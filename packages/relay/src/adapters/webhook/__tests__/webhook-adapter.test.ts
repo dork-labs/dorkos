@@ -369,6 +369,38 @@ describe('WebhookAdapter', () => {
       expect(options.budget).toBeUndefined();
     });
 
+    it('clamps a declared ceiling instead of trusting it', async () => {
+      // `hopCount` can only ever shorten a chain, so a wrong value there is
+      // self-limiting. `maxHops` is the opposite: a caller declaring 1000 would
+      // hand itself a thousand laps. A request may lower its own ceiling, never
+      // raise it.
+      const body = '{"event":"greedy"}';
+      const headers = {
+        ...buildHeaders(body, SECRET),
+        'x-relay-hop-count': '0',
+        'x-relay-max-hops': '1000',
+      };
+
+      await adapter.handleInbound(Buffer.from(body), headers);
+
+      const [, , options] = vi.mocked(relay.publish).mock.calls[0]!;
+      expect(options.budget).toEqual({ hopCount: 1, maxHops: 5 });
+    });
+
+    it('honours a ceiling lower than the default', async () => {
+      const body = '{"event":"modest"}';
+      const headers = {
+        ...buildHeaders(body, SECRET),
+        'x-relay-hop-count': '0',
+        'x-relay-max-hops': '2',
+      };
+
+      await adapter.handleInbound(Buffer.from(body), headers);
+
+      const [, , options] = vi.mocked(relay.publish).mock.calls[0]!;
+      expect(options.budget).toEqual({ hopCount: 1, maxHops: 2 });
+    });
+
     it('ignores an unreadable hop count rather than trusting it', async () => {
       const body = '{"event":"junk"}';
       const headers = { ...buildHeaders(body, SECRET), 'x-relay-hop-count': 'lots' };

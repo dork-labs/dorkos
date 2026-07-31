@@ -3,6 +3,7 @@ import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
 import {
   bindingAllowsInitiate,
   createInitiateConsentGate,
+  createAgentSubjectResolver,
   isConsentExemptPrincipal,
   type ConsentBindingStore,
 } from '../initiate-consent.js';
@@ -220,5 +221,52 @@ describe('createInitiateConsentGate — the DOR-277 delivery-layer gate', () => 
     it('allows agent→console sends (relay.human.console.*) — the operator’s own UI', () => {
       expect(gate(AGENT, 'relay.human.console.client-9').allowed).toBe(true);
     });
+  });
+});
+
+describe('createAgentSubjectResolver — by id, never by path', () => {
+  // The id → projectPath → subject round trip is not a bijection: the mesh can
+  // hold two agents whose project paths collide (DOR-790), so it can hand back
+  // a different agent's subject than the one it was asked about. In a consent
+  // gate that is an authorization decision made about the wrong principal.
+
+  /** A mesh where the path round trip would cross agent-1 with agent-2. */
+  const collidingMesh = {
+    inspect: (agentId: string) =>
+      agentId === 'agent-1' ? { relaySubject: AGENT } : { relaySubject: OTHER_AGENT },
+    // Present so a resolver that reached for them would compile and be caught
+    // by the assertions below rather than by a type error.
+    getProjectPath: () => '/shared/path',
+    getSubjectByPath: () => ({ subject: OTHER_AGENT, agentId: 'agent-2' }),
+  };
+
+  it('resolves the subject the registry holds for that id', () => {
+    expect(createAgentSubjectResolver(collidingMesh)('agent-1')).toBe(AGENT);
+  });
+
+  it('is not fooled by a colliding project path', () => {
+    // Via the path round trip this would be OTHER_AGENT, and the gate would
+    // then allow agent-2 to send on agent-1's binding.
+    const gate = createInitiateConsentGate({
+      bindingStore: storeFor(makeBinding({ agentId: 'agent-1' })),
+      resolveAgentSubject: createAgentSubjectResolver(collidingMesh),
+    });
+
+    expect(gate(OTHER_AGENT, HUMAN).allowed).toBe(false);
+    expect(gate(AGENT, HUMAN).allowed).toBe(true);
+  });
+
+  it('denies when the agent is not registered', () => {
+    const resolver = createAgentSubjectResolver({ inspect: () => undefined });
+    expect(resolver('ghost')).toBeUndefined();
+  });
+
+  it('denies when the registry entry names no subject', () => {
+    const resolver = createAgentSubjectResolver({ inspect: () => ({ relaySubject: null }) });
+    expect(resolver('agent-1')).toBeUndefined();
+  });
+
+  it('denies when this server has no mesh at all', () => {
+    expect(createAgentSubjectResolver(undefined)('agent-1')).toBeUndefined();
   });
 });

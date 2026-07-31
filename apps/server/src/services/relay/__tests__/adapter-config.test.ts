@@ -217,3 +217,88 @@ describe('loadAdapterConfig — one bad entry must not take the others down', ()
     expect(logger.error).toHaveBeenCalled();
   });
 });
+
+describe('an unreadable entry does not become a permanent ghost', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /** One good entry and one unreadable entry that carries an id. */
+  const WITH_GHOST = JSON.stringify({
+    adapters: [
+      {
+        id: 'slack-1',
+        type: 'slack',
+        enabled: true,
+        config: { botToken: 'a', appToken: 'b', signingSecret: 'c' },
+      },
+      { id: 'telegram-1', type: 'telegram', enabled: 'yes please', config: null },
+    ],
+  });
+
+  it('drops the ghost once an integration with that id parses again', async () => {
+    // The sequence a person actually walks: an integration breaks, they
+    // re-create it under the same name. Writing both would leave two entries
+    // sharing one id — a file no surface can make sense of afterwards.
+    vi.mocked(readFile).mockResolvedValue(WITH_GHOST);
+    const { adapters, unparsed } = await loadAdapterConfig(CONFIG_PATH);
+
+    const recreated = [
+      ...adapters,
+      { id: 'telegram-1', type: 'telegram', enabled: true, config: { token: 'y' } },
+    ] as never;
+
+    vi.mocked(writeFile).mockClear();
+    await saveAdapterConfig(CONFIG_PATH, recreated, unparsed);
+
+    const written = JSON.parse(vi.mocked(writeFile).mock.calls[0]![1] as string) as {
+      adapters: Array<{ id: string; enabled: unknown }>;
+    };
+    expect(written.adapters.map((a) => a.id)).toEqual(['slack-1', 'telegram-1']);
+    // The surviving one is the working entry, not the ghost.
+    expect(written.adapters.find((a) => a.id === 'telegram-1')?.enabled).toBe(true);
+  });
+
+  it('says which ghost it dropped', async () => {
+    vi.mocked(readFile).mockResolvedValue(WITH_GHOST);
+    const { adapters, unparsed } = await loadAdapterConfig(CONFIG_PATH);
+    vi.mocked(logger.warn).mockClear();
+
+    await saveAdapterConfig(
+      CONFIG_PATH,
+      [...adapters, { id: 'telegram-1', type: 'telegram', enabled: true, config: {} }] as never,
+      unparsed
+    );
+
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("'telegram-1'"));
+  });
+
+  it('keeps a ghost whose id no parsed entry claims', async () => {
+    vi.mocked(readFile).mockResolvedValue(WITH_GHOST);
+    const { adapters, unparsed } = await loadAdapterConfig(CONFIG_PATH);
+
+    vi.mocked(writeFile).mockClear();
+    await saveAdapterConfig(CONFIG_PATH, adapters, unparsed);
+
+    const written = JSON.parse(vi.mocked(writeFile).mock.calls[0]![1] as string) as {
+      adapters: Array<{ id: string }>;
+    };
+    expect(written.adapters.map((a) => a.id)).toEqual(['slack-1', 'telegram-1']);
+    expect(written.adapters[1]).toMatchObject({ enabled: 'yes please' });
+  });
+
+  it('warns that an unreadable entry may still hold a credential in plain text', async () => {
+    // It is preserved verbatim, so the DOR-280 migration never touched it. That
+    // is a different fact from "this entry did not load", with a different fix.
+    vi.mocked(readFile).mockResolvedValue(WITH_GHOST);
+
+    await loadAdapterConfig(CONFIG_PATH);
+
+    const credentialWarnings = vi
+      .mocked(logger.warn)
+      .mock.calls.filter((call) => String(call[0]).includes('plain text'));
+    expect(credentialWarnings).toHaveLength(1);
+    expect(String(credentialWarnings[0]![0])).toContain("'telegram-1'");
+    expect(String(credentialWarnings[0]![0])).toContain(CONFIG_PATH);
+  });
+});

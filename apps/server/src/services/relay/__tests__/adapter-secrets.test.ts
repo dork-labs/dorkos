@@ -360,3 +360,147 @@ describe('editing a webhook adapter without touching its headers', () => {
     expect(merged).toMatchObject({ outbound: { headers: { Authorization: 'Bearer replaced' } } });
   });
 });
+
+describe('setting webhook custom headers through the form (DOR-796, server half)', () => {
+  // A manifest field's key is a PATH (`outbound.headers`) while the config is
+  // nested, and the form normalizer only ever matched top-level keys. So the
+  // declared `valueShape` did nothing: the textarea's text reached the schema
+  // as a string, failed it, and the save was refused. The field could not be
+  // set at all — on create or on edit.
+
+  /** What the wizard sends for a webhook: flat keys, textarea values as text. */
+  function formEntry(config: Record<string, unknown>) {
+    return { id: 'wh-1', type: 'webhook', enabled: true, builtin: false, config };
+  }
+
+  it('accepts headers typed as JSON text and stores them as an object', () => {
+    const parsed = parseAdapterConfigForPersist(
+      formEntry({
+        inbound: { subject: 'relay.webhook.wh-1', secret: 'inbound-secret-16ch' },
+        outbound: {
+          url: 'https://example.com/hook',
+          secret: 'outbound-secret-16c',
+          headers: '{"Authorization": "Bearer sk-live-abc", "X-Trace": "on"}',
+        },
+      }),
+      WEBHOOK_MANIFEST
+    );
+
+    expect(parsed.config).toMatchObject({
+      outbound: { headers: { Authorization: 'Bearer sk-live-abc', 'X-Trace': 'on' } },
+    });
+  });
+
+  it('refuses unparseable header text instead of silently dropping it', () => {
+    expect(() =>
+      parseAdapterConfigForPersist(
+        formEntry({
+          inbound: { subject: 's', secret: 'inbound-secret-16ch' },
+          outbound: {
+            url: 'https://example.com/hook',
+            secret: 'outbound-secret-16c',
+            headers: '{oops',
+          },
+        }),
+        WEBHOOK_MANIFEST
+      )
+    ).toThrow(/expected JSON/);
+  });
+
+  it('treats a cleared field as no headers', () => {
+    const parsed = parseAdapterConfigForPersist(
+      formEntry({
+        inbound: { subject: 's', secret: 'inbound-secret-16ch' },
+        outbound: { url: 'https://example.com/hook', secret: 'outbound-secret-16c', headers: '' },
+      }),
+      WEBHOOK_MANIFEST
+    );
+
+    expect((parsed.config as { outbound: { headers: unknown } }).outbound.headers).toEqual({});
+  });
+
+  it('leaves the caller’s own object unmutated', () => {
+    // The normalizer writes through copies; mutating the request body would
+    // surprise every caller downstream of the route.
+    const config = {
+      inbound: { subject: 's', secret: 'inbound-secret-16ch' },
+      outbound: {
+        url: 'https://example.com/hook',
+        secret: 'outbound-secret-16c',
+        headers: '{"Authorization": "Bearer x"}',
+      },
+    };
+    parseAdapterConfigForPersist(formEntry(config), WEBHOOK_MANIFEST);
+
+    expect(config.outbound.headers).toBe('{"Authorization": "Bearer x"}');
+  });
+
+  it('round-trips: typed headers survive validation, encryption, and resolution', async () => {
+    const store = new FakeCredentialStore();
+    const manifests = new Map<string, AdapterManifest>([['webhook', WEBHOOK_MANIFEST]]);
+
+    const parsed = parseAdapterConfigForPersist(
+      formEntry({
+        inbound: { subject: 'relay.webhook.wh-1', secret: 'inbound-secret-16ch' },
+        outbound: {
+          url: 'https://example.com/hook',
+          secret: 'outbound-secret-16c',
+          headers: '{"Authorization": "Bearer sk-live-abc"}',
+        },
+      }),
+      WEBHOOK_MANIFEST
+    );
+
+    await materializeAdapterSecrets([parsed], { store, manifests });
+    // At rest: a reference, not the key.
+    expect(JSON.stringify(parsed)).not.toContain('sk-live-abc');
+
+    const resolved = await resolveAdapterSecrets(parsed, {
+      provider: new FakeCredentialProvider(store),
+      manifests,
+    });
+    // In the adapter's hands: the real value.
+    expect(resolved.config).toMatchObject({
+      outbound: { headers: { Authorization: 'Bearer sk-live-abc' } },
+    });
+  });
+
+  it('masks each header value, keeping the shape the schema declares', () => {
+    // Replacing the whole object with the string '***' made GET
+    // /api/relay/adapters lie about its own type. The header NAMES stay
+    // readable — they are not secret, and they are what lets someone see which
+    // headers are configured without being shown a value.
+    const masked = maskSensitiveFields(
+      {
+        inbound: { subject: 's', secret: 'file:in' },
+        outbound: {
+          url: 'u',
+          secret: 'file:out',
+          headers: { Authorization: 'file:auth', 'X-Trace': 'file:trace' },
+        },
+      },
+      WEBHOOK_MANIFEST
+    );
+
+    expect(masked).toMatchObject({
+      outbound: { headers: { Authorization: '***', 'X-Trace': '***' } },
+    });
+  });
+
+  it('treats a fully masked header object as untouched on save', () => {
+    // A client echoing back a masked GET must not overwrite the real values
+    // with the mask.
+    const stored = {
+      inbound: { subject: 's', secret: 'file:in' },
+      outbound: { url: 'u', secret: 'file:out', headers: { Authorization: 'file:auth' } },
+    };
+
+    const merged = mergeWithPasswordPreservation(
+      stored,
+      { outbound: { url: 'u', secret: '***', headers: { Authorization: '***' } } },
+      WEBHOOK_MANIFEST
+    );
+
+    expect(merged).toMatchObject({ outbound: { headers: { Authorization: 'file:auth' } } });
+  });
+});

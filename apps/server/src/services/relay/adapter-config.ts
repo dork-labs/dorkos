@@ -73,6 +73,24 @@ function valueShapesOf(manifest?: AdapterManifest): Map<string, 'id-list' | 'jso
  * `?? 'allowlist'`, equal enough for the DM gate's `=== 'allowlist'`, nor equal
  * enough for the warning's `=== 'open'` — open, and silent about it.
  *
+ * ## Dotted keys are resolved too
+ *
+ * A manifest field's key is a PATH (`outbound.headers`), while the config it
+ * describes is nested. Matching declarations against top-level keys only meant
+ * every nested `valueShape` silently did nothing: the webhook adapter's custom
+ * headers reached `WebhookOutboundConfigSchema` as the raw textarea string,
+ * failed it, and the save was refused — so that field could not be set at all,
+ * on create or on edit (DOR-796). Nested paths are resolved in a second pass,
+ * writing through copies so the caller's object is never mutated.
+ *
+ * ## Ordering: this runs AFTER the password merge
+ *
+ * `updateConfig` merges the stored value in for any password field the form
+ * sent back as the `'***'` sentinel, and only then validates. That order is
+ * load-bearing now that a secret field can hold an object: the sentinel is a
+ * string, and reaching this function it would be parsed as JSON and refused.
+ * Do not move the merge after this.
+ *
  * @param config - The raw `config` block as the caller sent it.
  * @param manifest - The adapter's manifest, read for its `valueShape` declarations.
  * @returns The same config with form shapes resolved.
@@ -95,7 +113,48 @@ function normalizeFormConfig(config: unknown, manifest?: AdapterManifest): unkno
       normalized[key] = value;
     }
   }
+
+  for (const [key, shape] of shapes) {
+    if (!key.includes('.')) continue;
+    const parts = key.split('.');
+    const current = getNestedValue(normalized, parts);
+    // Absent stays absent: a field nobody filled in must not be materialized
+    // as an empty value the schema would then treat as a choice.
+    if (current === undefined) continue;
+    setNestedValueCopying(
+      normalized,
+      parts,
+      shape === 'id-list' ? toIdList(current) : toJsonObject(key, current)
+    );
+  }
+
   return normalized;
+}
+
+/**
+ * Write a nested value, copying every container on the way down.
+ *
+ * {@link setNestedValue} writes in place, which would reach through the shallow
+ * copy {@link normalizeFormConfig} makes and mutate the caller's own config
+ * object. Copying each level keeps the normalization pure.
+ *
+ * @param root - The object being built (owned by the caller).
+ * @param parts - Dot-notation key parts.
+ * @param value - The value to set at the leaf.
+ */
+function setNestedValueCopying(
+  root: Record<string, unknown>,
+  parts: string[],
+  value: unknown
+): void {
+  let current = root;
+  for (const part of parts.slice(0, -1)) {
+    const child = current[part];
+    current[part] =
+      typeof child === 'object' && child !== null && !Array.isArray(child) ? { ...child } : {};
+    current = current[part] as Record<string, unknown>;
+  }
+  current[parts.at(-1)!] = value;
 }
 
 /**
@@ -256,8 +315,32 @@ export interface LoadedAdapterConfigs {
    * They are carried so that {@link saveAdapterConfig} can write them back
    * untouched: a save that dropped them would turn a typo in one integration
    * into the permanent deletion of it, at the next unrelated edit.
+   *
+   * Preserved **verbatim**, which includes any secret they hold in cleartext.
+   * The secret migration (DOR-280) reads a config's declared secret fields, and
+   * an entry nobody could parse has no declared anything — guessing at which of
+   * its keys is a token would be inventing structure for a shape we just failed
+   * to read. So the credential stays exactly where it was, and the load says so
+   * out loud rather than letting the file look protected when it is not.
    */
   unparsed: unknown[];
+}
+
+/**
+ * The `id` of an entry that failed to parse, when it has a readable one.
+ *
+ * An unreadable entry is still usually a *mostly* readable one — a bad enum, a
+ * missing key — so its id is normally right there. Reading it is what makes the
+ * entry addressable: it can be named in a log, deleted through the API, and
+ * recognised as the ghost of an integration the person has since re-created.
+ *
+ * @param entry - A raw entry from `adapters.json`.
+ * @returns The id, or `undefined` when the entry does not carry a usable one.
+ */
+export function unparsedEntryId(entry: unknown): string | undefined {
+  if (typeof entry !== 'object' || entry === null) return undefined;
+  const id = (entry as { id?: unknown }).id;
+  return typeof id === 'string' && id.length > 0 ? id : undefined;
 }
 
 /** The shell of `adapters.json`, before anything is said about each entry. */
@@ -312,12 +395,21 @@ export async function loadAdapterConfig(configPath: string): Promise<LoadedAdapt
         adapters.push(parsed.data as AdapterConfig);
       } else {
         unparsed.push(entry);
-        const id = (entry as { id?: unknown })?.id;
+        const id = unparsedEntryId(entry);
+        const named = id ? ` '${id}'` : '';
         logger.error(
-          `[AdapterConfig] Skipping integration${typeof id === 'string' ? ` '${id}'` : ''}: ` +
-            `its saved settings could not be read. It will not start, and it has been left ` +
-            `in the file untouched so nothing is lost:`,
+          `[AdapterConfig] Skipping integration${named}: its saved settings could not be read. ` +
+            `It will not start, and it has been left in the file untouched so nothing is lost:`,
           z.flattenError(parsed.error)
+        );
+        // Said separately because it is a different fact with a different fix:
+        // the entry is preserved byte for byte, so a token inside it is NOT
+        // moved into the encrypted store the way a readable entry's is.
+        logger.warn(
+          `[AdapterConfig] The unreadable entry${named} in ${configPath} is kept exactly as ` +
+            `written, so if it holds a bot token or API key that credential stays in the file ` +
+            `in plain text. Fix the entry (it will then be encrypted on the next save) or ` +
+            `delete the integration to clear it.`
         );
       }
     }
@@ -377,9 +469,18 @@ async function repairAdapterConfigPermissions(configPath: string): Promise<void>
  * which materializes any cleartext secret into a reference before this write —
  * this function does not itself guard against cleartext.
  *
- * Entries that could not be read on load are written back verbatim alongside
- * the parsed ones (see {@link LoadedAdapterConfigs.unparsed}), so saving one
- * integration never deletes another that this version could not understand.
+ * Entries that could not be read on load are written back **verbatim**
+ * alongside the parsed ones (see {@link LoadedAdapterConfigs.unparsed}), so
+ * saving one integration never deletes another that this version could not
+ * understand. Verbatim means exactly that: a secret sitting in cleartext inside
+ * an unreadable entry is written back in cleartext, because the DOR-280
+ * migration reads a config's declared secret fields and an unparseable entry
+ * declares nothing. The load says so out loud, per entry.
+ *
+ * An unparsed entry is dropped when a parsed entry now carries the same `id`.
+ * That is the person re-creating an integration they had to abandon, and two
+ * entries under one id is a file no surface can make sense of afterwards — the
+ * parsed one is the one they can see and edit, so it wins.
  *
  * @param configPath - Absolute path to adapters.json
  * @param configs - The adapter configs to write
@@ -390,14 +491,24 @@ export async function saveAdapterConfig(
   configs: AdapterConfig[],
   unparsed: readonly unknown[] = []
 ): Promise<void> {
+  const parsedIds = new Set(configs.map((config) => config.id));
+  const kept = unparsed.filter((entry) => {
+    const id = unparsedEntryId(entry);
+    if (id === undefined || !parsedIds.has(id)) return true;
+    logger.warn(
+      `[AdapterConfig] Dropping the unreadable saved entry for '${id}': an integration with ` +
+        `that name has been re-created and now works. The old, unreadable copy is being ` +
+        `removed so the file holds one entry per integration.`
+    );
+    return false;
+  });
+
   // `writeFileAtomic` re-asserts the mode after the rename: a pre-existing
   // file's perms survive `rename`, and the tmp file's create mode is subject to
   // the process umask.
-  await writeFileAtomic(
-    configPath,
-    JSON.stringify({ adapters: [...configs, ...unparsed] }, null, 2),
-    { mode: ADAPTER_CONFIG_MODE }
-  );
+  await writeFileAtomic(configPath, JSON.stringify({ adapters: [...configs, ...kept] }, null, 2), {
+    mode: ADAPTER_CONFIG_MODE,
+  });
 }
 
 /**
@@ -464,14 +575,25 @@ export function watchAdapterConfig(configPath: string, onChange: () => void): FS
   return watcher;
 }
 
+/** What a masked secret reads as in an API response. */
+export const SECRET_MASK = '***';
+
 /**
  * Mask password-type fields in an adapter config using the manifest definition.
  *
  * Supports dot-notation keys (e.g., `inbound.secret`) by traversing nested objects.
  *
+ * A field holding a MAP of secrets (the webhook adapter's `outbound.headers`)
+ * is masked value by value, so the response keeps the shape the schema
+ * declares — `{"Authorization": "***"}`, not the string `"***"` where an object
+ * belongs. Replacing the whole object made `GET /api/relay/adapters` lie about
+ * its own type. Header NAMES stay readable on purpose: they are not secret, and
+ * they are what lets someone see which headers are configured without ever
+ * being shown a value.
+ *
  * @param config - The raw config object
  * @param manifest - The adapter manifest with field definitions
- * @returns A deep copy of config with password fields replaced by `'***'`
+ * @returns A deep copy of config with password fields masked
  */
 export function maskSensitiveFields(
   config: Record<string, unknown>,
@@ -494,14 +616,35 @@ export function maskSensitiveFields(
     }
     const lastKey = parts.at(-1)!;
     if (found && lastKey in current) {
-      current[lastKey] = '***';
+      current[lastKey] = maskSecretValue(current[lastKey]);
     }
   }
   return masked;
 }
 
 /**
+ * Mask one secret value, keeping the shape it had.
+ *
+ * @param value - The stored value of a secret field.
+ * @returns The mask, or an object of masks for a map of secrets.
+ */
+function maskSecretValue(value: unknown): unknown {
+  if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+    return Object.fromEntries(Object.keys(value).map((key) => [key, SECRET_MASK]));
+  }
+  return SECRET_MASK;
+}
+
+/**
  * Merge incoming config with existing, preserving password fields when masked or empty.
+ *
+ * A secret the person did not retype comes back as the mask, and the mask is
+ * not a value — it is the absence of one. That covers both shapes: the string
+ * `'***'`, and (for a map of secrets) an object whose every value is `'***'`,
+ * which is what a client echoing back a masked `GET` sends.
+ *
+ * Runs BEFORE validation in `updateConfig`, deliberately — see
+ * {@link normalizeFormConfig}.
  *
  * @param existing - The current config values
  * @param incoming - The new config values to merge
@@ -520,7 +663,7 @@ export function mergeWithPasswordPreservation(
     if (field.type !== 'password') continue;
     const parts = field.key.split('.');
     const incomingValue = getNestedValue(incoming, parts);
-    if (incomingValue === '' || incomingValue === '***' || incomingValue === undefined) {
+    if (incomingValue === '' || incomingValue === undefined || isMaskedValue(incomingValue)) {
       const existingValue = getNestedValue(existing, parts);
       if (existingValue !== undefined) {
         setNestedValue(result, parts, existingValue);
@@ -528,6 +671,18 @@ export function mergeWithPasswordPreservation(
     }
   }
   return result;
+}
+
+/**
+ * Whether an incoming secret value is the mask rather than a real value.
+ *
+ * @param value - The value the caller sent for a secret field.
+ */
+function isMaskedValue(value: unknown): boolean {
+  if (value === SECRET_MASK) return true;
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const entries = Object.values(value);
+  return entries.length > 0 && entries.every((entry) => entry === SECRET_MASK);
 }
 
 /**

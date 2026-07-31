@@ -514,6 +514,45 @@ describe('AccessControl', () => {
       expect(acl.checkAccess('relay.x', 'relay.y').allowed).toBe(true);
     }, 10_000);
 
+    it('refuses to add a rule, rather than overwriting the file it preserved', async () => {
+      // A quarantined evaluator holds NO rules — it did not guess at what the
+      // file said. Persisting from that state would write an empty list plus
+      // the new rule, destroying the very file the quarantine exists to keep,
+      // and would silently lift the quarantine because the result parses.
+      writeRaw(tmpDir, '{{{');
+      acl = new AccessControl(tmpDir);
+
+      expect(() => acl.addRule(makeRule('relay.a', 'relay.b', 'deny', 10))).toThrow(
+        /cannot be read/
+      );
+      // The unreadable file is untouched.
+      expect(fs.readFileSync(path.join(tmpDir, 'access-rules.json'), 'utf-8')).toBe('{{{');
+      expect(acl.isQuarantined()).toBe(true);
+    });
+
+    it('refuses to remove a rule for the same reason', async () => {
+      writeRaw(tmpDir, '{{{');
+      acl = new AccessControl(tmpDir);
+
+      expect(() => acl.removeRule('relay.a', 'relay.b')).toThrow(/cannot be read/);
+      expect(fs.readFileSync(path.join(tmpDir, 'access-rules.json'), 'utf-8')).toBe('{{{');
+    });
+
+    it('accepts writes again once the file is repaired', async () => {
+      writeRaw(tmpDir, '{{{');
+      acl = new AccessControl(tmpDir);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      writeRulesFile(tmpDir, []);
+
+      const start = Date.now();
+      while (Date.now() - start < 3000 && acl.isQuarantined()) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+
+      expect(() => acl.addRule(makeRule('relay.a', 'relay.b', 'deny', 10))).not.toThrow();
+      expect(readRulesFile(tmpDir)).toHaveLength(1);
+    }, 10_000);
+
     it('recovers when the broken file is deleted', async () => {
       writeRaw(tmpDir, '{{{');
       acl = new AccessControl(tmpDir);

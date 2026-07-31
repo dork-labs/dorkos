@@ -24,6 +24,7 @@ import type {
   RelayPublisher,
 } from '../../types.js';
 import { BaseRelayAdapter } from '../../base-adapter.js';
+import { DEFAULT_MAX_HOPS } from '../../budget-enforcer.js';
 
 /** Stripe-standard timestamp window for replay attack prevention (±5 minutes). */
 const TIMESTAMP_WINDOW_SECS = 300;
@@ -381,6 +382,16 @@ export class WebhookAdapter extends BaseRelayAdapter {
    * the header. This closes the accidental loop, which is the one that happens;
    * it is not a defence against the holder of your own signing key.
    *
+   * **The declared ceiling is clamped, not trusted.** `hopCount` can only ever
+   * shorten a chain, so a wrong value there is self-limiting; `maxHops` is the
+   * opposite — a caller declaring `1000` would hand itself a thousand laps.
+   * It is therefore taken as `Math.min(declared, DEFAULT_MAX_HOPS)`: a request
+   * may lower its own ceiling, never raise it. The comparison is against the
+   * package default rather than this relay's configured value because an
+   * adapter is not given the relay's options; the effect of a
+   * higher-than-default configured ceiling is that an echoed budget is
+   * shortened, which errs toward stopping sooner.
+   *
    * @param headers - The inbound request headers.
    * @returns Publish options carrying the continued budget, or `undefined`.
    */
@@ -404,7 +415,9 @@ export class WebhookAdapter extends BaseRelayAdapter {
     return {
       budget: {
         hopCount: parsed.data.hopCount + 1,
-        ...(parsed.data.maxHops !== undefined ? { maxHops: parsed.data.maxHops } : {}),
+        ...(parsed.data.maxHops !== undefined
+          ? { maxHops: Math.min(parsed.data.maxHops, DEFAULT_MAX_HOPS) }
+          : {}),
       },
     };
   }

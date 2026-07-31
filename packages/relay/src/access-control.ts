@@ -174,8 +174,10 @@ export class AccessControl {
    * same `from`, `to`, and `priority` already exists, it is replaced.
    *
    * @param rule - The access rule to add
+   * @throws While quarantined — see {@link assertWritable}.
    */
   addRule(rule: RelayAccessRule): void {
+    this.assertWritable('add a rule');
     // Remove any exact duplicate (same from + to + priority)
     this.rules = this.rules.filter(
       (r) => !(r.from === rule.from && r.to === rule.to && r.priority === rule.priority)
@@ -190,8 +192,10 @@ export class AccessControl {
    *
    * @param from - The `from` pattern to match
    * @param to - The `to` pattern to match
+   * @throws While quarantined — see {@link assertWritable}.
    */
   removeRule(from: string, to: string): void {
+    this.assertWritable('remove a rule');
     const index = this.rules.findIndex((r) => r.from === from && r.to === to);
     if (index !== -1) {
       this.rules.splice(index, 1);
@@ -223,6 +227,32 @@ export class AccessControl {
   // ---------------------------------------------------------------------------
   // Private helpers
   // ---------------------------------------------------------------------------
+
+  /**
+   * Refuse to write the rules file while it cannot be read.
+   *
+   * A quarantined evaluator holds NO rules — it deliberately did not guess at
+   * what the unreadable file said. Persisting from that state would write an
+   * empty list plus whatever was just added, destroying the very file the
+   * quarantine exists to preserve and turning a typo into permanent loss of
+   * every rule. It would also silently lift the quarantine, because the file
+   * would then parse.
+   *
+   * So the write is refused and the caller is told why. Repair or delete the
+   * file first; the watcher lifts the quarantine and rules become editable
+   * again with no restart.
+   *
+   * @param action - What the caller was trying to do, for the message.
+   * @throws When the rules file is unreadable.
+   */
+  private assertWritable(action: string): void {
+    if (this.quarantineReason === null) return;
+    throw new Error(
+      `Cannot ${action}: the relay access rules at ${this.rulesPath} cannot be read ` +
+        `(${this.quarantineReason}). Saving now would overwrite them with an empty list. ` +
+        `Fix or delete that file first — it is left exactly as it is until you do.`
+    );
+  }
 
   /**
    * Load rules from disk synchronously.

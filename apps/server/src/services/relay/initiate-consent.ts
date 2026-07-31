@@ -73,14 +73,52 @@ export interface ConsentBindingStore {
  *
  * The gate is handed a publish principal (`relay.agent.{namespace}.{agentId}`)
  * and a binding that names a mesh agent id. This is the one bridge between
- * them, and it must be the SAME derivation the sender side uses
- * (`resolveSenderIdentity` → `meshCore.getSubjectByPath`), or the comparison
- * silently never matches and the gate denies everything.
+ * them, and it must produce the same subject grammar the sender side does —
+ * both go through `subjectForAgent` over an un-stripped registry entry, so they
+ * agree by construction. See {@link createAgentSubjectResolver} for why this
+ * side reaches the entry by id rather than by project path.
  *
  * @param agentId - The mesh agent id recorded on a binding.
  * @returns That agent's publish subject, or `undefined` if it is not registered.
  */
 export type ResolveAgentSubject = (agentId: string) => string | undefined;
+
+/** The one mesh lookup {@link createAgentSubjectResolver} needs. */
+export interface ConsentMeshCore {
+  /**
+   * Registry entry for an agent id, including its canonical relay subject.
+   * `relaySubject` is nullable in the mesh's own schema; a null one names
+   * nobody, so it is treated exactly like an unregistered agent.
+   */
+  inspect(agentId: string): { relaySubject: string | null } | undefined;
+}
+
+/**
+ * Resolve a bound agent's publish subject **by id, straight from the registry**.
+ *
+ * The obvious spelling of this is `getProjectPath(agentId)` then
+ * `getSubjectByPath(path)`, and it is wrong. It turns an id into a path and a
+ * path back into an id, and those two are not a bijection: the mesh can hold
+ * two agents whose project paths collide (DOR-790), so the round trip can hand
+ * back a DIFFERENT agent's subject than the one it was asked about. In a
+ * consent gate that is not a stale lookup, it is an authorization decision made
+ * about the wrong principal — agent A allowed on agent B's binding.
+ *
+ * `inspect()` reads the registry entry for that id and builds the subject from
+ * it with `subjectForAgent`, the same grammar registration used. No path is
+ * involved, so no path collision can reach this. An unregistered id resolves to
+ * `undefined`, and the gate denies.
+ *
+ * @param meshCore - The mesh, or `undefined` when this server has none.
+ * @returns A resolver the consent gate can call.
+ */
+export function createAgentSubjectResolver(
+  meshCore: ConsentMeshCore | undefined
+): ResolveAgentSubject {
+  // No mesh means no agent can be shown to be the bound one, so the gate denies
+  // rather than waves through.
+  return (agentId) => meshCore?.inspect(agentId)?.relaySubject ?? undefined;
+}
 
 /**
  * The shared consent predicate (DOR-239 + DOR-277).

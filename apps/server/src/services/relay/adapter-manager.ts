@@ -29,6 +29,7 @@ import { AdapterError } from './adapter-error.js';
 import {
   loadAdapterConfig,
   saveAdapterConfig,
+  unparsedEntryId,
   ensureDefaultAdapterConfig,
   watchAdapterConfig,
   maskSensitiveFields,
@@ -717,6 +718,13 @@ export class AdapterManager {
   async removeAdapter(id: string): Promise<void> {
     const index = this.configs.findIndex((c) => c.id === id);
     if (index === -1) {
+      // Not a running integration — but it may be one whose saved settings
+      // could not be read. Those are held aside rather than started, and
+      // without this they were undeletable from every surface: invisible to
+      // the list, unremovable by name, and rewritten on every save. Deleting
+      // one is also the only way to clear a cleartext credential stuck inside
+      // it, so this path has to exist.
+      if (await this.removeUnparsedEntry(id)) return;
       throw new AdapterError(`Adapter '${id}' not found`, 'NOT_FOUND');
     }
 
@@ -769,6 +777,28 @@ export class AdapterManager {
         );
       }
     }
+  }
+
+  /**
+   * Delete an entry whose saved settings could not be read.
+   *
+   * Nothing was started for it and no secret of its was ever migrated, so this
+   * is a file edit and nothing more: drop it and rewrite `adapters.json`.
+   *
+   * @param id - The id read off the unreadable entry.
+   * @returns `true` when an entry was found and removed.
+   */
+  private async removeUnparsedEntry(id: string): Promise<boolean> {
+    const index = this.unparsedConfigEntries.findIndex((entry) => unparsedEntryId(entry) === id);
+    if (index === -1) return false;
+
+    this.unparsedConfigEntries.splice(index, 1);
+    await this.persistConfigs();
+    logger.info(
+      `[AdapterManager] Removed the unreadable saved entry for '${id}'. Nothing was running ` +
+        `for it; any credential it held is now gone from adapters.json.`
+    );
+    return true;
   }
 
   /** Update an adapter's config with password field preservation. */
