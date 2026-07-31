@@ -1,13 +1,14 @@
 /**
- * The universal half of the `CommunityAdapter` conformance suite: the sixteen
+ * The universal half of the `CommunityAdapter` conformance suite: the seventeen
  * assertions every backend owes, with no branch and no opt-out.
  *
  * These are the properties that stay true whatever a backend declares — an
  * address that carries its own community, a snapshot before any entry, a resume
  * that is gap-free or refuses, exhaustion declared rather than inferred, stable
  * entry ids, honest attribution, a terminal event when a room goes away, one
- * defined answer for a room the caller cannot have, and no credential anywhere
- * on the wire.
+ * defined answer for a room the caller cannot have, no credential anywhere on
+ * the wire, and — U17, added after an adapter shipped minting a cursor its own
+ * reader refused — every cursor an adapter hands out being one it takes back.
  *
  * @module test-utils/community-conformance-universal
  */
@@ -23,6 +24,8 @@ import {
   CommunityRoomSchema,
   CommunityUnsupportedError,
   StaleCommunityCursorError,
+  type CommunityAdapter,
+  type CommunityCursor,
 } from '@dorkos/shared/community-adapter';
 import {
   GATED_PROBES,
@@ -538,5 +541,104 @@ export function registerUniversalAssertions(ctx: CommunityConformanceContext): v
         'a room this identity cannot stream is refused with CommunityRoomNotFoundError, at call time'
       ).toThrow(CommunityRoomNotFoundError);
     });
+
+    it('U17 accepts every cursor it minted, on both the surfaces that take one', async () => {
+      // The port says a cursor must be REJECTED when it belongs somewhere else.
+      // Nothing said the converse out loud, so nothing checked it: an adapter
+      // whose encoding cannot round-trip one of its own tokens fails the caller
+      // in the way that looks most like a backend problem — a resume that throws
+      // `StaleCommunityCursorError` for a cursor that is not stale at all, on a
+      // room that is perfectly healthy. The caller then falls back to a cold
+      // snapshot forever, exactly as the port instructs, and never resumes again.
+      const { adapter, roomId } = await arrange();
+      const minted = await mintedCursorsFor(adapter, roomId);
+      expect(minted.length, 'a room with entries mints cursors on both surfaces').toBeGreaterThan(
+        0
+      );
+
+      for (const { cursor, source } of minted) {
+        // Constructed, awaiting nothing — a refusal here is eager by contract,
+        // so it lands on this line or not at all.
+        expect(
+          () => adapter.subscribeRoom(roomId, cursor),
+          `subscribeRoom refused a cursor this adapter minted itself (${source})`
+        ).not.toThrow();
+        await expect(
+          adapter.listEntries(roomId, { cursor }),
+          `listEntries refused a cursor this adapter minted itself (${source})`
+        ).resolves.toBeDefined();
+      }
+    });
+
+    if (opts.seedEmptyRoom || declared.roomAdmin) {
+      it('U17 accepts the cursor it minted for a room with nothing in it', async () => {
+        // The one cursor an adapter mints nowhere else. A backend whose position
+        // is a real address rather than a counter has to invent something for
+        // "before the first entry", and whatever it invents is the value its own
+        // reader has never been handed.
+        const { adapter } = await arrange();
+        const emptyRoomId = opts.seedEmptyRoom
+          ? await opts.seedEmptyRoom(adapter)
+          : (await adapter.createRoom({ title: `Empty ${Date.now()}` })).roomId;
+
+        const iterator = adapter.subscribeRoom(emptyRoomId)[Symbol.asyncIterator]();
+        let cursor;
+        try {
+          const first = await nextEvent(iterator, 'the empty room’s snapshot', eventTimeoutMs);
+          expect(first.type).toBe('snapshot');
+          if (first.type !== 'snapshot') return;
+          expect(first.entries, 'the room was arranged with nothing in it').toEqual([]);
+          cursor = first.cursor;
+        } finally {
+          await iterator.return?.();
+        }
+
+        expect(
+          () => adapter.subscribeRoom(emptyRoomId, cursor),
+          'an adapter must accept the cursor its own empty-room snapshot handed out'
+        ).not.toThrow();
+        await expect(
+          adapter.listEntries(emptyRoomId, { cursor }),
+          'and so must the paging surface'
+        ).resolves.toBeDefined();
+      });
+    } else {
+      it.skip('U17 empty-room cursor (no seedEmptyRoom hook, and this backend cannot create one)', () => {});
+    }
   });
+
+  /**
+   * Every cursor a room hands out: the one its snapshot opens with, the one on
+   * each entry, and the one a page declares to continue from.
+   *
+   * @param adapter - The adapter to read.
+   * @param roomId - The room to collect from.
+   */
+  async function mintedCursorsFor(
+    adapter: CommunityAdapter,
+    roomId: string
+  ): Promise<{ cursor: CommunityCursor; source: string }[]> {
+    const minted: { cursor: CommunityCursor; source: string }[] = [];
+    const iterator = adapter.subscribeRoom(roomId)[Symbol.asyncIterator]();
+    try {
+      const first = await nextEvent(iterator, 'the opening snapshot', eventTimeoutMs);
+      if (first.type === 'snapshot') {
+        minted.push({ cursor: first.cursor, source: 'the snapshot' });
+        for (const entry of first.entries) {
+          minted.push({ cursor: entry.cursor, source: `the entry '${entry.id}'` });
+        }
+      }
+    } finally {
+      await iterator.return?.();
+    }
+
+    const page = await adapter.listEntries(roomId, { limit: PAGE_SIZE });
+    for (const entry of page.entries) {
+      minted.push({ cursor: entry.cursor, source: `a paged entry '${entry.id}'` });
+    }
+    if (page.nextCursor !== null) {
+      minted.push({ cursor: page.nextCursor, source: "a page's nextCursor" });
+    }
+    return minted;
+  }
 }

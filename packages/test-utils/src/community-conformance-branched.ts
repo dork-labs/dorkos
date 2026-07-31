@@ -11,6 +11,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   CommunityInviteSchema,
+  CommunityMemberNotFoundError,
   CommunityMemberSchema,
   CommunityUnsupportedError,
   RoomAddressSchema,
@@ -476,5 +477,20 @@ export function registerCapabilityBranchedAssertions(ctx: CommunityConformanceCo
         'the override appears on the roster, not only on the write'
       ).toBe('silent');
     });
+
+    if (declared.responseMode) {
+      it('C19 refuses an addressing override for a member this room has nobody for', async () => {
+        const { adapter, roomId } = await arrange();
+        // The port's own typed refusal, not a backend-native error with a `.code`
+        // an out-of-process consumer could only duck-type. The id is fabricated,
+        // so "unknown" and "known but not in this room" are the same case here —
+        // which is the point: the refusal carries no reason to tell them apart.
+        await expect(
+          adapter.setResponseMode(roomId, 'nobody-this-community-minted', 'silent')
+        ).rejects.toBeInstanceOf(CommunityMemberNotFoundError);
+      });
+    } else {
+      it.skip('C19 member-not-found refusal (this backend has no addressing override)', () => {});
+    }
   });
 }

@@ -14,6 +14,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import {
+  CommunityMemberNotFoundError,
   CommunityRoomNotFoundError,
   LOCAL_COMMUNITY,
   StaleCommunityCursorError,
@@ -385,7 +386,7 @@ describe('LocalCommunityAdapter signals', () => {
 
     await expect(
       adapter.publishSignal(roomId, 'progress', { state: 'working', memberId: 'ghost-nobody' })
-    ).rejects.toMatchObject({ name: 'RoomError', code: 'MEMBER_NOT_FOUND' });
+    ).rejects.toBeInstanceOf(CommunityMemberNotFoundError);
   });
 
   it('still lets one room member publish presence about another — the documented gap', async () => {

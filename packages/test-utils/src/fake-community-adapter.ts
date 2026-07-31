@@ -17,6 +17,7 @@
  * @module test-utils/fake-community-adapter
  */
 import {
+  CommunityMemberNotFoundError,
   CommunityRoomNotFoundError,
   CommunityUnsupportedError,
   LOCAL_COMMUNITY,
@@ -488,7 +489,11 @@ export class FakeCommunityAdapter implements CommunityAdapter {
       );
     }
     const membership = this._rooms.get(roomId)?.roster.get(memberId);
-    if (!membership) return Promise.reject(new Error(`'${memberId}' is not in room '${roomId}'`));
+    // The port's typed refusal, and the same one for a member this community
+    // never minted as for one it minted and this room does not hold.
+    if (!membership) {
+      return Promise.reject(new CommunityMemberNotFoundError(this.community, memberId));
+    }
     membership.responseMode = mode;
     return Promise.resolve(this._projectMember(membership)!);
   }
