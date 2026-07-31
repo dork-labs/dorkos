@@ -11,6 +11,8 @@ export { useSyncCurrentAgentId } from './model/use-sync-current-agent-id';
 export { useReconcileExplicitAgentPath } from './model/use-reconcile-explicit-agent-path';
 export { useUpdateAgent } from './model/use-update-agent';
 export { useResolvedAgents } from './model/use-resolved-agents';
+export { useExecutionExceptions } from './model/use-execution-exceptions';
+export type { ExecutionException, ExecutionExceptions } from './model/use-execution-exceptions';
 export { useAgentVisual, resolveAgentVisual } from './model/use-agent-visual';
 export type { AgentVisual, AgentVisualSource } from './model/use-agent-visual';
 export { useAgentToolStatus } from './model/use-agent-tool-status';

@@ -34,7 +34,10 @@ const mockCompleteOnboarding = vi.fn();
  * stands in for the moment before the config query has landed.
  */
 let mockOnboardingConfig:
-  | { agents: { defaultDirectory: string; defaultAgent: string } }
+  | {
+      agents: { defaultDirectory: string; defaultAgent: string };
+      executionDefaults?: { runtime: string };
+    }
   | undefined;
 vi.mock('../model/use-onboarding', () => ({
   useOnboarding: () => ({
@@ -314,6 +317,25 @@ describe('OnboardingConversation', () => {
     expect(onComplete).toHaveBeenCalled();
   });
 
+  // Two literals here used to say `claude-code` no matter what the server's
+  // default was, so a person who had chosen Codex was told their very first
+  // session ran on something it did not.
+  it("names the server's default runtime on the first session, not a hardcoded one", async () => {
+    mockOnboardingConfig = {
+      agents: { defaultDirectory: '/home/kai/.dork/agents', defaultAgent: 'dorkbot' },
+      executionDefaults: { runtime: 'codex' },
+    };
+    render(<OnboardingConversation onComplete={vi.fn()} />);
+    await reachDiscovery();
+    fireEvent.click(screen.getByText('Not now'));
+    await screen.findByTestId('composer');
+    fireEvent.change(screen.getByTestId('composer'), { target: { value: 'hello' } });
+    fireEvent.click(screen.getByTestId('send'));
+
+    const records = Object.values(useAgentBirthStore.getState().records);
+    expect(records[0]).toMatchObject({ runtime: 'codex' });
+  });
+
   it('the first message registers a first-message birth record and navigates into a session', async () => {
     const onComplete = vi.fn();
     render(<OnboardingConversation onComplete={onComplete} />);
@@ -335,6 +357,8 @@ describe('OnboardingConversation', () => {
       path: REGISTERED_DIR,
     });
     expect(records[0].path).not.toContain('~');
+    // The birth certificate names the runtime the session will actually run on.
+    expect(records[0]).toMatchObject({ runtime: 'claude-code' });
 
     const sessionId = Object.keys(useAgentBirthStore.getState().records)[0];
     expect(mockNavigate).toHaveBeenCalledWith({

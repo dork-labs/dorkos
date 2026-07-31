@@ -8,6 +8,22 @@ import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { RuntimesTab } from '../ui/tabs/RuntimesTab';
 
+// The tab now composes the exceptions strip, whose rows close the Settings
+// dialog on the way to an agent — so it reads the deep-link hook, which needs a
+// router these tests deliberately do not mount. Same stand-in `SettingsDialog`
+// uses; URL behavior is covered by `use-dialog-deep-link.test.tsx`.
+vi.mock('@/layers/shared/model/use-dialog-deep-link', () => ({
+  useSettingsDeepLink: () => ({
+    isOpen: true,
+    activeTab: 'runtimes',
+    section: null,
+    open: vi.fn(),
+    close: vi.fn(),
+    setTab: vi.fn(),
+    setSection: vi.fn(),
+  }),
+}));
+
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,

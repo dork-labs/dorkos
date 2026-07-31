@@ -186,6 +186,7 @@ vi.mock('@/layers/entities/agent', async () => ({
     '@/layers/entities/agent/lib/agent-choices'
   )),
   useResolvedAgents: () => ({ data: mockResolvedAgents() }),
+  useExecutionExceptions: () => mockExecutionExceptions(),
   useAgentVisual: () => ({ color: '#aaaaaa', emoji: '🤖' }),
   AgentIdentity: ({ name, emoji }: { name: string; emoji: string }) => (
     <span>
@@ -203,9 +204,16 @@ vi.mock('@/layers/entities/agent', async () => ({
 // same "keep fixtures fresh" intent the spec calls for, applied at the mock
 // instead of threading timestamps through every fixture. DOR-339 tests
 // override this per-case via `mockAttentionMap.mockImplementation(...)`.
-const mockAttentionMap = vi.fn((paths: string[]) =>
+const mockAttentionMap = vi.fn((paths: string[], _broken?: string[]) =>
   Object.fromEntries(paths.map((p) => [p, 'active']))
 );
+
+/** Which agents' execution settings are broken. Empty unless a case says otherwise. */
+const mockExecutionExceptions = vi.fn(() => ({
+  exceptions: [],
+  brokenPaths: [] as string[],
+  defaultRuntime: 'claude-code',
+}));
 
 vi.mock('@/layers/entities/session', async (importOriginal) => ({
   // The query-key factory is the real one: a stub here would let the sidebar
@@ -215,7 +223,7 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
   useSessionBorderState: () => ({ kind: 'idle', color: 'x', pulse: false, label: 'Idle' }),
   useAgentHottestStatus: () => ({ kind: 'idle', color: 'x', pulse: false, label: 'Idle' }),
   useAgentsAggregateStatus: () => false,
-  useAgentAttentionMap: (paths: string[]) => mockAttentionMap(paths),
+  useAgentAttentionMap: (paths: string[], broken?: string[]) => mockAttentionMap(paths, broken),
   usePulseMotion: () => ({ animate: undefined, transition: undefined }),
   useRenameSession: () => ({ mutate: vi.fn() }),
   useRecentSessions: () => mockRecent(),
@@ -618,8 +626,29 @@ describe('DashboardSidebar attention filters + reveal (DOR-339)', () => {
     mockRooms.mockReset();
     mockRooms.mockReturnValue([]);
     mockAttentionMap.mockReset();
+    mockExecutionExceptions.mockReset();
+    mockExecutionExceptions.mockReturnValue({
+      exceptions: [],
+      brokenPaths: [],
+      defaultRuntime: 'claude-code',
+    });
     mockSelectedCwd = null;
     mockPathname = '/';
+  });
+
+  // The bridge the operator asked for: breakage found in Settings has to reach
+  // the attention model, or "Needs attention" is only ever about live sessions.
+  it('hands a broken execution config to the attention model, alongside the live signals', () => {
+    mockExecutionExceptions.mockReturnValue({
+      exceptions: [],
+      brokenPaths: ['/projects/alpha'],
+      defaultRuntime: 'claude-code',
+    });
+    mockAttentionMap.mockImplementation((paths: string[]) =>
+      Object.fromEntries(paths.map((p) => [p, 'active']))
+    );
+    renderWithProviders(<DashboardSidebar />);
+    expect(mockAttentionMap).toHaveBeenCalledWith(expect.any(Array), ['/projects/alpha']);
   });
 
   /** Override the attention map for specific paths; everything else stays 'active'. */
@@ -682,8 +711,29 @@ describe('DashboardSidebar smart groups (DOR-338)', () => {
     mockRooms.mockReset();
     mockRooms.mockReturnValue([]);
     mockAttentionMap.mockReset();
+    mockExecutionExceptions.mockReset();
+    mockExecutionExceptions.mockReturnValue({
+      exceptions: [],
+      brokenPaths: [],
+      defaultRuntime: 'claude-code',
+    });
     mockSelectedCwd = null;
     mockPathname = '/';
+  });
+
+  // The bridge the operator asked for: breakage found in Settings has to reach
+  // the attention model, or "Needs attention" is only ever about live sessions.
+  it('hands a broken execution config to the attention model, alongside the live signals', () => {
+    mockExecutionExceptions.mockReturnValue({
+      exceptions: [],
+      brokenPaths: ['/projects/alpha'],
+      defaultRuntime: 'claude-code',
+    });
+    mockAttentionMap.mockImplementation((paths: string[]) =>
+      Object.fromEntries(paths.map((p) => [p, 'active']))
+    );
+    renderWithProviders(<DashboardSidebar />);
+    expect(mockAttentionMap).toHaveBeenCalledWith(expect.any(Array), ['/projects/alpha']);
   });
 
   /** Override the attention map for specific paths; everything else stays 'active'. */

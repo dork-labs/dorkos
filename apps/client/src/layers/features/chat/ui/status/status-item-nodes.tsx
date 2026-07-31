@@ -131,6 +131,22 @@ export function buildStatusItemNodes(
     );
   }
 
+  // `disabled={!sessionId}` looks vestigial in the cockpit and is not.
+  //
+  // Spec `execution-defaults` §3.3 asks that model and effort be choosable
+  // BEFORE a session's first message, and in the cockpit they already are: the
+  // `/session` route loader always redirects to a URL carrying a session id —
+  // the most recent cached one, or a fresh UUID — so `sessionId` is non-empty
+  // from the first paint (pinned by `session-route-loader.test.ts`, and
+  // browser-verified on a cold `/session?dir=…`, where the picker opens and the
+  // "Send a message first" tooltip never renders).
+  //
+  // The guard survives because the EMBED has no router and no loader: Obsidian's
+  // shell reads the id from the store, which starts `null` and is set back to
+  // `null` on a directory switch. There, `updateSession` has no session to PATCH,
+  // and a picker that silently wrote nowhere would be worse than one that says
+  // why it is not ready. Closing that gap means minting an id in the embed shell,
+  // which is a change to a surface this repo cannot yet verify end to end.
   nodes.model = (
     <ModelConfigPopover
       model={status.model}

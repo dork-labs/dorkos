@@ -59,6 +59,7 @@ export type { TriggerTurnDeps, TriggerTurnOpts, TriggerTurnResult } from './trig
 export {
   resolveSessionDefaults,
   readAgentExecutionDefaults,
+  describeExecutionDefaults,
   type AgentExecutionDefaults,
 } from './resolve-session-defaults.js';
 export { triggerCommandIntent } from './trigger-command-intent.js';

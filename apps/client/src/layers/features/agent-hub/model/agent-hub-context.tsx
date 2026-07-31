@@ -1,10 +1,10 @@
 import { createContext, useContext, type ReactNode } from 'react';
-import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import type { AgentManifest, AgentManifestUpdate } from '@dorkos/shared/mesh-schemas';
 
 export interface AgentHubContextValue {
   agent: AgentManifest;
   projectPath: string;
-  onUpdate: (updates: Partial<AgentManifest>) => void;
+  onUpdate: (updates: AgentManifestUpdate) => void;
   onPersonalityUpdate: (
     updates: Partial<AgentManifest> & { soulContent?: string; nopeContent?: string }
   ) => void;

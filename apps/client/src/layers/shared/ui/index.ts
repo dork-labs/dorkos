@@ -102,6 +102,8 @@ export { Kbd } from './kbd';
 export { Label } from './label';
 export { PasswordInput } from './password-input';
 export type { PasswordInputProps } from './password-input';
+export { ProvenanceChip } from './provenance-chip';
+export type { ProvenanceChipProps } from './provenance-chip';
 export { SettingRow, SwitchSettingRow } from './setting-row';
 export type { SettingRowProps, SwitchSettingRowProps } from './setting-row';
 export { SettingsPanel } from './settings-panel';

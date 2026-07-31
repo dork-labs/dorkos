@@ -55,6 +55,17 @@ export interface DeriveAttentionInput {
   lastActivityAt: number | null;
   /** Caller-supplied clock reading (epoch ms) — kept pure and testable, no `Date.now()` inside. */
   now: number;
+  /**
+   * Whether this agent's execution settings cannot be honored as written — a
+   * runtime it names that is not connected, a model its runtime no longer
+   * offers, an effort where there is none (spec `execution-defaults` §5).
+   *
+   * Folded in here rather than shown only in Settings because breakage has to
+   * surface where attention already lives: an agent that cannot start a session
+   * the way it is configured is exactly what "needs attention" has always meant,
+   * and a person who never opens Settings would otherwise find out by running it.
+   */
+  hasBrokenExecutionConfig?: boolean;
 }
 
 /**
@@ -74,7 +85,11 @@ export interface DeriveAttentionInput {
  * @param input - Pre-folded live kinds, last-activity timestamp, and clock reading.
  */
 export function deriveAttention(input: DeriveAttentionInput): AttentionState {
-  if (input.liveKinds.includes('pendingApproval') || input.liveKinds.includes('error')) {
+  if (
+    input.liveKinds.includes('pendingApproval') ||
+    input.liveKinds.includes('error') ||
+    input.hasBrokenExecutionConfig === true
+  ) {
     return 'needs-attention';
   }
   if (input.liveKinds.includes('streaming')) {
@@ -135,9 +150,19 @@ export function foldLiveKindsByPath(
  * `session-list-store.ts` for the same gotcha with `useShallow`).
  *
  * @param paths - Agent project paths to derive attention for.
+ * @param brokenExecutionPaths - Paths whose execution settings cannot be
+ *   honored, from `useExecutionExceptions`. Passed in rather than computed here
+ *   because that question spans agents, config, and runtimes, and this module
+ *   is the session entity — the caller already holds all three.
  */
-export function useAgentAttentionMap(paths: string[]): Record<string, AttentionState> {
+export function useAgentAttentionMap(
+  paths: string[],
+  brokenExecutionPaths: string[] = []
+): Record<string, AttentionState> {
   const key = paths.join('\n');
+  // Joined to a string for the same reason `paths` is: a fresh array every
+  // render would defeat the memo below on every store tick.
+  const brokenKey = brokenExecutionPaths.join('\n');
   const statusCwds = useSessionListStore(useCallback((s) => s.statusCwds, []));
   const statuses = useSessionListStore(useCallback((s) => s.statuses, []));
   const { data } = useRecentSessions();
@@ -145,6 +170,7 @@ export function useAgentAttentionMap(paths: string[]): Record<string, AttentionS
 
   return useMemo(() => {
     const pathList = key.length === 0 ? [] : key.split('\n');
+    const broken = new Set(brokenKey.length === 0 ? [] : brokenKey.split('\n'));
     const liveFolded = foldLiveKindsByPath(statusCwds, statuses, new Set(pathList));
     // eslint-disable-next-line react-hooks/purity -- Date.now() is intentional for recency-threshold classification
     const now = Date.now();
@@ -155,8 +181,9 @@ export function useAgentAttentionMap(paths: string[]): Record<string, AttentionS
         liveKinds: liveFolded.get(path) ?? [],
         lastActivityAt: iso ? new Date(iso).getTime() : null,
         now,
+        hasBrokenExecutionConfig: broken.has(path),
       });
     }
     return result;
-  }, [key, statusCwds, statuses, agentActivity]);
+  }, [key, brokenKey, statusCwds, statuses, agentActivity]);
 }

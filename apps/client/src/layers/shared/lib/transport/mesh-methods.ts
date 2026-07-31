@@ -5,6 +5,7 @@
  */
 import type {
   AgentManifest,
+  AgentManifestUpdate,
   AgentPathEntry,
   CreateAgentOptions,
   DiscoveryCandidate,
@@ -157,7 +158,7 @@ export function createMeshMethods(baseUrl: string) {
       return data.agents;
     },
 
-    updateAgentByPath(path: string, updates: Partial<AgentManifest>): Promise<AgentManifest> {
+    updateAgentByPath(path: string, updates: AgentManifestUpdate): Promise<AgentManifest> {
       return fetchJSON<AgentManifest>(baseUrl, `/agents/current?path=${encodeURIComponent(path)}`, {
         method: 'PATCH',
         body: JSON.stringify(updates),

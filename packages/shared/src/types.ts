@@ -75,6 +75,7 @@ export type {
   WorkbenchSignResponse,
   HealthResponse,
   TunnelStatus,
+  ExecutionDefaults,
   ServerConfig,
   GitStatusResponse,
   GitStatusError,

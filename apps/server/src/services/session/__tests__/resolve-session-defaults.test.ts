@@ -14,7 +14,11 @@ import { writeManifest } from '@dorkos/shared/manifest';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { RuntimeRegistry } from '../../core/runtime-registry.js';
-import { resolveSessionDefaults, readAgentExecutionDefaults } from '../resolve-session-defaults.js';
+import {
+  resolveSessionDefaults,
+  readAgentExecutionDefaults,
+  describeExecutionDefaults,
+} from '../resolve-session-defaults.js';
 
 /** The least manifest that validates, for the on-disk half of the ladder. */
 const BASE_MANIFEST: AgentManifest = {
@@ -299,5 +303,56 @@ describe('readAgentExecutionDefaults', () => {
     expect(await readAgentExecutionDefaults(dir)).toEqual({});
     expect(await readAgentExecutionDefaults(path.join(dir, 'not-here'))).toEqual({});
     expect(await readAgentExecutionDefaults(undefined)).toEqual({});
+  });
+});
+
+describe('describeExecutionDefaults', () => {
+  it('reports one entry per runtime that has a config section', () => {
+    const view = describeExecutionDefaults(runtimes());
+    expect(view.runtime).toBe('claude-code');
+    expect(view.perRuntime.map((entry) => entry.runtime)).toEqual([
+      'claude-code',
+      'codex',
+      'opencode',
+    ]);
+  });
+
+  it('reports what is stored, per runtime, in that runtime’s own id space', () => {
+    const view = describeExecutionDefaults(
+      runtimes({
+        claudeCode: {
+          ...USER_CONFIG_DEFAULTS.runtimes.claudeCode,
+          defaultModel: 'opus',
+          defaultEffort: 'high',
+        },
+        codex: { ...USER_CONFIG_DEFAULTS.runtimes.codex, defaultModel: 'gpt-5.3-codex' },
+      })
+    );
+    expect(view.perRuntime.find((e) => e.runtime === 'claude-code')).toEqual({
+      runtime: 'claude-code',
+      model: 'opus',
+      effort: 'high',
+      supportsEffort: true,
+    });
+    expect(view.perRuntime.find((e) => e.runtime === 'codex')?.model).toBe('gpt-5.3-codex');
+  });
+
+  // The absence has to survive the trip to the screen, or "Not supported by
+  // OpenCode" is a claim the payload quietly contradicts.
+  it('reports OpenCode as having no effort at all, never a null it could set', () => {
+    const opencode = describeExecutionDefaults(runtimes()).perRuntime.find(
+      (e) => e.runtime === 'opencode'
+    );
+    expect(opencode).toEqual({
+      runtime: 'opencode',
+      model: null,
+      effort: null,
+      supportsEffort: false,
+    });
+  });
+
+  it('reports the configured default runtime', () => {
+    const view = describeExecutionDefaults(runtimes({ default: 'codex' }));
+    expect(view.runtime).toBe('codex');
   });
 });

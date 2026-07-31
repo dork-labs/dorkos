@@ -16,6 +16,7 @@ import {
   IntegrationsTab as AgentIntegrationsTab,
 } from '@/layers/features/agent-settings';
 import { useAgentHubContext } from '../../model/agent-hub-context';
+import { AgentExecutionRows } from './AgentExecutionRows';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 
 // ---------------------------------------------------------------------------
@@ -89,7 +90,14 @@ export function ConfigTab() {
   const { agent, projectPath, onUpdate, onPersonalityUpdate } = useAgentHubContext();
   const augmented = agent as AgentWithConventions;
   const { data: capData } = useRuntimeCapabilities();
-  const availableRuntimes = capData ? Object.keys(capData.capabilities) : [agent.runtime];
+  const registeredRuntimes = capData ? Object.keys(capData.capabilities) : [agent.runtime];
+  // The agent's OWN runtime always appears, registered or not. Without it the
+  // dropdown renders empty for an agent pointed at a runtime this machine has
+  // not connected — which is precisely the agent the exceptions strip sends
+  // people here to fix, and a blank field tells them nothing about what is wrong.
+  const availableRuntimes = registeredRuntimes.includes(agent.runtime)
+    ? registeredRuntimes
+    : [agent.runtime, ...registeredRuntimes];
 
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
@@ -200,6 +208,10 @@ export function ConfigTab() {
             </div>
           </div>
         </div>
+
+        {/* Model + Effort — the two settings that join Runtime above, each with
+            its own provenance (spec `execution-defaults` §2). */}
+        <AgentExecutionRows agent={agent} onUpdate={onUpdate} />
 
         {/* Capabilities */}
         <div className="space-y-1">
