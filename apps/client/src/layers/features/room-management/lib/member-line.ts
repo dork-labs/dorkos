@@ -58,9 +58,14 @@ export interface MemberLineFacts {
  */
 export function memberSecondaryLine(facts: MemberLineFacts): string {
   if (facts.presence !== null) {
+    // Both rungs carry the elapsed time. "working now" on its own was the one
+    // row here that stated a fact and withheld the number a person actually
+    // reads it for — how long they have been waiting — and it made a turn that
+    // started four minutes ago look the same as one that started this second.
+    const elapsed = presenceElapsed(facts.presence.elapsedMs);
     return facts.presence.state === 'working_late'
-      ? `still working, ${presenceElapsed(facts.presence.elapsedMs)}`
-      : 'working now';
+      ? `still working, ${elapsed}`
+      : `working now, ${elapsed}`;
   }
   if (facts.lastSpokeAt !== null) return `last spoke ${formatRelativeTime(facts.lastSpokeAt)}`;
   return `joined ${formatRelativeTime(facts.joinedAt)}`;

@@ -365,7 +365,7 @@ describe('the room stream feeds the store', () => {
     expect(keysIn(ROOM)).toEqual([key('kai', 'entry-1')]);
   });
 
-  it('claims to know nothing once the stream has given up', async () => {
+  it('claims to know nothing once the room has gone quiet', async () => {
     vi.spyOn(Math, 'random').mockReturnValue(0);
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     useRoomPresenceStore.getState().observe(ROOM, signal('kai', 'working', 'entry-1'));
@@ -376,12 +376,25 @@ describe('the room stream feeds the store', () => {
       })()
     );
 
-    const { result } = renderHook(() => useRoomStream(ROOM, true), {
+    const { result, unmount } = renderHook(() => useRoomStream(ROOM, true), {
       wrapper: wrapperFor(transport, makeQueryClient()),
     });
 
-    await vi.waitFor(() => expect(result.current.stalled).toBe(true));
-    expect(transport.subscribeRoom).toHaveBeenCalledTimes(SSE_RESILIENCE.DISCONNECTED_THRESHOLD);
-    expect(keysIn(ROOM)).toEqual([]);
+    try {
+      await vi.waitFor(() => expect(result.current.stalled).toBe(true));
+      // Whatever was working is now unknowable — the release would have come
+      // down the socket that just went away, so a frozen "· 42s" under a line
+      // saying nothing is coming through is the lingering-dots lie.
+      expect(keysIn(ROOM)).toEqual([]);
+      // It takes the whole budget to say so, and no fewer: one bad attempt must
+      // not blank a room's presence. It is deliberately not an exact count any
+      // more — the loop keeps retrying underneath the notice rather than
+      // stopping, so by the time this assertion runs it has tried again.
+      expect(
+        (transport.subscribeRoom as unknown as { mock: { calls: unknown[][] } }).mock.calls.length
+      ).toBeGreaterThanOrEqual(SSE_RESILIENCE.DISCONNECTED_THRESHOLD);
+    } finally {
+      unmount();
+    }
   });
 });

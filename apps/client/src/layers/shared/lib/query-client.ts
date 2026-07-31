@@ -38,6 +38,27 @@ import { toast } from 'sonner';
 import { QUERY_TIMING } from './constants';
 
 /**
+ * Is this cache entry kept current by a durable subscription of its own?
+ *
+ * A query that declares `meta.streamOwned` is hydrated once by its read and
+ * written from then on by a stream that resumes from a cursor and is gap-free.
+ * Re-reading it is not a re-sync but a step backwards: the GET answers with
+ * whatever page the server returns — a room's history read returns only the
+ * TRAILING page — and it lands over anything the socket delivered while it was
+ * in flight, which nothing re-delivers.
+ *
+ * So a broom that sweeps the whole cache has to be told what to leave alone.
+ * `installReconnectInvalidation` is the one that does, and the flag is checked
+ * rather than the key so `shared` never has to name a key an upper layer owns.
+ *
+ * @param query - Any query the cache holds.
+ * @returns True when only its own stream may write it.
+ */
+export function isStreamOwnedQuery(query: { meta?: Record<string, unknown> }): boolean {
+  return query.meta?.streamOwned === true;
+}
+
+/**
  * Build the app's QueryClient configuration.
  *
  * A factory rather than a shared object because a QueryCache and a MutationCache

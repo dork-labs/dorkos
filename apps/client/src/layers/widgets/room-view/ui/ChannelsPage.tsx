@@ -3,7 +3,7 @@ import { useSearch } from '@tanstack/react-router';
 import { AnimatePresence, motion } from 'motion/react';
 import { MessagesSquare } from 'lucide-react';
 import { Skeleton } from '@/layers/shared/ui';
-import { useIsMobile } from '@/layers/shared/model';
+import { useIsMobile, useVisualViewportBottomInset } from '@/layers/shared/model';
 import {
   useMarkRoomRead,
   useRoom,
@@ -22,6 +22,7 @@ import { useThreadUrlSync } from '../model/use-thread-url-sync';
 import { RoomComposer } from './RoomComposer';
 import { RoomHeader } from './RoomHeader';
 import { RoomPresenceLine } from './RoomPresenceLine';
+import { RoomStalledNotice } from './RoomStalledNotice';
 import { RoomThreadPanel } from './RoomThreadPanel';
 import { RoomTimeline, RoomTimelineSkeleton } from './RoomTimeline';
 
@@ -44,6 +45,9 @@ export function ChannelsPage() {
   const { id, thread } = useSearch({ from: '/_shell/channels' });
   const roomId = id ?? null;
   const isMobile = useIsMobile();
+  // How much of the screen a software keyboard is currently eating. `0`
+  // everywhere else, including every desktop — see the mobile branch below.
+  const keyboardInset = useVisualViewportBottomInset();
   const openThread = useRoomOpenThread(roomId);
   const openThreadId = openThread?.rootEntryId;
   /**
@@ -195,6 +199,8 @@ export function ChannelsPage() {
       entries={entries}
       reactionFrequents={room.reactionFrequents}
       streamStalled={stream.stalled}
+      streamUnavailable={stream.unavailable}
+      onRetryStream={stream.retry}
       historyLoaded={entriesQuery.isSuccess}
       historyFailed={entriesQuery.isError}
       pushed={isMobile}
@@ -222,23 +228,11 @@ export function ChannelsPage() {
           onOpenThread={onOpenThread}
         />
       </div>
-      {/* A room that has stopped listening looks exactly like a quiet one, so it
-          has to say so. One line, no banner — you can still read and still post,
-          and what you post still lands; you just would not see a reply. */}
+      {/* Directly above the composer, because the state it describes is about
+          what happens after you press Enter. `RoomStalledNotice` explains why
+          the composer beside it stays open. */}
       {stream.stalled && (
-        <div
-          role="status"
-          className="text-muted-foreground flex items-center gap-2 border-t px-4 py-2 text-xs"
-        >
-          <span>New messages aren&apos;t coming through right now.</span>
-          <button
-            type="button"
-            onClick={stream.retry}
-            className="focus-ring hover:text-foreground rounded underline underline-offset-2"
-          >
-            Reconnect
-          </button>
-        </div>
+        <RoomStalledNotice onRetry={stream.retry} unavailable={stream.unavailable} />
       )}
       {/* Keyed on the room so opening a conversation gives you a composer that
           is focused and freshly sized for that room's draft. Switching to an
@@ -290,6 +284,21 @@ export function ChannelsPage() {
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: 16 }}
           transition={{ duration: 0.15, ease: [0, 0, 0.2, 1] }}
+          // The room ends where the software keyboard begins.
+          //
+          // A phone's keyboard shrinks the VISUAL viewport and leaves the layout
+          // viewport alone, so `h-dvh` on the shell above measures a screen that
+          // is no longer all visible — and everything this column pins to its
+          // bottom edge (the composer, the stalled notice, the presence line)
+          // sits behind the keyboard the moment you tap to type. Insetting by
+          // the difference is what puts them back above it, and it costs
+          // nothing where there is no keyboard: the hook reads 0 without
+          // `visualViewport`, under pinch-zoom, and on every desktop.
+          //
+          // One place, not two: on a phone the thread panel is a full-screen
+          // push rendered INSIDE this element, so both surfaces inherit it.
+          style={{ paddingBottom: keyboardInset }}
+          data-testid="room-surface"
           // A flex COLUMN, not a bare `h-full` box: the room column inside is
           // `flex-1`, which needs a flex parent to be bounded by. Without it the
           // scroller had no height to overflow, so the room silently stopped

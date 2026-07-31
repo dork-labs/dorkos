@@ -17,6 +17,16 @@ export const roomKeys = {
   /** One room with its roster. */
   detail: (roomId: string) => ['rooms', 'detail', roomId] as const,
   /**
+   * Every room's detail, whatever the id.
+   *
+   * Its own factory rather than `all` for the same reason `lists()` is: `all`
+   * is a PREFIX, so invalidating it reaches `entries` too — and a room's
+   * history is owned by its live stream, which means sweeping it discards
+   * entries the socket delivered and the server will never re-send. Anything
+   * that wants "every room read except the histories" reaches for these three.
+   */
+  details: () => ['rooms', 'detail'] as const,
+  /**
    * Every thread the reader takes part in, across every room. Not under
    * `list`, because it is not a room list — invalidating the room lists must
    * not have to know about it, and the two are refreshed by the same events

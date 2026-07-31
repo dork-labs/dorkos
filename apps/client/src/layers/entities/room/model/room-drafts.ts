@@ -1,18 +1,16 @@
 /**
  * What you have typed in each room but not yet sent.
  *
- * A draft lives here rather than in the composer's own state for two reasons,
- * and the second one is a correctness requirement, not a nicety:
+ * A draft lives here rather than in the composer's own state so that leaving a
+ * room and coming back finds your half-written sentence where you left it, the
+ * way every chat surface behaves.
  *
- * - Leaving a room and coming back should find your half-written sentence where
- *   you left it, the way every chat surface behaves.
- * - A refused post has to give the words back even when the composer that sent
- *   them is gone. Both restore paths run outside the component: the reader can
- *   switch rooms before the refusal lands (the composer unmounts), and a second
- *   post detaches the first one's observer (`mutationObserver.js:56-58`), after
- *   which per-call `mutate(…, { onError })` callbacks are never dispatched at
- *   all (`:77`, gated on `hasListeners()`). State that dies with the component
- *   cannot hold a guarantee that outlives it.
+ * It used to hold a second job — giving a refused post's words back — and that
+ * is gone (DOR-783). A refusal now keeps its words in the pending row that has
+ * been holding them since the keystroke (`pending-posts`), which is both a
+ * better place for them and the only one that can say WHICH of two in-flight
+ * messages failed. Merging a refusal into this box meant two sentences with a
+ * claim on one field, and a reader who then pressed Enter sent both as one.
  *
  * Keyed by room id, so one conversation's draft can never surface in another —
  * and by {@link threadDraftKey} for a thread panel's composer, which is a
@@ -64,14 +62,6 @@ interface RoomDraftActions {
    * duplicate from someone deliberately sending "ok" twice in a row.
    */
   take: (roomId: string) => string;
-  /**
-   * Put refused words back into the room they were meant for.
-   *
-   * Anything typed since goes below them rather than being overwritten: at this
-   * point two different sentences both have a claim on the box, and choosing
-   * one means destroying the other.
-   */
-  restore: (roomId: string, text: string) => void;
 }
 
 /** The per-room draft store. */
@@ -90,18 +80,6 @@ export const useRoomDraftStore = create<RoomDraftState & RoomDraftActions>()(
         }
         return held;
       },
-
-      restore: (roomId, text) =>
-        set(
-          (state) => {
-            const current = state.drafts[roomId] ?? '';
-            return {
-              drafts: { ...state.drafts, [roomId]: current === '' ? text : `${text}\n${current}` },
-            };
-          },
-          false,
-          'roomDrafts/restore'
-        ),
     }),
     { name: 'RoomDraftStore' }
   )

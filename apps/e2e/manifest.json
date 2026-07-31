@@ -132,7 +132,7 @@
     "room-conversation": {
       "specFile": "tests/rooms/room-conversation.spec.ts",
       "feature": "rooms",
-      "description": "create a channel from the sidebar, post to it, and read the post back, switching rooms swaps the history, the masthead and the browser tab, an arriving message does not yank a reader back from history, a room whose stream has died says so, and Reconnect brings it back",
+      "description": "create a channel from the sidebar, post to it, and read the post back, switching rooms swaps the history, the masthead and the browser tab, an arriving message does not yank a reader back from history, a room whose stream has died says so and comes back on its own",
       "lastRun": "2026-07-30T23:28:20.126Z",
       "lastStatus": "passed",
       "runCount": 9,

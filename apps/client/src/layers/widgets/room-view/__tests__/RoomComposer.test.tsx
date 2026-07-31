@@ -8,7 +8,7 @@ import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import { REACTION_FREQUENTS_DEFAULT } from '@dorkos/shared/room-schemas';
 import type { PostToRoomResponse, RoomWithRoster } from '@dorkos/shared/room-schemas';
-import { useRoomDraftStore } from '@/layers/entities/room';
+import { usePendingPostStore, useRoomDraftStore } from '@/layers/entities/room';
 import { createQueryClientConfig } from '@/layers/shared/lib';
 import { TransportProvider } from '@/layers/shared/model';
 import { RoomComposer } from '../ui/RoomComposer';
@@ -38,6 +38,9 @@ afterEach(() => {
   toastError.mockClear();
   // Drafts outlive components on purpose, which means they also outlive tests.
   useRoomDraftStore.setState({ drafts: {} });
+  // Pending rows outlive their composer for the same reason drafts do — a
+  // refusal has to find something still standing — so they outlive tests too.
+  usePendingPostStore.setState({ posts: [] });
 });
 
 function roomWith(overrides: Partial<RoomWithRoster> = {}): RoomWithRoster {
@@ -187,7 +190,7 @@ describe('RoomComposer', () => {
     await waitFor(() => expect(transport.postToRoom).toHaveBeenCalledTimes(0));
   });
 
-  it('gives every word back when the post fails, and says why exactly once', async () => {
+  it('keeps every word when the post fails, and says why exactly once', async () => {
     const transport = createMockTransport({
       postToRoom: vi.fn().mockRejectedValue(new Error('This room is archived')),
     });
@@ -196,7 +199,18 @@ describe('RoomComposer', () => {
     type(field, 'the message I do not want to retype');
     fireEvent.keyDown(field, { key: 'Enter' });
 
-    await waitFor(() => expect(field.value).toBe('the message I do not want to retype'));
+    // The words are held by the failed row now, not pushed back into the box.
+    // The box is where the NEXT sentence goes, and a refusal arriving into it
+    // merges two sentences that both have a claim on it — see `usePostToRoom`.
+    await waitFor(() => {
+      const held = usePendingPostStore.getState().posts;
+      expect(held).toHaveLength(1);
+      expect(held[0]).toMatchObject({
+        text: 'the message I do not want to retype',
+        status: 'failed',
+      });
+    });
+    expect(field.value).toBe('');
     // One toast, naming the action and carrying the server's own reason. It
     // comes from the shared MutationCache rather than from this component,
     // because this component is not always still here when a refusal lands.
@@ -222,7 +236,7 @@ describe('RoomComposer', () => {
     expect(field.value).toBe('');
   });
 
-  it('puts a refused message back above a follow-up instead of destroying one', async () => {
+  it('leaves a follow-up being typed completely alone when the first is refused', async () => {
     let refuse: (err: Error) => void = () => {};
     const transport = createMockTransport({
       postToRoom: vi.fn(
@@ -244,7 +258,17 @@ describe('RoomComposer', () => {
     type(field, 'the one typed while waiting');
     refuse(new Error('offline'));
 
-    await waitFor(() => expect(field.value).toBe('the refused one\nthe one typed while waiting'));
+    // Both sentences survive, in one place each. The old shape merged the
+    // refused one into the box on top of the half-typed one — two sentences
+    // with a claim on one field, and a reader who then pressed Enter sent both
+    // at once as a single message.
+    await waitFor(() =>
+      expect(usePendingPostStore.getState().posts[0]).toMatchObject({
+        text: 'the refused one',
+        status: 'failed',
+      })
+    );
+    expect(field.value).toBe('the one typed while waiting');
   });
 
   it('refuses to post into an archived room, and says so on screen', async () => {

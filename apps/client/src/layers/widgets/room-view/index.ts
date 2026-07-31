@@ -22,3 +22,11 @@ export { RoomEntryRow } from './ui/RoomEntryRow';
  */
 export { RoomThreadPanel } from './ui/RoomThreadPanel';
 export { RoomThreadReplyRow } from './ui/RoomThreadReplyRow';
+/**
+ * The row that holds a message between pressing Enter and the room echoing it
+ * back, exported for the Dev Playground's delivery bench (`/dev/rooms`) — the
+ * only place its two states can be reviewed on demand, since producing a real
+ * one takes a slow link or a dead stream. Nothing in the routed app imports it
+ * from here; the timeline and the thread panel mount it themselves.
+ */
+export { RoomPendingRow } from './ui/RoomPendingRow';
