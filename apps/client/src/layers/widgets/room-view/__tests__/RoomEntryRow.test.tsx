@@ -177,11 +177,10 @@ describe('RoomEntryRow — the action surface', () => {
   });
 
   it('names a row rendered outside any feed, and gives it no place in a set', () => {
-    // The shape the THREAD PANEL renders — no `feedPosition`, because nothing
-    // there navigates a set yet (DOR-780). Naming is universal for message rows
-    // and position is one consumer of it, so the panel's rows are named too.
-    // Pinned here so the second surface's behaviour is a decision rather than
-    // something that leaked out of the room's feed work.
+    // Naming is universal for message rows and position is one consumer of it,
+    // so a row with no feed around it is still named. Pinned here so the two
+    // halves stay separable: every surface that renders this row names it,
+    // and only the ones that navigate a set number it.
     renderRow();
     const row = screen.getByTestId('room-entry');
 
