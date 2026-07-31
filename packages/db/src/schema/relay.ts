@@ -31,15 +31,31 @@ export const relayIndex = sqliteTable(
   (table) => [primaryKey({ columns: [table.id, table.endpointHash] })]
 );
 
-/** Delivery telemetry for Relay messages. Replaces relay/index.db 'message_traces' table. */
+/**
+ * Delivery telemetry for Relay messages. Replaces relay/index.db 'message_traces' table.
+ *
+ * Two things here are load-bearing for the numbers the cockpit shows:
+ *
+ * - `status` separates `no_subscriber` from `failed`. A publish to a subject
+ *   nobody listens on is not a failure, and counting it as one produced whole
+ *   days reading "100% failure rate" with not one error message attached.
+ * - `kind` separates a message's delivery span from an adapter's lifecycle
+ *   event (connected / disconnected / error). Lifecycle rows used to be written
+ *   as `status: 'delivered'` and were counted as delivered traffic, so simply
+ *   restarting an integration inflated the delivered count.
+ */
 export const relayTraces = sqliteTable('relay_traces', {
   id: text('id').primaryKey(), // ULID
   messageId: text('message_id').notNull().unique(),
   traceId: text('trace_id').notNull(),
   subject: text('subject').notNull(),
   status: text('status', {
-    enum: ['sent', 'delivered', 'failed', 'timeout'],
+    enum: ['sent', 'delivered', 'failed', 'timeout', 'no_subscriber'],
   }).notNull(),
+  /** `delivery` for a message span, `lifecycle` for an adapter connect/disconnect/error event. */
+  kind: text('kind', { enum: ['delivery', 'lifecycle'] })
+    .notNull()
+    .default('delivery'),
   sentAt: text('sent_at').notNull(), // ISO 8601 TEXT (was: INTEGER Unix ms)
   deliveredAt: text('delivered_at'),
   processedAt: text('processed_at'),

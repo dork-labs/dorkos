@@ -420,6 +420,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       totalMessages: 0,
       deliveredCount: 0,
       failedCount: 0,
+      noSubscriberCount: 0,
       deadLetteredCount: 0,
       avgDeliveryLatencyMs: null,
       p50DeliveryLatencyMs: null,

@@ -165,6 +165,15 @@ export abstract class BaseRelayAdapter implements RelayAdapter {
    * Stop the adapter with idempotency guard and status tracking.
    *
    * Subclasses implement `_stop()` for the actual disconnection logic.
+   *
+   * **A stop that threw is not a stop.** The status used to be set to
+   * `disconnected` in a `finally`, so an adapter whose poller refused to shut
+   * down reported itself cleanly stopped while it was still holding the
+   * connection — and the registry, reading that, was free to start a second
+   * adapter on the same token. A failed stop now lands in the `error` state
+   * with the reason attached, and the throw reaches the caller.
+   *
+   * @throws Whatever `_stop()` threw.
    */
   async stop(): Promise<void> {
     if (this._status.state === 'disconnected') return; // idempotent
@@ -172,15 +181,18 @@ export abstract class BaseRelayAdapter implements RelayAdapter {
     this.logger.info('stopping');
     try {
       await this._stop();
-    } finally {
+    } catch (err) {
       this.relay = null;
-      this._status = {
-        state: 'disconnected',
-        messageCount: this._status.messageCount,
-        errorCount: this._status.errorCount,
-      };
-      this.logger.info('stopped');
+      this.recordError(err);
+      throw err;
     }
+    this.relay = null;
+    this._status = {
+      state: 'disconnected',
+      messageCount: this._status.messageCount,
+      errorCount: this._status.errorCount,
+    };
+    this.logger.info('stopped');
   }
 
   /**

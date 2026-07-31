@@ -91,7 +91,10 @@ describe('TraceStore', () => {
     expect(metrics.totalMessages).toBe(4);
     expect(metrics.deliveredCount).toBe(2);
     expect(metrics.failedCount).toBe(1);
-    expect(metrics.deadLetteredCount).toBe(1);
+    // `deadLetteredCount` counts the dead-letter queue (`relay_index` rows in
+    // the failed state), not a trace status nothing writes — which is why it
+    // used to read zero however full the queue was (DOR-789).
+    expect(metrics.deadLetteredCount).toBe(0);
     expect(metrics.activeEndpoints).toBe(1);
   });
 

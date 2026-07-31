@@ -763,8 +763,17 @@ export class AdapterManager {
     await this.enqueue(async () => {
       try {
         await this.registry.unregister(id);
-      } catch {
-        /* not running -- ignore */
+      } catch (err) {
+        // The config is going away either way — the person asked for that. But
+        // an adapter that would not stop is still connected, and saying nothing
+        // about it is how a bot goes on answering from an integration the
+        // cockpit no longer lists.
+        const message = err instanceof Error ? err.message : String(err);
+        this.deps.eventRecorder?.insertAdapterEvent(id, 'adapter.error', message);
+        logger.error(
+          `[AdapterManager] '${id}' would not stop while being removed and may still be ` +
+            `connected — restart DorkOS if it keeps answering: ${message}`
+        );
       }
     });
 
@@ -856,8 +865,20 @@ export class AdapterManager {
       if (!current?.enabled || !this.registry.get(id)) return;
       try {
         await this.registry.unregister(id);
-      } catch {
-        /* ignore */
+      } catch (err) {
+        // Do NOT build a replacement. The old adapter failed to let go of its
+        // connection and is still registered; starting a second one on the same
+        // credentials is how one bot token ended up with two pollers, every
+        // message delivered twice, and two agent turns billed for one question.
+        // The new settings are saved and take effect on the next successful
+        // start (a restart, or a re-enable once the stuck adapter releases).
+        const message = err instanceof Error ? err.message : String(err);
+        this.deps.eventRecorder?.insertAdapterEvent(id, 'adapter.error', message);
+        logger.error(
+          `[AdapterManager] '${id}' would not stop, so its new settings were saved but not ` +
+            `applied — restarting it now would run two copies at once: ${message}`
+        );
+        throw err;
       }
       const adapter = await this.buildAdapter(current);
       if (adapter) await this.registry.register(adapter);

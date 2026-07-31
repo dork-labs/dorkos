@@ -32,8 +32,9 @@
  * @module relay/relay-gc
  */
 import { inferEndpointType } from './types.js';
+import type { TraceStoreLike } from './types.js';
 import { isSyntheticEndpointHash } from './sqlite-index.js';
-import type { SqliteIndex, MessageStatus } from './sqlite-index.js';
+import type { SqliteIndex, MessageStatus, IndexedMessage } from './sqlite-index.js';
 import type { MaildirStore } from './maildir-store.js';
 import type { DeadLetterQueue } from './dead-letter-queue.js';
 import type { EndpointRegistry } from './endpoint-registry.js';
@@ -59,6 +60,26 @@ export const DEFAULT_ORPHAN_MAILDIR_RETENTION_MS = 24 * 60 * 60 * 1000;
  */
 export const DEFAULT_IN_FLIGHT_RECOVERY_MS = 30 * 60 * 1000;
 
+/**
+ * Default retention for **unread mail in a durable inbox** (7 days).
+ *
+ * ## Why this exists at all
+ *
+ * A message's `budget.ttl` is a delivery deadline: it is how long the relay may
+ * keep trying to hand a message on, and it defaults to one hour. It was also,
+ * by accident, how long an agent's inbox kept mail nobody had read — the same
+ * timestamp landed in the index's `expires_at`, and this sweep deleted the row
+ * and unlinked the file. An agent that was off for an afternoon came back to an
+ * empty mailbox, with no dead letter and nothing in any surface to say a
+ * message had ever arrived. Forty-six empty mailboxes on one live machine.
+ *
+ * Those are two different questions and now have two different answers. Unread
+ * mail in a `relay.inbox.*` inbox is kept for this much longer window, and when
+ * it does finally expire it is **dead-lettered**, not deleted — so it is still
+ * readable, still counted, and still recoverable.
+ */
+export const DEFAULT_UNDELIVERED_MAIL_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+
 // === Types ===
 
 /** Tunable retention windows for the GC sweep. */
@@ -69,6 +90,12 @@ export interface RelayGcConfig {
   orphanMaildirRetentionMs: number;
   /** `cur/` messages claimed longer ago than this are treated as crash-stranded and re-driven. */
   inFlightRecoveryMs: number;
+  /**
+   * How long unread mail in a durable inbox is kept, regardless of the
+   * message's own delivery TTL. See
+   * {@link DEFAULT_UNDELIVERED_MAIL_RETENTION_MS}.
+   */
+  undeliveredMailRetentionMs: number;
 }
 
 /** Per-sweep options for {@link RelayGc.sweep}. */
@@ -89,6 +116,11 @@ export interface RelayGcDeps {
   deadLetterQueue: DeadLetterQueue;
   endpointRegistry: EndpointRegistry;
   deliveryPipeline: DeliveryPipeline;
+  /**
+   * Optional trace store, so mail that finally times out unread leaves a
+   * record rather than vanishing between two sweeps.
+   */
+  traceStore?: TraceStoreLike;
   logger?: RelayLogger;
 }
 
@@ -182,6 +214,16 @@ export class RelayGc {
     let removed = 0;
 
     for (const message of expired) {
+      const disposition = await this.disposeUnreadMail(message, now);
+      // Unread mail lives on its own, much longer window (see
+      // DEFAULT_UNDELIVERED_MAIL_RETENTION_MS) and is dead-lettered rather than
+      // deleted when it does run out.
+      if (disposition === 'kept') continue;
+      if (disposition === 'retired') {
+        removed++;
+        continue;
+      }
+
       if (!isSyntheticEndpointHash(message.endpointHash)) {
         for (const subdir of subdirsForStatus(message.status)) {
           await this.deps.maildirStore.deleteMessageFile(message.endpointHash, subdir, message.id);
@@ -192,6 +234,75 @@ export class RelayGc {
     }
 
     return removed;
+  }
+
+  /**
+   * Decide what an expired row means when it is unread mail in a durable inbox.
+   *
+   * Three answers:
+   *
+   * - `'not-mail'` — anything else: an ephemeral dispatch/query inbox, a
+   *     synthetic accounting row, or a message already claimed into `cur/` by a
+   *     handler (that one is the crash-recovery phase's job, not this one). The
+   *     ordinary expiry deletion applies.
+   * - `'kept'` — unread mail inside its own, much longer retention window. The
+   *     message's delivery TTL says nothing about how long its owner's inbox
+   *     should hold it, and treating it as if it did emptied real mailboxes
+   *     under agents that were merely offline.
+   * - `'retired'` — unread past that window: dead-lettered, so it is still
+   *     readable and still counted, and the trace moved to `timeout` so
+   *     something says it expired unread.
+   *
+   * @param message - An expired index row.
+   * @param now - Current time in ms.
+   */
+  private async disposeUnreadMail(
+    message: IndexedMessage,
+    now: number
+  ): Promise<'not-mail' | 'kept' | 'retired'> {
+    if (message.status !== 'pending') return 'not-mail';
+    if (isSyntheticEndpointHash(message.endpointHash)) return 'not-mail';
+    // The endpoint hash IS the subject for Maildir endpoints.
+    if (inferEndpointType(message.endpointHash) !== 'persistent') return 'not-mail';
+
+    // Only a file still sitting in `new/` is unread. A pending row whose file
+    // has moved to `cur/` was claimed and never completed — crash recovery
+    // re-drives that one, and expiry still cleans up after it.
+    const envelope = await this.deps.maildirStore.readEnvelope(
+      message.endpointHash,
+      'new',
+      message.id
+    );
+    if (!envelope) return 'not-mail';
+
+    const age = now - new Date(message.createdAt).getTime();
+    if (age < this.config.undeliveredMailRetentionMs) return 'kept';
+
+    // `reject` writes the dead letter and flips the index row to `failed`,
+    // which takes it out of this sweep's query for good. The unread copy in
+    // `new/` has to go with it, or a later `rebuild()` would re-index the same
+    // message as pending and dead-letter it a second time.
+    await this.deps.deadLetterQueue.reject(
+      message.endpointHash,
+      envelope,
+      `unread for ${Math.round(age / 86_400_000)} day(s) — mailbox retention reached`
+    );
+    await this.deps.maildirStore.deleteMessageFile(message.endpointHash, 'new', message.id);
+
+    try {
+      this.deps.traceStore?.updateSpan(message.id, {
+        status: 'timeout',
+        error: 'expired unread in its inbox',
+      });
+    } catch {
+      // Tracing is best-effort — never fail a sweep for it.
+    }
+
+    this.logger.warn(
+      `RelayGc: dead-lettered mail nobody read in ${message.endpointHash} ` +
+        `(message ${message.id}, ${Math.round(age / 86_400_000)} day(s) old)`
+    );
+    return 'retired';
   }
 
   /** Purge dead letters older than the configured retention window. */

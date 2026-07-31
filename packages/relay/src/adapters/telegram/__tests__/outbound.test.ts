@@ -625,7 +625,11 @@ describe('deliverMessage', () => {
 
   describe('streaming — done flush', () => {
     it('flushes buffered text on done event', async () => {
-      responseBuffers.set(12345, { text: 'Accumulated text', startedAt: Date.now() });
+      responseBuffers.set(12345, {
+        text: 'Accumulated text',
+        startedAt: Date.now(),
+        lastEventAt: Date.now(),
+      });
       const envelope = createEnvelope('relay.human.telegram.12345', {
         type: 'done',
         data: {},
@@ -649,7 +653,9 @@ describe('deliverMessage', () => {
       expect(callbacks.trackOutbound).toHaveBeenCalled();
     });
 
-    it('done with no buffered text does not send', async () => {
+    // A turn that ends having sent nothing at all leaves the person looking at
+    // their own question with no sign anything happened (DOR-789).
+    it('done with nothing sent says the agent finished without a reply', async () => {
       const envelope = createEnvelope('relay.human.telegram.12345', {
         type: 'done',
         data: {},
@@ -666,13 +672,53 @@ describe('deliverMessage', () => {
         codec: testCodec,
       });
       expect(result.success).toBe(true);
+      expect(mockSendMessage).toHaveBeenCalledWith(
+        12345,
+        expect.stringContaining('finished without sending anything back'),
+        { parse_mode: 'HTML' }
+      );
+    });
+
+    it('done after an approval card stays quiet — that turn already spoke', async () => {
+      await deliverMessage({
+        adapterId: 'telegram',
+        subject: 'relay.human.telegram.12345',
+        envelope: createEnvelope('relay.human.telegram.12345', {
+          type: 'approval_required',
+          data: { toolCallId: 'tc-1', toolName: 'Bash', input: 'ls', timeoutMs: 1000 },
+        }),
+        bot,
+        responseBuffers,
+        state,
+        callbacks,
+        streaming: false,
+        codec: testCodec,
+      });
+      mockSendMessage.mockClear();
+
+      await deliverMessage({
+        adapterId: 'telegram',
+        subject: 'relay.human.telegram.12345',
+        envelope: createEnvelope('relay.human.telegram.12345', { type: 'done', data: {} }),
+        bot,
+        responseBuffers,
+        state,
+        callbacks,
+        streaming: false,
+        codec: testCodec,
+      });
+
       expect(mockSendMessage).not.toHaveBeenCalled();
     });
   });
 
   describe('streaming — error flush', () => {
     it('flushes buffer with error suffix on error event', async () => {
-      responseBuffers.set(12345, { text: 'Partial response', startedAt: Date.now() });
+      responseBuffers.set(12345, {
+        text: 'Partial response',
+        startedAt: Date.now(),
+        lastEventAt: Date.now(),
+      });
       const envelope = createEnvelope('relay.human.telegram.12345', {
         type: 'error',
         data: { message: 'Context exceeded' },
@@ -894,7 +940,11 @@ describe('deliverMessage', () => {
     });
 
     it('finalizes draft via sendMessage on done', async () => {
-      responseBuffers.set(12345, { text: 'Full response', startedAt: Date.now() });
+      responseBuffers.set(12345, {
+        text: 'Full response',
+        startedAt: Date.now(),
+        lastEventAt: Date.now(),
+      });
       const envelope = createEnvelope('relay.human.telegram.12345', {
         type: 'done',
         data: {},
@@ -918,7 +968,11 @@ describe('deliverMessage', () => {
     it('reaps stale buffers older than BUFFER_TTL_MS on the next deliverMessage call', async () => {
       // Seed a buffer that is already past its TTL
       const staleStartedAt = Date.now() - BUFFER_TTL_MS - 1;
-      responseBuffers.set(99999, { text: 'stale text', startedAt: staleStartedAt });
+      responseBuffers.set(99999, {
+        text: 'stale text',
+        startedAt: staleStartedAt,
+        lastEventAt: staleStartedAt,
+      });
 
       // Deliver any message to trigger the reaping pass
       const envelope = createEnvelope('relay.human.telegram.12345', { content: 'ping' });
@@ -940,7 +994,11 @@ describe('deliverMessage', () => {
     it('preserves buffers that are within the TTL window', async () => {
       // Seed a buffer that is well within the TTL
       const recentStartedAt = Date.now() - 1_000;
-      responseBuffers.set(99999, { text: 'recent text', startedAt: recentStartedAt });
+      responseBuffers.set(99999, {
+        text: 'recent text',
+        startedAt: recentStartedAt,
+        lastEventAt: recentStartedAt,
+      });
 
       const envelope = createEnvelope('relay.human.telegram.12345', { content: 'ping' });
       await deliverMessage({
@@ -961,7 +1019,11 @@ describe('deliverMessage', () => {
 
     it('preserves the original startedAt when appending text_delta chunks', async () => {
       const originalStartedAt = Date.now() - 5_000;
-      responseBuffers.set(12345, { text: 'first', startedAt: originalStartedAt });
+      responseBuffers.set(12345, {
+        text: 'first',
+        startedAt: originalStartedAt,
+        lastEventAt: originalStartedAt,
+      });
 
       const envelope = createEnvelope('relay.human.telegram.12345', {
         type: 'text_delta',
@@ -982,6 +1044,74 @@ describe('deliverMessage', () => {
       const buf = responseBuffers.get(12345);
       expect(buf?.text).toBe('first second');
       expect(buf?.startedAt).toBe(originalStartedAt);
+    });
+
+    // Reaping used to run off `startedAt`, which nothing refreshed, so a long
+    // answer had its own text deleted mid-stream and `done` flushed only the
+    // tail (DOR-789).
+    it('keeps a stream alive past the TTL as long as text keeps arriving', async () => {
+      const startedLongAgo = Date.now() - BUFFER_TTL_MS * 2;
+      responseBuffers.set(12345, {
+        text: 'the beginning of a long answer',
+        startedAt: startedLongAgo,
+        lastEventAt: Date.now() - 1_000,
+      });
+
+      await deliverMessage({
+        adapterId: 'telegram',
+        subject: 'relay.human.telegram.12345',
+        envelope: createEnvelope('relay.human.telegram.12345', {
+          type: 'text_delta',
+          data: { text: ' and its end' },
+        }),
+        bot,
+        responseBuffers,
+        state,
+        callbacks,
+        streaming: false,
+        codec: testCodec,
+      });
+
+      // Then the turn finishes: the whole answer goes out, not just the tail.
+      await deliverMessage({
+        adapterId: 'telegram',
+        subject: 'relay.human.telegram.12345',
+        envelope: createEnvelope('relay.human.telegram.12345', { type: 'done', data: {} }),
+        bot,
+        responseBuffers,
+        state,
+        callbacks,
+        streaming: false,
+        codec: testCodec,
+      });
+
+      expect(mockSendMessage).toHaveBeenCalledWith(
+        12345,
+        'the beginning of a long answer and its end',
+        { parse_mode: 'HTML' }
+      );
+    });
+
+    it('still reaps a stream that has genuinely gone silent', async () => {
+      responseBuffers.set(99999, {
+        text: 'abandoned',
+        startedAt: Date.now() - 1_000,
+        lastEventAt: Date.now() - BUFFER_TTL_MS - 1,
+      });
+
+      await deliverMessage({
+        adapterId: 'telegram',
+        subject: 'relay.human.telegram.12345',
+        envelope: createEnvelope('relay.human.telegram.12345', { content: 'ping' }),
+        bot,
+        responseBuffers,
+        state,
+        callbacks,
+        streaming: false,
+        codec: testCodec,
+      });
+
+      expect(responseBuffers.has(99999)).toBe(false);
     });
   });
 

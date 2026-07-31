@@ -25,7 +25,14 @@ import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
 import type { BindingTestResult } from '@dorkos/shared/relay-schemas';
 import type { RelayFlowEvent } from '@dorkos/shared/relay-schemas';
 import type { PermissionMode } from '@dorkos/shared/schemas';
-import type { PublishOptions, Unsubscribe } from '@dorkos/relay';
+import type {
+  ChatNoticeReason,
+  ChatNoticeSender,
+  PublishOptions,
+  PublishResult,
+  SubscriberVerdict,
+  Unsubscribe,
+} from '@dorkos/relay';
 import { runtimeSessionSubject, legacyAgentSubject } from '@dorkos/relay';
 import { logger } from '../../lib/logger.js';
 import type { BindingStore } from './binding-store.js';
@@ -89,14 +96,12 @@ export interface AgentSessionCreator {
 
 /** Minimal interface for RelayCore publish and subscription. */
 export interface RelayCoreLike {
-  publish(
-    subject: string,
-    payload: unknown,
-    options: PublishOptions
-  ): Promise<{ messageId: string; deliveredTo: number }>;
+  publish(subject: string, payload: unknown, options: PublishOptions): Promise<PublishResult>;
   subscribe(
     pattern: string,
-    handler: (envelope: RelayEnvelope) => void | Promise<void>
+    handler: (
+      envelope: RelayEnvelope
+    ) => void | SubscriberVerdict | Promise<void | SubscriberVerdict>
   ): Unsubscribe;
 }
 
@@ -130,6 +135,13 @@ export interface BindingRouterDeps {
     insertAdapterEvent(adapterId: string, eventType: string, message: string): void;
   };
   /**
+   * Tells the person, in the chat they wrote in, that their message was not
+   * passed on. Optional only so unit tests can leave it out; in the server it is
+   * always wired, because a refusal nobody is told about is the bug this
+   * router had for every one of its drop paths (DOR-789).
+   */
+  chatNotice?: ChatNoticeSender;
+  /**
    * Optional callback fired once per delivered inbound message (`deliveredTo
    * > 0`), used solely to animate the topology pulse. Injected rather than
    * imported so the router stays unit-testable and free of the SSE
@@ -145,12 +157,53 @@ export interface BindingRouterDeps {
  * to handle. Routing is purely data-driven — the router never references any
  * adapter class by name.
  */
+/**
+ * One live chat session, as the rest of the server needs to read it.
+ *
+ * `scope` is the field that stops a lie the old shape told: a session key is
+ * either `…:chat:<chatId>` or `…:user:<userId>`, and everything downstream read
+ * the tail as a chat id regardless. Under the per-user strategy that meant a
+ * group notification was addressed to a person's private id — the notice landed
+ * in a DM, or nowhere.
+ */
+export interface BindingSessionEntry {
+  /** The raw session-map key. */
+  key: string;
+  /** Whether this session belongs to a chat or to one person. */
+  scope: 'chat' | 'user';
+  /** The chat this session belongs to. Present when `scope` is `'chat'`. */
+  chatId?: string;
+  /** The person this session belongs to. Present when `scope` is `'user'`. */
+  userId?: string;
+  sessionId: string;
+  /**
+   * When a message last flowed through this session (epoch ms).
+   *
+   * `0` for a session restored from a file written before this field existed —
+   * known to exist, never yet seen active. Recency comparisons treat it as the
+   * oldest possible, which is what it is.
+   */
+  lastActivityAt: number;
+}
+
+/** What the router remembers about one session. */
+interface SessionRecord {
+  sessionId: string;
+  /** Epoch ms of the last message routed through it; 0 when never observed. */
+  lastActivityAt: number;
+}
+
 export class BindingRouter {
   /** Maximum number of session mappings before LRU eviction kicks in. */
   private static readonly MAX_SESSIONS = 10_000;
 
-  /** Maps `bindingId:context` to sessionId for session reuse. */
-  private sessionMap: Map<string, string> = new Map();
+  /** Shortest gap between two activity-driven writes of the session file. */
+  private static readonly ACTIVITY_SAVE_THROTTLE_MS = 60_000;
+
+  /** Maps `bindingId:(chat|user):id` to the session that serves it. */
+  private sessionMap: Map<string, SessionRecord> = new Map();
+  /** When session activity was last flushed to disk. */
+  private lastActivitySaveAt = 0;
   /** In-flight session creation promises, keyed the same as sessionMap. */
   private inFlight = new Map<string, Promise<string>>();
   private readonly sessionMapPath: string;
@@ -260,18 +313,12 @@ export class BindingRouter {
    * Get active sessions for a specific binding.
    *
    * @param bindingId - Binding UUID to filter by
-   * @returns Array of session entries with parsed chatId
+   * @returns Session entries, each saying whether it is keyed by chat or person
    */
-  getSessionsByBinding(
-    bindingId: string
-  ): Array<{ key: string; chatId: string; sessionId: string }> {
-    const results: Array<{ key: string; chatId: string; sessionId: string }> = [];
-    for (const [key, sessionId] of this.sessionMap) {
-      if (key.startsWith(`${bindingId}:`)) {
-        const parts = key.split(':');
-        const chatId = parts.length >= 3 ? parts.slice(2).join(':') : 'unknown';
-        results.push({ key, chatId, sessionId });
-      }
+  getSessionsByBinding(bindingId: string): BindingSessionEntry[] {
+    const results: BindingSessionEntry[] = [];
+    for (const [key, record] of this.sessionMap) {
+      if (key.startsWith(`${bindingId}:`)) results.push(describeSession(key, record));
     }
     return results;
   }
@@ -279,74 +326,104 @@ export class BindingRouter {
   /**
    * Get all active sessions across all bindings.
    *
-   * @returns Array of session entries with parsed bindingId and chatId
+   * @returns Session entries with their binding id
    */
-  getAllSessions(): Array<{ key: string; bindingId: string; chatId: string; sessionId: string }> {
-    const results: Array<{ key: string; bindingId: string; chatId: string; sessionId: string }> =
-      [];
-    for (const [key, sessionId] of this.sessionMap) {
-      const parts = key.split(':');
-      const bindingId = parts[0] ?? 'unknown';
-      const chatId = parts.length >= 3 ? parts.slice(2).join(':') : 'unknown';
-      results.push({ key, bindingId, chatId, sessionId });
+  getAllSessions(): Array<BindingSessionEntry & { bindingId: string }> {
+    const results: Array<BindingSessionEntry & { bindingId: string }> = [];
+    for (const [key, record] of this.sessionMap) {
+      results.push({ bindingId: key.split(':')[0] ?? 'unknown', ...describeSession(key, record) });
     }
     return results;
   }
 
-  private async handleInbound(envelope: RelayEnvelope): Promise<void> {
+  /**
+   * Route one inbound chat message, or say why it was not routed.
+   *
+   * Every refusal path does three things now, where it used to do one:
+   *
+   * 1. **Returns a verdict.** A handler that dropped the message no longer
+   *    counts as a delivery, so the publish trace stops reading `delivered`
+   *    for a turn that never ran.
+   * 2. **Tells the person.** A one-line notice goes back out through the
+   *    adapter, into the chat they wrote in — except when nothing is bound
+   *    there at all, where this machine has no standing to speak (see
+   *    `chat-notice.ts`).
+   * 3. **Keeps the log line**, for the operator reading the server side.
+   *
+   * @param envelope - The inbound `relay.human.*` envelope.
+   * @returns Nothing when routed; a {@link SubscriberVerdict} when refused.
+   */
+  private async handleInbound(envelope: RelayEnvelope): Promise<void | SubscriberVerdict> {
     try {
-      // Skip response events from agents — only route inbound human messages.
-      // Agent responses are published to relay.human.* subjects for adapter delivery
-      // (step 7 in relay-core), but BindingRouter (step 7b) must not re-route them
-      // back to relay.agent.* as that creates a feedback loop.
-      if (envelope.from.startsWith('agent:')) {
-        return;
+      // Skip messages this server produced. Agent replies (`agent:*`) are
+      // published to relay.human.* subjects for adapter delivery, and system
+      // notices (`relay.system.*`) — including the refusal notices below — go
+      // out the same way. Routing either back to an agent is a feedback loop:
+      // the notice would arrive as a fresh prompt.
+      if (envelope.from.startsWith('agent:') || envelope.from.startsWith('relay.system.')) {
+        return { handled: false, reason: 'not an inbound message from a person' };
       }
 
       const { adapterId, chatId, channelType } = parseHumanSubject(envelope.subject);
       if (!adapterId) {
         logger.warn(`BindingRouter: could not parse subject '${envelope.subject}'`);
-        return;
+        return { handled: false, reason: `unreadable chat subject '${envelope.subject}'` };
       }
 
       const binding = this.deps.bindingStore.resolve(adapterId, chatId, channelType);
       if (!binding) {
+        // Deliberately silent in-chat: nobody connected this conversation to
+        // anything here, so there is no agent whose silence needs explaining,
+        // and speaking would be this machine starting a conversation it has no
+        // consent for. The trace and the log carry it instead.
         logger.info(`BindingRouter: no binding for adapter=${adapterId} chat=${chatId}, skipping`);
-        return;
+        return { handled: false, reason: 'no binding connects this chat to an agent' };
       }
 
       // Skip paused bindings — they do not participate in routing
       if (binding.enabled === false) {
-        logger.debug(
-          '[BindingRouter] Dropping inbound — binding %s is paused (enabled=false)',
-          binding.id
-        );
-        return;
+        return this.refuse(envelope, binding, 'binding_paused', `binding ${binding.id} is paused`);
       }
 
       // Permission check: drop inbound if canReceive is false
       if (binding.canReceive === false) {
-        logger.debug(
-          '[BindingRouter] Dropping inbound — canReceive=false for binding %s',
-          binding.id
+        return this.refuse(
+          envelope,
+          binding,
+          'receive_denied',
+          `binding ${binding.id} is set not to send messages to its agent`
         );
-        return;
       }
 
       const projectPath = this.deps.meshCore.getProjectPath(binding.agentId);
       if (!projectPath) {
-        logger.warn(
-          `BindingRouter: agent '${binding.agentId}' not found in mesh registry, skipping`
-        );
         this.deps.eventRecorder?.insertAdapterEvent(
           binding.adapterId,
           'binding.routing_failed',
           `Agent '${binding.agentId}' not found in mesh registry`
         );
-        return;
+        return this.refuse(
+          envelope,
+          binding,
+          'agent_missing',
+          `agent '${binding.agentId}' is not in the mesh registry`
+        );
       }
 
-      const sessionId = await this.resolveSession(binding, chatId, envelope);
+      let sessionId: string;
+      try {
+        sessionId = await this.resolveSession(binding, chatId, envelope);
+      } catch (err) {
+        // A session that cannot be created is the one refusal that used to
+        // reach only the catch-all below, where it became a log line with no
+        // binding attached and no way for the person to know.
+        return this.refuse(
+          envelope,
+          binding,
+          'session_failed',
+          err instanceof Error ? err.message : String(err)
+        );
+      }
 
       const enrichedPayload =
         envelope.payload && typeof envelope.payload === 'object'
@@ -369,15 +446,26 @@ export class BindingRouter {
 
       const dispatchSubject = await this.buildDispatchSubject(sessionId);
 
-      const { deliveredTo } = await this.deps.relayCore.publish(dispatchSubject, enrichedPayload, {
-        from: envelope.from,
-        replyTo: envelope.replyTo,
-        budget: envelope.budget,
-      });
+      const { deliveredTo, rejected } = await this.deps.relayCore.publish(
+        dispatchSubject,
+        enrichedPayload,
+        {
+          from: envelope.from,
+          replyTo: envelope.replyTo,
+          budget: envelope.budget,
+        }
+      );
 
-      // One delivered inbound message = one pulse. deliveredTo === 0 means the
+      // One accepted inbound message = one pulse. deliveredTo === 0 means the
       // message was budget-rejected (DOR-260), consent-denied (DOR-277), or had
       // no subscriber — it never reached the agent, so it must not pulse.
+      //
+      // What a pulse means, exactly: the runtime ACCEPTED the turn. Agent
+      // deliveries are detached — an agent turn outlives any publish timeout —
+      // so nothing here can wait for the turn to run. A turn that is accepted
+      // and then fails (adapter at capacity, a thrown runtime) is dead-lettered
+      // and the person is told through the chat-failure notice wired into
+      // `AdapterDelivery`, not by retracting this pulse.
       if (deliveredTo > 0) {
         this.deps.onFlow?.({
           bindingId: binding.id,
@@ -386,18 +474,54 @@ export class BindingRouter {
           direction: 'inbound',
           at: new Date().toISOString(),
         });
+        this.touchSession(binding, chatId, envelope);
+        logger.info(
+          `BindingRouter: dispatched ${envelope.subject} → ${dispatchSubject} ` +
+            `(binding=${binding.id}, projectPath=${projectPath})`
+        );
+        return;
       }
 
-      logger.info(
-        `BindingRouter: routed ${envelope.subject} → ${dispatchSubject} ` +
-          `(binding=${binding.id}, projectPath=${projectPath})`
+      // Accepted by nobody. The gate that said so names itself in `rejected`;
+      // that is the honest thing to put in front of the person, rather than a
+      // silence that looks exactly like an agent thinking.
+      const gate = rejected?.[0]?.reason;
+      const noticeReason: ChatNoticeReason =
+        gate === 'rate_limited'
+          ? 'rate_limited'
+          : gate === 'budget_exceeded'
+            ? 'budget_exceeded'
+            : 'delivery_failed';
+      return this.refuse(
+        envelope,
+        binding,
+        noticeReason,
+        `the runtime did not accept the turn${gate ? ` (${gate})` : ''}`
       );
     } catch (err) {
-      logger.error(
-        `BindingRouter: failed to route ${envelope.subject}:`,
-        err instanceof Error ? err.message : err
-      );
+      const reason = err instanceof Error ? err.message : String(err);
+      logger.error(`BindingRouter: failed to route ${envelope.subject}:`, reason);
+      return { handled: false, reason };
     }
+  }
+
+  /**
+   * Refuse one inbound message: log it, tell the person, and report the drop.
+   *
+   * @param envelope - The message being dropped.
+   * @param binding - The binding it resolved to.
+   * @param notice - Which one-line notice the person should read.
+   * @param reason - The operator-facing reason, recorded on the trace.
+   */
+  private async refuse(
+    envelope: RelayEnvelope,
+    binding: AdapterBinding,
+    notice: ChatNoticeReason,
+    reason: string
+  ): Promise<SubscriberVerdict> {
+    logger.warn(`BindingRouter: dropped ${envelope.subject} (binding=${binding.id}): ${reason}`);
+    await this.deps.chatNotice?.(envelope.subject, notice, { scope: binding.id });
+    return { handled: false, reason };
   }
 
   /**
@@ -432,32 +556,78 @@ export class BindingRouter {
     chatId: string | undefined,
     envelope: RelayEnvelope
   ): Promise<string> {
-    switch (binding.sessionStrategy) {
-      case 'stateless':
-        return this.createNewSession(binding);
+    const key = this.sessionKeyFor(binding, chatId, envelope);
+    if (!key) return this.createNewSession(binding);
+    return this.getOrCreateSession(key, binding);
+  }
 
-      case 'per-user': {
-        const userId = extractPlatformUserId(envelope.payload);
-        if (!userId) {
-          // No platform identity on this message — fall back to the chat, which
-          // is what per-chat would have done. Said out loud because a per-user
-          // binding silently behaving as per-chat is the bug this replaced.
-          logger.warn(
-            `[BindingRouter] Binding ${binding.id} uses the per-user strategy but this ` +
-              `message carries no platform user id; falling back to a per-chat session. ` +
-              `Everyone in this conversation will share one session.`
-          );
-        }
-        const key = `${binding.id}:user:${userId ?? chatId ?? 'unknown'}`;
-        return this.getOrCreateSession(key, binding);
-      }
+  /**
+   * The session-map key one message belongs to, or `undefined` for the
+   * stateless strategy, which keeps no session to key.
+   *
+   * @param binding - The resolved binding.
+   * @param chatId - The chat the message came from.
+   * @param envelope - The inbound envelope (carries the platform user id).
+   */
+  private sessionKeyFor(
+    binding: AdapterBinding,
+    chatId: string | undefined,
+    envelope: RelayEnvelope
+  ): string | undefined {
+    if (binding.sessionStrategy === 'stateless') return undefined;
 
-      case 'per-chat':
-      default: {
-        const key = `${binding.id}:chat:${chatId ?? 'default'}`;
-        return this.getOrCreateSession(key, binding);
+    if (binding.sessionStrategy === 'per-user') {
+      const userId = extractPlatformUserId(envelope.payload);
+      if (!userId) {
+        // No platform identity on this message — fall back to the chat, which
+        // is what per-chat would have done. Said out loud because a per-user
+        // binding silently behaving as per-chat is the bug this replaced.
+        logger.warn(
+          `[BindingRouter] Binding ${binding.id} uses the per-user strategy but this ` +
+            `message carries no platform user id; falling back to a per-chat session. ` +
+            `Everyone in this conversation will share one session.`
+        );
+        return `${binding.id}:chat:${chatId ?? 'unknown'}`;
       }
+      return `${binding.id}:user:${userId}`;
     }
+
+    return `${binding.id}:chat:${chatId ?? 'default'}`;
+  }
+
+  /**
+   * Record that a message just flowed through this binding's session.
+   *
+   * This is the timestamp `resolveNotifyTarget` sorts on. Without it, "the
+   * most-recently-active chat" was whichever entry the session file happened to
+   * list last — so a task-completion notice could land in a channel nobody had
+   * spoken in for weeks instead of the DM the person was using.
+   *
+   * @param binding - The binding the message routed through.
+   * @param chatId - The chat the message came from.
+   * @param envelope - The inbound envelope.
+   */
+  private touchSession(
+    binding: AdapterBinding,
+    chatId: string | undefined,
+    envelope: RelayEnvelope
+  ): void {
+    const key = this.sessionKeyFor(binding, chatId, envelope);
+    if (!key) return;
+    const record = this.sessionMap.get(key);
+    if (!record) return;
+    const now = Date.now();
+    record.lastActivityAt = now;
+
+    // Persist at most once a minute. Writing the file on every message would
+    // be an atomic rewrite per chat message; never writing it would mean a
+    // restart forgets who was talking most recently, which is the whole point
+    // of the field.
+    if (now - this.lastActivitySaveAt < BindingRouter.ACTIVITY_SAVE_THROTTLE_MS) return;
+    this.lastActivitySaveAt = now;
+    void this.saveSessionMap().catch((err: unknown) => {
+      logger.warn('BindingRouter: failed to persist session activity', err);
+    });
   }
 
   private async getOrCreateSession(key: string, binding: AdapterBinding): Promise<string> {
@@ -466,7 +636,7 @@ export class BindingRouter {
       // Refresh LRU position so active sessions are not evicted
       this.sessionMap.delete(key);
       this.sessionMap.set(key, existing);
-      return existing;
+      return existing.sessionId;
     }
 
     // Deduplicate concurrent session creation for the same key
@@ -476,7 +646,7 @@ export class BindingRouter {
     const promise = (async () => {
       try {
         const sessionId = await this.createNewSession(binding);
-        this.sessionMap.set(key, sessionId);
+        this.sessionMap.set(key, { sessionId, lastActivityAt: Date.now() });
         this.evictOldestSessions();
         try {
           await this.saveSessionMap();
@@ -539,13 +709,11 @@ export class BindingRouter {
         return;
       }
 
-      const valid = parsed.filter(
-        (entry): entry is [string, string] =>
-          Array.isArray(entry) &&
-          entry.length === 2 &&
-          typeof entry[0] === 'string' &&
-          typeof entry[1] === 'string'
-      );
+      const valid: Array<[string, SessionRecord]> = [];
+      for (const entry of parsed) {
+        const record = parseSessionEntry(entry);
+        if (record) valid.push(record);
+      }
 
       if (valid.length < parsed.length) {
         logger.warn(
@@ -585,4 +753,60 @@ export class BindingRouter {
     }
     this.sessionMap.clear();
   }
+}
+
+/**
+ * Read one persisted session entry, in either shape it can be on disk.
+ *
+ * The file used to hold `[key, sessionId]` pairs and now holds
+ * `[key, {sessionId, lastActivityAt}]`. A file written by an older build is
+ * read, not discarded: its sessions are real, they simply have no recorded
+ * activity yet, which is exactly what `lastActivityAt: 0` says.
+ *
+ * @param entry - One parsed JSON array element.
+ * @returns The key/record pair, or `null` when the entry is malformed.
+ */
+function parseSessionEntry(entry: unknown): [string, SessionRecord] | null {
+  if (!Array.isArray(entry) || entry.length !== 2 || typeof entry[0] !== 'string') return null;
+  const [key, value] = entry as [string, unknown];
+
+  if (typeof value === 'string') return [key, { sessionId: value, lastActivityAt: 0 }];
+
+  if (value !== null && typeof value === 'object') {
+    const { sessionId, lastActivityAt } = value as Record<string, unknown>;
+    if (typeof sessionId !== 'string') return null;
+    return [
+      key,
+      {
+        sessionId,
+        lastActivityAt: typeof lastActivityAt === 'number' ? lastActivityAt : 0,
+      },
+    ];
+  }
+
+  return null;
+}
+
+/**
+ * Describe one session-map entry without guessing what its key means.
+ *
+ * The key is `bindingId:(chat|user):id`, and the middle segment is the whole
+ * point: read blindly, a per-user session's person id was reported as a chat id
+ * and messages addressed to it went to the wrong conversation.
+ *
+ * @param key - The session-map key.
+ * @param record - What the router remembers about that session.
+ */
+function describeSession(key: string, record: SessionRecord): BindingSessionEntry {
+  const parts = key.split(':');
+  const scope = parts[1] === 'user' ? 'user' : 'chat';
+  // Ids can contain colons (Slack thread keys do), so the tail is rejoined.
+  const id = parts.length >= 3 ? parts.slice(2).join(':') : 'unknown';
+  return {
+    key,
+    scope,
+    ...(scope === 'user' ? { userId: id } : { chatId: id }),
+    sessionId: record.sessionId,
+    lastActivityAt: record.lastActivityAt,
+  };
 }

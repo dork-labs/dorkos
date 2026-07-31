@@ -212,8 +212,22 @@ describe('Binding MCP Tools', () => {
 
   describe('binding_list_sessions', () => {
     const TEST_SESSIONS = [
-      { key: 'b-1:user1:chat-abc', bindingId: 'b-1', chatId: 'chat-abc', sessionId: 'sess-1' },
-      { key: 'b-1:user2:chat-xyz', bindingId: 'b-1', chatId: 'chat-xyz', sessionId: 'sess-2' },
+      {
+        key: 'b-1:user1:chat-abc',
+        bindingId: 'b-1',
+        scope: 'chat' as const,
+        chatId: 'chat-abc',
+        sessionId: 'sess-1',
+        lastActivityAt: 1,
+      },
+      {
+        key: 'b-1:user2:chat-xyz',
+        bindingId: 'b-1',
+        scope: 'chat' as const,
+        chatId: 'chat-xyz',
+        sessionId: 'sess-2',
+        lastActivityAt: 1,
+      },
     ];
 
     function makeMockBindingRouter(overrides?: Record<string, unknown>) {
@@ -338,7 +352,14 @@ describe('Binding MCP Tools', () => {
         getAllSessions: vi
           .fn()
           .mockReturnValue([
-            { key: 'b-2:u1:general', bindingId: 'b-2', chatId: 'general', sessionId: 'sess-10' },
+            {
+              key: 'b-2:u1:general',
+              bindingId: 'b-2',
+              scope: 'chat' as const,
+              chatId: 'general',
+              sessionId: 'sess-10',
+              lastActivityAt: 1,
+            },
           ]),
       });
       const adapterMgr = makeMockAdapterManager({

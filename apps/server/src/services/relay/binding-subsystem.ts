@@ -10,6 +10,7 @@
  */
 import { dirname } from 'node:path';
 import type { AgentRuntimeLike } from '@dorkos/relay';
+import { createChatNoticeSender } from '@dorkos/relay';
 import type { PermissionMode } from '@dorkos/shared/schemas';
 import type { RelayFlowEvent } from '@dorkos/shared/relay-schemas';
 import { runtimeRegistry } from '../core/runtime-registry.js';
@@ -176,6 +177,12 @@ export class BindingSubsystem {
         },
         eventRecorder: deps.eventRecorder,
         onFlow: deps.onFlow,
+        // Wired here, and never optional in the server: a refusal the person
+        // never hears about is indistinguishable from an agent thinking.
+        chatNotice: createChatNoticeSender({
+          publish: (subject, payload, options) => deps.relayCore.publish(subject, payload, options),
+          logger,
+        }),
       });
       await subsystem.bindingRouter.init();
       logger.info('[BindingSubsystem] BindingRouter initialized');

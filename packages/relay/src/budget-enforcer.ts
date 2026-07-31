@@ -48,6 +48,7 @@ export function enforceBudget(envelope: RelayEnvelope, currentEndpoint: string):
   if (budget.hopCount >= budget.maxHops) {
     return {
       allowed: false,
+      code: 'hop_limit',
       reason: `max hops exceeded (${budget.hopCount}/${budget.maxHops})`,
     };
   }
@@ -55,6 +56,7 @@ export function enforceBudget(envelope: RelayEnvelope, currentEndpoint: string):
   if (budget.ancestorChain.includes(currentEndpoint)) {
     return {
       allowed: false,
+      code: 'cycle_detected',
       reason: `cycle detected: ${currentEndpoint} already in chain`,
     };
   }
@@ -62,6 +64,7 @@ export function enforceBudget(envelope: RelayEnvelope, currentEndpoint: string):
   if (Date.now() > budget.ttl) {
     return {
       allowed: false,
+      code: 'ttl_expired',
       reason: 'message expired (TTL)',
     };
   }
@@ -69,6 +72,7 @@ export function enforceBudget(envelope: RelayEnvelope, currentEndpoint: string):
   if (budget.callBudgetRemaining <= 0) {
     return {
       allowed: false,
+      code: 'budget_exhausted',
       reason: 'call budget exhausted',
     };
   }

@@ -417,4 +417,66 @@ describe('AdapterDelivery', () => {
       });
     });
   });
+
+  // A chat message's replyTo IS the chat. The reply-inbox notifier above
+  // deliberately ignores those subjects, so before this the person whose turn
+  // died at the capacity check was told nothing at all (DOR-789).
+  describe('chat failure notice (detached path)', () => {
+    it('tells the chat when the runtime turned the turn away at capacity', async () => {
+      const chatNotice = vi.fn().mockResolvedValue(true);
+      vi.mocked(deps.adapterRegistry!.deliver).mockResolvedValue({
+        success: false,
+        error: 'Adapter at capacity (3 concurrent sessions)',
+      } as DeliveryResult);
+      const delivery = new AdapterDelivery(deps);
+      delivery.setChatFailureNotifier(chatNotice);
+
+      await delivery.deliver(
+        AGENT_SUBJECT,
+        createEnvelope({ subject: AGENT_SUBJECT, replyTo: CHANNEL_SUBJECT })
+      );
+
+      await vi.waitFor(() =>
+        expect(chatNotice).toHaveBeenCalledWith(CHANNEL_SUBJECT, 'agent_busy', expect.anything())
+      );
+    });
+
+    it('reports any other failure as a plain delivery failure', async () => {
+      const chatNotice = vi.fn().mockResolvedValue(true);
+      vi.mocked(deps.adapterRegistry!.deliver).mockResolvedValue({
+        success: false,
+        error: 'runtime exploded',
+      } as DeliveryResult);
+      const delivery = new AdapterDelivery(deps);
+      delivery.setChatFailureNotifier(chatNotice);
+
+      await delivery.deliver(
+        AGENT_SUBJECT,
+        createEnvelope({ subject: AGENT_SUBJECT, replyTo: CHANNEL_SUBJECT })
+      );
+
+      await vi.waitFor(() =>
+        expect(chatNotice).toHaveBeenCalledWith(
+          CHANNEL_SUBJECT,
+          'delivery_failed',
+          expect.anything()
+        )
+      );
+    });
+
+    it('says nothing when there is no reply subject to say it in', async () => {
+      const chatNotice = vi.fn().mockResolvedValue(true);
+      vi.mocked(deps.adapterRegistry!.deliver).mockResolvedValue({
+        success: false,
+        error: 'runtime exploded',
+      } as DeliveryResult);
+      const delivery = new AdapterDelivery(deps);
+      delivery.setChatFailureNotifier(chatNotice);
+
+      await delivery.deliver(AGENT_SUBJECT, createEnvelope({ subject: AGENT_SUBJECT }));
+
+      await vi.waitFor(() => expect(deps.deadLetterQueue.reject).toHaveBeenCalled());
+      expect(chatNotice).not.toHaveBeenCalled();
+    });
+  });
 });

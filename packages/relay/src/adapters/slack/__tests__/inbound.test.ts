@@ -318,6 +318,32 @@ describe('handleInboundMessage', () => {
 
       expect(presence.pendingReactions.has('D67890')).toBe(false);
     });
+
+    // The router's own drops (paused binding, missing agent, no binding) come
+    // back as deliveredTo: 0 with NOTHING in `rejected` — and the queue was only
+    // cleared for an explicit rejection, so every one of those left a trigger
+    // behind and offset the `:eyes:` on every later turn in the channel by one
+    // (DOR-789).
+    it('forgets the queued message when the router silently drops it', async () => {
+      const event = createEvent({ ts: '1234.5678' });
+      const presence = createSlackPresenceState();
+      (relay.publish as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ deliveredTo: 0 });
+
+      await handleInboundMessage(
+        event,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        state,
+        undefined,
+        'reaction',
+        presence
+      );
+      await new Promise((r) => setTimeout(r, 10));
+
+      expect(presence.pendingReactions.has('D67890')).toBe(false);
+    });
   });
 
   describe('event deduplication', () => {

@@ -96,14 +96,21 @@ export function createBindingListSessionsHandler(deps: McpToolDeps) {
       const adapterId = binding?.adapterId ?? 'unknown';
       const adapter = adapterMap.get(adapterId);
       const adapterType = adapter?.config?.type ?? 'unknown';
-      const subject = `relay.human.${adapterType}.${adapterId}.${s.chatId}`;
+      // A per-user session is keyed by a PERSON, not a chat, so the binding's
+      // own chat is the only address that reaches the conversation. Reading the
+      // key tail as a chat id (which this did) built a subject pointing at a
+      // user id — a private message, or nothing at all.
+      const chatId = s.scope === 'chat' ? s.chatId : binding?.chatId;
       return {
         bindingId: s.bindingId,
         adapterId,
         adapterType,
-        chatId: s.chatId,
+        scope: s.scope,
+        chatId,
+        ...(s.userId ? { userId: s.userId } : {}),
         sessionId: s.sessionId,
-        subject,
+        lastActivityAt: s.lastActivityAt,
+        subject: chatId ? `relay.human.${adapterType}.${adapterId}.${chatId}` : undefined,
       };
     });
 

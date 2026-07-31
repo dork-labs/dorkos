@@ -47,7 +47,15 @@ function makeMockBindingRouter(overrides?: Record<string, unknown>) {
   return {
     getSessionsByBinding: vi
       .fn()
-      .mockReturnValue([{ key: 'b-1:chat-42', chatId: 'chat-42', sessionId: 'sess-1' }]),
+      .mockReturnValue([
+        {
+          key: 'b-1:chat-42',
+          scope: 'chat' as const,
+          chatId: 'chat-42',
+          sessionId: 'sess-1',
+          lastActivityAt: 1,
+        },
+      ]),
     ...overrides,
   };
 }
@@ -113,7 +121,15 @@ describe('relay_notify_user', () => {
       bindingRouter: makeMockBindingRouter({
         getSessionsByBinding: vi.fn().mockImplementation((bindingId: string) => {
           if (bindingId === 'b-2')
-            return [{ key: 'b-2:chat-99', chatId: 'chat-99', sessionId: 'sess-2' }];
+            return [
+              {
+                key: 'b-2:chat-99',
+                scope: 'chat' as const,
+                chatId: 'chat-99',
+                sessionId: 'sess-2',
+                lastActivityAt: 1,
+              },
+            ];
           return [];
         }),
       }) as unknown as McpToolDeps['bindingRouter'],
@@ -143,7 +159,15 @@ describe('relay_notify_user', () => {
       bindingRouter: makeMockBindingRouter({
         getSessionsByBinding: vi.fn().mockImplementation((bindingId: string) => {
           if (bindingId === 'b-1')
-            return [{ key: 'b-1:chat-77', chatId: 'chat-77', sessionId: 'sess-3' }];
+            return [
+              {
+                key: 'b-1:chat-77',
+                scope: 'chat' as const,
+                chatId: 'chat-77',
+                sessionId: 'sess-3',
+                lastActivityAt: 1,
+              },
+            ];
           return [];
         }),
       }) as unknown as McpToolDeps['bindingRouter'],

@@ -39,6 +39,7 @@ import { claimPresence, releasePresence } from './presence.js';
 import type { PresenceContext, SlackPresenceState } from './presence.js';
 import { isBlockingInteractionEventType } from '@dorkos/shared/session-stream';
 import { handleApprovalRequired } from './approval.js';
+import { chatNoticeText } from '../../chat-notice.js';
 import type { SlackOutboundState } from './approval.js';
 
 // Re-export types so existing imports from outbound.ts continue to work
@@ -165,12 +166,13 @@ export async function deliverMessage(opts: SlackDeliverOptions): Promise<Deliver
   } = opts;
   const startTime = Date.now();
 
-  // Reap orphaned streams that never received a done/error event
+  // Reap streams that have gone silent — idle time, not total age. Reaping on
+  // age cut long answers in half (see STREAM_TTL_MS).
   for (const [key, stream] of streamState) {
-    if (startTime - stream.startedAt > STREAM_TTL_MS) {
+    if (startTime - stream.lastEventAt > STREAM_TTL_MS) {
       streamState.delete(key);
       logger.warn(
-        `stream: reaped orphaned stream for ${key} (age: ${Math.round((startTime - stream.startedAt) / 1000)}s)`
+        `stream: reaped silent stream for ${key} (idle: ${Math.round((startTime - stream.lastEventAt) / 1000)}s)`
       );
     }
   }
@@ -178,7 +180,7 @@ export async function deliverMessage(opts: SlackDeliverOptions): Promise<Deliver
   // Echo prevention: skip messages originating from this adapter
   if (envelope.from.startsWith(opts.codec.prefix)) {
     logger.debug('deliver: echo prevention — skipping self-originated message');
-    return { success: true, durationMs: Date.now() - startTime };
+    return { success: true, skipped: true, durationMs: Date.now() - startTime };
   }
 
   if (!client) {
@@ -253,24 +255,49 @@ export async function deliverMessage(opts: SlackDeliverOptions): Promise<Deliver
     releasePresence(presenceCtx, isTurnPaused(eventType) ? 'paused' : 'terminal');
   }
 
+  // What a turn has actually posted, keyed exactly like its stream buffer.
+  const spokenKey = `${channelId}:${streamKeyTs}`;
+  const spoken = opts.approvalState.spokenStreams;
+
   if (eventType) {
     const textChunk = extractTextDelta(envelope.payload);
     if (textChunk) {
       logger.debug(
         `deliver: text_delta to ${channelId} (${textChunk.length} chars, streaming=${opts.streaming ? (opts.nativeStreaming ? 'native' : 'legacy') : 'buffered'})`
       );
+      spoken.add(spokenKey);
       return handleTextDelta(textChunk, opts.streaming, opts.nativeStreaming, ctx);
     }
 
     const errorMsg = extractErrorMessage(envelope.payload);
     if (errorMsg) {
       logger.debug(`deliver: error to ${channelId}: "${errorMsg.slice(0, 100)}"`);
+      spoken.delete(spokenKey); // the turn is over either way
       return handleError(errorMsg, ctx);
     }
 
     if (eventType === 'done') {
       logger.debug(`deliver: done for ${channelId}`);
-      return handleDone(ctx);
+      const alreadySpoke = spoken.delete(spokenKey);
+      const result = await handleDone(ctx);
+      // A turn that ends having posted nothing at all: say so, rather than
+      // leaving the person's question sitting there unanswered forever. Only
+      // when this turn really did post nothing — a card, a partial answer or an
+      // error has already spoken for it.
+      if (!alreadySpoke && result.success) {
+        return wrapSlackCall(
+          () =>
+            client.chat.postMessage({
+              channel: channelId,
+              text: chatNoticeText('empty_response'),
+              ...(threadTs ? { thread_ts: threadTs } : {}),
+            }),
+          callbacks,
+          startTime,
+          true
+        );
+      }
+      return result;
     }
 
     if (eventType === 'approval_required') {
@@ -282,6 +309,7 @@ export async function deliverMessage(opts: SlackDeliverOptions): Promise<Deliver
         // Flush accumulated text before posting the approval card so partial
         // responses aren't lost when the stream pauses for approval.
         await flushStreamBuffer(ctx);
+        spoken.add(spokenKey);
         return handleApprovalRequired(
           channelId,
           threadTs,
@@ -298,7 +326,7 @@ export async function deliverMessage(opts: SlackDeliverOptions): Promise<Deliver
 
     // All other StreamEvent types: silently drop (whitelist model)
     logger.debug(`deliver: dropping stream event '${eventType}' (whitelist)`);
-    return { success: true, durationMs: Date.now() - startTime };
+    return { success: true, skipped: true, durationMs: Date.now() - startTime };
   }
 
   // --- Standard payload (non-StreamEvent) ---
@@ -308,6 +336,7 @@ export async function deliverMessage(opts: SlackDeliverOptions): Promise<Deliver
     `deliver: standard payload to ${channelId} (${formatted.length} chars, ${chunks.length} chunk${chunks.length === 1 ? '' : 's'})`
   );
 
+  spoken.add(spokenKey);
   let lastResult: DeliveryResult = { success: true, durationMs: 0 };
   for (let i = 0; i < chunks.length; i++) {
     lastResult = await wrapSlackCall(

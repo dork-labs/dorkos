@@ -303,7 +303,7 @@ describe('BaseRelayAdapter', () => {
     await expect(adapter.stop()).resolves.toBeUndefined();
   });
 
-  it('stop() clears relay ref in finally even if _stop() throws', async () => {
+  it('stop() that throws clears the relay ref and reports the adapter as errored', async () => {
     class ThrowingStopAdapter extends BaseRelayAdapter {
       constructor() {
         super('t', 'relay.t.', 'T');
@@ -321,11 +321,13 @@ describe('BaseRelayAdapter', () => {
     }
     const a = new ThrowingStopAdapter();
     await a.start(relay);
-    // stop() uses finally — relay ref is cleared even when _stop() throws
     await expect(a.stop()).rejects.toThrow('stop failed');
     expect(a.getRelayRefPublic()).toBeNull();
-    // State is also set to disconnected
-    expect(a.getStatus().state).toBe('disconnected');
+    // NOT 'disconnected'. An adapter whose stop threw may still be holding its
+    // connection, and reporting it cleanly stopped is what let the registry
+    // start a second one on the same credentials (DOR-789).
+    expect(a.getStatus().state).toBe('error');
+    expect(a.getStatus().lastError).toBe('stop failed');
   });
 
   // --- trackOutbound() / trackInbound() ---

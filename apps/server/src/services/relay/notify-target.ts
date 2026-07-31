@@ -21,7 +21,17 @@ export interface NotifyTargetBindingStore {
 
 /** Minimal binding-router surface — active chat sessions for a binding. */
 export interface NotifyTargetBindingRouter {
-  getSessionsByBinding(bindingId: string): Array<{ chatId: string; sessionId: string }>;
+  getSessionsByBinding(bindingId: string): Array<{
+    /** Whether the session belongs to a chat or to one person. */
+    scope: 'chat' | 'user';
+    /** Present when `scope` is `'chat'`. */
+    chatId?: string;
+    /** Present when `scope` is `'user'`. */
+    userId?: string;
+    sessionId: string;
+    /** Epoch ms of the last message through this session; 0 if never observed. */
+    lastActivityAt: number;
+  }>;
 }
 
 /** Minimal adapter-manager surface — resolves an adapter id to its type. */
@@ -59,6 +69,50 @@ export type NotifyTarget =
   | { ok: false; reason: 'NO_BINDING'; availableChannels: string[] }
   | { ok: false; reason: 'NO_ACTIVE_SESSIONS'; availableAdapters: string[] }
   | { ok: false; reason: 'INITIATE_NOT_ALLOWED'; bindingId: string; adapterId: string };
+
+/**
+ * Pick the chat this agent spoke in most recently, across its eligible bindings.
+ *
+ * ## Two things this had wrong
+ *
+ * It took `sessions[sessions.length - 1]` from the last binding that had any
+ * session at all — file order, not recency — while its own doc promised "the
+ * most-recently-active chat session". A task-completion notice therefore landed
+ * wherever the session file happened to end, which in practice was a public
+ * channel somebody had used once, not the DM they were working in. Sessions now
+ * carry `lastActivityAt`, maintained by `BindingRouter` on every routed
+ * message, and this sorts on it.
+ *
+ * It also read every session's key tail as a chat id. Under the `per-user`
+ * strategy that tail is a **person**, and a person's id is not a chat: on Slack
+ * it is a `U…` where the conversation is a `D…`, and on a group binding it
+ * would divert a group notification into a private message. A per-user session
+ * is therefore only usable when its binding names the chat to speak in; when it
+ * does not, we know who was active but not where, and that candidate is skipped
+ * rather than guessed at.
+ *
+ * @param bindings - The agent's eligible (non-paused, channel-filtered) bindings.
+ * @param bindingRouter - Session lookup.
+ * @returns The best binding/chat pair, or `null` when none is addressable.
+ */
+function pickMostRecentChat(
+  bindings: AdapterBinding[],
+  bindingRouter: NotifyTargetBindingRouter
+): { binding: AdapterBinding; chatId: string } | null {
+  let best: { binding: AdapterBinding; chatId: string; at: number } | null = null;
+
+  for (const binding of bindings) {
+    for (const session of bindingRouter.getSessionsByBinding(binding.id)) {
+      const chatId = session.scope === 'chat' ? session.chatId : binding.chatId;
+      if (!chatId) continue; // active person, unknown conversation — see above
+      if (!best || session.lastActivityAt > best.at) {
+        best = { binding, chatId, at: session.lastActivityAt };
+      }
+    }
+  }
+
+  return best ? { binding: best.binding, chatId: best.chatId } : null;
+}
 
 /**
  * Resolve the integration an agent may initiate a proactive message on.
@@ -106,17 +160,7 @@ export function resolveNotifyTarget(agentId: string, deps: NotifyTargetDeps): No
     return { ok: false, reason: 'NO_BINDING', availableChannels: available };
   }
 
-  let best: {
-    binding: AdapterBinding;
-    chatId: string;
-  } | null = null;
-  for (const binding of myBindings) {
-    const sessions = bindingRouter.getSessionsByBinding(binding.id);
-    if (sessions.length > 0) {
-      const latest = sessions[sessions.length - 1]!;
-      best = { binding, chatId: latest.chatId };
-    }
-  }
+  const best = pickMostRecentChat(myBindings, bindingRouter);
 
   if (!best) {
     return {
@@ -142,7 +186,7 @@ export function resolveNotifyTarget(agentId: string, deps: NotifyTargetDeps): No
   }
 
   const adapters = adapterManager?.listAdapters() ?? [];
-  const adapter = adapters.find((a) => a.config.id === best!.binding.adapterId);
+  const adapter = adapters.find((a) => a.config.id === best.binding.adapterId);
   const adapterType = adapter?.config?.type ?? 'unknown';
   const subject = `relay.human.${adapterType}.${best.binding.adapterId}.${best.chatId}`;
 

@@ -90,11 +90,31 @@ export type TraceMetadata = z.infer<typeof TraceMetadataSchema>;
 
 // === Trace & Metrics ===
 
+/**
+ * What happened to one message.
+ *
+ * `no_subscriber` is deliberately distinct from `failed`: a publish to a
+ * subject nobody is listening on delivered to zero targets, but nothing went
+ * wrong and nobody needs to fix anything. Folding the two together is what made
+ * the health bar report a 100% failure rate on days whose only "failures" were
+ * messages sent to an unwatched subject.
+ */
 export const TraceSpanStatusSchema = z
-  .enum(['sent', 'delivered', 'failed', 'timeout'])
+  .enum(['sent', 'delivered', 'failed', 'timeout', 'no_subscriber'])
   .openapi('TraceSpanStatus');
 
 export type TraceSpanStatus = z.infer<typeof TraceSpanStatusSchema>;
+
+/**
+ * What a trace row is about.
+ *
+ * `delivery` rows are messages. `lifecycle` rows are an adapter connecting,
+ * disconnecting, or erroring — they are excluded from every delivery metric,
+ * because restarting an integration is not traffic.
+ */
+export const TraceKindSchema = z.enum(['delivery', 'lifecycle']).openapi('TraceKind');
+
+export type TraceKind = z.infer<typeof TraceKindSchema>;
 
 /**
  * Legacy status values accepted by TraceStore.insertSpan() for backwards compatibility
@@ -112,6 +132,7 @@ export const TraceSpanSchema = z
     traceId: z.string(),
     subject: z.string(),
     status: TraceSpanStatusSchema,
+    kind: TraceKindSchema,
     sentAt: z.string(),
     deliveredAt: z.string().nullable(),
     processedAt: z.string().nullable(),
@@ -121,6 +142,18 @@ export const TraceSpanSchema = z
   .openapi('TraceSpan');
 
 export type TraceSpan = z.infer<typeof TraceSpanSchema>;
+
+/**
+ * Machine codes for the reasons the authoritative budget gate rejects a message.
+ *
+ * Recorded on the trace span so {@link BudgetRejectionsSchema} can be counted
+ * from real rows instead of being reported as four hardcoded zeros.
+ */
+export const BudgetRejectionCodeSchema = z
+  .enum(['hop_limit', 'ttl_expired', 'cycle_detected', 'budget_exhausted'])
+  .openapi('BudgetRejectionCode');
+
+export type BudgetRejectionCode = z.infer<typeof BudgetRejectionCodeSchema>;
 
 export const BudgetRejectionsSchema = z
   .object({
@@ -138,6 +171,17 @@ export const DeliveryMetricsSchema = z
     totalMessages: z.number().int(),
     deliveredCount: z.number().int(),
     failedCount: z.number().int(),
+    /**
+     * Messages that reached nobody because the subject had no listener — not a
+     * failure, and counted separately from one so the health bar stops calling
+     * an idle machine broken.
+     */
+    noSubscriberCount: z.number().int(),
+    /**
+     * Messages currently sitting in the dead-letter queue, counted from the
+     * queue itself. It used to count trace rows with a status nothing ever
+     * wrote, so it was always zero.
+     */
     deadLetteredCount: z.number().int(),
     avgDeliveryLatencyMs: z.number().nullable(),
     /**

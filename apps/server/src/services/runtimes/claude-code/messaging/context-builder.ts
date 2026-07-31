@@ -380,9 +380,14 @@ function buildRelayConnectionsBlock(
     if (sessions.length > 0) {
       lines.push('  Active chats:');
       for (const session of sessions) {
-        const keyParts = session.key.split(':');
-        const channelType = keyParts[1] === 'chat' ? 'DM' : (keyParts[1] ?? 'unknown');
-        lines.push(`  - ${session.chatId} (${channelType})`);
+        // Say which of the two a session is. The old line called every
+        // chat-scoped session a "DM" — including group chats — and printed a
+        // per-user session's person id as though it were a chat.
+        lines.push(
+          session.scope === 'user'
+            ? `  - person ${session.userId} (one session per person)`
+            : `  - chat ${session.chatId}`
+        );
       }
     } else {
       lines.push('  No active chats yet (user must message the bot first)');

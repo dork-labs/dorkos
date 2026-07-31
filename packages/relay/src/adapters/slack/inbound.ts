@@ -602,16 +602,31 @@ export async function handleInboundMessage(
       replyTo: subject,
     });
 
-    // Check for rejected publishes (e.g. rate-limited) before tracking or reacting
-    if (result.deliveredTo === 0 && result.rejected?.length) {
-      const reason = result.rejected[0]?.reason ?? 'unknown';
-      callbacks.recordError(new Error(`Publish rejected: ${reason}`));
-      logger.warn(`inbound publish rejected for ${event.channel}: ${reason}`);
-      // Roll back dedup so the message's twin event (or a Slack retry) can
-      // reprocess it \u2014 a rate-limited publish must not permanently suppress it.
-      forgetSeen(state.seenEvents, dedupKeys);
-      // Forget the queued trigger since nothing will process this message
+    // Nothing took the message. Two different things follow from that, and
+    // conflating them is what left the `:eyes:` queue out of step.
+    if (result.deliveredTo === 0) {
+      const reason = result.rejected?.[0]?.reason;
+
+      // ALWAYS forget the queued trigger. No turn will claim it, so leaving it
+      // on the FIFO offsets every later turn in this channel by one \u2014 the next
+      // answer marks this message instead of the one it is actually answering.
+      // This used to happen only for an explicitly rejected publish, so every
+      // router-side drop (paused binding, no binding, agent missing) desynced
+      // the queue silently (DOR-789).
       forgetQueuedTrigger(presence, event.channel, event.ts, reactionQueued);
+
+      if (reason) {
+        // An explicit gate rejection can succeed on a retry, so let the twin
+        // event (or Slack's own redelivery) reprocess it.
+        callbacks.recordError(new Error(`Publish rejected: ${reason}`));
+        logger.warn(`inbound publish rejected for ${event.channel}: ${reason}`);
+        forgetSeen(state.seenEvents, dedupKeys);
+      } else {
+        // Nothing was listening, or the router refused it. Reprocessing would
+        // reach the same verdict; the person is told through the chat notice
+        // and the drop is on the trace.
+        logger.warn(`inbound message in ${event.channel} reached no agent`);
+      }
       return;
     }
 

@@ -1425,6 +1425,36 @@ describe('AdapterManager', () => {
   });
 
   describe('updateConfig()', () => {
+    // The old adapter is deleted from the registry before its stop() is
+    // awaited, and this call site swallowed the throw — so a Telegram poller
+    // that would not die was joined by a second one on the same token, and the
+    // chat got every message twice (DOR-789).
+    it('does not start a replacement when the running adapter will not stop', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      const mockEventRecorder = { insertAdapterEvent: vi.fn() };
+      const stuckRegistry = createMockRegistry();
+      const stuckManager = new AdapterManager(stuckRegistry, configPath, {
+        ...mockDeps,
+        eventRecorder: mockEventRecorder,
+      });
+      await initAndStart(stuckManager);
+      const registeredBefore = vi.mocked(stuckRegistry.register).mock.calls.length;
+      vi.mocked(stuckRegistry.unregister).mockRejectedValueOnce(new Error('poller busy'));
+
+      await expect(
+        stuckManager.updateConfig('tg-main', { token: 'new-token', mode: 'webhook' })
+      ).rejects.toThrow('poller busy');
+
+      // No second adapter was built or registered.
+      expect(vi.mocked(stuckRegistry.register).mock.calls.length).toBe(registeredBefore);
+      // …and the operator is told, rather than the failure being swallowed.
+      expect(mockEventRecorder.insertAdapterEvent).toHaveBeenCalledWith(
+        'tg-main',
+        'adapter.error',
+        expect.stringContaining('poller busy')
+      );
+    });
+
     it('merges new config and persists', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
       await initAndStart(manager);

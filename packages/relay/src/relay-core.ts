@@ -30,9 +30,11 @@ import {
   DEFAULT_DEAD_LETTER_RETENTION_MS,
   DEFAULT_ORPHAN_MAILDIR_RETENTION_MS,
   DEFAULT_IN_FLIGHT_RECOVERY_MS,
+  DEFAULT_UNDELIVERED_MAIL_RETENTION_MS,
 } from './relay-gc.js';
 import type { RelayGcSweepOptions } from './relay-gc.js';
 import { createReplyFailureNotifier } from './reply-failure-notifier.js';
+import { createChatNoticeSender } from './chat-notice.js';
 import { ReliabilityConfigSchema } from '@dorkos/shared/relay-schemas';
 import { inferEndpointType } from './types.js';
 import { RelayPublishPipeline } from './relay-publish.js';
@@ -247,6 +249,19 @@ export class RelayCore {
     adapterDelivery.setReplyFailureNotifier(replyFailureNotifier);
     this.publishPipeline.setReplyFailureNotifier(replyFailureNotifier);
 
+    // A chat message whose turn was accepted and then failed — the runtime at
+    // capacity, a thrown adapter — is dead-lettered above and, before this, told
+    // nobody: the reply-inbox notifier deliberately covers only `relay.inbox.*`
+    // and `relay.a2a.reply.*`, which is 0% of chat traffic. This second notifier
+    // covers the person's own chat, and its `relay.system.*` principal is what
+    // keeps the notice from being routed back to the agent as a fresh prompt.
+    adapterDelivery.setChatFailureNotifier(
+      createChatNoticeSender({
+        publish: (subject, payload, opts) => this.publishPipeline.publish(subject, payload, opts),
+        logger: options?.logger,
+      })
+    );
+
     this.subscriptionDeps = {
       subscriptionRegistry: this.subscriptionRegistry,
       signalEmitter: this.signalEmitter,
@@ -267,6 +282,7 @@ export class RelayCore {
         deadLetterQueue,
         endpointRegistry,
         deliveryPipeline: this.deliveryPipeline,
+        traceStore: options?.traceStore,
         logger: options?.logger,
       },
       {
@@ -274,6 +290,8 @@ export class RelayCore {
         orphanMaildirRetentionMs:
           options?.orphanMaildirRetentionMs ?? DEFAULT_ORPHAN_MAILDIR_RETENTION_MS,
         inFlightRecoveryMs: options?.inFlightRecoveryMs ?? DEFAULT_IN_FLIGHT_RECOVERY_MS,
+        undeliveredMailRetentionMs:
+          options?.undeliveredMailRetentionMs ?? DEFAULT_UNDELIVERED_MAIL_RETENTION_MS,
       }
     );
 

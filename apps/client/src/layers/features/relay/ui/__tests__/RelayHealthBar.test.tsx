@@ -36,6 +36,7 @@ const mockMetrics = {
   totalMessages: 142,
   deliveredCount: 139,
   failedCount: 3,
+  noSubscriberCount: 0,
   deadLetteredCount: 1,
   avgDeliveryLatencyMs: 45,
   p50DeliveryLatencyMs: 30,
@@ -113,6 +114,7 @@ const emptyMetrics = {
   totalMessages: 0,
   deliveredCount: 0,
   failedCount: 0,
+  noSubscriberCount: 0,
   deadLetteredCount: 0,
   avgDeliveryLatencyMs: null,
   p50DeliveryLatencyMs: null,
@@ -210,14 +212,24 @@ describe('computeHealthState', () => {
     expect(result.state).toBe('critical');
   });
 
-  it('includes dead-lettered count in failure rate calculation', () => {
-    // 50 failed + 10 dead-lettered = 60/100 = 60% > 50%
+  // Dead letters are a backlog to look at, not a live failure rate, and
+  // messages nobody listened for are not failures at all (DOR-789).
+  it('rates on failures alone — dead letters and unlistened subjects do not inflate it', () => {
     const result = computeHealthState(
-      { ...mockMetrics, totalMessages: 100, failedCount: 50, deadLetteredCount: 10 },
+      {
+        ...mockMetrics,
+        totalMessages: 100,
+        deliveredCount: 40,
+        failedCount: 10,
+        noSubscriberCount: 40,
+        deadLetteredCount: 10,
+      },
       3,
       3
     );
-    expect(result.state).toBe('critical');
+    // 10 real failures in 100 is degraded, not critical — the same numbers
+    // read as 20% before, and as 50% once no-listener rows counted as failed.
+    expect(result.state).toBe('degraded');
   });
 
   it('returns healthy when no messages sent and all adapters connected', () => {

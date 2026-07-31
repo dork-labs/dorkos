@@ -70,13 +70,20 @@ function binding(overrides: Partial<AdapterBinding> = {}): AdapterBinding {
 function makeDeps(
   overrides: {
     bindings?: AdapterBinding[];
-    sessions?: Array<{ chatId: string; sessionId: string }>;
+    sessions?: Array<{
+      chatId: string;
+      sessionId: string;
+      scope?: 'chat';
+      lastActivityAt?: number;
+    }>;
     relayEnabled?: boolean;
     publish?: TaskCompletionNotifierDeps['relayCore'];
   } = {}
 ): { deps: TaskCompletionNotifierDeps; publish: ReturnType<typeof vi.fn> } {
   const publish = vi.fn().mockResolvedValue({ deliveredTo: 1 });
-  const sessions = overrides.sessions ?? [{ chatId: 'chat-42', sessionId: 'sess-1' }];
+  const sessions = (overrides.sessions ?? [{ chatId: 'chat-42', sessionId: 'sess-1' }]).map(
+    (s) => ({ scope: 'chat' as const, lastActivityAt: 0, ...s })
+  );
   const deps: TaskCompletionNotifierDeps = {
     bindingStore: { getAll: () => overrides.bindings ?? [binding()] },
     bindingRouter: { getSessionsByBinding: () => sessions },

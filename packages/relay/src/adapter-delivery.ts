@@ -23,6 +23,7 @@ import type { SqliteIndex } from './sqlite-index.js';
 import type { MaildirStore } from './maildir-store.js';
 import type { DeadLetterQueue } from './dead-letter-queue.js';
 import type { AdapterRegistryLike, AdapterContext, DeliveryResult } from './types.js';
+import type { ChatNoticeSender } from './chat-notice.js';
 
 import type { Logger } from '@dorkos/shared/logger';
 
@@ -80,6 +81,9 @@ export class AdapterDelivery {
   /** Optional callback to notify a reply inbox when a detached delivery fails. */
   private replyFailureNotifier?: ReplyFailureNotifier;
 
+  /** Optional callback that tells a person, in their chat, that their turn died. */
+  private chatFailureNotifier?: ChatNoticeSender;
+
   constructor(private readonly deps: AdapterDeliveryDeps) {
     this.logger = deps.logger ?? console;
   }
@@ -92,6 +96,22 @@ export class AdapterDelivery {
    */
   setReplyFailureNotifier(notifier: ReplyFailureNotifier): void {
     this.replyFailureNotifier = notifier;
+  }
+
+  /**
+   * Register the callback that tells a person, in the chat they wrote in, that
+   * the turn their message started did not run.
+   *
+   * Distinct from {@link setReplyFailureNotifier} on purpose. That one settles
+   * a *caller* waiting on a reply inbox and is deliberately restricted to
+   * `relay.inbox.*` / `relay.a2a.reply.*`; widening it to chat subjects would
+   * feed the notice back to the agent as a new prompt, because a chat subject
+   * has a live subscriber (the binding router) that a reply inbox does not.
+   *
+   * @param notifier - The chat notice sender.
+   */
+  setChatFailureNotifier(notifier: ChatNoticeSender): void {
+    this.chatFailureNotifier = notifier;
   }
 
   /**
@@ -260,6 +280,17 @@ export class AdapterDelivery {
         const message = err instanceof Error ? err.message : String(err);
         this.logger.warn(`RelayCore: failed to notify reply inbox of delivery failure: ${message}`);
       }
+    }
+
+    // When the caller was a person in a chat, their reply subject IS that chat.
+    // Tell them there, in one line, instead of leaving the message looking like
+    // an agent that is still thinking.
+    if (envelope.replyTo && this.chatFailureNotifier) {
+      await this.chatFailureNotifier(
+        envelope.replyTo,
+        /capacity/i.test(reason) ? 'agent_busy' : 'delivery_failed',
+        { scope: subject }
+      );
     }
   }
 }

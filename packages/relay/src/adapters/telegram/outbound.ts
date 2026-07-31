@@ -30,6 +30,7 @@ import { isBlockingInteractionEventType } from '@dorkos/shared/session-stream';
 import { extractChatId } from './inbound.js';
 import type { TelegramThreadIdCodec } from '../../lib/thread-id.js';
 import { sendMessageDraft } from './stream-api.js';
+import { chatNoticeText } from '../../chat-notice.js';
 
 /** Telegram sendChatAction type for typing indicator. */
 const TELEGRAM_TYPING_ACTION = 'typing' as const;
@@ -62,7 +63,16 @@ export const TYPING_INACTIVITY_MS = 60_000;
 /** Minimum interval (ms) between sendMessageDraft calls for a single chat. */
 const DRAFT_UPDATE_INTERVAL_MS = 200;
 
-/** TTL for response buffers (ms). Buffers older than this are reaped to prevent memory leaks. */
+/**
+ * How long a response buffer may go **silent** before it is reaped (ms).
+ *
+ * Idle time, not age. This used to be measured from `startedAt`, which the
+ * buffer deliberately preserved across every delta — so an answer that took
+ * longer than five minutes had its own accumulated text deleted mid-stream, and
+ * the `done` that followed flushed only whatever had arrived since. The person
+ * got the tail of a long answer and no sign that the rest ever existed. A
+ * stream still producing text is not stale however long it runs.
+ */
 export const BUFFER_TTL_MS = 5 * 60 * 1_000;
 
 /** Maximum age (ms) for callbackIdMap entries before auto-eviction. */
@@ -96,6 +106,16 @@ export interface TelegramOutboundState {
   callbackIdMap: Map<string, { toolCallId: string; sessionId: string; agentId: string }>;
   /** Pending approval timeouts keyed by callback short key. */
   pendingApprovalTimeouts: Map<string, ReturnType<typeof setTimeout>>;
+  /**
+   * Chats this adapter has actually sent something to since their last
+   * terminal.
+   *
+   * Read at `done` to tell an answer from a silence. A turn that ends having
+   * sent nothing at all leaves the person looking at their own question with no
+   * sign anything happened; a turn that sent a card, a partial answer, or an
+   * error has already spoken and must not be contradicted.
+   */
+  spokenChats: Set<number>;
 }
 
 /** Create a fresh outbound state container for a new adapter instance. */
@@ -106,6 +126,7 @@ export function createTelegramOutboundState(): TelegramOutboundState {
     lastDraftUpdate: new Map(),
     callbackIdMap: new Map(),
     pendingApprovalTimeouts: new Map(),
+    spokenChats: new Set(),
   };
 }
 
@@ -134,6 +155,13 @@ export interface ResponseBuffer {
   text: string;
   /** Unix timestamp (ms) when this buffer was first created. */
   startedAt: number;
+  /**
+   * Unix timestamp (ms) of the last chunk added to this buffer.
+   *
+   * The reaper reads this, not {@link startedAt}: a buffer still being written
+   * to belongs to a live answer, whatever time it started.
+   */
+  lastEventAt: number;
 }
 
 /** Options for delivering a Relay message to Telegram. */
@@ -250,7 +278,7 @@ export async function deliverMessage(opts: TelegramDeliverOptions): Promise<Deli
   // pipeline routes the message right back to deliver(), creating a loop.
   if (envelope.from.startsWith(codec.prefix)) {
     logger.debug('deliver: echo prevention — skipping self-originated message');
-    return { success: true, durationMs: Date.now() - startTime };
+    return { success: true, skipped: true, durationMs: Date.now() - startTime };
   }
 
   if (!bot) {
@@ -275,11 +303,11 @@ export async function deliverMessage(opts: TelegramDeliverOptions): Promise<Deli
   // e.g. the agent crashed mid-stream or the session was abandoned.
   const now = Date.now();
   for (const [id, buf] of responseBuffers) {
-    if (now - buf.startedAt > BUFFER_TTL_MS) {
+    if (now - buf.lastEventAt > BUFFER_TTL_MS) {
       responseBuffers.delete(id);
       state.lastDraftUpdate.delete(id);
       logger.warn(
-        `buffer: reaped stale buffer for chat ${id} (age: ${Math.round((now - buf.startedAt) / 1000)}s)`
+        `buffer: reaped silent buffer for chat ${id} (idle: ${Math.round((now - buf.lastEventAt) / 1000)}s)`
       );
     }
   }
@@ -304,10 +332,12 @@ export async function deliverMessage(opts: TelegramDeliverOptions): Promise<Deli
     const textChunk = extractTextDelta(envelope.payload);
     if (textChunk) {
       logger.debug(`deliver: text_delta to chat ${chatId} (${textChunk.length} chars)`);
+      state.spokenChats.add(chatId);
       const existing = responseBuffers.get(chatId);
       responseBuffers.set(chatId, {
         text: (existing?.text ?? '') + textChunk,
         startedAt: existing?.startedAt ?? Date.now(),
+        lastEventAt: Date.now(),
       });
 
       // Native draft streaming: DMs only (chatId > 0), streaming enabled
@@ -338,6 +368,7 @@ export async function deliverMessage(opts: TelegramDeliverOptions): Promise<Deli
       const buffered = responseBuffers.get(chatId)?.text ?? '';
       responseBuffers.delete(chatId);
       state.lastDraftUpdate.delete(chatId);
+      state.spokenChats.delete(chatId); // the turn is over either way
       const text = buffered ? `${buffered}\n\n[Error: ${errorMsg}]` : `[Error: ${errorMsg}]`;
       return sendAndTrack(bot, chatId, text, startTime, callbacks);
     }
@@ -350,10 +381,18 @@ export async function deliverMessage(opts: TelegramDeliverOptions): Promise<Deli
       );
       responseBuffers.delete(chatId);
       state.lastDraftUpdate.delete(chatId);
+      const spoke = state.spokenChats.delete(chatId);
       if (buffered) {
         return sendAndTrack(bot, chatId, buffered.text, startTime, callbacks);
       }
-      return { success: true, durationMs: Date.now() - startTime };
+      // A turn that ends having sent nothing at all: say so, rather than
+      // leaving the person looking at their own question forever. Only when
+      // this turn really did send nothing — an approval card or a flushed
+      // partial already spoke for it.
+      if (!spoke) {
+        return sendAndTrack(bot, chatId, chatNoticeText('empty_response'), startTime, callbacks);
+      }
+      return { success: true, skipped: true, durationMs: Date.now() - startTime };
     }
 
     // approval_required: flush buffered text, then render inline keyboard
@@ -370,6 +409,7 @@ export async function deliverMessage(opts: TelegramDeliverOptions): Promise<Deli
           state.lastDraftUpdate.delete(chatId);
           await sendAndTrack(bot, chatId, buffered.text, startTime, callbacks);
         }
+        state.spokenChats.add(chatId);
 
         return handleApprovalRequired({
           bot,
@@ -387,7 +427,7 @@ export async function deliverMessage(opts: TelegramDeliverOptions): Promise<Deli
     // All other StreamEvent types: silently drop (whitelist model).
     // Only text_delta, error, done, and approval_required warrant delivery actions.
     logger.debug(`deliver: dropping stream event '${eventType}' (whitelist)`);
-    return { success: true, durationMs: Date.now() - startTime };
+    return { success: true, skipped: true, durationMs: Date.now() - startTime };
   }
 
   // --- Standard payload (non-StreamEvent) ---
@@ -506,6 +546,7 @@ export function clearAllTypingIntervals(state: TelegramOutboundState): void {
   state.typingIntervals.clear();
   state.lastEventAt.clear();
   state.lastDraftUpdate.clear();
+  state.spokenChats.clear();
 }
 
 // === Approval handling ===

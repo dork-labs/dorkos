@@ -70,7 +70,10 @@ describe('GC expiry sweep', () => {
       defaultTtlMs: 100,
       gcIntervalMs: NEVER_MS,
     });
-    const subject = 'relay.inbox.persist.x';
+    // An ephemeral query inbox: its owner is a transient tool call, so its mail
+    // really does expire with the message. Durable `relay.inbox.<name>` mail is
+    // a different contract — see the mailbox-retention tests below.
+    const subject = 'relay.inbox.query.x';
     await relay.registerEndpoint(subject);
 
     // No subscriber: the message lands in new/ as pending and stays there.
@@ -111,7 +114,7 @@ describe('GC backpressure recovery', () => {
       gcIntervalMs: NEVER_MS,
       reliability: { backpressure: { maxMailboxSize: 3, pressureWarningAt: 0.8 } },
     });
-    const subject = 'relay.inbox.brick.x';
+    const subject = 'relay.inbox.query.brick';
     await relay.registerEndpoint(subject);
 
     // Fill the mailbox to its cap (no subscriber → all stay pending).
@@ -290,6 +293,69 @@ describe('GC expiry of claimed-pending messages', () => {
     expect(await listDir(path.join(mailboxDir(subject), 'cur'))).toHaveLength(0);
     const inbox = await relay.readInbox(subject, { status: 'unread' });
     expect(inbox.messages).toHaveLength(0);
+
+    await relay.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Mailbox retention for unread mail (C2)
+// ---------------------------------------------------------------------------
+
+describe('unread mail in a durable inbox', () => {
+  it('survives the message delivery TTL that used to delete it', async () => {
+    // A message's `budget.ttl` is a delivery deadline (one hour by default),
+    // and it doubled as mailbox retention: an agent that was off for an
+    // afternoon came back to an empty inbox with no dead letter and nothing
+    // anywhere to say a message had arrived (DOR-789).
+    const relay = new RelayCore({
+      dataDir: tmpDir,
+      defaultTtlMs: 100,
+      gcIntervalMs: NEVER_MS,
+    });
+    const subject = 'relay.inbox.persist.mail';
+    await relay.registerEndpoint(subject);
+    await relay.publish(subject, { n: 1 }, { from: 'relay.agent.sender' });
+
+    await new Promise((r) => setTimeout(r, 160));
+    await relay.runGcSweep();
+
+    const inbox = await relay.readInbox(subject, { status: 'unread' });
+    expect(inbox.messages).toHaveLength(1);
+    expect(await listDir(path.join(mailboxDir(subject), 'new'))).toHaveLength(1);
+
+    await relay.close();
+  });
+
+  it('is dead-lettered, not deleted, once its own retention runs out', async () => {
+    const relay = new RelayCore({
+      dataDir: tmpDir,
+      defaultTtlMs: 50,
+      gcIntervalMs: NEVER_MS,
+      undeliveredMailRetentionMs: 100,
+    });
+    const subject = 'relay.inbox.persist.stale';
+    await relay.registerEndpoint(subject);
+    await relay.publish(subject, { n: 1 }, { from: 'relay.agent.sender' });
+
+    await new Promise((r) => setTimeout(r, 160));
+    const result = await relay.runGcSweep();
+    expect(result?.expiredRemoved).toBeGreaterThanOrEqual(1);
+
+    // Out of the inbox, but readable: the message still exists and still says
+    // why it is here. It used to be unlinked with no record of any kind.
+    const inbox = await relay.readInbox(subject, { status: 'unread' });
+    expect(inbox.messages).toHaveLength(0);
+    const dead = await relay.getDeadLetters({ endpointHash: subject });
+    expect(dead).toHaveLength(1);
+    expect(dead[0]!.reason).toContain('retention');
+
+    // The unread copy is gone, so a rebuild cannot resurrect and re-kill it.
+    expect(await listDir(path.join(mailboxDir(subject), 'new'))).toHaveLength(0);
+    await relay.rebuildIndex();
+    const secondSweep = await relay.runGcSweep();
+    expect(secondSweep?.expiredRemoved).toBe(0);
+    expect(await relay.getDeadLetters({ endpointHash: subject })).toHaveLength(1);
 
     await relay.close();
   });

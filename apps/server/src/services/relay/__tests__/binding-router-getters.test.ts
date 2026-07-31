@@ -66,8 +66,20 @@ describe('BindingRouter getters', () => {
       expect(results.every((r) => r.key.startsWith('b1:'))).toBe(true);
       expect(results).toEqual(
         expect.arrayContaining([
-          { key: 'b1:chat:12345', chatId: '12345', sessionId: 'session-aaa' },
-          { key: 'b1:chat:67890', chatId: '67890', sessionId: 'session-bbb' },
+          {
+            key: 'b1:chat:12345',
+            scope: 'chat',
+            chatId: '12345',
+            sessionId: 'session-aaa',
+            lastActivityAt: 0,
+          },
+          {
+            key: 'b1:chat:67890',
+            scope: 'chat',
+            chatId: '67890',
+            sessionId: 'session-bbb',
+            lastActivityAt: 0,
+          },
         ])
       );
     });
@@ -91,10 +103,40 @@ describe('BindingRouter getters', () => {
       expect(results).toHaveLength(seedEntries.length);
       expect(results).toEqual(
         expect.arrayContaining([
-          { key: 'b1:chat:12345', bindingId: 'b1', chatId: '12345', sessionId: 'session-aaa' },
-          { key: 'b1:chat:67890', bindingId: 'b1', chatId: '67890', sessionId: 'session-bbb' },
-          { key: 'b2:chat:11111', bindingId: 'b2', chatId: '11111', sessionId: 'session-ccc' },
-          { key: 'b2:user:alice', bindingId: 'b2', chatId: 'alice', sessionId: 'session-ddd' },
+          {
+            key: 'b1:chat:12345',
+            bindingId: 'b1',
+            scope: 'chat',
+            chatId: '12345',
+            sessionId: 'session-aaa',
+            lastActivityAt: 0,
+          },
+          {
+            key: 'b1:chat:67890',
+            bindingId: 'b1',
+            scope: 'chat',
+            chatId: '67890',
+            sessionId: 'session-bbb',
+            lastActivityAt: 0,
+          },
+          {
+            key: 'b2:chat:11111',
+            bindingId: 'b2',
+            scope: 'chat',
+            chatId: '11111',
+            sessionId: 'session-ccc',
+            lastActivityAt: 0,
+          },
+          // A per-user key names a PERSON. Reported as a chat id (which is what
+          // this test used to assert), it addressed the wrong conversation.
+          {
+            key: 'b2:user:alice',
+            bindingId: 'b2',
+            scope: 'user',
+            userId: 'alice',
+            sessionId: 'session-ddd',
+            lastActivityAt: 0,
+          },
         ])
       );
     });
@@ -136,7 +178,13 @@ describe('BindingRouter getters', () => {
 
       const byBinding = colonRouter.getSessionsByBinding('b3');
       expect(byBinding).toEqual([
-        { key: 'b3:chat:foo:bar:baz', chatId: 'foo:bar:baz', sessionId: 'session-colon' },
+        {
+          key: 'b3:chat:foo:bar:baz',
+          scope: 'chat',
+          chatId: 'foo:bar:baz',
+          sessionId: 'session-colon',
+          lastActivityAt: 0,
+        },
       ]);
 
       const all = colonRouter.getAllSessions();
@@ -144,8 +192,10 @@ describe('BindingRouter getters', () => {
         {
           key: 'b3:chat:foo:bar:baz',
           bindingId: 'b3',
+          scope: 'chat',
           chatId: 'foo:bar:baz',
           sessionId: 'session-colon',
+          lastActivityAt: 0,
         },
       ]);
 

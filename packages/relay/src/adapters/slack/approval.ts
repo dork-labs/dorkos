@@ -30,14 +30,24 @@ interface PendingApprovalEntry {
   client: WebClient;
 }
 
-/** Instance-scoped container for Slack outbound approval state. */
+/** Instance-scoped container for Slack outbound state. */
 export interface SlackOutboundState {
   pendingApprovalTimeouts: Map<string, PendingApprovalEntry>;
+  /**
+   * Stream keys this adapter has actually posted something for since their last
+   * terminal.
+   *
+   * Read at `done` to tell an answer from a silence. A turn that ends having
+   * posted nothing at all leaves the person looking at their own question with
+   * no sign anything happened; one that posted a card, a partial answer, or an
+   * error has already spoken and must not be contradicted.
+   */
+  spokenStreams: Set<string>;
 }
 
 /** Create a fresh outbound state container for a single adapter instance. */
 export function createSlackOutboundState(): SlackOutboundState {
-  return { pendingApprovalTimeouts: new Map() };
+  return { pendingApprovalTimeouts: new Map(), spokenStreams: new Set() };
 }
 
 /**
@@ -52,6 +62,7 @@ export function clearAllApprovalTimeouts(state: SlackOutboundState): void {
     clearTimeout(entry.timer);
   }
   state.pendingApprovalTimeouts.clear();
+  state.spokenStreams.clear();
 }
 
 /**

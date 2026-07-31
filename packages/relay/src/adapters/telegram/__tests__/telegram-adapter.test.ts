@@ -1630,7 +1630,7 @@ describe('TelegramAdapter', () => {
       expect(mockSendMessage).toHaveBeenCalledWith(12345, 'Direct message', { parse_mode: 'HTML' });
     });
 
-    it('done with empty buffer does not send a message', async () => {
+    it('done with an empty buffer tells the chat the agent said nothing', async () => {
       await adapter.start(mockRelay);
 
       const doneEnvelope = createEnvelope('relay.human.telegram.tg1.12345', {
@@ -1639,7 +1639,12 @@ describe('TelegramAdapter', () => {
       });
       const result = await adapter.deliver('relay.human.telegram.tg1.12345', doneEnvelope);
       expect(result.success).toBe(true);
-      expect(mockSendMessage).not.toHaveBeenCalled();
+      // Silence here is indistinguishable from an agent still thinking (DOR-789).
+      expect(mockSendMessage).toHaveBeenCalledWith(
+        12345,
+        expect.stringContaining('finished without sending anything back'),
+        expect.anything()
+      );
     });
 
     it('buffers per-chat independently', async () => {

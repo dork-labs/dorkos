@@ -128,14 +128,39 @@ export class AdapterRegistry implements AdapterRegistryLike {
   /**
    * Unregister and stop an adapter by ID.
    *
+   * ## Stop first, then forget
+   *
+   * This used to delete the entry and then await `stop()`. When `stop()` threw
+   * — a Telegram poller mid-`getUpdates`, a Slack socket refusing to close —
+   * the adapter was already gone from the registry while its connection was
+   * still live, and every call site swallowed the throw. The next
+   * `register()` (an `updateConfig` restart, a hot reload) then saw an empty
+   * slot and started a SECOND adapter on the same bot token: two pollers, two
+   * copies of every inbound message, two agent turns, two bills.
+   *
+   * Now a failed stop keeps the entry. The adapter stays in the registry, its
+   * own status records the error, and the throw reaches the caller — so the
+   * next register sees an occupied slot and hot-reloads through the swap path
+   * instead of starting a rival.
+   *
    * @param id - The adapter ID to remove
    * @returns true if the adapter was found and stopped, false if not found
+   * @throws Whatever `stop()` threw — the adapter is left registered.
    */
   async unregister(id: string): Promise<boolean> {
     const adapter = this.adapters.get(id);
     if (!adapter) return false;
+    try {
+      await adapter.stop();
+    } catch (err) {
+      this.logger.warn(
+        `AdapterRegistry: adapter '${id}' failed to stop and is still registered — ` +
+          `it may still be connected:`,
+        err
+      );
+      throw err;
+    }
     this.adapters.delete(id);
-    await adapter.stop();
     return true;
   }
 
