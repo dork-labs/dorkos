@@ -261,6 +261,17 @@ export const CONFIG_DISCLOSURE = {
   'runtimes.claudeCode.activeAccount': 'expose',
   'runtimes.claudeCode.accounts[].path': 'expose',
   'runtimes.claudeCode.accounts[].label': 'expose',
+  // The execution defaults a new session on each runtime starts with. A model id
+  // and an effort rung are the same class of thing as `runtimes.default`: they
+  // describe HOW work runs here, name no credential and no person, and an agent
+  // that can see them can explain why its session started on the model it did
+  // instead of guessing. OpenCode has a model leaf and no effort leaf — its API
+  // takes none, and the absent row is the honest way to say so.
+  'runtimes.claudeCode.defaultModel': 'expose',
+  'runtimes.claudeCode.defaultEffort': 'expose',
+  'runtimes.opencode.defaultModel': 'expose',
+  'runtimes.codex.defaultModel': 'expose',
+  'runtimes.codex.defaultEffort': 'expose',
   'runtimes.opencode.enabled': 'expose',
   'runtimes.opencode.binaryPath': 'expose',
   'runtimes.opencode.port': 'expose',

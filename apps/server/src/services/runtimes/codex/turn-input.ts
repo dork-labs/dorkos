@@ -33,6 +33,20 @@ const MODE_TO_SANDBOX: Record<string, SandboxMode> = {
 /**
  * DorkOS effort → Codex reasoning effort. Codex has no `none`/`max`; they
  * clamp to the nearest supported level.
+ *
+ * **The bottom two rungs mean something different here than they do on
+ * claude-code, and that is now visible to people.** `none` clamps UP to
+ * `minimal` — Codex always reasons, so the honest floor is its least — while
+ * claude-code's `none` turns thinking OFF outright
+ * (`claude-code/messaging/thinking-config.ts`). `minimal` lands on Codex's own
+ * `minimal`; claude-code has no such rung and maps it to `low`. `max` clamps
+ * DOWN to `xhigh`, the top Codex offers, where claude-code has a real `max`.
+ *
+ * This used to be invisible: effort was set per session, so nobody compared two
+ * runtimes' reading of one word. A per-runtime DEFAULT changes that — a person
+ * who sets `none` on both runtimes gets no thinking on one and minimal thinking
+ * on the other. Keep both mappings documented, and change neither without the
+ * other: the divergence is a fact about the two APIs, not a bug to reconcile.
  */
 const EFFORT_TO_REASONING: Record<EffortLevel, ModelReasoningEffort> = {
   none: 'minimal',

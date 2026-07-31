@@ -170,6 +170,17 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   // account WORK runs on is `activeAccount`, classified `safe` below.
   'runtimes.claudeCode.accounts[].path',
   'runtimes.claudeCode.accounts[].label',
+  // The per-runtime execution defaults all ship `null`, which means "let the
+  // runtime choose" — byte-for-byte the behavior before the fields existed. No
+  // safety axis: a model id and an effort rung send nothing off the machine,
+  // grant no capability, and enforce no bound. Spend is the nearest thing to an
+  // axis and it does not qualify — the default picks no model at all, so an
+  // upgrade cannot move anybody onto a more expensive one.
+  'runtimes.claudeCode.defaultModel',
+  'runtimes.claudeCode.defaultEffort',
+  'runtimes.opencode.defaultModel',
+  'runtimes.codex.defaultModel',
+  'runtimes.codex.defaultEffort',
   'runtimes.opencode.enabled',
   'runtimes.opencode.binaryPath',
   'runtimes.opencode.port',

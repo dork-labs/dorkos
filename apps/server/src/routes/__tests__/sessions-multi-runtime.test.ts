@@ -42,9 +42,16 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
   },
 }));
 
+/**
+ * The stored `runtimes` section this file's server reads. `null` by default —
+ * every other setting these routes touch is irrelevant here — and replaced by
+ * the execution-defaults tests below, which need a real one.
+ */
+let runtimesConfig: unknown = null;
+
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: {
-    get: vi.fn().mockReturnValue(null),
+    get: vi.fn((key: string) => (key === 'runtimes' ? runtimesConfig : null)),
     set: vi.fn(),
   },
 }));
@@ -63,6 +70,7 @@ import { ClaudeCodeRuntime } from '../../services/runtimes/claude-code/claude-co
 import { TestModeRuntime } from '../../services/runtimes/test-mode/test-mode-runtime.js';
 import { peekProjector, disposeProjector } from '../../services/session/session-state-projector.js';
 import type { SessionSnapshot } from '@dorkos/shared/session-stream';
+import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 
 const app = createApp();
 finalizeApp(app);
@@ -86,6 +94,10 @@ function registerBothRuntimes(db: Db): {
   const claude = new ClaudeCodeRuntime('/tmp/dork-test-home', '/tmp/dork-test-cwd');
   const testMode = new TestModeRuntime();
   runtimeRegistry.setDb(db);
+  // The durable settings port, wired exactly as the composition root wires it
+  // (`index.ts`): without it a settings change writes nothing, which is the very
+  // path the seeding tests below are about.
+  claude.setSessionSettings(runtimeRegistry);
   runtimeRegistry.register(claude);
   runtimeRegistry.register(testMode);
   runtimeRegistry.setDefault('claude-code');
@@ -129,6 +141,127 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
     ]) {
       disposeProjector(id);
     }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Execution defaults seeded at the first write (spec execution-defaults E1)
+  // ---------------------------------------------------------------------------
+
+  describe('POST /:id/messages — model and effort seeding', () => {
+    afterEach(() => {
+      runtimesConfig = null;
+    });
+
+    it("starts a new session on the runtime's configured default model and effort", async () => {
+      // One write, and all three adapters inherit: each already resolves a turn
+      // as per-send override -> persisted -> its own default, so seeding the
+      // persisted row is the only change the inheritance needs.
+      runtimesConfig = {
+        ...USER_CONFIG_DEFAULTS.runtimes,
+        claudeCode: {
+          ...USER_CONFIG_DEFAULTS.runtimes.claudeCode,
+          defaultModel: 'opus',
+          defaultEffort: 'high',
+        },
+      };
+      vi.spyOn(claude, 'sendMessage').mockImplementation(async function* () {
+        yield { type: 'done', data: { sessionId: CLAUDE_SESSION } } as StreamEvent;
+      });
+
+      expect((await postMessage(CLAUDE_SESSION, { content: 'hi' })).status).toBe(202);
+
+      const row = db
+        .select()
+        .from(sessionMetadata)
+        .where(eq(sessionMetadata.sessionId, CLAUDE_SESSION))
+        .get();
+      expect(row!.model).toBe('opus');
+      expect(row!.effort).toBe('high');
+    });
+
+    it('uses the default of the runtime the session actually lands on', async () => {
+      // Model ids are runtime-namespaced, which is why the defaults are too: a
+      // test-mode session must not be started on the claude-code model.
+      runtimesConfig = {
+        ...USER_CONFIG_DEFAULTS.runtimes,
+        claudeCode: { ...USER_CONFIG_DEFAULTS.runtimes.claudeCode, defaultModel: 'opus' },
+      };
+
+      await postMessage(TEST_MODE_SESSION, { content: 'hi', runtime: 'test-mode' });
+
+      const row = db
+        .select()
+        .from(sessionMetadata)
+        .where(eq(sessionMetadata.sessionId, TEST_MODE_SESSION))
+        .get();
+      expect(row!.model).toBeNull();
+    });
+
+    it('leaves a session that has already started exactly as it is', async () => {
+      // "Applies to new conversations — running ones keep their settings."
+      await postMessage(TEST_MODE_SESSION, { content: 'first', runtime: 'test-mode' });
+      runtimesConfig = {
+        ...USER_CONFIG_DEFAULTS.runtimes,
+        claudeCode: { ...USER_CONFIG_DEFAULTS.runtimes.claudeCode, defaultModel: 'opus' },
+      };
+
+      await postMessage(TEST_MODE_SESSION, { content: 'second', runtime: 'test-mode' });
+
+      const row = db
+        .select()
+        .from(sessionMetadata)
+        .where(eq(sessionMetadata.sessionId, TEST_MODE_SESSION))
+        .get();
+      expect(row!.model).toBeNull();
+    });
+
+    it('still seeds when a settings change minted the row before the first message', async () => {
+      // The pre-launch path, and the one E3 makes NORMAL: changing a setting
+      // before sending anything writes the `session_metadata` row, so the
+      // first-message insert finds a row and does nothing. The defaults have to
+      // ride whatever creates the row, not one chosen creator — and an explicit
+      // value always wins over the default it arrives beside.
+      runtimesConfig = {
+        ...USER_CONFIG_DEFAULTS.runtimes,
+        claudeCode: {
+          ...USER_CONFIG_DEFAULTS.runtimes.claudeCode,
+          defaultModel: 'opus',
+          defaultEffort: 'high',
+        },
+      };
+      vi.spyOn(claude, 'sendMessage').mockImplementation(async function* () {
+        yield { type: 'done', data: { sessionId: CLAUDE_SESSION } } as StreamEvent;
+      });
+
+      await request(app)
+        .patch(`/api/sessions/${CLAUDE_SESSION}`)
+        .send({ model: 'sonnet' })
+        .expect(200);
+
+      const row = db
+        .select()
+        .from(sessionMetadata)
+        .where(eq(sessionMetadata.sessionId, CLAUDE_SESSION))
+        .get();
+      // The person's explicit choice, untouched.
+      expect(row!.model).toBe('sonnet');
+      // The key their write did not carry, filled from the server default.
+      expect(row!.effort).toBe('high');
+    });
+
+    it('seeds nothing at all on a fresh install', async () => {
+      runtimesConfig = USER_CONFIG_DEFAULTS.runtimes;
+
+      await postMessage(TEST_MODE_SESSION, { content: 'hi', runtime: 'test-mode' });
+
+      const row = db
+        .select()
+        .from(sessionMetadata)
+        .where(eq(sessionMetadata.sessionId, TEST_MODE_SESSION))
+        .get();
+      expect(row!.model).toBeNull();
+      expect(row!.effort).toBeNull();
+    });
   });
 
   // ---------------------------------------------------------------------------

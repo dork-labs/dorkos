@@ -3,9 +3,11 @@ import {
   RuntimeRegistry,
   RuntimeNotRegisteredError,
   applyConfiguredDefaultRuntime,
+  applyAndWatchConfiguredDefaultRuntime,
   registerOptionalRuntime,
 } from '../runtime-registry.js';
 import type { AgentRuntime, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
+import type { SessionSettings } from '@dorkos/shared/types';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { sessionMetadata, eq, type Db } from '@dorkos/db';
 import { logger } from '../../../lib/logger.js';
@@ -52,11 +54,24 @@ function createMockRuntime(type: string, overrides?: Partial<RuntimeCapabilities
   } as AgentRuntime;
 }
 
+/**
+ * What the server's per-runtime defaults resolve to for this file's registry.
+ * Stubbed because WHERE the defaults come from is `resolve-session-defaults`'s
+ * own question — the registry's claim is only that they ride a row's creation,
+ * under whatever the caller wrote.
+ */
+let serverDefaults: SessionSettings = {};
+
+vi.mock('../../session/resolve-session-defaults.js', () => ({
+  resolveSessionDefaults: () => serverDefaults,
+}));
+
 describe('RuntimeRegistry', () => {
   let registry: RuntimeRegistry;
 
   beforeEach(() => {
     registry = new RuntimeRegistry();
+    serverDefaults = {};
   });
 
   describe('register and get', () => {
@@ -221,6 +236,82 @@ describe('RuntimeRegistry', () => {
     });
   });
 
+  describe('applyAndWatchConfiguredDefaultRuntime', () => {
+    /** A settings source under this test's control, with one live listener. */
+    function source(initial: string) {
+      const state = { value: initial, listeners: [] as ((c: { sections: string[] }) => void)[] };
+      return {
+        state,
+        read: () => state.value,
+        onChange: (listener: (c: { sections: readonly string[] }) => void) => {
+          state.listeners.push(listener as (c: { sections: string[] }) => void);
+          return () => {
+            state.listeners = state.listeners.filter((l) => l !== listener);
+          };
+        },
+        write: (value: string, sections = ['runtimes']) => {
+          state.value = value;
+          for (const listener of state.listeners) listener({ sections });
+        },
+      };
+    }
+
+    it('applies the configured default immediately', () => {
+      registry.register(createMockRuntime('claude-code'));
+      registry.register(createMockRuntime('opencode'));
+
+      applyAndWatchConfiguredDefaultRuntime(registry, source('opencode'));
+
+      expect(registry.getDefaultType()).toBe('opencode');
+    });
+
+    it('re-applies it when the setting changes, with no restart', () => {
+      // The reason the change-subscription primitive exists: the default runtime
+      // is APPLIED once, so without this a person changes it in Settings, the
+      // screen agrees, and nothing happens until they restart.
+      registry.register(createMockRuntime('claude-code'));
+      registry.register(createMockRuntime('codex'));
+      const config = source('claude-code');
+      applyAndWatchConfiguredDefaultRuntime(registry, config);
+
+      config.write('codex');
+
+      expect(registry.getDefaultType()).toBe('codex');
+    });
+
+    it('ignores a write to some other section', () => {
+      registry.register(createMockRuntime('claude-code'));
+      registry.register(createMockRuntime('codex'));
+      const config = source('claude-code');
+      applyAndWatchConfiguredDefaultRuntime(registry, config);
+
+      config.write('codex', ['ui']);
+
+      expect(registry.getDefaultType()).toBe('claude-code');
+    });
+
+    it('keeps the current default when the new value names no registered runtime', () => {
+      registry.register(createMockRuntime('claude-code'));
+      const config = source('claude-code');
+      applyAndWatchConfiguredDefaultRuntime(registry, config);
+
+      config.write('opencode');
+
+      expect(registry.getDefaultType()).toBe('claude-code');
+    });
+
+    it('stops listening once unsubscribed', () => {
+      registry.register(createMockRuntime('claude-code'));
+      registry.register(createMockRuntime('codex'));
+      const config = source('claude-code');
+
+      applyAndWatchConfiguredDefaultRuntime(registry, config)();
+      config.write('codex');
+
+      expect(registry.getDefaultType()).toBe('claude-code');
+    });
+  });
+
   describe('registerOptionalRuntime', () => {
     // Reproduces the launch-blocking crash: CodexRuntime/OpenCodeRuntime throw
     // synchronously at construction when their CLI binary isn't found (the
@@ -327,6 +418,40 @@ describe('RuntimeRegistry', () => {
         expect(row?.runtime).toBe('claude-code');
         expect(row?.agentPath).toBeNull();
         expect(row?.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+      });
+
+      it("seeds the server's execution defaults onto the row it creates", async () => {
+        // The first-write seam: the per-runtime model/effort land on the row
+        // that mints the session, without any caller passing them.
+        serverDefaults = { model: 'opus', effort: 'high' };
+
+        await registry.persistSessionRuntime('session-seeded', 'claude-code');
+
+        const row = db
+          .select()
+          .from(sessionMetadata)
+          .where(eq(sessionMetadata.sessionId, 'session-seeded'))
+          .get();
+        expect(row?.model).toBe('opus');
+        expect(row?.effort).toBe('high');
+      });
+
+      it('never seeds over a session that already has a row', async () => {
+        // "Applies to new conversations — running ones keep their settings."
+        await registry.persistSessionRuntime('session-running', 'claude-code');
+        await registry.saveSessionSettings('session-running', { model: 'sonnet' });
+        serverDefaults = { model: 'opus', effort: 'high' };
+
+        const created = await registry.persistSessionRuntime('session-running', 'claude-code');
+
+        expect(created).toBe(false);
+        const row = db
+          .select()
+          .from(sessionMetadata)
+          .where(eq(sessionMetadata.sessionId, 'session-running'))
+          .get();
+        expect(row?.model).toBe('sonnet');
+        expect(row?.effort).toBeNull();
       });
 
       it('stores agentPath when provided', async () => {
@@ -510,6 +635,66 @@ describe('RuntimeRegistry', () => {
       // Only the set field is present; unset columns are absent, not null/undefined values.
       expect(settings).toEqual({ permissionMode: 'plan' });
       expect('model' in settings!).toBe(false);
+    });
+
+    it('fills only the keys a row-creating write does not carry', async () => {
+      // A settings change before the first message is what CREATES the row, and
+      // E3's pre-launch picker makes that the normal way a session starts. The
+      // person's own value wins; the key they said nothing about takes the
+      // server default. Seeding only the first-message insert dropped both.
+      serverDefaults = { model: 'opus', effort: 'high' };
+
+      await registry.saveSessionSettings('pre-launch', { model: 'sonnet' });
+
+      const row = db
+        .select()
+        .from(sessionMetadata)
+        .where(eq(sessionMetadata.sessionId, 'pre-launch'))
+        .get();
+      expect(row?.model).toBe('sonnet');
+      expect(row?.effort).toBe('high');
+    });
+
+    it('never lets a default reach a row that already exists', async () => {
+      // The UPDATE branch carries the patch alone: an existing row is a running
+      // session, whatever the server default now says.
+      await registry.persistSessionRuntime('already-running', 'claude-code');
+      serverDefaults = { model: 'opus', effort: 'high' };
+
+      await registry.saveSessionSettings('already-running', { permissionMode: 'plan' });
+
+      const row = db
+        .select()
+        .from(sessionMetadata)
+        .where(eq(sessionMetadata.sessionId, 'already-running'))
+        .get();
+      expect(row?.permissionMode).toBe('plan');
+      expect(row?.model).toBeNull();
+      expect(row?.effort).toBeNull();
+    });
+
+    it('drops an effort value the ladder no longer has, rather than passing it on', async () => {
+      // `effort` is a free-form TEXT column. A rung removed in a later release,
+      // or a hand-edited row, used to be cast straight to `EffortLevel` and sent
+      // into an adapter. Unreadable means "no preference", the same as NULL.
+      db.insert(sessionMetadata)
+        .values({
+          sessionId: 'garbage-effort',
+          runtime: 'claude-code',
+          createdAt: new Date().toISOString(),
+          effort: 'ludicrous',
+          model: 'opus',
+        })
+        .run();
+
+      const settings = await registry.getSessionSettings('garbage-effort');
+
+      expect(settings).toEqual({ model: 'opus' });
+      // The batch read is the same code path and must agree — it feeds the
+      // session list, where a crash would take every row down with it.
+      expect(registry.getSessionSettingsMany(['garbage-effort']).get('garbage-effort')).toEqual({
+        model: 'opus',
+      });
     });
 
     it('round-trips boolean settings as booleans (not 1/0)', async () => {

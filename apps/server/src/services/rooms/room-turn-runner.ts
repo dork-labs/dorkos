@@ -41,6 +41,7 @@ import { runtimeRegistry } from '../core/runtime-registry.js';
 import {
   getOrCreateProjector,
   rekeyProjector,
+  resolveSessionDefaults,
   triggerTurn,
   type SessionStateProjector,
 } from '../session/index.js';
@@ -123,6 +124,30 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       const runtime = runtimeRegistry.get(runtimeType);
       if (!runtime) throw new Error(`Runtime '${runtimeType}' is not registered`);
 
+      // A room turn is the one place a session's first turn runs BEFORE its
+      // `session_metadata` row exists, so it cannot inherit its model and effort
+      // by reading that row — the ordering above is deliberate and stays. The
+      // defaults are resolved here instead and handed to the turn directly; the
+      // registry writes the same values onto the row it creates below, so the
+      // second turn reads them the ordinary way. Rooms are the surface this
+      // feature was most needed on: until now a room turn had no model or effort
+      // path at all.
+      //
+      // Only for a session with no row yet. A room conversation that has already
+      // run keeps what it is running with, exactly like every other session.
+      //
+      // One honest gap, which is a window rather than a state: a settings change
+      // that lands between this read and the turn starting is outranked by the
+      // seed for that ONE turn, because a per-send value beats the persisted row
+      // by design. It self-heals — the row is there for every turn after — and
+      // closing it would mean holding the session lock across a config read on
+      // the room's hot path to fix a race a person can only lose by changing a
+      // setting in the same instant a room message arrives.
+      const seed =
+        (await runtimeRegistry.getSessionSettings(sessionId)) === null
+          ? resolveSessionDefaults({ runtimeType })
+          : {};
+
       const projector = getOrCreateProjector(sessionId, request.agentPath, {
         persist: runtime.getCapabilities().logBackedHistory === true,
       });
@@ -166,6 +191,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         content: prompt,
         cwd: request.agentPath,
         roomContext: request.roomContext,
+        settings: seed,
         projector,
         deps: {
           acquireLock: (sid, cid, lifecycle, token) =>

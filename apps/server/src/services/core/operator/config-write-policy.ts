@@ -322,6 +322,19 @@ export const CONFIG_WRITE_POLICY = {
   'runtimes.claudeCode.activeAccount': 'operator-only',
   'runtimes.claudeCode.accounts[].path': 'operator-only',
   'runtimes.claudeCode.accounts[].label': 'operator-only',
+  // The execution defaults for new sessions on each runtime. Writable, and the
+  // operator was asked directly: a model and an effort level are a preference
+  // about how work runs, on the same footing as `runtimes.default` right above,
+  // not a security control. Neither can move spend onto a different sign-in —
+  // that is `activeAccount`, which stays operator-only just above. The
+  // interesting case ("set yourself to the cheapest model for this batch") is a
+  // reasonable thing to ask an agent to do, and a person can always see and
+  // reverse it: the chip on every row says where the value came from.
+  'runtimes.claudeCode.defaultModel': 'agent-writable',
+  'runtimes.claudeCode.defaultEffort': 'agent-writable',
+  'runtimes.opencode.defaultModel': 'agent-writable',
+  'runtimes.codex.defaultModel': 'agent-writable',
+  'runtimes.codex.defaultEffort': 'agent-writable',
   'runtimes.opencode.enabled': 'agent-writable',
   // An executable the server spawns.
   'runtimes.opencode.binaryPath': 'operator-only',

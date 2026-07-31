@@ -660,6 +660,8 @@ describe('GET /api/config', () => {
             { path: real, label: 'Acme Corp' },
             { path: missing, label: null },
           ],
+          defaultModel: null,
+          defaultEffort: null,
         },
       });
 
