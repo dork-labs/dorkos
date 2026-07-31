@@ -28,7 +28,17 @@ import {
 
 /** Minimum interval (ms) between chat.update calls for a single stream. */
 const STREAM_UPDATE_INTERVAL_MS = 1_000;
-/** Maximum age (ms) before an orphaned stream entry is reaped. */
+/**
+ * How long a stream may go **silent** before it is treated as orphaned (ms).
+ *
+ * Idle time, not age. This used to be measured from `startedAt`, which nothing
+ * refreshed, so any answer that took longer than five minutes had its own
+ * stream reaped out from under it mid-flight: the accumulated text was thrown
+ * away, the native `stream_id` leaked, and the remaining deltas opened a second
+ * Slack message. The person got the tail of an answer with no beginning. A
+ * stream that is still producing text is not orphaned however long it runs;
+ * only one that has said nothing for this long is.
+ */
 export const STREAM_TTL_MS = 5 * 60 * 1_000;
 /** Delay (ms) between consecutive Slack posts when a response spans multiple messages. */
 export const SLACK_CHUNK_PACING_MS = 1_100;
@@ -45,8 +55,17 @@ export interface ActiveStream {
   accumulatedText: string;
   /** Timestamp (ms) of the last chat.update call — used for throttling. */
   lastUpdateAt: number;
-  /** Timestamp (ms) when the stream was created — used for TTL reaping. */
+  /** Timestamp (ms) when the stream was created. */
   startedAt: number;
+  /**
+   * Timestamp (ms) of the last event on this stream — used for idle reaping.
+   *
+   * Distinct from {@link lastUpdateAt}, which only moves when a throttled
+   * `chat.update` actually fires (and never at all in buffered or native mode).
+   * This moves on every delta, which is what makes the reap an idle timeout
+   * rather than a hard cap on how long an answer may take.
+   */
+  lastEventAt: number;
   /** Unique ID for this stream. */
   streamId: string;
   /** Slack native streaming API stream_id (only set when nativeStreaming is true). */
@@ -207,6 +226,7 @@ export async function handleTextDelta(
   if (!streaming) {
     if (existing) {
       existing.accumulatedText += textChunk;
+      existing.lastEventAt = Date.now();
     } else {
       streamState.set(key, {
         channelId,
@@ -215,6 +235,7 @@ export async function handleTextDelta(
         accumulatedText: textChunk,
         lastUpdateAt: 0,
         startedAt: Date.now(),
+        lastEventAt: Date.now(),
         streamId: randomUUID(),
       });
       markParticipation(ctx.threadTracker, channelId, threadTs);
@@ -224,6 +245,9 @@ export async function handleTextDelta(
 
   if (existing) {
     existing.accumulatedText += textChunk;
+    // Every delta is proof the turn is alive — this is what keeps a long answer
+    // from being reaped mid-stream.
+    existing.lastEventAt = Date.now();
 
     // Native streaming: buffer to a line boundary, then format + append the
     // complete lines. Formatting whole lines (not raw fragments) prevents
@@ -275,6 +299,7 @@ export async function handleTextDelta(
         accumulatedText: textChunk,
         lastUpdateAt: now,
         startedAt: now,
+        lastEventAt: now,
         streamId: randomUUID(),
         nativeStreamId,
         nativePending: textChunk,
@@ -309,6 +334,7 @@ export async function handleTextDelta(
       accumulatedText: textChunk,
       lastUpdateAt: now,
       startedAt: now,
+      lastEventAt: now,
       streamId: randomUUID(),
     });
     markParticipation(ctx.threadTracker, channelId, threadTs);

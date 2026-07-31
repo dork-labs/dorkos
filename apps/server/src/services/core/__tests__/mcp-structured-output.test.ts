@@ -106,6 +106,7 @@ const METRICS: DeliveryMetrics = {
   totalMessages: 10,
   deliveredCount: 9,
   failedCount: 1,
+  noSubscriberCount: 0,
   deadLetteredCount: 0,
   avgDeliveryLatencyMs: 12.5,
   p50DeliveryLatencyMs: 10,

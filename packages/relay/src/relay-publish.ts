@@ -34,6 +34,7 @@ import type {
   InitiateConsentDecision,
   PublishResult,
 } from './types.js';
+import type { BudgetRejectionCode } from '@dorkos/shared/relay-schemas';
 
 // === Types ===
 
@@ -212,6 +213,13 @@ export class RelayPublishPipeline {
       );
     }
 
+    // The id is minted before the rate-limit check so a rate-limited publish
+    // can be traced like every other non-delivery. It used to return an empty
+    // messageId and record nothing at all, which is how a whole class of
+    // refusal stayed invisible to every surface that reads traces.
+    const messageId = generateUlid();
+    const createdAt = new Date().toISOString();
+
     // 3. Rate limit check (per-sender, before fan-out)
     if (this.rateLimitConfig.enabled) {
       const windowStartIso = new Date(
@@ -220,21 +228,26 @@ export class RelayPublishPipeline {
       const countInWindow = this.deps.sqliteIndex.countSenderInWindow(options.from, windowStartIso);
       const rateLimitResult = checkRateLimit(options.from, countInWindow, this.rateLimitConfig);
       if (!rateLimitResult.allowed) {
-        this.deps.logger?.warn?.(
-          `publish rate-limited: sender=${options.from}, ` +
-            `count=${rateLimitResult.currentCount}/${rateLimitResult.limit} ` +
-            `in ${this.rateLimitConfig.windowSecs}s window, subject=${subject}`
-        );
-        return {
-          messageId: '',
+        const reason =
+          `rate limit: ${rateLimitResult.currentCount}/${rateLimitResult.limit} ` +
+          `messages from ${options.from} in ${this.rateLimitConfig.windowSecs}s`;
+        this.deps.logger?.warn?.(`publish rate-limited: ${reason}, subject=${subject}`);
+        const rejected: PublishResult['rejected'] = [{ endpointHash: '*', reason: 'rate_limited' }];
+        this.recordTrace({
+          messageId,
+          subject,
           deliveredTo: 0,
-          rejected: [{ endpointHash: '*', reason: 'rate_limited' }],
-        };
+          rejected,
+          adapterResult: null,
+          createdAt,
+          error: reason,
+          rejectionCode: 'rate_limited',
+        });
+        return { messageId, deliveredTo: 0, rejected };
       }
     }
 
     // 4. Build envelope
-    const messageId = generateUlid();
     const budget = createDefaultBudget({
       maxHops: this.opts.maxHops,
       ttl: Date.now() + this.opts.defaultTtlMs,
@@ -247,7 +260,7 @@ export class RelayPublishPipeline {
       from: options.from,
       replyTo: options.replyTo,
       budget,
-      createdAt: new Date().toISOString(),
+      createdAt,
       payload,
     };
 
@@ -312,7 +325,8 @@ export class RelayPublishPipeline {
         subject,
         messageId,
         'budget_exceeded',
-        gate.reason ?? 'budget enforcement failed'
+        gate.reason ?? 'budget enforcement failed',
+        gate.code
       );
     }
 
@@ -349,28 +363,56 @@ export class RelayPublishPipeline {
         adapterEnvelope,
         this.adapterContextBuilder
       );
-      if (adapterResult?.success) deliveredTo++;
+      // An adapter that deliberately sent nothing did not deliver anything.
+      // The Telegram/Slack echo guard returns success for a message the adapter
+      // recognises as its own, which counted as a delivery — so an inbound chat
+      // message with no binding behind it still reported `deliveredTo: 1` and
+      // traced as `delivered`.
+      if (adapterResult?.success && !adapterResult.skipped) deliveredTo++;
     }
 
-    // 8. Dispatch to subscription handlers when no Maildir endpoints exist
-    let subscriberCount = 0;
+    // 8. Dispatch to subscription handlers when no Maildir endpoints exist.
+    //    `matched` is how many handlers were invoked; `handled` is how many
+    //    took the message. Only the second is a delivery — but the first is
+    //    what decides buffering and dead-lettering, so a refused message is
+    //    not re-delivered to a late subscriber and does not manufacture a dead
+    //    letter for every message in an unbound chat.
+    let matchedSubscribers = 0;
+    let handledSubscribers = 0;
+    let refusal: string | undefined;
     if (matchingEndpoints.length === 0) {
-      subscriberCount = await this.dispatchToSubscribers(envelope, subject);
-      deliveredTo += subscriberCount;
+      const dispatch = await this.dispatchToSubscribers(envelope, subject);
+      matchedSubscribers = dispatch.matched;
+      handledSubscribers = dispatch.handled;
+      refusal = dispatch.refusal;
+      deliveredTo += handledSubscribers;
     }
 
     // 9. Buffer for late subscribers when no handlers matched
-    if (subscriberCount === 0 && matchingEndpoints.length === 0) {
+    if (matchedSubscribers === 0 && matchingEndpoints.length === 0) {
       this.deps.subscriptionRegistry.bufferForPendingSubscriber(subject, envelope);
     }
 
     // 10. Dead-letter only when NO delivery targets matched at all
-    if (deliveredTo === 0 && matchingEndpoints.length === 0 && subscriberCount === 0) {
+    if (
+      deliveredTo === 0 &&
+      matchingEndpoints.length === 0 &&
+      matchedSubscribers === 0 &&
+      !adapterResult?.skipped
+    ) {
       await this.deadLetter(subject, envelope, adapterResult);
     }
 
     // 11. Record trace span
-    this.recordTrace(messageId, subject, deliveredTo, rejected, adapterResult, envelope);
+    this.recordTrace({
+      messageId,
+      subject,
+      deliveredTo,
+      rejected,
+      adapterResult,
+      createdAt: envelope.createdAt,
+      ...(deliveredTo === 0 && refusal ? { error: refusal } : {}),
+    });
 
     return {
       messageId,
@@ -434,18 +476,29 @@ export class RelayPublishPipeline {
    * BindingRouter and other subscribers to intercept messages published
    * to subjects with no registered endpoint.
    */
-  private async dispatchToSubscribers(envelope: RelayEnvelope, subject: string): Promise<number> {
-    let count = 0;
+  private async dispatchToSubscribers(
+    envelope: RelayEnvelope,
+    subject: string
+  ): Promise<{ matched: number; handled: number; refusal?: string }> {
+    let handled = 0;
+    let refusal: string | undefined;
     const subscribers = this.deps.subscriptionRegistry.getSubscribers(subject);
     for (const handler of subscribers) {
       try {
-        await handler(envelope);
-        count++;
+        const verdict = await handler(envelope);
+        // A handler that says it did nothing is not a delivery. The first
+        // reason given is kept for the trace — it is what a person would be
+        // shown if they asked why nothing happened.
+        if (verdict && verdict.handled === false) {
+          refusal ??= verdict.reason;
+          continue;
+        }
+        handled++;
       } catch {
         // Subscription handler errors are non-fatal for publish()
       }
     }
-    return count;
+    return { matched: subscribers.length, handled, ...(refusal ? { refusal } : {}) };
   }
 
   /**
@@ -468,7 +521,8 @@ export class RelayPublishPipeline {
     subject: string,
     messageId: string,
     rejectionCode: NonNullable<PublishResult['rejected']>[number]['reason'],
-    reason: string
+    reason: string,
+    budgetCode?: BudgetRejectionCode
   ): Promise<PublishResult> {
     this.deps.logger?.warn?.(
       `publish rejected at ${rejectionCode} gate: subject=${subject}, ` +
@@ -490,7 +544,17 @@ export class RelayPublishPipeline {
     }
 
     const rejected: PublishResult['rejected'] = [{ endpointHash: subject, reason: rejectionCode }];
-    this.recordTrace(messageId, subject, 0, rejected, null, envelope);
+    this.recordTrace({
+      messageId,
+      subject,
+      deliveredTo: 0,
+      rejected,
+      adapterResult: null,
+      createdAt: envelope.createdAt,
+      error: reason,
+      rejectionCode,
+      ...(budgetCode ? { budgetCode } : {}),
+    });
     return { messageId, deliveredTo: 0, rejected };
   }
 
@@ -508,27 +572,63 @@ export class RelayPublishPipeline {
     await this.deps.deadLetterQueue.reject(subject, envelope, reason);
   }
 
-  /** Record a trace span for delivery tracking (best-effort). */
-  private recordTrace(
-    messageId: string,
-    subject: string,
-    deliveredTo: number,
-    rejected: PublishResult['rejected'],
-    adapterResult: DeliveryResult | null,
-    envelope: RelayEnvelope
-  ): void {
+  /**
+   * Record a trace span for delivery tracking (best-effort).
+   *
+   * ## Zero deliveries is two different stories
+   *
+   * This used to write `failed` for every `deliveredTo === 0`, with no error
+   * message, which is how 1,653 rows came to claim failure while naming no
+   * cause and one whole day read as a 100% failure rate — its traffic was
+   * publishes to a subject nothing subscribed to. A message nobody was
+   * listening for is `no_subscriber`: nothing went wrong and nothing needs
+   * fixing. A message that hit a gate, a rejecting endpoint, or an adapter
+   * error is `failed`, and now carries the reason that made it one.
+   *
+   * @param span - What happened to one published message.
+   */
+  private recordTrace(span: {
+    messageId: string;
+    subject: string;
+    deliveredTo: number;
+    rejected: PublishResult['rejected'];
+    adapterResult: DeliveryResult | null;
+    /** When the publish started, for the span's duration. */
+    createdAt: string;
+    /** Human-readable cause, when this publish was stopped at a gate. */
+    error?: string;
+    /** Machine rejection code, when one applies (gate or budget). */
+    rejectionCode?: string;
+    /** The budget check that rejected it, for the budget-rejection counters. */
+    budgetCode?: BudgetRejectionCode;
+  }): void {
     if (!this.deps.traceStore) return;
+    const { messageId, subject, deliveredTo, rejected, adapterResult, createdAt } = span;
+    const failureReason = span.error ?? adapterResult?.error ?? undefined;
+    const status =
+      deliveredTo > 0
+        ? 'delivered'
+        : failureReason || (rejected?.length ?? 0) > 0
+          ? 'failed'
+          : 'no_subscriber';
     try {
       this.deps.traceStore.insertSpan({
         messageId,
         traceId: messageId,
         subject,
-        status: deliveredTo > 0 ? 'delivered' : 'failed',
+        status,
+        // A delivery that happened has a time it happened at. Leaving this null
+        // on the delivered path is what left the latency percentiles computing
+        // over an empty column while the panel presented them as measurements.
+        ...(status === 'delivered' ? { deliveredAt: new Date().toISOString() } : {}),
+        ...(failureReason ? { error: failureReason } : {}),
         metadata: {
           deliveredTo,
           rejectedCount: rejected?.length ?? 0,
           hasAdapterResult: !!adapterResult,
-          durationMs: Date.now() - new Date(envelope.createdAt).getTime(),
+          durationMs: Date.now() - new Date(createdAt).getTime(),
+          ...(span.rejectionCode ? { rejectionCode: span.rejectionCode } : {}),
+          ...(span.budgetCode ? { budgetCode: span.budgetCode } : {}),
         },
       });
     } catch {

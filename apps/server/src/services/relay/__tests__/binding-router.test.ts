@@ -567,7 +567,8 @@ describe('BindingRouter', () => {
       });
       vi.mocked(mockRelayCore.publish).mockRejectedValue(new Error('publish failed'));
 
-      // Should NOT throw — error is caught internally
+      // Does not throw — and says the message was NOT handled, so the publish
+      // pipeline stops counting a thrown dispatch as a delivery (DOR-789).
       await expect(
         capturedHandler!({
           id: 'msg-1',
@@ -583,7 +584,7 @@ describe('BindingRouter', () => {
           },
           createdAt: '2026-01-01T00:00:00.000Z',
         })
-      ).resolves.toBeUndefined();
+      ).resolves.toEqual({ handled: false, reason: 'publish failed' });
     });
 
     it('catches and logs errors when createSession() throws', async () => {
@@ -616,7 +617,7 @@ describe('BindingRouter', () => {
           },
           createdAt: '2026-01-01T00:00:00.000Z',
         })
-      ).resolves.toBeUndefined();
+      ).resolves.toEqual({ handled: false, reason: 'session creation failed' });
     });
   });
 

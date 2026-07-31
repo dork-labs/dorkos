@@ -10,6 +10,9 @@
  */
 import { dirname } from 'node:path';
 import type { AgentRuntimeLike } from '@dorkos/relay';
+import { createChatNoticeSender } from '@dorkos/relay';
+import type { ChatNoticeTargetResolver } from '@dorkos/relay';
+import { parseHumanSubject } from './human-subject.js';
 import type { PermissionMode } from '@dorkos/shared/schemas';
 import type { RelayFlowEvent } from '@dorkos/shared/relay-schemas';
 import { runtimeRegistry } from '../core/runtime-registry.js';
@@ -90,6 +93,30 @@ function resolveSessionCreatorRuntime(
       'Existing sessions still route to their own runtime.'
   );
   return fallback;
+}
+
+/**
+ * Build the lookup that decides whether this machine may speak in a chat.
+ *
+ * Used by every chat notice that did not come from the binding router — most
+ * importantly the one for a turn that died after acceptance, whose subject is
+ * the failed envelope's `replyTo` and therefore, on `relay_send`, a string the
+ * model chose. Resolving it here means a chat with no binding, or one whose
+ * binding is paused, is answered with `null`: silence.
+ *
+ * @param bindingStore - The store to resolve chat subjects against.
+ * @returns A resolver for {@link createChatNoticeSender}.
+ */
+export function makeChatNoticeTargetResolver(
+  bindingStore: Pick<BindingStore, 'resolve'>
+): ChatNoticeTargetResolver {
+  return (subject) => {
+    const { adapterId, chatId, channelType } = parseHumanSubject(subject);
+    if (!adapterId) return null;
+    const binding = bindingStore.resolve(adapterId, chatId, channelType);
+    if (!binding || binding.enabled === false) return null;
+    return { bindingId: binding.id };
+  };
 }
 
 /**
@@ -176,6 +203,13 @@ export class BindingSubsystem {
         },
         eventRecorder: deps.eventRecorder,
         onFlow: deps.onFlow,
+        // Wired here, and never optional in the server: a refusal the person
+        // never hears about is indistinguishable from an agent thinking.
+        chatNotice: createChatNoticeSender({
+          publish: (subject, payload, options) => deps.relayCore.publish(subject, payload, options),
+          resolveTarget: makeChatNoticeTargetResolver(bindingStore),
+          logger,
+        }),
       });
       await subsystem.bindingRouter.init();
       logger.info('[BindingSubsystem] BindingRouter initialized');

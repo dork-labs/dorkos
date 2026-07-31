@@ -118,18 +118,18 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
 
 ## The known gaps, so you do not re-discover them
 
-Current as of 2026-07-30; fix them rather than working around them.
+Current as of 2026-07-31; fix them rather than working around them.
 
-- Telegram's adapter has no `is_bot` filter and answers every message in every
-  group. Two bots in one group is an unbounded loop.
 - No room is bridged to a chat platform. Room presence reaches the cockpit
   (`RoomService.publishSignal` → the room's event stream) and stops there. The
   Telegram adapter keeps a signal seam for it (`handleTypingSignal`), but
   nothing publishes into it yet, so a Telegram chat cannot show a room's
   working state — build the bridge rather than a second indicator.
 
-Three gaps that were listed here are gone, so nothing should be written around
-them any more: the room composer has a mention picker
+Four gaps that were listed here are gone, so nothing should be written around
+them any more: Telegram drops messages from other bots
+(`isBotSender` in `adapters/telegram/inbound.ts`, with a carve-out for a human
+posting as an anonymous group admin), the room composer has a mention picker
 (`features/mentions`), a room shows an in-flight working indicator
 (`entities/room/model/use-room-presence.ts`, `widgets/room-view/ui/RoomPresenceLine.tsx`),
 and Telegram's typing indicator is driven by the turn — it starts on the turn's

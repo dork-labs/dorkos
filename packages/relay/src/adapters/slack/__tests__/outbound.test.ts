@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { WebClient } from '@slack/web-api';
 import { deliverMessage, createSlackOutboundState } from '../outbound.js';
 import type { ActiveStream } from '../outbound.js';
+import { STREAM_TTL_MS } from '../stream.js';
 import type { AdapterOutboundCallbacks } from '../../../types.js';
 import { SlackThreadIdCodec } from '../../../lib/thread-id.js';
 import { ThreadParticipationTracker } from '../thread-tracker.js';
@@ -217,6 +218,16 @@ function createEnvelope(subject: string, payload: unknown, from = 'relay.agent.b
 }
 
 /** Helper to call deliverMessage with options object. */
+/**
+ * Outbound state for the current test.
+ *
+ * Shared across `deliver()` calls the way the real adapter shares it: one
+ * instance per adapter, for its whole life. A fresh one per call would hide
+ * anything that spans two events of the same turn — which is most of what this
+ * module does.
+ */
+let approvalState = createSlackOutboundState();
+
 function deliver(
   subject: string,
   envelope: ReturnType<typeof createEnvelope>,
@@ -242,7 +253,7 @@ function deliver(
     streaming,
     nativeStreaming,
     typingIndicator,
-    approvalState: createSlackOutboundState(),
+    approvalState,
     codec: testCodec,
     threadTracker,
   });
@@ -258,6 +269,7 @@ describe('deliverMessage', () => {
     vi.clearAllMocks();
     client = buildMockClient();
     streamState = new Map();
+    approvalState = createSlackOutboundState();
     callbacks = createCallbacks();
     // Pin Date.now for throttle-aware tests
     nowMs = 1_000_000;
@@ -278,7 +290,8 @@ describe('deliverMessage', () => {
         streamState,
         callbacks
       );
-      expect(result.success).toBe(true);
+      // `skipped`, not a plain success — see the Telegram twin of this test.
+      expect(result).toMatchObject({ success: true, skipped: true });
       expect(mockPostMessage).not.toHaveBeenCalled();
     });
   });
@@ -623,13 +636,63 @@ describe('deliverMessage', () => {
       expect(streamState.size).toBe(0);
     });
 
-    it('done with no active stream does not send any message', async () => {
+    // A turn that ends having posted nothing at all leaves the person looking
+    // at their own question with no sign anything happened (DOR-789).
+    it('done with nothing posted says the agent finished without a reply', async () => {
       const done = createEnvelope('relay.human.slack.D123', { type: 'done', data: {} });
       const result = await deliver('relay.human.slack.D123', done, client, streamState, callbacks);
       expect(result.success).toBe(true);
-      expect(mockPostMessage).not.toHaveBeenCalled();
+      expect(mockPostMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          channel: 'D123',
+          text: expect.stringContaining('finished without sending anything back'),
+        })
+      );
       expect(mockChatUpdate).not.toHaveBeenCalled();
-      expect(callbacks.trackOutbound).not.toHaveBeenCalled();
+    });
+
+    // The runtime publishes error THEN done. The done used to find "nothing
+    // posted" and add "the agent finished without sending anything back" under
+    // the error line — on every crashed turn (DOR-789).
+    it('done after an error adds nothing — the error was the answer', async () => {
+      const error = createEnvelope('relay.human.slack.D123', {
+        type: 'error',
+        data: { message: 'SDK session crashed' },
+      });
+      await deliver('relay.human.slack.D123', error, client, streamState, callbacks);
+      expect(mockPostMessage).toHaveBeenCalledTimes(1);
+      mockPostMessage.mockClear();
+
+      const done = createEnvelope('relay.human.slack.D123', { type: 'done', data: {} });
+      await deliver('relay.human.slack.D123', done, client, streamState, callbacks);
+
+      expect(mockPostMessage).not.toHaveBeenCalled();
+    });
+
+    it('done after a standard-payload answer adds nothing', async () => {
+      const answer = createEnvelope('relay.human.slack.D123', { content: 'here you go' });
+      await deliver('relay.human.slack.D123', answer, client, streamState, callbacks);
+      mockPostMessage.mockClear();
+
+      const done = createEnvelope('relay.human.slack.D123', { type: 'done', data: {} });
+      await deliver('relay.human.slack.D123', done, client, streamState, callbacks);
+
+      expect(mockPostMessage).not.toHaveBeenCalled();
+    });
+
+    it('done after a partial answer stays quiet — that turn already spoke', async () => {
+      const delta = createEnvelope('relay.human.slack.D123', {
+        type: 'text_delta',
+        data: { text: 'here you go' },
+      });
+      await deliver('relay.human.slack.D123', delta, client, streamState, callbacks);
+      mockPostMessage.mockClear();
+
+      const done = createEnvelope('relay.human.slack.D123', { type: 'done', data: {} });
+      await deliver('relay.human.slack.D123', done, client, streamState, callbacks);
+
+      // Finalized through chat.update — no "said nothing" line on top of it.
+      expect(mockPostMessage).not.toHaveBeenCalled();
     });
   });
 
@@ -748,6 +811,7 @@ describe('deliverMessage', () => {
         accumulatedText: 'stale',
         lastUpdateAt: nowMs - 6 * 60 * 1_000,
         startedAt: nowMs - 6 * 60 * 1_000,
+        lastEventAt: nowMs - 6 * 60 * 1_000,
         streamId: 'stale-stream',
       });
 
@@ -765,6 +829,7 @@ describe('deliverMessage', () => {
         accumulatedText: 'recent',
         lastUpdateAt: nowMs - 1_000,
         startedAt: nowMs - 1_000,
+        lastEventAt: nowMs - 1_000,
         streamId: 'recent-stream',
       });
 
@@ -772,6 +837,38 @@ describe('deliverMessage', () => {
       await deliver('relay.human.slack.D123', envelope, client, streamState, callbacks);
 
       expect(streamState.has('D999')).toBe(true);
+    });
+
+    // Reaping ran off `startedAt`, which nothing refreshed, so an answer longer
+    // than the window lost its own stream mid-flight: the accumulated text went,
+    // the native stream_id leaked, and the rest of the reply opened a second
+    // Slack message (DOR-789).
+    it('keeps a stream alive past the window as long as deltas keep arriving', async () => {
+      const delta = createEnvelope('relay.human.slack.D123', {
+        type: 'text_delta',
+        data: { text: 'the beginning ' },
+      });
+      await deliver('relay.human.slack.D123', delta, client, streamState, callbacks);
+
+      const key = [...streamState.keys()][0]!;
+      const stream = streamState.get(key)!;
+      // Simulate a turn that has been running far longer than the window, but
+      // whose last delta was a moment ago.
+      stream.startedAt = Date.now() - STREAM_TTL_MS * 3;
+      stream.lastEventAt = Date.now() - 1_000;
+      const streamIdBefore = stream.streamId;
+
+      const more = createEnvelope('relay.human.slack.D123', {
+        type: 'text_delta',
+        data: { text: 'and its end' },
+      });
+      await deliver('relay.human.slack.D123', more, client, streamState, callbacks);
+
+      const after = streamState.get(key);
+      expect(after).toBeDefined();
+      // Same stream, not a fresh one — a fresh one is a second Slack message.
+      expect(after!.streamId).toBe(streamIdBefore);
+      expect(after!.accumulatedText).toBe('the beginning and its end');
     });
   });
 

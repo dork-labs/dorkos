@@ -966,7 +966,9 @@ describe('reliability pipeline integration', () => {
       { from: 'relay.sender.rate' }
     );
 
-    expect(result.messageId).toBe('');
+    // A real id, not an empty string: a rate-limited publish is traced like
+    // every other non-delivery, and a trace needs something to key on (DOR-789).
+    expect(result.messageId).not.toBe('');
     expect(result.deliveredTo).toBe(0);
     expect(result.rejected).toEqual([{ endpointHash: '*', reason: 'rate_limited' }]);
   });
@@ -1794,7 +1796,10 @@ describe('trace store integration', () => {
     );
   });
 
-  it('records failed trace span for dead-lettered messages', async () => {
+  // A subject nobody listens on is not a failure — nothing broke and nothing
+  // needs fixing. Recording it as one produced thousands of rows claiming
+  // failure with no error attached (DOR-789).
+  it('records a no_subscriber trace span for a message nothing was listening for', async () => {
     await traceRelay.publish(
       'relay.nowhere.subject',
       { content: 'lost' },
@@ -1803,7 +1808,23 @@ describe('trace store integration', () => {
 
     expect(mockTraceStore.insertSpan).toHaveBeenCalledWith(
       expect.objectContaining({
+        status: 'no_subscriber',
+      })
+    );
+  });
+
+  it('records a failed trace span, with the reason, when a gate refuses the message', async () => {
+    await traceRelay.publish(
+      'relay.test.gated',
+      { content: 'nope' },
+      { from: 'relay.test.sender', budget: { hopCount: 9, maxHops: 5 } }
+    );
+
+    expect(mockTraceStore.insertSpan).toHaveBeenCalledWith(
+      expect.objectContaining({
         status: 'failed',
+        error: expect.stringContaining('max hops'),
+        metadata: expect.objectContaining({ budgetCode: 'hop_limit' }),
       })
     );
   });

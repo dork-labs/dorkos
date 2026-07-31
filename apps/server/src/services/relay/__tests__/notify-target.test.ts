@@ -31,10 +31,26 @@ function store(bindings: AdapterBinding[]): NotifyTargetBindingStore {
   return { getAll: () => bindings };
 }
 
-function router(
-  sessionsByBinding: Record<string, Array<{ chatId: string; sessionId: string }>>
-): NotifyTargetBindingRouter {
-  return { getSessionsByBinding: (id) => sessionsByBinding[id] ?? [] };
+/** A session as the router reports it, with the boilerplate fields defaulted. */
+type TestSession = {
+  chatId?: string;
+  userId?: string;
+  sessionId: string;
+  scope?: 'chat' | 'user';
+  lastActivityAt?: number;
+};
+
+function router(sessionsByBinding: Record<string, TestSession[]>): NotifyTargetBindingRouter {
+  return {
+    getSessionsByBinding: (id) =>
+      (sessionsByBinding[id] ?? []).map((s) => ({
+        scope: s.scope ?? (s.userId ? 'user' : 'chat'),
+        ...(s.chatId ? { chatId: s.chatId } : {}),
+        ...(s.userId ? { userId: s.userId } : {}),
+        sessionId: s.sessionId,
+        lastActivityAt: s.lastActivityAt ?? 0,
+      })),
+  };
 }
 
 function adapters(list: Array<{ id: string; type: string }>): NotifyTargetAdapterManager {
@@ -136,5 +152,72 @@ describe('resolveNotifyTarget', () => {
     });
     expect(result.ok && result.adapterId).toBe('tg-lifeos');
     expect(result.ok && result.chatId).toBe('chat-77');
+  });
+
+  // The doc always claimed "most-recently-active"; the code took whichever
+  // session the file happened to list last, so a completion notice landed in a
+  // stale public channel instead of the DM in use (DOR-789).
+  describe('recency', () => {
+    it('picks the chat with the newest activity, not the last one listed', () => {
+      const result = resolveNotifyTarget('agent-1', {
+        bindingStore: store([binding()]),
+        bindingRouter: router({
+          'b-1': [
+            { chatId: 'chat-fresh', sessionId: 's1', lastActivityAt: 5_000 },
+            { chatId: 'chat-stale', sessionId: 's2', lastActivityAt: 1_000 },
+          ],
+        }),
+        adapterManager: adapters([{ id: 'tg-main', type: 'telegram' }]),
+      });
+      expect(result.ok && result.chatId).toBe('chat-fresh');
+    });
+
+    it('picks across bindings, not just within the last one that has sessions', () => {
+      const result = resolveNotifyTarget('agent-1', {
+        bindingStore: store([
+          binding({ id: 'b-1', adapterId: 'tg-main' }),
+          binding({ id: 'b-2', adapterId: 'tg-other' }),
+        ]),
+        bindingRouter: router({
+          'b-1': [{ chatId: 'chat-fresh', sessionId: 's1', lastActivityAt: 9_000 }],
+          'b-2': [{ chatId: 'chat-stale', sessionId: 's2', lastActivityAt: 2_000 }],
+        }),
+        adapterManager: adapters([
+          { id: 'tg-main', type: 'telegram' },
+          { id: 'tg-other', type: 'telegram' },
+        ]),
+      });
+      expect(result.ok && result.chatId).toBe('chat-fresh');
+      expect(result.ok && result.bindingId).toBe('b-1');
+    });
+  });
+
+  describe('per-user sessions', () => {
+    it('addresses the binding chat, never the person id', () => {
+      const result = resolveNotifyTarget('agent-1', {
+        bindingStore: store([binding({ chatId: 'C-group', sessionStrategy: 'per-user' })]),
+        bindingRouter: router({
+          'b-1': [{ userId: 'U-person', sessionId: 's1', lastActivityAt: 5_000 }],
+        }),
+        adapterManager: adapters([{ id: 'tg-main', type: 'telegram' }]),
+      });
+      expect(result.ok && result.chatId).toBe('C-group');
+      expect(result.ok && result.subject).toBe('relay.human.telegram.tg-main.C-group');
+    });
+
+    it('reports no active session when the binding names no chat to answer in', () => {
+      const result = resolveNotifyTarget('agent-1', {
+        bindingStore: store([binding({ sessionStrategy: 'per-user' })]),
+        bindingRouter: router({
+          'b-1': [{ userId: 'U-person', sessionId: 's1', lastActivityAt: 5_000 }],
+        }),
+        adapterManager: adapters([{ id: 'tg-main', type: 'telegram' }]),
+      });
+      // Knowing who was active is not knowing where to answer. Guessing here is
+      // what put a group's notification into somebody's private messages.
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.reason).toBe('NO_ACTIVE_SESSIONS');
+    });
   });
 });

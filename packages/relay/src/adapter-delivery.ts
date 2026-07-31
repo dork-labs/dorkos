@@ -23,11 +23,34 @@ import type { SqliteIndex } from './sqlite-index.js';
 import type { MaildirStore } from './maildir-store.js';
 import type { DeadLetterQueue } from './dead-letter-queue.js';
 import type { AdapterRegistryLike, AdapterContext, DeliveryResult } from './types.js';
+import type { ChatNoticeSender } from './chat-notice.js';
 
 import type { Logger } from '@dorkos/shared/logger';
 
 /** Subject prefix for agent-session deliveries that run detached. */
 const AGENT_SUBJECT_PREFIX = 'relay.agent.';
+
+/**
+ * Which chat notice a failed delivery deserves.
+ *
+ * Prefers the adapter's machine {@link DeliveryResult.code} — a runtime that
+ * says `at_capacity` says it in a way no rewording of its message can break.
+ * The prose match is the fallback for adapters that predate the code, and is
+ * deliberately broad, because getting it wrong only picks the more general of
+ * two true sentences.
+ *
+ * @param reason - The failure text.
+ * @param code - The adapter's machine code, when it gave one.
+ */
+function classifyChatFailure(
+  reason: string,
+  code?: DeliveryResult['code']
+): 'agent_busy' | 'delivery_failed' {
+  if (code === 'at_capacity') return 'agent_busy';
+  return /\b(at capacity|capacity|too busy|queue full|concurren\w+ limit)\b/i.test(reason)
+    ? 'agent_busy'
+    : 'delivery_failed';
+}
 
 /**
  * Callback that publishes a terminal failure notice to a dead-lettered
@@ -80,6 +103,9 @@ export class AdapterDelivery {
   /** Optional callback to notify a reply inbox when a detached delivery fails. */
   private replyFailureNotifier?: ReplyFailureNotifier;
 
+  /** Optional callback that tells a person, in their chat, that their turn died. */
+  private chatFailureNotifier?: ChatNoticeSender;
+
   constructor(private readonly deps: AdapterDeliveryDeps) {
     this.logger = deps.logger ?? console;
   }
@@ -92,6 +118,22 @@ export class AdapterDelivery {
    */
   setReplyFailureNotifier(notifier: ReplyFailureNotifier): void {
     this.replyFailureNotifier = notifier;
+  }
+
+  /**
+   * Register the callback that tells a person, in the chat they wrote in, that
+   * the turn their message started did not run.
+   *
+   * Distinct from {@link setReplyFailureNotifier} on purpose. That one settles
+   * a *caller* waiting on a reply inbox and is deliberately restricted to
+   * `relay.inbox.*` / `relay.a2a.reply.*`; widening it to chat subjects would
+   * feed the notice back to the agent as a new prompt, because a chat subject
+   * has a live subscriber (the binding router) that a reply inbox does not.
+   *
+   * @param notifier - The chat notice sender.
+   */
+  setChatFailureNotifier(notifier: ChatNoticeSender): void {
+    this.chatFailureNotifier = notifier;
   }
 
   /**
@@ -156,7 +198,12 @@ export class AdapterDelivery {
           // dead-letter — otherwise the message is silently swallowed.
           await this.deadLetterDetached(subject, envelope, 'no adapter matched subject');
         } else if (!result.success) {
-          await this.deadLetterDetached(subject, envelope, result.error ?? 'unknown error');
+          await this.deadLetterDetached(
+            subject,
+            envelope,
+            result.error ?? 'unknown error',
+            result.code
+          );
         } else {
           this.indexDelivered(subject, envelope);
         }
@@ -235,7 +282,8 @@ export class AdapterDelivery {
   private async deadLetterDetached(
     subject: string,
     envelope: RelayEnvelope,
-    reason: string
+    reason: string,
+    code?: DeliveryResult['code']
   ): Promise<void> {
     this.logger.warn(`RelayCore: detached adapter delivery failed for ${subject}: ${reason}`);
     try {
@@ -260,6 +308,18 @@ export class AdapterDelivery {
         const message = err instanceof Error ? err.message : String(err);
         this.logger.warn(`RelayCore: failed to notify reply inbox of delivery failure: ${message}`);
       }
+    }
+
+    // When the caller was a person in a chat, their reply subject IS that chat.
+    // Tell them there, in one line, instead of leaving the message looking like
+    // an agent that is still thinking.
+    // The subject is NOT trusted: on `relay_send` the model writes `replyTo`,
+    // so this could name any chat at all. The notifier resolves it through the
+    // binding store and says nothing when nothing is bound there — and the
+    // damper is keyed on the binding it resolved, so varying the failed agent
+    // subject cannot buy another line.
+    if (envelope.replyTo && this.chatFailureNotifier) {
+      await this.chatFailureNotifier(envelope.replyTo, classifyChatFailure(reason, code));
     }
   }
 }

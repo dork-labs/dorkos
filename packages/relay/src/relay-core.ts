@@ -30,9 +30,12 @@ import {
   DEFAULT_DEAD_LETTER_RETENTION_MS,
   DEFAULT_ORPHAN_MAILDIR_RETENTION_MS,
   DEFAULT_IN_FLIGHT_RECOVERY_MS,
+  DEFAULT_UNDELIVERED_MAIL_RETENTION_MS,
 } from './relay-gc.js';
 import type { RelayGcSweepOptions } from './relay-gc.js';
 import { createReplyFailureNotifier } from './reply-failure-notifier.js';
+import { createChatNoticeSender } from './chat-notice.js';
+import type { ChatNoticeTargetResolver } from './chat-notice.js';
 import { ReliabilityConfigSchema } from '@dorkos/shared/relay-schemas';
 import { inferEndpointType } from './types.js';
 import { RelayPublishPipeline } from './relay-publish.js';
@@ -147,6 +150,13 @@ export class RelayCore {
   private readonly ttlSweepIntervalMs: number;
   private ttlSweepInterval?: ReturnType<typeof setInterval>;
   private readonly gc: RelayGc;
+  /**
+   * Host-installed binding lookup that authorizes a chat-failure notice.
+   *
+   * Unset means "this relay cannot tell whose chat that is", which is a denial —
+   * see {@link setChatNoticeTargetResolver}.
+   */
+  private chatNoticeTargetResolver?: ChatNoticeTargetResolver;
   private readonly gcIntervalMs: number;
   private gcInterval?: ReturnType<typeof setInterval>;
   private closed = false;
@@ -247,6 +257,25 @@ export class RelayCore {
     adapterDelivery.setReplyFailureNotifier(replyFailureNotifier);
     this.publishPipeline.setReplyFailureNotifier(replyFailureNotifier);
 
+    // A chat message whose turn was accepted and then failed — the runtime at
+    // capacity, a thrown adapter — is dead-lettered above and, before this, told
+    // nobody: the reply-inbox notifier deliberately covers only `relay.inbox.*`
+    // and `relay.a2a.reply.*`, which is 0% of chat traffic. This second notifier
+    // covers the person's own chat, and its `relay.system.*` principal is what
+    // keeps the notice from being routed back to the agent as a fresh prompt.
+    //
+    // The subject it speaks on is the failed envelope's `replyTo`, which on
+    // `relay_send` is written by the model — so it resolves through the
+    // host-installed binding resolver below, and says nothing at all until that
+    // is installed.
+    adapterDelivery.setChatFailureNotifier(
+      createChatNoticeSender({
+        publish: (subject, payload, opts) => this.publishPipeline.publish(subject, payload, opts),
+        resolveTarget: (subject) => this.chatNoticeTargetResolver?.(subject) ?? null,
+        logger: options?.logger,
+      })
+    );
+
     this.subscriptionDeps = {
       subscriptionRegistry: this.subscriptionRegistry,
       signalEmitter: this.signalEmitter,
@@ -267,6 +296,7 @@ export class RelayCore {
         deadLetterQueue,
         endpointRegistry,
         deliveryPipeline: this.deliveryPipeline,
+        traceStore: options?.traceStore,
         logger: options?.logger,
       },
       {
@@ -274,6 +304,8 @@ export class RelayCore {
         orphanMaildirRetentionMs:
           options?.orphanMaildirRetentionMs ?? DEFAULT_ORPHAN_MAILDIR_RETENTION_MS,
         inFlightRecoveryMs: options?.inFlightRecoveryMs ?? DEFAULT_IN_FLIGHT_RECOVERY_MS,
+        undeliveredMailRetentionMs:
+          options?.undeliveredMailRetentionMs ?? DEFAULT_UNDELIVERED_MAIL_RETENTION_MS,
       }
     );
 
@@ -313,6 +345,22 @@ export class RelayCore {
    */
   setInitiateConsentGate(gate: InitiateConsentGate): void {
     this.publishPipeline.setInitiateConsentGate(gate);
+  }
+
+  /**
+   * Install the binding lookup that authorizes a chat-failure notice.
+   *
+   * Wired by the host beside {@link setInitiateConsentGate}, and for the same
+   * reason: this relay cannot see the binding store, and the subject a notice
+   * would speak on comes from a failed envelope's `replyTo` — a field the model
+   * writes on `relay_send`. Until this is installed the notifier resolves
+   * nothing and stays silent, so a relay that never got its bindings cannot be
+   * talked into posting somewhere nobody bound.
+   *
+   * @param resolver - Chat subject → the enabled binding that owns it, or null.
+   */
+  setChatNoticeTargetResolver(resolver: ChatNoticeTargetResolver): void {
+    this.chatNoticeTargetResolver = resolver;
   }
 
   // --- Publish ---

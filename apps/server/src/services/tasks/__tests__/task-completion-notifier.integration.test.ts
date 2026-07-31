@@ -56,7 +56,9 @@ describe('Task completion → notifier → relay publish (integration)', () => {
     const notifier = new TaskCompletionNotifier({
       bindingStore: { getAll: () => [binding()] },
       bindingRouter: {
-        getSessionsByBinding: () => [{ chatId: 'chat-42', sessionId: 'sess-1' }],
+        getSessionsByBinding: () => [
+          { scope: 'chat' as const, chatId: 'chat-42', sessionId: 'sess-1', lastActivityAt: 0 },
+        ],
       },
       adapterManager: { listAdapters: () => [{ config: { id: 'tg-main', type: 'telegram' } }] },
       relayCore: { publish },

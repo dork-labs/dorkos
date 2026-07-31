@@ -25,6 +25,7 @@ import type {
   SlackAdapterConfig,
   AdapterConfig,
   AdapterStatus as SharedAdapterStatus,
+  BudgetRejectionCode,
 } from '@dorkos/shared/relay-schemas';
 import type { DeadLetterNotice } from './dead-letter-queue.js';
 
@@ -61,7 +62,26 @@ export type { AdapterConfig };
 
 // --- Core handler and utility types ---
 
-export type MessageHandler = (envelope: RelayEnvelope) => void | Promise<void>;
+/**
+ * What a subscriber may say about a message it was handed.
+ *
+ * Returning nothing means "I took it" — the overwhelmingly common case, and
+ * what every handler written before this said. A handler that looked at the
+ * message and did nothing with it should say so instead, because the publish
+ * pipeline counts handlers as deliveries: a `BindingRouter` that dropped a
+ * chat message for want of a binding still counted as one delivery, and the
+ * trace said `delivered` for a turn that never ran.
+ */
+export interface SubscriberVerdict {
+  /** False when this handler deliberately did nothing with the message. */
+  handled: false;
+  /** Why, in words a person could be shown. */
+  reason: string;
+}
+
+export type MessageHandler = (
+  envelope: RelayEnvelope
+) => void | SubscriberVerdict | Promise<void | SubscriberVerdict>;
 export type SignalHandler = (subject: string, signal: Signal) => void;
 export type Unsubscribe = () => void;
 
@@ -93,6 +113,11 @@ export interface SubscriptionInfo {
 export interface BudgetResult {
   allowed: boolean;
   reason?: string;
+  /**
+   * Machine code for a rejection, recorded on the trace span so the budget
+   * rejection counters are computed from real rows. Absent when allowed.
+   */
+  code?: BudgetRejectionCode;
   updatedBudget?: RelayBudget;
 }
 
@@ -273,6 +298,14 @@ export interface RelayOptions {
    * Default: 30 * 60 * 1000 (30 minutes)
    */
   inFlightRecoveryMs?: number;
+  /**
+   * How long unread mail in a durable `relay.inbox.*` inbox is kept, measured
+   * from when it was written and INDEPENDENT of the message's own delivery
+   * budget. When it is finally reached, the message is dead-lettered rather
+   * than deleted, so it stays readable.
+   * Default: 7 * 24 * 60 * 60 * 1000 (7 days)
+   */
+  undeliveredMailRetentionMs?: number;
 
   /**
    * Optional observer invoked at the moment a message is dead-lettered (the
@@ -623,8 +656,23 @@ export interface AdapterContext {
  */
 export interface DeliveryResult {
   success: boolean;
+  /**
+   * True when the adapter deliberately sent nothing — an echo of a message it
+   * published itself, or a stream event it does not render. Not a failure, and
+   * not a delivery: the publish pipeline counts it as neither, so a chat with
+   * nothing bound behind it stops reporting messages as delivered.
+   */
+  skipped?: boolean;
   /** Error message if delivery failed */
   error?: string;
+  /**
+   * Machine code for a failure, when the adapter has one.
+   *
+   * Read in preference to the message text, so a surface that reacts to a
+   * specific failure (the chat notice for a runtime at capacity) does not
+   * depend on the exact wording of somebody's error string.
+   */
+  code?: 'at_capacity';
   /** Whether a dead letter was created for this failure */
   deadLettered?: boolean;
   /** Response message ID if the adapter published a reply */

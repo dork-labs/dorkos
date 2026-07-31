@@ -355,6 +355,41 @@ describe('AdapterRegistry', () => {
     expect(a2.stop).toHaveBeenCalled();
   });
 
+  // The registry deleted the entry BEFORE awaiting stop(), and every call site
+  // swallowed the throw — so a poller that refused to die left an empty slot,
+  // the next register() started a rival on the same token, and the chat got
+  // every message twice (DOR-789).
+  describe('an adapter that will not stop', () => {
+    it('stays registered, and says why', async () => {
+      const stubborn = createMockAdapter();
+      vi.mocked(stubborn.stop).mockRejectedValue(new Error('poller busy'));
+      await registry.register(stubborn);
+
+      await expect(registry.unregister('mock-adapter')).rejects.toThrow('poller busy');
+
+      // Still there — so the slot is occupied and nothing can be started beside it.
+      expect(registry.get('mock-adapter')).toBe(stubborn);
+    });
+
+    it('cannot be replaced by a second adapter delivering the same subject', async () => {
+      const stubborn = createMockAdapter();
+      vi.mocked(stubborn.stop).mockRejectedValue(new Error('poller busy'));
+      await registry.register(stubborn);
+
+      await expect(registry.unregister('mock-adapter')).rejects.toThrow('poller busy');
+
+      // A caller that ignores the throw and registers a replacement goes
+      // through the hot-reload swap, not an addition: one entry, one delivery.
+      const replacement = createMockAdapter();
+      await registry.register(replacement);
+      expect(registry.list()).toHaveLength(1);
+
+      await registry.deliver('relay.test.mock.chat', createMockEnvelope());
+      expect(replacement.deliver).toHaveBeenCalledTimes(1);
+      expect(stubborn.deliver).not.toHaveBeenCalled();
+    });
+  });
+
   it('shutdown() clears the adapter map', async () => {
     const adapter = createMockAdapter();
     await registry.register(adapter);

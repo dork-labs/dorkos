@@ -7,9 +7,24 @@
  *
  * @module services/relay/trace-store
  */
-import { eq, sql, count, relayTraces, hasPercentileSupport, type Db } from '@dorkos/db';
+import {
+  and,
+  eq,
+  sql,
+  count,
+  relayIndex,
+  relayTraces,
+  hasPercentileSupport,
+  type Db,
+} from '@dorkos/db';
 import { ulid } from 'ulidx';
-import type { DeliveryMetrics, ObservedChat, ChannelType } from '@dorkos/shared/relay-schemas';
+import type {
+  BudgetRejections,
+  DeliveryMetrics,
+  ObservedChat,
+  ChannelType,
+  TraceSpanStatus,
+} from '@dorkos/shared/relay-schemas';
 import { logger } from '../../lib/logger.js';
 
 /**
@@ -31,6 +46,8 @@ export interface TraceSpanRow {
   traceId: string;
   subject: string;
   status: string;
+  /** `delivery` for a message span, `lifecycle` for an adapter event. */
+  kind: string;
   sentAt: string;
   deliveredAt: string | null;
   processedAt: string | null;
@@ -44,6 +61,36 @@ function toIso(value: string | number | undefined | null): string | undefined {
   if (typeof value === 'number') return new Date(value).toISOString();
   return value;
 }
+
+/** Statuses older callers still write, mapped onto the schema enum. */
+const LEGACY_STATUS: Record<string, TraceSpanStatus> = {
+  pending: 'sent',
+  processed: 'delivered',
+  dead_lettered: 'timeout',
+};
+
+/**
+ * Map any caller-supplied status onto the schema enum.
+ *
+ * An unrecognized value lands on `failed` rather than being written through: the
+ * column is an enum, and a value outside it is a row no query can find.
+ *
+ * @param raw - The status a caller passed, if any.
+ */
+function normalizeStatus(raw: unknown): TraceSpanStatus {
+  const value = String(raw ?? 'sent');
+  const mapped = LEGACY_STATUS[value] ?? value;
+  return TRACE_STATUSES.has(mapped as TraceSpanStatus) ? (mapped as TraceSpanStatus) : 'failed';
+}
+
+/** Every status the schema accepts. */
+const TRACE_STATUSES = new Set<TraceSpanStatus>([
+  'sent',
+  'delivered',
+  'failed',
+  'timeout',
+  'no_subscriber',
+]);
 
 /**
  * Persistent trace storage for Relay message delivery tracking.
@@ -73,18 +120,7 @@ export class TraceStore {
     metadata?: Record<string, unknown>;
     [key: string]: unknown;
   }): void {
-    // Map legacy status values to the new schema enum
-    const statusMap: Record<string, string> = {
-      pending: 'sent',
-      processed: 'delivered',
-      dead_lettered: 'timeout',
-    };
-    const rawStatus = String(span.status ?? 'sent');
-    const status = (statusMap[rawStatus] ?? rawStatus) as
-      | 'sent'
-      | 'delivered'
-      | 'failed'
-      | 'timeout';
+    const status = normalizeStatus(span.status);
 
     this.db
       .insert(relayTraces)
@@ -94,9 +130,17 @@ export class TraceStore {
         traceId: span.traceId,
         subject: span.subject,
         status,
+        kind: 'delivery',
         sentAt: new Date().toISOString(),
+        deliveredAt: toIso(span.deliveredAt as string | number | null | undefined) ?? null,
+        errorMessage: typeof span.error === 'string' ? span.error : null,
         metadata: span.metadata ? JSON.stringify(span.metadata) : null,
       })
+      // One envelope can be spanned twice — the publish pipeline records the
+      // hop, and the runtime adapter records the turn it triggered — and
+      // `message_id` is unique. First writer wins rather than throwing: the
+      // second insert used to raise a constraint error inside a live turn.
+      .onConflictDoNothing()
       .run();
   }
 
@@ -110,14 +154,7 @@ export class TraceStore {
     const setValues: Record<string, unknown> = {};
 
     if (update.status !== undefined) {
-      // Map legacy status values
-      const statusMap: Record<string, string> = {
-        pending: 'sent',
-        processed: 'delivered',
-        dead_lettered: 'timeout',
-      };
-      const raw = String(update.status);
-      setValues.status = statusMap[raw] ?? raw;
+      setValues.status = normalizeStatus(update.status);
     }
     const deliveredIso = toIso(update.deliveredAt);
     if (deliveredIso !== undefined) setValues.deliveredAt = deliveredIso;
@@ -163,16 +200,39 @@ export class TraceStore {
   getMetrics(options?: { since?: string }): DeliveryMetrics {
     const sinceIso = options?.since ?? new Date(Date.now() - 86_400_000).toISOString();
 
+    // Delivery rows only. An adapter connecting or disconnecting is not
+    // traffic, and counting those lifecycle rows as delivered messages meant
+    // restarting an integration raised the delivered count.
+    const deliveryRows = and(
+      sql`${relayTraces.sentAt} >= ${sinceIso}`,
+      eq(relayTraces.kind, 'delivery')
+    );
+
     const [counts] = this.db
       .select({
         total: count(),
         delivered: count(sql`CASE WHEN ${relayTraces.status} = 'delivered' THEN 1 END`),
         failed: count(sql`CASE WHEN ${relayTraces.status} = 'failed' THEN 1 END`),
-        deadLettered: count(sql`CASE WHEN ${relayTraces.status} = 'timeout' THEN 1 END`),
+        noSubscriber: count(sql`CASE WHEN ${relayTraces.status} = 'no_subscriber' THEN 1 END`),
       })
       .from(relayTraces)
-      .where(sql`${relayTraces.sentAt} >= ${sinceIso}`)
+      .where(deliveryRows)
       .all();
+
+    // Dead letters are counted from the queue that actually holds them. This
+    // used to count trace rows with `status = 'timeout'`, which nothing writes,
+    // so the panel showed zero however full the queue was.
+    //
+    // Windowed like every sibling metric: this number sits beside "today's"
+    // counts, and a figure covering all of history next to four that cover a
+    // day is read as the same period by anyone glancing at the row.
+    const [deadLetters] = this.db
+      .select({ cnt: count() })
+      .from(relayIndex)
+      .where(and(eq(relayIndex.status, 'failed'), sql`${relayIndex.createdAt} >= ${sinceIso}`))
+      .all();
+
+    const budgetRejections = this.countBudgetRejections(sinceIso);
 
     // Delivery latency in ms, NULL for spans that haven't (yet) delivered.
     // Reused for AVG and every percentile below so they all agree on what
@@ -207,7 +267,7 @@ export class TraceStore {
         p99Ms: percentile(0.99),
       })
       .from(relayTraces)
-      .where(sql`${relayTraces.sentAt} >= ${sinceIso}`)
+      .where(deliveryRows)
       .all();
 
     const [endpointCount] = this.db
@@ -215,26 +275,51 @@ export class TraceStore {
         cnt: sql<number>`COUNT(DISTINCT ${relayTraces.subject})`,
       })
       .from(relayTraces)
-      .where(sql`${relayTraces.sentAt} >= ${sinceIso}`)
+      .where(deliveryRows)
       .all();
 
     return {
       totalMessages: counts.total,
       deliveredCount: counts.delivered,
       failedCount: counts.failed,
-      deadLetteredCount: counts.deadLettered,
+      noSubscriberCount: counts.noSubscriber,
+      deadLetteredCount: deadLetters.cnt,
       avgDeliveryLatencyMs: latency.avgMs,
       p50DeliveryLatencyMs: latency.p50Ms,
       p95DeliveryLatencyMs: latency.p95Ms,
       p99DeliveryLatencyMs: latency.p99Ms,
       activeEndpoints: endpointCount.cnt,
-      budgetRejections: {
-        hopLimit: 0,
-        ttlExpired: 0,
-        cycleDetected: 0,
-        budgetExhausted: 0,
-      },
+      budgetRejections,
     };
+  }
+
+  /**
+   * Count the budget gate's rejections by cause, from the spans that recorded
+   * them.
+   *
+   * These four numbers were hardcoded zeros — four fields presented as
+   * measurements that no code path could ever move. The publish pipeline now
+   * stamps a machine `budgetCode` into the span's metadata, so they are real.
+   *
+   * @param sinceIso - Only spans sent at or after this ISO timestamp count.
+   */
+  private countBudgetRejections(sinceIso: string): BudgetRejections {
+    const codeCount = (code: string) =>
+      count(sql`CASE WHEN json_extract(${relayTraces.metadata}, '$.budgetCode') = ${code}
+        THEN 1 END`);
+
+    const [row] = this.db
+      .select({
+        hopLimit: codeCount('hop_limit'),
+        ttlExpired: codeCount('ttl_expired'),
+        cycleDetected: codeCount('cycle_detected'),
+        budgetExhausted: codeCount('budget_exhausted'),
+      })
+      .from(relayTraces)
+      .where(sql`${relayTraces.sentAt} >= ${sinceIso}`)
+      .all();
+
+    return row;
   }
 
   /**
@@ -255,7 +340,11 @@ export class TraceStore {
         messageId: ulid(), // Unique per event
         traceId: adapterId, // Group by adapter
         subject: eventType,
-        status: 'delivered' as const,
+        // Not a delivery, and not counted as one. These rows were written as
+        // `delivered` and swept up by every delivery metric, so an integration
+        // that reconnected a few times looked like successful traffic.
+        status: 'sent' as const,
+        kind: 'lifecycle' as const,
         sentAt: new Date().toISOString(),
         metadata: JSON.stringify({ adapterId, eventType, message }),
       })

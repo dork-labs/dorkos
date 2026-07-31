@@ -13,6 +13,9 @@ function statusColor(status: TraceSpan['status']): string {
       return 'bg-green-500';
     case 'failed':
       return 'bg-red-500';
+    // Reached nobody, but nothing went wrong — grey, never the failure red.
+    case 'no_subscriber':
+      return 'bg-slate-400';
     case 'sent':
       return 'bg-yellow-500';
     case 'timeout':

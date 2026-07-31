@@ -86,13 +86,68 @@ describe('TraceStore', () => {
     store.insertSpan({ messageId: 'msg-002', traceId: 't2', subject: 's1', status: 'delivered' });
     store.insertSpan({ messageId: 'msg-003', traceId: 't3', subject: 's1', status: 'failed' });
     store.insertSpan({ messageId: 'msg-004', traceId: 't4', subject: 's1', status: 'timeout' });
+    store.insertSpan({
+      messageId: 'msg-005',
+      traceId: 't5',
+      subject: 's1',
+      status: 'no_subscriber',
+    });
 
     const metrics = store.getMetrics();
-    expect(metrics.totalMessages).toBe(4);
+    expect(metrics.totalMessages).toBe(5);
     expect(metrics.deliveredCount).toBe(2);
     expect(metrics.failedCount).toBe(1);
-    expect(metrics.deadLetteredCount).toBe(1);
+    // A message nothing was listening for is counted apart from a failure.
+    expect(metrics.noSubscriberCount).toBe(1);
     expect(metrics.activeEndpoints).toBe(1);
+  });
+
+  // Restarting an integration is not traffic. These rows were written as
+  // `delivered` and swept into every delivery metric (DOR-789).
+  it('leaves adapter lifecycle events out of the delivery numbers', () => {
+    store.insertSpan({ messageId: 'msg-001', traceId: 't1', subject: 's1', status: 'delivered' });
+    const before = store.getMetrics();
+
+    store.insertAdapterEvent('tg-main', 'adapter.connected', 'Connected to relay');
+    store.insertAdapterEvent('tg-main', 'adapter.disconnected', 'Disconnected from relay');
+    store.insertAdapterEvent('tg-main', 'adapter.connected', 'Connected to relay');
+
+    const after = store.getMetrics();
+    expect(after.totalMessages).toBe(before.totalMessages);
+    expect(after.deliveredCount).toBe(before.deliveredCount);
+    // …and the events are still readable on their own surface.
+    expect(store.getAdapterEvents('tg-main')).toHaveLength(3);
+  });
+
+  // It used to count trace rows with a status nothing writes, so it read zero
+  // however full the queue was (DOR-789).
+  it('counts dead letters from the queue that actually holds them', () => {
+    const insertDeadLetter = (id: string) =>
+      db.run(
+        sql`INSERT INTO relay_index (id, subject, endpoint_hash, status, created_at)
+            VALUES (${id}, 'relay.inbox.agent-a', 'relay.inbox.agent-a', 'failed',
+                    ${new Date().toISOString()})`
+      );
+
+    expect(store.getMetrics().deadLetteredCount).toBe(0);
+    insertDeadLetter('dl-1');
+    insertDeadLetter('dl-2');
+    expect(store.getMetrics().deadLetteredCount).toBe(2);
+  });
+
+  it('windows dead letters by the same period as every other metric', () => {
+    const old = new Date(Date.now() - 3 * 86_400_000).toISOString();
+    db.run(
+      sql`INSERT INTO relay_index (id, subject, endpoint_hash, status, created_at)
+          VALUES ('dl-old', 'relay.inbox.agent-a', 'relay.inbox.agent-a', 'failed', ${old})`
+    );
+
+    // Default window is 24h: a three-day-old dead letter is not "today".
+    expect(store.getMetrics().deadLetteredCount).toBe(0);
+    expect(
+      store.getMetrics({ since: new Date(Date.now() - 7 * 86_400_000).toISOString() })
+        .deadLetteredCount
+    ).toBe(1);
   });
 
   it('returns empty metrics with no data', () => {

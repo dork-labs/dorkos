@@ -8,10 +8,15 @@ interface MetricsSummaryProps {
 /**
  * Inline summary row of key delivery metrics for the Activity tab.
  *
- * Renders four stat pills (Total, Delivered, Failed, Dead Letter) and an
- * average latency indicator. Failed is red when > 0, Dead Letter is amber
- * when > 0, Delivered is green when > 0. Returns null when relay is
+ * Renders five stat pills (Total, Delivered, Failed, No listener, Dead Letter)
+ * and an average latency indicator. Failed is red when > 0, Dead Letter is
+ * amber when > 0, Delivered is green when > 0. Returns null when relay is
  * disabled or metrics are not yet loaded.
+ *
+ * "No listener" is deliberately its own pill and deliberately not red: those
+ * messages went to a subject nothing was watching, which is a fact about the
+ * setup, not a failure. They used to be counted as failures, which is how a
+ * quiet machine could show a wall of red.
  */
 export function MetricsSummary({ enabled }: MetricsSummaryProps) {
   const { data: metrics } = useDeliveryMetrics();
@@ -25,6 +30,7 @@ export function MetricsSummary({ enabled }: MetricsSummaryProps) {
       value: metrics.failedCount,
       variant: metrics.failedCount > 0 ? 'danger' : 'default',
     },
+    { label: 'No listener', value: metrics.noSubscriberCount, variant: 'default' as const },
     {
       label: 'Dead Letter',
       value: metrics.deadLetteredCount,

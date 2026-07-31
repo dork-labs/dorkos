@@ -30,14 +30,61 @@ interface PendingApprovalEntry {
   client: WebClient;
 }
 
-/** Instance-scoped container for Slack outbound approval state. */
+/** Instance-scoped container for Slack outbound state. */
 export interface SlackOutboundState {
   pendingApprovalTimeouts: Map<string, PendingApprovalEntry>;
+  /**
+   * Stream keys this adapter has posted something for, and when.
+   *
+   * Read at `done` to tell an answer from a silence. A turn that ends having
+   * posted nothing at all leaves the person looking at their own question with
+   * no sign anything happened; one that posted a card, a partial answer, or an
+   * **error** has already spoken and must not be contradicted.
+   *
+   * The timestamp exists so a turn whose terminal never arrives cannot hold a
+   * key forever — see {@link markSpoken}.
+   */
+  spokenStreams: Map<string, number>;
 }
 
 /** Create a fresh outbound state container for a single adapter instance. */
 export function createSlackOutboundState(): SlackOutboundState {
-  return { pendingApprovalTimeouts: new Map() };
+  return { pendingApprovalTimeouts: new Map(), spokenStreams: new Map() };
+}
+
+/**
+ * How long a "this turn has spoken" mark is kept when no terminal arrives (ms).
+ *
+ * A terminal is not guaranteed — the `done` publish upstream is best-effort —
+ * and without a bound a long-lived adapter accumulates one key per turn
+ * forever. Comfortably longer than any turn, because dropping a mark early
+ * risks the one thing this must never do: telling somebody the agent said
+ * nothing when it did.
+ */
+export const SPOKEN_TTL_MS = 60 * 60 * 1_000;
+
+/** Most spoken-turn marks kept, for the pathological case the TTL is too slow for. */
+const MAX_SPOKEN_ENTRIES = 2_000;
+
+/**
+ * Record that a turn has already put something on screen, and sweep the marks
+ * that no terminal ever came for.
+ *
+ * @param spoken - The adapter's spoken-turn marks.
+ * @param key - The stream key of the turn that spoke.
+ */
+export function markSpoken(spoken: Map<string, number>, key: string): void {
+  const now = Date.now();
+  for (const [k, at] of spoken) {
+    if (now - at > SPOKEN_TTL_MS) spoken.delete(k);
+  }
+  spoken.delete(key); // refresh insertion order for the size cap below
+  spoken.set(key, now);
+  while (spoken.size > MAX_SPOKEN_ENTRIES) {
+    const oldest = spoken.keys().next().value;
+    if (oldest === undefined) break;
+    spoken.delete(oldest);
+  }
 }
 
 /**
@@ -52,6 +99,7 @@ export function clearAllApprovalTimeouts(state: SlackOutboundState): void {
     clearTimeout(entry.timer);
   }
   state.pendingApprovalTimeouts.clear();
+  state.spokenStreams.clear();
 }
 
 /**

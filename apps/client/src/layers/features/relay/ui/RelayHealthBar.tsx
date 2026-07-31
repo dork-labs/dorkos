@@ -43,10 +43,11 @@ export function computeHealthState(
   connected: number,
   total: number
 ): { state: HealthState; message: string } {
-  const failureRate =
-    metrics.totalMessages > 0
-      ? (metrics.failedCount + metrics.deadLetteredCount) / metrics.totalMessages
-      : 0;
+  // Failures only — messages that reached nobody because nothing was listening
+  // are not failures, and they used to be counted here. A day whose only
+  // traffic was publishes to an unwatched subject reported a 100% failure rate
+  // with not one error to show for it.
+  const failureRate = metrics.totalMessages > 0 ? metrics.failedCount / metrics.totalMessages : 0;
 
   if (total === 0) {
     return { state: 'healthy', message: 'No connections configured' };

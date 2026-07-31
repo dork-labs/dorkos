@@ -1027,14 +1027,23 @@ describe('buildRelayConnectionsBlock', () => {
     const ctx = makeRelayContext({
       bindingRouter: {
         getSessionsByBinding: vi.fn(() => [
-          { key: 'binding-uuid-1:chat:817732118', chatId: '817732118', sessionId: 'sess-1' },
+          {
+            key: 'binding-uuid-1:chat:817732118',
+            scope: 'chat' as const,
+            chatId: '817732118',
+            sessionId: 'sess-1',
+            lastActivityAt: 1,
+          },
         ]),
       } as unknown as RelayContextDeps['bindingRouter'],
     });
     const result = _buildRelayConnectionsBlock(ctx, allOnToolConfig);
     expect(result).toContain('Active chats:');
     expect(result).toContain('817732118');
-    expect(result).toContain('(DM)');
+    // "chat", not "DM": the old line called every chat-scoped session a DM,
+    // including group chats, and printed a per-user session's person id as
+    // though it were a chat (DOR-789).
+    expect(result).toContain('chat 817732118');
     // The raw relay.human.* subject is no longer advertised as a send target.
     expect(result).not.toContain('relay.human.telegram.telegram-lifeos.817732118');
     // Default binding is canInitiate:false — the permission is surfaced honestly.

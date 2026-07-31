@@ -56,6 +56,7 @@ export { checkBackpressure, DEFAULT_BP_CONFIG } from './backpressure.js';
 // Types
 export type {
   MessageHandler,
+  SubscriberVerdict,
   SignalHandler,
   Unsubscribe,
   EndpointInfo,
@@ -202,6 +203,20 @@ export {
   HUMAN_SUBJECT_PREFIX,
   CONSOLE_SUBJECT_PREFIX,
 } from './lib/consent-scope.js';
+
+// One-line notices a person reads in the chat where they asked (DOR-789)
+export {
+  createChatNoticeSender,
+  chatNoticeText,
+  CHAT_NOTICE_SENDER,
+  NOTICE_DAMP_MS,
+} from './chat-notice.js';
+export type {
+  ChatNoticeReason,
+  ChatNoticeSender,
+  ChatNoticeSenderDeps,
+  ChatNoticeTargetResolver,
+} from './chat-notice.js';
 
 // Plugin loader
 export { loadAdapters, validateAdapterShape } from './adapter-plugin-loader.js';
