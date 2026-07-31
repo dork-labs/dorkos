@@ -34,6 +34,11 @@ function hooks(capabilities: Partial<Omit<CommunityCapabilities, 'type'>> = {}) 
     plantedCredential: PLANTED,
     seedRoom: (adapter: CommunityAdapter) =>
       Promise.resolve((adapter as FakeCommunityAdapter).seedRoom({ entries: 3 })),
+    // Supplied for every profile, not only the ones that could make their own
+    // with `createRoom`: the empty-room cursor is exactly the case a read-only
+    // backend never arranges by accident.
+    seedEmptyRoom: (adapter: CommunityAdapter) =>
+      Promise.resolve((adapter as FakeCommunityAdapter).seedRoom({ entries: 0 })),
     makeUnreachableAdapter: () =>
       new FakeCommunityAdapter({ capabilities, connectStatus: 'unreachable' }),
     makeUnadmittedAdapter: () =>

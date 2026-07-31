@@ -1,5 +1,5 @@
 /**
- * A push-driven async iterable, for the two `CommunityAdapter` streams whose
+ * A push-driven async iterable, for the `CommunityAdapter` streams whose
  * events arrive from somewhere other than the consumer's own pull.
  *
  * The port requires `subscribeRoom` to validate its cursor **synchronously** and
@@ -13,7 +13,7 @@
  * `next()` is lost — which is the whole reason the snapshot can be composed at
  * call time.
  *
- * @module server/services/communities/local/push-stream
+ * @module server/services/communities/push-stream
  */
 
 /**

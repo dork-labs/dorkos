@@ -82,6 +82,7 @@
  * @module server/services/communities/local/local-community-adapter
  */
 import {
+  CommunityMemberNotFoundError,
   CommunityRoomNotFoundError,
   CommunityUnsupportedError,
   LOCAL_COMMUNITY,
@@ -113,6 +114,7 @@ import { ROOMS } from '../../../config/constants.js';
 import { logger } from '../../../lib/logger.js';
 import { eventFanOut } from '../../core/event-fan-out.js';
 import { RoomError } from '../../rooms/room-errors.js';
+import { PushStream } from '../push-stream.js';
 import type { RoomService } from '../../rooms/room-service.js';
 import type { RoomStore } from '../../rooms/room-store.js';
 import { mintLocalCursor, readLocalCursor } from './local-cursor.js';
@@ -123,7 +125,6 @@ import {
   toCommunitySignal,
   toRoomPresence,
 } from './local-projection.js';
-import { PushStream } from './push-stream.js';
 
 /** Page size when a caller does not ask for one. Matches the port's own default shape. */
 const DEFAULT_PAGE_SIZE = 50;
@@ -523,13 +524,34 @@ export class LocalCommunityAdapter implements CommunityAdapter {
     }
   }
 
+  /**
+   * Set a membership's per-room addressing override.
+   *
+   * The service's own `MEMBER_NOT_FOUND` is translated into the port's
+   * {@link CommunityMemberNotFoundError} rather than escaping as a `RoomError`:
+   * `RoomError` is not exported from `@dorkos/shared`, so a consumer outside this
+   * process could only ever duck-type its `.code`. Every other `RoomError` is
+   * left alone — a refusal this port has no vocabulary for must not be dressed up
+   * as one it does.
+   *
+   * @param roomId - The room the override applies to.
+   * @param memberId - Whose membership to change.
+   * @param mode - The addressing mode.
+   */
   async setResponseMode(
     roomId: string,
     memberId: string,
     mode: ResponseMode
   ): Promise<CommunityMember> {
-    const member = this.deps.service.updateMembership(roomId, this.identity(), memberId, mode);
-    return toCommunityMember(this.community, member);
+    try {
+      const member = this.deps.service.updateMembership(roomId, this.identity(), memberId, mode);
+      return toCommunityMember(this.community, member);
+    } catch (err) {
+      if (err instanceof RoomError && err.code === 'MEMBER_NOT_FOUND') {
+        throw new CommunityMemberNotFoundError(this.community, memberId);
+      }
+      throw err;
+    }
   }
 
   // --- Agent admission -----------------------------------------------------
@@ -614,9 +636,10 @@ export class LocalCommunityAdapter implements CommunityAdapter {
    * where this adapter has nothing to check against. Ours is not one of those:
    * a `memberId` here IS a DorkOS author id in this install's own namespace, so
    * a value naming nobody in the room is a claim about a real person or agent
-   * that this backend can see is false. It refuses loudly (`RoomError`
-   * `MEMBER_NOT_FOUND`, the same refusal {@link LocalCommunityAdapter.setResponseMode}
-   * surfaces for the same mistake) and **never falls back to the connected
+   * that this backend can see is false. It refuses loudly
+   * ({@link CommunityMemberNotFoundError}, the port's own vocabulary and the same
+   * refusal {@link LocalCommunityAdapter.setResponseMode} answers with for the
+   * same mistake) and **never falls back to the connected
    * identity** — a silent fallback turns a caller's bad id into an indicator
    * saying the operator is working, which is misattribution dressed as
    * robustness. With no `memberId` at all, the emitter speaks for itself.
@@ -653,9 +676,7 @@ export class LocalCommunityAdapter implements CommunityAdapter {
     }
     const author = payload?.memberId ?? identity;
     if (author !== identity && !room.members.some((member) => member.authorId === author)) {
-      return Promise.reject(
-        new RoomError('MEMBER_NOT_FOUND', `'${author}' is not a member of this room`)
-      );
+      return Promise.reject(new CommunityMemberNotFoundError(this.community, author));
     }
     this.deps.service.publishSignal(roomId, signal, author, payload && toRoomPresence(payload));
     return Promise.resolve();

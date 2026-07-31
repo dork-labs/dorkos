@@ -6,10 +6,19 @@
  * across communities with per-community degradation, and the credential
  * discipline every machine-managed adapter resolves through.
  *
- * The first concrete adapter lives in `local/` — this machine's own SQLite
- * rooms, wrapped rather than rewritten. A read-only Buzz relay and
- * `apps/community` follow, in that order, and each ships with its own
- * `communityConformance` registration.
+ * Two concrete adapters live here. `local/` is this machine's own SQLite rooms,
+ * wrapped rather than rewritten. `buzz/` is a read-only Buzz relay — the foreign
+ * case, kept deliberately unlike ours so the port cannot quietly become a
+ * description of our own backend. `apps/community` is the third. Each ships with
+ * its own `communityConformance` registration.
+ *
+ * **The Buzz adapter is not exported here, and not registered at startup.** That
+ * is the whole of its wiring story: it needs a relay URL and a label from
+ * somebody, which means a user-config surface, and nothing routes through this
+ * port yet. Re-exporting it before anything constructs it would be dead code
+ * dressed as an API — it is reached at
+ * `./buzz/buzz-community-adapter.js`, and it joins this barrel the day something
+ * configures a remote community.
  *
  * @module server/services/communities
  */

@@ -979,6 +979,44 @@ export class CommunityRoomNotFoundError extends Error {
 }
 
 /**
+ * Thrown when a method is handed a `memberId` this community has nobody for —
+ * unknown, or known and not in the room the call names.
+ *
+ * **Those two cases throw the identical refusal**, and this class takes no
+ * `reason` parameter for the same argument {@link CommunityRoomNotFoundError}
+ * makes at length: a member id is an address, not an authorization, and any
+ * detail that told them apart would let anyone holding an id confirm who is in a
+ * room they cannot see.
+ *
+ * It exists because the alternative was every backend inventing its own answer.
+ * The methods that need it — {@link CommunityAdapter.setResponseMode}, and
+ * {@link CommunityAdapter.publishSignal} on a backend whose members are its own
+ * install's identities — were rejecting with backend-native errors that no
+ * out-of-process consumer could match on except by duck-typing a `.code`. A
+ * third backend would have written a third answer.
+ *
+ * **`removeMember` deliberately does NOT throw it.** That method is contractually
+ * idempotent: removing somebody who is not there is the outcome the caller asked
+ * for, not a refusal.
+ */
+export class CommunityMemberNotFoundError extends Error {
+  /**
+   * Build the refusal, naming only the address that could not be resolved.
+   *
+   * @param community - The community that refused.
+   * @param memberId - The member this community has nobody for. Whether they are
+   *   unknown or merely not in the room is deliberately not reported.
+   */
+  constructor(
+    readonly community: CommunityRef,
+    readonly memberId: string
+  ) {
+    super(`Member '${memberId}' is not available in community '${community}'`);
+    this.name = 'CommunityMemberNotFoundError';
+  }
+}
+
+/**
  * Rejected by any capability-gated method whose capability is off. Never a
  * silent no-op and never a partial write — a required method with a typed
  * refusal is what an optional method cannot be: visible to the compiler and
@@ -1203,6 +1241,11 @@ export interface CommunityAdapter {
    * Set a membership's per-room agent addressing override. Gated on
    * `responseMode`.
    *
+   * Rejects with {@link CommunityMemberNotFoundError} when `memberId` names
+   * nobody this room holds — unknown and merely-absent alike, indistinguishably.
+   * The capability refusal comes first: a backend with no addressing override at
+   * all has no roster question to answer.
+   *
    * @param roomId - The room the override applies to.
    * @param memberId - Whose membership to change.
    * @param mode - The addressing mode.
@@ -1288,8 +1331,9 @@ export interface CommunityAdapter {
    * backend with a foreign identity model has nothing to check it against. An
    * adapter whose members ARE this install's own identities owes the check
    * itself: whatever this field says is what every subscriber will be shown as
-   * "who is working", so an id naming nobody must be refused rather than
-   * published or silently re-attributed to the caller.
+   * "who is working", so an id naming nobody must be refused — with
+   * {@link CommunityMemberNotFoundError} — rather than published or silently
+   * re-attributed to the caller.
    *
    * @param roomId - The room to signal in.
    * @param signal - Which signal.

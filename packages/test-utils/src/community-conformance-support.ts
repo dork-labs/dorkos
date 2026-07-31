@@ -112,6 +112,24 @@ export interface CommunityConformanceOpts {
     agent: CommunityMember
   ) => Promise<string>;
 
+  /**
+   * Optional: arrange a room with NOTHING in it, and return its id.
+   *
+   * A backend that declares `roomAdmin` does not need this — the suite makes an
+   * empty room with `createRoom`. It exists for the backends that cannot, which
+   * are exactly the ones where an empty room is most likely to be untested: a
+   * read-only adapter's fixtures are all arranged out of band, so nobody writes
+   * the empty case unless something asks for it.
+   *
+   * The case it exists for is narrow and was a real bug: the cursor an adapter
+   * mints for a room with no history is the one cursor it never mints anywhere
+   * else, so it is the one an encoding can reject without any other assertion
+   * noticing.
+   *
+   * @param adapter - The adapter to arrange the room on.
+   */
+  seedEmptyRoom?: (adapter: CommunityAdapter) => Promise<string>;
+
   /** Optional: a second community, for the cross-community cursor rejection. */
   secondCommunity?: () => CommunityAdapter;
 
