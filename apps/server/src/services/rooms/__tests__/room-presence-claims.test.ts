@@ -98,12 +98,12 @@ interface HeldTurn {
  * asserting about a room that never moved, which is the failure mode a test
  * helper must not have.
  *
- * **Held turns queue per agent rather than overwrite.** One agent really can
- * have two turns running in one room at once — `engaged` produces it whenever a
- * held-late agent is re-triggered inside its window — so a map keyed by author
- * silently dropped the first hold, and with it the ability to see the very
- * duplicate `workingIn` had to learn to collapse. Landing takes the OLDEST
- * outstanding hold, which is the order a room finishes them in.
+ * **Held turns queue per agent rather than overwrite.** A map keyed by author
+ * silently dropped a second hold, which is exactly the shape a test about
+ * double-triggering must be able to SEE rather than lose: the dispatcher now
+ * refuses a second turn for an agent already working in a room, and a runner
+ * that could not represent two would agree with a broken one. Landing takes the
+ * OLDEST outstanding hold, which is the order a room finishes them in.
  *
  * @param opts.plan - What each turn does, by request.
  * @param opts.say - What an answering turn says. `'on it'` by default.
@@ -246,14 +246,14 @@ describe('a claim lives until its turn is done', () => {
    * `mention-only` is set explicitly by default, and the reason is the thing
    * these tests are about. A channel now seeds `engaged` (`room-roster.ts`), so
    * an agent stays answerable for ten minutes after being addressed — which
-   * means the SECOND message of a scenario re-triggers the agent whose turn is
-   * still being held, in a fresh cascade the guard has no reason to refuse. A
-   * scenario about ONE held turn then measures two. Naming each target makes who
-   * runs a property of the message rather than of a window.
+   * means the SECOND message of a scenario reaches the agent whose turn is still
+   * being held. A scenario about one held turn then measures a refusal it never
+   * asked about. Naming each target makes who runs a property of the message
+   * rather than of a window.
    *
-   * Pass `'seeded'` to leave the channel's own default in place — that path has
-   * its own test, because pinning `mention-only` everywhere is exactly what hid
-   * the duplicate `workingIn` reported.
+   * Pass `'seeded'` to leave the channel's own default in place. One test WANTS
+   * that re-trigger, because refusing it is the fix for DOR-752 — and pinning
+   * `mention-only` everywhere is exactly what hid the double turn for so long.
    *
    * @param driven - The runner standing in for the turn machinery.
    * @param responseMode - What every agent's membership is set to, or `'seeded'`
@@ -391,92 +391,6 @@ describe('a claim lives until its turn is done', () => {
       expect(postsBy(ana)).toHaveLength(1);
     });
 
-    it('names an agent once, however many turns it has in flight here', async () => {
-      // The shipped default, and the shape every other test here hides by
-      // pinning `mention-only`. A channel seeds `engaged`: Ana is addressed, her
-      // turn outruns the wait, and the next message re-triggers her because she
-      // is still inside her window. That is two live claims for one agent, in
-      // two different cascades — legitimate, and both really are running.
-      //
-      // `workingIn` walked the claim map, so it reported Ana twice, and the
-      // roster block an agent reads rendered "Working right now: Ana, Ana". The
-      // count collapses; the OLDEST claim wins, because elapsed time has to
-      // measure how long Ana has been working and not how long ago she was last
-      // interrupted.
-      //
-      // **Presence does the opposite, and this is the only place both are
-      // visible at once.** The roster block is prose for a model, where "Ana,
-      // Ana" is noise; the signal stream carries an INDICATOR per claim, keyed
-      // `(author, entryId)`, because the client has to be able to clear one of
-      // Ana's two indicators when that turn ends without clearing the other. A
-      // per-author collapse here would make the second claim's `done`
-      // indistinguishable from the first's, and the live turn's indicator would
-      // die at the client's TTL while the work was still running.
-      //
-      // The clock is pinned (`settleUntil` still needs a real `setTimeout`) so
-      // "oldest wins" is checkable. Two claims a millisecond apart would let a
-      // newest-wins bug pass. `setInterval` is faked alongside it so the
-      // republish tick can be driven from here.
-      vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
-      try {
-        vi.setSystemTime(new Date('2026-07-30T04:00:00.000Z'));
-        open(
-          drivenRunner({
-            plan: (request) => (request.authorId === ana ? 'hold' : 'answer'),
-            // Nobody posts anything: this test is about the claim map, and a
-            // reply would start a cascade that has nothing to do with it.
-            say: () => null,
-          }),
-          'seeded'
-        );
-
-        const asked = service.post(room.id, {
-          authorId: human,
-          text: '@ana can you check the deploy?',
-        });
-        await settleUntil(() => runner.holdsFor(ana) === 1, 'Ana past the wait deadline');
-        expect(runner.holdsFor(ana)).toBe(1);
-
-        // Five minutes on, well inside Ana's ten-minute window.
-        vi.setSystemTime(new Date('2026-07-30T04:05:00.000Z'));
-        const later = service.post(room.id, { authorId: human, text: '@bo what do you think?' });
-        await settleUntil(
-          () => runner.holdsFor(ana) === 2 && turnsBy(bo).length === 1,
-          'Ana re-triggered on her engagement, and Bo handed a turn'
-        );
-
-        // Ana was re-triggered on her engagement, so she has two turns running.
-        expect(runner.holdsFor(ana)).toBe(2);
-        expect(turnsBy(ana)).toHaveLength(2);
-        // And Bo is told about her once, from when she started.
-        expect(workingSeenBy(turnsBy(bo)[0])).toEqual(['Ana']);
-        expect(turnsBy(bo)[0].roomContext.working[0].since).toBe('2026-07-30T04:00:00.000Z');
-
-        // The stream, meanwhile, is still carrying BOTH of Ana's claims: one tick
-        // re-states each of them separately, under the entry it is answering and
-        // from the time that claim was taken. Collapsing them to one event per
-        // author is what this pins against.
-        const before = presenceFor(ana).length;
-        vi.advanceTimersByTime(10_000);
-        const tick = presenceFor(ana).slice(before);
-        expect(tick.map((event) => event.entryId)).toEqual([asked.id, later.id]);
-        expect(tick.map((event) => event.state)).toEqual(['working_late', 'working_late']);
-        expect(tick.map((event) => event.since)).toEqual([
-          '2026-07-30T04:00:00.000Z',
-          '2026-07-30T04:05:00.000Z',
-        ]);
-
-        runner.land(ana, { text: null, waitedMs: 12 * 60_000 });
-        runner.land(ana, { text: null, waitedMs: 7 * 60_000 });
-        await service.triggersIdle();
-        // Both turns ended with nothing to say, so the room stayed quiet: the
-        // two questions are the whole log.
-        expect(log()).toHaveLength(2);
-      } finally {
-        vi.useRealTimers();
-      }
-    });
-
     it('lets go the moment the late answer lands', async () => {
       open(drivenRunner({ plan: (request) => (request.authorId === ana ? 'hold' : 'answer') }));
 
@@ -538,13 +452,10 @@ describe('a claim lives until its turn is done', () => {
       // refused. Ana genuinely has a turn in flight on this room's session for
       // this cascade; starting another one is the thing to avoid.
       //
-      // The refusal's copy is the known rough edge: `cascade_stopped` says the
-      // back-and-forth "hit its automatic-reply limit" when the real cause is a
-      // turn still running, and it will land beside a live working indicator
-      // once the presence line ships. Both statements are true (no NEW turn
-      // starts; the OLD one has not finished), but the words point at the wrong
-      // reason — revisit them if dogfooding shows people read it as a
-      // contradiction.
+      // The words are the busy path's, not the guard's: nothing here reached a
+      // limit, so "this back-and-forth hit its automatic-reply limit" would
+      // point at the wrong reason — and at a remedy (raise the ceiling) that
+      // would change nothing. Ana is busy, and she will be free.
       //
       // Bo is gated so that Ana's turn is provably past the deadline before Bo's
       // reply re-enters the cascade. Ungated, the two turns race and this test
@@ -577,7 +488,7 @@ describe('a claim lives until its turn is done', () => {
       expect(postsBy(bo)).toHaveLength(1);
       expect(turnsBy(ana)).toHaveLength(1);
       expect(noticesAbout(ana)).toHaveLength(1);
-      expect(noticesAbout(ana)[0].body.notice).toBe('cascade_stopped');
+      expect(noticesAbout(ana)[0].body.notice).toBe('agent_busy');
 
       // The refusal did not disturb the claim: Ana is still working, and the
       // next agent to be handed a context is still told so.
@@ -592,6 +503,115 @@ describe('a claim lives until its turn is done', () => {
       await service.triggersIdle();
       expect(postsBy(ana)).toHaveLength(0);
       expect(notices()).toHaveLength(1);
+    });
+
+    it('refuses a second turn for an agent already working here, whatever cascade asks', async () => {
+      // DOR-752, the shipped default. The guard's in-flight union is scoped to
+      // ONE cascade, so an agent held past the wait deadline and re-triggered by
+      // the NEXT message — a different cascade root, which is what every human
+      // message mints — was allowed straight through. Ana then ran two turns at
+      // once on the one session this room binds for her: two model calls, two
+      // interleaved writers on one transcript, and a room that had never been
+      // asked twice.
+      //
+      // `engaged` is the channel default, so this is the ordinary path for any
+      // slow agent, not an edge. The rule is the one the busy path already
+      // states: one turn per agent per room, refuse rather than queue.
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        vi.setSystemTime(new Date('2026-07-30T04:00:00.000Z'));
+        open(
+          drivenRunner({ plan: (request) => (request.authorId === ana ? 'hold' : 'answer') }),
+          'seeded'
+        );
+
+        service.post(room.id, { authorId: human, text: '@ana can you check the deploy?' });
+        await settleUntil(() => runner.holdsFor(ana) === 1, 'Ana past the wait deadline');
+
+        // Five minutes on, well inside Ana's ten-minute engagement window. Nobody
+        // is named, so Ana is the only member this can reach.
+        vi.setSystemTime(new Date('2026-07-30T04:05:00.000Z'));
+        service.post(room.id, { authorId: human, text: 'and the migration?' });
+        await settleUntil(() => noticesAbout(ana).length === 1, 'Ana refused, once');
+
+        // One turn, one claim, and the room said why in words that are true: she
+        // is busy. Not `cascade_stopped` — no limit was reached, and re-sending
+        // when she is free is exactly the remedy.
+        expect(turnsBy(ana)).toHaveLength(1);
+        expect(runner.holdsFor(ana)).toBe(1);
+        expect(noticesAbout(ana)[0].body.notice).toBe('agent_busy');
+
+        // The refusal did not disturb the live claim: the indicator is still up,
+        // dated from when the work actually started.
+        expect(statesFor(ana)).toEqual(['working', 'working_late']);
+        expect(presenceFor(ana).at(-1)?.since).toBe('2026-07-30T04:00:00.000Z');
+
+        // And the turn that IS running still lands its answer.
+        runner.land(ana, { text: 'green', waitedMs: 12 * 60_000 });
+        await service.triggersIdle();
+        expect(postsBy(ana)).toHaveLength(1);
+        expect(statesFor(ana).at(-1)).toBe('done');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('still says the turn failed after it has already said the agent was busy', async () => {
+      // The trap the busy refusal opens, and the reason its damping key carries
+      // the REASON. Ana is refused as busy while her real turn runs, so the room
+      // says "was busy… send it again when Ana is free" — and then that turn
+      // falls over. With one memory per `(room, agent)`, the busy line had
+      // already armed it and the `turn_failed` line was swallowed: the room's
+      // last word was an invitation to wait for an agent that had crashed.
+      //
+      // Both lines are true, both are news, and the person needs the second one
+      // most. Seed for the red: collapse the two keys back into one.
+      open(drivenRunner({ plan: (request) => (request.authorId === ana ? 'hold' : 'answer') }), 'seeded');
+
+      service.post(room.id, { authorId: human, text: '@ana can you check the deploy?' });
+      await settleUntil(() => runner.holdsFor(ana) === 1, 'Ana past the wait deadline');
+
+      service.post(room.id, { authorId: human, text: 'and the migration?' });
+      await settleUntil(() => noticesAbout(ana).length === 1, 'Ana refused as busy');
+      expect(noticesAbout(ana)[0].body.notice).toBe('agent_busy');
+
+      runner.fail(ana, new Error('the session stream went away'));
+      await service.triggersIdle();
+
+      expect(noticesAbout(ana).map((entry) => entry.body.notice)).toEqual([
+        'agent_busy',
+        'turn_failed',
+      ]);
+      // And the indicator is down: the room is not still claiming she is on it.
+      expect(statesFor(ana).at(-1)).toBe('done');
+    });
+
+    it('does not spend the room budget on a turn it refuses as busy', async () => {
+      // The refusal happens before `tryReserve`, and this is what says so. A
+      // busy refusal that charged the room would let a person burn an hour's
+      // automatic turns on answers that never ran — and the room would then
+      // report a budget notice for a spend nobody got.
+      open(drivenRunner({ plan: (request) => (request.authorId === ana ? 'hold' : 'answer') }), 'seeded');
+
+      service.post(room.id, { authorId: human, text: '@ana can you check the deploy?' });
+      await settleUntil(() => runner.holdsFor(ana) === 1, 'Ana past the wait deadline');
+      const beforeRefusal = turnsBy(ana)[0].roomContext.budget
+        .automaticRepliesLeftInThisRoomThisHour;
+
+      service.post(room.id, { authorId: human, text: 'and the migration?' });
+      await settleUntil(() => noticesAbout(ana).length === 1, 'Ana refused as busy');
+
+      // Bo is named next, so his turn reports what the room has left. Unchanged
+      // by Ana's refusal, and one lower than Ana's own reading only because Bo's
+      // turn charged for itself.
+      service.post(room.id, { authorId: human, text: '@bo can you take it?' });
+      await settleUntil(() => turnsBy(bo).length === 1, 'Bo handed a turn');
+      expect(
+        turnsBy(bo)[0].roomContext.budget.automaticRepliesLeftInThisRoomThisHour
+      ).toBe(beforeRefusal - 1);
+
+      runner.land(ana, { text: 'green', waitedMs: 12 * 60_000 });
+      await service.triggersIdle();
     });
 
     it('gives an agent posting during its own late window the cascade it is in', async () => {

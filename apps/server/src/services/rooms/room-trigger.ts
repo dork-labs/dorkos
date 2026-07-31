@@ -16,14 +16,15 @@
  *    unguarded and looks fine in tests, because the guard's absence is only
  *    visible under a cascade (ADR 260726-170127).
  *
- * 2. **A target is claimed BEFORE its turn runs.** The ancestry rule reads the
- *    authors already in a cascade, which is a durable query — and an agent that
- *    has been triggered but has not answered yet is in the cascade without
- *    being in that table. Two `always` agents would each be triggered twice
- *    from one human message through that window. {@link RoomTriggerDispatcher}
- *    holds an in-flight claim per `(room, cascade, author)` and feeds it to the
- *    guard alongside the query, so the rule is the same rule whatever the
- *    scheduler does.
+ * 2. **A target is claimed BEFORE its turn runs, and one claim per agent per
+ *    room is all there is.** A room binds one session per agent, so a second
+ *    turn there is a second writer on one transcript answering a room that
+ *    asked once. {@link RoomTriggerDispatcher} holds an in-flight claim per
+ *    `(room, agent)` and refuses any trigger for an agent already holding one —
+ *    whatever exchange it arrives in, because the cascade rules bound an
+ *    exchange and every message a person sends starts a new one. Refusing, not
+ *    queueing: this domain has declined a scheduler twice
+ *    (ADR 260726-170125), and the room says so in words.
  *
  * 3. **Every way an agent can fail to answer is visible, and said once.** The
  *    guard refusing it, its session being busy, its turn failing: each writes a
@@ -297,7 +298,8 @@ export class RoomTriggerDispatcher {
   private readonly deps: RoomTriggerDeps;
 
   /**
-   * Turns in flight, keyed `(room, cascade, author)`.
+   * Turns in flight, keyed `(room, agent)` — one apiece, which is the rule
+   * {@link RoomTriggerDispatcher.busyIn} enforces rather than merely records.
    *
    * The VALUE carries every field a reader needs. Nothing parses the key back
    * apart — an earlier revision did, against a separator it guessed wrong, and
@@ -317,7 +319,7 @@ export class RoomTriggerDispatcher {
   private republishing: NodeJS.Timeout | null = null;
 
   /**
-   * `(room, cascade, author)` triples a CASCADE refusal notice has already
+   * `(room, cascade, agent)` triples a CASCADE refusal notice has already
    * named. Bounded FIFO: a cascade is short-lived, so forgetting the oldest
    * costs at most one repeated line.
    *
@@ -329,8 +331,8 @@ export class RoomTriggerDispatcher {
   private readonly noticedCascades = new Set<string>();
 
   /**
-   * `(room, author)` pairs the room has already reported as not answering,
-   * because the agent was busy or its turn failed.
+   * `(room, author, reason)` triples the room has already reported as not
+   * answering — one memory per REASON, not one per agent.
    *
    * **Keyed on the agent, NOT the cascade, and that is the whole point.** Every
    * message a person sends starts its own cascade root, so a cascade-keyed
@@ -339,10 +341,20 @@ export class RoomTriggerDispatcher {
    * same trap the depth-refusal branch in `claimTargets` is deliberately not
    * walking into, and it does not get a pass here because the copy is nicer.
    *
+   * **The reason is in the key because the two are different news.** They used
+   * to share one key, which was harmless only while a busy refusal and a failure
+   * could not both be true of one live turn. They can now: a trigger refused
+   * because the agent is mid-turn writes "was busy… send it again", and then
+   * THAT turn crashes — and a shared key swallowed the `turn_failed` line, so
+   * the room's last word was an invitation to wait for an agent that had already
+   * fallen over. Invariant 3 in this file's header says every way an agent can
+   * fail to answer is visible; one key per reason is what makes that true when
+   * two of them happen in a row.
+   *
    * Re-armed on recovery rather than on a clock, the way {@link
    * RoomTriggerDispatcher.noticedBudget} re-arms: the moment that agent takes a
-   * turn in that room without a reason to refuse it, the block is over and the
-   * NEXT one is news again. No timer, no staleness, and nothing to tune.
+   * turn in that room without a reason to refuse it, EVERY reason's block is
+   * over and the next one is news again. No timer, no staleness, nothing to tune.
    */
   private readonly noticedSilence = new Set<string>();
 
@@ -468,10 +480,7 @@ export class RoomTriggerDispatcher {
     const provenance = {
       root: entry.cascadeRoot,
       depth: entry.cascadeDepth,
-      authorsInCascade: [
-        ...this.deps.store.authorsInCascade(room.id, entry.cascadeRoot),
-        ...this.claimsIn(room.id, entry.cascadeRoot),
-      ],
+      authorsInCascade: this.deps.store.authorsInCascade(room.id, entry.cascadeRoot),
     };
     const maxAgentDepth = this.deps.maxAgentDepth();
 
@@ -500,7 +509,7 @@ export class RoomTriggerDispatcher {
         //      EVERY `maxAgentDepth`, for every room-mate, on every post an
         //      agent makes outside a turn. Copy that offers to raise a limit is
         //      inert here: no limit was reached, and raising it changes nothing.
-        //   2. The `(room, cascade, author)` damping key CANNOT repeat here,
+        //   2. The `(room, cascade, agent)` damping key CANNOT repeat here,
         //      because each such post is its own cascade root. Whatever notice
         //      you add is written once per post per room-mate, forever. Closing
         //      this needs a key that repeats — keyed on the room and the quiet
@@ -533,6 +542,26 @@ export class RoomTriggerDispatcher {
       // `naturalKey` is the agentPath — the only handle the turn machinery needs
       // and the one thing that survives a mesh reconciler rebuild.
       if (!record || record.kind !== 'agent') continue;
+      // ONE TURN PER AGENT PER ROOM, and this is the only thing that enforces it.
+      // The cascade rules above are about an EXCHANGE — how deep it has gone and
+      // who is already in it — so they are scoped to one `cascadeRoot`, and every
+      // message a person sends mints a new one. An agent still working on the
+      // last message was therefore waved straight through by a guard that had no
+      // reason to refuse: it ran a second turn on the very session the first was
+      // holding, which is two model calls answering one room and two writers on
+      // one transcript (`room-turn-runner.ts` already had to defend a collector
+      // against exactly that interleaving). With `engaged` the channel default,
+      // any agent slower than the wait deadline hit this on the ordinary path.
+      //
+      // Refuse, never queue: the room has no scheduler and declined one twice
+      // (ADR 260726-170125). The words are the busy path's own, because that is
+      // what is true — this agent is on something else, and re-sending when it is
+      // free is the remedy — and they are damped on `(room, agent)` until it
+      // answers here again, so a run of messages to a busy agent is one line.
+      if (this.busyIn(room.id, authorId)) {
+        this.reportSilence(room, entry, { authorId, displayName: record.displayName }, 'busy');
+        continue;
+      }
       allowed.push({
         authorId,
         agentPath: record.naturalKey,
@@ -648,7 +677,7 @@ export class RoomTriggerDispatcher {
 
   /** Run one agent's turn and post whatever it said back into the room. */
   private async runOne(room: Room, entry: RoomEntry, target: TriggerTarget): Promise<void> {
-    const key = claimKey(room.id, entry.cascadeRoot, target.authorId);
+    const key = agentKey(room.id, target.authorId);
     try {
       const result = await this.deps.runner.run({
         room,
@@ -755,8 +784,11 @@ export class RoomTriggerDispatcher {
 
     // The turn ran and nothing refused it, so whatever was blocking this agent
     // here is over. Recovery IS the re-arm: the next time it cannot answer, the
-    // room says so again.
-    this.noticedSilence.delete(silenceKey(room.id, target.authorId));
+    // room says so again — for every reason, because an answer landing is
+    // evidence against all of them at once.
+    for (const reason of SILENCE_REASONS) {
+      this.noticedSilence.delete(silenceKey(room.id, target.authorId, reason));
+    }
 
     const said = reply.text?.trim();
     // An agent with nothing to say is exercising judgment, not failing. Only a
@@ -793,7 +825,7 @@ export class RoomTriggerDispatcher {
    *
    * The turn was never cancelled, so this is the answer to a real question that
    * a real person asked — it goes in, saying how long it took. The claim on
-   * `(room, cascade, author)` is still held when this runs (see
+   * `(room, agent)` is still held when this runs (see
    * {@link RoomTriggerDispatcher.runOne}'s `finally`), which is what makes the
    * late window honest rather than a hole; the cascade stamp is passed
    * explicitly regardless, so the guard sees the hop either way.
@@ -817,7 +849,7 @@ export class RoomTriggerDispatcher {
     sessionId: string;
     late: Promise<LateRoomReply>;
   }): void {
-    const key = claimKey(opts.room.id, opts.entry.cascadeRoot, opts.target.authorId);
+    const key = agentKey(opts.room.id, opts.target.authorId);
     this.inFlight += 1;
     void opts.late
       .then((reply) =>
@@ -851,30 +883,36 @@ export class RoomTriggerDispatcher {
   }
 
   /**
-   * Say once, until that agent answers again, that it did not answer here.
+   * Say once per reason, until that agent answers again, that it did not answer
+   * here.
    *
-   * The damping key is `(room, agent)`, never the cascade. A person sending
-   * four messages to a busy agent mints four cascade roots, so a cascade-keyed
-   * memory would put four apologies in the room while claiming to write one —
-   * the exact over-participation this whole programme exists to prevent (E17).
-   * The block clears the moment that agent takes a turn there, in {@link
+   * The damping key is `(room, agent, reason)`, never the cascade. A person
+   * sending four messages to a busy agent mints four cascade roots, so a
+   * cascade-keyed memory would put four apologies in the room while claiming to
+   * write one — the exact over-participation this whole programme exists to
+   * prevent (E17). The reason is in it so that a busy line cannot stand in for a
+   * failure line: see {@link RoomTriggerDispatcher.noticedSilence}. Every block
+   * clears the moment that agent takes a turn there, in {@link
    * RoomTriggerDispatcher.deliver}.
    *
+   * @param agent - Who did not answer, named as the room names it. Deliberately
+   *   not a {@link TriggerTarget}: a trigger refused before it was claimed never
+   *   became one, and it owes the same line as a turn that ran and could not.
    * @param reason - Why it stayed quiet, which picks the words.
    */
   private reportSilence(
     room: Room,
     entry: RoomEntry,
-    target: TriggerTarget,
+    agent: { authorId: string; displayName: string },
     reason: RoomTurnUnanswered
   ): void {
-    const key = silenceKey(room.id, target.authorId);
+    const key = silenceKey(room.id, agent.authorId, reason);
     if (this.noticedSilence.has(key)) return;
     const body =
       reason === 'busy'
-        ? buildBusyNotice(target.displayName, target.authorId)
-        : buildTurnFailedNotice(target.displayName, target.authorId);
-    if (this.writeNotice(room, entry, target.authorId, body)) {
+        ? buildBusyNotice(agent.displayName, agent.authorId)
+        : buildTurnFailedNotice(agent.displayName, agent.authorId);
+    if (this.writeNotice(room, entry, agent.authorId, body)) {
       remember(this.noticedSilence, key);
     }
   }
@@ -891,7 +929,7 @@ export class RoomTriggerDispatcher {
    * @param body - The notice copy, from `room-notices.ts`.
    */
   private announce(room: Room, entry: RoomEntry, authorId: string, body: RoomEntryBody): void {
-    const key = claimKey(room.id, entry.cascadeRoot, authorId);
+    const key = cascadeNoticeKey(room.id, entry.cascadeRoot, authorId);
     if (this.noticedCascades.has(key)) return;
     // Remembered only once it is actually in the log. Marking first meant a
     // cascade whose FIRST notice threw went silent for good — precisely the
@@ -963,15 +1001,15 @@ export class RoomTriggerDispatcher {
    * `working` can come from.
    *
    * The `set` cannot silently evict a live claim, which is why nothing here has
-   * to release one: an author already claimed in a cascade is in the guard's
-   * in-flight union ({@link RoomTriggerDispatcher.claimsIn}), so it is refused
-   * before it can be selected a second time under the same key.
+   * to release one: {@link RoomTriggerDispatcher.claimTargets} refuses any agent
+   * {@link RoomTriggerDispatcher.busyIn} already reports as working here, so
+   * nothing reaches this line under a key that is taken.
    *
    * @param claim - The claim being taken, already fully resolved.
    */
   private holdClaim(claim: ActiveClaim): void {
     const before = this.workingCount(claim.roomId);
-    this.claimed.set(claimKey(claim.roomId, claim.cascadeRoot, claim.authorId), claim);
+    this.claimed.set(agentKey(claim.roomId, claim.authorId), claim);
     this.publishPresence(claim, 'working');
     this.publishWorkingCount(claim.roomId, before);
     if (this.republishing === null) {
@@ -1000,10 +1038,9 @@ export class RoomTriggerDispatcher {
    * {@link RoomTriggerDispatcher.runOne}'s `finally` reaches here on a path where
    * the claim may already be gone. The map is the only record that an indicator
    * is outstanding, so a `done` for a claim nobody holds would be an event about
-   * nothing — and on the client it would clear an indicator belonging to some
-   * other live claim for the same agent.
+   * nothing.
    *
-   * @param key - The `(room, cascade, author)` key being released.
+   * @param key - The `(room, agent)` key being released.
    */
   private releaseClaim(key: string): void {
     const claim = this.claimed.get(key);
@@ -1021,16 +1058,10 @@ export class RoomTriggerDispatcher {
   /**
    * Re-state every live claim, on the interval.
    *
-   * **One event per CLAIM, not per agent** — deliberately, and differently from
-   * {@link RoomTriggerDispatcher.workingIn}, which collapses an agent's claims
-   * to one name. The two answer different questions. `workingIn` writes a
-   * sentence for a model to read, where "Ana, Ana" is noise. This writes the
-   * indicator's identity, `(room, author, entryId)`, and the client keys its
-   * store on exactly that so it can render one name while tracking both claims
-   * (room-presence spec §3.2, §5.1). Collapsing here would break the release: a
-   * `done` for one of an agent's two claims would be indistinguishable from a
-   * `done` for both, and DOR-752's double-cascade case would strand or
-   * prematurely clear an indicator that is still true.
+   * One event per claim, carrying the indicator's full identity —
+   * `(room, author, entryId)` — because that is what the client keys its store
+   * on (room-presence spec §3.2, §5.1). An agent holds at most one claim per
+   * room, so this is also one event per working agent per room.
    */
   private republishPresence(): void {
     const rooms = new Set<string>();
@@ -1100,31 +1131,19 @@ export class RoomTriggerDispatcher {
    * colleague most wants to know about before starting the same work — were the
    * only ones nobody was told about.
    *
-   * **One entry per agent, at its earliest claim.** The map's grain is
-   * `(room, cascade, author)`, so one agent can legitimately hold several claims
-   * here at once — the shipped `engaged` default produces it on the ordinary
-   * path, when a held-late agent is re-triggered by the next message inside its
-   * window. Walking the map raw then said the same name twice, and the roster
-   * block an agent reads rendered "Working right now: Ana, Ana". A reader wants
-   * to know Ana is busy and since when, not how many claims the scheduler is
-   * holding, so the count collapses and the OLDEST `since` wins — an elapsed
-   * time must measure how long the agent has been working, not how long ago it
-   * was most recently interrupted.
-   *
-   * ISO-8601 strings from `toISOString()` are fixed-width and UTC, so `<` on the
-   * string is `<` on the instant. No parsing, no clock.
+   * **One entry per agent, and no de-duplication needed to get there.** The
+   * map's grain IS `(room, agent)` and {@link RoomTriggerDispatcher.busyIn}
+   * refuses a second claim, so an agent cannot appear twice. It could, before
+   * DOR-752 was fixed, and the roster block an agent reads rendered "Working
+   * right now: Ana, Ana" — a symptom of the real fault, which was that Ana was
+   * running two turns. The collapse that hid it is gone with the cause.
    *
    * @param roomId - The room being described.
    */
   private workingIn(roomId: string): Array<{ authorId: string; since: string }> {
-    const earliest = new Map<string, string>();
-    for (const claim of this.claimed.values()) {
-      if (claim.roomId !== roomId) continue;
-      const seen = earliest.get(claim.authorId);
-      if (seen === undefined || claim.claimedAt < seen)
-        earliest.set(claim.authorId, claim.claimedAt);
-    }
-    return [...earliest].map(([authorId, since]) => ({ authorId, since }));
+    return [...this.claimed.values()]
+      .filter((claim) => claim.roomId === roomId)
+      .map((claim) => ({ authorId: claim.authorId, since: claim.claimedAt }));
   }
 
   /**
@@ -1133,40 +1152,40 @@ export class RoomTriggerDispatcher {
    * The narrow read the room list and the `room_presence` fan-out are given, in
    * place of the claim map itself: a count cannot be mistaken for a roster, and
    * no caller outside this class can start reasoning about cascades, sessions or
-   * entry ids it has no business knowing. Distinct AGENTS, not claims — the
-   * sidebar answers "is anyone on it", and an agent answering two triggers is
-   * one busy agent.
+   * entry ids it has no business knowing.
+   *
+   * Agents and claims are the same number here, structurally rather than by
+   * arithmetic: the map is keyed `(room, agent)`, so "one agent, two claims" is
+   * not a state this class can hold. Nothing counts distinct authors, because
+   * there is nothing to distinguish.
    *
    * @param roomId - The room being asked about.
-   * @returns The number of distinct agents holding a claim there. `0` when idle.
+   * @returns The number of agents holding a claim there. `0` when idle.
    */
   workingCount(roomId: string): number {
     return this.workingIn(roomId).length;
   }
 
   /**
-   * Author ids with a turn in flight in one cascade.
+   * Whether this agent already has a turn running in this room.
    *
-   * Unioned with the durable ancestry query, so the guard reads the same rule
-   * whether an agent has already answered or is still answering. Holding a claim
-   * past the wait deadline strengthens that union in one visible way: an author
-   * whose late turn ends up saying nothing never lands a durable stamp, so a
-   * re-trigger of it in the same cascade during the late window is now refused
-   * where it once bought a second turn. That refusal is correct — the author
-   * really does have a turn in flight on that `(room, agent)` session — and it is
-   * pinned in `room-presence-claims.test.ts` rather than left to be rediscovered.
+   * **Deliberately blind to the cascade**, which is the whole point. This used to
+   * be a cascade-scoped union fed into the guard's ancestry rule, and that shape
+   * could only ever see a re-trigger arriving inside the SAME exchange — so the
+   * common case, the next message a person sends, sailed past it under a fresh
+   * root (DOR-752). What makes a second turn wrong is not which exchange asked
+   * for it: it is the single session this room binds per `(room, agent)`, which
+   * belongs to the turn already running on it.
    *
-   * @param roomId - The room the cascade is running in.
-   * @param cascadeRoot - The entry the exchange began at.
+   * It includes turns the room has stopped WAITING for, because those are still
+   * running — and on the shipped defaults that window is up to fifty minutes, so
+   * it is where nearly every collision lives.
+   *
+   * @param roomId - The room being triggered.
+   * @param authorId - The agent a trigger would run.
    */
-  private claimsIn(roomId: string, cascadeRoot: string): string[] {
-    const authors: string[] = [];
-    for (const claim of this.claimed.values()) {
-      if (claim.roomId === roomId && claim.cascadeRoot === cascadeRoot) {
-        authors.push(claim.authorId);
-      }
-    }
-    return authors;
+  private busyIn(roomId: string, authorId: string): boolean {
+    return this.claimed.has(agentKey(roomId, authorId));
   }
 }
 
@@ -1179,11 +1198,11 @@ export class RoomTriggerDispatcher {
  * the only live record that an agent is working, so three readers depend on it
  * today, and holding it for the whole turn changed what each of them sees:
  *
- * 1. {@link RoomTriggerDispatcher.claimsIn} — the cascade guard's in-flight
- *    union. A late turn that ends up silent is now in the cascade it is
- *    answering, so it cannot be triggered again inside that cascade.
+ * 1. {@link RoomTriggerDispatcher.busyIn} — whether this agent is already
+ *    working here. A late turn is still running, so a fresh trigger for it is
+ *    refused rather than started beside it on the same session.
  * 2. {@link RoomTriggerDispatcher.workingIn} — `room_context.working`. A late
- *    turn is now reported, once per agent, from its earliest claim.
+ *    turn is still reported there, because it is still work.
  * 3. {@link RoomTriggerDispatcher.activeTurnFor} — the provenance an agent's own
  *    direct post inherits. **This is the one whose behaviour moved furthest.** A
  *    post an agent makes during its own late window used to be read as a post
@@ -1250,20 +1269,54 @@ interface TriggerTarget {
 const CLAIM_KEY_SEPARATOR = '\u0000';
 
 /**
- * A `(room, cascade, author)` key, for map identity only. Nothing parses it back
- * apart; every reader goes through the {@link ActiveClaim} value instead.
+ * The `(room, agent)` identity, for map keys only. Nothing parses it back apart.
+ *
+ * Two maps are keyed on it and both mean the same thing by it: **one agent, in
+ * one room**. That is the grain of a live claim — a room binds one session per
+ * agent, so one turn is all there can honestly be — and the grain of what the
+ * room has already said about that agent being unable to answer. The absence of
+ * a cascade is the design in both cases: every message a person sends starts its
+ * own, so a cascade in either key would never collide with anything.
  */
-function claimKey(roomId: string, cascadeRoot: string, authorId: string): string {
-  return [roomId, cascadeRoot, authorId].join(CLAIM_KEY_SEPARATOR);
+function agentKey(roomId: string, authorId: string): string {
+  return [roomId, authorId].join(CLAIM_KEY_SEPARATOR);
 }
 
 /**
- * A `(room, agent)` key: what the room has already said about one agent being
- * unable to answer, with no cascade in it. The absence of the cascade is the
- * whole design — see `noticedSilence`.
+ * A `(room, agent, reason)` key: whether the room has already said THIS about
+ * why that agent did not answer. One memory per reason, so a busy line and a
+ * failure line each get their own "once" — see `noticedSilence`.
  */
-function silenceKey(roomId: string, authorId: string): string {
-  return [roomId, authorId].join(CLAIM_KEY_SEPARATOR);
+function silenceKey(roomId: string, authorId: string, reason: RoomTurnUnanswered): string {
+  return [roomId, authorId, reason].join(CLAIM_KEY_SEPARATOR);
+}
+
+/**
+ * Every reason a silence can be reported for, so recovery can clear them all
+ * without a caller remembering to list them.
+ *
+ * **Written as a keyed object because that is the only shape the compiler
+ * checks for completeness.** The obvious version — a `readonly RoomTurnUnanswered[]`
+ * array, however it is asserted — only ever proves that each element BELONGS to
+ * the union, which `['busy']` satisfies just as happily as this does. A missing
+ * reason there compiles clean and costs a person the notice it was meant to
+ * re-arm: that agent's block would outlive its recovery and stay silent for
+ * good. `Record<RoomTurnUnanswered, true>` is the assertion that runs the other
+ * way — every member must appear — so adding a reason to the union without
+ * adding it here is a type error at this line rather than a bug in a room.
+ */
+const SILENCE_REASONS = Object.keys({
+  busy: true,
+  failed: true,
+} satisfies Record<RoomTurnUnanswered, true>) as RoomTurnUnanswered[];
+
+/**
+ * A `(room, cascade, agent)` key: whether this exchange has already been told
+ * that the guard stopped it here. Cascade-scoped because the guard's rule is —
+ * a later exchange may legitimately say so again.
+ */
+function cascadeNoticeKey(roomId: string, cascadeRoot: string, authorId: string): string {
+  return [roomId, cascadeRoot, authorId].join(CLAIM_KEY_SEPARATOR);
 }
 
 /**

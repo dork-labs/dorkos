@@ -52,10 +52,10 @@ interface GatedRunner extends ScriptedTurnRunner {
  */
 function gatedRunner(): GatedRunner {
   const turns: ScriptedTurnRunner['turns'] = [];
-  // Queued per agent, not keyed by it: one agent really can hold two turns in
-  // one room at once — the shipped `always` mode produces it whenever a second
-  // message arrives while the first turn is still running — and a map that
-  // overwrote would drop the very case the distinct-agent count is about.
+  // Queued per agent, not keyed by it: a map that overwrote would silently drop
+  // a second turn, and one of the scenarios below is about proving a second turn
+  // never starts. A runner that cannot hold two agrees with a dispatcher that
+  // runs two.
   const gates = new Map<string, Array<() => void>>();
   return {
     turns,
@@ -157,30 +157,27 @@ describe('the sidebar is told which rooms have an agent working', () => {
     expect(counts.at(-1)).toEqual({ roomId: room.id, working: 0 });
   });
 
-  it('counts agents, not claims: one agent on two questions is one dot and one event', async () => {
-    // One agent can hold two claims in a room at once — two questions arriving
-    // while the first turn still runs is the ordinary way. The sidebar answers
-    // "is anyone on it", so that is ONE agent working, said ONCE: a count taken
-    // over the raw claim map would say "2 agents working" about one agent, and
-    // a publish that did not check whether the count moved would repaint the
-    // same dot for a reader who has nothing new to learn.
+  it('does not repaint the dot for a second question the busy agent never takes', async () => {
+    // Two questions to one agent, the second arriving while the first turn is
+    // still running. The room refuses it — one turn per agent per room — and
+    // says so in a notice, so there is no second claim, no second turn, and
+    // nothing for the sidebar to redraw: the dot was already up, and it means
+    // the same thing it meant a moment ago.
     service.post(room.id, { authorId: human, text: '@ana can you check the deploy?' });
     await settleUntil(() => runner.turns.length === 1, 'Ana handed her first turn');
     expect(counts).toEqual([{ roomId: room.id, working: 1 }]);
 
-    // A second question, in its own cascade, while the first turn is still held.
     service.post(room.id, { authorId: human, text: '@ana and the migration?' });
-    await settleUntil(() => runner.turns.length === 2, 'Ana handed her second turn');
+    await settleUntil(
+      () => service.listEntries(room.id, human, { limit: 20 }).some((e) => e.kind === 'notice'),
+      'the room to say Ana is busy'
+    );
 
+    expect(runner.turns).toHaveLength(1);
     expect(service.listRooms(human).map((summary) => summary.working)).toEqual([1]);
     expect(counts).toEqual([{ roomId: room.id, working: 1 }]);
 
-    // And the dot survives the first claim being released, because the second is
-    // still live — the count only reaches zero when the agent really is done.
-    runner.release(ana);
-    await settleUntil(() => runner.turns.length === 2 && counts.length === 1, 'the first answer');
-    expect(service.listRooms(human).map((summary) => summary.working)).toEqual([1]);
-
+    // And the one turn there is takes the dot down with it when it ends.
     runner.release(ana);
     await service.triggersIdle();
     expect(counts.at(-1)).toEqual({ roomId: room.id, working: 0 });

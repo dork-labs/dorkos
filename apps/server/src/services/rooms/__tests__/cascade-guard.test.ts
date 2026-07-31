@@ -114,13 +114,24 @@ describe('cascade guard, wired', () => {
   it('lands a durable notice in the room, in the room own voice', async () => {
     await seedAndSettle('thoughts?');
 
+    // A ping-pong stops for two different reasons and the room names each one
+    // correctly. The agent that has already spoken in this exchange is refused
+    // by the ancestry rule — `cascade_stopped`. The agent that is simply still
+    // working when the other's reply lands is refused because it is busy, and
+    // saying "this back-and-forth hit its automatic-reply limit" about a turn
+    // that is running would be pointing at a limit nobody reached.
     const notices = log().filter((entry) => entry.kind === 'notice');
-    expect(notices.length).toBeGreaterThan(0);
-    expect(notices[0].body.notice).toBe('cascade_stopped');
-    expect(notices[0].body.text).toContain('automatic-reply limit');
-    expect(notices[0].body.text).not.toMatch(/error|Error|undefined|null/);
-    expect(notices[0].authorId).toBe(authors.system().id);
-    expect([ana, bo]).toContain(notices[0].body.subjectAuthorId);
+    expect(notices.map((entry) => entry.body.notice).sort()).toEqual([
+      'agent_busy',
+      'cascade_stopped',
+    ]);
+    const stopped = notices.find((entry) => entry.body.notice === 'cascade_stopped');
+    expect(stopped?.body.text).toContain('automatic-reply limit');
+    for (const notice of notices) {
+      expect(notice.body.text).not.toMatch(/error|Error|undefined|null/);
+      expect(notice.authorId).toBe(authors.system().id);
+      expect([ana, bo]).toContain(notice.body.subjectAuthorId);
+    }
   });
 
   it('says an agent stopped at most once per cascade', async () => {
@@ -399,8 +410,12 @@ describe('cascade guard, wired', () => {
 
     await seedAndSettle('what do you two think?');
     const notices = log().filter((e) => e.kind === 'notice');
-    expect(notices.length).toBeGreaterThan(0);
-    expect(notices.every((n) => n.body.notice === 'cascade_stopped')).toBe(true);
+    // The ancestry refusal SPEAKS, and it speaks as itself. The other notice
+    // here is the busy one — a different refusal, with its own words — so
+    // asserting that every notice is a `cascade_stopped` would pass for the
+    // wrong reason the moment the two are confused.
+    expect(notices.some((n) => n.body.notice === 'cascade_stopped')).toBe(true);
+    expect(notices.every((n) => n.body.subjectAuthorId !== undefined)).toBe(true);
   });
 
   it('stops replying entirely when the ceiling is zero', async () => {

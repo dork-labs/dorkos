@@ -502,8 +502,20 @@ export class RoomStore {
    *
    * @param roomId - The room.
    * @param opts.afterSeq - Return entries with `seq` strictly above this.
-   * @param opts.excludeAuthorId - Drop this author's own entries; they are
-   *   reported separately, outside the untrusted fence.
+   * **Notices ABOUT this agent are dropped too**, and that is the least obvious
+   * clause. A notice is the room speaking, so it is not the agent's own entry
+   * and the author filter above never touches it — which meant the room's line
+   * about Ana ("Ana was busy… send it again when Ana is free") arrived in Ana's
+   * next turn as something she had missed. It is not news to her: it is the
+   * room narrating her, in the third person, occupying one of thirty slots that
+   * exist to carry what other people said. Notices about SOMEBODY ELSE stay,
+   * because those are real context — a room-mate went quiet, and this agent may
+   * be the one to pick it up.
+   *
+   * @param opts.afterSeq - Return entries with `seq` strictly above this.
+   * @param opts.excludeAuthorId - Drop this author's own entries, and the room's
+   *   notices about it; the first are reported separately outside the untrusted
+   *   fence, and the second are the room talking about the reader.
    * @param opts.excludeEntryId - Drop the triggering entry; it IS the message.
    * @param opts.limit - How many of the newest to return.
    */
@@ -519,7 +531,13 @@ export class RoomStore {
           eq(roomEntries.roomId, roomId),
           gt(roomEntries.seq, opts.afterSeq),
           ne(roomEntries.authorId, opts.excludeAuthorId),
-          ne(roomEntries.id, opts.excludeEntryId)
+          ne(roomEntries.id, opts.excludeEntryId),
+          // In SQL with the rest of them, for the reason the cap is: filtering
+          // afterwards would return fewer than `limit` rows and make the
+          // truncation flag lie. `json_extract` reads the subject out of the
+          // body column; a row with no subject yields NULL, and `IS NOT` is the
+          // null-safe comparison that keeps it.
+          sql`json_extract(${roomEntries.body}, '$.subjectAuthorId') IS NOT ${opts.excludeAuthorId}`
         )
       )
       .orderBy(desc(roomEntries.seq))
