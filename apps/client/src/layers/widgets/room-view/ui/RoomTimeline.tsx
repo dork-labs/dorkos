@@ -2,7 +2,7 @@ import { Fragment, useMemo } from 'react';
 import { MessagesSquare } from 'lucide-react';
 import { buildTimelineRows } from '@/layers/shared/lib';
 import { useNow } from '@/layers/shared/model';
-import { Button, Skeleton } from '@/layers/shared/ui';
+import { Button, Feed, Skeleton } from '@/layers/shared/ui';
 import type { RoomEntry, RoomRosterEntry } from '@/layers/entities/room';
 import { DayDivider, UnreadDivider } from '@/layers/features/chat';
 import { authorsById, groupByThread, toMessageAuthor, unreadPlacement } from '../lib/room-timeline';
@@ -12,6 +12,12 @@ import { RoomThreadReplyRow } from './RoomThreadReplyRow';
 interface RoomTimelineProps {
   /** The room on screen. Every entry's actions act on it. */
   roomId: string;
+  /**
+   * The room's own title, which names the feed. A page can hold more than one
+   * scrollable history — the room and an open thread — so "Messages" alone
+   * would leave a screen reader unable to say which one it had landed in.
+   */
+  roomName: string;
   /**
    * The reader's own author id, as the server resolved it for this request.
    * Always present — seeing a room and being a member of it are different
@@ -58,9 +64,18 @@ const SKELETON_ROWS = 4;
  * drawn — and a timeline that has no room yet cannot be asked for the room id
  * and reader identity its rows need.
  */
-export function RoomTimelineSkeleton() {
+export function RoomTimelineSkeleton({ roomName }: { roomName?: string }) {
   return (
-    <div className="flex flex-col gap-4 p-4" aria-busy data-testid="room-timeline-loading">
+    // The same feed the loaded room renders, saying it is busy — which is what
+    // the pattern asks for and why the wait is announced rather than silent. A
+    // room whose NAME has not arrived either is labelled generically; it is a
+    // second or two, and inventing a title would be worse.
+    <Feed
+      label={roomName === undefined ? 'Conversation' : `Messages in ${roomName}`}
+      busy
+      className="flex flex-col gap-4 p-4"
+      data-testid="room-timeline-loading"
+    >
       {Array.from({ length: SKELETON_ROWS }, (_, i) => (
         <div key={`room-skeleton-${i}`} className="flex gap-3">
           <Skeleton className="size-7 shrink-0 rounded-full" />
@@ -70,7 +85,7 @@ export function RoomTimelineSkeleton() {
           </div>
         </div>
       ))}
-    </div>
+    </Feed>
   );
 }
 
@@ -90,9 +105,21 @@ export function RoomTimelineSkeleton() {
  *
  * The unread rule reads the membership cursor rather than anything in this
  * browser, so where you left off is the same on every device you open.
+ *
+ * **It is a feed** (WAI-ARIA `role="feed"`), which is what makes crossing it
+ * bearable without a mouse: Page Down and Page Up step message to message
+ * however many buttons, pills and reply rows each one carries, and Ctrl+Home /
+ * Ctrl+End leave for the controls above and the composer below. Every message
+ * is a named article that says where it sits in the room's flow, so a screen
+ * reader can say "message 12 of 30, Ana" rather than reading the room out as
+ * one undifferentiated wall. The day and unread rules stay as separators
+ * BETWEEN articles: they are real to a reader and there is nothing in them to
+ * stand on. `Feed` explains why the mechanics live in `shared` rather than
+ * here.
  */
 export function RoomTimeline({
   roomId,
+  roomName,
   viewerAuthorId,
   entries,
   members,
@@ -128,7 +155,7 @@ export function RoomTimeline({
     );
   }, [topLevel, lastReadSeq, now]);
 
-  if (isLoading) return <RoomTimelineSkeleton />;
+  if (isLoading) return <RoomTimelineSkeleton roomName={roomName} />;
 
   if (error) {
     return (
@@ -168,7 +195,11 @@ export function RoomTimeline({
   }
 
   return (
-    <div className="flex flex-col py-4" data-testid="room-timeline">
+    <Feed
+      label={`Messages in ${roomName}`}
+      className="flex flex-col py-4"
+      data-testid="room-timeline"
+    >
       {rows.map((row) => {
         if (row.kind === 'day-divider') return <DayDivider key={row.key} label={row.label} />;
         if (row.kind === 'unread-divider') return <UnreadDivider key={row.key} />;
@@ -187,6 +218,11 @@ export function RoomTimeline({
               streamStalled={streamStalled}
               grouping={row.grouping}
               orphanedReply={orphaned.has(entry.id)}
+              // Counted over the room's own flow, which is exactly the set of
+              // articles this feed renders: a thread's replies live in the
+              // panel, so numbering them here would promise a reader articles
+              // they will never reach with Page Down.
+              feedPosition={{ index: row.index + 1, total: topLevel.length }}
             />
             {replies && (
               <RoomThreadReplyRow
@@ -200,6 +236,6 @@ export function RoomTimeline({
           </Fragment>
         );
       })}
-    </div>
+    </Feed>
   );
 }

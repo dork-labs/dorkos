@@ -11,6 +11,7 @@ import {
   useRoomOpenThread,
   useRoomOpenThreadStore,
   useRoomStream,
+  roomDisplayTitle,
   threadRootIdOf,
 } from '@/layers/entities/room';
 import { RoomDetailsDialog, type RoomDetailsFocus } from '@/layers/features/room-management';
@@ -206,6 +207,7 @@ export function ChannelsPage() {
       <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto">
         <RoomTimeline
           roomId={room.id}
+          roomName={roomDisplayTitle(room)}
           viewerAuthorId={room.viewerAuthorId}
           entries={entries}
           members={room.members}

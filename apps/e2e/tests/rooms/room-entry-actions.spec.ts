@@ -398,9 +398,69 @@ test.describe('Rooms — every message gets a menu', () => {
     expect(snapshot).toContain('toolbar');
     expect(snapshot.indexOf('the deploy is stuck')).toBeLessThan(snapshot.indexOf('toolbar'));
 
-    // And the author is spoken once. Naming the article "Message from You" over
-    // a row that visibly says "You" is the DOR-583 double-announcement.
-    expect(snapshot.split('You').length - 1).toBe(1);
+    // The author is spoken as the article's NAME and as the line that name
+    // points at — twice, and no more (DOR-757).
+    //
+    // This is the one thing the feed pattern costs, and it is worth saying why
+    // it is accepted. A row shipped unnamed because "Message from You" over a
+    // row that visibly says "You" is a second sentence invented for screen
+    // readers — the DOR-583 shape. A feed cannot work that way: moving article
+    // to article means being told WHICH article you landed on, so an unnamed
+    // one is a wall of anonymous boxes. The APG's own feed example resolves it
+    // the same way — the article is labelled BY the heading already inside it —
+    // so what repeats is the visible line, never a string written for the
+    // purpose. A third occurrence would mean somebody added one.
+    expect(snapshot).toMatch(/article "You/);
+    expect(snapshot.split('You').length - 1).toBe(2);
+  });
+
+  test('Page Down crosses the room a message at a time, whatever each one carries', async ({
+    page,
+    roomsApi,
+    roomsPage,
+  }) => {
+    // The room timeline is a WAI-ARIA feed, and this is what that buys: Tab
+    // still costs a stop per message and a second one per thread row, so a busy
+    // room is dozens of presses deep before the composer. Page Down moves
+    // between ARTICLES, so the buttons, pills and reply rows inside a message
+    // cost nothing to pass.
+    const slug = `e2e-feed-nav-${roomsApi.runId}`;
+    const room = await roomsApi.createChannel(slug, slug);
+    await roomsApi.postEntries(room.id, ['first', 'second', 'third']);
+
+    await page.goto(`/channels?id=${room.id}`);
+    await expect(roomsPage.entries).toHaveCount(3, { timeout: SERVER_ROUND_TRIP_MS });
+
+    const feed = page.getByRole('feed');
+    await expect(feed).toHaveAttribute('aria-busy', 'false');
+    // Each message says where it sits, so a reader is told "2 of 3" rather than
+    // left to count.
+    await expect(roomsPage.entries.nth(1)).toHaveAttribute('aria-posinset', '2');
+    await expect(roomsPage.entries.nth(1)).toHaveAttribute('aria-setsize', '3');
+
+    await roomsPage.entries.first().focus();
+    await page.keyboard.press('PageDown');
+    await expect(roomsPage.entries.nth(1)).toBeFocused();
+
+    // From inside a message's own toolbar it is still a feed command — the
+    // roving group leaves Page Down alone so it can reach the feed.
+    await page.keyboard.press('ArrowRight');
+    await expect(roomsPage.quickReactionsIn(roomsPage.entries.nth(1)).first()).toBeFocused();
+    await page.keyboard.press('PageDown');
+    await expect(roomsPage.entries.nth(2)).toBeFocused();
+
+    // The end of the history is the end of it — no wrap round to the top, which
+    // would tell a reader they had arrived somewhere they had not.
+    await page.keyboard.press('PageDown');
+    await expect(roomsPage.entries.nth(2)).toBeFocused();
+
+    await page.keyboard.press('PageUp');
+    await expect(roomsPage.entries.nth(1)).toBeFocused();
+
+    // And the way out: Ctrl+End leaves the feed for the first thing after it,
+    // which on this page is the composer.
+    await page.keyboard.press('Control+End');
+    await expect(roomsPage.composer(`#${slug}`)).toBeFocused();
   });
 
   test('a reply lands in the panel beside the room, and a reply to a reply joins it', async ({

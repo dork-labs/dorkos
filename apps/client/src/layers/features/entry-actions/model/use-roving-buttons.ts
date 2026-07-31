@@ -74,11 +74,17 @@ export function useRovingButtons(
           event.preventDefault();
           step(index, -1);
           break;
+        // Home and End belong to the GROUP; Ctrl+Home and Ctrl+End belong to
+        // the feed around it, which is how a reader leaves a room's history
+        // altogether. Taking the modified press here would swallow the feed's
+        // only way out at whichever button happened to have focus.
         case 'Home':
+          if (event.ctrlKey || event.metaKey) break;
           event.preventDefault();
           step(0, 0);
           break;
         case 'End':
+          if (event.ctrlKey || event.metaKey) break;
           event.preventDefault();
           step(count - 1, 0);
           break;
