@@ -25,24 +25,107 @@
  * abort-induced quiet `done` from the runtime can never contradict the injected
  * error close: it is simply never observed.
  *
+ * Bounded interrupt (DOR-782): the interrupt itself is raced against
+ * `SESSIONS.STALL_INTERRUPT_TIMEOUT_MS`. `interruptQuery` reaches the same
+ * possibly-wedged subprocess the watchdog is firing about, so an unbounded await
+ * on it can hold the turn in exactly the frozen state the watchdog exists to
+ * end. Past the bound the turn closes anyway and says so in the error details.
+ * Every stall is logged — the firing, and its outcome either way.
+ *
  * @module services/session/stall-guard
  */
 import type { StreamEvent } from '@dorkos/shared/types';
+import { SESSIONS } from '../../config/constants.js';
+import { logger } from '../../lib/logger.js';
 
 /** Race sentinel: the inactivity timer expired before the next source event. */
 const STALL_TIMEOUT = Symbol('stall-timeout');
+
+/** Race sentinel: the interrupt did not settle inside its own bound. */
+const INTERRUPT_TIMEOUT = Symbol('stall-interrupt-timeout');
 
 /** Configuration for {@link withStallGuard}. */
 export interface StallGuardOpts {
   sessionId: string;
   /** Inactivity window (ms) between source events before the turn is declared stalled. */
   timeoutMs: number;
-  /** True while the stall clock must not fire (session blocked on the operator). */
+  /**
+   * True while the stall clock must not fire — the turn is legitimately waiting
+   * on a person (a pending approval, question, or elicitation), not hung.
+   */
   isPaused: () => boolean;
   /** Interrupt hook (runtime.interruptQuery). Resolves false when no in-flight turn was found. */
   onStall: () => Promise<boolean>;
+  /**
+   * How long to wait for {@link StallGuardOpts.onStall} before closing the turn
+   * anyway. Defaults to {@link SESSIONS.STALL_INTERRUPT_TIMEOUT_MS}.
+   */
+  interruptTimeoutMs?: number;
   /** Diagnostics sink for onStall rejections (never thrown). */
   onError?: (err: unknown) => void;
+}
+
+/** What the bounded interrupt attempt concluded, and how to say it to a person. */
+interface InterruptOutcome {
+  /** True only when the runtime confirmed it aborted an in-flight turn. */
+  interrupted: boolean;
+  /** Wall time the interrupt attempt took, bounded by `interruptTimeoutMs`. */
+  elapsedMs: number;
+  /** The `details` string carried on the injected `turn_stalled` error. */
+  details: string;
+}
+
+/**
+ * Interrupt the runtime, bounded so a wedged `interruptQuery` cannot hold the
+ * turn open forever — the call meant to unstick a hung subprocess reaches that
+ * same subprocess, so it can hang too. Never throws: a rejection is reported
+ * through `onError` and becomes an outcome like any other.
+ *
+ * A rejection arriving AFTER the bound already won is silenced separately, so a
+ * dying transport cannot surface as an unhandled rejection.
+ */
+async function attemptInterrupt(opts: StallGuardOpts): Promise<InterruptOutcome> {
+  const startedAt = Date.now();
+  // Wrapped so a synchronous throw from onStall becomes a rejection like any
+  // other, and so the extra catch below can silence a LATE rejection.
+  const interrupt = (async () => opts.onStall())();
+  interrupt.catch(() => {});
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    const expiry = new Promise<typeof INTERRUPT_TIMEOUT>((resolve) => {
+      timer = setTimeout(
+        () => resolve(INTERRUPT_TIMEOUT),
+        opts.interruptTimeoutMs ?? SESSIONS.STALL_INTERRUPT_TIMEOUT_MS
+      );
+      timer.unref();
+    });
+    const winner = await Promise.race([interrupt, expiry]);
+    const elapsedMs = Date.now() - startedAt;
+    if (winner === INTERRUPT_TIMEOUT) {
+      return {
+        interrupted: false,
+        elapsedMs,
+        details:
+          'Interrupting the turn did not finish in time; the runtime may have leaked a process.',
+      };
+    }
+    return winner
+      ? { interrupted: true, elapsedMs, details: 'The in-flight turn was aborted.' }
+      : {
+          interrupted: false,
+          elapsedMs,
+          details: 'No in-flight turn was found to abort; the runtime may have leaked a process.',
+        };
+  } catch (err) {
+    opts.onError?.(err);
+    return {
+      interrupted: false,
+      elapsedMs: Date.now() - startedAt,
+      details: 'Interrupting the turn failed; the runtime may have leaked a process.',
+    };
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }
 
 /**
@@ -68,6 +151,9 @@ export async function* withStallGuard(
   opts: StallGuardOpts
 ): AsyncGenerator<StreamEvent> {
   const iterator = source[Symbol.asyncIterator]();
+  // Only for the stall log's `inactivityMs`; the firing decision stays the
+  // timer's, so a paused re-arm is unaffected by what this records.
+  let lastActivityAt = Date.now();
   let timer: NodeJS.Timeout | undefined;
   const clearTimer = (): void => {
     if (timer !== undefined) {
@@ -97,6 +183,7 @@ export async function* withStallGuard(
       if (winner !== STALL_TIMEOUT) {
         // Event won the race: forward it and re-arm against the next one.
         if (winner.done) return;
+        lastActivityAt = Date.now();
         yield winner.value;
         pending = iterator.next();
         continue;
@@ -115,12 +202,25 @@ export async function* withStallGuard(
       void pending.catch(() => {});
       void Promise.resolve(iterator.return?.()).catch(() => {});
 
-      let details = 'No in-flight turn was found to abort; the runtime may have leaked a process.';
-      try {
-        if (await opts.onStall()) details = 'The in-flight turn was aborted.';
-      } catch (err) {
-        details = 'Interrupting the turn failed; the runtime may have leaked a process.';
-        opts.onError?.(err);
+      // The measured silence, not a restatement of the threshold: a turn that
+      // was paused on an operator prompt for an hour and THEN went dark reports
+      // the hour, so a log reader can tell the two shapes apart.
+      logger.warn('[stall-guard] no activity from the runtime; interrupting the turn', {
+        sessionId: opts.sessionId,
+        inactivityMs: Date.now() - lastActivityAt,
+        timeoutMs: opts.timeoutMs,
+      });
+      const outcome = await attemptInterrupt(opts);
+      const outcomeContext = {
+        sessionId: opts.sessionId,
+        interrupted: outcome.interrupted,
+        elapsedMs: outcome.elapsedMs,
+        details: outcome.details,
+      };
+      if (outcome.interrupted) {
+        logger.info('[stall-guard] stalled turn interrupted', outcomeContext);
+      } else {
+        logger.warn('[stall-guard] stalled turn could not be interrupted', outcomeContext);
       }
 
       yield {
@@ -129,7 +229,7 @@ export async function* withStallGuard(
           message: `No activity from the agent for ${formatWindow(opts.timeoutMs)}, so the turn was interrupted.`,
           code: 'turn_stalled',
           category: 'execution_error',
-          details,
+          details: outcome.details,
         },
       };
       // session_status carries the terminalReason feedProjector attaches to the
