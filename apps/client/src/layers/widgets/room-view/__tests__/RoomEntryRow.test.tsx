@@ -9,6 +9,7 @@ import type { RoomEntry, RoomEntryReaction } from '@dorkos/shared/room-schemas';
 import { useRoomDraftStore, useRoomOpenThreadStore } from '@/layers/entities/room';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
+import type { MessageGrouping } from '@/layers/shared/model';
 import { RoomEntryRow } from '../ui/RoomEntryRow';
 
 /** The shipped quick row, which is what a fresh install's capsule offers. */
@@ -72,7 +73,11 @@ function pill(emoji: string, authorIds: string[]): RoomEntryReaction {
  * The row as JSX, so a test can re-render it with one prop changed — which is
  * how "the stream died while this was on screen" is expressed.
  */
-function rowElement(target: RoomEntry, streamStalled?: boolean) {
+function rowElement(
+  target: RoomEntry,
+  streamStalled?: boolean,
+  grouping: MessageGrouping = { position: 'only' }
+) {
   return (
     <RoomEntryRow
       roomId="room-1"
@@ -83,20 +88,20 @@ function rowElement(target: RoomEntry, streamStalled?: boolean) {
       authorNames={NAMES}
       reactionFrequents={FREQUENTS}
       streamStalled={streamStalled}
-      grouping={{ position: 'only' }}
+      grouping={grouping}
     />
   );
 }
 
 function renderRow(
   target: RoomEntry = entry(),
-  options: { transport?: Transport; streamStalled?: boolean } = {}
+  options: { transport?: Transport; streamStalled?: boolean; grouping?: MessageGrouping } = {}
 ) {
   const transport = options.transport ?? createMockTransport();
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  return render(rowElement(target, options.streamStalled), {
+  return render(rowElement(target, options.streamStalled, options.grouping), {
     wrapper: ({ children }) => (
       <QueryClientProvider client={queryClient}>
         <TransportProvider transport={transport}>
@@ -156,13 +161,82 @@ describe('RoomEntryRow — the action surface', () => {
     expect(screen.getByTestId('room-entry')).toHaveAttribute('tabindex', '0');
   });
 
-  it('does not repeat the author, who is already on screen', () => {
+  it('takes its name from the author line already on screen', () => {
     // Naming the article "Message from Ana" over a row that visibly says "Ana"
-    // makes a screen reader say it twice — the DOR-583 shape. Session chat gives
-    // its rows no name for the same reason.
+    // would make a screen reader say it twice — the DOR-583 shape, and why this
+    // row shipped unnamed. The feed pattern needs a name to move between
+    // articles WITH, so the name is the visible line pointed at rather than a
+    // second sentence written for screen readers.
+    renderRow();
+    const row = screen.getByTestId('room-entry');
+
+    expect(row).toHaveAccessibleName(/Ana/);
+    expect(row.getAttribute('aria-labelledby')).toBe(
+      screen.getByText('Ana').parentElement!.getAttribute('id')
+    );
+  });
+
+  it('names a row rendered outside any feed, and gives it no place in a set', () => {
+    // The shape the THREAD PANEL renders — no `feedPosition`, because nothing
+    // there navigates a set yet (DOR-780). Naming is universal for message rows
+    // and position is one consumer of it, so the panel's rows are named too.
+    // Pinned here so the second surface's behaviour is a decision rather than
+    // something that leaked out of the room's feed work.
+    renderRow();
+    const row = screen.getByTestId('room-entry');
+
+    expect(row).toHaveAccessibleName(/Ana/);
+    expect(row).not.toHaveAttribute('aria-posinset');
+    expect(row).not.toHaveAttribute('aria-setsize');
+  });
+
+  it('names a continuation row, which has no author line to point at', () => {
+    // The design drops the author line for a run from the same person. Sighted
+    // readers get who is speaking from the grouping; this is how everyone else
+    // gets the same fact.
+    renderRow(entry(), { grouping: { position: 'middle' } });
+
+    expect(screen.queryByText('Ana')).not.toBeInTheDocument();
+    expect(screen.getByTestId('room-entry')).toHaveAccessibleName(/Ana/);
+  });
+
+  it('points at the words as the article’s description', () => {
+    renderRow();
+    const row = screen.getByTestId('room-entry');
+
+    expect(row.getAttribute('aria-describedby')).toBe(
+      document.querySelector('[data-slot="message-content"]')!.getAttribute('id')
+    );
+  });
+
+  it('says out loud that Enter opens the actions', () => {
+    // A roving group is invisible until you are standing in it, so the way in
+    // has to be announced or it is not discoverable at all.
     renderRow();
 
-    expect(screen.getByTestId('room-entry')).not.toHaveAccessibleName();
+    expect(screen.getByTestId('room-entry')).toHaveAttribute('aria-keyshortcuts', 'Enter');
+  });
+
+  it('leaves Ctrl+End to the feed rather than taking it for the toolbar', () => {
+    // Bare End is the group's own — jump to the last button. The MODIFIED press
+    // belongs to the feed a room's rows sit in, where it is the way out of the
+    // history altogether. Pinned on a row rendered alone, because with a feed
+    // around it the container's answer lands second and hides whether the group
+    // grabbed it on the way past.
+    renderRow();
+    const row = screen.getByTestId('room-entry');
+    row.focus();
+    fireEvent.keyDown(row, { key: 'ArrowRight' });
+    const first = screen.getByRole('button', { name: 'React with thumbsup' });
+    const last = screen.getByRole('button', { name: 'Mention Ana' });
+
+    fireEvent.keyDown(first, { key: 'End', ctrlKey: true });
+    expect(last).not.toHaveFocus();
+    expect(first).toHaveFocus();
+
+    // Unmodified, it still does what it always did.
+    fireEvent.keyDown(first, { key: 'End' });
+    expect(last).toHaveFocus();
   });
 
   it('keeps every action out of the tab order, always', () => {
@@ -369,15 +443,24 @@ describe('RoomEntryRow — the pills under a message', () => {
     expect(row).toHaveFocus();
   });
 
-  it('sends ArrowDown to the capsule when there are no pills to reach', () => {
-    // The behaviour the row shipped with, unchanged for the messages that have
-    // no down group — which is nearly all of them.
+  it('leaves the arrows to the reader when there is no group below the message', () => {
+    // Changed deliberately (DOR-757, N-f). ArrowUp and ArrowDown used to be
+    // swallowed into the capsule by every message, so a keyboard reader on a
+    // message longer than the window could not scroll through it without
+    // leaving the message first. The capsule keeps ArrowRight and Enter, which
+    // is two ways in; the arrows go back to scrolling.
     renderRow();
     const row = screen.getByTestId('room-entry');
-    row.focus();
-    fireEvent.keyDown(row, { key: 'ArrowDown' });
+    const first = screen.getByRole('button', { name: 'React with thumbsup' });
 
-    expect(screen.getByRole('button', { name: 'React with thumbsup' })).toHaveFocus();
+    row.focus();
+    const down = fireEvent.keyDown(row, { key: 'ArrowDown' });
+    expect(first).not.toHaveFocus();
+    expect(down).toBe(true); // not prevented, so the scroller still gets it
+
+    const up = fireEvent.keyDown(row, { key: 'ArrowUp' });
+    expect(first).not.toHaveFocus();
+    expect(up).toBe(true);
   });
 
   it('refuses a pick from a picker that was already open when the room went quiet', () => {

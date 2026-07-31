@@ -77,6 +77,7 @@ export {
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
 } from './dropdown-menu';
+export { Feed } from './feed';
 export {
   Field,
   FieldContent,

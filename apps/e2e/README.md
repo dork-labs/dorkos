@@ -109,6 +109,12 @@ env -u E2E_SITE \
 
 Notes:
 
+- **Every run boots the mock leg, whichever spec you asked for.** The web
+  servers are configured per-run, not per-project, so selecting a single cockpit
+  spec still starts the test-mode server and its Vite client. Overriding
+  `DORKOS_PORT` / `VITE_PORT` alone therefore is not an isolated run — the mock
+  leg stays on 4243/4248 and collides with any other worktree already there,
+  failing a run whose specs never touch it.
 - Override the mock ports too (`DORKOS_MOCK_PORT` / `DORKOS_MOCK_VITE_PORT`).
   No run adopts a server it did not start, so a leg whose port is already busy
   is a **startup error naming that port** — not, as it once was, a silent

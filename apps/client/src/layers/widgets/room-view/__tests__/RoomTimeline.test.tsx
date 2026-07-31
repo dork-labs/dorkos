@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -59,10 +59,29 @@ function entry(seq: number, overrides: Partial<RoomEntry> = {}): RoomEntry {
   };
 }
 
-function renderTimeline(overrides: Partial<Parameters<typeof RoomTimeline>[0]> = {}) {
-  return render(
+/** The providers a room row needs: a query client, a transport and tooltips. */
+function Wrapper({ children }: { children: React.ReactNode }) {
+  return (
+    <QueryClientProvider
+      client={
+        new QueryClient({
+          defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+        })
+      }
+    >
+      <TransportProvider transport={createMockTransport()}>
+        <TooltipProvider>{children}</TooltipProvider>
+      </TransportProvider>
+    </QueryClientProvider>
+  );
+}
+
+/** The timeline with everything it needs supplied, so a test names only what it is about. */
+function FeedHarness(overrides: Partial<Parameters<typeof RoomTimeline>[0]> = {}) {
+  return (
     <RoomTimeline
       roomId="room-1"
+      roomName="general"
       viewerAuthorId="reader"
       entries={[]}
       members={[member('ana', 'Ana')]}
@@ -73,23 +92,12 @@ function renderTimeline(overrides: Partial<Parameters<typeof RoomTimeline>[0]> =
       onAddAgents={vi.fn()}
       onOpenThread={vi.fn()}
       {...overrides}
-    />,
-    {
-      wrapper: ({ children }) => (
-        <QueryClientProvider
-          client={
-            new QueryClient({
-              defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-            })
-          }
-        >
-          <TransportProvider transport={createMockTransport()}>
-            <TooltipProvider>{children}</TooltipProvider>
-          </TransportProvider>
-        </QueryClientProvider>
-      ),
-    }
+    />
   );
+}
+
+function renderTimeline(overrides: Partial<Parameters<typeof RoomTimeline>[0]> = {}) {
+  return render(<FeedHarness {...overrides} />, { wrapper: Wrapper });
 }
 
 describe('RoomTimeline', () => {
@@ -429,6 +437,187 @@ describe('groupByThread', () => {
     expect(result.orphaned.has('entry-9')).toBe(true);
     expect(result.orphaned.has('entry-10')).toBe(false);
     expectNothingLost(input, result);
+  });
+});
+
+describe('RoomTimeline as a feed', () => {
+  /** Three messages from two people, so there are articles to move between. */
+  const THREE = [
+    entry(1),
+    entry(2, { authorId: 'bo' }),
+    entry(3, { authorId: 'ana', createdAt: '2026-07-26T11:00:00.000Z' }),
+  ];
+  const ROSTER = [member('ana', 'Ana'), member('bo', 'Bo')];
+
+  it('is a feed, named for the room it is a history of', () => {
+    // A page can hold two histories at once — the room and an open thread — so
+    // an unnamed feed leaves a reader unable to tell which one they are in.
+    renderTimeline({ entries: THREE, members: ROSTER });
+
+    expect(screen.getByRole('feed', { name: 'Messages in general' })).toBeInTheDocument();
+  });
+
+  it('says it is busy while the history is still arriving, and not once it has', () => {
+    renderTimeline({ isLoading: true });
+    expect(screen.getByTestId('room-timeline-loading')).toHaveAttribute('aria-busy', 'true');
+
+    cleanup();
+    renderTimeline({ entries: THREE, members: ROSTER });
+    // Written as false rather than left off: a feed that only ever GAINS the
+    // attribute is one that announces a wait after the wait is over.
+    expect(screen.getByTestId('room-timeline')).toHaveAttribute('aria-busy', 'false');
+  });
+
+  it('numbers every message in the room’s flow', () => {
+    renderTimeline({ entries: THREE, members: ROSTER });
+    const articles = screen.getAllByRole('article');
+
+    expect(articles).toHaveLength(3);
+    articles.forEach((article, index) => {
+      expect(article).toHaveAttribute('aria-posinset', String(index + 1));
+      expect(article).toHaveAttribute('aria-setsize', '3');
+    });
+  });
+
+  it('names each message from the author line already on screen', () => {
+    // The DOR-583 rule holds: the name is the visible one, pointed at, never a
+    // second sentence invented for a screen reader.
+    renderTimeline({ entries: THREE, members: ROSTER });
+
+    expect(screen.getAllByRole('article')[1]).toHaveAccessibleName(/Bo/);
+  });
+
+  it('leaves the day and unread rules as separators between articles', () => {
+    // They are real to a reader and there is nothing in them to stand on, so
+    // they stay out of the set Page Down walks.
+    renderTimeline({ entries: THREE, members: ROSTER, lastReadSeq: 1 });
+
+    expect(screen.getByTestId('unread-divider')).toHaveAttribute('role', 'separator');
+    expect(screen.getByTestId('unread-divider')).not.toHaveAttribute('aria-posinset');
+  });
+
+  it('counts a notice as an article, named by what it says', () => {
+    // A fixed name like "Room notice" would be a live hazard rather than a tidy
+    // default: `aria-label` REPLACES the element's own text for naming, so
+    // landing on a one-line paragraph would announce three words that say
+    // nothing in place of the line itself.
+    renderTimeline({
+      entries: [
+        entry(1),
+        entry(2, { kind: 'notice', body: { text: 'Ana stopped replying here' } }),
+      ],
+      members: ROSTER,
+    });
+
+    const notice = screen.getByTestId('room-notice');
+    expect(notice).toHaveAttribute('role', 'article');
+    expect(notice).toHaveAttribute('aria-posinset', '2');
+    expect(notice).toHaveAccessibleName('Ana stopped replying here');
+  });
+
+  it('cuts a long notice’s name on a word, not mid-word', () => {
+    const long = `Ana stopped replying here because ${'the queue backed up '.repeat(8)}badly`;
+    renderTimeline({
+      entries: [entry(1, { kind: 'notice', body: { text: long } })],
+      members: ROSTER,
+    });
+
+    const name = screen.getByTestId('room-notice').getAttribute('aria-label')!;
+    expect(name.length).toBeLessThanOrEqual(81);
+    expect(name.endsWith('…')).toBe(true);
+    // A prefix of the real line, ending on a word rather than through one.
+    expect(long.startsWith(name.slice(0, -1))).toBe(true);
+    expect(name).not.toMatch(/\s…$/);
+    expect(long[name.length - 1]).toBe(' ');
+  });
+
+  it('moves message to message on Page Down and Page Up', () => {
+    renderTimeline({ entries: THREE, members: ROSTER });
+    const [first, second, third] = screen.getAllByRole('article');
+
+    first!.focus();
+    fireEvent.keyDown(first!, { key: 'PageDown' });
+    expect(second).toHaveFocus();
+
+    fireEvent.keyDown(second!, { key: 'PageDown' });
+    expect(third).toHaveFocus();
+
+    fireEvent.keyDown(third!, { key: 'PageUp' });
+    expect(second).toHaveFocus();
+  });
+
+  it('stops at the ends rather than wrapping round', () => {
+    // A feed is a stretch of history. Jumping from its end back to its start
+    // would tell a reader they had arrived somewhere they had not.
+    renderTimeline({ entries: THREE, members: ROSTER });
+    const articles = screen.getAllByRole('article');
+    const last = articles[articles.length - 1]!;
+
+    last.focus();
+    fireEvent.keyDown(last, { key: 'PageDown' });
+    expect(last).toHaveFocus();
+
+    articles[0]!.focus();
+    fireEvent.keyDown(articles[0]!, { key: 'PageUp' });
+    expect(articles[0]).toHaveFocus();
+  });
+
+  it('moves on from wherever inside a message the focus happens to be', () => {
+    // The composition the roving toolbar has to survive: Page Down pressed with
+    // focus on one of a message's own buttons is still a feed command.
+    renderTimeline({ entries: THREE, members: ROSTER });
+    const [first, second] = screen.getAllByRole('article');
+
+    first!.focus();
+    fireEvent.keyDown(first!, { key: 'ArrowRight' });
+    const button = screen.getAllByRole('button', { name: 'React with thumbsup' })[0]!;
+    expect(button).toHaveFocus();
+
+    fireEvent.keyDown(button, { key: 'PageDown' });
+    expect(second).toHaveFocus();
+  });
+
+  it('leaves the feed for the controls around it on Ctrl+Home and Ctrl+End', () => {
+    render(
+      <>
+        <button type="button">above</button>
+        <FeedHarness entries={THREE} members={ROSTER} />
+        <button type="button">below</button>
+      </>,
+      { wrapper: Wrapper }
+    );
+    const articles = screen.getAllByRole('article');
+
+    articles[1]!.focus();
+    fireEvent.keyDown(articles[1]!, { key: 'End', ctrlKey: true });
+    expect(screen.getByRole('button', { name: 'below' })).toHaveFocus();
+
+    articles[1]!.focus();
+    fireEvent.keyDown(articles[1]!, { key: 'Home', ctrlKey: true });
+    expect(screen.getByRole('button', { name: 'above' })).toHaveFocus();
+  });
+
+  it('leaves the feed even from a message’s own toolbar', () => {
+    // Ctrl+End has to work from wherever focus is, and inside a message that is
+    // a button belonging to a roving group. (Whether the group also grabs the
+    // press on the way past is invisible from here — the container's answer
+    // lands second either way — so `RoomEntryRow` pins that half on a row
+    // rendered without a feed around it.)
+    render(
+      <>
+        <FeedHarness entries={THREE} members={ROSTER} />
+        <button type="button">below</button>
+      </>,
+      { wrapper: Wrapper }
+    );
+
+    const first = screen.getAllByRole('article')[0]!;
+    first.focus();
+    fireEvent.keyDown(first, { key: 'ArrowRight' });
+    const button = screen.getAllByRole('button', { name: 'React with thumbsup' })[0]!;
+
+    fireEvent.keyDown(button, { key: 'End', ctrlKey: true });
+    expect(screen.getByRole('button', { name: 'below' })).toHaveFocus();
   });
 });
 

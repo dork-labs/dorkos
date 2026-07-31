@@ -1,5 +1,11 @@
-import { useCallback, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import type { MessageGrouping, MessageAuthor, LongPressState } from '@/layers/shared/model';
+import { useCallback, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import {
+  feedArticleProps,
+  type FeedPosition,
+  type MessageGrouping,
+  type MessageAuthor,
+  type LongPressState,
+} from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
 import { MarkdownContent } from '@/layers/shared/ui';
 import {
@@ -54,6 +60,14 @@ interface RoomEntryRowProps {
    * room's flow, so it has to say that it is answering something.
    */
   orphanedReply?: boolean;
+  /**
+   * Where this row sits in the room's feed, when it is rendering inside one.
+   *
+   * Omitted in the thread panel: its rows are still named, but a position in a
+   * set nothing navigates would be a promise of Page Down that the panel does
+   * not yet keep (DOR-780).
+   */
+  feedPosition?: FeedPosition;
 }
 
 /**
@@ -65,6 +79,26 @@ function formatTime(timestamp: string): string {
   const ms = Date.parse(timestamp);
   if (Number.isNaN(ms)) return '';
   return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+/** How much of a notice its name carries before it is cut short. */
+const NOTICE_NAME_MAX = 80;
+
+/**
+ * A notice's own words, short enough to be a name.
+ *
+ * Cut on a word boundary where there is one within reach, so the name ends
+ * mid-sentence rather than mid-word — a name is spoken, and a chopped word is
+ * heard as a mistake.
+ *
+ * @param text - What the notice says.
+ */
+function noticeName(text: string): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= NOTICE_NAME_MAX) return trimmed;
+  const cut = trimmed.slice(0, NOTICE_NAME_MAX);
+  const lastSpace = cut.lastIndexOf(' ');
+  return `${(lastSpace > NOTICE_NAME_MAX / 2 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`;
 }
 
 /**
@@ -86,6 +120,30 @@ function formatTime(timestamp: string): string {
  * same actions on right-click, and a drawer on a long press. The row is a tab
  * stop so the toolbar can be reached without a pointer; its buttons join the
  * tab order only while focus is inside the row (see `EntryActionBar`).
+ *
+ * **Every message row is NAMED, wherever it renders** — the room's feed and the
+ * thread panel alike. That is the decision, not a side effect of the feed work
+ * that happened to leak: a message that cannot say who wrote it is a message a
+ * screen reader can only reach by reading everything around it, and that is as
+ * true in a thread as it is in a room.
+ *
+ * A row shipped unnamed on purpose once, and the reason it changed is worth
+ * keeping. "Message from Ana" over a row that visibly says "Ana" is a second
+ * sentence invented for screen readers — the DOR-583 double-speak. The answer
+ * is not to stay silent but to stop inventing: the name is the author line
+ * ALREADY ON SCREEN, pointed at with `aria-labelledby`, so what repeats is the
+ * visible line and never a string written for the purpose. The APG's own feed
+ * example resolves it the same way.
+ *
+ * A continuation row is the exception and gets an `aria-label` instead: it has
+ * no author line to point at, because the design deliberately drops one for a
+ * run of messages from the same person. Sighted readers get that from the
+ * grouping; a name is how everyone else gets the same fact.
+ *
+ * `feedPosition` is a CONSUMER of that name rather than its cause. It adds
+ * where the row sits in the set, which is what makes Page Down say "12 of 30,
+ * Ana" — so a row outside a feed is named but unnumbered, which is exactly what
+ * the thread panel should be until it becomes a feed of its own (DOR-780).
  */
 export function RoomEntryRow({
   roomId,
@@ -98,8 +156,12 @@ export function RoomEntryRow({
   streamStalled,
   grouping,
   orphanedReply,
+  feedPosition,
 }: RoomEntryRowProps) {
   const time = formatTime(entry.createdAt);
+  const domId = useId();
+  const headerId = `${domId}-author`;
+  const contentId = `${domId}-content`;
   const rowRef = useRef<HTMLDivElement>(null);
   const barRef = useRef<EntryActionBarHandle>(null);
   const pillsRef = useRef<RovingGroupHandle>(null);
@@ -129,10 +191,23 @@ export function RoomEntryRow({
   );
 
   if (entry.kind === 'notice') {
+    // An article like any other line of the log, and a stop the feed can land
+    // on. Leaving it out of the set would make Page Down skip the room saying
+    // something about itself — which is exactly the kind of line a reader who
+    // is not watching the screen most needs to be given.
+    //
+    // Named from its OWN words, not a fixed "Room notice". An `aria-label`
+    // REPLACES the element's text for naming purposes, so a shared label over a
+    // one-line paragraph is a live hazard: land on it and the only thing
+    // guaranteed to be announced is the label, which would turn "Ana stopped
+    // replying here" into three words that say nothing. Naming it after its own
+    // text means the worst case is hearing the line twice rather than never.
     return (
       <p
         data-testid="room-notice"
-        className="text-muted-foreground px-[var(--msg-padding-x)] py-2 text-xs italic"
+        {...(feedPosition && { role: 'article', 'aria-label': noticeName(entry.body.text) })}
+        {...feedArticleProps(feedPosition)}
+        className="text-muted-foreground focus-visible:ring-ring/50 px-[var(--msg-padding-x)] py-2 text-xs italic outline-none focus-visible:ring-2"
       >
         {entry.body.text}
       </p>
@@ -148,20 +223,28 @@ export function RoomEntryRow({
   /**
    * From the message itself, an arrow or Enter moves into its buttons.
    *
-   * A message has two groups now and the key says which: the capsule is ABOVE
-   * the message, so ArrowUp / ArrowRight / Enter reach it; the pills are BELOW,
-   * so ArrowDown reaches those. A message with no reactions has no down group,
-   * and ArrowDown does what it always did.
+   * A message has two groups and the key says which: ArrowRight and Enter reach
+   * the capsule above it, ArrowDown reaches the pills below it. A message with
+   * no pills has no down group, and then **ArrowDown is left alone** — it
+   * scrolls, which is what an arrow key on a page of text is for.
+   *
+   * That is the difference from how the row shipped, and it is deliberate
+   * (DOR-757, N-f). ArrowUp and ArrowDown used to be swallowed into the capsule
+   * by every message, so a keyboard reader who focused a message longer than the
+   * window could not scroll through it without leaving the message first. The
+   * capsule keeps two ways in that nothing else wants, and the arrows go back to
+   * the reader.
    */
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget) return;
     const { key } = event;
-    if (key !== 'ArrowRight' && key !== 'ArrowUp' && key !== 'ArrowDown' && key !== 'Enter') return;
-    event.preventDefault();
     if (key === 'ArrowDown' && reactions.length > 0) {
+      event.preventDefault();
       pillsRef.current?.focusFirst();
       return;
     }
+    if (key !== 'ArrowRight' && key !== 'Enter') return;
+    event.preventDefault();
     barRef.current?.focusFirst();
   };
 
@@ -183,6 +266,22 @@ export function RoomEntryRow({
         role="article"
         // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- see above
         tabIndex={0}
+        // Named from the author line already on screen, or — for a continuation
+        // row, which has none — from the same two facts said directly. Either
+        // way it is who spoke and when, never a sentence about the row itself.
+        {...(showAuthorHeader
+          ? { 'aria-labelledby': headerId }
+          : {
+              'aria-label': time.length > 0 ? `${author.displayName}, ${time}` : author.displayName,
+            })}
+        // What the article is ABOUT, which the APG asks a feed's articles to
+        // point at: the words, not the toolbar drawn over them.
+        aria-describedby={contentId}
+        // The capsule is reached with an arrow or Enter and announced by
+        // nothing — a roving group is invisible until you are standing in it.
+        // Enter is the one worth saying out loud.
+        aria-keyshortcuts="Enter"
+        {...feedArticleProps(feedPosition)}
         onKeyDown={handleKeyDown}
         className={cn(
           styles.root(),
@@ -212,7 +311,7 @@ export function RoomEntryRow({
         </div>
         <div className={styles.body()}>
           {showAuthorHeader && (
-            <div className={styles.header()}>
+            <div id={headerId} className={styles.header()}>
               <span className={styles.authorName()}>{author.displayName}</span>
               {time.length > 0 && (
                 <span className={cn(styles.timestamp(), 'text-msg-timestamp')}>{time}</span>
@@ -232,7 +331,7 @@ export function RoomEntryRow({
             menu to be taking away. That is a property of this call site, not of
             `MarkdownContent` everywhere.
           */}
-          <div data-slot="message-content" className={styles.content()}>
+          <div id={contentId} data-slot="message-content" className={styles.content()}>
             <MarkdownContent content={entry.body.text} linkSafety />
           </div>
           {/* The pills, under the words they are about. A message with no
