@@ -64,19 +64,54 @@ export class SessionStore {
    * old id would silently revert the ENFORCED mode to the runtime default on the
    * first turn after an eviction or a restart (DOR-493).
    *
+   * The id the turn was ASKED with is only a hint here, never the answer: the
+   * SDK can rename the same conversation more than once, and from the second
+   * rename on, the caller is asking by an id that is an index alias rather than
+   * the key the session is stored under. Writing that alias into the index as
+   * if it were the map key stranded the session — neither current id resolved,
+   * and the next resume looked for a transcript the SDK had already renamed
+   * away from (DOR-774). So the map key is resolved, from the asked id or the
+   * outgoing one, whichever the store still recognises.
+   *
+   * Every id the session has ever answered to keeps pointing at it. Clients
+   * legitimately hold different links in that chain — the cockpit adopts the id
+   * the 202 reports, a room holds the id it bound — and a turn already in
+   * flight is being tracked by the id it started under. Eviction sweeps the
+   * whole chain, so nothing outlives the session.
+   *
    * @param previousSdkSessionId - The canonical id held until now
    * @param nextSdkSessionId - The canonical id the SDK just assigned
-   * @param sessionMapKey - The key this session is stored under in the session map
+   * @param requestedSessionId - The id the turn was asked with, as a lookup hint
    */
   async rebindSdkSession(
     previousSdkSessionId: string,
     nextSdkSessionId: string,
-    sessionMapKey: string
+    requestedSessionId: string
   ): Promise<void> {
     if (previousSdkSessionId === nextSdkSessionId) return;
-    this.sdkSessionIndex.delete(previousSdkSessionId);
-    this.sdkSessionIndex.set(nextSdkSessionId, sessionMapKey);
+    const sessionMapKey =
+      this.resolveMapKey(requestedSessionId) ?? this.resolveMapKey(previousSdkSessionId);
+    if (sessionMapKey) {
+      this.sdkSessionIndex.set(previousSdkSessionId, sessionMapKey);
+      this.sdkSessionIndex.set(nextSdkSessionId, sessionMapKey);
+    } else {
+      // The session was evicted mid-turn. Nothing to index, but the durable
+      // settings row below still has to follow the id, or the operator's mode
+      // reverts on the next cold resume.
+      logger.warn('[rebindSdkSession] no live session for rebind; indexed nothing', {
+        requestedSessionId,
+        previousSdkSessionId,
+        nextSdkSessionId,
+      });
+    }
     await this.settingsPort?.rekeySessionSettings(previousSdkSessionId, nextSdkSessionId);
+  }
+
+  /** The key a session is stored under, given any id it answers to. */
+  private resolveMapKey(sessionId: string): string | undefined {
+    if (this.sessions.has(sessionId)) return sessionId;
+    const mappedKey = this.sdkSessionIndex.get(sessionId);
+    return mappedKey !== undefined && this.sessions.has(mappedKey) ? mappedKey : undefined;
   }
 
   /** Find a session by map key or SDK session ID (O(1) via reverse index). */
@@ -146,7 +181,6 @@ export class SessionStore {
       pendingInteractions: new Map(),
       eventQueue: [],
     });
-    this.sdkSessionIndex.set(sessionId, sessionId);
   }
 
   /**
@@ -432,14 +466,19 @@ export class SessionStore {
   // ---------------------------------------------------------------------------
 
   /**
-   * Evict sessions that have exceeded their idle timeout. Returns the evicted
-   * ids — each session's map key (the original request UUID) AND, when it
-   * differs, its `sdkSessionId` (the canonical id). Both are returned because
+   * Evict sessions that have exceeded their idle timeout. Returns EVERY id the
+   * session answered to — its map key (the original request UUID) plus every
+   * SDK id it was ever renamed to. All of them are returned because
    * `rekeyProjector` moves a brand-new session's projector from the request
    * UUID to the canonical id mid-first-turn, so disposing by the map key alone
    * would miss every rekeyed projector and leak it (plus its EventLog) for the
-   * server's lifetime. Locks may exist under either id too; `cleanup` is
-   * delete-if-present, so passing both is safe.
+   * server's lifetime. Locks may exist under any of them too; `cleanup` is
+   * delete-if-present, so passing them all is safe.
+   *
+   * The reverse index is swept the same way — by value, not by the current
+   * `sdkSessionId` — because a twice-renamed session keeps an entry per id it
+   * has held, and deleting only the newest would leave the older ones pointing
+   * at a map key that no longer exists, for the life of the server.
    */
   checkSessionHealth(lockManager: SessionLockManager): string[] {
     const now = Date.now();
@@ -449,12 +488,16 @@ export class SessionStore {
         for (const interaction of session.pendingInteractions.values()) {
           clearTimeout(interaction.timeout);
         }
-        this.sdkSessionIndex.delete(session.sdkSessionId);
-        this.sessions.delete(id);
-        expiredIds.push(id);
-        if (session.sdkSessionId && session.sdkSessionId !== id) {
-          expiredIds.push(session.sdkSessionId);
+        const ids = new Set<string>([id]);
+        for (const [sdkId, mapKey] of this.sdkSessionIndex) {
+          if (mapKey === id) {
+            this.sdkSessionIndex.delete(sdkId);
+            ids.add(sdkId);
+          }
         }
+        if (session.sdkSessionId) ids.add(session.sdkSessionId);
+        this.sessions.delete(id);
+        expiredIds.push(...ids);
       }
     }
     lockManager.cleanup(expiredIds);
