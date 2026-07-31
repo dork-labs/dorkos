@@ -332,6 +332,60 @@ export class RoomsApi {
   }
 
   /**
+   * The ids of a room's entries, oldest first — what a reaction attaches to.
+   *
+   * @param roomId - The room to read.
+   */
+  async entryIds(roomId: string): Promise<string[]> {
+    const res = await this.request.get(`/api/rooms/${roomId}/entries`);
+    if (!res.ok()) throw new Error(`Reading ${roomId} answered ${res.status()}`);
+    const body = (await res.json()) as { entries: { id: string }[] };
+    return body.entries.map((entry) => entry.id);
+  }
+
+  /**
+   * Put an emoji on an entry through the API — the way another reader would.
+   *
+   * `on` is named rather than flipped, for the same reason the cockpit names it:
+   * a seed that flipped would undo itself if it ever ran twice.
+   *
+   * @param roomId - The room the entry lives in.
+   * @param entryId - The entry to react to.
+   * @param emoji - The reaction.
+   * @param on - The state to land in. Defaults to putting it there.
+   */
+  async react(roomId: string, entryId: string, emoji: string, on = true): Promise<void> {
+    const res = await this.request.post(`/api/rooms/${roomId}/entries/${entryId}/reactions`, {
+      data: { emoji, on },
+    });
+    if (res.status() !== 202) {
+      throw new Error(`Reacting on ${entryId} answered ${res.status()}: ${await res.text()}`);
+    }
+  }
+
+  /**
+   * One entry's reaction set, as the SERVER holds it.
+   *
+   * The check an optimistic pill cannot pass by being drawn: this reads the same
+   * history route every reader hydrates from, so what it answers is what the
+   * write actually did.
+   *
+   * @param roomId - The room the entry lives in.
+   * @param entryId - The entry to read.
+   */
+  async reactionsOn(
+    roomId: string,
+    entryId: string
+  ): Promise<{ emoji: string; authorIds: string[] }[]> {
+    const res = await this.request.get(`/api/rooms/${roomId}/entries`);
+    if (!res.ok()) throw new Error(`Reading ${roomId} answered ${res.status()}`);
+    const body = (await res.json()) as {
+      entries: { id: string; reactions?: { emoji: string; authorIds: string[] }[] }[];
+    };
+    return body.entries.find((entry) => entry.id === entryId)?.reactions ?? [];
+  }
+
+  /**
    * Wait until the room list reports a room as carrying `count` unread.
    *
    * A test about the unread badge has two preconditions, not one: the entries

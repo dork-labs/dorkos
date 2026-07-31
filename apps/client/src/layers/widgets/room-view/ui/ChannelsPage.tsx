@@ -108,6 +108,8 @@ export function ChannelsPage() {
           entries={entries}
           members={room.members}
           lastReadSeq={frozenReadSeq}
+          reactionFrequents={room.reactionFrequents}
+          streamStalled={stream.stalled}
           isLoading={entriesQuery.isLoading}
           error={entriesQuery.error}
           onAddAgents={() => setDetailsFocus('add')}

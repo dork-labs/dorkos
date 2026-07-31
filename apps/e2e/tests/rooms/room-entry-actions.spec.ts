@@ -59,9 +59,15 @@ test.describe('Rooms — every message gets a menu', () => {
     await expect(toolbar).toHaveCSS('opacity', '1');
 
     // The action set, read off the accessibility tree rather than off icons.
-    // This message is the reader's own, so it does not offer to mention them —
-    // the picker leaves the reader out for the same reason.
-    await expect(toolbar.getByRole('button')).toHaveCount(2);
+    // Six: three quick reactions and the picker, then the commands — and this
+    // message is the reader's own, so it does not offer to mention them, the
+    // same way the mention picker leaves the reader out.
+    await expect(toolbar.getByRole('button')).toHaveCount(6);
+    // Three quick reactions, counted rather than named: which three they are is
+    // the reader's own history across every room on this shared server, so a
+    // sibling spec's reaction changes them (see `GOTCHAS.md`).
+    await expect(roomsPage.quickReactionsIn(entry)).toHaveCount(3);
+    await expect(toolbar.getByRole('button', { name: 'Pick a reaction' })).toBeVisible();
     await expect(toolbar.getByRole('button', { name: 'Reply in thread' })).toBeVisible();
     await expect(toolbar.getByRole('button', { name: 'Copy text' })).toBeVisible();
   });
@@ -113,6 +119,12 @@ test.describe('Rooms — every message gets a menu', () => {
     // The pill is `p-0.5` inside a 1px border, so every real inset is 3px. Two
     // is the floor: enough to fail on any overflow or on padding collapsing
     // away, loose enough to survive a sub-pixel layout or a rounding change.
+    //
+    // Unchanged by the reaction slots, and that is the point of re-reading it
+    // here: the quick row made the capsule WIDER, not taller, so every button
+    // still sits inside the same padding and `--msg-actions-height` still
+    // describes the box. A reaction button that rendered taller than an icon one
+    // would break the straddle promise next door, and this is where it shows.
     const MIN_INSET_PX = 2;
     expect(insets.length).toBeGreaterThan(0);
     // Filtered rather than asserted one at a time, so a failure names every
@@ -311,9 +323,14 @@ test.describe('Rooms — every message gets a menu', () => {
     await entry.focus();
     await expect(toolbar).toHaveCSS('opacity', '1');
 
-    // Into the toolbar with an arrow, along it with another, and back out with
-    // Escape — roving tabindex, so Tab is never spent inside a message.
+    // Into the toolbar with an arrow, along it with more, and back out with
+    // Escape — roving tabindex, so Tab is never spent inside a message however
+    // many slots the capsule grew.
     await page.keyboard.press('ArrowRight');
+    await expect(roomsPage.quickReactionsIn(entry).first()).toBeFocused();
+
+    // Past the three quick reactions and the picker, onto the first command.
+    for (let i = 0; i < 4; i += 1) await page.keyboard.press('ArrowRight');
     await expect(toolbar.getByRole('button', { name: 'Reply in thread' })).toBeFocused();
 
     await page.keyboard.press('ArrowRight');
@@ -322,8 +339,9 @@ test.describe('Rooms — every message gets a menu', () => {
     await page.keyboard.press('Escape');
     await expect(entry).toBeFocused();
 
-    // Back in, and take the first action.
+    // Back in, along to Reply, and take it.
     await page.keyboard.press('ArrowRight');
+    for (let i = 0; i < 4; i += 1) await page.keyboard.press('ArrowRight');
     await page.keyboard.press('Enter');
 
     await expect(roomsPage.replyBanner).toBeVisible();
@@ -337,8 +355,10 @@ test.describe('Rooms — every message gets a menu', () => {
     roomsPage,
   }) => {
     // The whole reason the actions are `tabIndex={-1}`. With them in the tab
-    // order, these two presses would land on the first message's Copy and
-    // Mention buttons and a three-message room would cost nine presses to cross.
+    // order, these two presses would land inside the first message's capsule and
+    // a three-message room would cost eighteen presses to cross — six slots
+    // each, now that reactions are in there. The pill row is closed the same way
+    // and for the same reason (`room-reactions.spec.ts` walks it with arrows).
     const slug = `e2e-actions-trail-${roomsApi.runId}`;
     const room = await roomsApi.createChannel(slug, slug);
     await roomsApi.postEntries(room.id, ['first', 'second', 'third']);

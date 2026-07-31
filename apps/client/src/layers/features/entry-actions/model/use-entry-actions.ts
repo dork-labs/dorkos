@@ -13,7 +13,7 @@ import {
   type AuthorRef,
   type RoomEntry,
 } from '@/layers/entities/room';
-import { ENTRY_ACTION_ORDER, type EntryAction, type EntryActionId } from '../lib/entry-actions';
+import { ENTRY_ACTION_ORDER, type EntryAction, type EntryActionSlot } from '../lib/entry-actions';
 
 /** The message an action set is being built for. */
 export interface EntryActionsInput {
@@ -78,7 +78,7 @@ export function useEntryActions({
   const authorName = author?.displayName;
 
   return useMemo(() => {
-    const available: Partial<Record<EntryActionId, EntryAction>> = {
+    const available: Partial<Record<EntryActionSlot, EntryAction>> = {
       reply: {
         id: 'reply',
         label: 'Reply in thread',
@@ -116,8 +116,10 @@ export function useEntryActions({
     }
 
     // Ordered BY the constant rather than by the shape of the object above, so
-    // the reservation for reactions has one source and not two that agree today.
-    return ENTRY_ACTION_ORDER.map((id) => available[id]).filter(
+    // the capsule's order has one source and not two that agree today. The two
+    // reaction slots simply have no command in here — the toolbar fills them,
+    // from the same constant.
+    return ENTRY_ACTION_ORDER.map((slot) => available[slot]).filter(
       (action): action is EntryAction => action !== undefined
     );
   }, [roomId, rootEntryId, text, handle, authorName]);

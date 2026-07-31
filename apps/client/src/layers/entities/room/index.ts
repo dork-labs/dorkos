@@ -19,6 +19,16 @@ export type { RoomPresenceAuthor } from './model/use-room-presence';
 export { usePostToRoom } from './model/use-post-to-room';
 export type { PostToRoomInput } from './model/use-post-to-room';
 export { useReplyInThread } from './model/use-reply-in-thread';
+export { useToggleReaction } from './model/use-toggle-reaction';
+export type { ToggleReactionInput } from './model/use-toggle-reaction';
+export {
+  REACTION_ROW_LIMIT,
+  applyReactionToggle,
+  hasReacted,
+  mergeRoomReactions,
+  reactionSummary,
+  splitReactionRow,
+} from './lib/reactions';
 export { useRoomDraft, useRoomDraftStore } from './model/room-drafts';
 export {
   useComposerFocusRequest,
@@ -72,6 +82,7 @@ export type {
   AuthorRef,
   Room,
   RoomEntry,
+  RoomEntryReaction,
   RoomKind,
   RoomRosterEntry,
   RoomSummary,

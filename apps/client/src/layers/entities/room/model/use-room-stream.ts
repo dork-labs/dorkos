@@ -30,6 +30,7 @@ import type { RoomEntry } from '@dorkos/shared/room-schemas';
 import { SSE_RESILIENCE } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 import { roomKeys } from '../api/query-keys';
+import { mergeRoomReactions } from '../lib/reactions';
 import { useRoomPresenceStore } from './use-room-presence';
 
 /**
@@ -159,12 +160,18 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
               useRoomPresenceStore.getState().observe(roomId, event);
               continue;
             }
-            // Reactions are durable state on an entry rather than a place in the
-            // log, so they carry no `seq` and nothing here merges them. The
-            // server keeps them fresh on this stream and re-sends the trailing
-            // window on a resume; drawing them is B3's, and until it lands this
-            // is a deliberate ignore rather than a gap.
-            if (event.type === 'reaction') continue;
+            // Reactions are durable state ON an entry rather than a place in
+            // the log: the event carries the entry's WHOLE set and no `seq`, so
+            // it is written onto the entry the cache already holds and never
+            // moves the cursor. A resume re-sends one of these per entry in the
+            // trailing window — including entries with no pills at all, which is
+            // how a removal made while this reader was away gets corrected.
+            if (event.type === 'reaction') {
+              queryClient.setQueryData<RoomEntry[]>(roomKeys.entries(roomId), (cached) =>
+                mergeRoomReactions(cached, event.entryId, event.reactions)
+              );
+              continue;
+            }
             // An author's own entry retires that author's indicators here. It
             // has to happen on the way in, beside the merge: the entry replays
             // on a reconnect and the `done` beside it does not, so a client that

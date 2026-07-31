@@ -256,6 +256,76 @@ describe('useRoomStream', () => {
     expect(result.current.stalled).toBe(false);
   });
 
+  it('puts an arriving reaction set on the entry it names, whole', async () => {
+    const transport = createMockTransport();
+    const queryClient = makeQueryClient();
+    queryClient.setQueryData<RoomEntry[]>(roomKeys.entries('room-1'), [
+      {
+        ...entry(4),
+        reactions: [{ emoji: '👍', authorIds: ['ana'], firstAt: '2026-07-26T10:00Z' }],
+      },
+      entry(5),
+    ]);
+    transport.subscribeRoom = vi
+      .fn()
+      .mockImplementation((_id: string, _cursor: number, signal: AbortSignal) =>
+        (async function* (): AsyncIterable<RoomEvent> {
+          yield {
+            type: 'reaction',
+            entryId: 'entry-4',
+            reactions: [{ emoji: '🎉', authorIds: ['kai'], firstAt: '2026-07-26T11:00Z' }],
+          };
+          // An empty set for entry-5, which is what a resume sends for every
+          // entry in the trailing window — including the ones with no pills.
+          yield { type: 'reaction', entryId: 'entry-5', reactions: [] };
+          await new Promise<void>((resolve) => {
+            if (signal.aborted) return resolve();
+            signal.addEventListener('abort', () => resolve(), { once: true });
+          });
+        })()
+      );
+
+    renderHook(() => useRoomStream('room-1', true), {
+      wrapper: wrapperFor(transport, queryClient),
+    });
+
+    await waitFor(() => {
+      const held = queryClient.getQueryData<RoomEntry[]>(roomKeys.entries('room-1'));
+      // Replaced outright: the 👍 is gone, not kept alongside the 🎉. A client
+      // that merged would show a pill the server no longer holds.
+      expect(held?.[0]!.reactions).toEqual([
+        { emoji: '🎉', authorIds: ['kai'], firstAt: '2026-07-26T11:00Z' },
+      ]);
+      expect(held?.[1]!.reactions).toEqual([]);
+    });
+  });
+
+  it('does not move the resume cursor for a reaction', async () => {
+    const transport = createMockTransport();
+    const queryClient = makeQueryClient();
+    queryClient.setQueryData<RoomEntry[]>(roomKeys.entries('room-1'), [entry(4)]);
+    transport.subscribeRoom = vi
+      .fn()
+      .mockImplementationOnce(() =>
+        (async function* (): AsyncIterable<RoomEvent> {
+          yield { type: 'reaction', entryId: 'entry-4', reactions: [] };
+          throw new Error('socket closed');
+        })()
+      )
+      .mockImplementationOnce((_id: string, _cursor: number, signal: AbortSignal) =>
+        staysOpen(signal)
+      );
+
+    renderHook(() => useRoomStream('room-1', true), {
+      wrapper: wrapperFor(transport, queryClient),
+    });
+
+    await waitFor(() => expect(transport.subscribeRoom).toHaveBeenCalledTimes(2));
+    // Still 4. A reaction carries no `seq` and is not a place in the log, so a
+    // reader that let one advance its cursor would skip real messages.
+    expect(cursors(transport)).toEqual([4, 4]);
+  });
+
   it('treats leaving the room as leaving, not as a drop worth retrying', async () => {
     const transport = createMockTransport();
     const queryClient = makeQueryClient();

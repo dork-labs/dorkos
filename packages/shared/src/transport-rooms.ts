@@ -24,6 +24,8 @@ import type {
   RoomRosterEntry,
   RoomSummary,
   RoomWithRoster,
+  ToggleReactionRequest,
+  ToggleReactionResponse,
   UpdateMembershipRequest,
   UpdateRoomRequest,
 } from './room-schemas.js';
@@ -113,6 +115,30 @@ export interface RoomTransport {
    * @param req - The entry to hang the reply off, and what to say.
    */
   replyInThread(id: string, req: PostThreadReplyRequest): Promise<PostToRoomResponse>;
+  /**
+   * Put one emoji on one entry, or take it back.
+   *
+   * Trigger-only in the same shape as {@link postToRoom}: the entry's new
+   * reaction set reaches every reader — this one included — over
+   * {@link subscribeRoom}, so **the stream is authoritative and this response is
+   * not**. Somebody else may have reacted between the click and the answer, and
+   * the frame carries the entry's whole set while this body only says what YOUR
+   * click did. What it adds is the two things a caller cannot derive: which way
+   * its own toggle went, and the reader's quick row recomputed with it counted.
+   *
+   * **Do not retry a bare toggle.** A timeout does not say whether the write
+   * landed, and re-sending a flip undoes it. Send `{ on: true | false }`, which
+   * names the state and is safe to repeat.
+   *
+   * @param id - The room the entry lives in.
+   * @param entryId - The entry the emoji attaches to.
+   * @param req - The emoji, and optionally the state to land in.
+   */
+  toggleReaction(
+    id: string,
+    entryId: string,
+    req: ToggleReactionRequest
+  ): Promise<ToggleReactionResponse>;
   /**
    * Add a member to a room, by author id or by agent directory.
    *

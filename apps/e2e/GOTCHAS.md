@@ -83,6 +83,12 @@ The whole suite shares one server, and specs run in parallel against it. So an a
 Concretely, do not assert:
 
 - that a list is empty ("No schedules yet.") — a sibling is seeding into it;
+- **which three emoji a message capsule's quick row holds.** They are the
+  READER's most-used, counted across every room on the server, so any sibling
+  spec that reacts to anything changes them for everyone. Naming 👍 there passes
+  on a clean database and fails the moment another reactions test runs first —
+  which is what it did. Read the row (`RoomsPage.quickReactionsIn`, then the
+  button's `data-emoji`) and assert against what you read;
 - that a palette's **first** row is anything in particular — another spec's unread room may be above yours;
 - that pressing Enter on an unfiltered list opens _your_ thing — filter to your own run id first.
 

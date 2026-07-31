@@ -3,7 +3,10 @@ import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
 import { render, screen, cleanup, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { createMockTransport } from '@dorkos/test-utils';
 import type { RoomEntry, RoomRosterEntry } from '@dorkos/shared/room-schemas';
+import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { RoomTimeline } from '../ui/RoomTimeline';
 import { unreadPlacement, toMessageAuthor, authorsById, groupByThread } from '../lib/room-timeline';
@@ -64,12 +67,27 @@ function renderTimeline(overrides: Partial<Parameters<typeof RoomTimeline>[0]> =
       entries={[]}
       members={[member('ana', 'Ana')]}
       lastReadSeq={null}
+      reactionFrequents={['👍', '❤️', '🎉']}
       isLoading={false}
       error={null}
       onAddAgents={vi.fn()}
       {...overrides}
     />,
-    { wrapper: ({ children }) => <TooltipProvider>{children}</TooltipProvider> }
+    {
+      wrapper: ({ children }) => (
+        <QueryClientProvider
+          client={
+            new QueryClient({
+              defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+            })
+          }
+        >
+          <TransportProvider transport={createMockTransport()}>
+            <TooltipProvider>{children}</TooltipProvider>
+          </TransportProvider>
+        </QueryClientProvider>
+      ),
+    }
   );
 }
 

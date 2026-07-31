@@ -231,6 +231,21 @@
      together, which is the only way the asymmetry stays deliberate. */
   --msg-actions-fade-in: 90ms;
   --msg-actions-fade-out: 60ms;
+  /* A reaction's arrival, in three parts that run together (design record §5.2):
+     the pill pops, a ring bursts out of it once, and a count that changed rolls
+     up into place. Removal is deliberately none of them — a plain fade, because
+     the celebration belongs to arriving. Every one of these is well inside the
+     300ms all motion here resolves within, and the whole set is `motion-safe:`
+     at its call sites, so a reader who asked for less motion is handed the pill
+     already where it settles. */
+  --msg-reaction-pop: 240ms;
+  --msg-reaction-ring: 260ms;
+  --msg-reaction-roll: 180ms;
+  --msg-reaction-fade-out: 120ms;
+  /* Touch press acknowledgment (design record §5.6): how long the message takes
+     to spring back after a long press is released. The squish going IN uses the
+     same value as a transition, so the gesture feels symmetrical. */
+  --msg-press-release: 200ms;
 
   /* === Shape tokens === */
   --msg-radius: 1.25rem;
@@ -673,6 +688,120 @@ body {
 
 @utility animate-capsule-in {
   animation: capsule-in 160ms cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+
+/* A reaction arriving (design record §5.2): scale 0.4 → 1.28 with a ~2° tilt,
+   an undershoot, then settle. The overshoot is stated as a KEYFRAME rather than
+   left to the curve for the same reason `capsule-in` states its pixel — a curve
+   alone cannot carry a scale a quarter of the way past its landing and have it
+   read as a pop.
+
+   `transform-origin: left center` so the pill grows out of where it will sit
+   rather than pushing the row apart from its middle: the pill row is left-
+   aligned and a centre-origin pop shoves its neighbours sideways. */
+@keyframes reaction-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.4) rotate(-6deg);
+  }
+  42% {
+    opacity: 1;
+    transform: scale(1.28) rotate(2deg);
+  }
+  74% {
+    transform: scale(0.94) rotate(0deg);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+@utility animate-reaction-pop {
+  animation: reaction-pop var(--msg-reaction-pop) cubic-bezier(0.2, 1.8, 0.35, 1);
+  transform-origin: left center;
+}
+
+/* The one-shot ring that fires outward as the pill lands. Drawn as a border on
+   an inset overlay, so it costs no layout and animates on transform/opacity
+   only — and it is `pointer-events-none`, because a ring expanding past the
+   pill must never eat the click that would take the reaction back. */
+@keyframes reaction-ring {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  27% {
+    opacity: 0.7;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.9);
+  }
+}
+
+@utility animate-reaction-ring {
+  animation: reaction-ring var(--msg-reaction-ring) ease-out;
+}
+
+/* A count that changed rolls up into its new value, like a mechanical counter
+   advancing one place. Keyed on the number in `EntryReactionRow`, so it runs
+   when the count moves and never on a re-render that left it alone. */
+@keyframes reaction-roll {
+  from {
+    opacity: 0;
+    transform: translateY(0.45em);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@utility animate-reaction-roll {
+  animation: reaction-roll var(--msg-reaction-roll) cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+
+/* A long press in progress (design record §5.6): the message gives 5% under the
+   finger and HOLDS there while the press lasts (`forwards`). Written as an
+   animation on `transform` rather than as a `scale-95` utility, and that is not
+   style preference: Tailwind v4's scale utilities write the standalone `scale`
+   property while the release below writes `transform`, so mixing them left the
+   squish and the spring-back on two different properties — the squish measured
+   `transform: none` on the live surface, which is how this was caught. */
+@keyframes press-in {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(0.95);
+  }
+}
+
+@utility animate-press-in {
+  animation: press-in var(--msg-press-release) cubic-bezier(0.2, 0.8, 0.4, 1) forwards;
+}
+
+/* Letting go of a long press (design record §5.6): the message springs back from
+   its 0.95 squish, overshooting 1.5% before settling. A press that was CANCELLED
+   — the reader started scrolling, or selecting text — gets none of this: it
+   returns instantly, because a spring on a gesture the reader abandoned is the
+   surface celebrating something that did not happen. */
+@keyframes press-release {
+  from {
+    transform: scale(0.95);
+  }
+  55% {
+    transform: scale(1.015);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+@utility animate-press-release {
+  animation: press-release var(--msg-press-release) cubic-bezier(0.2, 1.6, 0.4, 1);
 }
 
 @keyframes health-pulse {

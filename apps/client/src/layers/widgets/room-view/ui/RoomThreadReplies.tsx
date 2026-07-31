@@ -11,8 +11,14 @@ interface RoomThreadRepliesProps {
   replies: RoomEntry[];
   /** The room's roster, keyed by author id — the only place a name comes from. */
   authors: ReadonlyMap<string, AuthorRef>;
+  /** The same roster as display names, for a reaction's "who reacted" line. */
+  authorNames: ReadonlyMap<string, string>;
   /** The reader's own author id here, passed through to each reply's actions. */
   viewerAuthorId: string;
+  /** This reader's three most-used emoji, passed through to each reply. */
+  reactionFrequents: readonly string[];
+  /** True when the room's live stream has given up — reactions go with it. */
+  streamStalled?: boolean;
   /** "Now" as epoch ms, for the same reason the timeline takes one. */
   now: number;
 }
@@ -65,7 +71,10 @@ export function RoomThreadReplies({
   roomId,
   replies,
   authors,
+  authorNames,
   viewerAuthorId,
+  reactionFrequents,
+  streamStalled,
   now,
 }: RoomThreadRepliesProps) {
   const [expanded, setExpanded] = useState(false);
@@ -109,6 +118,9 @@ export function RoomThreadReplies({
             author={toMessageAuthor(visible[row.index]!.authorId, authors)}
             authorRef={authors.get(visible[row.index]!.authorId)}
             viewerAuthorId={viewerAuthorId}
+            authorNames={authorNames}
+            reactionFrequents={reactionFrequents}
+            streamStalled={streamStalled}
             grouping={row.grouping}
           />
         ) : null

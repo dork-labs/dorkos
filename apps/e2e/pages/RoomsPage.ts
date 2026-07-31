@@ -286,6 +286,54 @@ export class RoomsPage {
   }
 
   /**
+   * The quick-reaction buttons in one message's capsule, in the order drawn.
+   *
+   * **Never assert WHICH emoji these are.** The quick row is the reader's own
+   * most-used, counted across every room on the server — so a sibling spec that
+   * reacts changes what this row holds, and a test naming 👍 is making a claim
+   * only one test in the suite can be right about (see `GOTCHAS.md`). Read the
+   * row, then assert against what you read.
+   *
+   * @param entry - The message row, from {@link RoomsPage.entries}.
+   */
+  quickReactionsIn(entry: Locator): Locator {
+    return this.actionsIn(entry).locator('[data-entry-action="react"]');
+  }
+
+  /**
+   * The pill row under one message.
+   *
+   * Absent entirely on a message nobody has reacted to — the design's "zero
+   * reactions stay perfectly clean" is a promise about the DOM, not about
+   * opacity, so `toHaveCount(0)` is the honest assertion for it.
+   *
+   * @param entry - The message row, from {@link RoomsPage.entries}.
+   */
+  reactionsIn(entry: Locator): Locator {
+    return entry.getByTestId('entry-reactions');
+  }
+
+  /**
+   * One pill under a message, found by the emoji on it.
+   *
+   * @param entry - The message row.
+   * @param emoji - The reaction to look for.
+   */
+  reaction(entry: Locator, emoji: string): Locator {
+    return entry.locator(`[data-testid="entry-reaction"][data-emoji="${emoji}"]`);
+  }
+
+  /** The faint 🙂+ that ends a row which already has reactions on it. */
+  reactionAdd(entry: Locator): Locator {
+    return entry.getByTestId('entry-reactions-add');
+  }
+
+  /** The searchable emoji grid, wherever it was opened from. */
+  get reactionPicker(): Locator {
+    return this.page.getByTestId('reaction-picker');
+  }
+
+  /**
    * The thread hanging off one message: the reply group drawn directly beneath
    * it.
    *
