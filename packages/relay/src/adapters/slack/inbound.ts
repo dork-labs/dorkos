@@ -13,7 +13,8 @@ import type { StandardPayload, RespondMode } from '@dorkos/shared/relay-schemas'
 import { DEFAULT_RESPOND_MODE } from '@dorkos/shared/relay-schemas';
 import type { RelayPublisher, AdapterInboundCallbacks, RelayLogger } from '../../types.js';
 import { noopLogger } from '../../types.js';
-import type { PendingReactions } from './stream.js';
+import { queuePendingReaction, dropPendingReaction } from './presence.js';
+import type { SlackPresenceState } from './presence.js';
 import { SlackThreadIdCodec } from '../../lib/thread-id.js';
 import type { ThreadParticipationTracker } from './thread-tracker.js';
 
@@ -389,39 +390,19 @@ export function clearCaches(state: SlackInboundState): void {
 }
 
 /**
- * Remove an eagerly-queued reaction when publish fails or is rejected.
+ * Forget a queued trigger message that will never be answered.
  *
- * Removes the entry from the pending queue and issues a fire-and-forget
- * reactions.remove call so the hourglass doesn't linger on a message
- * that will never be processed.
+ * Nothing was shown in Slack for it — the queue is only a record of what a
+ * later claim may react to — so this is bookkeeping, not cleanup.
  */
-function removeQueuedReaction(
-  client: WebClient,
+function forgetQueuedTrigger(
+  presence: SlackPresenceState | undefined,
   channelId: string,
   messageTs: string,
-  pendingReactions: PendingReactions | undefined,
-  wasQueued: boolean,
-  logger: RelayLogger
+  wasQueued: boolean
 ): void {
-  if (!wasQueued) return;
-  if (pendingReactions) {
-    const queue = pendingReactions.get(channelId);
-    if (queue) {
-      const idx = queue.indexOf(messageTs);
-      if (idx !== -1) queue.splice(idx, 1);
-      if (queue.length === 0) pendingReactions.delete(channelId);
-    }
-  }
-  void client.reactions
-    .remove({ channel: channelId, name: 'hourglass_flowing_sand', timestamp: messageTs })
-    .catch((err) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (!msg.includes('no_reaction')) {
-        logger.warn(
-          `inbound: failed to remove queued typing reaction from ${channelId}:${messageTs}: ${msg}`
-        );
-      }
-    });
+  if (!wasQueued || !presence) return;
+  dropPendingReaction(presence, channelId, messageTs);
 }
 
 /**
@@ -439,6 +420,11 @@ function removeQueuedReaction(
  * @param state - The adapter instance's inbound caches (required — a shared
  *   fallback would silently reintroduce the cross-instance cache bug)
  * @param logger - Optional relay logger for debug/warn output (defaults to silent)
+ * @param typingIndicator - The operator's working-indicator setting
+ * @param presence - Working-presence state; the trigger message is queued here
+ *   for the claim to react to, and nothing is shown until then
+ * @param codec - The adapter instance's subject codec
+ * @param options - Per-event options (dedup id, respond mode, allowlists)
  */
 export async function handleInboundMessage(
   event: SlackMessageEvent,
@@ -449,7 +435,7 @@ export async function handleInboundMessage(
   state: SlackInboundState,
   logger: RelayLogger = noopLogger,
   typingIndicator: 'none' | 'reaction' = 'none',
-  pendingReactions?: PendingReactions,
+  presence?: SlackPresenceState,
   codec?: SlackThreadIdCodec,
   options?: InboundOptions
 ): Promise<void> {
@@ -556,38 +542,14 @@ export async function handleInboundMessage(
   // Cap inbound content to prevent oversized payloads
   const content = event.text.slice(0, MAX_CONTENT_LENGTH);
 
-  // Add hourglass reaction immediately — before name resolution and publish
-  // so the user sees feedback within milliseconds of sending their message.
-  // Queue is populated synchronously so the outbound handler can find it
-  // when done/error arrives — even if the Slack API call is still in-flight.
+  // Queue this message as a candidate for the `:eyes:` reaction. Nothing is
+  // shown yet: the reaction goes on at the claim — when a turn actually starts
+  // — and Slack tells the outbound side nothing about which message a turn came
+  // from, so the queue is what correlates them (FIFO, per channel).
   let reactionQueued = false;
-  if (typingIndicator === 'reaction') {
-    if (pendingReactions) {
-      const queue = pendingReactions.get(event.channel) ?? [];
-      queue.push(event.ts);
-      pendingReactions.set(event.channel, queue);
-      reactionQueued = true;
-    }
-
-    client.reactions
-      .add({ channel: event.channel, name: 'hourglass_flowing_sand', timestamp: event.ts })
-      .then(() => {
-        logger.debug(`inbound: added typing reaction to ${event.channel}:${event.ts}`);
-      })
-      .catch((err) => {
-        // Remove from queue since the reaction was never actually added.
-        if (pendingReactions) {
-          const queue = pendingReactions.get(event.channel);
-          if (queue) {
-            const idx = queue.indexOf(event.ts);
-            if (idx !== -1) queue.splice(idx, 1);
-            if (queue.length === 0) pendingReactions.delete(event.channel);
-          }
-        }
-        logger.warn(
-          `inbound: failed to add typing reaction to ${event.channel}:${event.ts}: ${err instanceof Error ? err.message : String(err)}`
-        );
-      });
+  if (typingIndicator === 'reaction' && presence) {
+    queuePendingReaction(presence, event.channel, event.ts);
+    reactionQueued = true;
   }
 
   const senderName = event.user ? await resolveUserName(state, client, event.user) : 'unknown';
@@ -629,15 +591,8 @@ export async function handleInboundMessage(
       // Roll back dedup so the message's twin event (or a Slack retry) can
       // reprocess it \u2014 a rate-limited publish must not permanently suppress it.
       forgetSeen(state.seenEvents, dedupKeys);
-      // Clean up the eagerly-added reaction since nothing will process this message
-      removeQueuedReaction(
-        client,
-        event.channel,
-        event.ts,
-        pendingReactions,
-        reactionQueued,
-        logger
-      );
+      // Forget the queued trigger since nothing will process this message
+      forgetQueuedTrigger(presence, event.channel, event.ts, reactionQueued);
       return;
     }
 
@@ -653,7 +608,7 @@ export async function handleInboundMessage(
     );
     // Roll back dedup so the message's twin event (or a Slack retry) can reprocess it.
     forgetSeen(state.seenEvents, dedupKeys);
-    // Clean up the eagerly-added reaction since nothing will process this message
-    removeQueuedReaction(client, event.channel, event.ts, pendingReactions, reactionQueued, logger);
+    // Forget the queued trigger since nothing will process this message
+    forgetQueuedTrigger(presence, event.channel, event.ts, reactionQueued);
   }
 }

@@ -104,7 +104,7 @@ Relay connects to external platforms through **adapters**: plugins that bridge e
 
 - **Claude Code adapter**: routes messages to Claude sessions. When a message arrives on `relay.agent.*`, this adapter creates or resumes a Claude session and passes the message as a prompt. Response chunks flow back to the sender's reply-to subject.
 - **Telegram adapter**: connects a Telegram bot to the bus via the grammy library. Inbound messages publish to `relay.human.telegram.{chatId}`. Outbound messages on matching subjects are delivered to the chat. Supports real-time streaming via `sendMessageDraft`.
-- **Slack adapter**: bridges Slack workspaces into Relay using Socket Mode (Slack's WebSocket-based connection, which avoids exposing a public webhook URL). Supports streaming responses, threading, and typing indicators.
+- **Slack adapter**: bridges Slack workspaces into Relay using Socket Mode (Slack's WebSocket-based connection, which avoids exposing a public webhook URL). Supports streaming responses, threading, and a working indicator driven by the turn itself.
 - **Webhook adapter**: a generic HTTP webhook bridge with HMAC-SHA256 signature verification (a cryptographic check that confirms a webhook payload wasn't tampered with) for both directions.
 
 You can add custom adapters from npm packages or local file paths. Plugin adapters implement the same `RelayAdapter` interface as built-in adapters. Multi-agent coordination through Relay is shipped, but we haven't verified every agent-to-agent path end to end yet, so test your specific setup before relying on it in production.

@@ -1,10 +1,23 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { WebClient } from '@slack/web-api';
 import { deliverMessage, createSlackOutboundState } from '../outbound.js';
 import type { ActiveStream } from '../outbound.js';
 import type { AdapterOutboundCallbacks } from '../../../types.js';
 import { SlackThreadIdCodec } from '../../../lib/thread-id.js';
 import { ThreadParticipationTracker } from '../thread-tracker.js';
+import {
+  createSlackPresenceState,
+  queuePendingReaction,
+  markAssistantThread,
+  clearAllPresence,
+  PRESENCE_EMOJI,
+  WORKING_STATUS,
+  WORKING_LATE_STATUS,
+  PRESENCE_LATE_MS,
+  PRESENCE_REFRESH_MS,
+  PRESENCE_INACTIVITY_MS,
+} from '../presence.js';
+import type { SlackPresenceState } from '../presence.js';
 
 /** Shared codec for tests — no instance ID so prefix is `relay.human.slack`. */
 const testCodec = new SlackThreadIdCodec();
@@ -156,6 +169,7 @@ const mockAppendStream = vi.fn().mockResolvedValue({ ok: true });
 const mockStopStream = vi.fn().mockResolvedValue({ ok: true });
 const mockReactionsAdd = vi.fn().mockResolvedValue({ ok: true });
 const mockReactionsRemove = vi.fn().mockResolvedValue({ ok: true });
+const mockSetStatus = vi.fn().mockResolvedValue({ ok: true });
 
 /**
  * Build a WebClient test double with chat and reactions methods wired.
@@ -173,6 +187,7 @@ function buildMockClient(): WebClient {
       stopStream: mockStopStream,
     },
     reactions: { add: mockReactionsAdd, remove: mockReactionsRemove },
+    assistant: { threads: { setStatus: mockSetStatus } },
   };
   return stub as unknown as WebClient;
 }
@@ -212,7 +227,7 @@ function deliver(
   streaming = true,
   typingIndicator: 'none' | 'reaction' = 'none',
   nativeStreaming = false,
-  pendingReactions: Map<string, string[]> = new Map(),
+  presence: SlackPresenceState = createSlackPresenceState(),
   threadTracker?: ThreadParticipationTracker
 ) {
   return deliverMessage({
@@ -221,7 +236,7 @@ function deliver(
     envelope,
     client,
     streamState,
-    pendingReactions,
+    presence,
     botUserId,
     callbacks,
     streaming,
@@ -804,330 +819,315 @@ describe('deliverMessage', () => {
     });
   });
 
-  describe('typing indicator — emoji reaction', () => {
-    it('adds reaction on stream start when typingIndicator is reaction', async () => {
-      const delta = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: 'Hello' },
-        platformData: { ts: '1234.0001' },
+  describe('working presence — :eyes: at claim', () => {
+    let presence: SlackPresenceState;
+
+    beforeEach(() => {
+      presence = createSlackPresenceState();
+    });
+
+    afterEach(() => {
+      clearAllPresence(presence);
+    });
+
+    /** A runtime stream event for a turn in flight. */
+    function turnEvent(
+      ts: string,
+      type = 'text_delta',
+      data: Record<string, unknown> = { text: 'x' }
+    ) {
+      return createEnvelope('relay.human.slack.D123', {
+        type,
+        data,
+        platformData: { ts },
       });
-      await deliver(
+    }
+
+    /** Deliver one envelope with presence wired in. */
+    function deliverWith(
+      envelope: ReturnType<typeof createEnvelope>,
+      typingIndicator: 'none' | 'reaction' = 'reaction'
+    ) {
+      return deliver(
         'relay.human.slack.D123',
-        delta,
+        envelope,
         client,
         streamState,
         callbacks,
         'UBOTID',
         true,
-        'reaction'
+        typingIndicator,
+        false,
+        presence
       );
+    }
 
+    it('adds :eyes: to the trigger message when the turn claims it, not when the message arrives', async () => {
+      queuePendingReaction(presence, 'D123', '1234.0001');
+
+      // The message has arrived and is queued — nothing is shown yet.
+      expect(mockReactionsAdd).not.toHaveBeenCalled();
+
+      await deliverWith(turnEvent('1234.0001'));
+
+      expect(mockReactionsAdd).toHaveBeenCalledTimes(1);
       expect(mockReactionsAdd).toHaveBeenCalledWith({
         channel: 'D123',
-        name: 'hourglass_flowing_sand',
+        name: PRESENCE_EMOJI,
         timestamp: '1234.0001',
       });
     });
 
-    it('removes reaction on done', async () => {
-      const delta = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: 'Hello' },
-        platformData: { ts: '1234.0001' },
-      });
-      await deliver(
-        'relay.human.slack.D123',
-        delta,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        true,
-        'reaction'
-      );
+    it('does not re-add on every event of the same turn', async () => {
+      queuePendingReaction(presence, 'D123', '1234.0001');
+      await deliverWith(turnEvent('1234.0001'));
+      await deliverWith(turnEvent('1234.0001'));
+      await deliverWith(turnEvent('1234.0001'));
 
-      const done = createEnvelope('relay.human.slack.D123', {
-        type: 'done',
-        data: {},
-        platformData: { ts: '1234.0001' },
+      expect(mockReactionsAdd).toHaveBeenCalledTimes(1);
+    });
+
+    it('removes the reaction at done', async () => {
+      queuePendingReaction(presence, 'D123', '1234.0001');
+      await deliverWith(turnEvent('1234.0001'));
+      await deliverWith(turnEvent('1234.0001', 'done', {}));
+
+      expect(mockReactionsRemove).toHaveBeenCalledWith({
+        channel: 'D123',
+        name: PRESENCE_EMOJI,
+        timestamp: '1234.0001',
       });
-      await deliver(
-        'relay.human.slack.D123',
-        done,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        true,
-        'reaction'
+    });
+
+    it('removes the reaction at error', async () => {
+      queuePendingReaction(presence, 'D123', '1234.0001');
+      await deliverWith(turnEvent('1234.0001'));
+      await deliverWith(turnEvent('1234.0001', 'error', { message: 'failed' }));
+
+      expect(mockReactionsRemove).toHaveBeenCalledWith({
+        channel: 'D123',
+        name: PRESENCE_EMOJI,
+        timestamp: '1234.0001',
+      });
+    });
+
+    it('releases when the turn stops to wait on a person', async () => {
+      queuePendingReaction(presence, 'D123', '1234.0001');
+      await deliverWith(turnEvent('1234.0001'));
+      await deliverWith(
+        turnEvent('1234.0001', 'approval_required', {
+          toolCallId: 'tc-1',
+          toolName: 'Bash',
+          input: 'ls',
+        })
       );
 
       expect(mockReactionsRemove).toHaveBeenCalledWith({
         channel: 'D123',
-        name: 'hourglass_flowing_sand',
+        name: PRESENCE_EMOJI,
         timestamp: '1234.0001',
       });
     });
 
-    it('removes reaction on error', async () => {
-      const delta = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: 'Partial' },
-        platformData: { ts: '1234.0001' },
-      });
-      await deliver(
-        'relay.human.slack.D123',
-        delta,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        true,
-        'reaction'
-      );
+    it('an approval pause gives the mark back to the same message, never the next one', async () => {
+      queuePendingReaction(presence, 'D123', '1234.0001');
+      queuePendingReaction(presence, 'D123', '1234.0002');
 
-      const error = createEnvelope('relay.human.slack.D123', {
-        type: 'error',
-        data: { message: 'failed' },
-        platformData: { ts: '1234.0001' },
-      });
-      await deliver(
-        'relay.human.slack.D123',
-        error,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        true,
-        'reaction'
+      await deliverWith(turnEvent('1234.0001'));
+      await deliverWith(
+        turnEvent('1234.0001', 'approval_required', {
+          toolCallId: 'tc-1',
+          toolName: 'Bash',
+          input: 'ls',
+        })
       );
+      // The turn resumes after the person answers.
+      await deliverWith(turnEvent('1234.0001'));
+      await deliverWith(turnEvent('1234.0001', 'done', {}));
 
-      expect(mockReactionsRemove).toHaveBeenCalledWith({
-        channel: 'D123',
-        name: 'hourglass_flowing_sand',
-        timestamp: '1234.0001',
-      });
+      const touched = [...mockReactionsAdd.mock.calls, ...mockReactionsRemove.mock.calls].map(
+        (c) => c[0].timestamp
+      );
+      // The asker's message was marked, unmarked, re-marked and cleaned up...
+      expect(touched).toEqual(['1234.0001', '1234.0001', '1234.0001', '1234.0001']);
+      // ...and nobody else's message was touched, or lost its place in the queue.
+      expect(presence.pendingReactions.get('D123')?.map((e) => e.ts)).toEqual(['1234.0002']);
     });
 
-    it('does not add reaction when typingIndicator is none', async () => {
-      const delta = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: 'Hello' },
-        platformData: { ts: '1234.0001' },
-      });
-      await deliver(
-        'relay.human.slack.D123',
-        delta,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        true,
-        'none'
-      );
+    it('ignores a trailing event from a turn that already ended', async () => {
+      queuePendingReaction(presence, 'D123', '1234.0001');
+      await deliverWith(turnEvent('1234.0001'));
+      await deliverWith(turnEvent('1234.0001', 'done', {}));
+      queuePendingReaction(presence, 'D123', '1234.0002');
+      mockReactionsAdd.mockClear();
+
+      // An event the runtime emits after `done` must not claim the next question.
+      await deliverWith(turnEvent('1234.0001', 'tool_result', { ok: true }));
 
       expect(mockReactionsAdd).not.toHaveBeenCalled();
+      expect(presence.pendingReactions.get('D123')?.map((e) => e.ts)).toEqual(['1234.0002']);
     });
 
-    it('swallows reaction errors silently', async () => {
-      mockReactionsAdd.mockRejectedValueOnce(new Error('no_permission'));
+    it('two interleaved turns remove the reaction from the right message (FIFO)', async () => {
+      queuePendingReaction(presence, 'D123', '1234.0001');
+      queuePendingReaction(presence, 'D123', '1234.0002');
 
-      const delta = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: 'Hello' },
-        platformData: { ts: '1234.0001' },
-      });
-      const result = await deliver(
-        'relay.human.slack.D123',
-        delta,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        true,
-        'reaction'
-      );
+      // Both turns start before either finishes.
+      await deliverWith(turnEvent('1234.0001'));
+      await deliverWith(turnEvent('1234.0002'));
 
-      // Delivery should still succeed even if reaction fails
-      expect(result.success).toBe(true);
-    });
+      expect(mockReactionsAdd.mock.calls.map((c) => c[0].timestamp)).toEqual([
+        '1234.0001',
+        '1234.0002',
+      ]);
 
-    it('does not add reaction when no threadTs available', async () => {
-      const delta = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: 'Hello' },
-        // No platformData — no threadTs
-      });
-      await deliver(
-        'relay.human.slack.D123',
-        delta,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        true,
-        'reaction'
-      );
-
-      // Reactions require a real message ts — should not be called without threadTs
-      expect(mockReactionsAdd).not.toHaveBeenCalled();
-    });
-
-    it('adds reaction on buffered mode stream start', async () => {
-      const delta = createEnvelope('relay.human.slack.D123', {
-        type: 'text_delta',
-        data: { text: 'Hello' },
-        platformData: { ts: '1234.0001' },
-      });
-      await deliver(
-        'relay.human.slack.D123',
-        delta,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        false,
-        'reaction'
-      );
-
-      expect(mockReactionsAdd).toHaveBeenCalledWith({
+      // The second turn finishes first — its own message loses the reaction.
+      await deliverWith(turnEvent('1234.0002', 'done', {}));
+      expect(mockReactionsRemove).toHaveBeenCalledTimes(1);
+      expect(mockReactionsRemove).toHaveBeenLastCalledWith({
         channel: 'D123',
-        name: 'hourglass_flowing_sand',
-        timestamp: '1234.0001',
-      });
-      // Should not post message (buffered mode)
-      expect(mockPostMessage).not.toHaveBeenCalled();
-    });
-
-    it('removes pending reaction on done even without platformData in response', async () => {
-      // Simulate inbound adding a pending reaction
-      const pendingReactions = new Map<string, string[]>();
-      pendingReactions.set('D123', ['1234.0001']);
-
-      // CCA response envelope has NO platformData (realistic scenario)
-      const done = createEnvelope('relay.human.slack.D123', {
-        type: 'done',
-        data: {},
-      });
-      await deliver(
-        'relay.human.slack.D123',
-        done,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        true,
-        'reaction',
-        false,
-        pendingReactions
-      );
-
-      expect(mockReactionsRemove).toHaveBeenCalledWith({
-        channel: 'D123',
-        name: 'hourglass_flowing_sand',
-        timestamp: '1234.0001',
-      });
-      // Queue should be drained
-      expect(pendingReactions.has('D123')).toBe(false);
-    });
-
-    it('removes pending reaction on error even without platformData in response', async () => {
-      const pendingReactions = new Map<string, string[]>();
-      pendingReactions.set('D123', ['1234.0001']);
-
-      const error = createEnvelope('relay.human.slack.D123', {
-        type: 'error',
-        data: { message: 'failed' },
-      });
-      await deliver(
-        'relay.human.slack.D123',
-        error,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        true,
-        'reaction',
-        false,
-        pendingReactions
-      );
-
-      expect(mockReactionsRemove).toHaveBeenCalledWith({
-        channel: 'D123',
-        name: 'hourglass_flowing_sand',
-        timestamp: '1234.0001',
-      });
-    });
-
-    it('handles FIFO ordering with multiple queued messages', async () => {
-      const pendingReactions = new Map<string, string[]>();
-      pendingReactions.set('D123', ['1234.0001', '1234.0002']);
-
-      // First done removes first reaction
-      const done1 = createEnvelope('relay.human.slack.D123', { type: 'done', data: {} });
-      await deliver(
-        'relay.human.slack.D123',
-        done1,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        true,
-        'reaction',
-        false,
-        pendingReactions
-      );
-
-      expect(mockReactionsRemove).toHaveBeenCalledWith({
-        channel: 'D123',
-        name: 'hourglass_flowing_sand',
-        timestamp: '1234.0001',
-      });
-
-      // Second done removes second reaction
-      mockReactionsRemove.mockClear();
-      const done2 = createEnvelope('relay.human.slack.D123', { type: 'done', data: {} });
-      await deliver(
-        'relay.human.slack.D123',
-        done2,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        true,
-        'reaction',
-        false,
-        pendingReactions
-      );
-
-      expect(mockReactionsRemove).toHaveBeenCalledWith({
-        channel: 'D123',
-        name: 'hourglass_flowing_sand',
+        name: PRESENCE_EMOJI,
         timestamp: '1234.0002',
       });
-      expect(pendingReactions.has('D123')).toBe(false);
+
+      await deliverWith(turnEvent('1234.0001', 'done', {}));
+      expect(mockReactionsRemove).toHaveBeenLastCalledWith({
+        channel: 'D123',
+        name: PRESENCE_EMOJI,
+        timestamp: '1234.0001',
+      });
     });
 
-    it('does not crash when pending reactions queue is empty', async () => {
-      const pendingReactions = new Map<string, string[]>();
+    it("makes zero reactions.* calls across a full turn when the indicator is 'none'", async () => {
+      queuePendingReaction(presence, 'D123', '1234.0001');
+      await deliverWith(turnEvent('1234.0001'), 'none');
+      await deliverWith(turnEvent('1234.0001'), 'none');
+      await deliverWith(turnEvent('1234.0001', 'done', {}), 'none');
 
-      const done = createEnvelope('relay.human.slack.D123', { type: 'done', data: {} });
-      const result = await deliver(
-        'relay.human.slack.D123',
-        done,
-        client,
-        streamState,
-        callbacks,
-        'UBOTID',
-        true,
-        'reaction',
-        false,
-        pendingReactions
+      expect(mockReactionsAdd).not.toHaveBeenCalled();
+      expect(mockReactionsRemove).not.toHaveBeenCalled();
+    });
+
+    it('shows nothing when no trigger message was queued', async () => {
+      await deliverWith(turnEvent('1234.0001'));
+
+      expect(mockReactionsAdd).not.toHaveBeenCalled();
+    });
+
+    it('adds no completion emoji — the reply is the terminal', async () => {
+      queuePendingReaction(presence, 'D123', '1234.0001');
+      await deliverWith(turnEvent('1234.0001'));
+      await deliverWith(turnEvent('1234.0001', 'done', {}));
+
+      const named = [...mockReactionsAdd.mock.calls, ...mockReactionsRemove.mock.calls].map(
+        (c) => c[0].name
       );
+      expect(new Set(named)).toEqual(new Set([PRESENCE_EMOJI]));
+    });
+
+    it('keeps delivering when the reaction call fails', async () => {
+      mockReactionsAdd.mockRejectedValueOnce(new Error('no_permission'));
+      queuePendingReaction(presence, 'D123', '1234.0001');
+
+      const result = await deliverWith(turnEvent('1234.0001'));
 
       expect(result.success).toBe(true);
-      // No reactions should be removed when queue is empty
-      expect(mockReactionsRemove).not.toHaveBeenCalled();
+    });
+
+    describe('assistant split panel — status, not reaction', () => {
+      it('sets a working status at claim and clears it at the terminal', async () => {
+        markAssistantThread(presence, 'D123', '1234.0001');
+        queuePendingReaction(presence, 'D123', '1234.0001');
+
+        await deliverWith(turnEvent('1234.0001'));
+        expect(mockSetStatus).toHaveBeenCalledWith({
+          channel_id: 'D123',
+          thread_ts: '1234.0001',
+          status: WORKING_STATUS,
+        });
+        // The status IS the indicator here — no emoji on top of it.
+        expect(mockReactionsAdd).not.toHaveBeenCalled();
+
+        await deliverWith(turnEvent('1234.0001', 'done', {}));
+        expect(mockSetStatus).toHaveBeenLastCalledWith({
+          channel_id: 'D123',
+          thread_ts: '1234.0001',
+          status: '',
+        });
+      });
+
+      it('says nothing on a thread it has never seen start', async () => {
+        queuePendingReaction(presence, 'D123', '1234.0001');
+        await deliverWith(turnEvent('1234.0001'));
+
+        expect(mockSetStatus).not.toHaveBeenCalled();
+        expect(mockReactionsAdd).toHaveBeenCalledTimes(1);
+      });
+
+      it('says it is running long exactly once, and says nothing after the terminal', async () => {
+        vi.useFakeTimers();
+        try {
+          markAssistantThread(presence, 'D123', '1234.0001');
+          await deliverWith(turnEvent('1234.0001'));
+          expect(mockSetStatus).toHaveBeenCalledWith({
+            channel_id: 'D123',
+            thread_ts: '1234.0001',
+            status: WORKING_STATUS,
+          });
+
+          // The turn keeps reporting in, so it is never released as stalled.
+          for (
+            let elapsed = 0;
+            elapsed < PRESENCE_LATE_MS + PRESENCE_REFRESH_MS;
+            elapsed += 10_000
+          ) {
+            nowMs += 10_000;
+            await vi.advanceTimersByTimeAsync(10_000);
+            await deliverWith(turnEvent('1234.0001'));
+          }
+
+          const statuses = mockSetStatus.mock.calls.map((c) => c[0].status as string);
+          const firstLate = statuses.indexOf(WORKING_LATE_STATUS);
+          expect(firstLate).toBeGreaterThan(0);
+          // Once it has run long it never goes back to claiming it is on pace.
+          expect(statuses.slice(firstLate)).not.toContain(WORKING_STATUS);
+
+          await deliverWith(turnEvent('1234.0001', 'done', {}));
+          expect(mockSetStatus).toHaveBeenLastCalledWith({
+            channel_id: 'D123',
+            thread_ts: '1234.0001',
+            status: '',
+          });
+
+          const callsAtTerminal = mockSetStatus.mock.calls.length;
+          nowMs += PRESENCE_REFRESH_MS * 4 + PRESENCE_LATE_MS;
+          await vi.advanceTimersByTimeAsync(PRESENCE_REFRESH_MS * 4 + PRESENCE_LATE_MS);
+          expect(mockSetStatus).toHaveBeenCalledTimes(callsAtTerminal);
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+    });
+
+    it('releases a claim whose stream goes dark, so nothing lingers', async () => {
+      vi.useFakeTimers();
+      try {
+        queuePendingReaction(presence, 'D123', '1234.0001');
+        await deliverWith(turnEvent('1234.0001'));
+        expect(mockReactionsRemove).not.toHaveBeenCalled();
+
+        // No further events: the stream has stalled without a terminal.
+        nowMs += PRESENCE_INACTIVITY_MS + PRESENCE_REFRESH_MS;
+        await vi.advanceTimersByTimeAsync(PRESENCE_REFRESH_MS * 2);
+
+        expect(mockReactionsRemove).toHaveBeenCalledWith({
+          channel: 'D123',
+          name: PRESENCE_EMOJI,
+          timestamp: '1234.0001',
+        });
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 
@@ -1785,7 +1785,7 @@ describe('deliverMessage', () => {
         envelope,
         client,
         streamState,
-        pendingReactions: new Map(),
+        presence: createSlackPresenceState(),
         botUserId: 'UBOTID',
         callbacks,
         streaming: true,
@@ -1811,7 +1811,7 @@ describe('deliverMessage', () => {
         envelope,
         client,
         streamState,
-        pendingReactions: new Map(),
+        presence: createSlackPresenceState(),
         botUserId: 'UBOTID',
         callbacks,
         streaming: true,
@@ -1836,7 +1836,7 @@ describe('deliverMessage', () => {
         envelope,
         client,
         streamState,
-        pendingReactions: new Map(),
+        presence: createSlackPresenceState(),
         botUserId: 'UBOTID',
         callbacks,
         streaming: true,
@@ -1867,7 +1867,7 @@ describe('deliverMessage', () => {
         true,
         'none',
         false,
-        new Map(),
+        createSlackPresenceState(),
         tracker
       );
       expect(tracker.isParticipating('D123', '1234.0001')).toBe(true);
@@ -1888,7 +1888,7 @@ describe('deliverMessage', () => {
         true,
         'none',
         false,
-        new Map(),
+        createSlackPresenceState(),
         tracker
       );
       expect(tracker.size).toBe(0);
@@ -1911,7 +1911,7 @@ describe('deliverMessage', () => {
         true,
         'none',
         false,
-        new Map(),
+        createSlackPresenceState(),
         tracker
       );
       expect(tracker.isParticipating('D123', '1234.0001')).toBe(false);
@@ -1934,7 +1934,7 @@ describe('deliverMessage', () => {
         true,
         'none',
         false,
-        new Map(),
+        createSlackPresenceState(),
         tracker
       );
       expect(tracker.isParticipating('D123', '1234.0001')).toBe(true);
@@ -1957,7 +1957,7 @@ describe('deliverMessage', () => {
         false,
         'none',
         false,
-        new Map(),
+        createSlackPresenceState(),
         tracker
       );
       expect(tracker.isParticipating('D123', '1234.0001')).toBe(true);
@@ -1980,7 +1980,7 @@ describe('deliverMessage', () => {
         true,
         'none',
         true,
-        new Map(),
+        createSlackPresenceState(),
         tracker
       );
       expect(tracker.isParticipating('D123', '1234.0001')).toBe(true);

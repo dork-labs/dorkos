@@ -550,14 +550,32 @@ Supports two delivery modes controlled by the `streaming` config field:
 
 All bot responses thread under the original inbound message using `platformData.ts`. Messages exceeding Slack's 4000-character limit are split into multiple chunks (at paragraph or sentence boundaries) and sent sequentially with a 1.1-second delay between chunks for rate limiting.
 
-**Typing Indicators:**
+**Working Indicator** (`typingIndicator`, key and shape unchanged):
 
-| Mode       | Behavior                                                                 |
-| ---------- | ------------------------------------------------------------------------ |
-| `reaction` | Adds/removes `:hourglass_flowing_sand:` emoji reaction during processing |
-| `none`     | No visual feedback                                                       |
+| Mode       | Behavior                                                                                      |
+| ---------- | --------------------------------------------------------------------------------------------- |
+| `reaction` | `:eyes:` on the trigger message from the claim to the terminal (`adapters/slack/presence.ts`) |
+| `none`     | No visual feedback, and zero `reactions.*` / `assistant.*` calls                              |
 
 Default is `reaction` (changed from `none` in v0.21).
+
+The indicator is driven by the **claim** — the first runtime event of a real
+turn arriving at `deliver()` — never by message receipt, which is the same rule
+the Telegram loop follows and the one `.claude/rules/room-conduct.md` and E16a
+state. Inbound only queues the trigger message (FIFO, per channel) so the claim
+knows what to mark; a message nobody picks up is never marked. A turn that
+pauses on an approval or a question takes its mark down and keeps its binding,
+so the resume re-marks the same message rather than the next person's.
+
+Slack has one surface with a status line of its own — the AI-assistant split
+panel, via `assistant.threads.setStatus`. That mapping is implemented and
+self-gating (a workspace that has not enabled Agents & AI Apps never sends
+`assistant_thread_started`, so every thread falls back to the reaction), but it
+is **unverified end to end**: our documented install tells operators NOT to
+enable that feature, and the default app manifest ships neither the
+`assistant:write` scope nor the event subscription it would need. Do not claim
+it works in user-facing copy until somebody has run it against a real Slack app
+with the feature on.
 
 **Thread Participation Tracking:**
 
@@ -1643,11 +1661,6 @@ interface PlatformClient {
     prompt: string,
     actions: Array<{ label: string; value: string }>
   ): Promise<{ messageId: string }>;
-  // Optional, and only where the indicator genuinely belongs to the client.
-  // Telegram's does not: its loop belongs to the turn, in the adapter's
-  // outbound path, so `GrammyPlatformClient` implements neither.
-  startTyping?(threadId: string): void;
-  stopTyping?(threadId: string): void;
   handleInbound(relay: RelayPublisher): void;
   destroy(): Promise<void>;
 }
@@ -1658,7 +1671,7 @@ interface PlatformClient {
 | Client                 | Platform | Key Features                                                                      |
 | ---------------------- | -------- | --------------------------------------------------------------------------------- |
 | `GrammyPlatformClient` | Telegram | post/edit/delete, inline keyboards (typing lives with the turn, in `outbound.ts`) |
-| `SlackPlatformClient`  | Slack    | post/edit/delete, hourglass emoji reactions for typing                            |
+| `SlackPlatformClient`  | Slack    | post/edit/delete (the working indicator lives with the turn, in `presence.ts`)    |
 
 Streaming delivery lives inside each adapter's own outbound path — the
 Telegram adapter throttles `sendMessageDraft` edits (200ms) and Slack posts

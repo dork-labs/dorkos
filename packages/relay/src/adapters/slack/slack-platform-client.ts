@@ -2,8 +2,9 @@
  * Slack platform client implementing the PlatformClient interface.
  *
  * Wraps the Bolt `WebClient` to provide a clean, platform-agnostic API for
- * posting, editing, and deleting messages in Slack channels. Typing
- * indicators are implemented via hourglass emoji reactions (best-effort, fire-and-forget).
+ * posting, editing, and deleting messages in Slack channels. The working
+ * indicator is not here: it is keyed to the turn, needs a channel and a message
+ * timestamp rather than one id, and lives in `presence.ts`.
  *
  * This class never touches RelayEnvelopes or subjects — it operates solely on
  * Slack channel IDs (used as `threadId`) and content strings.
@@ -11,8 +12,7 @@
  * @module relay/adapters/slack/slack-platform-client
  */
 import type { WebClient } from '@slack/web-api';
-import type { PlatformClient, RelayPublisher, RelayLogger } from '../../types.js';
-import { noopLogger } from '../../types.js';
+import type { PlatformClient, RelayPublisher } from '../../types.js';
 import { formatForPlatform, truncateText } from '../../lib/payload-utils.js';
 import { MAX_MESSAGE_LENGTH } from './inbound.js';
 
@@ -38,12 +38,10 @@ export class SlackPlatformClient implements PlatformClient {
 
   private readonly client: WebClient;
   private readonly config: SlackPlatformClientConfig;
-  private readonly logger: RelayLogger;
 
-  constructor(client: WebClient, config: SlackPlatformClientConfig = {}, logger?: RelayLogger) {
+  constructor(client: WebClient, config: SlackPlatformClientConfig = {}) {
     this.client = client;
     this.config = config;
-    this.logger = logger ?? noopLogger;
   }
 
   /**
@@ -107,47 +105,6 @@ export class SlackPlatformClient implements PlatformClient {
    */
   handleInbound(_relay: RelayPublisher): void {
     // No-op: inbound is handled by SlackAdapter via Bolt event listeners.
-  }
-
-  /**
-   * Signal that the bot is composing a response by adding an hourglass reaction.
-   *
-   * Best-effort and fire-and-forget — failures are logged but not thrown.
-   * No-op when `threadId` is not a valid message timestamp.
-   *
-   * @param threadId - The `ts` of the user message to react to
-   */
-  startTyping(threadId: string): void {
-    void this.client.reactions
-      .add({ channel: threadId, name: 'hourglass_flowing_sand', timestamp: threadId })
-      .catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (!msg.includes('already_reacted')) {
-          this.logger.warn(
-            `slack-platform-client: failed to add typing reaction to ${threadId}: ${msg}`
-          );
-        }
-      });
-  }
-
-  /**
-   * Cancel the active typing indicator by removing the hourglass reaction.
-   *
-   * Best-effort and fire-and-forget — failures are logged but not thrown.
-   *
-   * @param threadId - The `ts` of the user message the reaction was added to
-   */
-  stopTyping(threadId: string): void {
-    void this.client.reactions
-      .remove({ channel: threadId, name: 'hourglass_flowing_sand', timestamp: threadId })
-      .catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (!msg.includes('no_reaction')) {
-          this.logger.warn(
-            `slack-platform-client: failed to remove typing reaction from ${threadId}: ${msg}`
-          );
-        }
-      });
   }
 
   /**

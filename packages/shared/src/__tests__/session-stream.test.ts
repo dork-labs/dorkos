@@ -4,6 +4,9 @@ import {
   SessionEventSchema,
   SessionSnapshotSchema,
   SessionListEventSchema,
+  BLOCKING_INTERACTION_EVENT_TYPES,
+  isBlockingInteractionEventType,
+  isBlockingInteractionEvent,
 } from '../session-stream.js';
 
 const coldStatus = {
@@ -245,5 +248,40 @@ describe('SessionListEventSchema', () => {
   it('rejects an unknown list-event type', () => {
     // Purpose: the discriminated union must reject members outside its closed set.
     expect(() => SessionListEventSchema.parse({ type: 'session_unknown' })).toThrow();
+  });
+});
+
+describe('blocking interaction predicates', () => {
+  // Purpose: these two are the shared answer to "is the agent working, or is it
+  // waiting on me?" — the session projector, the Telegram typing loop and the
+  // Slack working indicator all read them, and a wrong answer shows a person a
+  // working signal for a turn that is stalled on a question they never saw.
+  it('answers true for exactly the three blocking interactions', () => {
+    for (const type of BLOCKING_INTERACTION_EVENT_TYPES) {
+      expect(isBlockingInteractionEventType(type)).toBe(true);
+    }
+    expect(BLOCKING_INTERACTION_EVENT_TYPES).toEqual([
+      'approval_required',
+      'question_prompt',
+      'elicitation_prompt',
+    ]);
+  });
+
+  it('answers false for the events of a turn that is running or done', () => {
+    for (const type of ['turn_start', 'text_delta', 'tool_use', 'done', 'error', 'turn_end']) {
+      expect(isBlockingInteractionEventType(type)).toBe(false);
+    }
+  });
+
+  it('narrows an event by its own type, so callers reach the interaction fields', () => {
+    const blocking = { type: 'question_prompt' as const, id: 'q-1' };
+    const running = { type: 'text_delta' as const, id: 'd-1' };
+
+    expect(isBlockingInteractionEvent(blocking)).toBe(true);
+    expect(isBlockingInteractionEvent(running)).toBe(false);
+    if (isBlockingInteractionEvent(blocking)) {
+      // Compile-time half of the assertion: the narrowed union keeps `id`.
+      expect(blocking.id).toBe('q-1');
+    }
   });
 });
