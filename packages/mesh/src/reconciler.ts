@@ -132,6 +132,8 @@ export async function reconcile(deps: ReconcilerDeps): Promise<ReconcileResult> 
         personaEnabled: manifest.personaEnabled,
         color: manifest.color,
         icon: manifest.icon,
+        model: manifest.model,
+        effort: manifest.effort,
       });
       result.synced++;
     }
@@ -205,6 +207,8 @@ function manifestDiffersFromEntry(manifest: AgentManifest, entry: AgentRegistryE
     (manifest.persona ?? undefined) !== (entry.persona ?? undefined) ||
     (manifest.personaEnabled ?? true) !== (entry.personaEnabled ?? true) ||
     (manifest.color ?? undefined) !== (entry.color ?? undefined) ||
-    (manifest.icon ?? undefined) !== (entry.icon ?? undefined)
+    (manifest.icon ?? undefined) !== (entry.icon ?? undefined) ||
+    (manifest.model ?? undefined) !== (entry.model ?? undefined) ||
+    (manifest.effort ?? undefined) !== (entry.effort ?? undefined)
   );
 }

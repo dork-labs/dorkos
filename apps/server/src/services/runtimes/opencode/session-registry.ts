@@ -18,17 +18,25 @@
  *
  * @module services/runtimes/opencode/session-registry
  */
-import type { Session, PermissionMode, EffortLevel } from '@dorkos/shared/types';
+import type { Session, PermissionMode } from '@dorkos/shared/types';
 import type { SessionListEvent } from '@dorkos/shared/session-stream';
 
 /** Max characters of a first message used as the derived session title/preview. */
 const PREVIEW_MAX_CHARS = 80;
 
-/** Metadata fields the registry can update on a tracked session. */
+/**
+ * Metadata fields the registry can update on a tracked session.
+ *
+ * **No `effort`, deliberately.** OpenCode's prompt API accepts no effort field
+ * — verified against both the pinned and the current SDK — so an effort tracked
+ * here could only ever be echoed back to whoever set it while changing nothing
+ * about how the agent thinks. Tracking it was the quiet lie; not having it is
+ * what lets the UI say "Not supported by OpenCode" and be telling the truth
+ * (spec `execution-defaults` §4).
+ */
 export interface OpenCodeSessionPatch {
   permissionMode?: PermissionMode;
   model?: string;
-  effort?: EffortLevel;
   fastMode?: boolean;
   cwd?: string;
 }
@@ -210,7 +218,6 @@ export class OpenCodeSessionRegistry {
     }
     if (patch.permissionMode !== undefined) session.permissionMode = patch.permissionMode;
     if (patch.model !== undefined) session.model = patch.model;
-    if (patch.effort !== undefined) session.effort = patch.effort;
     if (patch.fastMode !== undefined) session.fastMode = patch.fastMode;
     if (patch.cwd !== undefined) session.cwd = patch.cwd;
     return session;

@@ -353,6 +353,11 @@ export async function createAgentWorkspace(
       // The emoji face chosen in the naming step (M3), or seeded from a
       // template — persisted so the agent's visual identity survives creation.
       ...(opts.icon ? { icon: opts.icon } : {}),
+      // Written only when asked for. An absent key is what "inherit the server
+      // default" looks like on disk, so writing the resolved value here instead
+      // would freeze today's default into every agent ever created.
+      ...(opts.model ? { model: opts.model } : {}),
+      ...(opts.effort ? { effort: opts.effort } : {}),
       behavior: { responseMode: 'always' },
       traits,
       conventions,

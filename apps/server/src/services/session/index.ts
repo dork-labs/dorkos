@@ -56,7 +56,11 @@ export {
   guardTurnErrors,
 } from './trigger-turn.js';
 export type { TriggerTurnDeps, TriggerTurnOpts, TriggerTurnResult } from './trigger-turn.js';
-export { resolveSessionDefaults } from './resolve-session-defaults.js';
+export {
+  resolveSessionDefaults,
+  readAgentExecutionDefaults,
+  type AgentExecutionDefaults,
+} from './resolve-session-defaults.js';
 export { triggerCommandIntent } from './trigger-command-intent.js';
 export type {
   TriggerCommandIntentDeps,

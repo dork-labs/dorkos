@@ -24,6 +24,15 @@ const getCapabilities = vi.fn().mockReturnValue({ logBackedHistory: false, nativ
  */
 let internalSessionId: (sessionId: string) => string | undefined = () => undefined;
 
+/**
+ * Which runtimes this server registered. Everything, for most of this file. The
+ * execution-defaults tests narrow it, because `registerOptionalRuntime` lets a
+ * runtime fail to register — the packaged desktop app bundles only the
+ * claude-code SDK — and an agent whose manifest names a missing runtime is
+ * resolved onto the default rather than refused.
+ */
+let registeredRuntimes: string[] = ['claude-code', 'codex', 'opencode', 'test-mode'];
+
 vi.mock('../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
     persistSessionRuntime: (...args: unknown[]) => persistSessionRuntime(...args),
@@ -36,12 +45,21 @@ vi.mock('../../core/runtime-registry.js', () => ({
       interruptQuery: () => Promise.resolve(false),
       getInternalSessionId: (sessionId: string) => internalSessionId(sessionId),
     }),
-    has: () => true,
+    has: (type: string) => registeredRuntimes.includes(type),
     getDefaultType: () => 'claude-code',
   },
 }));
 
-vi.mock('@dorkos/shared/manifest', () => ({ readManifest: () => Promise.resolve(null) }));
+/**
+ * The addressed agent's manifest. Null for most of this file — the room does not
+ * need one — but the execution-defaults tests set it, because the agent's own
+ * model and effort are read from exactly here.
+ */
+let agentManifest: Record<string, unknown> | null = null;
+
+vi.mock('@dorkos/shared/manifest', () => ({
+  readManifest: () => Promise.resolve(agentManifest),
+}));
 
 /**
  * The stored `runtimes` section the real `resolveSessionDefaults` reads. The
@@ -468,6 +486,8 @@ describe('what a room turn runs with (execution defaults)', () => {
     turnBehaviour = saysAndCloses('green');
     storedSettings = null;
     runtimesConfig = USER_CONFIG_DEFAULTS.runtimes;
+    agentManifest = null;
+    registeredRuntimes = ['claude-code', 'codex', 'opencode', 'test-mode'];
   });
 
   it("starts a room agent's first turn on the server's default model and effort", async () => {
@@ -514,5 +534,72 @@ describe('what a room turn runs with (execution defaults)', () => {
   it('sends no model at all when nothing is configured', async () => {
     await createSessionRoomTurnRunner().run(request());
     expect(triggered[0].settings).toEqual({});
+  });
+
+  it("runs the turn on the addressed agent's own model and effort", async () => {
+    // Rooms are where the per-agent setting earns its keep: the room addressed
+    // THIS agent, so what it says about itself outranks the server's default.
+    runtimesConfig = {
+      ...USER_CONFIG_DEFAULTS.runtimes,
+      claudeCode: {
+        ...USER_CONFIG_DEFAULTS.runtimes.claudeCode,
+        defaultModel: 'opus',
+        defaultEffort: 'high',
+      },
+    };
+    agentManifest = { runtime: 'claude-code', model: 'sonnet', effort: 'low' };
+
+    await createSessionRoomTurnRunner().run(request());
+
+    expect(triggered[0].settings).toEqual({ model: 'sonnet', effort: 'low' });
+  });
+
+  it('never seeds a Codex model onto the claude-code session a missing runtime falls back to', async () => {
+    // The reported break, end to end. This build has no Codex adapter, so the
+    // room turn runs on claude-code — and the agent's `gpt-5.3-codex` would
+    // otherwise ride along onto it, handing the Claude Code SDK an id from
+    // another provider's namespace on the very first turn.
+    registeredRuntimes = ['claude-code'];
+    runtimesConfig = {
+      ...USER_CONFIG_DEFAULTS.runtimes,
+      claudeCode: { ...USER_CONFIG_DEFAULTS.runtimes.claudeCode, defaultModel: 'opus' },
+    };
+    agentManifest = { runtime: 'codex', model: 'gpt-5.3-codex' };
+
+    await createSessionRoomTurnRunner().run(request());
+
+    // The server's default for the runtime it actually landed on — the only
+    // value that can mean anything to that session.
+    expect(triggered[0].settings).toEqual({ model: 'opus' });
+    expect(persistSessionRuntime).toHaveBeenLastCalledWith(
+      expect.any(String),
+      'claude-code',
+      '/repo/ana'
+    );
+  });
+
+  it('still seeds that model once the runtime it was written for is registered', async () => {
+    registeredRuntimes = ['claude-code', 'codex'];
+    agentManifest = { runtime: 'codex', model: 'gpt-5.3-codex' };
+
+    await createSessionRoomTurnRunner().run(request());
+
+    expect(triggered[0].settings).toEqual({ model: 'gpt-5.3-codex' });
+  });
+
+  it("keeps the server's effort for an agent that only names a model", async () => {
+    runtimesConfig = {
+      ...USER_CONFIG_DEFAULTS.runtimes,
+      claudeCode: {
+        ...USER_CONFIG_DEFAULTS.runtimes.claudeCode,
+        defaultModel: 'opus',
+        defaultEffort: 'high',
+      },
+    };
+    agentManifest = { runtime: 'claude-code', model: 'sonnet' };
+
+    await createSessionRoomTurnRunner().run(request());
+
+    expect(triggered[0].settings).toEqual({ model: 'sonnet', effort: 'high' });
   });
 });

@@ -9,7 +9,11 @@ import { EffortLevelSchema } from '@dorkos/shared/schemas';
 // function — so the first session module that ever imports the registry would
 // close a cycle nobody edited. The direct import keeps that more than one
 // re-export away.
-import { resolveSessionDefaults } from '../session/resolve-session-defaults.js';
+import {
+  resolveSessionDefaults,
+  readAgentExecutionDefaults,
+  type AgentExecutionDefaults,
+} from '../session/resolve-session-defaults.js';
 import { sessionMetadata, eq, inArray, type Db } from '@dorkos/db';
 import { logger } from '../../lib/logger.js';
 import { traceRuntime } from '../observability/index.js';
@@ -181,6 +185,10 @@ export class RuntimeRegistry {
     agentPath?: string
   ): Promise<boolean> {
     const db = this.requireDb('persistSessionRuntime');
+    // The agent tier is read here, where the owning agent is actually known.
+    // Read unconditionally rather than only for a row that turns out to be new:
+    // the INSERT is what decides that, and it cannot await mid-statement.
+    const agent = await readAgentExecutionDefaults(agentPath);
     const result = await db
       .insert(sessionMetadata)
       .values({
@@ -188,7 +196,7 @@ export class RuntimeRegistry {
         runtime,
         agentPath: agentPath ?? null,
         createdAt: new Date().toISOString(),
-        ...this.seedForNewRow(runtime),
+        ...this.seedForNewRow(runtime, agent),
       })
       .onConflictDoNothing();
     // better-sqlite3 RunResult: `changes` is the number of rows actually written
@@ -304,6 +312,17 @@ export class RuntimeRegistry {
       // the first message — which E3's pre-launch picker makes the normal way a
       // session starts — and a seed that rode only the first-message insert
       // would be silently dropped for exactly those sessions.
+      //
+      // This is also the ONE seeding path with no agent tier, and the reason is
+      // structural rather than a shortcut: a settings change arrives as
+      // `PATCH /api/sessions/:id` through the runtime's own `updateSession`,
+      // which knows a session id and nothing about who owns it — there is no row
+      // yet to read an `agentPath` from, and threading one down through the
+      // three adapters and the shared settings port would put an agent lookup on
+      // every settings write to buy one key. What it costs is bounded: the
+      // person is here BECAUSE they are choosing a model or an effort, so the
+      // key they came for is theirs either way, and only the other one falls
+      // back to the server default instead of the agent's.
       .values({
         sessionId,
         runtime,
@@ -335,9 +354,14 @@ export class RuntimeRegistry {
    * inference itself is DOR-764's subject, not this seam's.
    *
    * @param runtime - The runtime type the row is being created for.
+   * @param agent - The owning agent's manifest model/effort, when the caller
+   *   knows which agent that is. Omitted → the server default alone.
    */
-  private seedForNewRow(runtime: string): Partial<typeof sessionMetadata.$inferInsert> {
-    return pickSettings(resolveSessionDefaults({ runtimeType: runtime }));
+  private seedForNewRow(
+    runtime: string,
+    agent?: AgentExecutionDefaults
+  ): Partial<typeof sessionMetadata.$inferInsert> {
+    return pickSettings(resolveSessionDefaults({ runtimeType: runtime, agent }));
   }
 
   /**

@@ -213,6 +213,66 @@ describe('reconcile()', () => {
     );
   });
 
+  it("syncs an agent's model and effort from disk to DB", async () => {
+    // File-first (ADR-0043): a person editing `agent.json` by hand, or an edit
+    // that missed the write-through, must still reach the cache the agent list
+    // reads — otherwise the exceptions strip reports a stale answer forever.
+    const entry = makeEntry({ id: 'a1', projectPath: '/root/proj/backend' });
+    registry.list.mockReturnValue([entry]);
+    vi.mocked(fsPromises.access).mockResolvedValue(undefined);
+    vi.mocked(manifestModule.readManifest).mockResolvedValue(
+      makeManifest({
+        id: 'a1',
+        name: entry.name,
+        description: entry.description,
+        runtime: entry.runtime,
+        capabilities: entry.capabilities,
+        behavior: entry.behavior,
+        model: 'sonnet',
+        effort: 'low',
+      })
+    );
+
+    const result = await reconcile(deps);
+    expect(result.synced).toBe(1);
+    expect(registry.update).toHaveBeenCalledWith(
+      'a1',
+      expect.objectContaining({ model: 'sonnet', effort: 'low' })
+    );
+  });
+
+  it('clears the cached model and effort when the manifest drops them', async () => {
+    // The removal direction, which the diff has to notice as much as the
+    // addition: someone deletes the two keys from `agent.json` to go back to
+    // inheriting, and a cache that only ever learned NEW values would keep
+    // reporting the old ones to the agent list forever.
+    const entry = makeEntry({
+      id: 'a1',
+      projectPath: '/root/proj/backend',
+      model: 'sonnet',
+      effort: 'low',
+    });
+    registry.list.mockReturnValue([entry]);
+    vi.mocked(fsPromises.access).mockResolvedValue(undefined);
+    vi.mocked(manifestModule.readManifest).mockResolvedValue(
+      makeManifest({
+        id: 'a1',
+        name: entry.name,
+        description: entry.description,
+        runtime: entry.runtime,
+        capabilities: entry.capabilities,
+        behavior: entry.behavior,
+      })
+    );
+
+    const result = await reconcile(deps);
+    expect(result.synced).toBe(1);
+    expect(registry.update).toHaveBeenCalledWith(
+      'a1',
+      expect.objectContaining({ model: undefined, effort: undefined })
+    );
+  });
+
   it('does not sync when only non-compared fields differ', async () => {
     const entry = makeEntry({
       id: 'a1',

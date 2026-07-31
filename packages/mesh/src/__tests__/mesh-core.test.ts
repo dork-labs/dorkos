@@ -1126,6 +1126,40 @@ describe('update() write-through (ADR-0043)', () => {
     mesh.close();
   });
 
+  it("sets and then clears an agent's model and effort, on disk and in the cache", async () => {
+    // The clear is the reset the UI's provenance chip offers: "use the server
+    // default". `undefined` is what a route turns the wire's `null` into, and
+    // the observable claim is that the KEY is gone from `agent.json` afterwards
+    // — an absent key is what "inherits" means on disk, and a key that survived
+    // as `null` would read as a value.
+    const base = await makeTempDir();
+    const projectDir = path.join(base, 'exec-defaults');
+    await fs.mkdir(projectDir, { recursive: true });
+    const { readManifest: readDisk } = await import('../manifest.js');
+
+    const mesh = new MeshCore({ db, defaultScanRoot: base });
+    const manifest = await mesh.registerByPath(projectDir, {
+      name: 'picky',
+      runtime: 'claude-code',
+    });
+
+    await mesh.update(manifest.id, { model: 'sonnet', effort: 'low' });
+    expect((await readDisk(projectDir))!.model).toBe('sonnet');
+    expect((await readDisk(projectDir))!.effort).toBe('low');
+    expect(mesh.get(manifest.id)?.model).toBe('sonnet');
+    expect(mesh.get(manifest.id)?.effort).toBe('low');
+
+    await mesh.update(manifest.id, { model: undefined, effort: undefined });
+
+    const cleared = await readDisk(projectDir);
+    expect(Object.keys(cleared!)).not.toContain('model');
+    expect(Object.keys(cleared!)).not.toContain('effort');
+    expect(mesh.get(manifest.id)?.model).toBeUndefined();
+    expect(mesh.get(manifest.id)?.effort).toBeUndefined();
+
+    mesh.close();
+  });
+
   it('returns undefined for nonexistent agent', async () => {
     const base = await makeTempDir();
     const mesh = new MeshCore({ db, defaultScanRoot: base });

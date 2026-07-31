@@ -62,8 +62,20 @@ function createMockRuntime(type: string, overrides?: Partial<RuntimeCapabilities
  */
 let serverDefaults: SessionSettings = {};
 
+/**
+ * What the OWNING AGENT's manifest says, for whichever `agentPath` a call
+ * carries. Stubbed for the same reason: reading `.dork/agent.json` is the
+ * resolver's job, and the registry's claim is only that it asks about the agent
+ * it was handed and lets the answer outrank the server's.
+ */
+let agentDefaults: SessionSettings = {};
+
 vi.mock('../../session/resolve-session-defaults.js', () => ({
-  resolveSessionDefaults: () => serverDefaults,
+  resolveSessionDefaults: (opts: { agent?: SessionSettings }) => ({
+    ...serverDefaults,
+    ...(opts.agent ?? {}),
+  }),
+  readAgentExecutionDefaults: async (dir?: string) => (dir ? agentDefaults : {}),
 }));
 
 describe('RuntimeRegistry', () => {
@@ -72,6 +84,7 @@ describe('RuntimeRegistry', () => {
   beforeEach(() => {
     registry = new RuntimeRegistry();
     serverDefaults = {};
+    agentDefaults = {};
   });
 
   describe('register and get', () => {
@@ -434,6 +447,37 @@ describe('RuntimeRegistry', () => {
           .get();
         expect(row?.model).toBe('opus');
         expect(row?.effort).toBe('high');
+      });
+
+      it("prefers the owning agent's model and effort over the server's", async () => {
+        // The agent tier (spec `execution-defaults` E2). The agent is known here
+        // and nowhere else on this path, which is why the read happens here.
+        serverDefaults = { model: 'opus', effort: 'high' };
+        agentDefaults = { model: 'sonnet', effort: 'low' };
+
+        await registry.persistSessionRuntime('session-agent-seeded', 'claude-code', '/agents/kai');
+
+        const row = db
+          .select()
+          .from(sessionMetadata)
+          .where(eq(sessionMetadata.sessionId, 'session-agent-seeded'))
+          .get();
+        expect(row?.model).toBe('sonnet');
+        expect(row?.effort).toBe('low');
+      });
+
+      it('falls back to the server default for a session with no agent', async () => {
+        serverDefaults = { model: 'opus' };
+        agentDefaults = { model: 'sonnet' };
+
+        await registry.persistSessionRuntime('session-agentless', 'claude-code');
+
+        const row = db
+          .select()
+          .from(sessionMetadata)
+          .where(eq(sessionMetadata.sessionId, 'session-agentless'))
+          .get();
+        expect(row?.model).toBe('opus');
       });
 
       it('never seeds over a session that already has a row', async () => {

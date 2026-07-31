@@ -36,6 +36,7 @@
  */
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { Session, SessionSettings } from '@dorkos/shared/types';
+import { runtimeSupportsEffort } from '@dorkos/shared/constants';
 
 /** The one runtime capability this module needs: a session's id alias. */
 type SessionIdAliasing = Pick<AgentRuntime, 'getInternalSessionId'>;
@@ -78,13 +79,22 @@ export function resolveSettingsKey(
  * in-session toolbar, and runtime enforcement in sync. Store wins;
  * runtime-derived values remain the fallback for sessions with no stored row.
  *
+ * One exception, and it is a display rule rather than a storage one: a session
+ * on a runtime with no effort at its API (OpenCode) never shows an effort, even
+ * if a row holds one. Rows outlive the rule — a value could have been written
+ * before this existed, or by a shared write path that does not ask which runtime
+ * it is serving — and the screen is where "Not supported by OpenCode" is either
+ * true or a lie. The stored value is left alone; it is simply not displayed.
+ *
  * @param target - The session object to mutate in place
  * @param stored - Persisted settings (only defined fields are applied)
  */
 export function applyStoredSettings(target: Session, stored: SessionSettings): void {
   if (stored.permissionMode !== undefined) target.permissionMode = stored.permissionMode;
   if (stored.model !== undefined) target.model = stored.model;
-  if (stored.effort !== undefined) target.effort = stored.effort;
+  if (stored.effort !== undefined && runtimeSupportsEffort(target.runtime)) {
+    target.effort = stored.effort;
+  }
   if (stored.fastMode !== undefined) target.fastMode = stored.fastMode;
 }
 

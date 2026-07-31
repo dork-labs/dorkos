@@ -702,3 +702,43 @@ describe('agent identity fields', () => {
     expect(columnNames).toContain('icon');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Execution defaults (spec `execution-defaults` E2)
+// ---------------------------------------------------------------------------
+
+describe('execution defaults on the cache', () => {
+  it("round-trips an agent's model and effort, so a list can answer for them", () => {
+    // The Settings exceptions strip names every agent that differs from the
+    // server default. It reads the agent LIST — which is this cache — so a
+    // column that stopped at the manifest would make that view impossible
+    // without opening every agent.json on disk.
+    registry.upsert(makeEntry({ model: 'sonnet', effort: 'low' }));
+
+    expect(registry.get('01JKABC00001')?.model).toBe('sonnet');
+    expect(registry.get('01JKABC00001')?.effort).toBe('low');
+    expect(registry.list()[0].model).toBe('sonnet');
+    expect(registry.list()[0].effort).toBe('low');
+  });
+
+  it('leaves both absent for an agent that inherits', () => {
+    registry.upsert(makeEntry());
+    expect(registry.get('01JKABC00001')?.model).toBeUndefined();
+    expect(registry.get('01JKABC00001')?.effort).toBeUndefined();
+  });
+
+  it('clears them when an update drops them', () => {
+    registry.upsert(makeEntry({ model: 'sonnet', effort: 'low' }));
+    registry.update('01JKABC00001', { model: undefined, effort: undefined });
+    expect(registry.get('01JKABC00001')?.model).toBeUndefined();
+    expect(registry.get('01JKABC00001')?.effort).toBeUndefined();
+  });
+
+  it('reads an unrecognized stored effort as no preference rather than passing it on', () => {
+    // A rung a later release drops, or a hand-edited row. "No preference" is the
+    // safe answer; handing a word no adapter knows to a runtime is not.
+    registry.upsert(makeEntry({ effort: 'high' }));
+    db.run?.(`UPDATE agents SET effort = 'ludicrous' WHERE id = '01JKABC00001'`);
+    expect(registry.get('01JKABC00001')?.effort).toBeUndefined();
+  });
+});

@@ -317,3 +317,83 @@ describe('UpdateAgentRequestSchema — enabledToolGroups', () => {
     expect(result.name).toBe('new-name');
   });
 });
+
+describe('AgentManifestSchema — model and effort (execution defaults, E2)', () => {
+  it('keeps a model and an effort the agent names', () => {
+    const manifest = AgentManifestSchema.parse({
+      ...baseManifest,
+      model: 'opus',
+      effort: 'high',
+    });
+    expect(manifest.model).toBe('opus');
+    expect(manifest.effort).toBe('high');
+  });
+
+  it('leaves both absent when the agent names neither — absent means inherit', () => {
+    const manifest = AgentManifestSchema.parse(baseManifest);
+    expect(manifest.model).toBeUndefined();
+    expect(manifest.effort).toBeUndefined();
+  });
+
+  it('accepts a model its runtime may not offer — validity is a warning, not a refusal', () => {
+    // A Claude Code agent asking for a Codex model id. The write succeeds; the
+    // mismatch is what the client's warning chip is for (design §3.4).
+    const manifest = AgentManifestSchema.parse({
+      ...baseManifest,
+      runtime: 'claude-code',
+      model: 'gpt-5.3-codex',
+    });
+    expect(manifest.model).toBe('gpt-5.3-codex');
+  });
+
+  it('accepts an effort on an OpenCode agent, which cannot honor one', () => {
+    const manifest = AgentManifestSchema.parse({
+      ...baseManifest,
+      runtime: 'opencode',
+      effort: 'xhigh',
+    });
+    expect(manifest.effort).toBe('xhigh');
+  });
+
+  it('survives a hand-edited manifest with a nonsense effort, dropping only that field', () => {
+    // The whole agent must not vanish from the fleet over a typo in one
+    // setting. A manifest that fails to parse makes `readManifest` return null,
+    // which reads to every caller as "there is no agent here".
+    const result = AgentManifestSchema.safeParse({
+      ...baseManifest,
+      model: 'sonnet',
+      effort: 'ludicrous',
+    });
+    expect(result.success).toBe(true);
+    expect(result.data?.model).toBe('sonnet');
+    expect(result.data?.effort).toBeUndefined();
+  });
+
+  it('drops an empty model string the same way, rather than failing the manifest', () => {
+    const result = AgentManifestSchema.safeParse({ ...baseManifest, model: '', effort: 'high' });
+    expect(result.success).toBe(true);
+    expect(result.data?.model).toBeUndefined();
+    expect(result.data?.effort).toBe('high');
+  });
+});
+
+describe('UpdateAgentRequestSchema — model and effort', () => {
+  it('carries both on a partial update', () => {
+    const result = UpdateAgentRequestSchema.parse({ model: 'sonnet', effort: 'low' });
+    expect(result.model).toBe('sonnet');
+    expect(result.effort).toBe('low');
+  });
+
+  it('accepts null for either, which is how a person says "back to the server default"', () => {
+    const result = UpdateAgentRequestSchema.parse({ model: null, effort: null });
+    expect(result.model).toBeNull();
+    expect(result.effort).toBeNull();
+  });
+
+  it('refuses an effort off the ladder — a caller gets told, unlike a file on disk', () => {
+    // The asymmetry is deliberate: the manifest tolerates a bad value because
+    // nobody is standing there to be told, and a write does not.
+    expect(UpdateAgentRequestSchema.safeParse({ effort: 'turbo' }).success).toBe(false);
+    expect(UpdateAgentRequestSchema.safeParse({ model: '' }).success).toBe(false);
+  });
+});

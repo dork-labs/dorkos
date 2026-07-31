@@ -88,6 +88,41 @@ describe('applyStoredSettings', () => {
   });
 });
 
+describe('applyStoredSettings — a runtime with no effort', () => {
+  it('never shows an effort on an OpenCode session, even with one in the row', () => {
+    // OpenCode's API takes no effort, so displaying one would be showing a
+    // person a setting that does nothing. A row can still hold one — written
+    // before this rule, or by a shared path that does not ask which runtime it
+    // serves — so the display gate is what makes "Not supported by OpenCode"
+    // true rather than aspirational.
+    const session = makeSession('oc-1', 'opencode');
+
+    applyStoredSettings(session, { model: 'openrouter/anthropic/claude-opus-4.6', effort: 'high' });
+
+    expect(session.effort).toBeUndefined();
+    // Everything else the row holds still wins, as always.
+    expect(session.model).toBe('openrouter/anthropic/claude-opus-4.6');
+  });
+
+  it('still shows it on a runtime that has one', () => {
+    const session = makeSession('cc-1', 'claude-code');
+
+    applyStoredSettings(session, { effort: 'high' });
+
+    expect(session.effort).toBe('high');
+  });
+
+  it('shows it for a session with no runtime tag at all', () => {
+    // Unknown means unknown, not unsupported: muting an effort for a session
+    // whose runtime the aggregation could not name would hide a real setting.
+    const session = makeSession('unknown-1');
+
+    applyStoredSettings(session, { effort: 'max' });
+
+    expect(session.effort).toBe('max');
+  });
+});
+
 describe('overlayStoredSettings', () => {
   it('keys each session by its runtime canonical id, not the id it is listed under', () => {
     // The row lives under the canonical id (where PATCH wrote it, and where the
