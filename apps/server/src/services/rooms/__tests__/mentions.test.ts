@@ -59,6 +59,79 @@ describe('resolveMentions', () => {
   it('ignores an @ that starts with punctuation', () => {
     expect(resolveMentions('@-ana @.bo', roster)).toEqual([]);
   });
+
+  describe('quoted text addresses nobody', () => {
+    // "Mentions resolve once, at write time" was not true of anything quoted:
+    // re-stating somebody's message re-addressed everyone it named, minutes or
+    // days later. The room's own late answer is the case that bit — it quotes
+    // the question it is answering — but the rule is general, because a person
+    // quoting a colleague to disagree with them is not summoning the four
+    // agents that colleague pinged.
+
+    it('resolves nothing inside a blockquote', () => {
+      expect(resolveMentions('> can @ana and @bo look at this?', roster)).toEqual([]);
+    });
+
+    it('resolves what the author wrote around a quote, and nothing inside it', () => {
+      const text = ['Dorian said:', '', '> @ana can you check the deploy?', '', 'Any luck @bo?'];
+      expect(resolveMentions(text.join('\n'), roster)).toEqual(['author-bo']);
+    });
+
+    it('resolves nothing inside a fenced code block', () => {
+      const text = ['Here is the config:', '```yaml', 'owner: @ana', 'reviewer: @bo', '```'];
+      expect(resolveMentions(text.join('\n'), roster)).toEqual([]);
+    });
+
+    it('closes a fence again, so text after it still addresses people', () => {
+      const text = ['```', '@ana', '```', 'so @bo should take it'];
+      expect(resolveMentions(text.join('\n'), roster)).toEqual(['author-bo']);
+    });
+
+    it('treats an unclosed fence as ordinary text, not as a hole in the message', () => {
+      // A running toggle read the first ``` as "everything after this is code",
+      // so one stray or unterminated fence — somebody pasting a snippet and
+      // forgetting to close it — swallowed every mention in the rest of the
+      // message. Silently: the post looks addressed and reaches nobody.
+      //
+      // An opener with no closer is not a code block. It is a line that starts
+      // with backticks, and what follows is the author talking.
+      const text = ['```js', 'const x = 1;', 'and @bo please take this'];
+      expect(resolveMentions(text.join('\n'), roster)).toEqual(['author-bo']);
+    });
+
+    it('lets a shorter fence sit inside a longer one without closing it', () => {
+      // CommonMark's rule, and the reason the scan matches a CLOSER rather than
+      // toggling: a ``` inside a ```` block is content. Toggling instead paired
+      // the outer opener with the inner one, ending the block early and letting
+      // the code after it address people.
+      const text = ['````', '```', '@ana', '```', '````', 'over to @bo'];
+      expect(resolveMentions(text.join('\n'), roster)).toEqual(['author-bo']);
+    });
+
+    it('keeps a nested pair quoted when the outer fence never closes', () => {
+      // The outer ```` opens and is never closed, so it is ordinary text — but
+      // the inner ``` pair really does close, and what it holds really is code.
+      // A closed-region model gets both right at once; a toggle got neither.
+      const text = ['````', '```', '@ana', '```', 'so @bo should take it'];
+      expect(resolveMentions(text.join('\n'), roster)).toEqual(['author-bo']);
+    });
+
+    it('does not let a line with an info string close a fence', () => {
+      // ```` ```js ```` opens a block; it never closes one. Accepting it as a
+      // closer would end this block three lines early and hand `@bo` back to
+      // the resolver as though the author had written it.
+      const text = ['```', '@ana', '```js', '@bo', '```'];
+      expect(resolveMentions(text.join('\n'), roster)).toEqual([]);
+    });
+
+    it('resolves nothing inside an inline code span', () => {
+      expect(resolveMentions('the literal `@ana` is not a person', roster)).toEqual([]);
+    });
+
+    it('still resolves a handle beside an inline code span', () => {
+      expect(resolveMentions('`@ana` — over to you @bo', roster)).toEqual(['author-bo']);
+    });
+  });
 });
 
 /** One member answering to `names`, the roster shape the helpers take. */

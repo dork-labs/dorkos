@@ -164,11 +164,115 @@ export function advertisedHandle(
 }
 
 /**
+ * A fenced-code delimiter line: three or more backticks or tildes, indented no
+ * more than three spaces (four would make it an indented code block instead).
+ *
+ * Captures the run itself, because a fence is closed only by one of **the same
+ * character, at least as long** — CommonMark's rule, and the only thing that
+ * makes a ```` ``` ```` inside a ```` ```` ```` block read as content rather
+ * than as a terminator.
+ */
+const CODE_FENCE = /^ {0,3}((`{3,})|(~{3,}))/;
+
+/** A quoted line: markdown's blockquote marker, indented no more than three. */
+const BLOCKQUOTE = /^ {0,3}>/;
+
+/** An inline code span: the shortest run of text between matching backticks. */
+const INLINE_CODE = /`[^`]*`/g;
+
+/**
+ * The part of a message that is the author speaking, with everything they were
+ * merely QUOTING removed.
+ *
+ * Three things are dropped: CLOSED fenced code blocks, blockquote lines, and
+ * inline code spans. Each is text the author reproduced rather than wrote, and
+ * an `@name` inside one is a citation, not an address.
+ *
+ * **This is what keeps "mentions resolve once, at write time" true.** Without
+ * it, quoting a message re-addressed everybody it named — so a room's own late
+ * answer, which quotes the question it is answering, re-triggered the original
+ * message's targets, and one observed entry stored a mention of the very agent
+ * that wrote it, from nothing but the quote in its own prefix.
+ *
+ * **Closed regions, not a running toggle**, and the difference is a message that
+ * silently reaches nobody. A toggle treats the first ``` as "everything after
+ * this is code", so a single stray or unterminated fence — somebody pasting a
+ * snippet and forgetting to close it, which is ordinary — swallowed every
+ * mention in the rest of the message. An opener with no matching closer is not a
+ * code block; it is a line that happens to start with backticks, and the text
+ * after it is the author talking. Scanning for the CLOSER first also gets
+ * nesting right for free: a shorter fence inside a longer one cannot close it,
+ * so it stays content.
+ *
+ * Deliberately a filter over the raw text rather than a markdown parse. The
+ * grammar it has to agree with is {@link MENTION_PATTERN}, which is three
+ * character classes; pulling a parser in to decide which of them count would be
+ * a second, richer model of the same message, and the two would drift. Two
+ * constructs are knowingly left resolving, because both need that parser and
+ * neither is a way to quote somebody's mentions by accident: a **four-space
+ * indented code block**, and a **lazy blockquote continuation** (a wrapped quote
+ * line written without its own `>`). Widening this is a markdown parser's job,
+ * not a regex's.
+ *
+ * @param text - The raw message body.
+ * @returns The same text with every quoted region removed, lines still in order.
+ */
+function speakingParts(text: string): string {
+  const lines = text.split('\n');
+  /** Lines inside a fence that actually closed, and the two delimiters. */
+  const fenced = new Set<number>();
+  for (let at = 0; at < lines.length; at += 1) {
+    if (fenced.has(at)) continue;
+    const opener = CODE_FENCE.exec(lines[at]);
+    if (!opener) continue;
+    const closedAt = closingFence(lines, at, opener[1]);
+    // Unclosed: this opener is ordinary text, and so is everything after it.
+    if (closedAt === -1) continue;
+    for (let inside = at; inside <= closedAt; inside += 1) fenced.add(inside);
+    at = closedAt;
+  }
+
+  const kept: string[] = [];
+  for (let at = 0; at < lines.length; at += 1) {
+    if (fenced.has(at) || BLOCKQUOTE.test(lines[at])) continue;
+    kept.push(lines[at].replace(INLINE_CODE, ' '));
+  }
+  return kept.join('\n');
+}
+
+/**
+ * Where the fence opened at `from` is closed, or `-1` when nothing closes it.
+ *
+ * A closer must use the same character as its opener and be at least as long,
+ * and — CommonMark again — carry no info string, so ```` ```js ```` opens but
+ * never closes.
+ *
+ * @param lines - Every line of the message.
+ * @param from - The index of the opening delimiter.
+ * @param opener - The opening delimiter's run, e.g. ``` ``` ``` or `~~~~`.
+ */
+function closingFence(lines: readonly string[], from: number, opener: string): number {
+  for (let at = from + 1; at < lines.length; at += 1) {
+    const candidate = CODE_FENCE.exec(lines[at]);
+    if (!candidate) continue;
+    const run = candidate[1];
+    if (run[0] !== opener[0] || run.length < opener.length) continue;
+    if (lines[at].slice(lines[at].indexOf(run) + run.length).trim() !== '') continue;
+    return at;
+  }
+  return -1;
+}
+
+/**
  * Resolve every `@name` in `text` against a room's roster.
  *
  * Matching is case-insensitive. The first roster member claiming a name wins,
  * so a handle collision resolves deterministically rather than by scan order at
  * the call site.
+ *
+ * **Quoted text does not address anybody.** Blockquote lines, fenced code blocks
+ * and inline code spans are removed before matching — see
+ * {@link speakingParts}.
  *
  * @param text - The raw message body.
  * @param roster - The room's members and the names each answers to.
@@ -179,7 +283,7 @@ export function resolveMentions(text: string, roster: readonly MentionCandidate[
 
   const resolved: string[] = [];
   const seen = new Set<string>();
-  for (const match of text.matchAll(MENTION_PATTERN)) {
+  for (const match of speakingParts(text).matchAll(MENTION_PATTERN)) {
     const raw = match[1].toLowerCase();
     const authorId = byName.get(raw) ?? byName.get(raw.replace(TRAILING_PUNCTUATION, ''));
     if (!authorId || seen.has(authorId)) continue;

@@ -48,6 +48,7 @@ import type { LateRoomReply, RoomTurnRequest, RoomTurnResult } from '../room-tri
 import {
   agentLookupFor,
   createRoomHarness,
+  settleUntil,
   type RecordedTurn,
   type ScriptedTurnRunner,
 } from './room-test-harness.js';
@@ -184,40 +185,6 @@ function drivenRunner(opts: {
       }
     },
   };
-}
-
-/** How many macrotask hops a room gets to reach a state before the test gives up. */
-const SETTLE_HOPS = 500;
-
-/**
- * Wait until the room has reached the state this step is about.
- *
- * `triggersIdle()` is the right wait when every turn will settle, and the wrong
- * one whenever a turn is being held: it never resolves until the test lands
- * that turn. So these steps need a different wait, and the obvious one — hop the
- * macrotask queue a fixed number of times — is how a suite acquires a test that
- * usually passes. Two hops were enough on an idle machine and not enough inside
- * a full run, where several hundred test files share one event loop; the
- * scenarios then measured a room that had not finished moving.
- *
- * Waiting on the CONDITION removes the guess in both directions: it returns as
- * soon as the room is ready, and it fails with the state it wanted rather than
- * with a confusing assertion three lines later.
- *
- * Absence is never the condition. "Ana was not triggered again" is proved by
- * waiting for the thing that happens INSTEAD — the refusal notice, or the reply
- * that carried it — which is on the log by the time the dispatch that decided it
- * returns.
- *
- * @param reached - The state being waited for.
- * @param described - What that state is, for the failure message.
- */
-async function settleUntil(reached: () => boolean, described: string): Promise<void> {
-  for (let hop = 0; hop < SETTLE_HOPS; hop += 1) {
-    if (reached()) return;
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  }
-  throw new Error(`the room never reached: ${described}`);
 }
 
 describe('a claim lives until its turn is done', () => {
@@ -556,6 +523,177 @@ describe('a claim lives until its turn is done', () => {
       }
     });
 
+    it('does not re-arm its apologies at the deadline of a turn that answered nothing', async () => {
+      // The wait deadline was clearing every damping key for the agent it was
+      // about, and nothing on the outside could see it happen.
+      //
+      // `runOne` used to hand a late result to BOTH `deliverLate` and `deliver`.
+      // A late result is `{ text: null, late, unanswered: undefined }`, which
+      // `deliver` cannot tell from a turn that ran and chose to stay quiet — so
+      // it ran its recovery branch, whose whole premise is "this agent just
+      // answered, so whatever was blocking it is over". Nothing had answered.
+      // The block was lifted at the moment the room GAVE UP waiting, for an
+      // agent that was still working, and the next refusal wrote a second
+      // apology on top of the standing one.
+      //
+      // Every existing scenario missed it because the clear lands BEFORE the
+      // first busy line in each of them, where it has nothing to clear. This one
+      // is ordered the other way round: a line first, then a deadline, then an
+      // agent-driven re-trigger — which is the only trigger kind still damped,
+      // so it is the only one that can show the key surviving.
+      let anaTurns = 0;
+      open(
+        drivenRunner({
+          plan: (request) => {
+            if (request.authorId === bo) return 'gated';
+            if (request.authorId !== ana) return 'answer';
+            anaTurns += 1;
+            return anaTurns === 1 ? 'busy' : 'hold';
+          },
+          say: (request) => (request.authorId === bo ? 'not sure — @ana would know' : 'on it'),
+        })
+      );
+
+      // One busy line, and the key that damps agent traffic is now armed.
+      service.post(room.id, { authorId: human, text: '@ana can you check the deploy?' });
+      await service.triggersIdle();
+      expect(noticesAbout(ana)).toHaveLength(1);
+      expect(noticesAbout(ana)[0].body.notice).toBe('agent_busy');
+
+      // Ana's next turn outruns the wait. The room stops waiting; she has still
+      // answered nothing, so nothing about her has recovered.
+      service.post(room.id, { authorId: human, text: '@ana and the migration?' });
+      await settleUntil(() => runner.holdsFor(ana) === 1, 'Ana past the wait deadline');
+
+      // Bo, answering a third question, hands it to Ana — an AGENT-authored
+      // trigger against an agent the room has already apologised for.
+      service.post(room.id, { authorId: human, text: '@bo any idea?' });
+      await settleUntil(() => turnsBy(bo).length === 1, 'Bo handed a turn');
+      runner.release(bo);
+      await settleUntil(() => postsBy(bo).length === 1, 'Bo answered, naming Ana');
+
+      // Still one. Two is the defect: the deadline having quietly re-armed it.
+      expect(noticesAbout(ana)).toHaveLength(1);
+      // And Ana was never asked to run beside the turn she is still holding.
+      expect(turnsBy(ana)).toHaveLength(2);
+      expect(runner.holdsFor(ana)).toBe(1);
+
+      // The real answer landing IS the recovery, and it is the only thing that
+      // is: the room has an answer to show for lifting the block.
+      runner.land(ana, { text: 'green', waitedMs: 12 * 60_000 });
+      await service.triggersIdle();
+      expect(postsBy(ana)).toHaveLength(1);
+    });
+
+    it('answers a person who asks again, and stays quiet for a cascade that does', async () => {
+      // The two halves of the damping rule, in one room, so neither can be
+      // widened into the other by accident.
+      //
+      // Ana is held past the deadline throughout, so every trigger below is
+      // refused as busy. The person asks twice and is told twice; Bo asks once,
+      // inside an exchange nobody typed, and is told nothing, because the room
+      // has already said this and Bo is not the one who needs to hear it.
+      open(
+        drivenRunner({
+          plan: (request) => {
+            if (request.authorId === ana) return 'hold';
+            return request.authorId === bo ? 'gated' : 'answer';
+          },
+          say: (request) => (request.authorId === bo ? 'ask @ana, she ran it' : 'on it'),
+        })
+      );
+
+      service.post(room.id, { authorId: human, text: '@ana can you check the deploy?' });
+      await settleUntil(() => runner.holdsFor(ana) === 1, 'Ana past the wait deadline');
+
+      // A person, asking again. Never damped: their message went nowhere and
+      // they are entitled to know, every time it does.
+      service.post(room.id, { authorId: human, text: '@ana are you there?' });
+      await settleUntil(() => noticesAbout(ana).length === 1, 'the first re-ask answered');
+      service.post(room.id, { authorId: human, text: '@ana hello?' });
+      await settleUntil(() => noticesAbout(ana).length === 2, 'the second re-ask answered');
+
+      // An agent, asking inside a cascade. Damped: this is the traffic that
+      // multiplies, and the line it would write is already standing.
+      service.post(room.id, { authorId: human, text: '@bo who ran the deploy?' });
+      await settleUntil(() => turnsBy(bo).length === 1, 'Bo handed a turn');
+      runner.release(bo);
+      await settleUntil(() => postsBy(bo).length === 1, 'Bo answered, naming Ana');
+
+      expect(noticesAbout(ana)).toHaveLength(2);
+      // Every one of them is about being busy, and none is a cascade refusal
+      // wearing the same shape.
+      expect(noticesAbout(ana).map((entry) => entry.body.notice)).toEqual([
+        'agent_busy',
+        'agent_busy',
+      ]);
+
+      runner.land(ana, { text: 'green', waitedMs: 12 * 60_000 });
+      await service.triggersIdle();
+    });
+
+    it('says what the busy agent is actually doing, in words the reader can act on', async () => {
+      // The old line was `was busy with something else and did not pick this up.
+      // Send it again when Ana is free.` — false in the commonest case, because
+      // "something else" was usually the previous message in this very room, and
+      // un-followable in every case, because a room shows no "free" state to
+      // watch for.
+      //
+      // **The discriminator is the claim's existence, not its cascade root**, and
+      // getting that wrong reproduced the original falsehood. An earlier draft
+      // chose the wording by comparing the claim's root against the refused
+      // entry's — but every message a person sends mints its own root, so an
+      // ordinary follow-up compared root A against root B and was told Ana was
+      // "working on something else". She was working on that person's previous
+      // message, in front of them.
+      //
+      // The claim map is keyed `(room, agent)`. A claim existing at all means
+      // "mid-turn in THIS room", which is the only thing the dispatcher can see
+      // and therefore the only thing it may say. Both shapes below — an agent's
+      // reply inside the exchange, and a person's fresh question — get the same
+      // true sentence.
+      open(
+        drivenRunner({
+          plan: (request) => {
+            if (request.authorId === ana) return 'hold';
+            return request.authorId === bo ? 'gated' : 'answer';
+          },
+          say: (request) => (request.authorId === bo ? 'ask @ana about it' : 'on it'),
+        })
+      );
+
+      // One message asks both. Bo waits at his gate while Ana's turn outruns the
+      // wait, so Bo's reply re-enters the SAME exchange Ana is still answering.
+      service.post(room.id, { authorId: human, text: '@ana @bo what is going on with the build?' });
+      await settleUntil(
+        () => runner.holdsFor(ana) === 1 && turnsBy(bo).length === 1,
+        'Ana past the wait deadline, with Bo waiting at his gate'
+      );
+      runner.release(bo);
+      await settleUntil(() => noticesAbout(ana).length === 1, 'Ana refused inside this exchange');
+
+      const insideTheExchange = noticesAbout(ana)[0].body.text;
+      expect(insideTheExchange).toBe(
+        "Ana is still working on an earlier message here. It didn't pick this one up — that answer will land in this conversation."
+      );
+
+      // A fresh question from a person, which mints its own cascade root. Ana is
+      // doing exactly the same thing she was a moment ago, so the room says
+      // exactly the same thing about her.
+      service.post(room.id, { authorId: human, text: '@ana and the migration?' });
+      await settleUntil(() => noticesAbout(ana).length === 2, 'the new question refused');
+
+      expect(noticesAbout(ana)[1].body.text).toBe(insideTheExchange);
+      // Never the advice nobody can follow, and never the claim it cannot check.
+      for (const notice of noticesAbout(ana)) {
+        expect(notice.body.text).not.toContain('is free');
+        expect(notice.body.text).not.toContain('something else');
+      }
+
+      runner.land(ana, { text: 'green', waitedMs: 12 * 60_000 });
+      await service.triggersIdle();
+    });
+
     it('still says the turn failed after it has already said the agent was busy', async () => {
       // The trap the busy refusal opens, and the reason its damping key carries
       // the REASON. Ana is refused as busy while her real turn runs, so the room
@@ -566,7 +704,10 @@ describe('a claim lives until its turn is done', () => {
       //
       // Both lines are true, both are news, and the person needs the second one
       // most. Seed for the red: collapse the two keys back into one.
-      open(drivenRunner({ plan: (request) => (request.authorId === ana ? 'hold' : 'answer') }), 'seeded');
+      open(
+        drivenRunner({ plan: (request) => (request.authorId === ana ? 'hold' : 'answer') }),
+        'seeded'
+      );
 
       service.post(room.id, { authorId: human, text: '@ana can you check the deploy?' });
       await settleUntil(() => runner.holdsFor(ana) === 1, 'Ana past the wait deadline');
@@ -591,12 +732,15 @@ describe('a claim lives until its turn is done', () => {
       // busy refusal that charged the room would let a person burn an hour's
       // automatic turns on answers that never ran — and the room would then
       // report a budget notice for a spend nobody got.
-      open(drivenRunner({ plan: (request) => (request.authorId === ana ? 'hold' : 'answer') }), 'seeded');
+      open(
+        drivenRunner({ plan: (request) => (request.authorId === ana ? 'hold' : 'answer') }),
+        'seeded'
+      );
 
       service.post(room.id, { authorId: human, text: '@ana can you check the deploy?' });
       await settleUntil(() => runner.holdsFor(ana) === 1, 'Ana past the wait deadline');
-      const beforeRefusal = turnsBy(ana)[0].roomContext.budget
-        .automaticRepliesLeftInThisRoomThisHour;
+      const beforeRefusal =
+        turnsBy(ana)[0].roomContext.budget.automaticRepliesLeftInThisRoomThisHour;
 
       service.post(room.id, { authorId: human, text: 'and the migration?' });
       await settleUntil(() => noticesAbout(ana).length === 1, 'Ana refused as busy');
@@ -606,9 +750,9 @@ describe('a claim lives until its turn is done', () => {
       // turn charged for itself.
       service.post(room.id, { authorId: human, text: '@bo can you take it?' });
       await settleUntil(() => turnsBy(bo).length === 1, 'Bo handed a turn');
-      expect(
-        turnsBy(bo)[0].roomContext.budget.automaticRepliesLeftInThisRoomThisHour
-      ).toBe(beforeRefusal - 1);
+      expect(turnsBy(bo)[0].roomContext.budget.automaticRepliesLeftInThisRoomThisHour).toBe(
+        beforeRefusal - 1
+      );
 
       runner.land(ana, { text: 'green', waitedMs: 12 * 60_000 });
       await service.triggersIdle();
@@ -851,17 +995,18 @@ describe('a claim lives until its turn is done', () => {
       expect(releaseIndex(ana)).toBe(entryIndex((entry) => entry.kind === 'notice') + 1);
     });
 
-    it('shows an indicator for every attempt, while saying once that the agent was busy', async () => {
-      // Two busy refusals for the same agent, with no successful turn between
-      // them. The notice is damped on `(room, agent)` until that agent answers
-      // again — four messages to a busy agent must not put four apologies in the
-      // room — but the INDICATOR is not damped, because each attempt really did
-      // take a claim and really did release it.
+    it('shows an indicator for every attempt, and answers the person on every one', async () => {
+      // Two busy refusals for the same agent, both from somebody typing into the
+      // room, with no successful turn between them. Neither the indicator nor
+      // the line is damped here: each attempt really did take a claim and
+      // release it, and each message really did go nowhere.
       //
-      // So the second release's durable explanation is the notice already
-      // standing on the log. That is the release invariant read exactly as
-      // written (spec §4.1 path (a)): an indicator may disappear into a fresh
-      // notice OR one already standing, and never into nothing.
+      // Damping a person's second message is what DOR-781 reversed — see
+      // `room-silence.test.ts`. What stays damped is agent traffic, which is
+      // where the apologies actually multiplied.
+      //
+      // So each indicator resolves into ITS OWN fresh notice: the release
+      // invariant (spec §4.1 path (a)) read one attempt at a time.
       open(drivenRunner({ plan: () => 'busy' }));
 
       service.post(room.id, { authorId: human, text: '@ana can you check the deploy?' });
@@ -871,22 +1016,20 @@ describe('a claim lives until its turn is done', () => {
 
       expect(turnsBy(ana)).toHaveLength(2);
       expect(statesFor(ana)).toEqual(['working', 'done', 'working', 'done']);
-      expect(noticesAbout(ana)).toHaveLength(1);
+      expect(noticesAbout(ana)).toHaveLength(2);
 
-      // The first release resolves into its own fresh notice; the second writes
-      // no notice at all, and the standing one is still there to explain it.
       const stream = roomStream();
       const releases = stream.flatMap((event, at) =>
         event.type === 'signal' && event.state === 'done' ? [at] : []
       );
-      const notice = entryIndex((entry) => entry.kind === 'notice');
+      const written = stream.flatMap((event, at) =>
+        event.type === 'entry' && event.entry.kind === 'notice' ? [at] : []
+      );
       expect(releases).toHaveLength(2);
-      expect(releases[0]).toBe(notice + 1);
-      expect(
-        stream
-          .slice(releases[0], releases[1])
-          .filter((e) => e.type === 'entry' && e.entry.kind === 'notice')
-      ).toEqual([]);
+      expect(written).toHaveLength(2);
+      // Each release sits immediately after the notice that explains it, never
+      // before — on both attempts.
+      expect(releases).toEqual([written[0] + 1, written[1] + 1]);
     });
 
     it('keeps re-stating every live claim, dated from when each one started', async () => {

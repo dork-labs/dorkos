@@ -21,6 +21,7 @@
  * @module server/services/rooms/room-notices
  */
 import type { RoomEntryBody } from '@dorkos/shared/room-schemas';
+import { MENTION_PATTERN } from './mentions.js';
 import type { BudgetRefusalScope } from './turn-budget.js';
 
 /**
@@ -61,23 +62,57 @@ export function buildBudgetNotice(scope: BudgetRefusalScope = 'room'): RoomEntry
 }
 
 /**
- * The durable `notice` for a trigger that was skipped because somebody else was
- * already writing to that agent's session.
+ * What the room knows about why an agent could not pick a message up.
  *
- * Says the agent is occupied, not broken, and says what to do: nothing is
- * queued, so the message has to be sent again. Written once per `(room, agent)`
- * until that agent takes a turn there again, so somebody typing four messages
- * at a busy agent gets one line rather than four. The damping key deliberately
- * has no cascade in it — every message a person sends mints its own cascade
- * root, so a cascade-keyed memory would never collide and this doc would be a
- * promise the code does not keep.
+ * Exactly two states, because exactly two are knowable.
+ *
+ * - `working-here` — this room holds a live claim for that agent. The claim map
+ *   is keyed `(room, agent)`, so a claim existing AT ALL means the agent is
+ *   mid-turn on an earlier message **in this room**. Waiting is the remedy: that
+ *   answer is coming, here, and the reader will see it.
+ * - `unknown` — no claim, which happens when the turn never started because
+ *   another writer held the agent's session (most often the person typing into
+ *   that agent directly). The room has nothing to read, so it does not guess.
+ *
+ * **There is deliberately no "busy somewhere else" variant.** An earlier draft
+ * had one, chosen by comparing the claim's `cascadeRoot` against the refused
+ * entry's — which is wrong, because every message a person sends mints its own
+ * root, so an ordinary follow-up compared root A against root B and was told the
+ * agent was "working on something else". It was working on that person's
+ * previous message, in front of them. Answering "is it elsewhere?" honestly
+ * needs claim awareness ACROSS rooms, which nothing here has: the dispatcher can
+ * only see the room it was asked about. A variant no caller can truthfully
+ * reach is worse than an absent one — it reads as a supported answer.
+ */
+export type BusyContext = 'working-here' | 'unknown';
+
+/**
+ * The durable `notice` for a trigger that was skipped because that agent was
+ * already working.
+ *
+ * Says the agent is occupied, not broken, and — this is what changed — says
+ * something the reader can act on. The old line was "was busy with something
+ * else and did not pick this up. Send it again when X is free", which was false
+ * in the commonest case (the agent was busy with THIS room, usually with that
+ * same person's previous message) and un-followable in every case: a room shows
+ * no "free" state, so "send it again when X is free" asks the reader to watch
+ * for a signal that does not exist. Both variants below point at something that
+ * does.
  *
  * @param agentName - Display name of the agent that did not take the turn.
  * @param subjectAuthorId - Author id of that agent, for rendering.
+ * @param busyWith - What the room knows it is doing, from the live claim.
  */
-export function buildBusyNotice(agentName: string, subjectAuthorId: string): RoomEntryBody {
+export function buildBusyNotice(
+  agentName: string,
+  subjectAuthorId: string,
+  busyWith: BusyContext = 'unknown'
+): RoomEntryBody {
   return {
-    text: `${agentName} was busy with something else and did not pick this up. Send it again when ${agentName} is free.`,
+    text:
+      busyWith === 'working-here'
+        ? `${agentName} is still working on an earlier message here. It didn't pick this one up — that answer will land in this conversation.`
+        : `${agentName} was busy and didn't pick this up. Send it again in a moment.`,
     notice: 'agent_busy',
     subjectAuthorId,
   };
@@ -135,15 +170,29 @@ export function withLateAnswerNote(
 const QUOTE_LIMIT = 60;
 
 /**
- * One line of somebody else's message, short enough to sit inside a sentence.
+ * One line of somebody else's message, short enough to sit inside a sentence
+ * and unable to address anybody.
  *
  * Newlines and stray quote marks are flattened rather than escaped: this lands
  * inside a quoted clause in a markdown post, and a message containing a line
  * break or a `"` would otherwise break the line it is quoted on.
  *
+ * **The `@` sigils go with them, and that is not cosmetic.** This excerpt is
+ * pasted into a real post, so every handle it carried was resolved again at
+ * write time and every agent named in the original question was addressed a
+ * second time — by a late answer whose whole point is that the question has
+ * already been asked. One observed entry mentioned the agent that wrote it,
+ * from nothing but the quote in its own prefix. The name is kept because the
+ * reader needs it to recognise the message; only the address is dropped.
+ *
+ * {@link MENTION_PATTERN} is imported rather than restated: a second grammar
+ * here could pass while the resolver disagreed, which is exactly the failure
+ * being closed. `String.replace` with a global pattern resets `lastIndex` at
+ * both ends, so borrowing the shared regex is safe.
+ *
  * @param message - The original text.
  */
 function excerpt(message: string): string {
-  const flat = message.replace(/\s+/g, ' ').replace(/"/g, '').trim();
+  const flat = message.replace(/\s+/g, ' ').replace(/"/g, '').replace(MENTION_PATTERN, '$1').trim();
   return flat.length <= QUOTE_LIMIT ? flat : `${flat.slice(0, QUOTE_LIMIT).trimEnd()}…`;
 }
