@@ -1,0 +1,9 @@
+{
+  "id": "260731-191225",
+  "slug": "messaging-observability",
+  "title": "Messaging observability & DX — one id across the dispatch chain, and the surfaces to read it",
+  "created": "2026-07-31",
+  "status": "specified",
+  "linearIssue": "DOR-797",
+  "notes": "DOR-797 already exists in Linear; this spec was written without tracker I/O. Not yet registered in specs/manifest.json — registration is a follow-up (see 02-specification.md §12)."
+}

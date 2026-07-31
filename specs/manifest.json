@@ -2396,6 +2396,13 @@
       "title": "Agent creation, reborn — four moments from fork to first hello",
       "status": "specified",
       "created": "2026-07-20"
+    },
+    {
+      "id": "260731-191225",
+      "slug": "messaging-observability",
+      "title": "Messaging observability & DX — one id across the dispatch chain, and the surfaces to read it",
+      "status": "specified",
+      "created": "2026-07-31"
     }
   ]
 }
