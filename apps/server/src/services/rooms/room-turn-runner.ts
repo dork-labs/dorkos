@@ -41,6 +41,7 @@ import { runtimeRegistry } from '../core/runtime-registry.js';
 import {
   getOrCreateProjector,
   rekeyProjector,
+  readAgentExecutionDefaults,
   resolveSessionDefaults,
   triggerTurn,
   type SessionStateProjector,
@@ -145,7 +146,13 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // setting in the same instant a room message arrives.
       const seed =
         (await runtimeRegistry.getSessionSettings(sessionId)) === null
-          ? resolveSessionDefaults({ runtimeType })
+          ? resolveSessionDefaults({
+              runtimeType,
+              // A room turn always has an agent — it is the agent the room
+              // addressed — so this is the one surface where the per-agent
+              // setting is the whole point rather than a refinement.
+              agent: await readAgentExecutionDefaults(request.agentPath),
+            })
           : {};
 
       const projector = getOrCreateProjector(sessionId, request.agentPath, {

@@ -11,6 +11,7 @@ import { eq, desc, and, lt } from 'drizzle-orm';
 import { agents } from '@dorkos/db';
 import type { Db } from '@dorkos/db';
 import type { AgentManifest, AgentRuntime } from '@dorkos/shared/mesh-schemas';
+import { EffortLevelSchema } from '@dorkos/shared/schemas';
 import { computeHealthStatus } from './health.js';
 
 // === Types ===
@@ -113,6 +114,8 @@ export class AgentRegistry {
         isSystem: agent.isSystem ?? false,
         color: agent.color ?? null,
         icon: agent.icon ?? null,
+        model: agent.model ?? null,
+        effort: agent.effort ?? null,
         registeredAt: agent.registeredAt,
         updatedAt: now,
       })
@@ -133,6 +136,8 @@ export class AgentRegistry {
           isSystem: agent.isSystem ?? false,
           color: agent.color ?? null,
           icon: agent.icon ?? null,
+          model: agent.model ?? null,
+          effort: agent.effort ?? null,
           updatedAt: now,
           status: 'active', // Re-registration clears unreachable
         },
@@ -222,6 +227,8 @@ export class AgentRegistry {
         isSystem: merged.isSystem ?? false,
         color: merged.color ?? null,
         icon: merged.icon ?? null,
+        model: merged.model ?? null,
+        effort: merged.effort ?? null,
         updatedAt: now,
       })
       .where(eq(agents.id, id))
@@ -438,6 +445,11 @@ export class AgentRegistry {
       isSystem: row.isSystem ?? false,
       color: row.color ?? undefined,
       icon: row.icon ?? undefined,
+      model: row.model ?? undefined,
+      // Parsed, not cast: a rung a later release drops, or a hand-edited row,
+      // means "no preference" rather than travelling into an adapter as a value
+      // nothing understands — the same hardening the session settings got.
+      effort: EffortLevelSchema.safeParse(row.effort).data,
       // enabledToolGroups is not yet persisted in the DB schema — defaults to {} (inherit global).
       // A future migration will add a JSON column; until then, read from the manifest file.
       enabledToolGroups: {},

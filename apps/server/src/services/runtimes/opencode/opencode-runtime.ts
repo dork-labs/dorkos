@@ -153,7 +153,6 @@ export class OpenCodeRuntime implements AgentRuntime {
     this.registry.register(sessionId, {
       permissionMode: opts.permissionMode,
       ...(opts.model !== undefined ? { model: opts.model } : {}),
-      ...(opts.effort !== undefined ? { effort: opts.effort } : {}),
       ...(opts.fastMode !== undefined ? { fastMode: opts.fastMode } : {}),
       ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
     });
@@ -193,6 +192,13 @@ export class OpenCodeRuntime implements AgentRuntime {
    * writes the operator's choice through the durable settings store first
    * (ADR-0260) so it survives restarts. The new mode applies to the very next
    * permission request — enforcement reads the registry live.
+   *
+   * `effort` is part of the shared signature and is DROPPED here — not tracked,
+   * not echoed, and not written to the durable store. OpenCode's prompt API has
+   * no effort field, so a persisted value could only ever be read back out at
+   * the person as a setting that does nothing; storing it would make "Not
+   * supported by OpenCode" false in the one place that matters (spec
+   * `execution-defaults` §4).
    */
   async updateSession(
     sessionId: string,
@@ -203,11 +209,11 @@ export class OpenCodeRuntime implements AgentRuntime {
       fastMode?: boolean;
     }
   ): Promise<boolean> {
-    await this.settingsPort?.saveSessionSettings(sessionId, opts);
+    const { effort: _unsupported, ...storable } = opts;
+    await this.settingsPort?.saveSessionSettings(sessionId, storable);
     this.registry.register(sessionId, {
       ...(opts.permissionMode !== undefined ? { permissionMode: opts.permissionMode } : {}),
       ...(opts.model !== undefined ? { model: opts.model } : {}),
-      ...(opts.effort !== undefined ? { effort: opts.effort } : {}),
       ...(opts.fastMode !== undefined ? { fastMode: opts.fastMode } : {}),
     });
     return true;
@@ -380,19 +386,16 @@ export class OpenCodeRuntime implements AgentRuntime {
       this.registry.register(sessionId, {
         permissionMode: opts?.permissionMode ?? persisted?.permissionMode ?? 'default',
         ...(persisted?.model !== undefined ? { model: persisted.model } : {}),
-        ...(persisted?.effort !== undefined ? { effort: persisted.effort } : {}),
         ...(persisted?.fastMode !== undefined ? { fastMode: persisted.fastMode } : {}),
         ...(opts?.cwd !== undefined ? { cwd: opts.cwd } : {}),
       });
     }
     const tracked = this.registry.get(sessionId)!;
     const model = opts?.model ?? tracked.model;
-    const effort = opts?.effort ?? tracked.effort;
     const fastMode = opts?.fastMode ?? tracked.fastMode;
     return {
       permissionMode: opts?.permissionMode ?? tracked.permissionMode,
       ...(model !== undefined ? { model } : {}),
-      ...(effort !== undefined ? { effort } : {}),
       ...(fastMode !== undefined ? { fastMode } : {}),
     };
   }
@@ -844,7 +847,6 @@ export class OpenCodeRuntime implements AgentRuntime {
     if (!tracked) return;
     session.permissionMode = tracked.permissionMode;
     if (tracked.model !== undefined) session.model = tracked.model;
-    if (tracked.effort !== undefined) session.effort = tracked.effort;
     if (tracked.fastMode !== undefined) session.fastMode = tracked.fastMode;
   }
 }

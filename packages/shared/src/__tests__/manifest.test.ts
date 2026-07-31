@@ -103,6 +103,25 @@ describe('readManifest', () => {
     expect(result).toEqual(manifest);
   });
 
+  it('keeps the agent when a hand-edited execution setting is nonsense', async () => {
+    // A typo in `effort` must cost that one field, not the agent: a null from
+    // here reads as "no agent registered at this path" to every caller, so the
+    // agent would drop out of the fleet, out of the mesh, and out of its rooms.
+    const projectDir = await makeTempDir();
+    const dorkDir = path.join(projectDir, '.dork');
+    await fs.mkdir(dorkDir, { recursive: true });
+    await fs.writeFile(
+      path.join(dorkDir, 'agent.json'),
+      JSON.stringify({ ...makeManifest({ model: 'sonnet' }), effort: 'ludicrous' }, null, 2),
+      'utf-8'
+    );
+
+    const result = await readManifest(projectDir);
+    expect(result?.name).toBe('test-agent');
+    expect(result?.model).toBe('sonnet');
+    expect(result?.effort).toBeUndefined();
+  });
+
   it('warns (with path) when a present file fails schema validation', async () => {
     const projectDir = await makeTempDir();
     const dorkDir = path.join(projectDir, '.dork');

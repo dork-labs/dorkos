@@ -4,11 +4,13 @@
  *
  * ## The ladder
  *
- * 1. **The agent's own setting** — an agent whose manifest names a model or an
- *    effort gets it. Not yet: the manifest fields land with E2 of the
- *    `execution-defaults` spec, so today this tier resolves to nothing. The slot
- *    is labeled below rather than left implicit, because the ORDER is the design
- *    decision and it should be readable before the fields exist.
+ * 1. **The agent's own setting** — an agent whose manifest names a `model` or an
+ *    `effort` gets it, per key: an agent that sets only an effort still inherits
+ *    the server's model. Read from `.dork/agent.json`, which is the source of
+ *    truth for a manifest (ADR-0043), by {@link readAgentExecutionDefaults}.
+ *    Each key is dropped where it could not mean anything: the model when the
+ *    session lands on a runtime other than the one the manifest names, the
+ *    effort on a runtime that has none (OpenCode).
  * 2. **The server's per-runtime default** — `runtimes.<runtime>.defaultModel` and
  *    `.defaultEffort`. Per runtime because a model id only means something inside
  *    the runtime that offers it.
@@ -40,7 +42,75 @@
  */
 import type { UserConfig } from '@dorkos/shared/config-schema';
 import type { SessionSettings } from '@dorkos/shared/types';
+import { readManifest } from '@dorkos/shared/manifest';
+import { runtimeSupportsEffort } from '@dorkos/shared/constants';
 import { configManager } from '../core/config-manager.js';
+
+/**
+ * What one agent says its sessions should start with — the ladder's first tier.
+ *
+ * Both keys are independent and both may be absent; absent means "no opinion,
+ * ask the next tier", never "unset it".
+ */
+export interface AgentExecutionDefaults {
+  /**
+   * The runtime the agent's `model` was chosen for — the manifest's own
+   * `runtime` field, not the runtime the session ends up on. The two can differ
+   * (see {@link resolveSessionDefaults}), and telling them apart is the only way
+   * to know whether the model id means anything here.
+   *
+   * Absent means the caller makes no claim about which runtime the model was
+   * written for, and the model is taken at face value. `readManifest` never
+   * produces that shape — `runtime` is required on the manifest — so it is a
+   * statement only a programmatic caller can make.
+   */
+  runtime?: string;
+  /** The model the agent names, in its own runtime's id space. */
+  model?: string;
+  /** The effort rung the agent names. */
+  effort?: SessionSettings['effort'];
+}
+
+/**
+ * Read an agent's execution defaults off its manifest.
+ *
+ * Tolerant by construction: no directory, no manifest, an unreadable file, or a
+ * manifest that names neither field all answer the same "no opinion". A session
+ * must always be startable — a manifest problem is a reason to fall through to
+ * the server's default, never a reason to refuse the turn.
+ *
+ * The values are returned exactly as written, including ones the agent's model
+ * may not honor — that is the design's accepted-at-write rule (§3.4): the
+ * mismatch is reported to the person as a warning chip, because a model catalog
+ * is remote and a runtime can be disconnected while somebody edits.
+ *
+ * Whether a RUNTIME can honor an effort at all is a different question, and it
+ * is not answered here: this function does not know which runtime the session is
+ * bound to. {@link resolveSessionDefaults} drops an effort for a runtime whose
+ * API has none (`runtimeSupportsEffort`), which is the difference between "we
+ * are not sure your model likes this" and "this runtime has no such setting".
+ *
+ * @param manifestDir - The agent's project directory (the one holding `.dork/`).
+ *   Omitted → no agent tier at all.
+ */
+export async function readAgentExecutionDefaults(
+  manifestDir?: string
+): Promise<AgentExecutionDefaults> {
+  if (!manifestDir) return {};
+  try {
+    const manifest = await readManifest(manifestDir);
+    if (!manifest) return {};
+    return {
+      // The manifest's own runtime travels with its model, because it is what
+      // makes the model id readable — see `AgentExecutionDefaults.runtime`.
+      runtime: manifest.runtime,
+      ...(manifest.model !== undefined ? { model: manifest.model } : {}),
+      ...(manifest.effort !== undefined ? { effort: manifest.effort } : {}),
+    };
+  } catch {
+    return {};
+  }
+}
 
 /**
  * Which config section holds a runtime's execution defaults.
@@ -64,18 +134,55 @@ const CONFIG_SECTION_BY_RUNTIME: Readonly<Record<string, 'claudeCode' | 'codex' 
  * already mean everywhere else.
  *
  * @param opts.runtimeType - The runtime the new session is bound to.
+ * @param opts.agent - The owning agent's manifest values, from
+ *   {@link readAgentExecutionDefaults}. Omitted → the session has no agent, or
+ *   the caller does not know which one, and the ladder starts at tier 2.
  * @param opts.runtimes - The `runtimes` config section; defaults to the stored one.
  */
 export function resolveSessionDefaults(opts: {
   runtimeType: string;
+  agent?: AgentExecutionDefaults;
   runtimes?: UserConfig['runtimes'];
 }): SessionSettings {
-  // Tier 1 — the agent's own model/effort. Arrives with E2 (agent manifest
-  // fields); until then no agent can express one, so nothing shadows tier 2.
+  // Tier 1 — the agent's own model/effort, which outranks the server's default
+  // for whichever of the two keys it names. The two keys are gated differently,
+  // and the difference is the design's, not this function's: a model id lives in
+  // ONE runtime's namespace (§8, which is why the server's default model is
+  // per-runtime at all), while the effort ladder is a single normalized enum
+  // every runtime maps into (§4, "Reuse; never fork").
+  //
+  // So the MODEL applies only when the session actually lands on the runtime the
+  // manifest wrote it for. Those come apart in a degraded mode that is real and
+  // deliberately tolerated: `registerOptionalRuntime` lets a runtime fail to
+  // register — the packaged desktop app bundles only the claude-code SDK — and
+  // both runtime resolvers then fall back to the default rather than refusing
+  // the turn. Without this check, an agent with `runtime: 'codex'` addressed in
+  // a room on such a build starts a claude-code session seeded with
+  // `gpt-5.3-codex`. That is not §3.4's "a model your runtime may not currently
+  // offer", which is accepted-at-write and reported; it is an id from another
+  // provider's namespace, which cannot become valid and is nobody's preference.
+  // A session on the wrong runtime falls back to the server's default for THAT
+  // runtime, which is the only value that can mean anything to it.
+  //
+  // The EFFORT survives the mismatch: "think harder" is the same request on any
+  // runtime that can hear it. What it does not survive is a runtime with no
+  // effort at its API — OpenCode — because a value stored there comes back out
+  // at the person as a setting that does nothing, and "Not supported by
+  // OpenCode" is only true if nothing here quietly supplies one anyway.
+  const modelIsForThisRuntime =
+    opts.agent?.runtime === undefined || opts.agent.runtime === opts.runtimeType;
+  const fromAgent: SessionSettings = {
+    ...(opts.agent?.model !== undefined && modelIsForThisRuntime
+      ? { model: opts.agent.model }
+      : {}),
+    ...(opts.agent?.effort !== undefined && runtimeSupportsEffort(opts.runtimeType)
+      ? { effort: opts.agent.effort }
+      : {}),
+  };
 
   // Tier 2 — the server's per-runtime default.
   const section = CONFIG_SECTION_BY_RUNTIME[opts.runtimeType];
-  if (!section) return {};
+  if (!section) return fromAgent;
   // Both `?.`s are load-bearing, and neither is decoration. `configManager` is a
   // `let` that is undefined until `initConfigManager` runs, and this is now
   // consulted by `RuntimeRegistry` on every row it creates — so a registry used
@@ -90,12 +197,18 @@ export function resolveSessionDefaults(opts: {
   // does not admit that a boot-wired `let` is undefined before boot.
   const runtimes = opts.runtimes ?? configManager?.get('runtimes');
   const configured = runtimes?.[section];
-  if (!configured) return {};
-  const settings: SessionSettings = {};
-  if (configured.defaultModel != null) settings.model = configured.defaultModel;
+  if (!configured) return fromAgent;
+  const settings: SessionSettings = { ...fromAgent };
+  if (settings.model === undefined && configured.defaultModel != null) {
+    settings.model = configured.defaultModel;
+  }
   // OpenCode's section has no `defaultEffort` — its API accepts no effort, so
   // the field does not exist rather than existing and doing nothing.
-  if ('defaultEffort' in configured && configured.defaultEffort != null) {
+  if (
+    settings.effort === undefined &&
+    'defaultEffort' in configured &&
+    configured.defaultEffort != null
+  ) {
     settings.effort = configured.defaultEffort;
   }
 

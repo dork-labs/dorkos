@@ -335,6 +335,25 @@ describe('createAgentWorkspace', () => {
     expect(result.manifest.icon).toBeUndefined();
   });
 
+  it('records a model and an effort chosen at creation', async () => {
+    const result = await createAgentWorkspace(
+      { name: 'picky-agent', model: 'sonnet', effort: 'low' },
+      mockMeshCore
+    );
+
+    expect(result.manifest.model).toBe('sonnet');
+    expect(result.manifest.effort).toBe('low');
+  });
+
+  it('leaves both off the manifest when neither is chosen, so the agent inherits', async () => {
+    // Writing today's resolved default here instead would freeze it into every
+    // agent ever created — an absent key is what "inherits" means on disk.
+    const result = await createAgentWorkspace({ name: 'ordinary-agent' }, mockMeshCore);
+
+    expect(result.manifest.model).toBeUndefined();
+    expect(result.manifest.effort).toBeUndefined();
+  });
+
   it('rejects a persona over the 4000-char bound', async () => {
     await expect(
       createAgentWorkspace({ name: 'too-much', persona: 'x'.repeat(4001) })

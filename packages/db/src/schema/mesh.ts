@@ -29,6 +29,13 @@ export const agents = sqliteTable('agents', {
   isSystem: integer('is_system', { mode: 'boolean' }).notNull().default(false),
   color: text('color'),
   icon: text('icon'),
+  // Execution defaults the agent carries (spec `execution-defaults` E2). Cached
+  // here, not only on the manifest, because the agent LIST is what the Settings
+  // exceptions strip reads to name every agent that differs from the server
+  // default — a list view that would otherwise have to open every agent.json on
+  // disk to answer. NULL = inherit.
+  model: text('model'),
+  effort: text('effort'),
   registeredAt: text('registered_at').notNull(),
   updatedAt: text('updated_at').notNull(),
   // manifest_json DROPPED — redundant with individual structured columns

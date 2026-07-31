@@ -449,6 +449,54 @@ describe('Mesh routes', () => {
       expect(meshCore.update).toHaveBeenCalledWith('agent-1', { name: 'Updated Agent' });
     });
 
+    it("carries an agent's model and effort through to the manifest write", async () => {
+      meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, model: 'sonnet', effort: 'low' });
+
+      const res = await request(app)
+        .patch('/api/mesh/agents/agent-1')
+        .send({ model: 'sonnet', effort: 'low' });
+
+      expect(res.status).toBe(200);
+      expect(meshCore.update).toHaveBeenCalledWith('agent-1', {
+        model: 'sonnet',
+        effort: 'low',
+      });
+    });
+
+    it("accepts a model the agent's runtime may not offer, rather than refusing the save", async () => {
+      // Accepted at write, reported as a warning afterwards (design §3.4).
+      // Catalogs are remote and a runtime can be disconnected while somebody
+      // edits — a refusal here fails for reasons they cannot see or fix.
+      meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, model: 'gpt-5.3-codex' });
+
+      const res = await request(app)
+        .patch('/api/mesh/agents/agent-1')
+        .send({ model: 'gpt-5.3-codex' });
+
+      expect(res.status).toBe(200);
+      expect(meshCore.update).toHaveBeenCalledWith('agent-1', { model: 'gpt-5.3-codex' });
+    });
+
+    it('reads null as "go back to inheriting the server default"', async () => {
+      meshCore.update.mockReturnValue(MOCK_MANIFEST);
+
+      const res = await request(app)
+        .patch('/api/mesh/agents/agent-1')
+        .send({ model: null, effort: null });
+
+      expect(res.status).toBe(200);
+      // The KEY must reach the merge carrying `undefined` — that is what makes
+      // the merge drop it, and a manifest without the key is what "inherits"
+      // looks like on disk. Asserted on key PRESENCE, because a patch that
+      // silently omitted both would satisfy any value comparison against
+      // `undefined` while leaving the old model in place forever. See
+      // `mesh-core.test.ts` for the same claim end to end, against real files.
+      const patch = meshCore.update.mock.calls[0][1] as Record<string, unknown>;
+      expect(Object.keys(patch).sort()).toEqual(['effort', 'model']);
+      expect(patch.model).toBeUndefined();
+      expect(patch.effort).toBeUndefined();
+    });
+
     it('returns 404 when agent not found', async () => {
       meshCore.update.mockReturnValue(undefined);
 

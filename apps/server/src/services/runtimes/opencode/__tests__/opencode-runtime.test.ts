@@ -918,6 +918,26 @@ describe('OpenCodeRuntime', () => {
       const sessions = await runtime.listSessions(DIRECTORY);
       expect(sessions.find((s) => s.id === sessionId)!.permissionMode).toBe('bypassPermissions');
     });
+
+    it('never persists an effort, because OpenCode has nowhere to spend one', () => {
+      // Its prompt API carries no effort field in the pinned or the current
+      // SDK. Storing one would leave a value that can only be read back out at
+      // the person as a setting that does nothing — so the write is dropped
+      // here, at the adapter that knows the truth about its own API.
+      const { runtime, settingsPort } = makeRuntime();
+      const sessionId = nextSessionId();
+      runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: DIRECTORY });
+
+      return runtime
+        .updateSession(sessionId, { model: 'openrouter/x', effort: 'high' })
+        .then(async () => {
+          expect(settingsPort.saveSessionSettings).toHaveBeenCalledWith(sessionId, {
+            model: 'openrouter/x',
+          });
+          const sessions = await runtime.listSessions(DIRECTORY);
+          expect(sessions.find((s) => s.id === sessionId)!.effort).toBeUndefined();
+        });
+    });
   });
 
   describe('capabilities and models', () => {

@@ -4175,6 +4175,25 @@
             "default": false,
             "description": "System agents are auto-managed and cannot be deleted"
           },
+          "model": {
+            "type": "string",
+            "description": "Model new sessions for this agent start on, in its own runtime's id space. Absent = inherit the server default.",
+            "example": "opus"
+          },
+          "effort": {
+            "type": "string",
+            "enum": [
+              "none",
+              "minimal",
+              "low",
+              "medium",
+              "high",
+              "max",
+              "xhigh"
+            ],
+            "description": "Reasoning effort new sessions for this agent start at. Absent = inherit the server default.",
+            "example": "high"
+          },
           "enabledToolGroups": {
             "$ref": "#/components/schemas/EnabledToolGroups"
           }
@@ -4372,6 +4391,25 @@
                 "default": false,
                 "description": "System agents are auto-managed and cannot be deleted"
               },
+              "model": {
+                "type": "string",
+                "description": "Model new sessions for this agent start on, in its own runtime's id space. Absent = inherit the server default.",
+                "example": "opus"
+              },
+              "effort": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "minimal",
+                  "low",
+                  "medium",
+                  "high",
+                  "max",
+                  "xhigh"
+                ],
+                "description": "Reasoning effort new sessions for this agent start at. Absent = inherit the server default.",
+                "example": "high"
+              },
               "enabledToolGroups": {
                 "$ref": "#/components/schemas/EnabledToolGroups"
               }
@@ -4450,6 +4488,29 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "effort": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "none",
+              "minimal",
+              "low",
+              "medium",
+              "high",
+              "max",
+              "xhigh",
+              null
             ]
           },
           "enabledToolGroups": {

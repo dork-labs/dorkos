@@ -10,6 +10,7 @@
 import { z } from 'zod';
 import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
 import { AGENT_NAME_REGEX } from './validation.js';
+import { EFFORT_LEVELS } from './constants.js';
 
 extendZodWithOpenApi(z);
 
@@ -172,6 +173,42 @@ export type Conventions = z.infer<typeof ConventionsSchema>;
 
 // === Agent Manifest ===
 
+/**
+ * The model this agent's new sessions start on, or absent to inherit the
+ * server's default for whichever runtime it uses.
+ *
+ * Read inside the agent's own `runtime` — a model id only means something to the
+ * runtime that offers it (`opus` to Claude Code, `gpt-5.3-codex` to Codex,
+ * `provider/model` to OpenCode), which is why the server's defaults are
+ * per-runtime and an agent's is not: the agent already names its runtime.
+ *
+ * **Deliberately unvalidated against any catalog.** Catalogs are remote and move
+ * under us, and an agent can be edited while its runtime is disconnected. A value
+ * the runtime cannot honor is accepted at write and surfaced afterwards as a
+ * warning (design `execution-defaults` §3.4) — never a refused save, which would
+ * make a settings screen fail for reasons a person cannot see or fix.
+ */
+const AgentModelSchema = z.string().min(1).optional().openapi({
+  description:
+    "Model new sessions for this agent start on, in its own runtime's id space. Absent = inherit the server default.",
+  example: 'opus',
+});
+
+/**
+ * The reasoning effort this agent's new sessions start at, or absent to inherit
+ * the server's per-runtime default.
+ *
+ * The shared {@link EFFORT_LEVELS} ladder, never a per-runtime fork. An effort
+ * set on an agent whose runtime or model cannot honor it (OpenCode accepts no
+ * effort at all) is kept and reported, on the same accepted-at-write rule as
+ * {@link AgentModelSchema}.
+ */
+const AgentEffortSchema = z.enum(EFFORT_LEVELS).optional().openapi({
+  description:
+    'Reasoning effort new sessions for this agent start at. Absent = inherit the server default.',
+  example: 'high',
+});
+
 export const AgentManifestSchema = z
   .object({
     id: z.string().min(1).describe('ULID assigned at registration'),
@@ -206,6 +243,31 @@ export const AgentManifestSchema = z
     }),
     isSystem: z.boolean().default(false).optional().openapi({
       description: 'System agents are auto-managed and cannot be deleted',
+    }),
+    // The `.openapi(...)` metadata is repeated on the OUTSIDE of `.catch()` and
+    // that is load-bearing, not duplication: the generator cannot see through a
+    // `ZodCatch` and throws "Unknown zod object type" for the whole document,
+    // which takes `/api/docs` and every consumer of `openapi.json` with it.
+    //
+    // `.catch(undefined)` on the manifest copies ONLY: a hand-edited
+    // `agent.json` with `"effort": "ludicrous"` degrades that one field to
+    // "inherit" instead of failing the whole parse, which would make
+    // `readManifest` return null and the agent vanish from the fleet over a
+    // typo in a setting. The write surfaces below stay strict — an API caller
+    // sending a bad rung is told so, because there is somebody there to tell.
+    // Same reasoning as the stored-effort parse in `agent-registry.ts`.
+    model: AgentModelSchema.catch(undefined).openapi({
+      type: 'string',
+      description:
+        "Model new sessions for this agent start on, in its own runtime's id space. Absent = inherit the server default.",
+      example: 'opus',
+    }),
+    effort: AgentEffortSchema.catch(undefined).openapi({
+      type: 'string',
+      enum: [...EFFORT_LEVELS],
+      description:
+        'Reasoning effort new sessions for this agent start at. Absent = inherit the server default.',
+      example: 'high',
     }),
     enabledToolGroups: EnabledToolGroupsSchema,
   })
@@ -377,6 +439,8 @@ export const UpdateAgentRequestSchema = AgentManifestSchema.pick({
   conventions: true,
   color: true,
   icon: true,
+  model: true,
+  effort: true,
   enabledToolGroups: true,
 })
   .partial()
@@ -384,6 +448,11 @@ export const UpdateAgentRequestSchema = AgentManifestSchema.pick({
     // Null signals "clear this field" — needed because undefined is stripped from JSON
     color: z.string().nullable().optional(),
     icon: z.string().nullable().optional(),
+    // For model and effort, "clear" has a name: go back to inheriting the
+    // server's default. That is what the chip's one action does (design §3.1),
+    // so the wire needs a way to say it — `null`, on the same convention.
+    model: z.string().min(1).nullable().optional(),
+    effort: z.enum(EFFORT_LEVELS).nullable().optional(),
   })
   .openapi('UpdateAgentRequest');
 
@@ -461,6 +530,13 @@ export const CreateAgentOptionsSchema = z
     icon: z.string().max(64).optional(),
     traits: TraitsSchema.optional(),
     conventions: ConventionsSchema.optional(),
+    /**
+     * Model and effort the agent's sessions start with, recorded on the manifest.
+     * Omitted → the agent inherits the server's per-runtime defaults, which is
+     * what every agent created before these fields existed keeps doing.
+     */
+    model: AgentModelSchema,
+    effort: AgentEffortSchema,
     /**
      * Internal flag for the marketplace install pipeline. When true, the
      * agent-creator skips its own directory creation and template download

@@ -316,6 +316,36 @@ describe('Agents Routes', () => {
       expect(res.body.error).toBe('No agent registered at this path');
     });
 
+    it("records the agent's own model and effort", async () => {
+      mockReadManifest.mockResolvedValue(mockManifest);
+
+      const res = await request(app)
+        .patch('/api/agents/current')
+        .query({ path: '/home/user/project' })
+        .send({ model: 'sonnet', effort: 'low' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.model).toBe('sonnet');
+      expect(res.body.effort).toBe('low');
+      expect(mockWriteManifest).toHaveBeenCalledWith(
+        '/home/user/project',
+        expect.objectContaining({ model: 'sonnet', effort: 'low' })
+      );
+    });
+
+    it('drops them back to inherited when sent as null', async () => {
+      mockReadManifest.mockResolvedValue({ ...mockManifest, model: 'sonnet', effort: 'low' });
+
+      const res = await request(app)
+        .patch('/api/agents/current')
+        .query({ path: '/home/user/project' })
+        .send({ model: null, effort: null });
+
+      expect(res.status).toBe(200);
+      expect(res.body.model).toBeUndefined();
+      expect(res.body.effort).toBeUndefined();
+    });
+
     it('merges updates into existing manifest', async () => {
       mockReadManifest.mockResolvedValue(mockManifest);
 

@@ -109,6 +109,8 @@ export async function register(
     isSystem: overrides?.isSystem ?? false,
     color: overrides?.color,
     icon: overrides?.icon,
+    model: overrides?.model,
+    effort: overrides?.effort,
     enabledToolGroups: overrides?.enabledToolGroups ?? {},
   };
 
@@ -152,6 +154,8 @@ export async function registerByPath(
     isSystem: partial.isSystem ?? false,
     color: partial.color,
     icon: partial.icon,
+    model: partial.model,
+    effort: partial.effort,
     enabledToolGroups: partial.enabledToolGroups ?? {},
   };
 
