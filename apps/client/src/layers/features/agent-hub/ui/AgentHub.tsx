@@ -13,7 +13,7 @@ import { AvatarPickerPanel } from './AvatarPickerPopover';
 import { PersonalityPickerPanel } from './PersonalityPickerPopover';
 import { NoAgentSelected } from './NoAgentSelected';
 import { AgentNotFound } from './AgentNotFound';
-import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import type { AgentManifest, AgentManifestUpdate } from '@dorkos/shared/mesh-schemas';
 
 /** Which inline picker panel is open, or null for normal tab view. */
 type HeroPanel = 'avatar' | 'personality' | null;
@@ -111,7 +111,7 @@ export function AgentHub() {
         ? {
             agent: displayAgent,
             projectPath: displayPath,
-            onUpdate: (updates: Partial<AgentManifest>) =>
+            onUpdate: (updates: AgentManifestUpdate) =>
               updateAgent.mutate({ path: displayPath, updates }),
             onPersonalityUpdate: (
               updates: Partial<AgentManifest> & { soulContent?: string; nopeContent?: string }

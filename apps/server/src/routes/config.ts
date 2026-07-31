@@ -3,6 +3,10 @@ import { tunnelManager } from '../services/core/tunnel-manager.js';
 import { resolveClaudeCliPath } from '../services/runtimes/claude-code/sdk/sdk-utils.js';
 import { describeClaudeCodeAccounts } from '../services/runtimes/claude-code/claude-config-dir.js';
 import { configManager } from '../services/core/config-manager.js';
+// Straight from the module, not the `services/session` barrel: that barrel pulls
+// in the projector, transcript readers, and the turn trigger, none of which a
+// config GET needs to load.
+import { describeExecutionDefaults } from '../services/session/resolve-session-defaults.js';
 import { env } from '../env.js';
 import {
   SIDEBAR_PREFS_DEFAULTS,
@@ -93,6 +97,10 @@ router.get('/', async (_req, res) => {
     // effective default belongs. The reader falls back to the section defaults on
     // its own, which covers the pre-migration read window.
     claudeCode: describeClaudeCodeAccounts(),
+    // What a new session starts with — the runtime, and the model and effort per
+    // runtime. Writable through PATCH already; this is the read the Defaults card
+    // needs, because a curated view is the only config the cockpit ever sees.
+    executionDefaults: describeExecutionDefaults(),
     boundary: getBoundary(),
     // Set by index.ts at startup before routes are registered — always present at request time
     dorkHome: process.env.DORK_HOME!,

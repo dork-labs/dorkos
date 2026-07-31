@@ -41,7 +41,7 @@
  * @module services/session/resolve-session-defaults
  */
 import type { UserConfig } from '@dorkos/shared/config-schema';
-import type { SessionSettings } from '@dorkos/shared/types';
+import type { ExecutionDefaults, SessionSettings } from '@dorkos/shared/types';
 import { readManifest } from '@dorkos/shared/manifest';
 import { runtimeSupportsEffort } from '@dorkos/shared/constants';
 import { configManager } from '../core/config-manager.js';
@@ -214,4 +214,46 @@ export function resolveSessionDefaults(opts: {
 
   // Tier 3 — whatever is still unset stays unset, and the runtime decides.
   return settings;
+}
+
+/**
+ * Report the server's execution defaults for `GET /api/config` — the read half
+ * of the settings card.
+ *
+ * These leaves are writable through `PATCH /api/config` already, but
+ * `GET /api/config` is a curated view rather than the raw user config, so
+ * nothing reported them back and a card over them could not show what was set.
+ * This is that report, and nothing more: it reads exactly the same config
+ * sections {@link resolveSessionDefaults} reads, through the same
+ * {@link CONFIG_SECTION_BY_RUNTIME} map, so the screen and the resolver can
+ * never disagree about which section a runtime's default lives in.
+ *
+ * A runtime with no config section is simply absent — `test-mode` has no
+ * default and never will, and absence is how that is said.
+ *
+ * @param runtimes - The `runtimes` config section; defaults to the stored one.
+ *   Both `?.`s below are for the same pre-boot window {@link resolveSessionDefaults}
+ *   documents: a missing section reports "no preference", never an error.
+ */
+export function describeExecutionDefaults(runtimes?: UserConfig['runtimes']): ExecutionDefaults {
+  const section = runtimes ?? configManager?.get('runtimes');
+  return {
+    runtime: section?.default ?? 'claude-code',
+    perRuntime: Object.entries(CONFIG_SECTION_BY_RUNTIME).map(([runtime, key]) => {
+      const configured = section?.[key];
+      const supportsEffort = runtimeSupportsEffort(runtime);
+      return {
+        runtime,
+        model: configured?.defaultModel ?? null,
+        // OpenCode's section has no `defaultEffort` key at all — the `in` check
+        // is what keeps that structural absence and a configured `null` the same
+        // answer here, rather than a type assertion that would outlive the fact.
+        effort:
+          supportsEffort && configured && 'defaultEffort' in configured
+            ? (configured.defaultEffort ?? null)
+            : null,
+        supportsEffort,
+      };
+    }),
+  };
 }

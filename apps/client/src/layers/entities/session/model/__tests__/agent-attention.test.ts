@@ -98,6 +98,26 @@ describe('deriveAttention', () => {
     expect(deriveAttention({ liveKinds: [], lastActivityAt: null, now })).toBe('fresh');
   });
 
+  // Execution breakage is the third live signal (spec `execution-defaults` §5):
+  // an agent that cannot start a session the way it is configured needs a person
+  // as surely as an approval gate does, and recency must not talk it down.
+  it('returns needs-attention for a broken execution config, even on a quiet agent', () => {
+    expect(
+      deriveAttention({
+        liveKinds: [],
+        lastActivityAt: now - 1_000_000_000,
+        now,
+        hasBrokenExecutionConfig: true,
+      })
+    ).toBe('needs-attention');
+  });
+
+  it('leaves a healthy config to the other signals', () => {
+    expect(
+      deriveAttention({ liveKinds: [], lastActivityAt: null, now, hasBrokenExecutionConfig: false })
+    ).toBe('fresh');
+  });
+
   it('returns active exactly at the active-within boundary (inclusive)', () => {
     const lastActivityAt = now - ATTENTION_THRESHOLDS.activeWithinMs;
     expect(deriveAttention({ liveKinds: [], lastActivityAt, now })).toBe('active');
@@ -159,6 +179,12 @@ describe('useAgentAttentionMap', () => {
   it('is needs-attention for a path with a live pendingApproval session, fresh for a never-active one', () => {
     work('s1', 'blocked', A);
     const { result } = renderHook(() => useAgentAttentionMap([A, B]));
+    expect(result.current[A]).toBe('needs-attention');
+    expect(result.current[B]).toBe('fresh');
+  });
+
+  it('marks a path with a broken execution config, and only that path', () => {
+    const { result } = renderHook(() => useAgentAttentionMap([A, B], [A]));
     expect(result.current[A]).toBe('needs-attention');
     expect(result.current[B]).toBe('fresh');
   });

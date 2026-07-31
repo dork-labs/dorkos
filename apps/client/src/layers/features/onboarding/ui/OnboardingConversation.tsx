@@ -65,6 +65,13 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
   // The default agent's REGISTERED absolute path — the registry is the only
   // thing that proves DorkBot is where the path says it is.
   const { defaultAgentDir } = useDefaultAgentSession();
+  // The runtime the first session will ACTUALLY start on. It was written here as
+  // the literal `'claude-code'` twice, which was true only until somebody set a
+  // different default — and then the birth certificate named a runtime the
+  // session was not running on. Read off the same `GET /api/config` this screen
+  // already has in hand, which is also what the Settings card writes to, so the
+  // two can never disagree and this adds no second request.
+  const defaultRuntime = config?.executionDefaults?.runtime ?? 'claude-code';
 
   const [traits, setTraits] = useState<Traits>({ ...DEFAULT_TRAITS });
   const [profileRoles, setProfileRoles] = useState<string[]>([]);
@@ -105,7 +112,7 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
         agentId: 'dorkbot',
         bornAt: new Date().toISOString(),
         path: defaultAgentDir,
-        runtime: 'claude-code',
+        runtime: defaultRuntime,
         kickoffMessage: text,
       };
       useAgentBirthStore.getState().register(newSessionId, record);
@@ -192,11 +199,11 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
       agentId: 'dorkbot',
       bornAt: new Date().toISOString(),
       path: defaultAgentDir,
-      runtime: 'claude-code',
+      runtime: defaultRuntime,
       kickoffMessage: '',
       fired: false,
     }),
-    [defaultAgentDir]
+    [defaultAgentDir, defaultRuntime]
   );
 
   if (convo.isFirstLight) {

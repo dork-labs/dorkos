@@ -8,6 +8,7 @@ import { useAppStore, useTransport, useAgentCreationStore } from '@/layers/share
 import { toast } from 'sonner';
 import {
   disambiguateDisplayNames,
+  useExecutionExceptions,
   useResolvedAgents,
   type AgentVisual,
 } from '@/layers/entities/agent';
@@ -207,7 +208,14 @@ export function DashboardSidebar() {
   // ── Attention + mute (DOR-339): one attention-map subscription for the whole
   // sidebar, and the individually-muted reference sets every section's filter and
   // rollup dot reads. ──
-  const attentionMap = useAgentAttentionMap(rawPaths);
+  // Execution breakage joins the live signals: an agent whose runtime is not
+  // connected, or whose pinned model is gone, needs a person as surely as a
+  // pending approval does (spec `execution-defaults` §5, operator requirement).
+  // Catalog checks stay off here — they are per-runtime network fetches and this
+  // runs for the whole fleet; the Settings strip, which is one screen opened on
+  // purpose, is where the model catalog gets asked.
+  const { brokenPaths } = useExecutionExceptions();
+  const attentionMap = useAgentAttentionMap(rawPaths, brokenPaths);
   const mutedPathsSet = useMemo(() => individuallyMutedAgentPaths(sidebarPrefs), [sidebarPrefs]);
   const mutedRoomIdSet = useMemo(() => individuallyMutedRoomIds(sidebarPrefs), [sidebarPrefs]);
   const effectiveMutedForRender = useMemo(

@@ -5,6 +5,8 @@ import {
 } from '@/layers/entities/runtime';
 import { renderRuntimeConnect } from '@/layers/features/runtime-connect';
 import { ClaudeAccountsCard } from '../ClaudeAccountsCard';
+import { ExecutionDefaultsCard } from '../execution-defaults/ExecutionDefaultsCard';
+import { ExecutionExceptionsStrip } from '../execution-defaults/ExecutionExceptionsStrip';
 
 /**
  * Runtimes settings tab: live discovery + connect for the three agent
@@ -21,6 +23,12 @@ import { ClaudeAccountsCard } from '../ClaudeAccountsCard';
  * Claude Code card inside it: `RuntimeSection` is entities-layer and props-only,
  * and entities may not import the config hooks the accounts card needs (spec
  * `claude-code-accounts` D7).
+ *
+ * {@link ExecutionDefaultsCard} and its {@link ExecutionExceptionsStrip} are a
+ * pair and stay adjacent: the card is what a new conversation starts with, and
+ * the strip directly beneath it is every agent that ignores it (spec
+ * `execution-defaults` §1). The strip draws nothing when the whole fleet
+ * inherits, so on a fresh install the pair is just the card.
  */
 export function RuntimesTab() {
   const requirementsQuery = useRuntimeRequirements();
@@ -40,6 +48,9 @@ export function RuntimesTab() {
         isRechecking={requirementsQuery.isFetching}
         renderConnect={renderRuntimeConnect}
       />
+
+      <ExecutionDefaultsCard />
+      <ExecutionExceptionsStrip />
 
       <ClaudeAccountsCard />
     </div>

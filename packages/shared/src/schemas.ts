@@ -2133,6 +2133,51 @@ export type HealthResponse = z.infer<typeof HealthResponseSchema>;
 
 // === Server Config ===
 
+/**
+ * What a NEW session starts with when nobody has chosen anything for it — the
+ * server's own answer, as the Settings screen needs to READ it.
+ *
+ * `GET /api/config` is a curated view, never the raw user config, so these
+ * leaves need a shape here to be readable at all: `runtimes.<section>.defaultModel`
+ * exists in `UserConfigSchema` and is writable through `PATCH /api/config`, but
+ * nothing reported it back. A settings card cannot show a value it cannot read.
+ *
+ * Per runtime, and reported as a LIST rather than a record, because the two
+ * questions a screen asks are "what is set for the runtime I am looking at" and
+ * "which runtimes are there" — a list answers both, and it survives a runtime
+ * being added without a schema change. `supportsEffort` travels with each entry
+ * so the client never has to re-derive from a runtime id which sections have an
+ * effort leaf at all (OpenCode has none, deliberately).
+ */
+export const ExecutionDefaultsSchema = z
+  .object({
+    runtime: z.string().openapi({
+      description: 'Runtime a new session starts on when nothing else picks one (runtimes.default)',
+    }),
+    perRuntime: z
+      .array(
+        z.object({
+          runtime: z.string().openapi({ description: 'Runtime type id, e.g. "claude-code"' }),
+          model: z.string().nullable().openapi({
+            description:
+              "Model a new session on this runtime starts on, in the runtime's own id space. Null = the runtime chooses",
+          }),
+          effort: EffortLevelSchema.nullable().openapi({
+            description:
+              'Reasoning effort a new session on this runtime starts at. Null = the runtime chooses, and always null for a runtime with no effort at its API',
+          }),
+          supportsEffort: z.boolean().openapi({
+            description: 'Whether this runtime can honor a reasoning effort at all',
+          }),
+        })
+      )
+      .openapi({ description: 'One entry per runtime that has a config section' }),
+  })
+  .openapi('ExecutionDefaults');
+
+/** The server's per-runtime execution defaults, as read. See {@link ExecutionDefaultsSchema}. */
+export type ExecutionDefaults = z.infer<typeof ExecutionDefaultsSchema>;
+
 export const ServerConfigSchema = z
   .object({
     version: z.string().openapi({ description: 'Current server version' }),
@@ -2187,6 +2232,10 @@ export const ServerConfigSchema = z
         description:
           'Which Claude Code account new work runs on, and the accounts registered here (spec claude-code-accounts)',
       }),
+    executionDefaults: ExecutionDefaultsSchema.optional().openapi({
+      description:
+        'What a new session starts with — the runtime, and the model and effort per runtime (spec execution-defaults)',
+    }),
     claudeCliPath: z.string().nullable(),
     tunnel: TunnelStatusSchema,
     tasks: z

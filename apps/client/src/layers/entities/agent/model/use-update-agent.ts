@@ -1,7 +1,33 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
 import { agentKeys } from '../api/queries';
-import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import type { AgentManifest, AgentManifestUpdate } from '@dorkos/shared/mesh-schemas';
+
+/**
+ * Apply a manifest update the way the SERVER will apply it, so the optimistic
+ * cache and the eventual response agree.
+ *
+ * `null` on the wire means "clear this field" — `undefined` cannot travel over
+ * JSON — and the server deletes those keys rather than storing them
+ * (`services/core/operator/agent-updater.ts`). Merging the patch verbatim stored
+ * the `null` instead, and every reader that asks "did somebody set this here?"
+ * answered yes for the length of one round-trip: clicking "Use server default"
+ * on a model chip made the row say "set here", turn amber, and announce
+ * "Claude Code no longer offers null." until the PATCH came back.
+ *
+ * @param previous - The manifest currently in cache.
+ * @param updates - The patch about to be sent.
+ */
+function applyUpdateLikeServer(
+  previous: AgentManifest,
+  updates: AgentManifestUpdate
+): AgentManifest {
+  const merged: Record<string, unknown> = { ...previous, ...updates };
+  for (const key of Object.keys(merged)) {
+    if (merged[key] === null) delete merged[key];
+  }
+  return merged as AgentManifest;
+}
 
 /**
  * Mutation hook to update an agent's fields with optimistic updates.
@@ -12,13 +38,13 @@ export function useUpdateAgent() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (opts: { path: string; updates: Partial<AgentManifest> }) =>
+    mutationFn: (opts: { path: string; updates: AgentManifestUpdate }) =>
       transport.updateAgentByPath(opts.path, opts.updates),
     onMutate: async ({ path, updates }) => {
       await queryClient.cancelQueries({ queryKey: agentKeys.byPath(path) });
       const previous = queryClient.getQueryData<AgentManifest | null>(agentKeys.byPath(path));
       if (previous) {
-        queryClient.setQueryData(agentKeys.byPath(path), { ...previous, ...updates });
+        queryClient.setQueryData(agentKeys.byPath(path), applyUpdateLikeServer(previous, updates));
       }
       return { previous };
     },

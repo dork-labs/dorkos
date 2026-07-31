@@ -58,6 +58,7 @@ import type {
 } from './relay-schemas.js';
 import type {
   AgentManifest,
+  AgentManifestUpdate,
   AgentPathEntry,
   CreateAgentOptions,
   DiscoveryCandidate,
@@ -1237,7 +1238,7 @@ export interface Transport extends RoomTransport {
   /** Batch resolve agents for multiple paths. Returns a map of path -> manifest|null. */
   resolveAgents(paths: string[]): Promise<Record<string, AgentManifest | null>>;
   /** Update an agent's fields by path. Returns the updated manifest. */
-  updateAgentByPath(path: string, updates: Partial<AgentManifest>): Promise<AgentManifest>;
+  updateAgentByPath(path: string, updates: AgentManifestUpdate): Promise<AgentManifest>;
   /** Create a new agent: mkdir + scaffold files + register. Returns the created manifest and resolved path. */
   createAgent(opts: CreateAgentOptions): Promise<AgentManifest & { _path: string }>;
 

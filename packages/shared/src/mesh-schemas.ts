@@ -275,6 +275,22 @@ export const AgentManifestSchema = z
 
 export type AgentManifest = z.infer<typeof AgentManifestSchema>;
 
+/**
+ * What a manifest PATCH may carry.
+ *
+ * Every manifest field is optional, and `model`/`effort` additionally accept
+ * `null` — which is not "unset the field" in the vague sense but a named
+ * outcome: go back to inheriting the server's default. `undefined` cannot say
+ * that, because JSON strips it, so the wire needs a value for the absence and
+ * `null` is it ({@link UpdateAgentRequestSchema} accepts exactly this). Typed
+ * here rather than at each caller so the chip's one action — "use server
+ * default" — is expressible without a cast.
+ */
+export type AgentManifestUpdate = Omit<Partial<AgentManifest>, 'model' | 'effort'> & {
+  model?: string | null;
+  effort?: (typeof EFFORT_LEVELS)[number] | null;
+};
+
 // === Lightweight Path Entry ===
 
 /** Minimal agent data with projectPath for onboarding/scheduling. */

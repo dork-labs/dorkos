@@ -228,6 +228,39 @@ describe('sessionRouteLoader', () => {
     expect(result.redirected).toBe(false);
   });
 
+  // This is what makes the model/effort picker usable BEFORE a session's first
+  // message (spec `execution-defaults` §3.3). The status bar disables the picker
+  // when it has no session id; in the cockpit it always has one, because every
+  // path through this loader ends at a `/session` URL that carries one — the
+  // most recent cached session, or a freshly minted UUID. Browser-verified on a
+  // cold `/session?dir=…`: the picker opens, and the old "Send a message first"
+  // tooltip never renders. Pinned here because it is the loader, not the status
+  // bar, that holds the guarantee up — a change here would disable the picker
+  // again with nothing in the picker's own tests to notice.
+  it('never leaves /session without a session id — on either branch', () => {
+    const fresh = callLoader('?dir=/api');
+    expect(fresh.redirected).toBe(true);
+    expect(
+      ((fresh.redirect as Record<string, unknown>).search as Record<string, string>).session
+    ).toMatch(UUID_REGEX);
+
+    queryClient.setQueryData(sessionKeys.list(null), [
+      {
+        id: 'cached-s1',
+        title: 'Existing',
+        createdAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-01T12:00:00Z',
+        permissionMode: 'default',
+        runtime: 'claude-code',
+      },
+    ] satisfies Session[]);
+    const existing = callLoader('');
+    expect(existing.redirected).toBe(true);
+    expect(
+      ((existing.redirect as Record<string, unknown>).search as Record<string, string>).session
+    ).toBe('cached-s1');
+  });
+
   it('drops the prompt seed when auto-selecting an existing session', () => {
     // A prompt seed must only ride a FRESH session; auto-selecting an existing
     // one must drop it, so a seed can never land in an unintended session.

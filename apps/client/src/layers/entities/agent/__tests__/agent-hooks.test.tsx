@@ -209,6 +209,45 @@ describe('useUpdateAgent', () => {
     // Cache should be reverted to original
     expect(agentResult.current.data?.name).toBe(mockAgent.name);
   });
+
+  // The wire says "clear this field" with `null`, and the server DELETES those
+  // keys (`services/core/operator/agent-updater.ts`). Merged verbatim, the
+  // optimistic cache held a literal `null` instead, and every reader asking
+  // "did somebody set this here?" said yes until the PATCH came back — which is
+  // how a reset click briefly showed "set here" and "no longer offers null."
+  it('clears a field optimistically instead of storing the wire’s null', async () => {
+    const pinned = { ...mockAgent, model: 'sonnet', effort: 'high' } as AgentManifest;
+    let resolveUpdate: (v: AgentManifest) => void;
+    const updatePromise = new Promise<AgentManifest>((res) => {
+      resolveUpdate = res;
+    });
+    const transport = createMockTransport({
+      getAgentByPath: vi.fn().mockResolvedValue(pinned),
+      updateAgentByPath: vi.fn().mockReturnValue(updatePromise),
+    });
+    const { Wrapper } = createWrapper(transport);
+
+    const { result: agentResult } = renderHook(() => useCurrentAgent('/projects/myapp'), {
+      wrapper: Wrapper,
+    });
+    await waitFor(() => expect(agentResult.current.data?.model).toBe('sonnet'));
+
+    const { result } = renderHook(() => useUpdateAgent(), { wrapper: Wrapper });
+    act(() => {
+      result.current.mutate({ path: '/projects/myapp', updates: { model: null } });
+    });
+
+    await waitFor(() => expect(agentResult.current.data?.model).toBeUndefined());
+    // `undefined`, and the key gone entirely — a stored `null` would satisfy
+    // neither, and the second assertion is the one a `!= null` reader needs.
+    expect('model' in (agentResult.current.data as object)).toBe(false);
+    // Untouched fields survive the strip.
+    expect(agentResult.current.data?.effort).toBe('high');
+    expect(agentResult.current.data?.name).toBe(mockAgent.name);
+
+    act(() => resolveUpdate!({ ...mockAgent, effort: 'high' } as AgentManifest));
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+  });
 });
 
 // ---------------------------------------------------------------------------
