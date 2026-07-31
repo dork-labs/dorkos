@@ -665,6 +665,14 @@ export interface DeliveryResult {
   skipped?: boolean;
   /** Error message if delivery failed */
   error?: string;
+  /**
+   * Machine code for a failure, when the adapter has one.
+   *
+   * Read in preference to the message text, so a surface that reacts to a
+   * specific failure (the chat notice for a runtime at capacity) does not
+   * depend on the exact wording of somebody's error string.
+   */
+  code?: 'at_capacity';
   /** Whether a dead letter was created for this failure */
   deadLettered?: boolean;
   /** Response message ID if the adapter published a reply */

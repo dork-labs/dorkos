@@ -222,10 +222,14 @@ export class TraceStore {
     // Dead letters are counted from the queue that actually holds them. This
     // used to count trace rows with `status = 'timeout'`, which nothing writes,
     // so the panel showed zero however full the queue was.
+    //
+    // Windowed like every sibling metric: this number sits beside "today's"
+    // counts, and a figure covering all of history next to four that cover a
+    // day is read as the same period by anyone glancing at the row.
     const [deadLetters] = this.db
       .select({ cnt: count() })
       .from(relayIndex)
-      .where(eq(relayIndex.status, 'failed'))
+      .where(and(eq(relayIndex.status, 'failed'), sql`${relayIndex.createdAt} >= ${sinceIso}`))
       .all();
 
     const budgetRejections = this.countBudgetRejections(sinceIso);

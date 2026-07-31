@@ -69,6 +69,7 @@ import {
   createInitiateConsentGate,
   createAgentSubjectResolver,
 } from './services/relay/initiate-consent.js';
+import { makeChatNoticeTargetResolver } from './services/relay/binding-subsystem.js';
 import { TraceStore } from './services/relay/trace-store.js';
 import { MeshCore } from '@dorkos/mesh';
 import { createMeshRouter } from './routes/mesh.js';
@@ -1024,6 +1025,12 @@ async function start() {
             resolveAgentSubject: createAgentSubjectResolver(meshCore),
           })
         );
+        // Same reasoning, same moment: the relay's chat-failure notice speaks on
+        // a subject that came off a failed envelope's `replyTo`, which the model
+        // writes on `relay_send`. Without this lookup it resolves nothing and
+        // stays silent, so a missing wire closes the channel rather than opening
+        // one into a chat nobody bound (DOR-789).
+        relayCore.setChatNoticeTargetResolver(makeChatNoticeTargetResolver(bindingStore));
       }
 
       logger.info('[Relay] AdapterManager initialized');

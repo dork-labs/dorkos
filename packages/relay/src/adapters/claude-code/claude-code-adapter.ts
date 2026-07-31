@@ -236,6 +236,9 @@ export class ClaudeCodeAdapter implements RelayAdapter {
     if (this.activeCount >= this.config.maxConcurrent) {
       return {
         success: false,
+        // The code, not the prose, is what downstream reacts to: the chat
+        // notice for a busy runtime must not hinge on this sentence's wording.
+        code: 'at_capacity',
         error: `Adapter at capacity (${this.config.maxConcurrent} concurrent sessions)`,
         durationMs: Date.now() - startTime,
       };

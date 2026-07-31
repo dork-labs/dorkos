@@ -290,7 +290,8 @@ describe('deliverMessage', () => {
         streamState,
         callbacks
       );
-      expect(result.success).toBe(true);
+      // `skipped`, not a plain success — see the Telegram twin of this test.
+      expect(result).toMatchObject({ success: true, skipped: true });
       expect(mockPostMessage).not.toHaveBeenCalled();
     });
   });
@@ -648,6 +649,35 @@ describe('deliverMessage', () => {
         })
       );
       expect(mockChatUpdate).not.toHaveBeenCalled();
+    });
+
+    // The runtime publishes error THEN done. The done used to find "nothing
+    // posted" and add "the agent finished without sending anything back" under
+    // the error line — on every crashed turn (DOR-789).
+    it('done after an error adds nothing — the error was the answer', async () => {
+      const error = createEnvelope('relay.human.slack.D123', {
+        type: 'error',
+        data: { message: 'SDK session crashed' },
+      });
+      await deliver('relay.human.slack.D123', error, client, streamState, callbacks);
+      expect(mockPostMessage).toHaveBeenCalledTimes(1);
+      mockPostMessage.mockClear();
+
+      const done = createEnvelope('relay.human.slack.D123', { type: 'done', data: {} });
+      await deliver('relay.human.slack.D123', done, client, streamState, callbacks);
+
+      expect(mockPostMessage).not.toHaveBeenCalled();
+    });
+
+    it('done after a standard-payload answer adds nothing', async () => {
+      const answer = createEnvelope('relay.human.slack.D123', { content: 'here you go' });
+      await deliver('relay.human.slack.D123', answer, client, streamState, callbacks);
+      mockPostMessage.mockClear();
+
+      const done = createEnvelope('relay.human.slack.D123', { type: 'done', data: {} });
+      await deliver('relay.human.slack.D123', done, client, streamState, callbacks);
+
+      expect(mockPostMessage).not.toHaveBeenCalled();
     });
 
     it('done after a partial answer stays quiet — that turn already spoke', async () => {

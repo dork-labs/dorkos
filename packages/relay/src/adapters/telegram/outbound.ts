@@ -107,15 +107,19 @@ export interface TelegramOutboundState {
   /** Pending approval timeouts keyed by callback short key. */
   pendingApprovalTimeouts: Map<string, ReturnType<typeof setTimeout>>;
   /**
-   * Chats this adapter has actually sent something to since their last
-   * terminal.
+   * Turns this adapter has already said something for, keyed
+   * `${chatId}:${turnKey}` — see {@link turnKeyFor}.
    *
    * Read at `done` to tell an answer from a silence. A turn that ends having
    * sent nothing at all leaves the person looking at their own question with no
    * sign anything happened; a turn that sent a card, a partial answer, or an
-   * error has already spoken and must not be contradicted.
+   * **error** has already spoken and must not be contradicted.
+   *
+   * Keyed per turn, not per chat: two turns interleaved in one chat would
+   * otherwise cancel each other's marks, and one of them would be told the
+   * agent said nothing while the other was mid-answer.
    */
-  spokenChats: Set<number>;
+  spokenTurns: Set<string>;
 }
 
 /** Create a fresh outbound state container for a new adapter instance. */
@@ -126,7 +130,7 @@ export function createTelegramOutboundState(): TelegramOutboundState {
     lastDraftUpdate: new Map(),
     callbackIdMap: new Map(),
     pendingApprovalTimeouts: new Map(),
-    spokenChats: new Set(),
+    spokenTurns: new Set(),
   };
 }
 
@@ -312,6 +316,11 @@ export async function deliverMessage(opts: TelegramDeliverOptions): Promise<Deli
     }
   }
 
+  // Which turn this event belongs to. Mirrors Slack's stream key: the same
+  // value for every event of one agent response, and different for two turns
+  // running into the same chat.
+  const turnKey = turnKeyFor(chatId, envelope);
+
   // --- StreamEvent-aware delivery ---
   const eventType = detectStreamEventType(envelope.payload);
 
@@ -332,7 +341,7 @@ export async function deliverMessage(opts: TelegramDeliverOptions): Promise<Deli
     const textChunk = extractTextDelta(envelope.payload);
     if (textChunk) {
       logger.debug(`deliver: text_delta to chat ${chatId} (${textChunk.length} chars)`);
-      state.spokenChats.add(chatId);
+      state.spokenTurns.add(turnKey);
       const existing = responseBuffers.get(chatId);
       responseBuffers.set(chatId, {
         text: (existing?.text ?? '') + textChunk,
@@ -368,7 +377,10 @@ export async function deliverMessage(opts: TelegramDeliverOptions): Promise<Deli
       const buffered = responseBuffers.get(chatId)?.text ?? '';
       responseBuffers.delete(chatId);
       state.lastDraftUpdate.delete(chatId);
-      state.spokenChats.delete(chatId); // the turn is over either way
+      // The error line IS output: mark the turn as spoken for, so the `done`
+      // the runtime publishes straight after it does not append "the agent
+      // finished without sending anything back" under every crashed turn.
+      state.spokenTurns.add(turnKey);
       const text = buffered ? `${buffered}\n\n[Error: ${errorMsg}]` : `[Error: ${errorMsg}]`;
       return sendAndTrack(bot, chatId, text, startTime, callbacks);
     }
@@ -381,7 +393,7 @@ export async function deliverMessage(opts: TelegramDeliverOptions): Promise<Deli
       );
       responseBuffers.delete(chatId);
       state.lastDraftUpdate.delete(chatId);
-      const spoke = state.spokenChats.delete(chatId);
+      const spoke = state.spokenTurns.delete(turnKey);
       if (buffered) {
         return sendAndTrack(bot, chatId, buffered.text, startTime, callbacks);
       }
@@ -409,7 +421,7 @@ export async function deliverMessage(opts: TelegramDeliverOptions): Promise<Deli
           state.lastDraftUpdate.delete(chatId);
           await sendAndTrack(bot, chatId, buffered.text, startTime, callbacks);
         }
-        state.spokenChats.add(chatId);
+        state.spokenTurns.add(turnKey);
 
         return handleApprovalRequired({
           bot,
@@ -431,9 +443,35 @@ export async function deliverMessage(opts: TelegramDeliverOptions): Promise<Deli
   }
 
   // --- Standard payload (non-StreamEvent) ---
+  // A finished answer delivered in one piece is the loudest thing this adapter
+  // does, and it was the one send that did not mark the turn as spoken for — so
+  // a `done` behind it appended "the agent finished without sending anything
+  // back" underneath a perfectly good reply.
+  state.spokenTurns.add(turnKey);
   const content = extractPayloadContent(envelope.payload);
   logger.debug(`deliver: standard payload to chat ${chatId} (${content.length} chars)`);
   return sendAndTrack(bot, chatId, content, startTime, callbacks);
+}
+
+/**
+ * The key identifying one agent turn in one chat.
+ *
+ * Mirrors the Slack adapter's stream key so the two adapters agree on what "a
+ * turn" is: a `correlationId` when the payload carries one, otherwise the
+ * sender — `agent:<sessionId>` for a runtime reply, which is stable across all
+ * of one turn's events and differs between two turns.
+ *
+ * @param chatId - The Telegram chat.
+ * @param envelope - The envelope being delivered.
+ */
+function turnKeyFor(chatId: number, envelope: RelayEnvelope): string {
+  const payload =
+    envelope.payload && typeof envelope.payload === 'object'
+      ? (envelope.payload as Record<string, unknown>)
+      : undefined;
+  const correlationId =
+    typeof payload?.correlationId === 'string' ? payload.correlationId : undefined;
+  return `${chatId}:${correlationId ?? envelope.from}`;
 }
 
 /**
@@ -546,7 +584,7 @@ export function clearAllTypingIntervals(state: TelegramOutboundState): void {
   state.typingIntervals.clear();
   state.lastEventAt.clear();
   state.lastDraftUpdate.clear();
-  state.spokenChats.clear();
+  state.spokenTurns.clear();
 }
 
 // === Approval handling ===

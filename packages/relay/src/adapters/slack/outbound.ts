@@ -38,7 +38,7 @@ import type { StreamContext } from './stream.js';
 import { claimPresence, releasePresence } from './presence.js';
 import type { PresenceContext, SlackPresenceState } from './presence.js';
 import { isBlockingInteractionEventType } from '@dorkos/shared/session-stream';
-import { handleApprovalRequired } from './approval.js';
+import { handleApprovalRequired, markSpoken } from './approval.js';
 import { chatNoticeText } from '../../chat-notice.js';
 import type { SlackOutboundState } from './approval.js';
 
@@ -265,14 +265,17 @@ export async function deliverMessage(opts: SlackDeliverOptions): Promise<Deliver
       logger.debug(
         `deliver: text_delta to ${channelId} (${textChunk.length} chars, streaming=${opts.streaming ? (opts.nativeStreaming ? 'native' : 'legacy') : 'buffered'})`
       );
-      spoken.add(spokenKey);
+      markSpoken(spoken, spokenKey);
       return handleTextDelta(textChunk, opts.streaming, opts.nativeStreaming, ctx);
     }
 
     const errorMsg = extractErrorMessage(envelope.payload);
     if (errorMsg) {
       logger.debug(`deliver: error to ${channelId}: "${errorMsg.slice(0, 100)}"`);
-      spoken.delete(spokenKey); // the turn is over either way
+      // The error line IS output: mark the turn as spoken for, so the `done`
+      // the runtime publishes straight after it does not append "the agent
+      // finished without sending anything back" under every crashed turn.
+      markSpoken(spoken, spokenKey);
       return handleError(errorMsg, ctx);
     }
 
@@ -309,7 +312,7 @@ export async function deliverMessage(opts: SlackDeliverOptions): Promise<Deliver
         // Flush accumulated text before posting the approval card so partial
         // responses aren't lost when the stream pauses for approval.
         await flushStreamBuffer(ctx);
-        spoken.add(spokenKey);
+        markSpoken(spoken, spokenKey);
         return handleApprovalRequired(
           channelId,
           threadTs,
@@ -336,7 +339,7 @@ export async function deliverMessage(opts: SlackDeliverOptions): Promise<Deliver
     `deliver: standard payload to ${channelId} (${formatted.length} chars, ${chunks.length} chunk${chunks.length === 1 ? '' : 's'})`
   );
 
-  spoken.add(spokenKey);
+  markSpoken(spoken, spokenKey);
   let lastResult: DeliveryResult = { success: true, durationMs: 0 };
   for (let i = 0; i < chunks.length; i++) {
     lastResult = await wrapSlackCall(

@@ -517,7 +517,10 @@ describe('deliverMessage', () => {
         streaming: false,
         codec: testCodec,
       });
-      expect(result.success).toBe(true);
+      // `skipped`, not a plain success: the publish pipeline counts a skip as
+      // neither delivered nor failed, which is what stopped an inbound message
+      // in an unbound chat from tracing as `delivered` (DOR-789).
+      expect(result).toMatchObject({ success: true, skipped: true });
       expect(mockSendMessage).not.toHaveBeenCalled();
     });
   });
@@ -677,6 +680,152 @@ describe('deliverMessage', () => {
         expect.stringContaining('finished without sending anything back'),
         { parse_mode: 'HTML' }
       );
+    });
+
+    // The runtime publishes error THEN done. The done used to find "nothing
+    // spoken" and append "the agent finished without sending anything back"
+    // under the error line — on every crashed turn (DOR-789).
+    it('done after an error adds nothing — the error was the answer', async () => {
+      const turn = { from: 'agent:session-crash' };
+      await deliverMessage({
+        adapterId: 'telegram',
+        subject: 'relay.human.telegram.12345',
+        envelope: createEnvelope(
+          'relay.human.telegram.12345',
+          { type: 'error', data: { message: 'SDK session crashed' } },
+          turn.from
+        ),
+        bot,
+        responseBuffers,
+        state,
+        callbacks,
+        streaming: false,
+        codec: testCodec,
+      });
+      expect(mockSendMessage).toHaveBeenCalledTimes(1);
+      expect(mockSendMessage.mock.calls[0][1]).toContain('SDK session crashed');
+
+      await deliverMessage({
+        adapterId: 'telegram',
+        subject: 'relay.human.telegram.12345',
+        envelope: createEnvelope(
+          'relay.human.telegram.12345',
+          { type: 'done', data: {} },
+          turn.from
+        ),
+        bot,
+        responseBuffers,
+        state,
+        callbacks,
+        streaming: false,
+        codec: testCodec,
+      });
+
+      // Exactly the error line, and nothing after it.
+      expect(mockSendMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it('done after a standard-payload answer adds nothing', async () => {
+      const turn = { from: 'agent:session-answer' };
+      await deliverMessage({
+        adapterId: 'telegram',
+        subject: 'relay.human.telegram.12345',
+        envelope: createEnvelope(
+          'relay.human.telegram.12345',
+          { content: 'here is your answer' },
+          turn.from
+        ),
+        bot,
+        responseBuffers,
+        state,
+        callbacks,
+        streaming: false,
+        codec: testCodec,
+      });
+      mockSendMessage.mockClear();
+
+      await deliverMessage({
+        adapterId: 'telegram',
+        subject: 'relay.human.telegram.12345',
+        envelope: createEnvelope(
+          'relay.human.telegram.12345',
+          { type: 'done', data: {} },
+          turn.from
+        ),
+        bot,
+        responseBuffers,
+        state,
+        callbacks,
+        streaming: false,
+        codec: testCodec,
+      });
+
+      expect(mockSendMessage).not.toHaveBeenCalled();
+    });
+
+    it('two turns interleaved in one chat do not cancel each other out', async () => {
+      // Turn A streams text; turn B finishes first. The response buffer is
+      // keyed by CHAT (an inherited conflation, documented on the buffer), so
+      // B's terminal is what flushes A's text — but the "has this turn spoken"
+      // mark is keyed per TURN, so A stays marked and its own terminal adds
+      // nothing. Keyed per chat, B's done consumed A's mark and A's done then
+      // appended "the agent finished without sending anything back" under the
+      // answer it had just given (DOR-789).
+      await deliverMessage({
+        adapterId: 'telegram',
+        subject: 'relay.human.telegram.12345',
+        envelope: createEnvelope(
+          'relay.human.telegram.12345',
+          { type: 'text_delta', data: { text: 'A is working' } },
+          'agent:session-A'
+        ),
+        bot,
+        responseBuffers,
+        state,
+        callbacks,
+        streaming: false,
+        codec: testCodec,
+      });
+      mockSendMessage.mockClear();
+
+      await deliverMessage({
+        adapterId: 'telegram',
+        subject: 'relay.human.telegram.12345',
+        envelope: createEnvelope(
+          'relay.human.telegram.12345',
+          { type: 'done', data: {} },
+          'agent:session-B'
+        ),
+        bot,
+        responseBuffers,
+        state,
+        callbacks,
+        streaming: false,
+        codec: testCodec,
+      });
+      // The chat's buffered text goes out. Not an empty response: something was
+      // said in this chat.
+      expect(mockSendMessage).toHaveBeenCalledTimes(1);
+      expect(mockSendMessage.mock.calls[0][1]).toBe('A is working');
+      mockSendMessage.mockClear();
+
+      await deliverMessage({
+        adapterId: 'telegram',
+        subject: 'relay.human.telegram.12345',
+        envelope: createEnvelope(
+          'relay.human.telegram.12345',
+          { type: 'done', data: {} },
+          'agent:session-A'
+        ),
+        bot,
+        responseBuffers,
+        state,
+        callbacks,
+        streaming: false,
+        codec: testCodec,
+      });
+      // A spoke, so A's terminal contradicts nothing.
+      expect(mockSendMessage).not.toHaveBeenCalled();
     });
 
     it('done after an approval card stays quiet — that turn already spoke', async () => {

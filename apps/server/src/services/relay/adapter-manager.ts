@@ -489,7 +489,22 @@ export class AdapterManager {
     await this.persistConfigs();
 
     await this.enqueue(async () => {
-      await this.registry.unregister(id);
+      try {
+        await this.registry.unregister(id);
+      } catch (err) {
+        // The config already says disabled. If the adapter would not let go of
+        // its connection, the cockpit would show "disabled" over a bot that is
+        // still answering — the exact shape of dishonesty this batch exists to
+        // remove. Record it and rethrow so the person is told the disable did
+        // not take (DOR-789).
+        const message = err instanceof Error ? err.message : String(err);
+        this.deps.eventRecorder?.insertAdapterEvent(id, 'adapter.error', message);
+        logger.error(
+          `[AdapterManager] '${id}' is disabled in settings but would not stop, so it may ` +
+            `still be connected — restart DorkOS if it keeps answering: ${message}`
+        );
+        throw err;
+      }
       this.deps.eventRecorder?.insertAdapterEvent(
         id,
         'adapter.disconnected',

@@ -23,6 +23,7 @@ import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import { BindingRouter } from '../binding-router.js';
 import { BindingStore } from '../binding-store.js';
 import { createInitiateConsentGate } from '../initiate-consent.js';
+import { makeChatNoticeTargetResolver } from '../binding-subsystem.js';
 import type { AdapterMeshCoreLike } from '../adapter-manager.js';
 
 const PLATFORM_SUBJECT = 'relay.human.telegram.tg-bot.12345';
@@ -141,6 +142,7 @@ beforeEach(async () => {
     runtimeResolver: { getSessionRuntimeType: async () => 'claude-code' },
     chatNotice: createChatNoticeSender({
       publish: (subject, payload, options) => relay.publish(subject, payload, options),
+      resolveTarget: makeChatNoticeTargetResolver(bindingStore),
     }),
   });
   await router.init();
@@ -177,18 +179,11 @@ describe('a refused chat message', () => {
     expect(registry.dispatches).toHaveLength(0);
   });
 
-  it('never becomes a new prompt for the agent', async () => {
-    await bindingStore.update(bindingId, { enabled: false });
-
-    await sendInbound('anyone there?');
-    await vi.waitFor(() => expect(registry.noticeTexts()).toHaveLength(1));
-
-    // The notice is published to the same chat subject the router subscribes
-    // to. Without the system-principal guard it would be routed straight back
-    // into a turn — the loop this design has to avoid.
-    expect(registry.dispatches).toHaveLength(0);
-    expect(createSession).not.toHaveBeenCalled();
-  });
+  // The loop guard is NOT tested here on purpose: with a paused binding nothing
+  // routes either way, so the assertion holds with or without the guard and
+  // proves nothing. `chat-notice-boundaries.integration.test.ts` drives the
+  // discriminating case — a HEALTHY binding whose turn dies — where removing
+  // the guard really does produce a second dispatch.
 
   it('says so once, however many times the person retries', async () => {
     await bindingStore.update(bindingId, { enabled: false });

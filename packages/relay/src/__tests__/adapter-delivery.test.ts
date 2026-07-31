@@ -426,7 +426,9 @@ describe('AdapterDelivery', () => {
       const chatNotice = vi.fn().mockResolvedValue(true);
       vi.mocked(deps.adapterRegistry!.deliver).mockResolvedValue({
         success: false,
-        error: 'Adapter at capacity (3 concurrent sessions)',
+        // The machine code decides, so rewording the message cannot break it.
+        code: 'at_capacity',
+        error: 'the runtime is not taking any more right now',
       } as DeliveryResult);
       const delivery = new AdapterDelivery(deps);
       delivery.setChatFailureNotifier(chatNotice);
@@ -437,7 +439,7 @@ describe('AdapterDelivery', () => {
       );
 
       await vi.waitFor(() =>
-        expect(chatNotice).toHaveBeenCalledWith(CHANNEL_SUBJECT, 'agent_busy', expect.anything())
+        expect(chatNotice).toHaveBeenCalledWith(CHANNEL_SUBJECT, 'agent_busy')
       );
     });
 
@@ -456,11 +458,7 @@ describe('AdapterDelivery', () => {
       );
 
       await vi.waitFor(() =>
-        expect(chatNotice).toHaveBeenCalledWith(
-          CHANNEL_SUBJECT,
-          'delivery_failed',
-          expect.anything()
-        )
+        expect(chatNotice).toHaveBeenCalledWith(CHANNEL_SUBJECT, 'delivery_failed')
       );
     });
 

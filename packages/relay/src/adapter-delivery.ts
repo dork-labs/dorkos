@@ -31,6 +31,28 @@ import type { Logger } from '@dorkos/shared/logger';
 const AGENT_SUBJECT_PREFIX = 'relay.agent.';
 
 /**
+ * Which chat notice a failed delivery deserves.
+ *
+ * Prefers the adapter's machine {@link DeliveryResult.code} — a runtime that
+ * says `at_capacity` says it in a way no rewording of its message can break.
+ * The prose match is the fallback for adapters that predate the code, and is
+ * deliberately broad, because getting it wrong only picks the more general of
+ * two true sentences.
+ *
+ * @param reason - The failure text.
+ * @param code - The adapter's machine code, when it gave one.
+ */
+function classifyChatFailure(
+  reason: string,
+  code?: DeliveryResult['code']
+): 'agent_busy' | 'delivery_failed' {
+  if (code === 'at_capacity') return 'agent_busy';
+  return /\b(at capacity|capacity|too busy|queue full|concurren\w+ limit)\b/i.test(reason)
+    ? 'agent_busy'
+    : 'delivery_failed';
+}
+
+/**
  * Callback that publishes a terminal failure notice to a dead-lettered
  * envelope's reply inbox, so a waiting caller (e.g. `relay_send_and_wait`, the
  * A2A executor) settles immediately instead of blocking to its full timeout.
@@ -176,7 +198,12 @@ export class AdapterDelivery {
           // dead-letter — otherwise the message is silently swallowed.
           await this.deadLetterDetached(subject, envelope, 'no adapter matched subject');
         } else if (!result.success) {
-          await this.deadLetterDetached(subject, envelope, result.error ?? 'unknown error');
+          await this.deadLetterDetached(
+            subject,
+            envelope,
+            result.error ?? 'unknown error',
+            result.code
+          );
         } else {
           this.indexDelivered(subject, envelope);
         }
@@ -255,7 +282,8 @@ export class AdapterDelivery {
   private async deadLetterDetached(
     subject: string,
     envelope: RelayEnvelope,
-    reason: string
+    reason: string,
+    code?: DeliveryResult['code']
   ): Promise<void> {
     this.logger.warn(`RelayCore: detached adapter delivery failed for ${subject}: ${reason}`);
     try {
@@ -285,12 +313,13 @@ export class AdapterDelivery {
     // When the caller was a person in a chat, their reply subject IS that chat.
     // Tell them there, in one line, instead of leaving the message looking like
     // an agent that is still thinking.
+    // The subject is NOT trusted: on `relay_send` the model writes `replyTo`,
+    // so this could name any chat at all. The notifier resolves it through the
+    // binding store and says nothing when nothing is bound there — and the
+    // damper is keyed on the binding it resolved, so varying the failed agent
+    // subject cannot buy another line.
     if (envelope.replyTo && this.chatFailureNotifier) {
-      await this.chatFailureNotifier(
-        envelope.replyTo,
-        /capacity/i.test(reason) ? 'agent_busy' : 'delivery_failed',
-        { scope: subject }
-      );
+      await this.chatFailureNotifier(envelope.replyTo, classifyChatFailure(reason, code));
     }
   }
 }

@@ -520,7 +520,12 @@ export class BindingRouter {
     reason: string
   ): Promise<SubscriberVerdict> {
     logger.warn(`BindingRouter: dropped ${envelope.subject} (binding=${binding.id}): ${reason}`);
-    await this.deps.chatNotice?.(envelope.subject, notice, { scope: binding.id });
+    // The binding is named rather than re-resolved: this router just resolved
+    // it from the store for this very message, and it is the only caller that
+    // can honestly say so. It is also what lets a PAUSED binding be spoken
+    // about at all — the sender's own resolver requires an enabled one, and
+    // "this chat is paused" is exactly what a paused chat needs to hear.
+    await this.deps.chatNotice?.(envelope.subject, notice, { binding: { id: binding.id } });
     return { handled: false, reason };
   }
 

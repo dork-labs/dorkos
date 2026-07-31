@@ -27,10 +27,13 @@
  *    reason for {@link NOTICE_DAMP_MS}. Somebody retrying six times into a
  *    paused chat is told once.
  *
- * A chat with **no binding at all** is deliberately not notified. Nobody
- * connected that conversation to anything on this machine, so there is no
- * agent whose silence needs explaining — and speaking there would be this
- * machine starting a conversation it has no consent for.
+ * A chat with **no binding at all** is deliberately not notified, and that is
+ * enforced here rather than left to each caller: every notice resolves through
+ * {@link ChatNoticeSenderDeps.resolveTarget} first. Nobody connected that
+ * conversation to anything on this machine, so there is no agent whose silence
+ * needs explaining — and speaking there would be this machine starting a
+ * conversation it has no consent for, under a principal the consent gate
+ * exempts.
  *
  * @module relay/chat-notice
  */
@@ -104,10 +107,37 @@ const NOTICE_TEXT: Record<ChatNoticeReason, string> = {
   empty_response: 'The agent finished without sending anything back.',
 };
 
+/**
+ * Resolve a chat subject to the enabled binding that owns it.
+ *
+ * This is the authorization step, not a lookup convenience. See
+ * {@link ChatNoticeSenderDeps.resolveTarget}.
+ */
+export type ChatNoticeTargetResolver = (subject: string) => { bindingId: string } | null;
+
 /** Dependencies for {@link createChatNoticeSender}. */
 export interface ChatNoticeSenderDeps {
   /** Publish a payload to a subject (the relay publish pipeline). */
   publish: (subject: string, payload: unknown, options: PublishOptions) => Promise<PublishResult>;
+  /**
+   * Resolve a chat subject to an **enabled** binding, through the binding
+   * store — or `null`, which means silence.
+   *
+   * ## This is a security boundary, not a nicety
+   *
+   * One caller of this sender is the detached-delivery failure path, and the
+   * subject it hands over is the failed envelope's `replyTo`. On `relay_send`
+   * that field is written by the model: an agent could set it to
+   * `relay.human.telegram.<any-adapter>.<any-chat>`, fail its own delivery, and
+   * have this machine post into a chat nobody had bound to anything — under a
+   * `relay.system.*` principal the consent gate exempts by design. Resolving
+   * through the store closes that door, and doing it here rather than at each
+   * call site means a new caller inherits the check instead of forgetting it.
+   *
+   * A resolver that cannot answer must return `null`. Not knowing is a denial,
+   * exactly as it is for {@link InitiateConsentGate}.
+   */
+  resolveTarget: ChatNoticeTargetResolver;
   /** Logger for the best-effort publish. Silent by default. */
   logger?: RelayLogger;
   /** Clock, injectable so the damper is testable without waiting ten minutes. */
@@ -119,15 +149,16 @@ export interface ChatNoticeSenderDeps {
  *
  * @param subject - The `relay.human.*` subject the person's message arrived on.
  * @param reason - Which refusal happened.
- * @param options - Optional extra detail appended to the line, and a damper key
- *   scope (normally the binding id) so two bindings on one chat damp apart.
+ * @param options - Optional extra detail appended to the line, and the binding
+ *   this notice is about when the caller has ALREADY resolved it from the store
+ *   this same tick (the binding router has; nobody else should claim to).
  * @returns `true` when a notice was published, `false` when it was damped,
- *   skipped as out of scope, or failed.
+ *   refused as out of scope, or failed.
  */
 export type ChatNoticeSender = (
   subject: string,
   reason: ChatNoticeReason,
-  options?: { detail?: string; scope?: string }
+  options?: { detail?: string; binding?: { id: string } }
 ) => Promise<boolean>;
 
 /**
@@ -136,12 +167,12 @@ export type ChatNoticeSender = (
  * The sender never throws: a notice that cannot be delivered must not take
  * down the path that was already reporting a problem.
  *
- * @param deps - Publish callback, logger, and clock.
+ * @param deps - Publish callback, binding resolver, logger, and clock.
  */
 export function createChatNoticeSender(deps: ChatNoticeSenderDeps): ChatNoticeSender {
   const logger = deps.logger ?? noopLogger;
   const now = deps.now ?? Date.now;
-  /** Last time each `${scope}|${subject}|${reason}` was spoken. */
+  /** Last time each `${bindingId}|${subject}|${reason}` was spoken. */
   const lastSpoken = new Map<string, number>();
 
   return async (subject, reason, options) => {
@@ -149,7 +180,16 @@ export function createChatNoticeSender(deps: ChatNoticeSenderDeps): ChatNoticeSe
     // surfaces for this, and an agent or system subject has no person on it.
     if (!requiresInitiateConsent(subject)) return false;
 
-    const key = `${options?.scope ?? ''}|${subject}|${reason}`;
+    // Which binding this chat belongs to. A caller that resolved it from the
+    // store this tick may name it; anyone else must go through the resolver,
+    // which answers `null` for a chat nothing is bound to.
+    const bindingId = options?.binding?.id ?? deps.resolveTarget(subject)?.bindingId;
+    if (!bindingId) return false;
+
+    // Keyed by (binding, chat, reason) — never by anything a caller supplies
+    // freely. Keying on the failed agent subject, as this briefly did, let a
+    // caller vary one field and speak past the damper as often as it liked.
+    const key = `${bindingId}|${subject}|${reason}`;
     const at = now();
     const previous = lastSpoken.get(key);
     if (previous !== undefined && at - previous < NOTICE_DAMP_MS) return false;

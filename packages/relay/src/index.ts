@@ -211,7 +211,12 @@ export {
   CHAT_NOTICE_SENDER,
   NOTICE_DAMP_MS,
 } from './chat-notice.js';
-export type { ChatNoticeReason, ChatNoticeSender, ChatNoticeSenderDeps } from './chat-notice.js';
+export type {
+  ChatNoticeReason,
+  ChatNoticeSender,
+  ChatNoticeSenderDeps,
+  ChatNoticeTargetResolver,
+} from './chat-notice.js';
 
 // Plugin loader
 export { loadAdapters, validateAdapterShape } from './adapter-plugin-loader.js';

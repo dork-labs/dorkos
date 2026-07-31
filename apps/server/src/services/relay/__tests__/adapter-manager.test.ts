@@ -1424,6 +1424,36 @@ describe('AdapterManager', () => {
     });
   });
 
+  describe('disable()', () => {
+    // Persisting "disabled" and then swallowing a failed stop left the cockpit
+    // showing a disabled integration over a bot that was still answering.
+    it('surfaces a stop that failed instead of reporting a clean disable', async () => {
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      const mockEventRecorder = { insertAdapterEvent: vi.fn() };
+      const stuckRegistry = createMockRegistry();
+      const stuckManager = new AdapterManager(stuckRegistry, configPath, {
+        ...mockDeps,
+        eventRecorder: mockEventRecorder,
+      });
+      await initAndStart(stuckManager);
+      vi.mocked(stuckRegistry.unregister).mockRejectedValueOnce(new Error('poller busy'));
+
+      await expect(stuckManager.disable('tg-main')).rejects.toThrow('poller busy');
+
+      expect(mockEventRecorder.insertAdapterEvent).toHaveBeenCalledWith(
+        'tg-main',
+        'adapter.error',
+        expect.stringContaining('poller busy')
+      );
+      // And it did NOT claim a clean disconnect.
+      expect(mockEventRecorder.insertAdapterEvent).not.toHaveBeenCalledWith(
+        'tg-main',
+        'adapter.disconnected',
+        expect.anything()
+      );
+    });
+  });
+
   describe('updateConfig()', () => {
     // The old adapter is deleted from the registry before its stop() is
     // awaited, and this call site swallowed the throw — so a Telegram poller

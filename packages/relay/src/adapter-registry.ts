@@ -138,10 +138,18 @@ export class AdapterRegistry implements AdapterRegistryLike {
    * slot and started a SECOND adapter on the same bot token: two pollers, two
    * copies of every inbound message, two agent turns, two bills.
    *
-   * Now a failed stop keeps the entry. The adapter stays in the registry, its
-   * own status records the error, and the throw reaches the caller — so the
-   * next register sees an occupied slot and hot-reloads through the swap path
-   * instead of starting a rival.
+   * Now a failed stop keeps the entry and rethrows. That is a signal, not a
+   * cure: {@link register} does NOT protect you here — it starts the new
+   * adapter *first* and only then swaps, so calling it after a failed stop
+   * still puts a second connection on the same credentials, and the old entry
+   * is simply overwritten. What actually prevents the double poller is the
+   * caller heeding this throw: `AdapterManager.updateConfig` rethrows without
+   * building a replacement, and `removeAdapter`/`reload` record an
+   * `adapter.error` event rather than swallowing it.
+   *
+   * The adapter's own status is left in the `error` state (see
+   * `BaseRelayAdapter.stop`), so the cockpit shows a connection that would not
+   * let go instead of one that looks cleanly gone.
    *
    * @param id - The adapter ID to remove
    * @returns true if the adapter was found and stopped, false if not found
