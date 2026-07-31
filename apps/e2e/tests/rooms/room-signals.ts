@@ -53,53 +53,77 @@ export interface PresenceSignal {
  * @param page - The page whose room stream to tap.
  */
 export async function tapRoomStream(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    const inject = { push: null as ((frame: string) => void) | null };
-    (window as unknown as { __roomStream: typeof inject }).__roomStream = inject;
+  await tapStream(page, '__roomStream', '/rooms/[^/?#]+/events(\\?|$)');
+}
 
-    const passThrough = window.fetch.bind(window);
-    window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-      if (!/\/rooms\/[^/?#]+\/events(\?|$)/.test(url)) return passThrough(input, init);
+/**
+ * Install the same shim on the GLOBAL stream, which is where the sidebar reads.
+ *
+ * A different socket answering a different question: `/api/events` carries what
+ * a reader who is not in a room needs to know about it, including the count of
+ * agents working in it. Everything the room shim's doc says applies unchanged —
+ * the bytes are the server's, only the extra frames are ours.
+ *
+ * @param page - The page whose global stream to tap.
+ */
+export async function tapGlobalStream(page: Page): Promise<void> {
+  await tapStream(page, '__globalStream', '/api/events(\\?|$)');
+}
 
-      const upstream = await passThrough(input, init);
-      if (!upstream.ok || !upstream.body) return upstream;
-      const body = upstream.body;
-      const encoder = new TextEncoder();
+/** Wrap `window.fetch` for one stream, exposing a pusher at `window[key]`. */
+async function tapStream(page: Page, key: string, pattern: string): Promise<void> {
+  await page.addInitScript(
+    ([tapKey, urlPattern]) => {
+      const inject = { push: null as ((frame: string) => void) | null };
+      (window as unknown as Record<string, typeof inject>)[tapKey] = inject;
+      const matches = new RegExp(urlPattern);
 
-      const merged = new ReadableStream<Uint8Array>({
-        start(controller) {
-          inject.push = (frame: string) => controller.enqueue(encoder.encode(frame));
-          void (async () => {
-            const reader = body.getReader();
-            try {
-              for (;;) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                controller.enqueue(value);
+      const passThrough = window.fetch.bind(window);
+      window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (!matches.test(url)) return passThrough(input, init);
+
+        const upstream = await passThrough(input, init);
+        if (!upstream.ok || !upstream.body) return upstream;
+        const body = upstream.body;
+        const encoder = new TextEncoder();
+
+        const merged = new ReadableStream<Uint8Array>({
+          start(controller) {
+            inject.push = (frame: string) => controller.enqueue(encoder.encode(frame));
+            void (async () => {
+              const reader = body.getReader();
+              try {
+                for (;;) {
+                  const { done, value } = await reader.read();
+                  if (done) break;
+                  controller.enqueue(value);
+                }
+              } catch {
+                // The socket ended, which is the caller's business, not ours.
               }
-            } catch {
-              // The socket ended, which is the caller's business, not ours.
-            }
-            try {
-              controller.close();
-            } catch {
-              // Already closed by an abort on the way out.
-            }
-          })();
-        },
-      });
+              try {
+                controller.close();
+              } catch {
+                // Already closed by an abort on the way out.
+              }
+            })();
+          },
+        });
 
-      // A fresh header set rather than the upstream's: the body handed back has
-      // already been decoded once, so replaying a `content-encoding` would ask
-      // the browser to decode it again.
-      return new Response(merged, {
-        status: upstream.status,
-        statusText: upstream.statusText,
-        headers: { 'content-type': 'text/event-stream' },
-      });
-    };
-  });
+        // A fresh header set rather than the upstream's: the body handed back has
+        // already been decoded once, so replaying a `content-encoding` would ask
+        // the browser to decode it again.
+        return new Response(merged, {
+          status: upstream.status,
+          statusText: upstream.statusText,
+          headers: { 'content-type': 'text/event-stream' },
+        });
+      };
+    },
+    [key, pattern] as [string, string]
+  );
 }
 
 /**
@@ -126,29 +150,68 @@ export async function publishPresence(page: Page, signal: PresenceSignal): Promi
     entryId: signal.entryId,
     since: signal.since,
   };
+  await pushFrame(page, '__roomStream', 'signal', event);
+}
+
+/**
+ * Say how many agents are working in a room, on the global stream.
+ *
+ * What the dispatcher broadcasts at every claim transition and again on its
+ * ten-second tick — the sidebar's half of presence, which reaches a reader who
+ * has no room open at all.
+ *
+ * @param page - The page holding the global stream, already tapped.
+ * @param count.roomId - The room the dot belongs to.
+ * @param count.working - How many agents are working in it. `0` clears the dot.
+ */
+export async function publishWorkingCount(
+  page: Page,
+  count: { roomId: string; working: number }
+): Promise<void> {
+  await pushFrame(page, '__globalStream', 'room_presence', count);
+}
+
+/**
+ * Put one frame onto a tapped stream, once it is open.
+ *
+ * **Waits for the stream to be open rather than requiring it to be.** A page
+ * hydrates over REST and connects its streams separately, so "the entries are on
+ * screen" does not mean "the socket is up" — it only usually does, on an
+ * unloaded machine. This used to throw the moment the two arrived in the other
+ * order, which made the presence spec pass or fail on how busy the run was
+ * rather than on anything about presence.
+ *
+ * @param page - The page holding the stream.
+ * @param key - Which tap to push onto.
+ * @param eventName - The SSE `event:` name.
+ * @param data - The payload, serialized as the frame's `data:`.
+ */
+async function pushFrame(page: Page, key: string, eventName: string, data: unknown): Promise<void> {
   await page
     .waitForFunction(
-      () =>
-        (window as unknown as { __roomStream?: { push: ((f: string) => void) | null } })
-          .__roomStream?.push != null,
-      undefined,
+      (tapKey) =>
+        (window as unknown as Record<string, { push?: ((f: string) => void) | null } | undefined>)[
+          tapKey
+        ]?.push != null,
+      key,
       { timeout: STREAM_OPEN_MS }
     )
     .catch(() => {
       // A bare Playwright timeout here names `waitForFunction` and an anonymous
-      // predicate, which says nothing about which room never came up. The
-      // sentence is deliberately NOT the one the publish below throws: never
+      // predicate, which says nothing about which stream never came up. The
+      // sentence is deliberately NOT the one the push below throws: never
       // opening and closing mid-flight are different failures, and reporting the
       // same words for both sends the reader to the wrong place.
-      throw new Error('The room stream is not open yet — nothing to publish onto.');
+      throw new Error(`The ${key} stream is not open yet — nothing to publish onto.`);
     });
   await page.evaluate(
-    (frame) => {
-      const tap = (window as unknown as { __roomStream?: { push: ((f: string) => void) | null } })
-        .__roomStream;
-      if (!tap?.push) throw new Error('The room stream closed before this signal could be sent.');
+    ([tapKey, frame]) => {
+      const tap = (
+        window as unknown as Record<string, { push?: ((f: string) => void) | null } | undefined>
+      )[tapKey];
+      if (!tap?.push) throw new Error('The stream closed before this frame could be sent.');
       tap.push(frame);
     },
-    `event: signal\ndata: ${JSON.stringify(event)}\n\n`
+    [key, `event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`] as [string, string]
   );
 }

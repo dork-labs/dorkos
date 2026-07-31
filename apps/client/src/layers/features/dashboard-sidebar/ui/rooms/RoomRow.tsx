@@ -31,6 +31,7 @@ import {
   useArchiveRoom,
   useMarkRoomReadNow,
   useRenameRoom,
+  useRoomWorking,
   useUnarchiveRoom,
 } from '@/layers/entities/room';
 import { useMenuCloseFocusGuard } from '../../model/use-menu-close-focus-guard';
@@ -83,6 +84,7 @@ export function RoomRow({ room, visual, isActive, onSelect, onOpenAgentProfile }
   const isMobile = useIsMobile();
   const meshAgents = useMeshAgentPaths().data?.agents ?? [];
   const unread = hasUnread(room);
+  const working = useRoomWorking(room.id, room.working);
   const title = roomDisplayTitle(room);
   const faces = sidebarItemFaces(visual);
 
@@ -274,6 +276,32 @@ export function RoomRow({ room, visual, isActive, onSelect, onOpenAgentProfile }
               >
                 <RoomAvatar room={room} participants={room.participants} visuals={faces} />
                 <RoomTitle room={room} className="min-w-0 flex-1" />
+                {working > 0 && (
+                  <span
+                    // `img` because the dot has no text of its own: a bare
+                    // `aria-label` on a generic element is not reliably read
+                    // out, and a role is what turns this from decoration into
+                    // something with a name.
+                    role="img"
+                    // Emerald, which is this cockpit's colour for "live" —
+                    // deliberately NOT the brand tint of the unread badge it
+                    // sits beside. Two facts about one row have to be tellable
+                    // apart at a glance, and a second orange mark next to an
+                    // orange pill reads as part of it.
+                    className="size-1.5 shrink-0 rounded-full bg-emerald-500 motion-safe:animate-pulse"
+                    // A dot, and nothing else. The unread badge beside it counts
+                    // messages waiting to be read; this counts work in flight,
+                    // which is a fact about right now that will be gone shortly
+                    // and needs no number on screen to be useful. A reader who
+                    // cannot see it gets the count in the label, where a number
+                    // costs no room.
+                    //
+                    // Like the unread badge, it does not name the room again —
+                    // the row's own name is already the first half of what a
+                    // screen reader reads out.
+                    aria-label={working === 1 ? '1 agent working' : `${working} agents working`}
+                  />
+                )}
                 {unread && (
                   <span
                     className="bg-brand/15 text-brand shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium tabular-nums"

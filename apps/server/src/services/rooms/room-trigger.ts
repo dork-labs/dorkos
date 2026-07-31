@@ -240,6 +240,19 @@ export interface RoomTriggerDeps {
    * publish that omits it is an indicator no client can key, age, or clear.
    */
   publishPresence(roomId: string, authorId: string, presence: RoomPresencePayload): void;
+  /**
+   * Say how many agents are working in a room, to everyone — not just to the
+   * readers who have that room open.
+   *
+   * The sibling of `publishPresence`, on the other stream and at the other
+   * grain. Presence rides the room's own channel and names an agent, an entry
+   * and a start, because the room view draws a sentence about them. This rides
+   * the GLOBAL fan-out and carries a bare count, because the sidebar draws a dot
+   * on a row for a room the reader is not in — and a count is the most a row can
+   * say without leaking who is talking to whom into a list that spans every
+   * room. Both are ephemeral; neither is ever logged.
+   */
+  publishWorkingCount(roomId: string, working: number): void;
 }
 
 /**
@@ -957,8 +970,10 @@ export class RoomTriggerDispatcher {
    * @param claim - The claim being taken, already fully resolved.
    */
   private holdClaim(claim: ActiveClaim): void {
+    const before = this.workingCount(claim.roomId);
     this.claimed.set(claimKey(claim.roomId, claim.cascadeRoot, claim.authorId), claim);
     this.publishPresence(claim, 'working');
+    this.publishWorkingCount(claim.roomId, before);
     if (this.republishing === null) {
       this.republishing = setInterval(() => this.republishPresence(), PRESENCE_REPUBLISH_MS);
       // A heartbeat is not a reason for the process to stay alive: an unref'd
@@ -993,8 +1008,10 @@ export class RoomTriggerDispatcher {
   private releaseClaim(key: string): void {
     const claim = this.claimed.get(key);
     if (!claim) return;
+    const before = this.workingCount(claim.roomId);
     this.claimed.delete(key);
     this.publishPresence(claim, 'done');
+    this.publishWorkingCount(claim.roomId, before);
     if (this.republishing !== null && this.claimed.size === 0) {
       clearInterval(this.republishing);
       this.republishing = null;
@@ -1016,9 +1033,39 @@ export class RoomTriggerDispatcher {
    * prematurely clear an indicator that is still true.
    */
   private republishPresence(): void {
+    const rooms = new Set<string>();
     for (const claim of this.claimed.values()) {
       this.publishPresence(claim, claim.pastDeadline ? 'working_late' : 'working');
+      rooms.add(claim.roomId);
     }
+    // One repaint per ROOM, not per claim: the sidebar draws a count, so two
+    // claims in one room are one dot and one event. The global stream has no
+    // replay, so this tick is the only way a reader who opened the cockpit
+    // mid-turn — or reconnected — learns that a room they do not have open is
+    // busy. Nothing is compared against a previous count here: the tick's job
+    // is to re-state, and a tick that suppressed an unchanged count would never
+    // reach the reader who missed the transition.
+    for (const roomId of rooms) {
+      this.deps.publishWorkingCount(roomId, this.workingCount(roomId));
+    }
+  }
+
+  /**
+   * Tell the fan-out a room's working count, but only when it actually moved.
+   *
+   * The count is over distinct AGENTS, so an agent taking a second claim in a
+   * room that already shows it as working changes nothing a reader can see, and
+   * an event for it would be a repaint of the identical dot. Transitions
+   * therefore publish on change only; the republish tick above publishes
+   * unconditionally, because those two are answering different questions —
+   * "something happened" versus "this is still true".
+   *
+   * @param roomId - The room whose count may have moved.
+   * @param before - The count taken before the claim map was mutated.
+   */
+  private publishWorkingCount(roomId: string, before: number): void {
+    const after = this.workingCount(roomId);
+    if (after !== before) this.deps.publishWorkingCount(roomId, after);
   }
 
   /**
@@ -1078,6 +1125,23 @@ export class RoomTriggerDispatcher {
         earliest.set(claim.authorId, claim.claimedAt);
     }
     return [...earliest].map(([authorId, since]) => ({ authorId, since }));
+  }
+
+  /**
+   * How many agents are working in one room right now.
+   *
+   * The narrow read the room list and the `room_presence` fan-out are given, in
+   * place of the claim map itself: a count cannot be mistaken for a roster, and
+   * no caller outside this class can start reasoning about cascades, sessions or
+   * entry ids it has no business knowing. Distinct AGENTS, not claims — the
+   * sidebar answers "is anyone on it", and an agent answering two triggers is
+   * one busy agent.
+   *
+   * @param roomId - The room being asked about.
+   * @returns The number of distinct agents holding a claim there. `0` when idle.
+   */
+  workingCount(roomId: string): number {
+    return this.workingIn(roomId).length;
   }
 
   /**

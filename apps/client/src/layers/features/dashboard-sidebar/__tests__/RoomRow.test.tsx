@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import type { ReactNode } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup, waitFor, within } from '@testing-library/react';
+import { act, render, screen, fireEvent, cleanup, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
@@ -9,6 +9,7 @@ import type { Transport } from '@dorkos/shared/transport';
 import { agentAuthorRef, type AuthorRef, type RoomSummary } from '@dorkos/shared/room-schemas';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { TransportProvider } from '@/layers/shared/model';
+import { useRoomWorkingStore } from '@/layers/entities/room';
 import { RoomRow } from '../ui/rooms/RoomRow';
 import type { SidebarItemVisual } from '../model/sidebar-item';
 
@@ -446,5 +447,43 @@ describe('RoomRow archive', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
     expect(transport.updateRoom).not.toHaveBeenCalled();
+  });
+});
+
+describe('RoomRow working dot', () => {
+  beforeEach(() => useRoomWorkingStore.setState({ rooms: {} }));
+
+  it('draws a dot from the list count alone, before any event has arrived', () => {
+    // The fresh-page-load case: the room list carries the server's live claim
+    // count, so a reader who opens the cockpit mid-turn does not stare at an
+    // idle-looking sidebar until the next republish tick.
+    renderRow(channel({ working: 1 }));
+    expect(screen.getByLabelText('1 agent working')).toBeInTheDocument();
+  });
+
+  it('says how many agents, so a reader who cannot see the dot still gets the count', () => {
+    renderRow(channel({ working: 3 }));
+    expect(screen.getByLabelText('3 agents working')).toBeInTheDocument();
+  });
+
+  it('draws nothing for a quiet room', () => {
+    renderRow(channel({ working: 0 }));
+    expect(screen.queryByLabelText(/working/)).not.toBeInTheDocument();
+  });
+
+  it('appears when the stream says a room went busy, and clears when it says done', () => {
+    renderRow(channel({ working: 0 }));
+    act(() => useRoomWorkingStore.getState().observe({ roomId: 'room-1', working: 1 }));
+    expect(screen.getByLabelText('1 agent working')).toBeInTheDocument();
+    act(() => useRoomWorkingStore.getState().observe({ roomId: 'room-1', working: 0 }));
+    expect(screen.queryByLabelText(/working/)).not.toBeInTheDocument();
+  });
+
+  it('keeps the working dot and the unread badge apart', () => {
+    // Two different facts about one row — messages waiting to be read, and work
+    // running right now — so one must never be mistaken for the other.
+    renderRow(channel({ working: 1, unreadCount: 2 }));
+    expect(screen.getByLabelText('1 agent working')).toBeInTheDocument();
+    expect(screen.getByLabelText('2 unread')).toBeInTheDocument();
   });
 });
