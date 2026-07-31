@@ -4,6 +4,7 @@
  * @module widgets/room-view/model/use-stick-to-bottom
  */
 import { useCallback, useEffect, useRef } from 'react';
+import type { PendingPost } from '@/layers/entities/room';
 
 /**
  * How far from the bottom still counts as being at it. A few pixels of rounding
@@ -24,6 +25,36 @@ const AT_BOTTOM_SLACK_PX = 64;
  * for that, short enough that a reader cannot meaningfully scroll inside it.
  */
 const SETTLE_FRAMES = 10;
+
+/**
+ * What the rows below the log currently are, as one comparable value.
+ *
+ * **Why the pin needs this at all.** A message in flight is drawn under the
+ * feed, not in it — the server has not accepted it, so it is not one of the
+ * feed's numbered articles. That row still takes up height, and height is the
+ * only thing the pin cares about: keyed on the newest ENTRY alone, appending a
+ * pending row grew the scroller without re-running the effect, so the row landed
+ * below the clip region. Measured on a real room: `elementFromPoint` at the
+ * row's centre hit the composer. A failed send whose toast had already faded was
+ * then invisible with no way to retry it — exactly the state the row exists to
+ * make visible.
+ *
+ * Every row's status, not just the count: `sending` → `failed` swaps a one-line
+ * spinner for a wrapped line carrying Try again and Discard, which is a height
+ * change with no change in how many rows there are.
+ *
+ * It does NOT see the Discard a slow row grows on a timer in `RoomPendingRow`,
+ * which changes nothing in the store. That row is already on screen and already
+ * dismissable; the case worth catching is the one that leaves the reader with
+ * nothing.
+ *
+ * @param posts - The pending rows, oldest first.
+ * @returns A value that changes whenever those rows do, or `null` for none.
+ */
+function pendingTailId(posts: readonly PendingPost[]): string | null {
+  if (posts.length === 0) return null;
+  return posts.map((post) => `${post.clientId}:${post.status}`).join('\n');
+}
 
 /** What the scroll container needs from its host. */
 export interface StickToBottom {
@@ -48,6 +79,13 @@ export interface StickToBottom {
  * reading back through history while an agent replies used to yank the view
  * away on every message.
  *
+ * **A message of this reader's own counts as the tail too**, before the server
+ * has accepted it: the pending row is drawn under the log and is the last thing
+ * in the conversation, so it moves the view on exactly the terms a real entry
+ * does — {@link pendingTailId} is what lets the effect see it. Same rule about
+ * WHO gets moved: somebody reading back through history is left where they are,
+ * and finds the row still there when they return to the bottom.
+ *
  * Whether the reader is at the bottom lives in a ref, not state: nothing
  * renders from it, and a scroll handler that re-rendered the timeline on every
  * wheel tick would cost more than the guard saves.
@@ -71,10 +109,14 @@ export interface StickToBottom {
  * @param newestEntryId - Id of the newest entry held, or `null` for an empty or
  *   still-loading room. Keyed on the entry rather than the array so a live
  *   arrival scrolls to itself and a re-render for any other reason does not.
+ * @param pendingPosts - What this reader has sent and the room has not echoed
+ *   back yet, drawn BELOW the log — see {@link pendingTailId} for why the pin
+ *   has to hear about them at all.
  */
 export function useStickToBottom(
   roomId: string | null,
-  newestEntryId: string | null
+  newestEntryId: string | null,
+  pendingPosts: readonly PendingPost[]
 ): StickToBottom {
   const elRef = useRef<HTMLDivElement | null>(null);
   const atBottomRef = useRef(true);
@@ -157,6 +199,8 @@ export function useStickToBottom(
     else pinPendingRef.current = false;
   }, []);
 
+  const pendingTail = pendingTailId(pendingPosts);
+
   useEffect(() => {
     // Room bookkeeping first, and unconditionally: a room you have not scrolled
     // yet opens at the bottom, whether or not it has anything in it yet.
@@ -168,10 +212,12 @@ export function useStickToBottom(
     }
 
     const el = elRef.current;
-    if (!el || newestEntryId === null || !atBottomRef.current) return;
+    // Nothing to follow: a room still loading its history, with nothing of this
+    // reader's waiting under it either.
+    if (!el || (newestEntryId === null && pendingTail === null) || !atBottomRef.current) return;
     el.scrollTop = el.scrollHeight;
     lastTopRef.current = el.scrollTop;
-  }, [roomId, newestEntryId]);
+  }, [roomId, newestEntryId, pendingTail]);
 
   return { scrollRef, onScroll };
 }

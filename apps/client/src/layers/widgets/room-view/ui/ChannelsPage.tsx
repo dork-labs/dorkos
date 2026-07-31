@@ -11,6 +11,7 @@ import {
   useRoomOpenThread,
   useRoomOpenThreadStore,
   useRoomStream,
+  usePendingPosts,
   roomDisplayTitle,
   threadRootIdOf,
 } from '@/layers/entities/room';
@@ -133,7 +134,11 @@ export function ChannelsPage() {
   useMarkRoomRead(room, entries);
 
   const newestEntryId = entries.length > 0 ? entries[entries.length - 1]!.id : null;
-  const { scrollRef, onScroll } = useStickToBottom(roomId, newestEntryId);
+  // The timeline draws these under the log and reads them for itself; the pin
+  // needs them too, because they are what the tail of the room actually is
+  // between pressing Enter and the echo landing (DOR-799).
+  const pendingPosts = usePendingPosts(roomId, null);
+  const { scrollRef, onScroll } = useStickToBottom(roomId, newestEntryId, pendingPosts);
 
   // The open thread's replies, so the room's presence line can hand exactly
   // those claims to the panel and keep the rest. `undefined` — no thread open —
