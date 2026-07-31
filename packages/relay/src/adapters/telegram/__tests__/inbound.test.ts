@@ -1,5 +1,5 @@
 /**
- * Tests for the two gates the Telegram inbound handler runs before publishing.
+ * Tests for the three gates the Telegram inbound handler runs before publishing.
  *
  * They are different kinds of thing and are tested separately on purpose:
  *
@@ -9,6 +9,8 @@
  *   (`.claude/rules/room-conduct.md`, ADR `260726-170127`).
  * - **Group respond gating** is a preference the operator sets, and it only
  *   ever narrows behavior in groups.
+ * - The **DM allowlist** is an access rule: a bot handle is public, and a
+ *   private message runs a turn on the operator's machine (DOR-788).
  *
  * Entry point is `handleInboundMessage`, the same function
  * `bot.on('message', ...)` calls for a real Telegram update.
@@ -17,7 +19,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Context as GrammyContext } from 'grammy';
 import { handleInboundMessage } from '../inbound.js';
 import { TelegramThreadIdCodec } from '../../../lib/thread-id.js';
-import type { RelayPublisher, AdapterInboundCallbacks } from '../../../types.js';
+import type { TelegramInboundOptions } from '../inbound.js';
+import { createDeniedChatNotices } from '../../denied-chat-notices.js';
+import type { RelayPublisher, AdapterInboundCallbacks, RelayLogger } from '../../../types.js';
 
 /** The bot this adapter authenticates as. */
 const ME = { id: 777, is_bot: true, first_name: 'DorkBot', username: 'dorkbot' };
@@ -99,8 +103,17 @@ function createCtx(options: CtxOptions = {}): GrammyContext {
 
 let relay: RelayPublisher;
 let callbacks: AdapterInboundCallbacks;
+let logger: RelayLogger;
+let warnings: string[];
 
 beforeEach(() => {
+  warnings = [];
+  logger = {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn((...args: unknown[]) => warnings.push(args.map(String).join(' '))),
+    error: vi.fn(),
+  };
   relay = {
     publish: vi.fn().mockResolvedValue({ messageId: 'm1', deliveredTo: 1 }),
     subscribe: vi.fn(),
@@ -109,20 +122,25 @@ beforeEach(() => {
   callbacks = { trackInbound: vi.fn(), recordError: vi.fn() };
 });
 
-/** Run the handler the way `bot.on('message', ...)` does. */
+/**
+ * Run the handler the way `bot.on('message', ...)` does.
+ *
+ * @param ctx - The grammy context for this update.
+ * @param options - Inbound options, or a bare respond mode for brevity.
+ */
 async function deliver(
   ctx: GrammyContext,
-  respondMode?: 'always' | 'mention-only' | 'thread-aware'
+  options?: 'always' | 'mention-only' | 'thread-aware' | TelegramInboundOptions
 ) {
-  await handleInboundMessage(
-    ctx,
-    relay,
-    callbacks,
-    undefined,
-    CODEC,
-    respondMode ? { respondMode } : undefined
-  );
+  const resolved = typeof options === 'string' ? { respondMode: options } : options;
+  await handleInboundMessage(ctx, relay, callbacks, logger, CODEC, resolved);
 }
+
+/** Every private chat this helper opens is from {@link HUMAN}. */
+const ALLOW_HUMAN: TelegramInboundOptions = {
+  dmPolicy: 'allowlist',
+  dmAllowlist: [String(HUMAN.id)],
+};
 
 /** The subjects the relay was asked to publish to, in order. */
 function publishedSubjects(): string[] {
@@ -167,7 +185,11 @@ describe('Telegram inbound — bot-loop guard (DOR-619)', () => {
   });
 
   it("drops a bot's message in a private chat, not just in groups", async () => {
-    await deliver(createCtx({ from: OTHER_BOT, chatType: 'private', text: 'hello' }));
+    // Allowlisted by id, so the bot guard is the only thing that can drop it.
+    await deliver(createCtx({ from: OTHER_BOT, chatType: 'private', text: 'hello' }), {
+      dmPolicy: 'allowlist',
+      dmAllowlist: [String(OTHER_BOT.id)],
+    });
 
     expect(publishedSubjects()).toEqual([]);
   });
@@ -238,7 +260,9 @@ describe('Telegram inbound — bot-loop guard (DOR-619)', () => {
 
 describe('Telegram inbound — group respond gating (DOR-619)', () => {
   it('answers every message in a private chat', async () => {
-    await deliver(createCtx({ chatType: 'private', text: 'no mention needed here' }));
+    // Respond mode never gates a private chat; the DM allowlist does, so this
+    // one names the sender to isolate the behaviour under test.
+    await deliver(createCtx({ chatType: 'private', text: 'no mention needed here' }), ALLOW_HUMAN);
 
     expect(publishedSubjects()).toEqual([PRIVATE_SUBJECT]);
   });
@@ -380,5 +404,104 @@ describe('Telegram inbound — group respond gating (DOR-619)', () => {
     await deliver(createCtx({ text: 'unaddressed chatter' }), undefined);
 
     expect(publishedSubjects()).toEqual([]);
+  });
+});
+
+describe('Telegram inbound — private-chat allowlist (DOR-788)', () => {
+  // A Telegram bot handle is public: search finds it, anyone can press Start,
+  // and a private message runs an agent turn in the binding's project
+  // directory. Groups have been gated since DOR-619; private chats were gated
+  // by nothing at all.
+
+  const privateCtx = () => createCtx({ chatType: 'private', text: 'run the deploy' });
+
+  it('drops a private message from someone not on the allowlist', async () => {
+    await deliver(privateCtx(), { dmPolicy: 'allowlist', dmAllowlist: ['999'] });
+
+    expect(publishedSubjects()).toEqual([]);
+  });
+
+  it('lets an allowlisted sender through', async () => {
+    await deliver(privateCtx(), ALLOW_HUMAN);
+
+    expect(publishedSubjects()).toEqual([PRIVATE_SUBJECT]);
+  });
+
+  it('defaults to the allowlist when the config never reached the schema', async () => {
+    // The same reasoning as Slack's identical field: an integration nobody
+    // configured answers nobody, rather than answering the whole world.
+    await deliver(privateCtx(), {});
+
+    expect(publishedSubjects()).toEqual([]);
+  });
+
+  it("answers anyone when the operator chooses 'open'", async () => {
+    await deliver(privateCtx(), { dmPolicy: 'open' });
+
+    expect(publishedSubjects()).toEqual([PRIVATE_SUBJECT]);
+  });
+
+  it("does not gate group messages — those are the respond mode's business", async () => {
+    // An empty DM allowlist must not silence a group the bot was invited to.
+    await deliver(
+      createCtx({
+        text: '@dorkbot ping',
+        entities: [{ type: 'mention', offset: 0, length: 8 }],
+      }),
+      { dmPolicy: 'allowlist', dmAllowlist: [] }
+    );
+
+    expect(publishedSubjects()).toEqual([GROUP_SUBJECT]);
+  });
+
+  describe('the refusal is explained, once', () => {
+    // At `debug` this was invisible, and a bot that silently ignores you is
+    // indistinguishable from a broken one — right after setup, when the
+    // allowlist is empty, that is the FIRST thing a person meets.
+
+    it('warns with the id to add and the setting to change', async () => {
+      await deliver(privateCtx(), {
+        dmPolicy: 'allowlist',
+        dmAllowlist: [],
+        deniedNotices: createDeniedChatNotices(),
+      });
+
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain('Alice');
+      expect(warnings[0]).toContain('42'); // the id to paste
+      expect(warnings[0]).toContain(String(PRIVATE_ID)); // the chat
+      expect(warnings[0]).toContain('DM Allowlist'); // the setting to change
+      expect(warnings[0]).toContain('the allowlist is empty');
+    });
+
+    it('says it once per chat, however many messages arrive', async () => {
+      // One person retrying — or a stranger hammering the bot — must not be
+      // able to fill the operator's log.
+      const options = {
+        dmPolicy: 'allowlist' as const,
+        dmAllowlist: [],
+        deniedNotices: createDeniedChatNotices(),
+      };
+
+      await deliver(privateCtx(), options);
+      await deliver(privateCtx(), options);
+      await deliver(privateCtx(), options);
+
+      expect(warnings).toHaveLength(1);
+      expect(publishedSubjects()).toEqual([]);
+    });
+
+    it('explains each distinct chat separately', async () => {
+      const options = {
+        dmPolicy: 'allowlist' as const,
+        dmAllowlist: [],
+        deniedNotices: createDeniedChatNotices(),
+      };
+
+      await deliver(createCtx({ chatType: 'private', chatId: 111, text: 'hi' }), options);
+      await deliver(createCtx({ chatType: 'private', chatId: 222, text: 'hi' }), options);
+
+      expect(warnings).toHaveLength(2);
+    });
   });
 });

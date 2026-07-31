@@ -13,8 +13,14 @@ import type { BudgetResult } from './types.js';
 /** One hour in milliseconds — default TTL for new budgets. */
 const DEFAULT_TTL_MS = 3_600_000;
 
-/** Default maximum hop count when none is specified. */
-const DEFAULT_MAX_HOPS = 5;
+/**
+ * Default maximum hop count when none is specified.
+ *
+ * Exported because it is also the ceiling an adapter clamps a caller-declared
+ * budget against — a request may lower its own hop limit, never raise it (see
+ * the webhook adapter's `continuedBudget`).
+ */
+export const DEFAULT_MAX_HOPS = 5;
 
 /** Default call budget when none is specified. */
 const DEFAULT_CALL_BUDGET = 10;

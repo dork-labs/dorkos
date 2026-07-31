@@ -27,7 +27,7 @@ async function loadFixture(adapters: unknown[]): Promise<Record<string, unknown>
   const path = join(dir, 'adapters.json');
   await writeFile(path, JSON.stringify({ adapters }, null, 2), 'utf-8');
   const loaded = await loadAdapterConfig(path);
-  return loaded[0].config as Record<string, unknown>;
+  return loaded.adapters[0].config as Record<string, unknown>;
 }
 
 const SECRETS = { botToken: 'xoxb-1', appToken: 'xapp-1', signingSecret: 'sec' };
@@ -61,7 +61,7 @@ async function persistAndLoad(config: Record<string, unknown>, type = 'slack') {
   const path = join(dir, 'adapters.json');
   await saveAdapterConfig(path, [parsed]);
   const loaded = await loadAdapterConfig(path);
-  const effective = loaded[0].config as Record<string, unknown>;
+  const effective = loaded.adapters[0].config as Record<string, unknown>;
   return { persistedKey, effective };
 }
 

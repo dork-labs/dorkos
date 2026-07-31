@@ -63,10 +63,9 @@ export type PluginSource = z.infer<typeof PluginSourceSchema>;
  * When a chat integration answers a message in a group conversation.
  *
  * DMs are outside this decision on every platform: a direct message is
- * addressed to the bot by construction, so this never gates one. What does gate
- * a DM is per-platform and not implied here — Slack has `dmPolicy`, Telegram
- * has no such field and answers every direct message. These values only decide
- * group behavior.
+ * addressed to the bot by construction, so this never gates one. What gates a
+ * DM is `dmPolicy`, which both Slack and Telegram now carry with identical
+ * meaning. These values only decide group behavior.
  *
  * - `'always'` — answer every message in the group. An agent wins every race
  *   for the next turn, so this is the setting that produces the bot nobody can
@@ -119,8 +118,9 @@ export const TelegramAdapterConfigSchema = z
      * (`@botname`, a `/command@botname`, or a direct user mention), or it
      * replies to a message the bot itself sent.
      *
-     * Unlike `dmPolicy`, this deliberately has **no carry-forward and no
-     * startup warning** (`services/relay/safe-defaults.ts`). Both of those
+     * Unlike {@link TelegramAdapterConfigSchema.shape.dmPolicy}, this
+     * deliberately has **no carry-forward and no startup warning**
+     * (`services/relay/safe-defaults.ts`). Both of those
      * exist to preserve, and then confess, a permissive value an operator had
      * implicitly chosen. Neither applies here: Telegram never exposed this
      * setting, so nobody chose the old behavior, and every stored integration
@@ -130,8 +130,32 @@ export const TelegramAdapterConfigSchema = z
      */
     respondMode: RespondModeSchema.default(DEFAULT_RESPOND_MODE),
     /**
+     * Who may message the bot privately. Same field name, same values and the
+     * same meaning as {@link SlackAdapterConfigSchema.shape.dmPolicy} — one
+     * vocabulary, so the two integrations cannot drift into meaning different
+     * things by the same word.
+     *
+     * A private message starts an agent turn in the binding's project
+     * directory, and a Telegram bot handle is public: anybody who finds it
+     * could open a chat and run turns on the operator's machine. Group chats
+     * were gated (`respondMode`); private chats were not gated at all. Defaults
+     * to `'allowlist'` for the reason Slack does — an integration nobody
+     * configured answers nobody, rather than answering the whole world
+     * (DOR-604, ADR 260727-181825).
+     *
+     * Integrations that predate this field keep `'open'` so a working bot does
+     * not go silent on upgrade; see `services/relay/safe-defaults.ts`, which
+     * also folds an unreadable stored value to `'allowlist'`.
+     */
+    dmPolicy: z.enum(['open', 'allowlist']).default('allowlist'),
+    /** Telegram user IDs allowed to message the bot privately. */
+    dmAllowlist: z.array(z.string()).default([]),
+    /**
      * Telegram user IDs who may approve a tool call this agent asks about.
-     * Empty by default, and empty authorizes nobody (DOR-609).
+     * Empty by default, and empty authorizes nobody (DOR-609). Deliberately
+     * separate from {@link TelegramAdapterConfigSchema.shape.dmAllowlist}:
+     * talking to an agent and authorizing a shell command are different
+     * privileges.
      */
     approverAllowlist: z.array(z.string()).default([]),
   })

@@ -22,12 +22,21 @@ let bindingStore: BindingStore;
 /** The outbound-channel subject an agent would target to DM the user. */
 const HUMAN = 'relay.human.telegram.tg1.chat-42';
 
+/** The publish principal of the bound agent, as the mesh derives it. */
+const AGENT_SUBJECT = 'relay.agent.ns.agent-1';
+
 beforeEach(async () => {
   tmpDir = await mkdtemp(join(tmpdir(), 'dor277-integration-'));
   relay = new RelayCore({ dataDir: join(tmpDir, 'relay') });
   bindingStore = new BindingStore(join(tmpDir, 'relay'));
-  // Wire the gate against the real store — the exact index.ts seam.
-  relay.setInitiateConsentGate(createInitiateConsentGate({ bindingStore }));
+  // Wire the gate against the real store — the exact index.ts seam. The mesh
+  // lookup stands in for `meshCore`: `agent-1` publishes as AGENT_SUBJECT.
+  relay.setInitiateConsentGate(
+    createInitiateConsentGate({
+      bindingStore,
+      resolveAgentSubject: (agentId) => (agentId === 'agent-1' ? AGENT_SUBJECT : undefined),
+    })
+  );
 });
 
 afterEach(async () => {
@@ -122,5 +131,22 @@ describe('DOR-277 — canInitiate enforced at the delivery layer', () => {
 
     expect(result.deliveredTo).toBe(1);
     expect(delivered).toHaveLength(1);
+  });
+
+  it('BLOCKS a DIFFERENT agent from riding a consenting binding', async () => {
+    // The consent belongs to agent-1 on this channel. agent-2 is another agent
+    // on the same machine and has been granted nothing here.
+    await bindingStore.create({ adapterId: 'tg1', agentId: 'agent-1', canInitiate: true });
+    const delivered = watchOutbound();
+
+    const result = await relay.publish(
+      HUMAN,
+      { text: 'not my channel' },
+      { from: 'relay.agent.ns.agent-2' }
+    );
+
+    expect(result.deliveredTo).toBe(0);
+    expect(result.rejected?.[0]?.reason).toBe('initiate_denied');
+    expect(delivered).toHaveLength(0);
   });
 });

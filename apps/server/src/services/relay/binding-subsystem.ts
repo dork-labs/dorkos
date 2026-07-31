@@ -2,8 +2,9 @@
  * Binding subsystem initialization for the Relay adapter manager.
  *
  * Owns BindingStore, AgentSessionStore, and BindingRouter lifecycle.
- * Created by AdapterManager after adapters have started. Non-fatal on
- * failure — adapters continue working without binding-based routing.
+ * Created by AdapterManager BEFORE any adapter starts, and fatal on failure:
+ * an adapter that runs without this has nowhere to route a message and no
+ * consent to check. See {@link BindingSubsystem.init}.
  *
  * @module services/relay/binding-subsystem
  */
@@ -112,14 +113,30 @@ export class BindingSubsystem {
   /**
    * Initialize the binding subsystem: BindingStore, AgentSessionStore, and BindingRouter.
    *
-   * Non-fatal — if initialization fails, returns undefined and logs a warning.
-   * AdapterManager continues running without binding-based routing.
+   * **Throws on failure, and that is the fix.** This used to catch everything,
+   * log one warning, and return `undefined`. The caller then carried on and
+   * started the chat adapters anyway — so Telegram and Slack connected, accepted
+   * messages, and had nowhere to route them, while the consent gate that reads
+   * this subsystem's binding store was never installed. Every visible signal
+   * said the integration was up. The failure is reachable, not theoretical: the
+   * stores and the router open chokidar watchers, and `EMFILE` on a machine
+   * running several agents is a documented way to get here.
+   *
+   * The caller (`AdapterManager.initialize`) runs this BEFORE starting any
+   * adapter, so a throw means no adapter starts, the server logs the failure,
+   * and the relay stays quiet — which is the honest reading of "we cannot tell
+   * who may talk to whom".
+   *
+   * Anything opened before the failure is closed on the way out, so a retry
+   * (a hot-reload, a restart) does not leak a watcher or a file handle.
    *
    * @param deps - Required dependencies for subsystem initialization
-   * @returns Initialized subsystem, or undefined on failure
+   * @returns The initialized subsystem
+   * @throws If any of the three components fails to initialize
    */
-  static async init(deps: BindingSubsystemDeps): Promise<BindingSubsystem | undefined> {
+  static async init(deps: BindingSubsystemDeps): Promise<BindingSubsystem> {
     const relayDir = dirname(deps.configPath);
+    let subsystem: BindingSubsystem | undefined;
     try {
       const bindingStore = new BindingStore(relayDir);
       await bindingStore.init();
@@ -129,7 +146,7 @@ export class BindingSubsystem {
       await agentSessionStore.init();
       logger.info('[BindingSubsystem] AgentSessionStore initialized');
 
-      const subsystem = new BindingSubsystem(bindingStore, agentSessionStore);
+      subsystem = new BindingSubsystem(bindingStore, agentSessionStore);
 
       // New sessions created by the BindingRouter (e.g., first chat-platform
       // message from a user) need a runtime to be created against. Existing
@@ -165,9 +182,19 @@ export class BindingSubsystem {
 
       return subsystem;
     } catch (err) {
-      logger.warn('[BindingSubsystem] Failed to initialize binding subsystem:', err);
-      // Non-fatal: adapters still work, just no binding-based routing
-      return undefined;
+      logger.error(
+        '[BindingSubsystem] Failed to initialize binding subsystem — chat integrations ' +
+          'will not be started, because without it messages have nowhere to route and ' +
+          'no consent to check:',
+        err
+      );
+      // Close whatever did open, then let the caller fail.
+      if (subsystem) {
+        await subsystem.shutdown().catch((closeErr: unknown) => {
+          logger.warn('[BindingSubsystem] Cleanup after a failed init also failed:', closeErr);
+        });
+      }
+      throw err;
     }
   }
 

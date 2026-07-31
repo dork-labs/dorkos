@@ -863,7 +863,7 @@ describe('handleInboundMessage', () => {
       expect(relay.publish).toHaveBeenCalledTimes(1);
     });
 
-    it('allowlist: non-allowed user skips silently', async () => {
+    it('allowlist: a non-allowed user is turned away', async () => {
       const event = createEvent({ channel: 'D67890', user: 'U99999', text: 'hi' });
       await handleInboundMessage(
         event,
@@ -879,6 +879,86 @@ describe('handleInboundMessage', () => {
         { dmPolicy: 'allowlist', dmAllowlist: ['U12345'] }
       );
       expect(relay.publish).not.toHaveBeenCalled();
+    });
+
+    it('says so out loud, with the id to add and the setting to change', async () => {
+      // This used to drop at `debug`, i.e. invisibly. Right after setup the
+      // allowlist is empty, so silence was the first thing a person met.
+      const warnings: string[] = [];
+      const logger = {
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn((...args: unknown[]) => warnings.push(args.map(String).join(' '))),
+        error: vi.fn(),
+      };
+      const event = createEvent({ channel: 'D67890', user: 'U99999', text: 'hi' });
+
+      await handleInboundMessage(
+        event,
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        state,
+        logger,
+        'none',
+        undefined,
+        undefined,
+        {
+          dmPolicy: 'allowlist',
+          dmAllowlist: [],
+        }
+      );
+
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain('U99999');
+      expect(warnings[0]).toContain('DM Allowlist');
+      expect(warnings[0]).toContain('the allowlist is empty');
+    });
+
+    it('says it once per conversation, however many messages arrive', async () => {
+      // One person retrying must not be able to fill the operator's log.
+      const warnings: string[] = [];
+      const logger = {
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn((...args: unknown[]) => warnings.push(args.map(String).join(' '))),
+        error: vi.fn(),
+      };
+      const options = { dmPolicy: 'allowlist' as const, dmAllowlist: [] };
+
+      for (const ts of ['1111.0001', '1111.0002', '1111.0003']) {
+        await handleInboundMessage(
+          createEvent({ channel: 'D67890', user: 'U99999', text: 'hi', ts }),
+          client,
+          relay,
+          'UBOTID',
+          callbacks,
+          state,
+          logger,
+          'none',
+          undefined,
+          undefined,
+          options
+        );
+      }
+
+      expect(warnings).toHaveLength(1);
+      // A DIFFERENT conversation is still explained.
+      await handleInboundMessage(
+        createEvent({ channel: 'D55555', user: 'U99999', text: 'hi', ts: '2222.0001' }),
+        client,
+        relay,
+        'UBOTID',
+        callbacks,
+        state,
+        logger,
+        'none',
+        undefined,
+        undefined,
+        options
+      );
+      expect(warnings).toHaveLength(2);
     });
 
     it('open policy: all DMs process', async () => {

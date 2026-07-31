@@ -176,7 +176,7 @@ export class RelayCore {
       rootDir: mailboxesDir,
       onDeadLetter: options?.onDeadLetter,
     });
-    this.accessControl = new AccessControl(dataDir);
+    this.accessControl = new AccessControl(dataDir, options?.logger);
     this.signalEmitter = new SignalEmitter();
 
     const rateLimitConfig = { ...DEFAULT_RATE_LIMIT_CONFIG, ...options?.reliability?.rateLimit };

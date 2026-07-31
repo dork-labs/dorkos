@@ -45,7 +45,9 @@
  *
  * Every other principal — `relay.agent.*`, `relay.session.*`, `relay.external.mcp`,
  * the in-app console `relay.human.console`, or anything else — is treated as
- * agent-initiated and GATED when it targets a bound human channel. (The console
+ * agent-initiated and GATED when it targets a bound human channel, and a
+ * `relay.agent.*` principal must additionally BE the agent the binding names
+ * (see {@link createInitiateConsentGate}). (The console
  * operator's legitimate targets — agents and `relay.human.console.*` — are not
  * gated; only an attempt to start a conversation on an external channel is.)
  *
@@ -57,12 +59,65 @@
  */
 import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
 import type { InitiateConsentGate } from '@dorkos/relay';
+import { requiresInitiateConsent, isConsoleSubject, AGENT_SUBJECT_PREFIX } from '@dorkos/relay';
 import { parseHumanSubject } from './human-subject.js';
 
 /** Minimal binding-store surface the gate reads. */
 export interface ConsentBindingStore {
   /** Resolve the best-matching binding for a human channel target. */
   resolve(adapterId: string, chatId?: string, channelType?: string): AdapterBinding | undefined;
+}
+
+/**
+ * Look up the relay subject a mesh agent publishes under.
+ *
+ * The gate is handed a publish principal (`relay.agent.{namespace}.{agentId}`)
+ * and a binding that names a mesh agent id. This is the one bridge between
+ * them, and it must produce the same subject grammar the sender side does —
+ * both go through `subjectForAgent` over an un-stripped registry entry, so they
+ * agree by construction. See {@link createAgentSubjectResolver} for why this
+ * side reaches the entry by id rather than by project path.
+ *
+ * @param agentId - The mesh agent id recorded on a binding.
+ * @returns That agent's publish subject, or `undefined` if it is not registered.
+ */
+export type ResolveAgentSubject = (agentId: string) => string | undefined;
+
+/** The one mesh lookup {@link createAgentSubjectResolver} needs. */
+export interface ConsentMeshCore {
+  /**
+   * Registry entry for an agent id, including its canonical relay subject.
+   * `relaySubject` is nullable in the mesh's own schema; a null one names
+   * nobody, so it is treated exactly like an unregistered agent.
+   */
+  inspect(agentId: string): { relaySubject: string | null } | undefined;
+}
+
+/**
+ * Resolve a bound agent's publish subject **by id, straight from the registry**.
+ *
+ * The obvious spelling of this is `getProjectPath(agentId)` then
+ * `getSubjectByPath(path)`, and it is wrong. It turns an id into a path and a
+ * path back into an id, and those two are not a bijection: the mesh can hold
+ * two agents whose project paths collide (DOR-790), so the round trip can hand
+ * back a DIFFERENT agent's subject than the one it was asked about. In a
+ * consent gate that is not a stale lookup, it is an authorization decision made
+ * about the wrong principal — agent A allowed on agent B's binding.
+ *
+ * `inspect()` reads the registry entry for that id and builds the subject from
+ * it with `subjectForAgent`, the same grammar registration used. No path is
+ * involved, so no path collision can reach this. An unregistered id resolves to
+ * `undefined`, and the gate denies.
+ *
+ * @param meshCore - The mesh, or `undefined` when this server has none.
+ * @returns A resolver the consent gate can call.
+ */
+export function createAgentSubjectResolver(
+  meshCore: ConsentMeshCore | undefined
+): ResolveAgentSubject {
+  // No mesh means no agent can be shown to be the bound one, so the gate denies
+  // rather than waves through.
+  return (agentId) => meshCore?.inspect(agentId)?.relaySubject ?? undefined;
 }
 
 /**
@@ -116,17 +171,49 @@ export function isConsentExemptPrincipal(from: string): boolean {
  * enabled, consenting binding to is precisely the side door being closed, and it
  * mirrors the blessed proactive path, which also requires a binding.
  *
- * @param deps - The binding store used to resolve consent.
+ * ## Consent belongs to a pair, not to a channel
+ *
+ * `canInitiate` is a switch a person flips for **one agent on one channel**, and
+ * that is how the cockpit presents it ("let this agent start conversations
+ * here"). Checking only that *some* binding for the channel consents made it a
+ * property of the channel instead: every agent and every session on the machine
+ * could publish to a raw `relay.human.*` subject and reach that chat as the
+ * user's own bot, on a permission a different agent had been granted. So the
+ * sender is checked too — a `relay.agent.*` principal must be the agent the
+ * resolved binding names, compared through {@link ResolveAgentSubject} against
+ * the same subject derivation the sender side uses.
+ *
+ * Two deliberate calls in that check:
+ *
+ * - **A principal that is not a mesh agent and not the console is denied.** An
+ *   unregistered session (`relay.session.*`) or the external MCP surface
+ *   (`relay.external.mcp`) is not the bound agent and cannot become it, so
+ *   there is no binding whose consent covers it.
+ * - **The in-app console is exempt from the sender check only.** It is the
+ *   operator driving their own machine, and they own every binding on it; they
+ *   are still subject to `canInitiate`, so a channel switched off stays off.
+ *
+ * ## Bindings that match more than one chat
+ *
+ * A binding with no `chatId` matches every chat on its adapter (that is what
+ * the field's absence means, and `BindingStore.resolve` scores it accordingly).
+ * Sender scoping does not narrow that: the bound agent may still initiate to
+ * any chat on that adapter, because that is the scope the person chose when
+ * they left the chat filter empty. What it stops is a DIFFERENT agent riding
+ * that binding.
+ *
+ * @param deps - The binding store, and the mesh lookup that maps a bound agent
+ *   id to the subject that agent publishes under.
  */
 export function createInitiateConsentGate(deps: {
   bindingStore: ConsentBindingStore;
+  resolveAgentSubject: ResolveAgentSubject;
 }): InitiateConsentGate {
   return (from, subject) => {
-    // Only agent→human sends are subject to the gate.
-    if (!subject.startsWith('relay.human.')) return { allowed: true };
+    // Only sends to a bound external human channel are subject to the gate.
     // The in-app console is the operator's own UI — no binding, no initiate
-    // semantics. Never gate it (doing so would deny all console messaging).
-    if (subject.startsWith('relay.human.console.')) return { allowed: true };
+    // semantics — and `requiresInitiateConsent` carves it out.
+    if (!requiresInitiateConsent(subject)) return { allowed: true };
     // Trusted server-injected principals (replies, system, inbound bot echoes)
     // are not agent-initiated.
     if (isConsentExemptPrincipal(from)) return { allowed: true };
@@ -159,6 +246,58 @@ export function createInitiateConsentGate(deps: {
       };
     }
 
-    return { allowed: true };
+    return checkSender(from, binding, deps.resolveAgentSubject);
   };
+}
+
+/**
+ * Confirm the sender is the agent this binding's consent was granted to.
+ *
+ * @param from - The publish principal.
+ * @param binding - The binding whose consent was just checked.
+ * @param resolveAgentSubject - Mesh lookup: bound agent id → publish subject.
+ */
+function checkSender(
+  from: string,
+  binding: AdapterBinding,
+  resolveAgentSubject: ResolveAgentSubject
+): ReturnType<InitiateConsentGate> {
+  // The operator's own UI. They own every binding here; `canInitiate` above is
+  // the switch that still applies to them.
+  if (isConsoleSubject(from)) {
+    return { allowed: true };
+  }
+
+  if (!from.startsWith(AGENT_SUBJECT_PREFIX)) {
+    return {
+      allowed: false,
+      code: 'INITIATE_NOT_ALLOWED',
+      reason:
+        `initiate denied: "${from}" is not a registered agent, so no binding's ` +
+        `consent covers it`,
+    };
+  }
+
+  const boundSubject = resolveAgentSubject(binding.agentId);
+  if (!boundSubject) {
+    return {
+      allowed: false,
+      code: 'NO_BINDING',
+      reason:
+        `initiate denied: binding ${binding.id} names agent "${binding.agentId}", ` +
+        `which is not registered in the mesh`,
+    };
+  }
+
+  if (boundSubject !== from) {
+    return {
+      allowed: false,
+      code: 'INITIATE_NOT_ALLOWED',
+      reason:
+        `initiate denied: binding ${binding.id} lets "${boundSubject}" start ` +
+        `conversations here, not "${from}"`,
+    };
+  }
+
+  return { allowed: true };
 }

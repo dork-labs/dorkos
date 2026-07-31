@@ -90,13 +90,25 @@ An optional secret token for additional request verification. When set, Telegram
 
 If left empty, DorkOS auto-generates a secure secret on first connection.
 
+## Who Can Message the Bot
+
+Your bot's username is public: anyone who finds it can open a chat and send it a message, and a message starts a real agent turn on your machine. So a new integration answers only the people you name.
+
+- **DM Access** — `Allowlist only` by default. Set it to `Open (anyone)` if you really do want the bot to answer everyone.
+- **DM Allowlist** — the Telegram user IDs allowed to message it privately, one per line. A user ID is a number, not a `@handle`.
+
+Don't know your ID? Message the bot once. DorkOS turns the message away and writes a line to the server log naming the exact ID to paste in. It writes that line once per chat, so a second message will not repeat it.
+
+Group chats are separate: **Replies in Groups** decides when the bot speaks there, and the allowlist does not apply.
+
 ## Testing
 
 After saving the adapter configuration:
 
 1. Open Telegram and find your bot by its username.
-2. Send a message (e.g., "Hello").
-3. In the DorkOS Relay panel, verify the message appears in the adapter's activity log.
-4. Check the adapter status shows **connected** in the Relay settings.
+2. Add your own Telegram user ID to the **DM Allowlist** (or send one message first and read the ID out of the server log).
+3. Send a message (e.g., "Hello").
+4. In the DorkOS Relay panel, verify the message appears in the adapter's activity log.
+5. Check the adapter status shows **connected** in the Relay settings.
 
-If the bot does not respond, check the DorkOS server logs for connection errors and verify the token is correct.
+If the bot does not respond, check the DorkOS server logs. A connection error means the token is wrong; a line about the DM allowlist means the bot is working and is deliberately ignoring that person.

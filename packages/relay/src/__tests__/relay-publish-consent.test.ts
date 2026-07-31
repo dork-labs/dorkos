@@ -122,19 +122,76 @@ describe('publish pipeline — initiate-consent gate (DOR-277)', () => {
     expect(result.rejected?.[0]?.reason).toBe('initiate_denied');
   });
 
-  it('is a no-op when no gate is injected (backward compatible)', async () => {
-    const received: RelayEnvelope[] = [];
-    relay.subscribe('relay.human.telegram.tg1.chat-42', (env) => {
-      received.push(env);
+  describe('no gate installed at all', () => {
+    // The gate is installed by the host only once the binding store it reads
+    // exists, and that subsystem can fail to come up. Treating "no gate" as
+    // "everybody consents" turned a broken boot into an open channel.
+
+    it('denies a send to a bound human channel', async () => {
+      const received: RelayEnvelope[] = [];
+      relay.subscribe('relay.human.telegram.tg1.chat-42', (env) => {
+        received.push(env);
+      });
+
+      const result = await relay.publish(
+        'relay.human.telegram.tg1.chat-42',
+        { text: 'no gate wired' },
+        { from: 'relay.agent.ns.agent-1' }
+      );
+
+      expect(result.deliveredTo).toBe(0);
+      expect(received).toHaveLength(0);
+      expect(result.rejected?.[0]?.reason).toBe('initiate_denied');
+
+      const deadLetters = await relay.getDeadLetters();
+      expect(
+        deadLetters.some((d) => d.envelope?.subject === 'relay.human.telegram.tg1.chat-42')
+      ).toBe(true);
     });
 
-    const result = await relay.publish(
-      'relay.human.telegram.tg1.chat-42',
-      { text: 'no gate wired' },
-      { from: 'relay.agent.ns.agent-1' }
-    );
+    it('denies it for a reply principal too — nothing reaches the channel undecided', async () => {
+      // With a gate installed, `agent:` replies are exempt. With NO gate there
+      // is no exemption to apply, because there is nothing to be exempt FROM.
+      const result = await relay.publish(
+        'relay.human.slack.s1.C123',
+        { text: 'reply with no gate' },
+        { from: 'agent:session-abc' }
+      );
 
-    expect(result.deliveredTo).toBe(1);
-    expect(received).toHaveLength(1);
+      expect(result.deliveredTo).toBe(0);
+      expect(result.rejected?.[0]?.reason).toBe('initiate_denied');
+    });
+
+    it('still delivers agent-to-agent traffic', async () => {
+      const received: RelayEnvelope[] = [];
+      relay.subscribe('relay.agent.ns.other', (env) => {
+        received.push(env);
+      });
+
+      const result = await relay.publish(
+        'relay.agent.ns.other',
+        { text: 'peer to peer' },
+        { from: 'relay.agent.ns.agent-1' }
+      );
+
+      expect(result.deliveredTo).toBe(1);
+      expect(received).toHaveLength(1);
+    });
+
+    it("still delivers to the operator's own console", async () => {
+      const received: RelayEnvelope[] = [];
+      relay.subscribe('relay.human.console.client-9', (env) => {
+        received.push(env);
+      });
+
+      const result = await relay.publish(
+        'relay.human.console.client-9',
+        { text: 'talking to myself' },
+        { from: 'relay.agent.ns.agent-1' }
+      );
+
+      expect(result.deliveredTo).toBe(1);
+      expect(received).toHaveLength(1);
+    });
   });
 });

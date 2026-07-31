@@ -99,6 +99,13 @@ export interface BudgetResult {
 export interface AccessResult {
   allowed: boolean;
   matchedRule?: RelayAccessRule;
+  /**
+   * Why access was denied, when no rule is responsible for it — today only the
+   * unreadable-rules quarantine (see {@link AccessControl}). Surfaced verbatim
+   * in the publish error so an operator is told what to repair instead of being
+   * told a rule they cannot find denied them.
+   */
+  reason?: string;
 }
 
 /**

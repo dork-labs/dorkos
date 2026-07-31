@@ -1306,6 +1306,47 @@ describe('AdapterManager', () => {
       expect(adapters.find((a) => a.config.id === 'tg-main')).toBeUndefined();
     });
 
+    it('deletes an entry whose saved settings could not be read', async () => {
+      // Held aside rather than started, such an entry was undeletable from
+      // every surface: invisible to the list, unremovable by name, rewritten on
+      // every save. Deleting it is also the only way to clear a cleartext
+      // credential stuck inside it.
+      vi.mocked(readFile).mockResolvedValue(
+        JSON.stringify({
+          adapters: [
+            {
+              id: 'tg-main',
+              type: 'telegram',
+              enabled: true,
+              config: { token: 'tok', mode: 'polling' },
+            },
+            { id: 'broken', type: 'telegram', enabled: 'yes please', config: null },
+          ],
+        })
+      );
+      await initAndStart(manager);
+      vi.mocked(writeFile).mockClear();
+
+      await manager.removeAdapter('broken');
+
+      const savedJson = vi.mocked(writeFile).mock.calls.at(-1)?.[1] as string;
+      const saved = JSON.parse(savedJson).adapters as Array<{ id: string }>;
+      expect(saved.map((a) => a.id)).toEqual(['tg-main']);
+    });
+
+    it('still reports NOT_FOUND for an id no entry carries, readable or not', async () => {
+      vi.mocked(readFile).mockResolvedValue(
+        JSON.stringify({
+          adapters: [{ id: 'broken', type: 'telegram', enabled: 'yes please', config: null }],
+        })
+      );
+      await initAndStart(manager);
+
+      await expect(manager.removeAdapter('never-existed')).rejects.toMatchObject({
+        code: 'NOT_FOUND',
+      });
+    });
+
     it('returns NOT_FOUND for unknown IDs', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
       await initAndStart(manager);

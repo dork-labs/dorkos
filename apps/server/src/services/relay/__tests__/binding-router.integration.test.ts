@@ -20,6 +20,7 @@ import type { RelayPublisher, AdapterRegistryLike, DeliveryResult } from '@dorko
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import { BindingRouter } from '../binding-router.js';
 import { BindingStore } from '../binding-store.js';
+import { createInitiateConsentGate } from '../initiate-consent.js';
 import type { AdapterMeshCoreLike } from '../adapter-manager.js';
 
 const PLATFORM_SUBJECT = 'relay.human.telegram.tg-bot.12345';
@@ -118,6 +119,19 @@ beforeEach(async () => {
   bindingStore = new BindingStore(relayDir);
   await bindingStore.init();
   await bindingStore.create({ adapterId: 'tg-bot', agentId: 'agent-a' });
+
+  // The real consent gate, wired the way index.ts wires it. Without one the
+  // relay refuses to deliver to a human channel at all, so leaving it out
+  // would test a configuration that never runs. Both flows here are exempt
+  // principals — the inbound `.bot` echo and the `agent:` reply — so the
+  // binding's `canInitiate` (false by default) does not gate them.
+  relay.setInitiateConsentGate(
+    createInitiateConsentGate({
+      bindingStore,
+      resolveAgentSubject: (agentId) =>
+        agentId === 'agent-a' ? 'relay.agent.ns.agent-a' : undefined,
+    })
+  );
 
   createSession = vi.fn(async () => ({ id: 'session-1' }));
 

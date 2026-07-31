@@ -4,11 +4,15 @@
  *
  * `BindingSubsystem.init` picks the runtime that new chat-originated sessions
  * are created against. It used to look up `runtimeRegistry.getDefaultType()` in
- * the AdapterManager's runtime map and throw when it missed — and `init` catches
- * its own throw, downgrades it to a warn line, and returns `undefined`. The
- * caller treats that as "no binding routing" and carries on. So the failure mode
- * was a server that boots clean, connects its chat adapters, accepts messages,
- * and delivers none of them.
+ * the AdapterManager's runtime map and throw when it missed — and `init` caught
+ * its own throw, downgraded it to a warn line, and returned `undefined`. The
+ * caller treated that as "no binding routing" and carried on. So the failure
+ * mode was a server that boots clean, connects its chat adapters, accepts
+ * messages, and delivers none of them.
+ *
+ * Both halves are now closed: the runtime lookup falls back rather than
+ * throwing, and a failure that IS fatal propagates instead of being swallowed
+ * (see the second describe block).
  *
  * Two configurations hit that miss. `runtimes.default: opencode` is the one this
  * ticket is about. The other has been live the whole time: under
@@ -38,6 +42,8 @@ vi.mock('../../core/runtime-registry.js', () => ({
 }));
 
 import { BindingSubsystem } from '../binding-subsystem.js';
+import { BindingStore } from '../binding-store.js';
+import { BindingRouter } from '../binding-router.js';
 import type { AdapterMeshCoreLike } from '../adapter-manager.js';
 
 /**
@@ -99,8 +105,7 @@ describe('BindingSubsystem.init runtime selection', () => {
     const claude = fakeRuntime('claude-code');
     const subsystem = await init(new Map([['claude-code', claude]]));
 
-    expect(subsystem).toBeDefined();
-    expect(subsystem?.getBindingRouter()).toBeDefined();
+    expect(subsystem.getBindingRouter()).toBeDefined();
   });
 
   it('initializes routing when the default runtime is opencode and the relay holds claude-code', async () => {
@@ -112,8 +117,7 @@ describe('BindingSubsystem.init runtime selection', () => {
 
     const subsystem = await init(new Map([['claude-code', claude]]));
 
-    expect(subsystem).toBeDefined();
-    expect(subsystem?.getBindingRouter()).toBeDefined();
+    expect(subsystem.getBindingRouter()).toBeDefined();
   });
 
   it('initializes routing in test mode, where the default type is test-mode', async () => {
@@ -125,8 +129,7 @@ describe('BindingSubsystem.init runtime selection', () => {
 
     const subsystem = await init(new Map([['test-mode', testMode]]));
 
-    expect(subsystem).toBeDefined();
-    expect(subsystem?.getBindingRouter()).toBeDefined();
+    expect(subsystem.getBindingRouter()).toBeDefined();
   });
 
   it('prefers the default runtime over another the relay also holds', async () => {
@@ -171,9 +174,51 @@ describe('BindingSubsystem.init runtime selection', () => {
     expect((claude as unknown as { ensured: string[] }).ensured).toHaveLength(1);
   });
 
-  it('returns undefined when the relay holds no runtimes at all', async () => {
-    // The one case that genuinely cannot be served. It must still be non-fatal.
-    const subsystem = await init(new Map());
-    expect(subsystem).toBeUndefined();
+  it('throws when the relay holds no runtimes at all', async () => {
+    // The one case that genuinely cannot be served. It used to be swallowed
+    // into `undefined`, and the caller started the chat adapters anyway.
+    await expect(init(new Map())).rejects.toThrow(/holds no agent runtimes/);
+  });
+});
+
+describe('BindingSubsystem.init failure handling', () => {
+  /**
+   * A failure inside init used to become one warn line and `undefined`, and the
+   * caller — which runs this BEFORE starting any adapter — carried on. Telegram
+   * and Slack then connected, accepted messages, routed none of them, and the
+   * consent gate that reads this subsystem's binding store was never installed.
+   * A throw is what stops the adapters from starting at all.
+   */
+  it('propagates a store failure instead of returning undefined', async () => {
+    // `EMFILE` is the documented shape of this on a machine running several
+    // agents at once: the store's watcher cannot be attached.
+    const failure = new Error('EMFILE: too many open files');
+    const spy = vi.spyOn(BindingStore.prototype, 'init').mockRejectedValue(failure);
+    try {
+      await expect(init(new Map([['claude-code', fakeRuntime('claude-code')]]))).rejects.toThrow(
+        failure
+      );
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('closes what it opened before rethrowing', async () => {
+    // A retry (a hot-reload, a restart) must not leak the watcher or file
+    // handle the first attempt had already opened.
+    const shutdown = vi.fn(async () => {});
+    const routerInit = vi
+      .spyOn(BindingRouter.prototype, 'init')
+      .mockRejectedValue(new Error('EMFILE: too many open files'));
+    const storeShutdown = vi.spyOn(BindingStore.prototype, 'shutdown').mockImplementation(shutdown);
+    try {
+      await expect(init(new Map([['claude-code', fakeRuntime('claude-code')]]))).rejects.toThrow(
+        /EMFILE/
+      );
+      expect(shutdown).toHaveBeenCalledTimes(1);
+    } finally {
+      routerInit.mockRestore();
+      storeShutdown.mockRestore();
+    }
   });
 });
