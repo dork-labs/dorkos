@@ -108,6 +108,7 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'ui.sidebar.ungroupedCollapsed',
   'ui.sidebar.recentsCollapsed',
   'ui.sidebar.channelsCollapsed',
+  'ui.sidebar.threadsCollapsed',
   'ui.sidebar.dmsCollapsed',
   'ui.sidebar.groupsHintDismissed',
   'ui.sidebar.muted[].kind',

@@ -5152,6 +5152,82 @@
           "lastActivityAt"
         ]
       },
+      "ThreadListResponse": {
+        "type": "object",
+        "properties": {
+          "threads": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ThreadSummary"
+            }
+          }
+        },
+        "required": [
+          "threads"
+        ]
+      },
+      "ThreadSummary": {
+        "type": "object",
+        "properties": {
+          "roomId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "roomKind": {
+            "$ref": "#/components/schemas/RoomKind"
+          },
+          "roomSlug": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Channels only, as on the room itself."
+          },
+          "roomTitle": {
+            "type": "string",
+            "minLength": 1
+          },
+          "rootEntryId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The entry the thread hangs off."
+          },
+          "rootAuthorId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "rootPreview": {
+            "type": "string",
+            "description": "The root's text, truncated to 160 characters. Empty when the root carried no text — a row draws a placeholder rather than pretending the message was blank."
+          },
+          "replyCount": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Replies below the root. Never counts the root."
+          },
+          "unreadCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Replies above the reader's `(member, room)` read cursor. Opening the room clears this, exactly as it clears the room's own badge: there is one cursor per (member, room) and threads share it. A reply of the reader's OWN counts while it sits above that cursor — unread is measured against the cursor and nothing else, which is how `countUnread` measures the room's badge, and one rule measured in one place is worth more here than a special case for your own words. In practice the room you just wrote in is the room you have open, so the cursor passes it immediately."
+          },
+          "lastActivityAt": {
+            "type": "string",
+            "description": "The newest reply's timestamp. The list is sorted on it."
+          }
+        },
+        "required": [
+          "roomId",
+          "roomKind",
+          "roomSlug",
+          "roomTitle",
+          "rootEntryId",
+          "rootAuthorId",
+          "rootPreview",
+          "replyCount",
+          "unreadCount",
+          "lastActivityAt"
+        ]
+      },
       "RoomWithRoster": {
         "allOf": [
           {
@@ -12993,6 +13069,50 @@
           },
           "409": {
             "description": "A live channel already holds that slug",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/threads": {
+      "get": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "List threads the caller takes part in, across every room",
+        "description": "Every thread the caller started or replied in, newest activity first, with the room it lives in, an excerpt of its opening message, its reply count and how many of those replies are above the caller's read cursor. Participation selects a thread and the room's roster permits it: the caller wrote the root or one of the replies, AND is on that room's roster today — so a room they have been removed from contributes no threads at all. There is no follow list and nothing here is stored; the list is derived from the room log on every read. `unreadCount` shares the room's single `(member, room)` cursor, so opening a room clears its threads' counts along with its own.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Threads, newest activity first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
             "content": {
               "application/json": {
                 "schema": {

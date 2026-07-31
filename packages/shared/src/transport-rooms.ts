@@ -15,6 +15,7 @@ import type {
   CreateRoomRequest,
   ListRoomEntriesQuery,
   ListRoomsQuery,
+  ListThreadsQuery,
   PostThreadReplyRequest,
   PostToRoomRequest,
   PostToRoomResponse,
@@ -24,6 +25,7 @@ import type {
   RoomRosterEntry,
   RoomSummary,
   RoomWithRoster,
+  ThreadSummary,
   ToggleReactionRequest,
   ToggleReactionResponse,
   UpdateMembershipRequest,
@@ -45,6 +47,24 @@ export interface RoomTransport {
    * @param query - Optional `kind` / `includeArchived` filters.
    */
   listRooms(query?: ListRoomsQuery): Promise<RoomSummary[]>;
+  /**
+   * List every thread this caller takes part in, across every room, newest
+   * activity first.
+   *
+   * Participation selects a thread and the room's roster permits it — the caller
+   * wrote the root or wrote a reply, AND is on that room's roster today. There
+   * is no follow list to consult and nothing is stored, so this is derived on
+   * every read. A room the caller has been removed from contributes no threads
+   * at all, so every summary here names a room they are currently in.
+   *
+   * `unreadCount` shares that room's single `(member, room)` read cursor, which
+   * is why opening a room clears its threads' counts along with the room's own
+   * badge. Unlike `RoomSummary.unreadCount` it is never `null`: that field
+   * carries a non-member case this one cannot have.
+   *
+   * @param query - Optional `limit`.
+   */
+  listThreads(query?: ListThreadsQuery): Promise<ThreadSummary[]>;
   /**
    * Create a channel or a DM. The caller joins it automatically.
    *

@@ -1,5 +1,6 @@
 /**
- * Keep the sidebar's room list honest about rooms the reader does not have open.
+ * Keep the sidebar's room list and thread list honest about rooms the reader
+ * does not have open.
  *
  * A room's entries ride its own `/api/rooms/:id/events` stream, which only the
  * open room subscribes to. Everything else a list row shows — a channel someone
@@ -38,6 +39,12 @@ export function useRoomListStream(): void {
   const queryClient = useQueryClient();
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: roomKeys.lists() });
+    // The Threads section is refreshed by the same events, and has to be: a
+    // reply lands in a room nobody has open, and the row that has to notice is
+    // in the sidebar rather than in the room. `room_activity` fires for a thread
+    // reply exactly as it does for a top-level post — a reply IS an entry in the
+    // room's log (ADR 260728-022013), so there is no second event to wait for.
+    void queryClient.invalidateQueries({ queryKey: roomKeys.threads() });
   };
 
   // A fixed-length literal tuple, so the hook count never varies between

@@ -924,11 +924,16 @@ export function backfillSidebarSettingsDefaults(store: {
 }
 
 /**
- * Migration body: backfill the two room-section collapse flags onto an EXISTING
- * `ui.sidebar` — `channelsCollapsed` and `dmsCollapsed`, both `false` (rooms
- * sidebar, DOR-525). conf merges top-level defaults SHALLOWLY, so a `ui.sidebar`
+ * Migration body: backfill the three room-section collapse flags onto an
+ * EXISTING `ui.sidebar` — `channelsCollapsed` and `dmsCollapsed` (rooms sidebar,
+ * DOR-525) and `threadsCollapsed` (the Threads section, room-messaging-design
+ * §3), all `false`. conf merges top-level defaults SHALLOWLY, so a `ui.sidebar`
  * already on disk never inherits new nested fields on its own; this supplies
  * them. Additive + idempotent: only writes a field that is actually missing.
+ *
+ * `threadsCollapsed` joins the same unreleased key rather than taking one of
+ * its own: it is the identical backfill on the identical object, and a second
+ * function would run a second write for the same reason.
  * The whole-section-absent case is handled by the schema default on read and by
  * `backfillSidebarDefaults` for an existing `ui` block with no `sidebar`.
  *
@@ -948,7 +953,13 @@ export function backfillSidebarRoomSections(store: {
   if (!sidebar || typeof sidebar !== 'object') return;
 
   const s = sidebar as Record<string, unknown>;
-  if (s.channelsCollapsed !== undefined && s.dmsCollapsed !== undefined) return;
+  if (
+    s.channelsCollapsed !== undefined &&
+    s.dmsCollapsed !== undefined &&
+    s.threadsCollapsed !== undefined
+  ) {
+    return;
+  }
 
   store.set('ui', {
     ...(ui as Record<string, unknown>),
@@ -956,6 +967,7 @@ export function backfillSidebarRoomSections(store: {
       ...s,
       channelsCollapsed: s.channelsCollapsed ?? false,
       dmsCollapsed: s.dmsCollapsed ?? false,
+      threadsCollapsed: s.threadsCollapsed ?? false,
     },
   });
 }
@@ -1485,9 +1497,10 @@ export const CONFIG_MIGRATIONS = {
     // agent's hook files, DOR-522). Additive + idempotent; seeds the list EMPTY,
     // so an upgrade never hands out an approval nobody gave.
     backfillHarnessApprovedHooks(store);
-    // `ui.sidebar.channelsCollapsed` / `ui.sidebar.dmsCollapsed` (the Channels
-    // and Direct messages sections, DOR-525). Additive + idempotent; both seed
-    // expanded so an upgrade shows the new sections rather than hiding them.
+    // `ui.sidebar.channelsCollapsed` / `dmsCollapsed` / `threadsCollapsed` (the
+    // Channels, Direct messages and Threads sections; DOR-525 and the room
+    // messaging design §3). Additive + idempotent; all seed expanded so an
+    // upgrade shows the new sections rather than hiding them.
     backfillSidebarRoomSections(store);
     // The `rooms` section (DOR-526): `maxAgentDepth`, how far agents may reply
     // to each other before a room stops them, plus the two spend caps that hold

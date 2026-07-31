@@ -46,7 +46,14 @@ export function useMarkRoomRead(
       // stream resumes from the cache and never re-delivers, so that entry would be
       // lost until something else refetched. The history belongs to the stream;
       // only the badge and the cursor are this mutation's to refresh.
+      //
+      // The Threads list is a badge too, and it is refreshed for exactly that
+      // reason: a thread's unread count is measured against this same cursor
+      // (there is one per `(member, room)` and threads share it), so moving the
+      // cursor without refreshing that list leaves a count beside a room the
+      // reader has just finished reading.
       void queryClient.invalidateQueries({ queryKey: roomKeys.lists() });
+      void queryClient.invalidateQueries({ queryKey: roomKeys.threads() });
       void queryClient.invalidateQueries({ queryKey: roomKeys.detail(roomId) });
     },
     onError: () => {
@@ -108,6 +115,7 @@ export function useMarkRoomReadNow(): UseMutationResult<void, Error, string> {
     },
     onSuccess: (_result, roomId) => {
       void queryClient.invalidateQueries({ queryKey: roomKeys.lists() });
+      void queryClient.invalidateQueries({ queryKey: roomKeys.threads() });
       void queryClient.invalidateQueries({ queryKey: roomKeys.detail(roomId) });
     },
     meta: { errorLabel: "Couldn't mark that room as read" },

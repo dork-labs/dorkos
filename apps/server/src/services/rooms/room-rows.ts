@@ -57,6 +57,28 @@ export interface NewRoomEntry {
 }
 
 /**
+ * One grouped row from {@link RoomStore.listThreadsForMember} — a thread and the
+ * room it lives in, before the root's body is parsed and truncated.
+ *
+ * `rootBody` is the raw JSON column rather than a preview, because turning a
+ * body into one line of text is a product decision (`RoomService.listThreads`
+ * makes it) and the store's job stops at the row.
+ */
+export interface ThreadAggregateRow {
+  roomId: string;
+  roomKind: string;
+  roomSlug: string | null;
+  roomTitle: string;
+  rootEntryId: string;
+  rootAuthorId: string;
+  /** The root's `body` column, still JSON. */
+  rootBody: string;
+  replyCount: number;
+  unreadCount: number;
+  lastActivityAt: string;
+}
+
+/**
  * Narrow a room row's stringly-typed `kind` onto the domain union.
  *
  * @param row - The stored row.
@@ -88,9 +110,21 @@ export function toEntry(row: RoomEntryRow): RoomEntry {
   return {
     ...row,
     kind: row.kind as RoomEntryKind,
-    body: parseJson<RoomEntryBody>(row.body, { text: row.body }),
+    body: parseEntryBody(row.body),
     mentions: parseJson<string[]>(row.mentions, []),
   };
+}
+
+/**
+ * Parse an entry's `body` column, degrading to the raw text rather than
+ * throwing. Exported because the cross-room thread list reads a root's body
+ * without building the whole entry around it, and two spellings of "what does
+ * a corrupted body mean" is one more than this store gets to have.
+ *
+ * @param raw - The stored `body` column.
+ */
+export function parseEntryBody(raw: string): RoomEntryBody {
+  return parseJson<RoomEntryBody>(raw, { text: raw });
 }
 
 /** Parse a column we wrote as JSON, falling back rather than throwing. */

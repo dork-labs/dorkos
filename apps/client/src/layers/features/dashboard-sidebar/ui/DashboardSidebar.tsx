@@ -24,6 +24,8 @@ import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import {
   useRooms,
   useRoomsByKind,
+  useThreads,
+  useRoomOpenThreadStore,
   roomDisplayTitle,
   type RoomSummary,
 } from '@/layers/entities/room';
@@ -36,6 +38,7 @@ import {
 } from '@/layers/entities/session';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 import type { Session } from '@dorkos/shared/types';
+import type { ThreadSummary } from '@dorkos/shared/room-schemas';
 import type { SmartGroupRules } from '@dorkos/shared/config-schema';
 import type { SmartGroupCandidate } from '@dorkos/shared/smart-groups';
 import { PromoSlot } from '@/layers/features/feature-promos';
@@ -45,6 +48,7 @@ import { AgentOnboardingCard } from './AgentOnboardingCard';
 import { SidebarNavHeader } from './SidebarNavHeader';
 import { RecentSessionsSection } from './RecentSessionsSection';
 import { ChannelsSection } from './rooms/ChannelsSection';
+import { ThreadsSection } from './rooms/ThreadsSection';
 import { DirectMessagesSection } from './rooms/DirectMessagesSection';
 import { RoomRow } from './rooms/RoomRow';
 import { PinnedSection } from './PinnedSection';
@@ -143,11 +147,48 @@ export function DashboardSidebar() {
     () => Object.fromEntries((roomsQuery.data ?? []).map((r) => [r.id, roomDisplayTitle(r)])),
     [roomsQuery.data]
   );
-  const channelsSearch = useSearch({ strict: false }) as { id?: string };
+  const channelsSearch = useSearch({ strict: false }) as { id?: string; thread?: string };
   const activeRoomId = pathname === '/channels' ? (channelsSearch.id ?? null) : null;
+  const activeThreadId = pathname === '/channels' ? (channelsSearch.thread ?? null) : null;
   const handleSelectRoom = useCallback(
     (room: RoomSummary) => {
       navigate({ to: '/channels', search: { id: room.id } });
+    },
+    [navigate]
+  );
+
+  // ── Threads (room-messaging-design §3) ──
+  // Every thread this person is in, wherever it lives. Its own query rather
+  // than a slice of the room list: a thread is not a room, and the question
+  // "where is this thread?" is the one the room list cannot answer.
+  const threadsQuery = useThreads();
+  const threads = useMemo(() => threadsQuery.data ?? [], [threadsQuery.data]);
+
+  /**
+   * Open a thread: its room, with its panel showing.
+   *
+   * **The store is written BEFORE the URL, and both are needed.** The panel
+   * reads the open-thread store and `ChannelsPage` mirrors it into `?thread=`;
+   * the URL is only read back on the way INTO a room, once per room. So
+   * navigating alone would land correctly on a room the reader is not already
+   * in and do nothing at all — worse than nothing, actually — when they are:
+   * the mirror would find the store still holding the old thread and write the
+   * new `?thread=` straight back out of the address bar. Setting the store is
+   * what opens the panel; the search param is what makes the result linkable.
+   *
+   * **This PUSHES a history entry, while `useThreadUrlSync` replaces — and the
+   * two are right to differ.** That hook mirrors a panel being opened and
+   * closed inside a room you are already looking at, which is reading rather
+   * than going somewhere; pushing there would make Back walk through every
+   * thread you glanced at. This is a sidebar row that changes which ROOM is on
+   * screen — the same act as `handleSelectRoom` directly above, which pushes
+   * too — so Back should return you to where you came from rather than skip
+   * past it.
+   */
+  const handleSelectThread = useCallback(
+    (thread: ThreadSummary) => {
+      useRoomOpenThreadStore.getState().openThread(thread.roomId, thread.rootEntryId);
+      navigate({ to: '/channels', search: { id: thread.roomId, thread: thread.rootEntryId } });
     },
     [navigate]
   );
@@ -587,6 +628,13 @@ export function DashboardSidebar() {
               onSelectSession={handleResumeRecentSession}
             />
           )}
+
+          <ThreadsSection
+            threads={threads}
+            error={threadsQuery.error}
+            activeThreadId={activeThreadId}
+            onSelectThread={handleSelectThread}
+          />
 
           <ChannelsSection
             channels={ungroupedChannels}

@@ -21,6 +21,7 @@ import {
   CreateRoomRequestSchema,
   ListRoomEntriesQuerySchema,
   ListRoomsQuerySchema,
+  ListThreadsQuerySchema,
   PostThreadReplyRequestSchema,
   PostToRoomRequestSchema,
   SetReadCursorRequestSchema,
@@ -99,6 +100,30 @@ router.post('/', (req, res) => {
     res.status(created ? 201 : 200).json(room);
   } catch (err) {
     sendRoomError(res, err, 'POST /');
+  }
+});
+
+/**
+ * GET /threads — every thread the caller takes part in, across every room,
+ * newest activity first.
+ *
+ * **Declared before `GET /:id`, and it has to be.** Express matches in
+ * declaration order, so a `/:id` above this one would answer `/threads` with a
+ * 404 for a room called "threads". A literal segment goes above its parameter.
+ *
+ * The only cross-room read in this file. A thread is a relation between entries
+ * inside one room (ADR 260728-022013), so every other thread route is scoped to
+ * `/:id` — this one exists because a sidebar cannot ask a question of a room it
+ * has not been told about yet.
+ */
+router.get('/threads', (req, res) => {
+  const query = parseBody(ListThreadsQuerySchema, req.query, res);
+  if (!query) return;
+  try {
+    const caller = resolveCaller(res);
+    res.json({ threads: getRoomService().listThreads(caller.id, query.limit) });
+  } catch (err) {
+    sendRoomError(res, err, 'GET /threads');
   }
 });
 

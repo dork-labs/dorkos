@@ -22,6 +22,8 @@ import {
   gt,
   ne,
   isNull,
+  isNotNull,
+  alias,
   sql,
   count,
   desc,
@@ -29,7 +31,14 @@ import {
 } from '@dorkos/db';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { Room, RoomEntry, RoomKind, RoomMember } from '@dorkos/shared/room-schemas';
-import { toEntry, toMember, toRoom, type NewRoom, type NewRoomEntry } from './room-rows.js';
+import {
+  toEntry,
+  toMember,
+  toRoom,
+  type NewRoom,
+  type NewRoomEntry,
+  type ThreadAggregateRow,
+} from './room-rows.js';
 
 /** Persistence for rooms, memberships, entries, and per-room agent sessions. */
 export class RoomStore {
@@ -806,6 +815,97 @@ export class RoomStore {
       )
       .get();
     return row?.value ?? 0;
+  }
+
+  /**
+   * Every thread one author takes part in, across every room, newest first.
+   *
+   * **Participation is what SELECTS a thread; the roster is what permits it**
+   * (spec `room-messaging-design` §3). A thread is here because this author
+   * wrote its root or wrote one of its replies AND is on the room's roster
+   * today. Nothing is stored — no follow list, no thread membership table — so
+   * this is derived from the log on every read, which is exactly why v1 needed
+   * no schema.
+   *
+   * **The participation test is an EXISTS rather than a predicate on the row,
+   * and getting that wrong is the bug worth naming.** The obvious spelling —
+   * `WHERE reply.author_id = ? OR root.author_id = ?` — filters the rows being
+   * COUNTED, so a thread you replied in once would report a reply count of one
+   * and no unread replies from anybody else. The EXISTS asks the same question
+   * about the thread rather than about the row, so every reply is aggregated
+   * whoever wrote it.
+   *
+   * **Unread is the room's own cursor, narrowed to the thread.** There is one
+   * `(member, room)` cursor and threads share it, so opening a room clears its
+   * threads' counts too — the same trade `groupByThread` states on the client,
+   * and the alternative is a badge nothing in the product can clear. A reply of
+   * the reader's own counts while it sits above the cursor, exactly as
+   * {@link RoomStore.countUnread} counts it for the room's badge — one rule,
+   * measured in one place.
+   *
+   * **The membership join is INNER, and that is the privacy boundary** — the
+   * same one {@link RoomStore.listRoomsForMember} draws, drawn the same way.
+   * Participation implies membership at WRITE time, never at read time:
+   * somebody removed from a room keeps the words they wrote there, but the room
+   * stops being theirs to see. `getRoom` already 404s them, so a row here would
+   * be a dead end, and a thread list that reached past the roster would be a
+   * way to keep watching a room you were taken out of.
+   *
+   * Archived rooms are excluded, matching the default room list — a room that
+   * has left the sidebar should not send its threads back into it.
+   *
+   * @param viewerAuthorId - Whose threads to list, and whose cursor to measure.
+   * @param limit - Most rows to return, newest activity first.
+   */
+  listThreadsForMember(viewerAuthorId: string, limit: number): ThreadAggregateRow[] {
+    const root = alias(roomEntries, 'thread_root');
+    // MAX over the replies' timestamps: a thread's activity is its newest
+    // reply. Named once and reused for the ORDER BY, so the sort and the value
+    // the row reports can never be two different expressions.
+    const lastActivityAt = sql<string>`MAX(${roomEntries.createdAt})`;
+    return (
+      this.db
+        .select({
+          roomId: roomEntries.roomId,
+          roomKind: rooms.kind,
+          roomSlug: rooms.slug,
+          roomTitle: rooms.title,
+          rootEntryId: root.id,
+          rootAuthorId: root.authorId,
+          rootBody: root.body,
+          replyCount: count(),
+          unreadCount: sql<number>`SUM(CASE WHEN ${roomEntries.seq} > ${roomMembers.lastReadSeq} THEN 1 ELSE 0 END)`,
+          lastActivityAt,
+        })
+        .from(roomEntries)
+        .innerJoin(
+          root,
+          and(eq(root.roomId, roomEntries.roomId), eq(root.id, roomEntries.threadRootEntryId))
+        )
+        .innerJoin(rooms, eq(rooms.id, roomEntries.roomId))
+        .innerJoin(
+          roomMembers,
+          and(eq(roomMembers.roomId, roomEntries.roomId), eq(roomMembers.authorId, viewerAuthorId))
+        )
+        .where(
+          and(
+            isNotNull(roomEntries.threadRootEntryId),
+            eq(rooms.archived, false),
+            sql`(${root.authorId} = ${viewerAuthorId} OR EXISTS (
+            SELECT 1 FROM ${roomEntries} AS participation
+            WHERE participation.room_id = ${roomEntries.roomId}
+              AND participation.thread_root_entry_id = ${roomEntries.threadRootEntryId}
+              AND participation.author_id = ${viewerAuthorId}
+          ))`
+          )
+        )
+        .groupBy(roomEntries.roomId, roomEntries.threadRootEntryId)
+        // The id breaks a tie so two threads answered in the same second never
+        // swap places between reads, the same rule every room list ends on.
+        .orderBy(desc(lastActivityAt), desc(root.id))
+        .limit(limit)
+        .all()
+    );
   }
 
   /**

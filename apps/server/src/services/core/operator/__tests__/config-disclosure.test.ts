@@ -131,6 +131,7 @@ function fullyPopulatedConfig(): Record<string, unknown> {
         recentsCollapsed: false,
         channelsCollapsed: false,
         dmsCollapsed: false,
+        threadsCollapsed: false,
         groupsHintDismissed: false,
         muted: [
           { kind: 'agent', path: '/Users/me/noisy' },
