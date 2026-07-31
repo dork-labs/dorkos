@@ -5,6 +5,7 @@
  */
 import type { ReactNode } from 'react';
 import { useFeedKeyboardNav } from '../model/feed/use-feed-keyboard-nav';
+import type { FeedBeyondRenderedHandler } from '../model/feed/use-feed-keyboard-nav';
 
 interface FeedProps {
   /**
@@ -26,6 +27,14 @@ interface FeedProps {
   className?: string;
   /** Test hook for the surface that owns this feed. */
   'data-testid'?: string;
+  /**
+   * What to do when the reader asks for an article the feed has not rendered.
+   *
+   * Only a VIRTUALIZED feed needs this — see {@link FeedBeyondRenderedHandler}.
+   * Omitted, the feed stops at the last article in the DOM, which for a feed
+   * that renders all of them is the end of its history.
+   */
+  onBeyondRendered?: FeedBeyondRenderedHandler;
 }
 
 /**
@@ -42,8 +51,15 @@ interface FeedProps {
  * entirely; {@link useFeedKeyboardNav} owns that and explains why it is worth
  * the keys it takes.
  */
-export function Feed({ label, busy, children, className, 'data-testid': testId }: FeedProps) {
-  const { containerRef, handleKeyDown } = useFeedKeyboardNav();
+export function Feed({
+  label,
+  busy,
+  children,
+  className,
+  'data-testid': testId,
+  onBeyondRendered,
+}: FeedProps) {
+  const { containerRef, handleKeyDown } = useFeedKeyboardNav({ onBeyondRendered });
 
   return (
     // A feed is a container of articles, not a control: it hears keys so that

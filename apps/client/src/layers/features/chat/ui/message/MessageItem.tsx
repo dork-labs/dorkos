@@ -1,7 +1,8 @@
+import { useId } from 'react';
 import { motion } from 'motion/react';
 import type { ChatMessage, MessageGrouping } from '../../model/use-chat-session';
-import { useAppStore } from '@/layers/shared/model';
-import type { MessageAuthor } from '@/layers/shared/model';
+import { feedArticleProps, useAppStore } from '@/layers/shared/model';
+import type { FeedPosition, MessageAuthor } from '@/layers/shared/model';
 import { cn, getPlatform } from '@/layers/shared/lib';
 import type { TextEffectConfig } from '@/layers/shared/lib';
 import { messageItem } from './message-variants';
@@ -50,6 +51,15 @@ interface MessageItemProps {
   presentation?: boolean;
   /** Display name of the session's runtime (e.g. "Claude"), for auth-error copy. */
   runtimeLabel?: string;
+  /**
+   * Where this message sits in the transcript's feed, when it is rendering
+   * inside one.
+   *
+   * Omitted off a transcript — the onboarding narration and the dev showcase
+   * render real message rows with no feed around them, and a position in a set
+   * nothing navigates would promise a Page Down that has nowhere to go.
+   */
+  feedPosition?: FeedPosition;
 }
 
 /** Format a timestamp string to a short time display (HH:MM). */
@@ -66,6 +76,22 @@ function formatTime(timestamp: string): string {
  * reads grouping and store settings, then delegates rendering to
  * UserMessageContent or AssistantMessageContent. Provides MessageContext to all
  * children for prop drilling elimination.
+ *
+ * **Every message row is an `article`, and every one of them is NAMED** —
+ * inside the transcript's feed and outside it alike, the same decision the room
+ * rows landed on (`RoomEntryRow`). The name is the author line ALREADY ON
+ * SCREEN, pointed at with `aria-labelledby`, never a second sentence invented
+ * for screen readers — that was the DOR-583 double-speak, and the fix for it is
+ * to stop inventing rather than to stay silent. A continuation row is the one
+ * exception and gets an `aria-label`: the design deliberately drops its author
+ * line for a run of messages from the same person, so who and when has to be
+ * said directly. The body is what the article is ABOUT
+ * (`aria-describedby`), which is what the APG asks a feed's articles to point
+ * at.
+ *
+ * `feedPosition` adds where the row sits in the set, which is what lets a
+ * screen reader say "message 12 of 30, DorkBot" as Page Down crosses the
+ * transcript. It is a consumer of the name, not its cause.
  */
 export function MessageItem({
   message,
@@ -84,7 +110,11 @@ export function MessageItem({
   textEffect,
   presentation = false,
   runtimeLabel,
+  feedPosition,
 }: MessageItemProps) {
+  const domId = useId();
+  const headerId = `${domId}-author`;
+  const contentId = `${domId}-content`;
   // A group start renders the avatar, the author's name, and the time; a
   // continuation renders none of them and hangs under the group start, with its
   // time in the gutter on hover. Derived, never passed in: the caller already
@@ -147,7 +177,18 @@ export function MessageItem({
         transition={{ type: 'spring', stiffness: 320, damping: 28 }}
         data-testid="message-item"
         data-role={message.role}
-        className={cn(styles.root(), presentation && 'hover:bg-transparent')}
+        role="article"
+        {...(showAuthorHeader
+          ? { 'aria-labelledby': headerId }
+          : { 'aria-label': showTime ? `${author.displayName}, ${time}` : author.displayName })}
+        aria-describedby={contentId}
+        {...feedArticleProps(feedPosition)}
+        className={cn(
+          styles.root(),
+          // A row Page Down can land on has to SHOW that it was landed on.
+          feedPosition && 'focus-visible:ring-ring/50 outline-none focus-visible:ring-2',
+          presentation && 'hover:bg-transparent'
+        )}
       >
         <div className={styles.gutter()}>
           {showAuthorHeader && <MessageAuthorAvatar author={author} />}
@@ -157,14 +198,14 @@ export function MessageItem({
         </div>
         <div className={styles.body()}>
           {showAuthorHeader && (
-            <div className={styles.header()}>
+            <div id={headerId} className={styles.header()}>
               <span className={styles.authorName()}>{author.displayName}</span>
               {showTime && (
                 <span className={cn(styles.timestamp(), 'text-msg-timestamp')}>{time}</span>
               )}
             </div>
           )}
-          <div data-slot="message-content" className={styles.content()}>
+          <div id={contentId} data-slot="message-content" className={styles.content()}>
             {isUser ? (
               <UserMessageContent message={message} />
             ) : (
