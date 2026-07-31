@@ -238,7 +238,7 @@ describe('TestModeRuntime — stateless log-backed contract adapter', () => {
       const runtime = new TestModeRuntime();
       // Opt the projector into persistence (the real trigger path does this for
       // log-backed runtimes) so the turn flushes to the durable store.
-      getOrCreateProjector(SESSION_A, CTX.cwd, { persist: true });
+      getOrCreateProjector(SESSION_A, CTX.cwd, { persist: 'history' });
       await runTurn(runtime, SESSION_A, 'before reset');
 
       // The turn landed in the durable store, and history reads it back.

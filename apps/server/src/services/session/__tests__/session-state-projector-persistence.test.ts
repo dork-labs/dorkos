@@ -113,10 +113,24 @@ describe('SessionStateProjector durable persistence (DOR-189)', () => {
       projector.ingest({ type: 'turn_start', userMessage: 'live' } as RawSessionEvent);
       projector.enablePersistence(store);
 
-      // Not re-hydrated: the in-memory log holds only the live event, and the
-      // counter is untouched (its in-memory run is authoritative).
+      // Not re-hydrated: the in-memory log holds only the live event, because
+      // this run is authoritative for what it has already streamed.
       expect(projector.replayFrom(0).map((e) => e.seq)).toEqual([1]);
-      expect(projector.getCursor()).toBe(1);
+      // The COUNTER is a different question, and it does move (DOR-784). It used
+      // to be left alone here, which was a silent data loss: `appendTurn` is
+      // INSERT OR IGNORE on `(session_id, seq)`, so the live turn about to close
+      // would have flushed under seqs 1 and 2 — both already taken by the stored
+      // rows above — and every row of it would have been dropped without a word.
+      // Carrying the counter past the durable max costs a gap in the seq space,
+      // which the store already documents as sparse, and nothing else.
+      expect(projector.getCursor()).toBe(2);
+      // So the turn closing now lands on a free seq and is really written. The
+      // event ingested BEFORE persistence was enabled keeps the seq it streamed
+      // under (nothing may renumber an event a client has already seen), so its
+      // row is still the stored one — an oddity this narrow window has always
+      // had. What changed is that the turn's OUTCOME survives.
+      projector.ingest({ type: 'turn_end' } as RawSessionEvent);
+      expect(store.readAll('sess').map((e) => e.seq)).toEqual([1, 2, 3]);
     });
 
     it('persistence does not perturb the replay→live subscribe sequence (no drift/dupes)', async () => {
@@ -163,5 +177,93 @@ describe('SessionStateProjector durable persistence (DOR-189)', () => {
       expect(projector.replayFrom(0).map((e) => e.seq)).toEqual([1]);
       expect(projector.getCursor()).toBe(1);
     });
+  });
+});
+
+/**
+ * `'record'` mode: a durable record of a room turn, never a history (DOR-784).
+ *
+ * A room is the one surface with no client holding the session stream, so a turn
+ * that fails there leaves nothing on anybody's screen — and for claude-code it
+ * used to leave nothing in the database either. `'record'` closes that with the
+ * smallest thing that answers "did it run, and how did it end": the turn's two
+ * boundaries and any error.
+ *
+ * It is deliberately NOT `'history'` for the same session, and the two tests
+ * about hydration are why. claude-code's history is SDK JSONL (ADR-0309); an
+ * EventLog seeded from these sparse rows would serve a resuming client a turn
+ * with its middle missing and call it a gap-free replay.
+ */
+describe("SessionStateProjector 'record' persistence (DOR-784)", () => {
+  it('keeps a turn down to its boundaries', () => {
+    const store = new SessionEventStore(createTestDb());
+    const projector = new SessionStateProjector('room-sess');
+    projector.enablePersistence(store, 'record');
+
+    driveTurn(projector, 'is the build green?', 'green');
+
+    expect(store.readAll('room-sess').map((e) => e.type)).toEqual(['turn_start', 'turn_end']);
+  });
+
+  it('keeps what the turn was asked and how it ended', () => {
+    const store = new SessionEventStore(createTestDb());
+    const projector = new SessionStateProjector('room-sess');
+    projector.enablePersistence(store, 'record');
+
+    projector.ingest({ type: 'turn_start', userMessage: 'is the build green?' } as RawSessionEvent);
+    projector.ingest({ type: 'turn_end', terminalReason: 'error' } as RawSessionEvent);
+
+    expect(store.readAll('room-sess')).toMatchObject([
+      { type: 'turn_start', userMessage: 'is the build green?' },
+      { type: 'turn_end', terminalReason: 'error' },
+    ]);
+  });
+
+  it('does not hydrate the replay log from its own sparse rows', () => {
+    const store = new SessionEventStore(createTestDb());
+    store.appendTurn('room-sess', [
+      { type: 'turn_start', seq: 1, userMessage: 'yesterday' } as SessionEvent,
+      { type: 'turn_end', seq: 3 } as SessionEvent,
+    ]);
+    const projector = new SessionStateProjector('room-sess');
+
+    projector.enablePersistence(store, 'record');
+
+    // Nothing to replay: a resume from an old cursor must take the cold snapshot
+    // (read from JSONL, and complete) rather than a turn missing its middle.
+    expect(projector.replayFrom(0)).toEqual([]);
+  });
+
+  it('still restores the seq counter, or the next turn would record nothing', () => {
+    // `appendTurn` is INSERT OR IGNORE on (session_id, seq). A projector that
+    // restarted at seq 0 would write its next turn under seqs the last process
+    // already used, and every row would be silently dropped — a durable record
+    // that records nothing. This is the one thing 'record' shares with 'history'.
+    const store = new SessionEventStore(createTestDb());
+    store.appendTurn('room-sess', [
+      { type: 'turn_start', seq: 1, userMessage: 'yesterday' } as SessionEvent,
+      { type: 'turn_end', seq: 3 } as SessionEvent,
+    ]);
+    const projector = new SessionStateProjector('room-sess');
+    projector.enablePersistence(store, 'record');
+
+    driveTurn(projector, 'today', 'green');
+
+    expect(projector.getCursor()).toBe(6);
+    expect(store.readAll('room-sess').map((e) => e.seq)).toEqual([1, 3, 4, 6]);
+  });
+
+  it("leaves 'history' mode exactly as it was", () => {
+    const store = new SessionEventStore(createTestDb());
+    const projector = new SessionStateProjector('log-sess');
+    projector.enablePersistence(store, 'history');
+
+    driveTurn(projector, 'q', 'a');
+
+    expect(store.readAll('log-sess').map((e) => e.type)).toEqual([
+      'turn_start',
+      'text_delta',
+      'turn_end',
+    ]);
   });
 });

@@ -115,7 +115,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
   return {
     async run(request: RoomTurnRequest): Promise<RoomTurnResult> {
       const sessionId = request.sessionId ?? randomUUID();
-      const runtimeType = await resolveRuntimeType(request.agentPath);
+      const runtimeType = await resolveRoomRuntimeType(request.agentPath);
       // Resolve the runtime WITHOUT writing anything. `persistSessionRuntime`
       // used to run here, before the turn was known to have started, so a
       // runtime that reliably throws left one orphan `session_metadata` row (and
@@ -155,8 +155,23 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
             })
           : {};
 
+      // **A room turn always persists something, whatever the runtime.**
+      //
+      // For a log-backed runtime that is `'history'`, unchanged: the durable
+      // rows ARE its transcript. For claude-code it is `'record'`, which is new
+      // and narrow. Its history is SDK JSONL and stays there (ADR-0309 —
+      // persisting the whole stream would double-store and inflate the hot
+      // path), so `'record'` keeps only each turn's two boundaries and any
+      // error: three rows a turn, whatever the model said.
+      //
+      // The reason rooms get this and the cockpit does not is that a room is the
+      // one surface with NOBODY WATCHING. Everywhere else a person is holding
+      // `GET /api/sessions/:id/events` while the turn runs, so a failure is on
+      // their screen. A room triggers a turn into the dark; when one went silent
+      // for forty-one minutes on 2026-07-31 there was not a single row anywhere
+      // to say whether it had run, failed, or never started (DOR-784).
       const projector = getOrCreateProjector(sessionId, request.agentPath, {
-        persist: runtime.getCapabilities().logBackedHistory === true,
+        persist: runtime.getCapabilities().logBackedHistory === true ? 'history' : 'record',
       });
       projector.cwd = request.agentPath;
 
@@ -455,9 +470,14 @@ function collectReply(
  * on disk says `claude-code`, and without the fallback no room could ever
  * trigger anything there.
  *
+ * Exported because the binding repair sweep
+ * (`room-session-convergence.ts`) has to ask the identical question — "which
+ * runtime owns this room's session?" — and a second copy of the fallback is a
+ * second copy that can disagree.
+ *
  * @param agentPath - The agent's project directory.
  */
-async function resolveRuntimeType(agentPath: string): Promise<string> {
+export async function resolveRoomRuntimeType(agentPath: string): Promise<string> {
   try {
     const manifest = await readManifest(agentPath);
     if (manifest?.runtime && runtimeRegistry.has(manifest.runtime)) return manifest.runtime;

@@ -31,6 +31,8 @@ import {
 } from '@dorkos/db';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { Room, RoomEntry, RoomKind, RoomMember } from '@dorkos/shared/room-schemas';
+import { logger } from '../../lib/logger.js';
+import { RoomSessionLedger } from './room-session-ledger.js';
 import {
   toEntry,
   toMember,
@@ -42,7 +44,17 @@ import {
 
 /** Persistence for rooms, memberships, entries, and per-room agent sessions. */
 export class RoomStore {
-  constructor(private readonly db: Db) {}
+  /**
+   * Session-id-keyed reads, and the memory of which ids the projector has
+   * retired. Public because the convergence paths address `room_sessions` by
+   * session rather than by room, which is a different subject from everything
+   * else on this store — see `room-session-ledger.ts`.
+   */
+  readonly sessionLedger: RoomSessionLedger;
+
+  constructor(private readonly db: Db) {
+    this.sessionLedger = new RoomSessionLedger(db);
+  }
 
   // === Rooms ===
 
@@ -1003,11 +1015,31 @@ export class RoomStore {
    * Claude Code session store), and the binding has to be whichever id the
    * transcript is under — always.
    *
+   * **Refuses to move a binding back onto a RETIRED id** — see
+   * {@link RoomSessionLedger.retire}. `runOne` compares the runner's answer to
+   * the id it asked with exactly once, and on turn 1 that answer is routinely
+   * the placeholder, because the runtime names its session milliseconds after
+   * the room stopped waiting for the id. The projector's rekey has already moved
+   * the binding forward by then, and this write would move it back — which is
+   * how one room's binding was observed oscillating between two ids, landing on
+   * the one with no transcript. A refusal here is the only place that can be
+   * structural: every caller goes through this method.
+   *
    * @param roomId - The room.
    * @param authorId - The agent member.
    * @param sessionId - The session the turn ran on.
    */
   rebindRoomSession(roomId: string, authorId: string, sessionId: string): void {
+    const successor = this.sessionLedger.successorFor(sessionId);
+    if (successor !== undefined) {
+      logger.warn('[rooms] refused to rebind a room onto a retired session id', {
+        roomId,
+        authorId,
+        retiredSessionId: sessionId,
+        canonicalSessionId: successor,
+      });
+      return;
+    }
     this.db
       .update(roomSessions)
       .set({ sessionId })

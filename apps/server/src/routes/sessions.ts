@@ -456,7 +456,7 @@ router.post('/:id/messages', async (req, res) => {
   // guarantees the turn_end flush regardless of whether an /events subscribe
   // has already minted (and persistence-enabled) the projector.
   const projector = getOrCreateProjector(sessionId, effectiveCwd, {
-    persist: runtime.getCapabilities().logBackedHistory === true,
+    persist: runtime.getCapabilities().logBackedHistory === true ? 'history' : undefined,
   });
   if (effectiveCwd !== undefined) projector.cwd = effectiveCwd;
 

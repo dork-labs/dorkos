@@ -172,6 +172,10 @@ import { localDialHost } from './lib/local-dial-host.js';
 import { SERVER_VERSION } from './lib/version.js';
 import { createWorkspaceSubsystem, setWorkspaceManager } from './services/workspace/index.js';
 import { createRoomSubsystem, setRoomService } from './services/rooms/index.js';
+import {
+  followSessionRekeys,
+  repairRoomSessionBindings,
+} from './services/rooms/room-session-convergence.js';
 import { registerLocalCommunity } from './services/communities/index.js';
 import { SearchIndexer } from './services/search/index.js';
 import { TerminalManager, attachTerminalWebSocket } from './services/terminal/index.js';
@@ -739,6 +743,44 @@ async function start() {
   } = createRoomSubsystem({ db });
   setRoomService(roomService);
   logger.info('[Rooms] RoomService registered');
+
+  // A room's memory is its `room_sessions` binding, and the id in it moves: the
+  // room mints a placeholder before the first turn and Claude Code renames the
+  // session mid-turn. Follow the RENAME rather than the turn's return value —
+  // the rename is announced the instant it happens, while the return value is
+  // read once at the end of a turn that routinely lost the race (DOR-784).
+  followSessionRekeys(roomStore);
+  // Then repair what was stranded before that listener existed. Bounded to
+  // rooms that have a binding and agents that run on claude-code, and detached:
+  // a disk probe must not sit in front of the port opening. Nothing is deleted —
+  // a binding with no known successor is warned about and left alone.
+  void repairRoomSessionBindings({
+    store: roomStore,
+    agentPathFor: (authorId) => {
+      const record = roomAuthors.getById(authorId);
+      return record?.kind === 'agent' ? record.naturalKey : null;
+    },
+    hasTranscript: async (agentPath, sessionId) => {
+      const reader = claudeRuntime?.getTranscriptReader();
+      // No claude-code runtime in this process means no claude-code binding can
+      // be judged. Reporting "it exists" is the safe answer: it repairs nothing
+      // and warns about nothing, which beats warning about every room on a
+      // test-mode server.
+      if (!reader) return true;
+      return (await reader.hasTranscript(agentPath, sessionId)).exists;
+    },
+  }).then(
+    (report) => {
+      if (report.repaired > 0 || report.stranded > 0) {
+        logger.info('[Rooms] checked room session bindings', { ...report });
+      }
+    },
+    (err: unknown) => {
+      logger.warn('[Rooms] could not check room session bindings', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  );
 
   // The local community (spec `community-adapter` §8) — this machine's own rooms
   // behind the `CommunityAdapter` port. Registered unconditionally and first,

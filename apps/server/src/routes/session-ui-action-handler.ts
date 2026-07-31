@@ -82,7 +82,7 @@ export async function sessionUiActionHandler(req: Request, res: Response): Promi
   // persistence would both skip this turn's flush and — once its counter moves
   // past 0 — block a later hydrate for the process's lifetime.
   const projector = getOrCreateProjector(sessionId, cwd, {
-    persist: runtime.getCapabilities().logBackedHistory === true,
+    persist: runtime.getCapabilities().logBackedHistory === true ? 'history' : undefined,
   });
   if (cwd !== undefined) projector.cwd = cwd;
 

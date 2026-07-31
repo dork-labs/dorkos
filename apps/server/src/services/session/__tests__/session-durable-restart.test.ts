@@ -26,7 +26,7 @@ function nextId(): string {
 }
 
 function driveTurn(sessionId: string, userMessage: string, text: string): void {
-  const p = getOrCreateProjector(sessionId, '/projects/x', { persist: true });
+  const p = getOrCreateProjector(sessionId, '/projects/x', { persist: 'history' });
   p.ingest({ type: 'turn_start', userMessage } as RawSessionEvent);
   p.ingest({ type: 'text_delta', text } as RawSessionEvent);
   p.ingest({ type: 'turn_end' } as RawSessionEvent);
@@ -65,7 +65,7 @@ describe('durable session history survives a restart (DOR-189)', () => {
     disposeProjector(id); // restart
 
     // A fresh /events subscribe or snapshot re-mints the projector with persist.
-    const revived = getOrCreateProjector(id, '/projects/x', { persist: true });
+    const revived = getOrCreateProjector(id, '/projects/x', { persist: 'history' });
     expect(revived.replayFrom(0).map((e) => e.seq)).toEqual([1, 2, 3]);
     expect(revived.getCursor()).toBe(3);
     // The next turn continues monotonically — ids never collide with pre-restart ones.
