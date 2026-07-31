@@ -5,10 +5,11 @@ import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
-import type { RoomEntry, RoomEvent } from '@dorkos/shared/room-schemas';
+import type { RoomEntry, RoomEvent, RoomNoticeCode } from '@dorkos/shared/room-schemas';
 import { SSE_RESILIENCE } from '@/layers/shared/lib';
 import { TransportProvider } from '@/layers/shared/model';
 import { roomKeys } from '../api/query-keys';
+import { useRoomPresenceStore } from '../model/use-room-presence';
 import { useRoomStream } from '../model/use-room-stream';
 
 function entry(seq: number): RoomEntry {
@@ -27,6 +28,16 @@ function entry(seq: number): RoomEntry {
     threadRootEntryId: null,
     signature: null,
     createdAt: '2026-07-26T10:00:00.000Z',
+  };
+}
+
+/** A `notice` — the room speaking about itself, written by the system author. */
+function notice(seq: number, code: RoomNoticeCode, subjectAuthorId: string): RoomEntry {
+  return {
+    ...entry(seq),
+    authorId: 'system',
+    kind: 'notice',
+    body: { text: 'the room said something about itself', notice: code, subjectAuthorId },
   };
 }
 
@@ -71,6 +82,11 @@ function wrapperFor(transport: Transport, queryClient: QueryClient) {
   );
 }
 
+/** How many times `subscribeRoom` has been called. */
+function subscribeCallCount(transport: Transport): number {
+  return (transport.subscribeRoom as unknown as { mock: { calls: unknown[][] } }).mock.calls.length;
+}
+
 /** The `sinceCursor` argument of each `subscribeRoom` call, in order. */
 function cursors(transport: Transport): unknown[] {
   return (transport.subscribeRoom as unknown as { mock: { calls: unknown[][] } }).mock.calls.map(
@@ -79,6 +95,7 @@ function cursors(transport: Transport): unknown[] {
 }
 
 beforeEach(() => {
+  useRoomPresenceStore.setState({ rooms: {} });
   // Full-jitter backoff with the die rigged to zero: the retry schedule is
   // `SSEConnection`'s and is tested there; what matters here is that a retry
   // happens at all, and from where.
@@ -152,19 +169,99 @@ describe('useRoomStream', () => {
     ).toEqual([4, 5]);
   });
 
-  it('stops after the retry budget and says the room has gone quiet', async () => {
+  it('says the room has gone quiet once the retries stop landing', async () => {
+    const transport = createMockTransport();
+    const queryClient = makeQueryClient();
+    transport.subscribeRoom = vi.fn().mockImplementation(() => dropsImmediately());
+    // Something was working when the stream died, and after the notice it must
+    // not still be on screen: the release would have come down the socket that
+    // just went away.
+    useRoomPresenceStore.getState().observe('room-1', {
+      type: 'signal',
+      signal: 'progress',
+      authorId: 'kai',
+      at: '2026-07-26T10:00:00.000Z',
+      state: 'working',
+      entryId: 'entry-4',
+      since: '2026-07-26T10:00:00.000Z',
+    });
+
+    const { result, unmount } = renderHook(() => useRoomStream('room-1', true), {
+      wrapper: wrapperFor(transport, queryClient),
+    });
+
+    try {
+      await waitFor(() => expect(result.current.stalled).toBe(true));
+      // The budget decides WHEN it is said, and nothing less than the budget
+      // says it: one bad attempt must not put a banner over a healthy room.
+      expect(subscribeCallCount(transport)).toBeGreaterThanOrEqual(
+        SSE_RESILIENCE.DISCONNECTED_THRESHOLD
+      );
+      expect(useRoomPresenceStore.getState().rooms['room-1']).toBeUndefined();
+    } finally {
+      unmount();
+    }
+  });
+
+  it('keeps trying after it has said the room is quiet', async () => {
+    // THE regression. Retrying used to STOP at the budget, so a room that lost
+    // its stream for eight seconds was frozen for as long as the tab stayed
+    // open — while the global stream beside it reconnected forever. Red on the
+    // old shape, which never called `subscribeRoom` a sixth time.
     const transport = createMockTransport();
     const queryClient = makeQueryClient();
     transport.subscribeRoom = vi.fn().mockImplementation(() => dropsImmediately());
 
-    const { result } = renderHook(() => useRoomStream('room-1', true), {
+    const { result, unmount } = renderHook(() => useRoomStream('room-1', true), {
       wrapper: wrapperFor(transport, queryClient),
     });
 
-    await waitFor(() => expect(result.current.stalled).toBe(true));
-    // Exactly the budget: 5 attempts, then it stops rather than spinning.
-    expect(transport.subscribeRoom).toHaveBeenCalledTimes(SSE_RESILIENCE.DISCONNECTED_THRESHOLD);
-    expect(transport.subscribeRoom).toHaveBeenCalledTimes(5);
+    try {
+      await waitFor(() => expect(result.current.stalled).toBe(true));
+      const atStall = subscribeCallCount(transport);
+      await waitFor(() => expect(subscribeCallCount(transport)).toBeGreaterThan(atStall));
+    } finally {
+      unmount();
+    }
+  });
+
+  it('takes the notice back down when a retry finally connects', async () => {
+    // The other half: a room that comes back on its own has to stop saying it
+    // has not. Proof of life here is an arriving event, which is the fast path
+    // — a silent-but-healthy stream is cleared by the stability window instead.
+    const transport = createMockTransport();
+    const queryClient = makeQueryClient();
+    transport.subscribeRoom = vi.fn().mockImplementation(() => dropsImmediately());
+
+    const { result, unmount } = renderHook(() => useRoomStream('room-1', true), {
+      wrapper: wrapperFor(transport, queryClient),
+    });
+
+    try {
+      await waitFor(() => expect(result.current.stalled).toBe(true));
+
+      // The server comes back, and NOBODY asks the room to try again — the
+      // loop's own next attempt is what has to find it. On the old shape there
+      // was no next attempt.
+      transport.subscribeRoom = vi
+        .fn()
+        .mockImplementation((_id: string, _cursor: number, signal: AbortSignal) =>
+          (async function* (): AsyncIterable<RoomEvent> {
+            yield { type: 'entry', seq: 7, entry: entry(7) } satisfies RoomEvent;
+            await new Promise<void>((resolve) => {
+              if (signal.aborted) return resolve();
+              signal.addEventListener('abort', () => resolve(), { once: true });
+            });
+          })()
+        );
+
+      await waitFor(() => expect(result.current.stalled).toBe(false));
+      expect(
+        queryClient.getQueryData<RoomEntry[]>(roomKeys.entries('room-1'))?.map((e) => e.seq)
+      ).toEqual([7]);
+    } finally {
+      unmount();
+    }
   });
 
   it('forgives the earlier failures of a stream that stayed up', async () => {
@@ -176,28 +273,181 @@ describe('useRoomStream', () => {
     vi.spyOn(Date, 'now').mockImplementation(() => clock);
 
     let attempts = 0;
-    transport.subscribeRoom = vi.fn().mockImplementation(() => {
-      attempts += 1;
-      // Attempts 1-3 die on contact. The 4th connects, runs past the stability
-      // window, and only then drops — the nightly-server-restart shape.
-      if (attempts !== 4) return dropsImmediately();
-      return (async function* (): AsyncIterable<RoomEvent> {
-        clock += SSE_RESILIENCE.STABILITY_WINDOW_MS;
-        throw new Error('dropped after a long, healthy run');
-      })();
-    });
+    transport.subscribeRoom = vi
+      .fn()
+      .mockImplementation((_id: string, _cursor: number, signal: AbortSignal) => {
+        attempts += 1;
+        // Attempts 1-3 die on contact. The 4th connects, runs past the stability
+        // window, and only then drops — the nightly-server-restart shape. 5-7
+        // die again, and the 8th holds.
+        if (attempts === 4) {
+          return (async function* (): AsyncIterable<RoomEvent> {
+            clock += SSE_RESILIENCE.STABILITY_WINDOW_MS;
+            throw new Error('dropped after a long, healthy run');
+          })();
+        }
+        if (attempts >= 8) return staysOpen(signal);
+        return dropsImmediately();
+      });
 
-    const { result } = renderHook(() => useRoomStream('room-1', true), {
+    const { result, unmount } = renderHook(() => useRoomStream('room-1', true), {
       wrapper: wrapperFor(transport, queryClient),
     });
 
-    await waitFor(() => expect(result.current.stalled).toBe(true));
-    // 8, not 5. The healthy 4th run reset the count, so the budget restarts
-    // from it: three more drops after that one, and the fifth consecutive
-    // failure is attempt 8. Without the reset this room would have been
-    // declared dead at attempt 5, on the strength of failures it had already
-    // recovered from.
-    expect(transport.subscribeRoom).toHaveBeenCalledTimes(8);
+    try {
+      await waitFor(() => expect(transport.subscribeRoom).toHaveBeenCalledTimes(8));
+      // Never declared quiet, and that is the point: the healthy 4th run reset
+      // the count, so the three drops after it are three, not eight. Without the
+      // reset this room would have been declared dead at attempt 5, on the
+      // strength of failures it had already recovered from.
+      expect(result.current.stalled).toBe(false);
+    } finally {
+      unmount();
+    }
+  });
+
+  it('retries when the browser comes back online', async () => {
+    // The room stream cannot see the network; the window can. Without this a
+    // reader who lost wifi for a moment waits out a 30s backoff for a room that
+    // could have been live the instant the link came back.
+    const transport = createMockTransport();
+    const queryClient = makeQueryClient();
+    let attempts = 0;
+    transport.subscribeRoom = vi
+      .fn()
+      .mockImplementation((_id: string, _cursor: number, signal: AbortSignal) => {
+        attempts += 1;
+        // Long-lived from the first connect, so the ONLY thing that can open a
+        // second one is the event below.
+        return staysOpen(signal);
+      });
+
+    const { unmount } = renderHook(() => useRoomStream('room-1', true), {
+      wrapper: wrapperFor(transport, queryClient),
+    });
+
+    try {
+      await waitFor(() => expect(transport.subscribeRoom).toHaveBeenCalledTimes(1));
+      act(() => {
+        window.dispatchEvent(new Event('online'));
+      });
+      await waitFor(() => expect(transport.subscribeRoom).toHaveBeenCalledTimes(2));
+      expect(attempts).toBe(2);
+    } finally {
+      unmount();
+    }
+  });
+
+  it('leaves a healthy stream alone on a brief tab switch', async () => {
+    // The other side of the wake-ups, and the reason they are not simply "retry
+    // on anything": tearing down a live socket every time somebody alt-tabs
+    // would be worse than the outage it is meant to shorten.
+    const transport = createMockTransport();
+    const queryClient = makeQueryClient();
+    transport.subscribeRoom = vi
+      .fn()
+      .mockImplementation((_id: string, _cursor: number, signal: AbortSignal) => staysOpen(signal));
+
+    const { unmount } = renderHook(() => useRoomStream('room-1', true), {
+      wrapper: wrapperFor(transport, queryClient),
+    });
+
+    try {
+      await waitFor(() => expect(transport.subscribeRoom).toHaveBeenCalledTimes(1));
+      act(() => {
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+      // A negative — that nothing reconnected — so it is settled by giving the
+      // loop every chance to and finding it did not.
+      await act(async () => {});
+      expect(transport.subscribeRoom).toHaveBeenCalledTimes(1);
+    } finally {
+      unmount();
+    }
+  });
+
+  it('clears the indicator of an agent a failed-turn notice is about', async () => {
+    // A notice is written by the SYSTEM author, so clearing on the entry's own
+    // author never reaches the agent the notice is ABOUT. Without this the room
+    // draws "Kai is working · 6m" directly under a line saying Kai ran into a
+    // problem and could not answer — and nothing else would ever take it down,
+    // because the `done` that would have is exactly what did not happen.
+    const transport = createMockTransport();
+    const queryClient = makeQueryClient();
+    useRoomPresenceStore.getState().observe('room-1', {
+      type: 'signal',
+      signal: 'progress',
+      authorId: 'kai',
+      at: '2026-07-26T10:00:00.000Z',
+      state: 'working',
+      entryId: 'entry-4',
+      since: '2026-07-26T10:00:00.000Z',
+    });
+
+    transport.subscribeRoom = vi
+      .fn()
+      .mockImplementation((_id: string, _cursor: number, signal: AbortSignal) =>
+        (async function* (): AsyncIterable<RoomEvent> {
+          yield { type: 'entry', seq: 8, entry: notice(8, 'turn_failed', 'kai') };
+          await new Promise<void>((resolve) => {
+            if (signal.aborted) return resolve();
+            signal.addEventListener('abort', () => resolve(), { once: true });
+          });
+        })()
+      );
+
+    const { unmount } = renderHook(() => useRoomStream('room-1', true), {
+      wrapper: wrapperFor(transport, queryClient),
+    });
+
+    try {
+      await waitFor(() => expect(useRoomPresenceStore.getState().rooms['room-1']).toBeUndefined());
+    } finally {
+      unmount();
+    }
+  });
+
+  it('leaves the indicator alone when a busy notice arrives', async () => {
+    // `agent_busy` reads like a stop and is the opposite: the trigger was
+    // skipped BECAUSE that agent's session was already being written to, so it
+    // is genuinely working — on the older message. Clearing here would blank the
+    // one true thing on screen.
+    const transport = createMockTransport();
+    const queryClient = makeQueryClient();
+    useRoomPresenceStore.getState().observe('room-1', {
+      type: 'signal',
+      signal: 'progress',
+      authorId: 'kai',
+      at: '2026-07-26T10:00:00.000Z',
+      state: 'working',
+      entryId: 'entry-4',
+      since: '2026-07-26T10:00:00.000Z',
+    });
+
+    transport.subscribeRoom = vi
+      .fn()
+      .mockImplementation((_id: string, _cursor: number, signal: AbortSignal) =>
+        (async function* (): AsyncIterable<RoomEvent> {
+          yield { type: 'entry', seq: 8, entry: notice(8, 'agent_busy', 'kai') };
+          await new Promise<void>((resolve) => {
+            if (signal.aborted) return resolve();
+            signal.addEventListener('abort', () => resolve(), { once: true });
+          });
+        })()
+      );
+
+    const { unmount } = renderHook(() => useRoomStream('room-1', true), {
+      wrapper: wrapperFor(transport, queryClient),
+    });
+
+    try {
+      await waitFor(() =>
+        expect(queryClient.getQueryData<RoomEntry[]>(roomKeys.entries('room-1'))).toHaveLength(1)
+      );
+      expect(useRoomPresenceStore.getState().rooms['room-1']).toBeDefined();
+    } finally {
+      unmount();
+    }
   });
 
   it('tries again on request, from the newest entry the reader holds', async () => {

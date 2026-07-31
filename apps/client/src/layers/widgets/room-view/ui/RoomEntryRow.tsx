@@ -1,5 +1,15 @@
 import { useCallback, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import {
+  CircleSlash,
+  Gauge,
+  Hourglass,
+  Info,
+  Megaphone,
+  TriangleAlert,
+  type LucideIcon,
+} from 'lucide-react';
+import type { RoomNoticeCode } from '@dorkos/shared/room-schemas';
+import {
   feedArticleProps,
   type FeedPosition,
   type MessageGrouping,
@@ -83,6 +93,43 @@ function formatTime(timestamp: string): string {
   if (Number.isNaN(ms)) return '';
   return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
+
+/**
+ * How each kind of notice is drawn.
+ *
+ * The room says five different things in its own voice and used to draw all
+ * five identically — one italic muted line, with `body.notice` read by nothing
+ * anywhere in the client. So "your agent hit an error and could not answer"
+ * looked exactly like "this room widened who answers here", and a reader
+ * skimming had no way to tell a problem from an aside without reading every
+ * line in full.
+ *
+ * A mark and, for one of them, a tone. **Only `turn_failed` is warm**, because
+ * only one of these is something going wrong: the others are the room working
+ * as designed and saying so, and a column of amber over a busy afternoon would
+ * teach a reader to stop looking. The mark is what tells them apart at a glance;
+ * the colour is reserved for the one that wants a decision.
+ *
+ * The WORDS are never touched here. The server owns them (`room-notices.ts`)
+ * and writes them for a person who did not configure this room; a second
+ * sentence invented at the render would be a second voice saying the same thing
+ * slightly differently.
+ */
+const NOTICE_STYLES: Record<RoomNoticeCode, { Icon: LucideIcon; tone?: string }> = {
+  // Something went wrong and the answer is not coming.
+  turn_failed: { Icon: TriangleAlert, tone: 'text-status-warning' },
+  // Occupied, not broken — and the message has to be sent again.
+  agent_busy: { Icon: Hourglass },
+  // A cap was reached. Nothing is wrong; the room is doing what it was told.
+  budget_reached: { Icon: Gauge },
+  // A back-and-forth reached its depth and stopped itself.
+  cascade_stopped: { Icon: CircleSlash },
+  // DorkOS changed when the agents here answer, and has to admit it.
+  addressing_changed: { Icon: Megaphone },
+};
+
+/** The mark on a notice whose code this client does not recognise. */
+const UNKNOWN_NOTICE: { Icon: LucideIcon; tone?: string } = { Icon: Info };
 
 /** How much of a notice its name carries before it is cut short. */
 const NOTICE_NAME_MAX = 80;
@@ -206,14 +253,25 @@ export function RoomEntryRow({
     // guaranteed to be announced is the label, which would turn "Ana stopped
     // replying here" into three words that say nothing. Naming it after its own
     // text means the worst case is hearing the line twice rather than never.
+    const { Icon, tone } =
+      (entry.body.notice && NOTICE_STYLES[entry.body.notice]) ?? UNKNOWN_NOTICE;
     return (
       <p
         data-testid="room-notice"
+        data-notice={entry.body.notice ?? 'unknown'}
         {...(feedPosition && { role: 'article', 'aria-label': noticeName(entry.body.text) })}
         {...feedArticleProps(feedPosition)}
-        className="text-muted-foreground focus-visible:ring-ring/50 px-[var(--msg-padding-x)] py-2 text-xs italic outline-none focus-visible:ring-2"
+        className={cn(
+          'focus-visible:ring-ring/50 flex items-start gap-2 px-[var(--msg-padding-x)] py-2 text-xs outline-none focus-visible:ring-2',
+          tone ?? 'text-muted-foreground'
+        )}
       >
-        {entry.body.text}
+        {/* Decoration, and it has to stay decoration: the words beside it already
+            say everything the mark stands for, and naming the icon would make a
+            screen reader read "warning" before a sentence that goes on to
+            explain itself. */}
+        <Icon aria-hidden className="mt-px size-3.5 shrink-0" />
+        <span>{entry.body.text}</span>
       </p>
     );
   }

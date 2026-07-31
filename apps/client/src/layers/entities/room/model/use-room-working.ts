@@ -27,8 +27,11 @@
  * @module entities/room/model/use-room-working
  */
 import { useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
+import { useTransport } from '@/layers/shared/model';
+import { roomKeys } from '../api/query-keys';
 import { PRESENCE_TICK_MS, PRESENCE_TTL_MS } from './use-room-presence';
 
 /** The last thing the fan-out said about one room. */
@@ -149,6 +152,41 @@ export function useRoomWorking(roomId: string, listed: number | undefined): numb
   }, [ageing]);
 
   return countNow(record, listed);
+}
+
+/**
+ * How many agents are working in the room that is OPEN.
+ *
+ * The same answer {@link useRoomWorking} gives a sidebar row, for a surface that
+ * does not have a `RoomSummary` in its hand: the open room is read as a
+ * `RoomWithRoster`, which carries no count, so the seed comes out of the room
+ * list this cockpit has already fetched.
+ *
+ * **The seed is the whole point.** Opening a room mid-turn is the case a live
+ * signal cannot cover: the room's own stream publishes presence, but the next
+ * republish is up to ten seconds away, so for those ten seconds a reader who
+ * opened a working room would be told nothing is happening. The list's `working`
+ * field is a live read of the same claim map, taken when the list was fetched,
+ * and it fills exactly that gap — then the stream takes over, as it does for the
+ * sidebar.
+ *
+ * **It never fetches.** `enabled: false` makes this an observer on a cache the
+ * sidebar already fills; a room's masthead is not worth a request, and mounting
+ * a second fetching observer on a stale list query would start a background
+ * refetch to decorate a chip.
+ *
+ * @param roomId - The room on screen.
+ * @returns The number of agents working there. `0` when nobody is, and when
+ *   this client has never read a room list.
+ */
+export function useOpenRoomWorking(roomId: string): number {
+  const transport = useTransport();
+  const listed = useQuery({
+    queryKey: roomKeys.list(),
+    queryFn: () => transport.listRooms(),
+    enabled: false,
+  }).data?.find((room) => room.id === roomId)?.working;
+  return useRoomWorking(roomId, listed);
 }
 
 /**

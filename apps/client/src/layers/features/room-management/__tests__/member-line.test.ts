@@ -34,7 +34,9 @@ describe('memberSecondaryLine', () => {
       joinedAt: JOINED,
     });
 
-    expect(line).toBe('working now');
+    // And it says how long, which the row used to withhold on this rung: a turn
+    // four minutes in read exactly like one that started this second.
+    expect(line).toBe('working now, 4s');
   });
 
   it('says how long a turn that has outrun the room has been going', () => {

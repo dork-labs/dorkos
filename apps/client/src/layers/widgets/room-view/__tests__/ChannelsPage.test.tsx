@@ -23,7 +23,11 @@ import {
   type RoomEvent,
   type RoomWithRoster,
 } from '@dorkos/shared/room-schemas';
-import { useRoomDraftStore, useRoomOpenThreadStore } from '@/layers/entities/room';
+import {
+  usePendingPostStore,
+  useRoomDraftStore,
+  useRoomOpenThreadStore,
+} from '@/layers/entities/room';
 import { createQueryClientConfig } from '@/layers/shared/lib';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
@@ -67,6 +71,9 @@ afterEach(() => {
   // refused message find its way back. So a test that typed into one has to put
   // it back, or the next test starts with words in a box it believes is empty.
   useRoomDraftStore.setState({ drafts: {} });
+  // Pending rows outlive their composer for the same reason drafts do — a
+  // refusal has to find something still standing — so they outlive tests too.
+  usePendingPostStore.setState({ posts: [] });
 });
 
 function roomWith(id: string, slug: string): RoomWithRoster {
@@ -346,7 +353,7 @@ describe('ChannelsPage room switching', () => {
  * a refusal at the call site therefore loses it completely: no words, no toast.
  */
 describe('ChannelsPage — a refusal nobody is listening for', () => {
-  it('gives the words back to the room even after the reader has left it', async () => {
+  it('keeps a refused message in the room it was written for, after the reader has left it', async () => {
     let refuse: (err: Error) => void = () => {};
     const { transport, openRoom } = renderPage({
       postToRoom: vi.fn(
@@ -373,14 +380,21 @@ describe('ChannelsPage — a refusal nobody is listening for', () => {
       expect(toastError).toHaveBeenCalledWith("Couldn't send your message — This room is archived")
     );
     expect(toastError).toHaveBeenCalledTimes(1);
-    // The room the reader is standing in is untouched...
+    // The room the reader is standing in is untouched — its composer is not a
+    // dumping ground for another conversation's refusal, and neither is its log.
     expect(channelField.value).toBe('');
-    // ...and the words are waiting in the room they were written for.
-    const restored = await openRoom('room-1');
-    expect(restored.value).toBe('the message that will fail');
+    expect(screen.queryByTestId('room-pending')).not.toBeInTheDocument();
+
+    // ...and the words are waiting in the room they were written for, on the
+    // row that has been holding them since they were typed.
+    await openRoom('room-1');
+    const held = await screen.findByTestId('room-pending');
+    expect(held).toHaveAttribute('data-status', 'failed');
+    expect(held).toHaveTextContent('the message that will fail');
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
   });
 
-  it('gives the words back when a second message supersedes the first', async () => {
+  it('reports a refusal nothing is listening for any more', async () => {
     const settlers: Array<(err: Error) => void> = [];
     const { transport, openRoom } = renderPage({
       postToRoom: vi.fn(
@@ -405,14 +419,21 @@ describe('ChannelsPage — a refusal nobody is listening for', () => {
     // The server refuses the FIRST one, which nothing is watching any more.
     settlers[0]!(new Error('Not a member of this room'));
 
-    await waitFor(() => expect(field.value).toBe('first'));
+    // TanStack dispatches per-call callbacks only while the observer still has
+    // listeners, and the second `mutate` took them — so this is the case that
+    // used to fail in silence. The row says which of the two did not get there.
+    await waitFor(() => {
+      const failed = usePendingPostStore.getState().posts.filter((p) => p.status === 'failed');
+      expect(failed).toHaveLength(1);
+      expect(failed[0]?.text).toBe('first');
+    });
     expect(toastError).toHaveBeenCalledTimes(1);
     expect(toastError).toHaveBeenCalledWith(
       "Couldn't send your message — Not a member of this room"
     );
   });
 
-  it('stacks a refusal above whatever was typed while it was in the air', async () => {
+  it('leaves whatever was typed while it was in the air completely alone', async () => {
     let refuse: (err: Error) => void = () => {};
     const { transport, openRoom } = renderPage({
       postToRoom: vi.fn(
@@ -431,7 +452,16 @@ describe('ChannelsPage — a refusal nobody is listening for', () => {
     fireEvent.change(field, { target: { value: 'typed while waiting' } });
     refuse(new Error('offline'));
 
-    await waitFor(() => expect(field.value).toBe('the refused one\ntyped while waiting'));
+    // Two sentences, one place each. Merging the refused one into the box on
+    // top of the half-typed one meant a reader who then pressed Enter sent both
+    // at once, as one message.
+    await waitFor(() =>
+      expect(usePendingPostStore.getState().posts[0]).toMatchObject({
+        text: 'the refused one',
+        status: 'failed',
+      })
+    );
+    expect(field.value).toBe('typed while waiting');
   });
 
   it('keeps a draft while you read another room, and hands it back on return', async () => {

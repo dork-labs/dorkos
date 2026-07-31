@@ -120,6 +120,22 @@ describe('RoomPresenceLine', () => {
     expect(line()).toBe('Kai, Ana and Sam are working on it · 42s');
   });
 
+  it('says a long wait is a long wait with more than one agent on it', () => {
+    // The defect this pins: the taking-longer wording was the single-agent case
+    // only, so a second agent picking something up silently withdrew the one
+    // statement a waiting person can act on.
+    vi.setSystemTime(new Date('2026-07-30T10:12:00.000Z'));
+    working('kai', 'working_late', '2026-07-30T10:00:00.000Z');
+    working('ana', 'working_late', '2026-07-30T10:00:30.000Z');
+
+    render(<RoomPresenceLine roomId={ROOM} members={ROSTER} />);
+
+    expect(line()).toBe('Kai and Ana are still working — this is taking longer than usual · 12m');
+    expect(screen.getByRole('status').textContent).toBe(
+      'Kai and Ana are still working — this is taking longer than usual'
+    );
+  });
+
   it('counts past three, and hands the names over on a tap', () => {
     vi.setSystemTime(new Date('2026-07-30T10:00:40.000Z'));
     working('kai', 'working', '2026-07-30T10:00:00.000Z');
@@ -143,6 +159,32 @@ describe('RoomPresenceLine', () => {
       'Ana · 30s',
       'Sam · 20s',
       'Rae · 10s',
+    ]);
+  });
+
+  it('carries the long wait into the count, and into the row it belongs to', () => {
+    // Past the naming limit the line used to drop state twice over — the count
+    // never said anything was slow, and the list behind it printed four
+    // identical-looking rows. The list is exactly where a person goes to find
+    // out which agent to chase.
+    vi.setSystemTime(new Date('2026-07-30T10:20:00.000Z'));
+    working('kai', 'working_late', '2026-07-30T10:00:00.000Z');
+    working('ana', 'working', '2026-07-30T10:19:00.000Z');
+    working('sam', 'working', '2026-07-30T10:19:20.000Z');
+    working('rae', 'working', '2026-07-30T10:19:40.000Z');
+
+    render(<RoomPresenceLine roomId={ROOM} members={ROSTER} />);
+
+    const toggle = screen.getByRole('button', {
+      name: '4 agents are still working — this is taking longer than usual',
+    });
+    fireEvent.click(toggle);
+
+    expect(screen.getAllByRole('listitem').map((item) => item.textContent)).toEqual([
+      'Kai · 20m · taking longer than usual',
+      'Ana · 1m',
+      'Sam · 40s',
+      'Rae · 20s',
     ]);
   });
 

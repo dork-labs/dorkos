@@ -27,11 +27,36 @@ export function useRoom(roomId: string | null): UseQueryResult<RoomWithRoster> {
 /**
  * One definition of a room's history query, so the reader that fetches it and
  * the reader that only looks at it can never key on different things.
+ *
+ * **The stream owns this cache entry, and every option here says so.** The read
+ * hydrates it once; from then on `useRoomStream` merges arriving entries into
+ * it and nothing else may write it. A background refetch would undo that work
+ * twice over: the server answers with the TRAILING page, so a room left open
+ * long enough to have scrolled past a page is truncated back to fifty rows, and
+ * anything the socket delivered while the GET was in flight is overwritten by a
+ * response that predates it — permanently, because the stream only recomputes
+ * its cursor when it reconnects and never re-delivers what it already sent.
+ *
+ * - `staleTime: Infinity` — nothing here goes stale, because the stream is what
+ *   keeps it current. A refetch could only ever be a step backwards.
+ * - `refetchOnWindowFocus: false` — the default fired the truncating refetch on
+ *   every alt-tab back into a room. Same precedent as `useSessionHistory`.
+ * - `refetchOnReconnect: false` — the stream has its own resume, from a cursor,
+ *   and it is gap-free; a whole-page GET beside it is a slower, lossier answer
+ *   to the same question.
+ *
+ * `meta.streamOwned` says the same thing to anything holding a broom: see
+ * `installReconnectInvalidation`, which invalidates the world when the global
+ * stream recovers and has to be told what not to sweep.
  */
 function roomEntriesQuery(transport: Transport, roomId: string | null) {
   return {
     queryKey: roomKeys.entries(roomId ?? ''),
     queryFn: () => transport.listRoomEntries(roomId!),
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    meta: { streamOwned: true },
   };
 }
 

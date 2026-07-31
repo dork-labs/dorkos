@@ -358,6 +358,75 @@ describe('RoomEntryRow — the action surface', () => {
   });
 });
 
+describe('RoomEntryRow — telling one notice from another', () => {
+  /** The notice's own mark, which is what tells the five codes apart. */
+  function mark(): SVGElement | null {
+    return screen.getByTestId('room-notice').querySelector('svg');
+  }
+
+  it('says which kind of notice it is, not just that it is one', () => {
+    // The room says five different things in its own voice and drew all five
+    // identically, with `body.notice` read by nothing in the client — so a turn
+    // that errored looked exactly like a room admitting it widened who answers
+    // here. Red if the code stops reaching the render.
+    renderRow(
+      entry({
+        kind: 'notice',
+        body: { text: 'Kai ran into a problem', notice: 'turn_failed', subjectAuthorId: 'kai' },
+      })
+    );
+
+    expect(screen.getByTestId('room-notice')).toHaveAttribute('data-notice', 'turn_failed');
+  });
+
+  it('is the only notice drawn warm, because it is the only one going wrong', () => {
+    renderRow(
+      entry({
+        kind: 'notice',
+        body: { text: 'Kai ran into a problem', notice: 'turn_failed', subjectAuthorId: 'kai' },
+      })
+    );
+    expect(screen.getByTestId('room-notice')).toHaveClass('text-status-warning');
+    const failedMark = mark()?.outerHTML;
+    cleanup();
+
+    // Everything else is the room working as designed and saying so. A column of
+    // amber over a busy afternoon teaches a reader to stop looking.
+    for (const code of ['agent_busy', 'budget_reached', 'cascade_stopped'] as const) {
+      renderRow(entry({ kind: 'notice', body: { text: 'the room said something', notice: code } }));
+      const row = screen.getByTestId('room-notice');
+      expect(row).toHaveClass('text-muted-foreground');
+      expect(row).not.toHaveClass('text-status-warning');
+      // …and still tells itself apart from the failure, by its mark.
+      expect(mark()?.outerHTML).not.toBe(failedMark);
+      cleanup();
+    }
+  });
+
+  it('draws the mark as decoration, never as a second sentence', () => {
+    // An icon with a name would make a screen reader read "warning" ahead of a
+    // sentence that goes on to explain itself in full.
+    renderRow(
+      entry({
+        kind: 'notice',
+        body: { text: 'Kai ran into a problem', notice: 'turn_failed', subjectAuthorId: 'kai' },
+      })
+    );
+
+    expect(mark()).toHaveAttribute('aria-hidden', 'true');
+    expect(screen.getByTestId('room-notice').textContent).toBe('Kai ran into a problem');
+  });
+
+  it('still draws a notice whose code this client has never heard of', () => {
+    // The server adds codes; a client that is a release behind must not render a
+    // blank line where a sentence should be.
+    renderRow(entry({ kind: 'notice', body: { text: 'something new happened' } }));
+
+    expect(screen.getByTestId('room-notice')).toHaveTextContent('something new happened');
+    expect(mark()).not.toBeNull();
+  });
+});
+
 describe('RoomEntryRow — the pills under a message', () => {
   it('draws nothing at all under a message nobody has reacted to', () => {
     // Behaviour 4's other half, and the one that keeps a room quiet: no pill

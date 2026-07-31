@@ -283,12 +283,17 @@ export function RoomRow({ room, visual, isActive, onSelect, onOpenAgentProfile }
                     // out, and a role is what turns this from decoration into
                     // something with a name.
                     role="img"
-                    // Emerald, which is this cockpit's colour for "live" —
-                    // deliberately NOT the brand tint of the unread badge it
-                    // sits beside. Two facts about one row have to be tellable
-                    // apart at a glance, and a second orange mark next to an
-                    // orange pill reads as part of it.
-                    className="size-1.5 shrink-0 rounded-full bg-emerald-500 motion-safe:animate-pulse"
+                    // The success token, which is this cockpit's colour for
+                    // "live" — deliberately NOT the brand tint of the unread
+                    // badge it sits beside. Two facts about one row have to be
+                    // tellable apart at a glance, and a second orange mark next
+                    // to an orange pill reads as part of it.
+                    //
+                    // The TOKEN and not the raw palette value it happens to
+                    // resolve to: `RoomMemberRow` draws the identical fact with
+                    // `bg-status-success`, and one fact wearing two spellings is
+                    // one that drifts the first time either theme moves.
+                    className="bg-status-success size-1.5 shrink-0 rounded-full motion-safe:animate-pulse"
                     // A dot, and nothing else. The unread badge beside it counts
                     // messages waiting to be read; this counts work in flight,
                     // which is a fact about right now that will be gone shortly

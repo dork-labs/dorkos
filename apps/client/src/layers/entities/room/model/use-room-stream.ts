@@ -24,13 +24,15 @@
  *
  * @module entities/room/model/use-room-stream
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import type { RoomEntry } from '@dorkos/shared/room-schemas';
 import { SSE_RESILIENCE } from '@/layers/shared/lib';
+import { streamManager } from '@/layers/shared/lib/transport';
 import { useTransport } from '@/layers/shared/model';
 import { roomKeys } from '../api/query-keys';
 import { mergeRoomReactions } from '../lib/reactions';
+import { usePendingPostStore } from './pending-posts';
 import { useRoomPresenceStore } from './use-room-presence';
 
 /**
@@ -52,6 +54,37 @@ export function mergeRoomEntry(
   // Entries almost always arrive in order, so check the tail before sorting.
   if (list.length === 0 || list[list.length - 1]!.seq < entry.seq) return [...list, entry];
   return [...list, entry].sort((a, b) => a.seq - b.seq);
+}
+
+/**
+ * Retire the indicator of the agent a notice is ABOUT, where the notice means
+ * that agent has stopped.
+ *
+ * The rule beside this one — an author's own entry clears that author's
+ * indicators — cannot reach these, and the gap is why a room could sit drawing
+ * "Kai is working · 6m" under a line saying Kai ran into a problem. A notice is
+ * written by the SYSTEM author, so clearing on `entry.authorId` clears the
+ * system's indicators, of which there are never any. `body.subjectAuthorId`
+ * names the agent, and until now nothing read it.
+ *
+ * **Only `turn_failed`**, deliberately. It is the one code that means the work
+ * has ended: the turn errored or never finished, and no `done` signal is coming
+ * because the thing that would have published one is gone.
+ *
+ * `agent_busy` reads like a stop and is the opposite. The trigger was skipped
+ * because that agent's session was ALREADY being written to — so the agent is
+ * genuinely working, on the older message, and clearing its indicator would
+ * blank the one true thing on screen. `cascade_stopped` and `budget_reached`
+ * describe a turn that was never started, so there is no indicator to retire.
+ *
+ * @param roomId - The room the notice landed in.
+ * @param entry - The entry that just arrived, of any kind.
+ */
+function clearNoticeSubject(roomId: string, entry: RoomEntry): void {
+  if (entry.kind !== 'notice' || entry.body.notice !== 'turn_failed') return;
+  const subject = entry.body.subjectAuthorId;
+  if (subject === undefined) return;
+  useRoomPresenceStore.getState().clearAuthor(roomId, subject);
 }
 
 /** The highest `seq` a room's cached history holds, or 0 when it is empty. */
@@ -92,10 +125,16 @@ function wait(ms: number, signal: AbortSignal): Promise<void> {
 /** What the open room's live stream is doing. */
 export interface RoomStreamState {
   /**
-   * True once the stream has dropped, been retried to the limit, and stopped —
-   * so the room on screen is no longer live. Nothing else reports this: the
-   * global stream keeps reconnecting and re-badging the room in the sidebar,
-   * which would make a frozen room look like a quiet one.
+   * True once the stream has dropped more times in a row than
+   * {@link SSE_RESILIENCE.DISCONNECTED_THRESHOLD} — so the room on screen is no
+   * longer live, and everything a reader might infer from its silence is
+   * unreliable. Nothing else reports this: the global stream keeps reconnecting
+   * and re-badging the room in the sidebar, which would make a frozen room look
+   * like a quiet one.
+   *
+   * **It is a statement about now, not a terminal state.** The loop keeps
+   * retrying underneath it at the backoff cap, and clears it the moment a stream
+   * is demonstrably alive again.
    */
   stalled: boolean;
   /** Try again from the newest entry the reader holds. */
@@ -107,16 +146,28 @@ export interface RoomStreamState {
  *
  * Reconnects on its own: when the stream ends or throws, the cursor is
  * recomputed from the cache — so the resume is gap-free however many entries
- * were missed — and the subscription reopens after a jittered backoff. Attempts
- * stop at {@link SSE_RESILIENCE.DISCONNECTED_THRESHOLD} rather than retrying
- * forever, and a stream that stayed up longer than the stability window is
- * forgiven its earlier failures, so a server that restarts nightly never spends
- * the budget.
+ * were missed — and the subscription reopens after a jittered backoff. A stream
+ * that stayed up longer than the stability window is forgiven its earlier
+ * failures, so a server that restarts nightly never spends the budget.
+ *
+ * **It never stops trying, and that is the fix.** Retrying stopped at
+ * {@link SSE_RESILIENCE.DISCONNECTED_THRESHOLD} — five attempts over roughly
+ * seven seconds — after which the room was frozen for as long as the tab stayed
+ * open, while the global `/api/events` stream beside it reconnected forever. A
+ * brief lift ended a room's day. The threshold now decides only when to SAY the
+ * room has gone quiet; the loop carries on at the backoff cap underneath, and
+ * clears that notice the moment a stream proves itself alive.
+ *
+ * Three things wake it early rather than waiting out a backoff that may be at
+ * its 30s cap, because all three mean the network just changed underneath it:
+ * the browser going back online, the global stream recovering, and a tab coming
+ * back to the foreground after long enough that its connections may have been
+ * culled.
  *
  * @param roomId - The room to follow, or `null` when nothing is selected.
  * @param hydrated - Whether the room's history has loaded. The stream waits for
  *   it, because the cursor it resumes from is that read's high-water mark.
- * @returns Whether the stream has given up, and a way to ask it to try again.
+ * @returns Whether the room has gone quiet, and a way to ask it to try now.
  */
 export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStreamState {
   const transport = useTransport();
@@ -125,10 +176,64 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
   // dead-stream notice across to a room whose stream is perfectly alive.
   const [stalledRoomId, setStalledRoomId] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  /**
+   * Whether the subscription loop is currently between streams.
+   *
+   * Read by the wake-ups below, so a tab switch over a perfectly healthy room
+   * does not tear down a live socket to open an identical one.
+   */
+  const betweenStreamsRef = useRef(false);
 
   // Re-running the effect is the whole of a retry: the cycle below clears the
   // stall itself, so there is nothing to reset here.
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
+
+  // The three wake-ups. Each is a fact about the network rather than a guess,
+  // and each is cheap: a retry re-opens from the cursor the reader already
+  // holds, so the worst case of an unnecessary one is a redundant resume.
+  useEffect(() => {
+    if (roomId === null) return;
+
+    // `online` means the machine had no network and now does, so whatever
+    // socket was open is dead by definition — no health check needed.
+    const onOnline = () => retry();
+
+    // A tab that was in the background long enough for a browser to cull its
+    // connections comes back to a socket that may be dead without anything
+    // having noticed: the adapter's own detection is a heartbeat watchdog, so
+    // it would take up to another 45s to find out. Short switches are left
+    // alone — the stream is almost certainly fine, and reopening it on every
+    // alt-tab would be worse than the problem.
+    let hiddenAt: number | null = null;
+    const onVisibility = () => {
+      if (document.visibilityState !== 'visible') {
+        hiddenAt = Date.now();
+        return;
+      }
+      const hiddenFor = hiddenAt === null ? 0 : Date.now() - hiddenAt;
+      hiddenAt = null;
+      if (betweenStreamsRef.current || hiddenFor >= SSE_RESILIENCE.VISIBILITY_GRACE_MS) retry();
+    };
+
+    // The global stream recovering says the server is reachable again. It is
+    // the signal that used to be missing entirely: `/api/events` reconnected
+    // forever and re-badged this very room in the sidebar while the room on
+    // screen sat dead, which is what made a frozen room look like a quiet one.
+    let previous = streamManager.getListConnectionState();
+    const unsubscribe = streamManager.subscribeListConnectionState((state) => {
+      const recovered = state === 'connected' && previous === 'reconnecting';
+      previous = state;
+      if (recovered) retry();
+    });
+
+    window.addEventListener('online', onOnline);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('online', onOnline);
+      document.removeEventListener('visibilitychange', onVisibility);
+      unsubscribe();
+    };
+  }, [roomId, retry]);
 
   useEffect(() => {
     if (roomId === null || !hydrated) return;
@@ -142,9 +247,29 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
       // coming through. Clearing on the way IN also covers the retry button and
       // a re-hydrate, which are the only other ways a cycle begins.
       setStalledRoomId(null);
+      betweenStreamsRef.current = false;
       let failures = 0;
+      // Said once per outage, not once per failed attempt: the loop no longer
+      // stops, so without this the room would clear its presence store every
+      // thirty seconds forever.
+      let declared = false;
+
+      /** This stream has proved itself; forget the outage that preceded it. */
+      const declareHealthy = () => {
+        failures = 0;
+        betweenStreamsRef.current = false;
+        if (!declared) return;
+        declared = false;
+        setStalledRoomId((held) => (held === roomId ? null : held));
+      };
+
       while (!controller.signal.aborted) {
         const openedAt = Date.now();
+        // A room can be healthy and completely silent, so "an event arrived" is
+        // not the only proof of life — a stream still open after the stability
+        // window is the other, and it is the one that takes the notice back down
+        // over a quiet room whose server has come back.
+        const stable = setTimeout(declareHealthy, SSE_RESILIENCE.STABILITY_WINDOW_MS);
         try {
           const stream = transport.subscribeRoom(
             roomId,
@@ -153,6 +278,10 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
           );
           for await (const event of stream) {
             if (controller.signal.aborted) return;
+            // Anything arriving is proof the socket is alive, which is the fast
+            // path out of a stall — a busy room recovers on its first message
+            // rather than ten seconds later.
+            declareHealthy();
             // Signals (typing, presence) are live-only and carry no `seq`, so
             // they never enter the history — they go to the presence store,
             // which expires them rather than keeping them.
@@ -178,6 +307,14 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
             // waited for the release would draw "working" under an answer that
             // is already on screen (`use-room-presence` explains the rest).
             useRoomPresenceStore.getState().clearAuthor(roomId, event.entry.authorId);
+            // …and the rule above cannot reach a notice's subject, because a
+            // notice is written by the SYSTEM author and is ABOUT an agent.
+            clearNoticeSubject(roomId, event.entry);
+            // The echo of something this reader sent retires the row that has
+            // been holding those words on screen since they were typed. Keyed on
+            // the server's own id, so two sends of "ok" retire in the order they
+            // were accepted rather than whichever row matched the text first.
+            usePendingPostStore.getState().settle(roomId, event.entry.id);
             // Only the history. The same post also fans out globally as
             // `room_activity`, which `useRoomListStream` turns into the list
             // refresh — so refreshing here too would just do it twice.
@@ -188,6 +325,8 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
         } catch (err) {
           if (controller.signal.aborted) return;
           console.warn('[rooms] live stream dropped', { roomId, err });
+        } finally {
+          clearTimeout(stable);
         }
         if (controller.signal.aborted) return;
 
@@ -195,14 +334,20 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
         // wrong after that is a fresh incident, not a continuing one.
         if (Date.now() - openedAt >= SSE_RESILIENCE.STABILITY_WINDOW_MS) failures = 0;
         failures += 1;
-        if (failures >= SSE_RESILIENCE.DISCONNECTED_THRESHOLD) {
+        betweenStreamsRef.current = true;
+        if (failures >= SSE_RESILIENCE.DISCONNECTED_THRESHOLD && !declared) {
           // Whatever was working is now unknowable: the releases would have come
           // down the stream that just died. A frozen "· 42s" under a banner
           // saying nothing is coming through is the lingering-dots lie.
           useRoomPresenceStore.getState().clearRoom(roomId);
           setStalledRoomId(roomId);
-          return;
+          declared = true;
         }
+        // And then round again. The backoff curve caps at
+        // `SSE_RESILIENCE.BACKOFF_CAP_MS`, so a room nobody can reach costs one
+        // request every thirty seconds — the same standing cost the global
+        // stream has always paid, and the price of a room that comes back on
+        // its own when the network does.
         await wait(backoffMs(failures), controller.signal);
       }
     })();

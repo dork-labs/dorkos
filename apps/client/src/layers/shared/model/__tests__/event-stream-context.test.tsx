@@ -33,7 +33,12 @@ const { fakeManager, stateListeners, eventListeners, mockInvalidateQueries } = v
   return { fakeManager, stateListeners, eventListeners, mockInvalidateQueries: vi.fn() };
 });
 
-vi.mock('@/layers/shared/lib/query-client', () => ({
+vi.mock('@/layers/shared/lib/query-client', async (importOriginal) => ({
+  // The real `isStreamOwnedQuery`, because the point of the assertion below is
+  // that the production predicate excludes the right things — a stub would just
+  // be the test agreeing with itself.
+  isStreamOwnedQuery: (await importOriginal<typeof import('../../lib/query-client')>())
+    .isStreamOwnedQuery,
   queryClient: { invalidateQueries: mockInvalidateQueries },
 }));
 
@@ -177,6 +182,31 @@ describe('refetch-on-reconnect', () => {
     await vi.waitFor(() => {
       expect(mockInvalidateQueries).toHaveBeenCalledOnce();
     });
+  });
+
+  it('spares caches a stream of their own already owns', async () => {
+    // A bare `invalidateQueries()` swept a room's history with everything else,
+    // and that read answers with the TRAILING page — so recovering from a
+    // ten-second blip truncated a room somebody had scrolled back through, and
+    // overwrote whatever the socket had already delivered. The room's own
+    // stream resumes from a cursor and is gap-free; it does not need help.
+    renderHook(() => useEventStream(), { wrapper: Wrapper });
+
+    fireState('reconnecting', 1);
+    fireState('connected', 0);
+
+    await vi.waitFor(() => expect(mockInvalidateQueries).toHaveBeenCalledOnce());
+    const { predicate } = mockInvalidateQueries.mock.calls[0]![0] as {
+      predicate: (query: { queryKey: unknown[]; meta?: Record<string, unknown> }) => boolean;
+    };
+
+    expect(
+      predicate({ queryKey: ['rooms', 'entries', 'room-1'], meta: { streamOwned: true } })
+    ).toBe(false);
+    // And everything else is still swept, which is the whole point of the
+    // handler — a narrowing that spared the world would be no re-sync at all.
+    expect(predicate({ queryKey: ['rooms', 'list', null] })).toBe(true);
+    expect(predicate({ queryKey: ['sessions'], meta: {} })).toBe(true);
   });
 
   it('does not invalidate on initial connecting → connected', async () => {

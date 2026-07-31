@@ -2,7 +2,12 @@ import { useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { RoomRosterEntry } from '@dorkos/shared/room-schemas';
 import { presenceElapsed, useRoomPresence, type PresenceScope } from '@/layers/entities/room';
-import { PRESENCE_NAME_LIMIT, presenceSentence } from '../lib/presence-copy';
+import {
+  PRESENCE_NAME_LIMIT,
+  presenceCountSentence,
+  presenceListRow,
+  presenceSentence,
+} from '../lib/presence-copy';
 
 /**
  * What to call an agent the roster does not hold.
@@ -57,19 +62,23 @@ export function RoomPresenceLine({ roomId, members, scope }: RoomPresenceLinePro
   const nameOf = (authorId: string): string =>
     members.find((member) => member.author.id === authorId)?.author.displayName ?? UNKNOWN_AGENT;
 
+  // The oldest claim's state speaks for the line, whether it names the agents or
+  // counts them: it is the claim the elapsed time beside the sentence measures,
+  // and the one that crosses the server's late threshold first.
+  const oldestState = working[0]?.state ?? 'working';
+  // The one sentence, said the same way whether it is on screen or read out.
+  const sentence = counted
+    ? presenceCountSentence(working.length, oldestState)
+    : presenceSentence(
+        working.map((agent) => nameOf(agent.authorId)),
+        oldestState
+      );
+
   // What a screen reader is told, which is deliberately NOT what is on screen:
   // the elapsed time is left out, because a live region that reworded itself
   // every second would make the room unusable. The sentence changes only when
   // who is working changes, or when the wait goes long.
-  const announcement =
-    working.length === 0
-      ? ''
-      : counted
-        ? `${working.length} agents are working on it`
-        : presenceSentence(
-            working.map((agent) => nameOf(agent.authorId)),
-            working[0]!.state
-          );
+  const announcement = working.length === 0 ? '' : sentence;
 
   return (
     <>
@@ -110,7 +119,7 @@ export function RoomPresenceLine({ roomId, members, scope }: RoomPresenceLinePro
                   onClick={() => setExpanded((open) => !open)}
                   className="focus-ring hover:text-foreground rounded underline underline-offset-2"
                 >
-                  {working.length} agents are working on it
+                  {sentence}
                 </button>
                 {expanded && (
                   <ul className="mt-1 space-y-0.5">
@@ -121,7 +130,11 @@ export function RoomPresenceLine({ roomId, members, scope }: RoomPresenceLinePro
                       typing ever ships it gets its own row, not this one. */}
                     {working.map((agent) => (
                       <li key={agent.authorId}>
-                        {`${nameOf(agent.authorId)} · ${presenceElapsed(agent.elapsedMs)}`}
+                        {presenceListRow(
+                          nameOf(agent.authorId),
+                          agent.state,
+                          presenceElapsed(agent.elapsedMs)
+                        )}
                       </li>
                     ))}
                   </ul>
