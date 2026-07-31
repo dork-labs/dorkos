@@ -1,6 +1,7 @@
 import { useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import type { RoomRosterEntry } from '@dorkos/shared/room-schemas';
-import { presenceElapsed, useRoomPresence } from '@/layers/entities/room';
+import { presenceElapsed, useRoomPresence, type PresenceScope } from '@/layers/entities/room';
 import { PRESENCE_NAME_LIMIT, presenceSentence } from '../lib/presence-copy';
 
 /**
@@ -18,6 +19,12 @@ interface RoomPresenceLineProps {
   roomId: string;
   /** Its roster, which is where the names come from. */
   members: readonly RoomRosterEntry[];
+  /**
+   * Which half of the room's presence this line speaks for, when a thread panel
+   * is open. The panel's line takes the thread's claims and the room's line
+   * takes the rest, so one agent's work is announced once. Omit for all of it.
+   */
+  scope?: PresenceScope;
 }
 
 /**
@@ -35,8 +42,8 @@ interface RoomPresenceLineProps {
  *
  * @param props - The room and its roster.
  */
-export function RoomPresenceLine({ roomId, members }: RoomPresenceLineProps) {
-  const working = useRoomPresence(roomId);
+export function RoomPresenceLine({ roomId, members, scope }: RoomPresenceLineProps) {
+  const working = useRoomPresence(roomId, scope);
   const [expanded, setExpanded] = useState(false);
   const counted = working.length > PRESENCE_NAME_LIMIT;
 
@@ -81,43 +88,56 @@ export function RoomPresenceLine({ roomId, members }: RoomPresenceLineProps) {
       >
         {announcement}
       </span>
-      {working.length > 0 && (
-        <div data-testid="room-presence" className="text-muted-foreground px-4 pb-2 text-xs">
-          {counted ? (
-            <>
-              <button
-                type="button"
-                aria-expanded={expanded}
-                onClick={() => setExpanded((open) => !open)}
-                className="focus-ring hover:text-foreground rounded underline underline-offset-2"
-              >
-                {working.length} agents are working on it
-              </button>
-              {expanded && (
-                <ul className="mt-1 space-y-0.5">
-                  {/* Every row is an agent. Presence is published only by the
+      {/* The hand-off (design record §5.4): the line does not vanish, it fades
+          as the answer settles upward into the space it leaves — the indicator
+          visibly BECOMING the answer. The exit is `motion`'s because an exit is
+          the one thing CSS cannot animate on an element that is unmounting; the
+          reply's own rise is CSS, in the panel that draws it. */}
+      <AnimatePresence initial={false}>
+        {working.length > 0 && (
+          <motion.div
+            key="presence"
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.16, ease: [0.3, 1, 0.4, 1] }}
+            data-testid="room-presence"
+            className="text-muted-foreground px-4 pb-2 text-xs"
+          >
+            {counted ? (
+              <>
+                <button
+                  type="button"
+                  aria-expanded={expanded}
+                  onClick={() => setExpanded((open) => !open)}
+                  className="focus-ring hover:text-foreground rounded underline underline-offset-2"
+                >
+                  {working.length} agents are working on it
+                </button>
+                {expanded && (
+                  <ul className="mt-1 space-y-0.5">
+                    {/* Every row is an agent. Presence is published only by the
                       dispatcher's claim lifecycle and only agents are claimed,
                       so a person can never appear here — and the copy is written
                       for an agent on purpose (room-presence spec §5.2). If human
                       typing ever ships it gets its own row, not this one. */}
-                  {working.map((agent) => (
-                    <li key={agent.authorId}>
-                      {`${nameOf(agent.authorId)} · ${presenceElapsed(agent.elapsedMs)}`}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </>
-          ) : (
-            <p>
-              {`${presenceSentence(
-                working.map((agent) => nameOf(agent.authorId)),
-                working[0]!.state
-              )} · ${presenceElapsed(working[0]!.elapsedMs)}`}
-            </p>
-          )}
-        </div>
-      )}
+                    {working.map((agent) => (
+                      <li key={agent.authorId}>
+                        {`${nameOf(agent.authorId)} · ${presenceElapsed(agent.elapsedMs)}`}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            ) : (
+              <p>
+                {`${presenceSentence(
+                  working.map((agent) => nameOf(agent.authorId)),
+                  working[0]!.state
+                )} · ${presenceElapsed(working[0]!.elapsedMs)}`}
+              </p>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
 }

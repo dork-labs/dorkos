@@ -13,3 +13,12 @@ export { ChannelsPage } from './ui/ChannelsPage';
  * catch a layout defect. Nothing in the routed app imports it from here.
  */
 export { RoomEntryRow } from './ui/RoomEntryRow';
+/**
+ * The thread side panel and its "N replies" row under a thread root, exported
+ * for the Dev Playground's thread bench (`/dev/rooms`) for the same reason
+ * `RoomEntryRow` is: the playground renders the real components, never a copy
+ * of their markup. Nothing in the routed app imports them from here — the
+ * room view mounts both itself.
+ */
+export { RoomThreadPanel } from './ui/RoomThreadPanel';
+export { RoomThreadReplyRow } from './ui/RoomThreadReplyRow';

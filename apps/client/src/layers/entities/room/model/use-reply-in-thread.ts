@@ -9,31 +9,32 @@
  * Everything `usePostToRoom` says about trigger-only delivery applies here
  * unchanged: the 202 carries the reply's identity, the reply itself arrives on
  * the room's SSE stream, and `useRoomStream` merges it by `seq` — which is also
- * where the timeline gathers it under its root. Nothing is written into the
- * entry cache from here.
+ * where the open thread panel picks it up. Nothing is written into the entry
+ * cache from here.
  *
- * A refusal gives back BOTH halves of what was in flight: the words go back
- * into the room's draft, and the composer goes back to aiming at the thread
- * they were written for. Restoring only the text would put the next Enter in
- * the room instead of the thread, silently, which is the one failure this hook
- * exists to prevent. Both restores run at this level rather than at the call
- * site, because the call site does not reliably exist when a refusal lands —
- * see `usePostToRoom` for why.
+ * A refusal gives the words back to the box they were typed in — the thread
+ * panel's own draft, keyed by `threadDraftKey`. That restore runs at this level
+ * rather than at the call site because the call site does not reliably exist
+ * when a refusal lands: the reader can close the panel first, and a second
+ * reply detaches the first one's observer, after which per-call `onError`
+ * callbacks are never dispatched at all. See `usePostToRoom` for the full
+ * story.
  *
- * **Neither half overwrites what the reader did in the meantime.** A refusal
- * arrives after the send, and the composer need not have stood still: the words
- * merge rather than replace (`restore`), and the aim is only taken back when it
- * is still on this thread or on nothing (`restoreAim`). Someone who moved to a
- * different thread while this was in flight keeps it, and keeps their caret —
- * pulling either one back would be the same silent misdelivery in the other
- * direction.
+ * The words MERGE rather than replace what is in the box by then (`restore`):
+ * a refusal arrives after the send, and two sentences both have a claim on the
+ * panel's composer by that point. Choosing one means destroying the other.
+ *
+ * There is no aim to give back, and that is the thread panel's doing (design
+ * record §3). A reply used to be written in the ROOM's composer, silently
+ * re-aimed at a thread, so a refusal had to restore both the words and the aim
+ * or the reader's next Enter would land in the wrong conversation. The panel
+ * removed the ambiguity it was guarding: a thread reply is typed in the thread.
  *
  * @module entities/room/model/use-reply-in-thread
  */
 import { useMutation, type UseMutationResult } from '@tanstack/react-query';
 import type { PostToRoomResponse } from '@dorkos/shared/room-schemas';
 import { useTransport } from '@/layers/shared/model';
-import { useRoomReplyTargetStore } from './reply-targets';
 import { useRoomDraftStore } from './room-drafts';
 
 /** What to say, and which thread to say it in. */
@@ -47,6 +48,15 @@ export interface ReplyInThreadInput {
   rootEntryId: string;
   /** The reply body. Already trimmed by the caller; the server rejects empty. */
   text: string;
+  /**
+   * Where refused words belong: the panel composer's own draft key.
+   *
+   * Required rather than defaulted to the room, because a thread reply is
+   * always typed in a thread's own box now, and quietly restoring somebody's
+   * sentence into a different conversation is the one failure this cannot be
+   * allowed to have a default for.
+   */
+  draftKey: string;
 }
 
 /**
@@ -67,9 +77,8 @@ export function useReplyInThread(): UseMutationResult<
   return useMutation({
     mutationFn: ({ roomId, rootEntryId, text }: ReplyInThreadInput) =>
       transport.replyInThread(roomId, { rootEntryId, text }),
-    onError: (_error, { roomId, rootEntryId, text }) => {
-      useRoomDraftStore.getState().restore(roomId, text);
-      useRoomReplyTargetStore.getState().restoreAim(roomId, rootEntryId);
+    onError: (_error, { text, draftKey }) => {
+      useRoomDraftStore.getState().restore(draftKey, text);
     },
     // Reads "Couldn't send your reply — This room is archived" through the
     // shared mutation toast, which is fit to show a person as-is.

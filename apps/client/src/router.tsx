@@ -241,17 +241,23 @@ const tasksRoute = createRoute({
  * addresses a DM the same way, so `/channels?id=<dmId>` is precedented rather
  * than odd.
  *
- * One param, because there is one thing to address. A thread used to be a room
- * and needed a second (`?thread=`); it is now a relation between entries in one
- * room's log and renders inside it (ADR 260728-022013). An old link carrying
- * `?thread=` still opens the room in `id` — zod drops the key it no longer
- * knows rather than refusing the route.
+ * Two params: the room, and the thread it has open beside it.
+ *
+ * `?thread=` is the entry a thread hangs off — NOT a room id, which is what the
+ * same spelling meant under the retired threads-as-rooms model. That version
+ * was dropped from this schema when a thread became a relation between entries
+ * (ADR 260728-022013) and nothing read it in between; it is back because the
+ * thread panel gave a thread somewhere to be, and a place needs an address so a
+ * refresh or a shared link lands on it (design record §3).
+ *
+ * Optional, so every link that only names a room still works untouched.
  *
  * @internal Exported for testing only.
  */
 export const channelsSearchSchema = mergeDialogSearch(
   z.object({
     id: z.string().optional(),
+    thread: z.string().optional(),
   })
 );
 

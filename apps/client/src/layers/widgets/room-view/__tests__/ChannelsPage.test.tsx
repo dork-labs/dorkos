@@ -10,6 +10,7 @@
  */
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
@@ -22,6 +23,7 @@ import {
   type RoomEvent,
   type RoomWithRoster,
 } from '@dorkos/shared/room-schemas';
+import { useRoomDraftStore, useRoomOpenThreadStore } from '@/layers/entities/room';
 import { createQueryClientConfig } from '@/layers/shared/lib';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
@@ -57,6 +59,14 @@ afterEach(() => {
   cleanup();
   toastError.mockClear();
   openRoomId = 'room-1';
+  // The open thread outlives an unmounted page on purpose — it is per-room
+  // state, not per-render — so a test that opened one has to put it back, or
+  // the next test starts with a panel already beside its room.
+  useRoomOpenThreadStore.setState({ open: {} });
+  // Drafts outlive an unmounted composer by design — that is what lets a
+  // refused message find its way back. So a test that typed into one has to put
+  // it back, or the next test starts with words in a box it believes is empty.
+  useRoomDraftStore.setState({ drafts: {} });
 });
 
 function roomWith(id: string, slug: string): RoomWithRoster {
@@ -596,7 +606,7 @@ describe('ChannelsPage — a thread reply still clears the badge', () => {
     await waitFor(() => expect(transport.setRoomReadCursor).toHaveBeenCalledWith('room-1', 2));
   });
 
-  it('draws the reply under the message it answers rather than in the room’s flow', async () => {
+  it('keeps the reply out of the room’s flow and offers it as a row', async () => {
     renderRoom();
 
     // The room's flow holds the root and nothing else...
@@ -607,8 +617,169 @@ describe('ChannelsPage — a thread reply still clears the badge', () => {
     );
     expect(flow).toHaveLength(1);
 
-    // ...and the reply is inside the thread group, which names itself.
-    const thread = screen.getByRole('group', { name: '1 reply' });
-    expect(within(thread).getByText('answering in a thread')).toBeInTheDocument();
+    // ...and the reply itself is in the panel, which is not open yet — the row
+    // is the whole of what a thread costs the room (design record §3).
+    expect(screen.queryByText('answering in a thread')).not.toBeInTheDocument();
+    expect(screen.getByTestId('room-thread-replies')).toHaveTextContent('1 reply');
+    expect(screen.queryByTestId('room-thread-panel')).not.toBeInTheDocument();
+  });
+
+  it('opens the thread beside the room when the row is pressed', async () => {
+    const user = userEvent.setup();
+    renderRoom();
+
+    await user.click(await screen.findByTestId('room-thread-replies'));
+
+    const panel = screen.getByTestId('room-thread-panel');
+    // Root at the top, reply beneath it — and a composer that writes into it.
+    expect(within(panel).getByText('the message it hangs off')).toBeInTheDocument();
+    expect(within(panel).getByText('answering in a thread')).toBeInTheDocument();
+    expect(
+      within(panel).getByRole('combobox', { name: 'Reply in this thread…' })
+    ).toBeInTheDocument();
+  });
+
+  it('closes the panel on Escape, and on its close button', async () => {
+    const user = userEvent.setup();
+    renderRoom();
+
+    await user.click(await screen.findByTestId('room-thread-replies'));
+    await user.keyboard('{Escape}');
+    expect(screen.queryByTestId('room-thread-panel')).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId('room-thread-replies'));
+    await user.click(screen.getByRole('button', { name: 'Close thread' }));
+    expect(screen.queryByTestId('room-thread-panel')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Two threads in one room — the switching case, and the one the panel's own
+ * unit tests cannot reach because the reuse happens a layer up.
+ */
+describe('ChannelsPage — switching between threads', () => {
+  /** `entry-<seq>`, a reply when `rootId` is given. */
+  function make(seq: number, rootId: string | null, text: string): RoomEntry {
+    return {
+      roomId: 'room-1',
+      seq,
+      id: `entry-${seq}`,
+      authorId: 'ana',
+      kind: 'post',
+      body: { text },
+      mentions: [],
+      sessionId: null,
+      cascadeRoot: rootId ?? `entry-${seq}`,
+      cascadeDepth: rootId === null ? 0 : 1,
+      parentEntryId: rootId,
+      threadRootEntryId: rootId,
+      signature: null,
+      createdAt: '2026-07-26T10:00:00.000Z',
+    };
+  }
+
+  // Two roots, one reply each — deliberately the SAME reply count, because a
+  // panel reused across a switch also keys its scroll effect on that number.
+  const history = [
+    make(1, null, 'first question'),
+    make(2, 'entry-1', 'answering the first'),
+    make(3, null, 'second question'),
+    make(4, 'entry-3', 'answering the second'),
+  ];
+
+  function renderRoom() {
+    const transport = createMockTransport({
+      getRoom: vi.fn(() => Promise.resolve(roomWith('room-1', 'backend'))),
+      listRoomEntries: vi.fn(() => Promise.resolve(history)),
+      subscribeRoom: vi.fn((_id: string, _cursor: number, signal: AbortSignal) =>
+        staysOpen(signal)
+      ),
+    });
+    render(
+      <QueryClientProvider client={new QueryClient(createQueryClientConfig())}>
+        <TransportProvider transport={transport}>
+          <TooltipProvider>
+            <ChannelsPage />
+          </TooltipProvider>
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+    return transport;
+  }
+
+  it('does not replay the second thread as though it had just arrived', async () => {
+    const user = userEvent.setup();
+    renderRoom();
+
+    const rows = await screen.findAllByTestId('room-thread-replies');
+    await user.click(rows[0]!);
+    expect(await screen.findByTestId('room-thread-panel')).toBeInTheDocument();
+
+    // Switch. A reused panel keeps `useThreadArrivals`'s memory of the FIRST
+    // thread, so every reply of the second is classified as a fresh arrival and
+    // the whole thread bounces in at once — motion that lies about what just
+    // happened.
+    await user.click(screen.getAllByTestId('room-thread-replies')[1]!);
+
+    const panel = screen.getByTestId('room-thread-panel');
+    expect(within(panel).getByText('answering the second')).toBeInTheDocument();
+    const animated = panel.querySelectorAll(
+      '[class*="animate-thread-reply-in"], [class*="animate-reply-settle"], [class*="animate-thread-line-draw"]'
+    );
+    expect(animated).toHaveLength(0);
+  });
+
+  it('puts the caret back on the row that opened the thread', async () => {
+    // Closing used to drop focus on `document.body`, which for a keyboard
+    // reader loses their place in the room entirely.
+    const user = userEvent.setup();
+    renderRoom();
+
+    const row = (await screen.findAllByTestId('room-thread-replies'))[0]!;
+    await user.click(row);
+    expect(await screen.findByTestId('room-thread-panel')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Close thread' }));
+
+    await waitFor(() => expect(screen.queryByTestId('room-thread-panel')).not.toBeInTheDocument());
+    expect(screen.getAllByTestId('room-thread-replies')[0]!).toHaveFocus();
+  });
+
+  it('leaves an Escape the mention palette answered to the palette', async () => {
+    // The composer's Escape ladder dismisses the palette and the key keeps
+    // bubbling. Without the panel honouring `defaultPrevented` — and without the
+    // ladder setting it — one Escape aimed at an autocomplete shut the whole
+    // thread and lost the reader's place.
+    const user = userEvent.setup();
+    renderRoom();
+
+    await user.click((await screen.findAllByTestId('room-thread-replies'))[0]!);
+    const composer = await screen.findByRole('combobox', { name: 'Reply in this thread…' });
+
+    await user.click(composer);
+    await user.keyboard('@');
+    // The palette is open over the room's roster.
+    await waitFor(() => expect(composer).toHaveAttribute('aria-expanded', 'true'));
+
+    await user.keyboard('{Escape}');
+
+    await waitFor(() => expect(composer).toHaveAttribute('aria-expanded', 'false'));
+    // The thread is still open. That is the whole finding.
+    expect(screen.getByTestId('room-thread-panel')).toBeInTheDocument();
+  });
+
+  it('still closes on Escape once the palette is out of the way', async () => {
+    // The other half: Escape in a composer that has nothing to answer it must
+    // still reach the panel, or the box becomes a trap.
+    const user = userEvent.setup();
+    renderRoom();
+
+    await user.click((await screen.findAllByTestId('room-thread-replies'))[0]!);
+    const composer = await screen.findByRole('combobox', { name: 'Reply in this thread…' });
+
+    await user.click(composer);
+    await user.keyboard('{Escape}');
+
+    await waitFor(() => expect(screen.queryByTestId('room-thread-panel')).not.toBeInTheDocument());
   });
 });

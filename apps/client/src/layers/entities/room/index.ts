@@ -15,7 +15,7 @@ export { useRoom, useRoomEntries, useLoadedRoomEntries } from './model/use-room'
 export { useRoomStream, mergeRoomEntry } from './model/use-room-stream';
 export type { RoomStreamState } from './model/use-room-stream';
 export { useRoomPresence, useRoomPresenceStore, PRESENCE_TICK_MS } from './model/use-room-presence';
-export type { RoomPresenceAuthor } from './model/use-room-presence';
+export type { PresenceScope, RoomPresenceAuthor } from './model/use-room-presence';
 export { usePostToRoom } from './model/use-post-to-room';
 export type { PostToRoomInput } from './model/use-post-to-room';
 export { useReplyInThread } from './model/use-reply-in-thread';
@@ -29,12 +29,10 @@ export {
   reactionSummary,
   splitReactionRow,
 } from './lib/reactions';
-export { useRoomDraft, useRoomDraftStore } from './model/room-drafts';
-export {
-  useComposerFocusRequest,
-  useRoomReplyTarget,
-  useRoomReplyTargetStore,
-} from './model/reply-targets';
+export { useRoomDraft, useRoomDraftStore, threadDraftKey } from './model/room-drafts';
+export { useRoomOpenThread, useRoomOpenThreadStore } from './model/open-thread';
+export type { OpenThread } from './model/open-thread';
+export { useComposerFocusRequest, useComposerFocusStore } from './model/composer-focus';
 export { useRoomListStream } from './model/use-room-list-stream';
 export { useMarkRoomRead, useMarkRoomReadNow } from './model/use-mark-room-read';
 export { useCreateChannel, useStartDirectMessage } from './model/use-create-room';
@@ -61,7 +59,8 @@ export type {
   SetResponseModeInput,
 } from './model/use-room-members';
 export { roomDisplayTitle, directMessageTitle, authorColor, hasUnread } from './lib/room-display';
-export { replyRootFor, threadRootIdOf } from './lib/thread';
+export { replyRootFor, threadReplySummary, threadRootIdOf } from './lib/thread';
+export type { ThreadReplySummary } from './lib/thread';
 export { presenceElapsed } from './lib/presence-copy';
 export { RESPONSE_RUNGS, rungOf, modeForRung, explainRung } from './lib/response-mode';
 export type {

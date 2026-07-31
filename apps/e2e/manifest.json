@@ -220,12 +220,12 @@
     "room-entry-actions": {
       "specFile": "tests/rooms/room-entry-actions.spec.ts",
       "feature": "rooms",
-      "description": "the toolbar appears on hover and offers what can be done to the message, the toolbar encloses the buttons it is drawn around, the toolbar straddles a message, and covers no word of one at rest, the toolbar rides the viewport edge on a message taller than the window, right-click offers the same actions as the toolbar, the keyboard alone reaches the actions and lands in the composer, a room costs one Tab per message, not one per action, a message is announced before the things you can do to it, a reply gathers under the message it answers, and a reply to a reply joins it, a long press opens the drawer, and a short one or a drag does not",
-      "lastRun": "2026-07-30T23:28:20.126Z",
-      "lastStatus": "passed",
-      "runCount": 20,
-      "passCount": 12,
-      "failCount": 8,
+      "description": "the toolbar appears on hover and offers what can be done to the message, the toolbar encloses the buttons it is drawn around, the toolbar straddles a message, and covers no word of one at rest, the toolbar rides the viewport edge on a message taller than the window, right-click offers the same actions as the toolbar, the keyboard alone reaches the actions and lands in the composer, a room costs one Tab per message, not one per action, a message is announced before the things you can do to it, a reply lands in the panel beside the room, and a reply to a reply joins it, a reply row opens the thread it counts, and Escape closes it again, a reply that arrives after you last looked wears the accent, a thread has an address, and a reload lands back on it, a long press opens the drawer, and a short one or a drag does not, the thread takes the whole screen, and Back returns to the room",
+      "lastRun": "2026-07-31T04:00:34.751Z",
+      "lastStatus": "failed",
+      "runCount": 43,
+      "passCount": 18,
+      "failCount": 25,
       "relatedCode": [],
       "lastModified": ""
     },
@@ -257,10 +257,10 @@
       "specFile": "tests/rooms/room-sheet-phone.spec.ts",
       "feature": "rooms",
       "description": "the sheet stays on the screen, and its middle is the part that scrolls, exactly one element carries the home-indicator padding, so it cannot double, every control a thumb has to hit is at least 44px tall, dragging the roster scrolls it; dragging the sheet itself puts it away, a long agent description truncates rather than pushing the picker's button away, the header lines up with itself and stays inside the sheet",
-      "lastRun": "2026-07-30T23:28:20.126Z",
+      "lastRun": "2026-07-31T04:00:06.739Z",
       "lastStatus": "passed",
-      "runCount": 1,
-      "passCount": 1,
+      "runCount": 10,
+      "passCount": 10,
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
@@ -845,6 +845,213 @@
       "failed": 0,
       "skipped": 0,
       "duration": 138277
+    },
+    {
+      "id": "2026-07-31T01-44-10",
+      "timestamp": "2026-07-31T01:44:10.880Z",
+      "total": 14,
+      "passed": 12,
+      "failed": 2,
+      "skipped": 0,
+      "duration": 256020
+    },
+    {
+      "id": "2026-07-31T01-45-37",
+      "timestamp": "2026-07-31T01:45:37.291Z",
+      "total": 14,
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 59416
+    },
+    {
+      "id": "2026-07-31T02-09-04",
+      "timestamp": "2026-07-31T02:09:04.792Z",
+      "total": 20,
+      "passed": 20,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 36969
+    },
+    {
+      "id": "2026-07-31T02-51-26",
+      "timestamp": "2026-07-31T02:51:26.021Z",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 14437
+    },
+    {
+      "id": "2026-07-31T02-51-53",
+      "timestamp": "2026-07-31T02:51:53.752Z",
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 19188
+    },
+    {
+      "id": "2026-07-31T02-52-39",
+      "timestamp": "2026-07-31T02:52:39.524Z",
+      "total": 21,
+      "passed": 21,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 38933
+    },
+    {
+      "id": "2026-07-31T02-59-57",
+      "timestamp": "2026-07-31T02:59:57.287Z",
+      "total": 21,
+      "passed": 21,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 64463
+    },
+    {
+      "id": "2026-07-31T03-45-36",
+      "timestamp": "2026-07-31T03:45:36.041Z",
+      "total": 21,
+      "passed": 19,
+      "failed": 2,
+      "skipped": 0,
+      "duration": 38928
+    },
+    {
+      "id": "2026-07-31T03-45-58",
+      "timestamp": "2026-07-31T03:45:58.671Z",
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 13991
+    },
+    {
+      "id": "2026-07-31T03-46-35",
+      "timestamp": "2026-07-31T03:46:35.211Z",
+      "total": 2,
+      "passed": 1,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 15626
+    },
+    {
+      "id": "2026-07-31T03-47-40",
+      "timestamp": "2026-07-31T03:47:40.348Z",
+      "total": 21,
+      "passed": 20,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 45383
+    },
+    {
+      "id": "2026-07-31T03-48-05",
+      "timestamp": "2026-07-31T03:48:05.474Z",
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 19620
+    },
+    {
+      "id": "2026-07-31T03-49-20",
+      "timestamp": "2026-07-31T03:49:20.921Z",
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 40005
+    },
+    {
+      "id": "2026-07-31T03-51-16",
+      "timestamp": "2026-07-31T03:51:16.202Z",
+      "total": 21,
+      "passed": 20,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 75372
+    },
+    {
+      "id": "2026-07-31T03-52-28",
+      "timestamp": "2026-07-31T03:52:28.722Z",
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 50504
+    },
+    {
+      "id": "2026-07-31T03-54-39",
+      "timestamp": "2026-07-31T03:54:39.181Z",
+      "total": 21,
+      "passed": 20,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 69396
+    },
+    {
+      "id": "2026-07-31T03-55-14",
+      "timestamp": "2026-07-31T03:55:14.949Z",
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 27516
+    },
+    {
+      "id": "2026-07-31T03-55-45",
+      "timestamp": "2026-07-31T03:55:45.372Z",
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 19628
+    },
+    {
+      "id": "2026-07-31T03-56-58",
+      "timestamp": "2026-07-31T03:56:58.396Z",
+      "total": 21,
+      "passed": 20,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 44680
+    },
+    {
+      "id": "2026-07-31T03-57-35",
+      "timestamp": "2026-07-31T03:57:35.145Z",
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 19617
+    },
+    {
+      "id": "2026-07-31T03-58-51",
+      "timestamp": "2026-07-31T03:58:51.967Z",
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 19502
+    },
+    {
+      "id": "2026-07-31T04-00-06",
+      "timestamp": "2026-07-31T04:00:06.739Z",
+      "total": 21,
+      "passed": 21,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 39778
+    },
+    {
+      "id": "2026-07-31T04-00-34",
+      "timestamp": "2026-07-31T04:00:34.751Z",
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 19571
     }
   ]
 }

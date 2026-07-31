@@ -272,7 +272,7 @@ export const EntryReactionRow = forwardRef<RovingGroupHandle, EntryReactionRowPr
 
         {overflow === 1 && (
           // A count with somewhere to go. A bare "+3 more" would name reactions
-          // the reader has no way to see — the shape `RoomThreadReplies` refuses
+          // the reader has no way to see — the shape the thread reply row refuses
           // for the same reason.
           <button
             ref={register(drawn.length)}

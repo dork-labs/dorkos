@@ -7,6 +7,8 @@ import type { PlaygroundSection } from '../playground-registry';
  *
  * Sources: RoomsShowcases — Room Sheet, RoomMemberRow, ResponseModeControl,
  * LoudnessMeter, RoomLoudnessLine, AgentRosterPicker, RemoveMemberConfirm.
+ * RoomThreadShowcases — RoomThreadReplyRow, RoomThreadPanel, Thread arrival
+ * animations.
  */
 export const ROOMS_SECTIONS: PlaygroundSection[] = [
   {
@@ -77,5 +79,55 @@ export const ROOMS_SECTIONS: PlaygroundSection[] = [
     page: 'rooms',
     category: 'Rooms',
     keywords: ['remove', 'confirm', 'undo', 'toast', 'member', 'destructive'],
+  },
+  {
+    id: 'roomthreadreplyrow',
+    title: 'RoomThreadReplyRow',
+    page: 'rooms',
+    category: 'Threads',
+    keywords: [
+      'thread',
+      'reply',
+      'replies',
+      'row',
+      'unread',
+      'count',
+      'flip',
+      'timeline',
+      'expand',
+    ],
+  },
+  {
+    id: 'roomthreadpanel',
+    title: 'RoomThreadPanel',
+    page: 'rooms',
+    category: 'Threads',
+    keywords: [
+      'thread',
+      'panel',
+      'side panel',
+      'orphan',
+      'orphaned',
+      'stalled',
+      'pushed',
+      'mobile',
+      'composer',
+    ],
+  },
+  {
+    id: 'thread-arrival-animations',
+    title: 'Thread arrival animations',
+    page: 'rooms',
+    category: 'Threads',
+    keywords: [
+      'thread',
+      'animation',
+      'connector',
+      'drop',
+      'hand-off',
+      'handoff',
+      'presence',
+      'micro-interaction',
+    ],
   },
 ];

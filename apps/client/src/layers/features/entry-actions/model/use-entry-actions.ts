@@ -8,8 +8,10 @@ import { AtSign, Copy, Reply } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   replyRootFor,
+  threadDraftKey,
+  useComposerFocusStore,
   useRoomDraftStore,
-  useRoomReplyTargetStore,
+  useRoomOpenThreadStore,
   type AuthorRef,
   type RoomEntry,
 } from '@/layers/entities/room';
@@ -50,12 +52,16 @@ function appendMention(roomId: string, handle: string): void {
  * What this reader can do to this message, in the one order every rendering of
  * the surface draws.
  *
- * **Reply is always offered and always aims at a thread ROOT.** Answering a
+ * **Reply always aims at a thread ROOT, and opens that thread.** Answering a
  * reply targets the entry heading its thread ({@link replyRootFor}), because
- * the server refuses to nest deeper and because one level is what the timeline
- * draws — so the thread the reader is answering into is the one they can see.
- * Nothing here can produce a `NESTED_THREAD` refusal, which is why no error
- * path exists for one.
+ * the server refuses to nest deeper — so nothing here can produce a
+ * `NESTED_THREAD` refusal, which is why no error path exists for one.
+ *
+ * What it opens is the side panel (design record §3), asking for the caret as
+ * it does — pressing reply is a request to WRITE, and a panel that opened
+ * without the caret would make the reader click into a box they just asked for.
+ * It replaced a version that re-aimed the room's own composer at the thread,
+ * which is the ambiguity the panel exists to remove.
  *
  * **Mention is offered only when it would work.** `mentionHandle` is absent for
  * an author no `@` can reach — every name they answer to either contains a
@@ -83,7 +89,17 @@ export function useEntryActions({
         id: 'reply',
         label: 'Reply in thread',
         icon: Reply,
-        run: () => useRoomReplyTargetStore.getState().replyTo(roomId, rootEntryId),
+        // Two ways to reach one composer, because the composer may or may not
+        // exist yet when this runs. Opening with `focusComposer` covers the
+        // press that MOUNTS the box — there is no composer for a focus request
+        // to reach on that path. The focus request covers the press made while
+        // the panel is already open, most often on a reply INSIDE it, where the
+        // box exists and the open is a no-op. Each is silent on the other's
+        // path, so both are needed and neither double-focuses.
+        run: () => {
+          useRoomOpenThreadStore.getState().openThread(roomId, rootEntryId, true);
+          useComposerFocusStore.getState().requestFocus(threadDraftKey(roomId, rootEntryId));
+        },
       },
       copy: {
         id: 'copy',
@@ -110,7 +126,7 @@ export function useEntryActions({
         icon: AtSign,
         run: () => {
           appendMention(roomId, handle);
-          useRoomReplyTargetStore.getState().requestFocus(roomId);
+          useComposerFocusStore.getState().requestFocus(roomId);
         },
       };
     }

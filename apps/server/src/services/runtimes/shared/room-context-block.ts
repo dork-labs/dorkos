@@ -432,7 +432,30 @@ function preamble(data: RoomContextData, where: string): string[] {
 
   // The one thing the deleted prose prompt got right, kept because it changes
   // behavior: an answer here is not returned privately to whoever asked.
-  lines.push(`Whatever you say this turn is posted into ${where}, where every member reads it.`);
+  //
+  // Inside a thread the destination is genuinely different, so the sentence is
+  // too. A reply does not join the room's flow — it hangs off the message the
+  // thread was opened on — and an agent told its words land "into #build, where
+  // every member reads it" writes for the room rather than for the aside it is
+  // actually in.
+  //
+  // **The thread is named by REFERENCE, never by quotation.** "that thread"
+  // points at the line above, which has already said a thread is open and that
+  // its opening message is quoted below. Naming it by pasting `rootExcerpt` here
+  // is exactly the hole this module's header describes: a member's words
+  // rendered in the preamble, which is trusted only because everything reaching
+  // it has been sanitized. The excerpt stays in the fence.
+  //
+  // "Every member can read it there" and not "its followers": following a thread
+  // is a deferred decision (design record §3), so there is no such set to name.
+  // A reply is an ordinary entry in this room's log — anybody here can read it —
+  // and the true half is the half worth saying.
+  lines.push(
+    data.thread
+      ? `Whatever you say this turn is posted as a reply in that thread, not into the main flow ` +
+          `of ${where}. Every member can read it there.`
+      : `Whatever you say this turn is posted into ${where}, where every member reads it.`
+  );
   lines.push(`Members: ${data.members.map(memberLine).join(', ')}.`);
 
   if (data.working.length > 0) {

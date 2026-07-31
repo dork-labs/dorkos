@@ -61,7 +61,16 @@ export class RoomsPage {
   /** The scrolling element that holds the open room's history. */
   readonly scroller: Locator;
 
-  /** Every `post` in the open room, oldest first. */
+  /**
+   * Every `post` in the open room's TIMELINE, oldest first.
+   *
+   * Scoped to the timeline rather than to the page, and that scope is load-
+   * bearing now that a thread has a panel: the panel draws its root and every
+   * reply as ordinary {@link RoomEntryRow}s — deliberately, a thread is a
+   * different place and not a different kind of message — so a page-wide match
+   * counts the same conversation twice. "How many messages are in the room" is
+   * a question about the room, and the panel is beside it.
+   */
   readonly entries: Locator;
 
   /** Every `notice` — the room speaking about itself — in the open room. */
@@ -94,7 +103,7 @@ export class RoomsPage {
       .filter({ has: page.locator('[data-slot="room-title"]') });
     this.roomHeading = this.roomHeader.getByRole('heading');
     this.scroller = page.locator('[data-testid="room-timeline"]').locator('xpath=..');
-    this.entries = page.getByTestId('room-entry');
+    this.entries = page.getByTestId('room-timeline').getByTestId('room-entry');
     this.notices = page.getByTestId('room-notice');
     this.presenceLine = page.getByTestId('room-presence');
     this.presenceAnnouncer = page.getByTestId('room-presence-announcer');
@@ -334,40 +343,128 @@ export class RoomsPage {
   }
 
   /**
-   * The thread hanging off one message: the reply group drawn directly beneath
-   * it.
+   * The one quiet line under a thread's root: "↳ 3 replies · last 9:45 AM".
    *
-   * Positional on purpose. A thread is a relation between entries rather than a
-   * room with an id of its own (ADR 260728-022013), so "the replies to THIS
-   * message" is a question about where the group sits — and matching it by
-   * position is what catches a reply that renders loose in the room's flow.
+   * Positional on purpose, and this is the same rigour the retired
+   * `threadUnder` carried for the retired inline gathering. A thread is a
+   * relation between entries rather than a room with an id of its own
+   * (ADR 260728-022013), so "the replies to THIS message" is a question about
+   * where the row sits — matching it by position is what catches a row that
+   * renders against the wrong root, which a page-wide `getByTestId` would pass.
    *
-   * @param entry - The message the thread should hang off.
+   * @param entry - The message the thread hangs off.
    */
-  threadUnder(entry: Locator): Locator {
-    return entry.locator('xpath=following-sibling::*[1][@data-testid="room-thread"]');
+  replyRow(entry: Locator): Locator {
+    return entry.locator('xpath=following-sibling::*[1][@data-testid="room-thread-replies"]');
   }
 
-  /** Every thread group in the open room. */
-  get threads(): Locator {
-    return this.page.getByTestId('room-thread');
-  }
-
-  /** The line above the composer naming the thread it is aimed at. */
-  get replyBanner(): Locator {
-    return this.page.getByTestId('room-reply-banner');
+  /** Every reply row in the open room — how many threads it is showing. */
+  get replyRows(): Locator {
+    return this.page.getByTestId('room-thread-replies');
   }
 
   /**
-   * The composer once it is aimed at a thread.
+   * The number inside one reply row.
+   *
+   * Read separately from the row's whole sentence because the row also says
+   * when the last reply landed, which is a clock — asserting the count against
+   * the row's text would mean matching a timestamp that changes every run.
+   *
+   * @param entry - The message the thread hangs off.
+   */
+  replyCount(entry: Locator): Locator {
+    return this.replyRow(entry).getByTestId('room-thread-reply-count');
+  }
+
+  /**
+   * The thread panel: the column beside the room, or the whole screen on a phone.
+   *
+   * One locator for both shapes deliberately. It is the same `section` in both
+   * — the design's "two shapes, one panel" — so a test that had to pick a
+   * locator per viewport would be asserting our layout classes rather than the
+   * thing a reader sees.
+   */
+  get threadPanel(): Locator {
+    return this.page.getByTestId('room-thread-panel');
+  }
+
+  /** The messages drawn inside the open panel: the root, then its replies. */
+  get threadEntries(): Locator {
+    return this.threadPanel.getByTestId('room-entry');
+  }
+
+  /**
+   * The vertical rules the panel hangs its replies off — one per reply.
+   *
+   * Counted rather than looked at: the connector is `aria-hidden` decoration, so
+   * the only honest question to ask it is whether the panel drew one for every
+   * reply and none for the root.
+   */
+  get threadConnectors(): Locator {
+    return this.threadPanel.getByTestId('room-thread-connector');
+  }
+
+  /** The line the panel shows when the message a thread hangs off is not loaded. */
+  get threadOrphan(): Locator {
+    return this.page.getByTestId('room-thread-orphan');
+  }
+
+  /**
+   * The panel's way out on a wide screen.
+   *
+   * Named rather than found by icon, and it is a different name on a phone
+   * ({@link RoomsPage.backToRoom}) — which is the point of asking for it by
+   * accessible name at all: the two shapes really do promise different things,
+   * and a locator that matched both would let the phone ship an X.
+   */
+  get closeThread(): Locator {
+    return this.page.getByRole('button', { name: 'Close thread' });
+  }
+
+  /**
+   * The push's way back, which names the room it returns to.
+   *
+   * @param spokenName - The room's spoken name, as the label is built from it.
+   */
+  backToRoom(spokenName: string): Locator {
+    return this.page.getByRole('button', { name: `Back to ${spokenName}` });
+  }
+
+  /**
+   * The panel's own composer.
    *
    * Its own locator rather than {@link RoomsPage.composer}, because the
-   * placeholder — which IS the accessible name — moves with the aim. That makes
-   * "the composer is pointed at a thread" something the accessibility tree can
-   * be asked, rather than a class only a screenshot could catch.
+   * placeholder — which IS the accessible name — is what says where the words
+   * are going. The room's composer no longer has a thread aim at all: writing
+   * into a thread means writing in the panel, so "which composer is this"
+   * became a question about which one is on screen, and the accessibility tree
+   * is where that is answerable rather than a class only a screenshot sees.
    */
   get threadComposer(): Locator {
     return this.page.getByRole('combobox', { name: 'Reply in this thread…' });
+  }
+
+  /**
+   * Say something in the open thread, the way a person does.
+   *
+   * @param text - What to say.
+   */
+  async replyInThread(text: string): Promise<void> {
+    await this.threadComposer.fill(text);
+    await this.threadComposer.press('Enter');
+  }
+
+  /**
+   * Open one message's thread through its hover capsule.
+   *
+   * The capsule is revealed by hover, so the hover is part of the gesture and
+   * not a detail a caller should have to remember.
+   *
+   * @param entry - The message to reply to.
+   */
+  async replyInThreadFrom(entry: Locator): Promise<void> {
+    await entry.hover();
+    await this.actionsIn(entry).getByRole('button', { name: 'Reply in thread' }).click();
   }
 
   /**
