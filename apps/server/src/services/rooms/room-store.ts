@@ -1015,15 +1015,22 @@ export class RoomStore {
    * Claude Code session store), and the binding has to be whichever id the
    * transcript is under — always.
    *
-   * **Refuses to move a binding back onto a RETIRED id** — see
-   * {@link RoomSessionLedger.retire}. `runOne` compares the runner's answer to
-   * the id it asked with exactly once, and on turn 1 that answer is routinely
-   * the placeholder, because the runtime names its session milliseconds after
-   * the room stopped waiting for the id. The projector's rekey has already moved
-   * the binding forward by then, and this write would move it back — which is
-   * how one room's binding was observed oscillating between two ids, landing on
-   * the one with no transcript. A refusal here is the only place that can be
-   * structural: every caller goes through this method.
+   * **Refuses to move a binding back onto a RETIRED id** — an id the projector
+   * has re-keyed away from, recorded by {@link RoomSessionLedger.retire}.
+   *
+   * The reversal is not hypothetical and it is not the first turn. On turn 1 the
+   * rekey listener wins and no rebind here has anything stale to say. It is the
+   * SECOND rename that reaches this branch: the SDK can assign a new id on a
+   * resume (`rebindSdkSession` in the Claude Code session store), the listener
+   * moves the binding forward the moment it happens, and the turn that was in
+   * flight then finishes and calls this with the id it read at its start. The
+   * repair sweep racing a live turn reaches it the same way, from the other
+   * side. Either one moved a binding back onto an id with no transcript, which
+   * is how one room's binding was observed oscillating (00dfdce7 → 0e7270c6 →
+   * 00dfdce7) and settling on the dead one.
+   *
+   * A refusal HERE is the only one that can be structural: every path that moves
+   * a binding by `(room, agent)` goes through this method.
    *
    * @param roomId - The room.
    * @param authorId - The agent member.

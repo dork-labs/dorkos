@@ -676,7 +676,8 @@ describe('what a room turn runs with (execution defaults)', () => {
  * started.
  *
  * The rows are a RECORD, never a history: claude-code's history is SDK JSONL and
- * stays there (ADR-0309). So the second test here is as load-bearing as the
+ * stays there (ADR 260710-024641, as retired in part by 260731-211050). So the
+ * second test here is as load-bearing as the
  * first — persisting the whole stream is the thing that ADR ruled out, and a
  * change that "fixed" the first test by turning on full persistence would put
  * every `text_delta` of every room turn in the database.

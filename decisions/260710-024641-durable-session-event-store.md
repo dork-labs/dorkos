@@ -12,7 +12,23 @@ superseded-by: null
 
 ## Status
 
-Accepted
+Accepted. **One clause is retired by**
+[260731-211050](260731-211050-a-room-driven-claude-code-turn-leaves-a-record.md) (A room-driven
+claude-code turn leaves a sparse record in `session_events`, never a history).
+
+**Exactly one clause below is retired:** "the **policy** (persist or not) is opt-in per session by
+the owning runtime — claude-code opts out." The related Negative bullet that restates it as a
+standing invariant ("claude-code must not persist") goes with it. A claude-code session that a ROOM
+drives now persists in a second mode, `'record'`, which writes only each turn's boundary and error
+events and never hydrates — enough to prove a turn ran and how it ended, and not enough to be a
+history. Read those two passages as history.
+
+**Everything else here stands and is still the governing decision:** the `session_events` table and
+its `(session_id, seq)` key; the turn-granular flush on `turn_end` and the per-session trim; the
+hydrate-and-restore-`counter` behaviour for log-backed runtimes; completed history read from the
+store rather than from a live projector; warned-and-swallowed flush failures; and the shape of the
+split — the mechanism is shared session-service infrastructure, the policy belongs to the caller.
+What changed is only that "the caller" is no longer the same thing as "the runtime".
 
 ## Context
 
@@ -68,7 +84,9 @@ resume stays a non-goal: `assertResumable` → cold-snapshot remains the guarant
   `getOrCreateProjector`.
 - Refines ADR-0310's "runtime-owned storage" into "shared mechanism, per-runtime
   opt-in policy" — a nuance future runtime authors must understand (claude-code
-  must not persist; log-backed runtimes must opt in).
+  must not persist; log-backed runtimes must opt in). _(Retired in part by
+  260731-211050: the opt-in is per CALLER, and a room-driven claude-code session
+  persists in `'record'` mode.)_
 - No backfill: sessions that ran before this ships remain history-less across a
   restart (no durable source to recover from).
 - Disk grows with active log-backed sessions (bounded per session by the trim);

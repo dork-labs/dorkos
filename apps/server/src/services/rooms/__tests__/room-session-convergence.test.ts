@@ -192,7 +192,7 @@ describe('the repair sweep', () => {
     const report = await repairRoomSessionBindings(sweepDeps(store, [CANONICAL]));
 
     expect(bound(db)).toBe(CANONICAL);
-    expect(report).toEqual({ checked: 1, repaired: 1, stranded: 0 });
+    expect(report).toEqual({ checked: 1, repaired: 1, stranded: 0, unreadable: 0 });
   });
 
   it('keeps a dead binding with no known successor, and warns with room, agent and id', async () => {
@@ -204,7 +204,7 @@ describe('the repair sweep', () => {
     // NOT deleted. A binding pointing nowhere is a conversation somebody may
     // still find by hand; a deleted one is a decision nobody can review.
     expect(bound(db)).toBe(PLACEHOLDER);
-    expect(report).toEqual({ checked: 1, repaired: 0, stranded: 1 });
+    expect(report).toEqual({ checked: 1, repaired: 0, stranded: 1, unreadable: 0 });
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining('no transcript'),
       expect.objectContaining({ roomId: ROOM, authorId: ANA, agentPath: ANA_PATH })
@@ -219,7 +219,7 @@ describe('the repair sweep', () => {
     const report = await repairRoomSessionBindings(sweepDeps(store, [PLACEHOLDER]));
 
     expect(bound(db)).toBe(PLACEHOLDER);
-    expect(report).toEqual({ checked: 1, repaired: 0, stranded: 0 });
+    expect(report).toEqual({ checked: 1, repaired: 0, stranded: 0, unreadable: 0 });
     expect(warn).not.toHaveBeenCalled();
     warn.mockRestore();
   });
@@ -232,7 +232,7 @@ describe('the repair sweep', () => {
     const report = await repairRoomSessionBindings(deps);
 
     expect(deps.probed).toEqual([]);
-    expect(report).toEqual({ checked: 0, repaired: 0, stranded: 0 });
+    expect(report).toEqual({ checked: 0, repaired: 0, stranded: 0, unreadable: 0 });
   });
 
   it('reports nothing rather than throwing when the bindings cannot be read', async () => {
@@ -245,6 +245,50 @@ describe('the repair sweep', () => {
       checked: 0,
       repaired: 0,
       stranded: 0,
+      unreadable: 0,
     });
+  });
+
+  it('counts a probe it could not run, instead of reporting a clean sweep', async () => {
+    // One unreadable `~/.claude/projects` — a permissions change, a mount that
+    // did not come back — makes every probe throw. Counting the failures apart
+    // from the verdicts is the difference between "nothing is wrong" and
+    // "nothing is known", and the second one is what is true.
+    const { store } = storeBoundToPlaceholder();
+    const deps = sweepDeps(store, []);
+    deps.hasTranscript = () => Promise.reject(new Error('EACCES'));
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+
+    const report = await repairRoomSessionBindings(deps);
+
+    expect(report).toEqual({ checked: 0, repaired: 0, stranded: 0, unreadable: 1 });
+    // And it must not do it quietly: a sweep that reached no verdict at all
+    // reads exactly like a clean bill of health unless it says otherwise.
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('checked 0 of 1 room bindings'),
+      expect.objectContaining({ unreadable: 1 })
+    );
+    warn.mockRestore();
+  });
+
+  it('stays quiet when every binding it could not judge sits beside one it could', async () => {
+    // The warn is about a sweep with NO verdict. A single unreadable row among
+    // readable ones is in the report and does not deserve a line of its own —
+    // that would be a warning on every startup with one odd agent on it.
+    const { store, db } = storeBoundToPlaceholder();
+    db.insert(roomSessions)
+      .values({ roomId: 'room-frontend', authorId: ANA, sessionId: 'live', createdAt: 'now' })
+      .run();
+    const deps = sweepDeps(store, ['live']);
+    const probe = deps.hasTranscript;
+    deps.hasTranscript = (agentPath, sessionId) =>
+      sessionId === PLACEHOLDER ? Promise.reject(new Error('EACCES')) : probe(agentPath, sessionId);
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+
+    const report = await repairRoomSessionBindings(deps);
+
+    expect(report).toEqual({ checked: 1, repaired: 0, stranded: 0, unreadable: 1 });
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 });

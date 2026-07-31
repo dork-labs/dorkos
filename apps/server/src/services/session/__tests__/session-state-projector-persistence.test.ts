@@ -124,11 +124,18 @@ describe('SessionStateProjector durable persistence (DOR-189)', () => {
       // Carrying the counter past the durable max costs a gap in the seq space,
       // which the store already documents as sparse, and nothing else.
       expect(projector.getCursor()).toBe(2);
-      // So the turn closing now lands on a free seq and is really written. The
+      // So the turn closing now lands on a free seq and is really written.
+      //
+      // Be clear about what this trades, because it is not a clean win. The
       // event ingested BEFORE persistence was enabled keeps the seq it streamed
-      // under (nothing may renumber an event a client has already seen), so its
-      // row is still the stored one — an oddity this narrow window has always
-      // had. What changed is that the turn's OUTCOME survives.
+      // under — nothing may renumber an event a client has already seen — so
+      // seq 1 in the store is still the OLD turn's `turn_start`, and reading
+      // this session back now yields a stored turn opening followed by a later
+      // turn's body. That is a mixed row set, and it is worse than a clean one.
+      // It is better than what it replaced: before, the whole turn collided and
+      // every row of it was dropped in silence, so the session's last durable
+      // word was the old turn and nothing recorded that a newer one had ever
+      // run. A visibly odd record beats a confidently absent one.
       projector.ingest({ type: 'turn_end' } as RawSessionEvent);
       expect(store.readAll('sess').map((e) => e.seq)).toEqual([1, 2, 3]);
     });
@@ -190,7 +197,8 @@ describe('SessionStateProjector durable persistence (DOR-189)', () => {
  * boundaries and any error.
  *
  * It is deliberately NOT `'history'` for the same session, and the two tests
- * about hydration are why. claude-code's history is SDK JSONL (ADR-0309); an
+ * about hydration are why. claude-code's history is SDK JSONL (ADR 260710-024641,
+ * as retired in part by 260731-211050); an
  * EventLog seeded from these sparse rows would serve a resuming client a turn
  * with its middle missing and call it a gap-free replay.
  */

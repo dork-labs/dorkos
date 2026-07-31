@@ -138,11 +138,14 @@ type Waiter = (event: SessionEvent | typeof TERMINATED) => void;
  *   flushed and a fresh projector HYDRATES its in-memory log back from the
  *   store. This is DOR-189's original behaviour, unchanged.
  * - `'record'` — claude-code sessions a ROOM drives. Their history is SDK JSONL
- *   and always will be (ADR-0309: persisting it in full would double-store and
+ *   and always will be (ADR 260710-024641: persisting it in full would double-store and
  *   inflate the hot path), so this mode writes only the turn's boundary and
  *   error events — enough to prove a turn ran and how it ended — and never
  *   hydrates, because a sparse log presented as a replay source would hand a
  *   resuming client a turn with its middle missing.
+ *
+ * The decision is ADR 260731-211050, which retires 260710-024641's
+ * "claude-code opts out" clause down to this one caller.
  *
  * Rooms are the one surface with nobody watching: a person triggers a turn from
  * a room and no client holds that session's stream, so a turn that fails leaves
@@ -174,6 +177,20 @@ const RECORDED_EVENT_TYPES: ReadonlySet<string> = new Set(['turn_start', 'turn_e
  * but the live read means that invariant is a nicety, not a correctness
  * dependency. Note the hydrate-time id and a hypothetical post-rekey flush id
  * could differ; that is the correct outcome (rows follow the canonical id).
+ *
+ * **The `seq` counter restore is the one thing keyed at ENABLE time**, and that
+ * asymmetry is worth knowing before trusting it. `enablePersistence` reads
+ * `store.maxSeq(this.sessionId)` under whatever id the projector is registered
+ * under at that instant. A {@link rekeyProjector} AFTER that point moves the
+ * flush to the canonical id but does not re-read the maximum, so a session with
+ * pre-existing rows under its canonical id — and a projector that enabled
+ * persistence while still keyed by the request UUID — can flush onto seqs that
+ * id has already used, and `INSERT OR IGNORE` drops them. That window is
+ * unreached today: a rekeying runtime is claude-code, whose only persisting
+ * caller is a room turn, whose canonical id has no rows before its first turn.
+ * It is written down rather than closed because closing it means re-reading the
+ * maximum on every rekey, which is a query on a path that runs for every new
+ * session on the machine.
  */
 interface ProjectorPersistence {
   /** The shared durable store (injected once at boot). */

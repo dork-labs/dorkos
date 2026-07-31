@@ -750,37 +750,39 @@ async function start() {
   // the rename is announced the instant it happens, while the return value is
   // read once at the end of a turn that routinely lost the race (DOR-784).
   followSessionRekeys(roomStore);
-  // Then repair what was stranded before that listener existed. Bounded to
+  // Then report what was stranded before that listener existed. Bounded to
   // rooms that have a binding and agents that run on claude-code, and detached:
-  // a disk probe must not sit in front of the port opening. Nothing is deleted —
-  // a binding with no known successor is warned about and left alone.
-  void repairRoomSessionBindings({
-    store: roomStore,
-    agentPathFor: (authorId) => {
-      const record = roomAuthors.getById(authorId);
-      return record?.kind === 'agent' ? record.naturalKey : null;
-    },
-    hasTranscript: async (agentPath, sessionId) => {
-      const reader = claudeRuntime?.getTranscriptReader();
-      // No claude-code runtime in this process means no claude-code binding can
-      // be judged. Reporting "it exists" is the safe answer: it repairs nothing
-      // and warns about nothing, which beats warning about every room on a
-      // test-mode server.
-      if (!reader) return true;
-      return (await reader.hasTranscript(agentPath, sessionId)).exists;
-    },
-  }).then(
-    (report) => {
-      if (report.repaired > 0 || report.stranded > 0) {
-        logger.info('[Rooms] checked room session bindings', { ...report });
+  // a disk probe must not sit in front of the port opening. At boot this only
+  // ever REPORTS — repair needs a successor and the ledger's memory is
+  // per-process, so it is empty here by construction. Nothing is deleted.
+  //
+  // Gated on the claude-code runtime being in this process at all: the probe IS
+  // its transcript reader, so without one there is no claude-code binding
+  // anybody could judge, and a sweep that ran anyway would have to invent an
+  // answer for every row.
+  if (claudeRuntime) {
+    const transcripts = claudeRuntime.getTranscriptReader();
+    void repairRoomSessionBindings({
+      store: roomStore,
+      agentPathFor: (authorId) => {
+        const record = roomAuthors.getById(authorId);
+        return record?.kind === 'agent' ? record.naturalKey : null;
+      },
+      hasTranscript: async (agentPath, sessionId) =>
+        (await transcripts.hasTranscript(agentPath, sessionId)).exists,
+    }).then(
+      (report) => {
+        if (report.repaired > 0 || report.stranded > 0 || report.unreadable > 0) {
+          logger.info('[Rooms] checked room session bindings', { ...report });
+        }
+      },
+      (err: unknown) => {
+        logger.warn('[Rooms] could not check room session bindings', {
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
-    },
-    (err: unknown) => {
-      logger.warn('[Rooms] could not check room session bindings', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  );
+    );
+  }
 
   // The local community (spec `community-adapter` §8) — this machine's own rooms
   // behind the `CommunityAdapter` port. Registered unconditionally and first,

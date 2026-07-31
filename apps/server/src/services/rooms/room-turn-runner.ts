@@ -159,10 +159,11 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       //
       // For a log-backed runtime that is `'history'`, unchanged: the durable
       // rows ARE its transcript. For claude-code it is `'record'`, which is new
-      // and narrow. Its history is SDK JSONL and stays there (ADR-0309 —
+      // and narrow. Its history is SDK JSONL and stays there (ADR 260710-024641 —
       // persisting the whole stream would double-store and inflate the hot
       // path), so `'record'` keeps only each turn's two boundaries and any
-      // error: three rows a turn, whatever the model said.
+      // error: three rows a turn, whatever the model said. The decision is
+      // ADR 260731-211050.
       //
       // The reason rooms get this and the cockpit does not is that a room is the
       // one surface with NOBODY WATCHING. Everywhere else a person is holding
