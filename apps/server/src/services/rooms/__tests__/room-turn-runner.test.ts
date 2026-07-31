@@ -6,7 +6,8 @@
  * claim this file checks is that a room reads the agent's answer off the same
  * stream a client renders from, gap-free from a cursor taken before the turn.
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { createTestDb } from '@dorkos/test-utils/db';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { RoomTurnRequest } from '../room-trigger.js';
@@ -107,6 +108,8 @@ vi.mock('../../session/index.js', async (importOriginal) => ({
 }));
 
 const { createSessionRoomTurnRunner } = await import('../room-turn-runner.js');
+const { SessionEventStore, setSessionEventStore } = await import('../../session/index.js');
+type SessionEventStoreInstance = InstanceType<typeof SessionEventStore>;
 
 let counter = 0;
 
@@ -659,5 +662,82 @@ describe('what a room turn runs with (execution defaults)', () => {
     await createSessionRoomTurnRunner().run(request());
 
     expect(triggered[0].settings).toEqual({ model: 'sonnet', effort: 'high' });
+  });
+});
+
+/**
+ * A room turn leaves a durable record, whatever runtime it ran on (DOR-784).
+ *
+ * Rooms are the one surface with nobody watching. Everywhere else a person is
+ * holding `GET /api/sessions/:id/events` while the turn runs, so a failure is on
+ * their screen; a room triggers a turn into the dark. On 2026-07-31 an agent
+ * went quiet in a room for forty-one minutes and `session_events` held zero rows
+ * about it — there was no way to tell whether the turn had run, failed, or never
+ * started.
+ *
+ * The rows are a RECORD, never a history: claude-code's history is SDK JSONL and
+ * stays there (ADR 260710-024641, as retired in part by 260731-211050). So the
+ * second test here is as load-bearing as the
+ * first — persisting the whole stream is the thing that ADR ruled out, and a
+ * change that "fixed" the first test by turning on full persistence would put
+ * every `text_delta` of every room turn in the database.
+ */
+describe('a room turn is recorded durably', () => {
+  let store: SessionEventStoreInstance;
+
+  beforeEach(() => {
+    store = new SessionEventStore(createTestDb());
+    setSessionEventStore(store);
+    internalSessionId = () => undefined;
+    turnBehaviour = saysAndCloses('green');
+    getCapabilities.mockReturnValue({ logBackedHistory: false, nativeContext: [] });
+  });
+
+  afterEach(() => {
+    setSessionEventStore(undefined);
+  });
+
+  it('writes rows for a claude-code turn, which used to write none', async () => {
+    const result = await createSessionRoomTurnRunner().run(request());
+
+    const recorded = store.readAll(result.sessionId);
+    expect(recorded.map((event: { type: string }) => event.type)).toEqual([
+      'turn_start',
+      'turn_end',
+    ]);
+  });
+
+  it('keeps only the boundaries, so the transcript is not double-stored', async () => {
+    turnBehaviour = saysAndCloses('Green', ' — ', 'nothing failed.');
+
+    const result = await createSessionRoomTurnRunner().run(request());
+
+    const recorded = store.readAll(result.sessionId);
+    expect(recorded.some((event: { type: string }) => event.type === 'text_delta')).toBe(false);
+  });
+
+  it('records the failure of a turn that ended in an error', async () => {
+    // The incident's actual question — did it run and break, or never run? The
+    // terminal reason is the answer, and it is on the row.
+    turnBehaviour = ({ sessionId, projector }) => {
+      projector.ingest({ type: 'turn_start' });
+      projector.ingest({ type: 'turn_end', terminalReason: 'error' });
+      return { accepted: true, canonicalId: sessionId };
+    };
+
+    const result = await createSessionRoomTurnRunner().run(request());
+
+    const recorded = store.readAll(result.sessionId);
+    expect(recorded.at(-1)).toMatchObject({ type: 'turn_end', terminalReason: 'error' });
+  });
+
+  it('still stores a log-backed runtime in full, because there the rows ARE the history', async () => {
+    getCapabilities.mockReturnValue({ logBackedHistory: true, nativeContext: [] });
+    turnBehaviour = saysAndCloses('green');
+
+    const result = await createSessionRoomTurnRunner().run(request());
+
+    const recorded = store.readAll(result.sessionId);
+    expect(recorded.some((event: { type: string }) => event.type === 'text_delta')).toBe(true);
   });
 });

@@ -131,7 +131,7 @@ export async function sessionCommandIntentHandler(req: Request, res: Response): 
   // Persist completed runs for LOG-BACKED runtimes (DOR-189), mirroring
   // /messages so the compact_boundary survives a restart.
   const projector = getOrCreateProjector(sessionId, cwd, {
-    persist: caps.logBackedHistory === true,
+    persist: caps.logBackedHistory === true ? 'history' : undefined,
   });
 
   const result = triggerCommandIntent({

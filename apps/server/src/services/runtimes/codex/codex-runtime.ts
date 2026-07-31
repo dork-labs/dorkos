@@ -675,11 +675,11 @@ export class CodexRuntime implements AgentRuntime {
    *
    * Built entirely from the DorkOS-owned projection: completed `messages` are
    * reconstructed from the EventLog (durably hydrated on projector creation via
-   * `{ persist: true }`), and the live turn/status/pending/cursor come from the
+   * `{ persist: 'history' }`), and the live turn/status/pending/cursor come from the
    * same projector — the exact test-mode pattern (ADR-0263).
    */
   async getSessionSnapshot(ctx: SessionOpts, sessionId: string): Promise<SessionSnapshot> {
-    const projector = getOrCreateProjector(sessionId, ctx.cwd, { persist: true });
+    const projector = getOrCreateProjector(sessionId, ctx.cwd, { persist: 'history' });
     return projector.buildSnapshot(() =>
       Promise.resolve(reconstructHistoryFromEvents(projector.replayFrom(0)))
     );
@@ -698,7 +698,7 @@ export class CodexRuntime implements AgentRuntime {
     sinceCursor?: number,
     signal?: AbortSignal
   ): AsyncIterable<SessionEvent> {
-    return getOrCreateProjector(sessionId, ctx.cwd, { persist: true }).subscribe(
+    return getOrCreateProjector(sessionId, ctx.cwd, { persist: 'history' }).subscribe(
       sinceCursor,
       signal
     );

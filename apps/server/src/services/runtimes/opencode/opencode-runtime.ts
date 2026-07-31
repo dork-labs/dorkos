@@ -607,7 +607,7 @@ export class OpenCodeRuntime implements AgentRuntime {
    * ADR-0263 prescribes for adapters that own a real history source.
    */
   async getSessionSnapshot(ctx: SessionOpts, sessionId: string): Promise<SessionSnapshot> {
-    const projector = getOrCreateProjector(sessionId, ctx.cwd, { persist: true });
+    const projector = getOrCreateProjector(sessionId, ctx.cwd, { persist: 'history' });
     return projector.buildSnapshot(() => this.getMessageHistory(ctx.cwd ?? DEFAULT_CWD, sessionId));
   }
 
@@ -624,7 +624,7 @@ export class OpenCodeRuntime implements AgentRuntime {
     sinceCursor?: number,
     signal?: AbortSignal
   ): AsyncIterable<SessionEvent> {
-    return getOrCreateProjector(sessionId, ctx.cwd, { persist: true }).subscribe(
+    return getOrCreateProjector(sessionId, ctx.cwd, { persist: 'history' }).subscribe(
       sinceCursor,
       signal
     );

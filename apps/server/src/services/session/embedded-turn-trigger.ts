@@ -53,7 +53,7 @@ export function createEmbeddedTurnTrigger(runtime: AgentRuntime): EmbeddedTurnTr
       // Persist completed turns for LOG-BACKED runtimes (DOR-189), mirroring
       // the HTTP route; claude-code opts out.
       const projector = getOrCreateProjector(sessionId, cwd, {
-        persist: runtime.getCapabilities().logBackedHistory === true,
+        persist: runtime.getCapabilities().logBackedHistory === true ? 'history' : undefined,
       });
       if (cwd !== undefined) projector.cwd = cwd;
 
@@ -122,7 +122,7 @@ export function createEmbeddedCommandIntentTrigger(
       // Persist completed runs for LOG-BACKED runtimes (DOR-189), mirroring the
       // turn trigger; claude-code opts out.
       const projector = getOrCreateProjector(sessionId, cwd, {
-        persist: runtime.getCapabilities().logBackedHistory === true,
+        persist: runtime.getCapabilities().logBackedHistory === true ? 'history' : undefined,
       });
       if (cwd !== undefined) projector.cwd = cwd;
 

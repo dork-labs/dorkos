@@ -31,6 +31,8 @@ import {
 } from '@dorkos/db';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { Room, RoomEntry, RoomKind, RoomMember } from '@dorkos/shared/room-schemas';
+import { logger } from '../../lib/logger.js';
+import { RoomSessionLedger } from './room-session-ledger.js';
 import {
   toEntry,
   toMember,
@@ -42,7 +44,17 @@ import {
 
 /** Persistence for rooms, memberships, entries, and per-room agent sessions. */
 export class RoomStore {
-  constructor(private readonly db: Db) {}
+  /**
+   * Session-id-keyed reads, and the memory of which ids the projector has
+   * retired. Public because the convergence paths address `room_sessions` by
+   * session rather than by room, which is a different subject from everything
+   * else on this store — see `room-session-ledger.ts`.
+   */
+  readonly sessionLedger: RoomSessionLedger;
+
+  constructor(private readonly db: Db) {
+    this.sessionLedger = new RoomSessionLedger(db);
+  }
 
   // === Rooms ===
 
@@ -1027,11 +1039,38 @@ export class RoomStore {
    * Claude Code session store), and the binding has to be whichever id the
    * transcript is under — always.
    *
+   * **Refuses to move a binding back onto a RETIRED id** — an id the projector
+   * has re-keyed away from, recorded by {@link RoomSessionLedger.retire}.
+   *
+   * The reversal is not hypothetical and it is not the first turn. On turn 1 the
+   * rekey listener wins and no rebind here has anything stale to say. It is the
+   * SECOND rename that reaches this branch: the SDK can assign a new id on a
+   * resume (`rebindSdkSession` in the Claude Code session store), the listener
+   * moves the binding forward the moment it happens, and the turn that was in
+   * flight then finishes and calls this with the id it read at its start. The
+   * repair sweep racing a live turn reaches it the same way, from the other
+   * side. Either one moved a binding back onto an id with no transcript, which
+   * is how one room's binding was observed oscillating (00dfdce7 → 0e7270c6 →
+   * 00dfdce7) and settling on the dead one.
+   *
+   * A refusal HERE is the only one that can be structural: every path that moves
+   * a binding by `(room, agent)` goes through this method.
+   *
    * @param roomId - The room.
    * @param authorId - The agent member.
    * @param sessionId - The session the turn ran on.
    */
   rebindRoomSession(roomId: string, authorId: string, sessionId: string): void {
+    const successor = this.sessionLedger.successorFor(sessionId);
+    if (successor !== undefined) {
+      logger.warn('[rooms] refused to rebind a room onto a retired session id', {
+        roomId,
+        authorId,
+        retiredSessionId: sessionId,
+        canonicalSessionId: successor,
+      });
+      return;
+    }
     this.db
       .update(roomSessions)
       .set({ sessionId })

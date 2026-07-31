@@ -130,10 +130,44 @@ interface TrackedInteraction {
 type Waiter = (event: SessionEvent | typeof TERMINATED) => void;
 
 /**
- * The durable persistence collaborator attached to a projector for a
- * LOG-BACKED session (DOR-189). Present only when the owning runtime opted the
- * session in (`getOrCreateProjector(…, { persist: true })`) AND a store was
- * injected at boot. Absent for claude-code and whenever no store is wired.
+ * What a session's durable rows are FOR — the two answers being different is
+ * why this is a mode and not a boolean.
+ *
+ * - `'history'` — the log-backed runtimes (codex, opencode, test-mode). Their
+ *   completed history has no other home, so every event of a completed turn is
+ *   flushed and a fresh projector HYDRATES its in-memory log back from the
+ *   store. This is DOR-189's original behaviour, unchanged.
+ * - `'record'` — claude-code sessions a ROOM drives. Their history is SDK JSONL
+ *   and always will be (ADR 260710-024641: persisting it in full would double-store and
+ *   inflate the hot path), so this mode writes only the turn's boundary and
+ *   error events — enough to prove a turn ran and how it ended — and never
+ *   hydrates, because a sparse log presented as a replay source would hand a
+ *   resuming client a turn with its middle missing.
+ *
+ * The decision is ADR 260731-211050, which retires 260710-024641's
+ * "claude-code opts out" clause down to this one caller.
+ *
+ * Rooms are the one surface with nobody watching: a person triggers a turn from
+ * a room and no client holds that session's stream, so a turn that fails leaves
+ * no trace anywhere a person will look. On 2026-07-31 an agent went silent in a
+ * room for forty-one minutes and `session_events` held zero rows for it
+ * (DOR-784). `'record'` is what makes that failure legible afterwards.
+ */
+export type ProjectorPersistenceMode = 'history' | 'record';
+
+/**
+ * Event types `'record'` mode keeps. The turn's two boundaries carry what
+ * triggered it (`turn_start.userMessage`) and how it ended
+ * (`turn_end.terminalReason`); `error` carries the fault itself. Everything
+ * between them is in the JSONL transcript already.
+ */
+const RECORDED_EVENT_TYPES: ReadonlySet<string> = new Set(['turn_start', 'turn_end', 'error']);
+
+/**
+ * The durable persistence collaborator attached to a projector (DOR-189).
+ * Present only when the owning runtime opted the session in
+ * (`getOrCreateProjector(…, { persist: … })`) AND a store was injected at boot.
+ * Absent for an ordinary claude-code session and whenever no store is wired.
  *
  * Durable rows are always keyed by the LIVE {@link SessionStateProjector.sessionId}
  * (read at flush time, never captured at enable time), so a
@@ -143,10 +177,26 @@ type Waiter = (event: SessionEvent | typeof TERMINATED) => void;
  * but the live read means that invariant is a nicety, not a correctness
  * dependency. Note the hydrate-time id and a hypothetical post-rekey flush id
  * could differ; that is the correct outcome (rows follow the canonical id).
+ *
+ * **The `seq` counter restore is the one thing keyed at ENABLE time**, and that
+ * asymmetry is worth knowing before trusting it. `enablePersistence` reads
+ * `store.maxSeq(this.sessionId)` under whatever id the projector is registered
+ * under at that instant. A {@link rekeyProjector} AFTER that point moves the
+ * flush to the canonical id but does not re-read the maximum, so a session with
+ * pre-existing rows under its canonical id — and a projector that enabled
+ * persistence while still keyed by the request UUID — can flush onto seqs that
+ * id has already used, and `INSERT OR IGNORE` drops them. That window is
+ * unreached today: a rekeying runtime is claude-code, whose only persisting
+ * caller is a room turn, whose canonical id has no rows before its first turn.
+ * It is written down rather than closed because closing it means re-reading the
+ * maximum on every rekey, which is a query on a path that runs for every new
+ * session on the machine.
  */
 interface ProjectorPersistence {
   /** The shared durable store (injected once at boot). */
   store: SessionEventStore;
+  /** What the rows are for; see {@link ProjectorPersistenceMode}. */
+  mode: ProjectorPersistenceMode;
 }
 
 /**
@@ -328,25 +378,52 @@ export class SessionStateProjector {
 
   /**
    * Attach durable persistence to this projector (idempotent, DOR-189). On the
-   * FIRST enable of a still-empty projector, hydrate the in-memory log from the
-   * store and restore `counter = maxSeq` so completed history and seq
-   * continuity survive a server restart. A projector that has already ingested
-   * live events (`counter > 0`) is not re-hydrated — its in-memory log is
-   * authoritative for this run and its completed turns are already flushed; a
-   * later restart mints a fresh projector that hydrates cleanly.
+   * FIRST enable of a still-empty projector, restore `counter = maxSeq` so seq
+   * continuity survives a server restart, and — in `'history'` mode only —
+   * hydrate the in-memory log from the store so completed history survives with
+   * it. A projector that has already ingested live events (`counter > 0`) is not
+   * re-hydrated: its in-memory log is authoritative for this run and its
+   * completed turns are already flushed; a later restart mints a fresh projector
+   * that hydrates cleanly.
+   *
+   * **The counter restore is not optional in either mode**, and it is what makes
+   * `'record'` work at all: `appendTurn` is `INSERT OR IGNORE` on
+   * `(session_id, seq)`, so a projector that restarted at seq 0 would write its
+   * next turn under seqs the last process already used and every row would be
+   * silently ignored — a durable record that records nothing.
+   *
+   * **`'record'` deliberately does not hydrate.** It keeps only turn boundaries,
+   * so hydrating would give the {@link EventLog} a replay source with each
+   * turn's middle missing, and a resuming client would be served that gap as
+   * though it were the whole turn. An empty log means {@link assertResumable}
+   * refuses a stale cursor instead, and the client takes the cold snapshot —
+   * which for claude-code is read from JSONL and is complete.
+   *
+   * The first enable wins the mode. In practice a session has one owner, and the
+   * two callers are disjoint: log-backed runtimes ask for `'history'` on their
+   * own read paths, the room runner asks for `'record'` only when the runtime is
+   * not log-backed.
    *
    * @param store - The shared durable session-event store (injected at boot).
+   * @param mode - What the rows are for; see {@link ProjectorPersistenceMode}.
    */
-  enablePersistence(store: SessionEventStore): void {
+  enablePersistence(store: SessionEventStore, mode: ProjectorPersistenceMode = 'history'): void {
     if (this.persistence !== undefined) return;
-    this.persistence = { store };
-    if (this.counter === 0) {
+    this.persistence = { store, mode };
+    if (this.counter === 0 && mode === 'history') {
       const events = store.readAll(this.sessionId);
       if (events.length > 0) this.log.hydrate(events);
-      // Restore the counter to the durable max (past any unparseable-and-skipped
-      // rows) so the next ingest continues monotonically and cannot collide.
-      this.counter = store.maxSeq(this.sessionId);
     }
+    // Carry the counter past the durable max (and past any
+    // unparseable-and-skipped rows), whatever the mode and whatever this
+    // projector has already ingested. `Math.max` rather than an assignment
+    // because persistence can now be enabled MID-LIFE: a claude-code session
+    // touched by the cockpit first and by a room second has a counter above
+    // zero and below the durable max, and assigning would move it backwards
+    // while subscribers are reading forwards. Leaving it low is the other
+    // failure — the flush would land on seqs a previous process already used and
+    // `INSERT OR IGNORE` would drop the whole turn without a word.
+    this.counter = Math.max(this.counter, store.maxSeq(this.sessionId));
   }
 
   /**
@@ -355,14 +432,23 @@ export class SessionStateProjector {
    * persistence error only forfeits cross-restart durability (degrading to the
    * pre-DOR-189 in-memory behavior) and must never break live streaming.
    *
+   * In `'record'` mode the turn is narrowed to {@link RECORDED_EVENT_TYPES}
+   * first, so the row count per turn is a constant rather than a function of how
+   * much the model said.
+   *
    * Rows key by the LIVE {@link sessionId} — see the {@link ProjectorPersistence}
    * rekey note.
    */
   private flushTurn(events: SessionEvent[]): void {
     const persistence = this.persistence;
     if (persistence === undefined) return;
+    const rows =
+      persistence.mode === 'record'
+        ? events.filter((event) => RECORDED_EVENT_TYPES.has(event.type))
+        : events;
+    if (rows.length === 0) return;
     try {
-      persistence.store.appendTurn(this.sessionId, events);
+      persistence.store.appendTurn(this.sessionId, rows);
     } catch (err) {
       logger.warn('[SessionStateProjector] durable turn flush failed — history not persisted', {
         sessionId: this.sessionId,
@@ -922,16 +1008,17 @@ function disposeProjectorIfCurrent(sessionId: string, instance: SessionStateProj
  * @param sessionId - DorkOS session id.
  * @param cwd - The session's working directory, when the caller knows it.
  *   Stamped once (first writer wins) and carried on status fan-outs.
- * @param opts - `{ persist: true }` opts the session into durable
- *   session-event storage (DOR-189) — set by the LOG-BACKED runtimes
- *   (codex/opencode/test-mode) on their read/subscribe paths and by the turn
- *   trigger for log-backed runtimes. A no-op when no store is wired, or on a
- *   projector that already persists. claude-code passes nothing.
+ * @param opts.persist - Opts the session into durable session-event storage
+ *   (DOR-189). `'history'` is the LOG-BACKED runtimes (codex/opencode/test-mode)
+ *   on their read/subscribe paths, where the store IS the history; `'record'` is
+ *   a room-driven claude-code session, where the store is only evidence that a
+ *   turn ran (DOR-784). A no-op when no store is wired, or on a projector that
+ *   already persists. An ordinary claude-code session passes nothing.
  */
 export function getOrCreateProjector(
   sessionId: string,
   cwd?: string,
-  opts?: { persist?: boolean }
+  opts?: { persist?: ProjectorPersistenceMode }
 ): SessionStateProjector {
   let projector = projectors.get(sessionId);
   if (!projector) {
@@ -939,8 +1026,8 @@ export function getOrCreateProjector(
     projectors.set(sessionId, projector);
   }
   if (cwd !== undefined && projector.cwd === undefined) projector.cwd = cwd;
-  if (opts?.persist === true && sessionEventStore !== undefined) {
-    projector.enablePersistence(sessionEventStore);
+  if (opts?.persist !== undefined && sessionEventStore !== undefined) {
+    projector.enablePersistence(sessionEventStore, opts.persist);
   }
   return projector;
 }

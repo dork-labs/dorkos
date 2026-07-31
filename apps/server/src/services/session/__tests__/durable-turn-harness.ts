@@ -40,7 +40,7 @@ export async function driveDurableTurn(
   const store = new SessionEventStore(createTestDb());
   setSessionEventStore(store);
   try {
-    const projector = getOrCreateProjector(sessionId, cwd, { persist: true });
+    const projector = getOrCreateProjector(sessionId, cwd, { persist: 'history' });
     await feedProjector(projector, runtime.sendMessage(sessionId, content, { cwd }), {
       userMessage: content,
     });

@@ -309,7 +309,7 @@ export class TestModeRuntime implements AgentRuntime {
    * from the same projector. No JSONL, no native transcript.
    */
   async getSessionSnapshot(ctx: SessionOpts, sessionId: string): Promise<SessionSnapshot> {
-    const projector = getOrCreateProjector(sessionId, ctx.cwd, { persist: true });
+    const projector = getOrCreateProjector(sessionId, ctx.cwd, { persist: 'history' });
     return projector.buildSnapshot(() =>
       Promise.resolve(reconstructHistoryFromEvents(projector.replayFrom(0)))
     );
@@ -330,7 +330,7 @@ export class TestModeRuntime implements AgentRuntime {
     sinceCursor?: number,
     signal?: AbortSignal
   ): AsyncIterable<SessionEvent> {
-    return getOrCreateProjector(sessionId, ctx.cwd, { persist: true }).subscribe(
+    return getOrCreateProjector(sessionId, ctx.cwd, { persist: 'history' }).subscribe(
       sinceCursor,
       signal
     );

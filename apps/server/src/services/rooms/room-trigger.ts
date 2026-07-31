@@ -656,9 +656,14 @@ export class RoomTriggerDispatcher {
       // was produced from an empty context. `bindRoomSession` returns the
       // WINNER, so claiming resolves the race to one session per (room, agent).
       //
-      // The id minted here is a PLACEHOLDER on the first turn: the runtime may
-      // hand back its own, and {@link RoomStore.rebindRoomSession} in `runOne`
-      // moves the binding onto it the moment the turn reports. Racing safely and
+      // The id minted here is a PLACEHOLDER on the first turn: the runtime names
+      // the session itself, mid-turn, and files the transcript under ITS name.
+      // What moves the binding onto that name is the projector's rekey — a
+      // listener registered by `room-session-convergence.ts` at boot, which
+      // fires the instant the id is known. The comparison in `runOne` is the
+      // FALLBACK, and it has to be: it reads a value `triggerTurn` resolves
+      // best-effort at first-event-or-5s, and turn 1 routinely loses that race
+      // and hands back this very placeholder (DOR-784). Racing safely and
       // remembering correctly are two different jobs; this one is the race.
       try {
         target.sessionId = this.deps.store.bindRoomSession(

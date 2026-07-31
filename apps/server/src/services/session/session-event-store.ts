@@ -11,9 +11,18 @@
  * session so the durable reconstructable depth matches the in-memory
  * {@link EventLog} cap, before and after a restart.
  *
- * Claude-code never writes here — its transcript is SDK JSONL and its EventLog
- * is only gap-replay overflow (ADR-0309); persisting it would double-store and
- * inflate the hot path.
+ * Claude-code's HISTORY never comes from here — its transcript is SDK JSONL and
+ * its EventLog is only gap-replay overflow (ADR 260710-024641); persisting it in full
+ * would double-store and inflate the hot path.
+ *
+ * One narrow exception writes here anyway, and it is a RECORD rather than a
+ * history: a claude-code session driven by a ROOM keeps its turn boundaries and
+ * errors (`'record'` mode, see `ProjectorPersistenceMode`). A room is the one
+ * surface with no live client holding the session stream, so a turn that failed
+ * there used to leave nothing durable at all — on 2026-07-31 an agent went quiet
+ * in a room for forty-one minutes and this table held zero rows about it
+ * (DOR-784). Three rows a turn is the smallest thing that makes that legible,
+ * and nothing reads them as history. See ADR 260731-211050.
  *
  * The composition root constructs this with the consolidated Drizzle `Db`
  * handle (never a filesystem path, per `.claude/rules/dork-home.md`).
