@@ -1,12 +1,14 @@
 /**
  * Top-level handler for `dorkos doctor`.
  *
- * Runs a short, read-only checklist over the local setup — Node version, data
- * directory, port, open-file limit, Claude Code CLI, optional runtimes, bundled
+ * Runs a short checklist over the local setup — Node version, data directory,
+ * port, open-file limit, Claude Code CLI, optional runtimes, bundled
  * extensions, and login/tunnel config sanity — and prints a calm, plain report.
- * It boots no server and changes nothing on disk; it only reads config and
- * probes the environment. Exit code is `1` only when something is genuinely
- * broken (a `fail`), never for warnings or informational notes.
+ * It boots no server and keeps nothing: the only thing it writes is a
+ * throwaway probe file in the data directory, which is how it answers "can
+ * DorkOS write here?" and which it deletes immediately. Exit code is `1` only
+ * when something is genuinely broken (a `fail`), never for warnings or
+ * informational notes.
  *
  * Two options widen it:
  *
@@ -20,6 +22,8 @@
  * Wired from the top-of-file interception block in `cli.ts` (after `DORK_HOME`
  * is resolved). Like every command handler here, it returns the exit code
  * rather than calling `process.exit`.
+ *
+ * @see {@link checkDorkHomeWritable} for the one write, and why it is one.
  *
  * @module commands/doctor
  */

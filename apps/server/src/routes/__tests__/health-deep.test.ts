@@ -46,6 +46,26 @@ describe('GET /api/health/deep', () => {
     expect(res.body.checks.some((c: { status: string }) => c.status === 'fail')).toBe(true);
   });
 
+  it('answers 200 with the other checks intact when a subsystem throws', async () => {
+    const app = createApp();
+    app.locals.deepHealthDeps = {
+      dorkHome: '/nonexistent',
+      relay: {
+        isAccessControlQuarantined: () => {
+          throw new Error('RelayCore is closed');
+        },
+        listAccessRules: () => [],
+      },
+    } satisfies DeepHealthDeps;
+
+    const res = await request(app).get('/api/health/deep');
+
+    expect(res.status).toBe(200);
+    expect(DeepHealthResponseSchema.safeParse(res.body).success).toBe(true);
+    expect(res.body.checks).toHaveLength(5);
+    expect(res.body.checks[1].label).toContain('Could not run the check');
+  });
+
   it('leaves the liveness probe alone', async () => {
     const res = await request(createApp()).get('/api/health');
 

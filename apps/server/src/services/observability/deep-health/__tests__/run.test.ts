@@ -167,11 +167,88 @@ describe('runDeepHealthChecks', () => {
     expect(results[0]?.status).toBe('pass');
   });
 
-  it('reports info, not failure, for subsystems that are not running', async () => {
+  it('reports info, not failure, for subsystems that were never turned on', async () => {
     const results = await runDeepHealthChecks({ dorkHome: tmpHome });
 
     expect(results).toHaveLength(5);
     expect(results.every((r) => r.status === 'info')).toBe(true);
     expect(results.every((r) => r.detail?.startsWith('Skipped'))).toBe(true);
+  });
+
+  it('tells a subsystem that failed to start apart from one that was never on', async () => {
+    const results = await runDeepHealthChecks({
+      dorkHome: tmpHome,
+      relayFailedToStart: true,
+      adaptersFailedToStart: true,
+      meshFailedToStart: true,
+    });
+
+    // Room transcripts still just "not available" — no flag says otherwise.
+    expect(results[0]?.status).toBe('info');
+    for (const result of results.slice(1)) {
+      expect(result.status).toBe('warn');
+      expect(result.detail).toContain('failed to start');
+    }
+  });
+
+  // The endpoint is read during an incident, which is exactly when a subsystem
+  // is most likely to throw instead of answering. RelayCore's assertOpen() does
+  // precisely that once it is closed.
+  it('contains a throwing dependency to its own line and still answers', async () => {
+    const projectsRoot = path.join(tmpHome, 'projects');
+    writeTranscript(projectsRoot, 'slug', 'sess');
+    const agentDir = writeManifest(path.join(tmpHome, 'proj'), JSON.stringify({ id: 'agent-a' }));
+
+    const results = await runDeepHealthChecks({
+      ...healthyDeps(projectsRoot, agentDir),
+      relay: {
+        isAccessControlQuarantined: () => {
+          throw new Error('RelayCore is closed (/Users/someone/.dork/relay)');
+        },
+        listAccessRules: () => [],
+      },
+    });
+
+    expect(results).toHaveLength(5);
+    expect(results[1]?.status).toBe('warn');
+    expect(results[1]?.label).toContain('Could not run the check');
+    // Content-free: the thrown error's path must not ride along.
+    expect(JSON.stringify(results[1])).not.toContain('/Users/someone');
+    // The other four are untouched.
+    for (const index of [0, 2, 3, 4]) {
+      expect(results[index]?.status).toBe('pass');
+    }
+  });
+
+  it('contains a throwing room-store read too', async () => {
+    const results = await runDeepHealthChecks({
+      dorkHome: tmpHome,
+      roomSessions: {
+        listRoomSessions: () => {
+          throw new Error('database is locked');
+        },
+      },
+      transcriptProjectRoots: () => [],
+    });
+
+    expect(results[0]?.status).toBe('warn');
+    expect(results[0]?.label).toContain('Could not run the check');
+    expect(JSON.stringify(results[0])).not.toContain('database is locked');
+  });
+
+  it('reports info rather than a confident pass when no runtime could be read', async () => {
+    const projectsRoot = path.join(tmpHome, 'projects');
+    fs.mkdirSync(projectsRoot, { recursive: true });
+    const agentDir = writeManifest(path.join(tmpHome, 'proj'), JSON.stringify({ id: 'agent-a' }));
+
+    const results = await runDeepHealthChecks({
+      ...healthyDeps(projectsRoot, agentDir),
+      runtimeForSession: async () => {
+        throw new Error('requireDb: no database');
+      },
+    });
+
+    expect(results[0]?.status).toBe('info');
+    expect(results[0]?.label).toContain('Could not check');
   });
 });

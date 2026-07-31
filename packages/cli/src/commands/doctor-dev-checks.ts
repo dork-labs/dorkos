@@ -71,27 +71,33 @@ export interface RunningProcess {
 }
 
 /**
- * Stray `tsx watch` processes left behind by an interrupted dev run.
+ * How many `tsx watch` processes are running.
  *
- * Each one keeps its chokidar watchers open. Enough of them and every test run
- * on the machine starts failing with `EMFILE`, which never mentions the servers
+ * Each one keeps its chokidar watchers open, and enough of them make unrelated
+ * test runs fail with `EMFILE` — an error that never mentions the dev servers
  * nobody stopped.
  *
+ * This reports rather than accuses, and it is deliberately `info` with no
+ * `kill` line. From a process listing there is no way to tell a leftover from
+ * the `pnpm dev` the reader is running right now (or a teammate's, or the one
+ * in another worktree), and a check that says "kill these" about a live dev
+ * server is worse than one that says nothing. Counting them is enough: someone
+ * chasing `EMFILE` needs the number, and can decide for themselves.
+ *
  * @param processes - Every process visible to this user.
- * @returns A `pass` when the count is expected, otherwise a `warn` naming the pids.
+ * @returns A `pass` when none are running, otherwise an `info` with the count and pids.
  */
 export function checkOrphanedWatchers(processes: readonly RunningProcess[]): CheckResult {
   const watchers = processes.filter((p) => /tsx\s+watch/.test(p.command));
   if (watchers.length === 0) {
-    return { label: 'No stray dev servers running', status: 'pass' };
+    return { label: 'No dev servers running', status: 'pass' };
   }
   return {
-    label: `${watchers.length} dev ${watchers.length === 1 ? 'server is' : 'servers are'} still running`,
-    status: 'warn',
+    label: `${watchers.length} dev ${watchers.length === 1 ? 'server is' : 'servers are'} running`,
+    status: 'info',
     detail:
-      'A `tsx watch` left over from an interrupted `pnpm dev` keeps its file watchers open. ' +
-      'Enough of them and unrelated test runs start failing with EMFILE.',
-    fix: `Stop them if they are not yours:\n  kill ${watchers.map((w) => w.pid).join(' ')}`,
+      `pid ${watchers.map((w) => w.pid).join(', ')}. Each one holds file watchers open; a pile ` +
+      'left over from interrupted `pnpm dev` runs is what makes unrelated tests fail with EMFILE.',
   };
 }
 

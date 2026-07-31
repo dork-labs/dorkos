@@ -1464,6 +1464,13 @@ async function start() {
     relay: relayCore,
     adapters: adapterManager,
     mesh: meshCore,
+    // An absent subsystem cannot say why it is absent, and "you never turned
+    // this on" and "this was meant to be running and crashed" want opposite
+    // reactions. Both catches above leave the object undefined, so the reason
+    // has to be reconstructed here from what was asked for.
+    relayFailedToStart: relayEnabled && !relayCore,
+    adaptersFailedToStart: relayEnabled && Boolean(relayCore) && !adapterManager,
+    meshFailedToStart: !meshCore,
   } satisfies DeepHealthDeps;
 
   // Session-origin Pulse overlay (session-origin-legibility): expose a narrow

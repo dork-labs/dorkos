@@ -73,9 +73,23 @@ function findDistBackedPackages(): Array<{ packageName: string; directory: strin
   return found.sort((a, b) => a.packageName.localeCompare(b.packageName));
 }
 
-/** The newest modification time anywhere under `dir`, or `null` when it has no files. */
+/**
+ * The newest modification time of anything under `dir` that the build reads.
+ *
+ * Tests are skipped. A build emits no output for them, so editing a test made
+ * `dist/` look stale forever and told the reader to run a build that would
+ * change nothing — the exact false alarm this check exists to avoid.
+ *
+ * @param dir - The folder to walk.
+ * @returns The newest mtime, or `null` when nothing counts.
+ */
 function newestMtimeMs(dir: string): number | null {
   let newest: number | null = null;
+  const isTest = (name: string): boolean =>
+    name === '__tests__' ||
+    name === '__mocks__' ||
+    /\.(test|spec)\.[cm]?[jt]sx?$/.test(name) ||
+    /\.test-d\.ts$/.test(name);
   const walk = (current: string): void => {
     let entries: fs.Dirent[];
     try {
@@ -84,6 +98,7 @@ function newestMtimeMs(dir: string): number | null {
       return;
     }
     for (const entry of entries) {
+      if (isTest(entry.name)) continue;
       const full = path.join(current, entry.name);
       if (entry.isDirectory()) {
         walk(full);

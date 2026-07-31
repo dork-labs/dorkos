@@ -1,6 +1,7 @@
 ---
 covers:
-  - 'feat(cli): dorkos doctor finds the problems that only show up while DorkOS is running (DOR-797)'
+  - 'feat(cli): doctor finds the problems that only show up while DorkOS is running (DOR-797)'
+  - 'fix(server): review round — the deep health report cannot be read without signing in, and one broken subsystem costs one line (DOR-797)'
 ---
 
 ### Added

@@ -44,7 +44,18 @@ export function checkNode(): CheckResult {
   return { label: `Node.js ${process.versions.node}`, status: 'pass' };
 }
 
-/** The data directory exists and DorkOS can write to it. */
+/**
+ * The data directory exists and DorkOS can write to it.
+ *
+ * The only check that writes anything. Asking the filesystem for permissions
+ * and reasoning about them answers a different question than "will a write
+ * succeed" — ownership, ACLs, read-only mounts, and full disks all disagree
+ * with the permission bits — so this actually writes a probe file and removes
+ * it. It is the one place where the honest answer costs a write.
+ *
+ * @param dorkHome - The resolved DorkOS data directory.
+ * @returns A `pass` when the probe round-trips, otherwise a `fail`.
+ */
 export function checkDorkHomeWritable(dorkHome: string): CheckResult {
   const probe = path.join(dorkHome, `.doctor-write-${process.pid}`);
   try {

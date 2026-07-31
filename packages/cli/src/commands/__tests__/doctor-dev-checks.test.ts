@@ -70,15 +70,25 @@ describe('checkOrphanedWatchers', () => {
     expect(result.status).toBe('pass');
   });
 
-  it('warns and names the pids of leftover tsx watchers', () => {
+  it('counts the watchers and names their pids', () => {
     const result = checkOrphanedWatchers([
       { pid: 111, command: 'node .../tsx watch src/index.ts' },
       { pid: 222, command: 'node .../tsx  watch --clear-screen=false src/index.ts' },
       { pid: 333, command: 'vite' },
     ]);
-    expect(result.status).toBe('warn');
-    expect(result.label).toContain('2 dev servers are');
-    expect(result.fix).toContain('kill 111 222');
+    expect(result.status).toBe('info');
+    expect(result.label).toContain('2 dev servers are running');
+    expect(result.detail).toContain('pid 111, 222');
+  });
+
+  // A process listing cannot tell a leftover from the `pnpm dev` the reader is
+  // running right now, so this must never tell anyone to kill anything.
+  it('never offers a kill command', () => {
+    const result = checkOrphanedWatchers([
+      { pid: 111, command: 'node .../tsx watch src/index.ts' },
+    ]);
+    expect(result.fix).toBeUndefined();
+    expect(JSON.stringify(result)).not.toContain('kill');
   });
 
   it('passes on an empty process list rather than guessing', () => {

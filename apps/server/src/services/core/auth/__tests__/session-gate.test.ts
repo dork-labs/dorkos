@@ -31,6 +31,8 @@ function buildApp(): express.Express {
   // Exempt: health probe.
   app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
   // Gated despite the /api/health prefix: the deep report is operator-only.
+  // Registered non-strictly and case-insensitively, exactly as the real app
+  // mounts it, so the test can prove the alternate spellings are gated too.
   app.get('/api/health/deep', (_req, res) => res.json({ checks: [] }));
   // Gated: stands in for the `/mcp` mount that `index.ts` adds after createApp.
   app.get('/mcp', (_req, res) => res.json({ ok: true }));
@@ -160,6 +162,28 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
       const res = await request(app).get('/api/health/deep');
       expect(res.status).toBe(401);
       expect(res.body?.code).toBe('AUTH_REQUIRED');
+    });
+
+    // Express routes non-strictly and case-insensitively, so every spelling
+    // below reaches the same handler. An exact-string carve-out out of the
+    // `/api/health/` prefix exemption caught only the first one, and the rest
+    // returned the whole report with no credential.
+    it.each([
+      ['trailing slash', '/api/health/deep/'],
+      ['doubled trailing slash', '/api/health/deep//'],
+      ['uppercase', '/API/HEALTH/DEEP'],
+      ['mixed case with trailing slash', '/Api/Health/Deep/'],
+    ])('gates /api/health/deep spelled with a %s', async (_name, path) => {
+      setAuthEnabled(true);
+      const res = await request(app).get(path);
+      expect(res.status).toBe(401);
+      expect(res.body?.code).toBe('AUTH_REQUIRED');
+    });
+
+    it('still exempts the liveness probe with a trailing slash', async () => {
+      setAuthEnabled(true);
+      const res = await request(app).get('/api/health/');
+      expect(res.status).not.toBe(401);
     });
 
     it('keeps /api/auth/* reachable without credentials (sign-in must work)', async () => {

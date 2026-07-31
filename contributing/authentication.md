@@ -52,7 +52,7 @@ export async function sessionGate(req, res, next) {
 
   const path = req.path.toLowerCase(); // Express routes case-insensitively; normalize BEFORE the check
   if (!isGatedPath(path)) return next(); // static SPA assets → login screen can load
-  if (isExemptPath(path)) return next(); // /api/auth/* (sign-in) + /api/health
+  if (isExemptPath(path)) return next(); // /api/auth/* (sign-in) + the /api/health probe
 
   const user = await verifyRequestAuth(req);
   if (user) {
@@ -64,6 +64,12 @@ export async function sessionGate(req, res, next) {
 ```
 
 The gate is mounted **after** the Better Auth handler and `express.json()`, **before** the first API route. The `/mcp` mount (added in `index.ts`) is on the same app, so the app-wide gate covers it too.
+
+#### Health is exempt; deep health is not
+
+`isExemptPath` exempts `/api/health` **and everything under it**, because a load balancer, the desktop shell, and the tunnel all have to reach the liveness probe before anyone can sign in. `GET /api/health/deep` wears the same prefix and is a different thing: it reports how many rooms, chat integrations, and agents this machine has and which of them are broken. So it is carved back out of the exemption by `isGatedHealthPath`, and it needs the owner's credential like any other route.
+
+**A carve-out out of a prefix exemption has to match the way the router matches, not the way the string looks.** Express routes non-strictly and case-insensitively, so `/api/health/deep/`, `/api/health/deep//`, and `/API/health/deep` all reach the same handler. An exact-string carve-out catches only the first spelling; the others miss it, fall through to the `/api/health/` exemption, and return the full report with no credential. `isGatedHealthPath` therefore collapses repeated slashes, strips trailing ones, and compares as a prefix (case is already normalized by the caller). Add a path to `GATED_HEALTH_PATHS` rather than writing a second comparison, and cover the alternate spellings in `session-gate.test.ts`.
 
 ### One verification path
 

@@ -23,10 +23,18 @@ export interface RoomSessionBinding {
 
 /** Facts needed to judge whether room members still have a conversation to continue. */
 export interface RoomSessionTranscriptInput {
-  /** Every room-to-session binding currently stored. */
+  /** Bindings this check could actually judge (Claude Code sessions). */
   bindings: readonly RoomSessionBinding[];
   /** Ids of every session that has a transcript file on disk. */
   transcriptSessionIds: ReadonlySet<string>;
+  /**
+   * Bindings dropped because their owning runtime could not be read.
+   *
+   * Counted rather than ignored: a broken lookup that silently emptied the
+   * list would report a confident "0 room members checked — all good", which
+   * is the shape of a check that cannot fail.
+   */
+  unknownRuntimeCount?: number;
 }
 
 /**
@@ -36,17 +44,28 @@ export interface RoomSessionTranscriptInput {
  * session an agent speaks through, but that session's transcript is gone, so
  * every reply starts from nothing while the room looks perfectly normal.
  *
- * @param input - Stored bindings plus the ids that have a transcript.
- * @returns A `pass` when every binding has a transcript, otherwise a `warn`
- *   carrying how many do not.
+ * @param input - Judgeable bindings, the ids that have a transcript, and how
+ *   many bindings could not be judged at all.
+ * @returns A `pass` when every binding has a transcript, a `warn` carrying how
+ *   many do not, and `info` when nothing could be judged.
  */
 export function checkRoomSessionTranscripts(input: RoomSessionTranscriptInput): CheckResult {
+  const unknown = input.unknownRuntimeCount ?? 0;
+  if (input.bindings.length === 0 && unknown > 0) {
+    return {
+      label: 'Could not check whether rooms remember their conversations',
+      status: 'info',
+      detail: `DorkOS could not work out which runtime owns ${unknown} room ${plural(unknown, 'member', 'members')}, so none could be checked.`,
+    };
+  }
   const orphaned = input.bindings.filter((b) => !input.transcriptSessionIds.has(b.sessionId));
   if (orphaned.length === 0) {
     return {
       label: 'Rooms remember their conversations',
       status: 'pass',
-      detail: `${input.bindings.length} ${plural(input.bindings.length, 'room member', 'room members')} checked`,
+      detail:
+        `${input.bindings.length} ${plural(input.bindings.length, 'room member', 'room members')} checked` +
+        (unknown > 0 ? `; ${unknown} could not be identified and were left out` : ''),
     };
   }
   const roomCount = new Set(orphaned.map((b) => b.roomId)).size;

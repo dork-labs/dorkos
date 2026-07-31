@@ -43,6 +43,36 @@ describe('checkRoomSessionTranscripts', () => {
     expect(result.fix).toBeTruthy();
   });
 
+  it('says it could not check when every binding had an unreadable runtime', () => {
+    const result = checkRoomSessionTranscripts({
+      bindings: [],
+      transcriptSessionIds: new Set(),
+      unknownRuntimeCount: 4,
+    });
+    expect(result.status).toBe('info');
+    expect(result.label).toContain('Could not check');
+    expect(result.detail).toContain('4 room members');
+  });
+
+  it('still passes on zero bindings when nothing was unreadable', () => {
+    const result = checkRoomSessionTranscripts({
+      bindings: [],
+      transcriptSessionIds: new Set(),
+      unknownRuntimeCount: 0,
+    });
+    expect(result.status).toBe('pass');
+  });
+
+  it('admits on a pass how many bindings it had to leave out', () => {
+    const result = checkRoomSessionTranscripts({
+      bindings: [{ roomId: 'r1', authorId: 'a1', sessionId: 's1' }],
+      transcriptSessionIds: new Set(['s1']),
+      unknownRuntimeCount: 2,
+    });
+    expect(result.status).toBe('pass');
+    expect(result.detail).toContain('2 could not be identified');
+  });
+
   it('carries no session id, room id, or path', () => {
     const result = checkRoomSessionTranscripts({
       bindings: [{ roomId: 'secret-room', authorId: 'agent', sessionId: 'secret-session' }],
