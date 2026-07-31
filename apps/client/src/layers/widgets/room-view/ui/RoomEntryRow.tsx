@@ -61,11 +61,14 @@ interface RoomEntryRowProps {
    */
   orphanedReply?: boolean;
   /**
-   * Where this row sits in the room's feed, when it is rendering inside one.
+   * Where this row sits in the feed it is rendering inside — the room's flow,
+   * or an open thread's root and replies.
    *
-   * Omitted in the thread panel: its rows are still named, but a position in a
-   * set nothing navigates would be a promise of Page Down that the panel does
-   * not yet keep (DOR-780).
+   * Counted per feed, never across both: a thread's replies are numbered in the
+   * panel that navigates them and are not part of the room's set, because a
+   * position in a set nothing walks is a promise of Page Down that no container
+   * keeps. Omitted where a row renders outside a feed entirely, which leaves it
+   * named but unnumbered.
    */
   feedPosition?: FeedPosition;
 }
@@ -142,8 +145,9 @@ function noticeName(text: string): string {
  *
  * `feedPosition` is a CONSUMER of that name rather than its cause. It adds
  * where the row sits in the set, which is what makes Page Down say "12 of 30,
- * Ana" — so a row outside a feed is named but unnumbered, which is exactly what
- * the thread panel should be until it becomes a feed of its own (DOR-780).
+ * Ana" — so a row outside a feed is named but unnumbered, and the same row is
+ * numbered differently in the room's flow and in an open thread's panel, which
+ * are two feeds and two sets.
  */
 export function RoomEntryRow({
   roomId,

@@ -595,6 +595,60 @@ test.describe('Rooms — every message gets a menu', () => {
     await expect(roomsPage.threadPanel).toHaveCount(0);
   });
 
+  test('Page Down crosses the thread, and Ctrl+End lands in the thread’s own composer', async ({
+    page,
+    roomsApi,
+    roomsPage,
+  }) => {
+    // The panel is a feed of its own, and the part worth pinning in a real
+    // browser is where its edges are: leaving it lands on the panel's close
+    // button and the panel's composer, never in the room still on screen
+    // behind it.
+    const slug = `e2e-thread-feed-${roomsApi.runId}`;
+    const room = await roomsApi.createChannel(slug, slug);
+    await roomsApi.postEntries(room.id, ['why is the build slow?']);
+    const [rootId] = await roomsApi.entryIds(room.id);
+    await roomsApi.postThreadReply(room.id, rootId!, 'the cache is cold');
+    await roomsApi.postThreadReply(room.id, rootId!, 'warming it now');
+
+    await page.goto(`/channels?id=${room.id}`);
+    await expect(roomsPage.entries).toHaveCount(1, { timeout: SERVER_ROUND_TRIP_MS });
+    await roomsPage.replyRow(roomsPage.entries.first()).click();
+    await expect(roomsPage.threadEntries).toHaveCount(3);
+
+    // Two feeds on screen, named apart — which is the whole reason a feed is
+    // named at all.
+    const threadFeed = page.getByRole('feed', { name: `Thread in #${slug}` });
+    await expect(threadFeed).toHaveAttribute('aria-busy', 'false');
+    await expect(page.getByRole('feed', { name: `Messages in #${slug}` })).toBeVisible();
+
+    // The root and its replies are one set of three, counted over the panel
+    // rather than over the room.
+    await expect(roomsPage.threadEntries.nth(1)).toHaveAttribute('aria-posinset', '2');
+    await expect(roomsPage.threadEntries.nth(1)).toHaveAttribute('aria-setsize', '3');
+
+    await roomsPage.threadEntries.first().focus();
+    await page.keyboard.press('PageDown');
+    await expect(roomsPage.threadEntries.nth(1)).toBeFocused();
+    await page.keyboard.press('PageDown');
+    await expect(roomsPage.threadEntries.nth(2)).toBeFocused();
+    await page.keyboard.press('PageUp');
+    await expect(roomsPage.threadEntries.nth(1)).toBeFocused();
+
+    // Out of the feed on either side, and both stops are the panel's own.
+    await page.keyboard.press('Control+End');
+    await expect(roomsPage.threadComposer).toBeFocused();
+
+    await roomsPage.threadEntries.nth(1).focus();
+    await page.keyboard.press('Control+Home');
+    await expect(roomsPage.closeThread).toBeFocused();
+
+    // Escape still closes from wherever the feed left the reader.
+    await roomsPage.threadEntries.nth(2).focus();
+    await page.keyboard.press('Escape');
+    await expect(roomsPage.threadPanel).toHaveCount(0);
+  });
+
   test('a reply that arrives after you last looked wears the accent', async ({
     page,
     roomsApi,

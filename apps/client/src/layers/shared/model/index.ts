@@ -38,9 +38,9 @@ export { useNow } from './use-now';
 // The WAI-ARIA feed pattern. `Feed` (in `shared/ui`) and `feedArticleProps`
 // are what a surface uses; `useFeedKeyboardNav` and `FEED_ARTICLE_ATTR` are the
 // parts a surface only needs if it builds its own container, which nothing does
-// yet — so knip flags them, and they stay: the session transcript (DOR-779) and
-// the thread panel (DOR-780) are the filed adopters, and a hook the second one
-// has to go fishing for is a hook the second one reimplements.
+// yet — so knip flags them, and they stay: the room timeline and the thread
+// panel both reach for `Feed` itself, and a hook a later surface has to go
+// fishing for is a hook that surface reimplements.
 export { useFeedKeyboardNav, FEED_ARTICLE_ATTR } from './feed/use-feed-keyboard-nav';
 export type { FeedKeyboardNav } from './feed/use-feed-keyboard-nav';
 export { feedArticleProps } from './feed/feed-articles';

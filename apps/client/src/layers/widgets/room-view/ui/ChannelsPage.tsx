@@ -196,6 +196,7 @@ export function ChannelsPage() {
       reactionFrequents={room.reactionFrequents}
       streamStalled={stream.stalled}
       historyLoaded={entriesQuery.isSuccess}
+      historyFailed={entriesQuery.isError}
       pushed={isMobile}
       onClose={closeThread}
     />

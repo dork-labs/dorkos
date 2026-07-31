@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, type KeyboardEvent } from 'react';
 import { ChevronLeft, X } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
-import { Skeleton } from '@/layers/shared/ui';
+import { Feed, Skeleton } from '@/layers/shared/ui';
 import type { RoomEntry, RoomWithRoster } from '@/layers/entities/room';
 import { roomDisplayTitle, threadRootIdOf, useRoomPresence } from '@/layers/entities/room';
 import { authorsById, toMessageAuthor } from '../lib/room-timeline';
@@ -38,6 +38,15 @@ interface RoomThreadPanelProps {
    * always there is not an arrival.
    */
   historyLoaded: boolean;
+  /**
+   * True when the read of the room's history FAILED.
+   *
+   * Its own input rather than the absence of {@link RoomThreadPanelProps.historyLoaded},
+   * because those are three states and not two: a fetch that errored is not
+   * still arriving, and treating it as such leaves the panel drawing a skeleton
+   * and announcing a wait that will never end.
+   */
+  historyFailed?: boolean;
   /** True when this is the mobile full-screen push rather than the side panel. */
   pushed: boolean;
   /** Close the panel. */
@@ -63,6 +72,16 @@ interface RoomThreadPanelProps {
  * composer, and `PresenceScope` explains why the two lines are complements
  * rather than copies.
  *
+ * **The thread is a feed of its own** (WAI-ARIA `role="feed"`), the same
+ * pattern the room timeline uses and named for the thread rather than the room,
+ * because on a desktop both are on screen at once. Page Down and Page Up cross
+ * the root and its replies a message at a time, and Ctrl+Home / Ctrl+End leave
+ * for the two controls that bracket it — the header's close button and this
+ * thread's own composer — so leaving the feed never means landing in the room
+ * behind the panel. It says it is busy while the room's history is still
+ * arriving, which is the deep-link case: `?thread=` mounts this before there is
+ * anything to show.
+ *
  * Three ways out, because the panel is a mode and a mode needs an unmissable
  * exit: the close button, Escape, and clicking another thread's reply row
  * (which switches rather than stacking). On a phone it is a full-screen push
@@ -76,6 +95,7 @@ export function RoomThreadPanel({
   reactionFrequents,
   streamStalled,
   historyLoaded,
+  historyFailed = false,
   pushed,
   onClose,
 }: RoomThreadPanelProps) {
@@ -94,6 +114,11 @@ export function RoomThreadPanel({
     }
     return { root: found, replies: gathered };
   }, [entries, rootEntryId]);
+
+  // What the feed holds, which is the root and its replies and nothing else:
+  // the orphan line and the connectors are furniture between articles, with
+  // nothing in them to stand on.
+  const articleCount = (root === undefined ? 0 : 1) + replies.length;
 
   // Scoped to the REPLIES, never the root — `PresenceScope` says why an agent
   // triggered by the root is the room's business and not this thread's.
@@ -191,88 +216,127 @@ export function RoomThreadPanel({
       </header>
 
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto py-3">
-        {root === undefined && !historyLoaded ? (
-          // Still arriving. A thread whose root has not loaded YET is not a
-          // thread whose root is gone, and saying the second while the first is
-          // true flashes a small lie on every deep link.
-          <div className="flex flex-col gap-2 px-[var(--msg-padding-x)]" aria-busy>
-            <Skeleton className="h-3 w-24" />
-            <Skeleton className="h-3 w-full max-w-sm" />
-          </div>
-        ) : root === undefined ? (
-          // The orphaned thread (design record §4). Its replies are real and
-          // stay; only the message they answer is out of the loaded history.
-          // Saying so beats an empty panel, and beats pretending the first
-          // reply is the start of something.
-          <p
-            data-testid="room-thread-orphan"
-            className="text-muted-foreground border-b px-[var(--msg-padding-x)] pb-3 text-xs italic"
-          >
-            The start of this thread is gone. What was said after it is still here.
-          </p>
-        ) : (
-          <RoomEntryRow
-            roomId={room.id}
-            entry={root}
-            author={toMessageAuthor(root.authorId, authors)}
-            authorRef={authors.get(root.authorId)}
-            viewerAuthorId={room.viewerAuthorId}
-            authorNames={authorNames}
-            reactionFrequents={reactionFrequents}
-            streamStalled={streamStalled}
-            grouping={{ position: 'only' }}
-          />
-        )}
+        <Feed
+          // Named for the THREAD, not the room: on a desktop both histories are
+          // on screen at once, and two feeds called the same thing leave a
+          // reader unable to say which one they have landed in.
+          label={`Thread in ${roomDisplayTitle(room)}`}
+          // The deep-link case. `?thread=` mounts this panel before the room's
+          // entries arrive, and a feed that is briefly empty because it is
+          // still waiting should say so rather than read as a thread of none.
+          // A read that FAILED is not still waiting, and a feed left busy over
+          // one is a promise nothing is going to keep.
+          busy={!historyLoaded && !historyFailed}
+          className="flex flex-col"
+          data-testid="room-thread-feed"
+        >
+          {root === undefined && historyFailed ? (
+            // Said out loud rather than left as a skeleton that never resolves.
+            // Same words as the room's own failure, because it is the same read
+            // that failed and a reader should not have to work out whether two
+            // different sentences mean two different problems.
+            <div
+              data-testid="room-thread-error"
+              className="text-muted-foreground flex flex-col items-center gap-2 px-[var(--msg-padding-x)] py-6 text-center text-sm"
+            >
+              <p className="text-foreground font-medium">Couldn&rsquo;t load this thread</p>
+              <p className="max-w-sm text-xs">
+                Nothing was lost — a room keeps everything that was said. Reload to try again.
+              </p>
+            </div>
+          ) : root === undefined && !historyLoaded ? (
+            // Still arriving. A thread whose root has not loaded YET is not a
+            // thread whose root is gone, and saying the second while the first is
+            // true flashes a small lie on every deep link.
+            <div className="flex flex-col gap-2 px-[var(--msg-padding-x)]">
+              <Skeleton className="h-3 w-24" />
+              <Skeleton className="h-3 w-full max-w-sm" />
+            </div>
+          ) : root === undefined ? (
+            // The orphaned thread (design record §4). Its replies are real and
+            // stay; only the message they answer is out of the loaded history.
+            // Saying so beats an empty panel, and beats pretending the first
+            // reply is the start of something.
+            <p
+              data-testid="room-thread-orphan"
+              className="text-muted-foreground border-b px-[var(--msg-padding-x)] pb-3 text-xs italic"
+            >
+              The start of this thread is gone. What was said after it is still here.
+            </p>
+          ) : (
+            <RoomEntryRow
+              roomId={room.id}
+              entry={root}
+              author={toMessageAuthor(root.authorId, authors)}
+              authorRef={authors.get(root.authorId)}
+              viewerAuthorId={room.viewerAuthorId}
+              authorNames={authorNames}
+              reactionFrequents={reactionFrequents}
+              streamStalled={streamStalled}
+              grouping={{ position: 'only' }}
+              feedPosition={{ index: 1, total: articleCount }}
+            />
+          )}
 
-        {/* No empty state under the root, and that is the decision (design
+          {/* No empty state under the root, and that is the decision (design
             record §4): a thread with no replies yet is a root and a composer,
             which is exactly what it is. A drawing of a speech bubble saying "no
             replies yet" would be furniture explaining something already
             obvious. */}
-        {replies.length > 0 && (
-          <div className="mt-2 flex flex-col">
-            {replies.map((reply) => {
-              const arrival = arrivals.get(reply.id) ?? 'at-rest';
-              return (
-                <div key={reply.id} className="relative flex">
-                  {/* The connector. It draws downward as a reply lands
+          {replies.length > 0 && (
+            <div className="mt-2 flex flex-col">
+              {replies.map((reply, index) => {
+                const arrival = arrivals.get(reply.id) ?? 'at-rest';
+                return (
+                  <div key={reply.id} className="relative flex">
+                    {/* The connector. It draws downward as a reply lands
                       (design record §5.3) and is otherwise simply there. */}
-                  <span
-                    aria-hidden
-                    data-testid="room-thread-connector"
-                    className={cn(
-                      'bg-border ml-[calc(var(--msg-padding-x)_+_var(--msg-gutter-width)_/_2)] w-px shrink-0',
-                      arrival === 'dropped' && 'motion-safe:animate-thread-line-draw'
-                    )}
-                  />
-                  <div
-                    className={cn(
-                      'min-w-0 flex-1',
-                      // Two arrivals, two motions, and the difference is real:
-                      // an ordinary reply drops in from above with a bounce; an
-                      // answer from an agent that was just on the presence line
-                      // rises into the space that line is leaving.
-                      arrival === 'dropped' && 'motion-safe:animate-thread-reply-in',
-                      arrival === 'handed-off' && 'motion-safe:animate-reply-settle'
-                    )}
-                  >
-                    <RoomEntryRow
-                      roomId={room.id}
-                      entry={reply}
-                      author={toMessageAuthor(reply.authorId, authors)}
-                      authorRef={authors.get(reply.authorId)}
-                      viewerAuthorId={room.viewerAuthorId}
-                      authorNames={authorNames}
-                      reactionFrequents={reactionFrequents}
-                      streamStalled={streamStalled}
-                      grouping={{ position: 'only' }}
+                    <span
+                      aria-hidden
+                      data-testid="room-thread-connector"
+                      className={cn(
+                        'bg-border ml-[calc(var(--msg-padding-x)_+_var(--msg-gutter-width)_/_2)] w-px shrink-0',
+                        arrival === 'dropped' && 'motion-safe:animate-thread-line-draw'
+                      )}
                     />
+                    <div
+                      className={cn(
+                        'min-w-0 flex-1',
+                        // Two arrivals, two motions, and the difference is real:
+                        // an ordinary reply drops in from above with a bounce; an
+                        // answer from an agent that was just on the presence line
+                        // rises into the space that line is leaving.
+                        arrival === 'dropped' && 'motion-safe:animate-thread-reply-in',
+                        arrival === 'handed-off' && 'motion-safe:animate-reply-settle'
+                      )}
+                    >
+                      <RoomEntryRow
+                        roomId={room.id}
+                        entry={reply}
+                        author={toMessageAuthor(reply.authorId, authors)}
+                        authorRef={authors.get(reply.authorId)}
+                        viewerAuthorId={room.viewerAuthorId}
+                        authorNames={authorNames}
+                        reactionFrequents={reactionFrequents}
+                        streamStalled={streamStalled}
+                        grouping={{ position: 'only' }}
+                        feedPosition={{
+                          // After the root where there is one. An orphaned thread
+                          // numbers from its first surviving reply rather than
+                          // leaving a gap for the message that is gone: Page Down
+                          // can only reach what is here, and the count should
+                          // promise nothing else.
+                          index: (root === undefined ? 0 : 1) + index + 1,
+                          total: articleCount,
+                        }}
+                      />
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+                );
+              })}
+            </div>
+          )}
+        </Feed>
       </div>
 
       {/* Writes into THIS thread because it is mounted here — no aim, no

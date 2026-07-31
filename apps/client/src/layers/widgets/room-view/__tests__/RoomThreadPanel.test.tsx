@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
-import { render, screen, cleanup, within } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -220,6 +220,102 @@ describe('RoomThreadPanel', () => {
     renderPanel();
 
     expect(screen.getByTestId('room-presence')).toHaveTextContent('Bo is working on it');
+  });
+
+  it('is a feed, named for the thread rather than the room', () => {
+    // Both histories are on screen at once on a desktop, so two feeds called
+    // the same thing would leave a reader unable to say which they landed in.
+    renderPanel();
+
+    expect(screen.getByRole('feed', { name: 'Thread in #build' })).toBeInTheDocument();
+  });
+
+  it('says it is busy while the thread’s history is still resolving', () => {
+    // The deep-link case: `?thread=` mounts the panel before the room's
+    // entries land.
+    renderPanel({ entries: [], historyLoaded: false });
+    expect(screen.getByRole('feed')).toHaveAttribute('aria-busy', 'true');
+
+    cleanup();
+    renderPanel();
+    // Written as false rather than left off, so the wait is announced as over.
+    expect(screen.getByRole('feed')).toHaveAttribute('aria-busy', 'false');
+  });
+
+  it('stops saying it is busy when the history fails to load', () => {
+    // The failure this catches: "loading" was the absence of success, so a
+    // fetch that ERRORED left the panel drawing a skeleton and promising a
+    // wait that was never going to end.
+    renderPanel({ entries: [], historyLoaded: false, historyFailed: true });
+
+    expect(screen.getByRole('feed')).toHaveAttribute('aria-busy', 'false');
+    expect(screen.getByText('Couldn’t load this thread')).toBeInTheDocument();
+    expect(screen.queryByTestId('room-thread-orphan')).not.toBeInTheDocument();
+  });
+
+  it('numbers the root and its replies as one set', () => {
+    renderPanel({ entries: [entry(1), reply(2, 1), reply(3, 1)] });
+    const articles = screen.getAllByRole('article');
+
+    expect(articles).toHaveLength(3);
+    articles.forEach((article, index) => {
+      expect(article).toHaveAttribute('aria-posinset', String(index + 1));
+      expect(article).toHaveAttribute('aria-setsize', '3');
+    });
+  });
+
+  it('numbers an orphaned thread over the replies it actually has', () => {
+    // The missing root is not a phantom first article: promising three when
+    // Page Down can only reach two is worse than saying two.
+    renderPanel({ entries: [reply(2, 1), reply(3, 1)] });
+    const articles = screen.getAllByRole('article');
+
+    expect(articles).toHaveLength(2);
+    expect(articles[0]).toHaveAttribute('aria-posinset', '1');
+    expect(articles[0]).toHaveAttribute('aria-setsize', '2');
+  });
+
+  it('moves root to reply on Page Down and back on Page Up', () => {
+    renderPanel({ entries: [entry(1), reply(2, 1), reply(3, 1)] });
+    const [root, first, second] = screen.getAllByRole('article');
+
+    root!.focus();
+    fireEvent.keyDown(root!, { key: 'PageDown' });
+    expect(first).toHaveFocus();
+
+    fireEvent.keyDown(first!, { key: 'PageDown' });
+    expect(second).toHaveFocus();
+
+    fireEvent.keyDown(second!, { key: 'PageUp' });
+    expect(first).toHaveFocus();
+  });
+
+  it('lands on the panel’s own close button and composer on Ctrl+Home and Ctrl+End', () => {
+    // WITHIN the panel: the room behind it is full of tab stops, and leaving
+    // the thread for one of them is not what leaving a feed means here.
+    renderPanel();
+    const root = screen.getAllByRole('article')[0]!;
+
+    root.focus();
+    fireEvent.keyDown(root, { key: 'End', ctrlKey: true });
+    expect(screen.getByRole('combobox', { name: 'Reply in this thread…' })).toHaveFocus();
+
+    root.focus();
+    fireEvent.keyDown(root, { key: 'Home', ctrlKey: true });
+    expect(screen.getByRole('button', { name: 'Close thread' })).toHaveFocus();
+  });
+
+  it('still closes on Escape from an article the feed put focus on', () => {
+    // The feed moves focus; Escape is one of the panel's three ways out and
+    // has to survive being pressed wherever the feed left the reader.
+    const onClose = vi.fn();
+    renderPanel({ onClose });
+    const root = screen.getAllByRole('article')[0]!;
+    root.focus();
+
+    fireEvent.keyDown(root, { key: 'Escape' });
+
+    expect(onClose).toHaveBeenCalled();
   });
 
   it('leaves work triggered by a ROOM message to the room’s own line', () => {
