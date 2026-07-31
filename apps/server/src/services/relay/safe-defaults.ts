@@ -10,6 +10,12 @@
  * - `SlackAdapterConfig.dmPolicy` — was `'open'`, so any member of the Slack
  *   workspace could DM an agent and drive a turn on the operator's machine.
  *   Now `'allowlist'`.
+ * - `TelegramAdapterConfig.dmPolicy` — did not exist at all, so anyone who
+ *   found the bot's public handle could do the same (DOR-788). New
+ *   integrations use an allowlist; existing ones are carried forward at
+ *   `'open'` by the identical rule below, because a stored Telegram
+ *   integration with no such field is exactly the "written by an older build"
+ *   case this file is about.
  * - `AdapterBinding.permissionMode` — was `'acceptEdits'`, so a binding nobody
  *   configured ran in a mode nobody chose. Now `'default'`, which prompts.
  *
@@ -61,8 +67,19 @@ import { logger } from '../../lib/logger.js';
 /** What `AdapterBinding.permissionMode` resolved to before DOR-604. */
 const LEGACY_BINDING_PERMISSION_MODE = 'acceptEdits';
 
-/** What `SlackAdapterConfig.dmPolicy` resolved to before DOR-604. */
-const LEGACY_SLACK_DM_POLICY = 'open';
+/**
+ * What a `dmPolicy` resolved to before the field existed on its adapter.
+ *
+ * Slack's moved from `'open'` to `'allowlist'` in DOR-604. Telegram never had
+ * the field at all and answered every private message, which is the same
+ * effective value, so both carry forward at `'open'` for the same reason: a
+ * live integration must not go silent because DorkOS changed its mind about
+ * the default (DOR-788).
+ */
+const LEGACY_DM_POLICY = 'open';
+
+/** Adapter types whose `config.dmPolicy` is carried forward. */
+const DM_POLICY_TYPES = new Set(['slack', 'telegram']);
 
 /** Whether a value is a plain JSON object we can safely read keys from. */
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -117,13 +134,14 @@ export function carryForwardAdapterDefaults(raw: unknown): unknown {
   let carried = 0;
   let closed = 0;
   const adapters = raw.adapters.map((entry) => {
-    if (!isRecord(entry) || entry.type !== 'slack') return entry;
+    if (!isRecord(entry) || typeof entry.type !== 'string') return entry;
+    if (!DM_POLICY_TYPES.has(entry.type)) return entry;
     const config = entry.config;
     if (!isRecord(config)) return entry;
 
     if (!('dmPolicy' in config)) {
       carried++;
-      return { ...entry, config: { ...config, dmPolicy: LEGACY_SLACK_DM_POLICY } };
+      return { ...entry, config: { ...config, dmPolicy: LEGACY_DM_POLICY } };
     }
 
     // A stored value that is neither option is not a third option. `''` is what
@@ -139,15 +157,15 @@ export function carryForwardAdapterDefaults(raw: unknown): unknown {
 
   if (closed > 0) {
     logger.warn(
-      `[Relay] ${closed} Slack integration(s) stored an unreadable DM policy; ` +
+      `[Relay] ${closed} integration(s) stored an unreadable DM policy; ` +
         `treating it as 'allowlist' so direct messages stay restricted (DOR-604).`
     );
   }
 
   if (carried > 0) {
     logger.info(
-      `[Relay] Carried ${carried} pre-existing Slack integration(s) forward at dmPolicy ` +
-        `'${LEGACY_SLACK_DM_POLICY}'. New integrations use an allowlist (DOR-604).`
+      `[Relay] Carried ${carried} pre-existing integration(s) forward at dmPolicy ` +
+        `'${LEGACY_DM_POLICY}'. New integrations use an allowlist (DOR-604, DOR-788).`
     );
   }
   return { ...raw, adapters };
@@ -166,7 +184,8 @@ export function carryForwardAdapterDefaults(raw: unknown): unknown {
  */
 export function warnOnOpenDmPolicy(adapters: ReadonlyArray<unknown>): void {
   for (const entry of adapters) {
-    if (!isRecord(entry) || entry.type !== 'slack' || entry.enabled === false) continue;
+    if (!isRecord(entry) || typeof entry.type !== 'string' || entry.enabled === false) continue;
+    if (!DM_POLICY_TYPES.has(entry.type)) continue;
     const config = entry.config;
     // Warn on anything that is not the closed value, not just on the literal
     // `'open'`. A `dmPolicy` of `''` — what a client with no manifest default
@@ -176,8 +195,10 @@ export function warnOnOpenDmPolicy(adapters: ReadonlyArray<unknown>): void {
     // `'allowlist'`, and this stays broad as the second line of defence.
     if (!isRecord(config) || config.dmPolicy === 'allowlist') continue;
     logger.warn(
-      `[Relay] Slack integration '${String(entry.id)}' accepts direct messages from anyone in ` +
-        `the workspace, and a direct message can start an agent turn on this machine. ` +
+      `[Relay] ${entry.type === 'slack' ? 'Slack' : 'Telegram'} integration ` +
+        `'${String(entry.id)}' accepts direct messages from ` +
+        `${entry.type === 'slack' ? 'anyone in the workspace' : 'anyone who finds the bot'}, ` +
+        `and a direct message can start an agent turn on this machine. ` +
         `Set "DM Access" to "Allowlist only" to limit it to people you name.`
     );
   }

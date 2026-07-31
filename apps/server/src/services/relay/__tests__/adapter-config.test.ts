@@ -70,7 +70,7 @@ describe('loadAdapterConfig — removed adapter types', () => {
     );
   });
 
-  it('leaves configs without removed types untouched and logs nothing', async () => {
+  it('leaves configs without removed types untouched and logs no migration hint', async () => {
     vi.mocked(readFile).mockResolvedValue(
       JSON.stringify({
         adapters: [{ id: 'telegram-1', type: 'telegram', enabled: true, config: { token: 'y' } }],
@@ -80,7 +80,13 @@ describe('loadAdapterConfig — removed adapter types', () => {
     const { adapters: configs } = await loadAdapterConfig(CONFIG_PATH);
 
     expect(configs).toHaveLength(1);
-    expect(logger.warn).not.toHaveBeenCalled();
+    // No removed-type hint. There IS a warning — this stored integration
+    // predates `dmPolicy`, so it is carried forward at 'open' and said out
+    // loud (DOR-788, covered in safe-defaults.test.ts) — so this asserts on
+    // the message rather than on silence.
+    expect(
+      vi.mocked(logger.warn).mock.calls.filter((call) => String(call[0]).includes('was removed'))
+    ).toHaveLength(0);
   });
 });
 

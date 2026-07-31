@@ -14,6 +14,7 @@ import { DEFAULT_RESPOND_MODE } from '@dorkos/shared/relay-schemas';
 import type { RelayPublisher, AdapterInboundCallbacks, RelayLogger } from '../../types.js';
 import { noopLogger } from '../../types.js';
 import { TelegramThreadIdCodec } from '../../lib/thread-id.js';
+import { shouldReportDeniedChat, type DeniedChatNotices } from '../denied-chat-notices.js';
 
 // === Constants ===
 
@@ -53,10 +54,22 @@ type BotIdentity = GrammyContext['me'];
 /** Options for inbound Telegram message handling. */
 export interface TelegramInboundOptions {
   /**
-   * When the bot answers in a group or supergroup. Private chats always get an
-   * answer regardless of this.
+   * When the bot answers in a group or supergroup. Private chats are gated by
+   * {@link dmPolicy} instead.
    */
   respondMode?: RespondMode;
+  /**
+   * Who may message the bot privately. Same field, values and meaning as
+   * Slack's. Omitted resolves to the schema default, `'allowlist'`.
+   */
+  dmPolicy?: 'open' | 'allowlist';
+  /** Telegram user IDs allowed to message privately when the policy is `'allowlist'`. */
+  dmAllowlist?: string[];
+  /**
+   * The adapter instance's record of which chats it has already explained
+   * turning away. Without one, every rejected message logs.
+   */
+  deniedNotices?: DeniedChatNotices;
 }
 
 // === Loop prevention ===
@@ -230,6 +243,72 @@ function shouldProcessGroupMessage(
   return repliesToBot(message, me);
 }
 
+// === Private-chat gating ===
+
+/** The schema's own default, restated here for a config that never met it. */
+const DEFAULT_DM_POLICY = 'allowlist';
+
+/**
+ * Whether a person may open a private chat with this bot.
+ *
+ * A Telegram bot handle is public — search finds it, and anyone can press
+ * Start. A private message then runs an agent turn in the binding's project
+ * directory, on the operator's machine. Groups have been gated since DOR-619;
+ * private chats were gated by nothing at all, which made "who can use this
+ * bot" a question with the answer "everyone who knows its name".
+ *
+ * Mirrors Slack's DM policy exactly, including defaulting to `'allowlist'` when
+ * the config never travelled through the schema: an integration nobody
+ * configured answers nobody, rather than answering the world.
+ *
+ * @param options - The resolved inbound options.
+ * @param senderId - The Telegram user id of the author, if known.
+ */
+function mayMessagePrivately(
+  options: TelegramInboundOptions | undefined,
+  senderId: string | undefined
+): boolean {
+  if ((options?.dmPolicy ?? DEFAULT_DM_POLICY) !== 'allowlist') return true;
+  if (senderId === undefined) return false;
+  return (options?.dmAllowlist ?? []).includes(senderId);
+}
+
+/**
+ * Explain, once per chat, that a private message was turned away.
+ *
+ * Named ids and the exact setting to change, because the person reading this is
+ * looking at a bot that appears broken and needs to know both that the refusal
+ * was deliberate and how to undo it. Once per chat rather than per message —
+ * see {@link shouldReportDeniedChat}.
+ *
+ * @param logger - The adapter's logger.
+ * @param options - The resolved inbound options, for the notice record.
+ * @param chatId - The Telegram chat the message arrived in.
+ * @param senderId - The author's user id, if known.
+ * @param senderName - The author's display name, for recognisability.
+ */
+function reportDeniedPrivateChat(
+  logger: RelayLogger,
+  options: TelegramInboundOptions | undefined,
+  chatId: number,
+  senderId: string | undefined,
+  senderName: string
+): void {
+  const notices = options?.deniedNotices;
+  if (notices && !shouldReportDeniedChat(notices, String(chatId))) return;
+
+  const allowlist = options?.dmAllowlist ?? [];
+  const who = senderId ? `${senderName} (id ${senderId})` : senderName;
+  logger.warn(
+    `Ignored a private message from ${who} in chat ${chatId}: they are not on this ` +
+      `integration's DM allowlist` +
+      (allowlist.length === 0 ? ' (the allowlist is empty — nobody can message it yet)' : '') +
+      `. To let them through, add ${senderId ?? 'their user id'} to "DM Allowlist" in this ` +
+      `Telegram integration's settings, or set "DM Access" to "Open (anyone)". ` +
+      `Further messages from this chat will not be logged.`
+  );
+}
+
 // === Helpers ===
 
 /**
@@ -289,11 +368,13 @@ function extractChannelName(chat: GrammyContext['chat']): string | undefined {
 /**
  * Handle an inbound Telegram message and publish it to the Relay.
  *
- * Two gates run before anything is published, and they are different kinds of
+ * Three gates run before anything is published, and they are different kinds of
  * thing. {@link isBotSender} is a mechanism — unconditional, unconfigurable,
  * and the reason two bots in one group cannot answer each other forever.
  * {@link shouldProcessGroupMessage} is a preference the operator sets, and it
- * only ever narrows behavior in groups.
+ * only ever narrows behavior in groups. {@link mayMessagePrivately} is an
+ * access rule, and it is the one that decides whether a stranger who found the
+ * bot's handle can run a turn on this machine.
  *
  * Past both gates, builds the subject from the chat ID, constructs a
  * {@link StandardPayload}, and publishes it. Errors during publish are caught
@@ -347,22 +428,29 @@ export async function handleInboundMessage(
     return;
   }
 
-  // Group respond gating. A private chat is addressed to the bot by
-  // construction, so it never reaches this.
+  const senderName = from
+    ? [from.first_name, from.last_name].filter(Boolean).join(' ') || from.username || UNKNOWN_SENDER
+    : UNKNOWN_SENDER;
+
+  // Access gating, one branch per kind of conversation: a group is gated on
+  // whether the bot was spoken to, a private chat on whether this person is
+  // allowed to speak to it at all.
   if (isGroup) {
     const respondMode = options?.respondMode ?? DEFAULT_RESPOND_MODE;
     if (!shouldProcessGroupMessage(respondMode, message, ctx.me)) {
       logger.debug(`inbound skipped: respond mode '${respondMode}' filtered chat ${chat.id}`);
       return;
     }
+  } else {
+    const senderId = from?.id !== undefined ? String(from.id) : undefined;
+    if (!mayMessagePrivately(options, senderId)) {
+      reportDeniedPrivateChat(logger, options, chat.id, senderId, senderName);
+      return;
+    }
   }
 
   // Cap inbound content to prevent oversized payloads from reaching the relay
   const text = rawText.slice(0, MAX_CONTENT_LENGTH);
-
-  const senderName = from
-    ? [from.first_name, from.last_name].filter(Boolean).join(' ') || from.username || UNKNOWN_SENDER
-    : UNKNOWN_SENDER;
 
   const payload: StandardPayload = {
     content: text,

@@ -13,7 +13,11 @@ import {
   deleteAdapterSecrets,
   secretFieldKeys,
 } from '../adapter-secrets.js';
-import { maskSensitiveFields } from '../adapter-config.js';
+import {
+  maskSensitiveFields,
+  mergeWithPasswordPreservation,
+  parseAdapterConfigForPersist,
+} from '../adapter-config.js';
 
 /** In-memory {@link CredentialStore} that mimics the `file:` scheme. */
 class FakeCredentialStore implements CredentialStore {
@@ -290,5 +294,69 @@ describe('a secret field that holds a MAP of secrets (webhook outbound headers)'
     );
 
     expect(JSON.stringify(masked)).not.toContain('sk-live-abc');
+  });
+});
+
+describe('editing a webhook adapter without touching its headers', () => {
+  // The wizard sends `'***'` back for any password field the person did not
+  // retype. `updateConfig` merges BEFORE it validates, so the sentinel is
+  // swapped for the stored value and never reaches the schema — which matters
+  // here because the stored value is an object and `'***'` is a string.
+
+  const stored = {
+    inbound: { subject: 'relay.webhook.wh-1', secret: 'file:inbound-ref' },
+    outbound: {
+      url: 'https://example.com/hook',
+      secret: 'file:outbound-ref',
+      headers: { Authorization: 'file:relay-adapter-wh-1-outbound-headers-Authorization' },
+    },
+  };
+
+  it('keeps the stored header references when the form sends the mask back', () => {
+    const merged = mergeWithPasswordPreservation(
+      stored,
+      {
+        inbound: { subject: 'relay.webhook.wh-1', secret: '***' },
+        outbound: { url: 'https://example.com/hook', secret: '***', headers: '***' },
+      },
+      WEBHOOK_MANIFEST
+    );
+
+    expect(merged).toMatchObject({
+      outbound: {
+        headers: { Authorization: 'file:relay-adapter-wh-1-outbound-headers-Authorization' },
+      },
+    });
+  });
+
+  it('produces a config the webhook schema still accepts', () => {
+    // The check that matters: after the merge, the entry validates. If the
+    // sentinel survived to here the save would be refused.
+    const merged = mergeWithPasswordPreservation(
+      stored,
+      { outbound: { url: 'https://example.com/hook', secret: '***', headers: '***' } },
+      WEBHOOK_MANIFEST
+    );
+
+    const parsed = parseAdapterConfigForPersist(
+      { id: 'wh-1', type: 'webhook', enabled: true, config: merged },
+      WEBHOOK_MANIFEST
+    );
+
+    expect(parsed.config).toMatchObject({
+      outbound: {
+        headers: { Authorization: 'file:relay-adapter-wh-1-outbound-headers-Authorization' },
+      },
+    });
+  });
+
+  it('replaces them when the person actually types new headers', () => {
+    const merged = mergeWithPasswordPreservation(
+      stored,
+      { outbound: { ...stored.outbound, headers: { Authorization: 'Bearer replaced' } } },
+      WEBHOOK_MANIFEST
+    );
+
+    expect(merged).toMatchObject({ outbound: { headers: { Authorization: 'Bearer replaced' } } });
   });
 });

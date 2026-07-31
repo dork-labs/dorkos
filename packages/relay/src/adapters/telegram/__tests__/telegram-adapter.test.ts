@@ -278,9 +278,19 @@ describe('TelegramAdapter', () => {
     // User 42 is the approver these tests press buttons as. Without a named
     // approver every approval is refused, which is the point of DOR-609 — the
     // refusal path has its own tests below.
+    //
+    // User 99 is `createInboundCtx`'s default author, and private chats now
+    // need an allowlist (DOR-788), so it is named here. These tests are about
+    // subjects and payload shapes; the allowlist has its own tests in
+    // `inbound.test.ts`.
     adapter = new TelegramAdapter(
       'tg1',
-      tgConfig({ token: 'test-token', mode: 'polling', approverAllowlist: ['42'] })
+      tgConfig({
+        token: 'test-token',
+        mode: 'polling',
+        approverAllowlist: ['42'],
+        dmAllowlist: ['99', '55'],
+      })
     );
     mockRelay = createMockRelay();
   });
@@ -483,6 +493,8 @@ describe('TelegramAdapter', () => {
   it('includes platformData with chatId and messageId', async () => {
     await adapter.start(mockRelay);
 
+    // fromId 55 rather than the fixture's 99, so this also proves the id the
+    // payload reports is the AUTHOR's and not the chat's.
     const ctx = createInboundCtx({ chatId: 99, messageId: 7, fromId: 55 });
     await capturedMessageHandler!(ctx);
 

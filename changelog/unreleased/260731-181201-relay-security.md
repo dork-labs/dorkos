@@ -1,11 +1,14 @@
 ---
 covers:
   - 'fix(relay): chat integrations stay closed when consent cannot be resolved'
+  - 'fix(relay): Telegram private chats need an allowlist, like Slack DMs'
 ---
 
 ### Fixed
 
-- "Let this agent start conversations here" is now a permission for that one agent on that one channel. Before, once you granted it, any agent on your machine could message that chat as your bot (DOR-788).
+- Telegram private chats now use an allowlist, the same way Slack DMs do. A bot handle is public, and a private message starts a real agent turn on your machine, so a new integration answers only the people you name. Integrations you already have keep working exactly as before — and if a message is ever turned away, the log says who it was, their user ID, and the setting to change (DOR-788).
+- Slack says the same thing out loud. Turning someone away used to be silent, which looks identical to a broken bot — especially right after setup, when the allowlist is still empty. It is now one clear line per conversation, not one per message.
+- "Let this agent start conversations here" is now a permission for that one agent on that one channel. Before, once you granted it, any agent on your machine could message that chat as your bot.
 - If the part of DorkOS that decides who may message whom fails to start, chat integrations no longer start either. They used to connect, look healthy, and answer nobody — with the permission checks quietly switched off.
 - If your relay access rules become unreadable, DorkOS now stops delivering and says which file to fix, instead of behaving as though you had never written a rule.
 - One unreadable integration in your settings no longer hides all of them, and adding a new integration can no longer delete the ones DorkOS could not read.

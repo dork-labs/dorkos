@@ -26,6 +26,7 @@ import { handleInboundMessage } from './inbound.js';
 import { GrammyPlatformClient } from './grammy-platform-client.js';
 import { TelegramThreadIdCodec } from '../../lib/thread-id.js';
 import { mayApprove } from '../approver-allowlist.js';
+import { createDeniedChatNotices, type DeniedChatNotices } from '../denied-chat-notices.js';
 import {
   deliverMessage,
   handleTypingSignal,
@@ -188,11 +189,53 @@ For local development, use a tunnel service (e.g., ngrok, Cloudflare Tunnel).`,
         'stops two bots in one group talking to each other forever.',
     },
     {
+      key: 'dmPolicy',
+      label: 'DM Access',
+      type: 'select',
+      // Required with an explicit default so the form always shows a choice —
+      // the same reasoning as Slack's identical field: left optional, a person
+      // who never touched it silently got the permissive value (DOR-604).
+      required: true,
+      default: 'allowlist',
+      description:
+        'Control who can message the bot privately. A private message can start an agent ' +
+        'turn on your machine, and your bot handle is public.',
+      section: 'Access Control',
+      options: [
+        {
+          label: 'Open (anyone)',
+          value: 'open',
+          description: 'Anyone who finds the bot on Telegram can message it.',
+        },
+        {
+          label: 'Allowlist only',
+          value: 'allowlist',
+          description: 'Only users in the allowlist can message the bot privately.',
+        },
+      ],
+      displayAs: 'radio-cards',
+    },
+    {
+      key: 'dmAllowlist',
+      label: 'DM Allowlist',
+      type: 'textarea',
+      valueShape: 'id-list',
+      required: false,
+      description: 'Telegram user IDs allowed to message the bot privately (one per line).',
+      placeholder: '123456789\n987654321',
+      section: 'Access Control',
+      showWhen: { field: 'dmPolicy', equals: 'allowlist' },
+      helpMarkdown:
+        'A Telegram user ID is a number, not a @handle. The log line DorkOS writes when it ' +
+        'turns someone away names the exact id to paste here.',
+    },
+    {
       key: 'approverAllowlist',
       label: 'Approvers',
       type: 'textarea',
       valueShape: 'id-list',
       required: false,
+      section: 'Access Control',
       description:
         'Telegram user IDs who may approve a tool call from Telegram (one per line). ' +
         'Empty means nobody can — approvals will be declined.',
@@ -258,6 +301,12 @@ export class TelegramAdapter extends BaseRelayAdapter {
   private responseBuffers = new Map<number, ResponseBuffer>();
   /** Instance-scoped outbound state — prevents cross-adapter leakage when multiInstance: true. */
   private readonly outboundState: TelegramOutboundState = createTelegramOutboundState();
+  /**
+   * Which private chats this instance has already explained turning away.
+   * Instance-scoped for the same reason the outbound state is: two Telegram
+   * integrations must not silence each other's notices.
+   */
+  private readonly deniedNotices: DeniedChatNotices = createDeniedChatNotices();
   private platformClient: GrammyPlatformClient | null = null;
   private readonly codec: TelegramThreadIdCodec;
 
@@ -392,18 +441,20 @@ export class TelegramAdapter extends BaseRelayAdapter {
       })
     );
     bot.on('message', (ctx) =>
-      handleInboundMessage(
-        ctx,
-        relay,
-        this.makeInboundCallbacks(),
-        this.logger,
-        this.codec,
+      handleInboundMessage(ctx, relay, this.makeInboundCallbacks(), this.logger, this.codec, {
         // Fall back to the schema's own default rather than restating one here:
         // a config that reached this point without a `respondMode` went through
         // neither the schema nor the setup form, and nothing about it says the
         // operator wanted the bot answering every message in every group.
-        { respondMode: this.config.respondMode ?? DEFAULT_RESPOND_MODE }
-      )
+        respondMode: this.config.respondMode ?? DEFAULT_RESPOND_MODE,
+        // Same reasoning for private chats, and the same default Slack uses.
+        // `inbound.ts` resolves an absent policy to `'allowlist'` too, so the
+        // closed value is what an unconfigured integration lands on wherever
+        // the decision is made.
+        dmPolicy: this.config.dmPolicy,
+        dmAllowlist: this.config.dmAllowlist,
+        deniedNotices: this.deniedNotices,
+      })
     );
     // Callback query handler for tool approval inline keyboard buttons
     bot.on('callback_query:data', (ctx) => this.handleApprovalCallback(ctx, relay));

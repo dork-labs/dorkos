@@ -16,6 +16,11 @@ import { noopLogger } from '../../types.js';
 import { queuePendingReaction, dropPendingReaction } from './presence.js';
 import type { SlackPresenceState } from './presence.js';
 import { SlackThreadIdCodec } from '../../lib/thread-id.js';
+import {
+  createDeniedChatNotices,
+  shouldReportDeniedChat,
+  type DeniedChatNotices,
+} from '../denied-chat-notices.js';
 import type { ThreadParticipationTracker } from './thread-tracker.js';
 
 // === Constants ===
@@ -221,6 +226,8 @@ export interface SlackInboundState {
   userNameCache: Map<string, CacheEntry>;
   /** Slack channel ID → resolved channel name. */
   channelNameCache: Map<string, CacheEntry>;
+  /** Conversations already told they are not on the DM allowlist. */
+  deniedNotices: DeniedChatNotices;
 }
 
 /** Create a fresh inbound state container for a single adapter instance. */
@@ -229,6 +236,7 @@ export function createSlackInboundState(): SlackInboundState {
     seenEvents: new Map(),
     userNameCache: new Map(),
     channelNameCache: new Map(),
+    deniedNotices: createDeniedChatNotices(),
   };
 }
 
@@ -515,13 +523,24 @@ export async function handleInboundMessage(
   if (isDm && options?.dmPolicy === 'allowlist') {
     const allowlist = options.dmAllowlist ?? [];
     if (!allowlist.includes(event.user ?? '')) {
-      // Every other skip path here logs; this one used to drop the message in
-      // silence, which is indistinguishable from the bot being broken. An empty
-      // allowlist is the common case right after setup, so say so (DOR-604).
-      logger.debug(
-        `inbound skipped: DM from ${event.user ?? 'unknown'} is not on the DM allowlist` +
-          (allowlist.length === 0 ? ' (the allowlist is empty — no one can DM this bot yet)' : '')
-      );
+      // At `debug` — where this used to live — the refusal was invisible, and a
+      // bot that silently ignores you is indistinguishable from a broken one.
+      // An empty allowlist is the common case right after setup, so this warns
+      // instead, names the id to add and the setting to change, and does it
+      // once per conversation so one person retrying cannot flood the log
+      // (DOR-604, DOR-788).
+      if (shouldReportDeniedChat(state.deniedNotices, channelId)) {
+        logger.warn(
+          `Ignored a DM from ${event.user ?? 'an unknown user'}: they are not on this ` +
+            `integration's DM allowlist` +
+            (allowlist.length === 0
+              ? ' (the allowlist is empty — nobody can DM this bot yet)'
+              : '') +
+            `. To let them through, add ${event.user ?? 'their user id'} to "DM Allowlist" in ` +
+            `this Slack integration's settings, or set "DM Access" to "Open (anyone)". ` +
+            `Further messages from this conversation will not be logged.`
+        );
+      }
       return;
     }
   }
