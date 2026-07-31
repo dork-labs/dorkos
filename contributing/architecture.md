@@ -374,7 +374,7 @@ Capability-gated UI renders only what the active runtime declares — e.g. the c
 Key methods:
 
 - `register(runtime)` — register or replace a runtime by its `type` string
-- `getDefault()` / `getDefaultType()` / `setDefault(type)` — the default runtime (claude-code unless changed)
+- `getDefault()` / `getDefaultType()` / `setDefault(type)` — the default runtime (claude-code unless changed). Shape-neutral: callers use only the `AgentRuntime` interface, so any registered runtime is a valid default. The relay's Claude Code adapter, which genuinely needs Claude-specific methods, binds the concrete claude-code runtime at the composition root instead (`relayAgentRuntime` in `index.ts`, passed as an `agentRuntimes` map keyed by the runtime's own `type`). The relay's binding subsystem prefers `getDefaultType()` when choosing where to create chat-originated sessions, but falls back — with a log — to the runtime the relay actually holds rather than disabling routing
 - `resolveForSession(sessionId)` — per-session dispatch: reads the session's immutable runtime binding from `session_metadata` (ADR-0255)
 - `persistSessionRuntime(sessionId, type)` — records the binding at session creation, **first-write-wins** (a session's runtime never changes after it starts)
 - `resolveForAgent(agentId, meshCore?)` — looks up the agent's manifest to determine which runtime to use, falling back to the default
@@ -918,7 +918,7 @@ The server reads `DORKOS_CORS_ORIGIN` from the environment to configure CORS all
 
 ### Dynamic Model List (`GET /api/models`)
 
-Available Claude models are served dynamically from the active runtime's `getSupportedModels()` method rather than being hardcoded. The `models` route (`routes/models.ts`) calls `runtimeRegistry.getDefault().getSupportedModels()` and returns `{ models: ModelOption[] }`. This ensures the model list automatically reflects SDK updates.
+Models are served dynamically from the resolved runtime's `getSupportedModels()` rather than being hardcoded, so the list reflects SDK updates on its own. The `models` route (`routes/models.ts`) resolves `?runtime=` > `?sessionId=` > the registry default and returns `{ models: ModelOption[] }`. Nothing here is Claude-specific: a `runtimes.default` of `codex` or `opencode` returns that runtime's catalog.
 
 ## Build Configuration
 

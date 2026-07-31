@@ -1932,4 +1932,34 @@ describe('AdapterManager', () => {
       expect(registeredIds).not.toContain('tg-second');
     });
   });
+
+  describe('legacy single-agentManager keying (DOR-768)', () => {
+    // The wrap used to key the lone runtime under a hardcoded 'claude-code'.
+    // Everything that reads the map back — session dispatch, and the binding
+    // subsystem's session creator — looks up a real runtime type, so a
+    // TestModeRuntime filed under 'claude-code' is invisible to every lookup
+    // and the relay goes quiet without erroring.
+    it('keys the runtime under its own type', () => {
+      const m = new AdapterManager(registry, configPath, {
+        ...mockDeps,
+        agentManager: { type: 'test-mode', ensureSession: vi.fn(), sendMessage: vi.fn() },
+      });
+      expect(m.listRegisteredRuntimeTypes()).toEqual(['test-mode']);
+    });
+
+    it('keeps claude-code for a double that declares no type', () => {
+      // Bare doubles mean claude-code; that is the shape the compat path exists
+      // for, and changing it would break callers this field is meant to serve.
+      const m = new AdapterManager(registry, configPath, mockDeps);
+      expect(m.listRegisteredRuntimeTypes()).toEqual(['claude-code']);
+    });
+
+    it('never lets the legacy wrap overwrite an explicit map', () => {
+      const m = new AdapterManager(registry, configPath, {
+        ...mockDeps,
+        agentRuntimes: new Map([['opencode', { ensureSession: vi.fn(), sendMessage: vi.fn() }]]),
+      });
+      expect(m.listRegisteredRuntimeTypes()).toEqual(['opencode']);
+    });
+  });
 });

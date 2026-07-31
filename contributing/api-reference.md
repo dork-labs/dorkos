@@ -1159,7 +1159,7 @@ Get overall mesh status — counts of registered, healthy, and denied agents.
 
 ### GET /api/models
 
-Returns the list of Claude models supported by the active runtime. Delegates to `runtimeRegistry.getDefault().getSupportedModels()` and includes display names and descriptions for each model.
+Returns the models supported by the resolved runtime — whichever runtime that is, not Claude's specifically. Resolution is `?runtime=` > `?sessionId=` > the registry default; a non-Claude default returns that runtime's own catalog. Includes display names and descriptions for each model.
 
 No feature flag required — always mounted.
 
@@ -1186,7 +1186,7 @@ No feature flag required — always mounted.
 
 ### GET /api/subagents
 
-Returns available subagents reported by the SDK. Delegates to `runtimeRegistry.getDefault().getSupportedSubagents()`. Values are cached by `RuntimeCache` and refreshed on `reloadPlugins()`.
+Returns the subagents reported by the resolved runtime — `?sessionId=`'s runtime, else the registry default, whichever runtime that is. Values are cached by `RuntimeCache` and refreshed on `reloadPlugins()`.
 
 No feature flag required — always mounted.
 

@@ -50,6 +50,16 @@ What does not exist: the two adapters; multi-runtime session listing (`routes/se
 - Changing the shipped default runtime (`claude-code` remains default).
 - Bundling runtime binaries; Windows-specific packaging work.
 
+> **Reconciled 2026-07-31 (DOR-768).** While this spec was in flight, "claude-code
+> remains default" hardened in the code into "the default must be Claude-shaped":
+> the relay's Claude Code adapter took `runtimeRegistry.getDefault()` through a
+> cast, so a `runtimes.default` of `codex` or `opencode` handed it a runtime
+> missing the methods it calls. That is now fixed — the relay binds the
+> claude-code runtime explicitly, and the default is shape-neutral. The Non-Goal
+> above stands as written and means only what it says: `claude-code` is the
+> shipped default because it is the right one to ship, not because anything
+> structural requires it.
+
 ## Technical Dependencies
 
 - `@opencode-ai/sdk` `^1.17.13` (MIT) — REST + SSE client for `opencode serve`; OpenAPI 3.1 at `/doc`. Requires user-installed `opencode` binary. Docs: opencode.ai/docs/server.
