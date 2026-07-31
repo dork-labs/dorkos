@@ -225,6 +225,38 @@ describe('the room context a trigger derives', () => {
       expect(context.pending.map((entry) => entry.text)).toEqual(['is the build green?']);
     });
 
+    it('leaves the room own notices ABOUT this agent out, and keeps the ones about others', async () => {
+      // A notice is the room speaking, so the own-author filter never touched
+      // it — and "Ana was busy with something else and did not pick this up.
+      // Send it again when Ana is free" then arrived in Ana's next turn as
+      // something she had missed. It is the room narrating Ana to Ana, in the
+      // third person, and it was taking one of the thirty slots that exist to
+      // carry what OTHER people said.
+      //
+      // The line about Bo stays, and that is the discriminating half: it is real
+      // context — a room-mate went quiet, and Ana may be the one to pick it up.
+      open({
+        agentPaths: ['/agents/ana', '/agents/bo'],
+        // Both are busy from the runner's point of view, so the room writes a
+        // notice about each of them and neither ever answers.
+        runner: outcomeRunner(() => ({ text: null, unanswered: 'busy' })),
+      });
+      await say('who is around?');
+      const written = service
+        .listEntries(room.id, human, { limit: 50 })
+        .filter((entry) => entry.kind === 'notice');
+      expect(written.map((entry) => entry.body.subjectAuthorId).sort()).toEqual([ana, bo].sort());
+
+      runner.turns.length = 0;
+      await say('anyone?');
+
+      const pending = contextFor(ana).pending;
+      const notices = pending.filter((entry) => entry.text.includes('was busy'));
+      expect(notices).toHaveLength(1);
+      expect(notices[0].text).toContain('Bo');
+      expect(pending.some((entry) => entry.text.includes('Ana'))).toBe(false);
+    });
+
     it('never reads the whole log to keep the last page of it', async () => {
       // E7 says silence must be free. Assembling this costs no model turn, but
       // it was getting steadily more expensive per message: `listEntriesAfter`
@@ -253,8 +285,16 @@ describe('the room context a trigger derives', () => {
     it('caps how much history it replays, and says it dropped some', async () => {
       // Every agent read cursor starts at 0, so without a clamp the first turn
       // in a busy room replays the entire log.
+      //
+      // Ana is named only by the last message. A room she is answering
+      // throughout would refuse every message after the first as busy (one turn
+      // per agent per room, DOR-752), and the turn under test — the one that
+      // arrives to a long backlog — is precisely the one that would never run.
       open();
-      for (let i = 1; i <= 32; i += 1) service.post(room.id, { authorId: human, text: `m${i}` });
+      service.updateMembership(room.id, human, ana, 'mention-only');
+      for (let i = 1; i <= 31; i += 1) service.post(room.id, { authorId: human, text: `m${i}` });
+      await service.triggersIdle();
+      service.post(room.id, { authorId: human, text: '@ana where are we?' });
       await service.triggersIdle();
 
       const context = contextFor(ana);
@@ -503,6 +543,10 @@ describe('the room context a trigger derives', () => {
       // thread, with nothing to fan out over.
       open({ runner: outcomeRunner(() => ({ text: null })) });
       const root = service.post(room.id, { authorId: human, text: 'the deploy is stuck' });
+      // Settled between posts: Ana answers everything here, so a second message
+      // arriving mid-turn is refused as busy and leaves a notice in the very
+      // history this asserts on.
+      await service.triggersIdle();
       service.post(room.id, { authorId: human, text: 'unrelated channel chatter' });
       await service.triggersIdle();
       runner.turns.length = 0;

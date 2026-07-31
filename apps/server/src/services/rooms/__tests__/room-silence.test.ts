@@ -153,13 +153,18 @@ describe('a room says why an agent did not answer', () => {
       // messages at a busy agent. Every one of them mints its own cascade root,
       // so the cascade-keyed damping the guard uses never collided and the room
       // got three identical apologies while the code's own doc claimed one.
+      //
+      // Only the FIRST reaches the runner now. The other two arrive while Ana
+      // holds a claim here, and the dispatcher refuses them outright rather than
+      // starting a second turn on her session (DOR-752) — which is the same
+      // answer arrived at one layer earlier, and the same single apology.
       open(outcomeRunner(() => ({ text: null, unanswered: 'busy' })));
       for (const text of ['is the build green?', 'still there?', 'hello?']) {
         service.post(room.id, { authorId: human, text });
       }
       await service.triggersIdle();
 
-      expect(runner.turns.filter((turn) => turn.authorId === ana)).toHaveLength(3);
+      expect(runner.turns.filter((turn) => turn.authorId === ana)).toHaveLength(1);
       expect(noticesAbout(ana)).toHaveLength(1);
       expect(notices()).toHaveLength(1);
     });

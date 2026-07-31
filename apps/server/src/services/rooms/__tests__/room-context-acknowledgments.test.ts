@@ -177,6 +177,10 @@ describe('acknowledgments in the room context', () => {
 
   it('reports only reactions on the agent’s OWN messages', async () => {
     const mine = service.post(room.id, { authorId: human, text: 'shipping today' });
+    // Settled before the next message, because Ana answers everything here: a
+    // second post while her turn is still running is refused as busy, and she
+    // would never get to say the line this scenario reacts to.
+    await service.triggersIdle();
     await anaSaid('Understood.');
     service.toggleReaction(room.id, mine.id, human, '🎉');
 
