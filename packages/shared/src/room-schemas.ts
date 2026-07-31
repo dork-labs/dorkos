@@ -657,6 +657,75 @@ export const ListRoomEntriesQuerySchema = z
 
 export type ListRoomEntriesQuery = z.infer<typeof ListRoomEntriesQuerySchema>;
 
+// === Threads across rooms ===
+
+/** How many threads `GET /api/rooms/threads` returns when the caller names none. */
+export const THREAD_LIST_LIMIT_DEFAULT = 50;
+
+/** Largest thread list that route will serve. Beyond it, 400. */
+export const THREAD_LIST_LIMIT_MAX = 200;
+
+/** Longest root excerpt a {@link ThreadSummary} carries. */
+export const THREAD_PREVIEW_MAX_CHARS = 160;
+
+export const ListThreadsQuerySchema = z
+  .object({
+    limit: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(THREAD_LIST_LIMIT_MAX)
+      .default(THREAD_LIST_LIMIT_DEFAULT),
+  })
+  .openapi('ListThreadsQuery');
+
+export type ListThreadsQuery = z.infer<typeof ListThreadsQuerySchema>;
+
+/**
+ * One thread the reader is in, as the sidebar's Threads section reads it
+ * (spec `room-messaging-design` §3, cross-room surface 1).
+ *
+ * **Participation selects a thread; the room's roster permits it.** A thread is
+ * here because the reader wrote its root or wrote one of its replies AND is on
+ * that room's roster today — participation implies membership when the words
+ * were written, never when they are read, so somebody removed from a room sees
+ * none of its threads. There is no follow list and no stored membership — that
+ * was assessed as real server lift and deferred until threads are noisy enough
+ * to need the valve — so nothing about this shape is persisted anywhere; it is
+ * derived from the room log on every read.
+ *
+ * The room is carried FLAT rather than nested, because that is every field a
+ * row needs to name the room it belongs to and none of the ones it does not:
+ * a thread row draws `#general`, never that channel's roster, topic, or
+ * archived flag.
+ */
+export const ThreadSummarySchema = z
+  .object({
+    roomId: z.string().min(1),
+    roomKind: RoomKindSchema,
+    roomSlug: z.string().nullable().describe('Channels only, as on the room itself.'),
+    roomTitle: z.string().min(1),
+    rootEntryId: z.string().min(1).describe('The entry the thread hangs off.'),
+    rootAuthorId: z.string().min(1),
+    rootPreview: z
+      .string()
+      .describe(
+        `The root's text, truncated to ${THREAD_PREVIEW_MAX_CHARS} characters. Empty when the root carried no text — a row draws a placeholder rather than pretending the message was blank.`
+      ),
+    replyCount: z.number().int().min(1).describe('Replies below the root. Never counts the root.'),
+    unreadCount: z
+      .number()
+      .int()
+      .min(0)
+      .describe(
+        "Replies above the reader's `(member, room)` read cursor. Opening the room clears this, exactly as it clears the room's own badge: there is one cursor per (member, room) and threads share it. A reply of the reader's OWN counts while it sits above that cursor — unread is measured against the cursor and nothing else, which is how `countUnread` measures the room's badge, and one rule measured in one place is worth more here than a special case for your own words. In practice the room you just wrote in is the room you have open, so the cursor passes it immediately."
+      ),
+    lastActivityAt: z.string().describe("The newest reply's timestamp. The list is sorted on it."),
+  })
+  .openapi('ThreadSummary');
+
+export type ThreadSummary = z.infer<typeof ThreadSummarySchema>;
+
 // === Responses ===
 
 /** The `GET /api/rooms` envelope. */
@@ -665,6 +734,13 @@ export const RoomListResponseSchema = z
   .openapi('RoomListResponse');
 
 export type RoomListResponse = z.infer<typeof RoomListResponseSchema>;
+
+/** The `GET /api/rooms/threads` envelope, most recent activity first. */
+export const ThreadListResponseSchema = z
+  .object({ threads: z.array(ThreadSummarySchema) })
+  .openapi('ThreadListResponse');
+
+export type ThreadListResponse = z.infer<typeof ThreadListResponseSchema>;
 
 /** The `GET /api/rooms/:id/entries` envelope, oldest-first within the page. */
 export const RoomEntryListResponseSchema = z

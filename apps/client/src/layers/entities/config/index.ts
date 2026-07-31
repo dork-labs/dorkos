@@ -37,6 +37,7 @@ export {
   setRecentsCollapsed,
   setChannelsCollapsed,
   setDmsCollapsed,
+  setThreadsCollapsed,
   setUngroupedSortMode,
   setGroupsHintDismissed,
   setGroupDisplayFilter,

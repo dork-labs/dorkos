@@ -72,8 +72,10 @@ import type {
   RoomRosterEntry,
   RoomSummary,
   RoomWithRoster,
+  ThreadSummary,
   UpdateRoomRequest,
 } from '@dorkos/shared/room-schemas';
+import { THREAD_PREVIEW_MAX_CHARS } from '@dorkos/shared/room-schemas';
 import { eventFanOut } from '../core/event-fan-out.js';
 import type { AuthorRecord, AuthorRegistry } from './author-registry.js';
 import { deriveCascade } from './cascade-guard.js';
@@ -82,7 +84,7 @@ import { resolveMentions } from './mentions.js';
 import type { ReactionStore } from './reaction-store.js';
 import { RoomError, type RoomAgentLookup } from './room-errors.js';
 import { RoomRoster, type AddMemberInput } from './room-roster.js';
-import type { NewRoom } from './room-rows.js';
+import { parseEntryBody, type NewRoom } from './room-rows.js';
 import type { RoomStore } from './room-store.js';
 import type { RoomBroadcaster } from './room-stream.js';
 import { RoomTriggerDispatcher, type RoomTurnRunner } from './room-trigger.js';
@@ -406,6 +408,49 @@ export class RoomService {
         participants: participants.get(room.id) ?? null,
       };
     });
+  }
+
+  /**
+   * Every thread this reader takes part in, across every room, newest first.
+   *
+   * The sidebar's Threads section (spec `room-messaging-design` §3), and the
+   * one place a thread is reachable without first knowing which room it is in.
+   *
+   * **Participation is what selects a thread**: the reader wrote the root, or
+   * wrote a reply. There is no follow list — that was weighed as real server
+   * lift and deferred until threads get noisy enough to need the escape valve —
+   * so nothing here is stored and nothing has to be kept in step.
+   *
+   * **The visibility boundary is the ROOM's roster, as it stands now.** A thread
+   * is a relation between entries in one room's log (ADR 260728-022013), so
+   * there is no second boundary to invent: the store joins on membership exactly
+   * as `listRooms` does. Participation implies membership at WRITE time and
+   * cannot be trusted at READ time — somebody removed from a room would
+   * otherwise keep a live view of a conversation they were taken out of, on
+   * rows that `getRoom` refuses to open. The owner's see-every-room privilege
+   * buys nothing extra here: a thread you never spoke in is not yours to see in
+   * this list.
+   *
+   * @param viewerAuthorId - Whose threads to list.
+   * @param limit - Most threads to return.
+   */
+  listThreads(viewerAuthorId: string, limit: number): ThreadSummary[] {
+    return this.store.listThreadsForMember(viewerAuthorId, limit).map((row) => ({
+      roomId: row.roomId,
+      roomKind: row.roomKind as RoomKind,
+      roomSlug: row.roomSlug,
+      roomTitle: row.roomTitle,
+      rootEntryId: row.rootEntryId,
+      rootAuthorId: row.rootAuthorId,
+      // Truncated here rather than in the row: a root can be as long as anyone
+      // cared to type, and a sidebar draws one line of it. Cut without an
+      // ellipsis — the row clamps its own text, and a server-side "…" inside a
+      // box that also clamps gives you two of them.
+      rootPreview: parseEntryBody(row.rootBody).text.slice(0, THREAD_PREVIEW_MAX_CHARS),
+      replyCount: row.replyCount,
+      unreadCount: row.unreadCount,
+      lastActivityAt: row.lastActivityAt,
+    }));
   }
 
   /**

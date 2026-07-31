@@ -404,6 +404,11 @@ export function setDmsCollapsed(prev: SidebarPrefs, collapsed: boolean): Sidebar
   return { ...prev, dmsCollapsed: collapsed };
 }
 
+/** Set the Threads section's collapsed state (room-messaging-design §3). */
+export function setThreadsCollapsed(prev: SidebarPrefs, collapsed: boolean): SidebarPrefs {
+  return { ...prev, threadsCollapsed: collapsed };
+}
+
 /** Set the ungrouped ("Agents") section's sort mode (`name` or `recent`). */
 export function setUngroupedSortMode(
   prev: SidebarPrefs,

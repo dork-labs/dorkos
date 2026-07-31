@@ -45,6 +45,7 @@ function prefs(overrides: Partial<SidebarPrefs> = {}): SidebarPrefs {
     recentsCollapsed: false,
     channelsCollapsed: false,
     dmsCollapsed: false,
+    threadsCollapsed: false,
     groupsHintDismissed: false,
     muted: [],
     ungroupedDisplayFilter: 'all',
@@ -214,10 +215,7 @@ describe('classifySidebarDrop / resolveSidebarDrop', () => {
 
   it('moves an agent between two groups (disjointness preserved)', () => {
     const p = prefs({
-      groups: [
-        grp({ id: 'g1', items: [agent('/a')] }),
-        grp({ id: 'g2', items: [agent('/b')] }),
-      ],
+      groups: [grp({ id: 'g1', items: [agent('/a')] }), grp({ id: 'g2', items: [agent('/b')] })],
     });
     const next = resolveSidebarDrop(
       p,

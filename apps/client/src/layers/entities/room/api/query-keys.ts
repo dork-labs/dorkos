@@ -16,6 +16,13 @@ export const roomKeys = {
   lists: () => ['rooms', 'list'] as const,
   /** One room with its roster. */
   detail: (roomId: string) => ['rooms', 'detail', roomId] as const,
+  /**
+   * Every thread the reader takes part in, across every room. Not under
+   * `list`, because it is not a room list — invalidating the room lists must
+   * not have to know about it, and the two are refreshed by the same events
+   * from one place rather than by being spelled alike.
+   */
+  threads: () => ['rooms', 'threads'] as const,
   /** One room's history. */
   entries: (roomId: string) => ['rooms', 'entries', roomId] as const,
 };

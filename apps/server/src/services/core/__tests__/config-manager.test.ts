@@ -1486,6 +1486,7 @@ describe('backfillSidebarRoomSections migration (rooms sidebar, DOR-525)', () =>
         recentsCollapsed: true,
         channelsCollapsed: false,
         dmsCollapsed: false,
+        threadsCollapsed: false,
         groupsHintDismissed: false,
         muted: [],
         ungroupedDisplayFilter: 'all',
@@ -1504,6 +1505,7 @@ describe('backfillSidebarRoomSections migration (rooms sidebar, DOR-525)', () =>
         recentsCollapsed: false,
         channelsCollapsed: true,
         dmsCollapsed: true,
+        threadsCollapsed: true,
         groupsHintDismissed: false,
         muted: [],
         ungroupedDisplayFilter: 'all',
@@ -1524,6 +1526,34 @@ describe('backfillSidebarRoomSections migration (rooms sidebar, DOR-525)', () =>
     const store = createMockStore({ server: { port: 4242 } });
     backfillSidebarRoomSections(store);
     expect(store.data.ui).toBeUndefined();
+  });
+
+  it('adds threadsCollapsed to a sidebar that already has the other two', () => {
+    // The upgrade path that actually exists: a config written by a release that
+    // shipped the Channels and Direct messages flags, reaching one that also has
+    // a Threads section. The other two must keep whatever the person chose.
+    const store = createMockStore({
+      ui: {
+        theme: 'dark',
+        sidebar: {
+          pinned: [],
+          groups: [],
+          ungroupedSortMode: 'name',
+          ungroupedCollapsed: false,
+          recentsCollapsed: false,
+          channelsCollapsed: true,
+          dmsCollapsed: false,
+          groupsHintDismissed: false,
+          muted: [],
+          ungroupedDisplayFilter: 'all',
+        },
+      },
+    });
+    backfillSidebarRoomSections(store);
+    const sidebar = (store.data.ui as { sidebar: Record<string, unknown> }).sidebar;
+    expect(sidebar.threadsCollapsed).toBe(false);
+    expect(sidebar.channelsCollapsed).toBe(true);
+    expect(sidebar.dmsCollapsed).toBe(false);
   });
 });
 
@@ -1759,6 +1789,7 @@ describe('migrateSidebarMembersToItemRefs migration (sidebar-groups, DOR-579)', 
         recentsCollapsed: false,
         channelsCollapsed: false,
         dmsCollapsed: false,
+        threadsCollapsed: false,
         groupsHintDismissed: false,
         muted: ['/projects/beta'],
         ungroupedDisplayFilter: 'all',
@@ -1803,6 +1834,7 @@ describe('migrateSidebarMembersToItemRefs migration (sidebar-groups, DOR-579)', 
     recentsCollapsed: false,
     channelsCollapsed: false,
     dmsCollapsed: false,
+    threadsCollapsed: false,
     groupsHintDismissed: false,
     muted: [{ kind: 'agent', path: '/projects/beta' }],
     ungroupedDisplayFilter: 'all',

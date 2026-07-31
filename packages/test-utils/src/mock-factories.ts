@@ -296,6 +296,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // Rooms (spec `rooms`) — every read answers empty so a component under test
     // renders its empty state unless the test overrides it.
     listRooms: vi.fn().mockResolvedValue([]),
+    listThreads: vi.fn().mockResolvedValue([]),
     createRoom: vi.fn(),
     getRoom: vi.fn(),
     updateRoom: vi.fn(),

@@ -168,6 +168,7 @@ export const CONFIG_WRITE_POLICY = {
   'ui.sidebar.ungroupedCollapsed': 'agent-writable',
   'ui.sidebar.recentsCollapsed': 'agent-writable',
   'ui.sidebar.channelsCollapsed': 'agent-writable',
+  'ui.sidebar.threadsCollapsed': 'agent-writable',
   'ui.sidebar.dmsCollapsed': 'agent-writable',
   'ui.sidebar.groupsHintDismissed': 'agent-writable',
   'ui.sidebar.muted[].kind': 'agent-writable',

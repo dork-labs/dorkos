@@ -16,6 +16,7 @@ import {
   type CreateRoomRequest,
   type ListRoomEntriesQuery,
   type ListRoomsQuery,
+  type ListThreadsQuery,
   type PostThreadReplyRequest,
   type PostToRoomRequest,
   type PostToRoomResponse,
@@ -25,6 +26,7 @@ import {
   type RoomRosterEntry,
   type RoomSummary,
   type RoomWithRoster,
+  type ThreadSummary,
   type ToggleReactionRequest,
   type ToggleReactionResponse,
   type UpdateMembershipRequest,
@@ -43,6 +45,13 @@ export function createRoomMethods(baseUrl: string) {
         includeArchived: query?.includeArchived,
       });
       return fetchJSON<{ rooms: RoomSummary[] }>(baseUrl, `/rooms${qs}`).then((r) => r.rooms);
+    },
+
+    listThreads(query?: ListThreadsQuery): Promise<ThreadSummary[]> {
+      const qs = buildQueryString({ limit: query?.limit });
+      return fetchJSON<{ threads: ThreadSummary[] }>(baseUrl, `/rooms/threads${qs}`).then(
+        (r) => r.threads
+      );
     },
 
     createRoom(req: CreateRoomRequest): Promise<RoomWithRoster> {

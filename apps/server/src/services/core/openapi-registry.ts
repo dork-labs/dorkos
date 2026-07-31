@@ -86,7 +86,9 @@ import {
   PostToRoomResponseSchema,
   RoomEntryListResponseSchema,
   RoomEventSchema,
+  ListThreadsQuerySchema,
   RoomListResponseSchema,
+  ThreadListResponseSchema,
   RoomMemberSchema,
   RoomRosterEntrySchema,
   RoomSnapshotSchema,
@@ -2837,6 +2839,23 @@ registry.registerPath({
     200: {
       description: 'Rooms, newest activity first',
       content: { 'application/json': { schema: RoomListResponseSchema } },
+    },
+    400: roomValidationError,
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/rooms/threads',
+  tags: ['Rooms'],
+  summary: 'List threads the caller takes part in, across every room',
+  description:
+    "Every thread the caller started or replied in, newest activity first, with the room it lives in, an excerpt of its opening message, its reply count and how many of those replies are above the caller's read cursor. Participation selects a thread and the room's roster permits it: the caller wrote the root or one of the replies, AND is on that room's roster today — so a room they have been removed from contributes no threads at all. There is no follow list and nothing here is stored; the list is derived from the room log on every read. `unreadCount` shares the room's single `(member, room)` cursor, so opening a room clears its threads' counts along with its own.",
+  request: { query: ListThreadsQuerySchema },
+  responses: {
+    200: {
+      description: 'Threads, newest activity first',
+      content: { 'application/json': { schema: ThreadListResponseSchema } },
     },
     400: roomValidationError,
   },

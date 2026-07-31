@@ -2,8 +2,14 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
-import { agentAuthorRef, type AuthorRef, type RoomSummary } from '@dorkos/shared/room-schemas';
+import {
+  agentAuthorRef,
+  type AuthorRef,
+  type RoomSummary,
+  type ThreadSummary,
+} from '@dorkos/shared/room-schemas';
 import { resolveAgentVisual } from '@/layers/shared/lib';
+import { useRoomOpenThreadStore } from '@/layers/entities/room';
 import { DashboardSidebar } from '../ui/DashboardSidebar';
 import { SidebarProvider, TooltipProvider } from '@/layers/shared/ui';
 import type { SidebarPrefs, SidebarGroup, SidebarItemRef } from '@dorkos/shared/config-schema';
@@ -84,6 +90,7 @@ function makePrefs(overrides: Partial<SidebarPrefs> = {}): SidebarPrefs {
     recentsCollapsed: false,
     channelsCollapsed: false,
     dmsCollapsed: false,
+    threadsCollapsed: false,
     groupsHintDismissed: false,
     muted: [],
     ungroupedDisplayFilter: 'all',
@@ -104,12 +111,14 @@ const mockRecent = vi.fn<() => RecentResult>(() => ({
 }));
 
 const mockRooms = vi.fn<() => RoomSummary[]>(() => []);
+const mockThreads = vi.fn<() => ThreadSummary[]>(() => []);
 const mockTransport = {
   getConfig: vi.fn().mockResolvedValue({ agents: { defaultAgent: 'dorkbot' } }),
   listMeshAgentPaths: vi.fn(),
   resolveAgents: vi.fn().mockResolvedValue({}),
   listSessions: vi.fn().mockResolvedValue({ sessions: [] }),
   listRooms: vi.fn(() => Promise.resolve(mockRooms())),
+  listThreads: vi.fn(() => Promise.resolve(mockThreads())),
 };
 
 vi.mock('@/layers/shared/model', async (importOriginal) => {
@@ -962,5 +971,88 @@ describe('DashboardSidebar mixed groups (sidebar-groups, DOR-580)', () => {
     // is exactly how it differs from every face-bearing mark.
     expect(mark.tagName.toLowerCase()).toBe('svg');
     expect(mark.textContent).toBe('');
+  });
+});
+
+describe('DashboardSidebar threads (room-messaging-design §3)', () => {
+  afterEach(() => cleanup());
+
+  beforeEach(() => {
+    localStorage.clear();
+    mockMeshPaths.mockReset();
+    mockMeshPaths.mockReturnValue([]);
+    mockSidebarPrefs.mockReset();
+    mockSidebarPrefs.mockReturnValue(makePrefs());
+    mockUpdateSidebar.mockReset();
+    mockRecent.mockReset();
+    mockRecent.mockReturnValue({ data: { sessions: [], agentActivity: {} }, isLoading: false });
+    mockNavigate.mockReset();
+    mockResolvedAgents.mockReset();
+    mockResolvedAgents.mockReturnValue({});
+    mockRooms.mockReset();
+    mockRooms.mockReturnValue([]);
+    mockThreads.mockReset();
+    mockThreads.mockReturnValue([]);
+    mockAttentionMap.mockReset();
+    mockAttentionMap.mockImplementation((paths: string[]) =>
+      Object.fromEntries(paths.map((p) => [p, 'active']))
+    );
+    mockSelectedCwd = null;
+    mockPathname = '/';
+    useRoomOpenThreadStore.setState({ open: {} });
+  });
+
+  const thread = (overrides: Partial<ThreadSummary> = {}): ThreadSummary => ({
+    roomId: 'room-1',
+    roomKind: 'channel',
+    roomSlug: 'general',
+    roomTitle: 'general',
+    rootEntryId: 'entry-1',
+    rootAuthorId: 'author-1',
+    rootPreview: 'Deploy is red again',
+    replyCount: 2,
+    unreadCount: 0,
+    lastActivityAt: '2026-07-30T12:00:00.000Z',
+    ...overrides,
+  });
+
+  it('draws the Threads section above Channels', async () => {
+    mockThreads.mockReturnValue([thread()]);
+    mockRooms.mockReturnValue([channel('room-1', 'general')]);
+    renderWithProviders(<DashboardSidebar />);
+
+    const threads = await screen.findByRole('button', { name: 'Threads' });
+    const channels = screen.getByRole('button', { name: 'Channels' });
+    // `compareDocumentPosition` answers about the rendered order, which is the
+    // claim — "above" is a fact about the DOM, not about the source.
+    expect(threads.compareDocumentPosition(channels)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it('opens the right room with the right thread panel, store first then URL', async () => {
+    mockThreads.mockReturnValue([thread({ roomId: 'room-7', rootEntryId: 'entry-9' })]);
+    renderWithProviders(<DashboardSidebar />);
+
+    fireEvent.click(await screen.findByText('Deploy is red again'));
+
+    // The store is what draws the panel. Navigating alone would do nothing at
+    // all in a room the reader is already in — the URL is only read on the way
+    // into a room — so this assertion is the feature, not a detail of it.
+    expect(useRoomOpenThreadStore.getState().open['room-7']).toEqual({
+      rootEntryId: 'entry-9',
+      focusComposer: false,
+    });
+    // …and the URL carries both, so the result is linkable and survives reload.
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: '/channels',
+      search: { id: 'room-7', thread: 'entry-9' },
+    });
+  });
+
+  it('shows no Threads section when the reader is in none', async () => {
+    mockRooms.mockReturnValue([channel('room-1', 'general')]);
+    renderWithProviders(<DashboardSidebar />);
+
+    await screen.findByRole('button', { name: 'Channels' });
+    expect(screen.queryByRole('button', { name: 'Threads' })).not.toBeInTheDocument();
   });
 });

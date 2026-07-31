@@ -38,6 +38,7 @@ import type {
   CreateRoomRequest,
   ListRoomEntriesQuery,
   ListRoomsQuery,
+  ListThreadsQuery,
   PostThreadReplyRequest,
   PostToRoomRequest,
   PostToRoomResponse,
@@ -47,6 +48,7 @@ import type {
   RoomRosterEntry,
   RoomSummary,
   RoomWithRoster,
+  ThreadSummary,
   ToggleReactionRequest,
   ToggleReactionResponse,
   UpdateMembershipRequest,
@@ -757,6 +759,10 @@ export const workspaceStubs = {
  */
 export const roomStubs = {
   async listRooms(_query?: ListRoomsQuery): Promise<RoomSummary[]> {
+    return [];
+  },
+
+  async listThreads(_query?: ListThreadsQuery): Promise<ThreadSummary[]> {
     return [];
   },
 

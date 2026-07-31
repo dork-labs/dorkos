@@ -8,7 +8,7 @@ import type { Transport } from '@dorkos/shared/transport';
 import { REACTION_FREQUENTS_DEFAULT } from '@dorkos/shared/room-schemas';
 import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { TransportProvider } from '@/layers/shared/model';
-import { useMarkRoomRead } from '../model/use-mark-room-read';
+import { useMarkRoomRead, useMarkRoomReadNow } from '../model/use-mark-room-read';
 
 function entry(seq: number): RoomEntry {
   return {
@@ -178,6 +178,10 @@ describe('useMarkRoomRead', () => {
     await waitFor(() => expect(invalidated.length).toBeGreaterThan(0));
     expect(invalidated).toContainEqual(['rooms', 'list']);
     expect(invalidated).toContainEqual(['rooms', 'detail', 'room-1']);
+    // The Threads list is measured against this very cursor — one per
+    // `(member, room)`, shared with the room's threads — so moving it and not
+    // refreshing that list leaves an unread count beside a room just read.
+    expect(invalidated).toContainEqual(['rooms', 'threads']);
     // The bare root key would sweep the entries cache with it.
     expect(invalidated).not.toContainEqual(['rooms']);
   });
@@ -227,5 +231,47 @@ describe('useMarkRoomRead', () => {
     rerender({ room: roomWith([human(1)]) });
     await act(async () => {});
     expect(transport.setRoomReadCursor).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('useMarkRoomReadNow', () => {
+  /** Collect the keys a run of the hook invalidates. */
+  function recordingWrapper() {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
+    });
+    const invalidated: unknown[] = [];
+    const spy = queryClient.invalidateQueries.bind(queryClient);
+    queryClient.invalidateQueries = ((filters?: { queryKey?: unknown }) => {
+      invalidated.push(filters?.queryKey);
+      return spy(filters as Parameters<typeof spy>[0]);
+    }) as typeof queryClient.invalidateQueries;
+    return { queryClient, invalidated };
+  }
+
+  it('refreshes the Threads list, so "Mark as read" clears a thread badge too', async () => {
+    // The menu action, not the automatic cursor above it — a separate mutation
+    // with a separate onSuccess, so it needs its own assertion. Without this
+    // the row's count survives the very action named "Mark as read".
+    const transport = createMockTransport({
+      listRoomEntries: vi.fn().mockResolvedValue([entry(7)]),
+    });
+    const { queryClient, invalidated } = recordingWrapper();
+    const { result } = renderHook(() => useMarkRoomReadNow(), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={queryClient}>
+          <TransportProvider transport={transport}>{children}</TransportProvider>
+        </QueryClientProvider>
+      ),
+    });
+
+    await act(async () => {
+      result.current.mutate('room-1');
+    });
+
+    await waitFor(() => expect(transport.setRoomReadCursor).toHaveBeenCalledWith('room-1', 7));
+    await waitFor(() => expect(invalidated).toContainEqual(['rooms', 'threads']));
+    expect(invalidated).toContainEqual(['rooms', 'list']);
+    expect(invalidated).toContainEqual(['rooms', 'detail', 'room-1']);
   });
 });

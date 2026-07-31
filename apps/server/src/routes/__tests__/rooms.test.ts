@@ -513,6 +513,53 @@ describe('/api/rooms', () => {
     });
   });
 
+  describe('GET /threads', () => {
+    /** Open a thread in `room` and answer with its root entry id. */
+    async function startThread(roomId: string, text: string): Promise<string> {
+      const root = await request(app).post(`/api/rooms/${roomId}/entries`).send({ text });
+      await request(app)
+        .post(`/api/rooms/${roomId}/threads`)
+        .send({ rootEntryId: root.body.entryId, text: 'on it' });
+      return root.body.entryId as string;
+    }
+
+    it('answers with the caller’s threads across rooms, newest first', async () => {
+      const backend = await createChannel('Backend');
+      const design = await createChannel('Design');
+      const older = await startThread(backend.id, 'older question');
+      const newer = await startThread(design.id, 'newer question');
+
+      const res = await request(app).get('/api/rooms/threads');
+      expect(res.status).toBe(200);
+      expect(res.body.threads.map((t: { rootEntryId: string }) => t.rootEntryId)).toEqual([
+        newer,
+        older,
+      ]);
+      expect(res.body.threads[0]).toMatchObject({
+        roomId: design.id,
+        roomTitle: 'Design',
+        rootPreview: 'newer question',
+        replyCount: 1,
+      });
+    });
+
+    it('is reached as a literal segment, not swallowed by GET /:id', async () => {
+      // The ordering hazard this route is written around: `/:id` above it would
+      // take `threads` for a room id and answer 404. A room-shaped 404 body here
+      // is the failure mode, so the assertion is on the SHAPE of a 200.
+      const res = await request(app).get('/api/rooms/threads');
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ threads: [] });
+      expect(res.body).not.toHaveProperty('members');
+    });
+
+    it('400s a limit outside the allowed range', async () => {
+      const res = await request(app).get('/api/rooms/threads').query({ limit: 5000 });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('Validation failed');
+    });
+  });
+
   describe('membership scoping', () => {
     /**
      * Mint a real identity token for an agent that is on NO room's roster, so

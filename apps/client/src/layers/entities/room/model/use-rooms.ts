@@ -79,9 +79,11 @@ export interface RoomsByKind {
  * Split a room list into channels and direct messages, each in the order its
  * own kind wants: channels by name, direct messages by recency.
  *
- * There is no third section and no row to drop: a thread is a relation between
- * entries inside a room's own log (ADR 260728-022013), reached by opening that
- * room rather than from a top-level sidebar section.
+ * There is no third partition and no row to drop: a thread is a relation
+ * between entries inside a room's own log (ADR 260728-022013), so it is not in
+ * this list at all. The sidebar's Threads section is a section, not a kind —
+ * it reads {@link useThreads}, which asks a different question of a different
+ * route.
  *
  * **Why the order is decided here and not in the query.** `GET /api/rooms`
  * answers with every kind in one list, and a SQL `ORDER BY` can only impose one
