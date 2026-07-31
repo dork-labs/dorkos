@@ -965,6 +965,27 @@ export class RoomStore {
   }
 
   /**
+   * Every room-to-session binding stored, across every room.
+   *
+   * A whole-table read with no room to scope it, which is why it exists only
+   * for diagnostics: `GET /api/health/deep` checks whether the sessions rooms
+   * are bound to still have a transcript on disk. Nothing on a request path
+   * should call this.
+   *
+   * @returns One entry per bound room member.
+   */
+  listRoomSessions(): Array<{ roomId: string; authorId: string; sessionId: string }> {
+    return this.db
+      .select({
+        roomId: roomSessions.roomId,
+        authorId: roomSessions.authorId,
+        sessionId: roomSessions.sessionId,
+      })
+      .from(roomSessions)
+      .all();
+  }
+
+  /**
    * Bind an agent member's session for this room. First write wins, mirroring
    * the runtime binding it will carry (ADR-0255).
    *

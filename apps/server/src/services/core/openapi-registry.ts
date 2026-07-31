@@ -99,6 +99,7 @@ import {
   UpdateMembershipRequestSchema,
   UpdateRoomRequestSchema,
 } from '@dorkos/shared/room-schemas';
+import { DeepHealthResponseSchema } from '@dorkos/shared/health-schemas';
 import { SessionSnapshotSchema, SessionEventSchema } from '@dorkos/shared/session-stream';
 import {
   PendingApprovalsResponseSchema,
@@ -329,6 +330,26 @@ registry.registerPath({
     200: {
       description: 'Server is healthy',
       content: { 'application/json': { schema: HealthResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/health/deep',
+  tags: ['Health'],
+  summary: 'Deep health checks',
+  description:
+    'The setup checks that need a running server: room-to-session bindings with no transcript, ' +
+    'quarantined relay access rules, unreadable chat-integration entries, relay bindings pointing ' +
+    'at a missing adapter or agent, and duplicate agent ids. Always answers 200 — a failing check ' +
+    'is data, not an HTTP error. Results are content-free (counts and plain sentences only) and ' +
+    'share the `CheckResult` shape `dorkos doctor` renders; `dorkos doctor --deep` merges them ' +
+    'into its checklist.',
+  responses: {
+    200: {
+      description: 'One check result per deep check, in a fixed order',
+      content: { 'application/json': { schema: DeepHealthResponseSchema } },
     },
   },
 });

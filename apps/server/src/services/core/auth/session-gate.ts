@@ -61,10 +61,23 @@ function isGatedPath(path: string): boolean {
 }
 
 /**
+ * The one path under `/api/health` that the gate still protects.
+ *
+ * The liveness probe is exempt because a load balancer, the desktop shell, and
+ * the tunnel all have to reach it before anyone signs in, and it says only that
+ * the server is up. `/api/health/deep` is a different thing wearing the same
+ * prefix: it reports how many rooms, integrations, and agents this machine has
+ * and which of them are broken. That is for the operator, so it needs the
+ * operator's credential.
+ */
+const GATED_HEALTH_PATHS = ['/api/health/deep'];
+
+/**
  * Paths that always pass while login is enabled: the Better Auth endpoints (so
  * sign-in is reachable) and the health probe.
  */
 function isExemptPath(path: string): boolean {
+  if (GATED_HEALTH_PATHS.includes(path)) return false;
   return (
     path.startsWith('/api/auth/') ||
     path === '/api/health' ||

@@ -30,6 +30,8 @@ function buildApp(): express.Express {
   });
   // Exempt: health probe.
   app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
+  // Gated despite the /api/health prefix: the deep report is operator-only.
+  app.get('/api/health/deep', (_req, res) => res.json({ checks: [] }));
   // Gated: stands in for the `/mcp` mount that `index.ts` adds after createApp.
   app.get('/mcp', (_req, res) => res.json({ ok: true }));
   // Non-API path (SPA asset): must never be gated.
@@ -151,6 +153,13 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
       const res = await request(app).get('/api/health');
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ status: 'ok' });
+    });
+
+    it('gates /api/health/deep even though /api/health is exempt', async () => {
+      setAuthEnabled(true);
+      const res = await request(app).get('/api/health/deep');
+      expect(res.status).toBe(401);
+      expect(res.body?.code).toBe('AUTH_REQUIRED');
     });
 
     it('keeps /api/auth/* reachable without credentials (sign-in must work)', async () => {

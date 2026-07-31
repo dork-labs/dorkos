@@ -11,28 +11,29 @@
 import net from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';
+import type { CheckResult } from '@dorkos/shared/health-schemas';
 import { checkNodeVersion } from '../startup-diagnostics.js';
 import { checkCoreExtensions } from '../check-core-extensions.js';
 import { checkExtensionCompilation } from '../check-extension-compilation.js';
 import { claudeCliLaunches } from '../check-claude.js';
 
-/** Outcome of a single doctor check. `fail` is the only status that affects the exit code. */
-export type CheckStatus = 'pass' | 'warn' | 'fail' | 'info';
-
-/** A renderable verdict from one check. */
-export interface CheckResult {
-  /** Short, plain label shown on the checklist line. */
-  label: string;
-  /** Verdict. Only `fail` makes `dorkos doctor` exit non-zero. */
-  status: CheckStatus;
-  /** Optional one-line context shown dimmed under the label. */
-  detail?: string;
-  /** Optional next step, shown for `warn`/`fail`. */
-  fix?: string;
-}
+// `CheckResult` and `CheckStatus` live in `@dorkos/shared` so `dorkos doctor`
+// and `GET /api/health/deep` render and return one type rather than two that
+// drift. Re-exported here because this module is where callers already look.
+export type { CheckResult, CheckStatus } from '@dorkos/shared/health-schemas';
 
 /** How long to wait for a port probe before treating the port as free. */
 const PORT_PROBE_TIMEOUT_MS = 500;
+
+/**
+ * The smallest open-file limit DorkOS runs comfortably under.
+ *
+ * The file watchers alone (workspaces, agent manifests, task files, adapter
+ * config) hold hundreds of descriptors on a busy machine; below this the server
+ * starts failing with `EMFILE` in places that look nothing like "too many open
+ * files". macOS still ships a default of 256 in some shells.
+ */
+const FILE_DESCRIPTOR_FLOOR = 1024;
 
 /** Node.js version meets the minimum DorkOS requires. */
 export function checkNode(): CheckResult {
@@ -214,6 +215,51 @@ export function checkTunnelConfig(ctx: TunnelConfigContext): CheckResult {
     detail: 'The tunnel cannot start without an ngrok auth token.',
     fix: 'Set a token:\n  dorkos config set tunnel.authtoken <token>\n  (or the NGROK_AUTHTOKEN env var)',
   };
+}
+
+/**
+ * How many files this machine lets DorkOS keep open at once.
+ *
+ * A low limit does not announce itself: the server starts fine and then, once
+ * enough watchers are running, fails with errors that never mention files. Node
+ * reports the soft limit through `process.report`, which is absent on Windows —
+ * there is no equivalent limit there, so the check simply says nothing.
+ *
+ * @param softLimit - The soft `nofile` limit, or `null` when the platform has none.
+ * @returns A `pass` above the floor, a `warn` below it, and `info` when unknown.
+ */
+export function checkFileDescriptors(softLimit: number | null): CheckResult {
+  if (softLimit === null) {
+    return { label: 'Open-file limit does not apply on this system', status: 'info' };
+  }
+  if (softLimit >= FILE_DESCRIPTOR_FLOOR) {
+    return { label: `Open-file limit is ${softLimit}`, status: 'pass' };
+  }
+  return {
+    label: `Open-file limit is only ${softLimit}`,
+    status: 'warn',
+    detail:
+      'DorkOS watches a lot of files. Below about ' +
+      `${FILE_DESCRIPTOR_FLOOR} it starts failing in ways that never mention files.`,
+    fix: `Raise it for this shell, then start DorkOS again:\n  ulimit -n ${FILE_DESCRIPTOR_FLOOR}`,
+  };
+}
+
+/**
+ * Read the soft open-file limit from Node's diagnostic report.
+ *
+ * @returns The soft limit, or `null` when the platform does not report one.
+ */
+export function readFileDescriptorLimit(): number | null {
+  try {
+    const report = process.report?.getReport() as
+      | { userLimits?: { open_files?: { soft?: unknown } } }
+      | undefined;
+    const soft = report?.userLimits?.open_files?.soft;
+    return typeof soft === 'number' && Number.isFinite(soft) ? soft : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Probe whether something is already listening on `port` at localhost. */

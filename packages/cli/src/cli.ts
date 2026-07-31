@@ -513,6 +513,7 @@ Commands:
   telemetry enable     Turn on telemetry channels (all, or --channel <c>)
   telemetry disable    Turn off telemetry channels (all, or --channel <c>)
   doctor               Check your setup and report problems in plain words
+                       (--deep also checks a running DorkOS; --json for raw output)
   feedback             Report a bug or request a feature on GitHub
   cleanup              Remove all DorkOS data
 

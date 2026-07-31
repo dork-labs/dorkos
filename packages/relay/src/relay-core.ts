@@ -483,6 +483,19 @@ export class RelayCore {
     return executeListAccessRules(this.endpointDeps);
   }
 
+  /**
+   * Whether the access rules file exists but could not be read.
+   *
+   * While that is true the evaluator holds no rules and denies every message,
+   * and `listAccessRules()` returns an empty list that looks exactly like "no
+   * rules configured". This is how a caller tells those two apart — notably
+   * `GET /api/health/deep`, which reports the difference to an operator.
+   */
+  isAccessControlQuarantined(): boolean {
+    this.assertOpen();
+    return this.accessControl.isQuarantined();
+  }
+
   /** Rebuild the SQLite index from Maildir files on disk. */
   async rebuildIndex(): Promise<number> {
     this.assertOpen();

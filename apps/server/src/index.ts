@@ -153,6 +153,7 @@ import {
   resolveApprovalTtlMs,
 } from './services/core/approvals/index.js';
 import { createApprovalsRouter } from './routes/approvals.js';
+import type { DeepHealthDeps } from './services/observability/deep-health/index.js';
 import { createCapabilitiesCatalogRouter } from './routes/capabilities-catalog.js';
 import { createCapabilitiesInvokeRouter } from './routes/capabilities-invoke.js';
 import {
@@ -1449,6 +1450,21 @@ async function start() {
     app.locals.meshCore = meshCore;
     logger.info('[Mesh] Routes mounted');
   }
+
+  // Deep health (`GET /api/health/deep`) — the checks `dorkos doctor --deep`
+  // cannot run from outside because they need this process's own view of rooms,
+  // messaging, integrations, and agents. Handed over as one bag of narrow reads,
+  // set after every subsystem above has had its chance to start; whatever is off
+  // simply reports its checks skipped. Nothing here runs until a request asks.
+  app.locals.deepHealthDeps = {
+    dorkHome,
+    roomSessions: roomStore,
+    transcriptProjectRoots: () => claudeRuntime?.getTranscriptReader().getProjectsRootSet() ?? [],
+    runtimeForSession: (sessionId: string) => runtimeRegistry.getSessionRuntimeType(sessionId),
+    relay: relayCore,
+    adapters: adapterManager,
+    mesh: meshCore,
+  } satisfies DeepHealthDeps;
 
   // Session-origin Pulse overlay (session-origin-legibility): expose a narrow
   // batched lookup to the sessions router via app.locals, mirroring the
