@@ -2329,6 +2329,10 @@ export const ServerConfigSchema = z
         completedAt: z.string().nullable().openapi({
           description: 'ISO timestamp when onboarding was completed (finish line reached)',
         }),
+        runtimeDefaultSetAt: z.string().nullable().openapi({
+          description:
+            'ISO timestamp when first-run setup decided the default runtime. Non-null means that decision is closed and is never made again.',
+        }),
       })
       .optional()
       .openapi({ description: 'First-time user onboarding state' }),

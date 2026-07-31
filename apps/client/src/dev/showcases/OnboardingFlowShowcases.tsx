@@ -131,7 +131,7 @@ function SystemRequirementsStepShowcase() {
   return (
     <PlaygroundSection
       title="SystemRequirementsStep"
-      description="First-run setup check, ready-first. A brief scan animation, then one of three outcomes: at least one agent ready (a 'Get started' success moment with a quiet disclosure to add more), everything ready (no disclosure count), or nothing ready yet (connect cards that do the setup). Click Replay to restart the scan."
+      description="First-run setup check, ready-first. A brief scan animation, then one of three outcomes: at least one agent ready (a 'Get started' success moment with a quiet disclosure to add more), everything ready (no disclosure count), or nothing ready yet (connect cards that do the setup). The ready states also disclose which runtime new chats will start on, with the one-tap change — simulated here, so nothing writes your own default. Click Replay to restart the scan."
     >
       <ShowcaseLabel>At least one ready — Claude connected, two more available</ShowcaseLabel>
       <div className="mb-3">
@@ -146,6 +146,7 @@ function SystemRequirementsStepShowcase() {
             onContinue={noop}
             renderConnect={renderRuntimeConnect}
             simulatedResult={MOCK_REQUIREMENTS_ONE_READY}
+            simulatedDefaultRuntime="claude-code"
           />
         </div>
       </ShowcaseDemo>
@@ -163,6 +164,7 @@ function SystemRequirementsStepShowcase() {
             onContinue={noop}
             renderConnect={renderRuntimeConnect}
             simulatedResult={MOCK_REQUIREMENTS_ALL_READY}
+            simulatedDefaultRuntime="codex"
           />
         </div>
       </ShowcaseDemo>

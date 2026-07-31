@@ -573,6 +573,67 @@ describe('GET /api/config', () => {
     expect(res.body).toHaveProperty('mesh');
   });
 
+  // First-run setup asks one question of this response: has the default runtime
+  // already been decided? An absent answer would read as "no" and let a machine
+  // that is long past onboarding have its setting rewritten.
+  describe('onboarding.runtimeDefaultSetAt — the once-only marker', () => {
+    it('reports null on a fresh install', async () => {
+      const res = await request(app).get('/api/config').expect(200);
+      expect(res.body.onboarding).toHaveProperty('runtimeDefaultSetAt', null);
+    });
+
+    // The upgrade path, taken from disk rather than through `configManager.set`
+    // — which re-validates and would fill the field itself, making the assertion
+    // true whatever the loader does. What is under test is that an install that
+    // has never heard of this field still REPORTS it, because the first-run gate
+    // reads "already decided?" off this one value.
+    it('reports null for an install whose config file predates the field', async () => {
+      const legacyDir = createTempDir();
+      fs.writeFileSync(
+        path.join(legacyDir, 'config.json'),
+        JSON.stringify({
+          version: 1,
+          onboarding: {
+            completedSteps: ['meet-dorkbot'],
+            skippedSteps: [],
+            startedAt: '2026-07-01T00:00:00.000Z',
+            dismissedAt: null,
+            completedAt: '2026-07-01T00:05:00.000Z',
+          },
+          __internal__: { migrations: { version: '0.55.0' } },
+        })
+      );
+      process.env.DORK_HOME = legacyDir;
+
+      const { initConfigManager } = await import('../../services/core/config-manager.js');
+      initConfigManager(legacyDir);
+      const legacyRouter = (await import('../config.js')).default;
+      const legacyApp = express();
+      legacyApp.use(express.json());
+      mountCallerFixture(legacyApp);
+      legacyApp.use('/api/config', legacyRouter);
+
+      const res = await request(legacyApp).get('/api/config').expect(200);
+      expect(res.body.onboarding).toHaveProperty('runtimeDefaultSetAt', null);
+      // The values that file DID carry survive the load untouched.
+      expect(res.body.onboarding.completedAt).toBe('2026-07-01T00:05:00.000Z');
+      expect(res.body.onboarding.completedSteps).toEqual(['meet-dorkbot']);
+      fs.rmSync(legacyDir, { recursive: true, force: true });
+    });
+
+    it('reports the stamp once first-run setup has decided', async () => {
+      const { configManager } = await import('../../services/core/config-manager.js');
+      const onboarding = configManager.get('onboarding');
+      configManager.set('onboarding', {
+        ...onboarding,
+        runtimeDefaultSetAt: '2026-07-31T09:00:00.000Z',
+      });
+
+      const res = await request(app).get('/api/config').expect(200);
+      expect(res.body.onboarding.runtimeDefaultSetAt).toBe('2026-07-31T09:00:00.000Z');
+    });
+  });
+
   // The cockpit prints these two numbers inside the sentence that describes the
   // `engaged` response mode — "keeps answering for 10 more minutes or 5 more
   // messages". They are settings, so the sentence is only true if the cockpit
