@@ -531,6 +531,54 @@ describe('POST /api/sessions/:id/messages — trigger-only contract', () => {
     });
   });
 
+  it('stall watchdog: a concurrent turn_start does not un-pause a turn still holding an unanswered approval', async () => {
+    // DOR-782. The pause used to be read off `lifecycle === 'blocked'`, which is
+    // a PROJECTION any later event may overwrite — and `turn_start` overwrites it
+    // with 'streaming'. A second detached turn on the same session (the
+    // compose-next auto-flush the lock's I1 token exists for) therefore un-paused
+    // the watchdog for the FIRST turn, which was still sitting on an approval
+    // card nobody had answered, and shot it a threshold later. The pending set
+    // itself cannot be overwritten this way, so it is what the guard now asks.
+    fakeRuntime.withScenarios([
+      async function* () {
+        yield {
+          type: 'approval_required',
+          data: { toolCallId: 'tc-concurrent-1', toolName: 'Bash', input: '{}', timeoutMs: 60_000 },
+        } as StreamEvent;
+        await new Promise(() => {});
+      },
+    ]);
+
+    const projector = getOrCreateProjector(SESSION_ID);
+    const result = await triggerTurn({
+      sessionId: SESSION_ID,
+      clientId: 'watchdog-client',
+      content: 'Hello',
+      projector,
+      deps: buildStallDeps(),
+      stallTimeoutMs: 40,
+    });
+    expect(result.accepted).toBe(true);
+    await vi.waitFor(() => expect(projector.getStatus().lifecycle).toBe('blocked'));
+
+    // A concurrent turn starts on the same projector. This is exactly what the
+    // second turn's feedProjector does, and it moves the lifecycle off 'blocked'
+    // while the approval is still unanswered.
+    projector.ingest({ type: 'turn_start' });
+    expect(projector.getStatus().lifecycle).toBe('streaming');
+    expect(projector.hasPendingInteractions()).toBe(true);
+
+    // Several threshold multiples with the lifecycle NOT 'blocked': the turn
+    // waiting on a person must survive.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(fakeRuntime.interruptQuery).not.toHaveBeenCalled();
+
+    // Answer the card and the guard is armed again, so a genuinely dark source
+    // still gets killed — the pause tracks the person, not the clock.
+    projector.resolveInteraction('tc-concurrent-1', 'approved');
+    await vi.waitFor(() => expect(fakeRuntime.interruptQuery).toHaveBeenCalledTimes(1));
+  });
+
   it('stall watchdog: interruptQuery finding no in-flight turn still settles with the leak details', async () => {
     // interruptQuery resolving false means the runtime found nothing to abort
     // (likely a leaked process). The turn must STILL close (the injected sequence

@@ -719,6 +719,80 @@ describe('SessionStateProjector', () => {
     disposeProjector(OLD);
     disposeProjector(NEW);
   });
+
+  // Failure mode (DOR-782): the displaced instance is evicted from the registry
+  // but its live `/events` subscribers are still parked inside it, awaiting an
+  // ingest that can never come — the session is off the registry, so nothing
+  // will ever feed it again. Those connections received only keepalives, forever.
+  it('ENDS the displaced instance subscribers so their clients reconnect and re-snapshot', async () => {
+    const OLD = 'displace-active';
+    const NEW = 'displace-target';
+    const active = getOrCreateProjector(OLD);
+    active.ingest({ type: 'turn_start' });
+
+    const stale = getOrCreateProjector(NEW);
+    stale.ingest({ type: 'turn_start' });
+    // A live subscriber, caught up and parked on the next ingest.
+    const received: unknown[] = [];
+    let ended = false;
+    const consuming = (async () => {
+      for await (const event of stale.subscribe(0)) received.push(event);
+      ended = true;
+    })();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(stale.getWaiterCount()).toBe(1);
+    expect(ended).toBe(false);
+
+    rekeyProjector(OLD, NEW);
+    await consuming;
+
+    // The stream ENDED (the route then closes the SSE response and the client
+    // reconnects), rather than hanging on a projector nothing can feed.
+    expect(ended).toBe(true);
+    expect(stale.getWaiterCount()).toBe(0);
+    // Everything it had already been sent still arrived — termination ends the
+    // stream, it does not rewrite history.
+    expect(received).toHaveLength(1);
+
+    // A subscriber that attaches to the retired instance afterwards likewise
+    // ends immediately instead of parking forever.
+    const late: unknown[] = [];
+    for await (const event of stale.subscribe(1)) late.push(event);
+    expect(late).toEqual([]);
+
+    disposeProjector(OLD);
+    disposeProjector(NEW);
+  });
+
+  it('leaves the winner untouched: a rekey with no collision ends nobody', async () => {
+    const OLD = 'no-collide-uuid';
+    const NEW = 'no-collide-canonical';
+    const active = getOrCreateProjector(OLD);
+    active.ingest({ type: 'turn_start' });
+
+    let ended = false;
+    const received: unknown[] = [];
+    const consuming = (async () => {
+      for await (const event of active.subscribe(0)) {
+        received.push(event);
+        if (received.length === 2) break;
+      }
+      ended = true;
+    })();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    rekeyProjector(OLD, NEW);
+    // The in-flight subscriber is still live and still receiving — the rekey
+    // moves the key, never the stream.
+    expect(ended).toBe(false);
+    active.ingest({ type: 'turn_end' });
+    await consuming;
+    expect(received).toHaveLength(2);
+
+    disposeProjector(NEW);
+  });
 });
 
 describe('onProjectorStatusChange (global lifecycle fan-out)', () => {
