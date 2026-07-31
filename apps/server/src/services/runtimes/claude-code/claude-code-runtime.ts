@@ -289,6 +289,9 @@ export class ClaudeCodeRuntime implements AgentRuntime {
         adapterManager: this.adapterManager,
         mcpServerFactory: this.mcpServerFactory,
         ...this.cache.buildSendCallbacks(cwdKey),
+        // `sessionId` is the id THIS turn was asked with, which is only a hint:
+        // after the session's first rename it is an alias, not the key the
+        // store holds it under. The store resolves the real key itself.
         onSdkSessionRebind: (previousSdkSessionId, nextSdkSessionId) =>
           this.sessionStore.rebindSdkSession(previousSdkSessionId, nextSdkSessionId, sessionId),
         modelThinkingCapability: modelCapability,
