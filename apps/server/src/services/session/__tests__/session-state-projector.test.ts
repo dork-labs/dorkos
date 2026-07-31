@@ -11,7 +11,10 @@ import {
 } from '../session-state-projector.js';
 import type { RawSessionEvent, ProjectorStatusUpdate } from '../session-state-projector.js';
 import { EVENT_LOG_MAX_EVENTS } from '../event-log.js';
-import { StaleResumeCursorError } from '@dorkos/shared/session-stream';
+import {
+  StaleResumeCursorError,
+  BLOCKING_INTERACTION_EVENT_TYPES,
+} from '@dorkos/shared/session-stream';
 import type { HistoryMessage } from '@dorkos/shared/types';
 
 const TIMEOUT_MS = 10 * 60 * 1000;
@@ -170,6 +173,29 @@ describe('SessionStateProjector', () => {
     expect(pending).toHaveLength(1);
     expect(pending[0]?.id).toBe('tool-1');
     expect(pending[0]?.remainingMs).toBe(TIMEOUT_MS);
+  });
+
+  // Failure mode (drift pin): the projector's switch enumerates the three
+  // blocking interactions by hand, because a switch cannot be driven by a
+  // constant. A fourth member added to BLOCKING_INTERACTION_EVENT_TYPES would
+  // be honored by every consumer that reads the list (the Telegram typing loop,
+  // the Slack working indicator) and silently dropped here by `default: break`,
+  // leaving a session that reads `streaming` while it waits on a person.
+  it('goes blocked for every member of BLOCKING_INTERACTION_EVENT_TYPES', () => {
+    for (const type of BLOCKING_INTERACTION_EVENT_TYPES) {
+      const p = new SessionStateProjector('s1');
+      p.ingest({
+        type,
+        id: `int-${type}`,
+        startedAt: Date.now(),
+        remainingMs: TIMEOUT_MS,
+        toolName: 'Bash',
+        input: '{}',
+        hasSuggestions: false,
+      } as unknown as RawSessionEvent);
+      expect(p.getStatus().lifecycle, `${type} must block the session`).toBe('blocked');
+      expect(p.getPendingInteractions(), `${type} must be pending`).toHaveLength(1);
+    }
   });
 
   // Failure mode: a stale prompt must never be re-presented; an interaction past

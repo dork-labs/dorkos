@@ -555,25 +555,6 @@ export interface PlatformClient {
   ): Promise<{ messageId: string }>;
 
   /**
-   * Signal to the platform that the bot is composing a response.
-   *
-   * Optional — platforms that support typing indicators (e.g., Telegram
-   * `sendChatAction`) implement this for better perceived responsiveness.
-   *
-   * @param threadId - Platform-specific thread or chat identifier
-   */
-  startTyping?(threadId: string): void;
-
-  /**
-   * Cancel any active typing indicator for the thread.
-   *
-   * Optional — called after `startTyping` once the response is ready to send.
-   *
-   * @param threadId - Platform-specific thread or chat identifier
-   */
-  stopTyping?(threadId: string): void;
-
-  /**
    * Tear down the platform client — close connections and release resources.
    *
    * Must drain any in-flight requests before resolving.

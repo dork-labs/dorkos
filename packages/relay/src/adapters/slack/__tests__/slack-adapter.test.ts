@@ -31,6 +31,11 @@ let capturedErrorHandler: ((error: Error) => Promise<void>) | null = null;
 /** Bolt action handlers by `action_id` — how the approve/deny buttons are driven. */
 const capturedActionHandlers = new Map<string, (args: Record<string, unknown>) => Promise<void>>();
 
+const mockReactionsAdd = vi.fn().mockResolvedValue({ ok: true });
+const mockReactionsRemove = vi.fn().mockResolvedValue({ ok: true });
+const mockSetStatus = vi.fn().mockResolvedValue({ ok: true });
+let capturedAssistantHandler: ((args: Record<string, unknown>) => Promise<void>) | null = null;
+
 vi.mock('@slack/bolt', () => {
   class MockApp {
     client = {
@@ -40,6 +45,8 @@ vi.mock('@slack/bolt', () => {
         update: mockChatUpdate,
         postEphemeral: mockPostEphemeral,
       },
+      reactions: { add: mockReactionsAdd, remove: mockReactionsRemove },
+      assistant: { threads: { setStatus: mockSetStatus } },
     };
 
     message(handler: (args: Record<string, unknown>) => Promise<void>) {
@@ -48,6 +55,7 @@ vi.mock('@slack/bolt', () => {
 
     event(eventName: string, handler: (args: Record<string, unknown>) => Promise<void>) {
       if (eventName === 'app_mention') capturedMentionHandler = handler;
+      if (eventName === 'assistant_thread_started') capturedAssistantHandler = handler;
     }
 
     action(actionId: string, handler: (args: Record<string, unknown>) => Promise<void>) {
@@ -83,6 +91,7 @@ describe('SlackAdapter', () => {
     vi.clearAllMocks();
     capturedMessageHandler = null;
     capturedMentionHandler = null;
+    capturedAssistantHandler = null;
     capturedErrorHandler = null;
     capturedActionHandlers.clear();
     adapter = new SlackAdapter(
@@ -253,6 +262,46 @@ describe('SlackAdapter', () => {
     const result = await adapter.deliver('relay.human.slack.slack-1.D123', envelope);
     expect(result.success).toBe(true);
     expect(mockPostMessage).toHaveBeenCalled();
+  });
+
+  // The assistant split panel is the one Slack surface with a status line, and
+  // `assistant_thread_started` is the only thing that names it. Without this
+  // wiring every surface would fall back to the emoji, which is the wrong idiom
+  // in a panel that has somewhere better to say it.
+  it('sets an assistant status, not a reaction, in a thread it saw start', async () => {
+    await adapter.start(mockRelay);
+    expect(capturedAssistantHandler).toBeDefined();
+
+    await capturedAssistantHandler!({
+      event: { assistant_thread: { channel_id: 'D123', thread_ts: '1234.0001' } },
+    });
+
+    const envelope = {
+      id: 'e1',
+      subject: 'relay.human.slack.slack-1.D123',
+      from: 'relay.agent.backend',
+      budget: {
+        hopCount: 0,
+        maxHops: 5,
+        ancestorChain: [],
+        ttl: Date.now() + 3_600_000,
+        callBudgetRemaining: 10,
+      },
+      createdAt: new Date().toISOString(),
+      payload: {
+        type: 'text_delta',
+        data: { text: 'working' },
+        platformData: { ts: '1234.0001' },
+      },
+    };
+    await adapter.deliver('relay.human.slack.slack-1.D123', envelope);
+
+    expect(mockSetStatus).toHaveBeenCalledWith({
+      channel_id: 'D123',
+      thread_ts: '1234.0001',
+      status: 'is working on it…',
+    });
+    expect(mockReactionsAdd).not.toHaveBeenCalled();
   });
 
   it('deliver() returns error when adapter is stopped', async () => {

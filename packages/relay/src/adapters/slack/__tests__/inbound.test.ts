@@ -16,6 +16,7 @@ import type { AdapterInboundCallbacks } from '../../../types.js';
 import type { RelayPublisher } from '../../../types.js';
 import { SlackThreadIdCodec } from '../../../lib/thread-id.js';
 import { ThreadParticipationTracker } from '../thread-tracker.js';
+import { createSlackPresenceState } from '../presence.js';
 
 /** Shared codec for tests — no instance ID so prefix is `relay.human.slack`. */
 const testCodec = new SlackThreadIdCodec();
@@ -241,10 +242,10 @@ describe('handleInboundMessage', () => {
     expect(published.senderName).toBe('U99999');
   });
 
-  describe('typing indicator — inbound reaction', () => {
-    it('adds hourglass reaction immediately on message receipt when typingIndicator is reaction', async () => {
+  describe('working presence — the trigger message is queued, not marked', () => {
+    it('queues the message without touching Slack when typingIndicator is reaction', async () => {
       const event = createEvent({ ts: '1234.5678' });
-      const pendingReactions = new Map<string, string[]>();
+      const presence = createSlackPresenceState();
 
       await handleInboundMessage(
         event,
@@ -255,22 +256,18 @@ describe('handleInboundMessage', () => {
         state,
         undefined,
         'reaction',
-        pendingReactions
+        presence
       );
-
-      // Wait a tick for the fire-and-forget promise to resolve
       await new Promise((r) => setTimeout(r, 10));
 
-      expect(client.reactions.add).toHaveBeenCalledWith({
-        channel: 'D67890',
-        name: 'hourglass_flowing_sand',
-        timestamp: '1234.5678',
-      });
+      // Receipt is not work. The `:eyes:` goes on when a turn claims the message.
+      expect(client.reactions.add).not.toHaveBeenCalled();
+      expect(presence.pendingReactions.get('D67890')?.map((e) => e.ts)).toEqual(['1234.5678']);
     });
 
-    it('tracks pending reaction in FIFO queue', async () => {
+    it('queues nothing when typingIndicator is none', async () => {
       const event = createEvent({ ts: '1234.5678' });
-      const pendingReactions = new Map<string, string[]>();
+      const presence = createSlackPresenceState();
 
       await handleInboundMessage(
         event,
@@ -280,33 +277,16 @@ describe('handleInboundMessage', () => {
         callbacks,
         state,
         undefined,
-        'reaction',
-        pendingReactions
+        'none',
+        presence
       );
       await new Promise((r) => setTimeout(r, 10));
 
-      expect(pendingReactions.get('D67890')).toEqual(['1234.5678']);
-    });
-
-    it('does not add reaction when typingIndicator is none', async () => {
-      const event = createEvent({ ts: '1234.5678' });
-
-      await handleInboundMessage(
-        event,
-        client,
-        relay,
-        'UBOTID',
-        callbacks,
-        state,
-        undefined,
-        'none'
-      );
-      await new Promise((r) => setTimeout(r, 10));
-
+      expect(presence.pendingReactions.size).toBe(0);
       expect(client.reactions.add).not.toHaveBeenCalled();
     });
 
-    it('does not add reaction when typingIndicator is omitted (default)', async () => {
+    it('queues nothing when typingIndicator is omitted (default)', async () => {
       const event = createEvent({ ts: '1234.5678' });
 
       await handleInboundMessage(event, client, relay, 'UBOTID', callbacks, state);
@@ -315,32 +295,13 @@ describe('handleInboundMessage', () => {
       expect(client.reactions.add).not.toHaveBeenCalled();
     });
 
-    it('logs warning when reaction add fails', async () => {
-      vi.mocked(client.reactions.add).mockRejectedValueOnce(new Error('no_permission'));
+    it('forgets the queued message when the publish is rejected', async () => {
       const event = createEvent({ ts: '1234.5678' });
-      const mockLogger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
-
-      await handleInboundMessage(
-        event,
-        client,
-        relay,
-        'UBOTID',
-        callbacks,
-        state,
-        mockLogger,
-        'reaction'
-      );
-      await new Promise((r) => setTimeout(r, 10));
-
-      expect(mockLogger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('failed to add typing reaction')
-      );
-    });
-
-    it('does not track reaction when add fails', async () => {
-      vi.mocked(client.reactions.add).mockRejectedValueOnce(new Error('no_permission'));
-      const event = createEvent({ ts: '1234.5678' });
-      const pendingReactions = new Map<string, string[]>();
+      const presence = createSlackPresenceState();
+      (relay.publish as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        deliveredTo: 0,
+        rejected: [{ reason: 'rate_limited' }],
+      });
 
       await handleInboundMessage(
         event,
@@ -351,12 +312,11 @@ describe('handleInboundMessage', () => {
         state,
         undefined,
         'reaction',
-        pendingReactions
+        presence
       );
       await new Promise((r) => setTimeout(r, 10));
 
-      // Should not track a reaction that failed to add
-      expect(pendingReactions.has('D67890')).toBe(false);
+      expect(presence.pendingReactions.has('D67890')).toBe(false);
     });
   });
 

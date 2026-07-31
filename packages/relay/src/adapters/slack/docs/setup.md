@@ -103,8 +103,8 @@ Navigate to **Features > OAuth & Permissions** and scroll to **Scopes > Bot Toke
 | `im:read`           | List and get info about DM conversations |
 | `im:write`          | Open and manage DM conversations         |
 | `mpim:history`      | Read group DM history                    |
-| `reactions:read`    | Remove typing indicator reactions        |
-| `reactions:write`   | Add typing indicator reactions           |
+| `reactions:read`    | Remove the working indicator reaction    |
+| `reactions:write`   | Add the working indicator reaction       |
 | `app_mentions:read` | Read @mention events                     |
 | `users:read`        | Resolve user display names               |
 
@@ -129,6 +129,20 @@ Still on the **Basic Information** page, scroll to **App Credentials** and click
 > **Do NOT enable "Agents & AI Apps"** in your Slack app settings.
 >
 > The "Agents & AI Apps" feature silently adds user-level OAuth scopes to your app. Most workspace plans do not support user scopes on bot apps, which causes `invalid_scope` errors during installation. If you have already enabled it, go to **Features > OAuth & Permissions**, remove any scopes listed under **User Token Scopes**, and reinstall the app.
+
+## The working indicator
+
+When an agent starts working on your message, it gets an :eyes: reaction — added when the work actually starts, not when the message arrives, and removed when the reply lands or the attempt fails. A message nobody picks up is never marked. Nothing is added at the end: the reply is the answer. Set **Working Indicator** to **None** to switch it off entirely.
+
+> **Not verified: the assistant-panel status.** Slack offers a real status line
+> (`assistant.threads.setStatus`) in one place only — the AI-assistant split
+> panel, part of the "Agents & AI Apps" feature this guide tells you not to
+> enable. The adapter implements that mapping and picks it up automatically for
+> any thread it sees start there, but **nobody has run it against a real Slack
+> app with the feature on**, and the app manifest above ships neither the
+> `assistant:write` scope nor the `assistant_thread_started` event subscription
+> it needs. Until that is verified, treat the :eyes: reaction as the working
+> indicator Slack actually gives you.
 
 ## Troubleshooting
 

@@ -28,6 +28,8 @@ import {
 } from './outbound.js';
 import type { ActiveStream, SlackOutboundState } from './outbound.js';
 import { SlackPlatformClient } from './slack-platform-client.js';
+import { createSlackPresenceState, clearAllPresence, markAssistantThread } from './presence.js';
+import type { SlackPresenceState } from './presence.js';
 import { SlackThreadIdCodec } from '../../lib/thread-id.js';
 import { mayApprove } from '../approver-allowlist.js';
 import { FATAL_SLACK_ERRORS, SLACK_MANIFEST } from './slack-manifest.js';
@@ -51,8 +53,8 @@ export class SlackAdapter extends BaseRelayAdapter {
   /** Bot's own user ID — cached after auth.test for echo prevention. */
   private botUserId = '';
   private streamState = new Map<string, ActiveStream>();
-  /** FIFO queue of message timestamps with pending hourglass reactions, keyed by channelId. */
-  private pendingReactions: import('./stream.js').PendingReactions = new Map();
+  /** Working-presence state: held claims, queued trigger messages, assistant threads. */
+  private readonly presence: SlackPresenceState = createSlackPresenceState();
   private readonly outboundState: SlackOutboundState = createSlackOutboundState();
   /** Instance-scoped inbound caches (dedup + name resolution). */
   private readonly inboundState: SlackInboundState = createSlackInboundState();
@@ -156,7 +158,7 @@ export class SlackAdapter extends BaseRelayAdapter {
         this.inboundState,
         this.logger,
         this.config.typingIndicator ?? 'none',
-        this.pendingReactions,
+        this.presence,
         this.codec,
         this.buildInboundOptions(eventId)
       );
@@ -175,10 +177,28 @@ export class SlackAdapter extends BaseRelayAdapter {
         this.inboundState,
         this.logger,
         this.config.typingIndicator ?? 'none',
-        this.pendingReactions,
+        this.presence,
         this.codec,
         this.buildInboundOptions(eventId, 'always')
       );
+    });
+
+    // The assistant split panel is the only Slack surface with a status line,
+    // and this event is the only thing that identifies it. Remember the thread
+    // so a claim in it sets a status instead of reacting with an emoji.
+    //
+    // The default app manifest deliberately subscribes to neither this event nor
+    // the `assistant:write` scope: it also tells operators NOT to enable
+    // "Agents & AI Apps", which adds user scopes that break installs on most
+    // workspaces. So this listener never fires on a stock install and every
+    // thread falls back to the reaction — the mapping is real but UNVERIFIED
+    // end to end (`docs/setup.md`). Do not add the scope here to "fix" it.
+    app.event('assistant_thread_started', async ({ event }) => {
+      const thread = (event as { assistant_thread?: { channel_id?: string; thread_ts?: string } })
+        .assistant_thread;
+      if (thread?.channel_id && thread.thread_ts) {
+        markAssistantThread(this.presence, thread.channel_id, thread.thread_ts);
+      }
     });
 
     // Register tool approval action handlers (Approve/Deny buttons)
@@ -217,15 +237,17 @@ export class SlackAdapter extends BaseRelayAdapter {
     this.logger.info('connecting via Socket Mode');
     await app.start();
     this.app = app;
-    this.platformClient = new SlackPlatformClient(
-      app.client,
-      { nativeStreaming: this.config.nativeStreaming },
-      this.logger
-    );
+    this.platformClient = new SlackPlatformClient(app.client, {
+      nativeStreaming: this.config.nativeStreaming,
+    });
   }
 
   /** Disconnect from Slack and clean up state. */
   protected async _stop(): Promise<void> {
+    // Take down anything still on screen with the client that put it there,
+    // before the app goes away. Best-effort: a disconnected adapter simply
+    // fails these, and nothing waits on them.
+    clearAllPresence(this.presence, this.app?.client ?? null, this.logger);
     if (this.app) {
       try {
         await this.app.stop();
@@ -240,7 +262,6 @@ export class SlackAdapter extends BaseRelayAdapter {
     }
     this.botUserId = '';
     this.streamState.clear();
-    this.pendingReactions.clear();
     this.threadTracker.clear();
     clearAllApprovalTimeouts(this.outboundState);
     clearCaches(this.inboundState);
@@ -266,7 +287,7 @@ export class SlackAdapter extends BaseRelayAdapter {
       envelope,
       client: this.app?.client ?? null,
       streamState: this.streamState,
-      pendingReactions: this.pendingReactions,
+      presence: this.presence,
       botUserId: this.botUserId,
       callbacks: this.makeOutboundCallbacks(),
       streaming: this.config.streaming ?? true,

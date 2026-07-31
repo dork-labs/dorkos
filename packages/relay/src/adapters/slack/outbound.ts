@@ -31,16 +31,18 @@ import {
   handleError,
   flushStreamBuffer,
   wrapSlackCall,
-  removePendingReaction,
   STREAM_TTL_MS,
   SLACK_CHUNK_PACING_MS,
 } from './stream.js';
 import type { StreamContext } from './stream.js';
+import { claimPresence, releasePresence } from './presence.js';
+import type { PresenceContext, SlackPresenceState } from './presence.js';
+import { isBlockingInteractionEventType } from '@dorkos/shared/session-stream';
 import { handleApprovalRequired } from './approval.js';
 import type { SlackOutboundState } from './approval.js';
 
 // Re-export types so existing imports from outbound.ts continue to work
-export type { ActiveStream, PendingReactions } from './stream.js';
+export type { ActiveStream } from './stream.js';
 // Re-export approval state types and helpers so the adapter facade can use them
 export {
   clearApprovalTimeout,
@@ -58,7 +60,8 @@ export interface SlackDeliverOptions {
   envelope: RelayEnvelope;
   client: WebClient | null;
   streamState: Map<string, import('./stream.js').ActiveStream>;
-  pendingReactions: import('./stream.js').PendingReactions;
+  /** Working-presence state: held claims, queued trigger messages, assistant threads. */
+  presence: SlackPresenceState;
   botUserId: string;
   callbacks: AdapterOutboundCallbacks;
   streaming: boolean;
@@ -93,6 +96,47 @@ function resolveThreadTs(envelope: RelayEnvelope): string | undefined {
   return undefined;
 }
 
+/**
+ * Is this delivery an event from a turn that is still running?
+ *
+ * True for any runtime stream event that is not a terminal. A non-stream
+ * payload is a finished message, not a turn in progress, so it is false.
+ *
+ * The terminals are `done`, an `error` — classified on the event type, never on
+ * whether a message could be extracted from it, so a malformed error still ends
+ * the turn — and the three interactions that block on a person, which come from
+ * `BLOCKING_INTERACTION_EVENT_TYPES` in `@dorkos/shared` so this list cannot
+ * drift from the session projector's `blocked` lifecycle. Showing "working"
+ * through one of those would claim somebody is working when the turn is
+ * actually stalled on a question.
+ *
+ * An event type this adapter does not know stays "running" on purpose — the
+ * runtime event vocabulary is open, and most of it is real work (tools,
+ * thinking) that `deliverMessage` drops from delivery but that a person is
+ * genuinely waiting on. A straggler arriving after the turn already ended is
+ * not guessed at here either: `claimPresence` refuses it, because the turn's
+ * binding is settled and no new question has been asked.
+ *
+ * @param eventType - The detected StreamEvent type, or null for a plain payload
+ */
+function isTurnRunning(eventType: string | null): boolean {
+  if (!eventType) return false;
+  if (eventType === 'done' || eventType === 'error') return false;
+  return !isTurnPaused(eventType);
+}
+
+/**
+ * Is this delivery a turn stopping to wait on a person?
+ *
+ * The three come from `BLOCKING_INTERACTION_EVENT_TYPES` in `@dorkos/shared` so
+ * this cannot drift from the session projector's `blocked` lifecycle.
+ *
+ * @param eventType - The detected StreamEvent type, or null for a plain payload
+ */
+function isTurnPaused(eventType: string | null): boolean {
+  return eventType !== null && isBlockingInteractionEventType(eventType);
+}
+
 // === Public API ===
 
 /**
@@ -116,7 +160,6 @@ export async function deliverMessage(opts: SlackDeliverOptions): Promise<Deliver
     envelope,
     client,
     streamState,
-    pendingReactions,
     callbacks,
     logger = noopLogger,
   } = opts;
@@ -126,16 +169,6 @@ export async function deliverMessage(opts: SlackDeliverOptions): Promise<Deliver
   for (const [key, stream] of streamState) {
     if (startTime - stream.startedAt > STREAM_TTL_MS) {
       streamState.delete(key);
-      // Clean up the pending hourglass reaction that would otherwise linger forever
-      if (client) {
-        removePendingReaction(
-          client,
-          stream.channelId,
-          opts.typingIndicator,
-          pendingReactions,
-          logger
-        );
-      }
       logger.warn(
         `stream: reaped orphaned stream for ${key} (age: ${Math.round((startTime - stream.startedAt) / 1000)}s)`
       );
@@ -191,15 +224,34 @@ export async function deliverMessage(opts: SlackDeliverOptions): Promise<Deliver
     streamState,
     callbacks,
     startTime,
-    typingIndicator: opts.typingIndicator,
     streamKeyTs,
-    pendingReactions,
     threadTracker: opts.threadTracker,
     logger,
   };
 
   // --- StreamEvent-aware delivery ---
   const eventType = detectStreamEventType(envelope.payload);
+
+  // The turn's lifecycle, as this adapter can observe it. A runtime event for
+  // this channel is evidence a turn is really running; `done`, an error, an
+  // interaction waiting on a person, and a plain finished reply all end that
+  // span. A message merely arriving proves nothing and shows nothing.
+  const presenceCtx: PresenceContext = {
+    client,
+    channelId,
+    threadTs,
+    streamKeyTs,
+    typingIndicator: opts.typingIndicator,
+    state: opts.presence,
+    logger,
+  };
+  if (isTurnRunning(eventType)) {
+    claimPresence(presenceCtx);
+  } else {
+    // Waiting on a person is a pause, not an end: the turn keeps the message it
+    // is answering, so resuming marks that one rather than the next person's.
+    releasePresence(presenceCtx, isTurnPaused(eventType) ? 'paused' : 'terminal');
+  }
 
   if (eventType) {
     const textChunk = extractTextDelta(envelope.payload);

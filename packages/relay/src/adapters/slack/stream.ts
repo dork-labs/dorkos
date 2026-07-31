@@ -6,8 +6,6 @@
  * Handles text_delta, done, and error StreamEvents, along with the
  * stream buffer flush used before approval card interrupts.
  *
- * Also owns the typing indicator helpers (add/remove reaction) since
- * they are exclusively used in streaming lifecycle events.
  *
  * @module relay/adapters/slack/stream
  */
@@ -34,15 +32,6 @@ const STREAM_UPDATE_INTERVAL_MS = 1_000;
 export const STREAM_TTL_MS = 5 * 60 * 1_000;
 /** Delay (ms) between consecutive Slack posts when a response spans multiple messages. */
 export const SLACK_CHUNK_PACING_MS = 1_100;
-
-/**
- * FIFO queue of message timestamps with pending :hourglass_flowing_sand: reactions.
- *
- * Keyed by channelId. Values are arrays of message `ts` values in arrival order.
- * The inbound handler pushes on message receipt; the outbound handler shifts on
- * done/error to remove the reaction from the correct message.
- */
-export type PendingReactions = Map<string, string[]>;
 
 /** Active stream state for a channel (keyed by channelId:streamKeyTs). */
 export interface ActiveStream {
@@ -82,9 +71,7 @@ export interface StreamContext {
   streamState: Map<string, ActiveStream>;
   callbacks: AdapterOutboundCallbacks;
   startTime: number;
-  typingIndicator: 'none' | 'reaction';
   streamKeyTs: string;
-  pendingReactions: PendingReactions;
   /** Thread participation tracker for marking threads the bot has replied to. */
   threadTracker?: ThreadParticipationTracker;
   logger?: { debug: (...args: unknown[]) => void; warn: (...args: unknown[]) => void };
@@ -126,7 +113,7 @@ export async function wrapSlackCall(
  * @param channelId - The Slack channel ID
  * @param streamKeyTs - Correlation key (threadTs, correlationId, or envelope.from)
  */
-export function buildStreamKey(channelId: string, streamKeyTs?: string): string {
+function buildStreamKey(channelId: string, streamKeyTs?: string): string {
   return streamKeyTs ? `${channelId}:${streamKeyTs}` : channelId;
 }
 
@@ -194,83 +181,6 @@ function markParticipation(
   }
 }
 
-/** Add :hourglass_flowing_sand: reaction — fire-and-forget with logged failures. */
-export function addTypingReaction(
-  client: WebClient,
-  channelId: string,
-  threadTs: string | undefined,
-  typingIndicator: 'none' | 'reaction',
-  logger?: { warn: (...args: unknown[]) => void }
-): void {
-  if (typingIndicator !== 'reaction' || !threadTs) return;
-  void client.reactions
-    .add({ channel: channelId, name: 'hourglass_flowing_sand', timestamp: threadTs })
-    .catch((err) => {
-      // already_reacted is expected when inbound already added the reaction
-      const msg = err instanceof Error ? err.message : String(err);
-      if (!msg.includes('already_reacted')) {
-        logger?.warn(`stream: failed to add typing reaction to ${channelId}:${threadTs}: ${msg}`);
-      }
-    });
-}
-
-/** Remove :hourglass_flowing_sand: reaction — fire-and-forget with logged failures. */
-export function removeTypingReaction(
-  client: WebClient,
-  channelId: string,
-  threadTs: string | undefined,
-  typingIndicator: 'none' | 'reaction',
-  logger?: { warn: (...args: unknown[]) => void }
-): void {
-  if (typingIndicator !== 'reaction' || !threadTs) return;
-  void client.reactions
-    .remove({ channel: channelId, name: 'hourglass_flowing_sand', timestamp: threadTs })
-    .catch((err) => {
-      // no_reaction is expected if the reaction was already removed or never added
-      const msg = err instanceof Error ? err.message : String(err);
-      if (!msg.includes('no_reaction')) {
-        logger?.warn(
-          `stream: failed to remove typing reaction from ${channelId}:${threadTs}: ${msg}`
-        );
-      }
-    });
-}
-
-/**
- * Remove the oldest pending reaction for a channel (FIFO).
- *
- * Called by handleDone/handleError to clean up the hourglass reaction
- * that was added on the inbound side. Uses the FIFO queue to correlate
- * with the correct user message even when multiple messages are queued.
- */
-export function removePendingReaction(
-  client: WebClient,
-  channelId: string,
-  typingIndicator: 'none' | 'reaction',
-  pendingReactions: PendingReactions,
-  logger?: { debug?: (...args: unknown[]) => void; warn: (...args: unknown[]) => void }
-): void {
-  if (typingIndicator !== 'reaction') return;
-  const queue = pendingReactions.get(channelId);
-  if (!queue || queue.length === 0) return;
-  const messageTs = queue.shift()!;
-  if (queue.length === 0) pendingReactions.delete(channelId);
-
-  void client.reactions
-    .remove({ channel: channelId, name: 'hourglass_flowing_sand', timestamp: messageTs })
-    .then(() => {
-      logger?.debug?.(`stream: removed pending typing reaction from ${channelId}:${messageTs}`);
-    })
-    .catch((err) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (!msg.includes('no_reaction')) {
-        logger?.warn(
-          `stream: failed to remove pending typing reaction from ${channelId}:${messageTs}: ${msg}`
-        );
-      }
-    });
-}
-
 /**
  * Handle a text_delta StreamEvent — start or append to a streaming message.
  *
@@ -289,17 +199,7 @@ export async function handleTextDelta(
   nativeStreaming: boolean,
   ctx: StreamContext
 ): Promise<DeliveryResult> {
-  const {
-    channelId,
-    threadTs,
-    client,
-    streamState,
-    callbacks,
-    startTime,
-    typingIndicator,
-    streamKeyTs,
-    logger,
-  } = ctx;
+  const { channelId, threadTs, client, streamState, callbacks, startTime, streamKeyTs } = ctx;
   const key = buildStreamKey(channelId, streamKeyTs);
   const existing = streamState.get(key);
 
@@ -317,7 +217,6 @@ export async function handleTextDelta(
         startedAt: Date.now(),
         streamId: randomUUID(),
       });
-      addTypingReaction(client, channelId, threadTs, typingIndicator, logger);
       markParticipation(ctx.threadTracker, channelId, threadTs);
     }
     return { success: true, durationMs: Date.now() - startTime };
@@ -387,7 +286,6 @@ export async function handleTextDelta(
       if (flush !== null) {
         await nativeAppendStream(client, nativeStreamId, formatForPlatform(flush, 'slack'));
       }
-      addTypingReaction(client, channelId, threadTs, typingIndicator, logger);
       markParticipation(ctx.threadTracker, channelId, threadTs);
       return { success: true, durationMs: Date.now() - startTime };
     } catch (err) {
@@ -413,7 +311,6 @@ export async function handleTextDelta(
       startedAt: now,
       streamId: randomUUID(),
     });
-    addTypingReaction(client, channelId, threadTs, typingIndicator, logger);
     markParticipation(ctx.threadTracker, channelId, threadTs);
     return { success: true, durationMs: now - startTime };
   } catch (err) {
@@ -553,34 +450,17 @@ async function finalizeStreamText(
 /**
  * Handle a done StreamEvent — finalize the streaming message.
  *
- * Performs a final update/post with the complete accumulated text,
- * removes the channel from streamState, and clears the typing indicator.
+ * Performs a final update/post with the complete accumulated text and
+ * removes the channel from streamState. Presence release is the caller's
+ * (`deliverMessage`), which sees every terminal — not just this one.
  *
  * @param ctx - Shared stream handler context
  */
 export async function handleDone(ctx: StreamContext): Promise<DeliveryResult> {
-  const {
-    channelId,
-    client,
-    streamState,
-    callbacks,
-    startTime,
-    typingIndicator,
-    streamKeyTs,
-    pendingReactions,
-    logger,
-  } = ctx;
+  const { channelId, client, streamState, callbacks, startTime, streamKeyTs, logger } = ctx;
   const key = buildStreamKey(channelId, streamKeyTs);
   const existing = streamState.get(key);
   streamState.delete(key);
-
-  // Remove the inbound-side hourglass reaction (FIFO queue)
-  removePendingReaction(client, channelId, typingIndicator, pendingReactions, logger);
-
-  // Also attempt outbound-side removal as fallback (for threaded messages where threadTs is known)
-  if (existing?.threadTs) {
-    removeTypingReaction(client, channelId, existing.threadTs, typingIndicator, logger);
-  }
 
   if (!existing) {
     // Stream completed with zero text_delta events — the user's message produced no visible response.
@@ -614,29 +494,10 @@ export async function handleDone(ctx: StreamContext): Promise<DeliveryResult> {
  * @param ctx - Shared stream handler context
  */
 export async function handleError(errorMsg: string, ctx: StreamContext): Promise<DeliveryResult> {
-  const {
-    channelId,
-    threadTs,
-    client,
-    streamState,
-    callbacks,
-    startTime,
-    typingIndicator,
-    streamKeyTs,
-    pendingReactions,
-    logger,
-  } = ctx;
+  const { channelId, threadTs, client, streamState, callbacks, startTime, streamKeyTs } = ctx;
   const key = buildStreamKey(channelId, streamKeyTs);
   const existing = streamState.get(key);
   streamState.delete(key);
-
-  // Remove the inbound-side hourglass reaction (FIFO queue)
-  removePendingReaction(client, channelId, typingIndicator, pendingReactions, logger);
-
-  // Also attempt outbound-side removal as fallback
-  if (existing?.threadTs) {
-    removeTypingReaction(client, channelId, existing.threadTs, typingIndicator, logger);
-  }
 
   if (existing) {
     if (existing.nativeStreamId) {

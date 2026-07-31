@@ -184,18 +184,19 @@ export const SLACK_MANIFEST: AdapterManifest = {
     },
     {
       key: 'typingIndicator',
-      label: 'Typing Indicator',
+      label: 'Working Indicator',
       type: 'select',
       required: false,
-      description: 'Show a visual indicator while the agent is working. Enabled by default.',
+      description: 'Show that an agent is working on your message. Enabled by default.',
       options: [
         { label: 'None', value: 'none' },
         { label: 'Emoji reaction', value: 'reaction' },
       ],
       visibleByDefault: true,
       helpMarkdown:
-        'When set to "Emoji reaction", adds an :hourglass_flowing_sand: reaction to your message ' +
-        'while the agent is processing. Requires the `reactions:write` and `reactions:read` scopes.',
+        'When on, your message gets an :eyes: reaction the moment an agent starts working on ' +
+        'it \u2014 and loses it when the agent replies or fails. A message nobody picks up is ' +
+        'never marked. Requires the `reactions:write` and `reactions:read` scopes.',
     },
     {
       key: 'respondMode',
