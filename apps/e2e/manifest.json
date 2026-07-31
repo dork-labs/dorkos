@@ -276,6 +276,18 @@
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
+    },
+    "room-presence-sidebar": {
+      "specFile": "tests/rooms/room-presence-sidebar.spec.ts",
+      "feature": "rooms",
+      "description": "the dot appears on the working room alone, and goes out when the work ends",
+      "lastRun": "2026-07-31T08:36:18.938Z",
+      "lastStatus": "passed",
+      "runCount": 1,
+      "passCount": 1,
+      "failCount": 0,
+      "relatedCode": [],
+      "lastModified": ""
     }
   },
   "runHistory": [
@@ -1052,6 +1064,15 @@
       "failed": 1,
       "skipped": 0,
       "duration": 19571
+    },
+    {
+      "id": "2026-07-31T08-36-18",
+      "timestamp": "2026-07-31T08:36:18.938Z",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 14107
     }
   ]
 }

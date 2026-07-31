@@ -201,6 +201,14 @@ export class RoomService {
       // get wrong.
       publishPresence: (roomId, authorId, presence) =>
         this.publishSignal(roomId, 'progress', authorId, presence),
+      // Deliberately NOT `room_activity`, which is the other event a room's work
+      // makes the sidebar redraw for. That one fires on a committed entry and
+      // carries the `seq` its reader orders the list by; a claim has no entry and
+      // no `seq`, so borrowing the name would have meant either a lie in the
+      // payload or a second meaning for its consumer to disambiguate
+      // (room-presence spec §6).
+      publishWorkingCount: (roomId, working) =>
+        eventFanOut.broadcast('room_presence', { roomId, working }),
     });
   }
 
@@ -406,6 +414,12 @@ export class RoomService {
         ...room,
         unreadCount: cursor === undefined ? null : this.store.countUnread(room.id, cursor),
         participants: participants.get(room.id) ?? null,
+        // Always a number, `0` included. A dot that only appears once the next
+        // republish tick lands would leave a freshly loaded cockpit blind for up
+        // to ten seconds about work already running — and an ABSENT count would
+        // be indistinguishable from "this server does not know", which is the
+        // one thing it is never true of: the claim map is right here.
+        working: this.triggers.workingCount(room.id),
       };
     });
   }

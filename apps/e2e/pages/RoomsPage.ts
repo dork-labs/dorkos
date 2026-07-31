@@ -162,6 +162,20 @@ export class RoomsPage {
     return this.row(spokenName).locator('[data-slot="room-avatar"]');
   }
 
+  /**
+   * The dot on a sidebar row that says an agent is working in that room.
+   *
+   * Found by its accessible name, which is also what it is FOR: a dot with no
+   * text is only useful to a reader who can see it, so the count lives in the
+   * label. Matching on the label is therefore the same assertion as matching on
+   * the pixel, and one a screen-reader user shares.
+   *
+   * @param spokenName - The room's spoken name.
+   */
+  rowWorkingDot(spokenName: string): Locator {
+    return this.row(spokenName).getByRole('img', { name: /agents? working$/ });
+  }
+
   /** The mark drawn beside the open room's name in its masthead. */
   get headerMark(): Locator {
     return this.roomHeader.locator('[data-slot="room-avatar"]');

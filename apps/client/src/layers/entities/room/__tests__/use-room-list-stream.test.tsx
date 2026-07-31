@@ -13,12 +13,13 @@ import { renderHook } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useRoomListStream } from '../model/use-room-list-stream';
+import { useRoomWorkingStore } from '../model/use-room-working';
 
 /** Handlers registered by the hook, keyed by the event they wait for. */
-const handlers = new Map<string, () => void>();
+const handlers = new Map<string, (payload?: unknown) => void>();
 
 vi.mock('@/layers/shared/model', () => ({
-  useEventSubscription: (event: string, handler: () => void) => {
+  useEventSubscription: (event: string, handler: (payload?: unknown) => void) => {
     handlers.set(event, handler);
   },
 }));
@@ -61,8 +62,21 @@ describe('useRoomListStream', () => {
       'room_created',
       'room_member_added',
       'room_member_removed',
+      'room_presence',
       'room_updated',
     ]);
+  });
+
+  it('feeds the working store from presence without refetching the list', () => {
+    // The one event here that must not invalidate: it fires at every claim and
+    // again every ten seconds while a turn runs, so refetching on it would turn
+    // one busy room into a poll of every row — for a fact the payload carries
+    // whole. Seed the defect by calling `refresh` from the presence handler and
+    // the second assertion goes red.
+    const invalidated = setup();
+    handlers.get('room_presence')!({ roomId: 'room-1', working: 2 });
+    expect(useRoomWorkingStore.getState().rooms['room-1']?.working).toBe(2);
+    expect(invalidated).toEqual([]);
   });
 
   it('refreshes both lists when a member is removed', () => {

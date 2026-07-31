@@ -14,6 +14,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEventSubscription } from '@/layers/shared/model';
 import { roomKeys } from '../api/query-keys';
+import { useRoomWorkingStore } from './use-room-working';
 
 /** Global events that change what a room list row says. */
 const ROOM_LIST_EVENTS = [
@@ -54,4 +55,13 @@ export function useRoomListStream(): void {
   useEventSubscription(ROOM_LIST_EVENTS[2], refresh);
   useEventSubscription(ROOM_LIST_EVENTS[3], refresh);
   useEventSubscription(ROOM_LIST_EVENTS[4], refresh);
+
+  // Presence is the one room-list event that must NOT refetch. It fires when a
+  // claim is taken and again every ten seconds while the work runs, so treating
+  // it like the five above would turn every busy room into a poll of the whole
+  // list — for a fact the event already carries in full. It goes to a store the
+  // rows read directly instead.
+  useEventSubscription('room_presence', (payload) =>
+    useRoomWorkingStore.getState().observe(payload)
+  );
 }

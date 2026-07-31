@@ -17,6 +17,7 @@ export { useRoomStream, mergeRoomEntry } from './model/use-room-stream';
 export type { RoomStreamState } from './model/use-room-stream';
 export { useRoomPresence, useRoomPresenceStore, PRESENCE_TICK_MS } from './model/use-room-presence';
 export type { PresenceScope, RoomPresenceAuthor } from './model/use-room-presence';
+export { useRoomWorking, useRoomWorkingStore } from './model/use-room-working';
 export { usePostToRoom } from './model/use-post-to-room';
 export type { PostToRoomInput } from './model/use-post-to-room';
 export { useReplyInThread } from './model/use-reply-in-thread';

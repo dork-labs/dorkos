@@ -5034,6 +5034,11 @@
                   "$ref": "#/components/schemas/AuthorRef"
                 },
                 "description": "Direct messages only: the DM's resolved roster. `null` — never `[]` — for a channel, meaning \"not carried here\". A DM's mark IS whoever it is with, so a sidebar that did not get the roster could only hash the room id and draw a stranger; a DM's roster is whoever one person assembled by hand, which is small enough to ride along on every list. A channel reads as `#slug`, so its roster would be payload nothing renders — and a channel's roster is the one with no ceiling on it."
+              },
+              "working": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "How many agents are working in this room right now — `0` when nobody is. The server always sends it; it is optional only so a caller that predates it still parses. It is a live read of the dispatcher's claim map at the moment of the request, not stored state, so it is the same fact the `room_presence` stream carries and exists purely so a freshly loaded sidebar draws its dots without waiting for the next republish tick."
               }
             },
             "required": [
