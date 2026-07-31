@@ -500,13 +500,21 @@ export class RuntimeRegistry {
  * typo) keeps the built-in default rather than failing boot. Returns whether
  * the configured value was applied so the caller can log the outcome.
  *
- * Caveat: a few subsystems still assume the default runtime is Claude-shaped —
- * notably the relay `AdapterManager`, which casts `getDefault()` to
- * `ClaudeCodeAgentRuntimeLike` (`index.ts`). Pointing `runtimes.default` at
- * `codex`/`opencode` is technically possible but unsupported (changing the
- * shipped default is a spec Non-Goal); those adapters would call Claude-specific
- * methods on a non-Claude instance. Per-session runtime selection (the picker,
- * `?runtime=`, agent manifests) is the supported path and is unaffected.
+ * The default is shape-neutral: nothing reads `getDefault()` expecting a
+ * Claude-shaped runtime. Callers use only the `AgentRuntime` interface, so
+ * `codex` or `opencode` is a legitimate `runtimes.default` — the surfaces that
+ * fall back to it (models, commands, subagents, MCP config) report that
+ * runtime's own truth, and MCP config degrades to "no servers" rather than
+ * reading Claude's `.mcp.json`. `claude-code` remains the *shipped* default;
+ * that is a product choice, not a structural constraint.
+ *
+ * The relay is the one genuinely Claude-specific consumer, and it does not read
+ * the default at all: the composition root binds it to the concrete claude-code
+ * runtime (`relayAgentRuntime` in `index.ts`). {@link getDefaultType} is still
+ * consulted once inside the relay — the binding subsystem prefers the default
+ * when choosing which runtime to create chat-originated sessions on — but a
+ * default the relay does not hold now falls back to the runtime it does hold and
+ * logs the mismatch, instead of aborting binding initialization.
  *
  * @param registry - The registry with all production runtimes registered
  * @param configured - The `runtimes.default` config value

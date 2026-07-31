@@ -23,6 +23,18 @@ import type { StreamEvent } from '@dorkos/shared/types';
  * types that are not relevant to the adapter's narrow concerns.
  */
 export interface AgentRuntimeLike {
+  /**
+   * The runtime's own type string (`'claude-code'`, `'test-mode'`, …).
+   *
+   * Optional because the adapter itself never dispatches on it — the handlers
+   * below work the same whoever is behind them. It exists so a caller holding
+   * only an `AgentRuntimeLike` can key it correctly in a runtime map instead of
+   * guessing `'claude-code'`, which is wrong for every runtime that isn't
+   * Claude Code and silently disables anything that looks the key up again.
+   * Every real `AgentRuntime` supplies it.
+   */
+  readonly type?: string;
+
   ensureSession(
     sessionId: string,
     opts: { permissionMode: string; cwd?: string; hasStarted?: boolean }

@@ -220,6 +220,21 @@ let claudeRuntime: ClaudeCodeRuntime | null = null;
 // (SchedulerAgentManager needs only ensureSession + sendMessage, both of which
 // TestModeRuntime implements). Never a real agent binary in test mode.
 let schedulerAgentManager: SchedulerAgentManager | null = null;
+// The runtime the relay's Claude Code adapter drives. Its need is
+// Claude-specific, not default-specific: the adapter speaks the Claude Agent
+// SDK's session/approval vocabulary, so it is bound to the concrete
+// claude-code runtime here at construction rather than read off
+// `runtimeRegistry.getDefault()`. That keeps `runtimes.default` free to point
+// at codex or opencode without the relay calling Claude-shaped methods on a
+// runtime that has none. Test mode substitutes TestModeRuntime, which
+// implements the same narrow surface with no real agent binary.
+//
+// It carries its own `type` rather than being paired with a separate type
+// variable, because the two are the same fact and two variables holding one
+// fact drift. AdapterManager keys its runtime map by that type, so the key is
+// always the runtime's actual identity — `test-mode` in test mode, not a
+// hardcoded `claude-code` that no lookup would ever match.
+let relayAgentRuntime: (ClaudeCodeAgentRuntimeLike & { readonly type: string }) | null = null;
 let schedulerService: TaskSchedulerService | null = null;
 let relayCore: RelayCore | undefined;
 let adapterRegistry: AdapterRegistry | undefined;
@@ -548,6 +563,7 @@ async function start() {
     runtimeRegistry.register(testRuntime);
     // Let the Tasks scheduler drive the test-mode runtime (see declaration).
     schedulerAgentManager = testRuntime;
+    relayAgentRuntime = testRuntime;
     // Optional SECOND instance under a distinct type — gives e2e a server with
     // more than one registered runtime (status-bar picker, ?runtime= launch
     // binding, session-list runtime marks) with zero real agent binaries.
@@ -568,6 +584,7 @@ async function start() {
   } else {
     claudeRuntime = new ClaudeCodeRuntime(dorkHome, env.DORKOS_DEFAULT_CWD);
     schedulerAgentManager = claudeRuntime;
+    relayAgentRuntime = claudeRuntime;
     runtimeRegistry.register(claudeRuntime);
     // Inject the core session-settings store (ADR-0260). The registry implements
     // SessionSettingsPort structurally over session_metadata; setDb() ran above.
@@ -909,13 +926,20 @@ async function start() {
 
   // Phase C: adapter manager — now meshCore is available for CWD resolution.
   // Must run after meshCore init so buildContext() can call meshCore.getProjectPath().
-  // Uses runtimeRegistry.getDefault() so this works in both production (ClaudeCodeRuntime)
-  // and test mode (TestModeRuntime). Both satisfy AgentRuntimeLike structurally.
-  if (relayEnabled && relayCore && adapterRegistry && traceStore) {
+  // Driven by `relayAgentRuntime` — the concrete claude-code runtime (or, in
+  // test mode, TestModeRuntime), never `runtimeRegistry.getDefault()`. See the
+  // declaration: the relay's need is Claude-specific, so it must not follow
+  // `runtimes.default` to a codex or opencode runtime.
+  //
+  // Passed as the `agentRuntimes` map keyed by the runtime's own `type`, not
+  // through the deprecated single-`agentManager` field. That field's compat
+  // wrap keys everything under `'claude-code'`, which is a lie in test mode and
+  // the reason binding routing has been silently dead there.
+  if (relayEnabled && relayCore && adapterRegistry && traceStore && relayAgentRuntime) {
     try {
       const adapterConfigPath = path.join(dorkHome, 'relay', 'adapters.json');
       adapterManager = new AdapterManager(adapterRegistry, adapterConfigPath, {
-        agentManager: runtimeRegistry.getDefault() as unknown as ClaudeCodeAgentRuntimeLike,
+        agentRuntimes: new Map([[relayAgentRuntime.type, relayAgentRuntime]]),
         traceStore,
         taskStore: taskStore,
         relayCore,
@@ -950,6 +974,14 @@ async function start() {
       // Adapters (including ClaudeCodeAdapter) will be unavailable.
       adapterManager = undefined;
     }
+  } else if (relayEnabled && relayCore && adapterRegistry && traceStore) {
+    // Reachable only if a future branch registers runtimes without assigning
+    // `relayAgentRuntime`. Silence here would look exactly like a relay that
+    // works: adapters simply never start, and chat platforms go quiet.
+    logger.error(
+      '[Relay] No agent runtime bound for the relay — adapters will not start. ' +
+        'Every runtime-registration branch in start() must assign relayAgentRuntime.'
+    );
   }
 
   // Store-level run-terminal hook (DOR-240): the single seam that fires exactly
@@ -1896,10 +1928,14 @@ async function start() {
   // Finalize app: API 404 catch-all, error handler, and SPA serving
   finalizeApp(app);
 
-  // Inject relay into the active runtime (a no-op for both runtimes today;
+  // Inject relay into every registered runtime (a no-op for all runtimes today;
   // the method survives on the interface for future relay-aware runtimes).
+  // Registry-wide rather than default-only: a relay-aware runtime needs the
+  // relay whether or not it happens to be `runtimes.default`.
   if (relayCore) {
-    runtimeRegistry.getDefault().setRelay?.(relayCore);
+    for (const runtime of runtimeRegistry.listRuntimes()) {
+      runtime.setRelay?.(relayCore);
+    }
   }
 
   const host = env.DORKOS_HOST;

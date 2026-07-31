@@ -26,10 +26,10 @@ export interface BindingSubsystemDeps {
   meshCore: AdapterMeshCoreLike;
   /**
    * Map from runtime type to the concrete `AgentRuntimeLike` used to create
-   * fresh sessions for incoming chat-platform messages. New sessions are
-   * created against the current default runtime (looked up via
-   * `runtimeRegistry.getDefaultType()`); multi-runtime dispatch of
-   * existing sessions happens in the adapter manager.
+   * fresh sessions for incoming chat-platform messages. See
+   * {@link resolveSessionCreatorRuntime} for which entry gets picked when
+   * `runtimes.default` names a runtime the relay does not hold. Multi-runtime
+   * dispatch of existing sessions happens in the adapter manager.
    */
   agentRuntimes: Map<string, AgentRuntimeLike>;
   /** Absolute path to the adapter config file (used to derive relayDir). */
@@ -40,6 +40,55 @@ export interface BindingSubsystemDeps {
   };
   /** Optional callback fired once per delivered inbound message (topology pulse). */
   onFlow?: (flow: RelayFlowEvent) => void;
+}
+
+/**
+ * Pick the runtime that new chat-originated sessions are created against.
+ *
+ * Prefers `runtimes.default` when the relay actually holds a runtime for it —
+ * that is the honest reading of "the user's default" and stays correct the day
+ * the relay carries more than one runtime.
+ *
+ * When it doesn't, this falls back to the relay's own registered runtime
+ * instead of failing. The relay is wired to exactly one runtime today (the
+ * Claude Code adapter is Claude-specific by construction), so under
+ * `runtimes.default: opencode` the default lookup finds nothing — and the old
+ * code threw there, which `init` caught and turned into a warn line and a
+ * silently disabled BindingRouter. Chat platforms accepted messages and
+ * delivered none. A message that arrives has to be answered by somebody; the
+ * runtime the relay was actually given is the only honest candidate, and the
+ * mismatch is logged rather than swallowed.
+ *
+ * @param agentRuntimes - Runtime-type → runtime map held by the AdapterManager.
+ * @returns The runtime to create new sessions with.
+ * @throws If the relay holds no runtimes at all — there is nothing to fall back to.
+ */
+function resolveSessionCreatorRuntime(
+  agentRuntimes: Map<string, AgentRuntimeLike>
+): AgentRuntimeLike {
+  const defaultType = runtimeRegistry.getDefaultType();
+  const preferred = agentRuntimes.get(defaultType);
+  if (preferred) return preferred;
+
+  // First insertion wins. Unambiguous today — the relay is wired to exactly one
+  // runtime — but the day it carries more than one, "first inserted" stops being
+  // a decision and becomes an accident of composition-root ordering. Give it a
+  // real rule then (an explicit relay-preferred type), rather than letting the
+  // map's iteration order quietly choose who answers a stranger's first message.
+  const [fallbackType, fallback] = agentRuntimes.entries().next().value ?? [];
+  if (!fallback || fallbackType === undefined) {
+    throw new Error(
+      '[BindingSubsystem] The relay holds no agent runtimes — cannot initialize ' +
+        'the session creator. The composition root must pass `agentRuntimes`.'
+    );
+  }
+
+  logger.info(
+    `[BindingSubsystem] Default runtime '${defaultType}' is not wired into the relay; ` +
+      `new chat-originated sessions will be created on '${fallbackType}'. ` +
+      'Existing sessions still route to their own runtime.'
+  );
+  return fallback;
 }
 
 /**
@@ -83,16 +132,9 @@ export class BindingSubsystem {
       const subsystem = new BindingSubsystem(bindingStore, agentSessionStore);
 
       // New sessions created by the BindingRouter (e.g., first chat-platform
-      // message from a user) are attached to the current default runtime.
-      // Existing sessions route to their owning runtime via session_metadata.
-      const defaultType = runtimeRegistry.getDefaultType();
-      const agentManager = deps.agentRuntimes.get(defaultType);
-      if (!agentManager) {
-        throw new Error(
-          `[BindingSubsystem] No agent runtime registered for default type '${defaultType}' — ` +
-            `cannot initialize session creator. Registered types: [${Array.from(deps.agentRuntimes.keys()).join(', ')}]`
-        );
-      }
+      // message from a user) need a runtime to be created against. Existing
+      // sessions route to their owning runtime via session_metadata.
+      const agentManager = resolveSessionCreatorRuntime(deps.agentRuntimes);
       const sessionCreator: AgentSessionCreator = {
         async createSession(cwd: string, permissionMode: PermissionMode) {
           const id = crypto.randomUUID();

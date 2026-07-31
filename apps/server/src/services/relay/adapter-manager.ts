@@ -121,14 +121,15 @@ export interface AdapterManagerDeps {
    * session's declared type (never silently falls back to a default).
    *
    * For backward compatibility, callers may pass a single `agentManager`
-   * instead — it will be normalized into a single-entry map keyed by the
-   * default runtime type (`'claude-code'`).
+   * instead — it will be normalized into a single-entry map keyed by that
+   * runtime's own `type`.
    */
   agentRuntimes?: Map<string, AgentRuntimeLike>;
   /**
    * @deprecated Provide `agentRuntimes` (a map) instead. When supplied, this
-   * single runtime is registered as the default (`'claude-code'`) entry of
-   * the internal map so existing callers continue to work while they migrate.
+   * single runtime is registered under its own `type` (falling back to
+   * `'claude-code'` for doubles that declare none) so existing callers
+   * continue to work while they migrate.
    */
   agentManager?: AgentRuntimeLike;
   traceStore: TraceStoreLike;
@@ -178,12 +179,16 @@ export class AdapterManager {
 
     // Normalize agentRuntimes input:
     //   1. If an explicit map is supplied, use it.
-    //   2. Else, if a legacy single `agentManager` is supplied, wrap it as
-    //      the default `'claude-code'` entry for backward compatibility.
+    //   2. Else, if a legacy single `agentManager` is supplied, wrap it under
+    //      its OWN `type` — not a hardcoded `'claude-code'`. The hardcode was a
+    //      silent killer: a TestModeRuntime landed under `'claude-code'` while
+    //      every lookup asked for `'test-mode'`, so binding routing failed to
+    //      initialize and the relay went quiet with only a warn line. Bare test
+    //      doubles with no `type` keep the old key, which is what they mean.
     //   3. Else, start with an empty map — register(...) can populate it later.
     this.agentRuntimes = new Map(deps.agentRuntimes ?? []);
     if (!deps.agentRuntimes && deps.agentManager) {
-      this.agentRuntimes.set('claude-code', deps.agentManager);
+      this.agentRuntimes.set(deps.agentManager.type ?? 'claude-code', deps.agentManager);
     }
   }
 
