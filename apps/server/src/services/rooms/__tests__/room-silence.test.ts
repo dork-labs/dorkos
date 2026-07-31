@@ -18,14 +18,16 @@
  * notice. A test built on that shape passes about half the time and teaches the
  * next reader nothing, so every scenario below is one the ordering cannot move.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
+import { logger } from '../../../lib/logger.js';
 import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomService } from '../room-service.js';
 import {
   agentLookupFor,
   createRoomHarness,
   outcomeRunner,
+  settleUntil,
   type ScriptedTurnRunner,
 } from './room-test-harness.js';
 
@@ -128,6 +130,12 @@ describe('a room says why an agent did not answer', () => {
       expect(notices()[0].authorId).toBe(authors.system().id);
       expect(notices()[0].body.text).toContain('Ana');
       expect(notices()[0].body.text).not.toMatch(/error|Error|lock|undefined|null/);
+      // The room has no claim of its own to describe here — another writer holds
+      // Ana's session, most often the person typing into her directly — so it
+      // says what it knows and does not invent what she is doing instead.
+      expect(notices()[0].body.text).toBe(
+        "Ana was busy and didn't pick this up. Send it again in a moment."
+      );
       expect(postsBy(ana)).toHaveLength(0);
     });
 
@@ -148,16 +156,54 @@ describe('a room says why an agent did not answer', () => {
       expect(noticesAbout(bo)[0].body.text).toContain('Bo');
     });
 
-    it('says it once, however many messages arrive while it is busy', async () => {
-      // The probe that caught the first version of this: three ordinary
-      // messages at a busy agent. Every one of them mints its own cascade root,
-      // so the cascade-keyed damping the guard uses never collided and the room
-      // got three identical apologies while the code's own doc claimed one.
+    it('answers every message that asked it, however busy it stays', async () => {
+      // **This assertion was reversed, deliberately, and the reversal is the
+      // fix.** It used to expect ONE line for three messages, on the reasoning
+      // that three apologies are over-participation. What that shipped was
+      // worse: damping on `(room, agent, reason)` has no clock and clears only
+      // when the agent actually takes a turn, so "say it once" meant "say it
+      // once, ever". A person asked "@X are you there?" into a room that had
+      // reported X busy some time earlier and got total silence — twice — which
+      // from inside the room is indistinguishable from a product that dropped
+      // the message (DOR-781).
       //
-      // Only the FIRST reaches the runner now. The other two arrive while Ana
-      // holds a claim here, and the dispatcher refuses them outright rather than
-      // starting a second turn on her session (DOR-752) — which is the same
-      // answer arrived at one layer earlier, and the same single apology.
+      // A direct question deserves a direct answer, every time it is asked. This
+      // cannot become a flood: the bound is per ADDRESSED message and the sender
+      // is the one addressing, so somebody gets back exactly as many lines as
+      // they wrote messages naming Ana. Nothing an agent does inflates it.
+      //
+      // What stays damped is everything nobody directed at her — the test below.
+      open(outcomeRunner(() => ({ text: null, unanswered: 'busy' })));
+      for (const text of ['@ana is the build green?', '@ana still there?', '@ana hello?']) {
+        service.post(room.id, { authorId: human, text });
+      }
+      await service.triggersIdle();
+
+      // Only the FIRST reaches the runner: the other two arrive while Ana holds
+      // a claim here, and the dispatcher refuses them outright rather than
+      // starting a second turn on her session (DOR-752).
+      expect(runner.turns.filter((turn) => turn.authorId === ana)).toHaveLength(1);
+      expect(noticesAbout(ana)).toHaveLength(3);
+      expect(notices()).toHaveLength(3);
+      expect(noticesAbout(ana).map((entry) => entry.body.notice)).toEqual([
+        'agent_busy',
+        'agent_busy',
+        'agent_busy',
+      ]);
+    });
+
+    it('says it once for ordinary chatter that never asked it anything', async () => {
+      // The narrowness that keeps the rule above from becoming the flood it was
+      // meant to prevent.
+      //
+      // `engaged` is the channel default and `always` is set here, so an agent
+      // is triggered by EVERY message for the length of its window — not just
+      // the ones naming it. An exemption keyed on "a person wrote this" rather
+      // than "a person asked THIS agent" therefore fires on ordinary
+      // conversation: three unrelated messages while Ana ran late produced three
+      // apologies about an agent nobody had addressed.
+      //
+      // Nobody is owed a repeat for a message they never aimed at her.
       open(outcomeRunner(() => ({ text: null, unanswered: 'busy' })));
       for (const text of ['is the build green?', 'still there?', 'hello?']) {
         service.post(room.id, { authorId: human, text });
@@ -167,6 +213,89 @@ describe('a room says why an agent did not answer', () => {
       expect(runner.turns.filter((turn) => turn.authorId === ana)).toHaveLength(1);
       expect(noticesAbout(ana)).toHaveLength(1);
       expect(notices()).toHaveLength(1);
+    });
+
+    it('answers every message in a direct message, where naming is implicit', async () => {
+      // A DM has one agent on the other side, so every message a person sends
+      // there is addressed to it — nobody types `@ana` into their own DM with
+      // Ana. Requiring a literal mention would make the one room where every
+      // message is a direct question the one room that never answers a repeat.
+      open(outcomeRunner(() => ({ text: null, unanswered: 'busy' })));
+      const dm = service.createRoom(
+        { kind: 'dm', title: 'Ana', members: [], agentPaths: ['/agents/ana'] },
+        human
+      );
+      for (const text of ['is the build green?', 'still there?']) {
+        service.post(dm.id, { authorId: human, text });
+      }
+      await service.triggersIdle();
+
+      const dmNotices = service
+        .listEntries(dm.id, human, { limit: 50 })
+        .filter((entry) => entry.kind === 'notice');
+      expect(dmNotices).toHaveLength(2);
+      expect(dmNotices.every((entry) => entry.body.notice === 'agent_busy')).toBe(true);
+    });
+
+    it('says it once when a cascade keeps re-triggering the same busy agent, and logs both', async () => {
+      // The other half, and the reason the damping key exists at all. Bo and Cy
+      // both answer the person by handing the question to Ana, who is mid-turn
+      // — so two agent-authored entries refuse against the same busy agent,
+      // inside one exchange nobody typed. That is exactly the traffic E17 is
+      // about, and it gets one line.
+      //
+      // Everyone is `mention-only` so that who runs is a property of the
+      // message rather than of an engagement window, and so that Bo's and Cy's
+      // replies cannot trigger each other into a different notice entirely.
+      //
+      // The log half is the incident's other lesson. Forty-one minutes of a room
+      // going quiet left three lines in the whole server log, and the decisions
+      // that mattered most — the refusals a damping key swallowed — left none:
+      // from outside, a damped refusal and a trigger that never happened are the
+      // same absence. A damped notice is still a decision the room MADE.
+      const reported = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+      let landAna: (reply: { text: string; waitedMs: number }) => void = () => undefined;
+      const late = new Promise<{ text: string; waitedMs: number }>((resolve) => {
+        landAna = resolve;
+      });
+      open(
+        outcomeRunner((request) =>
+          request.authorId === ana ? { text: null, late } : { text: 'over to @ana' }
+        ),
+        ['/agents/ana', '/agents/bo', '/agents/cy']
+      );
+      for (const agent of [ana, bo, cy]) {
+        service.updateMembership(room.id, human, agent, 'mention-only');
+      }
+
+      // Ana is asked, and outruns the wait — so she holds a claim from here on.
+      service.post(room.id, { authorId: human, text: '@ana can you check the deploy?' });
+      // One message, two agents, and each of their answers names Ana.
+      service.post(room.id, { authorId: human, text: '@bo @cy can either of you chase it?' });
+      await settleUntil(
+        () => postsBy(bo).length === 1 && postsBy(cy).length === 1,
+        'Bo and Cy both answered, each naming Ana'
+      );
+
+      // Two agent-authored triggers, one line. Ana ran once and only once.
+      expect(runner.turns.filter((turn) => turn.authorId === ana)).toHaveLength(1);
+      expect(noticesAbout(ana)).toHaveLength(1);
+      expect(noticesAbout(ana)[0].body.notice).toBe('agent_busy');
+
+      // Two refusals happened. One was written into the room; both are on the
+      // log, and the one that was swallowed says so.
+      const refusals = reported.mock.calls.filter(
+        ([message]) => message === '[rooms] an agent did not answer'
+      );
+      expect(refusals).toHaveLength(2);
+      expect(refusals.map(([, context]) => (context as { damped: boolean }).damped)).toEqual([
+        false,
+        true,
+      ]);
+      reported.mockRestore();
+
+      landAna({ text: 'green', waitedMs: 12 * 60_000 });
+      await service.triggersIdle();
     });
 
     it('says it again once the agent has answered and gone quiet a second time', async () => {
@@ -203,6 +332,41 @@ describe('a room says why an agent did not answer', () => {
       // The room log is no place for a stack trace: the detail belongs on the
       // agent's own session stream, and the notice points there.
       expect(notices()[0].body.text).not.toMatch(/Error:|stack|undefined/);
+    });
+
+    it('says so every time, because an error is news each time it happens', async () => {
+      // `turn_failed` is not damped, and never was meant to be
+      // (room-participation spec §5.2). It shared the busy path's memory anyway,
+      // so the second crash in a row was swallowed: a room whose agent was
+      // failing on every message reported it once and then went quiet, which
+      // reads as the agent having recovered.
+      //
+      // A busy line can be a repeat of a state that has not changed. A turn that
+      // crashed is an event that just happened, and there is no such thing as a
+      // repeat of one.
+      //
+      // Both of Ana's turns are triggered by BO, not by the person — deliberately
+      // the damped side of the busy rule, so this measures "a failure is never
+      // damped" rather than borrowing the "a person is never damped" exemption
+      // that sits beside it.
+      open(
+        outcomeRunner((request) =>
+          request.authorId === ana ? { text: null, unanswered: 'failed' } : { text: 'over to @ana' }
+        ),
+        ['/agents/ana', '/agents/bo']
+      );
+      for (const agent of [ana, bo]) {
+        service.updateMembership(room.id, human, agent, 'mention-only');
+      }
+
+      await seedAndSettle('@bo is the build green?');
+      await seedAndSettle('@bo and the migration?');
+
+      expect(runner.turns.filter((turn) => turn.authorId === ana)).toHaveLength(2);
+      expect(noticesAbout(ana).map((entry) => entry.body.notice)).toEqual([
+        'turn_failed',
+        'turn_failed',
+      ]);
     });
 
     it('says so when the turn throws before it produces anything', async () => {
@@ -333,6 +497,111 @@ describe('a room says why an agent did not answer', () => {
         'This answers the message from 12 minutes ago: "is the build green?"\n\ngreen'
       );
       expect(notices()).toHaveLength(0);
+    });
+
+    it('re-addresses nobody from the question it quotes, however many names it held', async () => {
+      // The late answer used to re-address the whole question it was answering.
+      //
+      // Its prefix quotes that question, and the quote kept the `@` sigils — so
+      // the handles were resolved again at write time and everyone the person
+      // originally named was addressed by the ANSWER to them, minutes later. One
+      // observed entry mentioned the agent that wrote it, from nothing but the
+      // quote in its own prefix.
+      //
+      // The fix is at the source: the quote carries the words and not the
+      // addresses. Nothing about the POST is special — see the test below, which
+      // is the half that says so.
+      let land: (reply: { text: string; waitedMs: number }) => void = () => undefined;
+      const late = new Promise<{ text: string; waitedMs: number }>((resolve) => {
+        land = resolve;
+      });
+      open(
+        outcomeRunner((request) =>
+          request.authorId === ana ? { text: null, late } : { text: 'nothing from me' }
+        ),
+        ['/agents/ana', '/agents/bo', '/agents/cy']
+      );
+      for (const agent of [ana, bo, cy]) {
+        service.updateMembership(room.id, human, agent, 'mention-only');
+      }
+
+      const asked = service.post(room.id, {
+        authorId: human,
+        text: '@ana @bo @cy is the build green?',
+      });
+      await settleUntil(
+        () => postsBy(bo).length === 1 && postsBy(cy).length === 1,
+        'Bo and Cy answered while Ana ran on'
+      );
+      // Everyone the person named was addressed exactly once, which is correct
+      // and is the baseline the assertions below are measured against.
+      expect(asked.mentions).toEqual([ana, bo, cy]);
+
+      land({ text: 'all green', waitedMs: 12 * 60_000 });
+      await service.triggersIdle();
+
+      const answer = postsBy(ana)[0];
+      // The quote is still there — it is what tells the reader which message
+      // this belongs to — and it still carries the words, minus the addresses.
+      expect(answer.body.text).toBe(
+        'This answers the message from 12 minutes ago: "ana bo cy is the build green?"\n\nall green'
+      );
+      // Ana said nothing that addresses anybody, so the entry addresses nobody.
+      // Ana least of all: an agent cannot be re-triggered by a quote of the
+      // question it was asked, which is exactly the self-mention in the incident.
+      expect(answer.mentions).toEqual([]);
+      // And nobody ran a second turn off it.
+      expect(runner.turns.filter((turn) => turn.authorId === bo)).toHaveLength(1);
+      expect(runner.turns.filter((turn) => turn.authorId === cy)).toHaveLength(1);
+      expect(runner.turns.filter((turn) => turn.authorId === ana)).toHaveLength(1);
+      expect(notices()).toEqual([]);
+    });
+
+    it('still reaches whoever the late answer names in its own words', async () => {
+      // The counter-assertion, and a decision worth stating: a late answer is
+      // posted like any other and addresses people like any other.
+      //
+      // It was briefly written with its dispatch suppressed, on the theory that a
+      // reply to an already-dispatched question must not open a second hop. That
+      // over-corrected. The spam it was aimed at came from the QUOTE, which the
+      // test above closes at the source; what suppression ALSO dropped was the
+      // agent's own words. An agent that comes back after ten minutes with "@bo
+      // can you deploy it?" is handing work over, and silently reaching nobody
+      // with it is the one thing this file is not allowed to do — a dropped
+      // trigger is indistinguishable from a broken agent.
+      //
+      // Bo is deliberately not in the original question: he never entered this
+      // cascade, so the ancestry rule has no reason to refuse him and what is
+      // measured is the addressing, not the guard.
+      let land: (reply: { text: string; waitedMs: number }) => void = () => undefined;
+      const late = new Promise<{ text: string; waitedMs: number }>((resolve) => {
+        land = resolve;
+      });
+      open(
+        outcomeRunner((request) =>
+          request.authorId === ana ? { text: null, late } : { text: 'nothing from me' }
+        ),
+        ['/agents/ana', '/agents/bo', '/agents/cy']
+      );
+      for (const agent of [ana, bo, cy]) {
+        service.updateMembership(room.id, human, agent, 'mention-only');
+      }
+
+      service.post(room.id, { authorId: human, text: '@ana @cy is the build green?' });
+      await settleUntil(() => postsBy(cy).length === 1, 'Cy answered while Ana ran on');
+      expect(runner.turns.filter((turn) => turn.authorId === bo)).toHaveLength(0);
+
+      land({ text: 'all green — @bo can you deploy it?', waitedMs: 12 * 60_000 });
+      await service.triggersIdle();
+
+      const answer = postsBy(ana)[0];
+      // Bo, and only Bo: the quote named Ana and Cy, and neither is here.
+      expect(answer.mentions).toEqual([bo]);
+      // And he was actually asked, which is the part a person in the room would
+      // notice going missing.
+      expect(runner.turns.filter((turn) => turn.authorId === bo)).toHaveLength(1);
+      expect(runner.turns.filter((turn) => turn.authorId === cy)).toHaveLength(1);
+      expect(notices()).toEqual([]);
     });
 
     it('says the turn failed when the late answer never arrives', async () => {

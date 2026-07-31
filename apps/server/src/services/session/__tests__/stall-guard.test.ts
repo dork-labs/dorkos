@@ -15,6 +15,12 @@ import type { StallGuardOpts } from '../stall-guard.js';
 import { SESSIONS } from '../../../config/constants.js';
 import { logger } from '../../../lib/logger.js';
 
+// The guard says out loud when it fires, and consola collapses an identical
+// line repeated soon after by PARKING A TIMER to flush the repeat count. Every
+// stall below logs the same sentence, so from the second one on that timer is
+// live — and `no timer left behind` counts every fake timer, not just the
+// guard's. Replacing the logger keeps that assertion about the thing it names,
+// and makes the line itself assertable rather than merely emitted.
 vi.mock('../../../lib/logger.js', () => ({
   logger: {
     info: vi.fn(),
@@ -26,6 +32,9 @@ vi.mock('../../../lib/logger.js', () => ({
     withTag: vi.fn().mockReturnThis(),
   },
 }));
+
+/** What the guard said, for the tests that pin it. */
+const warned = vi.mocked(logger.warn);
 
 const TEN_MINUTES = 10 * 60 * 1000;
 const SESSION_ID = 'stall-guard-session';
@@ -126,6 +135,7 @@ function makeOpts(overrides: Partial<StallGuardOpts> = {}): StallGuardOpts {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.useFakeTimers();
+  warned.mockClear();
 });
 
 afterEach(() => {
@@ -184,6 +194,15 @@ describe('withStallGuard', () => {
     await flush();
     expect(collector.events).toEqual(stallCloseEvents('aborted'));
     expect(collector.isEnded()).toBe(true);
+
+    // And it said so. Everything downstream of a stall reports a turn that
+    // "failed" without saying why: a room showed an agent working for
+    // forty-one minutes and the only trace of the watchdog ending it was the
+    // absence of an answer.
+    expect(warned).toHaveBeenCalledWith(
+      '[stall-guard] no activity from the runtime; interrupting the turn',
+      { sessionId: SESSION_ID, inactivityMs: TEN_MINUTES, timeoutMs: TEN_MINUTES }
+    );
   });
 
   it('closes with the leaked-process details when onStall resolves false', async () => {

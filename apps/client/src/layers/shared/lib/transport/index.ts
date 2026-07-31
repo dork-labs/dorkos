@@ -5,6 +5,7 @@
  * @module shared/lib/transport
  */
 export { HttpTransport } from './http-transport';
+export { RoomStreamHttpError, isFatalStreamError } from './room-methods';
 export { SSEConnection, type SSEConnectionOptions } from './sse-connection';
 export {
   StreamManager,

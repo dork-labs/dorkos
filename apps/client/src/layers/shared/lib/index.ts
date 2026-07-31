@@ -55,7 +55,7 @@ export { isBypassPermissionMode, permissionModeLabel } from './permission-mode';
 export { isSessionRequestReady } from './session-request-scope';
 export { rankMatch, type MatchTier, type RankMatchResult } from './rank-match';
 export { buildClientReport } from './build-issue-report';
-export { HttpTransport, streamManager } from './transport';
+export { HttpTransport, streamManager, RoomStreamHttpError, isFatalStreamError } from './transport';
 export { DirectTransport, type DirectTransportServices } from './direct-transport';
 export { reportClientError, installClientErrorHandlers } from './client-error-reporter';
 export { getToolLabel, getMcpServerBadge, parseMcpToolName } from './tool-labels';
@@ -135,7 +135,7 @@ export { useAppForm, withForm, formOptions, useFieldContext, useFormContext } fr
 export { formatDuration } from './format-duration';
 export { humanizePackageName, packageDisplayLabel, isSingleEmoji } from './humanize-name';
 export { truncateMiddle } from './truncate-middle';
-export { queryClient, createQueryClientConfig } from './query-client';
+export { queryClient, createQueryClientConfig, isStreamOwnedQuery } from './query-client';
 export { classifyContent, type ContentType } from './classify-content';
 export { resolveAgentVisual } from './resolve-agent-visual';
 export type { AgentVisual, AgentVisualSource } from './resolve-agent-visual';

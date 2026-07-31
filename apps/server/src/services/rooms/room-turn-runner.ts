@@ -294,6 +294,27 @@ interface ReplyCollector {
 }
 
 /**
+ * The events that end one assistant message and begin the next.
+ *
+ * There is no message boundary on the durable session stream to read — the
+ * normalizer's own doc says turn boundaries are synthesized and nothing carries
+ * a message one — so this is the closest honest proxy, and it is exact for the
+ * shape that matters. A model that stops to use a tool emits its text and the
+ * `tool_use` in ONE message; the result comes back, and everything after it is a
+ * NEW message. So text either side of a tool call was never one paragraph, and
+ * concatenating it produced the observed `"…before answering.Congrats on…"` —
+ * a pre-tool preamble welded to the answer with no space between them.
+ *
+ * `status_change` is deliberately NOT here, though it does fire at each
+ * message's end (the SDK's `message_delta` token count maps onto it). It also
+ * fires mid-message, so breaking on it would split single paragraphs at
+ * unpredictable points. `thinking_delta` is not here either: reasoning precedes
+ * the text of the message it belongs to, so it separates nothing on its own, and
+ * anything that follows a tool result is caught by the boundary already.
+ */
+const MESSAGE_BOUNDARY = new Set(['tool_call', 'tool_result']);
+
+/**
  * Accumulate a turn's assistant text from the session's own event stream.
  *
  * **Bounded by its own turn, at both ends.** The read starts at this turn's
@@ -316,6 +337,13 @@ interface ReplyCollector {
  * `turn_end` also carries `terminalReason`, which is how a turn that failed is
  * told from one that simply had nothing to say — the two used to be the same
  * `null` here, and the room reported neither.
+ *
+ * **Text is collected in paragraphs, not one string.** Every `text_delta` in the
+ * turn used to be appended to a single buffer, so a message the agent wrote
+ * before reaching for a tool was glued to the answer it wrote afterwards, with
+ * no separator at all. Each run of deltas between {@link MESSAGE_BOUNDARY}
+ * events is kept whole and the runs are joined with a blank line, so nothing is
+ * dropped and the post reads the way the agent wrote it.
  *
  * ONE subscription serves both phases. The deadline resolves a race, it does
  * not abort the read: aborting at the deadline is what made a slow turn post
@@ -341,7 +369,15 @@ function collectReply(
   // Never rejects: both phases read this one promise, and the busy path reads
   // neither, so a rejection would surface as an unhandled one.
   const closed: Promise<CollectedTurn> = (async () => {
-    let collected = '';
+    /** One assistant message's text, finished. */
+    const paragraphs: string[] = [];
+    /** The message being streamed right now. */
+    let collecting = '';
+    /** Close the open paragraph, keeping it only if the agent said something. */
+    const endParagraph = (): void => {
+      if (collecting.trim() !== '') paragraphs.push(collecting.trim());
+      collecting = '';
+    };
     let started = false;
     let ended = false;
     let failed = false;
@@ -354,7 +390,8 @@ function collectReply(
           started = true;
           continue;
         }
-        if (event.type === 'text_delta') collected += event.text;
+        if (event.type === 'text_delta') collecting += event.text;
+        else if (MESSAGE_BOUNDARY.has(event.type)) endParagraph();
         if (event.type === 'turn_end') {
           ended = true;
           failed = event.terminalReason === 'error';
@@ -370,8 +407,11 @@ function collectReply(
     } finally {
       clearTimeout(ceiling);
     }
+    // Whatever was streaming when the turn closed — or when the ceiling gave up
+    // on it — is a paragraph too. An abandoned read still keeps what it heard.
+    endParagraph();
     return {
-      text: collected.trim() === '' ? null : collected,
+      text: paragraphs.length === 0 ? null : paragraphs.join('\n\n'),
       // A stream that ends without a `turn_end` was aborted — the ceiling, or a
       // cancel. Either way nobody got an answer, which is a failure to report.
       failed: failed || !ended,

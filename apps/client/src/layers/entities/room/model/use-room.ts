@@ -3,11 +3,13 @@
  *
  * @module entities/room/model/use-room
  */
+import { useEffect } from 'react';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { useTransport } from '@/layers/shared/model';
 import { roomKeys } from '../api/query-keys';
+import { usePendingPostStore } from './pending-posts';
 
 /**
  * Fetch one room with its roster.
@@ -27,11 +29,36 @@ export function useRoom(roomId: string | null): UseQueryResult<RoomWithRoster> {
 /**
  * One definition of a room's history query, so the reader that fetches it and
  * the reader that only looks at it can never key on different things.
+ *
+ * **The stream owns this cache entry, and every option here says so.** The read
+ * hydrates it once; from then on `useRoomStream` merges arriving entries into
+ * it and nothing else may write it. A background refetch would undo that work
+ * twice over: the server answers with the TRAILING page, so a room left open
+ * long enough to have scrolled past a page is truncated back to fifty rows, and
+ * anything the socket delivered while the GET was in flight is overwritten by a
+ * response that predates it — permanently, because the stream only recomputes
+ * its cursor when it reconnects and never re-delivers what it already sent.
+ *
+ * - `staleTime: Infinity` — nothing here goes stale, because the stream is what
+ *   keeps it current. A refetch could only ever be a step backwards.
+ * - `refetchOnWindowFocus: false` — the default fired the truncating refetch on
+ *   every alt-tab back into a room. Same precedent as `useSessionHistory`.
+ * - `refetchOnReconnect: false` — the stream has its own resume, from a cursor,
+ *   and it is gap-free; a whole-page GET beside it is a slower, lossier answer
+ *   to the same question.
+ *
+ * `meta.streamOwned` says the same thing to anything holding a broom: see
+ * `installReconnectInvalidation`, which invalidates the world when the global
+ * stream recovers and has to be told what not to sweep.
  */
 function roomEntriesQuery(transport: Transport, roomId: string | null) {
   return {
     queryKey: roomKeys.entries(roomId ?? ''),
     queryFn: () => transport.listRoomEntries(roomId!),
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    meta: { streamOwned: true },
   };
 }
 
@@ -52,7 +79,24 @@ function roomEntriesQuery(transport: Transport, roomId: string | null) {
  */
 export function useRoomEntries(roomId: string | null): UseQueryResult<RoomEntry[]> {
   const transport = useTransport();
-  return useQuery({ ...roomEntriesQuery(transport, roomId), enabled: roomId !== null });
+  const query = useQuery({ ...roomEntriesQuery(transport, roomId), enabled: roomId !== null });
+  const entries = query.data;
+
+  // A message this reader sent can reach the screen through this read as well as
+  // through the stream, and only the stream used to retire the row holding it.
+  // Any refetch while a post was in flight — a room reopened after its cache was
+  // collected, a hydrate that raced a send — therefore left a permanent
+  // "Sending…" row directly under the message it was waiting for, with nothing
+  // on it to press. Whatever puts an entry on screen has to be able to end that.
+  useEffect(() => {
+    if (roomId === null || entries === undefined) return;
+    usePendingPostStore.getState().settleMany(
+      roomId,
+      entries.map((entry) => entry.id)
+    );
+  }, [roomId, entries]);
+
+  return query;
 }
 
 /**

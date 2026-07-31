@@ -79,6 +79,19 @@ Provide a JSON object of additional HTTP headers sent with every outbound reques
 
 Leave this field empty if no custom headers are needed.
 
+Treat this field as a secret. DorkOS stores these values encrypted, hides them when it reads the settings back, and never writes them to a log — an API key belongs here, not in a plain settings file.
+
+### Loop Protection
+
+Every outbound request also carries two informational headers:
+
+| Header              | Description                                           |
+| ------------------- | ----------------------------------------------------- |
+| `X-Relay-Hop-Count` | How many relay hops this message has already taken    |
+| `X-Relay-Max-Hops`  | The ceiling after which DorkOS stops passing it along |
+
+If your service answers a DorkOS message by posting back to the inbound endpoint, send both headers back unchanged. DorkOS then counts the round trip as one more hop and stops a conversation that has started talking to itself. Omit them and each lap looks like a brand-new message, which is exactly how a loop runs forever.
+
 ## Secret Generation
 
 Both inbound and outbound directions require a shared secret for HMAC signing. Generate a secure random secret (minimum 16 characters):

@@ -40,7 +40,7 @@ describe('loadAdapterConfig — removed adapter types', () => {
       })
     );
 
-    const configs = await loadAdapterConfig(CONFIG_PATH);
+    const { adapters: configs } = await loadAdapterConfig(CONFIG_PATH);
 
     // The removed-type entry is stripped; the valid adapter survives.
     expect(configs).toHaveLength(1);
@@ -62,7 +62,7 @@ describe('loadAdapterConfig — removed adapter types', () => {
       })
     );
 
-    const configs = await loadAdapterConfig(CONFIG_PATH);
+    const { adapters: configs } = await loadAdapterConfig(CONFIG_PATH);
 
     expect(configs).toEqual([]);
     expect(logger.warn).toHaveBeenCalledWith(
@@ -70,17 +70,23 @@ describe('loadAdapterConfig — removed adapter types', () => {
     );
   });
 
-  it('leaves configs without removed types untouched and logs nothing', async () => {
+  it('leaves configs without removed types untouched and logs no migration hint', async () => {
     vi.mocked(readFile).mockResolvedValue(
       JSON.stringify({
         adapters: [{ id: 'telegram-1', type: 'telegram', enabled: true, config: { token: 'y' } }],
       })
     );
 
-    const configs = await loadAdapterConfig(CONFIG_PATH);
+    const { adapters: configs } = await loadAdapterConfig(CONFIG_PATH);
 
     expect(configs).toHaveLength(1);
-    expect(logger.warn).not.toHaveBeenCalled();
+    // No removed-type hint. There IS a warning — this stored integration
+    // predates `dmPolicy`, so it is carried forward at 'open' and said out
+    // loud (DOR-788, covered in safe-defaults.test.ts) — so this asserts on
+    // the message rather than on silence.
+    expect(
+      vi.mocked(logger.warn).mock.calls.filter((call) => String(call[0]).includes('was removed'))
+    ).toHaveLength(0);
   });
 });
 
@@ -132,5 +138,167 @@ describe('saveAdapterConfig — secret-file permissions', () => {
     );
     // ...and the final path is re-asserted to 0600 after rename.
     expect(vi.mocked(chmod)).toHaveBeenCalledWith(CONFIG_PATH, 0o600);
+  });
+});
+
+describe('loadAdapterConfig — one bad entry must not take the others down', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /** A file holding one good Slack integration and one unreadable entry. */
+  const MIXED = JSON.stringify({
+    adapters: [
+      {
+        id: 'slack-1',
+        type: 'slack',
+        enabled: true,
+        config: { botToken: 'a', appToken: 'b', signingSecret: 'c' },
+      },
+      { id: 'broken', type: 'telegram', enabled: 'yes please', config: null },
+      { id: 'telegram-1', type: 'telegram', enabled: true, config: { token: 'y' } },
+    ],
+  });
+
+  it('keeps the entries that parse', async () => {
+    // The whole array used to be parsed at once, so ONE bad entry returned
+    // nothing at all — and the next save wrote that nothing to disk.
+    vi.mocked(readFile).mockResolvedValue(MIXED);
+
+    const { adapters } = await loadAdapterConfig(CONFIG_PATH);
+
+    expect(adapters.map((a) => a.id)).toEqual(['slack-1', 'telegram-1']);
+  });
+
+  it('reports the entry it skipped, by id', async () => {
+    vi.mocked(readFile).mockResolvedValue(MIXED);
+
+    await loadAdapterConfig(CONFIG_PATH);
+
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("'broken'"),
+      expect.anything()
+    );
+  });
+
+  it('hands the unreadable entry back so a later save cannot erase it', async () => {
+    vi.mocked(readFile).mockResolvedValue(MIXED);
+
+    const { unparsed } = await loadAdapterConfig(CONFIG_PATH);
+
+    expect(unparsed).toEqual([
+      { id: 'broken', type: 'telegram', enabled: 'yes please', config: null },
+    ]);
+  });
+
+  it('writes the unreadable entry back out when a later save runs', async () => {
+    // The failure this closes: add an integration after a bad load, and the
+    // save silently deleted every integration the person had.
+    const { adapters, unparsed } = await (async () => {
+      vi.mocked(readFile).mockResolvedValue(MIXED);
+      return loadAdapterConfig(CONFIG_PATH);
+    })();
+
+    vi.mocked(writeFile).mockClear();
+    await saveAdapterConfig(CONFIG_PATH, adapters, unparsed);
+
+    const written = JSON.parse(vi.mocked(writeFile).mock.calls[0]![1] as string) as {
+      adapters: Array<{ id: string }>;
+    };
+    expect(written.adapters.map((a) => a.id)).toEqual(['slack-1', 'telegram-1', 'broken']);
+  });
+
+  it('reads nothing and keeps nothing when the file is not an adapters file at all', async () => {
+    vi.mocked(readFile).mockResolvedValue('{"nope": true}');
+
+    const loaded = await loadAdapterConfig(CONFIG_PATH);
+
+    expect(loaded).toEqual({ adapters: [], unparsed: [] });
+    expect(logger.error).toHaveBeenCalled();
+  });
+});
+
+describe('an unreadable entry does not become a permanent ghost', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /** One good entry and one unreadable entry that carries an id. */
+  const WITH_GHOST = JSON.stringify({
+    adapters: [
+      {
+        id: 'slack-1',
+        type: 'slack',
+        enabled: true,
+        config: { botToken: 'a', appToken: 'b', signingSecret: 'c' },
+      },
+      { id: 'telegram-1', type: 'telegram', enabled: 'yes please', config: null },
+    ],
+  });
+
+  it('drops the ghost once an integration with that id parses again', async () => {
+    // The sequence a person actually walks: an integration breaks, they
+    // re-create it under the same name. Writing both would leave two entries
+    // sharing one id — a file no surface can make sense of afterwards.
+    vi.mocked(readFile).mockResolvedValue(WITH_GHOST);
+    const { adapters, unparsed } = await loadAdapterConfig(CONFIG_PATH);
+
+    const recreated = [
+      ...adapters,
+      { id: 'telegram-1', type: 'telegram', enabled: true, config: { token: 'y' } },
+    ] as never;
+
+    vi.mocked(writeFile).mockClear();
+    await saveAdapterConfig(CONFIG_PATH, recreated, unparsed);
+
+    const written = JSON.parse(vi.mocked(writeFile).mock.calls[0]![1] as string) as {
+      adapters: Array<{ id: string; enabled: unknown }>;
+    };
+    expect(written.adapters.map((a) => a.id)).toEqual(['slack-1', 'telegram-1']);
+    // The surviving one is the working entry, not the ghost.
+    expect(written.adapters.find((a) => a.id === 'telegram-1')?.enabled).toBe(true);
+  });
+
+  it('says which ghost it dropped', async () => {
+    vi.mocked(readFile).mockResolvedValue(WITH_GHOST);
+    const { adapters, unparsed } = await loadAdapterConfig(CONFIG_PATH);
+    vi.mocked(logger.warn).mockClear();
+
+    await saveAdapterConfig(
+      CONFIG_PATH,
+      [...adapters, { id: 'telegram-1', type: 'telegram', enabled: true, config: {} }] as never,
+      unparsed
+    );
+
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("'telegram-1'"));
+  });
+
+  it('keeps a ghost whose id no parsed entry claims', async () => {
+    vi.mocked(readFile).mockResolvedValue(WITH_GHOST);
+    const { adapters, unparsed } = await loadAdapterConfig(CONFIG_PATH);
+
+    vi.mocked(writeFile).mockClear();
+    await saveAdapterConfig(CONFIG_PATH, adapters, unparsed);
+
+    const written = JSON.parse(vi.mocked(writeFile).mock.calls[0]![1] as string) as {
+      adapters: Array<{ id: string }>;
+    };
+    expect(written.adapters.map((a) => a.id)).toEqual(['slack-1', 'telegram-1']);
+    expect(written.adapters[1]).toMatchObject({ enabled: 'yes please' });
+  });
+
+  it('warns that an unreadable entry may still hold a credential in plain text', async () => {
+    // It is preserved verbatim, so the DOR-280 migration never touched it. That
+    // is a different fact from "this entry did not load", with a different fix.
+    vi.mocked(readFile).mockResolvedValue(WITH_GHOST);
+
+    await loadAdapterConfig(CONFIG_PATH);
+
+    const credentialWarnings = vi
+      .mocked(logger.warn)
+      .mock.calls.filter((call) => String(call[0]).includes('plain text'));
+    expect(credentialWarnings).toHaveLength(1);
+    expect(String(credentialWarnings[0]![0])).toContain("'telegram-1'");
+    expect(String(credentialWarnings[0]![0])).toContain(CONFIG_PATH);
   });
 });

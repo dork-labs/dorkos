@@ -207,9 +207,15 @@ export async function* withStallGuard(
       void pending.catch(() => {});
       void Promise.resolve(iterator.return?.()).catch(() => {});
 
-      // The measured silence, not a restatement of the threshold: a turn that
-      // was paused on an operator prompt for an hour and THEN went dark reports
-      // the hour, so a log reader can tell the two shapes apart.
+      // Said out loud, because everything downstream of here reports a turn that
+      // "failed" and nothing said why: a room showed an agent working for
+      // forty-one minutes and the only trace of the watchdog ending it was the
+      // absence of an answer (DOR-781).
+      //
+      // `inactivityMs` is the MEASURED silence rather than a restatement of the
+      // threshold: a turn parked on an operator prompt for an hour that then
+      // went dark reports the hour, so the two shapes are distinguishable in a
+      // log (DOR-782).
       logger.warn('[stall-guard] no activity from the runtime; interrupting the turn', {
         sessionId: opts.sessionId,
         inactivityMs: Date.now() - lastActivityAt,

@@ -22,6 +22,40 @@ import { RoomBroadcaster } from '../room-stream.js';
 import { RoomTurnBudget } from '../turn-budget.js';
 import type { RoomTurnRequest, RoomTurnResult, RoomTurnRunner } from '../room-trigger.js';
 
+/** How many macrotask hops a room gets to reach a state before a test gives up. */
+const SETTLE_HOPS = 500;
+
+/**
+ * Wait until the room has reached the state this step is about.
+ *
+ * `RoomService.triggersIdle()` is the right wait when every turn will settle,
+ * and the wrong one whenever a turn is being held: it never resolves until the
+ * test lands that turn. So those scenarios need a different wait, and the
+ * obvious one — hop the macrotask queue a fixed number of times — is how a suite
+ * acquires a test that usually passes. Two hops were enough on an idle machine
+ * and not enough inside a full run, where several hundred test files share one
+ * event loop; the scenarios then measured a room that had not finished moving.
+ *
+ * Waiting on the CONDITION removes the guess in both directions: it returns as
+ * soon as the room is ready, and it fails with the state it wanted rather than
+ * with a confusing assertion three lines later.
+ *
+ * Absence is never the condition. "Ana was not triggered again" is proved by
+ * waiting for the thing that happens INSTEAD — the refusal notice, or the reply
+ * that carried it — which is on the log by the time the dispatch that decided it
+ * returns.
+ *
+ * @param reached - The state being waited for.
+ * @param described - What that state is, for the failure message.
+ */
+export async function settleUntil(reached: () => boolean, described: string): Promise<void> {
+  for (let hop = 0; hop < SETTLE_HOPS; hop += 1) {
+    if (reached()) return;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  throw new Error(`the room never reached: ${described}`);
+}
+
 /** One turn the dispatcher asked for, as the test sees it. */
 export interface RecordedTurn {
   roomId: string;

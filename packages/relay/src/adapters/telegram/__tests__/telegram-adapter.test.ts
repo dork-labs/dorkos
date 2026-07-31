@@ -278,9 +278,19 @@ describe('TelegramAdapter', () => {
     // User 42 is the approver these tests press buttons as. Without a named
     // approver every approval is refused, which is the point of DOR-609 — the
     // refusal path has its own tests below.
+    //
+    // User 99 is `createInboundCtx`'s default author, and private chats now
+    // need an allowlist (DOR-788), so it is named here. These tests are about
+    // subjects and payload shapes; the allowlist has its own tests in
+    // `inbound.test.ts`.
     adapter = new TelegramAdapter(
       'tg1',
-      tgConfig({ token: 'test-token', mode: 'polling', approverAllowlist: ['42'] })
+      tgConfig({
+        token: 'test-token',
+        mode: 'polling',
+        approverAllowlist: ['42'],
+        dmAllowlist: ['99', '55'],
+      })
     );
     mockRelay = createMockRelay();
   });
@@ -332,6 +342,21 @@ describe('TelegramAdapter', () => {
     expect(autoRetry).toHaveBeenCalled();
     expect(mockBotStart).toHaveBeenCalledWith(
       expect.objectContaining({ drop_pending_updates: true })
+    );
+  });
+
+  it('bounds autoRetry so a failing call eventually surfaces', async () => {
+    // The library's own defaults are `maxRetryAttempts: Infinity` and
+    // `maxDelaySeconds: Infinity`, and it wraps `getUpdates` too. Left
+    // unbounded, a revoked token or a dead network retried in silence forever
+    // while the adapter still reported `connected` — no error, no reconnect,
+    // no message. The cap also bounds shutdown: the library's retry sleep is a
+    // timer it never unrefs, so it holds the process open for the whole delay.
+    await adapter.start(mockRelay);
+
+    const { autoRetry } = await import('@grammyjs/auto-retry');
+    expect(autoRetry).toHaveBeenCalledWith(
+      expect.objectContaining({ maxRetryAttempts: 3, maxDelaySeconds: 60 })
     );
   });
 
@@ -468,6 +493,8 @@ describe('TelegramAdapter', () => {
   it('includes platformData with chatId and messageId', async () => {
     await adapter.start(mockRelay);
 
+    // fromId 55 rather than the fixture's 99, so this also proves the id the
+    // payload reports is the AUTHOR's and not the chat's.
     const ctx = createInboundCtx({ chatId: 99, messageId: 7, fromId: 55 });
     await capturedMessageHandler!(ctx);
 

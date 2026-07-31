@@ -12,17 +12,14 @@
  * where the open thread panel picks it up. Nothing is written into the entry
  * cache from here.
  *
- * A refusal gives the words back to the box they were typed in — the thread
- * panel's own draft, keyed by `threadDraftKey`. That restore runs at this level
- * rather than at the call site because the call site does not reliably exist
- * when a refusal lands: the reader can close the panel first, and a second
- * reply detaches the first one's observer, after which per-call `onError`
- * callbacks are never dispatched at all. See `usePostToRoom` for the full
- * story.
- *
- * The words MERGE rather than replace what is in the box by then (`restore`):
- * a refusal arrives after the send, and two sentences both have a claim on the
- * panel's composer by that point. Choosing one means destroying the other.
+ * A reply in flight is a pending row at the tail of the thread it was typed in,
+ * and a refusal turns that row into a failed one carrying the same words and a
+ * way to try again. That handling runs at this level rather than at the call
+ * site because the call site does not reliably exist when a refusal lands: the
+ * reader can close the panel first, and a second reply detaches the first one's
+ * observer, after which per-call `onError` callbacks are never dispatched at
+ * all. See `usePostToRoom` for the full story, including why the words no
+ * longer go back into the composer.
  *
  * There is no aim to give back, and that is the thread panel's doing (design
  * record §3). A reply used to be written in the ROOM's composer, silently
@@ -32,10 +29,11 @@
  *
  * @module entities/room/model/use-reply-in-thread
  */
-import { useMutation, type UseMutationResult } from '@tanstack/react-query';
+import { useMutation, useQueryClient, type UseMutationResult } from '@tanstack/react-query';
 import type { PostToRoomResponse } from '@dorkos/shared/room-schemas';
 import { useTransport } from '@/layers/shared/model';
-import { useRoomDraftStore } from './room-drafts';
+import { usePendingPostStore } from './pending-posts';
+import { reconcilePendingPost } from './use-post-to-room';
 
 /** What to say, and which thread to say it in. */
 export interface ReplyInThreadInput {
@@ -49,14 +47,10 @@ export interface ReplyInThreadInput {
   /** The reply body. Already trimmed by the caller; the server rejects empty. */
   text: string;
   /**
-   * Where refused words belong: the panel composer's own draft key.
-   *
-   * Required rather than defaulted to the room, because a thread reply is
-   * always typed in a thread's own box now, and quietly restoring somebody's
-   * sentence into a different conversation is the one failure this cannot be
-   * allowed to have a default for.
+   * This client's id for the attempt, so the words have a row to sit in while
+   * they are in the air. Passed back unchanged on a retry.
    */
-  draftKey: string;
+  clientId: string;
 }
 
 /**
@@ -73,13 +67,17 @@ export function useReplyInThread(): UseMutationResult<
   ReplyInThreadInput
 > {
   const transport = useTransport();
+  const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: ({ roomId, rootEntryId, text }: ReplyInThreadInput) =>
       transport.replyInThread(roomId, { rootEntryId, text }),
-    onError: (_error, { text, draftKey }) => {
-      useRoomDraftStore.getState().restore(draftKey, text);
+    onMutate: ({ roomId, rootEntryId, text, clientId }) => {
+      usePendingPostStore.getState().start({ clientId, roomId, threadRootId: rootEntryId, text });
     },
+    onSuccess: (accepted, { roomId, clientId }) =>
+      reconcilePendingPost(queryClient, roomId, clientId, accepted.entryId),
+    onError: (_error, { clientId }) => usePendingPostStore.getState().failed(clientId),
     // Reads "Couldn't send your reply — This room is archived" through the
     // shared mutation toast, which is fit to show a person as-is.
     meta: { errorLabel: "Couldn't send your reply" },

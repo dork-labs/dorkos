@@ -85,6 +85,8 @@ describe('Telegram — capability compliance', () => {
         mode: 'polling',
         streaming: true,
         respondMode: 'thread-aware',
+        dmPolicy: 'allowlist',
+        dmAllowlist: [],
         approverAllowlist: [],
       }),
     deliverSubject: `${CODEC.prefix}.424242`,

@@ -184,6 +184,14 @@ Every one is a `kind: 'notice'` entry authored by the **system** author, carryin
 
 **Damping.** `agent_silent_here` and `agent_busy` follow the shipped cascade-notice rule: one per `(room, cascadeRoot, author)`, in the same 512-entry FIFO (`room-trigger.ts:128,154,466-472`). A person who mentions a silent agent five times in one exchange gets one line back, not five. `turn_failed` is not damped: an error is a distinct event each time it happens.
 
+> **Amended by DOR-781 (2026-07-31) — the `agent_busy` key above is superseded.** The `(room, cascadeRoot, author)` key never collided in practice: every message a person sends mints its own cascade root, so it damped nothing and a run of messages to a busy agent produced a line apiece. It was replaced by `(room, agent, reason)`, which over-corrected — that key has no clock and clears only when the agent takes a turn, so "say it once" became "say it once, ever" and a person asking "@X are you there?" got dead air. The rule that ships now:
+>
+> - **A busy refusal is damped on `(room, agent, reason)` for triggers nobody directed at that agent** — an agent's reply re-triggering a colleague, and the ordinary chatter that reaches an `engaged` agent inside its window.
+> - **It is never damped when the triggering message ASKED that agent**: a human author at `cascadeDepth: 0` whose entry names the agent in its stored `mentions`, or any human message in a DM, where naming is implicit. A direct question deserves a direct answer, and the count is bounded by how many such messages the sender chose to write — one dispatch triggers each agent once, so nothing an agent does can inflate it.
+> - **`turn_failed` is never damped**, which the paragraph above already says and the code did not do: it shared the busy path's memory, so a second crash in a row was swallowed.
+>
+> The `reason` in the key is load-bearing: a busy line and a failure line are different news, and one key for both let an "it is busy, try again" stand in for "its turn crashed".
+
 ### 5.3 A late reply is posted, and says it is late
 
 Per §2.4. Two changes:

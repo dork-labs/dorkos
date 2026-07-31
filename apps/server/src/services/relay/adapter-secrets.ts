@@ -17,6 +17,11 @@
  * (`keychain:`/`env:`/`file:`) is left untouched, which also lets a power user
  * opt into an `env:` or `keychain:` reference by typing it directly.
  *
+ * A secret field usually holds one secret. One holds a map of them — the
+ * webhook adapter's outbound headers, where an `Authorization` value is every
+ * bit as sensitive as a bot token — so each value in such a map is migrated
+ * and resolved individually; see {@link isSecretMap}.
+ *
  * @module services/relay/adapter-secrets
  */
 import type { AdapterConfig } from '@dorkos/relay';
@@ -63,6 +68,24 @@ function secretKeyFor(adapterId: string, fieldKey: string): string {
 }
 
 /**
+ * Whether a stored secret field holds a MAP of secrets rather than one secret.
+ *
+ * The webhook adapter's `outbound.headers` is the case: its stored value is
+ * `{ "Authorization": "Bearer …", "X-Api-Key": "…" }`, and every one of those
+ * values is a credential. Materializing the object as a whole is not possible
+ * (the schema requires an object of strings, and a reference is a string), so
+ * each VALUE is materialized individually and the object keeps its shape with
+ * `file:` references inside it. The header NAMES stay in the clear, which is
+ * right: a header name is not a secret, and it is what makes the stored entry
+ * readable and its credential key stable.
+ *
+ * @param value - The value read from the stored config at a secret field key.
+ */
+function isSecretMap(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
  * Move any cleartext secrets in `configs` into the encrypted credential store,
  * replacing each with its `file:<name>` reference **in place**.
  *
@@ -88,6 +111,25 @@ export async function materializeAdapterSecrets(
     for (const key of keys) {
       const parts = key.split('.');
       const value = getNestedValue(cfg, parts);
+
+      if (isSecretMap(value)) {
+        for (const [entryKey, entryValue] of Object.entries(value)) {
+          if (typeof entryValue !== 'string' || entryValue.length === 0) continue;
+          if (parseCredentialReference(entryValue)) continue;
+          value[entryKey] = await ctx.store.put(
+            secretKeyFor(config.id, `${key}.${entryKey}`),
+            entryValue
+          );
+          changed = true;
+          logger.warn(
+            `[AdapterSecrets] Migrated cleartext secret for adapter '${config.id}' field ` +
+              `'${key}.${entryKey}' into the encrypted credential store; adapters.json now ` +
+              `holds a reference, not the value.`
+          );
+        }
+        continue;
+      }
+
       if (typeof value !== 'string' || value.length === 0) continue;
       // Already a reference (including a power user's env:/keychain:) — leave it.
       if (parseCredentialReference(value)) continue;
@@ -112,14 +154,17 @@ export async function materializeAdapterSecrets(
  * @param configPath - Absolute path to adapters.json.
  * @param configs - Adapter configs to persist (rewritten in place).
  * @param ctx - The credential store and manifests.
+ * @param unparsed - Entries the last load could not read, written back verbatim
+ *   so persisting one integration never deletes another.
  */
 export async function persistAdapterConfigs(
   configPath: string,
   configs: AdapterConfig[],
-  ctx: MaterializeSecretsContext
+  ctx: MaterializeSecretsContext,
+  unparsed: readonly unknown[] = []
 ): Promise<void> {
   await materializeAdapterSecrets(configs, ctx);
-  await saveAdapterConfig(configPath, configs);
+  await saveAdapterConfig(configPath, configs, unparsed);
 }
 
 /**
@@ -148,6 +193,23 @@ export async function resolveAdapterSecrets(
   for (const key of keys) {
     const parts = key.split('.');
     const value = getNestedValue(cfg, parts);
+
+    if (isSecretMap(value)) {
+      for (const [entryKey, entryValue] of Object.entries(value)) {
+        if (typeof entryValue !== 'string' || entryValue.length === 0) continue;
+        if (!parseCredentialReference(entryValue)) continue;
+        const resolution = await ctx.provider.resolve(entryValue);
+        if (!resolution.ok) {
+          throw new Error(
+            `Failed to resolve credential for adapter '${config.id}' field ` +
+              `'${key}.${entryKey}': ${resolution.message}`
+          );
+        }
+        value[entryKey] = resolution.secret;
+      }
+      continue;
+    }
+
     if (typeof value !== 'string' || value.length === 0) continue;
     if (!parseCredentialReference(value)) continue; // Cleartext (test/legacy) — pass through.
     const resolution = await ctx.provider.resolve(value);
@@ -178,17 +240,23 @@ export async function deleteAdapterSecrets(
   const cfg = config.config as Record<string, unknown>;
   for (const key of keys) {
     const value = getNestedValue(cfg, key.split('.'));
-    // Only file: references live in our store; env:/keychain: are user-owned.
-    if (typeof value !== 'string') continue;
-    const parsed = parseCredentialReference(value);
-    if (parsed?.scheme !== 'file') continue;
-    try {
-      await ctx.store.delete(parsed.value);
-    } catch (err) {
-      logger.warn(
-        `[AdapterSecrets] Could not delete stored secret for adapter '${config.id}' field '${key}':`,
-        err
-      );
+    const entries: Array<[string, unknown]> = isSecretMap(value)
+      ? Object.entries(value).map(([entryKey, entryValue]) => [`${key}.${entryKey}`, entryValue])
+      : [[key, value]];
+
+    for (const [label, raw] of entries) {
+      // Only file: references live in our store; env:/keychain: are user-owned.
+      if (typeof raw !== 'string') continue;
+      const parsed = parseCredentialReference(raw);
+      if (parsed?.scheme !== 'file') continue;
+      try {
+        await ctx.store.delete(parsed.value);
+      } catch (err) {
+        logger.warn(
+          `[AdapterSecrets] Could not delete stored secret for adapter '${config.id}' field '${label}':`,
+          err
+        );
+      }
     }
   }
 }

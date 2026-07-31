@@ -9,6 +9,7 @@
  */
 import { monotonicFactory } from 'ulidx';
 import { validateSubject, matchesPattern } from './subject-matcher.js';
+import { requiresInitiateConsent } from './lib/consent-scope.js';
 import { createDefaultBudget, enforceBudget } from './budget-enforcer.js';
 import { checkRateLimit } from './rate-limiter.js';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
@@ -30,6 +31,7 @@ import type {
   TraceStoreLike,
   RelayLogger,
   InitiateConsentGate,
+  InitiateConsentDecision,
   PublishResult,
 } from './types.js';
 
@@ -98,7 +100,13 @@ export class RelayPublishPipeline {
   /** Optional callback to settle a waiting reply-inbox caller when the budget gate rejects. */
   private replyFailureNotifier?: ReplyFailureNotifier;
 
-  /** Optional agent→human initiate-consent gate (DOR-277). */
+  /**
+   * The agent→human initiate-consent gate (DOR-277).
+   *
+   * Optional in the type, never optional in effect: while it is unset, every
+   * publish to a bound human channel is denied. See
+   * {@link evaluateInitiateConsent}.
+   */
   private initiateConsentGate?: InitiateConsentGate;
 
   constructor(
@@ -145,6 +153,10 @@ export class RelayPublishPipeline {
    * channel is denied unless the resolved binding is enabled and its
    * `canInitiate` consent is on — closing the side door where `relay_send` to a
    * raw `relay.human.*` subject bypassed the two proactive-notify tool handlers.
+   *
+   * Until this is called, sends to bound human channels are denied rather than
+   * waved through ({@link evaluateInitiateConsent}), so forgetting to wire it —
+   * or failing to reach the wiring — cannot open the channel.
    *
    * @param gate - The consent gate predicate.
    */
@@ -194,7 +206,9 @@ export class RelayPublishPipeline {
         `Access denied: ${options.from} -> ${subject}` +
           (accessResult.matchedRule
             ? ` (rule: ${accessResult.matchedRule.from} -> ${accessResult.matchedRule.to})`
-            : '')
+            : accessResult.reason
+              ? ` — ${accessResult.reason}`
+              : '')
       );
     }
 
@@ -272,26 +286,15 @@ export class RelayPublishPipeline {
     //     denied here, no matter which publish path it took (relay_send*, A2A,
     //     etc.). Reply-forwarding and system principals are not agent-initiated
     //     and the gate returns allowed for them (see the host-side gate).
-    if (this.initiateConsentGate) {
-      let consent;
-      try {
-        consent = this.initiateConsentGate(envelope.from, subject);
-      } catch (err) {
-        // Fail closed: a throwing consent policy denies rather than letting the
-        // message slip through undecided. Dead-letter under the target subject.
-        const message = err instanceof Error ? err.message : String(err);
-        this.deps.logger?.warn?.(`initiate-consent gate threw; denying: ${message}`);
-        consent = { allowed: false as const, reason: `consent gate error: ${message}` };
-      }
-      if (!consent.allowed) {
-        return this.rejectAtGate(
-          envelope,
-          subject,
-          messageId,
-          'initiate_denied',
-          consent.reason ?? consent.code ?? 'agent is not allowed to start conversations here'
-        );
-      }
+    const consent = this.evaluateInitiateConsent(envelope.from, subject);
+    if (!consent.allowed) {
+      return this.rejectAtGate(
+        envelope,
+        subject,
+        messageId,
+        'initiate_denied',
+        consent.reason ?? consent.code ?? 'agent is not allowed to start conversations here'
+      );
     }
 
     // 5. Authoritative budget gate — ONE check, against the target subject,
@@ -376,6 +379,52 @@ export class RelayPublishPipeline {
       ...(Object.keys(mailboxPressure).length > 0 && { mailboxPressure }),
       ...(adapterResult && { adapterResult }),
     };
+  }
+
+  /**
+   * Resolve the initiate-consent decision for one publish.
+   *
+   * Three outcomes, and the third is the one this method exists for:
+   *
+   * - **A gate is installed** — it decides. A gate that throws denies (a policy
+   *   that cannot answer must not be read as a yes).
+   * - **No gate, and the subject needs none** — allowed. Agent-to-agent
+   *   traffic, system subjects and the operator's own console never depended on
+   *   binding consent.
+   * - **No gate, and the subject is a bound human channel** — DENIED. The gate
+   *   is installed by the host only once the binding store it reads exists, and
+   *   the binding subsystem can fail to come up (a chokidar `EMFILE` on a busy
+   *   machine is a documented way for that to happen here). Treating "nobody
+   *   installed a gate" as "everybody consents" meant a broken boot turned every
+   *   private consent switch off — the machine sent messages to a person's
+   *   Telegram or Slack precisely when it had lost the record of whether it was
+   *   allowed to. Not knowing is a denial.
+   *
+   * @param from - The publish principal.
+   * @param subject - The target subject.
+   */
+  private evaluateInitiateConsent(from: string, subject: string): InitiateConsentDecision {
+    if (!this.initiateConsentGate) {
+      if (!requiresInitiateConsent(subject)) return { allowed: true };
+      return {
+        allowed: false,
+        code: 'NO_BINDING',
+        reason:
+          'initiate denied: no consent gate is installed, so this relay cannot tell ' +
+          'whether you allowed an agent to message this channel. Chat integrations ' +
+          'stay silent until the binding subsystem starts.',
+      };
+    }
+
+    try {
+      return this.initiateConsentGate(from, subject);
+    } catch (err) {
+      // Fail closed: a throwing consent policy denies rather than letting the
+      // message slip through undecided. Dead-letter under the target subject.
+      const message = err instanceof Error ? err.message : String(err);
+      this.deps.logger?.warn?.(`initiate-consent gate threw; denying: ${message}`);
+      return { allowed: false, reason: `consent gate error: ${message}` };
+    }
   }
 
   /**

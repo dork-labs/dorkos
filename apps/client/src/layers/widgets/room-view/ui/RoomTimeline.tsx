@@ -4,9 +4,11 @@ import { buildTimelineRows } from '@/layers/shared/lib';
 import { useNow } from '@/layers/shared/model';
 import { Button, Feed, Skeleton } from '@/layers/shared/ui';
 import type { RoomEntry, RoomRosterEntry } from '@/layers/entities/room';
+import { usePendingPosts } from '@/layers/entities/room';
 import { DayDivider, UnreadDivider } from '@/layers/features/chat';
 import { authorsById, groupByThread, toMessageAuthor, unreadPlacement } from '../lib/room-timeline';
 import { RoomEntryRow } from './RoomEntryRow';
+import { RoomPendingList } from './RoomPendingRow';
 import { RoomThreadReplyRow } from './RoomThreadReplyRow';
 
 interface RoomTimelineProps {
@@ -142,6 +144,11 @@ export function RoomTimeline({
   // Ticked rather than read at render, so "Today" becomes "Yesterday" on its own
   // for a room left open across midnight.
   const now = useNow();
+  // What this reader has sent into the room's own flow and not yet seen back.
+  // Read here rather than passed in: it is the room's own id that answers it,
+  // and threading it through the page would put a prop on every caller for a
+  // fact this component can simply ask for.
+  const pending = usePendingPosts(roomId, null);
   const { topLevel, repliesByRoot, orphaned } = useMemo(() => groupByThread(entries), [entries]);
   const rows = useMemo(() => {
     const unread = unreadPlacement(topLevel, lastReadSeq);
@@ -168,7 +175,10 @@ export function RoomTimeline({
     );
   }
 
-  if (entries.length === 0) {
+  // A room with a message in flight is not an empty room, whatever the log
+  // says — the first thing anybody ever sends here would otherwise vanish into
+  // an illustration telling them to say something.
+  if (entries.length === 0 && pending.length === 0) {
     // A room with nobody in it answers nothing, so the empty state says which
     // kind of empty this is rather than one line that is wrong half the time.
     const hasAgents = members.some((member) => member.author.kind === 'agent');
@@ -195,47 +205,53 @@ export function RoomTimeline({
   }
 
   return (
-    <Feed
-      label={`Messages in ${roomName}`}
-      className="flex flex-col py-4"
-      data-testid="room-timeline"
-    >
-      {rows.map((row) => {
-        if (row.kind === 'day-divider') return <DayDivider key={row.key} label={row.label} />;
-        if (row.kind === 'unread-divider') return <UnreadDivider key={row.key} />;
-        const entry = topLevel[row.index]!;
-        const replies = repliesByRoot.get(entry.id);
-        return (
-          <Fragment key={entry.id}>
-            <RoomEntryRow
-              roomId={roomId}
-              entry={entry}
-              author={toMessageAuthor(entry.authorId, authors)}
-              authorRef={authors.get(entry.authorId)}
-              viewerAuthorId={viewerAuthorId}
-              authorNames={authorNames}
-              reactionFrequents={reactionFrequents}
-              streamStalled={streamStalled}
-              grouping={row.grouping}
-              orphanedReply={orphaned.has(entry.id)}
-              // Counted over the room's own flow, which is exactly the set of
-              // articles this feed renders: a thread's replies live in the
-              // panel, so numbering them here would promise a reader articles
-              // they will never reach with Page Down.
-              feedPosition={{ index: row.index + 1, total: topLevel.length }}
-            />
-            {replies && (
-              <RoomThreadReplyRow
-                rootEntryId={entry.id}
-                replies={replies}
-                lastReadSeq={lastReadSeq}
-                open={openThreadId === entry.id}
-                onOpen={() => onOpenThread(entry.id)}
+    <>
+      <Feed
+        label={`Messages in ${roomName}`}
+        className="flex flex-col py-4"
+        data-testid="room-timeline"
+      >
+        {rows.map((row) => {
+          if (row.kind === 'day-divider') return <DayDivider key={row.key} label={row.label} />;
+          if (row.kind === 'unread-divider') return <UnreadDivider key={row.key} />;
+          const entry = topLevel[row.index]!;
+          const replies = repliesByRoot.get(entry.id);
+          return (
+            <Fragment key={entry.id}>
+              <RoomEntryRow
+                roomId={roomId}
+                entry={entry}
+                author={toMessageAuthor(entry.authorId, authors)}
+                authorRef={authors.get(entry.authorId)}
+                viewerAuthorId={viewerAuthorId}
+                authorNames={authorNames}
+                reactionFrequents={reactionFrequents}
+                streamStalled={streamStalled}
+                grouping={row.grouping}
+                orphanedReply={orphaned.has(entry.id)}
+                // Counted over the room's own flow, which is exactly the set of
+                // articles this feed renders: a thread's replies live in the
+                // panel, so numbering them here would promise a reader articles
+                // they will never reach with Page Down.
+                feedPosition={{ index: row.index + 1, total: topLevel.length }}
               />
-            )}
-          </Fragment>
-        );
-      })}
-    </Feed>
+              {replies && (
+                <RoomThreadReplyRow
+                  rootEntryId={entry.id}
+                  replies={replies}
+                  lastReadSeq={lastReadSeq}
+                  open={openThreadId === entry.id}
+                  onOpen={() => onOpenThread(entry.id)}
+                />
+              )}
+            </Fragment>
+          );
+        })}
+      </Feed>
+      {/* Below the log, at the tail, where the message is about to appear —
+          and outside the feed, because a message the server has not accepted
+          yet is not one of its numbered articles. */}
+      <RoomPendingList posts={pending} viewerAuthorId={viewerAuthorId} />
+    </>
   );
 }

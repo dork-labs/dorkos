@@ -71,6 +71,8 @@ describe('type-consolidation', () => {
       mode: 'polling',
       streaming: true,
       respondMode: 'thread-aware',
+      dmPolicy: 'allowlist',
+      dmAllowlist: [],
       approverAllowlist: [],
     };
     const shared: SharedTelegramAdapterConfig = config;

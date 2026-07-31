@@ -466,6 +466,17 @@ describe('RoomRow working dot', () => {
     expect(screen.getByLabelText('3 agents working')).toBeInTheDocument();
   });
 
+  it('wears the theme token, not the palette value it happens to resolve to', () => {
+    // The room sheet draws the identical fact with `bg-status-success`. One
+    // fact spelled two ways is one that drifts the first time either theme
+    // moves, and the raw class is invisible to a theme that redefines it.
+    renderRow(channel({ working: 1 }));
+
+    const dot = screen.getByLabelText('1 agent working');
+    expect(dot).toHaveClass('bg-status-success');
+    expect(dot.className).not.toMatch(/emerald/);
+  });
+
   it('draws nothing for a quiet room', () => {
     renderRow(channel({ working: 0 }));
     expect(screen.queryByLabelText(/working/)).not.toBeInTheDocument();

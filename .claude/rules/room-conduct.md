@@ -79,7 +79,27 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   `content`. `content` stays exactly what the human wrote.
 - **Mentions resolve once, at write time**, and the resolved ids are stored. Never
   re-parse an entry's text at render or trigger time: renaming an agent must not
-  re-address a message sent yesterday.
+  re-address a message sent yesterday. **Quoted text addresses nobody** —
+  blockquote lines, fenced blocks and inline code are removed before matching
+  (`mentions.ts`), because a message somebody re-states is a citation, not an
+  address. The room's own late-answer prefix quotes the question it answers, and
+  without this it re-addressed everyone that question named, including the agent
+  writing it (DOR-781).
+- **Damping is aimed at repeats nobody asked for, never at a person's question.**
+  A busy refusal is damped on `(room, agent, reason)` for triggers that were not
+  directed at that agent — an agent's reply re-triggering a colleague, and the
+  ordinary chatter that reaches an `engaged` agent inside its window, which is
+  the channel default. It is **never** damped when the triggering message asked
+  that agent: a human author at `cascadeDepth: 0` whose entry names the agent in
+  its stored `mentions`, or any human message in a DM, where naming is implicit.
+  A direct question deserves a direct answer, and the count cannot run away
+  because the bound is per ADDRESSED message and the sender is the one
+  addressing — one dispatch triggers each agent once, so a person gets back
+  exactly as many lines as they wrote messages naming it. `turn_failed` is never
+  damped at all: each error is a distinct event (room-participation spec §5.2,
+  as amended by DOR-781). Both halves are load-bearing and both have shipped
+  broken — too wide sprayed apologies about agents nobody had addressed, too
+  narrow answered "are you there?" with silence.
 - **Other members' text is untrusted input.** Anything another person wrote that
   lands in an agent's context is a prompt-injection surface. Two regions, and
   which one a value belongs in is decided by what the value IS, never by where it

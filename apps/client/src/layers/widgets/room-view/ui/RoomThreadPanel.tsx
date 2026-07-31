@@ -3,12 +3,19 @@ import { ChevronLeft, X } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import { Feed, Skeleton } from '@/layers/shared/ui';
 import type { RoomEntry, RoomWithRoster } from '@/layers/entities/room';
-import { roomDisplayTitle, threadRootIdOf, useRoomPresence } from '@/layers/entities/room';
+import {
+  roomDisplayTitle,
+  threadRootIdOf,
+  usePendingPosts,
+  useRoomPresence,
+} from '@/layers/entities/room';
 import { authorsById, toMessageAuthor } from '../lib/room-timeline';
 import { useThreadArrivals } from '../model/use-thread-arrivals';
 import { RoomComposer } from './RoomComposer';
 import { RoomEntryRow } from './RoomEntryRow';
+import { RoomPendingList } from './RoomPendingRow';
 import { RoomPresenceLine } from './RoomPresenceLine';
+import { RoomStalledNotice } from './RoomStalledNotice';
 
 interface RoomThreadPanelProps {
   /** The room the thread lives in. */
@@ -30,6 +37,15 @@ interface RoomThreadPanelProps {
   reactionFrequents: readonly string[];
   /** True when the room's live stream has given up. */
   streamStalled?: boolean;
+  /** True when it has given up for good — see `RoomStreamState.unavailable`. */
+  streamUnavailable?: boolean;
+  /**
+   * Ask the room's stream to try now.
+   *
+   * The panel reports a stall only when it is the whole screen — see the notice
+   * below the feed — so this is unused beside a room that is drawing its own.
+   */
+  onRetryStream?: () => void;
   /**
    * Whether the room's history has actually arrived.
    *
@@ -94,6 +110,8 @@ export function RoomThreadPanel({
   entries,
   reactionFrequents,
   streamStalled,
+  streamUnavailable,
+  onRetryStream,
   historyLoaded,
   historyFailed = false,
   pushed,
@@ -124,6 +142,9 @@ export function RoomThreadPanel({
   // triggered by the root is the room's business and not this thread's.
   const replyIds = useMemo(() => new Set(replies.map((reply) => reply.id)), [replies]);
   const working = useRoomPresence(room.id, { replyIds, inside: true });
+  // Scoped to THIS thread: a reply typed here waits here, not at the bottom of
+  // the room behind the panel.
+  const pending = usePendingPosts(room.id, rootEntryId);
   const arrivals = useThreadArrivals(
     replies,
     useMemo(() => working.map((agent) => agent.authorId), [working]),
@@ -337,7 +358,20 @@ export function RoomThreadPanel({
             </div>
           )}
         </Feed>
+        {/* Replies of this reader's own that the thread has not echoed back.
+            Below the feed rather than in it, for the same reason the room's are
+            below its own: a reply the server has not accepted is not one of the
+            panel's numbered articles. */}
+        <RoomPendingList posts={pending} viewerAuthorId={room.viewerAuthorId} />
       </div>
+
+      {/* On a phone the thread REPLACES the room, so the room's own copy of
+          this line is off screen and the reader would have no way to know the
+          conversation had stopped hearing. Beside a room that is drawing one,
+          repeating it would just be the same sentence twice. */}
+      {pushed && streamStalled === true && onRetryStream !== undefined && (
+        <RoomStalledNotice onRetry={onRetryStream} unavailable={streamUnavailable} />
+      )}
 
       {/* Writes into THIS thread because it is mounted here — no aim, no
           banner. `key` on the thread so opening another one gives you a box

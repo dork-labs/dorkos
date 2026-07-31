@@ -18,6 +18,7 @@
  */
 import { join as pathJoin } from 'node:path';
 import { readFile } from 'node:fs/promises';
+import { z } from 'zod';
 import { writeFileAtomic } from '@dorkos/shared/atomic-write';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
@@ -30,6 +31,50 @@ import { logger } from '../../lib/logger.js';
 import type { BindingStore } from './binding-store.js';
 import type { AdapterMeshCoreLike } from './adapter-manager.js';
 import { parseHumanSubject } from './human-subject.js';
+
+/**
+ * The identity fields an inbound chat payload carries for the person who wrote
+ * the message. Slack writes `userId`; Telegram writes `fromId`.
+ *
+ * Read out of `payload.platformData`, which is `z.unknown()` in the envelope
+ * schema, so it is parsed rather than cast. Numeric ids (Telegram's are
+ * numbers) are coerced to their string form; anything else is treated as
+ * absent.
+ */
+const PlatformIdentitySchema = z
+  .object({
+    /** Slack's author id (`U…`). */
+    userId: z.union([z.string().min(1), z.number()]).optional(),
+    /** Telegram's author id (`from.id`). */
+    fromId: z.union([z.string().min(1), z.number()]).optional(),
+  })
+  .partial();
+
+/**
+ * The stable per-person key inside one chat, or `undefined` when the message
+ * carries none.
+ *
+ * The `per-user` session strategy used to read `envelope.metadata?.userId` — a
+ * field {@link RelayEnvelope} does not have — so it always resolved to the chat
+ * id and was byte-identical to `per-chat`. In a group chat that put everyone's
+ * conversation in one session: whatever one person said, the next person's turn
+ * could read. The real id has always been in the payload the adapters build
+ * (`platformData.userId` on Slack, `platformData.fromId` on Telegram); this
+ * reads it from there.
+ *
+ * @param payload - The relay envelope payload as it arrived.
+ * @returns The platform user id as a string, or `undefined`.
+ */
+function extractPlatformUserId(payload: unknown): string | undefined {
+  if (payload === null || typeof payload !== 'object') return undefined;
+  const platformData = (payload as { platformData?: unknown }).platformData;
+  const parsed = PlatformIdentitySchema.safeParse(platformData);
+  if (!parsed.success) return undefined;
+  const raw = parsed.data.userId ?? parsed.data.fromId;
+  if (raw === undefined) return undefined;
+  const asString = String(raw);
+  return asString.length > 0 ? asString : undefined;
+}
 
 /** Minimal interface for AgentManager session creation. */
 export interface AgentSessionCreator {
@@ -392,10 +437,18 @@ export class BindingRouter {
         return this.createNewSession(binding);
 
       case 'per-user': {
-        const metadata = envelope as Record<string, unknown>;
-        const userId =
-          (metadata.metadata as Record<string, unknown> | undefined)?.userId ?? chatId ?? 'unknown';
-        const key = `${binding.id}:user:${String(userId)}`;
+        const userId = extractPlatformUserId(envelope.payload);
+        if (!userId) {
+          // No platform identity on this message — fall back to the chat, which
+          // is what per-chat would have done. Said out loud because a per-user
+          // binding silently behaving as per-chat is the bug this replaced.
+          logger.warn(
+            `[BindingRouter] Binding ${binding.id} uses the per-user strategy but this ` +
+              `message carries no platform user id; falling back to a per-chat session. ` +
+              `Everyone in this conversation will share one session.`
+          );
+        }
+        const key = `${binding.id}:user:${userId ?? chatId ?? 'unknown'}`;
         return this.getOrCreateSession(key, binding);
       }
 

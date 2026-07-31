@@ -263,16 +263,18 @@ test.describe('Rooms — posting, switching and staying live @smoke', () => {
     await expect.poll(() => roomsPage.isAtBottom()).toBe(true);
   });
 
-  test('a room whose stream has died says so, and Reconnect brings it back', async ({
+  test('a room whose stream has died says so, and comes back on its own', async ({
     page,
     roomsApi,
     roomsPage,
   }) => {
     // The one deliberately slow test in the suite. The hook retries a dropped
-    // stream five times on jittered exponential backoff before it gives up, so
-    // reaching the notice takes up to ~15s of real waiting even on an idle
-    // machine — and that wait is the behaviour, not overhead to be tuned away.
-    test.setTimeout(120_000);
+    // stream on jittered exponential backoff and only says the room has gone
+    // quiet after five consecutive failures, so reaching the notice takes up to
+    // ~15s of real waiting even on an idle machine — and that wait is the
+    // behaviour, not overhead to be tuned away. It then keeps retrying at the
+    // 30s cap, which is the second half of what this test watches.
+    test.setTimeout(240_000);
 
     const slug = `e2e-stall-${roomsApi.runId}`;
     const room = await roomsApi.createChannel(slug);
@@ -298,17 +300,28 @@ test.describe('Rooms — posting, switching and staying live @smoke', () => {
     await roomsApi.postEntries(room.id, ['said while the stream was down']);
     await expect(roomsPage.entry('said while the stream was down')).toHaveCount(0);
 
-    // Let the stream through and ask the room to try again. The resume is
-    // gap-free — the message posted during the outage arrives too, which is the
-    // whole reason the retry recomputes its cursor from what the reader holds.
-    await page.unroute(`**/api/rooms/${room.id}/events**`);
+    // Reconnect with the route STILL aborted. This is the honest ordering: the
+    // press is a request to try now, not a promise that trying will work, and
+    // pressing it against a server that is still unreachable has to leave the
+    // notice standing rather than flashing it away. (It also removes a race the
+    // old version had — it unrouted first, so a background retry could clear
+    // the notice and take the button away before the click landed.)
     await roomsPage.reconnectButton.click();
-    await expect(roomsPage.stalledNotice).toBeHidden();
+    await expect(roomsPage.stalledNotice).toBeVisible({ timeout: 45_000 });
+
+    // Now let the stream through and press NOTHING. The room has to come back
+    // on its own, which is the whole of DOR-783: retrying used to stop at five
+    // attempts, so this room would have stayed frozen for as long as the tab
+    // was open however long anybody waited. The resume is gap-free — the
+    // message posted during the outage arrives with it, which is why the retry
+    // recomputes its cursor from what the reader already holds.
+    await page.unroute(`**/api/rooms/${room.id}/events**`);
+    await expect(roomsPage.stalledNotice).toBeHidden({ timeout: 90_000 });
     await expect(roomsPage.entry('said while the stream was down')).toBeVisible({
       timeout: SERVER_ROUND_TRIP_MS,
     });
 
-    // And the room is live again for anything posted after the reconnect.
+    // And the room is live again for anything posted after it healed itself.
     await roomsApi.postEntries(room.id, ['said after reconnecting']);
     await expect(roomsPage.entries).toHaveCount(3, { timeout: SERVER_ROUND_TRIP_MS });
     await expect(roomsPage.entry('said after reconnecting')).toBeVisible();

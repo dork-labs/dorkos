@@ -291,13 +291,86 @@ describe('BindingRouter', () => {
       expect(mockAgentManager.createSession).toHaveBeenCalledTimes(2);
     });
 
-    it('reuses session for per-user strategy with same chatId', async () => {
-      vi.mocked(mockBindingStore.resolve!).mockReturnValue(makeBinding('per-user'));
-      const envelope = makeEnvelope('123');
-      await capturedHandler!(envelope);
-      await capturedHandler!(envelope);
-      // per-user falls back to chatId when no userId in metadata
-      expect(mockAgentManager.createSession).toHaveBeenCalledTimes(1);
+    /**
+     * An envelope shaped like a real inbound chat message: a StandardPayload
+     * whose `platformData` carries the author's platform id.
+     *
+     * @param chatId - The chat the message arrived in.
+     * @param platformData - The adapter's platform block.
+     */
+    const makeChatEnvelope = (chatId: string, platformData: Record<string, unknown>) => ({
+      ...makeEnvelope(chatId),
+      payload: { content: 'hi', platformData },
+    });
+
+    describe('per-user', () => {
+      // `per-user` used to read `envelope.metadata?.userId` — a field the relay
+      // envelope does not have — so it always fell back to the chat id and was
+      // byte-identical to `per-chat`. In a shared channel that put everyone's
+      // conversation in one session, where the next person's turn could read
+      // what the last person said. The real id is in the payload the adapters
+      // build.
+
+      it('gives two Slack users in one channel two sessions', async () => {
+        vi.mocked(mockBindingStore.resolve!).mockReturnValue(makeBinding('per-user'));
+
+        await capturedHandler!(makeChatEnvelope('C123', { channelId: 'C123', userId: 'U-alice' }));
+        await capturedHandler!(makeChatEnvelope('C123', { channelId: 'C123', userId: 'U-bob' }));
+
+        expect(mockAgentManager.createSession).toHaveBeenCalledTimes(2);
+      });
+
+      it("reuses one Slack user's session across their messages", async () => {
+        vi.mocked(mockBindingStore.resolve!).mockReturnValue(makeBinding('per-user'));
+
+        await capturedHandler!(makeChatEnvelope('C123', { channelId: 'C123', userId: 'U-alice' }));
+        await capturedHandler!(makeChatEnvelope('C123', { channelId: 'C123', userId: 'U-alice' }));
+
+        expect(mockAgentManager.createSession).toHaveBeenCalledTimes(1);
+      });
+
+      it('gives two Telegram users in one group two sessions (numeric fromId)', async () => {
+        vi.mocked(mockBindingStore.resolve!).mockReturnValue(makeBinding('per-user'));
+
+        await capturedHandler!(makeChatEnvelope('-100', { chatId: -100, fromId: 111 }));
+        await capturedHandler!(makeChatEnvelope('-100', { chatId: -100, fromId: 222 }));
+
+        expect(mockAgentManager.createSession).toHaveBeenCalledTimes(2);
+      });
+
+      it("reuses one Telegram user's session across their messages", async () => {
+        vi.mocked(mockBindingStore.resolve!).mockReturnValue(makeBinding('per-user'));
+
+        await capturedHandler!(makeChatEnvelope('-100', { chatId: -100, fromId: 111 }));
+        await capturedHandler!(makeChatEnvelope('-100', { chatId: -100, fromId: 111 }));
+
+        expect(mockAgentManager.createSession).toHaveBeenCalledTimes(1);
+      });
+
+      it('separates the same user id across two different bindings', async () => {
+        // The key is scoped by binding, so one person talking to two agents is
+        // still two conversations.
+        vi.mocked(mockBindingStore.resolve!).mockReturnValueOnce(makeBinding('per-user'));
+        await capturedHandler!(makeChatEnvelope('C123', { userId: 'U-alice' }));
+
+        vi.mocked(mockBindingStore.resolve!).mockReturnValueOnce({
+          ...makeBinding('per-user'),
+          id: 'bind-2',
+        });
+        await capturedHandler!(makeChatEnvelope('C123', { userId: 'U-alice' }));
+
+        expect(mockAgentManager.createSession).toHaveBeenCalledTimes(2);
+      });
+
+      it('falls back to the chat when the message carries no platform user id', async () => {
+        vi.mocked(mockBindingStore.resolve!).mockReturnValue(makeBinding('per-user'));
+        const envelope = makeEnvelope('123');
+
+        await capturedHandler!(envelope);
+        await capturedHandler!(envelope);
+
+        expect(mockAgentManager.createSession).toHaveBeenCalledTimes(1);
+      });
     });
   });
 

@@ -57,6 +57,19 @@ let reconnectInvalidationInstalled: boolean =
  * Invalidate TanStack Query caches whenever the global stream recovers from a
  * disconnect (reconnecting → connected). Server state may have changed while
  * the stream was down; a full invalidation is the honest re-sync.
+ *
+ * **Except for caches a stream of their own already owns.** A query that
+ * declares `meta.streamOwned` is kept current by its own durable subscription,
+ * which resumes from a cursor and is gap-free — so a refetch here is not a
+ * re-sync but a step backwards: it answers with whatever page the server
+ * returns and overwrites anything the socket delivered while the GET was in
+ * flight. A room's history is the case (`roomEntriesQuery`), where the trailing
+ * page also silently truncates a room somebody had scrolled back through.
+ *
+ * The flag rather than the key, deliberately: this file is in `shared`, which
+ * may not import the room entity that owns the key, and spelling
+ * `['rooms','entries',…]` out here would be a copy that drifts the first time
+ * anybody renames it.
  */
 function installReconnectInvalidation(): void {
   if (reconnectInvalidationInstalled) return;
@@ -69,8 +82,8 @@ function installReconnectInvalidation(): void {
   streamManager.subscribeListConnectionState((state) => {
     if (state === 'connected' && previousState === 'reconnecting') {
       import('@/layers/shared/lib/query-client').then(
-        ({ queryClient }) => {
-          queryClient.invalidateQueries();
+        ({ queryClient, isStreamOwnedQuery }) => {
+          queryClient.invalidateQueries({ predicate: (query) => !isStreamOwnedQuery(query) });
         },
         () => {
           // Silently ignore — query client may not be available in test environments

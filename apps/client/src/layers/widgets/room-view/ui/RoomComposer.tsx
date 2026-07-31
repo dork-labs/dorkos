@@ -7,6 +7,7 @@ import {
   type MentionRow,
 } from '@/layers/features/mentions';
 import {
+  newPendingId,
   roomDisplayTitle,
   threadDraftKey,
   useComposerFocusRequest,
@@ -43,16 +44,16 @@ interface RoomComposerProps {
  * button all mean here what they mean there — and so a room does not acquire a
  * second, subtly different text box.
  *
- * The message round-trips: nothing is drawn until the server's copy arrives on
- * the room's stream, which is also the only way a second reader — or the agents
- * the post triggers — would ever see it. The box empties the moment you press
- * Enter, the way session chat's does, so the next sentence can be typed while
- * the first is still in the air.
+ * The message round-trips: the room's own copy arrives on its stream, which is
+ * also the only way a second reader — or the agents the post triggers — would
+ * ever see it. The box empties the moment you press Enter, the way session
+ * chat's does, so the next sentence can be typed while the first is still in the
+ * air — and the words go to a pending row at the tail of the conversation
+ * (`pending-posts`) rather than nowhere, so a slow link no longer looks like a
+ * message that was never typed.
  *
  * This component holds no draft of its own. The text belongs to the ROOM
- * (`useRoomDraft`), which is what lets it survive being navigated away from,
- * and lets a refused message find its way back to a composer that by then may
- * not exist.
+ * (`useRoomDraft`), which is what lets it survive being navigated away from.
  *
  * Typing `@` opens the mention picker over this room's roster. It writes the
  * handle the SERVER resolves rather than the name on screen, which is what
@@ -184,11 +185,15 @@ export function RoomComposer({ room, threadRootId, focusOnMount }: RoomComposerP
     if (body === '') return;
     // No per-call callbacks: a refusal is handled by the mutation itself, which
     // still runs when this composer is gone. See `usePostToRoom`.
+    //
+    // The id is minted here, at the keystroke, because that is when the row has
+    // to appear — before there is any server id to call it by.
+    const clientId = newPendingId();
     if (threadRootId !== undefined) {
-      reply.mutate({ roomId: room.id, rootEntryId: threadRootId, text: body, draftKey });
+      reply.mutate({ roomId: room.id, rootEntryId: threadRootId, text: body, clientId });
       return;
     }
-    post.mutate({ roomId: room.id, text: body });
+    post.mutate({ roomId: room.id, text: body, clientId });
   };
 
   return (
