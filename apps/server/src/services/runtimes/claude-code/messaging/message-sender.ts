@@ -577,13 +577,22 @@ export async function* executeSdkQuery(
   // The toggles still take effect through `buildSystemPromptAppend` above, which
   // leaves a disabled group's tool block out of the agent's context.
   const editBaselineCapture = createEditBaselineCapture(sessionId, effectiveCwd);
-  sdkOptions.canUseTool = createCanUseTool(session, logger.debug.bind(logger), editBaselineCapture);
+  sdkOptions.canUseTool = createCanUseTool(session, logger, editBaselineCapture);
   // Pre-edit baseline capture must ALSO ride the SDK PreToolUse hook (DOR-212):
-  // `canUseTool` is skipped entirely under `bypassPermissions` and does not see
-  // subagent (Task) tool use, but PreToolUse hooks fire in every mode, before
-  // the tool runs. The matcher confines the callback to the edit-family tools;
-  // the callback itself never blocks or modifies the tool (`continue: true`).
-  // First-touch-wins in the store makes the canUseTool+hook double-fire a no-op.
+  // `canUseTool` is skipped entirely under `bypassPermissions`, but PreToolUse
+  // hooks fire in every mode, before the tool runs. The matcher confines the
+  // callback to the edit-family tools; the callback itself never blocks or
+  // modifies the tool (`continue: true`). First-touch-wins in the store makes
+  // the canUseTool+hook double-fire a no-op.
+  //
+  // This used to also claim `canUseTool` does not see subagent (Task) tool use.
+  // That is not true at SDK 0.3.177 and the claim caused a real misdiagnosis
+  // (DOR-782): a foreground `Task` subagent's tool calls are routed to the SAME
+  // `can_use_tool` callback, tagged with `agentID` (`sdk.d.ts` `CanUseTool`), so
+  // they raise a normal approval card. Only BACKGROUNDED subagents differ, and
+  // they do not reach here either — the CLI auto-denies their asks upstream
+  // (`decisionReason: {type:'asyncAgent'}`) and reports the denial as a
+  // `permission_denied` system message.
   sdkOptions.hooks = {
     PreToolUse: [
       {
