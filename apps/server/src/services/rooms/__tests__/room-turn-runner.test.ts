@@ -218,6 +218,64 @@ describe('createSessionRoomTurnRunner', () => {
     expect(result.text).toBe('Green — nothing failed.');
   });
 
+  it('keeps two assistant messages apart instead of welding them together', async () => {
+    // The observed post: `…before answering.Congrats on…` — a note the agent
+    // wrote before reaching for a tool, glued with no space to the answer it
+    // wrote afterwards. Every `text_delta` in the turn went into one buffer, and
+    // a buffer cannot know that a tool call happened in the middle of it.
+    //
+    // Those are two assistant messages: a model emits its text and its
+    // `tool_use` together, and everything after the result is a new message. The
+    // durable stream carries no message boundary to read, so the tool events are
+    // the boundary — and they are exact for this shape, which is the one that
+    // produces run-on text.
+    //
+    // Nothing is dropped. Posting only the last block was considered and is not
+    // approved: a preamble is something the agent chose to say.
+    turnBehaviour = ({ sessionId, projector }) => {
+      projector.ingest({ type: 'turn_start' });
+      projector.ingest({ type: 'text_delta', text: 'Let me read the release notes first.' });
+      projector.ingest({
+        type: 'tool_call',
+        toolCallId: 'call-1',
+        toolName: 'Read',
+        status: 'running',
+      });
+      projector.ingest({
+        type: 'tool_result',
+        toolCallId: 'call-1',
+        toolName: 'Read',
+        status: 'success',
+        result: 'v2.1 shipped',
+      });
+      projector.ingest({ type: 'text_delta', text: 'Congrats on shipping v2.1!' });
+      projector.ingest({ type: 'turn_end' });
+      return { accepted: true, canonicalId: sessionId };
+    };
+
+    const result = await createSessionRoomTurnRunner().run(request());
+    expect(result.text).toBe('Let me read the release notes first.\n\nCongrats on shipping v2.1!');
+  });
+
+  it('does not split one message on the token counts that stream through it', async () => {
+    // The counter-assertion, and the reason the boundary is the tool events
+    // rather than "anything that is not text". A `status_change` really does
+    // land at the end of every assistant message — the SDK's `message_delta`
+    // carries the output-token count — but it also lands mid-message, so
+    // breaking on it would cut single sentences at unpredictable points.
+    turnBehaviour = ({ sessionId, projector }) => {
+      projector.ingest({ type: 'turn_start' });
+      projector.ingest({ type: 'text_delta', text: 'The build is ' });
+      projector.ingest({ type: 'status_change', status: { outputTokens: 12 } });
+      projector.ingest({ type: 'text_delta', text: 'green.' });
+      projector.ingest({ type: 'turn_end' });
+      return { accepted: true, canonicalId: sessionId };
+    };
+
+    const result = await createSessionRoomTurnRunner().run(request());
+    expect(result.text).toBe('The build is green.');
+  });
+
   it('mints a session on the first answer and reuses the bound one after', async () => {
     const runner = createSessionRoomTurnRunner();
 

@@ -313,7 +313,7 @@ Existing artifacts this touches: `specs/community-adapter/02-specification.md` (
 1. Dorian posts "can someone check the deploy" in #build. Within a second, under the composer: `Kai is working on it · 2s`, counting up. The sidebar's #build row shows the working dot.
 2. Kai answers in 40 s; the line vanishes as the reply lands — never before it.
 3. A slow one: at 10 minutes the line changes to `Kai is still working — this is taking longer than usual · 10m` and stays honest until the late reply posts with its "answers the message from N minutes ago" note.
-4. A busy one: the line shows, then resolves into the italic notice "Kai was busy with something else and did not pick this up." Indicator and explanation, never indicator and mystery.
+4. A busy one: the line shows, then resolves into the italic notice "Kai is still working on an earlier message here. It didn't pick this one up — that answer will land in this conversation." Indicator and explanation, never indicator and mystery.
 5. On Telegram, the same question shows the native "typing…" from the moment Kai's turn actually starts — not from the moment the message was received — and it stops when the answer arrives, however long that takes.
 6. Nothing anywhere shows what anyone has read, and no agent can turn its indicator on by wanting to.
 

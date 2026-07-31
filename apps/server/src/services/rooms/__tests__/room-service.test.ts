@@ -1645,3 +1645,92 @@ describe('RoomService — a thread reply is an addressing act', () => {
     expect(harness.runner.turns).toHaveLength(1);
   });
 });
+
+describe('RoomService — a committed post never fails because dispatching from it did', () => {
+  // The poster's own successful message used to 500.
+  //
+  // `dispatch` runs its target selection SYNCHRONOUSLY inside `post`, and the
+  // routes map anything that is not a `RoomError` to a 500 — so one SQLite write
+  // that lost a race, deep inside trigger selection, surfaced to the person as a
+  // failure of the message they had just sent. It was already committed,
+  // published, and visible to everyone else in the room.
+  //
+  // Losing the replies to a message is bad, visible in the room, and recoverable
+  // by asking again. Losing the message looks like a broken product.
+
+  const agents = agentLookupFor({
+    '/agents/ana': { name: 'ana', displayName: 'Ana' },
+    '/agents/bo': { name: 'bo', displayName: 'Bo' },
+  });
+
+  /** A channel holding Ana and Bo, each answering only when named. */
+  function open(): ReturnType<typeof createRoomHarness> & { roomId: string } {
+    const harness = createRoomHarness({ agents, runner: scriptedRunner(() => 'on it') });
+    const room = harness.service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: [] },
+      harness.human
+    );
+    for (const agentPath of ['/agents/ana', '/agents/bo']) {
+      harness.service.addMember(room.id, harness.human, {
+        agentPath,
+        responseMode: 'mention-only',
+      });
+    }
+    return { ...harness, roomId: room.id };
+  }
+
+  it('drops only the agent whose session binding could not be written', async () => {
+    // Two agents named by one message, and the first bind throws. The binds run
+    // in their own pass BEFORE any claim is taken, so there is nothing to unwind
+    // — the failed target simply never becomes one, and the other still answers.
+    const harness = open();
+    const realBind = harness.store.bindRoomSession.bind(harness.store);
+    let firstBind = true;
+    const bindings = vi.spyOn(harness.store, 'bindRoomSession').mockImplementation((...args) => {
+      if (!firstBind) return realBind(...args);
+      firstBind = false;
+      throw new Error('SQLITE_BUSY: database is locked');
+    });
+
+    const entry = harness.service.post(harness.roomId, {
+      authorId: harness.human,
+      text: '@ana @bo can you both look?',
+    });
+    await harness.service.triggersIdle();
+    bindings.mockRestore();
+
+    // The message is committed and returned, not a 500.
+    expect(entry.body.text).toBe('@ana @bo can you both look?');
+    expect(
+      harness.service.listEntries(harness.roomId, harness.human, { limit: 10 })
+    ).toContainEqual(expect.objectContaining({ id: entry.id }));
+    // One agent lost its turn; the other kept it.
+    expect(harness.runner.turns).toHaveLength(1);
+    // And nothing is left saying somebody is working. A claim taken for a target
+    // that never ran would be re-stated every ten seconds forever, which is the
+    // one stale indicator a client's TTL cannot heal.
+    expect(harness.service.listRooms(harness.human)[0].working).toBe(0);
+  });
+
+  it('keeps the message when trigger selection throws outright', async () => {
+    // The whole dispatch, not one target: whatever else in there learns to throw
+    // later is covered by the same guard.
+    const harness = open();
+    const ancestry = vi.spyOn(harness.store, 'authorsInCascade').mockImplementation(() => {
+      throw new Error('SQLITE_BUSY: database is locked');
+    });
+
+    const entry = harness.service.post(harness.roomId, {
+      authorId: harness.human,
+      text: '@ana can you look?',
+    });
+    await harness.service.triggersIdle();
+    ancestry.mockRestore();
+
+    expect(
+      harness.service.listEntries(harness.roomId, harness.human, { limit: 10 })
+    ).toContainEqual(expect.objectContaining({ id: entry.id }));
+    expect(harness.runner.turns).toHaveLength(0);
+    expect(harness.service.listRooms(harness.human)[0].working).toBe(0);
+  });
+});

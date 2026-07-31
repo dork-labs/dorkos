@@ -28,6 +28,7 @@
  * @module services/session/stall-guard
  */
 import type { StreamEvent } from '@dorkos/shared/types';
+import { logger } from '../../lib/logger.js';
 
 /** Race sentinel: the inactivity timer expired before the next source event. */
 const STALL_TIMEOUT = Symbol('stall-timeout');
@@ -108,7 +109,15 @@ export async function* withStallGuard(
         continue;
       }
 
-      // THE STALL. Detach from the source: silence the abandoned next() so a
+      // THE STALL. Said out loud, because everything downstream of here reports
+      // a turn that "failed" and nothing said why: a room showed an agent
+      // working for forty-one minutes and the only trace of the watchdog ending
+      // it was the absence of an answer.
+      logger.warn('[session] no activity from the agent; interrupting the turn', {
+        sessionId: opts.sessionId,
+        timeoutMs: opts.timeoutMs,
+      });
+      // Detach from the source: silence the abandoned next() so a
       // late rejection can never become an unhandled rejection, and fire
       // return() without awaiting it (it queues behind the pending next() and
       // may itself hang on a truly stuck source).

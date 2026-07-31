@@ -76,6 +76,7 @@ import type {
   UpdateRoomRequest,
 } from '@dorkos/shared/room-schemas';
 import { THREAD_PREVIEW_MAX_CHARS } from '@dorkos/shared/room-schemas';
+import { logger } from '../../lib/logger.js';
 import { eventFanOut } from '../core/event-fan-out.js';
 import type { AuthorRecord, AuthorRegistry } from './author-registry.js';
 import { deriveCascade } from './cascade-guard.js';
@@ -691,7 +692,24 @@ export class RoomService {
     // addresses answers on their own schedule. Deliberately not awaited — the
     // HTTP 202 must not wait on a model call, and the reply arrives on the same
     // SSE stream as everything else when it comes.
-    this.triggers.dispatch(room, entry);
+    //
+    // **A committed post must never fail because dispatching from it did.** The
+    // entry above is written, published and gone; `dispatch` runs its target
+    // selection SYNCHRONOUSLY, so anything it throws — a SQLite write under
+    // contention, most plausibly — surfaced at the route as a 500 for a message
+    // that is sitting in the log. The poster saw their own successful message
+    // fail. Losing the replies to it is bad and visible in the room; losing the
+    // message is worse and looks like a broken product.
+    try {
+      this.triggers.dispatch(room, entry);
+    } catch (err) {
+      logger.error('[rooms] a committed post could not be dispatched from', {
+        roomId,
+        entryId: entry.id,
+        authorId: input.authorId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
     return entry;
   }
 
