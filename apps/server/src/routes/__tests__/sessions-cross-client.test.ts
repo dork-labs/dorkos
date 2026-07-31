@@ -10,15 +10,25 @@
  * 2. An interaction resolved from a second surface drops as
  *    `interaction_resolved` on EVERY consumer's stream (other windows included).
  * 3. A second client's mid-turn POST conflicts (409 SESSION_LOCKED, naming the
- *    holder) while the write-lock is fresh, and is ACCEPTED (202) once the lock
- *    TTL lapses — the acceptance run's observed "mid-turn 202 steer" was this
- *    takeover: the tool-heavy turn had outlived LOCK_TTL_MS. What the SDK does
- *    with the second resume (deliver as a steer) is Claude-CLI behavior and not
- *    pinnable here; the route-level takeover contract is. DOR-82 will replace
- *    this incidental semantics with explicit queue/steer/interrupt dispositions.
+ *    holder) for as long as the first turn is alive, and is ACCEPTED (202) only
+ *    once that turn has gone dark past the lock TTL.
+ *
+ *    This clause CHANGED in DOR-782, and the old expectation is worth naming
+ *    because it read like a feature. The lock TTL was measured from acquisition,
+ *    so ANY turn outliving five minutes — which a room turn does routinely, and
+ *    a tool-heavy one often — was stealable while it was visibly streaming. The
+ *    acceptance run's "mid-turn 202 steer" was that: not a designed takeover, a
+ *    live turn losing its lock. The test pinned it because it was what happened,
+ *    not because it was wanted. The TTL now measures INACTIVITY (see
+ *    `LockActivity`), so a working turn keeps its lock however long it runs and
+ *    an abandoned one is still reclaimed a TTL later. What the SDK does with a
+ *    second resume (deliver as a steer) is Claude-CLI behavior and not pinnable
+ *    here; the route-level contract is. DOR-82 will replace this incidental
+ *    semantics with explicit queue/steer/interrupt dispositions.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
+import type { SseResponse } from '@dorkos/shared/agent-runtime';
 import type { SessionEvent, SessionSnapshot } from '@dorkos/shared/session-stream';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 
@@ -84,6 +94,7 @@ import {
   disposeProjector,
 } from '../../services/session/session-state-projector.js';
 import { SessionLockManager } from '../../services/session/session-lock.js';
+import type { LockActivity } from '../../services/session/session-lock.js';
 import { attachEventStream } from './helpers/trigger-turn-helpers.js';
 
 const app = createApp();
@@ -272,14 +283,21 @@ describe('cross-client: two consumers on one session', () => {
 });
 
 describe('cross-client: second-client POST during an open turn', () => {
-  it('conflicts (409, naming the holder) while the lock is fresh; accepted once the TTL lapses', async () => {
+  it('conflicts (409, naming the holder) for as long as the turn is alive; accepted once it goes dark', async () => {
     // Real lock semantics (not a canned mock): the route + triggerTurn
-    // composition against the actual SessionLockManager, including its TTL
-    // expiry — the mechanism behind the acceptance run's observed mid-turn 202.
+    // composition against the actual SessionLockManager, including its expiry.
     const lockManager = new SessionLockManager();
-    fakeRuntime.acquireLock.mockImplementation((sid, cid, res, token) =>
-      lockManager.acquireLock(sid, cid, res, token)
-    );
+    // The holder the turn acquires with is triggerTurn's DetachedTurnLifecycle,
+    // which is also the lock's liveness witness. Capturing it is how the test
+    // can make the turn "go dark" without waiting five real minutes.
+    let holder: (SseResponse & Partial<LockActivity>) | undefined;
+    fakeRuntime.acquireLock.mockImplementation((sid, cid, res, token) => {
+      const acquired = lockManager.acquireLock(sid, cid, res, token);
+      // Only a SUCCESSFUL acquisition installs a holder; a refused attempt's
+      // lifecycle is discarded and must not overwrite the real one.
+      if (acquired) holder = res;
+      return acquired;
+    });
     fakeRuntime.releaseLock.mockImplementation((sid, cid, token) =>
       lockManager.releaseLock(sid, cid, token)
     );
@@ -319,15 +337,28 @@ describe('cross-client: second-client POST during an open turn', () => {
     expect(conflict.body.lockedBy).toBe('client-a');
     expect(fakeRuntime.sendMessage).toHaveBeenCalledTimes(1);
 
-    // Force the lock past its TTL — the acceptance run's real-world condition:
-    // a tool-heavy turn (pending approval, subagents) outlives LOCK_TTL_MS
-    // while still streaming. Manipulates acquiredAt the same way the lock
-    // manager's own unit tests do.
+    // Age the ACQUISITION past the TTL. Before DOR-782 this alone handed the
+    // session to the second client. It must not now: the turn is still open and
+    // proved liveness when it streamed, so the lock is still its.
     const locks = (lockManager as unknown as { locks: Map<string, { acquiredAt: number }> }).locks;
     locks.get(SESSION_ID)!.acquiredAt -= SESSIONS.LOCK_TTL_MS + 1;
 
-    // Expired lock → the second client's POST is ACCEPTED and its message is
-    // dispatched to the runtime mid-turn. (The Claude CLI delivers such a
+    const stillHeld = await request(app)
+      .post(`/api/sessions/${SESSION_ID}/messages`)
+      .set('X-Client-Id', 'client-b')
+      .send({ content: 'steer while alive' });
+    expect(stillHeld.status).toBe(409);
+    expect(stillHeld.body.lockedBy).toBe('client-a');
+    expect(fakeRuntime.sendMessage).toHaveBeenCalledTimes(1);
+
+    // Now the turn goes DARK — its last proof of life recedes past the TTL, the
+    // shape of a client that vanished. The reclaim path must still work, or a
+    // crashed turn would lock the session forever.
+    expect(holder?.lastActivityAt).toBeTypeOf('function');
+    holder!.lastActivityAt = () => Date.now() - SESSIONS.LOCK_TTL_MS - 1;
+
+    // Abandoned lock → the second client's POST is ACCEPTED and its message is
+    // dispatched to the runtime. (The Claude CLI delivers such a
     // resume-during-active-turn as a steer; that half lives outside the server.)
     const takeover = await request(app)
       .post(`/api/sessions/${SESSION_ID}/messages`)

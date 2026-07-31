@@ -122,11 +122,21 @@ export const SESSIONS = {
   /**
    * Inactivity window before a detached turn is declared stalled: the watchdog
    * interrupts the runtime and closes the turn with a typed error. Resets on
-   * every StreamEvent; suspended while the session lifecycle is 'blocked'
-   * (a pending approval or question can legitimately sit for hours).
+   * every StreamEvent; suspended while the session holds a live pending
+   * interaction (an approval, question or elicitation can legitimately sit for
+   * as long as the person takes, bounded by INTERACTION_TIMEOUT_MS).
    * Trade-off: a legitimately silent tool run longer than this is interrupted.
    */
   TURN_STALL_TIMEOUT_MS: 10 * 60 * 1000,
+  /**
+   * How long the stall watchdog waits for the runtime's interrupt to settle
+   * before closing the turn anyway (DOR-782). `interruptQuery` reaches a
+   * possibly-wedged subprocess, so the call that is meant to unstick a hung turn
+   * can itself hang — leaving the turn frozen at `streaming`, the lock held, and
+   * the stream silent, which is the exact state the watchdog exists to end.
+   * Generous enough that a slow-but-working abort still reports its real outcome.
+   */
+  STALL_INTERRUPT_TIMEOUT_MS: 30 * 1000,
 } as const;
 
 export const TRANSCRIPT = {

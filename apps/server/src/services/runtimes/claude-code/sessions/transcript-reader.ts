@@ -12,6 +12,7 @@ import type {
 import { parseTranscript, extractTextContent, stripSystemTags } from './transcript-parser.js';
 import type { TranscriptLine } from './transcript-parser.js';
 import { classifyOrigin } from './classify-origin.js';
+import { projectSlug } from './project-slug.js';
 import { parseTasks } from './task-reader.js';
 import { SessionRootIndex, accountForTranscript } from './session-root-index.js';
 import { sumContextTokens } from '../sdk/context-tokens.js';
@@ -87,9 +88,18 @@ export class TranscriptReader {
     this.rootIndex.clear();
   }
 
-  /** Convert a working directory path to an SDK project slug (filesystem-safe). */
+  /**
+   * The SDK project-slug naming this working directory's transcript folder.
+   *
+   * Delegates to {@link projectSlug}, which mirrors the SDK's computation
+   * exactly — including the `realpath`, NFC and 200-character-truncation
+   * clauses this used to omit (DOR-782). Omitting them was silent: a symlinked
+   * checkout, a decomposed-Unicode path, or a path past 200 characters produced
+   * a directory name that does not exist, so the session cold-started instead
+   * of resuming.
+   */
   getProjectSlug(cwd: string): string {
-    return cwd.replace(/[^a-zA-Z0-9-]/g, '-');
+    return projectSlug(cwd);
   }
 
   /**

@@ -34,7 +34,7 @@ function makeContext(toolUseID: string): ToolApprovalContext {
   };
 }
 
-const noopLog = () => {};
+const noopLog = { debug: () => {}, info: () => {} };
 
 describe('createCanUseTool — approval gate', () => {
   const NON_SAFE_TOOL = 'Bash';
@@ -143,6 +143,59 @@ describe('createCanUseTool — approval gate', () => {
 
     expect(result).toEqual({ behavior: 'allow', updatedInput: { file_path: '/tmp/x' } });
     expect(session.eventQueue).toHaveLength(0);
+  });
+
+  // DOR-782. A stale comment in message-sender claimed `canUseTool` never sees
+  // subagent tool use, and a turn killed by the stall watchdog was misdiagnosed
+  // on the strength of it. At SDK 0.3.177 a foreground `Task` subagent's tool
+  // calls arrive on THIS callback, tagged with `agentID` (sdk.d.ts `CanUseTool`).
+  // This pins that DorkOS's gate treats such a call like any other — it raises a
+  // real card, which is what pauses the watchdog. If a future SDK genuinely
+  // stops routing subagent calls here, this test is the thing that should be
+  // re-read, but only a live SDK change can make it red.
+  it('raises a normal approval card for a call made from inside a subagent', async () => {
+    const session = makeSession('default');
+    const canUseTool = createCanUseTool(session, noopLog);
+
+    const result = canUseTool(NON_SAFE_TOOL, { command: 'ls' }, {
+      ...makeContext('subagent-tool-1'),
+      agentID: 'agent_01HZ',
+    } as ToolApprovalContext);
+    const settled = await Promise.race([
+      result.then(() => 'settled' as const),
+      Promise.resolve('pending' as const),
+    ]);
+
+    expect(settled).toBe('pending');
+    expect(session.eventQueue[0].type).toBe('approval_required');
+    expect(session.pendingInteractions.has('subagent-tool-1')).toBe(true);
+  });
+
+  it('logs an approval request at info and routine verdicts at debug', async () => {
+    // A turn parked on a card makes no further progress, so the line explaining
+    // WHY has to survive the default production log level (DOR-782). The
+    // per-call auto-allow chatter must not.
+    const log = { debug: vi.fn(), info: vi.fn() };
+    const session = makeSession('default');
+    const canUseTool = createCanUseTool(session, log);
+
+    await canUseTool('Read', { file_path: '/tmp/x' }, makeContext('quiet-1'));
+    expect(log.info).not.toHaveBeenCalled();
+    expect(log.debug).toHaveBeenCalledWith(
+      '[canUseTool] auto-allow safe tool',
+      expect.objectContaining({ toolName: 'Read' })
+    );
+
+    void canUseTool(NON_SAFE_TOOL, { command: 'ls' }, {
+      ...makeContext('loud-1'),
+      agentID: 'agent_01HZ',
+    } as ToolApprovalContext);
+    expect(log.info).toHaveBeenCalledWith('[canUseTool] requesting approval', {
+      toolName: NON_SAFE_TOOL,
+      permissionMode: 'default',
+      toolUseID: 'loud-1',
+      agentID: 'agent_01HZ',
+    });
   });
 });
 

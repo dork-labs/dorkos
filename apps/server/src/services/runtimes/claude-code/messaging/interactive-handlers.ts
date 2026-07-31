@@ -472,10 +472,42 @@ export function handleElicitation(
   });
 }
 
+/**
+ * The two log levels the tool gate needs.
+ *
+ * Routine verdicts (auto-allow, routing) are `debug` — they fire for every tool
+ * call and would drown a production log. Raising an approval card is `info`
+ * (DOR-782): it is the moment a turn stops making progress and starts waiting
+ * for a person, and diagnosing a turn that "hung" is exactly when someone reads
+ * the log at the default level.
+ */
+export interface ToolGateLogger {
+  debug(message: string, data: Record<string, unknown>): void;
+  info(message: string, data: Record<string, unknown>): void;
+}
+
 /** SDK context fields forwarded with tool approval requests. */
 export interface ToolApprovalContext {
   signal: AbortSignal;
   toolUseID: string;
+  /**
+   * The subagent this call came from, when it came from one (SDK 0.3.177,
+   * `CanUseTool`'s `agentID`; `agent_id` on the wire). Absent on the main thread.
+   *
+   * Its presence is the standing evidence that a subagent's tool calls DO reach
+   * this gate: for foreground `Task` subagents the CLI routes them to the same
+   * `can_use_tool` callback, so they raise a normal approval card and pause the
+   * stall watchdog like any other. That much is pinned by a test.
+   *
+   * What BACKGROUNDED (async) subagents do is an open question, deliberately not
+   * asserted here (DOR-795). `SDKControlPermissionRequest` lists `asyncAgent`
+   * among its `decision_reason_type` values, which suggests those asks are
+   * escalated to this callback too rather than resolved upstream — but the
+   * deciding logic lives in the native CLI binary, not in the shipped JS, so it
+   * cannot be read from here and has not been observed live. Do not build on
+   * either answer without checking.
+   */
+  agentID?: string;
   title?: string;
   displayName?: string;
   description?: string;
@@ -496,7 +528,7 @@ export interface ToolApprovalContext {
  * safe list and no permissive mode asks. `Bash` under `acceptEdits` asks.
  *
  * @param session - The interactive session state (with its permission mode).
- * @param logFn - Debug logger.
+ * @param log - Where the gate reports its verdicts; see {@link ToolGateLogger}.
  * @param onToolPreflight - Optional hook fired for EVERY tool BEFORE it runs and
  *   before any approval wait — the synchronous pre-tool seam DorkOS uses to
  *   snapshot a file's pre-edit bytes for the diff base (DOR-212). Awaited so the
@@ -505,7 +537,7 @@ export interface ToolApprovalContext {
  */
 export function createCanUseTool(
   session: InteractiveSession & { permissionMode: PermissionMode },
-  logFn: (msg: string, data: Record<string, unknown>) => void,
+  log: ToolGateLogger,
   onToolPreflight?: (toolName: string, input: Record<string, unknown>) => Promise<void>
 ): (
   toolName: string,
@@ -515,7 +547,10 @@ export function createCanUseTool(
   return async (toolName, input, context) => {
     if (onToolPreflight) await onToolPreflight(toolName, input);
     if (toolName === 'AskUserQuestion') {
-      logFn('[canUseTool] routing to question handler', { toolName, toolUseID: context.toolUseID });
+      log.debug('[canUseTool] routing to question handler', {
+        toolName,
+        toolUseID: context.toolUseID,
+      });
       return handleAskUserQuestion(session, context.toolUseID, input, context.signal);
     }
 
@@ -527,19 +562,24 @@ export function createCanUseTool(
       (READ_ONLY_TOOLS.has(toolName) || DORKOS_AGENT_TOOLS.has(toolName)) &&
       isAutoAllowedCall(toolName, input)
     ) {
-      logFn('[canUseTool] auto-allow safe tool', { toolName, toolUseID: context.toolUseID });
+      log.debug('[canUseTool] auto-allow safe tool', { toolName, toolUseID: context.toolUseID });
       return { behavior: 'allow', updatedInput: input };
     }
 
     if (resolveModeDecision(session.permissionMode) === 'ask') {
-      logFn('[canUseTool] requesting approval', {
+      // info, not debug: from here the turn makes no progress until a person
+      // answers, and this line is what tells a reader that (DOR-782).
+      // `agentID` is present when the call came from inside a subagent, which is
+      // the case that is hardest to explain from the outside.
+      log.info('[canUseTool] requesting approval', {
         toolName,
         permissionMode: session.permissionMode,
         toolUseID: context.toolUseID,
+        ...(context.agentID !== undefined ? { agentID: context.agentID } : {}),
       });
       return handleToolApproval(session, context.toolUseID, toolName, input, context);
     }
-    logFn('[canUseTool] auto-allow', {
+    log.debug('[canUseTool] auto-allow', {
       toolName,
       permissionMode: session.permissionMode,
       toolUseID: context.toolUseID,

@@ -123,8 +123,11 @@ interface TrackedInteraction {
   snapshot: Record<string, unknown>;
 }
 
-/** A subscriber waiting for the next ingested event. */
-type Waiter = (event: SessionEvent) => void;
+/**
+ * A subscriber waiting for the next ingested event, or for the projector to be
+ * retired ({@link SessionStateProjector.terminate}).
+ */
+type Waiter = (event: SessionEvent | typeof TERMINATED) => void;
 
 /**
  * The durable persistence collaborator attached to a projector for a
@@ -217,6 +220,13 @@ function notifyStatusChange(projector: SessionStateProjector, retiredSessionId?:
 const ABORTED = Symbol('subscribe-aborted');
 
 /**
+ * Sentinel resolved into every {@link SessionStateProjector.subscribe} wait when
+ * the projector is retired ({@link SessionStateProjector.terminate}). Like
+ * {@link ABORTED}, distinct from any {@link SessionEvent}.
+ */
+const TERMINATED = Symbol('projector-terminated');
+
+/**
  * Per-session projector: owns seq, the live projection, and the replay buffers.
  */
 export class SessionStateProjector {
@@ -250,6 +260,9 @@ export class SessionStateProjector {
 
   /** Active {@link subscribe} generators (replay or live phase). */
   private subscriberCount = 0;
+
+  /** Set once by {@link terminate}: this instance will never be fed again. */
+  private terminated = false;
 
   /** Backing field for {@link sessionId}; updated by {@link rekeyProjector}. */
   private _sessionId: string;
@@ -578,6 +591,34 @@ export class SessionStateProjector {
     return this.counter;
   }
 
+  /**
+   * Whether this session is parked on something only a person can answer — a
+   * tool approval, a question, or an MCP elicitation that is STILL LIVE.
+   *
+   * The authoritative answer to "is this turn's silence legitimate?", and the
+   * probe the stall watchdog and the session write-lock both ask (DOR-782).
+   * Prefer it over reading `getStatus().lifecycle === 'blocked'`: the lifecycle
+   * is a projection that a concurrent turn's `turn_start` overwrites with
+   * `streaming`, whereas the pending set cannot be overwritten that way.
+   *
+   * Expiry is not optional here, and the map's raw size is the wrong answer.
+   * An entry is normally removed by a resolution or an `interaction_cancelled`,
+   * but both are events that must traverse the whole pipeline, and an entry CAN
+   * strand: {@link markInterrupted} leaves the set populated, and a runtime
+   * stream that throws with an approval outstanding never re-drains its event
+   * queue. A stranded entry read as "still waiting" would be permanent — the
+   * watchdog could never fire and the lock could never expire, so a turn frozen
+   * before DOR-782 would become immortal after it. Delegating to
+   * {@link listPendingInteractions} bounds that by the same
+   * `INTERACTION_TIMEOUT_MS` the recovery DTOs already use, so the two answers
+   * to "what is pending" cannot disagree.
+   *
+   * @param now - Server epoch ms to evaluate expiry against (injected for tests).
+   */
+  hasPendingInteractions(now = Date.now()): boolean {
+    return listPendingInteractions(this.interactions, now).length > 0;
+  }
+
   /** A copy of the held status projection. */
   getStatus(): SessionStatus {
     return { ...this.status };
@@ -720,6 +761,9 @@ export class SessionStateProjector {
       }
       while (true) {
         if (signal?.aborted) return;
+        // Retired between the replay phase and parking: end here rather than
+        // park on a projector nothing will ever feed again.
+        if (this.terminated) return;
         // Drain anything ingested between the replay snapshot and registering as
         // a waiter, so a fast producer cannot slip an event past us.
         const buffered = this.replayFrom(cursor);
@@ -742,14 +786,16 @@ export class SessionStateProjector {
         // (MaxListenersExceededWarning at 11, unbounded growth on a durable
         // stream).
         let onAbort: (() => void) | undefined;
-        const waiter = await new Promise<SessionEvent | typeof ABORTED>((resolve) => {
-          parked = resolve as Waiter;
-          this.waiters.push(parked);
-          if (signal) {
-            onAbort = () => resolve(ABORTED);
-            signal.addEventListener('abort', onAbort, { once: true });
+        const waiter = await new Promise<SessionEvent | typeof ABORTED | typeof TERMINATED>(
+          (resolve) => {
+            parked = resolve as Waiter;
+            this.waiters.push(parked);
+            if (signal) {
+              onAbort = () => resolve(ABORTED);
+              signal.addEventListener('abort', onAbort, { once: true });
+            }
           }
-        });
+        );
         if (signal && onAbort) signal.removeEventListener('abort', onAbort);
         const settled = parked;
         parked = undefined;
@@ -759,6 +805,9 @@ export class SessionStateProjector {
           if (settled) this.removeWaiter(settled);
           return;
         }
+        // terminate() cleared the waiter list wholesale, exactly as ingest does,
+        // so there is nothing to remove — just end the stream.
+        if (waiter === TERMINATED) return;
         const next = waiter;
         if (next.seq > cursor) {
           cursor = next.seq;
@@ -781,6 +830,34 @@ export class SessionStateProjector {
         disposeProjectorIfCurrent(this.sessionId, this);
       }
     }
+  }
+
+  /**
+   * Retire this instance: end every live subscription and refuse new ones
+   * (DOR-782).
+   *
+   * For a projector that has been taken OFF the registry while subscribers are
+   * still attached — today only the {@link rekeyProjector} collision, where an
+   * active turn's instance displaces a pre-existing one under the canonical id.
+   * A displaced instance can never be ingested into again (nothing can resolve
+   * it), so its parked subscribers would wait on an event that cannot come:
+   * their `/events` connections stay open receiving nothing but keepalives, and
+   * the client has no way to notice. Ending the streams closes those responses,
+   * and the client's normal reconnect lands on the live projector and
+   * re-snapshots.
+   *
+   * Not the same as {@link disposeProjector}, which only drops the registry
+   * entry. Idempotent.
+   *
+   * @returns How many live subscriptions this ended (0 when there were none).
+   */
+  terminate(): number {
+    if (this.terminated) return 0;
+    this.terminated = true;
+    const waiters = this.waiters;
+    this.waiters = [];
+    for (const wake of waiters) wake(TERMINATED);
+    return waiters.length;
   }
 
   /** Remove a specific parked resolver from the live waiters list. */
@@ -918,7 +995,12 @@ export function disposeProjector(sessionId: string): void {
  * the ACTIVE turn's instance (`oldId`) wins and replaces the stale `newId`
  * entry, with a warning. Dropping the active turn's instance would orphan the
  * in-flight feed; the pre-existing `newId` projector has no active turn, so it
- * is the safer one to discard.
+ * is the safer one to discard. The displaced instance is
+ * {@link SessionStateProjector.terminate}d rather than merely dropped (DOR-782):
+ * once it is off the registry nothing can ingest into it, so its live
+ * subscribers would otherwise sit on an open `/events` connection receiving
+ * only keepalives, forever. Ending their streams sends them through their
+ * normal reconnect onto the winner.
  *
  * No-op when `oldId === newId` (an existing session whose id never changes) or
  * when no projector is registered under `oldId`.
@@ -930,10 +1012,16 @@ export function rekeyProjector(oldId: string, newId: string): void {
   if (oldId === newId) return;
   const projector = projectors.get(oldId);
   if (!projector) return;
-  if (projectors.has(newId)) {
+  const displaced = projectors.get(newId);
+  if (displaced !== undefined) {
+    // Evicting the displaced instance is not enough: it is now unreachable, so
+    // its live subscribers would park forever on an ingest that can never come.
+    // End their streams so their clients reconnect onto the winner (DOR-782).
+    const endedSubscribers = displaced.terminate();
     logger.warn('[SessionStateProjector] rekey target already has a projector; active turn wins', {
       oldId,
       newId,
+      endedSubscribers,
     });
   }
   projectors.set(newId, projector);

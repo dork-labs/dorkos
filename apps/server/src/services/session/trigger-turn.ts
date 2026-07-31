@@ -22,7 +22,10 @@
  *    `SseResponse` whose `close` this module emits when the turn finishes — so
  *    the lock manager's close-driven cleanup fires on turn completion, not when
  *    the 202 is sent. The lock is also released explicitly on completion AND on
- *    error (idempotent), so a turn that throws can never strand the lock.
+ *    error (idempotent), so a turn that throws can never strand the lock. The
+ *    lifecycle also vouches for the turn's liveness (DOR-782) so the lock's TTL
+ *    measures INACTIVITY rather than elapsed time: a turn that runs an hour while
+ *    streaming keeps its lock, one that goes dark still loses it a TTL later.
  *
  * 3. **Single delivery / detached error surfacing.** Because the client can no
  *    longer learn of a turn error from the POST, {@link guardTurnErrors} routes
@@ -36,10 +39,14 @@
  *    lifecycle frozen at `streaming`, lock held to its TTL, generator leaked.
  *    `withStallGuard` (composed INSIDE {@link guardTurnErrors}) races each
  *    source event against an inactivity timer, pausing while the session is
- *    `blocked`; on a stall it interrupts the runtime and injects the same
- *    typed-error terminal sequence as a throw. The lock path needs no special
- *    handling: the guard always ends the stream cleanly, so `feedProjector`
- *    settles and the existing `finally(releaseOnce)` fires as on any turn.
+ *    parked on a person; on a stall it interrupts the runtime and injects the
+ *    same typed-error terminal sequence as a throw. The lock path needs no
+ *    special handling: the guard always ends the stream cleanly, so
+ *    `feedProjector` settles and the existing `finally(releaseOnce)` fires as on
+ *    any turn. The pause reads the projector's PENDING-INTERACTION SET, not its
+ *    `blocked` lifecycle (DOR-782): the lifecycle is a projection that a
+ *    concurrent turn's `turn_start` overwrites with `streaming`, which used to
+ *    un-pause the watchdog for a turn still holding an unanswered approval.
  *
  * @module services/session/trigger-turn
  */
@@ -49,6 +56,7 @@ import type { ClientContext, RoomContextData } from '@dorkos/shared/additional-c
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
 import type { SessionStateProjector } from './session-state-projector.js';
+import type { LockActivity } from './session-lock.js';
 import { feedProjector } from './session-event-normalizer.js';
 import { assembleAdditionalContext } from './context-assembler.js';
 import { withStallGuard } from './stall-guard.js';
@@ -68,10 +76,42 @@ type RawOf<T extends SessionEvent['type']> = Omit<Extract<SessionEvent, { type: 
  * from the HTTP response lifecycle. The lock manager attaches its cleanup to
  * `on('close')`; we emit that close ourselves exactly once, when the detached
  * turn completes — so the lock is held for the turn, not for the 202.
+ *
+ * It is also the turn's liveness witness ({@link LockActivity}, DOR-782). The
+ * lock TTL is there to reclaim a lock whose holder vanished, but measured from
+ * acquisition it also expired locks held by turns that were plainly alive: a
+ * room turn legally runs an hour, so it spent 55 minutes stealable while
+ * streaming. This reports the turn as alive when either is true — it emitted an
+ * event recently, or it is parked on a person — and reports nothing once the
+ * turn goes genuinely dark, so a vanished holder is still reclaimed one TTL
+ * later. That silence is separately bounded by the stall watchdog, which shares
+ * the same "parked on a person" probe, so a renewed lock cannot outlive a turn
+ * the watchdog would have killed.
  */
-export class DetachedTurnLifecycle implements SseResponse {
+export class DetachedTurnLifecycle implements SseResponse, LockActivity {
   private readonly closeCallbacks: Array<() => void> = [];
   private closed = false;
+  private activityAt = Date.now();
+
+  /**
+   * Build a lifecycle for one detached turn.
+   *
+   * @param waitingOnPerson - Probe answering "is this turn parked on an approval,
+   *   question, or elicitation only a person can resolve?" Such a turn emits
+   *   nothing for as long as the person takes, and must not be treated as dead.
+   *   Defaults to "never", for callers that construct a lifecycle without one.
+   */
+  constructor(private readonly waitingOnPerson: () => boolean = () => false) {}
+
+  /** Record proof of life; called for every event the turn yields. */
+  touch(): void {
+    this.activityAt = Date.now();
+  }
+
+  /** Epoch ms of the turn's most recent proof of life ({@link LockActivity}). */
+  lastActivityAt(): number {
+    return this.waitingOnPerson() ? Date.now() : this.activityAt;
+  }
 
   /** Register a close handler (the lock manager registers its cleanup here). */
   on(_event: 'close', cb: () => void): void {
@@ -194,7 +234,13 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
   // turn's release token-matched: if a second same-client turn auto-flushes and
   // re-acquires before this one settles, this turn's stale releaseOnce becomes a
   // no-op and cannot drop the newer lock (which would admit a concurrent writer).
-  const lifecycle = new DetachedTurnLifecycle();
+  // One probe, two consumers (DOR-782): the stall watchdog must not shoot a turn
+  // parked on a person, and the lock must not expire under one. Read off the
+  // projector's pending-interaction set rather than `lifecycle === 'blocked'` —
+  // the set IS the pending state, while the lifecycle is a projection a later
+  // status_change can overwrite.
+  const waitingOnPerson = (): boolean => projector.hasPendingInteractions();
+  const lifecycle = new DetachedTurnLifecycle(waitingOnPerson);
   const lockToken = Symbol('detached-turn-lock');
   if (!deps.acquireLock(sessionId, clientId, lifecycle, lockToken)) {
     return { accepted: false };
@@ -260,6 +306,9 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     () => {
       signalFirstEvent();
       tryRekey();
+      // Proof of life for the write-lock: a turn that is visibly producing
+      // events must never be declared abandoned and stolen mid-flight (DOR-782).
+      lifecycle.touch();
       eventCount++;
     }
   );
@@ -279,7 +328,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
   const stallGuarded = withStallGuard(tapped, {
     sessionId,
     timeoutMs: opts.stallTimeoutMs ?? SESSIONS.TURN_STALL_TIMEOUT_MS,
-    isPaused: () => projector.getStatus().lifecycle === 'blocked',
+    isPaused: waitingOnPerson,
     onStall: () => deps.interruptQuery(sessionId),
     onError: (err) => opts.onError?.(err),
   });
@@ -321,8 +370,14 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
  * throws without yielding (so the canonical-id wait never hangs on an empty or
  * immediately-failing stream). Callers make their callbacks idempotent — the
  * canonical-id signal resolves once and the rekey retry disarms itself.
+ *
+ * @param source - The stream to forward.
+ * @param onEvent - Fired just before each event; also once if the stream ends
+ *   or throws without yielding.
+ * @internal Exported so {@link import('./trigger-command-intent').triggerCommandIntent}
+ * proves its own liveness to the lock off the same seam.
  */
-async function* tapEachEvent(
+export async function* tapEachEvent(
   source: AsyncIterable<StreamEvent>,
   onEvent: () => void
 ): AsyncIterable<StreamEvent> {

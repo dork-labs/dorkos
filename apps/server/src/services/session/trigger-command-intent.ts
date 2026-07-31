@@ -30,7 +30,7 @@ import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import type { SessionStateProjector } from './session-state-projector.js';
 import { feedProjector } from './session-event-normalizer.js';
 import { withStallGuard } from './stall-guard.js';
-import { DetachedTurnLifecycle, guardTurnErrors } from './trigger-turn.js';
+import { DetachedTurnLifecycle, guardTurnErrors, tapEachEvent } from './trigger-turn.js';
 import { SESSIONS } from '../../config/constants.js';
 
 /** The collaborators {@link triggerCommandIntent} needs, narrowed to a runtime-neutral port. */
@@ -98,7 +98,11 @@ export function triggerCommandIntent(opts: TriggerCommandIntentOpts): TriggerCom
   // Acquire against a detached lifecycle so the lock is bound to the intent's
   // real duration, not to the soon-to-be-sent 202 response (same contract as a
   // turn). The per-turn token makes this run's release token-matched.
-  const lifecycle = new DetachedTurnLifecycle();
+  // One probe, two consumers (DOR-782): the stall watchdog must not shoot a run
+  // parked on a person, and the lock must not expire under one. See
+  // {@link DetachedTurnLifecycle} and `SessionStateProjector.hasPendingInteractions`.
+  const waitingOnPerson = (): boolean => projector.hasPendingInteractions();
+  const lifecycle = new DetachedTurnLifecycle(waitingOnPerson);
   const lockToken = Symbol('detached-command-intent-lock');
   if (!deps.acquireLock(sessionId, clientId, lifecycle, lockToken)) {
     return { accepted: false };
@@ -119,11 +123,16 @@ export function triggerCommandIntent(opts: TriggerCommandIntentOpts): TriggerCom
   // interrupts it; the outer error-guard translates a throw INTO a terminal error
   // sequence so feedProjector always closes the turn exactly once and `/events`
   // consumers see any failure. No userMessage — a compact opens no user bubble.
-  const source = deps.executeCommandIntent(sessionId, intent, { cwd, instructions });
+  // Every yielded event is proof of life for the write-lock (DOR-782), so a
+  // long-running intent is not declared abandoned and stolen mid-flight.
+  const source = tapEachEvent(
+    deps.executeCommandIntent(sessionId, intent, { cwd, instructions }),
+    () => lifecycle.touch()
+  );
   const stallGuarded = withStallGuard(source, {
     sessionId,
     timeoutMs: opts.stallTimeoutMs ?? SESSIONS.TURN_STALL_TIMEOUT_MS,
-    isPaused: () => projector.getStatus().lifecycle === 'blocked',
+    isPaused: waitingOnPerson,
     onStall: () => deps.interruptQuery(sessionId),
     onError: (err) => opts.onError?.(err),
   });

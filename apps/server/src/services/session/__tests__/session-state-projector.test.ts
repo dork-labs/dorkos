@@ -175,6 +175,70 @@ describe('SessionStateProjector', () => {
     expect(pending[0]?.remainingMs).toBe(TIMEOUT_MS);
   });
 
+  // Failure mode (DOR-782): hasPendingInteractions is what keeps the stall
+  // watchdog from firing and the write-lock from expiring, so an entry it reads
+  // as "still waiting" forever makes a turn IMMORTAL — the watchdog can never
+  // close it and the lock can never be reclaimed. Entries do strand: a runtime
+  // stream that throws with an approval outstanding never re-drains its event
+  // queue, so the interaction_cancelled never arrives. Reading `interactions.size`
+  // directly was exactly that bug, and it also regressed markInterrupted (below).
+  it('stops counting a pending interaction once it passes the interaction timeout', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    const p = new SessionStateProjector('s1');
+    p.ingest({
+      type: 'approval_required',
+      id: 'stranded-1',
+      startedAt: Date.now(),
+      remainingMs: TIMEOUT_MS,
+      toolName: 'Bash',
+      input: '{}',
+      hasSuggestions: false,
+    } as RawSessionEvent);
+    expect(p.hasPendingInteractions()).toBe(true);
+
+    // One tick short of the exclusive boundary: still a live wait.
+    vi.setSystemTime(1_000_000 + TIMEOUT_MS - 1);
+    expect(p.hasPendingInteractions()).toBe(true);
+
+    // At and past the boundary the entry is stale — nobody is waiting on a
+    // person any more, whatever the map still holds. It agrees with the DTO
+    // selector, so the two answers to "what is pending" cannot diverge.
+    vi.setSystemTime(1_000_000 + TIMEOUT_MS);
+    expect(p.hasPendingInteractions()).toBe(false);
+    expect(p.getPendingInteractions()).toHaveLength(0);
+
+    vi.setSystemTime(1_000_000 + TIMEOUT_MS * 100);
+    expect(p.hasPendingInteractions()).toBe(false);
+  });
+
+  it('does not treat an interrupted turn as still waiting on a person', () => {
+    // markInterrupted leaves `interactions` populated by design, so the raw-size
+    // read made every interrupted turn look permanently blocked — a turn the
+    // pre-DOR-782 watchdog would have closed became one it never could.
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    const p = new SessionStateProjector('s1');
+    p.ingest({ type: 'turn_start' });
+    p.ingest({
+      type: 'approval_required',
+      id: 'int-1',
+      startedAt: Date.now(),
+      remainingMs: TIMEOUT_MS,
+      toolName: 'Bash',
+      input: '{}',
+      hasSuggestions: false,
+    } as RawSessionEvent);
+    p.markInterrupted();
+    expect(p.getStatus().lifecycle).toBe('interrupted');
+
+    // Still inside the window, the wait is real and the guard stays paused.
+    expect(p.hasPendingInteractions()).toBe(true);
+    // Past it, the guard is armed again and the lock is reclaimable.
+    vi.setSystemTime(1_000_000 + TIMEOUT_MS);
+    expect(p.hasPendingInteractions()).toBe(false);
+  });
+
   // Failure mode (drift pin): the projector's switch enumerates the three
   // blocking interactions by hand, because a switch cannot be driven by a
   // constant. A fourth member added to BLOCKING_INTERACTION_EVENT_TYPES would
@@ -717,6 +781,80 @@ describe('SessionStateProjector', () => {
     // NEW now resolves to the ACTIVE turn's instance, not the stale one.
     expect(getOrCreateProjector(NEW)).toBe(active);
     disposeProjector(OLD);
+    disposeProjector(NEW);
+  });
+
+  // Failure mode (DOR-782): the displaced instance is evicted from the registry
+  // but its live `/events` subscribers are still parked inside it, awaiting an
+  // ingest that can never come — the session is off the registry, so nothing
+  // will ever feed it again. Those connections received only keepalives, forever.
+  it('ENDS the displaced instance subscribers so their clients reconnect and re-snapshot', async () => {
+    const OLD = 'displace-active';
+    const NEW = 'displace-target';
+    const active = getOrCreateProjector(OLD);
+    active.ingest({ type: 'turn_start' });
+
+    const stale = getOrCreateProjector(NEW);
+    stale.ingest({ type: 'turn_start' });
+    // A live subscriber, caught up and parked on the next ingest.
+    const received: unknown[] = [];
+    let ended = false;
+    const consuming = (async () => {
+      for await (const event of stale.subscribe(0)) received.push(event);
+      ended = true;
+    })();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(stale.getWaiterCount()).toBe(1);
+    expect(ended).toBe(false);
+
+    rekeyProjector(OLD, NEW);
+    await consuming;
+
+    // The stream ENDED (the route then closes the SSE response and the client
+    // reconnects), rather than hanging on a projector nothing can feed.
+    expect(ended).toBe(true);
+    expect(stale.getWaiterCount()).toBe(0);
+    // Everything it had already been sent still arrived — termination ends the
+    // stream, it does not rewrite history.
+    expect(received).toHaveLength(1);
+
+    // A subscriber that attaches to the retired instance afterwards likewise
+    // ends immediately instead of parking forever.
+    const late: unknown[] = [];
+    for await (const event of stale.subscribe(1)) late.push(event);
+    expect(late).toEqual([]);
+
+    disposeProjector(OLD);
+    disposeProjector(NEW);
+  });
+
+  it('leaves the winner untouched: a rekey with no collision ends nobody', async () => {
+    const OLD = 'no-collide-uuid';
+    const NEW = 'no-collide-canonical';
+    const active = getOrCreateProjector(OLD);
+    active.ingest({ type: 'turn_start' });
+
+    let ended = false;
+    const received: unknown[] = [];
+    const consuming = (async () => {
+      for await (const event of active.subscribe(0)) {
+        received.push(event);
+        if (received.length === 2) break;
+      }
+      ended = true;
+    })();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    rekeyProjector(OLD, NEW);
+    // The in-flight subscriber is still live and still receiving — the rekey
+    // moves the key, never the stream.
+    expect(ended).toBe(false);
+    active.ingest({ type: 'turn_end' });
+    await consuming;
+    expect(received).toHaveLength(2);
+
     disposeProjector(NEW);
   });
 });
