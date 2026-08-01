@@ -72,16 +72,16 @@ function accumulateTouchChips(parts: MessagePart[]): TouchChip[];
 
 Fold every `tool_call` part in order (append-then-merge — never track by latest state; Cursor's silent-drop bug is the cautionary tale). Tool → verb mapping:
 
-| Tool                             | Verb                                                 | Target                                                                                                                        |
-| -------------------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Read, Glob                       | read                                                 | `input.file_path` / `input.pattern` base dir → file chips (Glob: the pattern as one chip)                                     |
-| Grep                             | search                                               | `input.pattern` (label = quoted pattern; hits count from result when parseable)                                               |
-| Edit, MultiEdit, NotebookEdit    | edit                                                 | `input.file_path`; diffstat from result `structuredPatch` when present (OutputRenderer precedent), else omit numbers          |
-| Write                            | create if the result indicates a new file, else edit | `input.file_path`                                                                                                             |
-| Bash                             | run                                                  | the command string; additionally parse `rm`/`git rm` argv → delete chips per path (best-effort; unparseable → no delete chip) |
-| WebFetch                         | fetch                                                | `input.url`, key = normalized URL (strip hash), label = registrable domain                                                    |
-| WebSearch                        | search                                               | `input.query` labeled with 🔍                                                                                                 |
-| Task/Agent, TodoWrite, MCP tools | none (v1)                                            | excluded                                                                                                                      |
+| Tool                             | Verb                                                 | Target                                                                                                                                                                        |
+| -------------------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Read, Glob                       | read                                                 | `input.file_path` / `input.pattern` base dir → file chips (Glob: the pattern as one chip)                                                                                     |
+| Grep                             | search                                               | `input.pattern` (label = quoted pattern; hits count from result when parseable)                                                                                               |
+| Edit, MultiEdit, NotebookEdit    | edit                                                 | `input.file_path`; diffstat estimated from the tool input's `old_string`/`new_string` line counts (the `parseEditInput` precedent in `OutputRenderer.tsx`), else omit numbers |
+| Write                            | create if the result indicates a new file, else edit | `input.file_path`                                                                                                                                                             |
+| Bash                             | run                                                  | the command string; additionally parse `rm`/`git rm` argv → delete chips per path (best-effort; unparseable → no delete chip)                                                 |
+| WebFetch                         | fetch                                                | `input.url`, key = normalized URL (strip hash), label = registrable domain                                                                                                    |
+| WebSearch                        | search                                               | `input.query` labeled with 🔍                                                                                                                                                 |
+| Task/Agent, TodoWrite, MCP tools | none (v1)                                            | excluded                                                                                                                                                                      |
 
 Verb precedence on merge: `delete` > `create` > `edit` > everything; read-then-edit sets `upgraded` once (the morph animates exactly once, driven by a key change, not re-render).
 
@@ -153,4 +153,4 @@ No external requests (letter-tile favicons). Canvas file opens go through the ex
 - `specs/chat-touch-chips/04-design-decisions.md` + `mockups/` (normative motion reference)
 - `research/20260801_touched_file_chip_ui_patterns.md` (cross-product survey)
 - `research/20260320_chat_message_list_animations.md`, `research/20260309_chat_microinteractions_polish.md`
-- Client seams: `layers/shared/model/app-store/app-store-canvas.ts` (`openCanvasDocument`), `layers/features/chat/ui/message/AssistantMessageContent.tsx`, `layers/shared/model/chat-message-types.ts`, `layers/features/chat/ui/message/OutputRenderer.tsx` (structuredPatch), `dev/playground-registry.ts`, `dev/simulator/scenarios/`
+- Client seams: `layers/shared/model/app-store/app-store-canvas.ts` (`openCanvasDocument`), `layers/features/chat/ui/message/AssistantMessageContent.tsx`, `layers/shared/model/chat-message-types.ts`, `layers/features/chat/ui/message/OutputRenderer.tsx` (`parseEditInput`), `dev/playground-registry.ts`, `dev/simulator/scenarios/`
