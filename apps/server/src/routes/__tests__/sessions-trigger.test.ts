@@ -67,6 +67,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null) }));
 
 import request from 'supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp, finalizeApp } from '../../app.js';
 import {
   getOrCreateProjector,
@@ -83,6 +84,15 @@ import {
 
 const app = createApp();
 finalizeApp(app);
+
+/**
+ * ONE listener for the whole file (DOR-483). Requests and `/events` attachments
+ * both target `server`, never `app`: handed a non-listening app, supertest binds
+ * and frees an ephemeral port per request and the stream helpers used to do the
+ * same, so a pooled keep-alive socket for a reclaimed port could land on the
+ * wrong server. See {@link listeningServer}.
+ */
+const server = listeningServer(app);
 
 const SESSION_ID = '00000000-0000-4000-8000-000000000001';
 /** The canonical id the adapter assigns to a brand-new session mid-turn. */
@@ -139,7 +149,7 @@ describe('POST /api/sessions/:id/messages — trigger-only contract', () => {
     ]);
 
     const started = Date.now();
-    const res = await request(app)
+    const res = await request(server)
       .post(`/api/sessions/${SESSION_ID}/messages`)
       .send({ content: 'Hello' });
     const elapsed = Date.now() - started;
@@ -165,7 +175,7 @@ describe('POST /api/sessions/:id/messages — trigger-only contract', () => {
       },
     ]);
 
-    const res = await request(app)
+    const res = await request(server)
       .post(`/api/sessions/${SESSION_ID}/messages`)
       .send({ content: 'Hello' });
 
@@ -184,7 +194,7 @@ describe('POST /api/sessions/:id/messages — trigger-only contract', () => {
       },
     ]);
 
-    const live = await collectTriggeredTurn(app, SESSION_ID, 'Hello');
+    const live = await collectTriggeredTurn(server, SESSION_ID, 'Hello');
     const types = live.map((f) => (f.data as SessionEvent).type);
 
     expect(types.filter((t) => t === 'turn_start')).toHaveLength(1);
@@ -210,7 +220,7 @@ describe('POST /api/sessions/:id/messages — trigger-only contract', () => {
       },
     ]);
 
-    await collectTriggeredTurn(app, SESSION_ID, 'Hello');
+    await collectTriggeredTurn(server, SESSION_ID, 'Hello');
 
     expect(fakeRuntime.acquireLock).toHaveBeenCalledTimes(1);
     expect(releasedDuringTurn).toBe(false);
@@ -236,7 +246,7 @@ describe('POST /api/sessions/:id/messages — trigger-only contract', () => {
       },
     ]);
 
-    const live = await collectTriggeredTurn(app, SESSION_ID, 'Hello');
+    const live = await collectTriggeredTurn(server, SESSION_ID, 'Hello');
     const events = live.map((f) => f.data as SessionEvent);
 
     const errorStatus = events.find(
@@ -261,7 +271,7 @@ describe('POST /api/sessions/:id/messages — trigger-only contract', () => {
       },
     ]);
 
-    const live = await collectTriggeredTurn(app, SESSION_ID, 'Hello');
+    const live = await collectTriggeredTurn(server, SESSION_ID, 'Hello');
     const events = live.map((f) => f.data as SessionEvent);
 
     const error = events.find((e) => e.type === 'error');
@@ -305,7 +315,7 @@ describe('POST /api/sessions/:id/messages — trigger-only contract', () => {
     fakeRuntime.isLocked.mockReturnValue(true);
     fakeRuntime.getLockInfo.mockReturnValue({ clientId: 'other', acquiredAt: Date.now() });
 
-    const res = await request(app)
+    const res = await request(server)
       .post(`/api/sessions/${SESSION_ID}/messages`)
       .send({ content: 'Hello' });
 
@@ -316,7 +326,7 @@ describe('POST /api/sessions/:id/messages — trigger-only contract', () => {
   });
 
   it('rejects an empty message with 400 and never acquires the lock', async () => {
-    const res = await request(app).post(`/api/sessions/${SESSION_ID}/messages`).send({});
+    const res = await request(server).post(`/api/sessions/${SESSION_ID}/messages`).send({});
     expect(res.status).toBe(400);
     expect(fakeRuntime.acquireLock).not.toHaveBeenCalled();
   });
@@ -336,7 +346,7 @@ describe('POST /api/sessions/:id/messages — trigger-only contract', () => {
       },
     ]);
 
-    const post = await request(app)
+    const post = await request(server)
       .post(`/api/sessions/${SESSION_ID}/messages`)
       .send({ content: 'Hello' });
     expect(post.status).toBe(202);
@@ -349,7 +359,7 @@ describe('POST /api/sessions/:id/messages — trigger-only contract', () => {
 
     // A cold /events connect under the CANONICAL id surfaces the turn — its
     // cursor is non-zero, so the snapshot reflects the real (rekeyed) state.
-    const { frames } = await openEventStream(app, CANONICAL_ID, { maxMs: 500 });
+    const { frames } = await openEventStream(server, CANONICAL_ID, { maxMs: 500 });
     const snapshot = frames.find((f) => f.event === 'snapshot')?.data as SessionSnapshot;
     expect(snapshot).toBeDefined();
     expect(snapshot.cursor).toBeGreaterThan(0);
@@ -377,7 +387,7 @@ describe('POST /api/sessions/:id/messages — trigger-only contract', () => {
       },
     ]);
 
-    const post = await request(app)
+    const post = await request(server)
       .post(`/api/sessions/${SESSION_ID}/messages`)
       .send({ content: 'Hello' });
     expect(post.status).toBe(202);
@@ -412,7 +422,7 @@ describe('POST /api/sessions/:id/messages — trigger-only contract', () => {
       },
     ]);
 
-    const post = await request(app)
+    const post = await request(server)
       .post(`/api/sessions/${SESSION_ID}/messages`)
       .send({ content: 'Hello' });
     expect(post.status).toBe(202);
@@ -439,7 +449,7 @@ describe('POST /api/sessions/:id/messages — trigger-only contract', () => {
       },
     ]);
 
-    const stream = attachEventStream(app, SESSION_ID);
+    const stream = attachEventStream(server, SESSION_ID);
     await stream.ready;
 
     const projector = getOrCreateProjector(SESSION_ID);
@@ -625,14 +635,14 @@ describe('POST /api/sessions/:id/messages — trigger-only contract', () => {
       },
     ]);
 
-    const post = await request(app)
+    const post = await request(server)
       .post(`/api/sessions/${SESSION_ID}/messages`)
       .send({ content: 'Hello' });
     expect(post.status).toBe(202);
 
     // Let the detached turn finish, then cold-connect.
     await vi.waitFor(() => expect(peekProjector(SESSION_ID)?.getStatus().lifecycle).toBe('idle'));
-    const { frames } = await openEventStream(app, SESSION_ID, { maxMs: 500 });
+    const { frames } = await openEventStream(server, SESSION_ID, { maxMs: 500 });
     const snapshot = frames.find((f) => f.event === 'snapshot')?.data as SessionSnapshot;
     expect(snapshot.inProgressTurn).toBeNull();
     expect(snapshot.status.lifecycle).toBe('idle');

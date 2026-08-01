@@ -12,6 +12,14 @@ export * from './community-conformance.js';
 export * from './connector-conformance.js';
 export * from './fake-agent-runtime.js';
 export * from './fake-community-adapter.js';
+//
+// listeningServer / swappableServer are exported via
+// '@dorkos/test-utils/listening-server' only, for a third reason: WEIGHT. Their
+// consumers are route tests, and several of those call `vi.resetModules()`
+// between tests, which re-evaluates every dynamically imported module. Pulling
+// the whole barrel (FakeAgentRuntime, the conformance suites, the scenario
+// table) into config.test.ts to reach a 40-line http helper measured +7s across
+// its 41 resets, and pushed its first `beforeEach` past the 10s hook timeout.
 export * from './fake-connector-provider.js';
 export * from './mock-factories.js';
 export * from './runtime-conformance.js';

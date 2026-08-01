@@ -7,7 +7,6 @@
  */
 import http from 'node:http';
 import request from 'supertest';
-import type { Express } from 'express';
 
 /** A single SSE frame parsed off the `/events` wire, with its optional `id:`. */
 export interface SseFrame {
@@ -64,64 +63,71 @@ export interface EventStreamHandle {
  * subscribe-first ordering the real client uses (so it cannot miss `turn_start`).
  * Exported for multi-consumer tests that need two concurrent attachments with
  * independent ready/done control (cross-client convergence pins).
+ *
+ * Takes an ALREADY-LISTENING server (from `listeningServer(app)`), not an app.
+ * It used to take the app and `listen(0)` per call, which churned an ephemeral
+ * port per attachment — and did so in files that also drive supertest, so a
+ * pooled keep-alive socket could be handed to a request meant for a port that
+ * had since been reclaimed by a different listener (DOR-483).
  */
 export function attachEventStream(
-  app: Express,
+  server: http.Server,
   sessionId: string,
   opts: { until?: string; maxMs?: number } = {}
 ): EventStreamHandle {
   const until = opts.until ?? 'turn_end';
   const maxMs = opts.maxMs ?? 4000;
+  const addr = server.address();
+  const port = typeof addr === 'object' && addr ? addr.port : 0;
+  if (!port) {
+    throw new Error(
+      'attachEventStream: server is not listening — pass the server from listeningServer(app)'
+    );
+  }
   let signalReady: () => void = () => {};
   const ready = new Promise<void>((resolve) => {
     signalReady = resolve;
   });
   let forceClose: () => void = () => {};
   const done = new Promise<EventsResult>((resolve, reject) => {
-    const server = app.listen(0, () => {
-      const addr = server.address();
-      const port = typeof addr === 'object' && addr ? addr.port : 0;
-      let raw = '';
-      let settled = false;
-      const finish = (status: number): void => {
-        if (settled) return;
+    let raw = '';
+    let settled = false;
+    const finish = (status: number): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      req.destroy();
+      signalReady();
+      resolve({ frames: parseFrames(raw), raw, status });
+    };
+    forceClose = () => finish(200);
+    const req = http.request(
+      { host: '127.0.0.1', port, path: `/api/sessions/${sessionId}/events`, method: 'GET' },
+      (res) => {
+        const status = res.statusCode ?? 0;
+        if (status !== 200) {
+          res.on('data', (c: Buffer) => (raw += c.toString()));
+          res.on('end', () => finish(status));
+          return;
+        }
+        res.setEncoding('utf8');
+        res.on('data', (chunk: string) => {
+          raw += chunk;
+          if (raw.includes('event: snapshot')) signalReady();
+          if (raw.includes(`event: ${until}`)) finish(200);
+        });
+        res.on('end', () => finish(200));
+      }
+    );
+    const timer = setTimeout(() => finish(200), maxMs);
+    req.on('error', () => {
+      if (!settled) {
         settled = true;
         clearTimeout(timer);
-        req.destroy();
-        server.close();
-        signalReady();
-        resolve({ frames: parseFrames(raw), raw, status });
-      };
-      forceClose = () => finish(200);
-      const req = http.request(
-        { host: '127.0.0.1', port, path: `/api/sessions/${sessionId}/events`, method: 'GET' },
-        (res) => {
-          const status = res.statusCode ?? 0;
-          if (status !== 200) {
-            res.on('data', (c: Buffer) => (raw += c.toString()));
-            res.on('end', () => finish(status));
-            return;
-          }
-          res.setEncoding('utf8');
-          res.on('data', (chunk: string) => {
-            raw += chunk;
-            if (raw.includes('event: snapshot')) signalReady();
-            if (raw.includes(`event: ${until}`)) finish(200);
-          });
-          res.on('end', () => finish(200));
-        }
-      );
-      const timer = setTimeout(() => finish(200), maxMs);
-      req.on('error', () => {
-        if (!settled) {
-          settled = true;
-          clearTimeout(timer);
-          server.close();
-          reject(new Error('events request errored'));
-        }
-      });
-      req.end();
+        reject(new Error('events request errored'));
+      }
     });
+    req.end();
   });
   return { ready, done, close: () => forceClose() };
 }
@@ -131,17 +137,17 @@ export function attachEventStream(
  * drain the durable stream after a turn was triggered (and to assert on the
  * cold snapshot).
  *
- * @param app - The Express app under test.
+ * @param server - The file's one listening server (see {@link attachEventStream}).
  * @param sessionId - Session id for the stream path.
  * @param opts.until - The `event:` name that closes the stream.
  * @param opts.maxMs - Safety cap so a missing terminator can't hang the test.
  */
 export function openEventStream(
-  app: Express,
+  server: http.Server,
   sessionId: string,
   opts: { until?: string; maxMs?: number } = {}
 ): Promise<EventsResult> {
-  return attachEventStream(app, sessionId, opts).done;
+  return attachEventStream(server, sessionId, opts).done;
 }
 
 /**
@@ -151,18 +157,18 @@ export function openEventStream(
  * `turn_end`. Returns only the live SessionEvent frames (the leading `snapshot`
  * is dropped) so callers can assert on the turn's event sequence.
  *
- * @param app - The Express app under test.
+ * @param server - The file's one listening server (see {@link attachEventStream}).
  * @param sessionId - Target session id.
  * @param content - The user message text.
  */
 export async function collectTriggeredTurn(
-  app: Express,
+  server: http.Server,
   sessionId: string,
   content: string
 ): Promise<SseFrame[]> {
-  const stream = attachEventStream(app, sessionId);
+  const stream = attachEventStream(server, sessionId);
   await stream.ready;
-  const post = await request(app).post(`/api/sessions/${sessionId}/messages`).send({ content });
+  const post = await request(server).post(`/api/sessions/${sessionId}/messages`).send({ content });
   if (post.status !== 202) {
     stream.close();
     throw new Error(`expected 202 from trigger POST, got ${post.status}`);
