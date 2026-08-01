@@ -19,9 +19,13 @@ import { readManifest } from '@dorkos/shared/manifest';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { assertBoundary, parseSessionId, sendError } from '../lib/route-utils.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
-import { logger } from '../lib/logger.js';
+import { logError, logger } from '../lib/logger.js';
 import { runInDispatch } from '../lib/dispatch-context.js';
 import { logRefusal } from '../services/observability/refusals.js';
+import {
+  recordDispatchEnd,
+  recordDispatchStart,
+} from '../services/observability/dispatch-buffers.js';
 import {
   aggregateSessionList,
   listRecentSessions,
@@ -451,6 +455,7 @@ router.post('/:id/messages', async (req, res) => {
   // announces it already carries it and a reader can start there.
   const dispatchId = newDispatchId();
   logger.info('[POST /messages] trigger', { sessionId, contentLength: content.length, dispatchId });
+  recordDispatchStart({ dispatchId, origin: 'session', sessionId });
 
   // The POST body's cwd is operator-chosen and authoritative — overwrite any
   // earlier stamp from a subscribe-path default (an /events connect without
@@ -500,9 +505,14 @@ router.post('/:id/messages', async (req, res) => {
       onError: (err) => {
         logger.warn('[POST /messages] detached turn error', {
           sessionId,
-          error: err instanceof Error ? err.message : String(err),
+          ...logError(err),
         });
       },
+      // The 202 has long since gone out by the time this fires. It is the only
+      // moment the server learns how a detached turn ended, which is exactly
+      // what the debug buffer is asked for during an incident.
+      onSettled: (outcome) =>
+        recordDispatchEnd(dispatchId, outcome === 'failed' ? 'failed' : 'answered'),
     })
   );
 

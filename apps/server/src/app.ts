@@ -26,6 +26,7 @@ import uploadRoutes from './routes/uploads.js';
 import mcpConfigRoutes from './routes/mcp-config.js';
 import errorRoutes from './routes/errors.js';
 import eventsRouter from './routes/events.js';
+import debugRoutes from './routes/debug.js';
 import { generateOpenAPISpec } from './services/core/openapi-registry.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { hostGuard } from './middleware/host-guard.js';
@@ -187,6 +188,15 @@ export function createApp() {
   app.use('/api/mcp-config', mcpConfigRoutes);
   app.use('/api/errors', errorRoutes);
   app.use('/api/events', eventsRouter);
+  // Diagnostic reads (`GET /api/debug/*`). Mounted here rather than in
+  // `index.ts` — it needs no singleton the composition root has to hand it, only
+  // `app.locals.debugDeps`, which `index.ts` sets alongside the deep-health bag.
+  // ALWAYS mounted and read-only: an env gate would make it unavailable in the
+  // one situation it exists for, because enabling it needs a restart and a
+  // restart destroys the in-memory state you wanted to read. It carries only
+  // what a span may carry, and inherits `hostGuard` + `sessionGate` with no
+  // carve-out — see `routes/debug.ts`.
+  app.use('/api/debug', debugRoutes);
 
   // Test control routes — only mounted when DORKOS_TEST_RUNTIME=true.
   // The router is always imported (safe: no vitest/SDK deps), but routes are

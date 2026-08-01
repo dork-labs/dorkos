@@ -111,10 +111,16 @@ import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { logError, logger } from '../../lib/logger.js';
 import { runInDispatch } from '../../lib/dispatch-context.js';
 import { logRefusal } from '../observability/refusals.js';
+import {
+  recordDispatchEnd,
+  recordDispatchStart,
+  type DispatchOutcome,
+} from '../observability/dispatch-buffers.js';
 import { selectTriggerTargets, type AddressingMember } from './addressing.js';
 import {
   agentKey,
   type ActiveClaim,
+  type ActiveClaimView,
   type ClaimOutcome,
   type TriggerTarget,
 } from './room-claims.js';
@@ -789,6 +795,12 @@ export class RoomTriggerDispatcher {
     target: TriggerTarget
   ): Promise<void> {
     const key = agentKey(room.id, target.authorId);
+    recordDispatchStart({
+      dispatchId: target.dispatchId,
+      origin: 'room',
+      roomId: room.id,
+      sessionId: target.sessionId,
+    });
     // What the release in the `finally` will report. Only the paths that reach a
     // terminal here set it; a turn handed to `deliverLate` does not release from
     // this frame at all, so its outcome is that method's to report.
@@ -1122,6 +1134,11 @@ export class RoomTriggerDispatcher {
       heldMs: Math.max(0, Date.now() - Date.parse(claim.claimedAt)),
       outcome,
     });
+    // Every terminal reaches here — the ordinary one, a late answer settling,
+    // and a halt — so this is the one place a room dispatch can be closed out
+    // exactly once. Recorded beside the log line rather than at each terminal,
+    // for the reason the release itself is here.
+    recordDispatchEnd(claim.dispatchId, DISPATCH_OUTCOMES[outcome]);
     // The turn is over, so whatever it was waiting for is over too. Cleared
     // here rather than beside an outcome because a halted turn, a crashed turn
     // and an answered one all end the wait equally, and only this line runs on
@@ -1222,6 +1239,30 @@ export class RoomTriggerDispatcher {
    *
    * @param roomId - The room being described.
    */
+  /**
+   * Every claim held right now, for the diagnostic read surface.
+   *
+   * "Which agent is holding a claim, and since when?" was the first question the
+   * 2026-07-31 incident asked and could not answer: the claim map is in this
+   * object's memory, and nothing outside the process could see it. Ids, an ISO
+   * timestamp and a duration — no room text, no prompt, no path.
+   *
+   * @returns One row per live claim, newest hold last.
+   */
+  listClaims(): ActiveClaimView[] {
+    const now = Date.now();
+    return [...this.claimed.values()].map((claim) => ({
+      roomId: claim.roomId,
+      authorId: claim.authorId,
+      entryId: claim.entryId,
+      cascadeRoot: claim.cascadeRoot,
+      dispatchId: claim.dispatchId,
+      claimedAt: claim.claimedAt,
+      heldMs: Math.max(0, now - Date.parse(claim.claimedAt)),
+      pastDeadline: claim.pastDeadline,
+    }));
+  }
+
   private workingIn(roomId: string): Array<{ authorId: string; since: string }> {
     return [...this.claimed.values()]
       .filter((claim) => claim.roomId === roomId)
@@ -1359,3 +1400,20 @@ export class RoomTriggerDispatcher {
     return claims.length;
   }
 }
+
+/**
+ * How a room's own claim outcome reads in the cross-origin dispatch buffer.
+ *
+ * A total `Record`, so adding a {@link ClaimOutcome} without deciding how it
+ * groups is a type error here rather than a silent `undefined` in a debug
+ * response. `busy` becomes `refused` because no turn ran; `quiet` stays its own
+ * thing, because an agent choosing to say nothing is not a refusal and the two
+ * looking alike is what made a busy agent indistinguishable from a broken one.
+ */
+const DISPATCH_OUTCOMES: Record<ClaimOutcome, DispatchOutcome> = {
+  answered: 'answered',
+  quiet: 'quiet',
+  halted: 'halted',
+  busy: 'refused',
+  failed: 'failed',
+};

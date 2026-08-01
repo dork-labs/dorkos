@@ -155,6 +155,7 @@ import {
 } from './services/core/approvals/index.js';
 import { createApprovalsRouter } from './routes/approvals.js';
 import type { DeepHealthDeps } from './services/observability/deep-health/index.js';
+import type { DebugDeps } from './routes/debug.js';
 import { createCapabilitiesCatalogRouter } from './routes/capabilities-catalog.js';
 import { createCapabilitiesInvokeRouter } from './routes/capabilities-invoke.js';
 import {
@@ -1532,6 +1533,17 @@ async function start() {
     adaptersFailedToStart: relayEnabled && Boolean(relayCore) && !adapterManager,
     meshFailedToStart: !meshCore,
   } satisfies DeepHealthDeps;
+
+  // The same live reads, for `GET /api/debug/*`. A separate bag from the one
+  // above and deliberately so: deep health ANSWERS questions ("is anything
+  // broken?"), and this one hands over raw state for a person to read. They
+  // overlap today; conflating them would mean a new debug read could only be
+  // added by widening the health checks' dependency surface.
+  app.locals.debugDeps = {
+    roomSessions: roomStore,
+    transcriptProjectRoots: () => claudeRuntime?.getTranscriptReader().getProjectsRootSet() ?? [],
+    ...(relayCore ? { relayTraceStore: traceStore } : {}),
+  } satisfies DebugDeps;
 
   // Session-origin Pulse overlay (session-origin-legibility): expose a narrow
   // batched lookup to the sessions router via app.locals, mirroring the

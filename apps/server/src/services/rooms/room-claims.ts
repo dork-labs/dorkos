@@ -142,3 +142,26 @@ const CLAIM_KEY_SEPARATOR = '\u0000';
 export function agentKey(roomId: string, authorId: string): string {
   return [roomId, authorId].join(CLAIM_KEY_SEPARATOR);
 }
+
+/**
+ * One live claim as the diagnostic surface reports it.
+ *
+ * A deliberate projection of {@link ActiveClaim}, not the record itself: the
+ * claim carries `agentPath` and `depth`, and `agentPath` is a filesystem path.
+ * A read surface that is safe to leave mounted carries what a span may carry —
+ * ids, counts, durations, coarse enums — so the path does not cross the
+ * boundary, and cannot start to just because someone adds a field to the claim.
+ */
+export interface ActiveClaimView {
+  roomId: string;
+  authorId: string;
+  entryId: string;
+  cascadeRoot: string;
+  dispatchId: string;
+  /** ISO 8601. */
+  claimedAt: string;
+  /** How long the claim has been held, at the moment of the read. */
+  heldMs: number;
+  /** The room stopped waiting, but the turn is still running. */
+  pastDeadline: boolean;
+}

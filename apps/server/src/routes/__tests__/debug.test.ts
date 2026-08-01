@@ -1,0 +1,363 @@
+/**
+ * The diagnostic read surface: what it answers, and — the load-bearing half —
+ * what it refuses to say.
+ *
+ * `/api/debug/*` is ALWAYS mounted, which it earns by carrying only what a span
+ * attribute may carry: ids, counts, durations, coarse enums, ISO timestamps. The
+ * leak test below poisons every reachable input with message text, an absolute
+ * path, and a token, then asserts none of it survives into any response —
+ * mirroring the span-poisoning test in `observability/__tests__/`.
+ */
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
+vi.mock('../../lib/boundary.js', () => ({
+  validateBoundary: vi.fn(async (p: string) => p),
+  validateBoundaryOrDorkHome: vi.fn(async (p: string) => p),
+  getBoundary: vi.fn(() => '/mock/home'),
+  initBoundary: vi.fn().mockResolvedValue('/mock/home'),
+  isWithinBoundary: vi.fn().mockResolvedValue(true),
+  BoundaryError: class BoundaryError extends Error {},
+}));
+
+vi.mock('../../services/core/runtime-registry.js', () => ({
+  runtimeRegistry: {
+    getSessionRuntimeType: vi.fn(async () => 'claude-code'),
+    has: vi.fn(() => false),
+    get: vi.fn(() => undefined),
+    getDefault: vi.fn(() => undefined),
+    getAllCapabilities: vi.fn(() => ({})),
+  },
+  RuntimeNotRegisteredError: class RuntimeNotRegisteredError extends Error {},
+}));
+
+vi.mock('../../services/core/tunnel-manager.js', () => ({
+  tunnelManager: {
+    status: { enabled: false, connected: false, url: null, port: null, startedAt: null },
+  },
+}));
+
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
+}));
+
+import request from 'supertest';
+import { createApp, finalizeApp } from '../../app.js';
+import {
+  recordDispatchStart,
+  recordDispatchEnd,
+  resetDispatchBuffers,
+  DISPATCH_BUFFER_SIZE,
+} from '../../services/observability/dispatch-buffers.js';
+import { logRefusal } from '../../services/observability/refusals.js';
+import { runInDispatch } from '../../lib/dispatch-context.js';
+import {
+  getOrCreateProjector,
+  disposeProjector,
+} from '../../services/session/session-state-projector.js';
+import type { RawSessionEvent } from '../../services/session/session-state-projector.js';
+import type { DebugDeps } from '../debug.js';
+
+const SESSION_ID = '00000000-0000-4000-8000-0000000dbb01';
+
+/** Text, paths and credentials that must never reach a response. */
+const POISON = {
+  text: 'the deploy key is hunter2 and the migration is broken',
+  absolutePath: '/Users/someone/secret-project/notes.md',
+  token: 'sk-ant-oat01-POISONTOKEN',
+};
+
+function buildApp(deps?: DebugDeps) {
+  const app = createApp();
+  if (deps) app.locals.debugDeps = deps;
+  finalizeApp(app);
+  return app;
+}
+
+beforeEach(() => {
+  resetDispatchBuffers();
+  vi.restoreAllMocks();
+});
+
+afterEach(() => {
+  disposeProjector(SESSION_ID);
+  resetDispatchBuffers();
+});
+
+describe('GET /api/debug/dispatches', () => {
+  it('reports recent dispatches newest first', async () => {
+    recordDispatchStart({ dispatchId: 'dsp_A', origin: 'room', roomId: 'room-1' });
+    recordDispatchStart({ dispatchId: 'dsp_B', origin: 'session', sessionId: SESSION_ID });
+    recordDispatchEnd('dsp_A', 'answered');
+
+    const res = await request(buildApp()).get('/api/debug/dispatches');
+    expect(res.status).toBe(200);
+    expect(res.body.recent.map((d: { dispatchId: string }) => d.dispatchId)).toEqual([
+      'dsp_B',
+      'dsp_A',
+    ]);
+    const a = res.body.recent.find((d: { dispatchId: string }) => d.dispatchId === 'dsp_A');
+    expect(a).toMatchObject({ origin: 'room', roomId: 'room-1', outcome: 'answered' });
+    expect(a.endedAt).not.toBeNull();
+    // Still running: an outcome it does not have yet is reported as absent, not
+    // guessed at.
+    const b = res.body.recent.find((d: { dispatchId: string }) => d.dispatchId === 'dsp_B');
+    expect(b.outcome).toBeNull();
+    expect(b.endedAt).toBeNull();
+  });
+
+  it('honours ?limit and clamps it to the ring', async () => {
+    for (let i = 0; i < 5; i += 1) {
+      recordDispatchStart({ dispatchId: `dsp_${i}`, origin: 'task' });
+    }
+    const app = buildApp();
+    const two = await request(app).get('/api/debug/dispatches?limit=2');
+    expect(two.body.recent).toHaveLength(2);
+    // Above the ring's capacity is clamped, not rejected: a 400 mid-incident
+    // helps nobody, and the ring cannot produce more than it holds.
+    const huge = await request(app).get('/api/debug/dispatches?limit=99999');
+    expect(huge.status).toBe(200);
+    expect(huge.body.recent.length).toBeLessThanOrEqual(DISPATCH_BUFFER_SIZE);
+    // Junk falls back to the default rather than returning nothing.
+    const junk = await request(app).get('/api/debug/dispatches?limit=banana');
+    expect(junk.body.recent).toHaveLength(5);
+  });
+
+  it('answers with an empty claim list when no room service is wired', async () => {
+    // Read during an incident is exactly when a subsystem is mid-crash. A 500
+    // here would lose the recent-dispatch buffer along with the claims.
+    const res = await request(buildApp()).get('/api/debug/dispatches');
+    expect(res.status).toBe(200);
+    expect(res.body.claims).toEqual([]);
+  });
+});
+
+describe('GET /api/debug/refusals', () => {
+  it('records every refusal the logger writes, with its dispatch', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    runInDispatch({ dispatchId: 'dsp_R', origin: 'room', entryId: 'entry-1' }, () => {
+      logRefusal('[rooms] an agent did not answer', {
+        reason: 'agent_busy',
+        visibility: 'damped',
+        roomId: 'room-1',
+        authorId: 'author-1',
+      });
+    });
+    const res = await request(buildApp()).get('/api/debug/refusals');
+    expect(res.status).toBe(200);
+    expect(res.body.refusals).toHaveLength(1);
+    expect(res.body.refusals[0]).toMatchObject({
+      dispatchId: 'dsp_R',
+      origin: 'room',
+      reason: 'agent_busy',
+      visibility: 'damped',
+      roomId: 'room-1',
+      authorId: 'author-1',
+    });
+  });
+
+  it('keeps a refusal made outside any dispatch, without inventing an id', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    logRefusal('[relay] nothing connects this chat to an agent', {
+      reason: 'no_binding',
+      visibility: 'silent',
+    });
+    const res = await request(buildApp()).get('/api/debug/refusals');
+    expect(res.body.refusals).toHaveLength(1);
+    expect(res.body.refusals[0].dispatchId).toBeUndefined();
+  });
+});
+
+describe('GET /api/debug/projectors and /sessions/:id', () => {
+  it('lists live projectors with counts only', async () => {
+    const projector = getOrCreateProjector(SESSION_ID);
+    projector.ingest({ type: 'text_delta', text: POISON.text } as RawSessionEvent);
+
+    const res = await request(buildApp()).get('/api/debug/projectors');
+    expect(res.status).toBe(200);
+    const entry = res.body.projectors.find(
+      (p: { sessionId: string }) => p.sessionId === SESSION_ID
+    );
+    expect(entry).toMatchObject({ seq: 1, subscribers: 0, waiters: 0 });
+    expect(entry.eventLogSize).toBeGreaterThan(0);
+  });
+
+  it('describes one session without any of its content', async () => {
+    const projector = getOrCreateProjector(SESSION_ID);
+    projector.ingest({ type: 'text_delta', text: POISON.text } as RawSessionEvent);
+
+    const res = await request(buildApp()).get(`/api/debug/sessions/${SESSION_ID}`);
+    expect(res.status).toBe(200);
+    expect(res.body.sessionId).toBe(SESSION_ID);
+    expect(res.body.projectorLive).toBe(true);
+    expect(res.body.seq).toBe(1);
+    expect(JSON.stringify(res.body)).not.toContain('deploy key');
+  });
+
+  it('rejects a malformed session id rather than probing with it', async () => {
+    const res = await request(buildApp()).get('/api/debug/sessions/..%2F..%2Fetc%2Fpasswd');
+    expect(res.status).toBe(400);
+  });
+
+  it('answers for a session with no live projector', async () => {
+    const res = await request(buildApp()).get(`/api/debug/sessions/${SESSION_ID}`);
+    expect(res.status).toBe(200);
+    expect(res.body.projectorLive).toBe(false);
+    expect(res.body.lifecycle).toBeNull();
+  });
+});
+
+describe('GET /api/debug/rooms/:id/bindings', () => {
+  let transcriptRoot: string;
+
+  beforeEach(() => {
+    transcriptRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'debug-transcripts-'));
+    fs.mkdirSync(path.join(transcriptRoot, '-Users-someone-project'));
+    fs.writeFileSync(path.join(transcriptRoot, '-Users-someone-project', 'has-one.jsonl'), '{}\n');
+  });
+
+  afterEach(() => {
+    fs.rmSync(transcriptRoot, { recursive: true, force: true });
+  });
+
+  it('says whether a binding points at a transcript — and never says where', async () => {
+    // The incident's "bindings pointing at ids with no transcript", answered
+    // directly. The path is the thing this must not return.
+    const app = buildApp({
+      roomSessions: {
+        listRoomSessions: () => [
+          { roomId: 'room-1', authorId: 'ana', sessionId: 'has-one' },
+          { roomId: 'room-1', authorId: 'bo', sessionId: 'has-none' },
+          { roomId: 'other-room', authorId: 'cy', sessionId: 'has-one' },
+        ],
+      },
+      transcriptProjectRoots: () => [transcriptRoot],
+    });
+
+    const res = await request(app).get('/api/debug/rooms/room-1/bindings');
+    expect(res.status).toBe(200);
+    expect(res.body.bindings).toEqual([
+      { authorId: 'ana', sessionId: 'has-one', transcriptExists: true },
+      { authorId: 'bo', sessionId: 'has-none', transcriptExists: false },
+    ]);
+    // Both halves matter: a probe that answered `true` for everything would
+    // satisfy the first row, and one that answered `false` would satisfy the
+    // second.
+    expect(JSON.stringify(res.body)).not.toContain(transcriptRoot);
+    expect(JSON.stringify(res.body)).not.toContain('Users');
+  });
+
+  it('degrades to nothing when no room store is wired', async () => {
+    const res = await request(buildApp()).get('/api/debug/rooms/room-1/bindings');
+    expect(res.status).toBe(200);
+    expect(res.body.bindings).toEqual([]);
+  });
+});
+
+describe('GET /api/debug/relay/traces/:traceId', () => {
+  it('says so plainly when the relay is off, rather than 500ing', async () => {
+    const res = await request(buildApp()).get('/api/debug/relay/traces/dsp_X');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ spans: [], available: false });
+  });
+
+  it('returns each hop without the adapter error string', async () => {
+    // `error_message` is free-form text from an adapter — it can echo the
+    // payload, a URL, or a path. The response says only WHETHER there was one.
+    const app = buildApp({
+      relayTraceStore: {
+        getTrace: () => [
+          {
+            id: 'row-1',
+            messageId: 'msg-1',
+            traceId: 'dsp_X',
+            subject: 'relay.agent.claude-code.s1',
+            status: 'failed',
+            kind: 'delivery',
+            sentAt: '2026-08-01T00:00:00.000Z',
+            deliveredAt: null,
+            processedAt: null,
+            errorMessage: `refused: ${POISON.token} at ${POISON.absolutePath}`,
+            metadata: null,
+          },
+        ],
+      } as unknown as DebugDeps['relayTraceStore'],
+    });
+
+    const res = await request(app).get('/api/debug/relay/traces/dsp_X');
+    expect(res.status).toBe(200);
+    expect(res.body.spans).toEqual([
+      {
+        messageId: 'msg-1',
+        subject: 'relay.agent.claude-code.s1',
+        status: 'failed',
+        kind: 'delivery',
+        sentAt: '2026-08-01T00:00:00.000Z',
+        deliveredAt: null,
+        hasError: true,
+      },
+    ]);
+    expect(JSON.stringify(res.body)).not.toContain(POISON.token);
+    expect(JSON.stringify(res.body)).not.toContain('Users');
+  });
+});
+
+describe('the whole surface leaks nothing (I7)', () => {
+  it('survives a poisoned world across every route', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const transcriptRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'debug-poison-'));
+    try {
+      const projector = getOrCreateProjector(SESSION_ID, POISON.absolutePath);
+      projector.ingest({ type: 'text_delta', text: POISON.text } as RawSessionEvent);
+      projector.ingest({
+        type: 'tool_call',
+        toolCallId: 't1',
+        toolName: 'Bash',
+        input: `cat ${POISON.absolutePath}`,
+        status: 'running',
+      } as RawSessionEvent);
+      runInDispatch({ dispatchId: 'dsp_P', origin: 'room' }, () => {
+        // Ids stay ids — a roomId is an opaque handle and IS echoed back, by
+        // design. What gets poisoned here is everything that is not an id: the
+        // event payloads, the tool input, the refusal detail, the transcript
+        // path, and a session id a caller could stuff a token into.
+        recordDispatchStart({ dispatchId: 'dsp_P', origin: 'room', roomId: 'room-1' });
+        logRefusal('[rooms] an agent did not answer', {
+          reason: 'turn_failed',
+          visibility: 'silent',
+          sessionId: SESSION_ID,
+          detail: { note: POISON.token },
+        });
+      });
+
+      const app = buildApp({
+        roomSessions: {
+          listRoomSessions: () => [{ roomId: 'room-1', authorId: 'ana', sessionId: POISON.token }],
+        },
+        transcriptProjectRoots: () => [transcriptRoot],
+      });
+
+      const routes = [
+        '/api/debug/dispatches',
+        '/api/debug/refusals',
+        '/api/debug/projectors',
+        `/api/debug/sessions/${SESSION_ID}`,
+        '/api/debug/rooms/room-1/bindings',
+        '/api/debug/relay/traces/dsp_P',
+      ];
+      for (const route of routes) {
+        const res = await request(app).get(route);
+        expect(res.status, route).toBe(200);
+        const body = JSON.stringify(res.body);
+        expect(body, route).not.toContain('deploy key');
+        expect(body, route).not.toContain('hunter2');
+        expect(body, route).not.toContain('notes.md');
+        expect(body, route).not.toContain('/Users/');
+      }
+    } finally {
+      fs.rmSync(transcriptRoot, { recursive: true, force: true });
+    }
+  });
+});

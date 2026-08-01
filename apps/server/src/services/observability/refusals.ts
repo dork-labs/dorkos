@@ -23,7 +23,9 @@
  *
  * @module services/observability/refusals
  */
+import { currentDispatch } from '../../lib/dispatch-context.js';
 import { logger } from '../../lib/logger.js';
+import { recordRefusal } from './dispatch-buffers.js';
 
 /**
  * Whether the person on the other end learned that something was declined.
@@ -128,4 +130,9 @@ export function logRefusal(message: string, refusal: Refusal): void {
   // happened, and a record filed at `info` is a record nobody looks at.
   if (visibility === 'shown') logger.info(message, fields);
   else logger.warn(message, fields);
+  // The same fact, kept in memory so `GET /api/debug/refusals` can answer
+  // "why has nothing replied for ten minutes" without anyone opening a file.
+  // The log is still the durable record; this is the last 256, for right now.
+  const ctx = currentDispatch();
+  recordRefusal(refusal, ctx ? { dispatchId: ctx.dispatchId, origin: ctx.origin } : undefined);
 }

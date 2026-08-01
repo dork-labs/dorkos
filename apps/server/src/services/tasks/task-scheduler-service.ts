@@ -9,6 +9,7 @@ import { isRelayEnabled } from '../relay/relay-state.js';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { createTaggedLogger } from '../../lib/logger.js';
 import { runInDispatch } from '../../lib/dispatch-context.js';
+import { recordDispatchEnd, recordDispatchStart } from '../observability/dispatch-buffers.js';
 import { formatDuration } from '../../lib/format-duration.js';
 import { SchedulerLock, SCHEDULER_HEARTBEAT_MS, type LeaderLock } from './scheduler-lock.js';
 import { withSpan, SPAN, ATTR } from '../observability/index.js';
@@ -413,11 +414,22 @@ export class TaskSchedulerService {
    * side.
    */
   private async executeRun(task: Task, run: TaskRun): Promise<void> {
-    return runInDispatch({ dispatchId: newDispatchId(), origin: 'task' }, () =>
+    const dispatchId = newDispatchId();
+    recordDispatchStart({ dispatchId, origin: 'task' });
+    return runInDispatch({ dispatchId, origin: 'task' }, () =>
       withSpan(SPAN.TASK_RUN, { [ATTR.TASK_TRIGGER]: run.trigger }, async (span) => {
         const viaRelay = isRelayEnabled() && this.relay;
         span.setAttr(ATTR.TASK_DISPATCH, viaRelay ? 'relay' : 'direct');
-        return viaRelay ? this.executeRunViaRelay(task, run) : this.executeRunDirect(task, run);
+        try {
+          const result = viaRelay
+            ? await this.executeRunViaRelay(task, run)
+            : await this.executeRunDirect(task, run);
+          recordDispatchEnd(dispatchId, 'answered');
+          return result;
+        } catch (err) {
+          recordDispatchEnd(dispatchId, 'failed');
+          throw err;
+        }
       })
     );
   }

@@ -36,8 +36,9 @@ import type {
 import { runtimeSessionSubject, legacyAgentSubject } from '@dorkos/relay';
 import { isDispatchId, newDispatchId } from '@dorkos/shared/dispatch-id';
 import { logError, logger } from '../../lib/logger.js';
-import { runInDispatch } from '../../lib/dispatch-context.js';
+import { currentDispatchId, runInDispatch } from '../../lib/dispatch-context.js';
 import { describeSession, parseSessionEntry, type SessionRecord } from './binding-session-map.js';
+import { recordDispatchEnd, recordDispatchStart } from '../observability/dispatch-buffers.js';
 import { logRefusal } from '../observability/refusals.js';
 import type { BindingStore } from './binding-store.js';
 import type { AdapterMeshCoreLike } from './adapter-manager.js';
@@ -366,6 +367,7 @@ export class BindingRouter {
     // The scope wraps the whole routing body rather than delegating to a second
     // method, so every line the routing writes — the refusals, the session
     // resolution, the dispatch — carries the id without being edited to.
+    recordDispatchStart({ dispatchId, origin: 'relay' });
     return runInDispatch(
       { dispatchId, origin: 'relay' },
       async (): Promise<void | SubscriberVerdict> => {
@@ -507,6 +509,10 @@ export class BindingRouter {
               `BindingRouter: dispatched ${envelope.subject} → ${dispatchSubject} ` +
                 `(binding=${binding.id}, projectPath=${projectPath})`
             );
+            // The relay's dispatch is over the moment the turn is ACCEPTED —
+            // agent deliveries are detached, and nothing here can wait for the
+            // turn. Its own ingress opens a dispatch of its own.
+            recordDispatchEnd(dispatchId, 'answered', sessionId);
             return;
           }
 
@@ -563,6 +569,7 @@ export class BindingRouter {
     // `shown` when a notifier exists to carry the one-line notice back into the
     // chat, `silent` when none is wired — an install with no notice path drops
     // the message with nothing but this line to show for it.
+    recordDispatchEnd(currentDispatchId() ?? '', 'refused');
     logRefusal('[relay] an inbound chat message was dropped', {
       reason: notice,
       visibility: this.deps.chatNotice !== undefined ? 'shown' : 'silent',

@@ -89,6 +89,7 @@ import { parseEntryBody, type NewRoom } from './room-rows.js';
 import type { RoomStore } from './room-store.js';
 import type { RoomBroadcaster } from './room-stream.js';
 import { RoomTriggerDispatcher, type RoomTurnRunner } from './room-trigger.js';
+import type { ActiveClaimView } from './room-claims.js';
 import type { RoomTurnBudget } from './turn-budget.js';
 
 /** Everything {@link RoomService} is constructed from. */
@@ -229,6 +230,19 @@ export class RoomService {
    * A cascade is asynchronous by construction — posting returns before any
    * agent has answered — so this is how a caller waits it out without sleeping.
    */
+  /**
+   * Every room turn in flight right now, for the diagnostic read surface.
+   *
+   * Delegated rather than re-derived: the dispatcher's claim map IS the answer,
+   * and a second count computed from the store would be a second truth that can
+   * disagree with the indicator people are looking at.
+   *
+   * @returns One row per live claim.
+   */
+  listActiveClaims(): ActiveClaimView[] {
+    return this.triggers.listClaims();
+  }
+
   triggersIdle(): Promise<void> {
     return this.triggers.idle();
   }
