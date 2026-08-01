@@ -20,7 +20,7 @@ import {
   type UpdateBindingRequest,
 } from '@dorkos/shared/relay-schemas';
 import { z } from 'zod';
-import { logger } from '../../lib/logger.js';
+import { logError, logger } from '../../lib/logger.js';
 import { carryForwardBindingDefaults } from './safe-defaults.js';
 
 /** Loose file schema — validates structure but not individual entries. */
@@ -230,7 +230,10 @@ export class BindingStore {
         logger.debug('[BindingSubsystem] no bindings.json yet, starting with none');
         this.bindings.clear();
       } else {
-        logger.error('Failed to load bindings.json, starting with empty bindings', err);
+        logger.error(
+          '[BindingSubsystem] could not load bindings.json, starting with none',
+          logError(err)
+        );
         this.bindings.clear();
       }
     }

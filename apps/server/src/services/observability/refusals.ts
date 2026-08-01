@@ -102,6 +102,25 @@ export interface Refusal {
   sessionId?: string;
   /** The room entry that triggered it. */
   entryId?: string;
+  /**
+   * WHICH dispatch this refusal belongs to, when the caller knows better than
+   * the ambient scope does. Three states, and the third is the one that matters:
+   *
+   * - **absent** — inherit the ambient dispatch. Correct for a refusal written
+   *   from inside the dispatch it is about.
+   * - **a string** — this dispatch, whatever the ambient one says.
+   * - **`null`** — *no* dispatch, and never the ambient one.
+   *
+   * `null` exists because "no id" and "the wrong id" are different failures and
+   * only one of them is survivable. A room's refusals are decided synchronously
+   * inside `RoomService.post`, before any target has been claimed — and when the
+   * post is an AGENT'S REPLY, that runs inside the replying agent's dispatch
+   * scope. Left ambient, a cascade refusal about Bo is stamped with Ana's
+   * dispatch id, and a `jq 'select(.dispatchId==…)'` over Ana's chain returns a
+   * refusal that has nothing to do with her. A missing field is legible; a
+   * bystander's id is a lie the tooling cannot detect.
+   */
+  dispatchId?: string | null;
   /** Free-form-shaped but bounded extras — ids, counts, durations, coarse enums. */
   detail?: Record<string, string | number | boolean | undefined>;
 }
@@ -109,20 +128,34 @@ export interface Refusal {
 /**
  * Write the one line a refusal owes, at the level its visibility earns.
  *
- * The `dispatchId` is NOT passed here: the file reporter adds it ambiently, so
- * a refusal inside a dispatch is correlated without this function knowing the
- * dispatch exists.
+ * Correlation is ambient by default — the file reporter adds the dispatch id of
+ * whatever scope the line was written in — so a refusal written from inside its
+ * own dispatch needs to say nothing. A caller that knows better passes
+ * {@link Refusal.dispatchId}: a string to name the dispatch, or `null` to state
+ * that there is none and refuse the ambient one.
  *
  * @param message - The `'[tag] sentence'` line, in the same voice as every other.
  * @param refusal - Why, who it happened to, and whether they were told.
  */
 export function logRefusal(message: string, refusal: Refusal): void {
-  const { reason, visibility, detail, ...where } = refusal;
+  const { reason, visibility, dispatchId, detail, ...where } = refusal;
+  const ambient = currentDispatch();
+  // `undefined` means "the caller did not say" — inherit. `null` means "there is
+  // no dispatch" — and must beat the ambient one rather than falling back to it.
+  const resolved = dispatchId === undefined ? ambient?.dispatchId : (dispatchId ?? undefined);
   const fields = {
-    ...Object.fromEntries(Object.entries(where).filter(([, v]) => v !== undefined)),
-    ...(detail
-      ? Object.fromEntries(Object.entries(detail).filter(([, v]) => v !== undefined))
-      : {}),
+    ...compact(where),
+    ...compact(detail),
+    // Present as a KEY whenever there is an ambient id to override, because the
+    // reporter injects that id into any entry that does not already carry one —
+    // and `JSON.stringify` drops a key whose value is `undefined`. That is what
+    // makes an explicit `null` a SUPPRESSION rather than a no-op. When there is
+    // nothing to suppress and nothing to say, the key stays off the line.
+    ...(resolved !== undefined
+      ? { dispatchId: resolved }
+      : ambient !== undefined
+        ? { dispatchId: undefined }
+        : {}),
     reason,
     visibility,
   };
@@ -133,6 +166,20 @@ export function logRefusal(message: string, refusal: Refusal): void {
   // The same fact, kept in memory so `GET /api/debug/refusals` can answer
   // "why has nothing replied for ten minutes" without anyone opening a file.
   // The log is still the durable record; this is the last 256, for right now.
-  const ctx = currentDispatch();
-  recordRefusal(refusal, ctx ? { dispatchId: ctx.dispatchId, origin: ctx.origin } : undefined);
+  //
+  // The origin rides along only when the id came from the ambient scope. An
+  // explicitly-named dispatch may belong to a scope this frame is not inside,
+  // and the ambient origin would then describe a different dispatch — the exact
+  // substitution `dispatchId: null` exists to prevent, one field over.
+  const fromAmbient = resolved !== undefined && resolved === ambient?.dispatchId;
+  recordRefusal(refusal, {
+    ...(resolved !== undefined ? { dispatchId: resolved } : {}),
+    ...(fromAmbient ? { origin: ambient.origin } : {}),
+  });
+}
+
+/** Drop the `undefined` entries of a bag, so no key reaches a line with no value. */
+function compact(bag: Record<string, unknown> | undefined): Record<string, unknown> {
+  if (!bag) return {};
+  return Object.fromEntries(Object.entries(bag).filter(([, value]) => value !== undefined));
 }

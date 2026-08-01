@@ -264,6 +264,43 @@ describe('GET /api/debug/rooms/:id/bindings', () => {
     expect(JSON.stringify(res.body)).not.toContain('Users');
   });
 
+  it('never probes outside the transcript roots, whatever the stored id says', async () => {
+    // The id comes out of the database, so it is not attacker-controlled today
+    // — but it is joined into a filesystem path, and `../../` in a stored id
+    // would have this stat'ing files that are none of its business. Containment
+    // is a property of the probe rather than of every writer that ever puts a
+    // row in `room_sessions`.
+    // Planted at exactly the path an UNCONTAINED probe would resolve to:
+    // `join(<root>/<slug>, '../outside.jsonl')` is `<root>/outside.jsonl`. A
+    // file somewhere merely nearby would leave this test green either way.
+    const escape = path.join(transcriptRoot, 'outside.jsonl');
+    fs.writeFileSync(escape, '{}\n');
+    expect(
+      fs.existsSync(path.join(transcriptRoot, '-Users-someone-project', '../outside.jsonl'))
+    ).toBe(true);
+    try {
+      const app = buildApp({
+        roomSessions: {
+          listRoomSessions: () => [
+            { roomId: 'room-1', authorId: 'ana', sessionId: '../outside' },
+            { roomId: 'room-1', authorId: 'bo', sessionId: '..' },
+            { roomId: 'room-1', authorId: 'cy', sessionId: '' },
+            // The control: a real transcript in a real slug folder still reads
+            // `true`, so this cannot pass by refusing everything.
+            { roomId: 'room-1', authorId: 'di', sessionId: 'has-one' },
+          ],
+        },
+        transcriptProjectRoots: () => [transcriptRoot],
+      });
+      const res = await get(app, '/api/debug/rooms/room-1/bindings');
+      expect(
+        res.body.bindings.map((b: { transcriptExists: boolean }) => b.transcriptExists)
+      ).toEqual([false, false, false, true]);
+    } finally {
+      fs.rmSync(escape, { force: true });
+    }
+  });
+
   it('degrades to nothing when no room store is wired', async () => {
     const res = await get(buildApp(), '/api/debug/rooms/room-1/bindings');
     expect(res.status).toBe(200);

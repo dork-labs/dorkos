@@ -12,6 +12,7 @@ import type { AdapterMeshCoreLike } from '../adapter-manager.js';
 import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import { isDispatchId, newDispatchId } from '@dorkos/shared/dispatch-id';
 import { currentDispatchId } from '../../../lib/dispatch-context.js';
+import { recentDispatches, resetDispatchBuffers } from '../../observability/dispatch-buffers.js';
 
 vi.mock('node:fs/promises');
 
@@ -286,6 +287,53 @@ describe('BindingRouter', () => {
       const minted = forwardedId() as string;
       expect(minted).not.toBe('../../etc/passwd');
       expect(isDispatchId(minted)).toBe(true);
+    });
+
+    it('opens no dispatch at all for a message this server produced', async () => {
+      // The ring is 256 entries and every agent reply rides a relay.human.*
+      // subject. A start-only row per reply flushed the real dispatches out of
+      // the surface at reply rate — the buffer filled with rows that were never
+      // dispatches and could never be closed.
+      bindOne();
+      resetDispatchBuffers();
+      for (const from of ['agent:ana', 'relay.system.notice']) {
+        await capturedHandler!({ ...inbound(), from });
+      }
+      expect(recentDispatches(10)).toHaveLength(0);
+      expect(mockRelayCore.publish).not.toHaveBeenCalled();
+    });
+
+    it('closes the dispatch when the chat subject cannot be read', async () => {
+      resetDispatchBuffers();
+      await capturedHandler!({ ...inbound(), subject: 'relay.agent.nonsense' });
+      const [row] = recentDispatches(10);
+      expect(row).toBeDefined();
+      expect(row.outcome).toBe('refused');
+      expect(row.endedAt).not.toBeNull();
+    });
+
+    it('closes the dispatch when nothing connects the chat to an agent', async () => {
+      // Both drops return before a binding is resolved, so neither can go
+      // through `refuse()` — which is where every other refusal closes its row.
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue(undefined);
+      resetDispatchBuffers();
+      await capturedHandler!(inbound());
+      const [row] = recentDispatches(10);
+      expect(row).toBeDefined();
+      expect(row.outcome).toBe('refused');
+      expect(row.endedAt).not.toBeNull();
+    });
+
+    it('leaves no dispatch open once a bound message has been routed or refused', async () => {
+      // The property, rather than three instances of it: whatever an inbound
+      // message does, it must not still read as running afterwards.
+      bindOne();
+      resetDispatchBuffers();
+      await capturedHandler!(inbound());
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue(undefined);
+      await capturedHandler!(inbound());
+      await capturedHandler!({ ...inbound(), subject: 'relay.agent.nonsense' });
+      expect(recentDispatches(10).filter((d) => d.outcome === null)).toEqual([]);
     });
 
     it('makes the id ambient for everything the routing does', async () => {

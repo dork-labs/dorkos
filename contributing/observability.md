@@ -156,6 +156,30 @@ logRefusal('[rooms] an agent did not answer', {
 - **`reason`** comes from a closed union, never a free-form string, so `jq 'group_by(.reason)'` works without parsing prose. Adding a reason means adding it to `REFUSAL_REASONS` with a one-line meaning.
 - **`visibility`** is `'shown' | 'damped' | 'silent'` — was the person told, was a notice suppressed as a repeat, or is there no notice for this path at all.
 - **Level follows visibility.** `shown` → `info`; `damped` or `silent` → `warn`. `logRefusal` does this for you and it is not overridable.
+- **`dispatchId` is ambient by default, and you must override it when ambient would lie** — see below.
+
+#### When ambient correlation is a lie
+
+The reporter stamps every line with the dispatch scope it was written in. For a refusal decided _inside_ the dispatch it is about, that is exactly right and you write nothing. Two shapes make it wrong, and both are on the messaging path:
+
+| Shape                                                                                      | What ambient gives you       | Pass                         |
+| ------------------------------------------------------------------------------------------ | ---------------------------- | ---------------------------- |
+| The refusal is decided **before** the dispatch exists, or **after** its scope has returned | Nothing, or a bystander's id | The id explicitly, or `null` |
+| The frame is running inside **somebody else's** dispatch                                   | That other dispatch's id     | `null`, or the right id      |
+
+The second one is the dangerous one, and it is not hypothetical. `RoomTriggerDispatcher.claimTargets` runs **synchronously inside `RoomService.post`** — and when the post is an agent's reply, that is inside the _replying_ agent's dispatch scope. Left ambient, a cascade refusal about Bo is filed under Ana's dispatch id, and `jq 'select(.dispatchId=="<ana>")'` returns a refusal that has nothing to do with her. **A missing field is legible; a bystander's id is a lie the tooling cannot detect**, so the three-state field exists to make "there is no dispatch" sayable:
+
+```ts
+logRefusal('[rooms] the guard stopped an exchange', {
+  reason: 'cascade_depth',
+  visibility: 'silent',
+  dispatchId: null, // absent → inherit ambient · a string → this one · null → none, ever
+});
+```
+
+`null` is a _suppression_, not a fallback: it puts a present-but-undefined key on the entry, which beats the reporter's injection and is then dropped by `JSON.stringify`. The same rule already governs the claim lines in `room-trigger.ts`, which pass `dispatchId` explicitly because a claim is taken before `runOne` enters its scope and released from `halt()` with no scope at all.
+
+Rule of thumb: **if the line is written outside the `runInDispatch` that owns it, say which dispatch it belongs to.**
 
 That last clause is the rule that would have changed the 2026-07-31 incident. A damped refusal means the person was never told, so the log line is the only record that anything happened — and a record filed at `info` beside the ones they _did_ see is a record nobody looks at.
 
@@ -331,7 +355,7 @@ Two rules when adding to any of this: **no dispatch context is created per strea
 
 ## 11. Rules of thumb
 
-1. If you add a log line inside the dispatch path, you get `dispatchId` for free. Do not add it by hand unless you are logging about a _different_ dispatch.
+1. If you add a log line inside the dispatch path, you get `dispatchId` for free. Add it by hand when the ambient scope is not the dispatch the line is about — a different one, or none (§4.4, "When ambient correlation is a lie").
 2. If your line says "we are not doing the thing", it is a refusal — use `logRefusal`, not `logger.warn`.
 3. If your line opens with `[tag]`, the tag becomes a filter. Pick one that already exists, or add a row to §4.2.
 4. If you want to expose new state at `/api/debug`, first ask whether every field could be a span attribute. If any could not, it does not go.

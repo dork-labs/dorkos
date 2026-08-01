@@ -62,6 +62,7 @@ import { assembleAdditionalContext } from './context-assembler.js';
 import { withStallGuard } from './stall-guard.js';
 import { SESSIONS } from '../../config/constants.js';
 import { startSpan, SPAN, ATTR } from '../observability/index.js';
+import { logError, logger } from '../../lib/logger.js';
 
 /**
  * The `seq`-less shape of a single {@link SessionEvent} member, selected by its
@@ -208,9 +209,12 @@ export interface TriggerTurnOpts {
    *
    * The 202 resolves long before this. A caller that wants to record how a turn
    * ended — the diagnostic dispatch buffer does — has nowhere else to learn it,
-   * because the request is gone and `onError` only fires on a failure. Kept
-   * side-effect free by contract: this runs on the turn's own settlement path,
-   * where a throw would surface as an unhandled rejection.
+   * because the request is gone and `onError` only fires on a failure.
+   *
+   * A throw here is caught and logged rather than allowed to escape: this runs
+   * on the turn's own settlement path, where an unhandled rejection would take
+   * down work that has already succeeded. An observability hook must be
+   * structurally unable to kill a turn.
    *
    * @param outcome - `'failed'` when the turn reported an error, else `'ok'`.
    */
@@ -384,7 +388,18 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
       turnSpan.setAttr(ATTR.EVENT_COUNT, eventCount);
       turnSpan.end();
       releaseOnce();
-      opts.onSettled?.(failed ? 'failed' : 'ok');
+      // Contained: this is the turn's own settlement path, where a throw becomes
+      // an unhandled rejection. An observability hook must be structurally
+      // unable to kill a turn, so the guarantee is enforced here rather than
+      // asked for in the hook's doc.
+      try {
+        opts.onSettled?.(failed ? 'failed' : 'ok');
+      } catch (err) {
+        logger.warn('[trigger-turn] a turn-settled observer threw', {
+          sessionId,
+          ...logError(err),
+        });
+      }
     });
   // The turn runs to completion in the background; the request does not await it.
   void turn;

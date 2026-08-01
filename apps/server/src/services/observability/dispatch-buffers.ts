@@ -112,9 +112,22 @@ class Ring<T> {
     return out;
   }
 
-  /** Find the newest entry matching `match`, for in-place updates. */
+  /**
+   * Find the newest entry matching `match`, for in-place updates.
+   *
+   * Scans backwards over the slots rather than through {@link Ring.recent},
+   * which would materialise a 256-element array on every dispatch that ends —
+   * an allocation per dispatch, on the messaging hot path, to find one row. The
+   * module doc promises "no allocation per write beyond the record itself", and
+   * this is the only place that promise could be broken.
+   */
   findLatest(match: (entry: T) => boolean): T | undefined {
-    return this.recent(this.capacity).find(match);
+    const held = Math.min(this.written, this.capacity);
+    for (let i = 1; i <= held; i += 1) {
+      const slot = this.slots[(this.cursor - i + this.capacity) % this.capacity];
+      if (slot !== undefined && match(slot)) return slot;
+    }
+    return undefined;
   }
 
   /** Forget everything. Test isolation only — nothing in the server calls it. */

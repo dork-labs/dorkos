@@ -14,8 +14,10 @@
  *
  * @module server/services/rooms/room-claims
  */
+import type { DispatchOutcome } from '../observability/dispatch-buffers.js';
+import type { BusyContext } from './room-notices.js';
+import type { CascadeStamp, RoomTurnUnanswered } from './room-notice-log.js';
 import type { EngagementWindow } from './engagement.js';
-import type { RoomTurnUnanswered } from './room-notice-log.js';
 
 /**
  * One turn in flight: which cascade it belongs to, how deep it sits, what it is
@@ -164,4 +166,126 @@ export interface ActiveClaimView {
   heldMs: number;
   /** The room stopped waiting, but the turn is still running. */
   pastDeadline: boolean;
+}
+
+// --- Reading the claim map --------------------------------------------------
+//
+// The map itself stays private to `RoomTriggerDispatcher`, which is the only
+// thing allowed to WRITE it: presence is the claim map made visible, and a
+// second writer would be a second source of the working indicator. These are
+// the questions anybody asks of it, as pure functions over a read-only view —
+// so the dispatcher keeps the writes and this module keeps the vocabulary.
+
+/**
+ * How a room's own claim outcome reads in the cross-origin dispatch buffer.
+ *
+ * A total `Record`, so adding a {@link ClaimOutcome} without deciding how it
+ * groups is a type error here rather than a silent `undefined` in a debug
+ * response. `busy` becomes `refused` because no turn ran; `quiet` stays its own
+ * thing, because an agent choosing to say nothing is not a refusal and the two
+ * looking alike is what made a busy agent indistinguishable from a broken one.
+ */
+export const DISPATCH_OUTCOMES: Record<ClaimOutcome, DispatchOutcome> = {
+  answered: 'answered',
+  quiet: 'quiet',
+  halted: 'halted',
+  busy: 'refused',
+  failed: 'failed',
+};
+
+/**
+ * The cascade an author is currently answering inside, deepest first.
+ *
+ * The deepest in-flight turn wins when an agent is answering in more than one
+ * room at once: the room a post lands in cannot say which turn produced it, so
+ * the conservative choice is the one closest to the ceiling.
+ *
+ * @param claims - The live claim map.
+ * @param authorId - The author writing a post.
+ * @returns The cascade to inherit, or `undefined` when it has no turn running.
+ */
+export function deepestClaimOf(
+  claims: ReadonlyMap<string, ActiveClaim>,
+  authorId: string
+): CascadeStamp | undefined {
+  let active: CascadeStamp | undefined;
+  for (const claim of claims.values()) {
+    if (claim.authorId !== authorId) continue;
+    if (!active || claim.depth > active.depth) {
+      active = { root: claim.cascadeRoot, depth: claim.depth };
+    }
+  }
+  return active;
+}
+
+/**
+ * Who is working in one room, and since when — what `room_context.working` and
+ * the presence fan-out are given.
+ *
+ * @param claims - The live claim map.
+ * @param roomId - The room being asked about.
+ * @returns One entry per agent holding a claim there.
+ */
+export function claimsWorkingIn(
+  claims: ReadonlyMap<string, ActiveClaim>,
+  roomId: string
+): Array<{ authorId: string; since: string }> {
+  const working: Array<{ authorId: string; since: string }> = [];
+  for (const claim of claims.values()) {
+    if (claim.roomId === roomId) working.push({ authorId: claim.authorId, since: claim.claimedAt });
+  }
+  return working;
+}
+
+/**
+ * What the room can truthfully say an agent is doing, or `null` when it is free.
+ *
+ * Two ceilings, asked in this order because they have two different remedies.
+ * The `(room, agent)` key bounds one TRANSCRIPT: a claim under it means the
+ * answer being worked on will land in front of this reader, so waiting is the
+ * whole remedy. The agent PATH bounds one CHECKOUT, which is shared by every
+ * room the agent is in — the contention DOR-500 measured — and nothing about
+ * the first question could see it.
+ *
+ * @param claims - The live claim map.
+ * @param roomId - The room being triggered.
+ * @param authorId - The agent a trigger would run.
+ * @param agentPath - That agent's directory, which is what the second ceiling
+ *   is really about.
+ * @returns The busy context, or `null` when the agent is doing nothing.
+ */
+export function claimBusyWith(
+  claims: ReadonlyMap<string, ActiveClaim>,
+  roomId: string,
+  authorId: string,
+  agentPath: string
+): BusyContext | null {
+  if (claims.has(agentKey(roomId, authorId))) return 'working-here';
+  for (const claim of claims.values()) {
+    if (claim.agentPath === agentPath) return 'working-elsewhere';
+  }
+  return null;
+}
+
+/**
+ * Every live claim, projected onto the shape the diagnostic surface may carry.
+ *
+ * @param claims - The live claim map.
+ * @param now - Epoch ms to measure `heldMs` against.
+ * @returns One row per live claim.
+ */
+export function describeClaims(
+  claims: ReadonlyMap<string, ActiveClaim>,
+  now = Date.now()
+): ActiveClaimView[] {
+  return [...claims.values()].map((claim) => ({
+    roomId: claim.roomId,
+    authorId: claim.authorId,
+    entryId: claim.entryId,
+    cascadeRoot: claim.cascadeRoot,
+    dispatchId: claim.dispatchId,
+    claimedAt: claim.claimedAt,
+    heldMs: Math.max(0, now - Date.parse(claim.claimedAt)),
+    pastDeadline: claim.pastDeadline,
+  }));
 }

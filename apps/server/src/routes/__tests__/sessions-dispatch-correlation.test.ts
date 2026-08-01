@@ -69,6 +69,11 @@ import {
   disposeProjector,
 } from '../../services/session/session-state-projector.js';
 import { currentDispatch, currentDispatchId } from '../../lib/dispatch-context.js';
+import {
+  recentDispatches,
+  recentRefusals,
+  resetDispatchBuffers,
+} from '../../services/observability/dispatch-buffers.js';
 
 const app = createApp();
 finalizeApp(app);
@@ -177,6 +182,34 @@ describe('the dispatch id survives the detached turn', () => {
     expect(reads).toHaveLength(2);
     expect(reads[0]).toBe(reads[1]);
     expect(isDispatchId(reads[0])).toBe(true);
+  });
+
+  it('closes the dispatch and correlates the refusal when the session is locked', async () => {
+    // A 409 is the most common interactive refusal, and it is the one path
+    // where `onSettled` can never fire — no turn started. Left alone the row
+    // sat open forever, and the refusal line was written AFTER `runInDispatch`
+    // returned, so the ambient id was already gone.
+    resetDispatchBuffers();
+    fakeRuntime.acquireLock.mockReturnValue(false);
+    fakeRuntime.getLockInfo.mockReturnValue({ clientId: 'someone-else', acquiredAt: Date.now() });
+
+    const res = await request(app)
+      .post(`/api/sessions/${SESSION_ID}/messages`)
+      .send({ content: 'Hello' });
+    expect(res.status).toBe(409);
+
+    const [row] = recentDispatches(10);
+    expect(row).toBeDefined();
+    expect(row.outcome).toBe('refused');
+    expect(row.endedAt).not.toBeNull();
+
+    const [refusal] = recentRefusals(10);
+    expect(refusal).toBeDefined();
+    expect(refusal.reason).toBe('session_locked');
+    // The whole point: the refusal names the dispatch it refused, so one filter
+    // finds both the trigger line and the reason it went nowhere.
+    expect(refusal.dispatchId).toBe(row.dispatchId);
+    expect(isDispatchId(refusal.dispatchId as string)).toBe(true);
   });
 
   it('gives two concurrent turns two different ids', async () => {

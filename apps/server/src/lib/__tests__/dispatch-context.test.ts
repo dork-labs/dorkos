@@ -99,6 +99,24 @@ describe('dispatch context', () => {
       expect(writtenLines()[0].dispatchId).toBe('dsp_EXPLICIT');
     });
 
+    it('lets an explicit undefined SUPPRESS the ambient id, not just lose to it', () => {
+      // How `logRefusal({ dispatchId: null })` reaches the file. The reporter
+      // injects the ambient id into any entry that does not already carry one,
+      // so "no id" has to be expressed as a present key with an undefined value
+      // — which `JSON.stringify` then drops. Without this, a refusal that
+      // explicitly disclaimed a dispatch would still be written under the
+      // bystander's id, which is the failure the disclaimer exists to prevent.
+      dispatch.runInDispatch({ dispatchId: 'dsp_BYSTANDER', origin: 'room' }, () => {
+        loggerModule.logger.warn('[rooms] the guard stopped an exchange', {
+          dispatchId: undefined,
+          reason: 'cascade_depth',
+        });
+      });
+      const [line] = writtenLines();
+      expect('dispatchId' in line).toBe(false);
+      expect(line.reason).toBe('cascade_depth');
+    });
+
     it('lifts a leading [tag] into the tag field, leaving the message intact', () => {
       // `jq 'select(.tag=="rooms")'` is what `debug:logs` advertises; before
       // this it matched nothing, because `tag` was empty on every line that

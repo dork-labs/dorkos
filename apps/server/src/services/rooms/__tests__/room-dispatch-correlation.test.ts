@@ -14,6 +14,7 @@
 import { describe, it, expect } from 'vitest';
 import { isDispatchId } from '@dorkos/shared/dispatch-id';
 import { currentDispatch } from '../../../lib/dispatch-context.js';
+import { recentRefusals, resetDispatchBuffers } from '../../observability/dispatch-buffers.js';
 import {
   agentLookupFor,
   createRoomHarness,
@@ -110,6 +111,89 @@ describe('a room dispatch is one agent answering one trigger', () => {
     expect(isDispatchId(seen[0])).toBe(true);
   });
 
+  describe('refusals decided before a target is claimed', () => {
+    it('files a budget refusal under the target it refused', async () => {
+      // The budget is asked AFTER the guard has allowed a target and given it an
+      // id, so this refusal has a real dispatch that simply never ran. Filing it
+      // with no id would lose the only record of a turn that was owed.
+      resetDispatchBuffers();
+      const { service, authors, human } = createRoomHarness({
+        agents,
+        runner: outcomeRunner(() => ({ text: null })),
+        maxAutomaticTurnsPerRoomPerHour: 0,
+      });
+      const room = service.createRoom(
+        { kind: 'channel', title: 'Backend', members: [], agentPaths: ['/agents/ana'] },
+        human
+      );
+      service.updateMembership(
+        room.id,
+        human,
+        authors.resolveAgent('/agents/ana', 'Ana').id,
+        'always'
+      );
+
+      service.post(room.id, { authorId: human, text: 'ping' });
+      await service.triggersIdle();
+
+      const budget = recentRefusals(20).find((r) => r.reason === 'room_budget');
+      expect(budget).toBeDefined();
+      expect(budget?.dispatchId).toBeDefined();
+      expect(isDispatchId(budget?.dispatchId as string)).toBe(true);
+    });
+
+    it("never stamps a cascade refusal with the REPLYING agent's dispatch id", async () => {
+      // The wrong-id case, and the reason `dispatchId: null` exists. An agent's
+      // reply is posted from inside that agent's own dispatch scope, so
+      // `claimTargets` — which runs synchronously inside `RoomService.post` —
+      // evaluates the next hop's refusals under the REPLYING agent's id. A
+      // refusal about Bo filed under Ana's dispatch is worse than one filed
+      // under none: a filter over Ana's chain returns a fact about somebody else.
+      resetDispatchBuffers();
+      const seen: string[] = [];
+      const { service, authors, human } = createRoomHarness({
+        agents,
+        // Ana answers by naming Bo, which re-enters the cascade at the ceiling
+        // and gets Bo refused — from inside Ana's scope.
+        runner: outcomeRunner((request) => {
+          const id = currentDispatch()?.dispatchId;
+          if (id) seen.push(id);
+          return { text: request.authorId === anaId ? 'over to @bo' : 'on it' };
+        }),
+        maxAgentDepth: 1,
+      });
+      const room = service.createRoom(
+        {
+          kind: 'channel',
+          title: 'Backend',
+          members: [],
+          agentPaths: ['/agents/ana', '/agents/bo'],
+        },
+        human
+      );
+      const anaId = authors.resolveAgent('/agents/ana', 'Ana').id;
+      service.updateMembership(room.id, human, anaId, 'mention-only');
+      service.updateMembership(
+        room.id,
+        human,
+        authors.resolveAgent('/agents/bo', 'Bo').id,
+        'mention-only'
+      );
+
+      service.post(room.id, { authorId: human, text: '@ana can you look?' });
+      await service.triggersIdle();
+
+      const cascade = recentRefusals(50).filter((r) => r.reason.startsWith('cascade_'));
+      expect(cascade.length).toBeGreaterThan(0);
+      // Ana's dispatch id was ambient when each of these was decided.
+      expect(seen.length).toBeGreaterThan(0);
+      for (const refusal of cascade) {
+        expect(refusal.dispatchId).toBeUndefined();
+        expect(seen).not.toContain(refusal.dispatchId);
+      }
+    });
+  });
+
   it('does not leak the dispatch context back to the caller that posted', () => {
     // `RoomService.post` runs SYNCHRONOUSLY inside the HTTP handler and returns
     // before any turn does. A dispatch scope that leaked out of it would tag the
@@ -123,7 +207,12 @@ describe('a room dispatch is one agent answering one trigger', () => {
       { kind: 'channel', title: 'Backend', members: [], agentPaths: ['/agents/ana'] },
       human
     );
-    service.updateMembership(room.id, human, authors.resolveAgent('/agents/ana', 'Ana').id, 'always');
+    service.updateMembership(
+      room.id,
+      human,
+      authors.resolveAgent('/agents/ana', 'Ana').id,
+      'always'
+    );
     service.post(room.id, { authorId: human, text: 'ping' });
     expect(currentDispatch()).toBeUndefined();
   });

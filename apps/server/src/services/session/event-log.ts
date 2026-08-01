@@ -73,4 +73,15 @@ export class EventLog {
   all(): SessionEvent[] {
     return [...this.events];
   }
+
+  /**
+   * How many events are retained.
+   *
+   * Separate from {@link EventLog.all} because the diagnostic read surface wants
+   * only the number, and copying up to 5,000 events to call `.length` on the
+   * copy is a real cost on a route somebody hits repeatedly during an incident.
+   */
+  size(): number {
+    return this.events.length;
+  }
 }

@@ -39,7 +39,7 @@ import { logError, logger } from '../../lib/logger.js';
 import { currentDispatchId, runInDispatch } from '../../lib/dispatch-context.js';
 import { describeSession, parseSessionEntry, type SessionRecord } from './binding-session-map.js';
 import { recordDispatchEnd, recordDispatchStart } from '../observability/dispatch-buffers.js';
-import { logRefusal } from '../observability/refusals.js';
+import { logRefusal, type Refusal } from '../observability/refusals.js';
 import type { BindingStore } from './binding-store.js';
 import type { AdapterMeshCoreLike } from './adapter-manager.js';
 import { parseHumanSubject } from './human-subject.js';
@@ -191,6 +191,29 @@ export interface BindingSessionEntry {
   lastActivityAt: number;
 }
 
+/**
+ * Whether this server produced the message, rather than a person.
+ *
+ * Optional-chained rather than asserted: `from` is typed a string because the
+ * envelope schema says so, and this runs on data that arrived from another
+ * process. A malformed envelope should take its own message out of routing, not
+ * throw before the handler's own try can turn it into a verdict.
+ *
+ * @param from - The envelope's sender principal.
+ * @returns `true` for an agent reply or a system notice.
+ */
+function isOwnProduced(from: string): boolean {
+  return from?.startsWith('agent:') === true || from?.startsWith('relay.system.') === true;
+}
+
+/**
+ * Routes inbound chat messages onto the agent that a binding connects them to,
+ * and says — in the chat and in the log — why any of them was not routed.
+ *
+ * It also owns the persisted `binding:(chat|user):id → session` map, which is
+ * what makes a conversation in a chat app resume the same agent session rather
+ * than starting a new one every message.
+ */
 export class BindingRouter {
   /** Maximum number of session mappings before LRU eviction kicks in. */
   private static readonly MAX_SESSIONS = 10_000;
@@ -354,6 +377,22 @@ export class BindingRouter {
    * @returns Nothing when routed; a {@link SubscriberVerdict} when refused.
    */
   private handleInbound(envelope: RelayEnvelope): Promise<void | SubscriberVerdict> {
+    // Skip messages this server produced. Agent replies (`agent:*`) are
+    // published to relay.human.* subjects for adapter delivery, and system
+    // notices (`relay.system.*`) — including the refusal notices below — go out
+    // the same way. Routing either back to an agent is a feedback loop: the
+    // notice would arrive as a fresh prompt.
+    //
+    // **Checked BEFORE any dispatch bookkeeping, and that ordering is
+    // load-bearing.** This branch fires for every agent reply the server sends,
+    // which is the single most frequent thing on this subscription. Minting an
+    // id and opening a ring row first meant a start-only row per reply, at reply
+    // rate, flushing the 256-entry ring of the real dispatches it exists to
+    // show. Not a dispatch: no id, no row, no scope.
+    if (isOwnProduced(envelope.from)) {
+      return Promise.resolve({ handled: false, reason: 'not an inbound message from a person' });
+    }
+
     // The bus is the one hop AsyncLocalStorage provably cannot cross, so the id
     // rides the envelope instead. An inbound message that already carries a
     // well-formed one CONTINUES that dispatch; anything else starts a fresh one.
@@ -372,24 +411,16 @@ export class BindingRouter {
       { dispatchId, origin: 'relay' },
       async (): Promise<void | SubscriberVerdict> => {
         try {
-          // Skip messages this server produced. Agent replies (`agent:*`) are
-          // published to relay.human.* subjects for adapter delivery, and system
-          // notices (`relay.system.*`) — including the refusal notices below — go
-          // out the same way. Routing either back to an agent is a feedback loop:
-          // the notice would arrive as a fresh prompt.
-          if (envelope.from.startsWith('agent:') || envelope.from.startsWith('relay.system.')) {
-            return { handled: false, reason: 'not an inbound message from a person' };
-          }
-
           const { adapterId, chatId, channelType } = parseHumanSubject(envelope.subject);
           if (!adapterId) {
             // Nothing to speak into: without an adapter id there is no chat to
             // answer in, so the log is the only record.
-            logRefusal('[relay] could not read the chat subject of an inbound message', {
-              reason: 'unreadable_subject',
-              visibility: 'silent',
-            });
-            return { handled: false, reason: `unreadable chat subject '${envelope.subject}'` };
+            return this.drop(
+              dispatchId,
+              '[relay] could not read the chat subject of an inbound message',
+              { reason: 'unreadable_subject', visibility: 'silent' },
+              `unreadable chat subject '${envelope.subject}'`
+            );
           }
 
           const binding = this.deps.bindingStore.resolve(adapterId, chatId, channelType);
@@ -398,12 +429,12 @@ export class BindingRouter {
             // anything here, so there is no agent whose silence needs explaining,
             // and speaking would be this machine starting a conversation it has no
             // consent for. The trace and the log carry it instead.
-            logRefusal('[relay] nothing connects this chat to an agent', {
-              reason: 'no_binding',
-              visibility: 'silent',
-              detail: { adapterId },
-            });
-            return { handled: false, reason: 'no binding connects this chat to an agent' };
+            return this.drop(
+              dispatchId,
+              '[relay] nothing connects this chat to an agent',
+              { reason: 'no_binding', visibility: 'silent', detail: { adapterId } },
+              'no binding connects this chat to an agent'
+            );
           }
 
           // Skip paused bindings — they do not participate in routing
@@ -539,6 +570,36 @@ export class BindingRouter {
         }
       }
     );
+  }
+
+  /**
+   * Drop one inbound message that never reached a binding: log the refusal,
+   * close its dispatch, and report the verdict.
+   *
+   * The two callers are the only refusals that happen BEFORE a binding is
+   * resolved, so {@link BindingRouter.refuse} — which needs one, both to speak
+   * into the chat and to name itself on the line — cannot serve them. They went
+   * straight to `logRefusal` instead, which left their dispatch row open
+   * forever: a `refused` outcome the ring never learned, sitting at the top of
+   * `GET /api/debug/dispatches` reading as still running.
+   *
+   * Sharing one exit is what stops the next such branch forgetting the end.
+   *
+   * @param dispatchId - The dispatch this drop terminates.
+   * @param message - The `'[tag] sentence'` refusal line.
+   * @param refusal - Why, and whether anybody was told.
+   * @param verdict - The reason string the subscriber verdict carries.
+   * @returns The `handled: false` verdict.
+   */
+  private drop(
+    dispatchId: string,
+    message: string,
+    refusal: Omit<Refusal, 'dispatchId'>,
+    verdict: string
+  ): SubscriberVerdict {
+    logRefusal(message, { ...refusal, dispatchId });
+    recordDispatchEnd(dispatchId, 'refused');
+    return { handled: false, reason: verdict };
   }
 
   /**

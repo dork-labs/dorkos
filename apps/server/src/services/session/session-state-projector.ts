@@ -37,6 +37,7 @@ import type {
   TaskItem,
 } from '@dorkos/shared/types';
 import { listPendingInteractions } from './pending-interactions.js';
+import type { SessionDebugCounters } from './session-debug-counters.js';
 import { logger } from '../../lib/logger.js';
 import { EventLog } from './event-log.js';
 import { RingBuffer } from './ring-buffer.js';
@@ -970,24 +971,17 @@ export class SessionStateProjector {
    * are never reachable from here — the buffers hold message text, and this is
    * a surface that answers "how much" and "what state", never "what was said".
    */
-  debugCounters(): {
-    lifecycle: SessionLifecycle;
-    seq: number;
-    /** Active `subscribe()` generators — how many clients hold this stream. */
-    subscribers: number;
-    /** Of those, how many are parked awaiting the next event right now. */
-    waiters: number;
-    eventLogSize: number;
-    ringSize: number;
-    persistence: ProjectorPersistenceMode | 'off';
-  } {
+  debugCounters(): SessionDebugCounters {
     return {
       lifecycle: this.status.lifecycle,
       seq: this.counter,
       subscribers: this.subscriberCount,
       waiters: this.waiters.length,
-      eventLogSize: this.log.all().length,
-      ringSize: this.ring.replayFrom(0).length,
+      eventLogSize: this.log.size(),
+      // Counted, never replayed: `replayFrom(0)` copies the array AND runs the
+      // ring's lazy TTL sweep, so reading the debug surface would mutate the
+      // state it is reporting.
+      ringSize: this.ring.size(),
       persistence: this.persistence?.mode ?? 'off',
     };
   }
@@ -1072,9 +1066,7 @@ export function getOrCreateProjector(
  *
  * @returns One entry per live projector, ids and counts only.
  */
-export function listProjectorDebugCounters(): Array<
-  { sessionId: string } & ReturnType<SessionStateProjector['debugCounters']>
-> {
+export function listProjectorDebugCounters(): Array<{ sessionId: string } & SessionDebugCounters> {
   return [...projectors.entries()].map(([sessionId, projector]) => ({
     sessionId,
     ...projector.debugCounters(),

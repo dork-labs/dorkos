@@ -100,7 +100,6 @@
  * @module server/services/rooms/room-trigger
  */
 import { randomUUID } from 'node:crypto';
-import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type {
   Room,
   RoomEntry,
@@ -111,14 +110,15 @@ import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { logError, logger } from '../../lib/logger.js';
 import { runInDispatch } from '../../lib/dispatch-context.js';
 import { logRefusal } from '../observability/refusals.js';
-import {
-  recordDispatchEnd,
-  recordDispatchStart,
-  type DispatchOutcome,
-} from '../observability/dispatch-buffers.js';
+import { recordDispatchEnd, recordDispatchStart } from '../observability/dispatch-buffers.js';
 import { selectTriggerTargets, type AddressingMember } from './addressing.js';
 import {
+  DISPATCH_OUTCOMES,
   agentKey,
+  claimBusyWith,
+  claimsWorkingIn,
+  deepestClaimOf,
+  describeClaims,
   type ActiveClaim,
   type ActiveClaimView,
   type ClaimOutcome,
@@ -135,128 +135,24 @@ import {
   type RoomNoticeWriter,
   type RoomTurnUnanswered,
 } from './room-notice-log.js';
-import {
-  buildCascadeNotice,
-  withLateAnswerNote,
-  type BusyContext,
-  type WaitingKind,
-} from './room-notices.js';
+import { buildCascadeNotice, withLateAnswerNote, type BusyContext } from './room-notices.js';
 import type { RoomAgentLookup } from './room-errors.js';
+import type { LateRoomReply, RoomTurnReply, RoomTurnRunner } from './room-turn-port.js';
 import type { RoomStore } from './room-store.js';
 import type { RoomTurnBudget } from './turn-budget.js';
 
-/** One agent turn, as the room asks for it. */
-export interface RoomTurnRequest {
-  /** The room the answer will be posted into. */
-  room: Room;
-  /** The agent author being triggered. */
-  authorId: string;
-  /** The agent's directory — its identity and its working directory. */
-  agentPath: string;
-  /** The session bound to this `(room, agent)`, or `null` on its first answer. */
-  sessionId: string | null;
-  /** The entry that triggered this turn. */
-  entry: RoomEntry;
-  /**
-   * Where the turn is happening: the room, the roster, what the agent missed and
-   * what is left to spend. Rides the runtime-neutral `additionalContext` bag
-   * rather than the message (ADR-0273), so `entry.body.text` reaches the model
-   * as exactly the words a person typed.
-   */
-  roomContext: RoomContextData;
-  /**
-   * Say that this turn has STOPPED and is waiting for a person — a tool
-   * approval, a question, an MCP prompt.
-   *
-   * The one part of a turn a room has to hear about before the turn ends,
-   * because the whole point of hearing it is that the turn will not end until
-   * somebody acts. Everything else the runner reports is an outcome; this is a
-   * state, reported while it is still true.
-   *
-   * Called once per prompt. The dispatcher damps repeats, so a runner never has
-   * to remember whether it has already said this.
-   *
-   * @param waiting - What the turn stopped for.
-   */
-  onWaiting(waiting: RoomTurnWaiting): void;
-}
-
-/** One reason a turn has stopped and can make no progress without a person. */
-export interface RoomTurnWaiting {
-  /** What sort of answer the turn is parked on; picks the room's words. */
-  kind: WaitingKind;
-  /**
-   * The tool an approval is about, when the prompt names one. **For the log
-   * only** — see `buildWaitingNotice` on why it is not in the room's copy.
-   */
-  toolName?: string;
-}
-
+// Re-exported rather than redefined. The turn port moved to its own module
+// (`room-turn-port.ts`), and the room service plus every rooms test imports it
+// from here — one definition, one import path, no churn at nine call sites.
 export type { RoomTurnUnanswered, CascadeStamp };
-
-/** What a turn produced, however long it took to produce it. */
-export interface RoomTurnReply {
-  /** What the agent said, or `null` when it said nothing worth posting. */
-  text: string | null;
-  /** Set when the room got no answer for a reason a member should see. */
-  unanswered?: RoomTurnUnanswered;
-}
-
-/** An answer that arrived after the room stopped waiting for it. */
-export interface LateRoomReply extends RoomTurnReply {
-  /** How long the answer took, from the trigger to the turn closing. */
-  waitedMs: number;
-}
-
-/** What one agent turn produced. */
-export interface RoomTurnResult extends RoomTurnReply {
-  /**
-   * The session the turn ran on. Bound to `(room, agent)` first-write-wins, so
-   * an agent keeps one thread of context per room.
-   */
-  sessionId: string;
-  /**
-   * Set when the turn outran the room's wait and is still running. Resolves
-   * when it finally closes, and its answer is posted then — late, and saying
-   * so. Cancelling instead was considered and rejected: silence is the worse
-   * failure (room-participation spec, constraint 6).
-   *
-   * **Settling this promise is what releases the turn's claim**, and nothing
-   * else does: `runOne` hands the claim over the moment this field is present.
-   * A runner that returns a promise it never settles leaves that agent reading
-   * as working for the life of the process. `collectReply`'s ceiling
-   * (`room-turn-runner.ts`) is what bounds it in production, so a new runner
-   * owes the room the same guarantee — resolve or reject, always, eventually.
-   */
-  late?: Promise<LateRoomReply>;
-}
-
-/** The seam between a room and the turn machinery. */
-export interface RoomTurnRunner {
-  /**
-   * Run one turn and resolve with what the agent said.
-   *
-   * @param request - The room, the agent, its session binding, and the trigger.
-   */
-  run(request: RoomTurnRequest): Promise<RoomTurnResult>;
-  /**
-   * Stop a turn that is already running, without waiting for what it would have
-   * said.
-   *
-   * The transport half of RP8's halt verb (room-participation spec §10.4): a
-   * control action, reaching the runtime rather than the model. Resolving says
-   * only that the interrupt was delivered — the turn's own stream still closes
-   * the ordinary way, and the room has already stopped listening by then.
-   *
-   * Never rejects for "there was nothing to interrupt": a halt races the turn it
-   * is halting, and a turn that finished a moment earlier is a successful halt,
-   * not a failure.
-   *
-   * @param request.sessionId - The session the turn is running on.
-   * @param request.agentPath - The agent's directory, which selects its runtime.
-   */
-  interrupt(request: { sessionId: string; agentPath: string }): Promise<void>;
-}
+export type {
+  RoomTurnRequest,
+  RoomTurnWaiting,
+  RoomTurnReply,
+  LateRoomReply,
+  RoomTurnResult,
+  RoomTurnRunner,
+} from './room-turn-port.js';
 
 /**
  * How a post gets written back into the room.
@@ -559,7 +455,13 @@ export class RoomTriggerDispatcher {
             entry,
             authorId,
             buildCascadeNotice(name, authorId),
-            decision.reason === 'ancestry' ? 'cascade_ancestry' : 'cascade_depth'
+            decision.reason === 'ancestry' ? 'cascade_ancestry' : 'cascade_depth',
+            // Explicitly none. This target was refused before it could be given
+            // an id — and `claimTargets` runs synchronously inside
+            // `RoomService.post`, which for an AGENT'S reply is inside that
+            // agent's own dispatch scope. Left to the ambient id, a refusal
+            // about Bo would be filed under Ana's dispatch.
+            null
           );
         }
         continue;
@@ -607,6 +509,9 @@ export class RoomTriggerDispatcher {
           entry,
           { authorId, displayName: record.displayName },
           'busy',
+          // Refused before it became a target, so it has no dispatch of its own
+          // — and the ambient one belongs to whoever's reply triggered this.
+          null,
           busyWith
         );
         continue;
@@ -644,7 +549,10 @@ export class RoomTriggerDispatcher {
         affordable.push(target);
         continue;
       }
-      this.notices.reportBudget(room, entry, decision.scope ?? 'room');
+      // This one CAN be correlated: `target` survived the guard and was given
+      // its id above, so the refusal belongs to a real dispatch that simply
+      // never ran.
+      this.notices.reportBudget(room, entry, decision.scope ?? 'room', target.dispatchId);
       break;
     }
 
@@ -702,6 +610,9 @@ export class RoomTriggerDispatcher {
         logRefusal('[rooms] could not bind a room session, so this agent was not triggered', {
           reason: 'session_bind_failed',
           visibility: 'silent',
+          // Named rather than ambient: this frame may be running inside another
+          // agent's dispatch (see the cascade refusal above).
+          dispatchId: target.dispatchId,
           roomId: room.id,
           authorId: target.authorId,
           entryId: entry.id,
@@ -757,14 +668,7 @@ export class RoomTriggerDispatcher {
    * @returns The cascade to inherit, or `undefined` when this author has no turn running.
    */
   activeTurnFor(authorId: string): CascadeStamp | undefined {
-    let active: CascadeStamp | undefined;
-    for (const claim of this.claimed.values()) {
-      if (claim.authorId !== authorId) continue;
-      if (!active || claim.depth > active.depth) {
-        active = { root: claim.cascadeRoot, depth: claim.depth };
-      }
-    }
-    return active;
+    return deepestClaimOf(this.claimed, authorId);
   }
 
   /**
@@ -900,7 +804,7 @@ export class RoomTriggerDispatcher {
         authorId: target.authorId,
         error: err instanceof Error ? err.message : String(err),
       });
-      this.notices.reportSilence(room, entry, target, 'failed');
+      this.notices.reportSilence(room, entry, target, 'failed', target.dispatchId);
     } finally {
       // `runner.run()` resolving is the end of the WAIT, which is only the end
       // of the TURN when the turn beat the deadline. A late turn is still
@@ -936,7 +840,7 @@ export class RoomTriggerDispatcher {
   }): ClaimOutcome {
     const { room, entry, target, reply } = opts;
     if (reply.unanswered) {
-      this.notices.reportSilence(room, entry, target, reply.unanswered);
+      this.notices.reportSilence(room, entry, target, reply.unanswered, target.dispatchId);
       return reply.unanswered;
     }
 
@@ -1051,7 +955,13 @@ export class RoomTriggerDispatcher {
         // to explain either. It gets the same `turn_failed` notice every other
         // failure gets — best-effort, and undamped like the rest of them,
         // because an error that just happened is never a repeat of one that did.
-        this.notices.reportSilence(opts.room, opts.entry, opts.target, 'failed');
+        this.notices.reportSilence(
+          opts.room,
+          opts.entry,
+          opts.target,
+          'failed',
+          opts.target.dispatchId
+        );
       })
       .finally(() => {
         this.releaseClaim(key, outcome);
@@ -1250,23 +1160,11 @@ export class RoomTriggerDispatcher {
    * @returns One row per live claim, newest hold last.
    */
   listClaims(): ActiveClaimView[] {
-    const now = Date.now();
-    return [...this.claimed.values()].map((claim) => ({
-      roomId: claim.roomId,
-      authorId: claim.authorId,
-      entryId: claim.entryId,
-      cascadeRoot: claim.cascadeRoot,
-      dispatchId: claim.dispatchId,
-      claimedAt: claim.claimedAt,
-      heldMs: Math.max(0, now - Date.parse(claim.claimedAt)),
-      pastDeadline: claim.pastDeadline,
-    }));
+    return describeClaims(this.claimed);
   }
 
   private workingIn(roomId: string): Array<{ authorId: string; since: string }> {
-    return [...this.claimed.values()]
-      .filter((claim) => claim.roomId === roomId)
-      .map((claim) => ({ authorId: claim.authorId, since: claim.claimedAt }));
+    return claimsWorkingIn(this.claimed, roomId);
   }
 
   /**
@@ -1324,11 +1222,7 @@ export class RoomTriggerDispatcher {
    *   doing nothing.
    */
   private busyWith(roomId: string, authorId: string, agentPath: string): BusyContext | null {
-    if (this.claimed.has(agentKey(roomId, authorId))) return 'working-here';
-    for (const claim of this.claimed.values()) {
-      if (claim.agentPath === agentPath) return 'working-elsewhere';
-    }
-    return null;
+    return claimBusyWith(this.claimed, roomId, authorId, agentPath);
   }
 
   /**
@@ -1400,20 +1294,3 @@ export class RoomTriggerDispatcher {
     return claims.length;
   }
 }
-
-/**
- * How a room's own claim outcome reads in the cross-origin dispatch buffer.
- *
- * A total `Record`, so adding a {@link ClaimOutcome} without deciding how it
- * groups is a type error here rather than a silent `undefined` in a debug
- * response. `busy` becomes `refused` because no turn ran; `quiet` stays its own
- * thing, because an agent choosing to say nothing is not a refusal and the two
- * looking alike is what made a busy agent indistinguishable from a broken one.
- */
-const DISPATCH_OUTCOMES: Record<ClaimOutcome, DispatchOutcome> = {
-  answered: 'answered',
-  quiet: 'quiet',
-  halted: 'halted',
-  busy: 'refused',
-  failed: 'failed',
-};

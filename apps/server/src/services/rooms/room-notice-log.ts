@@ -236,12 +236,19 @@ export class RoomNoticeLog {
    * @param reason - Why it stayed quiet, which picks the words.
    * @param busyWith - What the room KNOWS the agent is doing, for a `busy`
    *   reason. Ignored for a failure, which has nothing to describe.
+   * @param dispatchId - The dispatch this refusal belongs to, or `null` when
+   *   there is none. Required rather than ambient, and required rather than
+   *   optional: a refusal decided in `claimTargets` runs synchronously inside
+   *   `RoomService.post`, which for an agent's reply is inside the REPLYING
+   *   agent's dispatch scope — so the ambient id there names somebody else.
+   *   Every call site has to say which it is.
    */
   reportSilence(
     room: Room,
     entry: RoomEntry,
     agent: NoticeSubject,
     reason: RoomTurnUnanswered,
+    dispatchId: string | null,
     busyWith: BusyContext = 'unknown'
   ): void {
     const key = silenceKey(room.id, agent.authorId, reason);
@@ -262,6 +269,7 @@ export class RoomNoticeLog {
       logRefusal('[rooms] an agent did not answer', {
         reason: reason === 'busy' ? 'agent_busy' : 'turn_failed',
         visibility,
+        dispatchId,
         roomId: room.id,
         authorId: agent.authorId,
         entryId: entry.id,
@@ -353,19 +361,24 @@ export class RoomNoticeLog {
    * @param authorId - The agent that was refused.
    * @param body - The notice copy, from `room-notices.ts`.
    * @param cause - Which guard rule refused, for the log.
+   * @param dispatchId - The dispatch this refusal belongs to, or `null` when
+   *   there is none — which is every reachable case today, since a target the
+   *   guard refuses is never claimed and so never mints one.
    */
   announce(
     room: Room,
     entry: RoomEntry,
     authorId: string,
     body: RoomEntryBody,
-    cause: 'cascade_depth' | 'cascade_ancestry'
+    cause: 'cascade_depth' | 'cascade_ancestry',
+    dispatchId: string | null
   ): void {
     const key = cascadeNoticeKey(room.id, entry.cascadeRoot, authorId);
     const record = (visibility: RefusalVisibility): void =>
       logRefusal('[rooms] the guard stopped an exchange', {
         reason: cause,
         visibility,
+        dispatchId,
         roomId: room.id,
         authorId,
         entryId: entry.id,
@@ -395,12 +408,21 @@ export class RoomNoticeLog {
    * @param room - The room that ran out.
    * @param entry - The entry whose trigger could not be afforded.
    * @param scope - Which cap refused, so the copy points at the right setting.
+   * @param dispatchId - The dispatch this refusal belongs to. Unlike the guard's,
+   *   a budget refusal DOES have one: the target has already survived the guard
+   *   and been given an id by the time the room is asked to afford it.
    */
-  reportBudget(room: Room, entry: RoomEntry, scope: BudgetRefusalScope): void {
+  reportBudget(
+    room: Room,
+    entry: RoomEntry,
+    scope: BudgetRefusalScope,
+    dispatchId: string | null
+  ): void {
     const record = (visibility: RefusalVisibility): void =>
       logRefusal('[rooms] the room is out of automatic turns', {
         reason: 'room_budget',
         visibility,
+        dispatchId,
         roomId: room.id,
         entryId: entry.id,
         detail: { scope },

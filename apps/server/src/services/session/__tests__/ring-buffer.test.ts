@@ -12,6 +12,28 @@ describe('RingBuffer', () => {
     vi.useRealTimers();
   });
 
+  // Failure mode: the diagnostic read surface reports `ringSize`, and the
+  // obvious implementation — `replayFrom(0).length` — runs the lazy TTL sweep.
+  // A read that changes what the next read sees is a read nobody can trust
+  // mid-incident, which is the one moment this surface exists for.
+  it('counts without sweeping, so reading the size is not a mutation', () => {
+    vi.useFakeTimers();
+    const ring = new RingBuffer();
+    ring.markTurnStarted();
+    ring.append(textEvent(1));
+    ring.append(textEvent(2));
+    ring.markTurnEnded();
+    vi.advanceTimersByTime(RING_BUFFER_TTL_MS + 1);
+
+    // Expired, but not yet swept: the count is the honest answer to "what is in
+    // memory right now", and asking does not change it.
+    expect(ring.size()).toBe(2);
+    expect(ring.size()).toBe(2);
+    // The sweep is still the replay's job, and it still happens.
+    expect(ring.replayFrom(0)).toHaveLength(0);
+    expect(ring.size()).toBe(0);
+  });
+
   // Failure mode: a live turn longer than the cap would push the buffer's
   // memory unbounded; the oldest events must be dropped at the cap.
   it('drops the oldest events once the cap is exceeded', () => {

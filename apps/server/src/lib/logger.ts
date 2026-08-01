@@ -78,11 +78,20 @@ function createFileReporter() {
 /**
  * A leading `[tag]` in a log message, for the NDJSON `tag` field.
  *
- * Anchored and character-bounded on purpose: `[rooms]` and `[stall-guard]` are
- * tags, while the `[object Object]` a stringified argument produces and the
- * `[2026-07-31]` a message might open with are not. The message itself is left
- * untouched — the tag stays where every existing `grep` expects to find it, and
- * gains a field where `jq` can reach it.
+ * Anchored and character-bounded, which excludes exactly one shape worth naming:
+ * the `[object Object]` a stringified argument produces has a space inside the
+ * brackets, so it never matches.
+ *
+ * **A date WOULD match** — `[2026-07-31] …` yields `tag: "2026-07-31"`, because
+ * a hyphen is a legal tag character (`[stall-guard]`) and there is no way to
+ * exclude one without excluding the other. That is left alone rather than
+ * special-cased: no logger call site in the server, relay or mesh opens with a
+ * bracketed date, so the rule would be machinery guarding nothing, and a
+ * date-shaped `tag` on a line nobody writes is a harmless outcome next to a
+ * pattern the next reader has to decode.
+ *
+ * The message itself is left untouched either way — the tag stays where every
+ * existing `grep` expects to find it, and gains a field where `jq` can reach it.
  */
 const TAG_PREFIX_PATTERN = /^\[([a-zA-Z0-9:_-]+)\]\s/;
 

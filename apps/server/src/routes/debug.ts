@@ -166,7 +166,10 @@ router.get('/rooms/:id/bindings', (req, res) => {
   const bindings = (deps.roomSessions?.listRoomSessions() ?? []).filter(
     (binding) => binding.roomId === roomId
   );
-  const roots = deps.transcriptProjectRoots?.() ?? [];
+  // Every slug folder under every root, read ONCE for the whole request. Probing
+  // per binding meant `roots x bindings` directory reads, and a busy room with
+  // a dozen agents turned one debug read into hundreds of syscalls.
+  const slugDirs = listSlugDirs(deps.transcriptProjectRoots?.() ?? []);
   res.json({
     bindings: bindings.map((binding) => ({
       authorId: binding.authorId,
@@ -174,7 +177,7 @@ router.get('/rooms/:id/bindings', (req, res) => {
       // The incident's "bindings pointing at ids with no transcript", answered
       // directly. The PATH is never returned (only this boolean) — see the
       // module doc's content discipline.
-      transcriptExists: transcriptExists(roots, binding.sessionId),
+      transcriptExists: transcriptExists(slugDirs, binding.sessionId),
     })),
   });
 });
@@ -198,29 +201,50 @@ router.get('/relay/traces/:traceId', (req, res) => {
 });
 
 /**
- * Whether a session has a transcript file under any known projects root.
+ * Every project-slug folder under every transcript root, resolved once.
+ *
+ * @param roots - Absolute paths of `projects` folders holding transcripts.
+ * @returns Absolute paths of the slug folders inside them.
+ */
+function listSlugDirs(roots: readonly string[]): string[] {
+  const dirs: string[] = [];
+  for (const root of roots) {
+    try {
+      for (const slug of fs.readdirSync(root)) dirs.push(path.join(root, slug));
+    } catch {
+      // An unreadable root contributes nothing rather than failing the report.
+    }
+  }
+  return dirs;
+}
+
+/**
+ * Whether a session has a transcript file in any of those folders.
  *
  * A room binding records only a session id — never the working directory the
  * session ran in — so the SDK's `projectSlug()` cannot be computed from the
- * binding, and every slug folder under every root has to be checked for
- * `<sessionId>.jsonl` instead. Guessing a cwd to compute the slug would produce
- * confident wrong answers, which is worse than a sweep.
+ * binding, and every slug folder has to be checked for `<sessionId>.jsonl`
+ * instead. Guessing a cwd to compute the slug would produce confident wrong
+ * answers, which is worse than a sweep.
  *
- * @param roots - Absolute paths of `projects` folders holding transcripts.
+ * **The id is contained before it reaches a path.** It comes out of the
+ * database, so it is not attacker-controlled today — but it is joined into a
+ * filesystem path, and a stored id of `../../etc/passwd` would have this
+ * probing outside the roots entirely. `basename` costs nothing and makes the
+ * containment a property of this function rather than of every writer that ever
+ * puts a row in `room_sessions`.
+ *
+ * @param slugDirs - Absolute paths of project-slug folders, from {@link listSlugDirs}.
  * @param sessionId - The session the binding points at.
  * @returns `true` when a transcript for that id exists.
  */
-function transcriptExists(roots: readonly string[], sessionId: string): boolean {
-  for (const root of roots) {
-    let slugs: string[];
-    try {
-      slugs = fs.readdirSync(root);
-    } catch {
-      continue;
-    }
-    for (const slug of slugs) {
-      if (fs.existsSync(path.join(root, slug, `${sessionId}.jsonl`))) return true;
-    }
+function transcriptExists(slugDirs: readonly string[], sessionId: string): boolean {
+  const contained = path.basename(sessionId);
+  if (contained !== sessionId || contained === '' || contained === '.' || contained === '..') {
+    return false;
+  }
+  for (const dir of slugDirs) {
+    if (fs.existsSync(path.join(dir, `${contained}.jsonl`))) return true;
   }
   return false;
 }

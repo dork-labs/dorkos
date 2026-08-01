@@ -483,7 +483,7 @@ router.post('/:id/messages', async (req, res) => {
   // after this `await` resolves and the 202 has been sent (ADR-0264's `void
   // turn;`). A scope placed around the awaited race INSIDE `triggerTurn` would
   // expire at the 202 and correlate nothing; see
-  // `__tests__/dispatch-context-detached-turn.test.ts`, which fails if it moves.
+  // `__tests__/sessions-dispatch-correlation.test.ts`, which fails if it moves.
   const result = await runInDispatch({ dispatchId, origin: 'session' }, () =>
     triggerTurn({
       sessionId,
@@ -518,12 +518,22 @@ router.post('/:id/messages', async (req, res) => {
 
   if (!result.accepted) {
     const lockInfo = runtime.getLockInfo(sessionId);
+    // A refused trigger still opened a dispatch above, and `onSettled` fires
+    // only for a turn that STARTED — so nothing else will ever close this one.
+    // Left open, the most common interactive refusal sat at the top of
+    // `GET /api/debug/dispatches` reading as a turn still running.
+    recordDispatchEnd(dispatchId, 'refused');
     // `shown`, so `info`: the caller gets a 409 naming the holder, which is a
     // refusal the person can see and act on. It is deliberately not a `warn` —
     // the level is reserved for refusals that left no other trace.
+    //
+    // The id is passed explicitly because this line runs AFTER `runInDispatch`
+    // has returned: the scope that would have supplied it ambiently is gone by
+    // the time the 409 is written.
     logRefusal('[POST /messages] session locked', {
       reason: 'session_locked',
       visibility: 'shown',
+      dispatchId,
       sessionId,
       detail: { lockedBy: lockInfo?.clientId ?? 'unknown' },
     });
