@@ -142,10 +142,16 @@ describe('BindingAdvancedSection permissions', () => {
     });
 
     it('never offers planning as a level of trust', async () => {
+      // The binding sits at the Ask stop, which is where a `plan` that lost its
+      // `axis: 'working'` would surface — NOT as a fourth radio (it merges into
+      // the stop `default` already holds) but as a refinement SWITCH inside it.
+      // Asserting only on radios passes through that regression.
       renderSection();
 
       await waitFor(() => expect(dial()).toBeInTheDocument());
+      expect(screen.getByRole('radio', { name: 'Ask first' })).toBeChecked();
       expect(screen.queryByRole('radio', { name: /plan/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('switch', { name: /plan/i })).not.toBeInTheDocument();
     });
 
     it('applies the mode the runtime declared for the stop', async () => {
@@ -157,13 +163,40 @@ describe('BindingAdvancedSection permissions', () => {
     });
   });
 
+  describe('before the runtime has said anything', () => {
+    // One round trip on every cold open, and forever under a test-mode boot,
+    // where `claude-code` is never registered at all. The old screen rendered a
+    // Select with four items regardless; this one must not render a heading, an
+    // empty caption and a note about a control that is not there.
+    it('names the stored mode and says why there is nothing to pick', async () => {
+      const transport = createMockTransport({
+        getCapabilities: vi.fn().mockResolvedValue({
+          defaultRuntime: 'test-mode',
+          capabilities: {},
+        }),
+      });
+      renderSection({ permissionMode: 'bypassPermissions' }, transport);
+
+      const note = await screen.findByTestId('trust-dial-unavailable');
+      expect(note).toHaveTextContent(/Bypass All/);
+      expect(note).toHaveTextContent(/hasn’t said what it can do/);
+      expect(note).toHaveTextContent(/saving keeps it as it is/i);
+      expect(screen.queryByRole('radiogroup', { name: /how much/i })).not.toBeInTheDocument();
+      // The scope note is about a bypass mode a person just CHOSE. With no dial
+      // to choose on, it is a clarification about nothing.
+      expect(screen.queryByText(/This covers tools inside the session/)).not.toBeInTheDocument();
+    });
+  });
+
   describe('a binding saved at a mode the dial has no stop for', () => {
     it('keeps it, and says saving keeps it, rather than quietly widening it', async () => {
       const { onPermissionModeChange } = renderSection({ permissionMode: 'plan' });
 
       const note = await screen.findByTestId('trust-dial-stranded');
-      expect(note).toHaveTextContent(/Plan/);
-      expect(note).toHaveTextContent(/Saving keeps it as it is/);
+      // The runtime's own word for the mode, not the client's id table — the
+      // descriptor is right here, and a table is only ever the fallback.
+      expect(note).toHaveTextContent(/“Plan”/);
+      expect(note).toHaveTextContent(/saving keeps it as it is/i);
       expect(within(dial()).queryAllByRole('radio', { checked: true })).toHaveLength(0);
       expect(onPermissionModeChange).not.toHaveBeenCalled();
     });
@@ -182,7 +215,10 @@ describe('BindingAdvancedSection permissions', () => {
       // The facts that are true HERE and nowhere else: who could have answered,
       // and what happens to an ask nobody answers.
       expect(alert).toHaveTextContent(/approver/i);
-      expect(alert).toHaveTextContent(/10 minutes/);
+      expect(alert).toHaveTextContent(/refused after 10 minutes/);
+      // Not every adapter can draw a button. The sentence must be true for a
+      // webhook binding, which gets no buttons and auto-denies every ask.
+      expect(alert).toHaveTextContent(/where your integration can show buttons/i);
     });
 
     it('applies it only once the person confirms', async () => {

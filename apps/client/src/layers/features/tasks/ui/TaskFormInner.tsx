@@ -21,6 +21,31 @@ import { AgentPicker } from './AgentPicker';
 
 export type DialogStep = 'preset-picker' | 'form';
 
+/**
+ * The runtime a scheduled run actually executes on.
+ *
+ * **This is an assumption, and deliberately not the registry default.** A task
+ * carries no runtime of its own, and the scheduler's is fixed at boot:
+ * `apps/server/src/index.ts` binds `schedulerAgentManager` to the
+ * `ClaudeCodeRuntime` it constructs and hands that to `TaskSchedulerService`.
+ * The `runtimes.default` setting moves the *registry's* default — which runtime
+ * a new chat session gets — and never reaches the scheduler. So on a server set
+ * to Codex, dialling the default would caption a Claude Code run with Codex's
+ * promises: amber "can't pause to ask" for a run that will pause and ask, and no
+ * unattended-approval note at all, because Codex declares `asks: 'never'` at
+ * that stop.
+ *
+ * **Where this breaks:** the day the scheduler takes its runtime from the
+ * registry, or a task carries one. The fix then is to read it from the task (or
+ * from a scheduler-runtime endpoint), not to widen this constant.
+ *
+ * A test-mode boot is the one case this is already wrong about — the scheduler
+ * runs on `TestModeRuntime` there and `claude-code` is never registered. That
+ * resolves to no profile at all, which the form says out loud rather than
+ * guessing.
+ */
+const TASK_RUNTIME = 'claude-code';
+
 export const DEFAULT_MAX_RUNTIME = '10m';
 const MAX_NAME_LENGTH = 100;
 
@@ -121,11 +146,7 @@ export function ScheduleForm({
 }: ScheduleFormProps) {
   const createTask = useCreateTask();
   const updateTask = useUpdateTask();
-  // A task runs on whatever runtime the server drives runs with, which today is
-  // the server default — a task carries no runtime of its own. Nullish is the
-  // honest ask: `useCapabilitiesForRuntime` resolves it to the default rather
-  // than this form guessing a name.
-  const caps = useCapabilitiesForRuntime(null);
+  const caps = useCapabilitiesForRuntime(TASK_RUNTIME);
   const descriptors = caps?.permissionModes.values ?? [];
   const [pendingAutonomy, setPendingAutonomy] = useState<PermissionModeDescriptor | null>(null);
 
@@ -292,6 +313,26 @@ export function ScheduleForm({
               <form.AppField name="permissionMode">
                 {(field) => {
                   const current = descriptors.find((d) => d.id === field.state.value);
+                  // The runtime's own word for the mode wherever it declared one.
+                  const modeLabel = current?.label ?? permissionModeLabel(field.state.value);
+                  if (descriptors.length === 0) {
+                    // No profile in hand — one round trip on a cold open, and
+                    // forever under a test-mode boot, where the scheduler runs on
+                    // `TestModeRuntime` and `claude-code` is never registered.
+                    return (
+                      <fieldset className="space-y-2">
+                        <legend className="mb-1.5 text-sm font-medium">Permissions</legend>
+                        <p
+                          data-testid="trust-dial-unavailable"
+                          className="text-muted-foreground px-1 text-xs leading-relaxed"
+                        >
+                          This task is set to “{modeLabel}”. The agent that runs it hasn’t said what
+                          it can do, so there is nothing to choose from yet — saving keeps it as it
+                          is.
+                        </p>
+                      </fieldset>
+                    );
+                  }
                   return (
                     <fieldset className="space-y-2">
                       <legend className="mb-1.5 text-sm font-medium">Permissions</legend>
@@ -314,21 +355,27 @@ export function ScheduleForm({
                         strandsWorkingMode
                         strandedNote={
                           <>
-                            This task is set to “{permissionModeLabel(field.state.value)}”, which is
-                            not one of these. Saving keeps it as it is — pick a stop to change it.
+                            This task is set to “{modeLabel}”, which is not one of these. Saving
+                            keeps it as it is — pick a stop to change it.
                           </>
                         }
                       />
                       {/* The fact that is true here and on no attended surface:
                           a stop that asks has nobody to ask. Read from what the
-                          runtime declared, never from a mode id. */}
+                          runtime declared, never from a mode id.
+
+                          What happens next is NOT a stall until `maxRuntime`:
+                          `interactive-handlers.ts` refuses the ask at
+                          `SESSIONS.INTERACTION_TIMEOUT_MS` and the turn carries
+                          on, so a long task with three asks quietly loses half an
+                          hour of work and still finishes. */}
                       {current !== undefined && current.asks !== 'never' && (
                         <p
                           data-testid="task-unattended-note"
                           className="text-muted-foreground px-1 text-xs leading-relaxed"
                         >
-                          Nobody is watching a scheduled run. If it stops to ask, it waits there
-                          until the run hits its time limit.
+                          Nobody is watching a scheduled run. Anything it stops to ask about is
+                          refused after 10 minutes, and the run carries on without it.
                         </p>
                       )}
                       <PermissionModeScopeNote
@@ -341,8 +388,9 @@ export function ScheduleForm({
                         consequence={
                           <>
                             A scheduled run has nobody to ask, so nothing is asked: no approval
-                            card, no message, no record of a decision anybody made. The run does
-                            whatever it decides to, until it finishes or hits its time limit.
+                            card, no message, no record of a decision anybody made. At every other
+                            stop an action it cannot take is refused and the run works around it.
+                            Here it simply happens.
                           </>
                         }
                         onCancel={() => setPendingAutonomy(null)}

@@ -74,9 +74,13 @@ export const TaskFrontmatterSchema = SkillFrontmatterSchema.extend({
    * - `bypassPermissions`: nothing asks. The run does whatever it decides to.
    * - `auto`, `dontAsk`: the remaining runtime modes, carried through as-is.
    *
-   * A task run is unattended, so an approval nobody answers stalls the run until
-   * `max-runtime` — the stricter modes trade throughput for safety,
-   * deliberately.
+   * A task run is unattended, so nobody answers an approval it raises. It is
+   * **refused** after `SESSIONS.INTERACTION_TIMEOUT_MS` (10 minutes) and the
+   * turn carries on without it — it does not stall until `max-runtime`. A long
+   * task under a strict mode therefore finishes, having quietly spent ten
+   * minutes per ask and skipped the work behind each one. The stricter modes
+   * trade throughput for safety, deliberately; budget `max-runtime` for the
+   * asks you expect.
    */
   permissions: z.enum(TASK_PERMISSION_MODES).default('acceptEdits'),
 

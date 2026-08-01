@@ -311,7 +311,7 @@ describe('CreateTaskDialog', () => {
       expect(screen.queryByLabelText('Allow file edits')).toBeNull();
     });
 
-    it('says a scheduled run has nobody to answer an approval', async () => {
+    it('says what actually happens to an ask nobody answers', async () => {
       const transport = createMockTransport();
       const Wrapper = createWrapper(transport);
 
@@ -323,9 +323,137 @@ describe('CreateTaskDialog', () => {
       fireEvent.click(screen.getByText('Start from scratch'));
 
       // `acceptEdits` still asks before commands, and nobody is there to answer.
-      expect(await screen.findByTestId('task-unattended-note')).toHaveTextContent(
-        /nobody is watching/i
+      // The runtime refuses it after ten minutes and the turn CARRIES ON — it
+      // does not park until the run's time limit, which is what this said first
+      // and is not what `interactive-handlers.ts` does.
+      const note = await screen.findByTestId('task-unattended-note');
+      expect(note).toHaveTextContent(/nobody is watching/i);
+      expect(note).toHaveTextContent(/refused after 10 minutes/);
+      expect(note).toHaveTextContent(/carries on/);
+      expect(note).not.toHaveTextContent(/time limit/);
+    });
+
+    it('shows the runtime that actually runs the task, not the registry default', async () => {
+      // `schedulerAgentManager` is bound to ClaudeCodeRuntime at boot
+      // (apps/server/src/index.ts) — `runtimes.default` moves the registry's
+      // default and never touches the scheduler. Dialling the default would
+      // caption a Claude Code run with Codex's promises.
+      const transport = createMockTransport({
+        getCapabilities: vi.fn().mockResolvedValue({
+          defaultRuntime: 'codex',
+          capabilities: {
+            'claude-code': {
+              type: 'claude-code',
+              supportsToolApproval: true,
+              supportsCostTracking: false,
+              supportsResume: true,
+              supportsMcp: true,
+              supportsQuestionPrompt: true,
+              supportsPlugins: true,
+              permissionModes: {
+                supported: true,
+                values: [
+                  {
+                    id: 'acceptEdits',
+                    label: 'Accept edits',
+                    stop: 'act',
+                    asks: 'when-risky',
+                    reach: 'edit',
+                    promise: 'Edits files on its own. Asks before it runs a command.',
+                  },
+                ],
+              },
+              features: {},
+            },
+            codex: {
+              type: 'codex',
+              supportsToolApproval: true,
+              supportsCostTracking: false,
+              supportsResume: true,
+              supportsMcp: true,
+              supportsQuestionPrompt: false,
+              supportsPlugins: false,
+              permissionModes: {
+                supported: true,
+                values: [
+                  {
+                    id: 'acceptEdits',
+                    label: 'Workspace write',
+                    stop: 'act',
+                    asks: 'never',
+                    reach: 'workspace',
+                    promise:
+                      "Edits files and runs commands inside the workspace — Codex can't pause to ask.",
+                  },
+                ],
+              },
+              features: {},
+            },
+          },
+        }),
+      });
+      const Wrapper = createWrapper(transport);
+
+      render(
+        <Wrapper>
+          <CreateTaskDialog open={true} onOpenChange={vi.fn()} />
+        </Wrapper>
       );
+      fireEvent.click(screen.getByText('Start from scratch'));
+
+      await waitFor(() =>
+        expect(screen.getByTestId('trust-dial-caption')).toHaveTextContent(
+          'Edits files on its own. Asks before it runs a command.'
+        )
+      );
+      expect(screen.getByTestId('trust-dial-caption')).not.toHaveTextContent(/can't pause to ask/);
+      // And the stall note survives: gated on the declared `asks`, it would have
+      // been suppressed by Codex's `never` for a run Codex is not doing.
+      expect(screen.getByTestId('task-unattended-note')).toBeInTheDocument();
+    });
+
+    it('never offers planning as a level of trust', async () => {
+      // At the Ask stop, where a `plan` that lost its `axis: 'working'` would
+      // surface as a refinement SWITCH rather than a fourth radio.
+      const transport = createMockTransport();
+      const Wrapper = createWrapper(transport);
+      const schedule = createMockSchedule({ id: 'sched-default', permissionMode: 'default' });
+
+      render(
+        <Wrapper>
+          <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={schedule} />
+        </Wrapper>
+      );
+
+      await waitFor(() => expect(screen.getByRole('radio', { name: 'Ask first' })).toBeChecked());
+      expect(screen.queryByRole('radio', { name: /plan/i })).toBeNull();
+      expect(screen.queryByRole('switch', { name: /plan/i })).toBeNull();
+    });
+
+    it('names the stored mode when the runtime has said nothing yet', async () => {
+      const transport = createMockTransport({
+        getCapabilities: vi.fn().mockResolvedValue({
+          defaultRuntime: 'test-mode',
+          capabilities: {},
+        }),
+      });
+      const Wrapper = createWrapper(transport);
+      const schedule = createMockSchedule({
+        id: 'sched-bypass',
+        permissionMode: 'bypassPermissions',
+      });
+
+      render(
+        <Wrapper>
+          <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={schedule} />
+        </Wrapper>
+      );
+
+      const note = await screen.findByTestId('trust-dial-unavailable');
+      expect(note).toHaveTextContent(/Bypass All/);
+      expect(note).toHaveTextContent(/saving keeps it as it is/i);
+      expect(screen.queryByRole('radiogroup', { name: /how much/i })).toBeNull();
+      expect(screen.queryByText(/This covers tools inside the session/)).toBeNull();
     });
 
     it('asks before it turns on full autonomy, and says what an unattended run does', async () => {
@@ -398,7 +526,8 @@ describe('CreateTaskDialog', () => {
       );
 
       const note = await screen.findByTestId('trust-dial-stranded');
-      expect(note).toHaveTextContent(/Plan/);
+      // The runtime's own word ("Plan"), not the id table's ("Plan Mode").
+      expect(note).toHaveTextContent(/“Plan”/);
       expect(note).toHaveTextContent('Saving keeps it as it is');
       const dial = screen.getByRole('radiogroup', { name: /how much/i });
       expect(within(dial).queryAllByRole('radio', { checked: true })).toHaveLength(0);

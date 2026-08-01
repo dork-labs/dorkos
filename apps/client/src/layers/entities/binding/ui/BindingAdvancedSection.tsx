@@ -125,6 +125,9 @@ export function BindingAdvancedSection({
   const caps = useCapabilitiesForRuntime(BINDING_RUNTIME);
   const descriptors = caps?.permissionModes.values ?? [];
   const currentDescriptor = descriptors.find((d) => d.id === permissionMode);
+  // The runtime's own word for the mode wherever it declared one; the client's
+  // id table only where it did not.
+  const modeLabel = currentDescriptor?.label ?? permissionModeLabel(permissionMode);
   const [pendingAutonomy, setPendingAutonomy] = useState<PermissionModeDescriptor | null>(null);
 
   /**
@@ -180,25 +183,42 @@ export function BindingAdvancedSection({
         {/* How much this agent may do without asking — the Trust Dial */}
         <div className="space-y-2 px-4 py-3">
           <p className="text-muted-foreground text-xs font-medium">Permissions</p>
-          <TrustDial
-            mode={permissionMode}
-            descriptors={descriptors}
-            onChangeMode={handleChangeMode}
-            // A binding has no Plan switch. One saved at `plan` is kept and
-            // named, not frozen behind a control this screen does not have.
-            strandsWorkingMode
-            strandedNote={
-              <>
-                This integration is set to “{permissionModeLabel(permissionMode)}”, which is not one
-                of these. Saving keeps it as it is — pick a stop to change it.
-              </>
-            }
-          />
-          <PermissionModeScopeNote
-            mode={permissionMode}
-            {...(currentDescriptor ? { descriptor: currentDescriptor } : {})}
-            className="px-1"
-          />
+          {descriptors.length === 0 ? (
+            // No profile in hand — one round trip on a cold open, and forever
+            // under a test-mode boot, where `claude-code` is never registered.
+            // A heading over an empty caption and a note about a control that is
+            // not there says nothing; this says what the binding is set to and
+            // why it cannot be changed yet.
+            <p
+              data-testid="trust-dial-unavailable"
+              className="text-muted-foreground px-1 text-xs leading-relaxed"
+            >
+              This integration is set to “{modeLabel}”. The agent behind it hasn’t said what it can
+              do, so there is nothing to choose from yet — saving keeps it as it is.
+            </p>
+          ) : (
+            <>
+              <TrustDial
+                mode={permissionMode}
+                descriptors={descriptors}
+                onChangeMode={handleChangeMode}
+                // A binding has no Plan switch. One saved at `plan` is kept and
+                // named, not frozen behind a control this screen does not have.
+                strandsWorkingMode
+                strandedNote={
+                  <>
+                    This integration is set to “{modeLabel}”, which is not one of these. Saving
+                    keeps it as it is — pick a stop to change it.
+                  </>
+                }
+              />
+              <PermissionModeScopeNote
+                mode={permissionMode}
+                {...(currentDescriptor ? { descriptor: currentDescriptor } : {})}
+                className="px-1"
+              />
+            </>
+          )}
         </div>
 
         {/* Message direction toggles */}
@@ -275,10 +295,12 @@ export function BindingAdvancedSection({
         descriptor={pendingAutonomy}
         consequence={
           <>
-            At every other stop, an action this agent needs permission for arrives in the chat as
-            Approve and Deny buttons, only the people on the approver list can answer, and an ask
-            nobody answers is denied after 10 minutes. Here nothing is asked: anyone who can send a
-            message through this integration sets off whatever the agent decides to do.
+            At every other stop, an action this agent needs permission for waits for an answer:
+            where your integration can show buttons, it arrives in the chat as Approve and Deny, and
+            only the people on the approver list may answer. Either way an ask nobody answers is
+            refused after 10 minutes and the agent carries on without it. Here nothing is asked at
+            all — anyone who can send a message through this integration sets off whatever the agent
+            decides to do.
           </>
         }
         onCancel={() => setPendingAutonomy(null)}

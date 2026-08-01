@@ -187,23 +187,33 @@ function LiveDial({
 function UnattendedDial({
   descriptors,
   initial,
-  strandedNote,
+  subject,
   consequence,
 }: {
   descriptors: PermissionModeDescriptor[];
   initial: string;
-  strandedNote: ReactNode;
+  /** How this surface names itself in the stranded sentence. */
+  subject: 'This integration' | 'This task';
   consequence: ReactNode;
 }) {
   const [mode, setMode] = useState(initial);
   const [pending, setPending] = useState<PermissionModeDescriptor | null>(null);
+  // The runtime's own word for the mode wherever it declared one, exactly as the
+  // real callers resolve it — a hardcoded label here would demonstrate the
+  // hardcode rather than the component.
+  const modeLabel = descriptors.find((d) => d.id === mode)?.label ?? mode;
   return (
     <div className="w-72">
       <TrustDial
         mode={mode}
         descriptors={descriptors}
         strandsWorkingMode
-        strandedNote={strandedNote}
+        strandedNote={
+          <>
+            {subject} is set to “{modeLabel}”, which is not one of these. Saving keeps it as it is —
+            pick a stop to change it.
+          </>
+        }
         onChangeMode={(next) => {
           const descriptor = descriptors.find((d) => d.id === next);
           if (descriptor?.stop === 'autonomy') {
@@ -226,29 +236,14 @@ function UnattendedDial({
   );
 }
 
-/** What a binding's dial says about a mode it has no stop for. */
-const BINDING_STRANDED = (
-  <>
-    This integration is set to “Plan”, which is not one of these. Saving keeps it as it is — pick a
-    stop to change it.
-  </>
-);
-
 /** What a binding gives up at the autonomy stop. */
 const BINDING_CONSEQUENCE = (
   <>
-    At every other stop, an action this agent needs permission for arrives in the chat as Approve
-    and Deny buttons, only the people on the approver list can answer, and an ask nobody answers is
-    denied after 10 minutes. Here nothing is asked: anyone who can send a message through this
-    integration sets off whatever the agent decides to do.
-  </>
-);
-
-/** What a task's dial says about a mode it has no stop for. */
-const TASK_STRANDED = (
-  <>
-    This task is set to “Auto”, which is not one of these. Saving keeps it as it is — pick a stop to
-    change it.
+    At every other stop, an action this agent needs permission for waits for an answer: where your
+    integration can show buttons, it arrives in the chat as Approve and Deny, and only the people on
+    the approver list may answer. Either way an ask nobody answers is refused after 10 minutes and
+    the agent carries on without it. Here nothing is asked at all — anyone who can send a message
+    through this integration sets off whatever the agent decides to do.
   </>
 );
 
@@ -256,8 +251,8 @@ const TASK_STRANDED = (
 const TASK_CONSEQUENCE = (
   <>
     A scheduled run has nobody to ask, so nothing is asked: no approval card, no message, no record
-    of a decision anybody made. The run does whatever it decides to, until it finishes or hits its
-    time limit.
+    of a decision anybody made. At every other stop an action it cannot take is refused and the run
+    works around it. Here it simply happens.
   </>
 );
 
@@ -371,7 +366,7 @@ export function TrustDialShowcases() {
           <UnattendedDial
             descriptors={CLAUDE}
             initial="plan"
-            strandedNote={BINDING_STRANDED}
+            subject="This integration"
             consequence={BINDING_CONSEQUENCE}
           />
         </ShowcaseDemo>
@@ -381,7 +376,7 @@ export function TrustDialShowcases() {
           <UnattendedDial
             descriptors={CLAUDE.filter((d) => d.id !== 'auto')}
             initial="auto"
-            strandedNote={TASK_STRANDED}
+            subject="This task"
             consequence={TASK_CONSEQUENCE}
           />
         </ShowcaseDemo>
@@ -393,7 +388,7 @@ export function TrustDialShowcases() {
           <UnattendedDial
             descriptors={CODEX}
             initial="default"
-            strandedNote={BINDING_STRANDED}
+            subject="This integration"
             consequence={BINDING_CONSEQUENCE}
           />
         </ShowcaseDemo>
@@ -403,7 +398,7 @@ export function TrustDialShowcases() {
           <UnattendedDial
             descriptors={CLAUDE}
             initial="acceptEdits"
-            strandedNote={TASK_STRANDED}
+            subject="This task"
             consequence={TASK_CONSEQUENCE}
           />
         </ShowcaseDemo>

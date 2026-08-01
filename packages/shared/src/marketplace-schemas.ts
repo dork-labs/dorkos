@@ -212,7 +212,7 @@ export type SchedulePermissionMode = PermissionMode;
 export const SCHEDULE_PERMISSION_MODE_SUMMARY: Record<SchedulePermissionMode, string> = {
   default: 'runs at the most careful setting its agent offers',
   plan: 'can only read and plan, and cannot change anything',
-  acceptEdits: 'can change files on its own; some agents also run commands without asking',
+  acceptEdits: 'can change files on its own, and on some agents run commands too',
   dontAsk: 'runs its tools without asking you',
   bypassPermissions: 'can run any command without asking you',
   auto: 'decides for itself which actions are safe to take',
