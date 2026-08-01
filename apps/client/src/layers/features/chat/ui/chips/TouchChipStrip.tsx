@@ -5,12 +5,12 @@
  * @module features/chat/ui/chips/TouchChipStrip
  */
 import { Fragment, useCallback, useId, useMemo, useState } from 'react';
-import { AnimatePresence } from 'motion/react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import type { MessagePart } from '@dorkos/shared/types';
 import { cn, getPlatform } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
 import { accumulateTouchChips, type TouchChip as TouchChipData } from '../../lib/touch-chips';
-import { LIVE_WINDOW } from './chip-motion';
+import { CHIP_FADE, CHIP_SETTLE, LIVE_WINDOW } from './chip-motion';
 import { groupChipsByVerb, VERB_ICON, VERB_LABEL } from './chip-verbs';
 import { ChipPile } from './ChipPile';
 import { ChipTray } from './ChipTray';
@@ -88,6 +88,7 @@ function SummaryGroup({
  * @param props - The message's parts.
  */
 export function TouchChipStrip({ parts }: TouchChipStripProps) {
+  const reducedMotion = useReducedMotion() ?? false;
   const chips = useMemo(() => accumulateTouchChips(parts), [parts]);
   const [expanded, setExpanded] = useState(false);
   const trayId = useId();
@@ -130,57 +131,70 @@ export function TouchChipStrip({ parts }: TouchChipStripProps) {
 
   return (
     <div data-testid="touch-chip-strip" className="mt-2 flex flex-col gap-2">
-      {live ? (
-        <div
-          data-testid="chip-live-row"
-          role="group"
-          aria-label="Being handled now"
-          className="flex min-w-0 items-center gap-1.5 overflow-hidden"
-        >
-          {absorbed.length > 0 && (
-            <ChipPile
-              chips={absorbed}
-              expanded={expanded}
-              controls={trayId}
-              onExpand={() => setExpanded((open) => !open)}
-            />
-          )}
-          {/* The chip leaving the window is not simply dropped: it shrinks away
-              toward the pile, which is where it has gone. */}
-          <AnimatePresence initial={false}>
-            {visible.map((chip) => (
-              <TouchChip key={chip.key} chip={chip} onOpen={handleOpen} animated />
-            ))}
-          </AnimatePresence>
-        </div>
-      ) : (
-        <div className="text-muted-foreground flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs">
-          {groups.map((group, index) => (
-            <Fragment key={group.verb}>
-              {index > 0 && <span aria-hidden="true">·</span>}
-              <SummaryGroup
-                verb={group.verb}
-                count={group.chips.length}
-                additions={group.additions}
-                deletions={group.deletions}
-              />
-            </Fragment>
-          ))}
-          <span aria-hidden="true">—</span>
-          <button
-            type="button"
-            aria-expanded={expanded}
-            aria-controls={trayId}
-            onClick={() => setExpanded((open) => !open)}
-            className={cn(
-              'hover:text-foreground rounded-sm underline underline-offset-2',
-              'focus-visible:ring-ring/50 outline-none focus-visible:ring-2'
-            )}
+      {/* The turn finishing is a transition, not a swap: the row collapses into
+          the line that replaces it, on the same curve a tool card auto-hides. */}
+      <AnimatePresence initial={false} mode="wait">
+        {live ? (
+          <motion.div
+            key="live"
+            data-testid="chip-live-row"
+            role="group"
+            aria-label="Being handled now"
+            exit={reducedMotion ? { opacity: 0 } : { opacity: 0, height: 0 }}
+            transition={reducedMotion ? CHIP_FADE : CHIP_SETTLE}
+            className="flex min-w-0 items-center gap-1.5 overflow-hidden"
           >
-            {expanded ? 'hide' : 'show all'}
-          </button>
-        </div>
-      )}
+            {absorbed.length > 0 && (
+              <ChipPile
+                chips={absorbed}
+                expanded={expanded}
+                controls={trayId}
+                onExpand={() => setExpanded((open) => !open)}
+              />
+            )}
+            {/* The chip leaving the window is not simply dropped: it shrinks away
+                toward the pile, which is where it has gone. */}
+            <AnimatePresence initial={false}>
+              {visible.map((chip) => (
+                <TouchChip key={chip.key} chip={chip} onOpen={handleOpen} animated />
+              ))}
+            </AnimatePresence>
+          </motion.div>
+        ) : (
+          <motion.div
+            key="settled"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={reducedMotion ? CHIP_FADE : CHIP_SETTLE}
+            className="text-muted-foreground flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs"
+          >
+            {groups.map((group, index) => (
+              <Fragment key={group.verb}>
+                {index > 0 && <span aria-hidden="true">·</span>}
+                <SummaryGroup
+                  verb={group.verb}
+                  count={group.chips.length}
+                  additions={group.additions}
+                  deletions={group.deletions}
+                />
+              </Fragment>
+            ))}
+            <span aria-hidden="true">—</span>
+            <button
+              type="button"
+              aria-expanded={expanded}
+              aria-controls={trayId}
+              onClick={() => setExpanded((open) => !open)}
+              className={cn(
+                'hover:text-foreground rounded-sm underline underline-offset-2',
+                'focus-visible:ring-ring/50 outline-none focus-visible:ring-2'
+              )}
+            >
+              {expanded ? 'hide' : 'show all'}
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {expanded && <ChipTray id={trayId} chips={chips} onOpen={handleOpen} />}
     </div>
   );

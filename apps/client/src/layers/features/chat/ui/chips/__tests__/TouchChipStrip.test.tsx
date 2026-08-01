@@ -19,7 +19,7 @@ function toolCall(
   toolName: string,
   input: unknown,
   options: { result?: string; status?: ToolStatus } = {}
-): MessagePart {
+): Extract<MessagePart, { type: 'tool_call' }> {
   nextId += 1;
   return {
     type: 'tool_call',
@@ -219,6 +219,38 @@ describe('TouchChipStrip — the live row', () => {
     expect(screen.queryByTestId('chip-live-row')).toBeNull();
     expect(screen.getByTestId('chip-summary-read')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'show all' })).toBeInTheDocument();
+  });
+});
+
+describe('TouchChipStrip — the read→edit upgrade', () => {
+  it('morphs the chip in place instead of adding a second one', () => {
+    const read = toolCall('Read', { file_path: '/repo/a.ts' }, { status: 'running' });
+    const { rerender } = render(<TouchChipStrip parts={[read]} />);
+
+    const before = within(screen.getByTestId('chip-live-row')).getByTestId('touch-chip');
+    expect(before).toHaveAttribute('data-verb', 'read');
+
+    rerender(
+      <TouchChipStrip
+        parts={[
+          { ...read, status: 'complete' },
+          toolCall(
+            'Edit',
+            { file_path: '/repo/a.ts', old_string: 'a\nb', new_string: 'a\nX\nY' },
+            { status: 'running' }
+          ),
+        ]}
+      />
+    );
+
+    const row = screen.getByTestId('chip-live-row');
+    const after = within(row).getByTestId('touch-chip');
+    // The very same element: an upgrade rewrites the chip that is already
+    // there. A chip keyed by anything that changes on upgrade would remount
+    // here, and the file would appear to have been touched twice.
+    expect(after).toBe(before);
+    expect(after).toHaveAttribute('data-verb', 'edit');
+    expect(after.textContent).toBe('✏️a.ts×2+2 −1');
   });
 });
 

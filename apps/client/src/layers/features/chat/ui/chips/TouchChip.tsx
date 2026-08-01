@@ -3,11 +3,12 @@
  *
  * @module features/chat/ui/chips/TouchChip
  */
-import { motion, useReducedMotion } from 'motion/react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { cn } from '@/layers/shared/lib';
 import type { TouchChip as TouchChipData } from '../../lib/touch-chips';
-import { chipEntryMotion } from './chip-motion';
+import { CHIP_MORPH, CHIP_RING, chipEntryMotion } from './chip-motion';
 import { VERB_ICON, VERB_LABEL } from './chip-verbs';
+import { useUpgradePulse } from './use-upgrade-pulse';
 
 export interface TouchChipProps {
   /** The folded record of everything that happened to this target. */
@@ -59,6 +60,10 @@ function accessibleNameFor(chip: TouchChipData): string {
  * explicit that a deletion is never invisible — and a failed one carries the
  * destructive tint.
  *
+ * A file that was read and is now being changed does not get a second chip: this
+ * one morphs in place, the icon flipping to the pencil with a single ring pulse
+ * and the diffstat sliding in beside it.
+ *
  * `data-verb` and `data-live` are what the verb animations key off once they
  * land; they are written here so nothing has to be re-plumbed to switch them on.
  *
@@ -66,6 +71,7 @@ function accessibleNameFor(chip: TouchChipData): string {
  */
 export function TouchChip({ chip, onOpen, animated = false }: TouchChipProps) {
   const reducedMotion = useReducedMotion() ?? false;
+  const pulse = useUpgradePulse(chip.upgraded === true);
   const openable = isOpenable(chip);
   const tombstone = chip.verb === 'delete';
   const hasDiffstat = chip.additions !== undefined || chip.deletions !== undefined;
@@ -89,18 +95,51 @@ export function TouchChip({ chip, onOpen, animated = false }: TouchChipProps) {
         chip.error && 'border-destructive/40 bg-destructive/10 text-destructive'
       )}
     >
-      <span aria-hidden="true" className="shrink-0 leading-none">
-        {VERB_ICON[chip.verb]}
+      {/* Fixed width: the glyph swaps mid-flip, and a wider one must not push
+          the name along with it. */}
+      <span className="relative inline-flex w-4 shrink-0 items-center justify-center leading-none [perspective:400px]">
+        <AnimatePresence initial={false} mode="wait">
+          <motion.span
+            // The verb is the key, so the icon flips exactly when the verb
+            // changes — once per upgrade, not once per render.
+            key={chip.verb}
+            aria-hidden="true"
+            initial={reducedMotion ? { opacity: 0 } : { opacity: 0, rotateX: -90 }}
+            animate={reducedMotion ? { opacity: 1 } : { opacity: 1, rotateX: 0 }}
+            exit={reducedMotion ? { opacity: 0 } : { opacity: 0, rotateX: 90 }}
+            transition={CHIP_MORPH}
+          >
+            {VERB_ICON[chip.verb]}
+          </motion.span>
+        </AnimatePresence>
+        {pulse.pulsing && !reducedMotion && (
+          <motion.span
+            aria-hidden="true"
+            data-testid="chip-upgrade-pulse"
+            className="border-primary pointer-events-none absolute -inset-1 rounded-full border"
+            initial={{ scale: 0.6, opacity: 0.8 }}
+            animate={{ scale: 1.8, opacity: 0 }}
+            transition={CHIP_RING}
+            onAnimationComplete={pulse.end}
+          />
+        )}
       </span>
       <span className="truncate">{chip.label}</span>
       {chip.touches > 1 && (
         <span className="text-muted-foreground shrink-0 tabular-nums">×{chip.touches}</span>
       )}
       {hasDiffstat && (
-        <span className="shrink-0 tabular-nums">
+        <motion.span
+          className="shrink-0 tabular-nums"
+          // The numbers slide in with the morph that earned them, and are simply
+          // there on a chip that was already edited when it mounted.
+          initial={pulse.pulsing && !reducedMotion ? { opacity: 0, x: -4 } : false}
+          animate={{ opacity: 1, x: 0 }}
+          transition={CHIP_MORPH}
+        >
           <span className="text-emerald-600 dark:text-emerald-400">+{chip.additions ?? 0}</span>{' '}
           <span className="text-red-600 dark:text-red-400">−{chip.deletions ?? 0}</span>
-        </span>
+        </motion.span>
       )}
     </motion.button>
   );
