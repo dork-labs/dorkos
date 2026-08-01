@@ -112,28 +112,35 @@ describe('executeSdkQuery — auto-mode guard', () => {
     vi.clearAllMocks();
   });
 
-  it('sends default (and explains why) when auto support is UNKNOWN', async () => {
+  it('sends default when auto support is UNKNOWN, without claiming auto is unavailable', async () => {
     const session = makeSession();
 
     const { options, events } = await runTurn(session, { modelSupportsAutoMode: undefined });
 
     expect(options.permissionMode).toBe('default');
+    // This branch also fires permanently for a model id the cache never learns,
+    // so the explanation must not assert something nobody established.
     expect(events).toContainEqual({
       type: 'system_status',
-      data: { message: "Auto mode isn't available on this model — using Default instead." },
+      data: {
+        message: "Couldn't confirm Auto mode works on this model — running this turn in Default.",
+      },
     });
     // The operator's choice survives the downgrade: Auto returns for free once
     // the model capability loads.
     expect(session.permissionMode).toBe('auto');
   });
 
-  it('sends default (and explains why) when the model explicitly lacks auto', async () => {
+  it('sends default and states the fact when the model explicitly lacks auto', async () => {
     const session = makeSession();
 
     const { options, events } = await runTurn(session, { modelSupportsAutoMode: false });
 
     expect(options.permissionMode).toBe('default');
-    expect(events.some((event) => event.type === 'system_status')).toBe(true);
+    expect(events).toContainEqual({
+      type: 'system_status',
+      data: { message: "Auto mode isn't available on this model — using Default instead." },
+    });
     expect(session.permissionMode).toBe('auto');
   });
 
