@@ -8,6 +8,7 @@ import {
 } from '@dorkos/db';
 import { ulid } from 'ulidx';
 import type {
+  PermissionMode,
   Task,
   TaskRun,
   TaskRunStatus,
@@ -17,6 +18,7 @@ import type {
 import type { TaskDefinition } from '@dorkos/skills/types';
 import { parseDuration } from '@dorkos/skills/duration';
 import { logger } from '../../lib/logger.js';
+import { resolveFilePermissionMode } from './schedule-permission-clamp.js';
 
 /** Options for listing runs. */
 interface ListRunsOptions {
@@ -113,6 +115,13 @@ export class TaskStore {
   private db: Db;
   /** Optional listener fired once per run's terminal transition (DOR-240). */
   private onRunTerminal: RunTerminalListener | null = null;
+  /**
+   * Task files already reported as asking for a permission mode they cannot
+   * have (see {@link resolveFilePermissionMode}). Keyed by absolute file path,
+   * and dropped again as soon as the file stops asking, so the refusal is stated
+   * once per standing conflict rather than once per sync.
+   */
+  private readonly clampedTaskFiles = new Set<string>();
 
   constructor(db: Db) {
     this.db = db;
@@ -548,6 +557,11 @@ export class TaskStore {
    * Looks up existing tasks by `filePath`. If found, updates in place.
    * If not found, inserts a new row with a fresh ULID.
    *
+   * The file's declared `permissions` is resolved through
+   * {@link resolveFilePermissionMode} rather than written straight in: this is
+   * the primary create path for every task, and a file on disk is nobody's
+   * approval. Read that function for what a file may and may not do to the mode.
+   *
    * @param def - Parsed task definition from a SKILL.md file
    * @param agentId - Agent ID derived from directory location (optional)
    * @returns The upserted Task
@@ -562,6 +576,23 @@ export class TaskStore {
       .where(eq(pulseSchedules.filePath, def.filePath))
       .get();
 
+    const { mode: permissionMode, clamped } = resolveFilePermissionMode(
+      def.meta.permissions,
+      existing?.permissionMode as PermissionMode | undefined
+    );
+    // Said once per file rather than on every sync: the reconciler re-reads
+    // every task file every five minutes, and a file left declaring a mode it
+    // cannot have would otherwise turn one standing refusal into a log line
+    // every five minutes for as long as it sits there.
+    if (clamped && !this.clampedTaskFiles.has(def.filePath)) {
+      this.clampedTaskFiles.add(def.filePath);
+      logger.warn(
+        `TaskStore: ${def.filePath} asked to run with every approval prompt turned off. ` +
+          `DorkOS synced it with the normal prompts instead; you can change that on the task.`
+      );
+    }
+    if (!clamped) this.clampedTaskFiles.delete(def.filePath);
+
     if (existing) {
       this.db
         .update(pulseSchedules)
@@ -575,7 +606,7 @@ export class TaskStore {
           agentId: agentId ?? null,
           enabled: def.meta.enabled,
           maxRuntime: maxRuntimeMs,
-          permissionMode: def.meta.permissions,
+          permissionMode,
           // A `paused` row whose file is back is un-paused here, because
           // nothing else ever will: the scheduler requires `enabled` AND
           // `status === 'active'`, and restoring only `enabled` leaves a task
@@ -613,7 +644,7 @@ export class TaskStore {
         agentId: agentId ?? null,
         enabled: def.meta.enabled,
         maxRuntime: maxRuntimeMs,
-        permissionMode: def.meta.permissions,
+        permissionMode,
         status: 'active',
         filePath: def.filePath,
         tags: '[]',
@@ -638,6 +669,8 @@ export class TaskStore {
    * @returns The number of tasks marked as paused (0 or 1)
    */
   markRemovedByFilePath(filePath: string): number {
+    // A file that came back is a fresh conflict, worth stating again.
+    this.clampedTaskFiles.delete(filePath);
     const now = new Date().toISOString();
     const result = this.db
       .update(pulseSchedules)

@@ -18,7 +18,7 @@ import { PackageTypeSchema } from '@dorkos/marketplace';
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { TaskFrontmatterSchema } from '@dorkos/skills';
 import { ExtensionManifestSchema } from '@dorkos/extension-api';
-import { clampSchedulePermissionMode } from '../shapes/apply-shape.js';
+import { clampSchedulePermissionMode } from '../tasks/schedule-permission-clamp.js';
 import { installRootDirForType } from './lib/install-roots.js';
 import type {
   ConflictReport,
@@ -160,7 +160,11 @@ async function readExtensionManifests(
  * A task SKILL.md declares its own permission mode (`permissions`, default
  * `acceptEdits`) and whether it is active on arrival (`enabled`, default
  * `true`), so a scheduled job from this source is disclosed with exactly the
- * same detail as a Shape's `schedules[]` entry.
+ * same detail as a Shape's `schedules[]` entry — including the clamp. A file on
+ * disk cannot arm an unattended bypass any more than a manifest can
+ * (`services/tasks/schedule-permission-clamp.ts`), so reporting the raw
+ * declaration would warn a person about a job the install would never create.
+ * See {@link readManifestSchedules} for the whole of that reasoning.
  */
 async function readTaskSkills(packagePath: string): Promise<PreviewSchedule[]> {
   const tasksRoot = join(packagePath, '.dork', 'tasks');
@@ -180,7 +184,7 @@ async function readTaskSkills(packagePath: string): Promise<PreviewSchedule[]> {
         results.push({
           name: parsed.definition.meta.name,
           cron: parsed.definition.meta.cron ?? null,
-          permissionMode: parsed.definition.meta.permissions,
+          permissionMode: clampSchedulePermissionMode(parsed.definition.meta.permissions).mode,
           startsEnabled: parsed.definition.meta.enabled,
         });
       }
@@ -203,7 +207,9 @@ async function readTaskSkills(packagePath: string): Promise<PreviewSchedule[]> {
  * - `permissionMode` is run through the same clamp `apply-shape.ts` applies, so
  *   a Shape that requests `bypassPermissions` is disclosed as the mode it
  *   actually gets. Echoing the request would warn a person that an unattended
- *   job can run any command when the installer would never allow it.
+ *   job can run any command when the installer would never allow it. The same
+ *   clamp covers `.dork/tasks/<name>/SKILL.md` (see {@link readTaskSkills}),
+ *   because both sources end at the same schedule row.
  * - `startsEnabled` reads `startEnabled`, the field that decides this since
  *   DOR-607. The retired `startDisabled` is deliberately NOT consulted: it is
  *   declared in the schema only so apply-time can tell an author it is stale,

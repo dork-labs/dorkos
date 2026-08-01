@@ -44,7 +44,9 @@
  * ## What this does not cover, said plainly
  *
  * A task's permission mode also arrives from two places that are not a caller
- * supplying a field, and neither is closed here:
+ * supplying a field. Neither is closed HERE, because a per-caller field policy
+ * is the wrong mechanism for content — both are closed on the content path
+ * instead, by one rule in `tasks/schedule-permission-clamp.ts`:
  *
  * - The SKILL.md `permissions:` frontmatter on disk. The watcher and the
  *   reconciler sync whatever is in the file (`task-file-watcher.ts`,
@@ -52,10 +54,11 @@
  *   it — and that bar is LOWER than it sounds: an agent already running in
  *   `acceptEdits` writes that file with no prompt and no shell. Do not read this
  *   as only the shell-access adversary of `approvals/decision-authority.ts`.
- *   Closing it means a control on the file path (deciding what a task file may
- *   declare, and what happens when the watcher sees a mode it did not have
- *   before), which is a different mechanism from a per-caller field policy and is
- *   not in scope for DOR-504.
+ *   CLOSED: `TaskStore.upsertFromFile` refuses a file-declared
+ *   `bypassPermissions` and logs the downgrade, so a file can never INTRODUCE
+ *   one. It can still keep a bypass the row already carries, which only a caller
+ *   that cleared the bar above can have put there — that is a person's decision
+ *   on record, and the cockpit writes it straight back into the file.
  * - A Shape package manifest declaring a schedule with a `permissionMode`
  *   (`shapes/apply-shape.ts` → `shapes/shape-schedule-service.ts`). There the
  *   field comes from installed package CONTENT, not from the caller, so refusing
@@ -63,8 +66,7 @@
  *   may declare. CLOSED by DOR-607, in that shape: `apply-shape.ts` clamps a
  *   manifest-declared `bypassPermissions` back to `acceptEdits` and warns the
  *   operator, and a manifest can no longer declare that its schedule starts
- *   enabled by default either. The first bullet above — the SKILL.md file on
- *   disk — is still open.
+ *   enabled by default either.
  *
  * ## Why not the cookie bar, given a cron task IS a standing grant
  *

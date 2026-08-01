@@ -261,6 +261,18 @@ export function createTasksRouter(
     if (parsed.ok) {
       const def = { ...parsed.definition, scope: 'global' as const, projectPath: undefined };
       schedule = store.upsertFromFile(def, agentId ?? undefined);
+      // `upsertFromFile` refuses a file-declared `bypassPermissions`, because a
+      // SKILL.md on disk is nobody's approval
+      // (`services/tasks/schedule-permission-clamp.ts`). The mode here did not
+      // come from the file: the route wrote that file from this request body a
+      // few lines up, and `refusedOperatorOnlyTaskWrite` has already asked
+      // whether this caller may set the field at all. So the clamp is undone
+      // for the one caller that cleared the bar — the same after-the-fact patch
+      // the parking below uses, and for the same reason: the store's file path
+      // cannot tell the two sources apart.
+      if (trusted && data.permissionMode === 'bypassPermissions') {
+        schedule = store.updateTask(schedule.id, { permissionMode: 'bypassPermissions' })!;
+      }
     } else {
       // Fallback: create directly in DB
       schedule = store.createTask({

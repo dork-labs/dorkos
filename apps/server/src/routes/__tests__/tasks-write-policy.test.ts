@@ -56,6 +56,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   };
 });
 
+import { parseSkillFile } from '@dorkos/skills/parser';
 import { createTasksRouter } from '../tasks.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
@@ -217,6 +218,48 @@ describe('operator-only task fields on the REST routes', () => {
       const after = store.getTask(parked.id)!;
       expect(after.status).toBe('active');
       expect(after.permissionMode).toBe('bypassPermissions');
+    });
+
+    it('still gets the full-autonomy mode it chose, through the SKILL.md round trip', async () => {
+      // The happy path this route normally takes: it writes the SKILL.md, then
+      // syncs it back through `upsertFromFile` — which refuses a file-declared
+      // `bypassPermissions`, because a file on disk is nobody's approval
+      // (`services/tasks/schedule-permission-clamp.ts`). The mode here did not
+      // come from the file; it came from the request body, and
+      // `refusedOperatorOnlyTaskWrite` has already asked whether this caller may
+      // set it. So the person's own choice has to survive the trip through disk,
+      // or the cockpit's "Full autonomy" option would quietly do nothing.
+      vi.mocked(parseSkillFile).mockReturnValueOnce({
+        ok: true,
+        definition: {
+          name: 'full-autonomy',
+          meta: {
+            name: 'full-autonomy',
+            description: 'mine',
+            cron: '0 3 * * *',
+            timezone: 'UTC',
+            enabled: true,
+            permissions: 'bypassPermissions',
+          },
+          body: 'do a thing',
+          filePath: '/tmp/dork-test/tasks/full-autonomy/SKILL.md',
+          dirPath: '/tmp/dork-test/tasks/full-autonomy',
+        },
+      } as unknown as ReturnType<typeof parseSkillFile>);
+
+      const res = await request(app).post('/api/tasks').send({
+        name: 'full-autonomy',
+        description: 'mine',
+        prompt: 'do a thing',
+        cron: '0 3 * * *',
+        target: 'global',
+        permissionMode: 'bypassPermissions',
+      });
+
+      expect(res.status).toBe(201);
+      expect(res.body.permissionMode).toBe('bypassPermissions');
+      const created = store.getTasks().find((t) => t.name === 'full-autonomy')!;
+      expect(created.permissionMode).toBe('bypassPermissions');
     });
 
     it('creates a live task straight away, without the parking an agent gets', async () => {

@@ -20,6 +20,7 @@ import { parseSkillFile } from '@dorkos/skills/parser';
 import { TaskFrontmatterSchema } from '@dorkos/skills/task-schema';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
+import { clampSchedulePermissionMode } from '../../tasks/schedule-permission-clamp.js';
 import { TaskStore } from '../../tasks/task-store.js';
 import type { TaskSchedulerService } from '../../tasks/task-scheduler-service.js';
 import { ShapeScheduleService } from '../shape-schedule-service.js';
@@ -265,8 +266,15 @@ describe('ShapeScheduleService.createSchedule — every declarable permission mo
       );
       expect(parsed.ok, parsed.ok ? '' : parsed.error).toBe(true);
 
+      // The row matches the file for every mode a package may declare, EXCEPT
+      // the one the store refuses to take from a file: `upsertFromFile` clamps
+      // `bypassPermissions` back, because a SKILL.md on disk is nobody's
+      // approval (`tasks/schedule-permission-clamp.ts`). `apply-shape.ts` has
+      // already applied the same rule before it ever gets here, so in
+      // production this second refusal is belt and braces — this test calls the
+      // service directly, which is exactly the path that skips the first one.
       const row = store.getTasks().find((t) => t.name === request.name);
-      expect(row?.permissionMode).toBe(mode);
+      expect(row?.permissionMode).toBe(clampSchedulePermissionMode(mode).mode);
     }
   );
 });

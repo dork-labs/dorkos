@@ -305,6 +305,112 @@ describe('CreateTaskDialog', () => {
     ).toBeTruthy();
   });
 
+  describe('a task set to a mode this form does not offer', () => {
+    // The form offers two of the six modes. It used to coerce anything else to
+    // "Allow file edits" when it loaded the task, so opening a `plan`-mode task
+    // to fix a typo in its prompt and pressing Save widened what it may do —
+    // silently, and without the person ever touching the setting.
+
+    it('shows the real mode, selected, instead of pretending it is one of the two', async () => {
+      const transport = createMockTransport();
+      const Wrapper = createWrapper(transport);
+      const schedule = createMockSchedule({ id: 'sched-plan', permissionMode: 'plan' });
+
+      render(
+        <Wrapper>
+          <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={schedule} />
+        </Wrapper>
+      );
+
+      const stored = await screen.findByLabelText('Plan Mode');
+      expect((stored as HTMLInputElement).checked).toBe(true);
+      expect((stored as HTMLInputElement).disabled).toBe(true);
+      expect((screen.getByLabelText('Allow file edits') as HTMLInputElement).checked).toBe(false);
+    });
+
+    it('keeps it when an unrelated edit is saved', async () => {
+      const schedule = createMockSchedule({
+        id: 'sched-plan',
+        name: 'Old Name',
+        prompt: 'Old prompt',
+        permissionMode: 'plan',
+      });
+      const transport = createMockTransport({
+        updateTask: vi.fn().mockResolvedValue(schedule),
+      });
+      const Wrapper = createWrapper(transport);
+
+      render(
+        <Wrapper>
+          <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={schedule} />
+        </Wrapper>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('Old Name')).toBeTruthy();
+      });
+      fireEvent.change(screen.getByDisplayValue('Old Name'), { target: { value: 'New Name' } });
+      fireEvent.click(screen.getByText('Save'));
+
+      await waitFor(() => {
+        expect(transport.updateTask).toHaveBeenCalledWith(
+          'sched-plan',
+          expect.objectContaining({ name: 'New Name', permissionMode: 'plan' })
+        );
+      });
+    });
+
+    it('replaces it when the person picks one of the two on purpose', async () => {
+      const schedule = createMockSchedule({
+        id: 'sched-default',
+        name: 'Old Name',
+        permissionMode: 'default',
+      });
+      const transport = createMockTransport({
+        updateTask: vi.fn().mockResolvedValue(schedule),
+      });
+      const Wrapper = createWrapper(transport);
+
+      render(
+        <Wrapper>
+          <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={schedule} />
+        </Wrapper>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('Old Name')).toBeTruthy();
+      });
+      fireEvent.click(screen.getByLabelText('Allow file edits'));
+      expect(screen.queryByLabelText('Default')).toBeNull();
+
+      fireEvent.click(screen.getByText('Save'));
+
+      await waitFor(() => {
+        expect(transport.updateTask).toHaveBeenCalledWith(
+          'sched-default',
+          expect.objectContaining({ permissionMode: 'acceptEdits' })
+        );
+      });
+    });
+
+    it('offers only the two real options for a task already on one of them', async () => {
+      const transport = createMockTransport();
+      const Wrapper = createWrapper(transport);
+      const schedule = createMockSchedule({ id: 'sched-ae', permissionMode: 'acceptEdits' });
+
+      render(
+        <Wrapper>
+          <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={schedule} />
+        </Wrapper>
+      );
+
+      await waitFor(() => {
+        expect((screen.getByLabelText('Allow file edits') as HTMLInputElement).checked).toBe(true);
+      });
+      expect(screen.getAllByRole('radio')).toHaveLength(2);
+    });
+  });
+
   describe('agent picker', () => {
     it('shows agent combobox when agents exist', async () => {
       const transport = createMockTransport({

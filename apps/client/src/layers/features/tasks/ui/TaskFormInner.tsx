@@ -3,13 +3,21 @@ import { useCreateTask, useUpdateTask } from '@/layers/entities/tasks';
 import type { TaskTemplate } from '@/layers/entities/tasks';
 import { ResponsiveDialogFooter, Label, Button, PermissionModeScopeNote } from '@/layers/shared/ui';
 import { useAppForm } from '@/layers/shared/lib/form';
-import type { Task } from '@dorkos/shared/types';
+import { permissionModeLabel } from '@/layers/shared/lib';
+import type { PermissionMode, Task } from '@dorkos/shared/types';
 import { ScheduleBuilder } from './TaskBuilder';
 import { TimezoneCombobox } from './TimezoneCombobox';
 import { AgentPicker } from './AgentPicker';
 
-export type PermissionMode = 'acceptEdits' | 'bypassPermissions';
 export type DialogStep = 'preset-picker' | 'form';
+
+/**
+ * The two modes this form lets a person choose between. A task can hold any of
+ * the six (a SKILL.md on disk names them all, and so does the session picker),
+ * and one that arrived on a different mode is shown as it is rather than
+ * squeezed into one of these — see {@link buildFormValues}.
+ */
+const OFFERED_MODES: readonly PermissionMode[] = ['acceptEdits', 'bypassPermissions'];
 
 export const DEFAULT_MAX_RUNTIME = '10m';
 const MAX_NAME_LENGTH = 100;
@@ -33,7 +41,16 @@ function msToRuntimeStr(ms: number): string {
   return `${minutes}m`;
 }
 
-/** Build form default values from an edit task, a preset, or blank defaults. */
+/**
+ * Build form default values from an edit task, a preset, or blank defaults.
+ *
+ * A task's stored `permissionMode` is carried through exactly as it is, even
+ * when it is one of the four modes this form does not offer. Coercing it to
+ * `acceptEdits` on load — which this did — meant that opening a `plan`-mode task
+ * to fix a typo in its prompt and pressing Save widened what that task may do,
+ * without the person touching the setting or being told. Widening is a choice
+ * somebody has to make on purpose.
+ */
 export function buildFormValues(
   editTask?: Task,
   preset?: TaskTemplate | null,
@@ -47,8 +64,7 @@ export function buildFormValues(
       cron: editTask.cron ?? '',
       agentId: editTask.agentId ?? '',
       timezone: editTask.timezone ?? '',
-      permissionMode:
-        editTask.permissionMode === 'bypassPermissions' ? 'bypassPermissions' : 'acceptEdits',
+      permissionMode: editTask.permissionMode,
       maxRuntime: editTask.maxRuntime ? msToRuntimeStr(editTask.maxRuntime) : DEFAULT_MAX_RUNTIME,
     };
   }
@@ -286,6 +302,19 @@ export function ScheduleForm({
                       />
                       Full autonomy
                     </label>
+                    {!OFFERED_MODES.includes(field.state.value) && (
+                      <>
+                        <label className="text-muted-foreground flex items-center gap-2 text-sm">
+                          <input type="radio" name="permissionMode" checked disabled readOnly />
+                          {permissionModeLabel(field.state.value)}
+                        </label>
+                        <p className="text-muted-foreground text-xs">
+                          This task was set to {permissionModeLabel(field.state.value)} somewhere
+                          else. Saving keeps it that way — pick one of the options above to change
+                          it.
+                        </p>
+                      </>
+                    )}
                     {field.state.value === 'bypassPermissions' && (
                       <p className="text-xs text-yellow-600 dark:text-yellow-400">
                         Warning: This allows the agent to execute any tool without approval.
