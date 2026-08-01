@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ToolCallCard } from '@/layers/features/chat/ui/tools/ToolCallCard';
 import { ToolApproval } from '@/layers/features/chat/ui/tools/ToolApproval';
+import { ApprovalReceiptShowcases } from './ApprovalReceiptShowcases';
 import { SubagentBlock } from '@/layers/features/chat/ui/message/SubagentBlock';
 import { ErrorMessageBlock } from '@/layers/features/chat/ui/message/ErrorMessageBlock';
 import { ThinkingBlock } from '@/layers/features/chat/ui/message/ThinkingBlock';
@@ -402,6 +403,8 @@ export function ToolShowcases() {
           />
         </ShowcaseDemo>
       </PlaygroundSection>
+
+      <ApprovalReceiptShowcases />
 
       <BackgroundTaskShowcases />
     </>

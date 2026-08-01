@@ -751,3 +751,241 @@ describe('projectSessionMessages', () => {
     expect(parts[0]).toMatchObject({ toolCallId: 'rec-1', status: 'error' });
   });
 });
+
+describe('projectInProgressTurn — approval receipts', () => {
+  /** The ask, as the durable stream carries it. */
+  function ask(id: string): SessionEvent {
+    return {
+      seq: 1,
+      type: 'approval_required',
+      id,
+      toolName: 'Bash',
+      input: '{"command":"npm test"}',
+      startedAt: 1_000,
+      remainingMs: 600_000,
+      hasSuggestions: false,
+    };
+  }
+
+  /** The tool-call part the fold produced, with its approval fields visible. */
+  function approvalPart(events: SessionEvent[]) {
+    return projectInProgressTurn(events)[0] as {
+      approvalOutcome?: string;
+      approvalResolvedAt?: number;
+      status: string;
+    };
+  }
+
+  it('records an approval as allowed, with when it was answered', () => {
+    // Purpose: the answer has to survive on the part, not in a component — this
+    // is the whole basis for a receipt that outlives the card.
+    const part = approvalPart([
+      ask('tc-1'),
+      {
+        seq: 2,
+        type: 'interaction_resolved',
+        id: 'tc-1',
+        kind: 'approval',
+        resolution: 'approved',
+        at: 5_000,
+      },
+    ]);
+    expect(part.approvalOutcome).toBe('allowed');
+    expect(part.approvalResolvedAt).toBe(5_000);
+  });
+
+  it('records the answer on the LIVE path, where the turn never saw the ask', () => {
+    // Purpose: the shape production actually produces. A live client's store
+    // routes `approval_required` to `pendingInteractions`, NOT into the turn,
+    // and the resolution retires that DTO — so when the answer arrives the turn
+    // holds a BARE tool_call with nothing marking it as gated. Every test that
+    // seeds `approval_required` into the turn is testing the cold-snapshot
+    // shape and would pass while live sessions showed no receipt at all.
+    const part = approvalPart([
+      { seq: 1, type: 'tool_call', toolCallId: 'tc-1', toolName: 'Bash', status: 'pending' },
+      {
+        seq: 2,
+        type: 'interaction_resolved',
+        id: 'tc-1',
+        kind: 'approval',
+        resolution: 'approved',
+        at: 5_000,
+        startedAt: 1_000,
+      },
+    ]) as unknown as { interactiveType?: string; approvalStartedAt?: number } & {
+      approvalOutcome?: string;
+    };
+    expect(part.interactiveType).toBe('approval');
+    expect(part.approvalOutcome).toBe('allowed');
+    // The server's backfill is the only source for this on the live path.
+    expect(part.approvalStartedAt).toBe(1_000);
+  });
+
+  it('does NOT mint a receipt for a timed-out question', () => {
+    // Purpose: the collision that refutes "an expired resolution means an
+    // approval". `handleAskUserQuestion`'s timeout calls the same
+    // `notifyInteractionCancelled(..., 'timeout')` the approval path does, and
+    // the normalizer maps that to `expired` for EVERY interaction kind — while
+    // AskUserQuestion, being an ordinary tool_use block, has a real tool_call
+    // part in the turn under the same id. Inferring the kind from the
+    // resolution therefore printed "Expired — denied after 10:00" over a
+    // question the person was merely asked and never answered.
+    const part = approvalPart([
+      {
+        seq: 1,
+        type: 'tool_call',
+        toolCallId: 'q-1',
+        toolName: 'AskUserQuestion',
+        status: 'pending',
+      },
+      {
+        seq: 2,
+        type: 'interaction_resolved',
+        id: 'q-1',
+        kind: 'question',
+        resolution: 'expired',
+        at: 601_000,
+        startedAt: 1_000,
+      },
+    ]) as unknown as { interactiveType?: string; approvalOutcome?: string };
+    expect(part.approvalOutcome).toBeUndefined();
+    expect(part.interactiveType).not.toBe('approval');
+  });
+
+  it('does NOT mint a receipt for a declined elicitation that shares a tool id', () => {
+    // Purpose: an elicitation decline resolves `denied`, the same value a
+    // refused permission carries. Only the kind separates them.
+    const part = approvalPart([
+      { seq: 1, type: 'tool_call', toolCallId: 'e-1', toolName: 'Bash', status: 'pending' },
+      {
+        seq: 2,
+        type: 'interaction_resolved',
+        id: 'e-1',
+        kind: 'elicitation',
+        resolution: 'denied',
+        at: 5_000,
+      },
+    ]) as unknown as { approvalOutcome?: string };
+    expect(part.approvalOutcome).toBeUndefined();
+  });
+
+  it('records a denial as denied', () => {
+    const part = approvalPart([
+      ask('tc-1'),
+      {
+        seq: 2,
+        type: 'interaction_resolved',
+        id: 'tc-1',
+        kind: 'approval',
+        resolution: 'denied',
+        at: 5_000,
+      },
+    ]);
+    expect(part.approvalOutcome).toBe('denied');
+    expect(part.status).toBe('error');
+  });
+
+  it('records a timed-out request as expired, distinct from a denial', () => {
+    // Purpose: nobody answered an expired request. Folding it as `denied` would
+    // put words in the operator's mouth.
+    const part = approvalPart([
+      ask('tc-1'),
+      {
+        seq: 2,
+        type: 'interaction_resolved',
+        id: 'tc-1',
+        kind: 'approval',
+        resolution: 'expired',
+        at: 601_000,
+      },
+    ]);
+    expect(part.approvalOutcome).toBe('expired');
+    expect(part.status).toBe('error');
+  });
+
+  it('leaves no outcome on a cancelled ask', () => {
+    // Purpose: an SDK abort withdrew the question before anyone could answer —
+    // there is no decision to record.
+    const part = approvalPart([
+      ask('tc-1'),
+      {
+        seq: 2,
+        type: 'interaction_resolved',
+        id: 'tc-1',
+        kind: 'approval',
+        resolution: 'cancelled',
+      },
+    ]);
+    expect(part.approvalOutcome).toBeUndefined();
+    expect(part.status).toBe('error');
+  });
+
+  it('keeps the outcome when the tool result races ahead of the resolution', () => {
+    // Purpose: ordering between the runtime's tool_result and the projector's
+    // resolution is not guaranteed. The receipt must not depend on winning it.
+    const part = approvalPart([
+      ask('tc-1'),
+      { seq: 2, type: 'tool_result', toolCallId: 'tc-1', toolName: 'Bash', status: 'complete' },
+      {
+        seq: 3,
+        type: 'interaction_resolved',
+        id: 'tc-1',
+        kind: 'approval',
+        resolution: 'approved',
+        at: 5_000,
+      },
+    ]);
+    expect(part.approvalOutcome).toBe('allowed');
+    expect(part.status).toBe('complete');
+  });
+
+  it('leaves an answered question alone', () => {
+    // Purpose: `answered` belongs to AskUserQuestion, which keeps its own
+    // summary — an approval receipt would be the wrong shape for it.
+    const parts = projectInProgressTurn([
+      {
+        seq: 1,
+        type: 'question_prompt',
+        id: 'q-1',
+        startedAt: 1_000,
+        remainingMs: 600_000,
+        questions: [
+          { header: 'Color', question: 'Which?', options: [{ label: 'Blue' }], multiSelect: false },
+        ],
+      },
+      {
+        seq: 2,
+        type: 'interaction_resolved',
+        id: 'q-1',
+        kind: 'question',
+        resolution: 'answered',
+        at: 5_000,
+      },
+    ]);
+    expect((parts[0] as { approvalOutcome?: string }).approvalOutcome).toBeUndefined();
+  });
+
+  it('is stable across a replay that crosses the wire', () => {
+    // Purpose: a reconnect replays from Last-Event-ID, and those events arrive
+    // as JSON off an SSE stream — not as the objects this process happens to
+    // hold. Round-tripping through serialization is what makes this a replay
+    // test rather than an identity check on one array.
+    const events: SessionEvent[] = [
+      ask('tc-1'),
+      {
+        seq: 2,
+        type: 'interaction_resolved',
+        id: 'tc-1',
+        kind: 'approval',
+        resolution: 'approved',
+        at: 5_000,
+      },
+    ];
+    const replayed = JSON.parse(JSON.stringify(events)) as SessionEvent[];
+    expect(replayed).not.toBe(events);
+    expect(projectInProgressTurn(replayed)).toEqual(projectInProgressTurn(events));
+    expect(
+      (projectInProgressTurn(replayed)[0] as { approvalOutcome?: string }).approvalOutcome
+    ).toBe('allowed');
+  });
+});

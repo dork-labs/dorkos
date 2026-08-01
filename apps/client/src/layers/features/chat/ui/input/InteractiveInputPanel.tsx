@@ -1,8 +1,19 @@
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import type { ToolCallState } from '../../model/chat-types';
 import { ToolApproval } from '../tools/ToolApproval';
 import { BatchApprovalBar } from '../tools/BatchApprovalBar';
 import { QuestionPrompt } from '../tools/QuestionPrompt';
 import type { InteractiveToolHandle } from '../message';
+
+/**
+ * The next queued card rises into the slot the answered one vacated. The short
+ * delay is the point: without it the replacement appears under a cursor that
+ * has not moved yet, and the answer feels like it landed on the wrong card.
+ */
+const NEXT_CARD_TRANSITION = { duration: 0.16, delay: 0.08, ease: [0.16, 1, 0.3, 1] } as const;
+
+/** Reduced motion swaps the card with no travel and no time. */
+const INSTANT_TRANSITION = { duration: 0 } as const;
 
 interface InteractiveInputPanelProps {
   sessionId: string;
@@ -37,39 +48,50 @@ export function InteractiveInputPanel({
   const handleDecided = (answers?: Record<string, string>) =>
     onToolDecided(activeInteraction.toolCallId, answers);
 
+  const reducedMotion = useReducedMotion();
+
   return (
     <>
       <BatchApprovalBar sessionId={sessionId} pendingApprovals={pendingApprovals} />
-      {activeInteraction.interactiveType === 'approval' ? (
-        <ToolApproval
-          ref={onToolRef}
-          sessionId={sessionId}
-          toolCallId={activeInteraction.toolCallId}
-          toolName={activeInteraction.toolName}
-          input={activeInteraction.input || ''}
-          isActive
-          onDecided={handleDecided}
-          timeoutMs={activeInteraction.timeoutMs}
-          approvalStartedAt={activeInteraction.approvalStartedAt}
-          approvalTitle={activeInteraction.approvalTitle}
-          approvalDisplayName={activeInteraction.approvalDisplayName}
-          approvalDescription={activeInteraction.approvalDescription}
-          approvalBlockedPath={activeInteraction.approvalBlockedPath}
-          approvalDecisionReason={activeInteraction.approvalDecisionReason}
-          approvalHasSuggestions={activeInteraction.approvalHasSuggestions}
-        />
-      ) : activeInteraction.interactiveType === 'question' && activeInteraction.questions ? (
-        <QuestionPrompt
-          ref={onToolRef}
-          sessionId={sessionId}
-          toolCallId={activeInteraction.toolCallId}
-          questions={activeInteraction.questions}
-          answers={activeInteraction.answers}
-          isActive
-          focusedOptionIndex={focusedOptionIndex}
-          onDecided={handleDecided}
-        />
-      ) : null}
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={activeInteraction.toolCallId}
+          initial={reducedMotion ? false : { opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={reducedMotion ? INSTANT_TRANSITION : NEXT_CARD_TRANSITION}
+        >
+          {activeInteraction.interactiveType === 'approval' ? (
+            <ToolApproval
+              ref={onToolRef}
+              sessionId={sessionId}
+              toolCallId={activeInteraction.toolCallId}
+              toolName={activeInteraction.toolName}
+              input={activeInteraction.input || ''}
+              isActive
+              onDecided={handleDecided}
+              timeoutMs={activeInteraction.timeoutMs}
+              approvalStartedAt={activeInteraction.approvalStartedAt}
+              approvalTitle={activeInteraction.approvalTitle}
+              approvalDisplayName={activeInteraction.approvalDisplayName}
+              approvalDescription={activeInteraction.approvalDescription}
+              approvalBlockedPath={activeInteraction.approvalBlockedPath}
+              approvalDecisionReason={activeInteraction.approvalDecisionReason}
+              approvalHasSuggestions={activeInteraction.approvalHasSuggestions}
+            />
+          ) : activeInteraction.interactiveType === 'question' && activeInteraction.questions ? (
+            <QuestionPrompt
+              ref={onToolRef}
+              sessionId={sessionId}
+              toolCallId={activeInteraction.toolCallId}
+              questions={activeInteraction.questions}
+              answers={activeInteraction.answers}
+              isActive
+              focusedOptionIndex={focusedOptionIndex}
+              onDecided={handleDecided}
+            />
+          ) : null}
+        </motion.div>
+      </AnimatePresence>
       {queueDepth > 0 && (
         <p className="text-muted-foreground px-1 pt-2 text-xs">
           {queueDepth === 1
