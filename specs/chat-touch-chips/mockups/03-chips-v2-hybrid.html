@@ -1,0 +1,179 @@
+<style>
+  .vc-wrap { max-width: 1000px; margin: 0 auto; }
+  .dark { background: #0f0f14; border: 1px solid #26262f; border-radius: 12px; padding: 16px; color: #d4d4dc; font-size: 13px; font-family: ui-sans-serif, system-ui, sans-serif; }
+  .muted { color: #8a8a96; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .lbl { font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: #6b6b78; margin: 10px 0 8px; }
+
+  .chip { display: inline-flex; align-items: center; gap: 6px; background: #1c1c26; border: 1px solid #2e2e3a; border-radius: 999px; padding: 3px 11px; font-size: 12px; color: #b8b8c4; white-space: nowrap; line-height: 1.4; }
+  .chip .add { color: #4ade80; font-variant-numeric: tabular-nums; }
+  .chip .del { color: #f87171; font-variant-numeric: tabular-nums; }
+  .chip .cnt { background: #2e2e3a; border-radius: 999px; padding: 0 6px; font-size: 10px; color: #9d9dab; font-variant-numeric: tabular-nums; }
+  .fav { width: 13px; height: 13px; border-radius: 3px; display:inline-flex; align-items:center; justify-content:center; font-size:8px; color:#fff; font-weight:700; }
+  .fav.a { background: linear-gradient(135deg,#f97316,#dc2626); } .fav.gh { background: #24292f; }
+
+  /* ---------- morph demo ---------- */
+  .morph { position: relative; }
+  .morph .ico { display: inline-block; width: 14px; text-align: center; position: relative; }
+  .morph .ico span { position: absolute; left: 0; top: -8px; transition: none; }
+  .morph .ico .read { animation: m-read 5s ease infinite; }
+  .morph .ico .edit { animation: m-edit 5s ease infinite; }
+  @keyframes m-read { 0%,44% { opacity:1; transform: none; } 50%,94% { opacity:0; transform: rotateX(90deg); } 100% { opacity:1; transform:none; } }
+  @keyframes m-edit { 0%,44% { opacity:0; transform: rotateX(-90deg); } 52%,94% { opacity:1; transform: none; } 100% { opacity:0; } }
+  .morph .stat { display: inline-flex; gap: 5px; overflow: hidden; animation: m-stat 5s ease infinite; }
+  @keyframes m-stat { 0%,46% { max-width: 0; opacity: 0; } 56%,94% { max-width: 90px; opacity: 1; } 100% { max-width: 0; opacity: 0; } }
+  .morph::after { content:''; position:absolute; inset:-3px; border-radius:999px; border:1.5px solid #a78bfa; opacity:0; animation: m-ring 5s ease infinite; pointer-events:none; }
+  @keyframes m-ring { 46% { opacity:0; transform: scale(.9); } 52% { opacity:.8; transform: scale(1.05); } 62%,100% { opacity:0; transform: scale(1.25); } }
+
+  /* ---------- conveyor (shared by both option demos) ---------- */
+  .belt { position: relative; height: 32px; overflow: hidden; flex: 1; min-width: 0; }
+  .belt .chip { position: absolute; top: 2px; left: 0; width: 118px; overflow: hidden; text-overflow: ellipsis; justify-content: flex-start; opacity: 0; }
+  .belt .chip .nm { overflow: hidden; text-overflow: ellipsis; }
+  .belt .chip:nth-child(1) { animation: belt 12.5s linear infinite; }
+  .belt .chip:nth-child(2) { animation: belt 12.5s linear infinite 2.5s; }
+  .belt .chip:nth-child(3) { animation: belt 12.5s linear infinite 5s; }
+  .belt .chip:nth-child(4) { animation: belt 12.5s linear infinite 7.5s; }
+  .belt .chip:nth-child(5) { animation: belt 12.5s linear infinite 10s; }
+  @keyframes belt {
+    0%   { opacity: 0; transform: translateX(420px) translateY(7px) scale(.9); }
+    3%   { opacity: 1; transform: translateX(420px) translateY(-1px) scale(1.02); }
+    5%   { transform: translateX(420px) scale(1); }
+    20%  { transform: translateX(420px); }
+    26%  { transform: translateX(285px); }
+    40%  { transform: translateX(285px); }
+    46%  { transform: translateX(150px); }
+    60%  { transform: translateX(150px); }
+    66%  { transform: translateX(15px); opacity: 1; }
+    78%  { transform: translateX(15px); opacity: 1; }
+    84%  { transform: translateX(-52px) scale(.45); opacity: 0; }
+    100% { opacity: 0; transform: translateX(-60px) scale(.4); }
+  }
+
+  /* counters (option A absorption target) */
+  .counters { display: flex; gap: 8px; align-items: center; flex: none; }
+  .counter { display: inline-flex; align-items: center; gap: 5px; background: #16161e; border: 1px solid #2e2e3a; border-radius: 8px; padding: 3px 9px; font-size: 12px; color: #a0a0ac; }
+  .counter.hot { animation: c-pulse 12.5s ease infinite; }
+  .counter.hot2 { animation: c-pulse 12.5s ease infinite 5s; }
+  @keyframes c-pulse { 82% { transform: scale(1); border-color: #2e2e3a; } 85% { transform: scale(1.1); border-color: #8b8bd0; } 89% { transform: scale(1); border-color: #2e2e3a; } }
+  .odo { display: inline-block; height: 15px; overflow: hidden; vertical-align: -3px; }
+  .odo span { display: block; height: 15px; font-variant-numeric: tabular-nums; animation: odo 12.5s steps(1) infinite; }
+  @keyframes odo { 0% { transform: translateY(0); } 21% { transform: translateY(-15px); } 41% { transform: translateY(-30px); } 61% { transform: translateY(-45px); } 84% { transform: translateY(-60px); } 100% { transform: translateY(-60px); } }
+
+  /* pile (option B absorption target) */
+  .pile { position: relative; width: 74px; height: 26px; flex: none; }
+  .pile .p { position: absolute; top: 2px; width: 34px; height: 21px; border-radius: 999px; background: #1c1c26; border: 1px solid #2e2e3a; display: flex; align-items: center; justify-content: center; font-size: 10px; }
+  .pile .p:nth-child(1) { left: 0; z-index: 3; }
+  .pile .p:nth-child(2) { left: 13px; z-index: 2; opacity: .7; }
+  .pile .p:nth-child(3) { left: 26px; z-index: 1; opacity: .45; }
+  .pile .pbadge { position: absolute; right: 0; top: -7px; z-index: 4; background: #6366f1; color: #fff; font-size: 9.5px; border-radius: 999px; padding: 1px 6px; font-variant-numeric: tabular-nums; animation: c-pulse 12.5s ease infinite; }
+  .pile-wob { animation: p-wob 12.5s ease infinite; transform-origin: bottom center; }
+  @keyframes p-wob { 82% { transform: none; } 85% { transform: scale(1.08) rotate(-2deg); } 88% { transform: none; } }
+
+  /* ---------- tray ---------- */
+  .tray { border-top: 1px dashed #26262f; margin-top: 10px; padding-top: 10px; }
+  .tray .filters { display: flex; gap: 8px; margin-bottom: 8px; }
+  .tray .filters .counter { cursor: default; }
+  .tray .filters .counter.on { border-color: #6366f1; color: #d4d4dc; }
+  .roster { display: flex; flex-wrap: wrap; gap: 6px; max-height: 92px; overflow-y: auto; }
+
+  /* ---------- option cards ---------- */
+  .vc-card { border: 2px solid transparent; border-radius: 14px; cursor: pointer; transition: border-color .15s, transform .15s; background: rgba(128,128,140,.06); padding: 18px; margin-top: 20px; }
+  .vc-card:hover { transform: translateY(-2px); }
+  .vc-card.selected { border-color: #6366f1; }
+  .vc-card h3 { margin: 0 0 4px; }
+  .vc-tag { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; opacity: .6; }
+  .vc-meta { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px; font-size: 13px; opacity: .8; }
+  .live-row { display: flex; align-items: center; gap: 10px; }
+</style>
+
+<div class="vc-wrap">
+  <h2>Touch chips v2 — the hybrid, shaped by the research</h2>
+  <p class="subtitle">I surveyed Cursor, Copilot, Claude Code, Codex, Devin, Perplexity &amp; ChatGPT Deep Research. Verdict: dedupe to one chip per target (net diffstat), keep the live state a bounded quiet window — no infinite conveyor — and put the full roster one click away in a tray that never steals transcript height. Nothing slides away unreachably: old chips are <em>absorbed</em> into a running total on the left, and the full set is always in the tray.</p>
+
+  <div class="section">
+    <div class="lbl">Locked by research + your feedback (shared by both options)</div>
+    <div class="dark">
+      <div class="lbl" style="margin-top:0;">One chip per target — read-then-edited upgrades in place (watch the morph + ring)</div>
+      <span class="chip morph"><span class="ico"><span class="read">📖</span><span class="edit">✏️</span></span> schemas.ts <span class="stat"><span class="add">+12</span> <span class="del">−4</span></span></span>
+      <span class="muted" style="margin-left:10px; font-size:12px;">repeat reads → <span class="chip" style="padding:2px 9px;">📖 transport.ts <span class="cnt">×3</span></span> &nbsp;·&nbsp; click any chip → opens in the canvas pane</span>
+
+      <div class="lbl">SETTLED — after the turn: one quiet line, collapsed by default (the #1 complaint about Copilot's panel is that it isn't)</div>
+      <div><span class="chip">📖 21 · ✏️ 3 <span class="add">+34</span> <span class="del">−11</span> · 🌐 9 &nbsp;<span class="muted">show all</span></span></div>
+
+      <div class="tray">
+        <div class="lbl" style="margin-top:0;">EXPANDED TRAY — full deduped roster, grouped, filterable, bounded height (scrolls itself, never the transcript)</div>
+        <div class="filters">
+          <span class="counter on">📖 21</span><span class="counter">✏️ 3</span><span class="counter">🌐 9</span>
+          <span class="counter" style="margin-left:auto;">order: kind ⇄ chronological</span>
+        </div>
+        <div class="roster">
+          <span class="chip">✏️ event-mapper.ts <span class="add">+12</span> <span class="del">−4</span></span>
+          <span class="chip">✏️ ToolCallCard.tsx <span class="add">+14</span> <span class="del">−5</span></span>
+          <span class="chip">✚ use-touch-chips.ts <span class="add">+8</span></span>
+          <span class="chip">📖 schemas.ts <span class="cnt">×3</span></span>
+          <span class="chip">📖 session-store.ts</span>
+          <span class="chip">📖 agent-runtime.ts</span>
+          <span class="chip">📖 MessageList.tsx</span>
+          <span class="chip"><span class="fav a">A</span> anthropic.com/engineering</span>
+          <span class="chip"><span class="fav gh">G</span> github.com <span class="cnt">×2</span></span>
+          <span class="chip">📖 transport.ts</span>
+          <span class="chip">📖 use-stream-timing.ts</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h3 style="margin-top:26px;">The one open question: what absorbs a chip when it ages out of the live window?</h3>
+  <p class="subtitle">Both demos below: new chips pop in on the right when a tool touches something (bursty, event-driven — motion only on arrival, never continuous). The oldest chip doesn't slide off into nowhere — it visibly folds into the thing on the left, which is clickable and opens the tray.</p>
+
+  <!-- ============ A ============ -->
+  <div class="vc-card" data-choice="ledger-counters" onclick="toggleSelect(this)">
+    <div class="vc-tag">Option A</div>
+    <h3>Ledger — chips fold into ticking counters</h3>
+    <p class="muted">Absorption target is the kind-counters. When a chip ages out it shrinks toward its counter, which pulses and ticks up (watch the 📖 number). Reads like instrumentation: "the count just went up because <em>that</em> went in."</p>
+    <div class="dark">
+      <div class="live-row">
+        <div class="counters">
+          <span class="counter hot">📖 <span class="odo"><span>17</span><span>18</span><span>19</span><span>20</span><span>21</span></span></span>
+          <span class="counter hot2">🌐 <span class="odo"><span>7</span><span>7</span><span>8</span><span>8</span><span>9</span></span></span>
+          <span class="counter">✏️ 3</span>
+        </div>
+        <div class="belt">
+          <span class="chip"><span class="nm">📖 schemas.ts</span></span>
+          <span class="chip"><span class="nm">📖 session-store.ts</span></span>
+          <span class="chip"><span class="nm">🌐 anthropic.com</span></span>
+          <span class="chip"><span class="nm">📖 transport.ts</span></span>
+          <span class="chip"><span class="nm">✏️ mapper.ts</span></span>
+        </div>
+      </div>
+    </div>
+    <div class="vc-meta"><span>✦ Cleanest, most "control panel"</span><span>✦ Counters double as tray filters</span><span>✽ Absorbed chips are numbers, not things — less tactile</span></div>
+  </div>
+
+  <!-- ============ B ============ -->
+  <div class="vc-card" data-choice="ledger-pile" onclick="toggleSelect(this)">
+    <div class="vc-tag">Option B</div>
+    <h3>Ledger + pile — chips fold into a visible stack</h3>
+    <p class="muted">Same mechanics, but the absorption target is a small facepile-style stack that wobbles as each chip lands on it, with one running badge. The turn's history stays a physical <em>thing</em> that visibly grows — one click fans it open into the tray.</p>
+    <div class="dark">
+      <div class="live-row">
+        <div class="pile pile-wob">
+          <span class="pbadge">31</span>
+          <span class="p">📖</span><span class="p">🌐</span><span class="p">✏️</span>
+        </div>
+        <div class="belt">
+          <span class="chip"><span class="nm">📖 schemas.ts</span></span>
+          <span class="chip"><span class="nm">📖 session-store.ts</span></span>
+          <span class="chip"><span class="nm">🌐 anthropic.com</span></span>
+          <span class="chip"><span class="nm">📖 transport.ts</span></span>
+          <span class="chip"><span class="nm">✏️ mapper.ts</span></span>
+        </div>
+      </div>
+    </div>
+    <div class="vc-meta"><span>✦ More tactile and fun — the pile <em>is</em> the record</span><span>✦ Single click target</span><span>✽ One badge, no per-kind counts until you open the tray</span></div>
+  </div>
+
+  <div class="section" style="margin-top:22px;">
+    <p class="subtitle">Research receipts, briefly: every serious product dedupes to one entry per file with net diffstat (Copilot's panel, Claude Code's <span class="mono">/diff</span> Current view); Claude Code additionally offers a chronological per-turn lens as an opt-in toggle — hence the "kind ⇄ chronological" switch in the tray. The two documented anti-patterns we're avoiding: Copilot's expanded panel eating the chat by default, and Codex refusing to show even a file list when the diff is big. Cursor has a confirmed bug from deduping by "currently tracked state" — we'll dedupe by append-then-merge over the event stream instead, so an edit can never be silently dropped.</p>
+  </div>
+</div>

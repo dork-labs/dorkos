@@ -1,0 +1,179 @@
+<style>
+  .vc-wrap { max-width: 1000px; margin: 0 auto; }
+  .dark { background: #0f0f14; border: 1px solid #26262f; border-radius: 12px; padding: 14px 16px; color: #d4d4dc; font-size: 13px; font-family: ui-sans-serif, system-ui, sans-serif; }
+  .muted { color: #8a8a96; }
+  .lbl { font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: #6b6b78; }
+
+  .chip { position: relative; display: inline-flex; align-items: center; gap: 6px; background: #1c1c26; border: 1px solid #2e2e3a; border-radius: 999px; padding: 3px 11px; font-size: 12px; color: #b8b8c4; white-space: nowrap; line-height: 1.4; overflow: hidden; }
+  .chip .add { color: #4ade80; font-variant-numeric: tabular-nums; }
+  .chip .del { color: #f87171; font-variant-numeric: tabular-nums; }
+  .chip .cnt { background: #2e2e3a; border-radius: 999px; padding: 0 6px; font-size: 10px; color: #9d9dab; }
+  .fav { width: 13px; height: 13px; border-radius: 3px; display: inline-flex; align-items: center; justify-content: center; font-size: 8px; color: #fff; font-weight: 700; flex: none; }
+  .fav.a { background: linear-gradient(135deg,#f97316,#dc2626); }
+
+  /* ============ READ: smooth scan bar, like eyes over lines ============ */
+  .v-read::after { content: ''; position: absolute; top: 0; bottom: 0; width: 34px; left: -40px;
+    background: linear-gradient(90deg, transparent, rgba(167,139,250,.16), rgba(167,139,250,.30), rgba(167,139,250,.16), transparent);
+    animation: v-scan 1.7s ease-in-out infinite; }
+  @keyframes v-scan { 0% { left: -40px; } 70%, 100% { left: 110%; } }
+
+  /* ============ SEARCH: staccato spotlight, jumping between hits ============ */
+  .v-search::after { content: ''; position: absolute; top: 4px; bottom: 4px; width: 22px; border-radius: 5px;
+    background: rgba(103,232,249,.14); border: 1px solid rgba(103,232,249,.25);
+    animation: v-hits 2.2s steps(1) infinite; }
+  @keyframes v-hits { 0% { left: 26px; opacity: 1; } 22% { left: 74px; } 44% { left: 48px; } 66% { left: 96px; } 88%, 100% { left: 26px; opacity: 1; } }
+  .v-search .ic { animation: v-mag 2.2s steps(1) infinite; display: inline-block; }
+  @keyframes v-mag { 0%,88% { transform: none; } 22% { transform: translateY(-1px); } 44% { transform: translateY(1px); } 66% { transform: none; } }
+
+  /* ============ EDIT: caret blinks, scribble wiggle, diffstat ticks up ============ */
+  .v-edit .ic { display: inline-block; animation: v-scribble 1.4s ease-in-out infinite; transform-origin: 30% 80%; }
+  @keyframes v-scribble { 0%,100% { transform: rotate(0); } 15% { transform: rotate(-11deg) translateX(-1px); } 30% { transform: rotate(6deg) translateX(1px); } 45% { transform: rotate(-8deg); } 60% { transform: rotate(3deg); } 75% { transform: rotate(-4deg); } }
+  .v-edit .caret { display: inline-block; width: 1.5px; height: 12px; background: #a78bfa; margin-left: 1px; vertical-align: -2px; animation: v-blink .7s steps(1) infinite; }
+  @keyframes v-blink { 50% { opacity: 0; } }
+  .odo { display: inline-block; height: 15px; overflow: hidden; vertical-align: -3px; }
+  .odo span { display: block; height: 15px; font-variant-numeric: tabular-nums; animation: v-odo 4.2s steps(1) infinite; }
+  @keyframes v-odo { 0% { transform: translateY(0); } 25% { transform: translateY(-15px); } 50% { transform: translateY(-30px); } 75% { transform: translateY(-45px); } 100% { transform: translateY(0); } }
+
+  /* ============ CREATE: border pens itself, content fades in, spark ============ */
+  .v-create { border-color: transparent; background: #16161e; }
+  .v-create svg.pen { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .v-create svg.pen rect { fill: none; stroke: #4ade80; stroke-width: 1.5; opacity: .8;
+    stroke-dasharray: 320; stroke-dashoffset: 320; animation: v-pen 3.2s ease-in-out infinite; }
+  @keyframes v-pen { 0% { stroke-dashoffset: 320; opacity: .9; } 40% { stroke-dashoffset: 0; opacity: .9; } 75% { stroke-dashoffset: 0; opacity: .25; } 100% { stroke-dashoffset: 0; opacity: .25; } }
+  .v-create .inner { display: inline-flex; align-items: center; gap: 6px; animation: v-born 3.2s ease infinite; }
+  @keyframes v-born { 0%, 18% { opacity: 0; } 45%, 100% { opacity: 1; } }
+  .v-create .spark { position: absolute; right: 6px; top: -1px; font-size: 9px; color: #4ade80; animation: v-spark 3.2s ease infinite; }
+  @keyframes v-spark { 0%, 38% { opacity: 0; transform: scale(.4) rotate(0); } 46% { opacity: 1; transform: scale(1.25) rotate(40deg); } 60%, 100% { opacity: 0; transform: scale(.6) rotate(80deg); } }
+
+  /* ============ DELETE: strike draws through, chip crumples to a tombstone ============ */
+  .v-del .strike { position: absolute; left: 10px; right: 10px; top: 50%; height: 1.5px; background: #f87171; transform-origin: left center; transform: scaleX(0); animation: v-strike 3.6s ease infinite; }
+  @keyframes v-strike { 0%, 15% { transform: scaleX(0); } 40% { transform: scaleX(1); } 100% { transform: scaleX(1); } }
+  .v-del { animation: v-crumple 3.6s ease infinite; }
+  @keyframes v-crumple { 0%, 42% { opacity: 1; transform: none; filter: none; } 58% { transform: scale(.94) rotate(-1.2deg); } 70%, 92% { opacity: .45; transform: scale(.96); filter: saturate(.3); } 100% { opacity: 1; transform: none; } }
+
+  /* ============ FETCH: radar ping from the favicon ============ */
+  .v-fetch .ping { position: relative; display: inline-flex; }
+  .v-fetch .ping::before, .v-fetch .ping::after { content: ''; position: absolute; inset: -2px; border-radius: 5px; border: 1px solid #67e8f9; opacity: 0; animation: v-ping 1.8s ease-out infinite; }
+  .v-fetch .ping::after { animation-delay: .6s; }
+  @keyframes v-ping { 0% { opacity: .8; transform: scale(.7); } 70%, 100% { opacity: 0; transform: scale(2.4); } }
+  .v-fetch .dots span { display: inline-block; width: 3px; height: 3px; border-radius: 50%; background: #67e8f9; margin-left: 2px; animation: v-dl 1.2s ease infinite; }
+  .v-fetch .dots span:nth-child(2) { animation-delay: .15s; } .v-fetch .dots span:nth-child(3) { animation-delay: .3s; }
+  @keyframes v-dl { 0% { opacity: 0; transform: translateY(-4px); } 40% { opacity: 1; } 100% { opacity: 0; transform: translateY(4px); } }
+
+  /* ============ RUN: terminal block cursor + heartbeat border ============ */
+  .v-run { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; border-radius: 7px; }
+  .v-run .blk { display: inline-block; width: 6px; height: 11px; background: #34d399; margin-left: 3px; vertical-align: -1px; animation: v-blink .8s steps(1) infinite; }
+  .v-run { animation: v-hb 2.4s ease infinite; }
+  @keyframes v-hb { 0%, 100% { border-color: #2e2e3a; } 12% { border-color: #34d39966; } 24% { border-color: #2e2e3a; } 36% { border-color: #34d39944; } 48% { border-color: #2e2e3a; } }
+
+  /* settle pop shared */
+  .settle { animation: settle-in .5s ease both; }
+
+  /* ---------- verb cards ---------- */
+  .vgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 16px; }
+  .vc-card { border: 2px solid transparent; border-radius: 14px; cursor: pointer; transition: border-color .15s, transform .15s; background: rgba(128,128,140,.06); padding: 14px 16px; margin: 0; }
+  .vc-card:hover { transform: translateY(-2px); }
+  .vc-card.selected { border-color: #6366f1; }
+  .vc-card h3 { margin: 0 0 2px; font-size: 15px; }
+  .vc-card .why { font-size: 12.5px; color: inherit; opacity: .65; margin: 2px 0 10px; }
+  .staterow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .staterow .arrow { color: #6b6b78; font-size: 14px; }
+  @media (max-width: 760px) { .vgrid { grid-template-columns: 1fr; } }
+</style>
+
+<div class="vc-wrap">
+  <h2>The verb vocabulary — motion that says what's happening</h2>
+  <p class="subtitle">Each verb gets a physical signature: <em>reading sweeps, searching jumps, editing scribbles, creating pens itself into existence, deleting strikes through and crumples, fetching pings, running blinks</em>. Each card shows LIVE → SETTLED. This is multi-select: click every verb whose motion feels right; tell me in the terminal which ones miss and why.</p>
+
+  <div class="vgrid options" data-multiselect>
+
+    <div class="vc-card option" data-choice="verb-read" onclick="toggleSelect(this)">
+      <h3>📖 Read — the scan</h3>
+      <div class="why">A soft highlight sweeps across, like eyes moving over lines. Smooth and continuous = "taking it in."</div>
+      <div class="dark staterow">
+        <span class="chip v-read"><span>📖</span> session-store.ts</span>
+        <span class="arrow">→</span>
+        <span class="chip">📖 session-store.ts <span class="cnt">×2</span></span>
+      </div>
+    </div>
+
+    <div class="vc-card option" data-choice="verb-search" onclick="toggleSelect(this)">
+      <h3>🔍 Search — the spotlight</h3>
+      <div class="why">A small highlight <em>jumps</em> between spots — staccato, not smooth — the motion of checking match sites. Distinct from reading's glide.</div>
+      <div class="dark staterow">
+        <span class="chip v-search"><span class="ic">🔍</span> "Last-Event-ID"</span>
+        <span class="arrow">→</span>
+        <span class="chip">🔍 "Last-Event-ID" <span class="cnt">14 hits</span></span>
+      </div>
+    </div>
+
+    <div class="vc-card option" data-choice="verb-edit" onclick="toggleSelect(this)">
+      <h3>✏️ Edit — the scribble</h3>
+      <div class="why">The pencil wiggles like it's writing, a caret blinks in the filename, and the diffstat ticks up live as hunks land.</div>
+      <div class="dark staterow">
+        <span class="chip v-edit"><span class="ic">✏️</span> event-mapper.ts<span class="caret"></span> <span class="add">+<span class="odo"><span>4</span><span>7</span><span>9</span><span>12</span></span></span> <span class="del">−<span class="odo"><span>1</span><span>2</span><span>2</span><span>4</span></span></span></span>
+        <span class="arrow">→</span>
+        <span class="chip">✏️ event-mapper.ts <span class="add">+12</span> <span class="del">−4</span></span>
+      </div>
+    </div>
+
+    <div class="vc-card option" data-choice="verb-create" onclick="toggleSelect(this)">
+      <h3>✚ Create — penned into existence</h3>
+      <div class="why">The chip's border literally draws itself around nothing, the name fades in inside it, one green spark. Birth, not arrival.</div>
+      <div class="dark staterow">
+        <span class="chip v-create">
+          <svg class="pen" viewBox="0 0 150 26" preserveAspectRatio="none"><rect x="1" y="1" width="148" height="24" rx="12"/></svg>
+          <span class="spark">✦</span>
+          <span class="inner"><span>✚</span> use-touch-chips.ts</span>
+        </span>
+        <span class="arrow">→</span>
+        <span class="chip">✚ use-touch-chips.ts <span class="add">+86</span></span>
+      </div>
+    </div>
+
+    <div class="vc-card option" data-choice="verb-delete" onclick="toggleSelect(this)">
+      <h3>🗑 Delete — strike &amp; crumple</h3>
+      <div class="why">A red line draws through the name, then the chip desaturates and slumps into a ghost. The tombstone stays — deletions shouldn't be invisible.</div>
+      <div class="dark staterow">
+        <span class="chip v-del"><span>🗑</span> legacy-mapper.ts<span class="strike"></span></span>
+        <span class="arrow">→</span>
+        <span class="chip" style="opacity:.45; filter:saturate(.3);"><span>🗑</span> <s>legacy-mapper.ts</s></span>
+      </div>
+    </div>
+
+    <div class="vc-card option" data-choice="verb-fetch" onclick="toggleSelect(this)">
+      <h3>🌐 Fetch — the ping</h3>
+      <div class="why">Radar rings emanate from the favicon while dots stream down beside the domain — something is arriving from out there.</div>
+      <div class="dark staterow">
+        <span class="chip v-fetch"><span class="ping"><span class="fav a">A</span></span> anthropic.com <span class="dots"><span></span><span></span><span></span></span></span>
+        <span class="arrow">→</span>
+        <span class="chip"><span class="fav a">A</span> anthropic.com/engineering</span>
+      </div>
+    </div>
+
+    <div class="vc-card option" data-choice="verb-run" onclick="toggleSelect(this)">
+      <h3>▮ Run — the terminal pulse</h3>
+      <div class="why">Bash chips go monospace with a blinking block cursor and a faint green heartbeat on the border — unmistakably "a process is alive."</div>
+      <div class="dark staterow">
+        <span class="chip v-run">pnpm vitest run<span class="blk"></span></span>
+        <span class="arrow">→</span>
+        <span class="chip v-run" style="animation:none;">pnpm vitest run <span style="color:#34d399">✓ 2.1s</span></span>
+      </div>
+    </div>
+
+    <div class="vc-card option" data-choice="verb-upgrade" onclick="toggleSelect(this)">
+      <h3>📖→✏️ The upgrade — verbs chain</h3>
+      <div class="why">Already locked from last screen, shown for completeness: read-then-edited morphs in place with a ring pulse. Verbs compose on one chip — the motion tells the story of that file.</div>
+      <div class="dark staterow">
+        <span class="chip"><span>📖</span> schemas.ts</span>
+        <span class="arrow">flip→</span>
+        <span class="chip"><span>✏️</span> schemas.ts <span class="add">+12</span> <span class="del">−4</span></span>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="section" style="margin-top:20px;">
+    <p class="subtitle">Design rules underneath: every live animation stays <em>inside the chip's own bounds</em> (no layout shift, no neighbors moving), respects <code>prefers-reduced-motion</code> (falls back to the static icon + a subtle opacity pulse), and stops the instant the tool settles — motion means "in progress," stillness means "done." Settled chips are quiet; the pile and tray stay calm.</p>
+  </div>
+</div>
