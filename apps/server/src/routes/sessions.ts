@@ -123,8 +123,10 @@ router.get('/recent', async (req, res) => {
 });
 
 // GET /api/sessions/:id/runtime-type — Lightweight endpoint for clients that
-// need only the runtime owner. Uses getSessionRuntimeType which infers-on-miss
-// (legacy sessions resolve to 'claude-code' and back-fill session_metadata).
+// need only the runtime owner. Uses getSessionRuntimeType, which infers on a
+// miss ('claude-code' for legacy sessions predating the table) and NEVER
+// writes: a read path that back-filled would mint a ghost row for any id it
+// was handed, and first-write-wins would make that guess the binding (DOR-812).
 router.get('/:id/runtime-type', async (req, res) => {
   const sessionId = parseSessionId(req.params.id);
   if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');

@@ -513,13 +513,49 @@ export class RuntimeRegistry {
    * The whole row moves, not just the settings columns: the row describes ONE
    * session, and that session's id changed — `runtime`, `agentPath` and
    * `createdAt` belong with it. Ownership stays immutable (ADR-0255): when a row
-   * already exists under `toId` its `runtime` is left untouched and only the
-   * settings are merged in, source-wins per field, with a NULL source column
-   * leaving the destination's value alone. A destination that has no runtime yet
-   * is the one exception, and it is the same rule rather than a hole in it —
-   * there is no ownership there to keep, so the source's binding travels with
-   * the row it belongs to. The source row is deleted in the same transaction, so
-   * no id ever holds a second copy.
+   * already exists under `toId` its `runtime` is left untouched. A destination
+   * that has no runtime yet is the one exception, and it is the same rule rather
+   * than a hole in it — there is no ownership there to keep, so the source's
+   * binding travels with the row it belongs to. The source row is deleted in the
+   * same transaction, so the move never leaves a second copy behind.
+   *
+   * **The property this has to keep: an operator's explicit choice never loses
+   * to anything that is not a NEWER operator's explicit choice.** Read that
+   * twice before touching the merge, because the rows cannot express it on their
+   * own — nothing in `session_metadata` records who wrote a column, so an
+   * operator's `plan` and a server-seeded `acceptEdits` are the same shape once
+   * written, and recency of the ROW is therefore not a stand-in for provenance.
+   * Both merge directions have been measured wrong on some input:
+   *
+   * - **Source-wins** loses a newer operator choice to the retired row, because
+   *   the source row is normally the older of the two.
+   * - **Destination-wins** loses a genuine operator choice to a SEEDED default,
+   *   because {@link RuntimeRegistry.persistSessionRuntime} INSERTs rows
+   *   pre-filled from `runtimes.defaultTrustStop` (see
+   *   {@link RuntimeRegistry.seedForNewRow}) — a newer row nobody chose.
+   *
+   * So the merge is not where the property is kept. It is kept by ORDERING, one
+   * layer up: `message-sender` moves this row BEFORE it yields the event that
+   * lets `trigger-turn` announce the canonical id, and a caller can only name an
+   * id it has been told. By the time any POST or PATCH can arrive under `toId`,
+   * the row is already there and already bound — so `persistSessionRuntime`
+   * finds a bound row, seeds nothing, and reports no new session. That is what
+   * removes the seeded rival from this merge's inputs rather than teaching the
+   * merge to guess which value a person picked.
+   *
+   * Destination-wins per field is what remains, and it is right for the input
+   * that is still reachable: two rows that both hold OPERATOR choices, where the
+   * destination's is the later one. Keep both facts together — the rule is only
+   * sound while the ordering above holds, and a future author who moves the
+   * re-key back after the announcement re-opens the seeded direction. The
+   * `session-settings-rekey` tests fail in exactly that case.
+   *
+   * What this does NOT promise: that a session can never have two rows again. A
+   * stale client still holding the retired id and POSTing under it makes
+   * {@link RuntimeRegistry.persistSessionRuntime} mint a fresh row for that id —
+   * this moves the row, it does not reserve the id it left. Re-minting is
+   * tracked separately (DOR-837); do not read this as a uniqueness guarantee the
+   * schema does not enforce.
    *
    * @param fromId - The id the row is stored under today
    * @param toId - The canonical id the session is now known by
@@ -549,10 +585,10 @@ export class RuntimeRegistry {
       tx.update(sessionMetadata)
         .set({
           runtime: destination.runtime ?? source.runtime,
-          permissionMode: source.permissionMode ?? destination.permissionMode,
-          model: source.model ?? destination.model,
-          effort: source.effort ?? destination.effort,
-          fastMode: source.fastMode ?? destination.fastMode,
+          permissionMode: destination.permissionMode ?? source.permissionMode,
+          model: destination.model ?? source.model,
+          effort: destination.effort ?? source.effort,
+          fastMode: destination.fastMode ?? source.fastMode,
           agentPath: destination.agentPath ?? source.agentPath,
         })
         .where(eq(sessionMetadata.sessionId, toId))
