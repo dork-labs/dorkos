@@ -227,7 +227,7 @@ export class BindingStore {
       }
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-        logger.info('No bindings.json found, starting with empty bindings');
+        logger.debug('[BindingSubsystem] no bindings.json yet, starting with none');
         this.bindings.clear();
       } else {
         logger.error('Failed to load bindings.json, starting with empty bindings', err);

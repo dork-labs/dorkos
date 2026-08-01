@@ -222,7 +222,9 @@ export class BindingRouter {
       'relay.human.>',
       this.handleInbound.bind(this)
     );
-    logger.info(`BindingRouter initialized with ${this.sessionMap.size} persisted session(s)`);
+    logger.info('[BindingSubsystem] BindingRouter loaded persisted sessions', {
+      sessions: this.sessionMap.size,
+    });
   }
 
   /**

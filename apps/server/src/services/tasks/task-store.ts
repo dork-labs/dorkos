@@ -669,7 +669,7 @@ export class TaskStore {
 
   /** Close the database connection. No-op since the shared Db lifecycle is managed externally. */
   close(): void {
-    logger.debug('TaskStore: close() called (no-op — db lifecycle managed externally)');
+    logger.debug('[Tasks] TaskStore close() is a no-op — the db lifecycle is managed externally');
   }
 }
 
