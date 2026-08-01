@@ -116,7 +116,7 @@ function ReactionPill({
         // the pill does not: 12px of reach above and below takes it to 44px.
         // Vertical only, because pills sit 4px apart in a row and reaching
         // sideways would have each one stealing taps from its neighbour.
-        "after:absolute after:inset-x-0 after:-inset-y-3 after:content-[''] md:after:hidden",
+        'after:absolute after:inset-x-0 after:-inset-y-3 md:after:hidden',
         mine
           ? 'border-brand/70 bg-brand/12 text-foreground'
           : 'border-border bg-muted/60 text-muted-foreground hover:bg-muted',
@@ -290,7 +290,7 @@ export const EntryReactionRow = forwardRef<RovingGroupHandle, EntryReactionRowPr
             className={cn(
               'focus-ring text-muted-foreground hover:text-foreground relative rounded-full px-2 py-0.5 text-xs',
               // The same reach the pills beside it get, for the same reason.
-              "after:absolute after:inset-x-0 after:-inset-y-3 after:content-[''] md:after:hidden"
+              'after:absolute after:inset-x-0 after:-inset-y-3 md:after:hidden'
             )}
           >
             +{hidden} more

@@ -213,7 +213,7 @@ export function EntryReactionPicker({
                 // case: a capsule is never on screen on a touch device.
                 [
                   'text-muted-foreground/60 hover:text-foreground relative h-auto rounded-full px-2 py-0.5 text-xs',
-                  "after:absolute after:inset-x-0 after:-inset-y-3 after:content-[''] md:after:hidden",
+                  'after:absolute after:inset-x-0 after:-inset-y-3 md:after:hidden',
                 ]
           )}
         >

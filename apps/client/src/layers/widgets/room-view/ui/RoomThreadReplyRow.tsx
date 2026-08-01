@@ -87,7 +87,7 @@ export function RoomThreadReplyRow({
         // 20px row to a 44px one. Off above the breakpoint, where a pointer is
         // exact and the extra reach would only steal clicks from the messages
         // above and below.
-        "after:absolute after:-inset-3 after:content-[''] md:after:hidden",
+        'after:absolute after:-inset-3 md:after:hidden',
         // Accent is the unread signal, and it colours the WHOLE row rather than
         // a badge on the end of it: the row is small and quiet by design, and a
         // reader scanning a long history is looking for colour, not for a

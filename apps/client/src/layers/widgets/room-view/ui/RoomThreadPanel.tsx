@@ -241,7 +241,7 @@ export function RoomThreadPanel({
             // The glyph stays 16px so the header keeps its height; the target
             // grows to 44px with 10px of reach on every side, the same trick
             // the thread reply row uses.
-            "after:absolute after:-inset-2.5 after:content-[''] md:after:hidden"
+            'after:absolute after:-inset-2.5 md:after:hidden'
           )}
         >
           {pushed ? (
