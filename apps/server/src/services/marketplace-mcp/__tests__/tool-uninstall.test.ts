@@ -398,7 +398,9 @@ describe('createUninstallHandler — tier gate cooperation', () => {
     const uninstallFlow = createStubUninstallFlow({
       result: uninstallResult({ packageName: 'sentry-monitor' }),
     });
-    const handler = createUninstallHandler(createStubDeps({ confirmationProvider: provider, uninstallFlow }));
+    const handler = createUninstallHandler(
+      createStubDeps({ confirmationProvider: provider, uninstallFlow })
+    );
 
     const result = await handler({ name: 'sentry-monitor' }, { preApproved: true });
 
@@ -430,7 +432,9 @@ describe('createUninstallHandler — tier gate cooperation', () => {
     const provider = new FakeConfirmationProvider();
     provider.requestInstallConfirmation.mockResolvedValue({ status: 'pending', token: 't' });
     const uninstallFlow = createStubUninstallFlow({});
-    const handler = createUninstallHandler(createStubDeps({ confirmationProvider: provider, uninstallFlow }));
+    const handler = createUninstallHandler(
+      createStubDeps({ confirmationProvider: provider, uninstallFlow })
+    );
 
     const result = await handler({ name: 'sentry-monitor' });
 

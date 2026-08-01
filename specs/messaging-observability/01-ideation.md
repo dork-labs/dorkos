@@ -94,7 +94,7 @@ Two design calls follow from being honest about what it is for.
 
 Three of the four convention questions have empirical answers in the codebase and do not need debating.
 
-**Context keys are camelCase.** 41 `xxxId:` camelCase keys in logger call sites; zero snake_case. Settled. (`session_id` and friends appear in SDK payload shapes and MCP tool schemas — external wire formats, not logging.) The one wrinkle worth naming rather than silently tolerating: `session-spine-stall-locks-rekey` adds `toolUseID` and `agentID` with a capital `ID`, because they mirror Claude Agent SDK field names verbatim. That is a defensible exception, but it should be a _documented_ exception, not a precedent.
+**Context keys are camelCase.** 41 `xxxId:` camelCase keys in logger call sites; zero `snake_case`. Settled. (`session_id` and friends appear in SDK payload shapes and MCP tool schemas — external wire formats, not logging.) The one wrinkle worth naming rather than silently tolerating: `session-spine-stall-locks-rekey` adds `toolUseID` and `agentID` with a capital `ID`, because they mirror Claude Agent SDK field names verbatim. That is a defensible exception, but it should be a _documented_ exception, not a precedent.
 
 **Tags are a `[prefix]` in the message.** ~90 distinct bracket tags across hundreds of call sites, against exactly 3 uses of `createTaggedLogger`. Every file in the dispatch path uses the string prefix. Settled by overwhelming practice — but with a consequence nobody has noticed: because the tag lives in `msg`, the NDJSON `tag` field is **empty on almost every line**, and `jq 'select(.tag=="rooms")'` — the filter `debug:logs` advertises — matches nothing.
 

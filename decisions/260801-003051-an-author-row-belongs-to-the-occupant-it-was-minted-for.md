@@ -15,7 +15,7 @@ Proposed
 
 ## Context
 
-ADR 260726-170126 keys room author identity on the agent's directory, never its manifest ULID, and accepts that a *moved* agent splits in two. It left the inverse unhandled: `AuthorRegistry.resolve` mints purely on `(kind, naturalKey)` with no occupancy check, so registering a **new** agent in a previously-occupied directory silently inherits the previous agent's entire message history, `@handle` claims, and room memberships (DOR-790 H12). Ghost author rows are also never removed, so a stale row can claim a `@handle` and starve a live agent with the same display name — verified by execution during review: the ghost was advertised and the live agent was unreachable by mention.
+ADR 260726-170126 keys room author identity on the agent's directory, never its manifest ULID, and accepts that a _moved_ agent splits in two. It left the inverse unhandled: `AuthorRegistry.resolve` mints purely on `(kind, naturalKey)` with no occupancy check, so registering a **new** agent in a previously-occupied directory silently inherits the previous agent's entire message history, `@handle` claims, and room memberships (DOR-790 H12). Ghost author rows are also never removed, so a stale row can claim a `@handle` and starve a live agent with the same display name — verified by execution during review: the ghost was advertised and the live agent was unreachable by mention.
 
 ## Decision
 
