@@ -33,6 +33,8 @@ import {
   type EntryActionBarHandle,
   type RovingGroupHandle,
 } from '@/layers/features/entry-actions';
+import { entrySummary } from '../lib/entry-summary';
+import { formatAbsoluteTime, formatTime } from '../lib/entry-time';
 
 interface RoomEntryRowProps {
   /** The room this entry belongs to, which its actions act on. */
@@ -81,17 +83,17 @@ interface RoomEntryRowProps {
    * named but unnumbered.
    */
   feedPosition?: FeedPosition;
-}
-
-/**
- * Short time display (HH:MM) for an entry's timestamp, or `''` when it is not a
- * time at all. `toLocaleTimeString` does not throw on an unparseable date — it
- * renders "Invalid Date" — so the guard has to be the parse, not a `try`.
- */
-function formatTime(timestamp: string): string {
-  const ms = Date.parse(timestamp);
-  if (Number.isNaN(ms)) return '';
-  return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  /**
+   * The DOM id to put on the row, when something has to be able to find it
+   * again.
+   *
+   * Only the room's own timeline passes one. The same entry can be on screen
+   * TWICE — a thread's root renders in the room's flow and again at the head of
+   * the open panel — and two elements answering to one id is a lookup whose
+   * answer depends on document order. The timeline's copy is the one focus
+   * comes back to, so the timeline is the one that names it.
+   */
+  rowId?: string;
 }
 
 /**
@@ -169,7 +171,16 @@ function noticeName(text: string): string {
  * **Every post carries the action surface** — a toolbar on hover or focus, the
  * same actions on right-click, and a drawer on a long press. The row is a tab
  * stop so the toolbar can be reached without a pointer; its buttons join the
- * tab order only while focus is inside the row (see `EntryActionBar`).
+ * tab order only while focus is inside the row (see `EntryActionBar`). A fifth
+ * way in, hidden and costing nothing, exists for the one reader none of those
+ * four served: a screen reader on a touch screen. See the button below the
+ * reactions.
+ *
+ * **The article describes itself in a line, not in full.** The description a
+ * feed's articles carry is what a reader crossing the feed decides on, and
+ * pointing it at the whole rendered body meant a message with a pasted diff in
+ * it read the diff out before saying anything about itself. `entrySummary` owns
+ * that line and says what it drops.
  *
  * **Every message row is NAMED, wherever it renders** — the room's feed and the
  * thread panel alike. That is the decision, not a side effect of the feed work
@@ -208,11 +219,16 @@ export function RoomEntryRow({
   grouping,
   orphanedReply,
   feedPosition,
+  rowId,
 }: RoomEntryRowProps) {
   const time = formatTime(entry.createdAt);
+  const absoluteTime = formatAbsoluteTime(entry.createdAt);
+  // `null` for a message that already reads as one line — see `entrySummary`.
+  const summary = entrySummary(entry.body.text);
   const domId = useId();
   const headerId = `${domId}-author`;
   const contentId = `${domId}-content`;
+  const summaryId = `${domId}-summary`;
   const rowRef = useRef<HTMLDivElement>(null);
   const barRef = useRef<EntryActionBarHandle>(null);
   const pillsRef = useRef<RovingGroupHandle>(null);
@@ -324,6 +340,7 @@ export function RoomEntryRow({
       {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- see above */}
       <div
         ref={rowRef}
+        id={rowId}
         data-testid="room-entry"
         role="article"
         // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- see above
@@ -336,13 +353,18 @@ export function RoomEntryRow({
           : {
               'aria-label': time.length > 0 ? `${author.displayName}, ${time}` : author.displayName,
             })}
-        // What the article is ABOUT, which the APG asks a feed's articles to
-        // point at: the words, not the toolbar drawn over them.
-        aria-describedby={contentId}
-        // The capsule is reached with an arrow or Enter and announced by
-        // nothing — a roving group is invisible until you are standing in it.
-        // Enter is the one worth saying out loud.
-        aria-keyshortcuts="Enter"
+        // What the article is ABOUT: the words, where they are short enough to
+        // BE the description, and a line about them where they are not. See
+        // `entrySummary`, which decides which of those a message is.
+        aria-describedby={summary === null ? contentId : summaryId}
+        // No `aria-keyshortcuts` here, and that is a change rather than an
+        // omission. It said "Enter" on every row, so crossing a room of fifty
+        // messages announced the same shortcut fifty times to say one thing
+        // once — and it was carrying the whole of the capsule's
+        // discoverability, because a roving group is invisible until you are
+        // standing in it. That job now belongs to a named control (the
+        // "Message actions" button below the reactions), which says what it is
+        // rather than which key to press, and which a finger can reach.
         {...feedArticleProps(feedPosition)}
         onKeyDown={handleKeyDown}
         className={cn(
@@ -354,6 +376,12 @@ export function RoomEntryRow({
           // a CANCELLED press snap back with neither — a reader who started
           // scrolling gets no celebration for the gesture they abandoned.
           'origin-center',
+          // iOS answers a long press on text with its own selection callout, so
+          // the press meant to open this message's drawer summoned Apple's
+          // "Copy / Look Up" bubble on top of it — two menus for one gesture,
+          // and the wrong one in front. The words stay selectable; only the
+          // callout is refused, and the drawer carries a Copy text of its own.
+          '[-webkit-touch-callout:none]',
           press === 'pressing' && 'motion-safe:animate-press-in',
           press === 'released' && 'motion-safe:animate-press-release'
         )}
@@ -361,14 +389,22 @@ export function RoomEntryRow({
         <div className={styles.gutter()}>
           {showAuthorHeader && <MessageAuthorAvatar author={author} />}
           {!showAuthorHeader && time.length > 0 && (
-            <span
+            <time
+              dateTime={entry.createdAt}
+              title={absoluteTime}
               className={cn(
                 styles.avatarTimestamp(),
-                'group-hover:text-msg-timestamp text-transparent'
+                // Revealed by FOCUS as well as by hover. It was hover-only, so
+                // a keyboard reader crossing a run of messages from one person
+                // had no way to see when any of them was said — the one fact
+                // the grouping takes away is the one the reveal was meant to
+                // give back, and half the readers of this room could not ask
+                // for it.
+                'group-focus-within:text-msg-timestamp group-hover:text-msg-timestamp text-transparent'
               )}
             >
               {time}
-            </span>
+            </time>
           )}
         </div>
         <div className={styles.body()}>
@@ -376,7 +412,18 @@ export function RoomEntryRow({
             <div id={headerId} className={styles.header()}>
               <span className={styles.authorName()}>{author.displayName}</span>
               {time.length > 0 && (
-                <span className={cn(styles.timestamp(), 'text-msg-timestamp')}>{time}</span>
+                // A `<time>` with its own date on it, and the whole date as the
+                // title a pointer reveals. A room scrolled back a week showed
+                // nothing but clock times, so "which day was this?" had no
+                // answer anywhere on the surface — not on hover, not in the
+                // markup, and not to a screen reader.
+                <time
+                  dateTime={entry.createdAt}
+                  title={absoluteTime}
+                  className={cn(styles.timestamp(), 'text-msg-timestamp')}
+                >
+                  {time}
+                </time>
               )}
             </div>
           )}
@@ -393,9 +440,38 @@ export function RoomEntryRow({
             menu to be taking away. That is a property of this call site, not of
             `MarkdownContent` everywhere.
           */}
-          <div id={contentId} data-slot="message-content" className={styles.content()}>
+          <div
+            id={contentId}
+            data-slot="message-content"
+            className={cn(
+              styles.content(),
+              // A long unbroken token — a URL, a file path, a hash pasted as
+              // `code` — is wider than the column and had nowhere to go: the
+              // column is `min-w-0`, so the overflow was simply clipped and the
+              // end of the token was unreadable and unselectable. Inline code
+              // breaks mid-token, which is right for something that is not
+              // prose; a fenced block scrolls instead, because breaking a line
+              // of code changes what it says.
+              '[&_:not(pre)>code]:wrap-anywhere [&_pre]:overflow-x-auto'
+            )}
+          >
             <MarkdownContent content={entry.body.text} linkSafety />
           </div>
+          {summary !== null && (
+            /*
+              The article's description, for a message too long or too code-heavy
+              to be its own — and deliberately `display:none`.
+
+              A description is resolved from the element it points AT whether or
+              not that element is displayed, which is what makes this the one
+              place a summary can live without also being read twice: `sr-only`
+              would put it back in the row's own contents, so a screen reader
+              would hear the summary and then the message.
+            */
+            <span id={summaryId} className="hidden">
+              {summary}
+            </span>
+          )}
           {/* The pills, under the words they are about. A message with no
               reactions renders nothing here at all — no rail, no ghost — which
               is what keeps a quiet room quiet (design record §2, behaviour 4). */}
@@ -409,6 +485,42 @@ export function RoomEntryRow({
             disabled={streamStalled}
             onExit={() => rowRef.current?.focus()}
           />
+          {actions.length > 0 && (
+            /*
+              The way into this message's actions for somebody using a screen
+              reader on a touch screen — the one reader the capsule had no path
+              for at all.
+
+              The capsule is revealed by hover, which a finger never produces,
+              and by focus, which is reached with an arrow key that VoiceOver's
+              gestures do not send; and until it is revealed it is
+              `pointer-events-none`, so even a reader who found a button by
+              swiping could not activate it — the double-tap landed on the
+              message underneath. The only remaining path was a 500ms long
+              press, which VoiceOver does not produce either.
+
+              So: a real button, in the accessibility tree, that hands focus to
+              the capsule. Focus reveals it and turns its pointer events back
+              on, which is what makes every button in it activatable from that
+              point on.
+
+              **`sr-only` and `tabIndex={-1}`, both load-bearing.** It costs no
+              pixels, because sighted readers already have the hover capsule and
+              the right-click menu. And it is NOT a tab stop: a room is one Tab
+              per message (see `EntryActionBar`), and a second stop on every row
+              would double what crossing a room costs to give a keyboard reader
+              a second way to do what ArrowRight already does. VoiceOver reaches
+              it by swipe, which does not care about the tab order.
+            */
+            <button
+              type="button"
+              tabIndex={-1}
+              data-testid="entry-actions-reach"
+              aria-label="Message actions"
+              onClick={() => barRef.current?.focusFirst()}
+              className="sr-only"
+            />
+          )}
           {/*
             The rail is the strip of gutter the capsule lives in — exactly one
             capsule tall, sitting directly ABOVE the message's first line, so the

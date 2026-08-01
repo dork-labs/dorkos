@@ -111,6 +111,12 @@ function ReactionPill({
       className={cn(
         'focus-ring relative inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs',
         'disabled:pointer-events-none disabled:opacity-50',
+        // A pill is ~20px tall and stays that way — it is a quiet mark under a
+        // message, not a control competing with it — so the TARGET grows and
+        // the pill does not: 12px of reach above and below takes it to 44px.
+        // Vertical only, because pills sit 4px apart in a row and reaching
+        // sideways would have each one stealing taps from its neighbour.
+        "after:absolute after:inset-x-0 after:-inset-y-3 after:content-[''] md:after:hidden",
         mine
           ? 'border-brand/70 bg-brand/12 text-foreground'
           : 'border-border bg-muted/60 text-muted-foreground hover:bg-muted',
@@ -281,7 +287,11 @@ export const EntryReactionRow = forwardRef<RovingGroupHandle, EntryReactionRowPr
             onKeyDown={keyAt(drawn.length)}
             onClick={() => setExpanded(true)}
             data-testid="entry-reactions-more"
-            className="focus-ring text-muted-foreground hover:text-foreground rounded-full px-2 py-0.5 text-xs"
+            className={cn(
+              'focus-ring text-muted-foreground hover:text-foreground relative rounded-full px-2 py-0.5 text-xs',
+              // The same reach the pills beside it get, for the same reason.
+              "after:absolute after:inset-x-0 after:-inset-y-3 after:content-[''] md:after:hidden"
+            )}
           >
             +{hidden} more
           </button>

@@ -207,7 +207,14 @@ export function EntryReactionPicker({
             'leading-none',
             capsule
               ? 'text-[0.8125rem]'
-              : 'text-muted-foreground/60 hover:text-foreground h-auto rounded-full px-2 py-0.5 text-xs'
+              : // The ghost + ends the pill row and is the same ~20px height,
+                // so it takes the same reach the pills do — see
+                // `EntryReactionRow`. The capsule's own buttons are not in this
+                // case: a capsule is never on screen on a touch device.
+                [
+                  'text-muted-foreground/60 hover:text-foreground relative h-auto rounded-full px-2 py-0.5 text-xs',
+                  "after:absolute after:inset-x-0 after:-inset-y-3 after:content-[''] md:after:hidden",
+                ]
           )}
         >
           <span aria-hidden>🙂+</span>

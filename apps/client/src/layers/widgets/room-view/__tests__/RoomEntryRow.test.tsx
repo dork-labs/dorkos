@@ -199,7 +199,7 @@ describe('RoomEntryRow — the action surface', () => {
     expect(screen.getByTestId('room-entry')).toHaveAccessibleName(/Ana/);
   });
 
-  it('points at the words as the article’s description', () => {
+  it('points at the words as the article’s description, where the words are short', () => {
     renderRow();
     const row = screen.getByTestId('room-entry');
 
@@ -208,12 +208,69 @@ describe('RoomEntryRow — the action surface', () => {
     );
   });
 
-  it('says out loud that Enter opens the actions', () => {
-    // A roving group is invisible until you are standing in it, so the way in
-    // has to be announced or it is not discoverable at all.
+  it('describes a pasted diff in a line, instead of reading the diff out', () => {
+    // The defect: the description was the whole rendered body, so landing on
+    // this row announced every line of the diff before saying anything about
+    // the message. Without the fix this assertion sees the diff.
+    renderRow(entry({ body: { text: 'try this:\n\n```diff\n- const a = 1\n+ const a = 2\n```' } }));
+    const row = screen.getByTestId('room-entry');
+
+    expect(row).toHaveAccessibleDescription('try this: code block');
+    // And the description is NOT the content element any more, which is what
+    // used to carry the whole body.
+    expect(row.getAttribute('aria-describedby')).not.toBe(
+      document.querySelector('[data-slot="message-content"]')!.getAttribute('id')
+    );
+  });
+
+  it('declares no keyboard shortcut on the row itself', () => {
+    // It said "Enter" on every article, so crossing a room announced one fact
+    // once per message. The capsule's discoverability moved to a named control
+    // — see the touch-reachable button below — which also works on a finger.
     renderRow();
 
-    expect(screen.getByTestId('room-entry')).toHaveAttribute('aria-keyshortcuts', 'Enter');
+    expect(screen.getByTestId('room-entry')).not.toHaveAttribute('aria-keyshortcuts');
+  });
+
+  it('offers a named way into the actions that a touch screen reader can activate', () => {
+    // The capsule is revealed by hover (no finger produces one) or by focus
+    // (reached with an arrow key VoiceOver does not send), and until it is
+    // revealed it is `pointer-events-none` — so a double-tap on one of its
+    // buttons landed on the message underneath. This button is the way in.
+    renderRow();
+
+    const reach = screen.getByTestId('entry-actions-reach');
+    expect(reach).toHaveAccessibleName('Message actions');
+    // Not a tab stop: a room stays one Tab per message.
+    expect(reach).toHaveAttribute('tabindex', '-1');
+
+    fireEvent.click(reach);
+
+    // Focus is inside the capsule, which is what turns its pointer events back
+    // on (`focus-within` on the toolbar) for every button in it.
+    expect(screen.getByRole('button', { name: 'React with thumbsup' })).toHaveFocus();
+  });
+
+  it('carries the whole date on the time it shows', () => {
+    // A room scrolled back a week shows nothing but clock times, so "which day
+    // was this?" had no answer on the surface, in the markup, or to a screen
+    // reader.
+    renderRow();
+    const stamp = document.querySelector('time')!;
+
+    expect(stamp).toHaveAttribute('datetime', '2026-07-26T10:00:00.000Z');
+    expect(stamp.getAttribute('title')).toMatch(/2026/);
+  });
+
+  it('reveals a continuation’s timestamp on focus as well as on hover', () => {
+    // Hover-only meant a keyboard reader crossing a run of messages from one
+    // person could not see when any of them was said — the one fact the
+    // grouping takes away.
+    renderRow(entry(), { grouping: { position: 'middle' } });
+
+    expect(document.querySelector('time')!.className).toContain(
+      'group-focus-within:text-msg-timestamp'
+    );
   });
 
   it('leaves Ctrl+End to the feed rather than taking it for the toolbar', () => {
@@ -461,6 +518,19 @@ describe('RoomEntryRow — the pills under a message', () => {
     // The reader first, and by name for everybody else — a count would answer a
     // question nobody in a five-person room is asking.
     expect(screen.getByTestId('entry-reaction')).toHaveAttribute('title', 'You and Ana reacted 👍');
+  });
+
+  it('gives a pill a target a finger can hit, without making the pill bigger', () => {
+    // A pill is ~20px tall and stays that way — it is a quiet mark under a
+    // message, not a control competing with it — so the reach grows instead.
+    // Vertical only: pills sit 4px apart, and reaching sideways would have each
+    // one stealing taps from its neighbour.
+    renderRow(entry({ reactions: [pill('👍', ['ana'])] }));
+
+    const className = screen.getByTestId('entry-reaction').className;
+    expect(className).toContain('after:-inset-y-3');
+    expect(className).toContain('after:inset-x-0');
+    expect(className).toContain('md:after:hidden');
   });
 
   it('takes a reaction back when its own pill is pressed', async () => {
