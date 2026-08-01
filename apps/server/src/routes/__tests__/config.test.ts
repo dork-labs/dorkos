@@ -723,6 +723,7 @@ describe('GET /api/config', () => {
           ],
           defaultModel: null,
           defaultEffort: null,
+          defaultTrustStop: null,
         },
       });
 
@@ -832,6 +833,93 @@ describe('GET /api/config', () => {
 
     const res = await request(app).get('/api/config').expect(200);
     expect(res.body.ui.autonomyAcknowledgedAt).toBe(acknowledgedAt);
+  });
+
+  it('refuses Full autonomy as a default until the person has acknowledged it', async () => {
+    // The set-time door (spec `trust-dial`, decision 6). Making autonomy the
+    // stop new sessions START at is a wider claim than putting one session
+    // there — durable, and a session born from it opens already bypassed with
+    // no dialog to show — so the asking happens at the moment of choosing.
+    const res = await request(app)
+      .patch('/api/config')
+      .send({ runtimes: { defaultTrustStop: 'autonomy' } })
+      .expect(428);
+
+    expect(res.body.code).toBe('AUTONOMY_ACK_REQUIRED');
+    expect(res.body.paths).toEqual(['runtimes.defaultTrustStop']);
+
+    // A refusal changes nothing.
+    const after = await request(app).get('/api/config').expect(200);
+    expect(after.body.executionDefaults.trustStop).toBeNull();
+  });
+
+  it('refuses a per-runtime autonomy default the same way, naming the leaf', async () => {
+    const res = await request(app)
+      .patch('/api/config')
+      .send({ runtimes: { codex: { defaultTrustStop: 'autonomy' } } })
+      .expect(428);
+
+    expect(res.body.paths).toEqual(['runtimes.codex.defaultTrustStop']);
+  });
+
+  it('lets the gentler stops through with no ritual at all', async () => {
+    // Only the stop a person cannot walk back asks twice. A dialog in front of
+    // "ask me first" is how people learn to click through the one that matters.
+    await request(app)
+      .patch('/api/config')
+      .send({ runtimes: { defaultTrustStop: 'act', claudeCode: { defaultTrustStop: 'ask' } } })
+      .expect(200);
+
+    const res = await request(app).get('/api/config').expect(200);
+    expect(res.body.executionDefaults.trustStop).toBe('act');
+    expect(
+      res.body.executionDefaults.perRuntime.find(
+        (e: { runtime: string }) => e.runtime === 'claude-code'
+      ).trustStop
+    ).toBe('ask');
+  });
+
+  it('accepts autonomy when the acknowledgement rides the SAME patch', async () => {
+    // What the Settings dialog sends: the consent record and the new default in
+    // one write, so there is no window where the stop landed without the consent
+    // and no two-request ordering for a client to get wrong.
+    await request(app)
+      .patch('/api/config')
+      .send({
+        ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' },
+        runtimes: { defaultTrustStop: 'autonomy' },
+      })
+      .expect(200);
+
+    const res = await request(app).get('/api/config').expect(200);
+    expect(res.body.executionDefaults.trustStop).toBe('autonomy');
+  });
+
+  it('accepts autonomy on a standing acknowledgement given earlier', async () => {
+    await request(app)
+      .patch('/api/config')
+      .send({ ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' } })
+      .expect(200);
+
+    await request(app)
+      .patch('/api/config')
+      .send({ runtimes: { defaultTrustStop: 'autonomy' } })
+      .expect(200);
+  });
+
+  it('starts refusing again the moment the acknowledgement is cleared', async () => {
+    await request(app)
+      .patch('/api/config')
+      .send({ ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' } })
+      .expect(200);
+    await request(app)
+      .patch('/api/config')
+      .send({ ui: { autonomyAcknowledgedAt: null } });
+
+    await request(app)
+      .patch('/api/config')
+      .send({ runtimes: { defaultTrustStop: 'autonomy' } })
+      .expect(428);
   });
 
   it('lets Settings clear the acknowledgement, which brings the dialog back', async () => {

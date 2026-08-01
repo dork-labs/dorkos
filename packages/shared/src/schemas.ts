@@ -23,6 +23,9 @@ import { EFFORT_LEVELS } from './constants.js';
 // load-time cycle. The canvas `widget` content carries the document typed but
 // validated on the client (see the `widget` variant note below).
 import type { WidgetDocument } from './ui-widget.js';
+// Type-only: the stop vocabulary's home is the runtime contract, and this module
+// only restates it for the wire (see `PermissionStopSchema`).
+import type { PermissionStop } from './agent-runtime.js';
 
 extendZodWithOpenApi(z);
 
@@ -33,6 +36,36 @@ export const PermissionModeSchema = z
   .openapi('PermissionMode');
 
 export type PermissionMode = z.infer<typeof PermissionModeSchema>;
+
+/**
+ * A Trust Dial position on the wire — the runtime-neutral half of a permission
+ * mode (spec `trust-dial`, decision 2).
+ *
+ * The vocabulary's home is {@link PermissionStop} in `agent-runtime.ts`, which
+ * every runtime declares against; this is the same three words in the shape the
+ * API and OpenAPI export need. The two are pinned together by
+ * {@link AssertStopVocabulary} below, so adding a fourth stop in one place fails
+ * the build rather than shipping two disagreeing lists.
+ */
+export const PermissionStopSchema = z.enum(['ask', 'act', 'autonomy']).openapi('PermissionStop');
+
+/** A Trust Dial position. See {@link PermissionStopSchema}. */
+export type PermissionStopValue = z.infer<typeof PermissionStopSchema>;
+
+/**
+ * Compile-time proof that the wire enum and {@link PermissionStop} name the same
+ * three stops, in both directions. Never evaluated; `never` on either side is a
+ * type error at the declaration.
+ *
+ * @internal
+ */
+type AssertStopVocabulary = [PermissionStopValue] extends [PermissionStop]
+  ? [PermissionStop] extends [PermissionStopValue]
+    ? true
+    : never
+  : never;
+const _assertStopVocabulary: AssertStopVocabulary = true;
+void _assertStopVocabulary;
 
 export const SessionTaskStatusSchema = z
   .enum(['pending', 'in_progress', 'completed'])
@@ -2215,6 +2248,10 @@ export const ExecutionDefaultsSchema = z
     runtime: z.string().openapi({
       description: 'Runtime a new session starts on when nothing else picks one (runtimes.default)',
     }),
+    trustStop: PermissionStopSchema.nullable().openapi({
+      description:
+        'How much a new session may do without asking, on every runtime with no answer of its own (runtimes.defaultTrustStop). Null = the runtime decides',
+    }),
     perRuntime: z
       .array(
         z.object({
@@ -2229,6 +2266,10 @@ export const ExecutionDefaultsSchema = z
           }),
           supportsEffort: z.boolean().openapi({
             description: 'Whether this runtime can honor a reasoning effort at all',
+          }),
+          trustStop: PermissionStopSchema.nullable().openapi({
+            description:
+              'Trust stop a new session on this runtime starts at, overriding the global one. Null = use the global setting',
           }),
         })
       )

@@ -166,6 +166,9 @@ function fullyPopulatedConfig(): Record<string, unknown> {
     },
     runtimes: {
       default: 'claude-code',
+      // A global stop with one runtime overriding it, so the projection is
+      // exercised on both halves of the override rather than on one.
+      defaultTrustStop: 'act',
       // A populated roster, including an unnamed account, so the projection is
       // exercised on both `label` branches rather than on an empty array.
       claudeCode: {
@@ -176,6 +179,7 @@ function fullyPopulatedConfig(): Record<string, unknown> {
         ],
         defaultModel: 'opus',
         defaultEffort: 'high',
+        defaultTrustStop: null,
       },
       opencode: {
         enabled: true,
@@ -185,6 +189,7 @@ function fullyPopulatedConfig(): Record<string, unknown> {
         baseURL: null,
         // No `defaultEffort` sibling: OpenCode's API takes no effort at all.
         defaultModel: 'openrouter/anthropic/claude-opus-4.6',
+        defaultTrustStop: null,
       },
       codex: {
         enabled: true,
@@ -192,6 +197,7 @@ function fullyPopulatedConfig(): Record<string, unknown> {
         credentialRef: 'file:LEAK-6-codex-key-file',
         defaultModel: 'gpt-5.3-codex',
         defaultEffort: 'medium',
+        defaultTrustStop: 'ask',
       },
     },
     providers: {

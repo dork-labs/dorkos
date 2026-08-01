@@ -1,6 +1,6 @@
 /**
- * What model and effort a NEW session starts with, before anybody has chosen
- * anything for it.
+ * What model, effort and trust level a NEW session starts with, before anybody
+ * has chosen anything for it.
  *
  * ## The ladder
  *
@@ -10,13 +10,37 @@
  *    truth for a manifest (ADR-0043), by {@link readAgentExecutionDefaults}.
  *    Each key is dropped where it could not mean anything: the model when the
  *    session lands on a runtime other than the one the manifest names, the
- *    effort on a runtime that has none (OpenCode).
- * 2. **The server's per-runtime default** — `runtimes.<runtime>.defaultModel` and
- *    `.defaultEffort`. Per runtime because a model id only means something inside
- *    the runtime that offers it.
- * 3. **Nothing** — the settings are left unset, so the runtime picks, which is
+ *    effort on a runtime that has none (OpenCode). A manifest has no trust
+ *    level, so that key has no agent tier at all.
+ * 2. **The server's per-runtime default** — `runtimes.<runtime>.defaultModel`,
+ *    `.defaultEffort` and `.defaultTrustStop`. Per runtime because a model id
+ *    only means something inside the runtime that offers it.
+ * 3. **The server's global trust stop** — `runtimes.defaultTrustStop`, for the
+ *    one key that is runtime-NEUTRAL. "Ask first" means the same thing wherever
+ *    it is heard, so a person who wants it everywhere says so once; the
+ *    per-runtime leaf above beats it where they wanted something narrower
+ *    (spec `trust-dial`, decision 6).
+ * 4. **Nothing** — the settings are left unset, so the runtime picks, which is
  *    exactly the behavior before any of this existed. This is what `null` in the
  *    config means, and it is the shipped default.
+ *
+ * ## The trust stop is a stop, not a mode
+ *
+ * Config stores `'ask' | 'act' | 'autonomy'`; a session stores a runtime mode
+ * id. The translation is the runtime's own capability profile, read through
+ * {@link resolveTrustStops} — the SAME function the dial renders from, so the
+ * mode a default lands on is by construction the mode the dial would show as
+ * selected, including the first-declared rule where a runtime declares two modes
+ * at one stop. A runtime with no mode at the configured stop contributes
+ * nothing and starts at its own default.
+ *
+ * **Interactive sessions only.** The permission tier answers only when the
+ * caller passes the runtime's declared modes, and only the interactive
+ * session-creation paths do (`RuntimeRegistry.persistSessionRuntime` with
+ * `interactive: true`, and every settings write). Tasks, bindings and rooms
+ * carry their own permission mode and their own stricter gates — including the
+ * bypass clamp on file-sourced schedules — and this default must never reach
+ * them (decision 6).
  *
  * ## Where the answer lands
  *
@@ -41,9 +65,11 @@
  * @module services/session/resolve-session-defaults
  */
 import type { UserConfig } from '@dorkos/shared/config-schema';
-import type { ExecutionDefaults, SessionSettings } from '@dorkos/shared/types';
+import type { ExecutionDefaults, PermissionMode, SessionSettings } from '@dorkos/shared/types';
+import type { PermissionModeDescriptor, PermissionStop } from '@dorkos/shared/agent-runtime';
 import { readManifest } from '@dorkos/shared/manifest';
 import { runtimeSupportsEffort } from '@dorkos/shared/constants';
+import { resolveTrustStops } from '@dorkos/shared/permission-semantics';
 import { configManager } from '../core/config-manager.js';
 
 /**
@@ -138,11 +164,19 @@ const CONFIG_SECTION_BY_RUNTIME: Readonly<Record<string, 'claudeCode' | 'codex' 
  *   {@link readAgentExecutionDefaults}. Omitted → the session has no agent, or
  *   the caller does not know which one, and the ladder starts at tier 2.
  * @param opts.runtimes - The `runtimes` config section; defaults to the stored one.
+ * @param opts.permissionModes - Every mode the bound runtime declares, in its
+ *   declared order, from its capability profile. **Omitted means no permission
+ *   tier at all**, and that is the safe direction rather than an oversight: the
+ *   default is for attended sessions, so a caller that has not said it is one
+ *   gets what it got before this existed. Forgetting to pass it makes a
+ *   preference not apply; passing it from an unattended surface would start an
+ *   unwatched agent somewhere nobody chose.
  */
 export function resolveSessionDefaults(opts: {
   runtimeType: string;
   agent?: AgentExecutionDefaults;
   runtimes?: UserConfig['runtimes'];
+  permissionModes?: readonly PermissionModeDescriptor[];
 }): SessionSettings {
   // Tier 1 — the agent's own model/effort, which outranks the server's default
   // for whichever of the two keys it names. The two keys are gated differently,
@@ -182,7 +216,6 @@ export function resolveSessionDefaults(opts: {
 
   // Tier 2 — the server's per-runtime default.
   const section = CONFIG_SECTION_BY_RUNTIME[opts.runtimeType];
-  if (!section) return fromAgent;
   // Both `?.`s are load-bearing, and neither is decoration. `configManager` is a
   // `let` that is undefined until `initConfigManager` runs, and this is now
   // consulted by `RuntimeRegistry` on every row it creates — so a registry used
@@ -196,24 +229,70 @@ export function resolveSessionDefaults(opts: {
   // already apply to this singleton, and for the same reason: the declared type
   // does not admit that a boot-wired `let` is undefined before boot.
   const runtimes = opts.runtimes ?? configManager?.get('runtimes');
-  const configured = runtimes?.[section];
-  if (!configured) return fromAgent;
+  const configured = section ? runtimes?.[section] : undefined;
   const settings: SessionSettings = { ...fromAgent };
-  if (settings.model === undefined && configured.defaultModel != null) {
-    settings.model = configured.defaultModel;
-  }
-  // OpenCode's section has no `defaultEffort` — its API accepts no effort, so
-  // the field does not exist rather than existing and doing nothing.
-  if (
-    settings.effort === undefined &&
-    'defaultEffort' in configured &&
-    configured.defaultEffort != null
-  ) {
-    settings.effort = configured.defaultEffort;
+  if (configured) {
+    if (settings.model === undefined && configured.defaultModel != null) {
+      settings.model = configured.defaultModel;
+    }
+    // OpenCode's section has no `defaultEffort` — its API accepts no effort, so
+    // the field does not exist rather than existing and doing nothing.
+    if (
+      settings.effort === undefined &&
+      'defaultEffort' in configured &&
+      configured.defaultEffort != null
+    ) {
+      settings.effort = configured.defaultEffort;
+    }
   }
 
-  // Tier 3 — whatever is still unset stays unset, and the runtime decides.
+  // Tiers 2 and 3 for the trust stop, which is the one key with a GLOBAL tier
+  // under the per-runtime one — see the module doc. A runtime with no config
+  // section still reads the global stop: the value is runtime-neutral by
+  // construction, so "every new session asks first" has to mean every runtime,
+  // not every runtime somebody wrote a settings section for.
+  const mode = resolveTrustMode({
+    stop: configured?.defaultTrustStop ?? runtimes?.defaultTrustStop ?? null,
+    descriptors: opts.permissionModes,
+  });
+  if (mode !== undefined) settings.permissionMode = mode;
+
+  // Tier 4 — whatever is still unset stays unset, and the runtime decides.
   return settings;
+}
+
+/**
+ * Turn a configured dial position into the mode id this runtime calls it.
+ *
+ * The one rule, and it is not this module's: {@link resolveTrustStops} is what
+ * the dial itself renders from, so a default lands on exactly the mode the dial
+ * would show as selected — including where a runtime declares two modes at one
+ * stop and its own declared order decides which the position means (Claude
+ * Code's `acceptEdits` before `auto`). Re-deriving that here would be a second
+ * answer to a question that already has one.
+ *
+ * Answers `undefined` — "no preference, the runtime decides" — in three cases
+ * that are all the same case: nothing configured, no descriptors in hand (the
+ * caller is not an attended session), or a runtime that declares no mode at the
+ * configured stop. A stop a runtime cannot take is not an error and not a
+ * near-miss to round off; it is a preference this runtime has no way to honor.
+ *
+ * @param opts.stop - The configured dial position, or `null` for none.
+ * @param opts.descriptors - The runtime's declared modes, in declared order.
+ * @internal
+ */
+function resolveTrustMode(opts: {
+  stop: PermissionStop | null;
+  descriptors: readonly PermissionModeDescriptor[] | undefined;
+}): PermissionMode | undefined {
+  if (!opts.stop || !opts.descriptors) return undefined;
+  const match = resolveTrustStops(opts.descriptors).find((s) => s.stop === opts.stop);
+  // The cast is the wire's legacy narrowing, not a claim about this id.
+  // `PermissionMode` is a closed enum of the ids the three shipped runtimes
+  // happen to use, while a mode id is whatever its runtime declared (test-mode's
+  // `always-allow`) and the column holding it is plain text. The id here came
+  // from the runtime's own profile, so it is by definition one that runtime runs.
+  return match ? (match.mode.id as PermissionMode) : undefined;
 }
 
 /**
@@ -239,12 +318,22 @@ export function describeExecutionDefaults(runtimes?: UserConfig['runtimes']): Ex
   const section = runtimes ?? configManager?.get('runtimes');
   return {
     runtime: section?.default ?? 'claude-code',
+    // The global stop, reported beside the per-runtime ones so the card can show
+    // both halves of the override it offers. `null` is "the runtime decides",
+    // which is the shipped state and a real answer, not a missing one.
+    trustStop: section?.defaultTrustStop ?? null,
     perRuntime: Object.entries(CONFIG_SECTION_BY_RUNTIME).map(([runtime, key]) => {
       const configured = section?.[key];
       const supportsEffort = runtimeSupportsEffort(runtime);
       return {
         runtime,
         model: configured?.defaultModel ?? null,
+        // What THIS runtime overrides the global stop with; `null` = it doesn't.
+        // Reported unresolved: which mode id the stop lands on is the runtime's
+        // capability profile's answer, and the cockpit already holds those
+        // profiles, so resolving it here would put a second copy of that
+        // translation on the wire for the screen to disagree with.
+        trustStop: configured?.defaultTrustStop ?? null,
         // OpenCode's section has no `defaultEffort` key at all — the `in` check
         // is what keeps that structural absence and a configured `null` the same
         // answer here, rather than a type assertion that would outlive the fact.

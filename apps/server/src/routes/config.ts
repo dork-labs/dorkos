@@ -24,6 +24,11 @@ import {
   OPERATOR_ONLY_CONFIG_ERROR,
   REQUIRES_LOGIN_CONFIG_ERROR,
 } from '../services/core/operator/config-write-policy.js';
+import {
+  AUTONOMY_ACK_REQUIRED_CODE,
+  AUTONOMY_DEFAULT_ACK_MESSAGE,
+  findUnacknowledgedAutonomyDefaults,
+} from '../services/core/approvals/autonomy-consent.js';
 import { trustedCaller } from '../services/core/capabilities/index.js';
 import {
   readCallerAuthority,
@@ -371,6 +376,35 @@ router.patch('/', (req, res) => {
           message: describeOperatorOnlyRefusal(operatorOnly),
         });
       }
+    }
+
+    // ## THE AUTONOMY DOOR, at set-time (spec `trust-dial`, decision 6)
+    //
+    // Making Full autonomy the stop new sessions START at is a wider claim than
+    // putting one session there: it applies to sessions that do not exist yet, it
+    // is durable, and a session born from it opens already bypassed with no
+    // dialog to show. So the asking happens HERE, at the moment of choosing —
+    // and the record left here is what satisfies the session door
+    // (`PATCH /api/sessions/:id`) for every session this default births, which is
+    // the whole point of a standing default being allowed at all.
+    //
+    // Checked after the two policy bars above, because "you may not change this"
+    // outranks "confirm what this means" for a caller failing both, and before
+    // the write, because a refusal must change nothing. Same 428 as the session
+    // door, for the same reason: nothing about the request is malformed, and a
+    // precondition the caller can go and satisfy is exactly what 428 says.
+    //
+    // The cockpit satisfies it in ONE patch — the consent dialog writes
+    // `ui.autonomyAcknowledgedAt` and the new stop together — so there is no
+    // window where the stop landed without the consent.
+    const unacknowledged = findUnacknowledgedAutonomyDefaults(req.body);
+    if (unacknowledged.length > 0) {
+      return res.status(428).json({
+        error: AUTONOMY_DEFAULT_ACK_MESSAGE,
+        code: AUTONOMY_ACK_REQUIRED_CODE,
+        paths: unacknowledged,
+        message: AUTONOMY_DEFAULT_ACK_MESSAGE,
+      });
     }
 
     const postureBefore = readStandingGrantPosture();

@@ -41,6 +41,7 @@ import {
   scrubRetiredOnboardingSteps,
   backfillProfileDefaults,
   backfillRuntimeExecutionDefaults,
+  backfillDefaultTrustStops,
 } from '../config-manager.js';
 import { applyConfigPatch } from '../operator/config-patch.js';
 import fs from 'fs';
@@ -55,7 +56,14 @@ import { execSync } from 'child_process';
  */
 const RUNTIMES_DEFAULTS = {
   default: 'claude-code',
-  claudeCode: { activeAccount: null, accounts: [], defaultModel: null, defaultEffort: null },
+  defaultTrustStop: null,
+  claudeCode: {
+    activeAccount: null,
+    accounts: [],
+    defaultModel: null,
+    defaultEffort: null,
+    defaultTrustStop: null,
+  },
   opencode: {
     enabled: true,
     binaryPath: null,
@@ -64,6 +72,7 @@ const RUNTIMES_DEFAULTS = {
     baseURL: null,
     // No `defaultEffort`: OpenCode's API accepts no effort at all.
     defaultModel: null,
+    defaultTrustStop: null,
   },
   codex: {
     enabled: true,
@@ -71,6 +80,7 @@ const RUNTIMES_DEFAULTS = {
     credentialRef: null,
     defaultModel: null,
     defaultEffort: null,
+    defaultTrustStop: null,
   },
 };
 
@@ -1233,14 +1243,23 @@ describe('migrateStatusBarToPins migration (DOR-431, DOR-452)', () => {
     CONFIG_MIGRATIONS['0.57.0'](store);
     expect(store.data.runtimes).toEqual({
       default: 'claude-code',
+      // The trust-stop backfill rides the same composite, last of the three.
+      defaultTrustStop: null,
       // The execution-defaults backfill rides the same composite, and rides it
       // AFTER the section above exists.
-      codex: { enabled: true, binaryPath: null, defaultModel: null, defaultEffort: null },
+      codex: {
+        enabled: true,
+        binaryPath: null,
+        defaultModel: null,
+        defaultEffort: null,
+        defaultTrustStop: null,
+      },
       claudeCode: {
         activeAccount: null,
         accounts: [],
         defaultModel: null,
         defaultEffort: null,
+        defaultTrustStop: null,
       },
     });
   });
@@ -1384,6 +1403,7 @@ describe('backfillClaudeCodeRuntimeDefaults migration (claude-code-accounts)', (
         accounts: [],
         defaultModel: null,
         defaultEffort: null,
+        defaultTrustStop: null,
       });
       // The upgrade adds a section; it changes no runtime the person configured.
       expect(onDisk.runtimes).toMatchObject(priorRuntimes);
@@ -1425,6 +1445,7 @@ describe('backfillClaudeCodeRuntimeDefaults migration (claude-code-accounts)', (
         ],
         defaultModel: null,
         defaultEffort: null,
+        defaultTrustStop: null,
       });
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -3115,7 +3136,65 @@ describe('backfillRuntimeExecutionDefaults migration (execution-defaults E1)', (
       accounts: [],
       defaultModel: null,
       defaultEffort: null,
+      defaultTrustStop: null,
     });
+  });
+});
+
+describe('backfillDefaultTrustStops migration (trust-dial, decision 6)', () => {
+  it('seeds the global stop and every per-runtime override, all null', () => {
+    // `null` is "let the runtime decide" — an upgrade must never move anybody's
+    // new sessions to a stop they did not choose, least of all the silent one.
+    const store = createMockStore({
+      runtimes: {
+        default: 'claude-code',
+        claudeCode: { activeAccount: null, accounts: [] },
+        opencode: { enabled: true, binaryPath: null, port: 0 },
+        codex: { enabled: true, binaryPath: null },
+      },
+    });
+
+    backfillDefaultTrustStops(store);
+
+    const runtimes = store.data.runtimes as Record<string, Record<string, unknown>>;
+    expect(runtimes.defaultTrustStop).toBeNull();
+    expect(runtimes.claudeCode.defaultTrustStop).toBeNull();
+    expect(runtimes.opencode.defaultTrustStop).toBeNull();
+    expect(runtimes.codex.defaultTrustStop).toBeNull();
+  });
+
+  it('never overwrites a stop somebody already chose, however often it runs', () => {
+    const store = createMockStore({
+      runtimes: {
+        default: 'claude-code',
+        defaultTrustStop: 'autonomy',
+        codex: { enabled: true, defaultTrustStop: 'ask' },
+      },
+    });
+
+    backfillDefaultTrustStops(store);
+    backfillDefaultTrustStops(store);
+
+    const runtimes = store.data.runtimes as Record<string, Record<string, unknown>>;
+    expect(runtimes.defaultTrustStop).toBe('autonomy');
+    expect(runtimes.codex.defaultTrustStop).toBe('ask');
+  });
+
+  it('leaves a config with no runtimes block alone', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    backfillDefaultTrustStops(store);
+    expect(store.data.runtimes).toBeUndefined();
+  });
+
+  it('rides the newest migration key', () => {
+    const store = createMockStore({ runtimes: { default: 'claude-code' } });
+    CONFIG_MIGRATIONS['0.57.0'](store);
+    // Only the leaves the composite's earlier bodies actually seeded a section
+    // for: `backfillClaudeCodeRuntimeDefaults` supplies `claudeCode`, and a
+    // `runtimes` block with no `codex` object has nothing to add a leaf to.
+    const runtimes = store.data.runtimes as Record<string, Record<string, unknown>>;
+    expect(runtimes.defaultTrustStop).toBeNull();
+    expect(runtimes.claudeCode.defaultTrustStop).toBeNull();
   });
 });
 

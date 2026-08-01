@@ -325,6 +325,30 @@ export const CONFIG_WRITE_POLICY = {
   'workbench.autoOpenDiff': 'agent-writable',
 
   'runtimes.default': 'agent-writable',
+  // How much every FUTURE session may do without asking (spec `trust-dial`,
+  // decision 6). Operator-only, and it is the one field in this block that is not
+  // a preference — the neighbouring model and effort leaves say how work runs,
+  // this one says whether anybody is asked before it happens.
+  //
+  // Written to `'autonomy'` it removes the approval gate from every interactive
+  // session started from then on, which is the module's line exactly: a control
+  // widened by one write. Two things make it worse than the per-session change an
+  // agent can already ask for. It is DURABLE — nothing sweeps it, so it keeps
+  // applying to sessions the person starts tomorrow — and it is SILENT, because a
+  // new session simply opens already bypassed, with no dialog and nothing on
+  // screen saying a setting changed. `ui.autonomyAcknowledgedAt` is operator-only
+  // for the sibling reason (forging the consent record), and an agent that could
+  // write both would hold the whole door.
+  //
+  // The stops below autonomy are the same leaf and get the same verdict: this
+  // table classifies paths, not values, and a per-value rule would mean an agent
+  // could write `'ask'` today and nothing would notice the day the enum grew.
+  // The route enforces a second, value-shaped gate on top for `'autonomy'` (428
+  // `AUTONOMY_ACK_REQUIRED`), which is about consent rather than about who asks.
+  'runtimes.defaultTrustStop': 'operator-only',
+  'runtimes.claudeCode.defaultTrustStop': 'operator-only',
+  'runtimes.codex.defaultTrustStop': 'operator-only',
+  'runtimes.opencode.defaultTrustStop': 'operator-only',
   // Which Claude account new work runs and BILLS on, and the roster it is chosen
   // from (spec claude-code-accounts D6). A Claude config directory carries its own
   // sign-in, so moving the active account moves the operator's spend onto a

@@ -280,6 +280,10 @@ You do not have to edit this file. Open Settings and go to Runtimes: you can add
 
 **You can also say which model a new chat should start with, and how hard it should think.** Each runtime has its own pair of settings — `defaultModel` and `defaultEffort` — because a model name only means something to the runtime that offers it. Leave them `null`, which is how they ship, and each runtime keeps picking for itself, exactly as before. Set one and every new chat on that runtime starts there; chats you already have keep what they are running with. Effort is one of `none`, `minimal`, `low`, `medium`, `high`, `max`, or `xhigh`. OpenCode has a model setting but no effort setting: OpenCode gives no way to ask for more or less thinking, so DorkOS does not pretend to offer one. If you edit the file by hand, only add settings that exist — writing one that does not, like `runtimes.opencode.defaultEffort`, makes DorkOS treat the whole file as damaged: it keeps a copy next to it as `config.json.bak` and starts fresh from the defaults. Settings is the safer place to change any of this.
 
+**And you can say how much a new chat may do before it checks with you.** That is `runtimes.defaultTrustStop`, and it takes one of three words: `ask` (stop before changing anything), `act` (get on with the work, stop for the risky parts), or `autonomy` (never stop). It ships as `null`, which means every runtime starts where it always did — asking first. One setting covers every runtime, because those three words mean the same thing whichever agent you are talking to; each runtime works out its own equivalent. If you want something different for just one of them, set `defaultTrustStop` inside that runtime's own block and it wins there.
+
+Choosing `autonomy` is the one that asks you first. DorkOS will not save it until you have read what Full autonomy means and confirmed it, and it writes down that you did — after that, every new chat starts without asking and without stopping to check with you again. Settings shows a quiet note while that is on, so you can always find it. Chats you already have keep what they are running with, whatever you change here. This setting is for the chats you open yourself: scheduled runs, integrations, and rooms have their own settings and their own, stricter rules.
+
 <TypeTable
   type={{
     'runtimes.default': {
@@ -287,6 +291,12 @@ You do not have to edit this file. Open Settings and go to Runtimes: you can add
         'Runtime for new sessions that don’t specify one (explicit session picks and per-agent runtimes take precedence).',
       type: 'string',
       default: '"claude-code"',
+    },
+    'runtimes.defaultTrustStop': {
+      description:
+        'How much a new chat may do before it checks with you: "ask", "act", or "autonomy". When null — how it ships — each runtime starts where it always did, which is asking first.',
+      type: '"ask" | "act" | "autonomy" | null',
+      default: 'null',
     },
     'runtimes.claudeCode.activeAccount': {
       description:
@@ -340,6 +350,12 @@ You do not have to edit this file. Open Settings and go to Runtimes: you can add
       type: 'string | null',
       default: 'null',
     },
+    'runtimes.claudeCode.defaultTrustStop': {
+      description:
+        'How much a new Claude Code chat may do before it checks with you, overriding the setting above. Null follows the one above.',
+      type: '"ask" | "act" | "autonomy" | null',
+      default: 'null',
+    },
     'runtimes.opencode.defaultModel': {
       description:
         'The model a new OpenCode chat starts on, written as `provider/model`. When `null`, OpenCode picks. There is no effort setting here: OpenCode gives no way to ask for more or less thinking.',
@@ -363,6 +379,12 @@ You do not have to edit this file. Open Settings and go to Runtimes: you can add
       type: 'string | null',
       default: 'null',
     },
+    'runtimes.opencode.defaultTrustStop': {
+      description:
+        'How much a new OpenCode chat may do before it checks with you, overriding the setting above. Null follows the one above.',
+      type: '"ask" | "act" | "autonomy" | null',
+      default: 'null',
+    },
     'runtimes.codex.defaultModel': {
       description:
         'The model a new Codex chat starts on. When `null`, Codex picks. Chats you already have are not changed.',
@@ -373,6 +395,12 @@ You do not have to edit this file. Open Settings and go to Runtimes: you can add
       description:
         'How hard a new Codex chat thinks by default: none, minimal, low, medium, high, max, or xhigh. Codex has no “none” or “max” of its own, so it takes the nearest level it does have.',
       type: 'string | null',
+      default: 'null',
+    },
+    'runtimes.codex.defaultTrustStop': {
+      description:
+        'How much a new Codex chat may do before it checks with you, overriding the setting above. Null follows the one above.',
+      type: '"ask" | "act" | "autonomy" | null',
       default: 'null',
     },
   }}
@@ -459,6 +487,8 @@ DorkOS keeps one more value in this section, `approvals.standingGrantsVoidBefore
 Turning a conversation up to Full autonomy asks you to confirm what that means first. The agent stops asking about anything, so it is the one setting you cannot notice in time to undo — which is why it is the one setting that asks twice.
 
 If you tick **Don't show this again** in that dialog, DorkOS writes down the date and stops asking. Settings → Security shows the date back with a **Reset** button; resetting brings the dialog back the next time you reach for Full autonomy. Nothing about a conversation changes when you reset — only the asking comes back.
+
+You can also make Full autonomy where every new chat starts, in Settings under the defaults for new sessions, or right after you change a chat's setting — a quiet line offers it there for a few seconds. Either way DorkOS asks you to confirm what it means once, at the moment you choose it, and writes down that you did. From then on new chats start without asking, and Settings keeps a note saying so with a link to change it back. This covers the chats you open yourself; scheduled runs, integrations, and rooms have their own settings and their own, stricter rules.
 
 Reset takes effect everywhere within about half a minute. A browser tab you left open reads your settings from a copy it refreshes every 30 seconds, so a tab open at the moment you reset can still skip the dialog once before it catches up. Nothing is lost by that — it only means the confirmation returns a few seconds later on that tab than on the one you pressed Reset in.
 

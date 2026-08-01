@@ -79,11 +79,29 @@ let serverDefaults: SessionSettings = {};
  */
 let agentDefaults: SessionSettings = {};
 
+/**
+ * What the resolver answers ONLY when the caller hands it the runtime's declared
+ * modes — the interactive-only trust stop (spec `trust-dial`, decision 6). Kept
+ * separate from {@link serverDefaults} so a test can ask the one question the
+ * registry owns here: which callers get offered it at all.
+ */
+let interactiveDefaults: SessionSettings = {};
+
+/** The options the registry last handed the resolver, for the same question. */
+let lastResolveOpts: { permissionModes?: readonly unknown[] } | null = null;
+
 vi.mock('../../session/resolve-session-defaults.js', () => ({
-  resolveSessionDefaults: (opts: { agent?: SessionSettings }) => ({
-    ...serverDefaults,
-    ...(opts.agent ?? {}),
-  }),
+  resolveSessionDefaults: (opts: {
+    agent?: SessionSettings;
+    permissionModes?: readonly unknown[];
+  }) => {
+    lastResolveOpts = opts;
+    return {
+      ...serverDefaults,
+      ...(opts.permissionModes ? interactiveDefaults : {}),
+      ...(opts.agent ?? {}),
+    };
+  },
   readAgentExecutionDefaults: async (dir?: string) => (dir ? agentDefaults : {}),
 }));
 
@@ -94,6 +112,8 @@ describe('RuntimeRegistry', () => {
     registry = new RuntimeRegistry();
     serverDefaults = {};
     agentDefaults = {};
+    interactiveDefaults = {};
+    lastResolveOpts = null;
   });
 
   describe('register and get', () => {
@@ -529,6 +549,33 @@ describe('RuntimeRegistry', () => {
         expect(row?.agentPath).toBe('/first/path');
       });
 
+      it('seeds the trust stop only for a session a person is watching', async () => {
+        // The interactive-only boundary at the seam that decides it. A room turn
+        // reaches this same method (`room-turn-runner`) and must never inherit
+        // the cockpit's default, so the runtime's declared modes — the thing that
+        // turns a configured stop into a mode id — ride only the flagged call.
+        interactiveDefaults = { permissionMode: 'bypassPermissions' };
+
+        await registry.persistSessionRuntime('session-attended', 'claude-code', undefined, {
+          interactive: true,
+        });
+        await registry.persistSessionRuntime('session-unattended', 'claude-code');
+
+        const read = (id: string) =>
+          db.select().from(sessionMetadata).where(eq(sessionMetadata.sessionId, id)).get();
+        expect(read('session-attended')?.permissionMode).toBe('bypassPermissions');
+        expect(read('session-unattended')?.permissionMode).toBeNull();
+      });
+
+      it("hands the resolver the runtime's OWN declared modes, never a table here", async () => {
+        await registry.persistSessionRuntime('session-profile', 'claude-code', undefined, {
+          interactive: true,
+        });
+        expect(lastResolveOpts?.permissionModes).toEqual(
+          registry.get('claude-code').getCapabilities().permissionModes.values
+        );
+      });
+
       it('returns true on the first insert and false on the duplicate (the once-per-session signal)', async () => {
         // This boolean gates the once-per-session `session_created` usage event
         // at the POST /messages call site — a regression here double-fires it.
@@ -706,6 +753,22 @@ describe('RuntimeRegistry', () => {
         .get();
       expect(row?.model).toBe('sonnet');
       expect(row?.effort).toBe('high');
+    });
+
+    it('seeds the trust stop on a pre-launch row, and an explicit choice still wins', async () => {
+      // The other row-creating path, and it is interactive by construction: a
+      // person changed a setting before sending the first message. So the stop
+      // rides it too — otherwise the pre-launch picker, which is the normal way
+      // a session starts, would be the one place the default never applied.
+      interactiveDefaults = { permissionMode: 'bypassPermissions' };
+
+      await registry.saveSessionSettings('pre-launch-stop', { model: 'sonnet' });
+      await registry.saveSessionSettings('pre-launch-chosen', { permissionMode: 'plan' });
+
+      const read = (id: string) =>
+        db.select().from(sessionMetadata).where(eq(sessionMetadata.sessionId, id)).get();
+      expect(read('pre-launch-stop')?.permissionMode).toBe('bypassPermissions');
+      expect(read('pre-launch-chosen')?.permissionMode).toBe('plan');
     });
 
     it('never lets a default reach a row that already exists', async () => {

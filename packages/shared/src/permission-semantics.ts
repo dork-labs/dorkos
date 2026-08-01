@@ -36,8 +36,15 @@
  */
 import type { PermissionAsks, PermissionModeDescriptor, PermissionStop } from './agent-runtime.js';
 
-/** The dial's three positions, in the order a person reads them. */
-const STOP_ORDER: readonly PermissionStop[] = ['ask', 'act', 'autonomy'];
+/**
+ * The dial's three positions, in the order a person reads them.
+ *
+ * Exported because a stop is now a value some surfaces have to enumerate rather
+ * than merely read off a descriptor — Settings offers all three as a choice, and
+ * the config schema stores one — and a second hand-written list would be the
+ * exact id-table failure this module exists to end.
+ */
+export const PERMISSION_STOPS: readonly PermissionStop[] = ['ask', 'act', 'autonomy'];
 
 /**
  * How severely a surface should mark a mode. Deliberately three values and not
@@ -214,7 +221,7 @@ export interface TrustStop {
  */
 export function resolveTrustStops(descriptors: readonly PermissionModeDescriptor[]): TrustStop[] {
   const trust = descriptors.filter((d) => !isWorkingMode(d));
-  return STOP_ORDER.flatMap((stop) => {
+  return PERMISSION_STOPS.flatMap((stop) => {
     const [mode, ...refinements] = trust.filter((d) => d.stop === stop);
     return mode ? [{ stop, mode, refinements }] : [];
   });
