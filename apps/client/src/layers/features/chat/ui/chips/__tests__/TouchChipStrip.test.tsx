@@ -190,6 +190,24 @@ describe('TouchChipStrip — the live row', () => {
     expect(pile.getAttribute('aria-controls')).toBe(tray.getAttribute('id'));
   });
 
+  it('grows the pile by one as each new touch arrives', () => {
+    const settled = ['a', 'b', 'c', 'd'].map((name) =>
+      toolCall('Read', { file_path: `/repo/${name}.ts` })
+    );
+    const fifth = toolCall('Read', { file_path: '/repo/e.ts' }, { status: 'running' });
+    const { rerender } = render(<TouchChipStrip parts={[...settled, fifth]} />);
+
+    expect(screen.getByTestId('chip-pile-count')).toHaveTextContent('1');
+    expect(liveRowLabels()).toEqual(['📖b.ts', '📖c.ts', '📖d.ts', '📖e.ts']);
+
+    const sixth = toolCall('Read', { file_path: '/repo/f.ts' }, { status: 'running' });
+    rerender(<TouchChipStrip parts={[...settled, { ...fifth, status: 'complete' }, sixth]} />);
+
+    expect(screen.getByTestId('chip-pile-count')).toHaveTextContent('2');
+    // `b.ts` has left the row for the pile; the row still holds four.
+    expect(liveRowLabels()).toEqual(['📖c.ts', '📖d.ts', '📖e.ts', '📖f.ts']);
+  });
+
   it('has no pile until something has actually aged out', () => {
     render(
       <TouchChipStrip
@@ -251,6 +269,26 @@ describe('TouchChipStrip — the read→edit upgrade', () => {
     expect(after).toBe(before);
     expect(after).toHaveAttribute('data-verb', 'edit');
     expect(after.textContent).toBe('✏️a.ts×2+2 −1');
+  });
+
+  it('is still one chip after three more edits, with the diffstat summed', () => {
+    const read = toolCall('Read', { file_path: '/repo/a.ts' }, { status: 'running' });
+    const edit = () =>
+      toolCall('Edit', { file_path: '/repo/a.ts', old_string: 'a', new_string: 'b' });
+    const { rerender } = render(<TouchChipStrip parts={[read]} />);
+    const chip = within(screen.getByTestId('chip-live-row')).getByTestId('touch-chip');
+
+    const edits = [edit(), edit(), edit()];
+    for (let count = 1; count <= edits.length; count += 1) {
+      rerender(
+        <TouchChipStrip parts={[{ ...read, status: 'complete' }, ...edits.slice(0, count), read]} />
+      );
+    }
+
+    const row = screen.getByTestId('chip-live-row');
+    expect(within(row).getAllByTestId('touch-chip')).toHaveLength(1);
+    expect(within(row).getByTestId('touch-chip')).toBe(chip);
+    expect(chip.textContent).toBe('✏️a.ts×5+3 −3');
   });
 });
 

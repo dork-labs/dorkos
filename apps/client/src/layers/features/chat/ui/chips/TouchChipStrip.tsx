@@ -85,6 +85,17 @@ function SummaryGroup({
  * Expansion is plain component state: the design calls for it to be per-message
  * and not remembered, so there is nothing here worth persisting.
  *
+ * **On the virtualizer.** The strip changes height three times in a turn's life:
+ * when the first chip arrives, when the row collapses into the summary line, and
+ * when the tray opens. Nothing here tells `MessageList` about any of it, and
+ * nothing needs to: every virtual row is handed to `virtualizer.measureElement`,
+ * which observes the row with a `ResizeObserver`, so a height change anywhere
+ * inside it is re-measured on its own (`@tanstack/virtual-core`, `measureElement`
+ * → `observer.observe(node)` → `resizeItem`). What this component owes the
+ * virtualizer is boundedness rather than notification, and it pays that: the
+ * live row is a single clipped line, the tray is capped and scrolls itself, and
+ * the only animated height is the row's own 300ms collapse.
+ *
  * @param props - The message's parts.
  */
 export function TouchChipStrip({ parts }: TouchChipStripProps) {
