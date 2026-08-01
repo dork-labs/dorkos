@@ -19,17 +19,18 @@ Proposed
 
 ## Decision
 
-We keep trusting git-committed manifest ids, and we make relocation conditional: a registration carrying an already-registered id from a different path succeeds only if the incumbent path no longer holds a readable manifest with that id. While it does, the newcomer is a duplicate — it never registers, never moves the row, and the refusal is a damped structured warning, not an exception. When the incumbent manifest is gone, the move is a true relocation and proceeds with a log line. Scanner traversal is sorted so the same disk always yields the same outcome.
+We keep trusting git-committed manifest ids, and we make relocation an explicit, guarded verb. `AgentRegistry` stays a pure DB adapter whose `upsert` never moves a row on an id conflict — it returns a `'duplicate-id'` result, evaluated **before any mutation**, so a refused registration also never fires the delete-the-path-incumbent branch (the ordering that would otherwise let a branch switch destroy a registered agent and register nothing). The discovery layer resolves the conflict by reading the incumbent path's manifest with errno discipline: `ENOENT`/`ENOTDIR` or a different id there means the path gave the manifest up — a true relocation, performed via an explicit `relocate` call; the same id still readable there means the newcomer is a duplicate and never registers; **any other read failure means refuse and change nothing**, because treating a transient `EACCES`/`EIO` as "gone" would transfer the identity irreversibly. Refusals are visible: one aggregated structured warning per id per scan, naming every rejected path. A directory that contains a manifest is never surfaced as a new-agent candidate — the Register affordance would mint a fresh ULID and overwrite the git-tracked manifest — so making a clone its own agent stays a deliberate re-init, never a scan-surface click.
 
 ## Consequences
 
 ### Positive
 
-- A copied or worktree checkout can no longer steal a live agent's identity, and the failure mode changes from silent oscillation to one visible warning.
-- A user who genuinely moves an agent's directory keeps working, including the edge where a worktree outlives its deleted primary checkout — no special-casing of worktrees.
-- Blast radius is two mesh-layer seams; relay subjects, tasks, a2a, and all path-keyed room identity are untouched.
+- A copied or worktree checkout can no longer steal a live agent's identity, and the failure mode changes from silent oscillation to one visible aggregated warning.
+- A user who genuinely moves an agent's directory keeps working, including the edge where a worktree outlives its deleted primary checkout — no special-casing of worktrees, and a transient filesystem error can never hand the identity over.
+- Blast radius is two mesh-layer seams (`upsert`'s contract plus the discovery-side check); relay subjects, tasks, a2a, and all path-keyed room identity are untouched, and the registry stays synchronous and I/O-free.
 
 ### Negative
 
-- The conflict check reads the incumbent's manifest from disk at registration time — a small I/O cost on every id-conflicting upsert, and a stale-read window if the manifest is being edited concurrently.
-- Duplicate checkouts remain unregistered rather than becoming distinct agents; someone who _wants_ a clone to be its own agent must re-init its identity deliberately.
+- The conflict check reads the incumbent's manifest from disk at registration time — a small I/O cost on every id-conflicting registration.
+- Duplicate checkouts remain unregistered and invisible to the candidate surface; someone who wants a clone to be its own agent must re-init its identity deliberately (remove or regenerate the manifest).
+- `syncFromDisk` and every registration caller must handle a refusal result honestly — the "found and synced" contract gains a third outcome.
