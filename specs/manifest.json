@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260801-013351",
+      "slug": "trust-dial",
+      "title": "Trust Dial: permission modes redesigned",
+      "created": "2026-08-01",
+      "status": "ideation"
+    },
+    {
       "id": "260801-002836",
       "slug": "mesh-identity-integrity",
       "title": "Mesh identity integrity — a duplicated checkout cannot steal an agent, ghosts release their handles, a reused directory starts fresh",
