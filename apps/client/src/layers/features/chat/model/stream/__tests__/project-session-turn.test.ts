@@ -781,7 +781,14 @@ describe('projectInProgressTurn — approval receipts', () => {
     // is the whole basis for a receipt that outlives the card.
     const part = approvalPart([
       ask('tc-1'),
-      { seq: 2, type: 'interaction_resolved', id: 'tc-1', resolution: 'approved', at: 5_000 },
+      {
+        seq: 2,
+        type: 'interaction_resolved',
+        id: 'tc-1',
+        kind: 'approval',
+        resolution: 'approved',
+        at: 5_000,
+      },
     ]);
     expect(part.approvalOutcome).toBe('allowed');
     expect(part.approvalResolvedAt).toBe(5_000);
@@ -800,6 +807,7 @@ describe('projectInProgressTurn — approval receipts', () => {
         seq: 2,
         type: 'interaction_resolved',
         id: 'tc-1',
+        kind: 'approval',
         resolution: 'approved',
         at: 5_000,
         startedAt: 1_000,
@@ -813,10 +821,65 @@ describe('projectInProgressTurn — approval receipts', () => {
     expect(part.approvalStartedAt).toBe(1_000);
   });
 
+  it('does NOT mint a receipt for a timed-out question', () => {
+    // Purpose: the collision that refutes "an expired resolution means an
+    // approval". `handleAskUserQuestion`'s timeout calls the same
+    // `notifyInteractionCancelled(..., 'timeout')` the approval path does, and
+    // the normalizer maps that to `expired` for EVERY interaction kind — while
+    // AskUserQuestion, being an ordinary tool_use block, has a real tool_call
+    // part in the turn under the same id. Inferring the kind from the
+    // resolution therefore printed "Expired — denied after 10:00" over a
+    // question the person was merely asked and never answered.
+    const part = approvalPart([
+      {
+        seq: 1,
+        type: 'tool_call',
+        toolCallId: 'q-1',
+        toolName: 'AskUserQuestion',
+        status: 'pending',
+      },
+      {
+        seq: 2,
+        type: 'interaction_resolved',
+        id: 'q-1',
+        kind: 'question',
+        resolution: 'expired',
+        at: 601_000,
+        startedAt: 1_000,
+      },
+    ]) as unknown as { interactiveType?: string; approvalOutcome?: string };
+    expect(part.approvalOutcome).toBeUndefined();
+    expect(part.interactiveType).not.toBe('approval');
+  });
+
+  it('does NOT mint a receipt for a declined elicitation that shares a tool id', () => {
+    // Purpose: an elicitation decline resolves `denied`, the same value a
+    // refused permission carries. Only the kind separates them.
+    const part = approvalPart([
+      { seq: 1, type: 'tool_call', toolCallId: 'e-1', toolName: 'Bash', status: 'pending' },
+      {
+        seq: 2,
+        type: 'interaction_resolved',
+        id: 'e-1',
+        kind: 'elicitation',
+        resolution: 'denied',
+        at: 5_000,
+      },
+    ]) as unknown as { approvalOutcome?: string };
+    expect(part.approvalOutcome).toBeUndefined();
+  });
+
   it('records a denial as denied', () => {
     const part = approvalPart([
       ask('tc-1'),
-      { seq: 2, type: 'interaction_resolved', id: 'tc-1', resolution: 'denied', at: 5_000 },
+      {
+        seq: 2,
+        type: 'interaction_resolved',
+        id: 'tc-1',
+        kind: 'approval',
+        resolution: 'denied',
+        at: 5_000,
+      },
     ]);
     expect(part.approvalOutcome).toBe('denied');
     expect(part.status).toBe('error');
@@ -827,7 +890,14 @@ describe('projectInProgressTurn — approval receipts', () => {
     // put words in the operator's mouth.
     const part = approvalPart([
       ask('tc-1'),
-      { seq: 2, type: 'interaction_resolved', id: 'tc-1', resolution: 'expired', at: 601_000 },
+      {
+        seq: 2,
+        type: 'interaction_resolved',
+        id: 'tc-1',
+        kind: 'approval',
+        resolution: 'expired',
+        at: 601_000,
+      },
     ]);
     expect(part.approvalOutcome).toBe('expired');
     expect(part.status).toBe('error');
@@ -838,7 +908,13 @@ describe('projectInProgressTurn — approval receipts', () => {
     // there is no decision to record.
     const part = approvalPart([
       ask('tc-1'),
-      { seq: 2, type: 'interaction_resolved', id: 'tc-1', resolution: 'cancelled' },
+      {
+        seq: 2,
+        type: 'interaction_resolved',
+        id: 'tc-1',
+        kind: 'approval',
+        resolution: 'cancelled',
+      },
     ]);
     expect(part.approvalOutcome).toBeUndefined();
     expect(part.status).toBe('error');
@@ -850,7 +926,14 @@ describe('projectInProgressTurn — approval receipts', () => {
     const part = approvalPart([
       ask('tc-1'),
       { seq: 2, type: 'tool_result', toolCallId: 'tc-1', toolName: 'Bash', status: 'complete' },
-      { seq: 3, type: 'interaction_resolved', id: 'tc-1', resolution: 'approved', at: 5_000 },
+      {
+        seq: 3,
+        type: 'interaction_resolved',
+        id: 'tc-1',
+        kind: 'approval',
+        resolution: 'approved',
+        at: 5_000,
+      },
     ]);
     expect(part.approvalOutcome).toBe('allowed');
     expect(part.status).toBe('complete');
@@ -870,7 +953,14 @@ describe('projectInProgressTurn — approval receipts', () => {
           { header: 'Color', question: 'Which?', options: [{ label: 'Blue' }], multiSelect: false },
         ],
       },
-      { seq: 2, type: 'interaction_resolved', id: 'q-1', resolution: 'answered', at: 5_000 },
+      {
+        seq: 2,
+        type: 'interaction_resolved',
+        id: 'q-1',
+        kind: 'question',
+        resolution: 'answered',
+        at: 5_000,
+      },
     ]);
     expect((parts[0] as { approvalOutcome?: string }).approvalOutcome).toBeUndefined();
   });
@@ -882,7 +972,14 @@ describe('projectInProgressTurn — approval receipts', () => {
     // test rather than an identity check on one array.
     const events: SessionEvent[] = [
       ask('tc-1'),
-      { seq: 2, type: 'interaction_resolved', id: 'tc-1', resolution: 'approved', at: 5_000 },
+      {
+        seq: 2,
+        type: 'interaction_resolved',
+        id: 'tc-1',
+        kind: 'approval',
+        resolution: 'approved',
+        at: 5_000,
+      },
     ];
     const replayed = JSON.parse(JSON.stringify(events)) as SessionEvent[];
     expect(replayed).not.toBe(events);

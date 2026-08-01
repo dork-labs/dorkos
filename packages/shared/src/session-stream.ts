@@ -406,6 +406,19 @@ export const SessionEventSchema = z
       /** Outcome, when the resolver knows it; absent for generic clears. */
       resolution: z.enum(['approved', 'denied', 'answered', 'expired', 'cancelled']).optional(),
       /**
+       * WHICH KIND of interaction this resolved, backfilled by the projector
+       * from the entry it is about to drop.
+       *
+       * Not redundant with `resolution`, and not inferable from it: the three
+       * interaction kinds share a cancellation path, so a timed-out question
+       * and a timed-out permission prompt both resolve `expired`, and a
+       * declined elicitation carries the same `denied` a refused permission
+       * does. A consumer that renders one kind differently from another has to
+       * be told which it has — inferring it from the outcome put "Expired —
+       * denied" over questions nobody was ever asked to approve.
+       */
+      kind: z.enum(['approval', 'question', 'elicitation']).optional(),
+      /**
        * Server epoch ms when the interaction resolved. Timestamps the durable
        * record a client keeps of the answer; optional so a runtime that cannot
        * say when simply omits it (the record renders without a time).

@@ -7,12 +7,19 @@
  * announcement written to a node that unmounted in the same commit, which every
  * assertion against component state would have called a pass.
  */
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { render, screen, cleanup, act } from '@testing-library/react';
 import type { MessagePart } from '@dorkos/shared/types';
 import { useApprovalAnnouncer } from '../model/stream/use-approval-announcer';
 
-afterEach(cleanup);
+beforeEach(() => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+});
+
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 /** An answered approval part, as the projection folds one. */
 function answered(
@@ -42,10 +49,16 @@ const pending: MessagePart = {
 };
 
 /** The region as the transcript renders it. */
-function Announcer({ parts }: { parts: MessagePart[] }) {
+function Announcer({
+  parts,
+  sessionId = 'session-1',
+}: {
+  parts: MessagePart[];
+  sessionId?: string;
+}) {
   return (
     <div role="status" aria-live="polite" data-testid="approval-announcer">
-      {useApprovalAnnouncer(parts)}
+      {useApprovalAnnouncer(parts, sessionId)}
     </div>
   );
 }
@@ -117,8 +130,37 @@ describe('useApprovalAnnouncer', () => {
     expect(spoken()).not.toBe('');
 
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 4100));
+      await vi.advanceTimersByTimeAsync(4100);
     });
     expect(spoken()).toBe('');
+  });
+
+  it('says nothing about the conversation you just switched to', () => {
+    // Purpose: the list is not thrown away on a session switch, so without a
+    // per-session reset the incoming session's existing receipts would every
+    // one of them read as a decision just made.
+    const { rerender } = render(<Announcer parts={[pending]} sessionId="session-1" />);
+    rerender(
+      <Announcer
+        parts={[answered('tc-9', 'denied'), answered('tc-8', 'allowed')]}
+        sessionId="session-2"
+      />
+    );
+    expect(spoken()).toBe('');
+  });
+
+  it('still speaks about an answer that lands after the switch', () => {
+    // Purpose: the reset must adopt, not deafen.
+    const { rerender } = render(<Announcer parts={[pending]} sessionId="session-1" />);
+    rerender(<Announcer parts={[answered('tc-9', 'allowed')]} sessionId="session-2" />);
+    expect(spoken()).toBe('');
+
+    rerender(
+      <Announcer
+        parts={[answered('tc-9', 'allowed'), answered('tc-10', 'denied', 'ls')]}
+        sessionId="session-2"
+      />
+    );
+    expect(spoken()).toContain('Denied Run "ls"');
   });
 });

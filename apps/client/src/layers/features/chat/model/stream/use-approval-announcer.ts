@@ -45,17 +45,29 @@ function sentenceFor(part: Extract<MessagePart, { type: 'tool_call' }>): string 
  * would cost the length of the conversation for nothing.
  *
  * @param tailParts - Parts of the transcript's last message.
+ * @param sessionId - Which conversation these parts belong to. A change re-adopts
+ *   silently: the list is not virtualized away on a session switch, so without
+ *   this the new session's existing answers would all read as news.
  * @returns The sentence for the region, or `''` when there is nothing to say.
  */
-export function useApprovalAnnouncer(tailParts: MessagePart[]): string {
+export function useApprovalAnnouncer(tailParts: MessagePart[], sessionId: string): string {
   // Tool-call ids whose answer has already been accounted for — announced, or
-  // adopted silently at mount.
+  // adopted silently. Reset when the conversation changes, which is also what
+  // makes the adoption pass below run again for the session just opened.
   const seenRef = useRef<Set<string> | null>(null);
+  const seenSessionRef = useRef<string | null>(null);
   // The region's contents plus a nonce: two identical sentences in a row are
   // the same DOM text, which React does not touch and no screen reader repeats.
   const [announcement, setAnnouncement] = useState({ text: '', nonce: 0 });
 
   useEffect(() => {
+    // A different conversation is a different set of answers. Dropping what was
+    // seen sends this pass down the adoption branch below, which is what keeps
+    // the switch silent.
+    if (seenSessionRef.current !== sessionId) {
+      seenSessionRef.current = sessionId;
+      seenRef.current = null;
+    }
     const answered = tailParts.filter(
       (part) => part.type === 'tool_call' && part.approvalOutcome !== undefined
     ) as Extract<MessagePart, { type: 'tool_call' }>[];
@@ -73,8 +85,13 @@ export function useApprovalAnnouncer(tailParts: MessagePart[]): string {
       fresh.length === 1
         ? sentenceFor(fresh[0])
         : `Answered ${fresh.length} permission requests. Recorded in the conversation.`;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- An answer
+    // landing is an EVENT, not derived state: it has to be said once and not
+    // re-said on the next render, which is exactly what the `seen` set above
+    // guarantees. There is no cascade — this runs at most once per answered
+    // request. Same shape as the sibling `useStreamingAnnouncer`.
     setAnnouncement((prev) => ({ text, nonce: prev.nonce + 1 }));
-  }, [tailParts]);
+  }, [tailParts, sessionId]);
 
   // Empty at rest — the state the region must be in for a remount to be silent.
   useEffect(() => {

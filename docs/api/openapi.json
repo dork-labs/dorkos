@@ -1799,6 +1799,14 @@
                   "cancelled"
                 ]
               },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "approval",
+                  "question",
+                  "elicitation"
+                ]
+              },
               "at": {
                 "type": "number"
               },
@@ -7086,6 +7094,14 @@
                             "answered",
                             "expired",
                             "cancelled"
+                          ]
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "approval",
+                            "question",
+                            "elicitation"
                           ]
                         },
                         "at": {

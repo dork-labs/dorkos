@@ -507,18 +507,39 @@ export class SessionStateProjector {
         this.trackInteraction(event);
         break;
       case 'interaction_resolved':
-        // Backfill when the interaction began before dropping it. `project()`
-        // runs before the event is logged, buffered, or fanned out, so this
-        // reaches every consumer. A client cannot recover this itself: the
-        // pending DTO carrying `startedAt` is retired by this same event.
-        if (event.startedAt === undefined) {
-          event.startedAt = this.interactions.get(event.id)?.startedAt;
-        }
+        // Backfill WHICH interaction this was and WHEN it began, before
+        // dropping the only record of either. `project()` runs before the event
+        // is logged, buffered, or fanned out, so this reaches every consumer —
+        // and a client cannot recover it afterwards, because the pending DTO
+        // carrying both is retired by this same event. The kind matters as much
+        // as the timing: the three kinds share a cancellation path, so the
+        // resolution alone cannot say whether a `expired` was a permission
+        // prompt or a question.
+        this.backfillResolution(event);
         this.untrackInteraction(event.id);
         break;
       default:
         break;
     }
+  }
+
+  /**
+   * Stamp a resolution with the kind and start time of the interaction it
+   * retires, taken from the entry this projector still holds.
+   *
+   * Only fills what is missing, so a resolution that already carried either
+   * (a replayed event, a runtime that knows its own answer) is left alone. An
+   * untracked id leaves both undefined — consumers degrade to "an interaction
+   * resolved" rather than being told something invented.
+   *
+   * @param event - The `interaction_resolved` event, mutated in place before it
+   *   is logged, buffered, or fanned out.
+   */
+  private backfillResolution(event: Extract<SessionEvent, { type: 'interaction_resolved' }>): void {
+    const pending = this.interactions.get(event.id);
+    if (pending === undefined) return;
+    if (event.kind === undefined) event.kind = pending.type;
+    if (event.startedAt === undefined) event.startedAt = pending.startedAt;
   }
 
   /**

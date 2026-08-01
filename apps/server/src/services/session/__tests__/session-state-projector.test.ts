@@ -329,6 +329,69 @@ describe('SessionStateProjector', () => {
     expect(p.getStatus().lifecycle).toBe('streaming');
   });
 
+  // Failure mode: the resolution retires the ONLY record of what the
+  // interaction was and when it began, so a consumer that needs either has no
+  // way to recover it afterwards. Without the kind, a client cannot tell a
+  // timed-out question from a timed-out permission prompt (both resolve
+  // `expired`); without the start time it cannot say how long the request
+  // waited. Both are read from the entry this event is about to drop.
+  it('stamps a resolution with the kind and start time of what it retires', () => {
+    const p = new SessionStateProjector('s1');
+    const startedAt = Date.now();
+    p.ingest({
+      type: 'approval_required',
+      id: 'tool-1',
+      startedAt,
+      remainingMs: TIMEOUT_MS,
+      toolName: 'Bash',
+      input: '{}',
+      hasSuggestions: false,
+    } as RawSessionEvent);
+
+    const resolved = p.ingest({
+      type: 'interaction_resolved',
+      id: 'tool-1',
+      resolution: 'approved',
+    } as RawSessionEvent);
+
+    expect(resolved).toMatchObject({ kind: 'approval', startedAt });
+  });
+
+  it('stamps a resolved question as a question, not an approval', () => {
+    // Purpose: the distinction the stamp exists for. A question and a
+    // permission prompt resolve through the same path with the same values.
+    const p = new SessionStateProjector('s1');
+    p.ingest({
+      type: 'question_prompt',
+      id: 'q-1',
+      startedAt: Date.now(),
+      remainingMs: TIMEOUT_MS,
+      questions: [],
+    } as unknown as RawSessionEvent);
+
+    const resolved = p.ingest({
+      type: 'interaction_resolved',
+      id: 'q-1',
+      resolution: 'expired',
+    } as RawSessionEvent);
+
+    expect(resolved).toMatchObject({ kind: 'question' });
+  });
+
+  it('leaves an untracked resolution unstamped rather than inventing a kind', () => {
+    // Purpose: degrade to "an interaction resolved" — an id this projector never
+    // tracked has no kind to report, and guessing one would be worse than none.
+    const p = new SessionStateProjector('s1');
+    const resolved = p.ingest({
+      type: 'interaction_resolved',
+      id: 'never-tracked',
+      resolution: 'expired',
+    } as RawSessionEvent);
+
+    expect(resolved).not.toHaveProperty('kind');
+    expect(resolved).not.toHaveProperty('startedAt');
+  });
+
   it('resolveInteraction is a no-op for an unknown id (stale click emits nothing)', () => {
     const p = new SessionStateProjector('s1');
     p.ingest({ type: 'turn_start' }); // seq 1

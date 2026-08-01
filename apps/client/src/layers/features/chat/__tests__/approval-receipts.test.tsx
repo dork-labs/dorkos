@@ -82,7 +82,9 @@ function resolved(
   resolution: 'approved' | 'denied' | 'expired',
   at = APPROVAL_STARTED_AT + 5_000
 ): SessionEvent {
-  return { seq: 99, type: 'interaction_resolved', id, resolution, at };
+  // `kind` is what the server backfills from the entry it retires — the client
+  // is told which interaction this was rather than guessing from the outcome.
+  return { seq: 99, type: 'interaction_resolved', id, kind: 'approval', resolution, at };
 }
 
 /**

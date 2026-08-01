@@ -325,16 +325,19 @@ function foldInteractionResolved(parts: MessagePart[], event: ResolvedEvent) {
       toolCall.approvalRemainingMs = undefined;
     }
     const outcome = event.resolution && APPROVAL_OUTCOME_BY_RESOLUTION[event.resolution];
-    if (outcome) {
-      // The resolution is ALSO the proof that this part is an approval, and
-      // that is not redundant: on the live path `approval_required` never
-      // enters the turn (it arrives as a pending DTO, which this event
-      // retires), so by the time the answer lands the part is a bare tool_call
-      // with nothing marking it as gated. Only an approval is ever resolved
-      // `approved` / `denied` / `expired` — a question resolves `answered` —
-      // so the tag is safe to assert here. Deliberately NOT gated on
-      // `status === 'pending'` either: an approval whose tool_result raced
-      // ahead of its resolution still earns its receipt.
+    // The server says WHICH interaction this was; the outcome is not evidence
+    // of it. All three kinds share a cancellation path, so a timed-out question
+    // resolves `expired` exactly as a timed-out permission prompt does — and
+    // AskUserQuestion is an ordinary tool_use block, so it has a real tool_call
+    // part under the same id for this to land on. Reading the kind out of the
+    // resolution printed "Expired — denied" over questions.
+    if (outcome && event.kind === 'approval') {
+      // Tagging the part is the point of doing this here: on the live path
+      // `approval_required` never enters the turn (it arrives as a pending DTO
+      // that this event retires), so by the time the answer lands the part is a
+      // bare tool_call with nothing marking it as gated. Deliberately NOT gated
+      // on `status === 'pending'`: an approval whose tool_result raced ahead of
+      // its resolution still earns its receipt.
       toolCall.interactiveType = 'approval';
       toolCall.approvalOutcome = outcome;
       toolCall.approvalResolvedAt = event.at;

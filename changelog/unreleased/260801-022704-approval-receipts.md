@@ -2,6 +2,7 @@
 covers:
   - 'feat(client): an answered permission request settles into the conversation as a receipt'
   - 'fix(client): answered permission requests survive the end of a turn'
+  - 'fix(session): a resolved interaction says which kind it was'
 ---
 
 ### Added

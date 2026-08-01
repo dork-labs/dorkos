@@ -191,7 +191,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
 
   // A permission request getting its answer, said out loud. It is announced
   // from here rather than from the card because answering the card unmounts it.
-  const approvalAnnouncement = useApprovalAnnouncer(newest?.parts ?? EMPTY_PARTS);
+  const approvalAnnouncement = useApprovalAnnouncer(newest?.parts ?? EMPTY_PARTS, sessionId);
 
   const newestMessageId = messages[messages.length - 1]?.id;
   const { lastSeenMessageId, markSeen } = useUnreadCursor(sessionId, newestMessageId);
