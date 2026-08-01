@@ -239,8 +239,18 @@ export function RoomThreadPanel({
             // 24px of button, and on a phone this is Back — the control a
             // reader reaches for most and the one that costs the most to miss.
             // The glyph stays 16px so the header keeps its height; the target
-            // grows to 44px with 10px of reach on every side, the same trick
-            // the thread reply row uses.
+            // grows to 44px with 10px of reach on every side.
+            //
+            // **The one invisible reach left on this surface, and deliberately
+            // so.** Everywhere else the rule is now "grow the real box", because
+            // reach that overlaps a neighbour is worse than no reach at all —
+            // the pills and the thread reply row collided exactly that way. This
+            // one is the exception because it is alone: the panel header holds
+            // no other control, only the thread title beside it, which is text
+            // and takes no taps. Measured in Chromium at 390×844 — 44×42
+            // effective, inside a 62px header, colliding with nothing. Reach is
+            // safe when there is nothing to reach into; that is the test to
+            // apply before copying this anywhere else.
             'after:absolute after:-inset-2.5 md:after:hidden'
           )}
         >

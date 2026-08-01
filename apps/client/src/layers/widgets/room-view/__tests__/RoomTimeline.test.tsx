@@ -214,11 +214,28 @@ describe('RoomTimeline — thread reply rows', () => {
 
   it('grows its own box on a phone rather than reaching invisibly past it', () => {
     // On a phone this row is the ONLY way into a thread. It briefly claimed a
-    // 44px target with an invisible `::after` and measured 40px of THEFT from
-    // the reaction pills above it — so it takes real padding below the
-    // breakpoint instead, which cannot overlap anything because everything
-    // under it moves down. Geometry, not class names, is the evidence:
-    // `contributing/` has the Chromium numbers in the DOR-785 report.
+    // 44px target with an invisible `::after`, and that stole from the pills
+    // above it — so it takes real padding below the breakpoint instead, which
+    // cannot overlap anything because everything under it moves down.
+    //
+    // **Geometry is the evidence; these assertions are only its fingerprint.**
+    // Measured in Chromium at 390×844, on a message carrying both reactions and
+    // a thread, with `elementFromPoint` scanned a pixel at a time down the
+    // centre of each control:
+    //
+    //   before — pill reach y128–178, this row's reach y160–208. The 18px they
+    //     shared went to this row, so the pill's real target was 30px of the
+    //     50px it claimed and a tap meant for a reaction opened a thread. The
+    //     top of the pill's reach also sat over the last 8px of message text
+    //     (text ended y136), and the bottom of this row's landed 2px inside the
+    //     next message's text (y206).
+    //   after  — msg text ⋯136 │ 4px │ pill 140–166 (26px) │ 6px │ this row
+    //     172–208 (36px) │ 10px │ next msg text 218⋯. The column scan is
+    //     strictly ordered with a non-interactive gap between every control:
+    //     pill 26px effective, this row 35px, nothing overlapping anything.
+    //
+    // Rerun by rendering this component at 390×844 with the built CSS and
+    // walking `document.elementFromPoint` down each control's centre line.
     renderTimeline({ entries: [entry(1), reply(2, 1)] });
 
     const row = screen.getByTestId('room-thread-replies');
