@@ -123,6 +123,43 @@ function setupFetchNetworkError() {
   );
 }
 
+/**
+ * Turn the event loop until `settled()` holds, WITHOUT moving the fake clock.
+ *
+ * `advanceTimersByTimeAsync(0)` buys exactly one real event-loop turn, and one
+ * turn is a bet rather than a barrier for anything that crosses Node's stream
+ * internals. Those resume on the loop's check phase; the fake clock resumes on a
+ * real 1ms timer of its own — and which of the two lands first is the
+ * scheduler's call. On an idle machine the stream always wins; with three of
+ * these suites running at once it lost 6 times in 1200 (measured), leaving the
+ * connection still reading `connected` when the test asserted it had noticed the
+ * close. That is DOR-798. Waiting on the state the close produces cannot lose
+ * that race, and passing `0` never fires a pending backoff timer, so the
+ * backoff-window assertions below stay honest.
+ *
+ * Bounded by a turn count rather than a wall-clock deadline — the deliberate
+ * opposite of the server's `flushIoUntil`, which can read a real `Date.now()`
+ * because it fakes only `setTimeout`. Here the clock itself is faked, so there
+ * is no wall clock to bound against; 100 turns is a 100x margin over the single
+ * turn this ever needs, and exhausting it leaves the caller's own assertion to
+ * report the failure.
+ */
+async function untilSettled(settled: () => boolean, turns = 100): Promise<void> {
+  for (let i = 0; i < turns && !settled(); i++) await vi.advanceTimersByTimeAsync(0);
+}
+
+/**
+ * End the live mock stream — the server-disconnect simulation — and return once
+ * `conn` has registered the disconnect. A failed attempt is counted on exactly
+ * that path ({@link SSEConnection}'s error handler), so it is the observable
+ * that says the close arrived, whatever state it moves the connection into.
+ */
+async function closeStream(conn: SSEConnection): Promise<void> {
+  const before = conn.getFailedAttempts();
+  mockStream.close();
+  await untilSettled(() => conn.getFailedAttempts() > before);
+}
+
 // ---------------------------------------------------------------------------
 // Test suite
 // ---------------------------------------------------------------------------
@@ -131,6 +168,17 @@ describe('SSEConnection', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     setupFetchMock();
+    // Pin the backoff jitter for EVERY test. `calculateBackoff` multiplies its
+    // window by `Math.random()`, so roughly one draw in two hundred lands under
+    // a millisecond — and a sub-millisecond timer is already due on a
+    // zero-length advance, because the fake clock rounds its target down to a
+    // whole millisecond (verified: a 0.65ms timer fires on
+    // `advanceTimersByTimeAsync(0)`, a 1ms one does not). The reconnect then
+    // happens inside the very tick that delivers the disconnect, and the
+    // `reconnecting` state a test is about to assert never exists to be seen. It
+    // is not the machine's fault and no amount of waiting helps: the input was
+    // never pinned. Tests that care about a particular draw override this.
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
   });
 
   afterEach(() => {
@@ -168,8 +216,7 @@ describe('SSEConnection', () => {
       onStateChange.mockClear();
 
       // Close the stream — simulates server disconnect
-      mockStream.close();
-      await vi.advanceTimersByTimeAsync(0);
+      await closeStream(conn);
 
       expect(conn.getState()).toBe('reconnecting');
       expect(conn.getFailedAttempts()).toBe(1);
@@ -177,24 +224,32 @@ describe('SSEConnection', () => {
     });
 
     it('reconnects automatically after backoff delay', async () => {
+      // The pinned jitter makes this a NAMED 100ms backoff — 0.5 * min(1000,
+      // 100*2^1) — instead of "somewhere under 200ms", so the test checks the
+      // boundary it means to check rather than sleeping past a window and
+      // trusting the window is wide enough.
       const { conn } = createConnection();
       conn.connect();
-      await vi.advanceTimersByTimeAsync(0);
+      await untilSettled(() => conn.getState() === 'connected');
 
-      mockStream.close();
-      await vi.advanceTimersByTimeAsync(0);
+      await closeStream(conn);
+      expect(conn.getState()).toBe('reconnecting');
+      const attemptsBefore = fetchCallCount;
 
+      // A millisecond short of the backoff: nothing has been re-opened yet.
+      await vi.advanceTimersByTimeAsync(99);
+      expect(fetchCallCount).toBe(attemptsBefore);
       expect(conn.getState()).toBe('reconnecting');
 
-      // Advance past the maximum possible backoff for attempt 1: cap = min(1000, 100*2^1) = 200
-      await vi.advanceTimersByTimeAsync(201);
-
-      // After backoff, connect() is called again -> fetch resolves -> connected
+      // The backoff fires. "Reconnects" means a NEW connection was actually
+      // opened, not merely that a state string moved.
+      await vi.advanceTimersByTimeAsync(1);
+      expect(fetchCallCount).toBe(attemptsBefore + 1);
+      await untilSettled(() => conn.getState() === 'connected');
       expect(conn.getState()).toBe('connected');
     });
 
     it('transitions to disconnected after threshold failures', async () => {
-      vi.spyOn(Math, 'random').mockReturnValue(0.5);
       const { conn, onStateChange } = createConnection({
         disconnectedThreshold: 2,
         heartbeatTimeoutMs: 0,
@@ -205,8 +260,7 @@ describe('SSEConnection', () => {
       expect(conn.getState()).toBe('connected');
 
       // First failure -> reconnecting
-      mockStream.close();
-      await vi.advanceTimersByTimeAsync(0);
+      await closeStream(conn);
       expect(conn.getState()).toBe('reconnecting');
       expect(conn.getFailedAttempts()).toBe(1);
 
@@ -215,8 +269,7 @@ describe('SSEConnection', () => {
       expect(conn.getState()).toBe('connected');
 
       // Second failure -> exceeds threshold -> disconnected
-      mockStream.close();
-      await vi.advanceTimersByTimeAsync(0);
+      await closeStream(conn);
 
       expect(conn.getState()).toBe('disconnected');
       expect(conn.getFailedAttempts()).toBe(2);
@@ -231,13 +284,11 @@ describe('SSEConnection', () => {
   describe('backoff calculation', () => {
     it('delay is within expected range based on attempt count', async () => {
       const { conn } = createConnection();
-      vi.spyOn(Math, 'random').mockReturnValue(0.5);
 
       conn.connect();
       await vi.advanceTimersByTimeAsync(0);
 
-      mockStream.close();
-      await vi.advanceTimersByTimeAsync(0);
+      await closeStream(conn);
 
       // Attempt 1: max = min(1000, 100*2^1) = 200, delay = 0.5 * 200 = 100
       expect(conn.getState()).toBe('reconnecting');
@@ -259,8 +310,9 @@ describe('SSEConnection', () => {
 
       // Fail multiple times to push attempt count high
       for (let i = 0; i < 5; i++) {
-        mockStream.close();
-        await vi.advanceTimersByTimeAsync(0);
+        // Each iteration must close a LIVE stream, or it counts no failure.
+        await untilSettled(() => conn.getState() === 'connected');
+        await closeStream(conn);
         // Advance past max backoff cap
         await vi.advanceTimersByTimeAsync(501);
       }
@@ -337,7 +389,6 @@ describe('SSEConnection', () => {
 
   describe('max retries', () => {
     it('enters disconnected state after threshold failures', async () => {
-      vi.spyOn(Math, 'random').mockReturnValue(0.5);
       const { conn, onStateChange } = createConnection({
         disconnectedThreshold: 3,
         heartbeatTimeoutMs: 0,
@@ -348,8 +399,7 @@ describe('SSEConnection', () => {
 
       // Fail twice, reconnecting each time
       for (let i = 0; i < 2; i++) {
-        mockStream.close();
-        await vi.advanceTimersByTimeAsync(0);
+        await closeStream(conn);
         expect(conn.getState()).toBe('reconnecting');
         // Attempt i+1: backoff = 0.5 * min(1000, 100*2^(i+1))
         // i=0: 0.5 * 200 = 100, i=1: 0.5 * 400 = 200
@@ -360,8 +410,7 @@ describe('SSEConnection', () => {
       expect(conn.getFailedAttempts()).toBe(2);
 
       // Third failure pushes past threshold
-      mockStream.close();
-      await vi.advanceTimersByTimeAsync(0);
+      await closeStream(conn);
 
       expect(conn.getState()).toBe('disconnected');
       expect(conn.getFailedAttempts()).toBe(3);
@@ -373,8 +422,7 @@ describe('SSEConnection', () => {
       conn.connect();
       await vi.advanceTimersByTimeAsync(0);
 
-      mockStream.close();
-      await vi.advanceTimersByTimeAsync(0);
+      await closeStream(conn);
 
       expect(conn.getState()).toBe('disconnected');
       const callCount = fetchCallCount;
@@ -390,13 +438,11 @@ describe('SSEConnection', () => {
 
   describe('stability window', () => {
     it('resets attempt counter after connection is stable', async () => {
-      vi.spyOn(Math, 'random').mockReturnValue(0.5);
       const { conn, onStateChange } = createConnection({ stabilityWindowMs: 2_000 });
       conn.connect();
       await vi.advanceTimersByTimeAsync(0);
 
-      mockStream.close();
-      await vi.advanceTimersByTimeAsync(0);
+      await closeStream(conn);
       expect(conn.getFailedAttempts()).toBe(1);
 
       // Attempt 1: max = min(1000, 100*2^1) = 200, delay = 0.5 * 200 = 100
@@ -416,8 +462,7 @@ describe('SSEConnection', () => {
       conn.connect();
       await vi.advanceTimersByTimeAsync(0);
 
-      mockStream.close();
-      await vi.advanceTimersByTimeAsync(0);
+      await closeStream(conn);
       expect(conn.getFailedAttempts()).toBe(1);
 
       // Reconnect after backoff
@@ -426,8 +471,7 @@ describe('SSEConnection', () => {
 
       // Fail before stability window elapses
       await vi.advanceTimersByTimeAsync(3_000);
-      mockStream.close();
-      await vi.advanceTimersByTimeAsync(0);
+      await closeStream(conn);
 
       expect(conn.getFailedAttempts()).toBe(2);
     });
@@ -607,8 +651,7 @@ describe('SSEConnection', () => {
 
       expect(onStateChange).toHaveBeenCalledWith('connected', 0);
 
-      mockStream.close();
-      await vi.advanceTimersByTimeAsync(0);
+      await closeStream(conn);
       expect(onStateChange).toHaveBeenCalledWith('reconnecting', 1);
 
       // Backoff fires -> connect() -> 'connecting'
@@ -619,8 +662,7 @@ describe('SSEConnection', () => {
       expect(onStateChange).toHaveBeenCalledWith('connected', 1);
 
       // Second failure -> disconnected
-      mockStream.close();
-      await vi.advanceTimersByTimeAsync(0);
+      await closeStream(conn);
       expect(onStateChange).toHaveBeenCalledWith('disconnected', 2);
     });
 
@@ -642,8 +684,7 @@ describe('SSEConnection', () => {
       conn.connect();
       await vi.advanceTimersByTimeAsync(0);
 
-      mockStream.close();
-      await vi.advanceTimersByTimeAsync(0);
+      await closeStream(conn);
 
       expect(onError).toHaveBeenCalledTimes(1);
       expect(onError).toHaveBeenCalledWith(expect.any(Error));
@@ -732,8 +773,7 @@ describe('SSEConnection', () => {
       await vi.advanceTimersByTimeAsync(0);
 
       // Close stream to trigger reconnection
-      mockStream.close();
-      await vi.advanceTimersByTimeAsync(0);
+      await closeStream(conn);
 
       // Advance past backoff to trigger reconnect
       await vi.advanceTimersByTimeAsync(10_000);
@@ -765,8 +805,7 @@ describe('SSEConnection', () => {
       await vi.advanceTimersByTimeAsync(0);
 
       // Close stream to trigger reconnection
-      mockStream.close();
-      await vi.advanceTimersByTimeAsync(0);
+      await closeStream(conn);
 
       expect(conn.getState()).toBe('reconnecting');
 
