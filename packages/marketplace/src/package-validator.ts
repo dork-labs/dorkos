@@ -236,7 +236,10 @@ export async function validatePackage(packagePath: string): Promise<ValidatePack
  *
  * Both scanner-level failures (missing SKILL.md, frontmatter parse errors)
  * and structural failures from {@link validateSkillStructure} are surfaced
- * as `SKILL_INVALID` errors.
+ * as `SKILL_INVALID` errors — including a directory that exists but cannot be
+ * listed, which {@link scanSkillDirectory} throws for. Nothing here escapes as
+ * an exception: a validator's job is to return findings, and callers up the
+ * chain treat a throw as "the whole package list is broken".
  *
  * A frontmatter `name` that differs from the skill's directory name is a
  * WARNING (`SKILL_NAME_MISMATCH`), not an error: Claude Code keys skills by
@@ -254,10 +257,26 @@ async function validateSkillsInDirectory(
   packagePath: string,
   issues: ValidationIssue[]
 ): Promise<void> {
-  const scanResults = await scanSkillDirectory(fullDir, PermissiveSkillFrontmatterSchema, {
-    includeMissing: false,
-    requireNameMatch: false,
-  });
+  let scanResults;
+  try {
+    scanResults = await scanSkillDirectory(fullDir, PermissiveSkillFrontmatterSchema, {
+      includeMissing: false,
+      requireNameMatch: false,
+    });
+  } catch (err) {
+    // `scanSkillDirectory` throws when a directory is there but cannot be
+    // listed — EACCES, or EMFILE under transient file-descriptor pressure.
+    // That is a finding about ONE directory, so it is reported as one.
+    // Letting it propagate would turn an unreadable subdirectory of one
+    // package into a failed installed-package listing for every package.
+    issues.push({
+      level: 'error',
+      code: 'SKILL_INVALID',
+      message: `Could not read skills directory: ${(err as Error).message}`,
+      path: path.relative(packagePath, fullDir),
+    });
+    return;
+  }
 
   for (const result of scanResults) {
     if (!result.ok) {

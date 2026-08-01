@@ -140,6 +140,22 @@ describe('Tasks routes', () => {
       expect(res.body.error).toBe('Validation failed');
     });
 
+    it('refuses a name that slugifies to the reserved templates folder', async () => {
+      const res = await request(app).post('/api/tasks').send({
+        name: 'Templates',
+        description: 'clashes with the templates container',
+        prompt: 'do stuff',
+        cron: '0 2 * * *',
+        target: 'global',
+      });
+
+      // Allowing it would write a file the reconciler skips by name, and then
+      // retire the row the watcher created for it.
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('reserved');
+      expect(store.getTasks()).toHaveLength(0);
+    });
+
     it('registers cron job for enabled active schedule', async () => {
       await request(app).post('/api/tasks').send({
         name: 'Active',
@@ -201,6 +217,15 @@ describe('Tasks routes', () => {
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(scheduler.unregisterTask).toHaveBeenCalledWith(sched.id);
+    });
+
+    it('deletes a schedule that has already run', async () => {
+      const sched = store.createTask(taskInput({ name: 'Ran', prompt: 'p', cron: '0 * * * *' }));
+      store.createRun(sched.id, 'scheduled');
+
+      const res = await request(app).delete(`/api/tasks/${sched.id}`);
+      expect(res.status).toBe(200);
+      expect(store.getTask(sched.id)).toBeNull();
     });
 
     it('returns 404 for nonexistent schedule', async () => {

@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { TaskStore, type CreateTaskStoreInput } from '../task-store.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
-import { pulseSchedules, pulseRuns } from '@dorkos/db';
+import { pulseSchedules, pulseRuns, pulseDispatchLog } from '@dorkos/db';
+import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { eq } from 'drizzle-orm';
 
 /** Build a minimal CreateTaskStoreInput with defaults for required fields. */
@@ -113,6 +114,42 @@ describe('TaskStore', () => {
 
     it('returns false when deleting nonexistent task', () => {
       expect(store.deleteTask('nope')).toBe(false);
+    });
+
+    it('deletes a task that has run history, taking its runs with it', () => {
+      const created = store.createTask(taskInput({ name: 'Has runs' }));
+      store.createRun(created.id, 'manual');
+      store.createRun(created.id, 'scheduled');
+
+      expect(() => store.deleteTask(created.id)).not.toThrow();
+      expect(store.getTasks()).toHaveLength(0);
+      expect(
+        db.select().from(pulseRuns).where(eq(pulseRuns.scheduleId, created.id)).all()
+      ).toHaveLength(0);
+    });
+
+    it('deletes the task dispatch-dedup rows too, so they cannot outlive the task', () => {
+      const created = store.createTask(taskInput({ name: 'Has dispatches' }));
+      const other = store.createTask(taskInput({ name: 'Untouched' }));
+      store.tryClaimDispatch(created.id, 1_700_000_000_000);
+      store.tryClaimDispatch(other.id, 1_700_000_000_000);
+
+      store.deleteTask(created.id);
+
+      const remaining = db.select().from(pulseDispatchLog).all();
+      expect(remaining.map((r) => r.taskId)).toEqual([other.id]);
+    });
+
+    it('leaves other tasks runs untouched', () => {
+      const doomed = store.createTask(taskInput({ name: 'Doomed' }));
+      const survivor = store.createTask(taskInput({ name: 'Survivor' }));
+      store.createRun(doomed.id, 'manual');
+      const keptRun = store.createRun(survivor.id, 'manual');
+
+      store.deleteTask(doomed.id);
+
+      expect(store.getRun(keptRun.id)).not.toBeNull();
+      expect(db.select().from(pulseRuns).all()).toHaveLength(1);
     });
   });
 
@@ -634,6 +671,97 @@ describe('TaskStore', () => {
       );
       const count = store.disableTasksByAgentId('agent-multi');
       expect(count).toBe(3);
+    });
+  });
+
+  describe('markRemovedByFilePath', () => {
+    /** Two tasks sharing a slug across different tasks directories. */
+    function createSlugTwins(slug: string) {
+      const globalPath = `/home/u/.dork/tasks/${slug}/SKILL.md`;
+      const projectPath = `/home/u/code/proj/.dork/tasks/${slug}/SKILL.md`;
+      return {
+        globalTask: store.createTask(taskInput({ name: slug, prompt: 'p', filePath: globalPath })),
+        projectTask: store.createTask(
+          taskInput({ name: slug, prompt: 'p', filePath: projectPath })
+        ),
+        globalPath,
+        projectPath,
+      };
+    }
+
+    it('pauses only the exact file, never a same-slug task elsewhere', () => {
+      const { globalTask, projectTask, globalPath } = createSlugTwins('flow-drain');
+
+      expect(store.markRemovedByFilePath(globalPath)).toBe(1);
+
+      expect(store.getTask(globalTask.id)?.status).toBe('paused');
+      expect(store.getTask(globalTask.id)?.enabled).toBe(false);
+      // The live task in the other checkout is untouched.
+      expect(store.getTask(projectTask.id)?.status).toBe('active');
+      expect(store.getTask(projectTask.id)?.enabled).toBe(true);
+    });
+
+    it('reports zero when no task owns that path', () => {
+      expect(store.markRemovedByFilePath('/nowhere/SKILL.md')).toBe(0);
+    });
+  });
+
+  describe('upsertFromFile status recovery', () => {
+    /** A parsed definition for a file at `filePath`. */
+    function definition(name: string, filePath: string) {
+      return {
+        name,
+        meta: {
+          name,
+          description: 'd',
+          timezone: 'UTC',
+          enabled: true,
+          permissions: 'acceptEdits',
+        },
+        body: 'do it',
+        filePath,
+        dirPath: filePath.replace(`/${SKILL_FILENAME}`, ''),
+        scope: 'global',
+      } as Parameters<TaskStore['upsertFromFile']>[0];
+    }
+
+    it('un-pauses a task whose file came back', () => {
+      const filePath = '/home/u/.dork/tasks/back-again/SKILL.md';
+      const task = store.createTask(taskInput({ name: 'back-again', filePath }));
+      store.markRemovedByFilePath(filePath);
+      expect(store.getTask(task.id)?.status).toBe('paused');
+
+      store.upsertFromFile(definition('back-again', filePath));
+
+      // The scheduler requires BOTH — restoring only `enabled` leaves a task
+      // that reads as live and never fires.
+      expect(store.getTask(task.id)?.status).toBe('active');
+      expect(store.getTask(task.id)?.enabled).toBe(true);
+      expect(store.getTask(task.id)?.id).toBe(task.id);
+    });
+
+    it('leaves pending_approval alone — only a person clears that gate', () => {
+      const filePath = '/home/u/.dork/tasks/needs-ok/SKILL.md';
+      const task = store.createTask(taskInput({ name: 'needs-ok', filePath }));
+      store.updateTask(task.id, { status: 'pending_approval' });
+
+      store.upsertFromFile(definition('needs-ok', filePath));
+
+      expect(store.getTask(task.id)?.status).toBe('pending_approval');
+    });
+
+    it('still honours enabled: false from the file', () => {
+      const filePath = '/home/u/.dork/tasks/off/SKILL.md';
+      const task = store.createTask(taskInput({ name: 'off', filePath }));
+      store.markRemovedByFilePath(filePath);
+
+      const def = definition('off', filePath);
+      def.meta.enabled = false;
+      store.upsertFromFile(def);
+
+      // A person pausing a task writes `enabled: false` in the file; the
+      // status recovery must not override that choice.
+      expect(store.getTask(task.id)?.enabled).toBe(false);
     });
   });
 

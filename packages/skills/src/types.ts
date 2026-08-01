@@ -5,7 +5,26 @@ import type { CommandFrontmatter } from './command-schema.js';
 /** Discriminated parse result. */
 export type ParseResult<T> =
   | { ok: true; definition: T }
-  | { ok: false; error: string; filePath: string };
+  | {
+      ok: false;
+      error: string;
+      filePath: string;
+      /**
+       * Whether `filePath` is genuinely absent from disk, as opposed to
+       * present but unusable (unreadable, or malformed frontmatter).
+       *
+       * Only {@link scanSkillDirectory} sets this, and only when the read
+       * failed with ENOENT — it is the one failure that means "this skill is
+       * gone". Every other failure, including every failure from
+       * {@link parseSkillFile} (which is handed content the caller already
+       * read), leaves it absent, because the file is still there.
+       *
+       * Callers that treat a failure as a deletion MUST check it: a task
+       * reconciler that retires rows for missing files would otherwise delete
+       * a task, and its whole run history, over a typo in its frontmatter.
+       */
+      fileMissing?: boolean;
+    };
 
 /** Base parsed skill definition. */
 export interface SkillDefinition {

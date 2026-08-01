@@ -62,11 +62,11 @@ function meshWith(pathMap: Record<string, string>): MeshCore {
   } as unknown as MeshCore;
 }
 
-/** Poll until a slug resolves in the store or the deadline passes. */
-async function waitForTask(store: TaskStore, slug: string, label: string): Promise<Task> {
+/** Poll until the task defined by `filePath` resolves in the store. */
+async function waitForTask(store: TaskStore, filePath: string, label: string): Promise<Task> {
   const deadline = Date.now() + 5000;
   while (Date.now() < deadline) {
-    const task = store.getBySlug(slug);
+    const task = store.getByFilePath(filePath);
     if (task) return task;
     await new Promise((r) => setTimeout(r, 25));
   }
@@ -115,7 +115,11 @@ describe('flow-drain Pulse seat (real chokidar + croner integration)', () => {
     watcher.watch(tasksDir, 'project', projectPath, AGENT_ID);
 
     // 3. The watcher syncs the file into the pulseSchedules cache (file-first).
-    const task = await waitForTask(store, 'flow-drain', 'flow-drain to sync to pulseSchedules');
+    const task = await waitForTask(
+      store,
+      path.join(tasksDir, 'flow-drain', 'SKILL.md'),
+      'flow-drain to sync to pulseSchedules'
+    );
 
     expect(task.name).toBe('flow-drain');
     expect(task.displayName).toBe('/flow — drain ready queue');
@@ -191,7 +195,11 @@ describe('flow-drain Pulse seat (real chokidar + croner integration)', () => {
     await mkdir(skillDir);
     await writeFile(path.join(skillDir, 'SKILL.md'), FLOW_DRAIN_SKILL);
     watcher.watch(tasksDir, 'project', projectPath, AGENT_ID);
-    const task = await waitForTask(store, 'flow-drain', 'flow-drain to sync');
+    const task = await waitForTask(
+      store,
+      path.join(tasksDir, 'flow-drain', 'SKILL.md'),
+      'flow-drain to sync'
+    );
 
     const runtime = new FakeAgentRuntime();
     scheduler = new TaskSchedulerService({
@@ -232,7 +240,11 @@ describe('flow-drain Pulse seat (real chokidar + croner integration)', () => {
     await mkdir(skillDir);
     await writeFile(path.join(skillDir, 'SKILL.md'), FLOW_DRAIN_SKILL);
     watcher.watch(tasksDir, 'project', projectPath, AGENT_ID);
-    const task = await waitForTask(store, 'flow-drain', 'flow-drain to sync');
+    const task = await waitForTask(
+      store,
+      path.join(tasksDir, 'flow-drain', 'SKILL.md'),
+      'flow-drain to sync'
+    );
 
     const runtime = new FakeAgentRuntime();
     // Two immediately-completing turns — one per tick.

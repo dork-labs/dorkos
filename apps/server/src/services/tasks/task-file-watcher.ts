@@ -10,6 +10,7 @@ import type { TaskStore } from './task-store.js';
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { TaskFrontmatterSchema } from '@dorkos/skills/task-schema';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
+import { RESERVED_TASK_DIRNAMES } from './task-templates.js';
 import { logger } from '../../lib/logger.js';
 
 /** Callback invoked when a task file changes or is removed. */
@@ -62,9 +63,26 @@ export class TaskFileWatcher {
       },
     });
 
+    // A task is `<tasksDir>/<slug>/SKILL.md`, and `<slug>` may not be a name the
+    // tasks system reserves for a container. That last clause is not tidiness —
+    // a row for `<tasksDir>/templates/SKILL.md` is genuinely dangerous:
+    //
+    // - It schedules and fires like any other task, but the reconciler skips
+    //   reserved names, so it is the one row with no safety net behind it.
+    // - `DELETE /api/tasks/:id` derives the directory to remove from the row's
+    //   `filePath`, which for this row is the templates container itself — so
+    //   deleting the task `fs.rm`s every template the user has, recursively.
+    //
+    // Refusing at the source means the row is never created. It does NOT clean
+    // up a row an older build already made; that is deliberate. The slot has
+    // only ever been reachable by hand-placing a file (the create route refuses
+    // the name), so migration logic would be scaffolding for a case nobody is
+    // in — and deleting rows to fix a bug about deleting rows is the wrong
+    // trade. Such a row is now inert: never re-synced, never retired.
     const isSkillFile = (filePath: string): boolean =>
       path.basename(filePath) === SKILL_FILENAME &&
-      path.dirname(path.dirname(filePath)) === tasksDir;
+      path.dirname(path.dirname(filePath)) === tasksDir &&
+      !RESERVED_TASK_DIRNAMES.includes(path.basename(path.dirname(filePath)));
     watcher.on('add', (filePath) => {
       if (isSkillFile(filePath)) void this.handleFileChange(filePath, scope, projectPath, agentId);
     });
@@ -121,9 +139,11 @@ export class TaskFileWatcher {
   }
 
   private handleFileRemove(filePath: string): void {
-    // Derive slug from the parent directory name (e.g., /tasks/daily-check/SKILL.md → "daily-check")
+    // Pause by exact path, not by slug: the same slug can exist in the global
+    // tasks directory and in any number of project ones, and only this file
+    // was removed.
+    this.store.markRemovedByFilePath(filePath);
     const dirName = path.basename(path.dirname(filePath));
-    this.store.markRemovedBySlug(dirName);
     this.onTaskChange(dirName);
     logger.info(`[TaskFileWatcher] Task file removed: ${dirName}`);
   }

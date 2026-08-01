@@ -18,6 +18,7 @@ import type { PackageProvides } from '@dorkos/shared/marketplace-schemas';
 import { MARKETPLACE_BACKUP_DIR_MARKER } from '@dorkos/shared/marketplace-schemas';
 import { INSTALL_ROOT_DIRS } from './lib/install-roots.js';
 import { readInstallMetadata } from './installed-metadata.js';
+import { logger } from '../../lib/logger.js';
 
 /**
  * Scope origin of an installed package.
@@ -360,11 +361,22 @@ async function readManifestSummary(
  * which also synthesizes a manifest from `.claude-plugin/plugin.json` for
  * CC-native packages. Returns `null` when validation fails or produces no
  * manifest, so walkers skip the entry silently.
+ *
+ * Total by construction: an unreadable file or directory inside ONE package
+ * must cost that package its listing entry, never the whole installed list.
+ * This function is on the path from `GET /api/marketplace/installed`, where a
+ * propagating throw is a 500 for every package the user has.
  */
 async function validatedSummary(
   packagePath: string
 ): Promise<Omit<InstalledPackage, 'installedFrom' | 'installedAt'> | null> {
-  const validated = await validatePackage(packagePath);
+  let validated;
+  try {
+    validated = await validatePackage(packagePath);
+  } catch (err) {
+    logger.debug(`[InstalledScanner] Could not validate ${packagePath}`, err);
+    return null;
+  }
   if (!validated.ok || !validated.manifest) {
     return null;
   }

@@ -3784,9 +3784,16 @@
             "$ref": "#/components/schemas/PermissionMode"
           },
           "status": {
-            "$ref": "#/components/schemas/TaskStatus"
+            "$ref": "#/components/schemas/SettableTaskStatus"
           }
         }
+      },
+      "SettableTaskStatus": {
+        "type": "string",
+        "enum": [
+          "active",
+          "pending_approval"
+        ]
       },
       "TaskRun": {
         "type": "object",
