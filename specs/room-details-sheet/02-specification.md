@@ -2,13 +2,14 @@
 slug: room-details-sheet
 id: 260730-112334
 created: 2026-07-30
-status: specified
-design-session: .dork/visual-companion/27428-1785409067
+status: implemented
+design-screens: ./design/ # committed here; the .dork/ session that made them is gitignored and local-only
 ---
 
 # Specification: the room details sheet
 
 - **Slug:** room-details-sheet · **Id:** 260730-112334 · **Linear:** DOR-756
+- **Shipped** in [#636](https://github.com/dork-labs/dorkos/pull/636), merged to `main` as `bc9af5d09` on 2026-07-30. 45 commits. See [§12](#12-what-is-not-done) for what was deliberately left.
 - **Anchor:** `origin/main` @ `377b11881`, 2026-07-30
 - **Read first:** [`01-ideation.md`](./01-ideation.md) — the audit and the seven findings. [`04-design-decisions.md`](./04-design-decisions.md) — what was chosen in the visual session and why.
 - **Governs:** `apps/client/src/layers/features/room-management/` (renamed from `room-membership`), plus named additions to `entities/room`, `entities/agent` and `shared/ui`.
@@ -344,3 +345,26 @@ Three decisions taken during implementation that the draft did not anticipate:
 The general lesson is the second one: when a hit area is short, the fix is the control's own size unless there is provably dead space to reach into. Reach that overlaps a neighbour is worse than a small target, because a small target is a missed tap and an overlapping one is the wrong action.
 
 **Nothing is open.** The three items this section listed as open — the direct-message rung set, the `@only` DM note, and `explainRung`'s DM branch — are all in §2.1 and §2.3 as they now ship. Three more the review found afterwards are fixed with them: two removals in flight lost the first one's Undo (one mutation observer, one slot for per-call callbacks); an archived room let you add an agent under a banner saying its settings were on hold; and pressing the rung already displayed as chosen fired a real write.
+
+---
+
+## 12. What is not done
+
+This section is for whoever picks this up next. Everything above describes what shipped; this is what did not, and why.
+
+**Nothing here was ever looked at by a person.** The browser suite measures geometry and `/dev/rooms` makes every state reachable without a server, but no human eye has compared the shipped sheet against the design screens. That is a real gap on this repo, not a formality: the room message toolbar shipped visually broken past all-green Playwright specs, because position and clickability both survive a broken appearance. **Open `/dev/rooms` beside [`./design/`](./design/) before trusting this.**
+
+**Filed as follow-ups, deliberately out of scope:**
+
+|             |                                                                                                                                                                                                                                                                                                                                           |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **DOR-771** | `Button size="sm"` is 40px on touch app-wide, not 44. Forking the design system for one surface was the wrong fix; changing it globally has visual blast radius across every screen. There is a working ruler to verify against — `apps/e2e/tests/rooms/room-sheet-helpers.ts` binary-searches `elementFromPoint` to sub-pixel precision. |
+| **DOR-772** | A direct message's title does not follow its roster. Add a second agent to a conversation called "Ana" and it stays "Ana" while the avatar becomes a stack — while the sheet's own copy says adding a second agent turns it into a group conversation.                                                                                    |
+| **DOR-773** | `PersonalityTab`'s response-mode select still withholds `engaged`. Its justifying comment is corrected here; whether the select should now offer it is an open product question.                                                                                                                                                          |
+
+**Known, unfiled, and small:**
+
+- **Concurrent rung changes share one mutation observer**, so the in-flight dim can move off a row early when two are changed at once. Values are never wrong — the cache carries both — but the feedback can be. Documented in `use-room-details-writes.ts`.
+- **You can still add and remove members in an archived room's roster via the API**; the sheet holds both, but the server does not (`room-service.ts` checks `archived` only on `post` and `notice`). The UI is the only guard.
+- **The picker is alphabetical, not recency-ordered.** `RoomSummary.participants` is `null` for every channel by design, so there is no honest recency signal to sort by. The whole investigation is recorded in `agent-choices.ts` so nobody redoes it — do not "fix" this without a new data source.
+- **`ResponseModeControl`'s touch rendering cannot be seen from the playground's viewport toggle.** The toggle clips a wrapper div while `useIsMobile` reads real `matchMedia`, so the below-768px list can only be reached by narrowing the actual browser window. That is a playground limitation affecting every media-query-driven component, not this one.

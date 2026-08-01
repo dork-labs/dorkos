@@ -3,6 +3,8 @@
   "slug": "room-details-sheet",
   "title": "The members dialog becomes the room sheet, and the response mode becomes readable",
   "created": "2026-07-30",
-  "status": "specified",
-  "linearIssue": "DOR-756"
+  "status": "implemented",
+  "linearIssue": "DOR-756",
+  "shippedIn": "#636",
+  "followUps": ["DOR-771", "DOR-772", "DOR-773"]
 }

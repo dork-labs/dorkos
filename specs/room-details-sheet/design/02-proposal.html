@@ -1,0 +1,270 @@
+<style>
+  .dk {
+    --bg: 0 0% 7%; --fg: 0 0% 87%; --mut: 0 0% 64%; --acc: 0 0% 12%;
+    --bd: 0 0% 25%; --brand: 24 88% 55%;
+    background: hsl(var(--bg)); color: hsl(var(--fg));
+    border: 1px solid hsl(var(--bd)); border-radius: 10px;
+    box-shadow: 0 20px 25px -5px rgb(0 0 0 / .5);
+    width: 452px; max-width: 100%; font-size: 14px; line-height: 1.45;
+    font-family: system-ui, -apple-system, sans-serif; position: relative; padding: 22px;
+  }
+  .dk .x { position: absolute; top: 20px; right: 20px; color: hsl(var(--mut)); }
+  .dk h4.t { font-size: 18px; font-weight: 600; letter-spacing: -.01em; display: flex; align-items: center; gap: 8px; }
+  .dk .topic { font-size: 13px; color: hsl(var(--mut)); margin-top: 5px; }
+
+  /* room loudness meter */
+  .roomline { display: flex; align-items: center; gap: 10px; margin-top: 16px; padding: 10px 12px;
+              background: hsl(var(--acc)); border-radius: 8px; }
+  .roomline .txt { flex: 1; font-size: 13px; }
+  .roomline .txt em { color: hsl(var(--mut)); font-style: normal; font-size: 12px; display: block; margin-top: 1px; }
+
+  /* meter */
+  .meter { display: inline-flex; align-items: flex-end; gap: 2px; height: 14px; }
+  .meter i { width: 3px; border-radius: 1px; background: hsl(0 0% 38%); display: block; }
+  .meter i:nth-child(1){height:4px} .meter i:nth-child(2){height:7px}
+  .meter i:nth-child(3){height:10px} .meter i:nth-child(4){height:14px}
+  .meter.l1 i:nth-child(1){background:hsl(var(--brand))}
+  .meter.l2 i:nth-child(-n+2){background:hsl(var(--brand))}
+  .meter.l3 i:nth-child(-n+3){background:hsl(var(--brand))}
+  .meter.l4 i{background:hsl(var(--brand))}
+
+  /* member rows */
+  .mrow { display: flex; align-items: center; gap: 10px; padding: 9px 8px; border-radius: 8px; }
+  .mrow.hov { background: hsl(var(--acc)); }
+  .disc { width: 30px; height: 30px; border-radius: 999px; flex: 0 0 auto; position: relative;
+          display: flex; align-items: center; justify-content: center; font-size: 14px; }
+  .disc .bot { position: absolute; right: -2px; bottom: -2px; width: 14px; height: 14px; border-radius: 999px;
+               background: hsl(var(--bg)); border: 1.5px solid hsl(var(--bd)); color: hsl(var(--mut));
+               display: flex; align-items: center; justify-content: center; font-size: 8px; }
+  .disc .live { position: absolute; right: -1px; top: -1px; width: 9px; height: 9px; border-radius: 999px;
+                background: #34c759; border: 2px solid hsl(var(--bg)); }
+  .who { flex: 1; min-width: 0; }
+  .who b { font-size: 14px; font-weight: 500; display: block; }
+  .who span { font-size: 11.5px; color: hsl(var(--mut)); }
+  .pill { display: inline-flex; align-items: center; gap: 7px; padding: 3px 9px 3px 8px; border-radius: 999px;
+          border: 1px solid hsl(var(--bd)); font-size: 11.5px; color: hsl(var(--mut)); flex: 0 0 auto; }
+  .kebab { color: hsl(var(--mut)); font-size: 15px; width: 18px; text-align: center; flex: 0 0 auto; }
+
+  /* expanded mode control */
+  .expand { margin: 2px 8px 10px 48px; padding: 12px 14px; border: 1px solid hsl(var(--bd));
+            border-radius: 9px; background: hsl(0 0% 9%); }
+  .exhead { display: flex; justify-content: space-between; font-size: 10.5px; text-transform: uppercase;
+            letter-spacing: .06em; color: hsl(var(--mut)); margin-bottom: 7px; }
+  .seg { display: flex; border: 1px solid hsl(var(--bd)); border-radius: 7px; overflow: hidden; }
+  .seg div { flex: 1; text-align: center; padding: 7px 2px; font-size: 12px; color: hsl(var(--mut));
+             border-right: 1px solid hsl(var(--bd)); }
+  .seg div:last-child { border-right: none; }
+  .seg div.on { background: hsl(var(--brand) / .17); color: hsl(var(--brand)); font-weight: 500;
+                box-shadow: inset 0 0 0 1px hsl(var(--brand) / .45); }
+  .exwhy { font-size: 12.5px; color: hsl(var(--fg)); margin-top: 10px; line-height: 1.5; }
+  .exwhy b { color: hsl(var(--brand)); font-weight: 500; }
+  .exnote { font-size: 11.5px; color: hsl(var(--mut)); margin-top: 6px; }
+
+  /* add row */
+  .addrow { display: flex; align-items: center; gap: 10px; padding: 9px 8px; border-radius: 8px; color: hsl(var(--brand)); }
+  .addicon { width: 30px; height: 30px; border-radius: 999px; border: 1px dashed hsl(var(--bd));
+             display: flex; align-items: center; justify-content: center; font-size: 15px; color: hsl(var(--mut)); }
+  .grp { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: hsl(var(--mut));
+         padding: 12px 8px 4px; }
+  .foot { border-top: 1px solid hsl(var(--bd)); margin-top: 16px; padding-top: 12px;
+          display: flex; justify-content: space-between; font-size: 12.5px; color: hsl(var(--mut)); }
+
+  /* page furniture */
+  .stage { display: flex; gap: 34px; align-items: flex-start; flex-wrap: wrap; }
+  .col { flex: 1; min-width: 320px; }
+  .verdict { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .verdict:last-child { border-bottom: none; }
+  .verdict .m { flex: 0 0 auto; width: 18px; font-weight: 700; }
+  .verdict .m.y { color: var(--success); } .verdict .m.n { color: var(--error); }
+  .verdict p { color: var(--text-secondary); font-size: 12.5px; margin-top: 1px; }
+  .verdict b { font-size: 13px; color: var(--text-primary); }
+  .quote { border-left: 3px solid var(--accent); padding: 4px 0 4px 14px; margin: 16px 0 24px;
+           font-size: 15px; font-style: italic; color: var(--text-secondary); max-width: 800px; }
+  .anat { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--text-secondary); }
+  .anat span b { color: var(--text-primary); }
+  .delight { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin-top: 14px; }
+  .dcard { border: 1px solid var(--border); border-radius: 10px; padding: 13px 15px; background: var(--bg-secondary); }
+  .dcard h4 { font-size: 13px; margin-bottom: 4px; }
+  .dcard p { font-size: 12px; color: var(--text-secondary); }
+  .sketch { border: 1px solid var(--border); border-radius: 10px; padding: 14px; background: var(--bg-secondary); font-size: 12.5px; }
+  .sketch .lin { padding: 6px 8px; border-radius: 6px; background: var(--bg-tertiary); margin-bottom: 6px; }
+</style>
+
+<h2>Better than Slack</h2>
+<p class="subtitle">
+  Slack's sheet is a good read-only roster with a control problem it never had to solve.
+  We have the opposite: a control with no roster around it.
+</p>
+
+<div class="quote">
+  Slack's own “<b>Add people, agents, or apps</b>” button sits three rows under a tab bar that splits
+  <b>Members</b> from <b>Agents &amp; apps</b>. They mix them where it matters and segregate them where it's visible.
+  That contradiction is the seam we walk through.
+</div>
+
+<div class="section stage">
+  <div class="col" style="max-width:380px">
+    <div class="label" style="margin-bottom:10px">Steal</div>
+    <div class="verdict"><div class="m y">✓</div><div><b>Adding is a row, not a second panel</b><p>One list. The first item adds to it. This alone kills our <code>intent</code> prop and our second heading.</p></div></div>
+    <div class="verdict"><div class="m y">✓</div><div><b>The count is in the title</b><p>“Members 4”. We say nothing.</p></div></div>
+    <div class="verdict"><div class="m y">✓</div><div><b>A second line per person</b><p>They use job title. We have something better: <em>managed by</em>, and whether it has ever spoken here.</p></div></div>
+    <div class="verdict"><div class="m y">✓</div><div><b>You are in your own roster</b><p>“Dorian (you)”. We omit the reader entirely.</p></div></div>
+    <div class="verdict"><div class="m y">✓</div><div><b>A right-aligned pill slot</b><p>They put “Channel Manager” there. That is exactly where our loudness goes.</p></div></div>
+
+    <div class="label" style="margin:22px 0 10px">Reject</div>
+    <div class="verdict"><div class="m n">✕</div><div><b>Segregating agents into a tab</b><p>Our whole thesis is that agents are participants. One list, one badge.</p></div></div>
+    <div class="verdict"><div class="m n">✕</div><div><b>A search field for four members</b><p>Chrome before content. Search appears when the roster earns it — say, eight.</p></div></div>
+    <div class="verdict"><div class="m n">✕</div><div><b>An “Everyone” filter at four members</b><p>A dropdown whose every option shows the same list.</p></div></div>
+    <div class="verdict"><div class="m n">✕</div><div><b>Six tabs over three fields</b><p>Our room has a name, a topic and an archived flag. Tabs would be scaffolding around nothing.</p></div></div>
+
+    <div class="label" style="margin:22px 0 10px">What they cannot do</div>
+    <div class="verdict"><div class="m y">★</div><div><b>Say what the room will do</b><p>Slack's roster describes people. Ours can describe <em>behaviour</em> — and total it.</p></div></div>
+    <div class="verdict"><div class="m y">★</div><div><b>Presence that means work</b><p>Their green dot means a browser tab is open. Ours means a turn is running right now.</p></div></div>
+  </div>
+
+  <div>
+    <div class="label" style="margin-bottom:10px">Proposal · one panel, real size</div>
+    <div class="dk">
+      <span class="x">✕</span>
+      <h4 class="t"><span style="color:hsl(0 0% 45%)">#</span> testcwd</h4>
+      <div class="topic">Clicker planning — add a topic</div>
+
+      <div class="roomline">
+        <span class="meter l3"><i></i><i></i><i></i><i></i></span>
+        <div class="txt">
+          <span>Two agents will answer you here</span>
+          <em>Kai only when @mentioned</em>
+        </div>
+      </div>
+
+      <div class="grp">In this room · 4</div>
+
+      <div class="mrow">
+        <div class="disc" style="background:rgba(120,140,220,.22);font-size:11px">DC<span class="live"></span></div>
+        <div class="who"><b>Dorian <span style="color:hsl(0 0% 45%);font-weight:400">(you)</span></b><span>Owner of this room</span></div>
+      </div>
+
+      <div class="mrow hov">
+        <div class="disc" style="background:rgba(180,140,60,.22)">💼<span class="bot">⌁</span><span class="live"></span></div>
+        <div class="who"><b>Mio Clicker PM</b><span>managed by you · working now</span></div>
+        <span class="pill"><span class="meter l3"><i></i><i></i><i></i><i></i></span> Engaged</span>
+        <span class="kebab">⋯</span>
+      </div>
+
+      <div class="expand">
+        <div class="exhead"><span>How loud is Mio here?</span><span>Quiet → Loud</span></div>
+        <div class="seg">
+          <div>Silent</div><div>@only</div><div class="on">Engaged</div><div>Everything</div>
+        </div>
+        <div class="exwhy">
+          Answers when you <b>@mention</b> it — then keeps answering for
+          <b>10 more minutes</b> or <b>5 more messages</b>, whichever runs out first.
+        </div>
+        <div class="exnote">Then it goes quiet again until you say its name.</div>
+      </div>
+
+      <div class="mrow">
+        <div class="disc" style="background:rgba(60,160,120,.22)">🔔<span class="bot">⌁</span></div>
+        <div class="who"><b>mio-click-code</b><span>managed by you · hasn't spoken here yet</span></div>
+        <span class="pill"><span class="meter l3"><i></i><i></i><i></i><i></i></span> Engaged</span>
+        <span class="kebab">⋯</span>
+      </div>
+
+      <div class="mrow">
+        <div class="disc" style="background:rgba(200,90,110,.22)">🛰<span class="bot">⌁</span></div>
+        <div class="who"><b>Kai</b><span>managed by Priya · last spoke Tuesday</span></div>
+        <span class="pill"><span class="meter l2"><i></i><i></i><i></i><i></i></span> @only</span>
+        <span class="kebab">⋯</span>
+      </div>
+
+      <div class="addrow">
+        <div class="addicon">+</div>
+        <div class="who"><b style="color:hsl(24 88% 55%)">Add people or agents</b></div>
+      </div>
+
+      <div class="foot"><span>Created 4 days ago</span><span>Archive room</span></div>
+    </div>
+
+    <div class="anat" style="margin-top:16px;max-width:452px">
+      <span><b>Row anatomy:</b> disc + bot badge + live dot · name · <em>managed by · what it did here</em> · loudness pill · ⋯</span>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>The mode control, resolved</h3>
+  <p class="subtitle">
+    Four rungs, not five. Ordered quiet→loud so <em>position is the meaning</em>. Two of today's five values are aliases
+    that swap identity by room kind — so the room decides which four you see, and the stored value always maps to a rung.
+  </p>
+  <div style="display:flex;gap:30px;flex-wrap:wrap;margin-top:14px">
+    <div class="sketch" style="min-width:300px">
+      <div class="label" style="margin-bottom:8px">In a channel</div>
+      <div class="lin"><b>Silent</b> — never speaks here</div>
+      <div class="lin"><b>@only</b> — only when you @mention it <span style="color:var(--text-tertiary)">← direct-only lands here too</span></div>
+      <div class="lin"><b>Engaged</b> — @mention, then 10 min / 5 messages <span style="color:var(--text-tertiary)">← default</span></div>
+      <div class="lin" style="margin-bottom:0"><b>Everything</b> — answers every message</div>
+    </div>
+    <div class="sketch" style="min-width:300px">
+      <div class="label" style="margin-bottom:8px">In a DM · three rungs, because there are three behaviours</div>
+      <div class="lin"><b>Silent</b> — never speaks here</div>
+      <div class="lin"><b>@only</b> — only when you @mention it <span style="color:var(--text-tertiary)">← engaged lands here; its window never opens</span></div>
+      <div class="lin" style="margin-bottom:0"><b>Everything</b> — answers you every time <span style="color:var(--text-tertiary)">← direct-only lands here</span></div>
+      <div style="font-size:11.5px;color:var(--text-secondary);margin-top:10px">
+        Today the DM menu offers <b>four</b> options that produce <b>three</b> behaviours. Two pairs are indistinguishable.
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Where the delight lives</h3>
+  <p class="subtitle">Motion that explains, not motion that decorates. Every one of these is honest — it shows a consequence that is really there.</p>
+  <div class="delight">
+    <div class="dcard">
+      <h4>Hover a pill → the room previews itself</h4>
+      <p>The room meter at the top slides to what it <em>would</em> become, and the sentence rewrites. Let go and it slides back. You learn the whole model in three seconds without reading a word of help.</p>
+    </div>
+    <div class="dcard">
+      <h4>Change a rung → both meters move together</h4>
+      <p>120ms. The member's bars and the room's bars animate as one system, so cause and effect are the same gesture. This <em>is</em> the confirmation — no toast needed.</p>
+    </div>
+    <div class="dcard">
+      <h4>An agent working is alive on the disc</h4>
+      <p>The pulse already exists in <code>AgentAvatar</code> and the server already publishes the signal. Opening this panel mid-run should feel like walking into a room where people are busy.</p>
+    </div>
+    <div class="dcard">
+      <h4>Added agents land, they don't appear</h4>
+      <p>The chip becomes the row: it slides into position and pulses once. Today they silently vanish from one list and silently appear in another.</p>
+    </div>
+    <div class="dcard">
+      <h4>Remove offers Undo</h4>
+      <p>Archiving a whole room already has undo. Removing one agent — which destroys its session binding — has none. That's backwards.</p>
+    </div>
+    <div class="dcard">
+      <h4>The empty room opens ready</h4>
+      <p>Not a grey sentence. The picker is already open, already focused, with the create dialog's honest line: “a channel with nobody in it has nobody to answer you.”</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>One decision I need from you</h3>
+  <p class="subtitle">Everything above fits inside the members panel. The question is whether it stays a members panel.</p>
+  <div class="options">
+    <div class="option" data-choice="panel" onclick="toggleSelect(this)">
+      <div class="letter">A</div>
+      <div class="content">
+        <h3>Keep it a members panel</h3>
+        <p>Everything designed above, in the dialog that exists. Topic, rename and archive stay where they are — in the sidebar row menu and their own dialogs. Smaller change, ships sooner, four surfaces still describe one room.</p>
+      </div>
+    </div>
+    <div class="option" data-choice="sheet" onclick="toggleSelect(this)">
+      <div class="letter">B</div>
+      <div class="content">
+        <h3>Make it the room sheet</h3>
+        <p>The panel above <em>is</em> the design — note the editable topic in the header and “Archive room” in the footer. This absorbs <code>RoomTopicDialog</code>, inline rename and the archive <code>AlertDialog</code>. One place for everything about a room, and three surfaces retire. Bigger change; Slack's tabs are the evidence it's the right shape, minus the tabs.</p>
+      </div>
+    </div>
+  </div>
+</div>

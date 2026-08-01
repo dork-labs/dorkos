@@ -1,0 +1,318 @@
+<style>
+  .dk {
+    --background: 0 0% 7%; --foreground: 0 0% 87%;
+    --muted-foreground: 0 0% 64%; --accent: 0 0% 12%;
+    --border: 0 0% 25%; --input: 0 0% 25%; --brand: 24 88% 55%;
+  }
+  .dk {
+    background: hsl(var(--background)); color: hsl(var(--foreground));
+    border: 1px solid hsl(var(--border)); border-radius: 10px;
+    box-shadow: 0 20px 25px -5px rgb(0 0 0 / .5);
+    padding: 22px; width: 442px; max-width: 100%;
+    font-size: 14px; line-height: 1.45; position: relative;
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+  .dk-title { font-size: 18px; font-weight: 600; letter-spacing: -.01em; }
+  .dk-desc { font-size: 13.5px; color: hsl(var(--muted-foreground)); margin-top: 6px; }
+  .dk-member { border: 1px solid hsl(var(--border)); border-radius: 7px; padding: 9px; position: relative; margin-top: 10px; }
+  .dk-row { display: flex; align-items: center; gap: 9px; }
+  .dk-av { width: 24px; height: 24px; border-radius: 999px; flex: 0 0 auto; font-size: 13px;
+           display: flex; align-items: center; justify-content: center; }
+  .dk-name { flex: 1; min-width: 0; font-size: 14px; font-weight: 500; }
+  .dk-select { margin-top: 7px; height: 36px; border: 1px solid hsl(var(--input)); border-radius: 6px;
+               display: flex; align-items: center; justify-content: space-between; padding: 0 12px; font-size: 13.5px; }
+  .dk-sep { border-top: 1px solid hsl(var(--border)); margin-top: 18px; padding-top: 14px; position: relative; }
+  .dk-h3 { font-size: 14px; font-weight: 500; }
+  .dk-hint { font-size: 12.5px; color: hsl(var(--muted-foreground)); margin-top: 4px; }
+  .dk-field { margin-top: 10px; border: 1px solid hsl(var(--input)); border-radius: 6px; padding: 8px 10px;
+              font-size: 13.5px; color: hsl(var(--muted-foreground)); }
+  .dk-list { margin-top: 6px; max-height: 210px; overflow: hidden; position: relative; }
+  .dk-opt { font-size: 14px; padding: 7px 8px; border-radius: 4px; }
+  .dk-fade { position: absolute; inset: auto 0 0 0; height: 46px;
+             background: linear-gradient(transparent, hsl(var(--background))); }
+  .dk-scroll { position: absolute; top: 0; right: 2px; width: 4px; height: 44px; border-radius: 4px; background: hsl(0 0% 40%); }
+  .dk-btn { margin-top: 12px; height: 32px; border-radius: 6px; display: flex; align-items: center;
+            justify-content: center; font-size: 13.5px; font-weight: 500; background: hsl(0 0% 45%); color: hsl(0 0% 92%); }
+  .dk-x { position: absolute; top: 20px; right: 20px; color: hsl(var(--muted-foreground)); }
+
+  .pin { position: absolute; z-index: 3; width: 21px; height: 21px; border-radius: 999px;
+         background: #ff3b30; color: #fff; font-size: 11.5px; font-weight: 700;
+         display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 3px var(--bg-primary); }
+  .stage { display: flex; gap: 36px; align-items: flex-start; flex-wrap: wrap; }
+  .findings { flex: 1; min-width: 340px; }
+  .finding { display: flex; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--border); }
+  .finding:last-child { border-bottom: none; }
+  .fnum { width: 21px; height: 21px; border-radius: 999px; background: #ff3b30; color: #fff;
+          font-size: 11.5px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex: 0 0 auto; margin-top: 2px; }
+  .fnum.grey { background: var(--text-tertiary); }
+  .finding h4 { font-size: 13.5px; margin-bottom: 2px; }
+  .finding p { font-size: 12.5px; color: var(--text-secondary); }
+  .quote { border-left: 3px solid var(--accent); padding: 4px 0 4px 14px; margin: 16px 0 24px;
+           font-size: 15px; font-style: italic; color: var(--text-secondary); max-width: 780px; }
+  table.states { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.states th { text-align: left; padding: 7px 10px; border-bottom: 2px solid var(--border);
+                    font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-secondary); }
+  table.states td { padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .ok { color: var(--success); font-weight: 600; } .gap { color: var(--error); font-weight: 600; }
+  .mid { color: var(--warning); font-weight: 600; }
+  .modes { display: grid; gap: 5px; max-width: 620px; }
+  .mode { display: flex; gap: 10px; align-items: baseline; padding: 7px 12px; border: 1px solid var(--border);
+          border-radius: 8px; background: var(--bg-secondary); font-size: 13px; }
+  .mode span { color: var(--text-secondary); font-size: 12px; }
+  .avrow { display: flex; gap: 28px; flex-wrap: wrap; margin-top: 14px; }
+  .avcell { text-align: center; width: 132px; }
+  .avdisc { width: 44px; height: 44px; border-radius: 999px; margin: 0 auto 10px; position: relative;
+            display: flex; align-items: center; justify-content: center; font-size: 20px; }
+  .avbadge { position: absolute; right: -3px; bottom: -3px; width: 18px; height: 18px; border-radius: 999px;
+             background: var(--bg-primary); border: 1.5px solid var(--border);
+             display: flex; align-items: center; justify-content: center; font-size: 10px; }
+  .avdot { position: absolute; right: -1px; top: -1px; width: 11px; height: 11px; border-radius: 999px;
+           background: #34c759; border: 2px solid var(--bg-primary); }
+  .avcap { font-size: 11.5px; color: var(--text-secondary); }
+  .avcap b { display: block; color: var(--text-primary); font-size: 12.5px; margin-bottom: 2px; }
+</style>
+
+<h2>Members panel — the audit, against the real thing</h2>
+<p class="subtitle">
+  Rebuilt from your screenshot of <code>#testcwd</code>. Three defects below are only visible on screen —
+  they don't exist in the source, they exist in the rendering.
+</p>
+
+<div class="quote">
+  “The dialog is called <em>Members of #testcwd</em>. Two thirds of it is a filing cabinet of every folder on your disk.”
+</div>
+
+<div class="section stage">
+  <div>
+    <div class="label" style="margin-bottom:10px">What's actually on screen</div>
+    <div class="dk">
+      <span class="dk-x">✕</span>
+      <div class="dk-title">Members of #testcwd</div>
+      <div class="dk-desc">Who is in here, and when each agent replies.</div>
+
+      <div class="dk-member" style="margin-top:16px">
+        <span class="pin" style="top:-10px;left:-10px">1</span>
+        <div class="dk-row">
+          <div class="dk-av" style="background:rgba(180,140,60,.22)">💼</div>
+          <div class="dk-name">Mio Clicker PM</div>
+          <div style="opacity:.55">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+          </div>
+        </div>
+        <div class="dk-select"><span>Replies while it is in the conversation</span><span style="opacity:.5">⌄</span></div>
+      </div>
+
+      <div class="dk-member">
+        <span class="pin" style="top:34px;right:-10px">2</span>
+        <div class="dk-row">
+          <div class="dk-av" style="background:rgba(180,140,60,.22)">🔔</div>
+          <div class="dk-name">mio-click-code</div>
+          <div style="opacity:.55">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+          </div>
+        </div>
+        <div class="dk-select"><span>Replies while it is in the conversation</span><span style="opacity:.5">⌄</span></div>
+      </div>
+
+      <div class="dk-sep">
+        <span class="pin" style="top:16px;left:-10px">3</span>
+        <div class="dk-h3">Add agents</div>
+        <div class="dk-hint">They join here and can read everything already said.</div>
+        <div class="dk-field">Search agents</div>
+        <div class="dk-list">
+          <span class="pin" style="top:60px;right:-10px">4</span>
+          <div class="dk-scroll"></div>
+          <div class="dk-opt">144mono</div>
+          <div class="dk-opt">144x.co</div>
+          <div class="dk-opt">ab-monorepo</div>
+          <div class="dk-opt">AgentFS</div>
+          <div class="dk-opt">Alpha Remount Agent</div>
+          <div class="dk-opt">API Server</div>
+          <div class="dk-opt">Art Blocks Analytics</div>
+          <div class="dk-fade"></div>
+        </div>
+        <div class="dk-btn">
+          <span class="pin" style="top:-10px;right:-10px">5</span>
+          Add agent
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="findings">
+    <div class="label" style="margin-bottom:8px">What the screenshot proves</div>
+
+    <div class="finding">
+      <div class="fnum">1</div>
+      <div>
+        <h4>The setting outweighs the person</h4>
+        <p>The member's name is 14px in a 24px disc. The dropdown under it is 36px tall, full-bleed, and bordered.
+        The eye lands on the control, not on who it belongs to. In a panel called <em>Members</em>, the member is the smaller element.</p>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="fnum">2</div>
+      <div>
+        <h4>Two identical sentences, stacked</h4>
+        <p>Both agents read “Replies while it is in the conversation.” Twenty-four repeated characters of
+        low-contrast text, twice, telling you nothing about the difference between these two agents —
+        because there isn't one. Sameness should be silent; only difference deserves ink.</p>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="fnum">3</div>
+      <div>
+        <h4>Two headings, two explanations, one dialog</h4>
+        <p>“Who is in here, and when each agent replies” … then a rule, then “Add agents”, then
+        “They join here and can read everything already said.” The panel explains itself twice because it is two panels.</p>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="fnum">4</div>
+      <div>
+        <h4>A directory listing, not a roster · <span style="color:var(--error)">worst on screen</span></h4>
+        <p><em>144mono · 144x.co · ab-monorepo · AgentFS · Alpha Remount Agent · API Server · Art Blocks Analytics…</em>
+        Every project folder you own, alphabetically, in plain text, with <b>no faces at all</b> —
+        while <code>features/tasks/ui/AgentPicker.tsx</code> ten directories away renders the same list <em>with</em> avatars.
+        Sorted so that numbers come first. There is no recency, no “agents you actually use”, no grouping.
+        This is the file system leaking into the product.</p>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="fnum">5</div>
+      <div>
+        <h4>The heaviest element is the one you can't press</h4>
+        <p>Full-width, mid-grey, bottom-anchored — it reads as the dialog's primary action and it is disabled.
+        Meanwhile the two things you came to do (change a mode, remove someone) have no visual weight at all.</p>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="fnum grey">6</div>
+      <div>
+        <h4>You are not in the room</h4>
+        <p>No count, no “2 agents”, and the human — the person reading — appears nowhere.
+        The panel answers “who is in here?” with a list that omits you and doesn't total itself.</p>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="fnum grey">7</div>
+      <div>
+        <h4>Nothing tells you the room is fine</h4>
+        <p>Two agents both in the loudest useful mode is the single most consequential fact on this screen,
+        and it is expressed as two identical grey sentences you have to read and compare yourself.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>The mode menu, as a stranger meets it</h3>
+  <p class="subtitle">These five, in this order, are what the dropdown shows. Try to rank them by loudness without reading the source.</p>
+  <div class="modes">
+    <div class="mode"><b>Replies to everything</b></div>
+    <div class="mode"><b>Replies while it is in the conversation</b> <span>← which conversation? it's <em>in</em> the room, isn't it?</span></div>
+    <div class="mode"><b>Replies when spoken to directly</b> <span>← isn't “directly” just @mentioning it?</span></div>
+    <div class="mode"><b>Replies only when @mentioned</b> <span>← …then what was the previous one?</span></div>
+    <div class="mode"><b>Never replies on its own</b> <span>← “on its own” implies it replies some <em>other</em> way</span></div>
+  </div>
+  <p class="subtitle" style="margin-top:12px;max-width:800px">
+    They <em>are</em> ordered loudest→quietest in code. Nothing on screen says so. No scale, no grouping, no numbers —
+    and the real rule behind option 2 is “<b>10 minutes or 5 other messages, whichever runs out first</b>”,
+    which the UI never mentions even though it's a setting you own.
+  </p>
+</div>
+
+<div class="section">
+  <h3>Identity: what the disc should carry</h3>
+  <p class="subtitle">
+    Today the panel draws a raw <code>IdentityAvatar</code> from the author render-cache — no health ring, no working pulse,
+    and no answer to “is this a person or a machine?”. Buzz solved the last one with a bot glyph and an owner line
+    (their NIP-OA literally binds an agent key to the human who vouches for it).
+    <code>IdentityAvatar</code> already accepts children anchored to the disc — that's the slot.
+  </p>
+  <div class="avrow">
+    <div class="avcell">
+      <div class="avdisc" style="background:rgba(180,140,60,.22)">💼</div>
+      <div class="avcap"><b>Today</b>Author cache emoji. Person or agent? Working or idle? Unknowable.</div>
+    </div>
+    <div class="avcell">
+      <div class="avdisc" style="background:rgba(180,140,60,.22);box-shadow:0 0 0 2px rgba(52,199,89,.55)">💼<span class="avbadge">⌁</span></div>
+      <div class="avcap"><b>Agent</b>Bot glyph, health ring, working pulse — the same mark the rest of the cockpit draws.</div>
+    </div>
+    <div class="avcell">
+      <div class="avdisc" style="background:rgba(120,140,220,.22)">DC<span class="avdot"></span></div>
+      <div class="avcap"><b>Person</b>No glyph. Presence dot instead. Absence of the badge is the signal.</div>
+    </div>
+    <div class="avcell">
+      <div class="avdisc" style="background:rgba(60,160,120,.22)">🔔<span class="avbadge">⌁</span></div>
+      <div class="avcap"><b>Someone else's agent</b>“managed by Priya” on the line beneath.</div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Every state, and whether it is handled</h3>
+  <table class="states">
+    <thead><tr><th style="width:22%">State</th><th style="width:36%">Today</th><th>Verdict</th></tr></thead>
+    <tbody>
+      <tr><td>Roster loading</td><td>Two grey bars</td><td class="ok">✓ Honest</td></tr>
+      <tr><td>Roster failed</td><td>“…close this and open it again to retry.”</td><td class="mid">◐ True, but the human <em>is</em> the retry button</td></tr>
+      <tr><td>Room empty</td><td>One grey sentence</td><td class="mid">◐ The most important moment in the panel's life, given the least weight</td></tr>
+      <tr><td>Fleet loading / failed</td><td>Skeleton / message + Try again</td><td class="ok">✓ Best-built states in the file</td></tr>
+      <tr><td>Fleet empty</td><td>“You have not added any agents yet.”</td><td class="gap">✗ Dead end — no route to making one</td></tr>
+      <tr><td>Adding, in flight</td><td>Button disables; chips vanish one by one</td><td class="gap">✗ No per-agent progress; disappearance reads as loss, not success</td></tr>
+      <tr><td>Add partly failed</td><td>Failed chip survives, toast fires</td><td class="ok">✓ Excellent logic, invisible to the eye</td></tr>
+      <tr><td>Mode saving</td><td>Nothing</td><td class="gap">✗ No pending, no landing</td></tr>
+      <tr><td>Mode save failed</td><td>Toast; select still shows the value that didn't save</td><td class="gap">✗ The control states something false</td></tr>
+      <tr><td>Removal pending</td><td>Inline confirm, focus moved, Escape handled</td><td class="ok">✓ Genuinely well built</td></tr>
+      <tr><td>Removed</td><td>Row vanishes</td><td class="gap">✗ No undo — yet archiving a whole room has one</td></tr>
+      <tr><td>Agent working now</td><td>—</td><td class="gap">✗ Server publishes it; panel ignores it</td></tr>
+      <tr><td>Agent never spoke here</td><td>—</td><td class="gap">✗ The most useful fact about a member</td></tr>
+      <tr><td>Room too loud / too quiet</td><td>—</td><td class="gap">✗ The actual reason people open this</td></tr>
+      <tr><td>DM</td><td>Same panel, offers “Add agents”</td><td class="gap">✗ Silently converts a DM to a group</td></tr>
+      <tr><td>Archived room</td><td>Fully editable</td><td class="gap">✗ Nothing is triggered; panel doesn't say so</td></tr>
+      <tr><td>Mixed people + agents</td><td>Doesn't exist yet</td><td class="mid">◐ Design the disc for it now, before it does</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="section">
+  <h3>Where should I take this first?</h3>
+  <p class="subtitle">Pick any number — I'll bring back real designs for what you choose.</p>
+  <div class="options" data-multiselect>
+    <div class="option" data-choice="modes" onclick="toggleSelect(this)">
+      <div class="letter">A</div>
+      <div class="content">
+        <h3>Make the five modes obvious</h3>
+        <p>A visible loudness scale, plain words, real numbers (“10 min or 5 messages”), and a live line that says what it means <em>in this room</em>.</p>
+      </div>
+    </div>
+    <div class="option" data-choice="crew" onclick="toggleSelect(this)">
+      <div class="letter">B</div>
+      <div class="content">
+        <h3>Make the roster a crew, not a form</h3>
+        <p>Standard agent avatars, bot glyph, “managed by”, working pulse, last-spoke — one line per member, details on demand.</p>
+      </div>
+    </div>
+    <div class="option" data-choice="picker" onclick="toggleSelect(this)">
+      <div class="letter">C</div>
+      <div class="content">
+        <h3>Fix the directory listing</h3>
+        <p>Faces, recency, grouping, and one search field that both filters who's here and finds who isn't — killing the <code>intent</code> prop.</p>
+      </div>
+    </div>
+    <div class="option" data-choice="land" onclick="toggleSelect(this)">
+      <div class="letter">D</div>
+      <div class="content">
+        <h3>Make every change land</h3>
+        <p>Optimistic writes, micro-confirmations, undo on remove, and a room-level read-out of how loud this room will be.</p>
+      </div>
+    </div>
+  </div>
+</div>
