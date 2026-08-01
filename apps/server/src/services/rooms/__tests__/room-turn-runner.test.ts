@@ -320,8 +320,9 @@ describe('createSessionRoomTurnRunner', () => {
 
     const second = await runner.run(request({ sessionId: 'session-already-bound' }));
     expect(second.sessionId).toBe('session-already-bound');
-    // The runtime binding is written on every turn; it is INSERT-OR-IGNORE at
-    // the registry, so the first write wins and a second one changes nothing.
+    // The runtime binding is written on every turn; the registry only binds a
+    // session that has no runtime yet, so the first write wins and a second one
+    // changes nothing.
     expect(persistSessionRuntime).toHaveBeenLastCalledWith(
       'session-already-bound',
       'claude-code',

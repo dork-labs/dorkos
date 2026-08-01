@@ -292,9 +292,7 @@ export class CodexRuntime implements AgentRuntime {
     }
   ): Promise<boolean> {
     await this.seedFromDurable(sessionId);
-    // `interactive`: `updateSession` is reached only from `PATCH
-    // /api/sessions/:id`, a person changing a session they are watching.
-    await this.settingsPort?.saveSessionSettings(sessionId, opts, { interactive: true });
+    await this.settingsPort?.saveSessionSettings(sessionId, opts);
     this.registry.register(sessionId, {
       ...(opts.permissionMode !== undefined ? { permissionMode: opts.permissionMode } : {}),
       ...(opts.model !== undefined ? { model: opts.model } : {}),

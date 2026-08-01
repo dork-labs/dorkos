@@ -376,7 +376,7 @@ Key methods:
 - `register(runtime)` — register or replace a runtime by its `type` string
 - `getDefault()` / `getDefaultType()` / `setDefault(type)` — the default runtime (claude-code unless changed). Shape-neutral: callers use only the `AgentRuntime` interface, so any registered runtime is a valid default. The relay's Claude Code adapter, which genuinely needs Claude-specific methods, binds the concrete claude-code runtime at the composition root instead (`relayAgentRuntime` in `index.ts`, passed as an `agentRuntimes` map keyed by the runtime's own `type`). The relay's binding subsystem prefers `getDefaultType()` when choosing where to create chat-originated sessions, but falls back — with a log — to the runtime the relay actually holds rather than disabling routing
 - `resolveForSession(sessionId)` — per-session dispatch: reads the session's immutable runtime binding from `session_metadata` (ADR-0255)
-- `persistSessionRuntime(sessionId, type)` — records the binding at session creation, **first-write-wins** (a session's runtime never changes after it starts)
+- `persistSessionRuntime(sessionId, type)` — records the binding when the session starts, **first-write-wins** (a session's runtime never changes after that). A row created earlier by a settings change carries no runtime, and this call claims it; a row that already names one is left alone
 - `resolveForAgent(agentId, meshCore?)` — looks up the agent's manifest to determine which runtime to use, falling back to the default
 - `listRuntimes()` — all registered runtimes (powers session-list aggregation)
 - `getAllCapabilities()` — returns capability flags for all registered runtimes (used by `GET /api/capabilities`)
@@ -398,7 +398,9 @@ const { sessions, warnings } = await aggregateSessionList({
 });
 ```
 
-For a **new** session, `resolveRuntimeTypeForNewSession` (`routes/sessions.ts`) picks the type — explicit `body.runtime` hint (or `?runtime=` launch param) > agent manifest `runtime` field > registry default — and `persistSessionRuntime` freezes it on first write.
+For a **new** session, `resolveRuntimeTypeForNewSession` (`routes/sessions.ts`) picks the type — explicit `body.runtime` hint (or `?runtime=` launch param) > agent manifest `runtime` field > registry default — and `persistSessionRuntime` freezes it there, on the first message.
+
+A session that has not sent one yet has **no** runtime, and `session_metadata.runtime` is NULL to say so. Changing a setting before the first message (the pre-launch picker) creates the row, and that write deliberately names no runtime and seeds no defaults: it does not know which runtime the session will run on, and every default is a per-runtime answer. Reads resolve an unbound row exactly like a row-less one — by inference, never persisted — so nothing is blocked in the meantime (DOR-812).
 
 ### Aggregated Session Listing (ADR-0310)
 

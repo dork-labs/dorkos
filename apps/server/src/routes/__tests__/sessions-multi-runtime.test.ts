@@ -217,10 +217,10 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
 
     it('still seeds when a settings change minted the row before the first message', async () => {
       // The pre-launch path, and the one E3 makes NORMAL: changing a setting
-      // before sending anything writes the `session_metadata` row, so the
-      // first-message insert finds a row and does nothing. The defaults have to
-      // ride whatever creates the row, not one chosen creator — and an explicit
-      // value always wins over the default it arrives beside.
+      // before sending anything writes the `session_metadata` row. That row has
+      // no runtime yet (DOR-812), so the defaults ride the first message — the
+      // write that binds one — and an explicit value still wins over the default
+      // it arrives beside.
       runtimesConfig = {
         ...USER_CONFIG_DEFAULTS.runtimes,
         claudeCode: {
@@ -237,6 +237,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
         .patch(`/api/sessions/${CLAUDE_SESSION}`)
         .send({ model: 'sonnet' })
         .expect(200);
+      expect((await postMessage(CLAUDE_SESSION, { content: 'hi' })).status).toBe(202);
 
       const row = db
         .select()
@@ -247,6 +248,40 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       expect(row!.model).toBe('sonnet');
       // The key their write did not carry, filled from the server default.
       expect(row!.effort).toBe('high');
+    });
+
+    it('seeds the defaults of the runtime the first message binds, not of the guess', async () => {
+      // Changing a setting pre-launch used to mint the row with the INFERRED
+      // runtime, so this session would have been seeded — and routed — as
+      // claude-code despite the person having chosen test-mode. Every default is
+      // a per-runtime answer, so seeding before the binding is a guess in every
+      // key (DOR-812).
+      runtimesConfig = {
+        ...USER_CONFIG_DEFAULTS.runtimes,
+        claudeCode: {
+          ...USER_CONFIG_DEFAULTS.runtimes.claudeCode,
+          defaultModel: 'opus',
+          defaultEffort: 'high',
+        },
+      };
+
+      await request(app)
+        .patch(`/api/sessions/${TEST_MODE_SESSION}`)
+        .send({ effort: 'low' })
+        .expect(200);
+      expect(
+        (await postMessage(TEST_MODE_SESSION, { content: 'hi', runtime: 'test-mode' })).status
+      ).toBe(202);
+
+      const row = db
+        .select()
+        .from(sessionMetadata)
+        .where(eq(sessionMetadata.sessionId, TEST_MODE_SESSION))
+        .get();
+      expect(row!.effort).toBe('low');
+      // test-mode has no configured section, so claude-code's model must not
+      // reach it — the session is not a claude-code session.
+      expect(row!.model).toBeNull();
     });
 
     it('seeds nothing at all on a fresh install', async () => {
@@ -269,6 +304,12 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
   // ---------------------------------------------------------------------------
 
   describe('POST /:id/messages — runtime ownership persistence', () => {
+    // The stored `runtimes` section is module state; one test below needs a real
+    // one, so every test here starts from the same null it declares.
+    afterEach(() => {
+      runtimesConfig = null;
+    });
+
     it('persists runtime="test-mode" when body.runtime hint is provided', async () => {
       const res = await postMessage(TEST_MODE_SESSION, {
         content: 'hi',
@@ -335,6 +376,119 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
         .where(eq(sessionMetadata.sessionId, TEST_MODE_SESSION))
         .get();
       expect(row).toBeUndefined();
+    });
+
+    it('a settings change before the first message does not choose the runtime (DOR-812)', async () => {
+      // The whole bug, end to end: PATCH the session before sending anything —
+      // the pre-launch picker's normal move — and the row it minted used to say
+      // claude-code, which the first-write-wins binding then made permanent. A
+      // person who had chosen another runtime got a session on the wrong one.
+      await request(app)
+        .patch(`/api/sessions/${TEST_MODE_SESSION}`)
+        .send({ model: 'sonnet' })
+        .expect(200);
+
+      // Unbound in the meantime: the row exists, but nothing has claimed it.
+      expect(
+        db
+          .select()
+          .from(sessionMetadata)
+          .where(eq(sessionMetadata.sessionId, TEST_MODE_SESSION))
+          .get()!.runtime
+      ).toBeNull();
+
+      await postMessage(TEST_MODE_SESSION, { content: 'hi', runtime: 'test-mode' });
+
+      const row = db
+        .select()
+        .from(sessionMetadata)
+        .where(eq(sessionMetadata.sessionId, TEST_MODE_SESSION))
+        .get();
+      expect(row!.runtime).toBe('test-mode');
+      // The setting that created the row is still the person's.
+      expect(row!.model).toBe('sonnet');
+    });
+
+    it('keeps answering settings writes while the session is unbound, and stays unbound', async () => {
+      // The row exists but names no runtime, and every read still resolves it by
+      // inference — so the capability gate on `PATCH /api/sessions/:id` behaves
+      // exactly as it does for a session with no row at all: it accepts a mode
+      // the inferred runtime declares and refuses one it does not. Unbound must
+      // never mean unusable.
+      await request(app)
+        .patch(`/api/sessions/${TEST_MODE_SESSION}`)
+        .send({ model: 'sonnet' })
+        .expect(200);
+      await request(app)
+        .patch(`/api/sessions/${TEST_MODE_SESSION}`)
+        .send({ permissionMode: 'plan' })
+        .expect(200);
+
+      const refused = await request(app)
+        .patch(`/api/sessions/${TEST_MODE_SESSION}`)
+        .send({ permissionMode: 'dontAsk' });
+      expect(refused.status).toBe(400);
+      expect(refused.body.code).toBe('UNSUPPORTED_PERMISSION_MODE');
+
+      const row = db
+        .select()
+        .from(sessionMetadata)
+        .where(eq(sessionMetadata.sessionId, TEST_MODE_SESSION))
+        .get();
+      expect(row!.runtime).toBeNull();
+      // Both writes landed. What the row holds while it is unbound is
+      // PROVISIONAL — a mode gated against the inferred runtime, not against the
+      // one this session will run on — and the binding write is what settles
+      // that; see the two tests below.
+      expect(row!.model).toBe('sonnet');
+    });
+
+    it('drops a pre-launch mode the runtime it binds cannot run, for the runtime’s own', async () => {
+      // The hole this fix would otherwise open. The PATCH gate can only judge
+      // the mode against the INFERRED runtime, because an unbound session has
+      // nothing else — so `plan` is accepted here and would have arrived, intact
+      // and undeclared, on a bound test-mode session. A session must never
+      // report a safety posture its runtime is not running (#674).
+      runtimesConfig = { ...USER_CONFIG_DEFAULTS.runtimes, defaultTrustStop: 'act' };
+
+      await request(app)
+        .patch(`/api/sessions/${TEST_MODE_SESSION}`)
+        .send({ permissionMode: 'plan' })
+        .expect(200);
+      await postMessage(TEST_MODE_SESSION, { content: 'hi', runtime: 'test-mode' });
+
+      const row = db
+        .select()
+        .from(sessionMetadata)
+        .where(eq(sessionMetadata.sessionId, TEST_MODE_SESSION))
+        .get();
+      expect(row!.runtime).toBe('test-mode');
+      // test-mode declares no `plan`. What lands instead is its OWN mode at the
+      // configured stop — the seed, under the drop.
+      expect(row!.permissionMode).toBe('scripted');
+    });
+
+    it('keeps a pre-launch mode the runtime it binds does declare', async () => {
+      // The converse, and the reason the rule is "what this runtime declares"
+      // rather than "distrust anything chosen early": a person who set a mode
+      // before sending still gets it.
+      vi.spyOn(claude, 'sendMessage').mockImplementation(async function* () {
+        yield { type: 'done', data: { sessionId: CLAUDE_SESSION } } as StreamEvent;
+      });
+
+      await request(app)
+        .patch(`/api/sessions/${CLAUDE_SESSION}`)
+        .send({ permissionMode: 'plan' })
+        .expect(200);
+      await postMessage(CLAUDE_SESSION, { content: 'hi' });
+
+      const row = db
+        .select()
+        .from(sessionMetadata)
+        .where(eq(sessionMetadata.sessionId, CLAUDE_SESSION))
+        .get();
+      expect(row!.runtime).toBe('claude-code');
+      expect(row!.permissionMode).toBe('plan');
     });
 
     it('first-write-wins: subsequent hints on the same session are ignored', async () => {

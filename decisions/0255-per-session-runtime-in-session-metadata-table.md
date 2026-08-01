@@ -35,3 +35,9 @@ Add a `session_metadata` table to `packages/db/src/schema/sessions.ts` with colu
 - Couples this spec's Phase 1 to the DB schema / Drizzle migration workflow.
 - Sessions created during rollback windows need careful back-fill handling.
 - A new write path on session creation (writes to JSONL _and_ DB); partial failures require reconciliation.
+
+## Amendment — 2026-08-01 (DOR-812)
+
+The ownership column is now **nullable**, and a row may legitimately exist with no owner: changing a setting before a session's first message creates the row, and a preference chosen in a picker is not a binding. Such a row is claimed by the first authoritative write — the first turn, which carries the person's runtime choice — and a row that already names a runtime is still never re-bound, so the decision above is unchanged in substance.
+
+The one sentence of it that no longer holds is "inferred as `claude-code` on first access **and persisted**". Inference is never written down. A guess that is persisted becomes the binding, and under first-write-wins that made an early settings write pin a session to the wrong runtime for life.
