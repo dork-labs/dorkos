@@ -11,13 +11,16 @@ import { useSessionChatStore } from '@/layers/entities/session';
 // ──────────────────────────────────────────────────────────────────────────────
 
 // The Trust Dial reads the standing Full-autonomy acknowledgement from user
-// config before it sends one. Stubbed to "nobody has acknowledged anything",
-// which is the shipped state and the one every case below assumes.
+// config before it sends one. Defaults to "nobody has acknowledged anything",
+// which is the shipped state and the one most cases below assume; the
+// leaving-Plan case sets it, because that is the state it is about.
+const standingAck = { current: null as string | null };
 vi.mock('@/layers/entities/config/model/use-autonomy-acknowledgement', () => ({
   useAutonomyAcknowledgement: () => ({
-    acknowledgedAt: null,
+    acknowledgedAt: standingAck.current,
     acknowledge: vi.fn(),
     clear: vi.fn(),
+    canRemember: true,
     isPending: false,
   }),
 }));
@@ -259,6 +262,7 @@ beforeEach(() => {
   updateSession.mockClear();
   caps.current = CLAUDE_CAPS;
   permissionMode.current = 'default';
+  standingAck.current = null;
   useSessionChatStore.setState({ modeBeforePlan: {}, autonomyConfirmedSessions: {} });
 });
 
@@ -352,7 +356,7 @@ describe('ChatStatusSection — the composer’s Plan switch', () => {
     renderSection();
 
     fireEvent.click(planChip());
-    expect(updateSession).toHaveBeenCalledWith({ permissionMode: 'plan' });
+    expectPatched({ permissionMode: 'plan' });
   });
 
   it('reads as on while the session is planning', () => {
@@ -367,7 +371,7 @@ describe('ChatStatusSection — the composer’s Plan switch', () => {
     permissionMode.current = 'acceptEdits';
     const { rerender } = renderSection();
     fireEvent.click(planChip());
-    expect(updateSession).toHaveBeenCalledWith({ permissionMode: 'plan' });
+    expectPatched({ permissionMode: 'plan' });
 
     // …and off again returns to Act, not to the runtime's default.
     permissionMode.current = 'plan';
@@ -379,6 +383,22 @@ describe('ChatStatusSection — the composer’s Plan switch', () => {
     updateSession.mockClear();
     fireEvent.click(planChip());
     expectPatched({ permissionMode: 'acceptEdits' });
+  });
+
+  it('carries the acknowledgement when the mode it restores is Full autonomy', () => {
+    // The one click OUT of planning, for a session that was running without
+    // asking before it went in. The server refuses that mode without an
+    // acknowledgement, so leaving Plan has to assert the standing one like any
+    // other autonomy write — otherwise this exact click is the one that 428s,
+    // and it is not a click a person can route around.
+    standingAck.current = '2026-08-01T09:30:00.000Z';
+    useSessionChatStore.setState({ modeBeforePlan: { [SESSION_ID]: 'bypassPermissions' } });
+    permissionMode.current = 'plan';
+    renderSection();
+
+    fireEvent.click(planChip());
+
+    expectPatched({ permissionMode: 'bypassPermissions', acknowledgedAutonomy: true });
   });
 
   it('does not restore a remembered mode the runtime no longer offers', () => {

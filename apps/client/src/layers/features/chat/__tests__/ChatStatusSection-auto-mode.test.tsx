@@ -193,7 +193,9 @@ describe('ChatStatusSection — auto-mode entry confirmation', () => {
     fireEvent.click(screen.getByTestId('select-auto'));
     fireEvent.click(screen.getByRole('button', { name: 'Turn on Auto mode' }));
 
-    expect(updateSession).toHaveBeenCalledWith({ permissionMode: 'auto' });
+    // First argument only — the mode writer also passes an `onError` so a
+    // refused Full-autonomy write can reopen its door, which Auto never triggers.
+    expect(updateSession.mock.calls[0]?.[0]).toEqual({ permissionMode: 'auto' });
     expect(useSessionChatStore.getState().hasConfirmedAuto(SESSION_ID)).toBe(true);
   });
 

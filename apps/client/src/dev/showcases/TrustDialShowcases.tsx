@@ -202,6 +202,7 @@ function LiveAutonomyDialog() {
           whoever opened the playground to look at it. */}
       {lastAnswer && <span className="text-muted-foreground text-xs">{lastAnswer}</span>}
       <AutonomyConfirmDialog
+        canRemember
         descriptor={open ? autonomy : null}
         onCancel={() => {
           setOpen(false);

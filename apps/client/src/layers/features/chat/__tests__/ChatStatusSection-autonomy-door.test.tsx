@@ -27,12 +27,15 @@ import { useSessionChatStore } from '@/layers/entities/session';
 
 /** The standing acknowledgement this suite pretends is on file. */
 const standingAck = { current: null as string | null };
+/** Whether the transport behind this suite can store one at all (false = Obsidian). */
+const canRemember = { current: true };
 const acknowledge = vi.fn();
 vi.mock('@/layers/entities/config/model/use-autonomy-acknowledgement', () => ({
   useAutonomyAcknowledgement: () => ({
     acknowledgedAt: standingAck.current,
     acknowledge,
     clear: vi.fn(),
+    canRemember: canRemember.current,
     isPending: false,
   }),
 }));
@@ -245,6 +248,7 @@ beforeEach(() => {
   updateSession.mockClear();
   acknowledge.mockClear();
   standingAck.current = null;
+  canRemember.current = true;
   nextRefusal.current = null;
   useSessionChatStore.setState({ autonomyConfirmedSessions: {} });
 });
@@ -294,6 +298,38 @@ describe('the standing acknowledgement is offered, not assumed', () => {
 
     fireEvent.click(screen.getByTestId('select-autonomy'));
     expect(rememberCheckbox()).not.toBeChecked();
+  });
+});
+
+describe('nothing is offered that could not be kept', () => {
+  it('withholds the checkbox where the answer could not be stored', () => {
+    // Obsidian. `DirectTransport.updateConfig` is a documented no-op and its
+    // `getConfig` returns no `ui` block, so a tick there would save nothing,
+    // report nothing, and ask again forever. The dialog still works — it just
+    // asks every time, which is what it did before any of this existed.
+    canRemember.current = false;
+    renderSection();
+
+    fireEvent.click(screen.getByTestId('select-autonomy'));
+
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('checkbox', { name: /don.t show this again/i })
+    ).not.toBeInTheDocument();
+  });
+
+  it('still confirms, and still records nothing durable', () => {
+    canRemember.current = false;
+    renderSection();
+
+    fireEvent.click(screen.getByTestId('select-autonomy'));
+    fireEvent.click(screen.getByRole('button', { name: 'Turn on Full autonomy' }));
+
+    expect(acknowledge).not.toHaveBeenCalled();
+    expect(firstPatch()).toEqual({
+      permissionMode: 'bypassPermissions',
+      acknowledgedAutonomy: true,
+    });
   });
 });
 

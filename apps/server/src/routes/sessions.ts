@@ -306,12 +306,28 @@ router.patch('/:id', async (req, res) => {
     // it means. The boundary for agent callers is separate work
     // (`agent-approval-settings`, DOR-501); do not describe this as covering it.
     //
-    // ### Scope
+    // ### Scope: this route is not the only way into an autonomy mode
     //
-    // Interactive sessions only. Relay's `ensureSession`, task execution and
-    // room turns create and drive sessions in-process and never come through
-    // this route; they keep their own, stricter gates (the bypass clamp on
-    // file-sourced schedules among them) and are deliberately untouched here.
+    // It gates the interactive CHANGE, and nothing else, so read the other ways
+    // in as deliberately out of scope rather than as gaps nobody noticed:
+    //
+    // - **Relay bindings, task execution, room turns.** All create and drive
+    //   sessions in-process via `ensureSession` and never reach this route. They
+    //   keep their own, stricter gates — the bypass clamp on file-sourced
+    //   schedules among them.
+    // - **A runtime's own default.** A session is BORN at whatever mode its
+    //   runtime declares as default, with no PATCH and therefore no door;
+    //   `test-mode` is born at its autonomy stop, which is the entire point of
+    //   that runtime. What keeps that honest is the separate invariant that no
+    //   production runtime may default to a stop that stops asking, enforced per
+    //   runtime by the conformance suite and across the whole set by
+    //   `services/runtimes/__tests__/permission-semantics.test.ts`. This door
+    //   would be the wrong place for it: there is no request to refuse.
+    // - **Obsidian.** `DirectTransport` calls `runtime.updateSession` in-process
+    //   and bypasses this route entirely, so the embedded cockpit's dial is
+    //   gated by its dialog alone. Pre-existing property of that seam, widened
+    //   by nothing here; the checkbox is withheld there for a related reason
+    //   (see `AutonomyConfirmDialog`).
     if (asksForAutonomy(runtime, permissionMode) && !acknowledgedAutonomy) {
       if (!hasStandingAutonomyAck()) {
         // 428, not 400. The body is well-formed and the mode is one this runtime

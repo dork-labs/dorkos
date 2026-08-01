@@ -42,6 +42,13 @@ import { useCompactionChip } from '../../model/status/use-compaction-chip';
 import { useUsageReveal } from '../../model/use-usage-reveal';
 import { buildStatusItemNodes } from './status-item-nodes';
 
+/**
+ * The stable stand-in for "this runtime's capability profile has not arrived".
+ *
+ * Module-level so its identity never changes. See its one use site below.
+ */
+const NO_DECLARED_MODES: readonly PermissionModeDescriptor[] = [];
+
 interface ChatStatusSectionProps {
   sessionId: string;
   sessionStatus: SessionStatusEvent | null;
@@ -131,7 +138,11 @@ export function ChatStatusSection({
   // and every permission decision below reads what the runtime declared rather
   // than a mode id.
   const activeCaps = useCapabilitiesForRuntime(runtimeChip.runtime);
-  const declaredModes = activeCaps?.permissionModes.values ?? [];
+  // `NO_DECLARED_MODES`, not a fresh `[]`: three of the callbacks below depend on
+  // this list, and a new array identity every render would rebuild all three on
+  // every render of the status bar — which is also exactly what the compiler
+  // warns about when a logical expression feeds a dependency array.
+  const declaredModes = activeCaps?.permissionModes.values ?? NO_DECLARED_MODES;
   const runtimeDefaultMode = activeCaps?.permissionModes.default;
 
   // Once-per-session confirmation gates: the `auto` research preview, and the
@@ -157,16 +168,21 @@ export function ChatStatusSection({
 
   /**
    * Write one mode, attaching the autonomy acknowledgement when the mode needs
-   * one.
+   * one and this cockpit has one to assert.
    *
-   * Every path that changes the mode goes through here, not just the dial: the
-   * Plan toggle restores whatever the session was on before planning, and that
-   * can be Full autonomy. A path that forgot the flag would 428 on the one click
-   * a person takes to get OUT of planning.
+   * The single mode writer for every path on this surface EXCEPT
+   * `handleConfirmAutonomy`, which is the one place consent is given rather than
+   * recalled — see the note there. Routing the rest through here is not
+   * ceremony: the Plan toggle restores whatever the session was on before
+   * planning, and that can be Full autonomy, so a path that wrote the mode
+   * directly would 428 on the one click a person takes to get OUT of planning.
    *
-   * A refusal is a question, not a fault. If the server says an acknowledgement
-   * is required — another tab cleared the standing record, or this client's copy
-   * of it is stale — the dialog opens instead of an error nobody can act on.
+   * **The flag rides only when there is something to assert** — a standing
+   * record, or this page's own memory of confirming. Neither survives a reload,
+   * so a person who confirmed once, reloaded, and did not tick "don't show this
+   * again" reaches the server without one. That is intended: the 428 comes back,
+   * and the bounce below turns it into the question again rather than an error.
+   * The bounce is the recovery path, not a corner case.
    */
   const applyMode = useCallback(
     (nextMode: PermissionMode) => {
@@ -185,6 +201,13 @@ export function ChatStatusSection({
         }
       );
     },
+    // The `useState` setters ARE listed, here and in every callback below. They
+    // can never change — React guarantees a setter's identity for the life of the
+    // component — so this is not about correctness. It is that React Compiler's
+    // `preserve-manual-memoization` check does not make that exception: omit them
+    // and it reports it cannot preserve the memoization on this callback, which
+    // is a real warning about real generated code rather than a style note. All
+    // or none, and "all" is the one the toolchain can verify.
     [declaredModes, canAssertAutonomyAck, status, setPendingAutonomy]
   );
 
@@ -210,14 +233,25 @@ export function ChatStatusSection({
       }
       applyMode(nextMode);
     },
-    [hasConfirmedAuto, canAssertAutonomyAck, declaredModes, applyMode, setPendingAutonomy]
+    [
+      hasConfirmedAuto,
+      canAssertAutonomyAck,
+      declaredModes,
+      applyMode,
+      setPendingAutonomy,
+      setAutoConfirmOpen,
+    ]
   );
 
   const handleConfirmAuto = useCallback(() => {
     recordAutoConfirmed(sessionId);
-    status.updateSession({ permissionMode: 'auto' });
+    // Through `applyMode` like every other recalled write. `auto` is not an
+    // autonomy stop on any runtime today, so this adds no flag — it is routed
+    // here so the set of writers stays one, and a runtime that later declares
+    // its auto-equivalent at the autonomy stop is handled without an edit.
+    applyMode('auto');
     setAutoConfirmOpen(false);
-  }, [recordAutoConfirmed, sessionId, status, setAutoConfirmOpen]);
+  }, [recordAutoConfirmed, sessionId, applyMode, setAutoConfirmOpen]);
 
   const handleConfirmAutonomy = useCallback(
     (rememberChoice: boolean) => {
@@ -230,9 +264,12 @@ export function ChatStatusSection({
         // were, being asked again next time, which is the safe direction.
         autonomyAck.acknowledge();
       }
-      // Explicit rather than via `applyMode`: the acknowledgement was given
-      // right here, in this click, and must ride this request even though the
-      // session-scoped memory that `applyMode` reads has not re-rendered yet.
+      // THE ONE WRITER THAT IS NOT `applyMode`, and the reason is the whole
+      // difference between the two: `applyMode` RECALLS an acknowledgement from
+      // state, and consent was GIVEN here, in this click. The state it would
+      // read — the session memory recorded a line above — has not re-rendered
+      // yet, so routing through it would send the request without the flag and
+      // bounce the person off the dialog they just answered.
       void status.updateSession({
         permissionMode: pendingAutonomy.id as PermissionMode,
         acknowledgedAutonomy: true,
@@ -256,7 +293,10 @@ export function ChatStatusSection({
         // Remember where the dial stood, so switching Plan off is a return
         // rather than a guess.
         recordModeBeforePlan(sessionId, status.permissionMode);
-        status.updateSession({ permissionMode: workingMode.id as PermissionMode });
+        // Through `applyMode` for the same reason as the restore below: a way of
+        // working is never an autonomy stop today, so no flag is added, but the
+        // writer stays one rather than two that must be kept in step.
+        applyMode(workingMode.id as PermissionMode);
         return;
       }
       // A remembered mode is only worth restoring if it still exists. The
@@ -272,8 +312,12 @@ export function ChatStatusSection({
       const restored = viable ? remembered : runtimeDefaultMode;
       // Through `applyMode`, because the mode being restored can be Full
       // autonomy: a session that was running without asking, went into planning,
-      // and is now coming back out. The acknowledgement has to ride that request
-      // like any other, or leaving Plan would be the one click that 428s.
+      // and is now coming back out. Where this page still holds an
+      // acknowledgement — standing, or confirmed here — it rides the request and
+      // the click just works. Where it does not (a reload, and no standing
+      // record), the server answers 428 and `applyMode`'s bounce turns that into
+      // the dialog. Both outcomes are fine; writing the mode directly is what is
+      // not, because then the refusal has nothing to open.
       if (restored) applyMode(restored as PermissionMode);
     },
     [
@@ -425,6 +469,7 @@ export function ChatStatusSection({
         descriptor={pendingAutonomy}
         onCancel={() => setPendingAutonomy(null)}
         onConfirm={handleConfirmAutonomy}
+        canRemember={autonomyAck.canRemember}
       />
     </div>
   );

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { ShieldOff } from 'lucide-react';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import {
@@ -24,9 +24,15 @@ interface AutonomyConfirmDialogProps {
    * Called when the person confirms — applies the mode.
    *
    * @param rememberChoice - Whether they ticked "don't show this again", which
-   *   records a standing acknowledgement instead of asking every time.
+   *   records a standing acknowledgement instead of asking every time. Always
+   *   `false` when {@link canRemember} is `false`.
    */
   onConfirm: (rememberChoice: boolean) => void;
+  /**
+   * Whether this install can keep a standing acknowledgement at all. When
+   * `false` the checkbox is not offered — see the note in the component doc.
+   */
+  canRemember: boolean;
 }
 
 /**
@@ -63,12 +69,23 @@ interface AutonomyConfirmDialogProps {
  * server's requirement never relaxes; only the asking does. Settings shows the
  * date back with a way to clear it, which brings this dialog straight back.
  *
- * @param props - The mode being confirmed, and the two answers.
+ * ## Where the checkbox is not offered
+ *
+ * `canRemember` is `false` in Obsidian, where the cockpit runs on the in-process
+ * `DirectTransport` and there is no config file behind it: `updateConfig` is a
+ * documented no-op and `getConfig` returns no `ui` block. A checkbox there would
+ * tick, save nothing, report no error, and ask again forever — a promise the
+ * product cannot keep, which is worse than not offering it. So the row is
+ * absent, and the dialog simply asks each time, as it did before this existed.
+ *
+ * @param props - The mode being confirmed, the two answers, and whether a
+ *   standing acknowledgement can be kept.
  */
 export function AutonomyConfirmDialog({
   descriptor,
   onCancel,
   onConfirm,
+  canRemember,
 }: AutonomyConfirmDialogProps) {
   const open = descriptor !== null;
   const [rememberChoice, setRememberChoice] = useState(false);
@@ -76,9 +93,16 @@ export function AutonomyConfirmDialog({
   // A tick is an answer to THIS asking. Left standing, it would ride into the
   // next one already checked — so a person who cancelled, thought better of it,
   // and came back would be silently agreeing to never be asked again.
-  useEffect(() => {
-    if (!open) setRememberChoice(false);
-  }, [open]);
+  //
+  // Adjusted during render on the open transition rather than in an effect
+  // (React's "adjusting state when a prop changes"). An effect would reset it a
+  // paint LATE, which is a frame of the previous answer showing on a fresh ask,
+  // and would spend a second render doing it.
+  const [openCycle, setOpenCycle] = useState(open);
+  if (open !== openCycle) {
+    setOpenCycle(open);
+    setRememberChoice(false);
+  }
 
   return (
     <AlertDialog open={open} onOpenChange={(next) => !next && onCancel()}>
@@ -96,17 +120,20 @@ export function AutonomyConfirmDialog({
         </AlertDialogHeader>
         {descriptor && <PermissionModeScopeNote mode={descriptor.id} descriptor={descriptor} />}
         {/* Below the scope note, above the buttons: a person reads what this
-            means before they are offered the chance to stop being told. */}
-        <div className="flex items-center gap-2">
-          <Checkbox
-            id="autonomy-remember-choice"
-            checked={rememberChoice}
-            onCheckedChange={(checked) => setRememberChoice(checked === true)}
-          />
-          <Label htmlFor="autonomy-remember-choice" className="text-muted-foreground text-sm">
-            Don&apos;t show this again
-          </Label>
-        </div>
+            means before they are offered the chance to stop being told. Absent
+            where nothing could store the answer — see the component doc. */}
+        {canRemember && (
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="autonomy-remember-choice"
+              checked={rememberChoice}
+              onCheckedChange={(checked) => setRememberChoice(checked === true)}
+            />
+            <Label htmlFor="autonomy-remember-choice" className="text-muted-foreground text-sm">
+              Don&apos;t show this again
+            </Label>
+          </div>
+        )}
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction onClick={() => onConfirm(rememberChoice)}>

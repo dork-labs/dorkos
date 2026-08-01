@@ -106,6 +106,17 @@ export default defineConfig({
     //   against un-aliased 38.9s (transform 21.0s). The aliased run being the
     //   faster one is the point — that spread is machine noise, so read it as
     //   "no measurable cost", not as an improvement.
+    // - `permission-semantics` backs the cross-runtime pins in
+    //   `services/runtimes/__tests__/permission-semantics.test.ts`, which run EVERY
+    //   declared mode of all four runtime profiles through the real derivation
+    //   rules — including `isAutonomyStop`, the single rule the session PATCH's
+    //   autonomy door consults to decide whether a mode change needs the person's
+    //   acknowledgement. Same family as `session-stream` and `untrusted-text`: a
+    //   pure gate whose source text is the subject. Measured: forcing
+    //   `isAutonomyStop` to `return false` in `src/` reddened 0 of the 85 tests in
+    //   that file without this alias — they read the dist and passed — and 5 with
+    //   it, one of them the door's own gating pin. Without the alias the guard
+    //   cannot see a source change until somebody remembers to rebuild.
     // - `constants` backs `model-catalog-labels`, which asserts every runtime's
     //   model display name fits inside `STATUS_VALUE_MAX_CHARS`. Shrink the budget
     //   in `src/` and a stale dist measures against the old, roomier one.
@@ -208,6 +219,12 @@ export default defineConfig({
         find: '@dorkos/shared/session-stream',
         replacement: fileURLToPath(
           new URL('../../packages/shared/src/session-stream.ts', import.meta.url)
+        ),
+      },
+      {
+        find: '@dorkos/shared/permission-semantics',
+        replacement: fileURLToPath(
+          new URL('../../packages/shared/src/permission-semantics.ts', import.meta.url)
         ),
       },
       {
