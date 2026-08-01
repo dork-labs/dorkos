@@ -23,7 +23,9 @@ describe('ChipShowcases', () => {
     render(<ChipShowcases />);
 
     const registered = CHAT_SECTIONS.filter((section) => section.category === 'Chips');
-    expect(registered.length).toBeGreaterThan(0);
+    // Six: the verbs live, the verbs settled, failures and tombstones, the
+    // pile, the tray, and the whole strip.
+    expect(registered).toHaveLength(6);
     for (const section of registered) {
       expect(screen.getByRole('heading', { name: new RegExp(section.title) })).toBeInTheDocument();
     }
@@ -69,7 +71,9 @@ describe('ChipShowcases', () => {
     render(<ChipShowcases />);
 
     const tray = screen.getByTestId('chip-tray');
-    expect(within(tray).getAllByTestId('touch-chip').length).toBeGreaterThanOrEqual(10);
+    // The whole roster, unfiltered: eight files, two searches, a create, a
+    // delete, two links, two commands.
+    expect(within(tray).getAllByTestId('touch-chip')).toHaveLength(16);
     expect(within(tray).getByTestId('chip-filter-edit')).toBeInTheDocument();
     expect(within(tray).getByTestId('chip-filter-delete')).toBeInTheDocument();
   });

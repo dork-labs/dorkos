@@ -133,10 +133,9 @@ describe('MessageList rows', () => {
       .map(([node]) => node as HTMLElement | null)
       .filter((node): node is HTMLElement => node !== null);
 
-    expect(measured.length).toBeGreaterThan(0);
-    for (const node of measured) {
-      expect(node.hasAttribute('data-index')).toBe(true);
-    }
+    // Three rows: the day divider these two messages sit under, and each of
+    // them. Every one measured, with the index the virtualizer knows it by.
+    expect(measured.map((node) => node.getAttribute('data-index'))).toEqual(['0', '1', '2']);
   });
 
   it('counts dividers as virtualized rows alongside the messages', () => {

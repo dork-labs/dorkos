@@ -79,7 +79,9 @@ describe('the touch-chips scenario', () => {
   });
 
   it('touches more than the live row holds, so chips are absorbed into the pile', () => {
-    expect(chips.length).toBeGreaterThan(4);
+    // Eleven targets against a four-chip window: seven land in the pile, which
+    // is enough to watch it grow rather than merely appear.
+    expect(chips).toHaveLength(11);
   });
 
   it('reads a file and then changes it, which is the upgrade morph', () => {
@@ -88,7 +90,9 @@ describe('the touch-chips scenario', () => {
     expect(mapper.verb).toBe('edit');
     expect(mapper.upgraded).toBe(true);
     expect(mapper.touches).toBe(3);
-    expect(mapper.additions).toBeGreaterThan(0);
+    // Two edits, summed: +3 −1 then +2 −1. The chip is the arithmetic.
+    expect(mapper.additions).toBe(5);
+    expect(mapper.deletions).toBe(2);
   });
 
   it('deletes a file with an rm, which makes both a command chip and a tombstone', () => {
@@ -105,7 +109,8 @@ describe('the touch-chips scenario', () => {
     const created = byTarget(chips, '/repo/src/derive-event.ts');
 
     expect(created.verb).toBe('create');
-    expect(created.additions).toBeGreaterThan(0);
+    // Every line of a new file is a new line: the fixture writes three.
+    expect(created.additions).toBe(3);
     expect(created.deletions).toBeUndefined();
   });
 
