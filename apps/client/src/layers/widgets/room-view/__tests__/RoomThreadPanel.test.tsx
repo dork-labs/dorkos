@@ -204,6 +204,17 @@ describe('RoomThreadPanel', () => {
     expect(screen.queryByRole('button', { name: 'Close thread' })).not.toBeInTheDocument();
   });
 
+  it('gives Back a target a finger can hit, without growing the header', () => {
+    // 24px of button, and on a phone this is the control a reader reaches for
+    // most. The glyph stays 16px so the header keeps its height; the reach
+    // grows to 44px, and only below the breakpoint.
+    renderPanel({ pushed: true });
+
+    const back = screen.getByRole('button', { name: 'Back to #build' });
+    expect(back.className).toContain('after:-inset-2.5');
+    expect(back.className).toContain('md:after:hidden');
+  });
+
   it('draws the working line for an agent answering inside this thread', () => {
     // Presence follows you in (design record §3.2). The claim's trigger is a
     // REPLY in this thread, so this is where it belongs.
@@ -219,7 +230,7 @@ describe('RoomThreadPanel', () => {
 
     renderPanel();
 
-    expect(screen.getByTestId('room-presence')).toHaveTextContent('Bo is working on it');
+    expect(screen.getByTestId('thread-presence')).toHaveTextContent('Bo is working on it');
   });
 
   it('is a feed, named for the thread rather than the room', () => {
@@ -272,7 +283,10 @@ describe('RoomThreadPanel', () => {
 
     expect(articles).toHaveLength(2);
     expect(articles[0]).toHaveAttribute('aria-posinset', '1');
-    expect(articles[0]).toHaveAttribute('aria-setsize', '2');
+    // `-1`, not `2`: the panel reads this thread out of the room's loaded page,
+    // and a root that is not in that page means the page begins somewhere
+    // inside the thread. What is on screen is not what there is.
+    expect(articles[0]).toHaveAttribute('aria-setsize', '-1');
   });
 
   it('moves root to reply on Page Down and back on Page Up', () => {
@@ -333,6 +347,6 @@ describe('RoomThreadPanel', () => {
 
     renderPanel();
 
-    expect(screen.queryByTestId('room-presence')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('thread-presence')).not.toBeInTheDocument();
   });
 });

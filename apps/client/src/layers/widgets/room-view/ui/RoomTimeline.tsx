@@ -6,7 +6,13 @@ import { Button, Feed, Skeleton } from '@/layers/shared/ui';
 import type { RoomEntry, RoomRosterEntry } from '@/layers/entities/room';
 import { usePendingPosts } from '@/layers/entities/room';
 import { DayDivider, UnreadDivider } from '@/layers/features/chat';
-import { authorsById, groupByThread, toMessageAuthor, unreadPlacement } from '../lib/room-timeline';
+import {
+  authorsById,
+  entryRowId,
+  groupByThread,
+  toMessageAuthor,
+  unreadPlacement,
+} from '../lib/room-timeline';
 import { RoomEntryRow } from './RoomEntryRow';
 import { RoomPendingList } from './RoomPendingRow';
 import { RoomThreadReplyRow } from './RoomThreadReplyRow';
@@ -42,6 +48,17 @@ interface RoomTimelineProps {
   streamStalled?: boolean;
   /** True while the first page of history is loading. */
   isLoading: boolean;
+  /**
+   * True while the feed is putting articles INTO itself — a re-read of the
+   * history landing under a room that is already drawn.
+   *
+   * Separate from {@link RoomTimelineProps.isLoading}, which replaces the whole
+   * feed with a skeleton. This one is about a feed that is on screen and about
+   * to change under the reader, which is the case the APG asks `aria-busy` to
+   * cover: a screen reader that is told an insertion is coming waits for it to
+   * finish instead of reading a half-updated room out loud.
+   */
+  inserting?: boolean;
   /** Set when the history could not be read. */
   error: unknown;
   /**
@@ -129,6 +146,7 @@ export function RoomTimeline({
   reactionFrequents,
   streamStalled,
   isLoading,
+  inserting,
   error,
   onAddAgents,
   openThreadId,
@@ -208,6 +226,7 @@ export function RoomTimeline({
     <>
       <Feed
         label={`Messages in ${roomName}`}
+        busy={inserting}
         className="flex flex-col py-4"
         data-testid="room-timeline"
       >
@@ -229,11 +248,22 @@ export function RoomTimeline({
                 streamStalled={streamStalled}
                 grouping={row.grouping}
                 orphanedReply={orphaned.has(entry.id)}
-                // Counted over the room's own flow, which is exactly the set of
-                // articles this feed renders: a thread's replies live in the
-                // panel, so numbering them here would promise a reader articles
-                // they will never reach with Page Down.
-                feedPosition={{ index: row.index + 1, total: topLevel.length }}
+                // Where the row sits, counted over the room's own flow — a
+                // thread's replies live in the panel, so numbering them here
+                // would promise a reader articles they will never reach with
+                // Page Down.
+                //
+                // The SIZE is `-1`, which is the APG's "unknown", and it is the
+                // honest answer: this is the trailing page of a room's history
+                // (`useRoomEntries`), so what is loaded is not what there is.
+                // Saying "12 of 50" over a room that has been going for a month
+                // tells a reader they are near the end of a conversation that
+                // has barely started.
+                feedPosition={{ index: row.index + 1, total: -1 }}
+                // Only the timeline's copy of an entry is addressable — see
+                // `rowId`. It is where focus comes back to when the thread
+                // panel this row opened closes again.
+                rowId={entryRowId(entry.id)}
               />
               {replies && (
                 <RoomThreadReplyRow

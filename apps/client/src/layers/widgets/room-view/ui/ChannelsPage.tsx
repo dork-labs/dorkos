@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useSearch } from '@tanstack/react-router';
 import { AnimatePresence, motion } from 'motion/react';
 import { MessagesSquare } from 'lucide-react';
@@ -16,8 +16,8 @@ import {
   threadRootIdOf,
 } from '@/layers/entities/room';
 import { RoomDetailsDialog, type RoomDetailsFocus } from '@/layers/features/room-management';
-import { threadRowId } from '../lib/room-timeline';
 import { useFrozenReadCursor } from '../model/use-frozen-read-cursor';
+import { useRestoreThreadFocus } from '../model/use-restore-thread-focus';
 import { useStickToBottom } from '../model/use-stick-to-bottom';
 import { useThreadUrlSync } from '../model/use-thread-url-sync';
 import { RoomComposer } from './RoomComposer';
@@ -51,32 +51,16 @@ export function ChannelsPage() {
   const keyboardInset = useVisualViewportBottomInset();
   const openThread = useRoomOpenThread(roomId);
   const openThreadId = openThread?.rootEntryId;
-  /**
-   * The reply row to put the caret back on once the panel has gone.
-   *
-   * Closing used to drop focus on `document.body`, which for a keyboard reader
-   * means losing their place in the room entirely — a regression against the
-   * roving-tabindex model the rest of this surface keeps. Held as an id rather
-   * than a node because on a phone the room is unmounted while the panel is
-   * open, so any node captured on the way in is stale on the way out.
-   */
-  const restoreFocusRef = useRef<string | null>(null);
+  // Where the caret goes once the panel has gone — `useRestoreThreadFocus`
+  // owns the three ways that lookup used to miss.
+  const restoreFocus = useRestoreThreadFocus();
 
   const closeThread = useCallback(() => {
     if (roomId === null) return;
-    restoreFocusRef.current = useRoomOpenThreadStore.getState().open[roomId]?.rootEntryId ?? null;
+    const rootId = useRoomOpenThreadStore.getState().open[roomId]?.rootEntryId;
     useRoomOpenThreadStore.getState().closeThread(roomId);
-  }, [roomId]);
-
-  // After the commit that removed the panel, so the row is back in the DOM to
-  // be focused. No dependency array: the one thing that arms it is a close, and
-  // it disarms itself the moment it fires.
-  useEffect(() => {
-    const rootId = restoreFocusRef.current;
-    if (rootId === null) return;
-    restoreFocusRef.current = null;
-    document.getElementById(threadRowId(rootId))?.focus();
-  });
+    if (rootId !== undefined) restoreFocus.arm(rootId);
+  }, [roomId, restoreFocus]);
   // From a reply row: a request to READ, so the panel takes focus and the
   // keyboard stays shut. The capsule's reply action asks for the composer.
   const onOpenThread = useCallback(
@@ -227,6 +211,10 @@ export function ChannelsPage() {
           reactionFrequents={room.reactionFrequents}
           streamStalled={stream.stalled}
           isLoading={entriesQuery.isLoading}
+          // A re-read landing under a room that is already drawn. The first
+          // load is `isLoading` and swaps the whole feed for a skeleton; this
+          // is the case where the articles change underneath a reader.
+          inserting={entriesQuery.isFetching && !entriesQuery.isLoading}
           error={entriesQuery.error}
           onAddAgents={() => setDetailsFocus('add')}
           openThreadId={openThreadId}
@@ -236,9 +224,11 @@ export function ChannelsPage() {
       {/* Directly above the composer, because the state it describes is about
           what happens after you press Enter. `RoomStalledNotice` explains why
           the composer beside it stays open. */}
-      {stream.stalled && (
-        <RoomStalledNotice onRetry={stream.retry} unavailable={stream.unavailable} />
-      )}
+      <RoomStalledNotice
+        stalled={stream.stalled}
+        onRetry={stream.retry}
+        unavailable={stream.unavailable}
+      />
       {/* Keyed on the room so opening a conversation gives you a composer that
           is focused and freshly sized for that room's draft. Switching to an
           already-read room takes none of the early returns above, so without

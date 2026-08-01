@@ -25,7 +25,7 @@
  *
  * @module entities/room/model/use-room-presence
  */
-import { useEffect, useReducer } from 'react';
+import { useEffect, useMemo, useReducer } from 'react';
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import type { RoomPresenceState, RoomSignalEvent } from '@dorkos/shared/room-schemas';
@@ -362,4 +362,46 @@ export function useRoomPresence(
   // stale numbers. A room with nothing in it answers with one shared empty
   // array, so the quiet case — which is nearly always — costs nothing.
   return summarize(indicators, scope);
+}
+
+/** One shared empty answer, so a quiet room never re-renders its reader. */
+const NO_IDS: string[] = [];
+
+/**
+ * WHO is working, without the clock.
+ *
+ * The same question {@link useRoomPresence} answers, minus the two things that
+ * make that hook expensive to hold: the elapsed times, and the one-second timer
+ * that keeps them true. A caller that only needs the names re-renders when the
+ * names change and at no other moment.
+ *
+ * **That difference is worth a second hook.** The thread panel held the ticking
+ * one for a list of author ids, so a panel with forty replies in it re-rendered
+ * every reply, every reaction row and every action bar once a SECOND for as long
+ * as an agent was working — to recompute a number the panel does not draw. The
+ * elapsed time belongs to the line that shows it, which is a leaf, and this is
+ * how everything else stops paying for it.
+ *
+ * Expired records are still filtered out, so a caller cannot read a claim that
+ * has aged past {@link PRESENCE_TTL_MS} — but nothing here re-renders at the
+ * moment one does. That is the trade, and it is the right one for a caller
+ * asking "who has been working here lately".
+ *
+ * @param roomId - The room on screen, or `null` when none is.
+ * @param scope - Which half of the room's presence to answer with while a
+ *   thread panel is open. Omit for all of it — see {@link PresenceScope}.
+ * @returns The author ids with a live claim, oldest claim first.
+ */
+export function useRoomPresenceAuthorIds(
+  roomId: string | null,
+  scope?: PresenceScope
+): readonly string[] {
+  const indicators = useRoomPresenceStore((held) =>
+    roomId === null ? undefined : held.rooms[roomId]
+  );
+  return useMemo(() => {
+    const working = summarize(indicators, scope);
+    if (working.length === 0) return NO_IDS;
+    return working.map((agent) => agent.authorId);
+  }, [indicators, scope]);
 }

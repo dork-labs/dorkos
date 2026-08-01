@@ -7,7 +7,7 @@ import {
   roomDisplayTitle,
   threadRootIdOf,
   usePendingPosts,
-  useRoomPresence,
+  useRoomPresenceAuthorIds,
 } from '@/layers/entities/room';
 import { authorsById, toMessageAuthor } from '../lib/room-timeline';
 import { useThreadArrivals } from '../model/use-thread-arrivals';
@@ -136,20 +136,32 @@ export function RoomThreadPanel({
   // What the feed holds, which is the root and its replies and nothing else:
   // the orphan line and the connectors are furniture between articles, with
   // nothing in them to stand on.
-  const articleCount = (root === undefined ? 0 : 1) + replies.length;
+  //
+  // `-1` — the APG's "I do not know" — whenever the ROOT is missing. The panel
+  // reads the thread out of the room's loaded page, so a root that is not in
+  // that page means the page starts somewhere inside this thread and the
+  // replies above it are unread history, not absent replies. Counting what is
+  // on screen would promise a reader "3 of 3" over the middle of a
+  // conversation. With the root present, every reply after it is loaded too,
+  // and the count is exact.
+  const articleCount = root === undefined ? -1 : 1 + replies.length;
 
   // Scoped to the REPLIES, never the root — `PresenceScope` says why an agent
   // triggered by the root is the room's business and not this thread's.
   const replyIds = useMemo(() => new Set(replies.map((reply) => reply.id)), [replies]);
-  const working = useRoomPresence(room.id, { replyIds, inside: true });
+  const scope = useMemo(() => ({ replyIds, inside: true }), [replyIds]);
+  // The NAMES, not the elapsed times: this panel only needs to know whose
+  // answer a landing reply is. Reading the ticking hook here redrew the whole
+  // panel — every reply, every reaction row, every action bar — once a second
+  // for as long as an agent was working, to recompute a number nothing here
+  // draws. `useRoomPresenceAuthorIds` says why that is a second hook rather
+  // than a memo; the presence LINE at the foot of the panel still ticks, and it
+  // is a leaf.
+  const workingAuthorIds = useRoomPresenceAuthorIds(room.id, scope);
   // Scoped to THIS thread: a reply typed here waits here, not at the bottom of
   // the room behind the panel.
   const pending = usePendingPosts(room.id, rootEntryId);
-  const arrivals = useThreadArrivals(
-    replies,
-    useMemo(() => working.map((agent) => agent.authorId), [working]),
-    historyLoaded
-  );
+  const arrivals = useThreadArrivals(replies, workingAuthorIds, historyLoaded);
 
   // Follow the thread down as replies land, the way the room's own scroll does.
   // Written as a scroll offset rather than `scrollIntoView` for the same reason
@@ -222,7 +234,15 @@ export function RoomThreadPanel({
           type="button"
           onClick={onClose}
           aria-label={pushed ? `Back to ${roomDisplayTitle(room)}` : 'Close thread'}
-          className="focus-ring text-muted-foreground hover:text-foreground -ml-1 rounded p-1"
+          className={cn(
+            'focus-ring text-muted-foreground hover:text-foreground relative -ml-1 rounded p-1',
+            // 24px of button, and on a phone this is Back — the control a
+            // reader reaches for most and the one that costs the most to miss.
+            // The glyph stays 16px so the header keeps its height; the target
+            // grows to 44px with 10px of reach on every side, the same trick
+            // the thread reply row uses.
+            "after:absolute after:-inset-2.5 after:content-[''] md:after:hidden"
+          )}
         >
           {pushed ? (
             <ChevronLeft aria-hidden className="size-4" />
@@ -369,8 +389,12 @@ export function RoomThreadPanel({
           this line is off screen and the reader would have no way to know the
           conversation had stopped hearing. Beside a room that is drawing one,
           repeating it would just be the same sentence twice. */}
-      {pushed && streamStalled === true && onRetryStream !== undefined && (
-        <RoomStalledNotice onRetry={onRetryStream} unavailable={streamUnavailable} />
+      {pushed && onRetryStream !== undefined && (
+        <RoomStalledNotice
+          stalled={streamStalled === true}
+          onRetry={onRetryStream}
+          unavailable={streamUnavailable}
+        />
       )}
 
       {/* Writes into THIS thread because it is mounted here — no aim, no
@@ -385,11 +409,7 @@ export function RoomThreadPanel({
 
       {/* Under the composer, where the room puts its own — it is about what
           happens after you press Enter. */}
-      <RoomPresenceLine
-        roomId={room.id}
-        members={room.members}
-        scope={{ replyIds, inside: true }}
-      />
+      <RoomPresenceLine roomId={room.id} members={room.members} scope={scope} />
     </section>
   );
 }

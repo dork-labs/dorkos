@@ -89,7 +89,14 @@ export function RoomPresenceLine({ roomId, members, scope }: RoomPresenceLinePro
           shape as `ToolApproval`'s announcer. `sr-only` reserves no visual
           space, so the line itself is still absent when nothing is happening. */}
       <span
-        data-testid="room-presence-announcer"
+        // Named for the half of the room it speaks for. With a thread open on a
+        // wide screen there are two of these on the page — the panel's and the
+        // room's — and one testid over both made "the room announced it"
+        // unaskable: the query either found two nodes or silently answered with
+        // whichever came first in the document.
+        data-testid={
+          scope?.inside === true ? 'thread-presence-announcer' : 'room-presence-announcer'
+        }
         role="status"
         aria-live="polite"
         aria-atomic="true"
@@ -108,7 +115,7 @@ export function RoomPresenceLine({ roomId, members, scope }: RoomPresenceLinePro
             key="presence"
             exit={{ opacity: 0 }}
             transition={{ duration: 0.16, ease: [0.3, 1, 0.4, 1] }}
-            data-testid="room-presence"
+            data-testid={scope?.inside === true ? 'thread-presence' : 'room-presence'}
             className="text-muted-foreground px-4 pb-2 text-xs"
           >
             {counted ? (

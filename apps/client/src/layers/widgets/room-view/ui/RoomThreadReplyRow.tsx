@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { cn } from '@/layers/shared/lib';
 import { threadReplySummary, type RoomEntry } from '@/layers/entities/room';
+import { formatAbsoluteTime, formatTime } from '../lib/entry-time';
 import { threadRowId } from '../lib/room-timeline';
 
 interface RoomThreadReplyRowProps {
@@ -14,17 +15,6 @@ interface RoomThreadReplyRowProps {
   open: boolean;
   /** Open this thread's panel. */
   onOpen: () => void;
-}
-
-/**
- * Short time display (HH:MM) for a timestamp, or `''` when it is not a time at
- * all. `toLocaleTimeString` renders "Invalid Date" rather than throwing, so the
- * guard has to be the parse.
- */
-function formatTime(timestamp: string): string {
-  const ms = Date.parse(timestamp);
-  if (Number.isNaN(ms)) return '';
-  return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
 /**
@@ -88,7 +78,16 @@ export function RoomThreadReplyRow({
       onClick={onOpen}
       className={cn(
         'focus-ring ml-[calc(var(--msg-padding-x)_+_var(--msg-gutter-width)_+_var(--msg-gap))]',
-        'mb-1 w-fit rounded px-1 py-0.5 text-left text-xs transition-colors',
+        'relative mb-1 w-fit rounded px-1 py-0.5 text-left text-xs transition-colors',
+        // **On a phone this is the ONLY way into a thread**, and it was a 20px
+        // target — under half what a finger is designed against. It stays
+        // visually small on purpose (the row is meant to be quiet), so the
+        // TARGET grows rather than the glyph: the same `after:` trick
+        // `SidebarGroupAction` uses, 12px of reach on every side, which takes a
+        // 20px row to a 44px one. Off above the breakpoint, where a pointer is
+        // exact and the extra reach would only steal clicks from the messages
+        // above and below.
+        "after:absolute after:-inset-3 after:content-[''] md:after:hidden",
         // Accent is the unread signal, and it colours the WHOLE row rather than
         // a badge on the end of it: the row is small and quiet by design, and a
         // reader scanning a long history is looking for colour, not for a
@@ -112,7 +111,17 @@ export function RoomThreadReplyRow({
         {count}
       </span>
       {count === 1 ? ' reply' : ' replies'}
-      {time.length > 0 && ` · last ${time}`}
+      {/* The last reply's own date, carried on a `<time>` and revealed in full
+          on hover — "last 9:45 AM" on a thread from last Tuesday is a clock
+          reading with no day attached to it. */}
+      {time.length > 0 && (
+        <>
+          {' · last '}
+          <time dateTime={lastAt} title={formatAbsoluteTime(lastAt)}>
+            {time}
+          </time>
+        </>
+      )}
       {/* The count the accent is ABOUT, said out loud. The colour alone is a
           signal a reader has to have been taught; the words are for everybody,
           and for the screen reader that gets no colour at all. */}

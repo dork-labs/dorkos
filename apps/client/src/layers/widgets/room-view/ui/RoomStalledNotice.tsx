@@ -1,4 +1,11 @@
 interface RoomStalledNoticeProps {
+  /**
+   * True when the room's live stream has given up.
+   *
+   * A prop rather than the caller's `&&`, and that is the whole of why the
+   * announcement works — see the announcer below.
+   */
+  stalled: boolean;
   /** Ask the room's stream to try now, rather than waiting out its backoff. */
   onRetry: () => void;
   /**
@@ -11,6 +18,18 @@ interface RoomStalledNoticeProps {
    * notice was written for.
    */
   unavailable?: boolean;
+}
+
+/**
+ * What the line says, in the one place both the announcement and the sentence
+ * on screen can read it from.
+ *
+ * @param unavailable - Whether the room itself is gone rather than unreachable.
+ */
+function stalledSentence(unavailable: boolean): string {
+  return unavailable
+    ? 'This room is no longer available. It may have been deleted, or you may no longer have access to it.'
+    : "New messages aren't coming through right now. You can still send — anything that doesn't get through will say so.";
 }
 
 /**
@@ -33,48 +52,56 @@ interface RoomStalledNoticeProps {
  * not want to do: the backoff is at its thirty-second cap by the time anybody
  * reads this line, and pressing it tries immediately.
  *
- * @param props - How to ask for a retry.
+ * **It is mounted whether or not the room has stalled**, and that is what makes
+ * the sentence reach somebody who cannot see it. A live region that ARRIVES with
+ * its text already in it is the classic case assistive technology does not
+ * announce — the region has to be being watched before the words land in it. So
+ * the announcer is always here and empty, and the visible line is the part that
+ * comes and goes. Same shape as `RoomPresenceLine`, which carries the identical
+ * note for the identical reason.
+ *
+ * @param props - Whether the room has stalled, and how to ask for a retry.
  */
-export function RoomStalledNotice({ onRetry, unavailable = false }: RoomStalledNoticeProps) {
+export function RoomStalledNotice({
+  stalled,
+  onRetry,
+  unavailable = false,
+}: RoomStalledNoticeProps) {
   return (
-    <div
-      role="status"
-      data-testid="room-stalled"
-      data-unavailable={unavailable ? 'true' : undefined}
-      className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 border-t px-4 py-2 text-xs"
-    >
-      {unavailable ? (
-        <>
-          <span>
-            This room is no longer available. It may have been deleted, or you may no longer have
-            access to it.
-          </span>
-          {/* Still offered, because one of the three ways to get here — a signed-
-              out session — is one a person fixes in another tab and comes back
-              from. It just does not promise anything. */}
+    <>
+      {/* Always mounted, `sr-only`, and empty until there is something to say —
+          so it reserves no space and the room still looks like a room. */}
+      <span
+        data-testid="room-stalled-announcer"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        className="sr-only"
+      >
+        {stalled ? stalledSentence(unavailable) : ''}
+      </span>
+      {stalled && (
+        // No `role="status"` here: the announcer above already says this, and
+        // two live regions carrying one sentence is that sentence twice.
+        <div
+          data-testid="room-stalled"
+          data-unavailable={unavailable ? 'true' : undefined}
+          className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 border-t px-4 py-2 text-xs"
+        >
+          <span>{stalledSentence(unavailable)}</span>
+          {/* Offered in both states. One of the three ways to reach the
+              unavailable one — a signed-out session — is something a person
+              fixes in another tab and comes back from. It just does not promise
+              anything. */}
           <button
             type="button"
             onClick={onRetry}
             className="focus-ring hover:text-foreground rounded underline underline-offset-2"
           >
-            Try again
+            {unavailable ? 'Try again' : 'Reconnect'}
           </button>
-        </>
-      ) : (
-        <>
-          <span>
-            New messages aren&apos;t coming through right now. You can still send — anything that
-            doesn&apos;t get through will say so.
-          </span>
-          <button
-            type="button"
-            onClick={onRetry}
-            className="focus-ring hover:text-foreground rounded underline underline-offset-2"
-          >
-            Reconnect
-          </button>
-        </>
+        </div>
       )}
-    </div>
+    </>
   );
 }

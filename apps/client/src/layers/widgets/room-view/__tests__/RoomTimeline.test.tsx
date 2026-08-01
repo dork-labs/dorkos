@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -210,6 +210,26 @@ describe('RoomTimeline — thread reply rows', () => {
 
     const row = screen.getByTestId('room-thread-replies');
     expect(row).toHaveTextContent('1 reply');
+  });
+
+  it('is big enough to hit with a finger, without getting any bigger to look at', () => {
+    // On a phone this row is the ONLY way into a thread, and it was a 20px
+    // target. The glyph stays small — the row is meant to be quiet — so the
+    // reach grows instead, and only below the breakpoint where it is needed.
+    renderTimeline({ entries: [entry(1), reply(2, 1)] });
+
+    const row = screen.getByTestId('room-thread-replies');
+    expect(row.className).toContain('after:-inset-3');
+    expect(row.className).toContain('md:after:hidden');
+  });
+
+  it('carries the last reply’s whole date, not just a clock reading', () => {
+    renderTimeline({ entries: [entry(1), reply(2, 1)] });
+
+    const stamp = within(screen.getByTestId('room-thread-replies')).getByText(/^\d{1,2}:\d\d/);
+    expect(stamp.tagName).toBe('TIME');
+    expect(stamp).toHaveAttribute('datetime', '2026-07-26T10:00:00.000Z');
+    expect(stamp.getAttribute('title')).toMatch(/2026/);
   });
 
   it('hangs the row off its own root, not off whatever precedes it', () => {
@@ -475,8 +495,35 @@ describe('RoomTimeline as a feed', () => {
     expect(articles).toHaveLength(3);
     articles.forEach((article, index) => {
       expect(article).toHaveAttribute('aria-posinset', String(index + 1));
-      expect(article).toHaveAttribute('aria-setsize', '3');
+      // `-1` — the APG's "unknown". This is the trailing page of a room's
+      // history, so "3 of 3" over a month-old room would tell a reader they
+      // were at the end of a conversation that has barely started.
+      expect(article).toHaveAttribute('aria-setsize', '-1');
     });
+  });
+
+  it('says it is busy while a re-read is landing under a room already on screen', () => {
+    // `aria-busy` was only ever written by the skeleton, so it was never once
+    // true on the feed a reader is actually standing in — which is the case the
+    // APG asks it to cover: articles changing underneath somebody.
+    renderTimeline({ entries: THREE, members: ROSTER, inserting: true });
+    expect(screen.getByTestId('room-timeline')).toHaveAttribute('aria-busy', 'true');
+
+    cleanup();
+    renderTimeline({ entries: THREE, members: ROSTER });
+    expect(screen.getByTestId('room-timeline')).toHaveAttribute('aria-busy', 'false');
+  });
+
+  it('gives every message row a DOM id, so a closing thread can find it again', () => {
+    // The fallback the reply row cannot be: a thread opened from the capsule
+    // has no replies, so no "↳ N replies" row exists to hand focus back to.
+    renderTimeline({ entries: THREE, members: ROSTER });
+
+    expect(screen.getAllByRole('article').map((row) => row.id)).toEqual([
+      'room-entry-entry-1',
+      'room-entry-entry-2',
+      'room-entry-entry-3',
+    ]);
   });
 
   it('names each message from the author line already on screen', () => {

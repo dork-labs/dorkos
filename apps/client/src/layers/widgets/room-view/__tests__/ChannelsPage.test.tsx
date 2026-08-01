@@ -156,6 +156,23 @@ function renderPage(overrides: Partial<Transport> = {}) {
  * surface that happened to look similar is the failure this covers: one place
  * to learn, one place a change lands.
  */
+describe('ChannelsPage — saying the room has stopped hearing', () => {
+  it('has the announcer up and empty BEFORE anything goes wrong', async () => {
+    // The whole of the fix. The stall line used to be `role="status"` mounted at
+    // the moment it had something to say, and a live region that ARRIVES with
+    // its text in it is the classic case assistive technology never announces.
+    // So the announcer is here from the start, empty, watching.
+    renderPage();
+    await screen.findByRole('combobox', { name: /Message/ });
+
+    const announcer = screen.getByTestId('room-stalled-announcer');
+    expect(announcer).toHaveAttribute('aria-live', 'polite');
+    expect(announcer).toBeEmptyDOMElement();
+    // And nothing is drawn, because nothing is wrong.
+    expect(screen.queryByTestId('room-stalled')).not.toBeInTheDocument();
+  });
+});
+
 describe('ChannelsPage members-panel entry points', () => {
   /**
    * A fleet the page can offer, read through the same two transport calls the
@@ -715,6 +732,9 @@ describe('ChannelsPage — switching between threads', () => {
     make(2, 'entry-1', 'answering the first'),
     make(3, null, 'second question'),
     make(4, 'entry-3', 'answering the second'),
+    // A message nobody has answered, so it draws NO reply row — the one shape
+    // the focus restore used to have nothing to aim at.
+    make(5, null, 'nobody answered this'),
   ];
 
   function renderRoom() {
@@ -772,7 +792,44 @@ describe('ChannelsPage — switching between threads', () => {
     await user.click(screen.getByRole('button', { name: 'Close thread' }));
 
     await waitFor(() => expect(screen.queryByTestId('room-thread-panel')).not.toBeInTheDocument());
-    expect(screen.getAllByTestId('room-thread-replies')[0]!).toHaveFocus();
+    // Awaited, because the restore looks for its row on an animation frame
+    // rather than in the commit that removed the panel — the room is not
+    // necessarily back by then. See `useRestoreThreadFocus`.
+    await waitFor(() => expect(screen.getAllByTestId('room-thread-replies')[0]!).toHaveFocus());
+  });
+
+  it('puts the caret back on the MESSAGE when the thread has no reply row', async () => {
+    // "Reply in thread" from the capsule opens a thread on a message nobody has
+    // answered, so there is no "↳ N replies" row under it — the only thing the
+    // restore used to look for. Focus went to `document.body` on every close of
+    // a thread opened that way, which is the commonest way to open one.
+    const user = userEvent.setup();
+    renderRoom();
+
+    const rows = await screen.findAllByTestId('room-entry');
+    const unanswered = rows.find((row) => row.textContent?.includes('nobody answered this'))!;
+    await user.click(within(unanswered).getByRole('button', { name: 'Reply in thread' }));
+
+    expect(await screen.findByTestId('room-thread-panel')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Close thread' }));
+
+    await waitFor(() => expect(screen.queryByTestId('room-thread-panel')).not.toBeInTheDocument());
+    await waitFor(() => expect(unanswered).toHaveFocus());
+  });
+
+  it('gives the room’s presence announcer and the thread’s different names', async () => {
+    // Two `role="status"` regions are on the page while a thread is open — the
+    // room speaks for everything outside it, the panel for everything inside.
+    // Sharing one testid made "did the ROOM announce it?" unaskable.
+    const user = userEvent.setup();
+    renderRoom();
+
+    await user.click((await screen.findAllByTestId('room-thread-replies'))[0]!);
+
+    // `getByTestId` throws on a second match, so this only passes if each name
+    // belongs to exactly one of them.
+    expect(screen.getByTestId('room-presence-announcer')).toBeInTheDocument();
+    expect(screen.getByTestId('thread-presence-announcer')).toBeInTheDocument();
   });
 
   it('leaves an Escape the mention palette answered to the palette', async () => {
