@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
@@ -285,33 +285,108 @@ describe('CreateTaskDialog', () => {
     expect(screen.getByText(/every weekday at 9:00 AM/i)).toBeTruthy();
   });
 
-  it('shows permission mode warning for bypassPermissions', () => {
-    const transport = createMockTransport();
-    const Wrapper = createWrapper(transport);
+  describe('the trust dial', () => {
+    // The form used to ask this question with two hand-written radios ("Allow
+    // file edits", "Full autonomy") whose words described Claude Code and no
+    // other runtime. It is now the same dial every other picker shows, built
+    // from what the runtime declared (spec `trust-dial`).
 
-    render(
-      <Wrapper>
-        <CreateTaskDialog open={true} onOpenChange={vi.fn()} />
-      </Wrapper>
-    );
+    it('offers the runtime’s own stops instead of two hand-written radios', async () => {
+      const transport = createMockTransport();
+      const Wrapper = createWrapper(transport);
 
-    // Advance past preset-picker step to the form
-    fireEvent.click(screen.getByText('Start from scratch'));
+      render(
+        <Wrapper>
+          <CreateTaskDialog open={true} onOpenChange={vi.fn()} />
+        </Wrapper>
+      );
+      fireEvent.click(screen.getByText('Start from scratch'));
 
-    fireEvent.click(screen.getByLabelText('Full autonomy'));
+      const dial = await screen.findByRole('radiogroup', { name: /how much/i });
+      expect(
+        within(dial)
+          .getAllByRole('radio')
+          .map((s) => s.textContent)
+      ).toEqual(['Ask first', 'Act', 'Full autonomy']);
+      expect(screen.queryByLabelText('Allow file edits')).toBeNull();
+    });
 
-    expect(
-      screen.getByText('Warning: This allows the agent to execute any tool without approval.')
-    ).toBeTruthy();
+    it('says a scheduled run has nobody to answer an approval', async () => {
+      const transport = createMockTransport();
+      const Wrapper = createWrapper(transport);
+
+      render(
+        <Wrapper>
+          <CreateTaskDialog open={true} onOpenChange={vi.fn()} />
+        </Wrapper>
+      );
+      fireEvent.click(screen.getByText('Start from scratch'));
+
+      // `acceptEdits` still asks before commands, and nobody is there to answer.
+      expect(await screen.findByTestId('task-unattended-note')).toHaveTextContent(
+        /nobody is watching/i
+      );
+    });
+
+    it('asks before it turns on full autonomy, and says what an unattended run does', async () => {
+      const transport = createMockTransport();
+      const Wrapper = createWrapper(transport);
+
+      render(
+        <Wrapper>
+          <CreateTaskDialog open={true} onOpenChange={vi.fn()} />
+        </Wrapper>
+      );
+      fireEvent.click(screen.getByText('Start from scratch'));
+
+      await screen.findByRole('radiogroup', { name: /how much/i });
+      fireEvent.click(screen.getByRole('radio', { name: 'Full autonomy' }));
+
+      const alert = await screen.findByRole('alertdialog');
+      expect(alert).toHaveTextContent(/Turn on Full autonomy/);
+      expect(alert).toHaveTextContent(/never stops to ask|nothing is asked|no approval/i);
+
+      // Not applied until the person says so.
+      fireEvent.click(within(alert).getByRole('button', { name: 'Cancel' }));
+      await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+      expect(screen.getByRole('radio', { name: 'Act' })).toBeChecked();
+    });
+
+    it('applies full autonomy once confirmed', async () => {
+      const newSchedule = createMockSchedule({ id: 'sched-new' });
+      const transport = createMockTransport({
+        createTask: vi.fn().mockResolvedValue(newSchedule),
+      });
+      const Wrapper = createWrapper(transport);
+
+      render(
+        <Wrapper>
+          <CreateTaskDialog open={true} onOpenChange={vi.fn()} />
+        </Wrapper>
+      );
+      fireEvent.click(screen.getByText('Start from scratch'));
+
+      await screen.findByRole('radiogroup', { name: /how much/i });
+      fireEvent.click(screen.getByRole('radio', { name: 'Full autonomy' }));
+      fireEvent.click(
+        within(await screen.findByRole('alertdialog')).getByRole('button', {
+          name: 'Turn on Full autonomy',
+        })
+      );
+
+      await waitFor(() =>
+        expect(screen.getByRole('radio', { name: 'Full autonomy' })).toBeChecked()
+      );
+    });
   });
 
   describe('a task set to a mode this form does not offer', () => {
-    // The form offers two of the six modes. It used to coerce anything else to
-    // "Allow file edits" when it loaded the task, so opening a `plan`-mode task
-    // to fix a typo in its prompt and pressing Save widened what it may do —
-    // silently, and without the person ever touching the setting.
+    // The form offers the stops its runtime declares. It used to coerce anything
+    // else to "Allow file edits" when it loaded the task, so opening a
+    // `plan`-mode task to fix a typo in its prompt and pressing Save widened what
+    // it may do — silently, and without the person ever touching the setting.
 
-    it('shows the real mode, selected, instead of pretending it is one of the two', async () => {
+    it('shows the real mode instead of pretending it is one of the stops', async () => {
       const transport = createMockTransport();
       const Wrapper = createWrapper(transport);
       const schedule = createMockSchedule({ id: 'sched-plan', permissionMode: 'plan' });
@@ -322,15 +397,11 @@ describe('CreateTaskDialog', () => {
         </Wrapper>
       );
 
-      const stored = await screen.findByLabelText('Keep current: plan only, change nothing');
-      expect((stored as HTMLInputElement).checked).toBe(true);
-      expect((stored as HTMLInputElement).disabled).toBe(true);
-      // The explanation is tied to the radio, not just sitting near it.
-      expect(stored.getAttribute('aria-describedby')).toBe('schedule-permission-carried-note');
-      expect(document.getElementById('schedule-permission-carried-note')?.textContent).toContain(
-        'Saving keeps it as it is'
-      );
-      expect((screen.getByLabelText('Allow file edits') as HTMLInputElement).checked).toBe(false);
+      const note = await screen.findByTestId('trust-dial-stranded');
+      expect(note).toHaveTextContent(/Plan/);
+      expect(note).toHaveTextContent('Saving keeps it as it is');
+      const dial = screen.getByRole('radiogroup', { name: /how much/i });
+      expect(within(dial).queryAllByRole('radio', { checked: true })).toHaveLength(0);
     });
 
     it('keeps it when an unrelated edit is saved', async () => {
@@ -365,11 +436,11 @@ describe('CreateTaskDialog', () => {
       });
     });
 
-    it('replaces it when the person picks one of the two on purpose', async () => {
+    it('replaces it when the person picks a stop on purpose', async () => {
       const schedule = createMockSchedule({
-        id: 'sched-default',
+        id: 'sched-dontask',
         name: 'Old Name',
-        permissionMode: 'default',
+        permissionMode: 'dontAsk',
       });
       const transport = createMockTransport({
         updateTask: vi.fn().mockResolvedValue(schedule),
@@ -385,14 +456,15 @@ describe('CreateTaskDialog', () => {
       await waitFor(() => {
         expect(screen.getByDisplayValue('Old Name')).toBeTruthy();
       });
-      fireEvent.click(screen.getByLabelText('Allow file edits'));
-      expect(screen.queryByLabelText(/^Keep current:/)).toBeNull();
+      await screen.findByTestId('trust-dial-stranded');
+      fireEvent.click(screen.getByRole('radio', { name: 'Act' }));
+      expect(screen.queryByTestId('trust-dial-stranded')).toBeNull();
 
       fireEvent.click(screen.getByText('Save'));
 
       await waitFor(() => {
         expect(transport.updateTask).toHaveBeenCalledWith(
-          'sched-default',
+          'sched-dontask',
           expect.objectContaining({ permissionMode: 'acceptEdits' })
         );
       });
@@ -412,10 +484,10 @@ describe('CreateTaskDialog', () => {
         </Wrapper>
       );
 
-      expect(await screen.findByLabelText('Keep current: Auto')).toBeTruthy();
+      expect(await screen.findByTestId('trust-dial-stranded')).toHaveTextContent(/Auto/);
     });
 
-    it('offers only the two real options for a task already on one of them', async () => {
+    it('says nothing at all for a task already sitting on a stop', async () => {
       const transport = createMockTransport();
       const Wrapper = createWrapper(transport);
       const schedule = createMockSchedule({ id: 'sched-ae', permissionMode: 'acceptEdits' });
@@ -427,9 +499,9 @@ describe('CreateTaskDialog', () => {
       );
 
       await waitFor(() => {
-        expect((screen.getByLabelText('Allow file edits') as HTMLInputElement).checked).toBe(true);
+        expect(screen.getByRole('radio', { name: 'Act' })).toBeChecked();
       });
-      expect(screen.getAllByRole('radio')).toHaveLength(2);
+      expect(screen.queryByTestId('trust-dial-stranded')).toBeNull();
     });
   });
 

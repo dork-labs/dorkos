@@ -1,48 +1,25 @@
+import { useState } from 'react';
 import { ChevronRight, Trash2 } from 'lucide-react';
 import { useCreateTask, useUpdateTask } from '@/layers/entities/tasks';
 import type { TaskTemplate } from '@/layers/entities/tasks';
-import { ResponsiveDialogFooter, Label, Button, PermissionModeScopeNote } from '@/layers/shared/ui';
+import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
+import {
+  ResponsiveDialogFooter,
+  Label,
+  Button,
+  PermissionModeScopeNote,
+  TrustDial,
+  UnattendedAutonomyDialog,
+} from '@/layers/shared/ui';
 import { useAppForm } from '@/layers/shared/lib/form';
 import { permissionModeLabel } from '@/layers/shared/lib';
+import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import type { PermissionMode, Task } from '@dorkos/shared/types';
 import { ScheduleBuilder } from './TaskBuilder';
 import { TimezoneCombobox } from './TimezoneCombobox';
 import { AgentPicker } from './AgentPicker';
 
 export type DialogStep = 'preset-picker' | 'form';
-
-/**
- * The two modes this form lets a person choose between. A task can hold any of
- * the six (a SKILL.md on disk names them all, and so does the session picker),
- * and one that arrived on a different mode is shown as it is rather than
- * squeezed into one of these — see {@link buildFormValues}.
- */
-const OFFERED_MODES: readonly PermissionMode[] = ['acceptEdits', 'bypassPermissions'];
-
-/**
- * What the modes this form does NOT offer let a task do, in the same plain
- * words as the two it does ("Allow file edits", "Full autonomy") — a task's
- * mode sits next to those two, so an id like "Bypass All" reads as a different
- * kind of thing and tells a non-developer nothing.
- *
- * `auto` and `dontAsk` are deliberately absent. `packages/skills/src/task-schema.ts`
- * carries them "as-is" without saying what they do, and inventing a description
- * for a mode nobody has documented is how a person ends up trusting the wrong
- * sentence. Those fall back to {@link permissionModeLabel}, which returns an
- * unknown mode's own spelling for exactly this reason (DOR-496).
- */
-const CARRIED_MODE_DESCRIPTIONS: Partial<Record<PermissionMode, string>> = {
-  default: 'ask before every action',
-  plan: 'plan only, change nothing',
-};
-
-/** Id tying the carried-mode explanation to the radio it describes. */
-const CARRIED_MODE_NOTE_ID = 'schedule-permission-carried-note';
-
-/** How a mode the form cannot change is named on its own radio. */
-function carriedModeLabel(mode: PermissionMode): string {
-  return `Keep current: ${CARRIED_MODE_DESCRIPTIONS[mode] ?? permissionModeLabel(mode)}`;
-}
 
 export const DEFAULT_MAX_RUNTIME = '10m';
 const MAX_NAME_LENGTH = 100;
@@ -70,11 +47,11 @@ function msToRuntimeStr(ms: number): string {
  * Build form default values from an edit task, a preset, or blank defaults.
  *
  * A task's stored `permissionMode` is carried through exactly as it is, even
- * when it is one of the four modes this form does not offer. Coercing it to
- * `acceptEdits` on load — which this did — meant that opening a `plan`-mode task
- * to fix a typo in its prompt and pressing Save widened what that task may do,
- * without the person touching the setting or being told. Widening is a choice
- * somebody has to make on purpose.
+ * when it is a mode the dial has no stop for. Coercing it to `acceptEdits` on
+ * load — which this did — meant that opening a `plan`-mode task to fix a typo in
+ * its prompt and pressing Save widened what that task may do, without the person
+ * touching the setting or being told. Widening is a choice somebody has to make
+ * on purpose.
  */
 export function buildFormValues(
   editTask?: Task,
@@ -144,6 +121,13 @@ export function ScheduleForm({
 }: ScheduleFormProps) {
   const createTask = useCreateTask();
   const updateTask = useUpdateTask();
+  // A task runs on whatever runtime the server drives runs with, which today is
+  // the server default — a task carries no runtime of its own. Nullish is the
+  // honest ask: `useCapabilitiesForRuntime` resolves it to the default rather
+  // than this form guessing a name.
+  const caps = useCapabilitiesForRuntime(null);
+  const descriptors = caps?.permissionModes.values ?? [];
+  const [pendingAutonomy, setPendingAutonomy] = useState<PermissionModeDescriptor | null>(null);
 
   const form = useAppForm({
     defaultValues,
@@ -306,54 +290,72 @@ export function ScheduleForm({
 
             <div className="mt-3 space-y-4 pl-6">
               <form.AppField name="permissionMode">
-                {(field) => (
-                  <fieldset className="space-y-2">
-                    <legend className="mb-1.5 text-sm font-medium">Permission Mode</legend>
-                    <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="radio"
-                        name="permissionMode"
-                        checked={field.state.value === 'acceptEdits'}
-                        onChange={() => field.handleChange('acceptEdits')}
+                {(field) => {
+                  const current = descriptors.find((d) => d.id === field.state.value);
+                  return (
+                    <fieldset className="space-y-2">
+                      <legend className="mb-1.5 text-sm font-medium">Permissions</legend>
+                      <TrustDial
+                        mode={field.state.value}
+                        descriptors={descriptors}
+                        // The autonomy stop is the one nobody can walk back on a
+                        // run nobody is watching, so it asks first.
+                        onChangeMode={(next) => {
+                          const descriptor = descriptors.find((d) => d.id === next);
+                          if (descriptor?.stop === 'autonomy') {
+                            setPendingAutonomy(descriptor);
+                            return;
+                          }
+                          field.handleChange(next as PermissionMode);
+                        }}
+                        // A schedule has no Plan switch. One saved at `plan` is
+                        // kept and named, not frozen behind a control that is
+                        // not on this screen.
+                        strandsWorkingMode
+                        strandedNote={
+                          <>
+                            This task is set to “{permissionModeLabel(field.state.value)}”, which is
+                            not one of these. Saving keeps it as it is — pick a stop to change it.
+                          </>
+                        }
                       />
-                      Allow file edits
-                    </label>
-                    <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="radio"
-                        name="permissionMode"
-                        checked={field.state.value === 'bypassPermissions'}
-                        onChange={() => field.handleChange('bypassPermissions')}
-                      />
-                      Full autonomy
-                    </label>
-                    {!OFFERED_MODES.includes(field.state.value) && (
-                      <>
-                        <label className="text-muted-foreground flex items-center gap-2 text-sm">
-                          <input
-                            type="radio"
-                            name="permissionMode"
-                            checked
-                            disabled
-                            readOnly
-                            aria-describedby={CARRIED_MODE_NOTE_ID}
-                          />
-                          {carriedModeLabel(field.state.value)}
-                        </label>
-                        <p id={CARRIED_MODE_NOTE_ID} className="text-muted-foreground text-xs">
-                          This task was set up somewhere else. Saving keeps it as it is — pick one
-                          of the options above to change it.
+                      {/* The fact that is true here and on no attended surface:
+                          a stop that asks has nobody to ask. Read from what the
+                          runtime declared, never from a mode id. */}
+                      {current !== undefined && current.asks !== 'never' && (
+                        <p
+                          data-testid="task-unattended-note"
+                          className="text-muted-foreground px-1 text-xs leading-relaxed"
+                        >
+                          Nobody is watching a scheduled run. If it stops to ask, it waits there
+                          until the run hits its time limit.
                         </p>
-                      </>
-                    )}
-                    {field.state.value === 'bypassPermissions' && (
-                      <p className="text-xs text-yellow-600 dark:text-yellow-400">
-                        Warning: This allows the agent to execute any tool without approval.
-                      </p>
-                    )}
-                    <PermissionModeScopeNote mode={field.state.value} />
-                  </fieldset>
-                )}
+                      )}
+                      <PermissionModeScopeNote
+                        mode={field.state.value}
+                        {...(current ? { descriptor: current } : {})}
+                        className="px-1"
+                      />
+                      <UnattendedAutonomyDialog
+                        descriptor={pendingAutonomy}
+                        consequence={
+                          <>
+                            A scheduled run has nobody to ask, so nothing is asked: no approval
+                            card, no message, no record of a decision anybody made. The run does
+                            whatever it decides to, until it finishes or hits its time limit.
+                          </>
+                        }
+                        onCancel={() => setPendingAutonomy(null)}
+                        onConfirm={() => {
+                          if (pendingAutonomy) {
+                            field.handleChange(pendingAutonomy.id as PermissionMode);
+                          }
+                          setPendingAutonomy(null);
+                        }}
+                      />
+                    </fieldset>
+                  );
+                }}
               </form.AppField>
 
               <form.AppField name="maxRuntime">
