@@ -278,6 +278,47 @@ describe('what the incumbent directory says decides the outcome', () => {
 });
 
 // ---------------------------------------------------------------------------
+// §5.4 — relocate owns the destination's incumbent
+// ---------------------------------------------------------------------------
+
+describe('relocating onto an occupied directory', () => {
+  it('replaces the row already there instead of throwing a UNIQUE constraint', async () => {
+    // **The state the guard itself makes reachable.** `/w` is registered as X.
+    // D's manifest is checked out into `/w`, AND D's old home has genuinely lost
+    // its manifest — so this is a true relocation whose destination is taken.
+    // `agents.project_path` is NOT NULL UNIQUE, so a `relocate` that did not own
+    // the incumbent would throw SQLITE_CONSTRAINT out of `syncFromDisk` and, on
+    // the scan path, abort the whole `discover()` generator with an opaque
+    // error — trading a silent theft for a dead scan.
+    const base = await makeTempDir();
+    const dHome = path.join(base, 'd-home');
+    const workspace = path.join(base, 'w');
+    const dManifest = makeManifest({ id: '01DDD0000000000000000000D', name: 'dee' });
+    await seedAgent(dHome, dManifest);
+    await seedAgent(workspace, makeManifest({ id: '01XXX0000000000000000000X', name: 'ex' }));
+
+    const mesh = new MeshCore({ db, defaultScanRoot: base });
+    for await (const _ of mesh.discover([base])) void _;
+    expect(mesh.listWithPaths()).toHaveLength(2);
+
+    // D moves house: its old home is emptied and its manifest lands in `/w`,
+    // which X still holds.
+    await fs.rm(path.join(dHome, MANIFEST_DIR), { recursive: true, force: true });
+    await writeManifest(workspace, dManifest);
+
+    await expect(mesh.syncFromDisk(workspace)).resolves.toBe('synced');
+
+    // D lives at `/w` now, and X — the incumbent it replaced — is gone, which is
+    // the same replace-the-path-incumbent rule an ordinary registration follows.
+    expect(pathOf(mesh, '01DDD0000000000000000000D')).toBe(workspace);
+    expect(pathOf(mesh, '01XXX0000000000000000000X')).toBeUndefined();
+    expect(mesh.listWithPaths()).toHaveLength(1);
+
+    mesh.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // §5.6 — the contract stops lying
 // ---------------------------------------------------------------------------
 

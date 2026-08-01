@@ -93,6 +93,32 @@ export interface NoticeSubject {
   displayName: string;
 }
 
+/** What the caller knows about one silence, beyond the reason for it. */
+export interface SilenceContext {
+  /**
+   * What the room KNOWS the agent is doing, for a `busy` reason. Ignored for
+   * every other reason, which has nothing to describe.
+   */
+  busyWith?: BusyContext;
+  /**
+   * This message named this agent, even though no stored mention says so.
+   *
+   * The third route into {@link RoomNoticeLog.directlyAsked}, and it exists
+   * because of a state the other two cannot see: a ghost claims no names, so a
+   * person typing `@ana are you there?` at one produces an entry whose
+   * `mentions` is EMPTY. Read through the stored list alone, the most direct
+   * question in the room looks like ordinary chatter and is damped after the
+   * first — the "answered 'are you there?' with silence" failure, arrived at
+   * from the other side.
+   *
+   * Safe to be undamped for the same reason a resolved mention is: the bound is
+   * per addressed message and the sender is the one addressing. Ordinary
+   * chatter can never land here, because a ghost owns no name for chatter to
+   * match.
+   */
+  namedDirectly?: boolean;
+}
+
 /**
  * How many keys each notice memory holds before forgetting the oldest.
  *
@@ -249,14 +275,14 @@ export class RoomNoticeLog {
    *   not a claimed target: a trigger refused before it was claimed never became
    *   one, and it owes the same line as a turn that ran and could not.
    * @param reason - Why it stayed quiet, which picks the words.
-   * @param busyWith - What the room KNOWS the agent is doing, for a `busy`
-   *   reason. Ignored for a failure, which has nothing to describe.
    * @param dispatchId - The dispatch this refusal belongs to, or `null` when
    *   there is none. Required rather than ambient, and required rather than
    *   optional: a refusal decided in `claimTargets` runs synchronously inside
    *   `RoomService.post`, which for an agent's reply is inside the REPLYING
    *   agent's dispatch scope — so the ambient id there names somebody else.
    *   Every call site has to say which it is.
+   * @param context - What else is known: what a busy agent is doing, and
+   *   whether this message named it by a string no stored mention records.
    */
   reportSilence(
     room: Room,
@@ -264,13 +290,12 @@ export class RoomNoticeLog {
     agent: NoticeSubject,
     reason: RoomTurnUnanswered,
     dispatchId: string | null,
-    busyWith: BusyContext = 'unknown'
+    context: SilenceContext = {}
   ): void {
+    const busyWith = context.busyWith ?? 'unknown';
     const key = silenceKey(room.id, agent.authorId, reason);
-    const damped =
-      reason !== 'failed' &&
-      !this.directlyAsked(room, entry, agent.authorId) &&
-      this.noticedSilence.has(key);
+    const asked = context.namedDirectly === true || this.directlyAsked(room, entry, agent.authorId);
+    const damped = reason !== 'failed' && !asked && this.noticedSilence.has(key);
     // Every refusal, damped ones included. A room that went forty-one minutes
     // saying nothing left three lines in the log to explain it, and the two
     // silences that mattered most — the ones a damping key swallowed — left
@@ -618,7 +643,9 @@ export class RoomNoticeLog {
    *   (ADR 260727-184933 D6), and the rule should still read correctly then.
    * - **Addressed to this agent** — named in `entry.mentions`, or in a direct
    *   message, where every message a person sends is addressed to whoever is on
-   *   the other side and no `@` is needed to mean it.
+   *   the other side and no `@` is needed to mean it. A third route exists for
+   *   the one case a stored mention cannot record — see
+   *   {@link SilenceContext.namedDirectly}.
    *
    * `mentions` is the resolved list stored at write time, never a re-parse of
    * the text (`.claude/rules/room-conduct.md`), so this asks exactly the question

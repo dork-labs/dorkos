@@ -189,6 +189,141 @@ describe('a ghost author claims nothing', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Naming a ghost is a question, and it gets an answer every time
+// ---------------------------------------------------------------------------
+
+describe('typing a ghost’s name is answered, not swallowed', () => {
+  /**
+   * A channel with a ghost member left at the DEFAULT response mode.
+   *
+   * This is the shape the mechanism is most likely to meet, and the one where
+   * releasing the name could have made things WORSE than leaving it: `engaged`
+   * means an un-addressed message selects nobody, and a ghost owns no name — so
+   * `@ana are you there?` resolved to nobody, triggered nobody, and wrote
+   * nothing. Silence, in answer to the most direct question in the room.
+   */
+  function channelWithGhost(): { harness: RoomHarness; roomId: string; ghostId: string } {
+    const harness = liveHarness();
+    registerAgent(harness.db, { id: 'ULID_ANA', projectPath: ANA_PATH, name: 'ana' });
+    const seeded = channelWith(harness, [ANA_PATH]);
+    const ghost = harness.authors.resolveAgent(ANA_PATH, 'ana');
+    harness.db.delete(agents).where(eq(agents.projectPath, ANA_PATH)).run();
+    return { harness, roomId: seeded.id, ghostId: ghost.id };
+  }
+
+  it('answers every message that names it — three asks, three notices', async () => {
+    const { harness, roomId } = channelWithGhost();
+
+    for (const text of ['@ana are you there?', 'hey @ana', '@ana ping']) {
+      harness.service.post(roomId, { authorId: harness.human, text });
+      await harness.service.triggersIdle();
+    }
+
+    // Never damped: the bound is per addressed message and the person asking is
+    // the one setting it. Answering the first and swallowing the rest is the
+    // "'are you there?' met with silence" failure this rule exists to stop.
+    expect(noticeCodes(harness, roomId).filter((code) => code === 'agent_gone')).toHaveLength(3);
+    expect(harness.runner.turns).toHaveLength(0);
+  });
+
+  it('says nothing at all about ordinary chatter that does not name it', async () => {
+    const { harness, roomId } = channelWithGhost();
+
+    for (const text of ['morning all', 'shipping the thing today', 'anyone seen the build?']) {
+      harness.service.post(roomId, { authorId: harness.human, text });
+      await harness.service.triggersIdle();
+    }
+
+    // There is no spray path, structurally: a ghost claims no names, so nothing
+    // but an explicit token can reach it. This is what makes the never-damped
+    // rule above safe.
+    expect(noticeCodes(harness, roomId)).toEqual([]);
+  });
+
+  it('leaves a live room-mate holding a contested name, and answers the ghost’s own', async () => {
+    // Both halves at once: releasing the name is what lets the live agent be
+    // reached, and the ghost is only spoken about when a token reached NOBODY.
+    const harness = liveHarness();
+    registerAgent(harness.db, { id: 'ULID_ANA', projectPath: ANA_PATH, name: 'shared' });
+    registerAgent(harness.db, { id: 'ULID_BO', projectPath: BO_PATH, name: 'shared' });
+    const seeded = channelWith(harness, [ANA_PATH, BO_PATH]);
+    const ghost = harness.authors.resolveAgent(ANA_PATH, 'shared');
+    const live = harness.authors.resolveAgent(BO_PATH, 'shared');
+    harness.db.delete(agents).where(eq(agents.projectPath, ANA_PATH)).run();
+    putFirst(harness, seeded.id, ghost.id);
+
+    const reached = harness.service.post(seeded.id, {
+      authorId: harness.human,
+      text: '@shared can you look',
+    });
+    await harness.service.triggersIdle();
+
+    // The contested name reached the live agent, so nothing is said about the
+    // ghost — the person got what they asked for.
+    expect(reached.mentions).toEqual([live.id]);
+    expect(noticeCodes(harness, seeded.id)).toEqual([]);
+    expect(harness.runner.turns.map((turn) => turn.agentPath)).toEqual([BO_PATH]);
+  });
+
+  it('writes ONE notice when a message both names an always-mode ghost and triggers it', async () => {
+    // The overlap: the member is selected as a target AND named by the message.
+    // Two call sites that each looked right alone would write two identical
+    // lines about one agent for one message.
+    const { harness, roomId, ghostId } = channelWithGhost();
+    answerAlways(harness, roomId, ghostId);
+
+    harness.service.post(roomId, { authorId: harness.human, text: '@ana are you there?' });
+    await harness.service.triggersIdle();
+
+    expect(noticeCodes(harness, roomId).filter((code) => code === 'agent_gone')).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The damping rule, pinned in both directions
+// ---------------------------------------------------------------------------
+
+describe('how often the room says an agent is gone', () => {
+  it('says it ONCE for a state nobody asked about — three ordinary messages, one notice', async () => {
+    // Selected but not named: an `always` ghost is triggered by every message in
+    // the room. That is a STATE, and the most persistent one here — a line per
+    // message would be the over-participation this whole domain damps.
+    const harness = liveHarness();
+    registerAgent(harness.db, { id: 'ULID_ANA', projectPath: ANA_PATH, name: 'ana' });
+    const seeded = channelWith(harness, [ANA_PATH]);
+    const ghost = harness.authors.resolveAgent(ANA_PATH, 'ana');
+    answerAlways(harness, seeded.id, ghost.id);
+    harness.db.delete(agents).where(eq(agents.projectPath, ANA_PATH)).run();
+
+    for (const text of ['morning', 'still here', 'one more']) {
+      harness.service.post(seeded.id, { authorId: harness.human, text });
+      await harness.service.triggersIdle();
+    }
+
+    expect(noticeCodes(harness, seeded.id).filter((code) => code === 'agent_gone')).toHaveLength(1);
+  });
+
+  it('says it EVERY time in a DM, where every message is addressed', async () => {
+    // In a direct message naming is implicit, so all three are direct questions
+    // and all three are owed an answer.
+    const harness = liveHarness();
+    registerAgent(harness.db, { id: 'ULID_ANA', projectPath: ANA_PATH, name: 'ana' });
+    const dm = harness.service.createRoom(
+      { kind: 'dm', title: 'Ana', members: [], agentPaths: [ANA_PATH] },
+      harness.human
+    );
+    harness.db.delete(agents).where(eq(agents.projectPath, ANA_PATH)).run();
+
+    for (const text of ['hello?', 'you around?', 'ana?']) {
+      harness.service.post(dm.id, { authorId: harness.human, text });
+      await harness.service.triggersIdle();
+    }
+
+    expect(noticeCodes(harness, dm.id).filter((code) => code === 'agent_gone')).toHaveLength(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // §5.11 — the stale-stamp scenario
 // ---------------------------------------------------------------------------
 

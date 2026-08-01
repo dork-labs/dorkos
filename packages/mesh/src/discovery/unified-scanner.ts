@@ -9,7 +9,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import type { DiscoveryStrategy } from '../types.js';
-import { readManifest, MANIFEST_DIR, MANIFEST_FILE } from '../manifest.js';
+import { readManifest, probeManifest } from '../manifest.js';
 import type { ScanEvent, ScanProgress, UnifiedScanOptions } from './types.js';
 import { UNIFIED_EXCLUDE_PATTERNS, BACKUP_DIR_MARKER } from './types.js';
 
@@ -48,31 +48,6 @@ const ALLOWED_DOT_DIRS = new Set([
   '.kilocode',
   '.trae',
 ]);
-
-/**
- * Whether a directory holds a `.dork/agent.json` FILE — the gate on whether it
- * may be offered as a new-agent candidate.
- *
- * Deliberately not `readManifest`, whose `null` means both "no manifest" and
- * "a manifest that will not parse". The second must NOT reopen the Register
- * affordance: that would overwrite a git-tracked file with a fresh id rather
- * than fixing it.
- *
- * A read error that is not `ENOENT`/`ENOTDIR` answers **yes**, on the same
- * errno discipline the relocation guard uses: a directory whose `.dork/` cannot
- * be stat'd may well hold a manifest, and offering it as a fresh agent is the
- * irreversible direction to be wrong in.
- *
- * @param dir - The directory being walked.
- */
-async function manifestFileExists(dir: string): Promise<boolean> {
-  try {
-    return (await fs.stat(path.join(dir, MANIFEST_DIR, MANIFEST_FILE))).isFile();
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    return !(code === 'ENOENT' || code === 'ENOTDIR');
-  }
-}
 
 /**
  * Unified async BFS scanner for agent discovery.
@@ -160,17 +135,30 @@ export async function* unifiedScan(
 
       // Check for existing .dork/agent.json — auto-import, then continue BFS.
       //
-      // Two questions, deliberately asked separately. "Is there a manifest FILE
-      // here" decides whether this directory may be offered as a new-agent
-      // candidate below; "does it parse" decides whether it can be imported.
-      // `readManifest` answers `null` to both absent and invalid, and collapsing
-      // them here is what let a corrupt manifest surface as a fresh candidate.
-      const hasManifest = await manifestFileExists(dir);
-      // The logger is passed so a present-but-invalid manifest names itself in
-      // the scan's own log. Without it those warnings went to the console, where
-      // an operator running the server never sees them — and the recovery
-      // (fix or delete the file) is unguessable without the path.
-      const manifest = hasManifest ? await readManifest(dir, logger) : null;
+      // **Three states, deliberately not two.** `readManifest` answers `null` to
+      // both "nothing here" and "here but unreadable", and collapsing them is
+      // what let a corrupt manifest surface as a fresh candidate — whose
+      // Register button mints a ULID over the very file that could not be read.
+      // `probeManifest` keeps them apart, and its `unreadable` covers every way
+      // a manifest can be present and unusable: a permission drop, an I/O
+      // error, a `.dork/agent.json` that is a DIRECTORY, invalid JSON, a body
+      // that fails the schema.
+      const probe = await probeManifest(dir);
+      const hasManifest = probe.state !== 'absent';
+      if (probe.state === 'unreadable') {
+        // **The only line anybody gets.** `readManifest` is silent on an I/O
+        // failure and this directory is no longer offered as a candidate, so
+        // without this the file is invisible everywhere — and the recovery is
+        // to go and fix or delete a path nobody has been told about.
+        logger?.warn('[mesh] unified-scanner: an agent manifest could not be read', {
+          event: 'mesh.identity.manifest_unreadable',
+          projectPath: dir,
+          detail: probe.detail,
+        });
+      }
+      // Read for real only once the probe says there is something to read. The
+      // logger rides along for the race where the file changes in between.
+      const manifest = probe.state === 'present' ? await readManifest(dir, logger) : null;
       if (manifest) {
         progress.foundAgents++;
         yield { type: 'auto-import', data: { manifest, path: dir } };
@@ -202,7 +190,10 @@ export async function* unifiedScan(
       // dirtying a tracked file that would change the primary agent's id if it
       // were merged. Imported, refused, or invalid, this directory already has
       // an identity; someone who wants a clone to be its own agent re-inits it
-      // deliberately rather than clicking a scan surface.
+      // deliberately rather than clicking a scan surface. The same holds for a
+      // `.dork/agent.json` that is not a file at all — a directory of that name
+      // is a broken install, not a fresh project, and Register would fail inside
+      // `writeManifest` anyway.
       if (!hasManifest && !registry.isRegistered(dir)) {
         for (const strategy of strategies) {
           try {

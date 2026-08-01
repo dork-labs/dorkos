@@ -58,17 +58,26 @@ function makeManifest(id: string): AgentManifest {
 }
 
 /** A logger whose warnings a test can read, standing in for the scan's own. */
-function recordingLogger(): Logger & { warns: string[] } {
-  const warns: string[] = [];
+function recordingLogger(): Logger & { warns: Array<[string, unknown]> } {
+  const warns: Array<[string, unknown]> = [];
   return {
     warns,
-    warn: (msg: unknown) => void warns.push(String(msg)),
+    warn: (msg: unknown, ...rest: unknown[]) => void warns.push([String(msg), rest[0]]),
     info: vi.fn(),
     error: vi.fn(),
     debug: vi.fn(),
     trace: vi.fn(),
     fatal: vi.fn(),
-  } as unknown as Logger & { warns: string[] };
+  } as unknown as Logger & { warns: Array<[string, unknown]> };
+}
+
+/** Every unreadable-manifest warning the scan wrote, as its structured fields. */
+function unreadableWarnings(
+  logger: Logger & { warns: Array<[string, unknown]> }
+): Array<{ projectPath?: string; detail?: string }> {
+  return logger.warns
+    .map(([, fields]) => fields as { event?: string; projectPath?: string; detail?: string })
+    .filter((fields) => fields?.event === 'mesh.identity.manifest_unreadable');
 }
 
 /**
@@ -127,8 +136,56 @@ describe('a directory that already has an identity is never a candidate', () => 
     expect(mesh.listWithPaths()).toHaveLength(0);
     expect(candidates).not.toContain(broken);
     // So the log is what makes the recovery — fix it or delete it — reachable,
-    // and it has to carry the path.
-    expect(logger.warns.some((line) => line.includes(broken))).toBe(true);
+    // and it has to carry the path AND what is wrong with the file.
+    const named = unreadableWarnings(logger);
+    expect(named.map((fields) => fields.projectPath)).toEqual([broken]);
+    expect(named[0]!.detail).toBeTruthy();
+
+    mesh.close();
+  });
+
+  it('names a manifest it could not READ, rather than leaving it invisible', async () => {
+    // The gap this closes: `readManifest` is silent on an I/O failure, and the
+    // directory is no longer offered as a candidate either — so an unreadable
+    // manifest had nothing anywhere to say it existed. It is also the state a
+    // person is least able to guess at, because nothing about the room or the
+    // agent list changes.
+    const base = await makeTempDir();
+    const locked = await makeDetectable(path.join(base, 'locked'));
+    await writeManifest(locked, makeManifest('01ANA0000000000000000000A'));
+    const manifestFile = path.join(locked, MANIFEST_DIR, MANIFEST_FILE);
+    await fs.chmod(manifestFile, 0o000);
+
+    const logger = recordingLogger();
+    const mesh = new MeshCore({ db, defaultScanRoot: base, logger });
+    let candidates: string[];
+    try {
+      candidates = await candidatePaths(mesh, base);
+    } finally {
+      await fs.chmod(manifestFile, 0o600);
+    }
+
+    expect(candidates).not.toContain(locked);
+    const named = unreadableWarnings(logger);
+    expect(named.map((fields) => fields.projectPath)).toEqual([locked]);
+    expect(named[0]!.detail).toBe('EACCES');
+
+    mesh.close();
+  });
+
+  it('treats a `.dork/agent.json` that is a DIRECTORY as an identity, not a fresh project', async () => {
+    // A broken install, not a new agent — and Register would fail inside
+    // `writeManifest` anyway. It reads as unreadable, so it is refused AND named.
+    const base = await makeTempDir();
+    const odd = await makeDetectable(path.join(base, 'odd'));
+    await fs.mkdir(path.join(odd, MANIFEST_DIR, MANIFEST_FILE), { recursive: true });
+
+    const logger = recordingLogger();
+    const mesh = new MeshCore({ db, defaultScanRoot: base, logger });
+    const candidates = await candidatePaths(mesh, base);
+
+    expect(candidates).not.toContain(odd);
+    expect(unreadableWarnings(logger).map((fields) => fields.projectPath)).toContain(odd);
 
     mesh.close();
   });

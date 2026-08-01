@@ -59,34 +59,45 @@ export function isLiveAuthor(author: AuthorRecord, agents: RoomAgentLookup): boo
 
 /**
  * Every name an author answers to after an `@`, most preferred first: an agent's
- * handle, then whatever it renders as.
+ * handle, then whatever it renders as — with the liveness question not asked.
  *
- * The single definition behind both halves of the contract — what
- * `RoomRoster.mentionCandidates` resolves at write time, and what
- * {@link advertisedHandles} may advertise. Two derivations of "the name this
- * author answers to" is how a picker starts offering a handle the resolver does
- * not accept.
- *
- * **An agent author that is not live answers to NOTHING** ({@link isLiveAuthor}).
- * The old fallback to `[displayName]` is exactly how a ghost claimed a name:
- * `claimNames` is first-claimant-wins over the roster, so a ghost ahead of a
- * live agent with the same display name took the name and the live agent was
- * unreachable by mention — verified by execution, not reasoning. Returning no
- * names releases the claim at its source, which is also what keeps
- * {@link advertisedHandles} from offering it: a candidate with no names owns
- * nothing to advertise.
+ * The single definition of "the name this author answers to", read TWICE by
+ * {@link rosterMentionCandidates} and meaning the same thing both times: for a
+ * live author it is what a name reaches, and for a ghost it is what a name
+ * WOULD have reached. Deriving the second from anything but the first is how a
+ * person's `@ana` comes to be recognised by one half of the room and not the
+ * other.
  *
  * @param author - The stored author.
  * @param agents - The lookup that resolves an agent's handle from its directory.
  */
-export function mentionNamesFor(author: AuthorRecord, agents: RoomAgentLookup): string[] {
-  if (!isLiveAuthor(author, agents)) return [];
+function namesAnsweredTo(author: AuthorRecord, agents: RoomAgentLookup): string[] {
   const handle = author.kind === 'agent' ? agents.byPath(author.naturalKey)?.name : null;
   return handle ? [handle, author.displayName] : [author.displayName];
 }
 
 /**
- * Project already-read memberships onto the mention-candidate sequence.
+ * A room's roster split by whether a member can still be reached by name.
+ *
+ * Both halves come out of ONE walk of the roster, because they are two readings
+ * of the same question and a second walk is how they would come to disagree.
+ */
+export interface RosterCandidates {
+  /**
+   * Who a name may actually reach, in roster order — the sequence
+   * `resolveMentions` runs against and the only one a handle is advertised from.
+   */
+  live: MentionCandidate[];
+  /**
+   * Members a name WOULD have reached, if their author still spoke for its
+   * directory. Nothing addresses them; they exist so that typing a ghost's name
+   * is answered rather than swallowed.
+   */
+  unreachable: MentionCandidate[];
+}
+
+/**
+ * Project already-read memberships onto the mention-candidate sequences.
  *
  * Takes what the caller has already fetched rather than re-querying, so a caller
  * that has the roster in hand pays nothing to ask who owns what. Order is the
@@ -94,28 +105,43 @@ export function mentionNamesFor(author: AuthorRecord, agents: RoomAgentLookup): 
  * name. Every caller passes `RoomStore.listMembers` order, which is the order
  * `resolveMentions` sees at write time.
  *
- * A ghost member stays in the sequence carrying an EMPTY name list rather than
- * being dropped from it. The sequence mirrors the roster, and a candidate with
- * no names claims nothing and is offered nothing — so the exclusion lives in one
- * place ({@link mentionNamesFor}) instead of being re-derived here.
+ * **This is the seam that releases a ghost's claims, and it is the only one.**
+ * `claimNames` is first-claimant-wins over `live`, so a ghost ahead of a live
+ * agent with the same display name used to take the name and starve it —
+ * verified by execution, not reasoning. A ghost therefore stays in `live`
+ * carrying an EMPTY name list: it mirrors the roster, claims nothing, and is
+ * offered nothing, so {@link advertisedHandles} needs no rule of its own.
+ *
+ * The SAME member appears in `unreachable` with the names it would have
+ * answered to. Releasing a name must not make it a SILENT name: `@ana are you
+ * there?` now addresses nobody, and a message that addresses nobody triggers
+ * nobody and would leave the room quiet in answer to a direct question. This is
+ * what lets the person who typed it be told why nobody came.
  *
  * @param members - The room's memberships, in store order.
  * @param authors - The resolved authors, keyed by id. A member whose author row
  *   has vanished is skipped: it answers to no name.
  * @param agents - The lookup that resolves an agent's handle from its directory.
  */
-export function mentionCandidatesFrom(
+export function rosterMentionCandidates(
   members: readonly RoomMember[],
   authors: ReadonlyMap<string, AuthorRecord>,
   agents: RoomAgentLookup
-): MentionCandidate[] {
-  const candidates: MentionCandidate[] = [];
+): RosterCandidates {
+  const live: MentionCandidate[] = [];
+  const unreachable: MentionCandidate[] = [];
   for (const member of members) {
     const author = authors.get(member.authorId);
     if (!author) continue;
-    candidates.push({ authorId: author.id, names: mentionNamesFor(author, agents) });
+    const names = namesAnsweredTo(author, agents);
+    if (isLiveAuthor(author, agents)) {
+      live.push({ authorId: author.id, names });
+      continue;
+    }
+    live.push({ authorId: author.id, names: [] });
+    unreachable.push({ authorId: author.id, names });
   }
-  return candidates;
+  return { live, unreachable };
 }
 
 /**

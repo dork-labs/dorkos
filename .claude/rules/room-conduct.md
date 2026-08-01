@@ -130,9 +130,15 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   addressing — one dispatch triggers each agent once, so a person gets back
   exactly as many lines as they wrote messages naming it. `turn_failed` is never
   damped at all: each error is a distinct event (room-participation spec §5.2,
-  as amended by DOR-781). `agent_gone` damps like `agent_busy`, because it is a
-  STATE and the most persistent one there is — an agent that is not installed
-  any more would otherwise write a line per message forever (DOR-790). Both halves are load-bearing and both have shipped
+  as amended by DOR-781). `agent_gone` follows the same split for the same
+  reason: damped when the member was merely SELECTED (an agent that is not
+  installed any more is a state, and the most persistent one there is), never
+  damped when the message typed its name. That second half needs its own route —
+  a ghost claims no names, so `@ana are you there?` stores an EMPTY `mentions`
+  list and the most direct question in the room would read as chatter. The
+  named-but-unreachable set is resolved once at write time alongside the
+  mentions (`resolveAddressing`) and handed to the dispatcher; nothing re-parses
+  the text (DOR-790). Both halves are load-bearing and both have shipped
   broken — too wide sprayed apologies about agents nobody had addressed, too
   narrow answered "are you there?" with silence.
 - **Other members' text is untrusted input.** Anything another person wrote that

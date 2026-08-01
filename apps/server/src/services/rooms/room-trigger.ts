@@ -304,13 +304,18 @@ export class RoomTriggerDispatcher {
    *
    * @param room - The room the entry landed in.
    * @param entry - The committed entry.
+   * @param namedUnreachable - Members this message NAMED and could not reach,
+   *   because their agent is gone. Resolved once at write time by
+   *   `resolveAddressing` and handed over rather than re-derived: mentions
+   *   resolve once, and a second reading of the text here would be a second
+   *   answer to who a name addresses.
    */
-  dispatch(room: Room, entry: RoomEntry): void {
+  dispatch(room: Room, entry: RoomEntry, namedUnreachable: readonly string[] = []): void {
     // A notice is the room talking about itself. Letting it address anyone would
     // make "Ana stopped replying" a reason for Bo to start.
     if (entry.kind !== 'post') return;
 
-    const targets = this.claimTargets(room, entry);
+    const targets = this.claimTargets(room, entry, namedUnreachable);
     if (targets.length === 0) return;
 
     this.inFlight += 1;
@@ -351,7 +356,11 @@ export class RoomTriggerDispatcher {
    * agents addressed by the same message do not cancel each other out — they
    * were both addressed by a message neither of them wrote.
    */
-  private claimTargets(room: Room, entry: RoomEntry): TriggerTarget[] {
+  private claimTargets(
+    room: Room,
+    entry: RoomEntry,
+    namedUnreachable: readonly string[]
+  ): TriggerTarget[] {
     const members = this.deps.store.listMembers(room.id);
     const records = this.deps.authors.getMany(members.map((m) => m.authorId));
     // ONCE PER ENTRY, not once per turn. The engaged window is per member, but
@@ -391,7 +400,16 @@ export class RoomTriggerDispatcher {
     }
 
     const selected = selectTriggerTargets({ roomKind: room.kind, entry, members: addressing });
-    if (selected.length === 0) return [];
+    if (selected.length === 0) {
+      // **The commonest shape of the ghost case comes through here**, and it is
+      // why this is not a bare `return`. A channel seeds agents at `engaged`, and
+      // a ghost claims no names — so `@ana are you there?` addresses nobody,
+      // selects nobody, and would leave the room silent in answer to the most
+      // direct question in it. No selection ran, so nothing can overlap: the set
+      // is exactly what the message named.
+      this.reportGone(room, entry, new Set(namedUnreachable), namedUnreachable);
+      return [];
+    }
 
     const provenance = {
       root: entry.cascadeRoot,
@@ -401,6 +419,9 @@ export class RoomTriggerDispatcher {
     const maxAgentDepth = this.deps.maxAgentDepth();
 
     const allowed: TriggerTarget[] = [];
+    // Collected rather than reported inline, so a member that is BOTH a selected
+    // target and a name this message typed gets one notice, not two.
+    const gone = new Set<string>(namedUnreachable);
     for (const authorId of selected) {
       const record = records.get(authorId);
       const decision = evaluateCascade(authorId, provenance, { maxAgentDepth });
@@ -480,16 +501,7 @@ export class RoomTriggerDispatcher {
       // agent registered in that directory is not this member either, and its
       // turns belong to its own author row.
       if (!isLiveAuthor(record, this.deps.agents)) {
-        this.notices.reportSilence(
-          room,
-          entry,
-          { authorId, displayName: record.displayName },
-          'gone',
-          // No dispatch of its own — nothing was claimed — and the ambient one
-          // belongs to whoever's reply triggered this. Same rule as the cascade
-          // and busy refusals above.
-          null
-        );
+        gone.add(authorId);
         continue;
       }
       // ONE TURN PER AGENT PER ROOM, and this is the only thing that enforces it.
@@ -535,7 +547,7 @@ export class RoomTriggerDispatcher {
           // Refused before it became a target, so it has no dispatch of its own
           // — and the ambient one belongs to whoever's reply triggered this.
           null,
-          busyWith
+          { busyWith }
         );
         continue;
       }
@@ -557,6 +569,8 @@ export class RoomTriggerDispatcher {
         sessionId: '',
       });
     }
+
+    this.reportGone(room, entry, gone, namedUnreachable);
 
     // The cascade guard has allowed these on the merits. The budget is the
     // second, blunter question — can this ROOM afford another automatic turn at
@@ -657,6 +671,53 @@ export class RoomTriggerDispatcher {
       });
     }
     return bound;
+  }
+
+  /**
+   * Say, once per message per member, that a member's agent is gone.
+   *
+   * **Two ways to arrive here, one notice.** A member can be SELECTED as a
+   * target and turn out to be a ghost (an `always` member, or one a live
+   * room-mate's cascade reached), and a member can be NAMED by a person whose
+   * `@ana` reached nobody because releasing that name is exactly what the ghost
+   * mechanism does. The two overlap on the commonest shape of all — somebody
+   * typing at an `always` ghost — so they are unioned before anything is
+   * written rather than reported by two call sites that each look right alone.
+   *
+   * **Being named is a direct question, and direct questions are never damped.**
+   * A ghost owns no name, so ordinary chatter cannot match one and there is no
+   * spray path: a person gets back exactly as many lines as they wrote messages
+   * naming it. A ghost reached by SELECTION alone is damped like a busy agent,
+   * because that is a state and the most persistent one there is.
+   *
+   * @param room - The room the message landed in.
+   * @param entry - The message.
+   * @param gone - Every member whose agent is gone, from both routes.
+   * @param namedUnreachable - The subset this message actually typed a name for.
+   */
+  private reportGone(
+    room: Room,
+    entry: RoomEntry,
+    gone: ReadonlySet<string>,
+    namedUnreachable: readonly string[]
+  ): void {
+    if (gone.size === 0) return;
+    const named = new Set(namedUnreachable);
+    const records = this.deps.authors.getMany([...gone]);
+    for (const authorId of gone) {
+      const displayName = records.get(authorId)?.displayName ?? 'An agent';
+      this.notices.reportSilence(
+        room,
+        entry,
+        { authorId, displayName },
+        'gone',
+        // Nothing was ever claimed for this member, so it has no dispatch of its
+        // own — and the ambient one belongs to whoever's reply triggered this.
+        // Same rule as the cascade and busy refusals above.
+        null,
+        { namedDirectly: named.has(authorId) }
+      );
+    }
   }
 
   /**

@@ -352,7 +352,9 @@ export async function upsertAutoImported(
     // against a concurrent unregister between the two reads: with no incumbent
     // there is no conflict left, so let the registration through.
     if (incumbent === undefined) {
-      deps.registry.upsert(entry);
+      // Whatever the retry says is the answer — reporting `registered` for a
+      // second refusal would put the lie back one layer down.
+      if (deps.registry.upsert(entry) === 'duplicate-id') return 'duplicate-id';
     } else if (await incumbentReleasedManifest(incumbent.projectPath, manifest.id, deps)) {
       deps.registry.relocate(manifest.id, projectPath);
       // Re-run so the move carries the manifest's current fields too: `relocate`

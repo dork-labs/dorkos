@@ -72,8 +72,10 @@ export async function readManifest(
  *
  * - `absent` — there is demonstrably no manifest here (`ENOENT`/`ENOTDIR`).
  * - `unreadable` — a manifest may well be here and we could not read it: a
- *   permission drop, an I/O error, a descriptor limit, invalid JSON, a body
- *   that fails the schema.
+ *   permission drop, an I/O error, a descriptor limit, a `.dork/agent.json`
+ *   that is a DIRECTORY (`EISDIR`), invalid JSON, a body that fails the schema.
+ *   `detail` carries the errno, the parse error, or the schema issues, so one
+ *   log line can name what is actually wrong.
  * - `present` — read and validated; `id` is the manifest's ULID.
  */
 export type ManifestProbe =
@@ -119,7 +121,9 @@ export async function probeManifest(projectPath: string): Promise<ManifestProbe>
   }
 
   const result = AgentManifestSchema.safeParse(parsed);
-  if (!result.success) return { state: 'unreadable', detail: 'failed schema validation' };
+  if (!result.success) {
+    return { state: 'unreadable', detail: JSON.stringify(result.error.issues) };
+  }
   return { state: 'present', id: result.data.id };
 }
 
