@@ -40,10 +40,38 @@ describe('RuntimeCapabilities shape', () => {
       permissionModes: {
         supported: true,
         values: [
-          { id: 'default', label: 'Default' },
-          { id: 'acceptEdits', label: 'Accept edits' },
-          { id: 'plan', label: 'Plan' },
-          { id: 'bypassPermissions', label: 'Bypass permissions' },
+          {
+            id: 'default',
+            label: 'Default',
+            stop: 'ask',
+            asks: 'always',
+            reach: 'edit',
+            promise: 'Asks first.',
+          },
+          {
+            id: 'acceptEdits',
+            label: 'Accept edits',
+            stop: 'act',
+            asks: 'when-risky',
+            reach: 'edit',
+            promise: 'Edits on its own.',
+          },
+          {
+            id: 'plan',
+            label: 'Plan',
+            stop: 'ask',
+            asks: 'always',
+            reach: 'read',
+            promise: 'Reads and plans only.',
+          },
+          {
+            id: 'bypassPermissions',
+            label: 'Bypass permissions',
+            stop: 'autonomy',
+            asks: 'never',
+            reach: 'everything',
+            promise: 'Runs everything without asking.',
+          },
         ],
       },
       features: {
@@ -101,25 +129,40 @@ describe('RuntimeCapabilities shape', () => {
     expect(caps.features.anObject).toEqual({ nested: [1, 2, 3] });
   });
 
-  it('allows PermissionModeDescriptor with only required id and label', () => {
+  it('requires a PermissionModeDescriptor to say what its mode does', () => {
+    // Identity plus semantics is the whole descriptor: a mode that says what it
+    // is called but not what it does is the drift these fields exist to end.
+    // `description` and `native` stay optional — both are extra detail, not the
+    // meaning anything derives from.
     const minimal: PermissionModeDescriptor = {
       id: 'default',
       label: 'Default',
+      stop: 'ask',
+      asks: 'always',
+      reach: 'edit',
+      promise: 'Asks before it edits a file or runs a command.',
     };
 
     expect(minimal.id).toBe('default');
     expect(minimal.label).toBe('Default');
     expect(minimal.description).toBeUndefined();
+    expect(minimal.native).toBeUndefined();
   });
 
-  it('allows PermissionModeDescriptor with an optional description', () => {
+  it('allows PermissionModeDescriptor with an optional description and native name', () => {
     const described: PermissionModeDescriptor = {
       id: 'plan',
       label: 'Plan',
       description: 'Research only, no edits',
+      native: 'read-only',
+      stop: 'ask',
+      asks: 'always',
+      reach: 'read',
+      promise: 'Reads and plans only. Nothing changes until you approve the plan.',
     };
 
     expect(described.description).toBe('Research only, no edits');
+    expect(described.native).toBe('read-only');
   });
 });
 
