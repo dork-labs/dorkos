@@ -7,6 +7,7 @@ import {
   isConsentExemptPrincipal,
   type ConsentBindingStore,
 } from '../initiate-consent.js';
+import { TASK_SCHEDULER_PRINCIPAL } from '@dorkos/shared/relay-schemas';
 
 /** Build a binding with initiate-relevant fields, defaulting to a permissive DM. */
 function makeBinding(overrides: Partial<AdapterBinding> = {}): AdapterBinding {
@@ -78,6 +79,18 @@ describe('isConsentExemptPrincipal (trusted server-injected principals)', () => 
     expect(isConsentExemptPrincipal('relay.system.tasks.notifier')).toBe(true);
     expect(isConsentExemptPrincipal('relay.human.telegram.tg1.bot')).toBe(true);
     expect(isConsentExemptPrincipal('relay.human.slack.s1.bot')).toBe(true);
+  });
+
+  it('exempts the task scheduler — which is what stops HTTP callers spoofing it', () => {
+    // Load-bearing coupling, stated because it is invisible at both ends. The
+    // adapter refuses a run stop request whose `from` is not this principal
+    // (DOR-808), and the only reason a curl caller cannot simply assert it is
+    // that `POST /api/relay/messages` REJECTS every principal this predicate
+    // exempts. That rejection holds because the name sits under
+    // `relay.system.`. Rename it into a namespace this predicate does not
+    // cover — `relay.control.scheduler`, say — and the route would start
+    // accepting it, handing anyone with the port the ability to stop any run.
+    expect(isConsentExemptPrincipal(TASK_SCHEDULER_PRINCIPAL)).toBe(true);
   });
 
   it('does NOT exempt the console, agents, sessions, or arbitrary human ids', () => {

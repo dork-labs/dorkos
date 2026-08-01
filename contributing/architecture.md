@@ -1249,9 +1249,17 @@ routed through it queues behind the run it is trying to end. And it is not under
 explicitly refuses, and `GET /api/relay/stream` lets anyone watch
 `relay.system.>` with a handler that only forwards what it sees — a watcher on a
 stop's subject makes every Stop report success while nothing was stopped. The
-namespace is reserved in `relay-helpers.ts` (`SERVER_MANAGED_PREFIXES`) so no
-agent can register a mailbox that would swallow a stop, and the adapter refuses
-any stop whose `from` is not `relay.system.tasks.scheduler`.
+namespace is reserved in the bus itself (`packages/relay/src/lib/reserved-subjects.ts`),
+which both the agent tool surface and `POST /api/relay/endpoints` consult, and
+`EndpointRegistry` refuses a `relay.control.*` mailbox outright with no opt-out.
+Note what a mailbox there would actually do, since the obvious guess is wrong:
+it would not swallow the stop — the Maildir watcher re-dispatches to the same
+subscribers, so the handler still runs — but `deliveredTo` would count the
+mailbox delivery, reproducing the false confirmation by another route. Finally,
+the adapter refuses any stop whose `from` is not `relay.system.tasks.scheduler`;
+that name must stay under `relay.system.`, because `POST /api/relay/messages`
+rejects exactly the principals `isConsentExemptPrincipal` covers, and that is
+what stops an HTTP caller asserting it.
 
 Agent-created schedules enter `pending_approval` state and require human approval before activation.
 

@@ -6,6 +6,7 @@
 import path from 'node:path';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
+import { isServerManagedSubject } from '@dorkos/relay';
 
 /** Sender identity injected on the external `/mcp` surface (no per-session context). */
 export const EXTERNAL_MCP_SENDER = 'relay.external.mcp';
@@ -110,34 +111,12 @@ export function ownsEndpoint(
 }
 
 /**
- * Subject namespaces the server manages, which an agent may not register.
- *
- * `relay.agent.*` addresses are how messages reach an agent, so letting one
- * agent register another's would intercept its mail outright, not merely read
- * it. `relay.system.*` and `relay.human.*` belong to the server and the person
- * using it. The two ephemeral inbox namespaces are minted per tool call by
- * `relay_send_and_wait` and `relay_send_async`, which register them directly
- * rather than through the tool, so reserving them here costs nothing.
- *
- * `relay.control.*` carries the server's control signals — today, stopping a
- * task run (DOR-808). Registering a mailbox there would not merely read those
- * signals, it would CONSUME them: a matching endpoint makes the publish
- * pipeline skip subscriber dispatch entirely, so the adapter's stop handler
- * would never run while the publish still reported a delivery.
- */
-const SERVER_MANAGED_PREFIXES = [
-  'relay.agent.',
-  'relay.system.',
-  'relay.human.',
-  'relay.control.',
-  'relay.inbox.dispatch.',
-  'relay.inbox.query.',
-] as const;
-
-/**
  * Whether `subject` is in a namespace an agent may not register for itself.
  *
- * A caller registering its OWN address is allowed: that is the agent asking for
+ * The namespaces themselves are defined once, in the bus
+ * (`isServerManagedSubject`), so this surface and the HTTP route cannot drift
+ * apart. What lives here is the part only this surface knows: a caller
+ * registering its OWN address is allowed, because that is the agent asking for
  * the mailbox it already receives mail on, which grants it nothing new.
  *
  * @param subject - The subject the caller asked to register
@@ -146,7 +125,7 @@ const SERVER_MANAGED_PREFIXES = [
  */
 export function isReservedSubject(subject: string, identity: SenderIdentity): boolean {
   if (subject === identity.subject) return false;
-  return SERVER_MANAGED_PREFIXES.some((prefix) => subject.startsWith(prefix));
+  return isServerManagedSubject(subject);
 }
 
 /**

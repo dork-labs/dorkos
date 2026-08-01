@@ -41,6 +41,7 @@
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { validateSubject } from './subject-matcher.js';
+import { isControlSubject } from './lib/reserved-subjects.js';
 import type { EndpointInfo } from './types.js';
 
 /** Maildir subdirectories created for each endpoint. */
@@ -128,7 +129,8 @@ export class EndpointRegistry {
    * Refuses the registration when the subject would share a mailbox with an
    * existing endpoint (a letter-case variant) or when the mailbox already
    * records a different owner. Both are ownership boundaries, not conveniences:
-   * see the module docs.
+   * see the module docs. Also refuses any control subject outright — see
+   * {@link isControlSubject}.
    *
    * @param subject - The hierarchical subject for this endpoint (e.g. `relay.agent.myproject.backend`).
    *                  Must not contain wildcards (`*` or `>`).
@@ -136,9 +138,9 @@ export class EndpointRegistry {
    *                  the principal registering the endpoint, so later callers
    *                  can tell whose mailbox this is (see {@link EndpointInfo.owner}).
    * @returns The registered {@link EndpointInfo}
-   * @throws If the subject is invalid, the endpoint is already registered, the
-   *   subject collides with an existing mailbox, or the mailbox belongs to a
-   *   different owner
+   * @throws If the subject is invalid, names a control channel, is already
+   *   registered, collides with an existing mailbox, or belongs to a different
+   *   owner
    */
   async registerEndpoint(subject: string, options?: { owner?: string }): Promise<EndpointInfo> {
     const validation = validateSubject(subject);
@@ -149,6 +151,18 @@ export class EndpointRegistry {
     // Endpoints must be concrete subjects — no wildcards
     if (subject.includes('*') || subject.includes('>')) {
       throw new Error('Endpoint subjects must not contain wildcards (* or >)');
+    }
+
+    // Control signals travel by subscription and are never held in a mailbox.
+    // Refused here rather than at each caller, and with no opt-out: an endpoint
+    // here inflates `deliveredTo` into a false confirmation for every control
+    // signal on that subject (see `isControlSubject`), and no caller — the
+    // server included — has a reason to want one.
+    if (isControlSubject(subject)) {
+      throw new Error(
+        `Subject "${subject}" is a control channel and cannot have a mailbox: ` +
+          'control signals are delivered to subscribers, never stored'
+      );
     }
 
     if (this.endpoints.has(subject)) {

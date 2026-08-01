@@ -278,9 +278,12 @@ export type TaskDispatchPayload = z.infer<typeof TaskDispatchPayloadSchema>;
  * only forwards what it sees. A watcher attached to a stop's subject therefore
  * makes every stop report "delivered" while nothing was stopped — the honest
  * "nobody took it" answer becomes unreachable precisely when it is true.
- * `relay.control.` is outside every prefix that route will accept, and the
- * server reserves it so nothing else can register a mailbox that would swallow
- * a stop before the adapter's subscription ever runs.
+ * `relay.control.` is outside every prefix that route will accept, and the bus
+ * refuses a mailbox there outright — not because a mailbox would swallow the
+ * stop (it would not: the Maildir watcher re-dispatches to the same
+ * subscribers, so the handler still runs), but because `deliveredTo` would
+ * then count the mailbox and report the same false confirmation by a second
+ * route.
  *
  * The concrete subject is this prefix plus the run id, so a trace row names the
  * run it belongs to.
