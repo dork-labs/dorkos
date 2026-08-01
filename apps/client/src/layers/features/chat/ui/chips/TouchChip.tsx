@@ -3,8 +3,10 @@
  *
  * @module features/chat/ui/chips/TouchChip
  */
+import { motion, useReducedMotion } from 'motion/react';
 import { cn } from '@/layers/shared/lib';
 import type { TouchChip as TouchChipData } from '../../lib/touch-chips';
+import { chipEntryMotion } from './chip-motion';
 import { VERB_ICON, VERB_LABEL } from './chip-verbs';
 
 export interface TouchChipProps {
@@ -12,6 +14,12 @@ export interface TouchChipProps {
   chip: TouchChipData;
   /** Open the chip's target. Called for every chip; a chip with nowhere to go is a no-op. */
   onOpen: (chip: TouchChipData) => void;
+  /**
+   * Whether this chip is in the live row, where it pops in on arrival and is
+   * absorbed into the pile on its way out. Chips in the tray are a record being
+   * read rather than something arriving, so they default to still.
+   */
+  animated?: boolean;
 }
 
 /**
@@ -54,15 +62,17 @@ function accessibleNameFor(chip: TouchChipData): string {
  * `data-verb` and `data-live` are what the verb animations key off once they
  * land; they are written here so nothing has to be re-plumbed to switch them on.
  *
- * @param props - The chip model and the open handler.
+ * @param props - The chip model, the open handler, and whether it is in the live row.
  */
-export function TouchChip({ chip, onOpen }: TouchChipProps) {
+export function TouchChip({ chip, onOpen, animated = false }: TouchChipProps) {
+  const reducedMotion = useReducedMotion() ?? false;
   const openable = isOpenable(chip);
   const tombstone = chip.verb === 'delete';
   const hasDiffstat = chip.additions !== undefined || chip.deletions !== undefined;
 
   return (
-    <button
+    <motion.button
+      {...chipEntryMotion(animated, reducedMotion)}
       type="button"
       data-testid="touch-chip"
       data-verb={chip.verb}
@@ -92,6 +102,6 @@ export function TouchChip({ chip, onOpen }: TouchChipProps) {
           <span className="text-red-600 dark:text-red-400">−{chip.deletions ?? 0}</span>
         </span>
       )}
-    </button>
+    </motion.button>
   );
 }

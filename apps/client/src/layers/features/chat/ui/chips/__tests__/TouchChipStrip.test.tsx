@@ -101,6 +101,84 @@ describe('TouchChipStrip — the settled summary line', () => {
   });
 });
 
+describe('TouchChipStrip — the live row', () => {
+  /** The chips currently in the live row, in DOM order (left to right). */
+  function liveRowLabels(): string[] {
+    return within(screen.getByTestId('chip-live-row'))
+      .getAllByTestId('touch-chip')
+      .map((node) => node.textContent ?? '');
+  }
+
+  it('shows the live row instead of the summary while a tool is still running', () => {
+    render(
+      <TouchChipStrip
+        parts={[
+          toolCall('Read', { file_path: '/repo/src/a.ts' }),
+          toolCall('Read', { file_path: '/repo/src/b.ts' }, { status: 'running' }),
+        ]}
+      />
+    );
+
+    expect(liveRowLabels()).toHaveLength(2);
+    expect(screen.queryByTestId('chip-summary-read')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'show all' })).toBeNull();
+  });
+
+  it('keeps only the four newest touches in the row, newest on the right', () => {
+    render(
+      <TouchChipStrip
+        parts={[
+          toolCall('Read', { file_path: '/repo/a.ts' }),
+          toolCall('Read', { file_path: '/repo/b.ts' }),
+          toolCall('Read', { file_path: '/repo/c.ts' }),
+          toolCall('Read', { file_path: '/repo/d.ts' }),
+          toolCall('Read', { file_path: '/repo/e.ts' }),
+          toolCall('Read', { file_path: '/repo/f.ts' }, { status: 'running' }),
+        ]}
+      />
+    );
+
+    expect(liveRowLabels()).toEqual(['📖c.ts', '📖d.ts', '📖e.ts', '📖f.ts']);
+  });
+
+  it('brings a re-touched file back into the row', () => {
+    render(
+      <TouchChipStrip
+        parts={[
+          toolCall('Read', { file_path: '/repo/a.ts' }),
+          toolCall('Read', { file_path: '/repo/b.ts' }),
+          toolCall('Read', { file_path: '/repo/c.ts' }),
+          toolCall('Read', { file_path: '/repo/d.ts' }),
+          toolCall('Read', { file_path: '/repo/e.ts' }),
+          // `a.ts` is the oldest first touch, but the newest one.
+          toolCall('Edit', { file_path: '/repo/a.ts', old_string: 'x', new_string: 'y' }),
+          toolCall('Read', { file_path: '/repo/f.ts' }, { status: 'running' }),
+        ]}
+      />
+    );
+
+    expect(liveRowLabels()).toEqual(['📖d.ts', '📖e.ts', '✏️a.ts×2+1 −1', '📖f.ts']);
+  });
+
+  it('settles into the summary line once nothing is live', () => {
+    const running = [
+      toolCall('Read', { file_path: '/repo/src/a.ts' }, { status: 'running' }),
+      toolCall('Edit', { file_path: '/repo/src/c.ts', old_string: 'a\nb', new_string: 'a\nX\nY' }),
+    ];
+    const { rerender } = render(<TouchChipStrip parts={running} />);
+    expect(screen.getByTestId('chip-live-row')).toBeInTheDocument();
+
+    const settled = running.map((part) =>
+      part.type === 'tool_call' ? { ...part, status: 'complete' as const } : part
+    );
+    rerender(<TouchChipStrip parts={settled} />);
+
+    expect(screen.queryByTestId('chip-live-row')).toBeNull();
+    expect(screen.getByTestId('chip-summary-read')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'show all' })).toBeInTheDocument();
+  });
+});
+
 describe('TouchChipStrip — the disclosure', () => {
   it('opens the roster and flips aria-expanded', async () => {
     const user = userEvent.setup();
@@ -232,28 +310,25 @@ describe('TouchChipStrip — chip anatomy', () => {
     expect(chip).toHaveAccessibleName('Read /repo/src/a.ts, failed');
   });
 
-  it('marks a chip live while its tool is still running', async () => {
-    const user = userEvent.setup();
+  it('marks a chip live while its tool is still running', () => {
     render(
       <TouchChipStrip
         parts={[toolCall('Read', { file_path: '/repo/src/a.ts' }, { status: 'running' })]}
       />
     );
 
-    const tray = await openTray(user);
-    const chip = within(tray).getByTestId('touch-chip');
+    const chip = within(screen.getByTestId('chip-live-row')).getByTestId('touch-chip');
 
     expect(chip).toHaveAttribute('data-live', 'true');
     expect(chip).toHaveAttribute('data-verb', 'read');
   });
 
-  it('carries no looping-animation class in this phase, live or settled', async () => {
-    // Phase 1 has no motion: `data-verb` and `data-live` are wired so the verb
-    // signatures can key off them later, but nothing animates yet. The real
-    // reduced-motion assertion — that every verb loop stops when a reader has
-    // asked for less motion — belongs to the phase that adds those loops, and
-    // needs a browser to mean anything. This only pins that nothing crept in early.
-    const user = userEvent.setup();
+  it('carries no looping-animation class, live or settled', () => {
+    // `data-verb` and `data-live` are wired so the verb signatures can key off
+    // them; the loops themselves are Phase 3. The real reduced-motion
+    // assertion — that every verb loop stops when a reader has asked for less
+    // motion — belongs to the phase that adds those loops, and needs a browser
+    // to mean anything. This only pins that nothing crept in early.
     render(
       <TouchChipStrip
         parts={[
@@ -263,8 +338,7 @@ describe('TouchChipStrip — chip anatomy', () => {
       />
     );
 
-    const tray = await openTray(user);
-    for (const chip of within(tray).getAllByTestId('touch-chip')) {
+    for (const chip of within(screen.getByTestId('chip-live-row')).getAllByTestId('touch-chip')) {
       expect(chip.className).not.toMatch(/animate-/);
     }
   });

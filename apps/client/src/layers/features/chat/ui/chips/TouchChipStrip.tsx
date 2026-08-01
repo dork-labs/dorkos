@@ -9,12 +9,37 @@ import type { MessagePart } from '@dorkos/shared/types';
 import { cn, getPlatform } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
 import { accumulateTouchChips, type TouchChip as TouchChipData } from '../../lib/touch-chips';
+import { LIVE_WINDOW } from './chip-motion';
 import { groupChipsByVerb, VERB_ICON, VERB_LABEL } from './chip-verbs';
 import { ChipTray } from './ChipTray';
+import { TouchChip } from './TouchChip';
 
 export interface TouchChipStripProps {
   /** The assistant message's parts, in transcript order. */
   parts: MessagePart[];
+}
+
+/**
+ * Split the roster into what the live row shows and what has aged out of it.
+ *
+ * Recency is `lastSeq`, not `firstSeq`: a file touched again belongs back in the
+ * row, because that is what is happening now. The window is the tail of the
+ * ascending sort, so the newest touch sits on the right — chips arrive where the
+ * eye already is and travel left as they age, which is the direction the pile
+ * sits in.
+ *
+ * The absorbed set only ever grows: a turn accumulates chips and never loses
+ * them, so nothing can fall out of the pile once it has landed there.
+ */
+function splitLiveWindow(chips: TouchChipData[]): {
+  visible: TouchChipData[];
+  absorbed: TouchChipData[];
+} {
+  const byRecency = [...chips].sort((a, b) => a.lastSeq - b.lastSeq);
+  return {
+    visible: byRecency.slice(-LIVE_WINDOW),
+    absorbed: byRecency.slice(0, Math.max(0, byRecency.length - LIVE_WINDOW)),
+  };
 }
 
 /** One verb's tally in the collapsed line: `📖 21`, or `✏️ 3 +34 −11`. */
@@ -45,8 +70,11 @@ function SummaryGroup({
 }
 
 /**
- * Derive the turn's chips and show them: one quiet line of tallies, and — behind
- * a disclosure — the full roster.
+ * Derive the turn's chips and show them.
+ *
+ * While the turn is working, that is a bounded row of the newest few touches —
+ * the strip's live state. Once nothing is live any more it is one quiet line of
+ * tallies, and behind a disclosure, the full roster.
  *
  * The chips are derived on render from `parts` rather than accumulated into a
  * store, so a replayed or rehydrated transcript can never disagree with what is
@@ -93,37 +121,52 @@ export function TouchChipStrip({ parts }: TouchChipStripProps) {
   );
 
   const groups = useMemo(() => groupChipsByVerb(chips), [chips]);
+  const live = chips.some((chip) => chip.live);
+  const { visible } = useMemo(() => splitLiveWindow(chips), [chips]);
 
   if (chips.length === 0) return null;
 
   return (
     <div data-testid="touch-chip-strip" className="mt-2 flex flex-col gap-2">
-      <div className="text-muted-foreground flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs">
-        {groups.map((group, index) => (
-          <Fragment key={group.verb}>
-            {index > 0 && <span aria-hidden="true">·</span>}
-            <SummaryGroup
-              verb={group.verb}
-              count={group.chips.length}
-              additions={group.additions}
-              deletions={group.deletions}
-            />
-          </Fragment>
-        ))}
-        <span aria-hidden="true">—</span>
-        <button
-          type="button"
-          aria-expanded={expanded}
-          aria-controls={trayId}
-          onClick={() => setExpanded((open) => !open)}
-          className={cn(
-            'hover:text-foreground rounded-sm underline underline-offset-2',
-            'focus-visible:ring-ring/50 outline-none focus-visible:ring-2'
-          )}
+      {live ? (
+        <div
+          data-testid="chip-live-row"
+          role="group"
+          aria-label="Being handled now"
+          className="flex min-w-0 items-center gap-1.5 overflow-hidden"
         >
-          {expanded ? 'hide' : 'show all'}
-        </button>
-      </div>
+          {visible.map((chip) => (
+            <TouchChip key={chip.key} chip={chip} onOpen={handleOpen} animated />
+          ))}
+        </div>
+      ) : (
+        <div className="text-muted-foreground flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs">
+          {groups.map((group, index) => (
+            <Fragment key={group.verb}>
+              {index > 0 && <span aria-hidden="true">·</span>}
+              <SummaryGroup
+                verb={group.verb}
+                count={group.chips.length}
+                additions={group.additions}
+                deletions={group.deletions}
+              />
+            </Fragment>
+          ))}
+          <span aria-hidden="true">—</span>
+          <button
+            type="button"
+            aria-expanded={expanded}
+            aria-controls={trayId}
+            onClick={() => setExpanded((open) => !open)}
+            className={cn(
+              'hover:text-foreground rounded-sm underline underline-offset-2',
+              'focus-visible:ring-ring/50 outline-none focus-visible:ring-2'
+            )}
+          >
+            {expanded ? 'hide' : 'show all'}
+          </button>
+        </div>
+      )}
       {expanded && <ChipTray id={trayId} chips={chips} onOpen={handleOpen} />}
     </div>
   );
