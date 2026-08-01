@@ -561,17 +561,21 @@ router.post('/:id/messages', async (req, res) => {
     }
   }
 
-  // First-message creation: choose + persist the runtime BEFORE resolving.
-  // `persistSessionRuntime` is INSERT OR IGNORE, so subsequent calls that pass
-  // a different (or no) hint are no-ops — the first-message row wins.
+  // First-message binding: choose + persist the runtime BEFORE resolving.
+  // `persistSessionRuntime` binds a session that has none — including one whose
+  // row a pre-launch settings change already created — and leaves an
+  // already-bound session completely alone, so a later call passing a different
+  // (or no) hint changes nothing. The first message wins.
   const runtimeType = await resolveRuntimeTypeForNewSession({ runtimeHint, agentPath, cwd });
   if (!runtimeRegistry.has(runtimeType)) {
     return sendError(res, 400, `Unknown runtime: ${runtimeType}`, 'UNKNOWN_RUNTIME');
   }
   // The registry seeds this session's model, effort and trust stop from the
-  // server defaults if this call is what creates its row — see
-  // `resolveSessionDefaults`. Nothing is written for a session that already has
-  // one, so a running conversation keeps whatever it is running with.
+  // server defaults if this call is what BINDS it — see `resolveSessionDefaults`
+  // — filling only what nobody chose, and re-checking a mode chosen before the
+  // runtime was known against what this one declares. Nothing is written for a
+  // session that is already bound, so a running conversation keeps whatever it
+  // is running with.
   //
   // `interactive: true` is what unlocks the trust stop, and this route is where
   // that claim is true: a message posted to `/api/sessions/:id/messages` came
@@ -583,8 +587,8 @@ router.post('/:id/messages', async (req, res) => {
     agentPath,
     { interactive: true }
   );
-  // Fire the anonymous `session_created` usage event exactly once, on the
-  // first-write that mints the session (no-op unless usage telemetry is on).
+  // Fire the anonymous `session_created` usage event exactly once, on the write
+  // that binds the session (no-op unless usage telemetry is on).
   if (isNewSession)
     reportUsageEvent({ event: 'session_created', properties: { runtime: runtimeType } });
 

@@ -265,7 +265,8 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       });
 
       // The turn started, so the session is real: record which runtime owns it.
-      // INSERT-OR-IGNORE at the registry, so a resumed session is a no-op.
+      // The registry binds a session that has no runtime yet and leaves a bound
+      // one untouched, so a resumed session is a no-op.
       //
       // No `interactive` flag, deliberately: the configured default trust stop
       // is for sessions a person is watching (spec `trust-dial`, decision 6).

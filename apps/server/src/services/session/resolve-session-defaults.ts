@@ -36,31 +36,31 @@
  *
  * **Interactive sessions only.** The permission tier answers only when the
  * caller passes the runtime's declared modes, and only the interactive
- * session-creation paths do (`RuntimeRegistry.persistSessionRuntime` with
- * `interactive: true`, and every settings write). Tasks, bindings and rooms
- * carry their own permission mode and their own stricter gates — including the
- * bypass clamp on file-sourced schedules — and this default must never reach
- * them (decision 6).
+ * session-creation path does (`RuntimeRegistry.persistSessionRuntime` with
+ * `interactive: true`). Tasks, bindings and rooms carry their own permission
+ * mode and their own stricter gates — including the bypass clamp on
+ * file-sourced schedules — and this default must never reach them (decision 6).
  *
  * ## Where the answer lands
  *
- * Into `session_metadata` at the session's first write, and only there. Every
- * adapter already resolves a turn as `per-send override → persisted → its own
- * default`, so seeding the persisted row is the one change that makes all three
- * inherit — no adapter learns about config, and a value the person later sets
- * on the session simply overwrites the seed.
+ * Into `session_metadata` at the write that BINDS the session to a runtime, and
+ * only there. Every adapter already resolves a turn as `per-send override →
+ * persisted → its own default`, so seeding the persisted row is the one change
+ * that makes all three inherit — no adapter learns about config, and a value the
+ * person later sets on the session simply overwrites the seed.
  *
- * **"The first write" is not one caller**, which is why `RuntimeRegistry` owns
- * the seeding rather than the message route: the first message writes the
- * runtime binding, and changing a setting BEFORE that message writes the row
- * first. Both go through `seedForNewRow`, on the INSERT branch and under the
- * caller's own values, so an explicit choice always wins and only the keys a
- * write does not carry are filled.
+ * **The binding write, and not merely the first one**, which is the correction
+ * DOR-812 made: changing a setting before sending the first message also creates
+ * the row, and that write cannot seed anything, because every answer above is a
+ * per-runtime answer and it does not know the runtime. So the row it leaves
+ * holds the person's explicit choices alone, and `persistSessionRuntime` fills
+ * the rest when the first turn names an owner — filling only columns still
+ * holding NULL, so an explicit choice always wins.
  *
- * First write means FIRST: an existing row is never touched. That is what keeps
- * the promise the settings screen makes — "applies to new conversations, running
- * ones keep their settings" — true for a person who changes the default while
- * ten sessions are open.
+ * A bound row is never touched. That is what keeps the promise the settings
+ * screen makes — "applies to new conversations, running ones keep their
+ * settings" — true for a person who changes the default while ten sessions are
+ * open.
  *
  * @module services/session/resolve-session-defaults
  */

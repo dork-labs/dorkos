@@ -351,10 +351,7 @@ export class SessionStore {
     // if the live query rejects the change or the session is later evicted
     // (ADR-0260). Only user-driven PATCHes reach updateSession, so transient
     // per-send overrides (Tasks/relay) are never persisted here.
-    // `interactive`: the note above is the claim — only user-driven PATCHes
-    // reach `updateSession`, so a row created here belongs to a session a
-    // person is watching and may inherit the configured default trust stop.
-    await this.settingsPort?.saveSessionSettings(sessionId, opts, { interactive: true });
+    await this.settingsPort?.saveSessionSettings(sessionId, opts);
     if (opts.permissionMode) {
       const prevMode = session.permissionMode;
       session.permissionMode = opts.permissionMode;

@@ -14,7 +14,7 @@ import {
   readAgentExecutionDefaults,
   type AgentExecutionDefaults,
 } from '../session/resolve-session-defaults.js';
-import { sessionMetadata, eq, inArray, type Db } from '@dorkos/db';
+import { sessionMetadata, eq, inArray, isNull, sql, type Db, type SQL } from '@dorkos/db';
 import { logger } from '../../lib/logger.js';
 import { traceRuntime } from '../observability/index.js';
 
@@ -64,6 +64,40 @@ function pickSettings(settings: SessionSettings): Partial<typeof sessionMetadata
   if (settings.effort !== undefined) patch.effort = settings.effort;
   if (settings.fastMode !== undefined) patch.fastMode = settings.fastMode;
   return patch;
+}
+
+/** The settings columns, as UPDATE expressions rather than plain values. */
+type SettingsUpdate = { [K in keyof SessionSettings & string]?: SQL };
+
+/**
+ * Turn a seed into an UPDATE that fills only the columns still holding NULL.
+ *
+ * The UPSERT's INSERT branch gets "an explicit value wins" for free by ordering
+ * (`...seed, ...patch`). Its UPDATE branch cannot: the value it must not
+ * overwrite is already in the row, not in this statement. `coalesce(<column>,
+ * <seed>)` is that same rule expressed against the stored row — which is what
+ * lets a binding write seed a session whose settings were chosen before it
+ * started, without touching one of those choices.
+ *
+ * **The model and the effort, and deliberately no other column.**
+ * `permissionMode` needs more than filling — a stored mode has to be checked
+ * against what the runtime being bound declares, so it has its own expression
+ * ({@link RuntimeRegistry.claimedPermissionMode}). `fastMode` is never seeded:
+ * {@link resolveSessionDefaults} has no tier for it, and it is also the one
+ * BOOLEAN here — better-sqlite3 refuses to bind a JS boolean as a raw parameter
+ * ("can only bind numbers, strings, bigints, buffers, and null"), so a seed that
+ * ever grew a `fastMode` would throw here rather than quietly do nothing. Add it
+ * with a driver-encoded value, not by extending this list.
+ *
+ * @param seed - The columns a newly-created row would have carried.
+ */
+function fillNullsWith(seed: Partial<typeof sessionMetadata.$inferInsert>): SettingsUpdate {
+  const update: SettingsUpdate = {};
+  for (const key of ['model', 'effort'] as const) {
+    const value = seed[key];
+    if (value !== undefined) update[key] = sql`coalesce(${sessionMetadata[key]}, ${value})`;
+  }
+  return update;
 }
 
 /**
@@ -161,15 +195,20 @@ export class RuntimeRegistry {
   }
 
   /**
-   * Persist the owning runtime for a session in `session_metadata`.
+   * Bind a session to its owning runtime in `session_metadata`.
    *
-   * Uses INSERT OR IGNORE semantics: if a row already exists for `sessionId`,
-   * it is left untouched. Session ownership is immutable once assigned — the
-   * first write wins. Call this once at session-creation time.
+   * **First AUTHORITATIVE write wins (ADR-0255).** A row whose `runtime` is
+   * already set is left completely untouched — ownership is immutable once a
+   * session has started. A row whose `runtime` is NULL is CLAIMED by this call:
+   * that row was minted by a settings change made before the first message, and
+   * a preference chosen in a picker is not a binding (DOR-812). Which runtime
+   * the session runs on is this call's to say, because this call is the one
+   * carrying the person's runtime choice.
    *
-   * The server's execution defaults ride the same INSERT (see
-   * {@link RuntimeRegistry.seedForNewRow}), which is what makes them a seed
-   * rather than an override: they land only on a row this call creates.
+   * The server's execution defaults ride the same statement (see
+   * {@link RuntimeRegistry.seedForNewRow}), and only ever fill columns that are
+   * still NULL — so an explicit choice made before the session started survives
+   * being claimed, exactly as it survives the INSERT.
    *
    * @param sessionId - Session identifier (any runtime's session id)
    * @param runtime - Runtime type string (e.g. `'claude-code'`, `'codex'`)
@@ -180,10 +219,12 @@ export class RuntimeRegistry {
    *   binding each carry their own permission mode and their own stricter gates,
    *   and must never be handed the cockpit's. Defaults to `false`, so the
    *   dangerous direction is the one a caller has to ask for by name.
-   * @returns `true` when this call inserted a NEW binding row (i.e. a genuinely
-   *   new session), `false` when a row already existed. Lets the caller fire a
-   *   once-per-session side effect (e.g. the `session_created` usage event)
-   *   without a separate existence check on the hot path.
+   * @returns `true` when this call BOUND the session — whether it inserted the
+   *   row or claimed an unbound one — and `false` when the session was already
+   *   bound. Lets the caller fire a once-per-session side effect (e.g. the
+   *   `session_created` usage event) without a separate existence check on the
+   *   hot path. Binding is the honest moment for that event: a row minted by a
+   *   settings change belongs to a session nobody has started yet.
    */
   async persistSessionRuntime(
     sessionId: string,
@@ -196,6 +237,7 @@ export class RuntimeRegistry {
     // Read unconditionally rather than only for a row that turns out to be new:
     // the INSERT is what decides that, and it cannot await mid-statement.
     const agent = await readAgentExecutionDefaults(agentPath);
+    const seed = this.seedForNewRow(runtime, { agent, interactive: opts?.interactive === true });
     const result = await db
       .insert(sessionMetadata)
       .values({
@@ -203,24 +245,44 @@ export class RuntimeRegistry {
         runtime,
         agentPath: agentPath ?? null,
         createdAt: new Date().toISOString(),
-        ...this.seedForNewRow(runtime, { agent, interactive: opts?.interactive === true }),
+        ...seed,
       })
-      .onConflictDoNothing();
+      .onConflictDoUpdate({
+        target: sessionMetadata.sessionId,
+        set: {
+          runtime,
+          // The binding write is what establishes identity, so the agent it
+          // names is the session's — but only when it names one, so a caller
+          // with no agent never erases a path some other write knew.
+          ...(agentPath !== undefined ? { agentPath } : {}),
+          ...fillNullsWith(seed),
+          ...this.claimedPermissionMode(runtime, seed.permissionMode),
+        },
+        // The whole guard: claim a row nobody has bound, never re-bind one.
+        setWhere: isNull(sessionMetadata.runtime),
+      });
     // better-sqlite3 RunResult: `changes` is the number of rows actually written
-    // (0 when the conflict was ignored). A fresh insert === a new session.
+    // — 1 for a fresh insert, 1 for a claim, and 0 when `setWhere` refused an
+    // already-bound row. That is exactly "this call bound the session".
     return result.changes > 0;
   }
 
   /**
    * Return the runtime type string for a session.
    *
-   * Pure read — never writes. If `session_metadata` has no row for
-   * `sessionId`, infers `'claude-code'` when that adapter is registered
-   * (legacy sessions predate the table), otherwise the default registered
-   * type. The caller is responsible for persisting the inference via
-   * `persistSessionRuntime` when it is the session-creation path; for
-   * arbitrary read paths (e.g. `/api/sessions/:id/runtime-type`) we avoid
-   * accidental ghost rows by never writing here.
+   * Pure read — never writes. Two shapes get the same INFERRED answer, because
+   * they are the same state: `session_metadata` has no row for `sessionId`
+   * (legacy sessions predate the table), or it has one whose `runtime` is NULL
+   * (a settings change arrived before the session started — see
+   * {@link RuntimeRegistry.saveSessionSettings}). Neither has an owner yet, so
+   * both resolve to `'claude-code'` when that adapter is registered, otherwise
+   * the default registered type.
+   *
+   * The inference is never persisted here. That is the point rather than an
+   * optimization: a guess written down becomes the binding, and
+   * `persistSessionRuntime` is first-write-wins — which is exactly how an early
+   * settings write used to pin a session to the wrong runtime (DOR-812). Only
+   * the session-creation path may write an owner.
    *
    * @param sessionId - Session identifier
    */
@@ -231,17 +293,17 @@ export class RuntimeRegistry {
       .from(sessionMetadata)
       .where(eq(sessionMetadata.sessionId, sessionId))
       .get();
-    if (row) return row.runtime;
+    if (row?.runtime) return row.runtime;
 
     // Legacy inference: sessions predating the registry table are Claude Code
     // sessions — but only when that adapter is actually registered. On a
     // DORKOS_TEST_RUNTIME server (test-mode only), inferring 'claude-code'
     // would 503 every PRE-first-message read — `/events` connect, history GET,
     // commands — for a brand-new client-created id (which has no row until the
-    // first POST persists one), leaving the client permanently stream-less.
+    // first POST binds one), leaving the client permanently stream-less.
     const inferred = this.runtimes.has('claude-code') ? 'claude-code' : this.getDefaultType();
     logger.debug(
-      `[RuntimeRegistry] Inferring runtime='${inferred}' for row-less session '${sessionId}' (not persisted)`
+      `[RuntimeRegistry] Inferring runtime='${inferred}' for unbound session '${sessionId}' (not persisted)`
     );
     return inferred;
   }
@@ -300,78 +362,119 @@ export class RuntimeRegistry {
   /**
    * Persist (UPSERT) the provided settings fields for a session. Only keys that
    * are explicitly present are written; identity columns (`runtime`,
-   * `agentPath`, `createdAt`) are left intact on conflict. Creates the row with
-   * the resolved/inferred runtime if it does not yet exist (e.g. a settings
-   * change before the first message). No-op when no fields are provided.
+   * `agentPath`, `createdAt`) are left intact on conflict. Creates an UNBOUND
+   * row if none exists yet (a settings change before the first message). No-op
+   * when no fields are provided.
+   *
+   * **This write never names a runtime, and never seeds a default.** It cannot
+   * honestly do either. It knows a session id and nothing else: the session has
+   * not started, so nobody has said which runtime it will run on, and every
+   * default there is to seed is a per-runtime answer (a model id lives in one
+   * runtime's namespace, an effort is dropped where a runtime has none, a trust
+   * stop is resolved from the runtime's own declared modes — see
+   * {@link resolveSessionDefaults}). Writing either would be writing a guess,
+   * and the guess used to become permanent: `persistSessionRuntime` is
+   * first-write-wins, so changing a setting before sending the first message
+   * pinned the session to the inferred runtime for life (DOR-812).
+   *
+   * So the row this creates carries the person's explicit choices and nothing
+   * else, and the first turn — which does know the runtime — binds it and fills
+   * in whatever they said nothing about ({@link persistSessionRuntime}).
    *
    * @param sessionId - Session identifier
    * @param settings - Partial settings to persist (omitted keys are untouched)
-   * @param opts.interactive - Whether a PERSON is changing a session they are
-   *   watching. Only then may the row this write creates inherit the configured
-   *   default trust stop. Defaults to `false`: the seed is something a caller
-   *   asks for by name, never something a new caller inherits by saying nothing.
    */
-  async saveSessionSettings(
-    sessionId: string,
-    settings: SessionSettings,
-    opts?: { interactive?: boolean }
-  ): Promise<void> {
+  async saveSessionSettings(sessionId: string, settings: SessionSettings): Promise<void> {
     const db = this.requireDb('saveSessionSettings');
     const patch = pickSettings(settings);
     if (Object.keys(patch).length === 0) return;
-    const runtime = await this.getSessionRuntimeType(sessionId);
     db.insert(sessionMetadata)
-      // The seed goes on the INSERT branch only, UNDER the patch, so an explicit
-      // value always wins and only the keys this write does not carry are
-      // filled. This path creates the row whenever a setting is changed before
-      // the first message — which E3's pre-launch picker makes the normal way a
-      // session starts — and a seed that rode only the first-message insert
-      // would be silently dropped for exactly those sessions.
-      //
-      // This is also the ONE seeding path with no agent tier, and the reason is
-      // structural rather than a shortcut: a settings change arrives as
-      // `PATCH /api/sessions/:id` through the runtime's own `updateSession`,
-      // which knows a session id and nothing about who owns it — there is no row
-      // yet to read an `agentPath` from, and threading one down through the
-      // three adapters and the shared settings port would put an agent lookup on
-      // every settings write to buy one key. What it costs is bounded: the
-      // person is here BECAUSE they are choosing a model or an effort, so the
-      // key they came for is theirs either way, and only the other one falls
-      // back to the server default instead of the agent's.
       .values({
         sessionId,
-        runtime,
+        // No owner: a preference chosen in a picker is not a binding.
+        runtime: null,
         createdAt: new Date().toISOString(),
-        // Interactive only when the caller said so. Today every caller is the
-        // operator's own settings write (each adapter's `updateSession`, whose
-        // only caller is `PATCH /api/sessions/:id`) and says so at its call
-        // site; the default is `false` so a future one has to make the claim
-        // rather than inherit it.
-        ...this.seedForNewRow(runtime, { interactive: opts?.interactive === true }),
         ...patch,
       })
-      // The UPDATE branch carries the patch alone: an existing row is a running
-      // session, and nothing about a server default may reach it.
+      // The UPDATE branch carries the patch alone — it must not disturb a
+      // binding, and there is nothing else here to write.
       .onConflictDoUpdate({ target: sessionMetadata.sessionId, set: patch })
       .run();
   }
 
   /**
-   * The execution settings a row created RIGHT NOW should carry, as DB columns.
+   * The `permission_mode` a CLAIM should write: the stored one if the runtime
+   * being bound can actually run it, otherwise the seed, otherwise nothing.
    *
-   * Every path that can mint a `session_metadata` row goes through this, because
-   * "the session's first write" is not one caller: the first message writes the
-   * runtime binding, and a settings change before that message writes the row
-   * first. Seeding at one of them only would mean whichever happened second
-   * silently lost the defaults (spec `execution-defaults` E1).
+   * ## Why the claim has to judge a mode at all
    *
-   * On a row-less session the runtime is the INFERRED one (see
-   * {@link RuntimeRegistry.getSessionRuntimeType}), so a settings change before
-   * the first message seeds whichever runtime the inference named. That is
-   * consistent by construction — the same inference fills the `runtime` column
-   * on the row being created — so when it is wrong, the seeded model and the
-   * binding are wrong together rather than in two different directions. The
-   * inference itself is DOR-764's subject, not this seam's.
+   * `PATCH /api/sessions/:id` already refuses a mode the session's runtime does
+   * not declare — that gate is what keeps a session from reporting a safety
+   * posture it is not running (a codex session reading "Auto" everywhere while
+   * it runs read-only). But an UNBOUND session has no runtime for that gate to
+   * ask, so it asks the INFERRED one, and the answer is only as good as the
+   * guess. A person who chose Codex in the picker and then set a Claude-only
+   * mode before sending gets past the gate honestly and would arrive on a bound
+   * codex session holding a mode codex never declared.
+   *
+   * So the check runs again here, where the runtime is finally known. This is
+   * the same rule as the route's, applied at the one other write that can settle
+   * it — not a second, competing rule: both read the runtime's own descriptor
+   * list, and neither knows a mode id by name.
+   *
+   * ## What it does in each case
+   *
+   * - **Declared** → kept. A choice made early is still the person's.
+   * - **Not declared** → dropped, and the seed for the runtime being bound lands
+   *   in its place (the `coalesce` order). Dropped rather than refused, because
+   *   there is no request to refuse — the turn is already starting, and NULL
+   *   means "the runtime decides" everywhere else in this table.
+   * - **Runtime not registered here** (`undefined` descriptors, not an empty
+   *   list) → left alone. No profile is no basis to judge, the same answer
+   *   {@link RuntimeRegistry.seedForNewRow} gives; nothing can run such a
+   *   session anyway ({@link resolveForSession} throws), so deleting the
+   *   person's choice would only lose it.
+   *
+   * WRITE PATH ONLY, exactly as the route's gate is: this rides the claim, so a
+   * session already bound and running in a now-undeclared mode keeps it.
+   *
+   * @param runtime - The runtime type this call is binding the session to.
+   * @param seeded - The mode the seed would have written, if any.
+   * @returns A one-key patch for the UPDATE's SET, or `{}` to leave the column
+   *   out of the statement entirely.
+   */
+  private claimedPermissionMode(runtime: string, seeded: unknown): SettingsUpdate {
+    const declared = this.runtimes.get(runtime)?.getCapabilities().permissionModes.values;
+    const seed = typeof seeded === 'string' ? seeded : undefined;
+    if (declared === undefined) {
+      return seed === undefined
+        ? {}
+        : { permissionMode: sql`coalesce(${sessionMetadata.permissionMode}, ${seed})` };
+    }
+    // A runtime that declares no modes at all declares this one no more than any
+    // other, so the stored value cannot survive — `sql`null`` rather than an
+    // empty `in ()`, which drizzle refuses to build.
+    const kept =
+      declared.length > 0
+        ? sql`case when ${inArray(
+            sessionMetadata.permissionMode,
+            declared.map((descriptor) => descriptor.id)
+          )} then ${sessionMetadata.permissionMode} end`
+        : sql`null`;
+    return { permissionMode: seed === undefined ? kept : sql`coalesce(${kept}, ${seed})` };
+  }
+
+  /**
+   * The execution settings a session BEING BOUND RIGHT NOW should start with,
+   * as DB columns.
+   *
+   * One caller, {@link RuntimeRegistry.persistSessionRuntime}, and that is the
+   * whole of the seeding rule: the defaults land on the write that names the
+   * runtime, because every one of them is a per-runtime answer. They reach a row
+   * a settings change created earlier (E3's pre-launch picker makes that the
+   * normal way a session starts) through the UPDATE branch, which fills only the
+   * columns still holding NULL — so a person's explicit choice is never
+   * overwritten, and a session that has already started is never touched at all.
    *
    * @param runtime - The runtime type the row is being created for.
    * @param opts.agent - The owning agent's manifest model/effort, when the caller
@@ -412,8 +515,11 @@ export class RuntimeRegistry {
    * `createdAt` belong with it. Ownership stays immutable (ADR-0255): when a row
    * already exists under `toId` its `runtime` is left untouched and only the
    * settings are merged in, source-wins per field, with a NULL source column
-   * leaving the destination's value alone. The source row is deleted in the same
-   * transaction, so no id ever holds a second copy.
+   * leaving the destination's value alone. A destination that has no runtime yet
+   * is the one exception, and it is the same rule rather than a hole in it —
+   * there is no ownership there to keep, so the source's binding travels with
+   * the row it belongs to. The source row is deleted in the same transaction, so
+   * no id ever holds a second copy.
    *
    * @param fromId - The id the row is stored under today
    * @param toId - The canonical id the session is now known by
@@ -442,6 +548,7 @@ export class RuntimeRegistry {
       }
       tx.update(sessionMetadata)
         .set({
+          runtime: destination.runtime ?? source.runtime,
           permissionMode: source.permissionMode ?? destination.permissionMode,
           model: source.model ?? destination.model,
           effort: source.effort ?? destination.effort,

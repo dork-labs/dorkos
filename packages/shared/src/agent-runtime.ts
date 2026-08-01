@@ -201,18 +201,12 @@ export interface SessionSettingsPort {
   /**
    * Persist (UPSERT) the provided settings fields for a session.
    *
-   * @param opts.interactive - Whether this write is a PERSON changing a session
-   *   they are watching. Only such a write may create a row carrying the
-   *   configured default trust stop (spec `trust-dial`, decision 6): an
-   *   unattended surface has its own permission mode and its own stricter gates.
-   *   Absent means `false`, so a new adapter has to say it is interactive rather
-   *   than inherit the seed by not knowing about it.
+   * Settings only: this write stores what the person chose and asserts nothing
+   * about the session itself. A session whose first message has not been sent
+   * has no runtime yet, and a settings change is not what decides one — the
+   * first turn is (ADR-0255, DOR-812).
    */
-  saveSessionSettings(
-    sessionId: string,
-    settings: SessionSettings,
-    opts?: { interactive?: boolean }
-  ): Promise<void>;
+  saveSessionSettings(sessionId: string, settings: SessionSettings): Promise<void>;
   /**
    * Move a session's stored settings to a new id, so they stay under exactly
    * one key. A runtime calls this the moment it rebinds a session to a new

@@ -121,11 +121,7 @@ describe('SessionStore session-settings hydration (ADR-0260)', () => {
 
     expect(port.saveSessionSettings).toHaveBeenCalledWith(
       's1',
-      expect.objectContaining({ permissionMode: 'bypassPermissions', model: 'sonnet' }),
-      // The adapter states what its caller is: `updateSession` is reached only
-      // from the operator's own PATCH, which is what lets a row created here
-      // inherit the configured default trust stop (spec `trust-dial`, D6).
-      { interactive: true }
+      expect.objectContaining({ permissionMode: 'bypassPermissions', model: 'sonnet' })
     );
     expect(port.store.get('s1')).toMatchObject({
       permissionMode: 'bypassPermissions',

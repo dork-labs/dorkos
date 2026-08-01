@@ -88,10 +88,11 @@ let agentDefaults: SessionSettings = {};
 let interactiveDefaults: SessionSettings = {};
 
 /** The options the registry last handed the resolver, for the same question. */
-let lastResolveOpts: { permissionModes?: readonly unknown[] } | null = null;
+let lastResolveOpts: { runtimeType?: string; permissionModes?: readonly unknown[] } | null = null;
 
 vi.mock('../../session/resolve-session-defaults.js', () => ({
   resolveSessionDefaults: (opts: {
+    runtimeType?: string;
     agent?: SessionSettings;
     permissionModes?: readonly unknown[];
   }) => {
@@ -686,15 +687,17 @@ describe('RuntimeRegistry', () => {
       registry.register(createMockRuntime('claude-code'));
     });
 
-    it('UPSERT creates a row with the inferred runtime when none exists', async () => {
-      // A settings change can arrive before the first message — no row yet.
+    it('UPSERT creates an UNBOUND row when none exists', async () => {
+      // A settings change can arrive before the first message — no row yet. The
+      // row it creates carries the setting and no runtime: which runtime the
+      // session will run on is the first turn's to say (DOR-812).
       await registry.saveSessionSettings('s1', { permissionMode: 'bypassPermissions' });
       const row = db
         .select()
         .from(sessionMetadata)
         .where(eq(sessionMetadata.sessionId, 's1'))
         .get();
-      expect(row?.runtime).toBe('claude-code'); // inferred (no prior row)
+      expect(row?.runtime).toBeNull();
       expect(row?.permissionMode).toBe('bypassPermissions');
       expect(row?.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     });
@@ -737,12 +740,14 @@ describe('RuntimeRegistry', () => {
       expect('model' in settings!).toBe(false);
     });
 
-    it('fills only the keys a row-creating write does not carry', async () => {
-      // A settings change before the first message is what CREATES the row, and
-      // E3's pre-launch picker makes that the normal way a session starts. The
-      // person's own value wins; the key they said nothing about takes the
-      // server default. Seeding only the first-message insert dropped both.
+    it('seeds nothing at all — the row it creates has no runtime to seed for', async () => {
+      // E3's pre-launch picker makes a settings change before the first message
+      // the normal way a session starts, and it used to seed the server defaults
+      // right here. It cannot: every default is a per-runtime answer, and this
+      // write does not know the runtime (DOR-812). The seed rides the binding
+      // write instead — see 'an early settings write leaves the runtime unbound'.
       serverDefaults = { model: 'opus', effort: 'high' };
+      interactiveDefaults = { permissionMode: 'bypassPermissions' };
 
       await registry.saveSessionSettings('pre-launch', { model: 'sonnet' });
 
@@ -751,50 +756,9 @@ describe('RuntimeRegistry', () => {
         .from(sessionMetadata)
         .where(eq(sessionMetadata.sessionId, 'pre-launch'))
         .get();
+      // The person's explicit choice, and nothing beside it.
       expect(row?.model).toBe('sonnet');
-      expect(row?.effort).toBe('high');
-    });
-
-    it('seeds the trust stop on a pre-launch row, and an explicit choice still wins', async () => {
-      // The other row-creating path, and it is interactive by construction: a
-      // person changed a setting before sending the first message. So the stop
-      // rides it too — otherwise the pre-launch picker, which is the normal way
-      // a session starts, would be the one place the default never applied.
-      interactiveDefaults = { permissionMode: 'bypassPermissions' };
-
-      await registry.saveSessionSettings(
-        'pre-launch-stop',
-        { model: 'sonnet' },
-        {
-          interactive: true,
-        }
-      );
-      await registry.saveSessionSettings(
-        'pre-launch-chosen',
-        { permissionMode: 'plan' },
-        {
-          interactive: true,
-        }
-      );
-
-      const read = (id: string) =>
-        db.select().from(sessionMetadata).where(eq(sessionMetadata.sessionId, id)).get();
-      expect(read('pre-launch-stop')?.permissionMode).toBe('bypassPermissions');
-      expect(read('pre-launch-chosen')?.permissionMode).toBe('plan');
-    });
-
-    it('withholds the trust stop from a settings write that did not claim to be interactive', async () => {
-      // The default is `false` so a future adapter has to make the claim rather
-      // than inherit the seed by saying nothing.
-      interactiveDefaults = { permissionMode: 'bypassPermissions' };
-
-      await registry.saveSessionSettings('pre-launch-unclaimed', { model: 'sonnet' });
-
-      const row = db
-        .select()
-        .from(sessionMetadata)
-        .where(eq(sessionMetadata.sessionId, 'pre-launch-unclaimed'))
-        .get();
+      expect(row?.effort).toBeNull();
       expect(row?.permissionMode).toBeNull();
     });
 
@@ -860,6 +824,257 @@ describe('RuntimeRegistry', () => {
     });
   });
 
+  describe('an early settings write leaves the runtime unbound (DOR-812)', () => {
+    let db: Db;
+
+    beforeEach(() => {
+      db = createTestDb();
+      registry.setDb(db);
+      registry.register(createMockRuntime('claude-code'));
+      registry.register(createMockRuntime('test-mode'));
+    });
+
+    const read = (id: string) =>
+      db.select().from(sessionMetadata).where(eq(sessionMetadata.sessionId, id)).get();
+
+    it('does not choose the runtime — the first turn still does', async () => {
+      // The bug: a pre-launch settings change created the row with the INFERRED
+      // runtime, and the binding write is first-write-wins, so a session the
+      // person had pointed at another runtime was pinned to claude-code forever
+      // by the act of changing a setting before sending anything.
+      await registry.saveSessionSettings('pre-launch-codex', { model: 'sonnet' });
+
+      await registry.persistSessionRuntime('pre-launch-codex', 'test-mode');
+
+      expect(await registry.getSessionRuntimeType('pre-launch-codex')).toBe('test-mode');
+      expect(read('pre-launch-codex')?.runtime).toBe('test-mode');
+      // ...and the choice that created the row is still the person's.
+      expect(read('pre-launch-codex')?.model).toBe('sonnet');
+    });
+
+    it('writes no runtime at all, rather than a guess', async () => {
+      await registry.saveSessionSettings('unbound', { model: 'sonnet' });
+      expect(read('unbound')?.runtime).toBeNull();
+    });
+
+    it('still READS as the inferred runtime, so nothing is bricked before the binding', async () => {
+      // Every read path — the /events connect, the settings PATCH capability
+      // gate, a history GET — resolves an unbound row exactly like a row-less
+      // one: the inference answers, and stays unpersisted.
+      await registry.saveSessionSettings('unbound-read', { model: 'sonnet' });
+
+      expect(await registry.getSessionRuntimeType('unbound-read')).toBe('claude-code');
+      expect((await registry.resolveForSession('unbound-read')).type).toBe('claude-code');
+      expect(read('unbound-read')?.runtime).toBeNull();
+    });
+
+    it('seeds the defaults of the runtime it BINDS, not of the one it guessed', async () => {
+      // The reason the seed cannot ride the settings write: every key of it is a
+      // per-runtime answer (`resolve-session-defaults` — the model id lives in
+      // one runtime's namespace, the effort is dropped where a runtime has none,
+      // the trust stop is resolved from the runtime's own declared modes). A
+      // value written before the runtime is known is a guess in every key.
+      await registry.saveSessionSettings('seed-at-binding', { model: 'sonnet' });
+      serverDefaults = { model: 'opus', effort: 'high' };
+
+      await registry.persistSessionRuntime('seed-at-binding', 'test-mode');
+
+      expect(lastResolveOpts?.runtimeType).toBe('test-mode');
+      // The person's explicit choice survives the claim...
+      expect(read('seed-at-binding')?.model).toBe('sonnet');
+      // ...and only the key their write did not carry is filled.
+      expect(read('seed-at-binding')?.effort).toBe('high');
+    });
+
+    it('seeds the trust stop when the binding write says a person is watching', async () => {
+      interactiveDefaults = { permissionMode: 'bypassPermissions' };
+      await registry.saveSessionSettings('stop-at-binding', { model: 'sonnet' });
+      await registry.saveSessionSettings('stop-unattended', { model: 'sonnet' });
+
+      await registry.persistSessionRuntime('stop-at-binding', 'claude-code', undefined, {
+        interactive: true,
+      });
+      await registry.persistSessionRuntime('stop-unattended', 'claude-code');
+
+      expect(read('stop-at-binding')?.permissionMode).toBe('bypassPermissions');
+      // A room turn claims the same shape of row and must still inherit nothing.
+      expect(read('stop-unattended')?.permissionMode).toBeNull();
+    });
+
+    it('records the owning agent on the row the settings write left behind', async () => {
+      await registry.saveSessionSettings('agent-at-binding', { model: 'sonnet' });
+
+      await registry.persistSessionRuntime('agent-at-binding', 'test-mode', '/agents/kai');
+
+      expect(read('agent-at-binding')?.agentPath).toBe('/agents/kai');
+    });
+
+    it('reports the claim as the session being created, exactly once', async () => {
+      // The boolean gates the once-per-session `session_created` usage event.
+      // Binding an unbound row IS that session starting; the turn after is not.
+      await registry.saveSessionSettings('claim-signal', { model: 'sonnet' });
+
+      const first = await registry.persistSessionRuntime('claim-signal', 'test-mode');
+      const second = await registry.persistSessionRuntime('claim-signal', 'test-mode');
+
+      expect(first).toBe(true);
+      expect(second).toBe(false);
+    });
+
+    it('drops a stored permission mode the runtime it binds cannot run', async () => {
+      // The settings PATCH that stored this mode was gated against the INFERRED
+      // runtime, because that is all an unbound session has. So the stored mode
+      // is provisional, and the binding write is where it stops being: the
+      // runtime being bound is now known, and a mode it never declared would
+      // leave the session reporting a safety posture it is not running — the
+      // exact lie the PATCH gate exists to prevent.
+      registry.register(
+        createMockRuntime('narrow', {
+          permissionModes: {
+            supported: true,
+            values: [
+              {
+                id: 'strict',
+                label: 'Strict',
+                stop: 'ask',
+                asks: 'always',
+                reach: 'read',
+                promise: 'Asks first.',
+              },
+            ],
+          },
+        })
+      );
+      await registry.saveSessionSettings('mode-undeclared', { permissionMode: 'plan' });
+
+      await registry.persistSessionRuntime('mode-undeclared', 'narrow');
+
+      expect(read('mode-undeclared')?.permissionMode).toBeNull();
+    });
+
+    it('lands the bound runtime’s own default where the dropped mode was', async () => {
+      // Order matters: the drop has to happen UNDER the seed, or the session
+      // would be left with no stop where the person had chosen one.
+      registry.register(
+        createMockRuntime('narrow', {
+          permissionModes: {
+            supported: true,
+            values: [
+              {
+                id: 'strict',
+                label: 'Strict',
+                stop: 'ask',
+                asks: 'always',
+                reach: 'read',
+                promise: 'Asks first.',
+              },
+            ],
+          },
+        })
+      );
+      interactiveDefaults = { permissionMode: 'strict' };
+      await registry.saveSessionSettings('mode-reseeded', { permissionMode: 'plan' });
+
+      await registry.persistSessionRuntime('mode-reseeded', 'narrow', undefined, {
+        interactive: true,
+      });
+
+      expect(read('mode-reseeded')?.permissionMode).toBe('strict');
+    });
+
+    it('keeps a stored mode the runtime it binds does declare', async () => {
+      // TWO declared modes, and the stored one is NOT the one the seed would
+      // write. With a single mode — or a stored value equal to the seed —
+      // `coalesce(kept, seed)` answers the same whether the case kept the mode
+      // or dropped it, and the assertion would pin nothing.
+      registry.register(
+        createMockRuntime('twomode', {
+          permissionModes: {
+            supported: true,
+            values: [
+              {
+                id: 'default',
+                label: 'Default',
+                stop: 'ask',
+                asks: 'always',
+                reach: 'edit',
+                promise: 'Asks first.',
+              },
+              {
+                id: 'acceptEdits',
+                label: 'Accept edits',
+                stop: 'act',
+                asks: 'when-risky',
+                reach: 'edit',
+                promise: 'Edits without asking.',
+              },
+            ],
+          },
+        })
+      );
+      interactiveDefaults = { permissionMode: 'default' };
+      await registry.saveSessionSettings('mode-declared', { permissionMode: 'acceptEdits' });
+
+      await registry.persistSessionRuntime('mode-declared', 'twomode', undefined, {
+        interactive: true,
+      });
+
+      expect(read('mode-declared')?.permissionMode).toBe('acceptEdits');
+    });
+
+    it('drops the mode outright for a runtime that declares none', async () => {
+      registry.register(
+        createMockRuntime('modeless', { permissionModes: { supported: false, values: [] } })
+      );
+      await registry.saveSessionSettings('mode-modeless', { permissionMode: 'plan' });
+
+      await registry.persistSessionRuntime('mode-modeless', 'modeless');
+
+      expect(read('mode-modeless')?.permissionMode).toBeNull();
+    });
+
+    it('leaves the mode alone when the runtime being bound is not registered', async () => {
+      // No profile on this server means no basis to judge — the same answer
+      // `seedForNewRow` gives when it cannot read a runtime's declared modes.
+      // Nothing runs such a session anyway (`resolveForSession` throws), so
+      // deleting the person's choice would only lose it.
+      await registry.saveSessionSettings('mode-unknown-runtime', { permissionMode: 'plan' });
+
+      await registry.persistSessionRuntime('mode-unknown-runtime', 'codex');
+
+      expect(read('mode-unknown-runtime')?.permissionMode).toBe('plan');
+    });
+
+    it('never re-judges the mode of a session that is already bound', async () => {
+      // WRITE PATH ONLY, exactly as the PATCH gate is: a session already running
+      // in a now-undeclared mode keeps it and keeps running.
+      registry.register(
+        createMockRuntime('modeless', { permissionModes: { supported: false, values: [] } })
+      );
+      await registry.persistSessionRuntime('already-bound-mode', 'modeless');
+      await registry.saveSessionSettings('already-bound-mode', { permissionMode: 'plan' });
+
+      await registry.persistSessionRuntime('already-bound-mode', 'modeless');
+
+      expect(read('already-bound-mode')?.permissionMode).toBe('plan');
+    });
+
+    it('never re-binds a session whose runtime is already set (ADR-0255)', async () => {
+      // The invariant the fix must not spend: the first AUTHORITATIVE write wins.
+      // Only an inference is negotiable.
+      await registry.persistSessionRuntime('bound', 'test-mode', '/first/path');
+      serverDefaults = { model: 'opus' };
+
+      const created = await registry.persistSessionRuntime('bound', 'claude-code', '/second/path');
+
+      expect(created).toBe(false);
+      expect(read('bound')?.runtime).toBe('test-mode');
+      expect(read('bound')?.agentPath).toBe('/first/path');
+      // A running session keeps its settings, whatever the server default now says.
+      expect(read('bound')?.model).toBeNull();
+    });
+  });
+
   describe('rekeySessionSettings (DOR-493)', () => {
     let db: Db;
 
@@ -911,6 +1126,19 @@ describe('RuntimeRegistry', () => {
         // A NULL source column leaves the destination's value alone.
         model: 'sonnet',
       });
+    });
+
+    it('carries the binding onto a destination that has none', async () => {
+      // The same immutability rule, not an exception to it: a destination row
+      // minted by a settings change owns no runtime, so there is nothing there
+      // to protect and the source's binding travels with the row it describes.
+      await registry.saveSessionSettings('new', { model: 'sonnet' });
+      await registry.persistSessionRuntime('old', 'test-mode');
+
+      await registry.rekeySessionSettings('old', 'new');
+
+      expect(allRows()).toHaveLength(1);
+      expect(allRows()[0]).toMatchObject({ sessionId: 'new', runtime: 'test-mode' });
     });
 
     it('does not resurrect a destination value the source overwrote', async () => {
