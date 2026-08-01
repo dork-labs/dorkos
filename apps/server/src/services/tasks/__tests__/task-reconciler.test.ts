@@ -402,4 +402,143 @@ describe('TaskReconciler', () => {
       );
     });
   });
+
+  describe('a standing fault logs once an hour, not twelve times', () => {
+    const HOUR_MS = 60 * 60 * 1000;
+    /** Twelve passes is one hour at the real 5-minute cadence. */
+    const PASSES_PER_HOUR = 12;
+
+    // The clock is pinned because the damping window is the whole subject:
+    // with a real clock every pass lands inside the first window and the test
+    // could never tell "suppressed correctly" from "never logs again".
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-07-31T09:00:00Z'));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    /** A task file whose frontmatter does not parse — a fault that never clears. */
+    async function writeBrokenTask(slug: string): Promise<string> {
+      const dir = path.join(tasksDir, slug);
+      await fs.mkdir(dir, { recursive: true });
+      const filePath = path.join(dir, 'SKILL.md');
+      await fs.writeFile(filePath, `---\nname: ${slug}\nenabled: yes-please\n---\nBody`, 'utf-8');
+      return filePath;
+    }
+
+    it('logs the first occurrence in full, and swallows an hour of identical repeats', async () => {
+      await writeBrokenTask('broken');
+
+      await reconciler.reconcile();
+      expect(logger.warn).toHaveBeenCalledTimes(1);
+      // The first report of a fault is never withheld or abbreviated.
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('broken'));
+
+      // The remaining eleven passes of the hour say nothing new.
+      for (let i = 1; i < PASSES_PER_HOUR; i++) {
+        vi.advanceTimersByTime(5 * 60 * 1000);
+        await reconciler.reconcile();
+      }
+      expect(logger.warn).toHaveBeenCalledTimes(1);
+    });
+
+    it('speaks up again after the hour, saying how much it held back', async () => {
+      await writeBrokenTask('broken');
+
+      await reconciler.reconcile();
+      for (let i = 1; i < PASSES_PER_HOUR; i++) {
+        vi.advanceTimersByTime(5 * 60 * 1000);
+        await reconciler.reconcile();
+      }
+
+      vi.advanceTimersByTime(5 * 60 * 1000);
+      await reconciler.reconcile();
+
+      expect(logger.warn).toHaveBeenCalledTimes(2);
+      // A standing fault must read as standing, not as a fresh one-off.
+      expect(logger.warn).toHaveBeenLastCalledWith(
+        expect.stringContaining('11 identical reports suppressed in the last hour')
+      );
+    });
+
+    it('never damps a different fault behind one already being held back', async () => {
+      await writeBrokenTask('broken-one');
+      await reconciler.reconcile();
+      expect(logger.warn).toHaveBeenCalledTimes(1);
+
+      // Same call site, same minute, different file: a distinct fault, and the
+      // operator has not seen it yet.
+      await writeBrokenTask('broken-two');
+      await reconciler.reconcile();
+
+      expect(logger.warn).toHaveBeenCalledTimes(2);
+      expect(logger.warn).toHaveBeenLastCalledWith(expect.stringContaining('broken-two'));
+    });
+
+    it('damps a repeating error the same way, and keeps the error object on the first', async () => {
+      const filePath = await writeTask('flaky', 'flaky');
+      vi.spyOn(store, 'upsertFromFile').mockImplementation(() => {
+        throw new Error('db is busy');
+      });
+
+      await reconciler.reconcile();
+      expect(logger.error).toHaveBeenCalledTimes(1);
+      // Whatever a reader would have got before the damper, they still get.
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining(filePath),
+        expect.any(Error)
+      );
+
+      for (let i = 1; i < PASSES_PER_HOUR; i++) {
+        vi.advanceTimersByTime(5 * 60 * 1000);
+        await reconciler.reconcile();
+      }
+      expect(logger.error).toHaveBeenCalledTimes(1);
+    });
+
+    it('logs immediately when the same operation starts failing a different way', async () => {
+      await writeTask('flaky', 'flaky');
+      const upsert = vi.spyOn(store, 'upsertFromFile').mockImplementation(() => {
+        throw new Error('db is busy');
+      });
+
+      await reconciler.reconcile();
+      expect(logger.error).toHaveBeenCalledTimes(1);
+
+      upsert.mockImplementation(() => {
+        throw new Error('disk is full');
+      });
+      await reconciler.reconcile();
+
+      // Same file, same call site, well inside the window — but a different
+      // failure, which is news.
+      expect(logger.error).toHaveBeenCalledTimes(2);
+      expect(logger.error).toHaveBeenLastCalledWith(
+        expect.stringContaining('flaky'),
+        expect.objectContaining({ message: 'disk is full' })
+      );
+    });
+
+    it('forgets a fault that stopped happening, so its return logs in full', async () => {
+      await writeBrokenTask('broken');
+      await reconciler.reconcile();
+      expect(logger.warn).toHaveBeenCalledTimes(1);
+
+      // The user fixes the file, and an hour passes quietly.
+      await fs.writeFile(path.join(tasksDir, 'broken', 'SKILL.md'), skillFile('broken'), 'utf-8');
+      vi.advanceTimersByTime(HOUR_MS);
+      await reconciler.reconcile();
+      expect(logger.warn).toHaveBeenCalledTimes(1);
+
+      // It breaks again. That is a new problem to a person reading the log.
+      await writeBrokenTask('broken');
+      await reconciler.reconcile();
+
+      expect(logger.warn).toHaveBeenCalledTimes(2);
+      expect(logger.warn).toHaveBeenLastCalledWith(expect.not.stringContaining('suppressed'));
+    });
+  });
 });

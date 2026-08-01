@@ -20,11 +20,30 @@ const RECONCILE_INTERVAL_MS = 300_000;
 /** 24-hour grace period before removing orphan DB entries. */
 const ORPHAN_GRACE_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * How long one distinct fault stays quiet after it has been reported.
+ *
+ * A pass runs every 5 minutes, so a fault that does not clear on its own — an
+ * unreadable directory, a task file with a typo in it — used to write twelve
+ * byte-identical lines an hour, forever. Twelve copies say nothing the first
+ * one did not, and they bury the failures an operator actually needs to see.
+ * One line an hour keeps a standing fault visible at a volume that reads.
+ */
+const FAILURE_LOG_WINDOW_MS = 60 * 60 * 1000;
+
 interface TaskDirectory {
   tasksDir: string;
   scope: 'project' | 'global';
   projectPath?: string;
   agentId?: string;
+}
+
+/** What is remembered about one distinct fault already written to the log. */
+interface ReportedFailure {
+  /** `Date.now()` when this fault was last logged. */
+  lastLoggedAt: number;
+  /** Byte-identical recurrences swallowed since then. */
+  suppressed: number;
 }
 
 /**
@@ -35,6 +54,8 @@ interface TaskDirectory {
 export class TaskReconciler {
   private interval: ReturnType<typeof setInterval> | null = null;
   private directories: TaskDirectory[] = [];
+  /** One entry per distinct fault currently being damped. See {@link report}. */
+  private reportedFailures = new Map<string, ReportedFailure>();
 
   constructor(private store: TaskStore) {}
 
@@ -58,10 +79,71 @@ export class TaskReconciler {
     if (this.interval) return;
     this.interval = setInterval(() => {
       this.reconcile().catch((err) => {
-        logger.error('[TaskReconciler] Reconciliation failed', err);
+        this.report('error', '[TaskReconciler] Reconciliation failed', err);
       });
     }, RECONCILE_INTERVAL_MS);
     logger.info('[TaskReconciler] Started (interval: 5m)');
+  }
+
+  /**
+   * Log a failure, at most once per {@link FAILURE_LOG_WINDOW_MS} per fault.
+   *
+   * The first occurrence of a fault always logs, in full and unchanged — a
+   * failure a person has not seen yet is never withheld. Only byte-identical
+   * repeats inside the window are swallowed, and when the window closes the
+   * fault logs again carrying the count of what was swallowed, so a standing
+   * problem reads as standing rather than as a fresh one-off. Any fault that
+   * differs in any way — a different file, a different error code, a different
+   * message — is a different fault and logs immediately.
+   *
+   * Damping is local to this class on purpose. It exists because this one
+   * caller runs on a fixed timer forever, which is what turns a single fault
+   * into a repeating one; nothing here belongs in the shared logger.
+   *
+   * @param level - `error` for a failure, `warn` for a file DorkOS cannot use
+   * @param message - The line to log, already carrying its own identifying
+   *   detail (a path, a task id); this doubles as the fault's identity
+   * @param err - The underlying error, when there is one
+   */
+  private report(level: 'error' | 'warn', message: string, err?: unknown): void {
+    // Identity is the message plus how the error failed. The message already
+    // names the file or row it concerns, and the code distinguishes "same
+    // operation, genuinely different failure" — which must never be hidden
+    // behind a fault that happens to share a call site.
+    const cause =
+      err instanceof Error
+        ? `${(err as NodeJS.ErrnoException).code ?? err.name}:${err.message}`
+        : String(err ?? '');
+    // JSON rather than a joined string: a delimiter is only unambiguous if it
+    // cannot appear in the parts, and these parts are arbitrary text.
+    const key = JSON.stringify([level, message, cause]);
+
+    const now = Date.now();
+    const seen = this.reportedFailures.get(key);
+    if (seen && now - seen.lastLoggedAt < FAILURE_LOG_WINDOW_MS) {
+      seen.suppressed++;
+      return;
+    }
+
+    const repeats = seen?.suppressed ?? 0;
+    const line =
+      repeats > 0
+        ? `${message} (still failing; ${repeats} identical ${repeats === 1 ? 'report' : 'reports'} suppressed in the last hour)`
+        : message;
+    if (level === 'error') logger.error(line, err);
+    else logger.warn(line);
+
+    this.reportedFailures.set(key, { lastLoggedAt: now, suppressed: 0 });
+
+    // Drop faults that have gone quiet for a full window. They are no longer
+    // being damped — if one recurs it logs in full, which is what a fault
+    // returning after an hour of silence deserves — so keeping them only grows
+    // the map.
+    for (const [otherKey, other] of this.reportedFailures) {
+      if (otherKey !== key && now - other.lastLoggedAt >= FAILURE_LOG_WINDOW_MS) {
+        this.reportedFailures.delete(otherKey);
+      }
+    }
   }
 
   /** Stop periodic reconciliation. */
@@ -128,14 +210,14 @@ export class TaskReconciler {
         // here means the directory is there and we could not read it — EACCES,
         // or EMFILE under file-descriptor pressure. Treating that as "empty"
         // would pause every task inside it.
-        logger.error(`[TaskReconciler] Failed to scan ${dir.tasksDir}`, err);
+        this.report('error', `[TaskReconciler] Failed to scan ${dir.tasksDir}`, err);
         continue;
       }
       scannedDirs.add(dir.tasksDir);
 
       for (const result of results) {
         if (!result.ok) {
-          logger.warn(`[TaskReconciler] Invalid file ${result.filePath}: ${result.error}`);
+          this.report('warn', `[TaskReconciler] Invalid file ${result.filePath}: ${result.error}`);
           // A file that is on disk but unusable — unreadable, or frontmatter
           // that does not parse — is NOT a deleted task. Count it as seen so
           // the retirement pass leaves its row alone; a typo in a cron
@@ -158,7 +240,11 @@ export class TaskReconciler {
           this.store.upsertFromFile(def, dir.agentId);
           upserted++;
         } catch (err) {
-          logger.error(`[TaskReconciler] Failed to sync ${result.definition.filePath}`, err);
+          this.report(
+            'error',
+            `[TaskReconciler] Failed to sync ${result.definition.filePath}`,
+            err
+          );
         }
       }
     }
@@ -203,7 +289,7 @@ export class TaskReconciler {
           this.store.markRemovedByFilePath(task.filePath);
         }
       } catch (err) {
-        logger.error(`[TaskReconciler] Failed to retire removed task ${task.id}`, err);
+        this.report('error', `[TaskReconciler] Failed to retire removed task ${task.id}`, err);
       }
     }
 
