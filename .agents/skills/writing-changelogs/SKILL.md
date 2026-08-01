@@ -95,8 +95,17 @@ Not everything belongs in the changelog. Skip:
 - Development-only changes (CI, tests, linting)
 - Dependency updates (unless security-related)
 - Code style changes
+- Fixes to changes that haven't been released yet (see below)
 
 **Exception**: Include if it affects how users interact with the system.
+
+### Fixes to unreleased changes
+
+If a bug was introduced after the last release, no user ever saw it — from the reader's side the feature simply ships working. A separate "Fix …" bullet only tells them about a bug they could never have hit ([Common Changelog](https://github.com/vweevers/common-changelog) makes this an explicit rule).
+
+- **Writing the fragment**: write it as usual. At commit time you rarely know whether the feature will release before the fix, and the PR check wants the commit covered. If the fix lands on the same branch as the feature it fixes, fold it into the feature's fragment instead (move the `covers:` items across).
+- **At release**: `/system:release` classifies every Fixed bullet (Phase 4 curation) and drops the ones that fix behavior introduced since the last tag. If the fix changed what a user should _know_ about the feature — a limitation lifted, behavior that settled differently from the feature's entry — that substance folds into the feature's Added/Changed entry rather than surviving as a Fixed line.
+- **When unsure** whether the buggy behavior existed at the last tag: keep the fix. Over-including is harmless; wrongly dropping a real fix is not.
 
 ## Theme Blockquote (Optional)
 
