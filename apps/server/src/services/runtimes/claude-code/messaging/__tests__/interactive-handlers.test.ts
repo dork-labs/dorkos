@@ -595,6 +595,52 @@ describe('pending interaction snapshots', () => {
     }
   });
 
+  it('tells the agent WHY it was refused, when the person said why (DOR-809)', async () => {
+    // The refusal the model reads is the whole feature. Without the reason the
+    // agent is told only "denied" and typically retries the same call; with it
+    // it can adjust. The message must CONTAIN the person's words verbatim —
+    // asserting on the exact sentence would pin prose, asserting containment
+    // pins the contract.
+    const session = makeBareSession();
+    const result = handleToolApproval(
+      session,
+      'tool-deny-reason-1',
+      'Bash',
+      { command: 'rm -rf node_modules' },
+      { signal: new AbortController().signal, toolUseID: 'tool-deny-reason-1' }
+    );
+
+    const pending = session.pendingInteractions.get('tool-deny-reason-1');
+    if (pending?.type !== 'approval') throw new Error('expected a pending approval');
+    pending.resolve(false, 'Use pnpm prune instead — that folder is symlinked');
+
+    const denial = (await result) as { behavior: string; message: string };
+    expect(denial.behavior).toBe('deny');
+    expect(denial.message).toContain('Use pnpm prune instead — that folder is symlinked');
+  });
+
+  it('says only that it was denied when no reason was given', async () => {
+    // No reason means no reason: the message must not invent one, because the
+    // receipt's "agent was told why" clause is keyed to a reason existing.
+    const session = makeBareSession();
+    const result = handleToolApproval(
+      session,
+      'tool-deny-bare-1',
+      'Bash',
+      { command: 'ls' },
+      { signal: new AbortController().signal, toolUseID: 'tool-deny-bare-1' }
+    );
+
+    const pending = session.pendingInteractions.get('tool-deny-bare-1');
+    if (pending?.type !== 'approval') throw new Error('expected a pending approval');
+    pending.resolve(false);
+
+    await expect(result).resolves.toEqual({
+      behavior: 'deny',
+      message: 'User denied tool execution',
+    });
+  });
+
   it('captures an elicitation snapshot matching the request', () => {
     // Purpose: elicitation snapshot fidelity — serverName/message match request.
     const session = makeBareSession();

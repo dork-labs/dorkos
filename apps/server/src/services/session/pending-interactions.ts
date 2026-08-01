@@ -27,7 +27,12 @@ export interface PendingInteractionEntry {
   type: PendingInteractionDTO['type'];
   /** Server epoch ms when this interaction began (for the countdown math). */
   startedAt: number;
-  /** Serializable re-emit payload for the recovery path. */
+  /**
+   * Serializable re-emit payload for the recovery path.
+   *
+   * When it carries a `timeoutMs` it is also the budget this entry's remainder
+   * is measured against — see {@link listPendingInteractions}.
+   */
   snapshot: object;
 }
 
@@ -39,8 +44,15 @@ export interface PendingInteractionEntry {
  * expired (`remainingMs <= 0`) so the client never re-presents a stale prompt.
  * `now` is injected (rather than read from `Date.now()`) so callers — and
  * tests — control the clock deterministically. The boundary is exclusive: when
- * `now - startedAt === INTERACTION_TIMEOUT_MS`, `remainingMs` is `0` and the
- * entry is dropped.
+ * the elapsed time equals the budget, `remainingMs` is `0` and the entry is
+ * dropped.
+ *
+ * The budget is the interaction's OWN `timeoutMs` when it declared one, and the
+ * server-wide auto-deny only as a fallback. Measuring every interaction against
+ * the global constant made a DTO argue with itself — a 120-second ask shipped
+ * `timeoutMs: 120000` beside `remainingMs: 562000`, so the card drew a bar past
+ * its own maximum and announced nine minutes left on an ask with eighty-five
+ * seconds to live (DOR-810).
  *
  * @param interactions - Pending interactions keyed by interaction id.
  * @param now - Server epoch ms to evaluate the countdown against.
@@ -52,15 +64,19 @@ export function listPendingInteractions(
 ): PendingInteractionDTO[] {
   const out: PendingInteractionDTO[] = [];
   for (const [id, pending] of interactions) {
-    const remainingMs = Math.max(0, SESSIONS.INTERACTION_TIMEOUT_MS - (now - pending.startedAt));
-    if (remainingMs <= 0) continue;
-    out.push({
+    // The budget is read off the DTO being assembled rather than passed
+    // alongside it, so the number the countdown is measured against is
+    // literally the number that ships — the two cannot drift apart.
+    const dto = {
       id,
       type: pending.type,
       startedAt: pending.startedAt,
-      remainingMs,
       ...pending.snapshot,
-    } as PendingInteractionDTO);
+    } as PendingInteractionDTO & { timeoutMs?: number };
+    const budgetMs = dto.timeoutMs ?? SESSIONS.INTERACTION_TIMEOUT_MS;
+    const remainingMs = Math.max(0, budgetMs - (now - pending.startedAt));
+    if (remainingMs <= 0) continue;
+    out.push({ ...dto, remainingMs });
   }
   return out;
 }

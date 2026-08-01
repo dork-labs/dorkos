@@ -571,8 +571,15 @@ export class SessionStateProjector {
    *
    * @param interactionId - The id carried by the interaction event.
    * @param resolution - The outcome, when the caller knows it.
+   * @param opts.reasonGiven - Whether the person's own words were delivered to
+   *   the agent with a denial. Only the caller that delivered them can say so,
+   *   which is why this is passed in rather than derived here.
    */
-  resolveInteraction(interactionId: string, resolution?: 'approved' | 'denied' | 'answered'): void {
+  resolveInteraction(
+    interactionId: string,
+    resolution?: 'approved' | 'denied' | 'answered',
+    opts?: { reasonGiven?: boolean }
+  ): void {
     if (!this.interactions.has(interactionId)) return;
     // RawSessionEvent's Omit-on-union collapses to the common keys, so the
     // member literal needs the same widening cast `ingest` itself applies.
@@ -583,6 +590,9 @@ export class SessionStateProjector {
       // When the answer landed — the client keeps this as the timestamp on its
       // durable record of the decision.
       at: Date.now(),
+      // Carried only when true: an absent field is the honest shape for "no
+      // reason", and it keeps every pre-existing resolution byte-identical.
+      ...(opts?.reasonGiven === true ? { reasonGiven: true } : {}),
     } as unknown as RawSessionEvent);
   }
 

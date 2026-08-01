@@ -71,6 +71,7 @@ export function InteractiveInputPanel({
               onDecided={handleDecided}
               timeoutMs={activeInteraction.timeoutMs}
               approvalStartedAt={activeInteraction.approvalStartedAt}
+              approvalRemainingMs={activeInteraction.approvalRemainingMs}
               approvalTitle={activeInteraction.approvalTitle}
               approvalDisplayName={activeInteraction.approvalDisplayName}
               approvalDescription={activeInteraction.approvalDescription}

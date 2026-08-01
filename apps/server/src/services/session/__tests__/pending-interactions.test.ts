@@ -46,6 +46,59 @@ describe('listPendingInteractions', () => {
     });
   });
 
+  it('measures the remainder against the interaction OWN budget, not the global one', () => {
+    // DOR-810. The DTO carries the budget the raising runtime declared, and the
+    // card draws its bar against that — so a remainder measured against the
+    // global constant contradicts the very field it ships beside it. Measured
+    // in a browser before this was fixed: a 120s ask announced "9 minutes 22
+    // seconds remaining" and rendered aria-valuenow=562 against valuemax=120.
+    const startedAt = 1_000;
+    const ownBudget = 120_000;
+    const interactions = makeInteractions([
+      [
+        'call-1',
+        {
+          type: 'approval',
+          startedAt,
+          snapshot: { toolName: 'Bash', input: '{}', hasSuggestions: false, timeoutMs: ownBudget },
+        } as const,
+      ],
+    ]);
+
+    const dto = listPendingInteractions(interactions, startedAt + 60_000)[0];
+
+    expect(dto.remainingMs).toBe(60_000);
+    expect(dto).toMatchObject({ timeoutMs: ownBudget });
+  });
+
+  it('expires an interaction on its OWN budget, not the global one', () => {
+    // The same disagreement at the boundary: a short-budget ask that has run
+    // out must not be re-presented just because the global clock has time left.
+    const startedAt = 1_000;
+    const interactions = makeInteractions([
+      [
+        'call-1',
+        {
+          type: 'approval',
+          startedAt,
+          snapshot: { toolName: 'Bash', input: '{}', hasSuggestions: false, timeoutMs: 120_000 },
+        } as const,
+      ],
+    ]);
+
+    expect(listPendingInteractions(interactions, startedAt + 120_000)).toEqual([]);
+  });
+
+  it('falls back to the global budget for an interaction that declares none', () => {
+    // Questions and elicitations ship no budget of their own; the server-wide
+    // auto-deny is the honest answer for them.
+    const interactions = makeInteractions([
+      ['q-1', { type: 'question', startedAt: 1_000, snapshot: { questions: [] } } as const],
+    ]);
+
+    expect(listPendingInteractions(interactions, 61_000)[0].remainingMs).toBe(TIMEOUT - 60_000);
+  });
+
   it('excludes an interaction whose elapsed time equals the timeout exactly', () => {
     // Purpose: expiry boundary exclusive — remainingMs === 0 is dropped.
     const startedAt = 5000;

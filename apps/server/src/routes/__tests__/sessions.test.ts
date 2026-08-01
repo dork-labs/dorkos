@@ -983,7 +983,9 @@ describe('Sessions Routes', () => {
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true });
-      expect(fakeRuntime.approveTool).toHaveBeenCalledWith(S1, 'tc1', true, undefined);
+      expect(fakeRuntime.approveTool).toHaveBeenCalledWith(S1, 'tc1', true, {
+        alwaysAllow: undefined,
+      });
     });
 
     it('returns 404 when no pending approval', async () => {
@@ -1010,7 +1012,9 @@ describe('Sessions Routes', () => {
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true });
-      expect(fakeRuntime.approveTool).toHaveBeenCalledWith(S1, 'tc1', false);
+      expect(fakeRuntime.approveTool).toHaveBeenCalledWith(S1, 'tc1', false, {
+        denyReason: undefined,
+      });
     });
 
     it('returns 404 when no pending approval', async () => {

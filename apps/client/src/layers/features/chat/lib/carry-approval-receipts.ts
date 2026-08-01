@@ -50,6 +50,8 @@ export interface ApprovalReceiptRecord {
   startedAt?: number;
   /** The SDK's short noun phrase, carried so the label cannot change at the seam. */
   displayName?: string;
+  /** Whether the person's words were delivered to the agent with the denial. */
+  reasonGiven?: boolean;
 }
 
 /**
@@ -67,6 +69,7 @@ export function collectApprovalReceipts(parts: MessagePart[]): Map<string, Appro
       resolvedAt: part.approvalResolvedAt,
       startedAt: part.approvalStartedAt,
       displayName: part.approvalDisplayName,
+      reasonGiven: part.approvalReasonGiven,
     });
   }
   return receipts;
@@ -78,7 +81,8 @@ function alreadyCarries(part: ToolCallPart, record: ApprovalReceiptRecord): bool
     part.interactiveType === 'approval' &&
     part.approvalOutcome === record.outcome &&
     part.approvalResolvedAt === record.resolvedAt &&
-    part.approvalStartedAt === record.startedAt
+    part.approvalStartedAt === record.startedAt &&
+    part.approvalReasonGiven === record.reasonGiven
   );
 }
 
@@ -117,6 +121,7 @@ export function applyApprovalReceipts(
         approvalOutcome: record.outcome,
         approvalResolvedAt: record.resolvedAt,
         approvalStartedAt: record.startedAt,
+        approvalReasonGiven: record.reasonGiven,
         ...(record.displayName !== undefined ? { approvalDisplayName: record.displayName } : {}),
       };
     });

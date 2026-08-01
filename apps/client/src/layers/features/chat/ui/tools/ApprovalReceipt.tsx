@@ -21,6 +21,12 @@ interface ApprovalReceiptProps {
   resolvedAt?: number;
   /** Server epoch ms when the request was made — with `resolvedAt`, how long it waited. */
   startedAt?: number;
+  /**
+   * Whether the person's words were delivered to the agent with a denial. Set
+   * only from what the server said it delivered, so the clause below is a
+   * report and never a guess.
+   */
+  reasonGiven?: boolean;
   className?: string;
 }
 
@@ -76,6 +82,7 @@ export function ApprovalReceipt({
   items,
   resolvedAt,
   startedAt,
+  reasonGiven,
   className,
 }: ApprovalReceiptProps) {
   const reducedMotion = useReducedMotion();
@@ -123,6 +130,9 @@ export function ApprovalReceipt({
             <>
               You {outcome === 'allowed' ? 'allowed' : 'denied'}{' '}
               {isBatch ? subject : <span className="font-mono">{subject}</span>}
+              {/* Only when the reason actually reached the agent. A refusal it
+                  can explain is one it can work around instead of retrying. */}
+              {outcome === 'denied' && reasonGiven === true && <> — agent was told why</>}
             </>
           )}
         </span>

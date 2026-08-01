@@ -434,6 +434,9 @@
           "approvalResolvedAt": {
             "type": "number"
           },
+          "approvalReasonGiven": {
+            "type": "boolean"
+          },
           "approvalStartedAt": {
             "type": "number"
           }
@@ -596,6 +599,9 @@
               "expired"
             ],
             "description": "How an approval was answered — drives the transcript receipt line"
+          },
+          "approvalReasonGiven": {
+            "type": "boolean"
           },
           "approvalResolvedAt": {
             "type": "number"
@@ -1260,6 +1266,9 @@
               "id": {
                 "type": "string"
               },
+              "timeoutMs": {
+                "type": "number"
+              },
               "toolName": {
                 "type": "string"
               },
@@ -1826,6 +1835,9 @@
               },
               "startedAt": {
                 "type": "number"
+              },
+              "reasonGiven": {
+                "type": "boolean"
               }
             },
             "required": [
@@ -2998,6 +3010,9 @@
               "remainingMs": {
                 "type": "number"
               },
+              "timeoutMs": {
+                "type": "number"
+              },
               "toolName": {
                 "type": "string"
               },
@@ -3330,6 +3345,10 @@
           },
           "alwaysAllow": {
             "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 1000
           }
         },
         "required": [
@@ -6618,6 +6637,9 @@
                         "id": {
                           "type": "string"
                         },
+                        "timeoutMs": {
+                          "type": "number"
+                        },
                         "toolName": {
                           "type": "string"
                         },
@@ -7184,6 +7206,9 @@
                         },
                         "startedAt": {
                           "type": "number"
+                        },
+                        "reasonGiven": {
+                          "type": "boolean"
                         }
                       },
                       "required": [

@@ -83,6 +83,12 @@ export interface ToolCallState {
   timeoutMs?: number;
   /** Server timestamp (ms since epoch) when the approval timer started — for drift-free countdown */
   approvalStartedAt?: number;
+  /**
+   * Server-authoritative ms left before auto-deny. When set, the card's
+   * deadline is `Date.now() + approvalRemainingMs`, so a card recovered after a
+   * reconnect resumes where the clock actually is instead of restarting.
+   */
+  approvalRemainingMs?: number;
   /** SDK-provided full permission prompt sentence */
   approvalTitle?: string;
   /** SDK-provided short noun phrase for the tool action */

@@ -33,6 +33,7 @@ import type {
   RelayPort,
   SessionSettingsPort,
   McpAppServerConnection,
+  ToolDecisionOptions,
 } from '@dorkos/shared/agent-runtime';
 import type {
   SessionSnapshot,
@@ -504,11 +505,16 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     sessionId: string,
     toolCallId: string,
     approved: boolean,
-    alwaysAllow?: boolean
+    options?: ToolDecisionOptions
   ): boolean {
-    const resolved = this.sessionStore.approveTool(sessionId, toolCallId, approved, alwaysAllow);
+    const resolved = this.sessionStore.approveTool(sessionId, toolCallId, approved, options);
     if (resolved) {
-      this.notifyInteractionResolved(sessionId, toolCallId, approved ? 'approved' : 'denied');
+      // `reasonGiven` is asserted HERE, one line from the call that actually
+      // handed the reason to the model, so the transcript's "agent was told
+      // why" can never outrun what was delivered.
+      this.notifyInteractionResolved(sessionId, toolCallId, approved ? 'approved' : 'denied', {
+        reasonGiven: !approved && (options?.denyReason?.trim() ?? '') !== '',
+      });
     }
     return resolved;
   }
@@ -549,9 +555,10 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   private notifyInteractionResolved(
     sessionId: string,
     interactionId: string,
-    resolution: 'approved' | 'denied' | 'answered'
+    resolution: 'approved' | 'denied' | 'answered',
+    opts?: { reasonGiven?: boolean }
   ): void {
-    this.resolveLiveProjector(sessionId)?.resolveInteraction(interactionId, resolution);
+    this.resolveLiveProjector(sessionId)?.resolveInteraction(interactionId, resolution, opts);
   }
 
   /**

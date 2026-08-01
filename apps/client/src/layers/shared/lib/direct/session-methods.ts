@@ -257,12 +257,18 @@ export function createDirectSessionMethods(
       toolCallId: string,
       alwaysAllow?: boolean
     ): Promise<{ ok: boolean }> {
-      const result = services.runtime.approveTool(sessionId, toolCallId, true, alwaysAllow);
+      const result = services.runtime.approveTool(sessionId, toolCallId, true, { alwaysAllow });
       return { ok: result };
     },
 
-    async denyTool(sessionId: string, toolCallId: string): Promise<{ ok: boolean }> {
-      const result = services.runtime.approveTool(sessionId, toolCallId, false);
+    async denyTool(
+      sessionId: string,
+      toolCallId: string,
+      reason?: string
+    ): Promise<{ ok: boolean }> {
+      const result = services.runtime.approveTool(sessionId, toolCallId, false, {
+        denyReason: reason?.trim() || undefined,
+      });
       return { ok: result };
     },
 

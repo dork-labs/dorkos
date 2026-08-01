@@ -61,6 +61,18 @@ export function useInteractiveShortcuts({
       if (e.metaKey || e.ctrlKey || e.altKey) return;
 
       if (activeInteraction!.type === 'approval') {
+        // The approval card's own text field owns Enter while it has focus.
+        // Without this, the Enter that submits a deny reason would fire the
+        // card's bare-Enter shortcut and APPROVE the very call being refused.
+        //
+        // Scoped to a field that OPTS IN (`data-approval-field`) rather than to
+        // any focused input on the page: this listener is document-wide, so a
+        // blanket rule would silently disarm the card's shortcuts for anything
+        // else that happens to hold focus. Escape deliberately still falls
+        // through: on an approval card, Escape always means deny.
+        if (e.key === 'Enter' && isTextInput && target.closest('[data-approval-field]') !== null) {
+          return;
+        }
         if (e.key === 'Enter' && e.shiftKey) {
           e.preventDefault();
           respondingRef.current = true;

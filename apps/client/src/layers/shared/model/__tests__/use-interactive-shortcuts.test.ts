@@ -87,6 +87,40 @@ describe('useInteractiveShortcuts', () => {
       expect(onDeny).toHaveBeenCalledTimes(1);
     });
 
+    it("leaves Enter alone while someone is typing into the card's own field", () => {
+      // The safety case. The deny-reason field lives inside the approval card,
+      // and the card's bare-Enter shortcut is APPROVE — so without this guard
+      // the Enter that submits "no, do it the other way" would allow the very
+      // call being refused. The field's own handler owns Enter instead.
+      const field = document.createElement('input');
+      field.setAttribute('data-approval-field', '');
+      document.body.appendChild(field);
+      renderHook(() =>
+        useInteractiveShortcuts({ activeInteraction: approvalInteraction, onApprove, onDeny })
+      );
+
+      fireKeyOnElement(field, 'Enter');
+      expect(onApprove).not.toHaveBeenCalled();
+
+      // Escape still means deny, from inside the field as much as outside it.
+      fireKeyOnElement(field, 'Escape');
+      expect(onDeny).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps Enter for the card when focus is on an input the card does not own', () => {
+      // The listener is document-wide, so the stand-down has to be narrow: a
+      // blanket "any focused input" rule would disarm Approve for anything else
+      // on the page that happens to hold focus while a card is up.
+      const stray = document.createElement('input');
+      document.body.appendChild(stray);
+      renderHook(() =>
+        useInteractiveShortcuts({ activeInteraction: approvalInteraction, onApprove, onDeny })
+      );
+
+      fireKeyOnElement(stray, 'Enter');
+      expect(onApprove).toHaveBeenCalledTimes(1);
+    });
+
     it('does not fire question shortcuts in approval mode', () => {
       renderHook(() =>
         useInteractiveShortcuts({

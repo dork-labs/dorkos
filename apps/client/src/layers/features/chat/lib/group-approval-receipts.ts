@@ -42,6 +42,8 @@ export interface ApprovalReceiptGroup {
   indices: number[];
   /** The answer every part in the group shares. */
   outcome: ToolApprovalOutcome;
+  /** Whether every part in the group carried a reason to the agent. */
+  reasonGiven: boolean;
 }
 
 /** An approval part that carries its answer. */
@@ -66,6 +68,10 @@ function isAnsweredApproval(part: MessagePart): part is AnsweredApprovalPart {
  */
 function sameDecision(a: AnsweredApprovalPart, b: AnsweredApprovalPart): boolean {
   if (a.approvalOutcome !== b.approvalOutcome) return false;
+  // A refusal the agent had explained to it is a different answer from a bare
+  // one, so merging the two would let one line speak for both and claim the
+  // stronger of the two for all of them.
+  if ((a.approvalReasonGiven ?? false) !== (b.approvalReasonGiven ?? false)) return false;
   if (a.approvalResolvedAt === undefined || b.approvalResolvedAt === undefined) return false;
   return Math.abs(a.approvalResolvedAt - b.approvalResolvedAt) <= SAME_ANSWER_WINDOW_MS;
 }
@@ -103,6 +109,7 @@ export function groupApprovalReceipts(parts: MessagePart[]): Map<number, Approva
       leadIndex: i,
       indices: [i],
       outcome: part.approvalOutcome,
+      reasonGiven: part.approvalReasonGiven ?? false,
     };
     groups.set(i, group);
     open = { group, part };

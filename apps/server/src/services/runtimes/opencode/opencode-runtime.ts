@@ -51,6 +51,7 @@ import type {
   CommandIntentOpts,
   SseResponse,
   SessionSettingsPort,
+  ToolDecisionOptions,
 } from '@dorkos/shared/agent-runtime';
 import type {
   SessionSnapshot,
@@ -493,12 +494,19 @@ export class OpenCodeRuntime implements AgentRuntime {
    * would hang forever and the session would stay `blocked`, which also holds
    * the write-lock probe the next turn runs. When the echo does arrive it maps
    * to a resolve for an id already gone, which the projector no-ops.
+   *
+   * `denyReason` is dropped for a structural reason, not an oversight: the
+   * sidecar's respond endpoint takes `once`/`reject` and carries no free-text
+   * channel, so there is nowhere to put the person's words. What matters is
+   * that this path therefore never tells the projector a reason was given, so
+   * an OpenCode denial's receipt does not claim the agent was told why —
+   * silence here is the honest outcome rather than a lost promise.
    */
   approveTool(
     sessionId: string,
     toolCallId: string,
     approved: boolean,
-    _alwaysAllow?: boolean
+    _options?: ToolDecisionOptions
   ): boolean {
     const pending = this.approvals.take(sessionId, toolCallId);
     if (!pending) return false;

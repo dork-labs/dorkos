@@ -37,7 +37,12 @@ const text: MessagePart = { type: 'text', text: 'between' };
 describe('groupApprovalReceipts', () => {
   it('gives a lone answered approval its own receipt', () => {
     const groups = groupApprovalReceipts([answered('tc-1', 'allowed')]);
-    expect(groups.get(0)).toEqual({ leadIndex: 0, indices: [0], outcome: 'allowed' });
+    expect(groups.get(0)).toEqual({
+      leadIndex: 0,
+      indices: [0],
+      outcome: 'allowed',
+      reasonGiven: false,
+    });
   });
 
   it('collapses adjacent requests answered the same way in the same tick', () => {

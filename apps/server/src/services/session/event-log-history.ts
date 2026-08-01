@@ -38,7 +38,7 @@ type ErrorSessionEvent = Extract<SessionEvent, { type: 'error' }>;
 /** The answered-approval fields a tool call carries into history. */
 type ApprovalReceipt = Pick<
   HistoryToolCall,
-  'approvalOutcome' | 'approvalResolvedAt' | 'approvalStartedAt'
+  'approvalOutcome' | 'approvalResolvedAt' | 'approvalStartedAt' | 'approvalReasonGiven'
 >;
 
 /** Accumulator for one turn while folding the event stream. */
@@ -132,6 +132,7 @@ function buildFailedTurnParts(turn: TurnAccumulator): MessagePart[] {
             approvalOutcome: tool.approvalOutcome,
             approvalResolvedAt: tool.approvalResolvedAt,
             approvalStartedAt: tool.approvalStartedAt,
+            approvalReasonGiven: tool.approvalReasonGiven,
           }
         : {}),
     });
@@ -200,6 +201,7 @@ export function reconstructHistoryFromEvents(events: SessionEvent[]): HistoryMes
           approvalOutcome: outcome,
           approvalResolvedAt: event.at,
           approvalStartedAt: event.startedAt,
+          approvalReasonGiven: event.reasonGiven,
         });
         break;
       }

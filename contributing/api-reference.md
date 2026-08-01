@@ -248,15 +248,24 @@ Approve a pending tool call. Resolves the server-side deferred promise so the SD
 
 ### POST /api/sessions/:id/deny
 
-Deny a pending tool call.
+Deny a pending tool call, optionally saying why.
 
 **Request body:** `ApprovalRequest`
 
 ```json
 {
-  "toolCallId": "tc-abc123"
+  "toolCallId": "tc-abc123",
+  "reason": "Use pnpm prune instead — that folder is symlinked"
 }
 ```
+
+- `toolCallId` (string, required) - The tool call to deny
+- `reason` (string, optional, max 1000 chars) - Why the person refused. Delivered to
+  the agent as the denial message so it can adjust instead of retrying, and recorded on
+  the durable stream (`interaction_resolved.reasonGiven`) so the transcript receipt can
+  say the agent was told why. A blank string counts as no reason. Runtimes whose
+  backend has no free-text refusal channel (OpenCode) drop it and therefore never claim
+  a reason was given.
 
 **Responses:**
 

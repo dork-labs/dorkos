@@ -267,6 +267,14 @@ export const SessionEventSchema = z
       type: z.literal('approval_required'),
       ...interactionTimerShape,
       id: z.string(),
+      /**
+       * The full budget this ask was given, from the runtime that enforces the
+       * auto-deny. The card's countdown and draining bar are both gated on it,
+       * so an emission without it renders an ask with no visible deadline
+       * (DOR-810). Optional: a replay of an event recorded before the field
+       * existed must still parse.
+       */
+      timeoutMs: z.number().optional(),
       toolName: z.string(),
       input: z.string(),
       title: z.string().optional(),
@@ -433,6 +441,15 @@ export const SessionEventSchema = z
        * as a pending DTO, which this very event retires).
        */
       startedAt: z.number().optional(),
+      /**
+       * Whether the person's own words were delivered to the agent with this
+       * denial. The transcript receipt says "agent was told why" on the
+       * strength of this and nothing else, so it is set by the code that
+       * actually hands the runtime the reason — never inferred from the deny UI
+       * having offered a field. Absent on an `expired` resolution: the clock
+       * answered, and it explained nothing.
+       */
+      reasonGiven: z.boolean().optional(),
     }),
     // The start of an assistant turn. Carries the user message that triggered
     // it (when the turn was DorkOS-triggered): the POST is trigger-only

@@ -341,10 +341,12 @@ export function createSessionMethods(
       });
     },
 
-    denyTool(sessionId: string, toolCallId: string): Promise<{ ok: boolean }> {
+    denyTool(sessionId: string, toolCallId: string, reason?: string): Promise<{ ok: boolean }> {
       return fetchJSON<{ ok: boolean }>(baseUrl, `/sessions/${sessionId}/deny`, {
         method: 'POST',
-        body: JSON.stringify({ toolCallId }),
+        // A blank field is not a reason, so it is left off the wire entirely
+        // rather than sent as an empty string the server has to interpret.
+        body: JSON.stringify({ toolCallId, reason: reason?.trim() || undefined }),
         timeout: INTERACTION_TIMEOUT_MS,
       });
     },

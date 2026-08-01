@@ -394,8 +394,10 @@ onDecided?.(); // Optimistically update indicator (see below)
 await transport.approveTool(sessionId, toolCallId, { alwaysAllow: true });
 onDecided?.();
 
-// Deny
-await transport.denyTool(sessionId, toolCallId);
+// Deny — "Add a reason" reveals an optional one-line field on the card, and
+// whatever is in it rides along (Enter in the field denies; the card's bare
+// Enter shortcut stands down while a field has focus, so it cannot approve).
+await transport.denyTool(sessionId, toolCallId, reason);
 onDecided?.();
 ```
 
@@ -433,7 +435,7 @@ This clears `isWaitingForUser` (which checks for `status === 'pending'`), so the
 
 **7. Transport resolves the deferred promise**
 
-Both `approveTool` and `denyTool` call `runtime.approveTool(sessionId, toolCallId, approved)` with `true` or `false`. The pending interaction's `resolve(approved)` is called, returning `{ behavior: 'allow' }` or `{ behavior: 'deny' }` to the SDK.
+Both `approveTool` and `denyTool` call `runtime.approveTool(sessionId, toolCallId, approved, options)` with `true` or `false`; `options` carries `alwaysAllow` on an approval and `denyReason` on a refusal. The pending interaction's `resolve(approved, denyReason)` is called, returning `{ behavior: 'allow' }` or `{ behavior: 'deny', message }` to the SDK — where `message` names the reason when one was given, which is what lets the agent adjust rather than retry.
 
 ### MCP Elicitation
 

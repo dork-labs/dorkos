@@ -1007,6 +1007,120 @@ describe('ClaudeCodeRuntime interactive tools', () => {
       });
     });
 
+    /**
+     * Drive the REAL approval path end to end and hand back what the durable
+     * stream recorded: register a genuine pending approval through the SDK's
+     * own `canUseTool` seam, answer it through `ClaudeCodeRuntime.approveTool`,
+     * and read the `interaction_resolved` the projector emitted.
+     */
+    async function answerRealApproval(
+      toolCallId: string,
+      approved: boolean,
+      options?: { alwaysAllow?: boolean; denyReason?: string }
+    ) {
+      // A session (and projector) of its own per case: the projector registry
+      // is module-global, so a shared id would let one case read the previous
+      // case's resolution back out of `replayFrom`.
+      const sessionId = `sess-${toolCallId}`;
+      manager.ensureSession(sessionId, { permissionMode: 'default' });
+      let canUseToolFn: (
+        toolName: string,
+        input: Record<string, unknown>,
+        context: { signal: AbortSignal; toolUseID: string }
+      ) => Promise<unknown>;
+      const captureCanUseTool = (args: {
+        options: { canUseTool?: typeof canUseToolFn };
+      }): ReturnType<typeof query> => {
+        canUseToolFn = args.options.canUseTool!;
+        const mockIterator = {
+          next: vi
+            .fn()
+            .mockResolvedValueOnce({
+              done: false,
+              value: { type: 'system', subtype: 'init', session_id: sessionId },
+            })
+            .mockImplementationOnce(() => new Promise(() => {})),
+        };
+        return withQueryMethods({
+          [Symbol.asyncIterator]: () => mockIterator,
+        }) as unknown as ReturnType<typeof query>;
+      };
+      mockedQuery.mockImplementation(captureCanUseTool as unknown as typeof query);
+      const gen = manager.sendMessage(sessionId, 'do something');
+      const pullPromise = gen.next();
+      await vi.advanceTimersByTimeAsync(0);
+      const permission = canUseToolFn!(
+        'Bash',
+        { command: 'rm -rf node_modules' },
+        { signal: new AbortController().signal, toolUseID: toolCallId }
+      );
+      await pullPromise;
+
+      const { getOrCreateProjector, disposeProjector } =
+        await import('../../../session/session-state-projector.js');
+      const projector = getOrCreateProjector(sessionId);
+      projector.ingest({
+        type: 'approval_required',
+        id: toolCallId,
+        startedAt: Date.now(),
+        remainingMs: 600_000,
+        timeoutMs: 600_000,
+        toolName: 'Bash',
+        input: '{}',
+        hasSuggestions: false,
+      } as never);
+
+      expect(manager.approveTool(sessionId, toolCallId, approved, options)).toBe(true);
+
+      const resolved = projector.replayFrom(0).find((e) => e.type === 'interaction_resolved') as
+        | { resolution?: string; reasonGiven?: boolean }
+        | undefined;
+      disposeProjector(sessionId);
+      return { resolved, permission: (await permission) as { behavior: string; message?: string } };
+    }
+
+    // DOR-809. `reasonGiven` is the ONLY thing the transcript's "agent was told
+    // why" renders from, and the line that sets it lives one call away from the
+    // one that hands the model the reason. Pinned against the real runtime
+    // rather than a fake, because a test that computes the flag inside its own
+    // `approveTool` stub pins the projector and never the authorizing line:
+    // deleting the argument entirely, or hardcoding it to `true`, both left
+    // 8,585 tests green before this existed.
+    it('declares a reason was given, and hands the model that reason', async () => {
+      const { resolved, permission } = await answerRealApproval('tool-r1', false, {
+        denyReason: 'Use pnpm prune instead',
+      });
+      expect(resolved).toMatchObject({ resolution: 'denied', reasonGiven: true });
+      expect(permission.message).toContain('Use pnpm prune instead');
+    });
+
+    it('claims no reason for a bare denial', async () => {
+      const { resolved, permission } = await answerRealApproval('tool-r2', false);
+      expect(resolved).toMatchObject({ resolution: 'denied' });
+      expect(resolved?.reasonGiven).toBeUndefined();
+      expect(permission.message).toBe('User denied tool execution');
+    });
+
+    it('claims no reason for a whitespace-only one — a blank box explains nothing', async () => {
+      const { resolved, permission } = await answerRealApproval('tool-r3', false, {
+        denyReason: '   ',
+      });
+      expect(resolved?.reasonGiven).toBeUndefined();
+      expect(permission.message).toBe('User denied tool execution');
+    });
+
+    it('claims no reason on an approval', async () => {
+      const { resolved } = await answerRealApproval('tool-r4', true);
+      expect(resolved).toMatchObject({ resolution: 'approved' });
+      expect(resolved?.reasonGiven).toBeUndefined();
+    });
+
+    it('claims no reason on an always-allow approval', async () => {
+      const { resolved } = await answerRealApproval('tool-r5', true, { alwaysAllow: true });
+      expect(resolved).toMatchObject({ resolution: 'approved' });
+      expect(resolved?.reasonGiven).toBeUndefined();
+    });
+
     it('non-AskUserQuestion tools in bypassPermissions mode are allowed immediately', async () => {
       manager.ensureSession('sess-1', { permissionMode: 'bypassPermissions' });
 

@@ -37,7 +37,7 @@ export interface DirectTransportServices {
       sessionId: string,
       toolCallId: string,
       approved: boolean,
-      alwaysAllow?: boolean
+      options?: { alwaysAllow?: boolean; denyReason?: string }
     ): boolean;
     submitAnswers(sessionId: string, toolCallId: string, answers: Record<string, string>): boolean;
     updateSession(

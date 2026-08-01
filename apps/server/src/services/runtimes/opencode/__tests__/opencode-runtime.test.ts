@@ -419,7 +419,7 @@ describe('OpenCodeRuntime', () => {
 
       // alwaysAllow=true must still respond 'once' — 'always' would persist a
       // rule in OpenCode's own store (NOTES.md §2).
-      expect(runtime.approveTool(sessionId, 'per_0001', true, true)).toBe(true);
+      expect(runtime.approveTool(sessionId, 'per_0001', true, { alwaysAllow: true })).toBe(true);
       await vi.waitFor(() =>
         expect(client.postSessionIdPermissionsPermissionId).toHaveBeenCalledWith({
           path: { id: OC_SESSION_A, permissionID: 'per_0001' },

@@ -31,6 +31,17 @@ export function deriveFromParts(parts: MessagePart[]): {
         hooks: part.hooks,
         startedAt: part.startedAt,
         completedAt: part.completedAt,
+        // The pending card in the input zone is built from THIS shape, not from
+        // the part, so anything dropped here is invisible on the card a person
+        // actually answers — the SDK's context and the countdown alike (DOR-810).
+        approvalStartedAt: part.approvalStartedAt,
+        approvalRemainingMs: part.approvalRemainingMs,
+        approvalTitle: part.approvalTitle,
+        approvalDisplayName: part.approvalDisplayName,
+        approvalDescription: part.approvalDescription,
+        approvalBlockedPath: part.approvalBlockedPath,
+        approvalDecisionReason: part.approvalDecisionReason,
+        approvalHasSuggestions: part.approvalHasSuggestions,
       });
     }
   }
