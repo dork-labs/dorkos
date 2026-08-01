@@ -7,6 +7,7 @@ import type {
 import type { StreamEvent, QuestionItem } from '@dorkos/shared/types';
 import { UI_COMMAND_REACH, UiCommandSchema } from '@dorkos/shared/schemas';
 import type { PermissionMode } from '@dorkos/shared/schemas';
+import { logger } from '../../../../lib/logger.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import { toSdkQuestionAnswers } from '../sessions/question-answers.js';
 import { randomUUID } from 'node:crypto';
@@ -301,6 +302,50 @@ export interface InteractiveSession {
   pendingInteractions: Map<string, PendingInteraction>;
   eventQueue: StreamEvent[];
   eventQueueNotify?: () => void;
+  /**
+   * What this session is called, for the log and nothing else.
+   *
+   * Optional because the handlers below work perfectly well without it and a
+   * test fake should not have to invent one — but a real `AgentSession` always
+   * carries it, so the one line that matters
+   * ({@link logInteractionTimeout}) can name the session a person has to open.
+   */
+  sdkSessionId?: string;
+}
+
+/**
+ * Say that nobody answered, so this was denied.
+ *
+ * **The only trace an expired prompt leaves.** All three handlers below hand
+ * the model a denial after {@link SESSIONS.INTERACTION_TIMEOUT_MS} and, until
+ * now, wrote nothing anywhere: the card vanished from any client that happened
+ * to be watching, the turn carried on as though a person had refused, and there
+ * was no record that the refusal was a clock rather than a decision. On
+ * 2026-07-31 two agents hit this twice each, invisibly, inside one forty-one
+ * minute silence (DOR-784) — and reconstructing that afterwards took the SDK
+ * transcripts, because the server log had nothing.
+ *
+ * `warn`, not `info`: work was thrown away that a person would probably have
+ * approved. Nothing from the prompt's INPUT is logged — a tool's arguments are
+ * file paths, commands and occasionally secrets — only what it was and how long
+ * it waited.
+ *
+ * @param session - The session whose turn was blocked.
+ * @param interaction.id - The interaction's id (the tool-use id, for a tool).
+ * @param interaction.kind - Which of the three kinds of prompt expired.
+ * @param interaction.toolName - The tool an approval was about, when there is one.
+ */
+function logInteractionTimeout(
+  session: InteractiveSession,
+  interaction: { id: string; kind: 'approval' | 'question' | 'elicitation'; toolName?: string }
+): void {
+  logger.warn('[claude-code] nobody answered in time, so this was denied', {
+    sessionId: session.sdkSessionId,
+    interactionId: interaction.id,
+    kind: interaction.kind,
+    ...(interaction.toolName !== undefined ? { toolName: interaction.toolName } : {}),
+    waitedMs: SESSIONS.INTERACTION_TIMEOUT_MS,
+  });
 }
 
 /**
@@ -361,6 +406,7 @@ export function handleAskUserQuestion(
     const timeout = setTimeout(() => {
       signal?.removeEventListener('abort', onAbort);
       session.pendingInteractions.delete(toolUseId);
+      logInteractionTimeout(session, { id: toolUseId, kind: 'question' });
       notifyInteractionCancelled(session, toolUseId, 'timeout');
       resolve({ behavior: 'deny', message: 'User did not respond within 10 minutes' });
     }, SESSIONS.INTERACTION_TIMEOUT_MS);
@@ -439,6 +485,7 @@ export function handleElicitation(
     const timeout = setTimeout(() => {
       signal.removeEventListener('abort', onAbort);
       session.pendingInteractions.delete(interactionId);
+      logInteractionTimeout(session, { id: interactionId, kind: 'elicitation' });
       notifyInteractionCancelled(session, interactionId, 'timeout');
       decline();
     }, SESSIONS.INTERACTION_TIMEOUT_MS);
@@ -642,6 +689,7 @@ export function handleToolApproval(
     const timeout = setTimeout(() => {
       context.signal.removeEventListener('abort', onAbort);
       session.pendingInteractions.delete(toolUseId);
+      logInteractionTimeout(session, { id: toolUseId, kind: 'approval', toolName });
       notifyInteractionCancelled(session, toolUseId, 'timeout');
       deny(`Tool approval timed out after ${timeoutMinutes} minutes`);
     }, SESSIONS.INTERACTION_TIMEOUT_MS);
