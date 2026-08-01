@@ -29,6 +29,21 @@ function tooltipFor(chip: TouchChipData): string {
 }
 
 /**
+ * What the chip is called out loud. The glyph and the badges are decoration to a
+ * screen reader, so everything they carry — the verb, the repeat count, the
+ * diffstat — is said here instead.
+ */
+function accessibleNameFor(chip: TouchChipData): string {
+  const parts = [`${VERB_LABEL[chip.verb]} ${chip.fullTarget}`];
+  if (chip.touches > 1) parts.push(`${chip.touches} times`);
+  if (chip.additions !== undefined || chip.deletions !== undefined) {
+    parts.push(`${chip.additions ?? 0} added, ${chip.deletions ?? 0} removed`);
+  }
+  if (chip.error) parts.push('failed');
+  return parts.join(', ');
+}
+
+/**
  * Render one chip: its verb glyph, its name, a `×N` badge once it has been
  * touched more than once, and a diffstat once something has been changed.
  *
@@ -53,7 +68,7 @@ export function TouchChip({ chip, onOpen }: TouchChipProps) {
       data-verb={chip.verb}
       data-live={chip.live}
       title={tooltipFor(chip)}
-      aria-label={`${VERB_LABEL[chip.verb]} ${chip.fullTarget}`}
+      aria-label={accessibleNameFor(chip)}
       onClick={() => onOpen(chip)}
       className={cn(
         'inline-flex max-w-56 items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs',

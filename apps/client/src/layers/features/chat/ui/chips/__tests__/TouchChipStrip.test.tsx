@@ -203,6 +203,7 @@ describe('TouchChipStrip — chip anatomy', () => {
 
     expect(chip.textContent).toContain('×2');
     expect(chip).toHaveAttribute('title', '/repo/src/a.ts\nread, read');
+    expect(chip).toHaveAccessibleName('Read /repo/src/a.ts, 2 times');
   });
 
   it('keeps a deleted file on as a struck-through tombstone', async () => {
@@ -228,6 +229,7 @@ describe('TouchChipStrip — chip anatomy', () => {
     const chip = within(tray).getByTestId('touch-chip');
 
     expect(chip.className).toContain('border-destructive/40');
+    expect(chip).toHaveAccessibleName('Read /repo/src/a.ts, failed');
   });
 
   it('marks a chip live while its tool is still running', async () => {
