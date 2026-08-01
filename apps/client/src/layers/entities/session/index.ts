@@ -54,6 +54,7 @@ export {
   useSessionStatus as useSessionChatStatus,
   useHasConfirmedAuto,
   useHasConfirmedAutonomy,
+  useHasDismissedDefaultStopOffer,
   useModeBeforePlan,
   DEFAULT_SESSION_STATE,
 } from './model/session-chat-store';

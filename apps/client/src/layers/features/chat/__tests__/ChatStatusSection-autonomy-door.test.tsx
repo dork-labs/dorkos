@@ -40,6 +40,18 @@ vi.mock('@/layers/entities/config/model/use-autonomy-acknowledgement', () => ({
   }),
 }));
 
+// The status line now also asks where NEW sessions start, so it reads config and
+// can write it (spec `trust-dial`, decision 6C). Stubbed to "nothing configured,
+// writes go nowhere" — the offer is its own suite's subject
+// (`ChatStatusSection-make-default.test.tsx`), and every case below is about
+// something else.
+vi.mock('@/layers/entities/config/model/use-config', () => ({
+  useConfig: () => ({ data: undefined }),
+}));
+vi.mock('@/layers/entities/config/model/use-update-config', () => ({
+  useUpdateConfig: () => ({ mutate: vi.fn(), isPending: false }),
+}));
+
 vi.mock('@/layers/shared/model/media/use-is-mobile', () => ({
   useIsMobile: () => false,
 }));

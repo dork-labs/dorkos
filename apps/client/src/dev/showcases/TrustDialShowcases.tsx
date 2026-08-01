@@ -1,8 +1,8 @@
 /**
  * The Trust Dial across every runtime that ships, the states a dial can be in
- * that are easy to get wrong, and the two surfaces nobody is watching — an
- * integration binding and a scheduled task (spec `trust-dial`, decisions 1–3
- * and 5).
+ * that are easy to get wrong, the two surfaces nobody is watching — an
+ * integration binding and a scheduled task — and the two places a person says
+ * where NEW sessions should start (spec `trust-dial`, decisions 1–3, 5 and 6).
  *
  * Every demo is the REAL component driven by the REAL declared modes, copied from
  * each adapter's `runtime-constants`. That is the whole point: the dial's job is
@@ -13,8 +13,9 @@
  * @module dev/showcases/TrustDialShowcases
  */
 import { useState, type ReactNode } from 'react';
-import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
-import { PlanModeItem, AutonomyConfirmDialog } from '@/layers/features/status';
+import type { PermissionModeDescriptor, PermissionStop } from '@dorkos/shared/agent-runtime';
+import { PlanModeItem, AutonomyConfirmDialog, MakeDefaultStopLine } from '@/layers/features/status';
+import { DefaultTrustStopSection, type DefaultTrustStopRuntime } from '@/layers/features/settings';
 import { Button, TrustDial, UnattendedAutonomyDialog } from '@/layers/shared/ui';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
@@ -256,6 +257,77 @@ const TASK_CONSEQUENCE = (
   </>
 );
 
+/**
+ * Settings' "New sessions start in" — the one dial that belongs to no runtime,
+ * with the per-runtime consequences beneath it (spec `trust-dial`, decision 6B).
+ *
+ * The real section, driven by the same declared modes as every dial above, so
+ * the captions here are the sentences a person would actually read. The writes
+ * stay local: this is a playground, and the real thing changes where every new
+ * session starts.
+ */
+function LiveDefaultStopSection({ initial }: { initial: PermissionStop | null }) {
+  const [stop, setStop] = useState<PermissionStop | null>(initial);
+  const [overrides, setOverrides] = useState<Record<string, PermissionStop | null>>({});
+  const runtimes: DefaultTrustStopRuntime[] = [
+    { runtime: 'claude-code', label: 'Claude Code', descriptors: CLAUDE },
+    { runtime: 'codex', label: 'Codex', descriptors: CODEX },
+    { runtime: 'opencode', label: 'OpenCode', descriptors: OPENCODE },
+  ].map((entry) => ({ ...entry, stop: overrides[entry.runtime] ?? null }));
+  return (
+    <div className="w-96">
+      <DefaultTrustStopSection
+        stop={stop}
+        effectiveStop="ask"
+        runtimes={runtimes}
+        onChangeGlobal={setStop}
+        onChangeRuntime={(runtime, next) =>
+          setOverrides((current) => ({ ...current, [runtime]: next }))
+        }
+      />
+    </div>
+  );
+}
+
+/**
+ * The in-session offer, under the dial a person just moved (decision 6C).
+ *
+ * Driven by a real stop change, because the offer's whole point is that it is a
+ * response to one: pick a stop and the line appears for a few seconds, exactly
+ * as it does in a session. It withholds itself for the stop that is already the
+ * default, which is the behaviour worth seeing next to the behaviour it replaces.
+ */
+function LiveMakeDefaultOffer() {
+  const [mode, setMode] = useState('default');
+  const [offered, setOffered] = useState<PermissionStop | null>(null);
+  const [madeDefault, setMadeDefault] = useState<PermissionStop>('ask');
+  return (
+    <div className="w-72">
+      <TrustDial
+        mode={mode}
+        descriptors={CLAUDE}
+        onChangeMode={(next) => {
+          setMode(next);
+          const picked = CLAUDE.find((d) => d.id === next);
+          setOffered(picked && picked.stop !== madeDefault ? picked.stop : null);
+        }}
+      />
+      <MakeDefaultStopLine
+        stop={offered}
+        onMakeDefault={() => {
+          if (offered) setMadeDefault(offered);
+          setOffered(null);
+        }}
+        onDismiss={() => setOffered(null)}
+        onExpire={() => setOffered(null)}
+      />
+      <p className="text-muted-foreground px-1 text-[10px]">
+        New sessions currently start in: {madeDefault}
+      </p>
+    </div>
+  );
+}
+
 /** The composer's Plan switch, wired to its own state. */
 function LivePlanChip() {
   const [active, setActive] = useState(false);
@@ -415,6 +487,30 @@ export function TrustDialShowcases() {
             subject="This task"
             consequence={TASK_CONSEQUENCE}
           />
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="Trust Dial — where new sessions start"
+        description="The one dial that belongs to no runtime. It sets a runtime-neutral stop; each runtime resolves it through its own profile, and the lines beneath say what that means — including the amber where Codex cannot keep the middle stop's promise. Full autonomy is a permitted default, asked for once at the moment it is chosen."
+      >
+        <ShowcaseLabel>Settings — Ask first, the shipped default</ShowcaseLabel>
+        <ShowcaseDemo>
+          <LiveDefaultStopSection initial={null} />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          Settings — Full autonomy standing, with the note that keeps it findable
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <LiveDefaultStopSection initial="autonomy" />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          In session — “Make default”, offered only when it would change something
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <LiveMakeDefaultOffer />
         </ShowcaseDemo>
       </PlaygroundSection>
 

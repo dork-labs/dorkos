@@ -33,6 +33,7 @@ import {
   gitPromotionState,
   selectPromotedItems,
   applyStatusBudget,
+  useMakeDefaultStop,
   type StatusPromotionContext,
 } from '@/layers/features/status';
 import { findWorkingMode, isAutonomyStop } from '@/layers/shared/lib';
@@ -159,6 +160,16 @@ export function ChatStatusSection({
   // Full autonomy means and asked not to be told again.
   const autonomyAck = useAutonomyAcknowledgement();
 
+  // "Start every new session here?" — offered under the dial after a stop
+  // change, and only where it would tell the person something they have not
+  // already said (spec `trust-dial`, decision 6C).
+  const makeDefault = useMakeDefaultStop({
+    sessionId,
+    runtime: runtimeChip.runtime,
+    declaredModes,
+    runtimeDefaultMode,
+  });
+
   /**
    * Whether this cockpit has an acknowledgement it can honestly assert for the
    * server's autonomy door — the person's standing record, or the confirmation
@@ -232,12 +243,17 @@ export function ChatStatusSection({
         return;
       }
       applyMode(nextMode);
+      // The person just told DorkOS how much they want this agent to do. Noticing
+      // that here is the whole of decision 6C — the alternative is a trip to
+      // Settings to repeat a choice they have already made ten times.
+      makeDefault.offerFor(nextMode);
     },
     [
       hasConfirmedAuto,
       canAssertAutonomyAck,
       declaredModes,
       applyMode,
+      makeDefault,
       setPendingAutonomy,
       setAutoConfirmOpen,
     ]
@@ -274,9 +290,22 @@ export function ChatStatusSection({
         permissionMode: pendingAutonomy.id as PermissionMode,
         acknowledgedAutonomy: true,
       });
+      // Offered here too, and this is the person decision 6C was written for:
+      // the operator who chooses Full autonomy every morning. They have just
+      // been told exactly what it means, so the offer lands at the one moment
+      // it cannot be a surprise.
+      makeDefault.offerFor(pendingAutonomy.id);
       setPendingAutonomy(null);
     },
-    [pendingAutonomy, recordAutonomyConfirmed, sessionId, status, autonomyAck, setPendingAutonomy]
+    [
+      pendingAutonomy,
+      recordAutonomyConfirmed,
+      sessionId,
+      status,
+      autonomyAck,
+      makeDefault,
+      setPendingAutonomy,
+    ]
   );
 
   // Plan, where the runtime offers a way of working at all. Which mode that is
@@ -394,6 +423,7 @@ export function ChatStatusSection({
     status,
     onUpdateSession: status.updateSession,
     onChangeMode: handleChangeMode,
+    makeDefault: makeDefault.line,
     modelSupportsAutoMode,
     plan: workingMode
       ? { descriptor: workingMode, active: planActive, onToggle: handleTogglePlan }
@@ -470,6 +500,18 @@ export function ChatStatusSection({
         onCancel={() => setPendingAutonomy(null)}
         onConfirm={handleConfirmAutonomy}
         canRemember={autonomyAck.canRemember}
+      />
+      {/* The same door, asked about a wider scope: making Full autonomy the
+          stop EVERY new session starts at. A separate instance rather than a
+          mode on the one above, because the two answer different questions and
+          only one of them is about this session — and here the confirmation IS
+          the standing record, which is why no checkbox is offered. */}
+      <AutonomyConfirmDialog
+        descriptor={makeDefault.pendingDescriptor}
+        canRemember={false}
+        consentNote="Every new session will start here, and DorkOS will remember that you have read this."
+        onCancel={makeDefault.cancel}
+        onConfirm={makeDefault.confirm}
       />
     </div>
   );
