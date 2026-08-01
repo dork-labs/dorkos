@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { ShieldOff } from 'lucide-react';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
+import { warnTier } from '@/layers/shared/lib';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -11,13 +12,17 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from './alert-dialog';
+import { consentActionLabel, consentAsksNote } from './consent-ritual-copy';
 import { PermissionModeScopeNote } from './permission-mode-scope-note';
 
 export interface UnattendedAutonomyDialogProps {
   /**
-   * The autonomy mode being turned on, as its runtime declared it. `null` closes
-   * the dialog — the same open/closed convention the session's own autonomy
-   * dialog uses, so the two read alike at their call sites.
+   * The mode being turned on, as its runtime declared it. `null` closes the
+   * dialog — the same open/closed convention the session's own consent dialog
+   * uses, so the two read alike at their call sites.
+   *
+   * Any mode the consent door gates (`needsConsentRitual`): the autonomy stop,
+   * or one that never asks and can do more than read.
    */
   descriptor: PermissionModeDescriptor | null;
   /** What this surface will do once nobody is asked. One or two plain sentences. */
@@ -29,8 +34,15 @@ export interface UnattendedAutonomyDialogProps {
 }
 
 /**
- * The door into Full autonomy on a surface **nobody is watching** — a relay
- * binding, a scheduled task (spec `trust-dial`, decision 5).
+ * The door into a mode that will not stop to ask, on a surface **nobody is
+ * watching** — a relay binding, a scheduled task (spec `trust-dial`, decision 5,
+ * widened 2026-08-01 by DOR-816).
+ *
+ * Which modes is `needsConsentRitual`'s answer, the same one the server's door
+ * applies, and it is wider than the dial's Full-autonomy stop: a runtime may
+ * file a mode that never asks at the middle stop. An unattended surface is where
+ * that matters most — there is nobody to notice — so both callers gate it here
+ * rather than only at the top of the dial.
  *
  * ## Why this is not the session's dialog
  *
@@ -40,7 +52,9 @@ export interface UnattendedAutonomyDialogProps {
  * person needs told is not "it stops asking" but *what stops happening* — the
  * approval message that would have arrived in their chat, the card a run would
  * have waited on. That sentence is different per surface, so the caller writes
- * it and this component holds the shape.
+ * it and this component holds the shape. The copy that is about the MODE is
+ * shared with the session's dialog (`consent-ritual-copy`), so one promise never
+ * ends up with two spellings.
  *
  * Layer-wise it could not be shared even if the copy were identical: a binding
  * dialog lives in `entities/`, which cannot import a feature. Both halves point
@@ -60,17 +74,42 @@ export function UnattendedAutonomyDialog({
   onCancel,
   onConfirm,
 }: UnattendedAutonomyDialogProps) {
+  // Red for the one combination a person cannot walk back — never asks, reaches
+  // everything — and amber for a mode bounded to a workspace. Spending red on
+  // both is how red stops meaning anything (spec `trust-dial`, decision 3).
+  const danger = descriptor !== null && warnTier(descriptor) === 'danger';
+  const asksNote = descriptor ? consentAsksNote(descriptor) : null;
+
   return (
     <AlertDialog open={descriptor !== null} onOpenChange={(open) => !open && onCancel()}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
-            {/* Red here, and only here on this surface: this is the one setting
-                that never asks about anything, anywhere. */}
-            <ShieldOff className="size-4 text-red-500" />
-            Turn on Full autonomy
+            <ShieldOff
+              className={`size-4 ${danger ? 'text-red-500' : 'text-amber-600 dark:text-amber-400'}`}
+            />
+            {descriptor && consentActionLabel(descriptor)}
           </AlertDialogTitle>
-          <AlertDialogDescription>{descriptor?.promise}</AlertDialogDescription>
+          <AlertDialogDescription>
+            {descriptor?.promise}
+            {/* The fact the title cannot carry on a stop whose name promises
+                asking — absent at the autonomy stop, where the title already
+                says it. INSIDE the description, not beside it: the description
+                is what `aria-describedby` points at, and the one sentence
+                written because the name hides the fact is the last one that may
+                go unannounced. A `span` because a `p` cannot nest in one.
+
+                The explicit space is load-bearing and invisible on screen: the
+                accessible description is computed from text content, which
+                ignores the block layout, so without it a screen reader runs the
+                promise straight into this sentence with no gap. */}
+            {asksNote && ' '}
+            {asksNote && (
+              <span className="text-foreground mt-2 block" data-testid="consent-asks-note">
+                {asksNote}
+              </span>
+            )}
+          </AlertDialogDescription>
         </AlertDialogHeader>
         <p className="text-muted-foreground text-sm">{consequence}</p>
         {descriptor && <PermissionModeScopeNote mode={descriptor.id} descriptor={descriptor} />}
@@ -78,9 +117,9 @@ export function UnattendedAutonomyDialog({
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction
             onClick={onConfirm}
-            className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+            {...(danger ? { className: 'bg-red-600 hover:bg-red-700 focus:ring-red-600' } : {})}
           >
-            Turn on Full autonomy
+            {descriptor && consentActionLabel(descriptor)}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

@@ -12,7 +12,7 @@ import {
   UnattendedAutonomyDialog,
 } from '@/layers/shared/ui';
 import { useAppForm } from '@/layers/shared/lib/form';
-import { permissionModeLabel } from '@/layers/shared/lib';
+import { needsConsentRitual, permissionModeLabel } from '@/layers/shared/lib';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import type { PermissionMode, Task } from '@dorkos/shared/types';
 import { ScheduleBuilder } from './TaskBuilder';
@@ -339,11 +339,15 @@ export function ScheduleForm({
                       <TrustDial
                         mode={field.state.value}
                         descriptors={descriptors}
-                        // The autonomy stop is the one nobody can walk back on a
-                        // run nobody is watching, so it asks first.
+                        // A stop that never asks is the one nobody can walk back
+                        // on a run nobody is watching, so it asks first. The
+                        // rule is `needsConsentRitual` — the server's own — not
+                        // a stop comparison, so a runtime that files a
+                        // never-asking mode at the MIDDLE stop is caught here
+                        // too (DOR-816).
                         onChangeMode={(next) => {
                           const descriptor = descriptors.find((d) => d.id === next);
-                          if (descriptor?.stop === 'autonomy') {
+                          if (descriptor && needsConsentRitual(descriptor)) {
                             setPendingAutonomy(descriptor);
                             return;
                           }
@@ -388,8 +392,8 @@ export function ScheduleForm({
                         consequence={
                           <>
                             A scheduled run has nobody to ask, so nothing is asked: no approval
-                            card, no message, no record of a decision anybody made. At every other
-                            stop an action it cannot take is refused and the run works around it.
+                            card, no message, no record of a decision anybody made. At a stop that
+                            asks, an action it cannot take is refused and the run works around it.
                             Here it simply happens.
                           </>
                         }

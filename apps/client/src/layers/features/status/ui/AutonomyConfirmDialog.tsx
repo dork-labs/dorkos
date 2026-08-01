@@ -11,12 +11,21 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   Checkbox,
+  consentActionLabel,
+  consentAsksNote,
   Label,
   PermissionModeScopeNote,
 } from '@/layers/shared/ui';
+import { warnTier } from '@/layers/shared/lib';
 
 interface AutonomyConfirmDialogProps {
-  /** The autonomy mode being turned on, as its runtime declared it. Null when closed. */
+  /**
+   * The mode being turned on, as its runtime declared it. Null when closed.
+   *
+   * Any mode that goes through the consent door — the autonomy stop, or one that
+   * never asks and can do more than read (`needsConsentRitual`). Every word on
+   * screen is derived from it.
+   */
   descriptor: PermissionModeDescriptor | null;
   /** Close without applying. */
   onCancel: () => void;
@@ -47,12 +56,21 @@ interface AutonomyConfirmDialogProps {
 }
 
 /**
- * The door into Full autonomy (spec `trust-dial`, decision 5).
+ * The door into a mode that will not stop to ask (spec `trust-dial`, decision 5,
+ * widened 2026-08-01 by DOR-816).
  *
- * The autonomy stop is the one setting on the dial a person cannot walk back:
- * the agent stops asking, so by the time they notice, whatever happened has
- * happened. Every other stop is one click and instantly reversible, which is why
- * this is the only one that asks twice.
+ * A setting that stops the asking is the one a person cannot walk back: by the
+ * time they notice, whatever happened has happened. Every setting that still
+ * asks is one click and instantly reversible, which is why only these ask twice.
+ *
+ * **Which modes is not this component's decision.** `needsConsentRitual` in
+ * `@dorkos/shared/permission-semantics` answers it, the server's `PATCH
+ * /api/sessions/:id` applies the same rule, and the answer is wider than the
+ * dial's Full-autonomy stop: a runtime may file a mode that never asks at the
+ * MIDDLE stop, which Codex does. So nothing here says "Full autonomy" in
+ * hardcoded copy — the title, the button and the tint are all read off the
+ * descriptor, or a person choosing Act would be told they had chosen something
+ * else.
  *
  * It matters that a **keyboard** reaches this dialog too. A radio group selects
  * as focus moves, so arrowing along the dial commits each stop it passes — the
@@ -60,14 +78,19 @@ interface AutonomyConfirmDialogProps {
  * catches the deliberate press.
  *
  * The consequence sentence is the runtime's own `promise`, not copy written
- * here: what Full autonomy means differs by agent (Codex says "network
- * included"), and a stand-in sentence would be wrong for somebody. The scope
- * note beneath it is the same one the dial carries — what this does NOT cover.
+ * here: what a stop means differs by agent (Codex says "network included", and
+ * at its middle stop "Codex can't pause to ask"), and a stand-in sentence would
+ * be wrong for somebody. The scope note beneath it is the same one the dial
+ * carries — what this does NOT cover — and it renders on EVERY mode this dialog
+ * opens for, because it is decided by the same `needsConsentRitual` the door is
+ * (DOR-816). That pairing is deliberate: the strongest sentence on screen is the
+ * one that must arrive with its own correction, and the middle stop's is the
+ * strongest of all ("whatever it decides to do, it does").
  *
  * ## This dialog is not the gate
  *
- * The gate is on the server: `PATCH /api/sessions/:id` refuses a Full-autonomy
- * mode unless the request carries an acknowledgement, and answers `428
+ * The gate is on the server: `PATCH /api/sessions/:id` refuses a mode that never
+ * asks unless the request carries an acknowledgement, and answers `428
  * AUTONOMY_ACK_REQUIRED` when it does not. This dialog is how a person GIVES
  * that acknowledgement — it is the ritual, and the server is what makes the
  * ritual unskippable. Two consequences worth knowing: a second cockpit tab
@@ -76,9 +99,12 @@ interface AutonomyConfirmDialogProps {
  *
  * "Don't show this again" trades a repeated ritual for a recorded one. It writes
  * a dated acknowledgement into user config, and the cockpit then sends that
- * standing consent with every autonomy change instead of stopping to ask. The
- * server's requirement never relaxes; only the asking does. Settings shows the
- * date back with a way to clear it, which brings this dialog straight back.
+ * standing consent with every gated mode change instead of stopping to ask. ONE
+ * record covers the whole door, whichever mode opened it: what the person
+ * acknowledged is that a mode will not stop to ask, and that is the same fact at
+ * either stop. The server's requirement never relaxes; only the asking does.
+ * Settings shows the date back with a way to clear it, which brings this dialog
+ * straight back.
  *
  * ## Where the checkbox is not offered
  *
@@ -116,18 +142,44 @@ export function AutonomyConfirmDialog({
     setRememberChoice(false);
   }
 
+  // Red is spent on the one combination a person cannot walk back — never asks,
+  // reaches everything — and amber on the rest of this door's traffic, which is
+  // bounded to a workspace. The same three tones the dial's caption uses, for
+  // the same reason: a middle stop drawn in the colour of Full autonomy teaches
+  // people that the colour means nothing.
+  const tone =
+    descriptor && warnTier(descriptor) === 'danger'
+      ? 'text-red-500'
+      : 'text-amber-600 dark:text-amber-400';
+  const asksNote = descriptor ? consentAsksNote(descriptor) : null;
+
   return (
     <AlertDialog open={open} onOpenChange={(next) => !next && onCancel()}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
-            {/* Red here, and only here on this surface: this is the one setting
-                that never asks about anything, anywhere. */}
-            <ShieldOff className="size-4 text-red-500" />
-            Turn on Full autonomy
+            <ShieldOff className={`size-4 ${tone}`} />
+            {descriptor && consentActionLabel(descriptor)}
           </AlertDialogTitle>
           <AlertDialogDescription>
             {descriptor?.promise} You can switch back anytime.
+            {/* The fact the title cannot carry on a stop whose name promises
+                asking — absent at the autonomy stop, where the title already
+                says it. INSIDE the description, not beside it: the description
+                is what `aria-describedby` points at, and the one sentence
+                written because the name hides the fact is the last one that may
+                go unannounced. A `span` because a `p` cannot nest in one.
+
+                The explicit space is load-bearing and invisible on screen: the
+                accessible description is computed from text content, which
+                ignores the block layout, so without it a screen reader reads
+                "…switch back anytime.This stop never pauses…". */}
+            {asksNote && ' '}
+            {asksNote && (
+              <span className="text-foreground mt-2 block" data-testid="consent-asks-note">
+                {asksNote}
+              </span>
+            )}
           </AlertDialogDescription>
         </AlertDialogHeader>
         {descriptor && <PermissionModeScopeNote mode={descriptor.id} descriptor={descriptor} />}
@@ -154,7 +206,7 @@ export function AutonomyConfirmDialog({
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction onClick={() => onConfirm(rememberChoice)}>
-            Turn on Full autonomy
+            {descriptor && consentActionLabel(descriptor)}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

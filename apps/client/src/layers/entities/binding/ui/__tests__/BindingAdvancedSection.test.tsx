@@ -248,4 +248,95 @@ describe('BindingAdvancedSection permissions', () => {
       await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
     });
   });
+
+  describe('a middle stop that never asks (DOR-816)', () => {
+    /** A binding whose runtime declares Codex's shape: the Act stop cannot ask. */
+    function renderCodexBinding(overrides: { permissionMode?: PermissionMode } = {}) {
+      const transport = createMockTransport({
+        getCapabilities: vi.fn().mockResolvedValue({
+          defaultRuntime: 'claude-code',
+          capabilities: {
+            'claude-code': {
+              type: 'claude-code',
+              supportsToolApproval: true,
+              supportsCostTracking: false,
+              supportsResume: true,
+              supportsMcp: true,
+              supportsQuestionPrompt: true,
+              supportsPlugins: true,
+              permissionModes: { supported: true, values: CODEX_MODES },
+              features: {},
+            },
+          },
+        }),
+      });
+      return renderSection(overrides, transport);
+    }
+
+    it('asks first, in the words of the stop the person picked', async () => {
+      // An integration nobody is watching is where a stop that never asks
+      // matters most: there is no one to notice it did not ask.
+      const { onPermissionModeChange } = renderCodexBinding();
+
+      await waitFor(() => expect(dial()).toBeInTheDocument());
+      await userEvent.click(screen.getByRole('radio', { name: 'Act' }));
+
+      expect(onPermissionModeChange).not.toHaveBeenCalled();
+      const alert = await screen.findByRole('alertdialog');
+      // The dial's word for what they pressed, never "Full autonomy" — this
+      // mode is bounded to the workspace and saying otherwise would be false.
+      expect(alert).toHaveTextContent('Turn on Act');
+      expect(alert).not.toHaveTextContent(/Full autonomy/);
+      // The fact the stop's own name hides, and the runtime's own sentence.
+      // Announced rather than merely present: a sentence outside the element
+      // `aria-describedby` points at is one a screen reader never reads.
+      const note = within(alert).getByTestId('consent-asks-note');
+      expect(note).toHaveTextContent(/never pauses to ask/i);
+      const describedBy = alert.getAttribute('aria-describedby');
+      expect(describedBy, 'the dialog must point at a description').toBeTruthy();
+      const description = document.getElementById(describedBy!);
+      expect(description).toContainElement(note);
+      // And not run into the sentence before it when read out: the accessible
+      // description comes from text content, which ignores the line break.
+      expect(description?.textContent).toMatch(/pause to ask\.\sThis stop never pauses/);
+      expect(alert).toHaveTextContent(/can't pause to ask/);
+      // The correction the strongest sentence has to arrive with (DOR-816).
+      expect(alert).toHaveTextContent(/Actions on DorkOS itself/);
+    });
+
+    it('applies it only once the person confirms', async () => {
+      const { onPermissionModeChange } = renderCodexBinding();
+
+      await waitFor(() => expect(dial()).toBeInTheDocument());
+      await userEvent.click(screen.getByRole('radio', { name: 'Act' }));
+      await userEvent.click(
+        within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Turn on Act' })
+      );
+
+      expect(onPermissionModeChange).toHaveBeenCalledWith('acceptEdits');
+    });
+
+    it('leaves a stop that still asks alone', async () => {
+      // The same Act stop on a runtime that CAN pause: no dialog, one click.
+      const { onPermissionModeChange } = renderSection();
+
+      await waitFor(() => expect(dial()).toBeInTheDocument());
+      await userEvent.click(screen.getByRole('radio', { name: 'Act' }));
+
+      expect(onPermissionModeChange).toHaveBeenCalledWith('acceptEdits');
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    });
+
+    it('leaves a read-only stop alone, though it never asks either', async () => {
+      // Codex's read-only default never asks because it has nothing to ask
+      // about. A door in front of the safest setting is how a door stops being
+      // read — so picking Ask first applies at once.
+      const { onPermissionModeChange } = renderCodexBinding({ permissionMode: 'acceptEdits' });
+
+      await waitFor(() => expect(dial()).toBeInTheDocument());
+      await userEvent.click(screen.getByRole('radio', { name: 'Ask first' }));
+      expect(onPermissionModeChange).toHaveBeenCalledWith('default');
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    });
+  });
 });

@@ -317,8 +317,8 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
     ],
   },
   {
-    id: 'trust-dial-the-door-into-full-autonomy',
-    title: 'Trust Dial — the door into Full autonomy',
+    id: 'trust-dial-the-door-into-a-mode-that-never-asks',
+    title: 'Trust Dial — the door into a mode that never asks',
     page: 'chat',
     category: 'Status',
     keywords: [
@@ -331,6 +331,7 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
       'bypass',
       'permission',
       'scope',
+      'never asks',
     ],
   },
   {

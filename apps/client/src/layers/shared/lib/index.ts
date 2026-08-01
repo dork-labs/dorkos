@@ -61,6 +61,7 @@ export {
   warnTier,
   isBypassSemantics,
   isAutonomyStop,
+  needsConsentRitual,
   isWorkingMode,
   resolveTrustStops,
   findWorkingMode,

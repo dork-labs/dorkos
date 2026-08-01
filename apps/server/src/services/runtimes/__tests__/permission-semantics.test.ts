@@ -16,6 +16,7 @@ import {
   isAutonomyStop,
   isBypassSemantics,
   isDivergent,
+  needsConsentRitual,
   resolveTrustStops,
   warnTier,
 } from '@dorkos/shared/permission-semantics';
@@ -84,9 +85,17 @@ describe('declared permission-mode semantics', () => {
     ).toBe(true);
   });
 
-  it('never lets a runtime default to a stop that stops asking', () => {
+  it('never lets a runtime be BORN in a mode that never asks', () => {
     // The safety invariant the conformance suite enforces per runtime, asserted
     // here across the whole set so a new profile cannot slip in unnoticed.
+    //
+    // Asserted through `needsConsentRitual`, NOT against the set of stops. A
+    // session born at its runtime's default never PATCHes and so never meets the
+    // consent door — this is the only thing standing between a person and an
+    // agent that starts without asking. Checking `stop` instead left the exact
+    // hole DOR-816 closed everywhere else: a profile defaulting to
+    // `{ stop: 'act', asks: 'never', reach: 'workspace' }` is not an autonomy
+    // stop, so it passed, and no door exists on that path to catch it.
     for (const caps of PROFILES) {
       const declaredDefault = caps.permissionModes.default;
       if (declaredDefault === undefined) continue;
@@ -98,8 +107,25 @@ describe('declared permission-mode semantics', () => {
         expect(descriptor!.stop).toBe('autonomy');
         continue;
       }
-      expect(['ask', 'act'], `${caps.type} default stop`).toContain(descriptor!.stop);
+      expect(
+        needsConsentRitual(descriptor!),
+        `${caps.type} defaults to '${declaredDefault}', a mode that never asks — a session ` +
+          'born there passes no door and consents to nothing'
+      ).toBe(false);
     }
+  });
+
+  it('still lets a runtime be born read-only, though that never asks either', () => {
+    // Codex's default is `asks: 'never'` because it can only read. The invariant
+    // above must not be readable as "never say never": it is about being born
+    // able to ACT without asking, which is why it goes through the predicate
+    // rather than through `asks` alone.
+    const codexDefault = CODEX_CAPABILITIES.permissionModes.values.find(
+      (v) => v.id === CODEX_CAPABILITIES.permissionModes.default
+    );
+    expect(codexDefault?.asks).toBe('never');
+    expect(codexDefault?.reach).toBe('read');
+    expect(needsConsentRitual(codexDefault!)).toBe(false);
   });
 });
 
@@ -141,11 +167,47 @@ describe('equivalence with the id tables it replaces', () => {
   });
 });
 
-describe('the autonomy door’s reach across every runtime', () => {
+describe('the consent door’s reach across every runtime', () => {
   // The one rule the server's session PATCH applies to decide whether a mode
-  // change needs the person's acknowledgement (spec `trust-dial`, decision 5).
-  // Asserted here, over real profiles, because a door that misses a runtime's
-  // autonomy mode is a door that is not there.
+  // change needs the person's acknowledgement (spec `trust-dial`, decision 5,
+  // widened 2026-08-01 by DOR-816). Asserted here, over real profiles, because a
+  // door that misses a runtime's never-asking mode is a door that is not there.
+
+  it.each(declaredModes())(
+    '%s/%o: the door asks first about every mode that never asks and can act',
+    (_runtime, d) => {
+      // Read this as COVERAGE, not as a guard: the expectation restates the
+      // implementation, so an edit to the predicate that also edits this line
+      // stays green. What it buys is that every mode of every shipped profile
+      // is run through the real function, so a new profile whose semantics
+      // nobody thought about is at least evaluated here. The guards with teeth
+      // are the value-pinned cases below — Codex's middle stop, the read-only
+      // default, and the birth invariant — which name an answer this line
+      // cannot follow.
+      const expected = d.stop === 'autonomy' || (d.asks === 'never' && d.reach !== 'read');
+      expect(needsConsentRitual(d)).toBe(expected);
+    }
+  );
+
+  it('gates Codex’s middle stop, which the autonomy-stop rule missed', () => {
+    // THE PIN for DOR-816. `workspace-write` sits at the middle stop and runs
+    // shell commands with no way to pause and ask; before the widening it
+    // entered with no ritual at all, disclosed only by the amber caption.
+    const [readOnly, workspaceWrite, fullAccess] = CODEX_CAPABILITIES.permissionModes.values;
+    expect(needsConsentRitual(workspaceWrite!)).toBe(true);
+    expect(isAutonomyStop(workspaceWrite!), 'it is not at the autonomy stop').toBe(false);
+    // The other two, for contrast: read-only never asks and is left alone
+    // because it has nothing to ask about; full access was always gated.
+    expect(needsConsentRitual(readOnly!)).toBe(false);
+    expect(needsConsentRitual(fullAccess!)).toBe(true);
+  });
+
+  it('leaves every mode that still stops for the person alone', () => {
+    for (const [runtime, d] of declaredModes()) {
+      if (d.asks === 'never') continue;
+      expect(needsConsentRitual(d), `${runtime}/${d.id}`).toBe(false);
+    }
+  });
 
   it('finds exactly one autonomy mode in every profile that has one', () => {
     for (const caps of PROFILES) {

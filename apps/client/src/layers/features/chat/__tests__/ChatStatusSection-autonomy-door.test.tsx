@@ -93,6 +93,18 @@ const CAPS: RuntimeCapabilities = {
         reach: 'everything',
         promise: 'Runs everything without asking, including outside this project.',
       },
+      {
+        // A middle stop that never asks — Codex's shape, declared here so the
+        // door can be exercised without naming a runtime (DOR-816). It sits at
+        // the same stop as `acceptEdits` above, which is exactly the pairing
+        // that matters: one of them asks and one of them cannot.
+        id: 'dontAsk',
+        label: 'Workspace write',
+        stop: 'act',
+        asks: 'never',
+        reach: 'workspace',
+        promise: 'Edits files and runs commands inside the workspace without asking.',
+      },
     ],
   },
   commandIntents: { compact: { supported: false } },
@@ -190,13 +202,29 @@ vi.mock('@/layers/features/status', async (importOriginal) => {
     CwdItem: () => null,
     GitStatusItem: () => null,
     PermissionModeItem: ({ onChangeMode }: { onChangeMode: (m: string) => void }) => (
-      <button
-        type="button"
-        data-testid="select-autonomy"
-        onClick={() => onChangeMode('bypassPermissions')}
-      >
-        select autonomy
-      </button>
+      <>
+        <button
+          type="button"
+          data-testid="select-autonomy"
+          onClick={() => onChangeMode('bypassPermissions')}
+        >
+          select autonomy
+        </button>
+        <button
+          type="button"
+          data-testid="select-never-asking-middle"
+          onClick={() => onChangeMode('dontAsk')}
+        >
+          select the middle stop that never asks
+        </button>
+        <button
+          type="button"
+          data-testid="select-asking-middle"
+          onClick={() => onChangeMode('acceptEdits')}
+        >
+          select the middle stop that asks
+        </button>
+      </>
     ),
     ModelConfigPopover: () => null,
     ContextItem: () => null,
@@ -384,5 +412,77 @@ describe('a refusal reopens the door', () => {
     fireEvent.click(screen.getByTestId('select-autonomy'));
 
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+  });
+});
+
+describe('a middle stop that never asks (DOR-816)', () => {
+  it('asks first, in the words of the stop the person picked', () => {
+    renderSection();
+    fireEvent.click(screen.getByTestId('select-never-asking-middle'));
+
+    const dialog = screen.getByRole('alertdialog');
+    // Never "Full autonomy": this mode is bounded to the workspace, and
+    // borrowing the loudest word for it is how the loudest word stops working.
+    expect(dialog).toHaveTextContent('Turn on Act');
+    expect(dialog).not.toHaveTextContent(/Full autonomy/);
+    // The fact the stop's own name hides — "Act" promises asking about the
+    // risky parts, and this runtime cannot. It has to be ANNOUNCED, not merely
+    // present: a sentence outside the element `aria-describedby` points at is
+    // one a screen reader never reads, and this is the sentence that exists
+    // because the name is misleading.
+    const note = screen.getByTestId('consent-asks-note');
+    expect(note).toHaveTextContent(/never pauses to ask/i);
+    const describedBy = dialog.getAttribute('aria-describedby');
+    expect(describedBy, 'the dialog must point at a description').toBeTruthy();
+    const description = document.getElementById(describedBy!);
+    expect(description).toContainElement(note);
+    // And the words must not run together when they are read out. The
+    // accessible description is computed from text content, which ignores the
+    // line break this sits on — so the separating space has to be in the markup
+    // or a screen reader says "anytime.This stop never pauses".
+    expect(description?.textContent).toMatch(/anytime\.\sThis stop never pauses/);
+    // And the correction the strongest sentence has to arrive with (DOR-816):
+    // this mode covers tools in the session, not DorkOS's own approvals.
+    expect(dialog).toHaveTextContent(/Actions on DorkOS itself/);
+    // Nothing is written until they answer.
+    expect(updateSession).not.toHaveBeenCalled();
+  });
+
+  it('applies it with the acknowledgement once the person confirms', () => {
+    renderSection();
+    fireEvent.click(screen.getByTestId('select-never-asking-middle'));
+    fireEvent.click(screen.getByRole('button', { name: 'Turn on Act' }));
+
+    expect(firstPatch()).toEqual({ permissionMode: 'dontAsk', acknowledgedAutonomy: true });
+  });
+
+  it('offers the same standing acknowledgement, and honours one already on file', () => {
+    renderSection();
+    fireEvent.click(screen.getByTestId('select-never-asking-middle'));
+    fireEvent.click(rememberCheckbox());
+    fireEvent.click(screen.getByRole('button', { name: 'Turn on Act' }));
+
+    expect(acknowledge).toHaveBeenCalledTimes(1);
+
+    // One record, one door: what the person acknowledged is that a mode will
+    // not stop to ask, so the standing record covers this stop too.
+    cleanup();
+    updateSession.mockClear();
+    standingAck.current = '2026-08-01T09:30:00.000Z';
+    renderSection();
+    fireEvent.click(screen.getByTestId('select-never-asking-middle'));
+
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(firstPatch()).toEqual({ permissionMode: 'dontAsk', acknowledgedAutonomy: true });
+  });
+
+  it('leaves the same stop alone on a runtime that still asks', () => {
+    // `acceptEdits` sits at the very same stop and asks about the risky parts.
+    // One click, no dialog, no acknowledgement on the wire.
+    renderSection();
+    fireEvent.click(screen.getByTestId('select-asking-middle'));
+
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(firstPatch()).toEqual({ permissionMode: 'acceptEdits' });
   });
 });

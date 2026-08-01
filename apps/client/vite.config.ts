@@ -50,8 +50,19 @@ export default defineConfig({
     //   in the package, so a stale dist renders yesterday's rule — and the
     //   negative assertions (no "Advanced" heading for a manifest with no setup
     //   steps) stay green while the shipped rule regresses.
+    // - `permission-semantics` backs the consent-gate drift tests: the four
+    //   surfaces that must open the same dialog for the same mode —
+    //   `chat/__tests__/ChatStatusSection-autonomy-door.test.tsx`,
+    //   `binding/ui/__tests__/BindingAdvancedSection.test.tsx`,
+    //   `tasks/__tests__/CreateTaskDialog.test.tsx` and the scope note's own
+    //   suite — all decide by `needsConsentRitual`, whose whole job is to say
+    //   that a mode nobody thought about (a runtime that never asks at the
+    //   MIDDLE stop) still needs consent. Same family as the rest: a rule whose
+    //   source text is the subject. Measured: narrowing the predicate back to
+    //   `isAutonomyStop` in `src/` with a stale dist reddened 0 of those tests —
+    //   they read yesterday's rule and passed — and 6 with this entry.
     //
-    // Scoped to these five on purpose — see the same note in
+    // Scoped to these six on purpose — see the same note in
     // `apps/server/vitest.config.ts` for what widening to all 43 subpaths cost.
     alias: [
       {
@@ -73,6 +84,10 @@ export default defineConfig({
       {
         find: '@dorkos/shared/relay-schemas',
         replacement: path.resolve(__dirname, '../../packages/shared/src/relay-schemas.ts'),
+      },
+      {
+        find: '@dorkos/shared/permission-semantics',
+        replacement: path.resolve(__dirname, '../../packages/shared/src/permission-semantics.ts'),
       },
     ],
     // Ensure React loads development bundles (act, error messages) even when

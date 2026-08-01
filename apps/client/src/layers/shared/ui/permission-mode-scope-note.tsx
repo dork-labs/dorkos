@@ -1,5 +1,5 @@
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
-import { cn, isBypassPermissionMode, isBypassSemantics } from '@/layers/shared/lib';
+import { cn, isBypassPermissionMode, needsConsentRitual } from '@/layers/shared/lib';
 
 export interface PermissionModeScopeNoteProps {
   /** The permission mode currently selected. Anything that still asks renders nothing. */
@@ -15,12 +15,12 @@ export interface PermissionModeScopeNoteProps {
 }
 
 /**
- * What a "run everything" permission mode does NOT cover, said where the mode is
- * chosen (spec `agent-approval-settings` §3.7).
+ * What a mode that stops asking does NOT cover, said where the mode is chosen
+ * (spec `agent-approval-settings` §3.7).
  *
  * ## The surprise this exists to prevent
  *
- * Turning a bypass mode on reads as "stop asking me", and for tools inside the
+ * Turning such a mode on reads as "stop asking me", and for tools inside the
  * session that is exactly what it does. It does nothing to the approvals DorkOS
  * asks for on its own behalf — removing an installed package still stops and
  * waits. Somebody who learns that from a card appearing after they thought they
@@ -30,9 +30,25 @@ export interface PermissionModeScopeNoteProps {
  * So the sentence appears at the moment of the choice, in all three places a
  * permission mode is actually picked: the session status line, an integration
  * binding, and a scheduled task. One component and one condition, so the three
- * cannot drift into saying different things — `isBypassSemantics` where the
- * runtime's profile is at hand, {@link isBypassPermissionMode} on the name where
- * it is not.
+ * cannot drift into saying different things — {@link needsConsentRitual} where
+ * the runtime's profile is at hand, {@link isBypassPermissionMode} on the name
+ * where it is not.
+ *
+ * ## Why the condition is the door's rule, not the bypass rule
+ *
+ * It was `isBypassSemantics` (never asks AND reaches everything) until DOR-816.
+ * The sentence is true of ANY session mode — a session's permission mode never
+ * governs DorkOS-level approvals, whatever its reach — so the narrower condition
+ * was not protecting accuracy, it was rationing a correction. What made that
+ * untenable is that the consent dialog now carries an unqualified promise for
+ * the middle stop too ("This stop never pauses to ask. Whatever it decides to
+ * do, it does."), and the strongest sentence on screen is exactly the one that
+ * must arrive with its own correction. Matching the door means every dialog the
+ * door opens gets it.
+ *
+ * The name-based fallback stays narrow on purpose: with no descriptor there is
+ * nothing to read `asks` off, and a mode id is only evidence about the ids
+ * somebody once listed.
  *
  * All three pass a descriptor today: the binding dialog and the task form
  * resolve a runtime profile of their own to build the Trust Dial from. The
@@ -48,7 +64,7 @@ export function PermissionModeScopeNote({
   descriptor,
   className,
 }: PermissionModeScopeNoteProps) {
-  const covers = descriptor ? isBypassSemantics(descriptor) : isBypassPermissionMode(mode);
+  const covers = descriptor ? needsConsentRitual(descriptor) : isBypassPermissionMode(mode);
   if (!covers) return null;
   return (
     <p

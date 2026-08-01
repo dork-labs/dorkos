@@ -206,6 +206,7 @@ export { Switch } from './switch';
 export type { SwitchSize, SwitchProps } from './switch';
 export { TrustDial, TrustModeIcon, stopLabel, CANONICAL_TRUST_STOPS } from './trust-dial';
 export type { TrustDialProps } from './trust-dial';
+export { consentActionLabel, consentAsksNote } from './consent-ritual-copy';
 export { UnattendedAutonomyDialog } from './unattended-autonomy-dialog';
 export type { UnattendedAutonomyDialogProps } from './unattended-autonomy-dialog';
 export {

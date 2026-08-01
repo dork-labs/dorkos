@@ -19,6 +19,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { AgentRuntime, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
+import { needsConsentRitual } from '@dorkos/shared/permission-semantics';
 import {
   ErrorEventSchema,
   OperationProgressEventSchema,
@@ -84,10 +85,11 @@ export interface RuntimeConformanceOpts {
   ) => Promise<HistoryMessage[]>;
   /**
    * Waives the safety invariant that a runtime's DEFAULT permission mode must
-   * still stop for the person (`stop: 'ask'` or `'act'`). The string is the
-   * reason, and it is required rather than a boolean so the waiver is a sentence
-   * somebody wrote, not a flag somebody flipped — an empty or whitespace-only
-   * string does not waive anything.
+   * still stop for the person — one that would need a consent ritual if a person
+   * selected it (`needsConsentRitual`) may not be where a session is BORN. The
+   * string is the reason, and it is required rather than a boolean so the waiver
+   * is a sentence somebody wrote, not a flag somebody flipped — an empty or
+   * whitespace-only string does not waive anything.
    *
    * There is exactly one legitimate use today: `test-mode`, whose entire purpose
    * is a deterministic always-allow fixture. A production runtime that wants
@@ -573,16 +575,27 @@ export function runtimeConformance(
             // still consulted. A runtime whose default never asks hands the keys
             // over before anybody chose to, and no capability flag can make that
             // acceptable — only a written-down reason can (autonomyDefaultReason).
+            //
+            // Asked through `needsConsentRitual` — the same rule the consent
+            // door applies (DOR-816) — and NOT against `stop`. This is the one
+            // path with no door on it: a session born at the default never
+            // PATCHes, so nothing downstream can ask the person anything. A
+            // `stop`-shaped check passed a profile defaulting to
+            // `{ stop: 'act', asks: 'never', reach: 'workspace' }`, which is
+            // precisely the shape the door was widened to catch. A read-only
+            // default that "never asks" because it has nothing to ask about
+            // (Codex's) still passes, as it must.
             const defaultDescriptor = modes!.values.find((d) => d.id === modes!.default);
             // Trimmed, like the promise check above: a waiver has to BE a reason.
             // An empty or whitespace string is somebody silencing the invariant
             // without writing down why, which is the one thing it exists to stop.
             if ((autonomyDefaultReason ?? '').trim().length === 0) {
               expect(
-                defaultDescriptor?.stop,
-                'permissionModes.default must not be an autonomy mode — declare ' +
+                defaultDescriptor !== undefined && needsConsentRitual(defaultDescriptor),
+                `permissionModes.default ('${modes!.default}') must not be a mode that ` +
+                  'never asks — a session born there passes no consent door. Declare ' +
                   'autonomyDefaultReason if this runtime genuinely must'
-              ).not.toBe('autonomy');
+              ).toBe(false);
             }
           }
         } else {

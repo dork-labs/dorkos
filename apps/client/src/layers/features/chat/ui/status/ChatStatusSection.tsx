@@ -37,7 +37,7 @@ import {
   MakeDefaultStopLine,
   type StatusPromotionContext,
 } from '@/layers/features/status';
-import { findWorkingMode, isAutonomyStop } from '@/layers/shared/lib';
+import { findWorkingMode, needsConsentRitual } from '@/layers/shared/lib';
 import { useAutonomyAcknowledgement } from '@/layers/entities/config';
 import { compactComposerGate } from '../../model/build-palette-commands';
 import { useCompactionChip } from '../../model/status/use-compaction-chip';
@@ -211,7 +211,7 @@ export function ChatStatusSection({
   const applyMode = useCallback(
     (nextMode: PermissionMode) => {
       const descriptor = declaredModes.find((d) => d.id === nextMode);
-      const needsAck = descriptor !== undefined && isAutonomyStop(descriptor);
+      const needsAck = descriptor !== undefined && needsConsentRitual(descriptor);
       // The promise is RETURNED, not swallowed, so a caller can tell a landed
       // write from a refused one: `updateSession` answers with the updated
       // session on success and `undefined` after it has handed the failure to
@@ -246,17 +246,19 @@ export function ChatStatusSection({
         setAutoConfirmOpen(true);
         return;
       }
-      // The autonomy stop asks twice. Every other stop is one click and
-      // instantly reversible; this one stops the asking, so by the time a person
-      // notices they did not mean it, it has already happened. The dial selects
-      // on arrow keys as well as clicks, which is the other half of why this
-      // cannot be a straight write (`loop={false}` is the first half).
+      // A stop that never asks asks twice. Every stop that still asks is one
+      // click and instantly reversible; these stop the asking, so by the time a
+      // person notices they did not mean it, it has already happened. The dial
+      // selects on arrow keys as well as clicks, which is the other half of why
+      // this cannot be a straight write (`loop={false}` is the first half).
       //
-      // Asking here is a courtesy, not the gate — the server refuses the write
-      // outright without an acknowledgement, so skipping this branch would land
-      // on the same dialog by a worse route.
+      // WHICH stops is `needsConsentRitual`, not the autonomy position: on a
+      // runtime that cannot pause mid-turn, the MIDDLE stop never asks either
+      // (DOR-816). Asking here is a courtesy, not the gate — the server refuses
+      // the write outright without an acknowledgement, so skipping this branch
+      // would land on the same dialog by a worse route.
       const descriptor = declaredModes.find((d) => d.id === nextMode);
-      if (descriptor && isAutonomyStop(descriptor) && !canAssertAutonomyAck) {
+      if (descriptor && needsConsentRitual(descriptor) && !canAssertAutonomyAck) {
         setPendingAutonomy(descriptor);
         return;
       }
