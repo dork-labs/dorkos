@@ -670,6 +670,36 @@ body {
   animation-name: drain;
 }
 
+/* The "work is happening" breath, worn by ~20 call sites (ThinkingBlock,
+   MemoryRecallBlock, loading skeletons, connection dots) that referenced
+   `animate-tasks` for a long time while no keyframe existed — the pulse was
+   silently dead CSS.
+
+   It is a faster, quieter cousin of `breathe` above (which drives the DorkBot
+   avatar at a 3s cycle): the same opacity-and-scale breath, but at 1.6s so it
+   reads as attentive rather than sleepy, and with a smaller scale step because
+   this class lands on text labels and skeleton bars where a 3% grow would
+   visibly nudge the line. Both properties are compositor-friendly, so a page
+   full of skeletons stays cheap. */
+@keyframes tasks {
+  0%,
+  100% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.02);
+  }
+}
+
+@utility animate-tasks {
+  animation-name: tasks;
+  animation-duration: 1.6s;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+
 /* The message action capsule's entrance: a 5px rise that overshoots a pixel and
    settles (design record §5.1). The overshoot is a KEYFRAME, not the curve —
    cubic-bezier(.2,1.4,.4,1) alone only carries a 5px travel about a quarter of
