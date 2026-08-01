@@ -242,3 +242,64 @@ export function findWorkingMode(
 ): PermissionModeDescriptor | undefined {
   return descriptors.find(isWorkingMode);
 }
+
+/**
+ * Whether a posture runs an agent with nobody left to ask.
+ *
+ * The rule the unattended-autonomy banner is built on, and the reason it is a
+ * function rather than two calls at the call site: {@link isAutonomyStop} and
+ * {@link isBypassSemantics} answer different questions and are allowed to
+ * disagree, and on a surface nobody is watching BOTH answers are disqualifying.
+ *
+ * - The autonomy stop is the position a person deliberately took, behind the
+ *   unattended door. Report it even if a future runtime sandboxes it — what was
+ *   consented to is what should be visible.
+ * - Bypass semantics is what a mode DOES. A mode that never asks and reaches
+ *   everything belongs in this report whatever position its runtime filed it
+ *   under; Codex's `workspace-write` is the live reminder that a runtime can put
+ *   "never asks" at the middle stop.
+ *
+ * @param descriptor - A mode as its runtime declared it.
+ */
+export function isUnattendedAutonomy(descriptor: PermissionModeDescriptor): boolean {
+  return isAutonomyStop(descriptor) || isBypassSemantics(descriptor);
+}
+
+/** Which kind of driver starts an agent turn with nobody in front of it. */
+export type UnattendedDriverKind = 'binding' | 'task';
+
+/**
+ * One live driver that runs an agent without asking, on a surface nobody is
+ * watching. Deliberately three small fields: enough to name the thing on a
+ * banner and send a person to it, and nothing that would make this aggregate
+ * expensive to compute or interesting to leak.
+ *
+ * There is no mode name here on purpose. The obvious fourth field is the
+ * runtime's own word for the mode ("Bypass permissions"), and it was carried
+ * for a while before anything rendered it. Two reasons it is gone: nothing on
+ * screen needs it, and it is the WRONG vocabulary — the product speaks in the
+ * dial's three stops, so a payload offering a runtime's private spelling only
+ * invites a surface to print it. If a detail view ever wants one, it should
+ * take the stop, not the label.
+ */
+export interface UnattendedAutonomyDriver {
+  /** Which surface owns it — decides the word the banner uses and where it links. */
+  kind: UnattendedDriverKind;
+  /** The driver's own id (binding uuid, task ULID). */
+  id: string;
+  /** What to call it on screen. Never empty — the server resolves a fallback. */
+  name: string;
+}
+
+/**
+ * Every unattended surface currently set to run without asking.
+ *
+ * The whole answer, not a page of it: the count that matters is small by
+ * construction (a person has to have walked through the unattended-autonomy
+ * door for each one), and a banner that could only say "some" would be the kind
+ * of alarm people learn to ignore.
+ */
+export interface UnattendedAutonomyState {
+  /** The live drivers, bindings first, each in its store's own order. */
+  drivers: UnattendedAutonomyDriver[];
+}

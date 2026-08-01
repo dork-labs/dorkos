@@ -156,6 +156,7 @@ import {
 import { createApprovalsRouter } from './routes/approvals.js';
 import type { DeepHealthDeps } from './services/observability/deep-health/index.js';
 import type { DebugDeps } from './routes/debug.js';
+import type { UnattendedAutonomyDeps } from './services/core/unattended-autonomy/unattended-autonomy.js';
 import { createCapabilitiesCatalogRouter } from './routes/capabilities-catalog.js';
 import { createCapabilitiesInvokeRouter } from './routes/capabilities-invoke.js';
 import {
@@ -1545,6 +1546,30 @@ async function start() {
     transcriptProjectRoots: () => claudeRuntime?.getTranscriptReader().getProjectsRootSet() ?? [],
     ...(relayCore ? { relayTraceStore: traceStore } : {}),
   } satisfies DebugDeps;
+
+  // The standing unattended-autonomy banner's one read. A third narrow bag
+  // rather than a widening of either above, for the reason they are already two:
+  // this one answers a product question ("is anything running without asking
+  // where nobody can see it?") from the same live stores, and it is served on
+  // every install — including one with relay and Tasks both off, where every
+  // reader below answers empty and so does the banner.
+  //
+  // Every reader resolves its store AT REQUEST TIME rather than closing over
+  // one now. The binding store is created inside `adapterManager.initialize()`,
+  // which is awaited on a different path from this one — capturing it here
+  // would bake in whichever of the two happened to run first and leave the
+  // banner permanently blind to integrations on the losing ordering.
+  app.locals.unattendedAutonomyDeps = {
+    bindings: () => adapterManager?.getBindingStore()?.getAll() ?? [],
+    tasks: () => taskStore?.getTasks() ?? [],
+    adapterName: (adapterId: string) => adapterManager?.resolveAdapterName(adapterId) ?? adapterId,
+    // The REGISTRY, not the config's `enabled` flag — see the reader's doc.
+    // `disable()` clears the flag before it unregisters and warns that a failed
+    // unregister may leave the bot answering, so the registry is the half that
+    // tells the truth about whether a message can still arrive.
+    adapterLive: (adapterId: string) => adapterManager?.getRegistry().get(adapterId) !== undefined,
+    agentLive: (agentId: string) => meshCore?.getProjectPath(agentId) !== undefined,
+  } satisfies UnattendedAutonomyDeps;
 
   // Session-origin Pulse overlay (session-origin-legibility): expose a narrow
   // batched lookup to the sessions router via app.locals, mirroring the

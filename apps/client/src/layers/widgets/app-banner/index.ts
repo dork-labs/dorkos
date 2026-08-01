@@ -7,5 +7,9 @@
  */
 export { AppBannerSlot } from './ui/AppBannerSlot';
 export { useAppBanners } from './model/use-app-banners';
+export {
+  UnattendedAutonomyBanner,
+  type UnattendedAutonomyBannerProps,
+} from './ui/UnattendedAutonomyBanner';
 /** @internal Exported for the app-shell placement regression test only. */
 export { BANNER_PRIORITY, type BannerDescriptor } from './model/banner-descriptor';

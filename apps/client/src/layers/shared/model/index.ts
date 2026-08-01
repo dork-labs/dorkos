@@ -112,4 +112,4 @@ export {
   type DialogDeepLink,
 } from './use-dialog-deep-link';
 export { useDeepLinkScroll } from './use-deep-link-scroll';
-export { useSafeSearch, useSafePathname, EMBED_PATHNAME } from './use-safe-router';
+export { useSafeSearch, useSafeNavigate, useSafePathname, EMBED_PATHNAME } from './use-safe-router';

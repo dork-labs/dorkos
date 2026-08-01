@@ -1,7 +1,13 @@
 import { Router } from 'express';
-import type { SystemRequirements } from '@dorkos/shared/agent-runtime';
+import type { PermissionModeDescriptor, SystemRequirements } from '@dorkos/shared/agent-runtime';
 import { deriveRuntimeReadiness } from '@dorkos/shared/agent-runtime';
+import type { UnattendedAutonomyState } from '@dorkos/shared/permission-semantics';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
+import {
+  collectUnattendedAutonomy,
+  UNATTENDED_RUNTIME,
+  type UnattendedAutonomyDeps,
+} from '../services/core/unattended-autonomy/unattended-autonomy.js';
 
 const router = Router();
 
@@ -37,6 +43,46 @@ router.get('/requirements', async (_req, res) => {
   const runtimes: SystemRequirements['runtimes'] = Object.fromEntries(entries);
 
   res.json({ runtimes } satisfies SystemRequirements);
+});
+
+/**
+ * GET /api/system/unattended-autonomy — every live binding and scheduled task
+ * currently set to run an agent without asking anyone.
+ *
+ * The single read behind the standing unattended-autonomy banner, and shaped so
+ * the banner can afford to be app-wide: two small filters, a couple of map
+ * lookups per binding, one cheap synchronous SELECT for the tasks, and a payload
+ * of a handful of small objects. The client fetches it once and re-reads it when
+ * the server says bindings, tasks, or integrations moved — never per route,
+ * which is the constraint that kept this banner unbuilt until it had an
+ * aggregate of its own (spec `trust-dial`, "Follow-ups opened by the
+ * implementation").
+ *
+ * Degrades in both directions rather than failing: no relay and no Tasks means
+ * no drivers, and a boot where the runtime behind them is unregistered means no
+ * declared modes, which means no claim about what any stored mode does.
+ */
+router.get('/unattended-autonomy', (req, res) => {
+  const deps = (req.app.locals.unattendedAutonomyDeps ?? {}) as UnattendedAutonomyDeps;
+
+  const modes: readonly PermissionModeDescriptor[] = runtimeRegistry.has(UNATTENDED_RUNTIME)
+    ? runtimeRegistry.get(UNATTENDED_RUNTIME).getCapabilities().permissionModes.values
+    : [];
+
+  const state = collectUnattendedAutonomy({
+    bindings: deps.bindings?.() ?? [],
+    tasks: deps.tasks?.() ?? [],
+    modes,
+    adapterName: deps.adapterName ?? ((id) => id),
+    // Permissive defaults, and only reachable when the subsystem that would
+    // answer is not running. For adapters that means there are no bindings to
+    // judge; for Mesh it means erring toward saying something rather than
+    // letting a subsystem outage silence a standing warning.
+    adapterLive: deps.adapterLive ?? (() => true),
+    agentLive: deps.agentLive ?? (() => true),
+  });
+
+  res.json(state satisfies UnattendedAutonomyState);
 });
 
 export default router;

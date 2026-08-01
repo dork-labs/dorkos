@@ -404,6 +404,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
         },
       },
     }),
+    getUnattendedAutonomy: vi.fn().mockResolvedValue({ drivers: [] }),
     provisionRuntime: vi.fn().mockResolvedValue({ ok: true, binaryPath: '/mock/opencode' }),
     // Runtime connect (terminal-free auth)
     storeRuntimeCredential: vi.fn().mockResolvedValue({ ref: 'file:mock' }),

@@ -1,0 +1,202 @@
+/**
+ * Every writer that can change what the unattended-autonomy banner says must
+ * say so on the global stream.
+ *
+ * ## Why this file exists
+ *
+ * The banner's freshness contract has two halves and only one of them was
+ * tested. The client half — "invalidate when `tasks_changed` arrives" — is
+ * pinned in `entities/unattended-autonomy`, but it MOCKS the subscription, so
+ * it proves nothing about anyone emitting the event. And `eventFanOut.broadcast`
+ * is stringly-typed, so deleting every `broadcastTasksChanged()` call in the
+ * repo left 51 tests green: the banner would simply stop appearing when
+ * somebody dialled a task up to Full autonomy, and no test would notice.
+ *
+ * So each writer gets its own case, and each case fails when its own call is
+ * removed.
+ *
+ * ## Which writers, and why these five
+ *
+ * The rule is "every writer that can change the ANSWER". The answer depends on
+ * a task's `permissionMode`, `enabled` and `status`:
+ *
+ * - The three cockpit routes (`POST`, `PATCH`, `DELETE /api/tasks`) can change
+ *   all three, `permissionMode` included — they are the only path an operator
+ *   has to the autonomy stop.
+ * - MCP `tasks_update` and `tasks_delete` are refused `permissionMode` by
+ *   `task-write-policy`, but NOT `enabled`: an agent can re-enable a task a
+ *   person had already granted bypass to, at act tier, with no approval card.
+ *   That is the most important of the five to signal, and it was missing.
+ * - MCP `tasks_create` is deliberately absent. It forces `pending_approval` and
+ *   is refused `permissionMode`, so nothing it can produce is a live driver;
+ *   an event that could never change the answer is noise.
+ *
+ * The two writers that CANNOT broadcast — `upsertFromFile` and the reconciler —
+ * are named honestly in the collector's module doc, along with the 60-second
+ * staleness that covers them.
+ */
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import express from 'express';
+import request from 'supertest';
+import { createTestDb } from '@dorkos/test-utils/db';
+import type { Db } from '@dorkos/db';
+
+const broadcast = vi.fn();
+vi.mock('../../core/event-fan-out.js', () => ({
+  eventFanOut: { broadcast: (...args: unknown[]) => broadcast(...args) },
+}));
+
+vi.mock('../../../lib/boundary.js', () => ({
+  isWithinBoundary: vi.fn().mockResolvedValue(true),
+}));
+
+vi.mock('../../core/config-manager.js', () => ({
+  configManager: { get: (key: string) => (key === 'auth' ? { enabled: false } : undefined) },
+}));
+
+vi.mock('@dorkos/skills/writer', () => ({
+  writeSkillFile: vi.fn().mockResolvedValue('/tmp/dork-test/tasks/test/SKILL.md'),
+  deleteSkillDir: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('@dorkos/skills/parser', () => ({
+  parseSkillFile: vi.fn().mockReturnValue({ ok: false, errors: ['mocked'] }),
+}));
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>;
+  return {
+    ...actual,
+    default: {
+      ...(actual.default as Record<string, unknown>),
+      access: vi.fn().mockRejectedValue(new Error('ENOENT')),
+      readFile: vi.fn().mockResolvedValue(''),
+    },
+  };
+});
+
+import { createTasksRouter } from '../../../routes/tasks.js';
+import { TaskStore } from '../task-store.js';
+import type { TaskSchedulerService } from '../task-scheduler-service.js';
+import { getTasksTools } from '../../runtimes/claude-code/mcp-tools/task-tools.js';
+import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
+import type { Task } from '@dorkos/shared/schemas';
+
+/** The `tool()` shape, narrowed to what this file drives. */
+interface SessionTool {
+  name: string;
+  handler: (
+    args: Record<string, unknown>,
+    extra: unknown
+  ) => Promise<{ content: { type: string; text: string }[]; isError?: boolean }>;
+}
+
+/** Whether `tasks_changed` was broadcast — by name, which is the thing that rots. */
+function broadcastTasksChangedCount(): number {
+  return broadcast.mock.calls.filter((call) => call[0] === 'tasks_changed').length;
+}
+
+function createMockScheduler(): TaskSchedulerService {
+  return {
+    registerTask: vi.fn(),
+    unregisterTask: vi.fn(),
+    triggerManualRun: vi.fn().mockResolvedValue(null),
+    cancelRun: vi.fn().mockReturnValue(false),
+    getNextRun: vi.fn().mockReturnValue(new Date('2026-03-01T00:00:00Z')),
+    getActiveRunCount: vi.fn().mockReturnValue(0),
+    isRegistered: vi.fn().mockReturnValue(false),
+  } as unknown as TaskSchedulerService;
+}
+
+describe('a task write tells the world it happened', () => {
+  let app: express.Application;
+  let store: TaskStore;
+  let db: Db;
+  let tools: Record<string, SessionTool>;
+  let existing: Task;
+
+  beforeEach(() => {
+    broadcast.mockClear();
+    db = createTestDb();
+    store = new TaskStore(db);
+    app = express();
+    app.use(express.json());
+    app.use('/api/tasks', createTasksRouter(store, createMockScheduler(), '/tmp/dork-test'));
+
+    const deps = { taskStore: store, defaultCwd: '/tmp/test' } as unknown as McpToolDeps;
+    tools = Object.fromEntries(
+      (getTasksTools(deps) as unknown as SessionTool[]).map((t) => [t.name, t])
+    );
+
+    existing = store.createTask({
+      name: 'nightly',
+      description: 'nightly',
+      prompt: 'the prompt the person approved',
+      cron: '0 2 * * *',
+      filePath: '/tmp/tasks/nightly/SKILL.md',
+    });
+  });
+
+  afterEach(() => {
+    store.close();
+  });
+
+  it('POST /api/tasks broadcasts tasks_changed', async () => {
+    const res = await request(app).post('/api/tasks').send({
+      name: 'New',
+      description: 'do stuff',
+      prompt: 'do stuff',
+      cron: '0 2 * * *',
+      target: 'global',
+    });
+
+    expect(res.status).toBe(201);
+    expect(broadcastTasksChangedCount()).toBe(1);
+  });
+
+  it('PATCH /api/tasks/:id broadcasts tasks_changed', async () => {
+    const res = await request(app).patch(`/api/tasks/${existing.id}`).send({ enabled: false });
+
+    expect(res.status).toBe(200);
+    expect(broadcastTasksChangedCount()).toBe(1);
+  });
+
+  it('DELETE /api/tasks/:id broadcasts tasks_changed', async () => {
+    const res = await request(app).delete(`/api/tasks/${existing.id}`);
+
+    expect(res.status).toBe(200);
+    expect(broadcastTasksChangedCount()).toBe(1);
+  });
+
+  it('MCP tasks_update broadcasts tasks_changed — the agent-reachable path', async () => {
+    // `enabled` is NOT operator-only, so this is an agent switching a task the
+    // person already granted bypass to back on. If any writer had to signal,
+    // it is this one.
+    const result = await tools['tasks_update']!.handler(
+      { id: existing.id, enabled: true },
+      undefined
+    );
+
+    expect(result.isError).not.toBe(true);
+    expect(broadcastTasksChangedCount()).toBe(1);
+  });
+
+  it('MCP tasks_delete broadcasts tasks_changed', async () => {
+    const result = await tools['tasks_delete']!.handler({ id: existing.id }, undefined);
+
+    expect(result.isError).not.toBe(true);
+    expect(broadcastTasksChangedCount()).toBe(1);
+  });
+
+  it('stays quiet when the write did not happen', async () => {
+    // A 404 changes nothing, so it must announce nothing — otherwise every
+    // assertion above would pass against a broadcast fired unconditionally at
+    // the top of each handler.
+    const res = await request(app).patch('/api/tasks/nope').send({ enabled: false });
+    const mcp = await tools['tasks_delete']!.handler({ id: 'nope' }, undefined);
+
+    expect(res.status).toBe(404);
+    expect(mcp.isError).toBe(true);
+    expect(broadcastTasksChangedCount()).toBe(0);
+  });
+});

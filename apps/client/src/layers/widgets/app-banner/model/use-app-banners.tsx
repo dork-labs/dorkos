@@ -1,6 +1,8 @@
 import { useConfig } from '@/layers/entities/config';
+import { useUnattendedAutonomy } from '@/layers/entities/unattended-autonomy';
 import { TelemetryConsentBanner } from '@/layers/features/telemetry-consent';
 
+import { UnattendedAutonomyBanner } from '../ui/UnattendedAutonomyBanner';
 import { BANNER_PRIORITY, type BannerDescriptor } from './banner-descriptor';
 
 /**
@@ -20,6 +22,23 @@ function useTelemetryBannerDescriptor(): BannerDescriptor | null {
 }
 
 /**
+ * Unattended-autonomy descriptor — warning severity, eligible whenever at least
+ * one live binding or scheduled task is set to run without asking. Reads the
+ * server's single cheap aggregate rather than the binding and task lists, which
+ * is what lets a banner about them be app-wide at all.
+ */
+function useUnattendedAutonomyDescriptor(): BannerDescriptor | null {
+  const state = useUnattendedAutonomy();
+  if (!state || state.drivers.length === 0) return null;
+  return {
+    id: 'unattended-autonomy',
+    variant: 'warning',
+    priority: BANNER_PRIORITY.warning,
+    render: () => <UnattendedAutonomyBanner drivers={state.drivers} />,
+  };
+}
+
+/**
  * Collects every eligible app banner for the current app state. The slot ranks
  * the result and shows the highest-priority one. Add a banner by writing a
  * descriptor hook and appending its result here — no other wiring is required.
@@ -33,17 +52,19 @@ function useTelemetryBannerDescriptor(): BannerDescriptor | null {
  * The signal now lives where the setting does: the strip's word and tint, and the
  * per-row glyph in the session list.
  *
- * The case it was right about is **unattended** autonomy — an agent left running
+ * The case it WAS right about — **unattended** autonomy, an agent left running
  * without asking behind a relay binding or a scheduled task, where nobody is
- * watching the strip. That banner is not built: it needs binding and task state
- * this widget does not fetch (and must not fetch on every route), and its own
- * rules about what counts as unattended. It is written down as a follow-up in
- * `specs/trust-dial/04-design-decisions.md`, under "Follow-ups opened by the
- * implementation".
+ * watching a strip — is the descriptor above (DOR-814). It could not simply be
+ * narrowed into place: the old banner only ever read the session in front of the
+ * person, so the unattended case needed binding and task state this widget must
+ * not fetch on every route, plus its own definition of unattended. Both now live
+ * on the server (`services/core/unattended-autonomy/`), which is why
+ * this hook reads one small aggregate and no lists.
  *
  * @param sessionId - The active session id, or null when none is selected.
  */
 export function useAppBanners(_sessionId: string | null): BannerDescriptor[] {
   const telemetry = useTelemetryBannerDescriptor();
-  return [telemetry].filter((d): d is BannerDescriptor => d !== null);
+  const unattended = useUnattendedAutonomyDescriptor();
+  return [telemetry, unattended].filter((d): d is BannerDescriptor => d !== null);
 }

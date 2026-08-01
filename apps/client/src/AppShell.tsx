@@ -24,6 +24,7 @@ import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
 import { useCommandsSync } from '@/layers/entities/command';
 import { useBindingsSync } from '@/layers/entities/binding';
 import { useRelayAdaptersSync } from '@/layers/entities/relay';
+import { useUnattendedAutonomySync } from '@/layers/entities/unattended-autonomy';
 import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import { DialogHost } from '@/layers/widgets/app-layout';
 import { AppBannerSlot, useAppBanners } from '@/layers/widgets/app-banner';
@@ -288,6 +289,10 @@ export function AppShell() {
   // mutations and slow polling.
   useBindingsSync();
   useRelayAdaptersSync();
+  // Keep the standing unattended-autonomy banner honest the moment a binding or
+  // a task changes: dialling one up to Full autonomy has to raise the banner as
+  // the form closes, not on the next reload.
+  useUnattendedAutonomySync();
   // Make the Pulse Activity teaser live off `/api/events`: invalidate the
   // activity caches when an activity-generating broadcast (relay traffic/topology,
   // extension reloads) fires, coalescing bursts. Attention's live source
