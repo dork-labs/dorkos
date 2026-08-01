@@ -15,7 +15,7 @@
  * @module services/session/session-debug-counters
  */
 import type { SessionLifecycle } from '@dorkos/shared/session-stream';
-import type { ProjectorPersistenceMode } from './session-state-projector.js';
+import type { ProjectorPersistenceMode } from './projector-persistence.js';
 
 /** One projector's own bookkeeping, as the debug surface reports it. */
 export interface SessionDebugCounters {
