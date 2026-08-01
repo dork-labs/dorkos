@@ -33,6 +33,7 @@ import {
   useSessionStatus,
   useSessionSettingsOverridesStore,
   resolveSessionForCwd,
+  sessionKeys,
   SessionRow,
 } from '@/layers/entities/session';
 import { sessionRouteLoader } from '../router';
@@ -282,15 +283,24 @@ describe('session permission mode: the fresher answer wins', () => {
 
   /** The status line's real writer: applies optimism, PATCHes, writes the detail cache back. */
   function StatusLine({ sessionId }: { sessionId: string }) {
-    const { updateSession } = useSessionStatus(sessionId, null, false);
+    const { updateSession, permissionMode } = useSessionStatus(sessionId, null, false);
     return (
-      <button
-        type="button"
-        onClick={() => void updateSession({ permissionMode: 'bypassPermissions' })}
-      >
-        Switch to bypass
-      </button>
+      <>
+        <span data-testid="status-line-mode">{permissionMode}</span>
+        <button
+          type="button"
+          onClick={() => void updateSession({ permissionMode: 'bypassPermissions' })}
+        >
+          Switch to bypass
+        </button>
+      </>
     );
+  }
+
+  /** The cross-agent Recent section — a second, independently-timed source of server rows. */
+  function Recent() {
+    const { data } = useRecentSessions();
+    return <span data-testid="recent-count">{data?.sessions.length ?? 0}</span>;
   }
 
   /** The sidebar rail, rendered from the same list cache the app renders it from. */
@@ -317,6 +327,82 @@ describe('session permission mode: the fresher answer wins', () => {
       </TooltipProvider>
     );
   }
+
+  it('lets the later-fetched of two sources win, whichever arrives first', async () => {
+    // The guard compares an incoming answer against the date on the entry, so
+    // that date has to mean "when this data was true" for EVERY writer, not "when
+    // somebody copied it". Here the Recent fetch starts second and answers second,
+    // while the list fetch starts first and answers in between. If the list answer
+    // dates the entry by its own arrival, the genuinely newer Recent answer — the
+    // only one that knows the session has started bypassing — looks older than
+    // what it is replacing and is dropped. Two fetches of ONE query cannot
+    // interleave this way (TanStack dedupes them); these are two queries over the
+    // same rows, and only the clock they are dated on can order them.
+    let answerList!: (value: { sessions: Session[] }) => void;
+    let answerRecent!: (value: {
+      sessions: Session[];
+      agentActivity: typeof AGENT_ACTIVITY;
+    }) => void;
+    const listSessions = vi
+      .fn()
+      .mockResolvedValueOnce({ sessions: [makeSession({ permissionMode: 'default' })] })
+      .mockReturnValueOnce(
+        new Promise<{ sessions: Session[] }>((resolve) => {
+          answerList = resolve;
+        })
+      );
+    const listRecentSessions = vi
+      .fn()
+      .mockResolvedValueOnce({
+        sessions: [makeSession({ permissionMode: 'default' })],
+        agentActivity: AGENT_ACTIVITY,
+      })
+      .mockReturnValueOnce(
+        new Promise<{ sessions: Session[]; agentActivity: typeof AGENT_ACTIVITY }>((resolve) => {
+          answerRecent = resolve;
+        })
+      );
+    const { queryClient, wrapper } = createHarness(undefined, {
+      listSessions,
+      listRecentSessions,
+      getSession: vi.fn().mockResolvedValue(makeSession({ permissionMode: 'default' })),
+    });
+
+    render(
+      <>
+        <Rail openSessionId="listed-1" />
+        <Recent />
+      </>,
+      { wrapper }
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('open-session-mode')).toHaveTextContent('default')
+    );
+    await waitFor(() => expect(screen.getByTestId('recent-count')).toHaveTextContent('1'));
+
+    // Both refetch, list first. The gap is real time because the ordering under
+    // test is between the two FETCH STARTS, and the clock they are compared on
+    // has millisecond resolution.
+    void queryClient.refetchQueries({ queryKey: sessionKeys.list(CWD) });
+    await waitFor(() => expect(listSessions).toHaveBeenCalledTimes(2));
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    void queryClient.refetchQueries({ queryKey: sessionKeys.recentRoot });
+    await waitFor(() => expect(listRecentSessions).toHaveBeenCalledTimes(2));
+
+    answerList({ sessions: [makeSession({ permissionMode: 'default' })] });
+    await waitFor(() =>
+      expect(queryClient.isFetching({ queryKey: sessionKeys.list(CWD) })).toBe(0)
+    );
+    answerRecent({
+      sessions: [makeSession({ permissionMode: 'bypassPermissions' })],
+      agentActivity: AGENT_ACTIVITY,
+    });
+    await waitFor(() =>
+      expect(queryClient.isFetching({ queryKey: sessionKeys.recentRoot })).toBe(0)
+    );
+
+    expect(await screen.findByLabelText('Permissions bypassed')).toBeInTheDocument();
+  });
 
   it('warns when a session starts bypassing after the person moved on from it', async () => {
     // Red when: the row prefers a detail row nothing refreshes over the list row
@@ -456,6 +542,65 @@ describe('session permission mode: the fresher answer wins', () => {
     // has settled and the optimistic override has been dropped.
     await waitFor(() =>
       expect(useSessionSettingsOverridesStore.getState().bySession['listed-1']).toBeUndefined()
+    );
+    expect(screen.getByLabelText('Permissions bypassed')).toBeInTheDocument();
+  });
+
+  it('keeps that bypass when a list answer older than the change lands after it', async () => {
+    // Arrival order is not freshness. A list fetch already in flight when the
+    // person turns the dial was built before the PATCH persisted, and lands after
+    // the PATCH answer has written the detail row AND the convergence effect has
+    // dropped the optimistic override that would have outranked it. Refreshing
+    // the detail cache from whatever arrives last therefore reverts the session
+    // to the mode it held a moment ago — the same defect as the first case here,
+    // reached from the opposite side.
+    //
+    // The trigger is `refetchQueries` because that is what puts a list fetch in
+    // flight in the app: window focus against the 30s staleTime, the SSE
+    // reconnect broom, a Claude account switch.
+    let answerSecondList!: (value: { sessions: Session[] }) => void;
+    const secondList = new Promise<{ sessions: Session[] }>((resolve) => {
+      answerSecondList = resolve;
+    });
+    const listSessions = vi
+      .fn()
+      .mockResolvedValueOnce({ sessions: [makeSession({ permissionMode: 'default' })] })
+      .mockReturnValueOnce(secondList);
+    const { queryClient, wrapper } = createHarness(undefined, {
+      listSessions,
+      getSession: vi.fn().mockResolvedValue(makeSession({ permissionMode: 'default' })),
+      updateSession: vi
+        .fn()
+        .mockResolvedValue(makeSession({ permissionMode: 'bypassPermissions' })),
+    });
+
+    render(<Rail openSessionId="listed-1" />, { wrapper });
+    await waitFor(() =>
+      expect(screen.getByTestId('open-session-mode')).toHaveTextContent('default')
+    );
+
+    void queryClient.refetchQueries({ queryKey: sessionKeys.list(CWD) });
+    await waitFor(() => expect(listSessions).toHaveBeenCalledTimes(2));
+
+    // The person turns the dial while that fetch is still out.
+    await userEvent.click(screen.getByRole('button', { name: 'Switch to bypass' }));
+    await waitFor(() =>
+      expect(useSessionSettingsOverridesStore.getState().bySession['listed-1']).toBeUndefined()
+    );
+    expect(screen.getByLabelText('Permissions bypassed')).toBeInTheDocument();
+
+    // Now the older answer arrives. The sync runs INSIDE the query function, so
+    // waiting for the refetch to settle is a guarantee it has already had its
+    // chance — no sleep, and no window where this passes because the damage has
+    // not landed yet.
+    answerSecondList({ sessions: [makeSession({ permissionMode: 'default' })] });
+    await waitFor(() =>
+      expect(queryClient.isFetching({ queryKey: sessionKeys.list(CWD) })).toBe(0)
+    );
+
+    // The server is bypassing. Both surfaces that claim to know must still say so.
+    await waitFor(() =>
+      expect(screen.getByTestId('status-line-mode')).toHaveTextContent('bypassPermissions')
     );
     expect(screen.getByLabelText('Permissions bypassed')).toBeInTheDocument();
   });

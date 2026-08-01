@@ -123,13 +123,17 @@ export function reconcileSessionsCache(
   next: Record<string, Session>,
   prev: Record<string, Session>
 ): void {
+  // The store notifies its subscribers synchronously, so this is the instant the
+  // frame arrived — the earliest moment about this answer the client can
+  // observe. See the sync's own note on the hop it therefore cannot account for.
+  const observedAt = Date.now();
   const changed: Session[] = [];
   for (const [id, session] of Object.entries(next)) {
     if (prev[id] === session) continue; // unchanged reference → skip
     upsertSessionInCache(queryClient, session);
     changed.push(session);
   }
-  syncSessionDetailCache(queryClient, changed);
+  syncSessionDetailCache(queryClient, changed, observedAt);
   for (const [id, session] of Object.entries(prev)) {
     if (next[id]) continue;
     removeSessionFromCache(queryClient, id, session.cwd ?? null);

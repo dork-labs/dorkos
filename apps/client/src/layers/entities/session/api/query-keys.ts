@@ -9,7 +9,10 @@
  * namespaces:
  *
  * - **`detailRoot`** — one session's full row, keyed by session id + working
- *   directory.
+ *   directory. Also a sweep target: `syncSessionDetailCache` walks every entry
+ *   under it and reads each one's `id` to decide whether a fresh server row
+ *   covers it. So nothing whose value is NOT a single `Session` may live here —
+ *   the same rule `listRoot` carries below, for the same reason it earned it.
  * - **`listRoot`** — the sessions in one working directory, as a bare array.
  *   The prefix is a live invalidation and sweep target, so nothing whose value
  *   is NOT a `Session[]` may live under it.
