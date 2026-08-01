@@ -180,6 +180,16 @@ Applies when all detected changes are "added field with default" / TSDoc-only / 
 - **Cross-file renames** (a field moved from one nested object to another) surface as paired add + remove with different paths. The classifier may miss the connection. Use "Let me write it myself" if you spot this.
 - **Schemas imported from outside the watch list** won't show up in the diff. Today all DorkOS user-config sub-schemas (e.g., `LoggingConfigSchema`, `OnboardingStateSchema`) live inline in `packages/shared/src/config-schema.ts`, so this is theoretical. If a future refactor moves a sub-schema into a separate file, add that file to Step 1's `git diff` path list.
 
+### Check 7: DB schema and committed migrations agree
+
+```bash
+bash scripts/assert-migrations-current.sh
+```
+
+Belt-and-braces, seconds, deterministic. CI's `db-check` workflow (a required check) already gates this on every PR and merge group, but the release tags whatever `main` holds — an admin merge or a gap in protection could still land a schema change whose Drizzle migration was never committed, and users would boot a server whose code disagrees with their database. The script regenerates migrations and fails when the committed `packages/db/drizzle/` doesn't match `packages/db/src/schema/`.
+
+**If it fails, STOP**: run `pnpm --filter @dorkos/db db:generate` on a real terminal (a column rename needs an interactive answer drizzle-kit refuses to guess), review and land the migration through a PR, then re-run the release. Unlike Check 6, nothing here is release-versioned — Drizzle migrations are numbered and apply at server boot — so there is no per-version key to verify and nothing to scaffold; the migration just has to exist on `main`.
+
 ---
 
 ## Phase 3: Version Analysis
