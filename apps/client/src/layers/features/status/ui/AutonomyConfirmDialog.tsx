@@ -33,6 +33,17 @@ interface AutonomyConfirmDialogProps {
    * `false` the checkbox is not offered — see the note in the component doc.
    */
   canRemember: boolean;
+  /**
+   * One sentence for the caller whose confirmation IS the standing record, shown
+   * where the checkbox would be.
+   *
+   * Settings is that caller (spec `trust-dial`, decision 6): choosing Full
+   * autonomy as the default cannot happen without an acknowledgement — the
+   * server refuses the write — so there is nothing optional left for a checkbox
+   * to ask. Saying so in place of the checkbox is the honest swap; leaving both
+   * out would record consent the person was never told they were giving.
+   */
+  consentNote?: string;
 }
 
 /**
@@ -86,6 +97,7 @@ export function AutonomyConfirmDialog({
   onCancel,
   onConfirm,
   canRemember,
+  consentNote,
 }: AutonomyConfirmDialogProps) {
   const open = descriptor !== null;
   const [rememberChoice, setRememberChoice] = useState(false);
@@ -122,6 +134,11 @@ export function AutonomyConfirmDialog({
         {/* Below the scope note, above the buttons: a person reads what this
             means before they are offered the chance to stop being told. Absent
             where nothing could store the answer — see the component doc. */}
+        {consentNote && (
+          <p className="text-muted-foreground text-sm" data-testid="autonomy-consent-note">
+            {consentNote}
+          </p>
+        )}
         {canRemember && (
           <div className="flex items-center gap-2">
             <Checkbox

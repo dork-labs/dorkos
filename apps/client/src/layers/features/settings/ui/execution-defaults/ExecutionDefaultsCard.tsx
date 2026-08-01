@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { CircleAlert } from 'lucide-react';
 import type { EffortLevel } from '@dorkos/shared/types';
+import type { PermissionModeDescriptor, PermissionStop } from '@dorkos/shared/agent-runtime';
 import { EFFORT_LEVELS } from '@dorkos/shared/constants';
-import { effortLabel } from '@/layers/shared/lib';
+import { effortLabel, resolveTrustStops } from '@/layers/shared/lib';
 import {
   FieldCard,
   FieldCardContent,
@@ -12,11 +13,17 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Separator,
   SettingRow,
 } from '@/layers/shared/ui';
-import { useConfig, useUpdateConfig } from '@/layers/entities/config';
+import { useAutonomyAcknowledgement, useConfig, useUpdateConfig } from '@/layers/entities/config';
 import { getRuntimeDescriptor, useRuntimeCapabilities } from '@/layers/entities/runtime';
 import { useModels } from '@/layers/entities/session';
+// UI composition across features, which the layer rule allows: the door into
+// Full autonomy is one dialog and one contract, and Settings asks the same
+// question the session dial asks rather than a second version of it.
+import { AutonomyConfirmDialog } from '@/layers/features/status';
+import { DefaultTrustStopSection, type DefaultTrustStopRuntime } from './DefaultTrustStopSection';
 
 /**
  * Stands in for "no default", which writes `null`. Radix refuses an empty-string
@@ -58,8 +65,20 @@ export function ExecutionDefaultsCard() {
   const { data: capabilityMap } = useRuntimeCapabilities();
   const updateConfig = useUpdateConfig();
   const queryClient = useQueryClient();
+  const autonomyAck = useAutonomyAcknowledgement();
   const [writeError, setWriteError] = useState<string | null>(null);
   const [changed, setChanged] = useState(false);
+  /**
+   * The Full-autonomy default waiting on the dialog — which runtime it is for
+   * (`null` = the global setting), and the mode whose promise the dialog reads
+   * out. Held here rather than inside the section because consent is a
+   * conversation with the SERVER: the config route refuses this write without an
+   * acknowledgement, and this is the component that makes the write.
+   */
+  const [pendingAutonomy, setPendingAutonomy] = useState<{
+    runtime: string | null;
+    descriptor: PermissionModeDescriptor;
+  } | null>(null);
 
   const defaults = config?.executionDefaults;
   const runtime = defaults?.runtime ?? 'claude-code';
@@ -81,17 +100,27 @@ export function ExecutionDefaultsCard() {
    * reader has to move with the write.
    */
   function write(patch: Record<string, unknown>) {
+    writeConfig({ runtimes: patch });
+  }
+
+  /**
+   * Persist one whole-config patch.
+   *
+   * Separate from {@link write} for exactly one caller: the Full-autonomy
+   * default has to carry `ui.autonomyAcknowledgedAt` in the SAME request as the
+   * new stop. The server refuses the stop without an acknowledgement, so two
+   * requests would race — the stop could land first and bounce — and one patch
+   * has no such window.
+   */
+  function writeConfig(patch: Record<string, unknown>) {
     setWriteError(null);
-    updateConfig.mutate(
-      { runtimes: patch },
-      {
-        onSuccess: () => {
-          void queryClient.invalidateQueries({ queryKey: ['config'] });
-          setChanged(true);
-        },
-        onError: (err) => setWriteError(describeWriteFailure(err)),
-      }
-    );
+    updateConfig.mutate(patch, {
+      onSuccess: () => {
+        void queryClient.invalidateQueries({ queryKey: ['config'] });
+        setChanged(true);
+      },
+      onError: (err) => setWriteError(describeWriteFailure(err)),
+    });
   }
 
   function writeForRuntime(patch: Record<string, unknown>) {
@@ -99,6 +128,84 @@ export function ExecutionDefaultsCard() {
     if (!section) return;
     write({ [section]: patch });
   }
+
+  /** The `runtimes` patch that sets one trust stop — global when `forRuntime` is null. */
+  function trustStopPatch(
+    forRuntime: string | null,
+    stop: PermissionStop | null
+  ): Record<string, unknown> | null {
+    if (forRuntime === null) return { defaultTrustStop: stop };
+    const section = CONFIG_SECTION[forRuntime];
+    return section ? { [section]: { defaultTrustStop: stop } } : null;
+  }
+
+  /**
+   * Change where new sessions start, asking first when that is Full autonomy and
+   * this person has no standing acknowledgement.
+   *
+   * Set-time is consent-time (spec `trust-dial`, decision 6): the acknowledgement
+   * given here is what lets every session this default births start bypassed
+   * without meeting the dialog again.
+   *
+   * @param forRuntime - Which runtime's setting, or `null` for the global one.
+   * @param stop - The stop to store, or `null` to return a runtime to the global
+   *   setting. A `null` is never Full autonomy, so it never asks.
+   */
+  function changeTrustStop(forRuntime: string | null, stop: PermissionStop | null) {
+    const patch = trustStopPatch(forRuntime, stop);
+    if (!patch) return;
+    if (stop === 'autonomy' && autonomyAck.acknowledgedAt === null) {
+      // The runtime whose promise the dialog reads out: the one being changed,
+      // or the runtime a new session would land on when the choice is global.
+      // Its own sentence, never copy written here — what Full autonomy means
+      // differs by agent, and a stand-in would be wrong for somebody.
+      const descriptor = autonomyDescriptorFor(forRuntime ?? runtime);
+      if (descriptor) {
+        setPendingAutonomy({ runtime: forRuntime, descriptor });
+        return;
+      }
+    }
+    write(patch);
+  }
+
+  /** The mode a runtime declares at its autonomy stop, if it declares one. */
+  function autonomyDescriptorFor(runtimeType: string): PermissionModeDescriptor | undefined {
+    const declared = capabilityMap?.capabilities[runtimeType]?.permissionModes?.values ?? [];
+    return resolveTrustStops(declared).find((s) => s.stop === 'autonomy')?.mode;
+  }
+
+  /**
+   * The person read what Full autonomy means and said yes. Record the
+   * acknowledgement and the new default together — see {@link writeConfig}.
+   */
+  function confirmAutonomyDefault() {
+    if (!pendingAutonomy) return;
+    const patch = trustStopPatch(pendingAutonomy.runtime, 'autonomy');
+    setPendingAutonomy(null);
+    if (!patch) return;
+    writeConfig({
+      ui: { autonomyAcknowledgedAt: new Date().toISOString() },
+      runtimes: patch,
+    });
+  }
+
+  /** Every runtime with a settings section, as the trust section needs it. */
+  const trustRuntimes: DefaultTrustStopRuntime[] = (defaults?.perRuntime ?? []).map((entry) => ({
+    runtime: entry.runtime,
+    label: getRuntimeDescriptor(entry.runtime).label,
+    stop: entry.trustStop,
+    // Optional all the way down: a runtime the capability map has not answered
+    // for yet contributes no descriptors, and no descriptors means the section
+    // says "no such setting here" rather than throwing on a half-loaded map.
+    descriptors: capabilityMap?.capabilities[entry.runtime]?.permissionModes?.values ?? [],
+  }));
+
+  // What `null` actually means today: the default runtime's own starting mode,
+  // read from its profile. Shown as the dial's selection so the control says
+  // what will happen rather than leaving a person to guess at an empty setting.
+  const defaultRuntimeModes = capabilityMap?.capabilities[runtime]?.permissionModes;
+  const runtimeDefaultStop =
+    defaultRuntimeModes?.values?.find((d) => d.id === defaultRuntimeModes.default)?.stop ?? 'ask';
 
   const runtimeLabel = getRuntimeDescriptor(runtime).label;
 
@@ -239,6 +346,19 @@ export function ExecutionDefaultsCard() {
           )}
         </SettingRow>
 
+        <Separator />
+
+        {/* The one setting in this card that is not per runtime: a trust stop
+            means the same thing everywhere, so it is answered once and resolved
+            through each runtime's own profile (spec `trust-dial`, decision 6). */}
+        <DefaultTrustStopSection
+          stop={defaults?.trustStop ?? null}
+          effectiveStop={runtimeDefaultStop}
+          runtimes={trustRuntimes}
+          onChangeGlobal={(stop) => changeTrustStop(null, stop)}
+          onChangeRuntime={(target, stop) => changeTrustStop(target, stop)}
+        />
+
         {changed && (
           <p className="text-muted-foreground text-xs" data-testid="execution-defaults-timing">
             Applies to new conversations — running ones keep their settings.
@@ -254,6 +374,18 @@ export function ExecutionDefaultsCard() {
             <span>{writeError}</span>
           </p>
         )}
+
+        {/* The door, at set-time. No "don't show this again" checkbox: agreeing
+            HERE is itself the standing record — the server requires one for this
+            write, and offering the choice would make it look optional when the
+            setting cannot exist without it. */}
+        <AutonomyConfirmDialog
+          descriptor={pendingAutonomy?.descriptor ?? null}
+          canRemember={false}
+          consentNote="Every new session will start here, and DorkOS will remember that you have read this."
+          onCancel={() => setPendingAutonomy(null)}
+          onConfirm={confirmAutonomyDefault}
+        />
       </FieldCardContent>
     </FieldCard>
   );

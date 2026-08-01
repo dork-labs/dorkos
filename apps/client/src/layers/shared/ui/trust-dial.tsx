@@ -48,6 +48,64 @@ const STOP_LABELS: Record<PermissionStop, string> = {
 };
 
 /**
+ * What a dial position is called, for the surfaces that name one outside the
+ * dial — Settings' caption, and the in-session offer to make a stop the default.
+ *
+ * Exported from here rather than restated there, because two spellings of "Full
+ * autonomy" on two screens is how a fixed vocabulary stops being one.
+ *
+ * @param stop - A dial position.
+ */
+export function stopLabel(stop: PermissionStop): string {
+  return STOP_LABELS[stop];
+}
+
+/**
+ * The three stops as descriptors, for the ONE dial that belongs to no runtime:
+ * Settings' "New sessions start in", which sets a runtime-neutral stop that
+ * every runtime then resolves through its own profile (spec `trust-dial`,
+ * decision 6).
+ *
+ * The `id`s are the stop names, and that is the point — this dial's value IS the
+ * stop, so a caller reads `id` as one. Every other dial in the product is
+ * rendered from a runtime's declared modes and must stay that way; this one has
+ * no runtime to ask, and the honest thing at that moment is the canonical
+ * promise with the per-runtime consequences spelled out beneath it.
+ *
+ * The `promise` sentences are the stops' canonical meaning — what a person is
+ * entitled to expect from the position they picked, before any runtime speaks
+ * ({@link stopExpectation} is the same claim in machine form). `reach` on the
+ * autonomy stop is `'everything'` so the caption reads in the red a person
+ * should see at the moment they choose it.
+ */
+export const CANONICAL_TRUST_STOPS: readonly PermissionModeDescriptor[] = [
+  {
+    id: 'ask',
+    label: STOP_LABELS.ask,
+    stop: 'ask',
+    asks: 'always',
+    reach: 'edit',
+    promise: 'Asks before it changes anything.',
+  },
+  {
+    id: 'act',
+    label: STOP_LABELS.act,
+    stop: 'act',
+    asks: 'when-risky',
+    reach: 'edit',
+    promise: 'Gets on with the work and stops for the risky parts.',
+  },
+  {
+    id: 'autonomy',
+    label: STOP_LABELS.autonomy,
+    stop: 'autonomy',
+    asks: 'never',
+    reach: 'everything',
+    promise: 'Runs everything without asking.',
+  },
+];
+
+/**
  * One icon per stop, not per mode. The old table gave every mode id its own
  * glyph, which meant a runtime's unfamiliar mode name drew a shield and a
  * familiar one drew a lock, saying nothing. Three positions, three shapes.
