@@ -136,6 +136,13 @@ function setupFetchNetworkError() {
  * close. That is DOR-798. Waiting on the state the close produces cannot lose
  * that race, and passing `0` never fires a pending backoff timer, so the
  * backoff-window assertions below stay honest.
+ *
+ * Bounded by a turn count rather than a wall-clock deadline — the deliberate
+ * opposite of the server's `flushIoUntil`, which can read a real `Date.now()`
+ * because it fakes only `setTimeout`. Here the clock itself is faked, so there
+ * is no wall clock to bound against; 100 turns is a 100x margin over the single
+ * turn this ever needs, and exhausting it leaves the caller's own assertion to
+ * report the failure.
  */
 async function untilSettled(settled: () => boolean, turns = 100): Promise<void> {
   for (let i = 0; i < turns && !settled(); i++) await vi.advanceTimersByTimeAsync(0);
@@ -217,11 +224,10 @@ describe('SSEConnection', () => {
     });
 
     it('reconnects automatically after backoff delay', async () => {
-      // Pin the jitter, so the backoff is a NAMED 100ms — 0.5 * min(1000,
-      // 100*2^1) — instead of "somewhere under 200ms". The test then checks the
-      // boundary it means to check, rather than sleeping past a window and
+      // The pinned jitter makes this a NAMED 100ms backoff — 0.5 * min(1000,
+      // 100*2^1) — instead of "somewhere under 200ms", so the test checks the
+      // boundary it means to check rather than sleeping past a window and
       // trusting the window is wide enough.
-      vi.spyOn(Math, 'random').mockReturnValue(0.5);
       const { conn } = createConnection();
       conn.connect();
       await untilSettled(() => conn.getState() === 'connected');
@@ -244,7 +250,6 @@ describe('SSEConnection', () => {
     });
 
     it('transitions to disconnected after threshold failures', async () => {
-      vi.spyOn(Math, 'random').mockReturnValue(0.5);
       const { conn, onStateChange } = createConnection({
         disconnectedThreshold: 2,
         heartbeatTimeoutMs: 0,
@@ -279,7 +284,6 @@ describe('SSEConnection', () => {
   describe('backoff calculation', () => {
     it('delay is within expected range based on attempt count', async () => {
       const { conn } = createConnection();
-      vi.spyOn(Math, 'random').mockReturnValue(0.5);
 
       conn.connect();
       await vi.advanceTimersByTimeAsync(0);
@@ -385,7 +389,6 @@ describe('SSEConnection', () => {
 
   describe('max retries', () => {
     it('enters disconnected state after threshold failures', async () => {
-      vi.spyOn(Math, 'random').mockReturnValue(0.5);
       const { conn, onStateChange } = createConnection({
         disconnectedThreshold: 3,
         heartbeatTimeoutMs: 0,
@@ -435,7 +438,6 @@ describe('SSEConnection', () => {
 
   describe('stability window', () => {
     it('resets attempt counter after connection is stable', async () => {
-      vi.spyOn(Math, 'random').mockReturnValue(0.5);
       const { conn, onStateChange } = createConnection({ stabilityWindowMs: 2_000 });
       conn.connect();
       await vi.advanceTimersByTimeAsync(0);

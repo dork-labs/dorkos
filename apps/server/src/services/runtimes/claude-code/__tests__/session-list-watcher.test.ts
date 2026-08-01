@@ -94,13 +94,15 @@ describe('watchSessionList', () => {
    * CI runner can take far longer to answer. Both flakes this file has thrown in
    * CI were that guess coming up short. Waiting on the condition cannot flake in
    * either direction — it returns as soon as the work is done, and it says so
-   * loudly if the work never arrives at all.
+   * loudly if the work never arrives at all. The deadline sits under Vitest's
+   * 5s test timeout on purpose: a longer one would never fire, and the
+   * diagnostic below would be unreachable code dressed as a safety net.
    *
    * Fake timers are on for `setTimeout` here, so `vi.waitFor` is not usable;
    * `setImmediate` and `Date.now` are deliberately left real (see the `toFake`
    * list above).
    */
-  async function flushIoUntil(settled: () => boolean, timeoutMs = 10_000): Promise<void> {
+  async function flushIoUntil(settled: () => boolean, timeoutMs = 2_000): Promise<void> {
     const deadline = Date.now() + timeoutMs;
     while (!settled()) {
       if (Date.now() > deadline) {
