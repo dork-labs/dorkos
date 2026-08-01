@@ -1,0 +1,173 @@
+<style>
+  .vc-wrap { max-width: 980px; margin: 0 auto; }
+  .vc-cards { display: flex; flex-direction: column; gap: 24px; margin-top: 20px; }
+  .vc-card { border: 2px solid transparent; border-radius: 14px; cursor: pointer; transition: border-color .15s, transform .15s; background: rgba(128,128,140,.06); padding: 18px; }
+  .vc-card:hover { transform: translateY(-2px); }
+  .vc-card.selected { border-color: #6366f1; }
+  .vc-card h3 { margin: 0 0 4px; }
+  .vc-card .vc-tag { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; opacity: .6; }
+  .vc-meta { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 10px; font-size: 13px; opacity: .8; }
+
+  /* ---------- shared chat mockup chrome ---------- */
+  .chat { background: #0f0f14; border: 1px solid #26262f; border-radius: 12px; padding: 18px; margin-top: 14px; font-family: ui-sans-serif, system-ui, sans-serif; color: #d4d4dc; font-size: 13.5px; line-height: 1.5; overflow: hidden; }
+  .chat .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  .row { display: flex; gap: 10px; margin-bottom: 12px; }
+  .avatar { width: 24px; height: 24px; border-radius: 7px; background: linear-gradient(135deg,#312e81,#6d28d9); flex: none; display:flex; align-items:center; justify-content:center; font-size:12px; }
+  .bubble { flex: 1; min-width: 0; }
+  .muted { color: #8a8a96; }
+  .panel { background: #16161e; border: 1px solid #26262f; border-radius: 10px; padding: 10px 12px; }
+
+  /* ---------- A: Calm+ ---------- */
+  .a-pulse { display:inline-block; width: 8px; height: 8px; border-radius: 50%; background: #a78bfa; margin-right: 8px; animation: a-breathe 1.6s ease-in-out infinite; }
+  @keyframes a-breathe { 0%,100% { opacity:.35; transform:scale(.85);} 50% { opacity:1; transform:scale(1);} }
+  .a-preview { position: relative; height: 20px; overflow: hidden; }
+  .a-preview-inner { animation: a-lines 6s linear infinite; }
+  .a-preview-inner div { height: 20px; }
+  @keyframes a-lines { 0%,22% { transform: translateY(0);} 25%,47% { transform: translateY(-20px);} 50%,72% { transform: translateY(-40px);} 75%,97% { transform: translateY(-60px);} 100% { transform: translateY(-80px);} }
+  .a-spin { display:inline-block; width:11px; height:11px; border:1.5px solid #3f3f4b; border-top-color:#a78bfa; border-radius:50%; animation: a-rot 1s linear infinite; margin-right:7px; vertical-align:-1px; }
+  @keyframes a-rot { to { transform: rotate(360deg);} }
+  .a-fade-word { animation: a-fw .6s ease-out both; }
+  .a-fade-word:nth-child(2) { animation-delay:.5s } .a-fade-word:nth-child(3) { animation-delay:1s } .a-fade-word:nth-child(4) { animation-delay:1.5s }
+  @keyframes a-fw { from { opacity:0; filter: blur(3px);} to { opacity:1; filter: blur(0);} }
+
+  /* ---------- B: Alive ---------- */
+  .b-shimmer { background: linear-gradient(90deg, #8a8a96 0%, #f0f0ff 45%, #8a8a96 90%); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: b-sh 2.2s linear infinite; font-weight: 600; }
+  @keyframes b-sh { to { background-position: -200% 0; } }
+  .b-hairline { position: relative; border-radius: 10px; padding: 1px; background: linear-gradient(90deg, #26262f, #26262f); overflow: hidden; }
+  .b-hairline::before { content:''; position:absolute; inset:-40%; background: conic-gradient(from 0deg, transparent 70%, #67e8f9 82%, #a78bfa 90%, transparent 100%); animation: b-orbit 3.5s linear infinite; }
+  @keyframes b-orbit { to { transform: rotate(360deg);} }
+  .b-inner { position: relative; background: #16161e; border-radius: 9px; padding: 10px 12px; }
+  .b-think-win { height: 54px; overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, transparent, black 35%); mask-image: linear-gradient(to bottom, transparent, black 35%); }
+  .b-think-scroll { animation: b-scroll 8s linear infinite; }
+  .b-think-scroll div { height: 18px; color: #8a8a96; font-size: 12px; }
+  @keyframes b-scroll { 0% { transform: translateY(0);} 100% { transform: translateY(-90px);} }
+  .b-type { display: inline-block; overflow: hidden; white-space: nowrap; vertical-align: bottom; border-right: 2px solid #67e8f9; animation: b-type 4s steps(38) infinite; max-width: 100%; }
+  @keyframes b-type { 0% { width: 0; } 70% { width: 38ch; } 95% { width: 38ch; } 100% { width: 38ch; } }
+  .b-tick { font-variant-numeric: tabular-nums; color: #67e8f9; }
+
+  /* ---------- C: Mission Control ---------- */
+  .c-aurora { position: relative; border-radius: 12px; padding: 1.5px; overflow: hidden; }
+  .c-aurora::before { content:''; position:absolute; inset:-50%; background: conic-gradient(from 0deg, #22d3ee, #a78bfa, #f472b6, #fbbf24, #22d3ee); animation: b-orbit 4s linear infinite; }
+  .c-inner { position: relative; background: #101018; border-radius: 10.5px; padding: 12px; }
+  .c-ekg { width: 100%; height: 26px; }
+  .c-ekg polyline { fill: none; stroke: #34d399; stroke-width: 1.5; stroke-dasharray: 240; stroke-dashoffset: 240; animation: c-draw 2.4s linear infinite; }
+  @keyframes c-draw { to { stroke-dashoffset: 0; } }
+  .c-orbit { position: relative; width: 54px; height: 54px; flex: none; }
+  .c-orbit .core { position:absolute; inset: 18px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #a78bfa, #4c1d95); box-shadow: 0 0 12px #7c3aed88; }
+  .c-orbit .ring { position: absolute; inset: 0; animation: b-orbit 5s linear infinite; }
+  .c-orbit .ring.r2 { animation-duration: 3.2s; animation-direction: reverse; inset: 6px; }
+  .c-orbit .dot { position: absolute; top: 0; left: 50%; width: 7px; height: 7px; margin-left: -3.5px; border-radius: 50%; background: #67e8f9; box-shadow: 0 0 6px #67e8f9; }
+  .c-orbit .ring.r2 .dot { background: #f472b6; box-shadow: 0 0 6px #f472b6; }
+  .c-gauge { height: 6px; border-radius: 3px; background: #26262f; overflow: hidden; }
+  .c-gauge-fill { height: 100%; width: 40%; border-radius: 3px; background: linear-gradient(90deg,#34d399,#fbbf24,#f87171); background-size: 250% 100%; animation: c-fill 6s ease-in-out infinite alternate; }
+  @keyframes c-fill { from { width: 22%; } to { width: 71%; } }
+  .c-odo { display: inline-block; height: 16px; overflow: hidden; vertical-align: -3px; }
+  .c-odo span { display: block; height: 16px; font-variant-numeric: tabular-nums; animation: c-odo 3s steps(5) infinite; }
+  @keyframes c-odo { to { transform: translateY(-80px); } }
+  .c-chip { display: inline-flex; align-items: center; gap: 6px; background: #1c1c26; border: 1px solid #2e2e3a; border-radius: 999px; padding: 2px 10px; font-size: 11px; color: #a0a0ac; margin-right: 6px; animation: c-chip-in .5s ease-out both; }
+  .c-chip:nth-child(2) { animation-delay: .8s; } .c-chip:nth-child(3) { animation-delay: 1.6s; }
+  @keyframes c-chip-in { from { opacity: 0; transform: translateY(6px) scale(.92); } to { opacity: 1; transform: none; } }
+</style>
+
+<div class="vc-wrap">
+  <h2>Message list, 10×: pick the ambition level</h2>
+  <p class="subtitle">All three are built on data we already have (or are one adapter-line away from having). These mockups are animated — watch them for a few seconds. The question: how alive should a working agent feel?</p>
+
+  <div class="vc-cards">
+
+    <!-- ================= A ================= -->
+    <div class="vc-card" data-choice="calm-plus" onclick="toggleSelect(this)">
+      <div class="vc-tag">Option A</div>
+      <h3>Calm+ — the refined control panel</h3>
+      <p class="muted">Claude.ai-grade polish. Fix what's broken (the thinking pulse animation is currently dead CSS), add an elapsed timer, a one-line live preview of the thought stream, spring physics everywhere. Nothing glows.</p>
+      <div class="chat">
+        <div class="row"><div class="avatar">🤖</div><div class="bubble">
+          <div class="panel">
+            <div><span class="a-pulse"></span><span class="muted" style="font-weight:600">Thinking</span> <span class="muted" style="float:right; font-variant-numeric:tabular-nums">14s</span></div>
+            <div class="a-preview muted" style="margin-top:6px; font-size:12px;">
+              <div class="a-preview-inner">
+                <div>The session store dedupes by message id, so replay is safe…</div>
+                <div>…but the gap-free contract only holds if seq is monotonic…</div>
+                <div>Checking how Last-Event-ID interacts with the snapshot…</div>
+                <div>I should verify the reducer before touching the stream…</div>
+                <div>The session store dedupes by message id, so replay is safe…</div>
+              </div>
+            </div>
+          </div>
+          <div class="panel" style="margin-top:8px;">
+            <div><span class="a-spin"></span><span class="mono">Grep</span> <span class="muted mono">"Last-Event-ID" in apps/server</span> <span class="muted" style="float:right; font-variant-numeric:tabular-nums">2.1s</span></div>
+          </div>
+          <div style="margin-top:10px;"><span class="a-fade-word">Words</span> <span class="a-fade-word">crystallize</span> <span class="a-fade-word">in</span> <span class="a-fade-word">softly…</span></div>
+        </div></div>
+      </div>
+      <div class="vc-meta"><span>✦ Blur-in words (already wired, off-brand-safe)</span><span>✦ Live last-thought line</span><span>✦ Per-tool elapsed timers</span><span>✦ Zero new server work</span></div>
+    </div>
+
+    <!-- ================= B ================= -->
+    <div class="vc-card" data-choice="alive" onclick="toggleSelect(this)">
+      <div class="vc-tag">Option B</div>
+      <h3>Alive — light moves when the agent works</h3>
+      <p class="muted">Apple-Intelligence-style shimmer on the thinking label, a light particle orbiting the border of whatever is active, a visible stream-of-consciousness window, and tool inputs that <em>type themselves</em> live (we already stream the partial JSON — we just never show it).</p>
+      <div class="chat">
+        <div class="row"><div class="avatar">🤖</div><div class="bubble">
+          <div class="b-hairline"><div class="b-inner">
+            <div><span class="b-shimmer">Thinking</span> <span class="muted" style="float:right"><span class="b-tick">1.4k</span> <span class="muted">thought tokens · 14s</span></span></div>
+            <div class="b-think-win" style="margin-top:6px;">
+              <div class="b-think-scroll">
+                <div>The session store dedupes by message id, so replay is safe…</div>
+                <div>…but the gap-free contract only holds if seq is monotonic.</div>
+                <div>Wait — the snapshot already carries the high-water mark.</div>
+                <div>So the reducer can drop anything ≤ seq. Simpler.</div>
+                <div>Let me check who else consumes this stream…</div>
+                <div>The session store dedupes by message id, so replay is safe…</div>
+                <div>…but the gap-free contract only holds if seq is monotonic.</div>
+              </div>
+            </div>
+          </div></div>
+          <div class="b-hairline" style="margin-top:8px;"><div class="b-inner mono">
+            <span style="color:#67e8f9">Grep</span> <span class="b-type muted">{ pattern: "Last-Event-ID", path: "apps/serv</span>
+          </div></div>
+        </div></div>
+      </div>
+      <div class="vc-meta"><span>✦ Shimmer label + border light-orbit on the active block only</span><span>✦ Live tool-input typing (input_json_delta)</span><span>✦ Thought-token ticker</span><span>✦ ~1 week of client work, no schema changes</span></div>
+    </div>
+
+    <!-- ================= C ================= -->
+    <div class="vc-card" data-choice="mission-control" onclick="toggleSelect(this)">
+      <div class="vc-tag">Option C</div>
+      <h3>Mission Control — the over-the-top one</h3>
+      <p class="muted">Everything in B, plus the transcript becomes telemetry: an aurora border on active work, orbiting subagent dots, a live activity EKG, context fuel gauge, file-touch chips flying in as the agent reads/edits, and a "turn receipt" (cost · tokens · model · duration) stamped when the turn lands. Uses SDK data we currently throw away: <span class="mono">duration_ms, num_turns, ttft_ms, modelUsage</span>, the full context breakdown.</p>
+      <div class="chat">
+        <div class="row">
+          <div class="c-orbit">
+            <div class="core"></div>
+            <div class="ring"><div class="dot"></div></div>
+            <div class="ring r2"><div class="dot"></div></div>
+          </div>
+          <div class="bubble">
+            <div class="c-aurora"><div class="c-inner">
+              <div><span class="b-shimmer">Deep in thought</span> <span class="muted" style="float:right">2 subagents · <span class="b-tick">14s</span></span></div>
+              <svg class="c-ekg" viewBox="0 0 240 26" preserveAspectRatio="none"><polyline points="0,17 24,17 32,7 40,23 48,13 70,13 82,17 96,4 108,21 122,13 150,13 158,9 170,19 184,13 214,13 224,16 240,13"/></svg>
+              <div style="margin-top:4px;">
+                <span class="c-chip">📖 session-store.ts</span><span class="c-chip">📖 schemas.ts</span><span class="c-chip">✏️ event-mapper.ts</span>
+              </div>
+            </div></div>
+            <div style="display:flex; align-items:center; gap:10px; margin-top:10px;">
+              <div class="c-gauge" style="flex:1"><div class="c-gauge-fill"></div></div>
+              <span class="muted" style="font-size:11px; white-space:nowrap;">context 41%</span>
+            </div>
+            <div class="panel mono" style="margin-top:8px; font-size:11px; color:#8a8a96;">
+              turn receipt&nbsp;&nbsp;·&nbsp;&nbsp;$0.0<span class="c-odo"><span>41</span><span>43</span><span>46</span><span>48</span><span>52</span><span>41</span></span>&nbsp;&nbsp;·&nbsp;&nbsp;12.4k tok&nbsp;&nbsp;·&nbsp;&nbsp;3 api turns&nbsp;&nbsp;·&nbsp;&nbsp;opus-4-8&nbsp;&nbsp;·&nbsp;&nbsp;ttft 640ms
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="vc-meta"><span>✦ Aurora + EKG + orbiting subagents</span><span>✦ File-touch chips</span><span>✦ Turn receipt from dropped SDK fields</span><span>✦ Needs small schema additions + adapter lines (all mapped in research)</span></div>
+    </div>
+
+  </div>
+
+  <div class="section" style="margin-top:22px;">
+    <p class="subtitle">These aren't mutually exclusive — B is a strict superset of A, C of B. Picking C with a "ship B first" staging is a valid answer. Click one, then tell me in the terminal what you'd steal from the others.</p>
+  </div>
+</div>

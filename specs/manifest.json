@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260801-135340",
+      "slug": "chat-touch-chips",
+      "title": "Chat touch chips — files & URLs the agent handled, with a verb motion language",
+      "created": "2026-08-01",
+      "status": "specified"
+    },
+    {
       "id": "260801-013351",
       "slug": "trust-dial",
       "title": "Trust Dial: permission modes redesigned",

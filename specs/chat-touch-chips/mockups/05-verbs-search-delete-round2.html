@@ -1,0 +1,161 @@
+<style>
+  .vc-wrap { max-width: 1000px; margin: 0 auto; }
+  .dark { background: #0f0f14; border: 1px solid #26262f; border-radius: 12px; padding: 14px 16px; color: #d4d4dc; font-size: 13px; font-family: ui-sans-serif, system-ui, sans-serif; }
+  .muted { color: #8a8a96; }
+  .lbl { font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: #6b6b78; }
+
+  .chip { position: relative; display: inline-flex; align-items: center; gap: 6px; background: #1c1c26; border: 1px solid #2e2e3a; border-radius: 999px; padding: 3px 11px; font-size: 12px; color: #b8b8c4; white-space: nowrap; line-height: 1.4; overflow: hidden; }
+  .chip .cnt { background: #2e2e3a; border-radius: 999px; padding: 0 6px; font-size: 10px; color: #9d9dab; font-variant-numeric: tabular-nums; }
+
+  .vgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 12px; }
+  .vc-card { border: 2px solid transparent; border-radius: 14px; cursor: pointer; transition: border-color .15s, transform .15s; background: rgba(128,128,140,.06); padding: 14px 16px; margin: 0; }
+  .vc-card:hover { transform: translateY(-2px); }
+  .vc-card.selected { border-color: #6366f1; }
+  .vc-card h3 { margin: 0 0 2px; font-size: 15px; }
+  .vc-card .why { font-size: 12.5px; opacity: .65; margin: 2px 0 10px; }
+  .staterow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-height: 44px; }
+  @media (max-width: 760px) { .vgrid { grid-template-columns: 1fr; } }
+
+  .odo { display: inline-block; height: 15px; overflow: hidden; vertical-align: -3px; }
+  .odo span { display: block; height: 15px; font-variant-numeric: tabular-nums; animation: odo 3.6s steps(1) infinite; }
+  @keyframes odo { 0% { transform: translateY(0); } 25% { transform: translateY(-15px); } 50% { transform: translateY(-30px); } 75% { transform: translateY(-45px); } 100% { transform: translateY(0); } }
+
+  /* ========== SEARCH S1: radar beam + hits light up in its wake ========== */
+  .s1::after { content: ''; position: absolute; top: -4px; bottom: -4px; width: 14px; transform: skewX(-18deg);
+    background: linear-gradient(90deg, transparent, rgba(103,232,249,.28), transparent);
+    left: -20px; animation: s1-beam 2.6s cubic-bezier(.4,0,.6,1) infinite; }
+  @keyframes s1-beam { 0% { left: -20px; } 60%, 100% { left: 112%; } }
+  .s1 .hit { position: absolute; bottom: 3px; width: 10px; height: 2px; border-radius: 1px; background: #67e8f9; opacity: 0; }
+  .s1 .hit.h1 { left: 34px; animation: s1-hit 2.6s ease infinite .55s; }
+  .s1 .hit.h2 { left: 72px; animation: s1-hit 2.6s ease infinite .95s; }
+  .s1 .hit.h3 { left: 104px; animation: s1-hit 2.6s ease infinite 1.3s; }
+  @keyframes s1-hit { 0% { opacity: 0; transform: scaleX(.3); } 6% { opacity: 1; transform: scaleX(1.4); } 12% { transform: scaleX(1); } 55% { opacity: .55; } 100% { opacity: 0; } }
+
+  /* ========== SEARCH S2: sonar rings + hit counter ticking ========== */
+  .s2 .son { position: relative; display: inline-block; }
+  .s2 .son::before, .s2 .son::after { content: ''; position: absolute; inset: -1px; border-radius: 50%; border: 1px solid #67e8f9; opacity: 0; animation: s2-ring 1.9s ease-out infinite; }
+  .s2 .son::after { animation-delay: .65s; }
+  @keyframes s2-ring { 0% { opacity: .9; transform: scale(.55); } 75%, 100% { opacity: 0; transform: scale(2.6); } }
+  .s2 .hits { border-color: #67e8f955; color: #a5f3fc; animation: s2-glow 3.6s steps(1) infinite; }
+  @keyframes s2-glow { 0%, 24%, 49%, 74% { box-shadow: none; } 25%, 50%, 75% { box-shadow: 0 0 8px #67e8f930; } }
+
+  /* ========== SEARCH S3: query types itself, then results pop ========== */
+  .s3 .q { display: inline-block; overflow: hidden; white-space: nowrap; vertical-align: bottom; border-right: 1.5px solid #67e8f9; animation: s3-type 3.4s steps(15) infinite; max-width: 15ch; font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; }
+  @keyframes s3-type { 0% { width: 0; } 44% { width: 15ch; } 88% { width: 15ch; } 100% { width: 15ch; } }
+  .s3 .res { animation: s3-res 3.4s ease infinite; }
+  @keyframes s3-res { 0%, 48% { opacity: 0; transform: scale(.7); } 56% { opacity: 1; transform: scale(1.15); } 62%, 92% { transform: scale(1); opacity: 1; } 100% { opacity: 0; } }
+
+  /* ========== DELETE D1: disintegrate — letters fall away ========== */
+  .d1 .l { display: inline-block; animation: d1-fall 3.8s ease-in infinite; }
+  @keyframes d1-fall { 0%, 30% { opacity: 1; transform: none; filter: none; }
+    45% { opacity: 0; transform: translateY(9px) rotate(14deg); filter: blur(2px); }
+    78% { opacity: 0; transform: translateY(9px); }
+    88%, 100% { opacity: 1; transform: none; filter: none; } }
+  .d1 .l:nth-child(1) { animation-delay: 0s; } .d1 .l:nth-child(2) { animation-delay: .06s; }
+  .d1 .l:nth-child(3) { animation-delay: .12s; } .d1 .l:nth-child(4) { animation-delay: .18s; }
+  .d1 .l:nth-child(5) { animation-delay: .24s; } .d1 .l:nth-child(6) { animation-delay: .3s; }
+  .d1 .l:nth-child(7) { animation-delay: .36s; } .d1 .l:nth-child(8) { animation-delay: .42s; }
+  .d1 .l:nth-child(9) { animation-delay: .48s; } .d1 .l:nth-child(10) { animation-delay: .54s; }
+  .d1 .l:nth-child(11) { animation-delay: .6s; } .d1 .l:nth-child(12) { animation-delay: .66s; }
+  .d1 .l:nth-child(13) { animation-delay: .72s; } .d1 .l:nth-child(14) { animation-delay: .78s; }
+  .d1 .l:nth-child(15) { animation-delay: .84s; } .d1 .l:nth-child(16) { animation-delay: .9s; }
+  .d1 { animation: d1-ghost 3.8s ease infinite; }
+  @keyframes d1-ghost { 0%, 40% { opacity: 1; } 55%, 80% { opacity: .5; } 90%, 100% { opacity: 1; } }
+
+  /* ========== DELETE D2: eraser wipe → struck ghost ========== */
+  .d2 .layers { position: relative; display: inline-block; }
+  .d2 .ghost { opacity: .35; }
+  .d2 .ghost s { text-decoration-color: #f8717188; }
+  .d2 .solid { position: absolute; left: 0; top: 0; color: #b8b8c4; animation: d2-wipe 3.4s ease-in-out infinite; white-space: nowrap; }
+  @keyframes d2-wipe { 0%, 20% { clip-path: inset(0 0 0 0); } 60% { clip-path: inset(0 0 0 100%); } 92% { clip-path: inset(0 0 0 100%); } 100% { clip-path: inset(0 0 0 0); } }
+  .d2 .rubber { position: absolute; top: -3px; width: 10px; height: 20px; border-radius: 3px; background: #f9a8d4; border: 1px solid #f472b6; left: -12px; animation: d2-rub 3.4s ease-in-out infinite; }
+  @keyframes d2-rub { 0%, 20% { left: -12px; opacity: 0; } 24% { opacity: 1; transform: rotate(-8deg); }
+    32% { transform: rotate(8deg); } 40% { transform: rotate(-8deg); } 48% { transform: rotate(8deg); } 56% { transform: rotate(-6deg); }
+    60% { left: 103%; opacity: 1; } 66%, 100% { left: 103%; opacity: 0; } }
+
+  /* ========== DELETE D3: swallowed by the bin ========== */
+  .d3 .bin { display: inline-block; animation: d3-chomp 3.6s ease infinite; transform-origin: bottom center; }
+  @keyframes d3-chomp { 0%, 38% { transform: none; } 46% { transform: scale(1.25) rotate(-7deg); } 52% { transform: scale(.95); } 58%, 100% { transform: none; } }
+  .d3 .nm { display: inline-block; transform-origin: left center; animation: d3-suck 3.6s cubic-bezier(.5,0,.9,.4) infinite; }
+  @keyframes d3-suck { 0%, 28% { transform: none; opacity: 1; letter-spacing: 0; }
+    44% { transform: translateX(-16px) scaleX(.12) skewX(-12deg); opacity: .4; letter-spacing: -1px; }
+    48%, 78% { transform: translateX(-16px) scaleX(.05); opacity: 0; }
+    88%, 100% { transform: none; opacity: 1; } }
+  .d3 .puff { position: absolute; left: 24px; top: 4px; font-size: 8px; color: #8a8a96; opacity: 0; animation: d3-puff 3.6s ease infinite; }
+  @keyframes d3-puff { 44% { opacity: 0; transform: none; } 50% { opacity: .9; transform: translate(-4px,-5px) scale(1.3); } 60%, 100% { opacity: 0; transform: translate(-8px,-9px) scale(.6); } }
+</style>
+
+<div class="vc-wrap">
+  <h2>Round two: search &amp; delete</h2>
+  <p class="subtitle">Six verbs locked (read · edit · create · fetch · run · upgrade). Three fresh takes on each of the two that missed — pick one per group.</p>
+
+  <div class="lbl" style="margin-top:18px;">🔍 SEARCH — pick one</div>
+  <div class="vgrid options">
+    <div class="vc-card option" data-choice="search-radar-wake" onclick="toggleSelect(this)">
+      <h3>S1 — Beam with a wake of hits</h3>
+      <div class="why">One smooth angled beam sweeps through; tiny cyan underline marks flare where it finds matches and linger, fading. The chip accumulates evidence as it's scanned.</div>
+      <div class="dark staterow">
+        <span class="chip s1"><span>🔍</span> "Last-Event-ID"<span class="hit h1"></span><span class="hit h2"></span><span class="hit h3"></span></span>
+        <span class="muted">→</span>
+        <span class="chip">🔍 "Last-Event-ID" <span class="cnt">14 hits</span></span>
+      </div>
+    </div>
+
+    <div class="vc-card option" data-choice="search-sonar-counter" onclick="toggleSelect(this)">
+      <h3>S2 — Sonar + live hit counter</h3>
+      <div class="why">Rings pulse outward from the magnifier — actively listening — while the hits badge ticks up in real time as matches land. The number climbing <em>is</em> the animation.</div>
+      <div class="dark staterow">
+        <span class="chip s2"><span class="son">🔍</span> "Last-Event-ID" <span class="cnt hits"><span class="odo"><span>3</span><span>7</span><span>11</span><span>14</span></span> hits</span></span>
+        <span class="muted">→</span>
+        <span class="chip">🔍 "Last-Event-ID" <span class="cnt">14 hits</span></span>
+      </div>
+    </div>
+
+    <div class="vc-card option" data-choice="search-typed-query" onclick="toggleSelect(this)">
+      <h3>S3 — The query types itself</h3>
+      <div class="why">The search term is typed out character-by-character behind the magnifier, then the result count pops in. Literal "the agent just asked the codebase a question."</div>
+      <div class="dark staterow">
+        <span class="chip"><span>🔍</span> <span class="s3" style="display:inline-flex;align-items:center;gap:6px;"><span class="q">"Last-Event-ID"</span><span class="cnt res">14</span></span></span>
+        <span class="muted">→</span>
+        <span class="chip">🔍 "Last-Event-ID" <span class="cnt">14 hits</span></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="lbl" style="margin-top:24px;">🗑 DELETE — pick one</div>
+  <div class="vgrid options">
+    <div class="vc-card option" data-choice="delete-disintegrate" onclick="toggleSelect(this)">
+      <h3>D1 — Disintegrate</h3>
+      <div class="why">The letters themselves crumble away left-to-right — each one drops, tilts, and blurs out — then the ghost settles. The filename literally ceases to exist.</div>
+      <div class="dark staterow">
+        <span class="chip d1"><span>🗑</span>&nbsp;<span><span class="l">l</span><span class="l">e</span><span class="l">g</span><span class="l">a</span><span class="l">c</span><span class="l">y</span><span class="l">-</span><span class="l">m</span><span class="l">a</span><span class="l">p</span><span class="l">p</span><span class="l">e</span><span class="l">r</span><span class="l">.</span><span class="l">t</span><span class="l">s</span></span></span>
+        <span class="muted">→</span>
+        <span class="chip" style="opacity:.45;"><span>🗑</span> <s>legacy-mapper.ts</s></span>
+      </div>
+    </div>
+
+    <div class="vc-card option" data-choice="delete-eraser" onclick="toggleSelect(this)">
+      <h3>D2 — Eraser wipe</h3>
+      <div class="why">A little pink eraser scrubs across with a side-to-side wobble, wiping the solid name down to the struck ghost underneath. Playful, handmade, unmistakable.</div>
+      <div class="dark staterow">
+        <span class="chip d2"><span>🗑</span>&nbsp;<span class="layers"><span class="ghost"><s>legacy-mapper.ts</s></span><span class="solid">legacy-mapper.ts</span><span class="rubber"></span></span></span>
+        <span class="muted">→</span>
+        <span class="chip" style="opacity:.45;"><span>🗑</span> <s>legacy-mapper.ts</s></span>
+      </div>
+    </div>
+
+    <div class="vc-card option" data-choice="delete-swallow" onclick="toggleSelect(this)">
+      <h3>D3 — Swallowed by the bin</h3>
+      <div class="why">The filename gets sucked into the trash icon — compressing and skewing as it goes, a tiny puff escaping — and the bin does a satisfied little chomp. The most cartoon of the three.</div>
+      <div class="dark staterow">
+        <span class="chip d3"><span class="bin">🗑</span><span class="puff">✦</span>&nbsp;<span class="nm">legacy-mapper.ts</span></span>
+        <span class="muted">→</span>
+        <span class="chip" style="opacity:.45;"><span>🗑</span> <s>legacy-mapper.ts</s></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="section" style="margin-top:20px;">
+    <p class="subtitle">All three delete takes end on the same tombstone ghost — the question is only the moment of death. All animations stay in-bounds, settle to stillness, and collapse to a simple fade under reduced-motion.</p>
+  </div>
+</div>

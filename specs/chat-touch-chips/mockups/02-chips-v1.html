@@ -1,0 +1,195 @@
+<style>
+  .vc-wrap { max-width: 1000px; margin: 0 auto; }
+  .dark { background: #0f0f14; border: 1px solid #26262f; border-radius: 12px; padding: 16px; color: #d4d4dc; font-size: 13px; font-family: ui-sans-serif, system-ui, sans-serif; }
+  .muted { color: #8a8a96; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  /* ---------- chip base ---------- */
+  .chip { display: inline-flex; align-items: center; gap: 6px; background: #1c1c26; border: 1px solid #2e2e3a; border-radius: 999px; padding: 3px 11px; font-size: 12px; color: #b8b8c4; white-space: nowrap; line-height: 1.4; }
+  .chip .ic { font-size: 12px; }
+  .chip .add { color: #4ade80; font-variant-numeric: tabular-nums; }
+  .chip .del { color: #f87171; font-variant-numeric: tabular-nums; }
+  .chip .cnt { background: #2e2e3a; border-radius: 999px; padding: 0 6px; font-size: 10px; color: #9d9dab; font-variant-numeric: tabular-nums; }
+  .chip.err { border-color: #7f1d1d; background: #1f1418; color: #fca5a5; }
+  .chip.active { border-color: transparent; background:
+      linear-gradient(#1c1c26,#1c1c26) padding-box,
+      linear-gradient(90deg,#3b3b4a, #8b8bd0, #3b3b4a) border-box;
+    background-size: 100% 100%, 220% 100%; animation: chip-border 1.8s linear infinite; color: #d8d8e4; }
+  @keyframes chip-border { to { background-position: 0 0, -220% 0; } }
+  .chip .spin { display:inline-block; width:10px; height:10px; border:1.5px solid #3f3f4b; border-top-color:#a78bfa; border-radius:50%; animation: rot 1s linear infinite; }
+  @keyframes rot { to { transform: rotate(360deg);} }
+  .fav { width: 13px; height: 13px; border-radius: 3px; background: linear-gradient(135deg,#f97316,#dc2626); display:inline-flex; align-items:center; justify-content:center; font-size:8px; color:#fff; font-weight:700; }
+  .fav.gh { background: #24292f; }
+  .fav.so { background: linear-gradient(135deg,#f48024,#bc5b00); }
+
+  /* pop-in used everywhere a chip "arrives" */
+  @keyframes chip-in { 0% { opacity: 0; transform: translateY(7px) scale(.9); } 60% { transform: translateY(-1px) scale(1.02); } 100% { opacity: 1; transform: none; } }
+
+  /* ---------- anatomy row ---------- */
+  .anatomy { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .anatomy .lbl { flex-basis: 100%; font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: #6b6b78; margin-top: 8px; }
+  .demo-pop { animation: chip-in .45s ease-out both; animation-iteration-count: infinite; animation-duration: 2.6s; }
+
+  /* ---------- option cards ---------- */
+  .vc-card { border: 2px solid transparent; border-radius: 14px; cursor: pointer; transition: border-color .15s, transform .15s; background: rgba(128,128,140,.06); padding: 18px; margin-top: 20px; }
+  .vc-card:hover { transform: translateY(-2px); }
+  .vc-card.selected { border-color: #6366f1; }
+  .vc-card h3 { margin: 0 0 4px; }
+  .vc-tag { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; opacity: .6; }
+  .vc-meta { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px; font-size: 13px; opacity: .8; }
+
+  /* ---------- A: wrap & fold ---------- */
+  .wrapdemo { display: flex; flex-wrap: wrap; gap: 6px; }
+  .wrapdemo .newest { animation: chip-in .5s ease-out both; animation-delay: 1s; }
+  .fold-toggle { cursor: default; border-style: dashed; color: #8a8a96; }
+  .wrap-expanded { max-height: 0; overflow: hidden; opacity: 0; animation: fold-cycle 7s ease-in-out infinite; display: flex; flex-wrap: wrap; gap: 6px; }
+  @keyframes fold-cycle { 0%, 35% { max-height: 0; opacity: 0; margin-top: 0; } 45%, 85% { max-height: 80px; opacity: 1; margin-top: 6px; } 95%, 100% { max-height: 0; opacity: 0; margin-top: 0; } }
+
+  /* ---------- B: flow ticker ---------- */
+  .flow-win { overflow: hidden; -webkit-mask-image: linear-gradient(to right, transparent, black 8%, black 100%); mask-image: linear-gradient(to right, transparent, black 8%, black 100%); }
+  .flow-track { display: flex; gap: 6px; animation: flow 10s linear infinite; width: max-content; }
+  @keyframes flow { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+  .flow-summary { display: flex; gap: 6px; margin-top: 10px; }
+  .flow-summary .chip { animation: chip-in .5s ease-out both; }
+  .flow-summary .chip:nth-child(2) { animation-delay: .12s; } .flow-summary .chip:nth-child(3) { animation-delay: .24s; }
+
+  /* ---------- C: decks ---------- */
+  .decks { display: flex; gap: 26px; align-items: flex-start; }
+  .deck { position: relative; height: 30px; min-width: 150px; }
+  .deck .chip { position: absolute; top: 0; left: 0; transition: transform .25s cubic-bezier(.34,1.4,.64,1), opacity .2s; }
+  .deck .chip:nth-child(1) { z-index: 5; }
+  .deck .chip:nth-child(2) { transform: translateX(14px) scale(.96); z-index: 4; opacity: .75; }
+  .deck .chip:nth-child(3) { transform: translateX(28px) scale(.92); z-index: 3; opacity: .5; }
+  .deck .chip:nth-child(4) { transform: translateX(42px) scale(.88); z-index: 2; opacity: .3; }
+  .deck:hover .chip:nth-child(1) { transform: translateY(-38px); }
+  .deck:hover .chip:nth-child(2) { transform: translateY(-2px); opacity: 1; }
+  .deck:hover .chip:nth-child(3) { transform: translateY(34px); opacity: 1; }
+  .deck:hover .chip:nth-child(4) { transform: translateY(70px); opacity: 1; }
+  .deck .badge { position: absolute; top: -7px; right: -7px; z-index: 6; background: #6366f1; color: white; font-size: 9.5px; border-radius: 999px; padding: 1px 6px; font-variant-numeric: tabular-nums; }
+</style>
+
+<div class="vc-wrap">
+  <h2>Touch chips — files &amp; URLs the agent handled</h2>
+  <p class="subtitle">Direction locked: Calm+ base, with C's touch chips grafted on. Chips derive entirely from tool-call inputs we already stream (Read/Edit/Write paths, WebFetch/WebSearch URLs) — zero server work. First the shared anatomy, then the real question: what happens when a research turn touches 40 things?</p>
+
+  <div class="section">
+    <div class="label">Chip anatomy &amp; states (shared by all options below — not a choice, just the vocabulary)</div>
+    <div class="dark anatomy">
+      <div class="lbl">In progress — animated border sweep while the tool runs</div>
+      <span class="chip active"><span class="spin"></span> session-store.ts</span>
+      <span class="chip active"><span class="spin"></span> <span class="fav">A</span> anthropic.com/engineering</span>
+
+      <div class="lbl">Settled — read / fetched (click = open file or URL)</div>
+      <span class="chip"><span class="ic">📖</span> schemas.ts</span>
+      <span class="chip"><span class="fav gh">G</span> github.com <span class="cnt">issue #4021</span></span>
+      <span class="chip"><span class="fav so">S</span> stackoverflow.com</span>
+
+      <div class="lbl">Edited / created — with live diffstat</div>
+      <span class="chip demo-pop"><span class="ic">✏️</span> event-mapper.ts <span class="add">+12</span> <span class="del">−4</span></span>
+      <span class="chip"><span class="ic">✚</span> use-touch-chips.ts</span>
+
+      <div class="lbl">Deduped — same file touched repeatedly gets a count, never a duplicate chip. Read→then→edited upgrades the icon.</div>
+      <span class="chip"><span class="ic">📖</span> ToolCallCard.tsx <span class="cnt">×3</span></span>
+      <span class="chip"><span class="ic">✏️</span> schemas.ts <span class="cnt">read, then edited</span></span>
+
+      <div class="lbl">Failed — tool errored on this target</div>
+      <span class="chip err"><span class="ic">⚠</span> missing-file.ts</span>
+    </div>
+  </div>
+
+  <h3 style="margin-top:28px;">The overflow question — pick one</h3>
+
+  <!-- ============ A ============ -->
+  <div class="vc-card" data-choice="wrap-fold" onclick="toggleSelect(this)">
+    <div class="vc-tag">Option A</div>
+    <h3>Wrap &amp; fold</h3>
+    <p class="muted">Chips wrap naturally up to one row while live; everything past that folds behind a "+N more" chip. Click to expand the full set inline (demo auto-cycles the expand). Calmest option — the transcript never gets taller than you asked it to be.</p>
+    <div class="dark">
+      <div class="wrapdemo">
+        <span class="chip"><span class="ic">📖</span> session-store.ts</span>
+        <span class="chip"><span class="ic">📖</span> schemas.ts</span>
+        <span class="chip"><span class="fav gh">G</span> github.com</span>
+        <span class="chip newest active"><span class="spin"></span> event-mapper.ts</span>
+        <span class="chip fold-toggle">+17 more</span>
+      </div>
+      <div class="wrap-expanded">
+        <span class="chip"><span class="ic">📖</span> agent-runtime.ts</span>
+        <span class="chip"><span class="ic">📖</span> transport.ts</span>
+        <span class="chip"><span class="fav">A</span> anthropic.com</span>
+        <span class="chip"><span class="ic">📖</span> MessageList.tsx</span>
+        <span class="chip"><span class="ic">✏️</span> ToolCallCard.tsx <span class="add">+8</span> <span class="del">−2</span></span>
+        <span class="chip"><span class="fav so">S</span> stackoverflow.com</span>
+        <span class="chip"><span class="ic">📖</span> use-stream-timing.ts</span>
+      </div>
+    </div>
+    <div class="vc-meta"><span>✦ Fixed height while streaming</span><span>✦ Full record one click away</span><span>✽ Newest chip can land hidden inside the fold</span></div>
+  </div>
+
+  <!-- ============ B ============ -->
+  <div class="vc-card" data-choice="flow-ticker" onclick="toggleSelect(this)">
+    <div class="vc-tag">Option B</div>
+    <h3>Flow ticker → grouped summary</h3>
+    <p class="muted">While live: one row, newest chip slides in from the right, older ones drift left and fade out — a conveyor of what the agent is touching <em>right now</em>. When the turn settles, the ticker collapses into grouped totals that expand on click. Most "alive"; the history is summarized, not sprawled.</p>
+    <div class="dark">
+      <div class="muted" style="font-size:11px; margin-bottom:6px;">LIVE — during the turn</div>
+      <div class="flow-win">
+        <div class="flow-track">
+          <span class="chip"><span class="ic">📖</span> session-store.ts</span>
+          <span class="chip"><span class="fav gh">G</span> github.com</span>
+          <span class="chip"><span class="ic">📖</span> schemas.ts</span>
+          <span class="chip"><span class="ic">✏️</span> event-mapper.ts <span class="add">+12</span> <span class="del">−4</span></span>
+          <span class="chip"><span class="fav">A</span> anthropic.com</span>
+          <span class="chip active"><span class="spin"></span> MessageList.tsx</span>
+          <span class="chip"><span class="ic">📖</span> session-store.ts</span>
+          <span class="chip"><span class="fav gh">G</span> github.com</span>
+          <span class="chip"><span class="ic">📖</span> schemas.ts</span>
+          <span class="chip"><span class="ic">✏️</span> event-mapper.ts <span class="add">+12</span> <span class="del">−4</span></span>
+          <span class="chip"><span class="fav">A</span> anthropic.com</span>
+          <span class="chip active"><span class="spin"></span> MessageList.tsx</span>
+        </div>
+      </div>
+      <div class="muted" style="font-size:11px; margin:12px 0 6px;">SETTLED — after the turn</div>
+      <div class="flow-summary">
+        <span class="chip"><span class="ic">📖</span> 21 files read</span>
+        <span class="chip"><span class="ic">✏️</span> 3 edited <span class="add">+34</span> <span class="del">−11</span></span>
+        <span class="chip"><span class="ic">🌐</span> 9 pages</span>
+      </div>
+    </div>
+    <div class="vc-meta"><span>✦ Constant height, feels like telemetry</span><span>✦ Clean grouped receipt afterward</span><span>✽ Past chips leave the screen — you can't glance back mid-turn</span></div>
+  </div>
+
+  <!-- ============ C ============ -->
+  <div class="vc-card" data-choice="decks" onclick="toggleSelect(this)">
+    <div class="vc-tag">Option C</div>
+    <h3>Kind decks — stacked piles that fan out</h3>
+    <p class="muted">Chips cluster into three overlapping stacks — reads, edits, URLs — each with a running count badge. New chips shuffle onto the top of their pile. <strong>Hover a deck in the demo</strong> to fan it out. Compact and a little playful; the piles physically grow as the agent works.</p>
+    <div class="dark" style="padding-bottom: 26px;">
+      <div class="decks">
+        <div class="deck">
+          <span class="badge">21</span>
+          <span class="chip active"><span class="spin"></span> MessageList.tsx</span>
+          <span class="chip"><span class="ic">📖</span> schemas.ts</span>
+          <span class="chip"><span class="ic">📖</span> session-store.ts</span>
+          <span class="chip"><span class="ic">📖</span> transport.ts</span>
+        </div>
+        <div class="deck">
+          <span class="badge">3</span>
+          <span class="chip"><span class="ic">✏️</span> event-mapper.ts <span class="add">+12</span> <span class="del">−4</span></span>
+          <span class="chip"><span class="ic">✏️</span> ToolCallCard.tsx <span class="add">+8</span> <span class="del">−2</span></span>
+          <span class="chip"><span class="ic">✚</span> use-touch-chips.ts</span>
+        </div>
+        <div class="deck">
+          <span class="badge">9</span>
+          <span class="chip"><span class="fav">A</span> anthropic.com</span>
+          <span class="chip"><span class="fav gh">G</span> github.com</span>
+          <span class="chip"><span class="fav so">S</span> stackoverflow.com</span>
+        </div>
+      </div>
+    </div>
+    <div class="vc-meta"><span>✦ Most compact at any volume</span><span>✦ Counts + piles = instant "how big was this turn"</span><span>✽ Hover-to-fan is weak on touch devices; needs tap-to-expand fallback</span></div>
+  </div>
+
+  <div class="section" style="margin-top:22px;">
+    <p class="subtitle">Also worth deciding (answer in the terminal, no clicking needed): should chips live on a <strong>turn-level tray</strong> that persists as the turn's durable record (my recommendation — it survives tool-call auto-hide), or attach to <strong>each tool-call card</strong> and vanish with it? And should URL chips show real favicons or a neutral 🌐?</p>
+  </div>
+</div>
