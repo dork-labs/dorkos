@@ -30,7 +30,7 @@ function SummaryGroup({
   deletions?: number;
 }) {
   return (
-    <span className="inline-flex items-center gap-1">
+    <span data-testid={`chip-summary-${verb}`} className="inline-flex items-center gap-1">
       <span aria-hidden="true">{VERB_ICON[verb]}</span>
       <span className="sr-only">{VERB_LABEL[verb]}</span>
       <span className="tabular-nums">{count}</span>
