@@ -3080,6 +3080,42 @@
       "status": "accepted",
       "created": "2026-07-31",
       "supersedes": "260710-024641"
+    },
+    {
+      "id": "260801-204126",
+      "slug": "choosing-a-claude-account-adds-it-to-the-read-set",
+      "title": "A Claude account is a config directory, and choosing one adds it to the set DorkOS reads",
+      "status": "accepted",
+      "created": "2026-08-01",
+      "specSlug": "claude-code-accounts",
+      "extractedFrom": "claude-code-accounts"
+    },
+    {
+      "id": "260801-204127",
+      "slug": "a-sessions-claude-account-is-derived-from-disk",
+      "title": "A session's Claude account is derived from the root its transcript lives under, never stored",
+      "status": "accepted",
+      "created": "2026-08-01",
+      "specSlug": "claude-code-accounts",
+      "extractedFrom": "claude-code-accounts"
+    },
+    {
+      "id": "260801-204128",
+      "slug": "the-default-claude-account-is-named-by-absence",
+      "title": "The default Claude account is named by the absence of CLAUDE_CONFIG_DIR, not by its path",
+      "status": "accepted",
+      "created": "2026-08-01",
+      "specSlug": "claude-code-accounts",
+      "extractedFrom": "claude-code-accounts"
+    },
+    {
+      "id": "260801-204129",
+      "slug": "in-process-sdk-calls-pin-claude-config-dir-under-one-lock",
+      "title": "In-process SDK calls pin CLAUDE_CONFIG_DIR under one lock for writes, and degrade honestly for reads",
+      "status": "accepted",
+      "created": "2026-08-01",
+      "specSlug": "claude-code-accounts",
+      "extractedFrom": "claude-code-accounts"
     }
   ]
 }
