@@ -37,27 +37,60 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
         id: 'default',
         label: 'Default',
         description: 'Prompt on tool use and respect project permission settings.',
+        stop: 'ask',
+        asks: 'always',
+        reach: 'edit',
+        promise: 'Asks before it edits a file or runs a command.',
       },
       {
         id: 'acceptEdits',
         label: 'Accept edits',
         description: 'Auto-accept file edits; still prompt for other tools.',
+        stop: 'act',
+        asks: 'when-risky',
+        reach: 'edit',
+        promise: 'Edits files on its own. Asks before it runs a command.',
       },
       {
+        // `plan` leaves the trust axis in the Trust Dial UI and moves next to
+        // the composer as a way of working (spec `trust-dial`, decision 1); the
+        // substrate still has to describe it, because a session can be in it and
+        // every surface has to say what that means. `'ask'` is the honest
+        // position while it is still on the list — plan changes nothing until
+        // the person approves the plan it hands back — and no fourth "not on the
+        // dial" marker is invented here, because nothing would read it until the
+        // UI that removes plan ships, and a field with no reader is drift.
         id: 'plan',
         label: 'Plan',
         description: 'Read-only planning mode — the agent cannot execute tools.',
+        stop: 'ask',
+        asks: 'always',
+        reach: 'read',
+        promise: 'Reads and plans only. Nothing changes until you approve the plan.',
       },
       {
         id: 'bypassPermissions',
         label: 'Bypass permissions',
         description: 'Skip all tool approval prompts — use only in trusted contexts.',
+        stop: 'autonomy',
+        asks: 'never',
+        reach: 'everything',
+        promise: 'Runs everything without asking, including outside this project.',
       },
       {
+        // Research preview, and the middle stop's intelligence rather than a
+        // stop of its own (spec `trust-dial`, decision 1). `asks: 'when-risky'`
+        // is measured, not assumed: under `auto` the classifier resolves most
+        // calls, and DorkOS still raises an approval card for the ones it
+        // escalates (`resolveModeDecision` in `messaging/interactive-handlers`).
         id: 'auto',
         label: 'Auto',
         description:
           'A safety classifier approves or denies tool calls automatically — fewer interruptions on long autonomous runs. Research preview.',
+        stop: 'act',
+        asks: 'when-risky',
+        reach: 'edit',
+        promise: 'Edits files on its own and weighs each command, asking you about the risky ones.',
       },
     ],
   },

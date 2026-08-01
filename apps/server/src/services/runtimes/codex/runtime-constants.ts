@@ -49,22 +49,45 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
     default: 'default',
     values: [
       {
+        // Read-only, so it never has anything to ask about: `asks: 'never'` here
+        // means "cannot ask", not "will not stop" — which is why the warning
+        // tier reads `reach` too, and leaves a read-only mode alone.
         id: 'default',
         label: 'Read only',
         description:
           'Sandboxed reads — Codex can read files and answer questions, but not edit files, run mutating commands, or access the network.',
+        stop: 'ask',
+        asks: 'never',
+        reach: 'read',
+        promise: 'Reads files and answers questions. Nothing on your machine changes.',
+        native: 'read-only',
       },
       {
+        // THE divergent stop. `workspace-write` sits where the middle stop sits,
+        // but Codex has no approval channel at all — it cannot pause mid-turn to
+        // ask, so it runs shell commands unprompted. The promise says so in the
+        // words a person would use, because the surface's whole job here is to
+        // stop this being a surprise (spec `trust-dial`, decision 2).
         id: 'acceptEdits',
         label: 'Workspace write',
         description:
           'Codex can read, edit, and run commands inside the workspace. Network access stays off.',
+        stop: 'act',
+        asks: 'never',
+        reach: 'workspace',
+        promise: "Edits files and runs commands inside the workspace — Codex can't pause to ask.",
+        native: 'workspace-write',
       },
       {
         id: 'bypassPermissions',
         label: 'Full access',
         description:
           'No sandbox — full file and network access. Use only in trusted or externally-sandboxed environments.',
+        stop: 'autonomy',
+        asks: 'never',
+        reach: 'everything',
+        promise: 'Runs everything without asking, anywhere on your machine, network included.',
+        native: 'danger-full-access',
       },
     ],
   },

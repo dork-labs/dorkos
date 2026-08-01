@@ -168,6 +168,10 @@ export function ChatStatusSection({
     contextPercent: displayContextPercent,
     connectionState: syncConnectionState,
     permissionMode: status.permissionMode,
+    // The same profile the picker renders from, so the line's severity and the
+    // picker's tint can never disagree about one mode.
+    permissionDescriptor:
+      activeCaps?.permissionModes.values.find((d) => d.id === status.permissionMode) ?? null,
     // `runtimeCaps === undefined` is "the capability map has not arrived", not
     // "this runtime is not the default": treating it as the latter would promote
     // the item at RUNTIME_NON_DEFAULT for the frames before the query resolves,

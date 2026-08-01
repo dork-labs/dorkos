@@ -5,20 +5,35 @@ import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 /** Query key for the capabilities endpoint — static for the server lifetime. */
 const CAPABILITIES_KEY = ['capabilities'] as const;
 
+/** Fetch gate shared by {@link useRuntimeCapabilities} and {@link useCapabilitiesForRuntime}. */
+export interface UseRuntimeCapabilitiesOptions {
+  /**
+   * Whether this caller may fetch. Defaults to true. A caller that only reports
+   * on capabilities somebody else asked for can pass false: the query still
+   * subscribes to the cache and re-renders when the map lands, it just never
+   * issues a request of its own. The standing permission banner uses it so that
+   * appearing on `/agents` does not fetch a map that page has no use for.
+   */
+  enabled?: boolean;
+}
+
 /**
  * Fetch runtime capabilities for all registered runtimes.
  *
  * Capabilities are static for the lifetime of a server process, so
  * `staleTime: Infinity` prevents unnecessary refetches. Re-fetch by
  * calling `queryClient.invalidateQueries({ queryKey: ['capabilities'] })`.
+ *
+ * @param options - Fetch gate; see {@link UseRuntimeCapabilitiesOptions}.
  */
-export function useRuntimeCapabilities() {
+export function useRuntimeCapabilities(options?: UseRuntimeCapabilitiesOptions) {
   const transport = useTransport();
 
   return useQuery({
     queryKey: [...CAPABILITIES_KEY],
     queryFn: () => transport.getCapabilities(),
     staleTime: Infinity,
+    enabled: options?.enabled ?? true,
   });
 }
 
@@ -39,15 +54,18 @@ export function useRuntimeCapabilities() {
  * capabilities for the session's lifetime once it binds to a non-default
  * runtime (spec additional-agent-runtimes, task 4.2 fold-in).
  *
- * Returns `undefined` while the capabilities map is loading or when the
- * runtime type is not registered with this server.
+ * Returns `undefined` while the capabilities map is loading, when the caller has
+ * gated itself off with `enabled: false` and nobody else has loaded the map, or
+ * when the runtime type is not registered with this server.
  *
  * @param runtimeType - Runtime type (e.g. `'codex'`), or nullish for the server default
+ * @param options - Fetch gate; see {@link UseRuntimeCapabilitiesOptions}.
  */
 export function useCapabilitiesForRuntime(
-  runtimeType: string | null | undefined
+  runtimeType: string | null | undefined,
+  options?: UseRuntimeCapabilitiesOptions
 ): RuntimeCapabilities | undefined {
-  const { data } = useRuntimeCapabilities();
+  const { data } = useRuntimeCapabilities(options);
   if (!data) return undefined;
   return data.capabilities[runtimeType ?? data.defaultRuntime];
 }

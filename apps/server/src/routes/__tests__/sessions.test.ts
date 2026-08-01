@@ -286,7 +286,11 @@ describe('Sessions Routes', () => {
         permissionModes: {
           supported: true,
           default: ids[0],
-          values: ids.map((id) => ({ id, label: id })),
+          // Narrowed from the fake's own descriptors, so each surviving mode
+          // keeps the semantics it declares everywhere else.
+          values: capabilities.permissionModes.values.filter((d) =>
+            ids.includes(d.id as PermissionMode)
+          ),
         },
       });
       fakeRuntime.getCapabilities.mockClear();

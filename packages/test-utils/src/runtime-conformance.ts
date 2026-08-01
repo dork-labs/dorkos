@@ -82,7 +82,28 @@ export interface RuntimeConformanceOpts {
     sessionId: string,
     content: string
   ) => Promise<HistoryMessage[]>;
+  /**
+   * Waives the safety invariant that a runtime's DEFAULT permission mode must
+   * still stop for the person (`stop: 'ask'` or `'act'`). The string is the
+   * reason, and it is required rather than a boolean so the waiver is a sentence
+   * somebody wrote, not a flag somebody flipped — an empty or whitespace-only
+   * string does not waive anything.
+   *
+   * There is exactly one legitimate use today: `test-mode`, whose entire purpose
+   * is a deterministic always-allow fixture. A production runtime that wants
+   * this is telling you it starts sessions with the keys already handed over.
+   */
+  autonomyDefaultReason?: string;
 }
+
+/** Every valid {@link PermissionModeDescriptor.stop} value. */
+const PERMISSION_STOPS = ['ask', 'act', 'autonomy'];
+
+/** Every valid {@link PermissionModeDescriptor.asks} value. */
+const PERMISSION_ASKS = ['always', 'when-risky', 'never'];
+
+/** Every valid {@link PermissionModeDescriptor.reach} value. */
+const PERMISSION_REACHES = ['read', 'edit', 'workspace', 'everything'];
 
 /** The turn-terminating event type every sendMessage stream must end with. */
 const TERMINAL_EVENT_TYPE = 'done';
@@ -153,6 +174,7 @@ export function runtimeConformance(
     makeFailingRuntime,
     makeCompactingRuntime,
     durableHistory,
+    autonomyDefaultReason,
   } = opts;
 
   /** SessionOpts shared by every ensureSession call in the suite. */
@@ -502,12 +524,41 @@ export function runtimeConformance(
             expect(descriptor.id.length).toBeGreaterThan(0);
             expect(typeof descriptor.label).toBe('string');
             expect(descriptor.label.length).toBeGreaterThan(0);
+
+            // Semantics are what every surface computes its warnings from, so a
+            // mode that declares only half of them is worse than one that
+            // declares none: the client would derive a confident wrong answer
+            // rather than an obviously missing one (spec `trust-dial`).
+            expect(PERMISSION_STOPS, `${descriptor.id}.stop`).toContain(descriptor.stop);
+            expect(PERMISSION_ASKS, `${descriptor.id}.asks`).toContain(descriptor.asks);
+            expect(PERMISSION_REACHES, `${descriptor.id}.reach`).toContain(descriptor.reach);
+            expect(typeof descriptor.promise, `${descriptor.id}.promise`).toBe('string');
+            expect(
+              descriptor.promise.trim().length,
+              `${descriptor.id}.promise must say what happens`
+            ).toBeGreaterThan(0);
           }
           if (modes!.default !== undefined) {
             expect(
               modes!.values.map((descriptor) => descriptor.id),
               'permissionModes.default must reference a declared descriptor id'
             ).toContain(modes!.default);
+
+            // Safety invariant: a fresh session starts somewhere the person is
+            // still consulted. A runtime whose default never asks hands the keys
+            // over before anybody chose to, and no capability flag can make that
+            // acceptable — only a written-down reason can (autonomyDefaultReason).
+            const defaultDescriptor = modes!.values.find((d) => d.id === modes!.default);
+            // Trimmed, like the promise check above: a waiver has to BE a reason.
+            // An empty or whitespace string is somebody silencing the invariant
+            // without writing down why, which is the one thing it exists to stop.
+            if ((autonomyDefaultReason ?? '').trim().length === 0) {
+              expect(
+                defaultDescriptor?.stop,
+                'permissionModes.default must not be an autonomy mode — declare ' +
+                  'autonomyDefaultReason if this runtime genuinely must'
+              ).not.toBe('autonomy');
+            }
           }
         } else {
           // `supported: false, values: []` is the declared no-picker shape.

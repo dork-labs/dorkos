@@ -26,11 +26,21 @@
 const BYPASS_PERMISSION_MODES = new Set<string>(['bypassPermissions', 'always-allow']);
 
 /**
- * Whether a permission mode means the agent acts without asking. The ONE
- * definition of that fact — the standing banner, the status line's severity
- * ranking, the scope note next to every mode picker, and anything else that
- * warns about it must agree, or a session can warn on one surface and look
- * ordinary on another (DOR-482, DOR-463, DOR-501).
+ * Whether a permission mode means the agent acts without asking, answered from
+ * the mode's NAME.
+ *
+ * ## This is the fallback, not the answer
+ *
+ * `isBypassSemantics` in `@dorkos/shared/permission-semantics` is authoritative:
+ * it reads what the runtime declared its mode does, so it is right about modes
+ * this list has never heard of. Use it wherever a descriptor is in hand — the
+ * status line, the banner, the mode picker, the scope note beside a picker.
+ *
+ * This one exists for the places that have no runtime profile to consult: a
+ * collapsed session row in a rail of fifty, rendering before the capability map
+ * arrives. A guess from the id is better there than nothing, and every id it
+ * knows is a real mode of a shipped runtime — but it is a guess, and a mode a
+ * new runtime invents will not be in it.
  *
  * @param mode - The session's effective permission mode, if known.
  */

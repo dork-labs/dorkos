@@ -93,6 +93,10 @@
       "types": "./src/community-adapter.ts",
       "default": "./dist/community-adapter.js"
     },
+    "./permission-semantics": {
+      "types": "./src/permission-semantics.ts",
+      "default": "./dist/permission-semantics.js"
+    },
     "./command-intents": {
       "types": "./src/command-intents.ts",
       "default": "./dist/command-intents.js"

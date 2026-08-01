@@ -31,7 +31,8 @@ import type { ConnectionState, PermissionMode, UsageStatus } from '@dorkos/share
 import type { StatusBarPin } from '@dorkos/shared/config-schema';
 import { STATUS_BAR_PIN_KEYS } from '@dorkos/shared/config-schema';
 import { CONTEXT_ACTION_PERCENT, CONTEXT_PROMOTE_PERCENT } from '@/layers/entities/session';
-import { isBypassPermissionMode } from '@/layers/shared/lib';
+import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
+import { isBypassPermissionMode, isBypassSemantics } from '@/layers/shared/lib';
 import { useStatusBarPrefs, useUpdateStatusBarPrefs } from '@/layers/entities/config';
 
 /** Union of every status line item key. */
@@ -73,6 +74,13 @@ export interface StatusPromotionContext {
   connectionState: ConnectionState;
   /** The session's permission mode. */
   permissionMode: PermissionMode;
+  /**
+   * That mode as its runtime declared it, or `null` while the capability map is
+   * still arriving. What ranks the item is what the mode DOES, not what it is
+   * called — `null` falls back to the mode's name, which agrees for every
+   * runtime shipped today.
+   */
+  permissionDescriptor: PermissionModeDescriptor | null;
   /** Runtime identity, or `null` while it is still resolving. */
   runtime: RuntimePromotionState | null;
   /** Runtime-neutral usage descriptor, or `null` when the session has none. */
@@ -351,7 +359,10 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
     icon: Shield,
     promote: (ctx) => ctx.permissionMode !== 'default',
     severity: (ctx) => {
-      if (isBypassPermissionMode(ctx.permissionMode)) return SEVERITY.PERMISSION_BYPASS;
+      const bypassed = ctx.permissionDescriptor
+        ? isBypassSemantics(ctx.permissionDescriptor)
+        : isBypassPermissionMode(ctx.permissionMode);
+      if (bypassed) return SEVERITY.PERMISSION_BYPASS;
       return ctx.permissionMode === 'default' ? SEVERITY.QUIET : SEVERITY.PERMISSION_ELEVATED;
     },
   },

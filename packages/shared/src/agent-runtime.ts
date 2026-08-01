@@ -25,8 +25,61 @@ import type { SessionSnapshot, SessionEvent, SessionListEvent } from './session-
 import type { RuntimeCommandIntentId } from './command-intents.js';
 
 /**
+ * Where a permission mode sits on the one question the permission surface asks:
+ * *when should this agent stop and check with me?*
+ *
+ * Three positions, fixed across every runtime — a runtime never invents a
+ * fourth and never renames one, because the words are the person's mental
+ * model, not the backend's vocabulary (spec `trust-dial`, decision 2).
+ *
+ * - `'ask'` — stop before doing anything that changes the world.
+ * - `'act'` — get on with the work, stop for the risky parts.
+ * - `'autonomy'` — never stop.
+ */
+export type PermissionStop = 'ask' | 'act' | 'autonomy';
+
+/**
+ * How often a mode actually stops to ask the person. Declared by the runtime
+ * from its OWN behavior, which is why it is separate from {@link PermissionStop}:
+ * where the two disagree the surface says so out loud (Codex's workspace-write
+ * sits at `'act'` but asks `'never'`, because Codex has no way to pause).
+ */
+export type PermissionAsks = 'always' | 'when-risky' | 'never';
+
+/**
+ * The blast radius a person agrees to when they pick a mode — how far its
+ * actions can reach, whether or not it asks first. Ordered least to most:
+ *
+ * - `'read'` — reads and answers only. **Nothing leaves and nothing changes**:
+ *   no writes, no commands, and no network. Codex's `read-only` sandbox is the
+ *   reference — it blocks network access as well as writes, and that is what
+ *   makes it safe for the derivation rules to treat `'read'` as "there is
+ *   nothing here to warn about or to ask permission for". A runtime whose
+ *   read-ish mode can still fetch a URL or phone home must declare `'edit'` or
+ *   wider, or it will be described as harmless when it is not.
+ * - `'edit'` — files in the project may change; commands still go through the
+ *   mode's asking rule.
+ * - `'workspace'` — files *and* commands, inside the project directory.
+ * - `'everything'` — no sandbox: anywhere on the machine, plus the network.
+ */
+export type PermissionReach = 'read' | 'edit' | 'workspace' | 'everything';
+
+/**
  * Describes a single permission mode a runtime supports. Runtimes enumerate
  * these so the UI can render a picker without hard-coding a shared enum.
+ *
+ * ## Why the semantics are here and not in the client
+ *
+ * Every surface that warns about a permission mode used to do it from an
+ * id-keyed table in the client — one table for "is this a bypass mode", another
+ * for "tint this red" — which meant a new runtime got the wrong warning until
+ * somebody remembered to edit a file two packages away. The runtime is the only
+ * thing that knows what its own modes do, so it says so here, in fields the
+ * client can compute from by uniform rules and never by name (spec `trust-dial`,
+ * decision 2; the Final Design Summary's implementation invariants).
+ *
+ * `stop`/`asks`/`reach`/`promise` are REQUIRED on purpose. A descriptor that
+ * declares half its meaning is exactly the drift these fields exist to end.
  *
  * @see {@link RuntimeCapabilities.permissionModes}
  */
@@ -37,6 +90,38 @@ export interface PermissionModeDescriptor {
   label: string;
   /** Optional helper copy rendered beneath the label in rich pickers. */
   description?: string;
+  /**
+   * Which of the three dial positions this mode belongs to. Drives which stop
+   * renders as selected, and — compared against {@link asks} — whether this
+   * runtime diverges from the position's canonical promise.
+   */
+  stop: PermissionStop;
+  /**
+   * One plain sentence about what happens under this mode, in the person's
+   * words. Rendered verbatim as the caption beneath the dial, so it is product
+   * copy: describe the consequence, never the mechanism, and say the awkward
+   * part out loud when the runtime's behavior is surprising.
+   */
+  promise: string;
+  /**
+   * How often this mode stops to ask. Drives the divergence signal (declared
+   * `asks` vs. the canonical expectation of its {@link stop}) and, with
+   * {@link reach}, the warning tier.
+   */
+  asks: PermissionAsks;
+  /**
+   * How far this mode's actions can reach. With {@link asks}, decides the
+   * warning tier: never-asking plus everything-reaching is the one combination
+   * that earns red.
+   */
+  reach: PermissionReach;
+  /**
+   * The runtime's own name for this mode, when it differs from {@link id} —
+   * e.g. Codex's `'workspace-write'`. Detail views show it so somebody reading
+   * the runtime's own docs can line the two up. Omit when the id is the native
+   * name.
+   */
+  native?: string;
 }
 
 /** Minimal response interface for session locking — only needs close event detection. */
