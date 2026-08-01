@@ -226,8 +226,9 @@ let claudeRuntime: ClaudeCodeRuntime | null = null;
 // The runtime the Tasks scheduler drives. ClaudeCodeRuntime in production; in
 // test mode (DORKOS_TEST_RUNTIME) the registered TestModeRuntime stands in so
 // the Tasks surface is reachable for e2e and the marketing capture pipeline
-// (SchedulerAgentManager needs only ensureSession + sendMessage, both of which
-// TestModeRuntime implements). Never a real agent binary in test mode.
+// (SchedulerAgentManager needs ensureSession, sendMessage and interruptQuery,
+// all of which TestModeRuntime implements). Never a real agent binary in test
+// mode.
 let schedulerAgentManager: SchedulerAgentManager | null = null;
 // The runtime the relay's Claude Code adapter drives. Its need is
 // Claude-specific, not default-specific: the adapter speaks the Claude Agent

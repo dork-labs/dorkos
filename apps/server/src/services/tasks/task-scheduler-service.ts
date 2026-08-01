@@ -10,6 +10,7 @@ import { createTaggedLogger } from '../../lib/logger.js';
 import { formatDuration } from '../../lib/format-duration.js';
 import { SchedulerLock, SCHEDULER_HEARTBEAT_MS, type LeaderLock } from './scheduler-lock.js';
 import { withSpan, SPAN, ATTR } from '../observability/index.js';
+import { consumeRunStream, interruptRun } from './run-stream.js';
 
 const logger = createTaggedLogger('Tasks');
 
@@ -39,10 +40,10 @@ export function scheduledTickKey(cron: string, firedAt: Date): number {
 }
 
 /**
- * Race sentinel: the run was stopped (cancelled or out of time) before the
- * agent produced its next event.
+ * Abort reason used by {@link TaskSchedulerService.cancelRun}, distinguishing an
+ * operator's cancel from a shutdown abort and from the runtime deadline.
  */
-const RUN_STOPPED = Symbol('run-stopped');
+const OPERATOR_CANCEL = Symbol('operator-cancel');
 
 /** Narrow interface for the AgentManager methods used by the scheduler. */
 export interface SchedulerAgentManager {
@@ -311,11 +312,17 @@ export class TaskSchedulerService {
     return run;
   }
 
-  /** Cancel a running job by aborting its AbortController. */
+  /**
+   * Cancel a running job by aborting its AbortController.
+   *
+   * Aborts with {@link OPERATOR_CANCEL} so finalization can tell an operator's
+   * cancel apart from a shutdown abort and skip a duplicate activity event —
+   * the cancel route already emitted one, with the truthful "You" actor.
+   */
   cancelRun(runId: string): boolean {
     const controller = this.activeRuns.get(runId);
     if (!controller) return false;
-    controller.abort();
+    controller.abort(OPERATOR_CANCEL);
     return true;
   }
 
@@ -548,14 +555,19 @@ export class TaskSchedulerService {
         systemPromptAppend: taskAppend,
       });
 
-      await this.consumeRunStream(stream, sessionId, combinedSignal, (event) => {
-        // Collect first 500 chars of text output as summary
-        if (event.type === 'text_delta' && outputChars < 500) {
-          const data = event.data as { text: string };
-          outputSummary += data.text;
-          outputChars += data.text.length;
+      await consumeRunStream(
+        stream,
+        combinedSignal,
+        () => void interruptRun(this.agentManager, sessionId),
+        (event) => {
+          // Collect first 500 chars of text output as summary
+          if (event.type === 'text_delta' && outputChars < 500) {
+            const data = event.data as { text: string };
+            outputSummary += data.text;
+            outputChars += data.text.length;
+          }
         }
-      });
+      );
 
       const durationMs = Date.now() - startTime;
 
@@ -565,6 +577,7 @@ export class TaskSchedulerService {
         // happened.
         const timedOut =
           (combinedSignal.reason as { name?: string } | null)?.name === 'TimeoutError';
+        const operatorCancelled = combinedSignal.reason === OPERATOR_CANCEL;
         this.store.updateRun(run.id, {
           status: 'cancelled',
           finishedAt: new Date().toISOString(),
@@ -576,7 +589,12 @@ export class TaskSchedulerService {
               : 'Run cancelled',
           sessionId,
         });
-        this.emitRunEvent(task, run, 'cancelled', durationMs);
+        // The cancel route emits its own `tasks.run_cancelled` the moment the
+        // operator asks, attributed to "You". Emitting again here would put the
+        // same cancel in the activity feed twice, the second time attributed to
+        // Tasks. A deadline or a shutdown abort has no such route emit, so it
+        // still needs this one.
+        if (!operatorCancelled) this.emitRunEvent(task, run, 'cancelled', durationMs);
       } else {
         this.store.updateRun(run.id, {
           status: 'completed',
@@ -601,90 +619,6 @@ export class TaskSchedulerService {
       this.emitRunEvent(task, run, 'failed', durationMs, errorMsg);
     } finally {
       this.activeRuns.delete(run.id);
-    }
-  }
-
-  /**
-   * Consume a run's event stream until it ends or the run is stopped.
-   *
-   * Stopping has to reach the RUNTIME, not just this loop. A turn parked on a
-   * tool-approval prompt yields nothing for up to
-   * `SESSIONS.INTERACTION_TIMEOUT_MS`, so the old "check the signal at the top
-   * of the loop body" never ran: `maxRuntime` did not bite, `cancelRun` did not
-   * interrupt, the run kept its concurrency slot, and shutdown waited on it.
-   * Two things fix that, and both are needed — the abort listener ends the turn
-   * at the agent, and racing each `next()` against the signal releases the run
-   * even if the runtime ignores the interrupt or answers slowly.
-   *
-   * On a stop the source is ABANDONED rather than awaited: its pending `next()`
-   * is rejection-silenced and `return()` is fired without awaiting, because an
-   * async generator's `return()` queues behind the pending `next()` and would
-   * hang on exactly the parked turn this exists to escape.
-   *
-   * @param stream - The agent's per-turn event stream.
-   * @param sessionId - Session backing the run (the run id), used to interrupt.
-   * @param signal - Aborts when the run is cancelled or out of time.
-   * @param onEvent - Receives each event that arrives before the stop.
-   */
-  private async consumeRunStream(
-    stream: AsyncIterable<StreamEvent>,
-    sessionId: string,
-    signal: AbortSignal,
-    onEvent: (event: StreamEvent) => void
-  ): Promise<void> {
-    const iterator = stream[Symbol.asyncIterator]();
-    let onAbort!: () => void;
-    const stopped = new Promise<typeof RUN_STOPPED>((resolve) => {
-      onAbort = () => {
-        resolve(RUN_STOPPED);
-        void this.interruptRun(sessionId);
-      };
-      // A signal that aborted before we subscribed never fires the event.
-      if (signal.aborted) onAbort();
-      else signal.addEventListener('abort', onAbort, { once: true });
-    });
-
-    try {
-      // Exactly one pending next() at a time, so no event is ever dropped
-      // between race rounds.
-      let pending = iterator.next();
-      for (;;) {
-        const winner = await Promise.race([pending, stopped]);
-        if (winner === RUN_STOPPED) {
-          void pending.catch(() => {});
-          void Promise.resolve(iterator.return?.()).catch(() => {});
-          return;
-        }
-        if (winner.done) return;
-        onEvent(winner.value);
-        pending = iterator.next();
-      }
-    } finally {
-      signal.removeEventListener('abort', onAbort);
-    }
-  }
-
-  /**
-   * Ask the runtime to end the turn behind a stopped run.
-   *
-   * Never rejects: it is called from an abort listener, where a rejection would
-   * surface as an unhandled rejection and take the process down, and a runtime
-   * that cannot be interrupted must not stop the run from being finalized. Both
-   * unhappy outcomes are logged, because the only remaining trace of a leaked
-   * agent process is this line.
-   *
-   * @param sessionId - Session backing the run (the run id).
-   */
-  private async interruptRun(sessionId: string): Promise<void> {
-    try {
-      const interrupted = await this.agentManager.interruptQuery(sessionId);
-      if (!interrupted) {
-        logger.warn(
-          `run ${sessionId}: no in-flight turn to interrupt — the runtime may have leaked a process`
-        );
-      }
-    } catch (err) {
-      logger.error(`run ${sessionId}: interrupting the turn failed:`, err);
     }
   }
 

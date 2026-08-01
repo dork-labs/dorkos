@@ -67,6 +67,18 @@ export interface AgentRuntimeLike {
    * @returns false if the session or pending interaction was not found
    */
   approveTool(sessionId: string, toolCallId: string, approved: boolean): boolean;
+
+  /**
+   * End the in-flight turn for a session.
+   *
+   * The only way to stop a running turn: `sendMessage` takes no `AbortSignal`,
+   * so abandoning its stream leaves the agent running. The tasks handler calls
+   * this when a run's TTL budget expires.
+   *
+   * @param sessionId - The session key used in ensureSession/sendMessage
+   * @returns false if the runtime found no in-flight turn to abort
+   */
+  interruptQuery(sessionId: string): Promise<boolean>;
 }
 
 /**

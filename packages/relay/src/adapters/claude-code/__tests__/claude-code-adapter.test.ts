@@ -25,7 +25,29 @@ function createMockAgentManager(): AgentRuntimeLike {
     ),
     getSdkSessionId: vi.fn().mockReturnValue(undefined),
     approveTool: vi.fn().mockReturnValue(true),
+    interruptQuery: vi.fn().mockResolvedValue(true),
   };
+}
+
+/**
+ * A turn that emits one event and then parks forever — the shape of a run
+ * blocked on a tool-approval prompt nobody will answer. It yields no further
+ * events, so anything that only runs inside the consumer's loop body never runs
+ * again. `parked` resolves once the consumer has asked for the event that will
+ * never come.
+ */
+function parkedTurn(): { stream: AsyncGenerator<StreamEvent>; parked: Promise<void> } {
+  let signalParked!: () => void;
+  const parked = new Promise<void>((resolve) => {
+    signalParked = resolve;
+  });
+  const stream = (async function* () {
+    yield { type: 'text_delta', data: { text: 'starting' } } as StreamEvent;
+    signalParked();
+    // Never settles: the run is waiting on a person who never arrives.
+    await new Promise(() => {});
+  })();
+  return { stream, parked };
 }
 
 function createMockTraceStore(): TraceStoreLike {
@@ -338,6 +360,7 @@ describe('ClaudeCodeAdapter', () => {
       sendMessage: vi.fn().mockReturnValue(hangingStream),
       getSdkSessionId: vi.fn().mockReturnValue(undefined),
       approveTool: vi.fn(),
+      interruptQuery: vi.fn().mockResolvedValue(true),
     };
     const cappedAdapter = new ClaudeCodeAdapter(
       'capped',
@@ -669,6 +692,80 @@ describe('ClaudeCodeAdapter', () => {
     );
   });
 
+  it('Tasks: stops a parked run when the TTL budget runs out', async () => {
+    await adapter.start(relay);
+    const turn = parkedTurn();
+    vi.mocked(agentManager.sendMessage).mockReturnValue(turn.stream);
+    // The run outlives its budget while parked on a prompt: no further events
+    // arrive, so nothing inside the consumer's loop body ever runs again.
+    const envelope = createTasksEnvelope({
+      budget: {
+        hopCount: 0,
+        maxHops: 5,
+        ancestorChain: [],
+        ttl: Date.now() + 150,
+        callBudgetRemaining: 5,
+      },
+    });
+
+    // Deliver concurrently and wait until the turn is genuinely parked before
+    // the budget expires: a TTL that fired while the first event was still in
+    // flight would be caught by the loop body and prove nothing.
+    const delivery = adapter.deliver(envelope.subject, envelope);
+    await turn.parked;
+    const result = await delivery;
+
+    // The runtime is told to stop, not merely marked stopped in the store.
+    expect(agentManager.interruptQuery).toHaveBeenCalledWith('run-1');
+    expect(taskStore.updateRun).toHaveBeenCalledWith(
+      'run-1',
+      expect.objectContaining({ status: 'cancelled' })
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it('Tasks: leaves a healthy run alone — it completes and is never interrupted', async () => {
+    await adapter.start(relay);
+    const envelope = createTasksEnvelope();
+
+    await adapter.deliver(envelope.subject, envelope);
+
+    expect(agentManager.interruptQuery).not.toHaveBeenCalled();
+    expect(taskStore.updateRun).toHaveBeenCalledWith(
+      'run-1',
+      expect.objectContaining({ status: 'completed' })
+    );
+  });
+
+  it('Tasks: survives an interrupt that fails — the run still finalizes', async () => {
+    await adapter.start(relay);
+    const turn = parkedTurn();
+    vi.mocked(agentManager.sendMessage).mockReturnValue(turn.stream);
+    vi.mocked(agentManager.interruptQuery).mockRejectedValue(new Error('runtime is wedged'));
+    const envelope = createTasksEnvelope({
+      budget: {
+        hopCount: 0,
+        maxHops: 5,
+        ancestorChain: [],
+        ttl: Date.now() + 150,
+        callBudgetRemaining: 5,
+      },
+    });
+
+    // A rejected interrupt must not become an unhandled rejection, and must not
+    // leave the run pinned to `running`. Gated on a genuinely parked turn for
+    // the same reason as the TTL test above.
+    const delivery = adapter.deliver(envelope.subject, envelope);
+    await turn.parked;
+    const result = await delivery;
+
+    expect(taskStore.updateRun).toHaveBeenCalledWith(
+      'run-1',
+      expect.objectContaining({ status: 'cancelled' })
+    );
+    expect(result.success).toBe(false);
+  });
+
   // === StreamEvent filter (Bug 1 guard) ===
 
   describe('agent message delivery', () => {
@@ -867,6 +964,7 @@ describe('ClaudeCodeAdapter', () => {
         sendMessage: vi.fn().mockReturnValueOnce(hangingStream).mockReturnValueOnce(quickStream),
         getSdkSessionId: vi.fn().mockReturnValue(undefined),
         approveTool: vi.fn(),
+        interruptQuery: vi.fn().mockResolvedValue(true),
       };
 
       const serializedAdapter = new ClaudeCodeAdapter(
@@ -928,6 +1026,7 @@ describe('ClaudeCodeAdapter', () => {
         sendMessage: vi.fn().mockReturnValueOnce(streamForA).mockReturnValueOnce(streamForB),
         getSdkSessionId: vi.fn().mockReturnValue(undefined),
         approveTool: vi.fn(),
+        interruptQuery: vi.fn().mockResolvedValue(true),
       };
 
       const parallelAdapter = new ClaudeCodeAdapter(

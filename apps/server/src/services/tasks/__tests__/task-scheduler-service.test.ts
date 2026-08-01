@@ -11,6 +11,7 @@ import type { Db } from '@dorkos/db';
 import type { StreamEvent, Task, TaskRun } from '@dorkos/shared/types';
 import type { RelayCore } from '@dorkos/relay';
 import type { MeshCore } from '@dorkos/mesh';
+import type { ActivityService } from '../../activity/activity-service.js';
 import type { TaskDispatchPayload } from '@dorkos/shared/relay-schemas';
 
 vi.mock('../../relay/relay-state.js', () => ({
@@ -485,6 +486,50 @@ describe('TaskSchedulerService', () => {
 
       expect(interruptSpy(mockAgent)).not.toHaveBeenCalled();
       expect(store.getRun(run!.id)!.outputSummary).toBe('all done');
+
+      await service.stop();
+    });
+
+    it('does not re-emit run_cancelled for an operator cancel, but does for a deadline', async () => {
+      // The cancel route emits its own activity event when the operator asks;
+      // a second one here would show the same cancel twice.
+      const activityService = { emit: vi.fn() };
+      const cancelTurn = parkedTurn();
+      vi.mocked(mockAgent.sendMessage).mockImplementation(cancelTurn.impl);
+      const task = store.createTask(
+        taskInput({ name: 'Dedupe', prompt: 'test', cron: '0 * * * *', maxRuntime: null })
+      );
+      const service = new TaskSchedulerService({
+        store,
+        agentManager: mockAgent,
+        config: DEFAULT_CONFIG,
+        activityService: activityService as unknown as ActivityService,
+      });
+
+      const cancelled = await service.triggerManualRun(task.id);
+      await cancelTurn.parked;
+      service.cancelRun(cancelled!.id);
+      await vi.waitFor(() => {
+        expect(store.getRun(cancelled!.id)!.status).toBe('cancelled');
+      });
+      expect(activityService.emit).not.toHaveBeenCalled();
+
+      // A deadline has no route emit behind it, so it must still be reported.
+      const timeoutTurn = parkedTurn();
+      vi.mocked(mockAgent.sendMessage).mockImplementation(timeoutTurn.impl);
+      const timedTask = store.createTask(
+        taskInput({ name: 'Deadline', prompt: 'test', cron: '0 * * * *', maxRuntime: 50 })
+      );
+      const timedRun = await service.triggerManualRun(timedTask.id);
+      await vi.waitFor(
+        () => {
+          expect(store.getRun(timedRun!.id)!.status).toBe('cancelled');
+        },
+        { timeout: 2000 }
+      );
+      expect(activityService.emit).toHaveBeenCalledWith(
+        expect.objectContaining({ eventType: 'tasks.run_cancelled' })
+      );
 
       await service.stop();
     });
