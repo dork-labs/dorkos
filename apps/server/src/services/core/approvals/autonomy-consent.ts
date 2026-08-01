@@ -137,3 +137,88 @@ export function findUnacknowledgedAutonomyDefaults(patch: unknown): string[] {
  */
 export const AUTONOMY_DEFAULT_ACK_MESSAGE =
   'Starting every new session in Full autonomy needs you to confirm what it means first.';
+
+/**
+ * Whether a patch CLEARS the acknowledgement — Settings' Reset button, and the
+ * only way the record ever goes away.
+ *
+ * Absent is not cleared: a patch that says nothing about the record leaves it
+ * exactly as it was. Only an explicit `null` (or an empty string, which
+ * {@link hasStandingAutonomyAck} already reads as no record) counts.
+ */
+function patchClearsAutonomyAck(patch: unknown): boolean {
+  const record = asRecord(asRecord(patch)?.ui);
+  if (!record || !('autonomyAcknowledgedAt' in record)) return false;
+  const value = record.autonomyAcknowledgedAt;
+  return value === null || value === '';
+}
+
+/**
+ * The demotion a Reset has to carry with it: every default-trust-stop leaf that
+ * would still say `'autonomy'` afterwards, set back to `null`.
+ *
+ * ## Why clearing the record cannot leave the default standing
+ *
+ * The acknowledgement is not a dialog preference — for a standing autonomy
+ * default it is the LICENCE (decision 6: "set-time is consent-time, and that
+ * standing ack satisfies the server's autonomy requirement for every session the
+ * default births"). Take the licence away and leave the default, and the product
+ * is in a state nothing can justify: new sessions keep being born bypassed, with
+ * no dialog anywhere, while the first mode change the cockpit sends for one of
+ * them is refused 428 by the session door — the person is running without asking
+ * AND cannot change it back without meeting a dialog they thought they had
+ * turned back on.
+ *
+ * So Reset means what it says. It brings the asking back, and the setting whose
+ * only justification was the answer it just erased goes with it. Settings says
+ * so on the button, and the changelog and docs say so in words.
+ *
+ * ## Same write, deliberately
+ *
+ * Returned as a fragment for the caller to merge into the patch rather than
+ * applied here, so the clear and the demotion reach `applyConfigPatch` as ONE
+ * write. Two writes would leave a window — however brief — in which a session
+ * could be born bypassed with no record on file, which is the exact state this
+ * exists to make unreachable.
+ *
+ * ## Why the route and not `applyConfigPatch`
+ *
+ * `applyConfigPatch` is also reached by the `config_patch` capability, and the
+ * agent surface refuses `ui.autonomyAcknowledgedAt` outright (`operator-only`),
+ * so no agent can clear the record and nothing there needs this. Keeping the
+ * rule beside the door it belongs to — the same route, the same module — is what
+ * makes the pair readable as one policy.
+ *
+ * @param patch - The raw patch body.
+ * @param runtimes - The stored `runtimes` section; defaults to the live config.
+ * @returns A `{ runtimes: … }` fragment to merge ON TOP of the patch, or `null`
+ *   when the patch is not a Reset or no default is standing at autonomy.
+ */
+export function demoteAutonomyDefaultsOnAckClear(
+  patch: unknown,
+  runtimes?: unknown
+): Record<string, unknown> | null {
+  if (!patchClearsAutonomyAck(patch)) return null;
+  const stored = { runtimes: runtimes ?? configManager?.get('runtimes') };
+
+  const demoted: Record<string, unknown> = {};
+  for (const path of DEFAULT_TRUST_STOP_PATHS) {
+    // What the leaf would hold once this patch landed: the patch's own value
+    // where it carries one, the stored value otherwise. A patch that both
+    // clears the record and asks for autonomy is answered here rather than
+    // argued with — the clear wins, and the stop lands at `null`.
+    const fromPatch = readPath(patch, path);
+    const effective = fromPatch !== undefined ? fromPatch : readPath(stored, path);
+    if (effective !== 'autonomy') continue;
+    // `runtimes.claudeCode.defaultTrustStop` → `{ claudeCode: { defaultTrustStop: null } }`
+    const [, ...rest] = path.split('.');
+    const leaf = rest.pop()!;
+    const target = rest.reduce<Record<string, unknown>>((node, key) => {
+      node[key] ??= {};
+      return node[key] as Record<string, unknown>;
+    }, demoted);
+    target[leaf] = null;
+  }
+
+  return Object.keys(demoted).length > 0 ? { runtimes: demoted } : null;
+}

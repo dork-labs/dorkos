@@ -486,7 +486,7 @@ DorkOS keeps one more value in this section, `approvals.standingGrantsVoidBefore
 
 Turning a conversation up to Full autonomy asks you to confirm what that means first. The agent stops asking about anything, so it is the one setting you cannot notice in time to undo — which is why it is the one setting that asks twice.
 
-If you tick **Don't show this again** in that dialog, DorkOS writes down the date and stops asking. Settings → Security shows the date back with a **Reset** button; resetting brings the dialog back the next time you reach for Full autonomy. Nothing about a conversation changes when you reset — only the asking comes back.
+If you tick **Don't show this again** in that dialog, DorkOS writes down the date and stops asking. Settings → Security shows the date back with a **Reset** button; resetting brings the dialog back the next time you reach for Full autonomy. **Resetting also turns off any Full-autonomy default for new chats** — that note is what let new chats start without asking, so it goes when the note does. Nothing about a conversation you already have changes either way; only the asking comes back.
 
 You can also make Full autonomy where every new chat starts, in Settings under the defaults for new sessions, or right after you change a chat's setting — a quiet line offers it there for a few seconds. Either way DorkOS asks you to confirm what it means once, at the moment you choose it, and writes down that you did. From then on new chats start without asking, and Settings keeps a note saying so with a link to change it back. This covers the chats you open yourself; scheduled runs, integrations, and rooms have their own settings and their own, stricter rules.
 
@@ -496,7 +496,7 @@ Reset takes effect everywhere within about half a minute. A browser tab you left
   type={{
     'ui.autonomyAcknowledgedAt': {
       description:
-        'When you read what Full autonomy means and asked not to be shown it again. DorkOS writes this itself when you tick the box; Reset in Settings clears it back to null.',
+        'When you read what Full autonomy means and asked not to be shown it again. DorkOS writes this itself when you tick the box; Reset in Settings clears it back to null and turns off any Full-autonomy default for new chats.',
       type: 'string | null',
       default: 'null',
     },

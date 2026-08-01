@@ -210,7 +210,9 @@ export class OpenCodeRuntime implements AgentRuntime {
     }
   ): Promise<boolean> {
     const { effort: _unsupported, ...storable } = opts;
-    await this.settingsPort?.saveSessionSettings(sessionId, storable);
+    // `interactive`: `updateSession` is reached only from `PATCH
+    // /api/sessions/:id`, a person changing a session they are watching.
+    await this.settingsPort?.saveSessionSettings(sessionId, storable, { interactive: true });
     this.registry.register(sessionId, {
       ...(opts.permissionMode !== undefined ? { permissionMode: opts.permissionMode } : {}),
       ...(opts.model !== undefined ? { model: opts.model } : {}),

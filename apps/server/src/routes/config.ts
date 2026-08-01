@@ -27,6 +27,7 @@ import {
 import {
   AUTONOMY_ACK_REQUIRED_CODE,
   AUTONOMY_DEFAULT_ACK_MESSAGE,
+  demoteAutonomyDefaultsOnAckClear,
   findUnacknowledgedAutonomyDefaults,
 } from '../services/core/approvals/autonomy-consent.js';
 import { trustedCaller } from '../services/core/capabilities/index.js';
@@ -397,7 +398,26 @@ router.patch('/', (req, res) => {
     // The cockpit satisfies it in ONE patch — the consent dialog writes
     // `ui.autonomyAcknowledgedAt` and the new stop together — so there is no
     // window where the stop landed without the consent.
-    const unacknowledged = findUnacknowledgedAutonomyDefaults(req.body);
+    //
+    // ### Reset takes the standing default with it
+    //
+    // The other half of the same policy: clearing the acknowledgement demotes
+    // every default-trust-stop leaf still holding `'autonomy'`, in THIS write.
+    // The record is that default's licence, so a Reset that left it standing
+    // would keep birthing bypassed sessions with no consent on file — and the
+    // cockpit's first mode change for one of them would 428 against a door the
+    // person believed they had just re-armed. See
+    // `demoteAutonomyDefaultsOnAckClear` for why it is a fragment merged here
+    // rather than a second write.
+    const demotion = demoteAutonomyDefaultsOnAckClear(req.body);
+    const patch = demotion
+      ? deepMerge(req.body as Record<string, unknown>, demotion)
+      : (req.body as Record<string, unknown>);
+
+    // Asked of the MERGED patch, not the raw body: the question is what is about
+    // to be written, and a Reset that demotes a stop in the same breath is not
+    // asking for autonomy at all.
+    const unacknowledged = findUnacknowledgedAutonomyDefaults(patch);
     if (unacknowledged.length > 0) {
       return res.status(428).json({
         error: AUTONOMY_DEFAULT_ACK_MESSAGE,
@@ -406,9 +426,12 @@ router.patch('/', (req, res) => {
         message: AUTONOMY_DEFAULT_ACK_MESSAGE,
       });
     }
+    if (demotion) {
+      logger.info('[Config] Full-autonomy acknowledgement cleared; standing defaults demoted');
+    }
 
     const postureBefore = readStandingGrantPosture();
-    const result = applyConfigPatch(req.body);
+    const result = applyConfigPatch(patch);
     if (!result.ok) {
       return res.status(400).json({
         error: result.error,

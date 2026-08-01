@@ -306,8 +306,16 @@ export class RuntimeRegistry {
    *
    * @param sessionId - Session identifier
    * @param settings - Partial settings to persist (omitted keys are untouched)
+   * @param opts.interactive - Whether a PERSON is changing a session they are
+   *   watching. Only then may the row this write creates inherit the configured
+   *   default trust stop. Defaults to `false`: the seed is something a caller
+   *   asks for by name, never something a new caller inherits by saying nothing.
    */
-  async saveSessionSettings(sessionId: string, settings: SessionSettings): Promise<void> {
+  async saveSessionSettings(
+    sessionId: string,
+    settings: SessionSettings,
+    opts?: { interactive?: boolean }
+  ): Promise<void> {
     const db = this.requireDb('saveSessionSettings');
     const patch = pickSettings(settings);
     if (Object.keys(patch).length === 0) return;
@@ -334,12 +342,12 @@ export class RuntimeRegistry {
         sessionId,
         runtime,
         createdAt: new Date().toISOString(),
-        // `interactive: true`, and it is not a guess: this path exists because a
-        // person changed a setting before sending the first message, which is
-        // what the pre-launch picker does. Nothing unattended reaches it — a
-        // task, a binding and a room each set their permission mode on the turn
-        // they run rather than by PATCHing a session's settings.
-        ...this.seedForNewRow(runtime, { interactive: true }),
+        // Interactive only when the caller said so. Today every caller is the
+        // operator's own settings write (each adapter's `updateSession`, whose
+        // only caller is `PATCH /api/sessions/:id`) and says so at its call
+        // site; the default is `false` so a future one has to make the claim
+        // rather than inherit it.
+        ...this.seedForNewRow(runtime, { interactive: opts?.interactive === true }),
         ...patch,
       })
       // The UPDATE branch carries the patch alone: an existing row is a running

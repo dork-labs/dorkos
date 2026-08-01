@@ -16,7 +16,12 @@ import {
   Separator,
   SettingRow,
 } from '@/layers/shared/ui';
-import { useAutonomyAcknowledgement, useConfig, useUpdateConfig } from '@/layers/entities/config';
+import {
+  configSectionForRuntime,
+  useAutonomyAcknowledgement,
+  useConfig,
+  useUpdateConfig,
+} from '@/layers/entities/config';
 import { getRuntimeDescriptor, useRuntimeCapabilities } from '@/layers/entities/runtime';
 import { useModels } from '@/layers/entities/session';
 // UI composition across features, which the layer rule allows: the door into
@@ -30,13 +35,6 @@ import { DefaultTrustStopSection, type DefaultTrustStopRuntime } from './Default
  * item value, so the absence needs a spelling — same trick as the accounts card.
  */
 const INHERIT = '__inherit__';
-
-/** Which config section holds a runtime's defaults. Mirrors the server's own map. */
-const CONFIG_SECTION: Readonly<Record<string, 'claudeCode' | 'codex' | 'opencode'>> = {
-  'claude-code': 'claudeCode',
-  codex: 'codex',
-  opencode: 'opencode',
-};
 
 /** Turn a failed config write into one sentence a person can act on. */
 function describeWriteFailure(err: unknown): string {
@@ -124,7 +122,7 @@ export function ExecutionDefaultsCard() {
   }
 
   function writeForRuntime(patch: Record<string, unknown>) {
-    const section = CONFIG_SECTION[runtime];
+    const section = configSectionForRuntime(runtime);
     if (!section) return;
     write({ [section]: patch });
   }
@@ -135,7 +133,7 @@ export function ExecutionDefaultsCard() {
     stop: PermissionStop | null
   ): Record<string, unknown> | null {
     if (forRuntime === null) return { defaultTrustStop: stop };
-    const section = CONFIG_SECTION[forRuntime];
+    const section = configSectionForRuntime(forRuntime);
     return section ? { [section]: { defaultTrustStop: stop } } : null;
   }
 

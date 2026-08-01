@@ -17,7 +17,7 @@
  */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
-import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, act, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import type { ExecutionDefaults } from '@dorkos/shared/types';
@@ -131,7 +131,13 @@ vi.mock('@/layers/entities/session/model/use-sessions', async (importOriginal) =
   useSessions: () => ({ sessions: [], isLoading: false }) as never,
 }));
 
-const updateSession = vi.fn(() => Promise.resolve(undefined));
+/**
+ * What the server answers next: an updated session (success) or `undefined`,
+ * which is what `useSessionStatus.updateSession` returns once it has handed a
+ * failure to `onError`.
+ */
+const nextUpdateResult = { current: { id: 'ok' } as unknown };
+const updateSession = vi.fn(() => Promise.resolve(nextUpdateResult.current));
 vi.mock('@/layers/entities/session/model/use-session-status', () => ({
   useSessionStatus: () => ({
     permissionMode: 'default',
@@ -206,9 +212,11 @@ vi.mock('@/layers/features/status', async (importOriginal) => {
     PermissionModeItem: ({
       onChangeMode,
       makeDefault,
+      onOpenChange,
     }: {
       onChangeMode: (m: string) => void;
       makeDefault: React.ComponentProps<typeof actual.MakeDefaultStopLine> | null;
+      onOpenChange?: (open: boolean) => void;
     }) => (
       <div>
         <button type="button" data-testid="select-ask" onClick={() => onChangeMode('default')}>
@@ -226,6 +234,12 @@ vi.mock('@/layers/features/status', async (importOriginal) => {
           onClick={() => onChangeMode('bypassPermissions')}
         >
           autonomy
+        </button>
+        <button type="button" data-testid="open-picker" onClick={() => onOpenChange?.(true)}>
+          open picker
+        </button>
+        <button type="button" data-testid="close-picker" onClick={() => onOpenChange?.(false)}>
+          close picker
         </button>
         {makeDefault && <actual.MakeDefaultStopLine {...makeDefault} />}
       </div>
@@ -279,6 +293,7 @@ function renderSection() {
 beforeEach(() => {
   vi.useRealTimers();
   updateSession.mockClear();
+  nextUpdateResult.current = { id: 'ok' };
   updateConfig.mockClear();
   standingAck.current = null;
   canRemember.current = true;
@@ -295,67 +310,110 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('the offer appears where the habit is', () => {
-  it('offers the stop just chosen, by its own name', () => {
+  it('offers the stop just chosen, by its own name', async () => {
     renderSection();
     fireEvent.click(screen.getByTestId('select-act'));
 
-    expect(screen.getByTestId('make-default-offer')).toHaveTextContent(
+    expect(await screen.findByTestId('make-default-offer')).toHaveTextContent(
       'Start every new session in Act?'
     );
   });
 
-  it('writes the runtime-neutral stop when accepted', () => {
+  it('writes the runtime-neutral stop when accepted', async () => {
     renderSection();
     fireEvent.click(screen.getByTestId('select-act'));
-    fireEvent.click(screen.getByTestId('make-default-confirm'));
+    fireEvent.click(await screen.findByTestId('make-default-confirm'));
 
     expect(updateConfig.mock.calls[0]![0]).toEqual({ runtimes: { defaultTrustStop: 'act' } });
-    // And the offer is done: it was an offer, not a toggle.
-    expect(screen.queryByTestId('make-default-offer')).not.toBeInTheDocument();
   });
 
-  it('reserves its space, so arriving moves nothing', () => {
-    // The offer appears under a control the person is mid-interaction with. A
-    // line that pushed the caption down as it arrived would move the thing they
-    // are pointing at.
-    renderSection();
-    expect(screen.getByTestId('make-default-slot')).toBeInTheDocument();
-    expect(screen.queryByTestId('make-default-offer')).not.toBeInTheDocument();
-  });
-
-  it('withdraws itself after a few seconds', () => {
-    vi.useFakeTimers();
+  it('waits for the change to land before proposing to spread it', async () => {
+    // Offering to make a stop the standing default while the session itself
+    // failed to take it would be the product proposing to spread a change that
+    // did not happen.
+    nextUpdateResult.current = undefined;
     renderSection();
     fireEvent.click(screen.getByTestId('select-act'));
-    expect(screen.getByTestId('make-default-offer')).toBeInTheDocument();
+    await waitFor(() => expect(updateSession).toHaveBeenCalled());
 
-    act(() => {
-      vi.advanceTimersByTime(6_000);
+    expect(screen.queryByTestId('make-default-offer')).not.toBeInTheDocument();
+  });
+
+  it('reserves its space inside the open picker, so arriving moves nothing', async () => {
+    // The inline instance appears under a control the person is mid-interaction
+    // with, so its row is there whether or not it has anything in it.
+    renderSection();
+    fireEvent.click(screen.getByTestId('open-picker'));
+
+    expect(await screen.findByTestId('make-default-slot')).toBeInTheDocument();
+    expect(screen.queryByTestId('make-default-offer')).not.toBeInTheDocument();
+  });
+
+  it('costs the closed composer nothing at all', async () => {
+    // The overlay instance takes no space until there is something to say —
+    // a permanently reserved row under the status line would charge every
+    // conversation a blank line for a remark that is usually absent.
+    renderSection();
+    expect(screen.queryByTestId('make-default-slot-overlay')).not.toBeInTheDocument();
+  });
+
+  it('speaks from the overlay while the picker is shut, and inline once it opens', async () => {
+    // The two homes, and why there are two: the Full-autonomy dialog closes the
+    // picker under it, so an offer that only existed inline would be drawn into
+    // an unmounted tree (observed in a browser, 2026-08-01).
+    renderSection();
+    fireEvent.click(screen.getByTestId('select-act'));
+    await screen.findByTestId('make-default-offer');
+    expect(screen.getByTestId('make-default-slot-overlay')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('open-picker'));
+    await waitFor(() =>
+      expect(screen.queryByTestId('make-default-slot-overlay')).not.toBeInTheDocument()
+    );
+    expect(screen.getByTestId('make-default-slot')).toBeInTheDocument();
+    expect(screen.getByTestId('make-default-offer')).toBeInTheDocument();
+  });
+
+  it('withdraws itself after a few seconds, whether or not anything is drawing it', async () => {
+    // `shouldAdvanceTime` keeps Testing Library's own waiting working while the
+    // offer's clock is under our control.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    renderSection();
+    fireEvent.click(screen.getByTestId('select-act'));
+    await screen.findByTestId('make-default-offer');
+
+    // The clock belongs to the offer, not to the line: an offer made while the
+    // picker was closed used to sit un-expired and reappear stale.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6_000);
     });
 
     expect(screen.queryByTestId('make-default-offer')).not.toBeInTheDocument();
+    vi.useRealTimers();
   });
 });
 
 describe('the offer stays quiet when it would say nothing', () => {
-  it('says nothing about a stop that is already where new sessions start', () => {
+  it('says nothing about a stop that is already where new sessions start', async () => {
     // Ask first, on a fresh install: the runtime already starts there, so
     // "make it the default" would be an offer to change nothing.
     renderSection();
     fireEvent.click(screen.getByTestId('select-ask'));
+    await waitFor(() => expect(updateSession).toHaveBeenCalled());
 
     expect(screen.queryByTestId('make-default-offer')).not.toBeInTheDocument();
   });
 
-  it('reads the configured default, not just the runtime’s own', () => {
+  it('reads the configured default, not just the runtime’s own', async () => {
     executionDefaults.current = { ...executionDefaults.current, trustStop: 'act' };
     renderSection();
     fireEvent.click(screen.getByTestId('select-act'));
+    await waitFor(() => expect(updateSession).toHaveBeenCalled());
 
     expect(screen.queryByTestId('make-default-offer')).not.toBeInTheDocument();
   });
 
-  it('prefers a per-runtime override over the global one, as the server does', () => {
+  it('prefers a per-runtime override over the global one, as the server does', async () => {
     executionDefaults.current = {
       runtime: 'claude-code',
       trustStop: 'ask',
@@ -371,36 +429,98 @@ describe('the offer stays quiet when it would say nothing', () => {
     };
     renderSection();
     fireEvent.click(screen.getByTestId('select-act'));
+    await waitFor(() => expect(updateSession).toHaveBeenCalled());
 
     expect(screen.queryByTestId('make-default-offer')).not.toBeInTheDocument();
   });
 
-  it('never offers a way of working as a trust level', () => {
+  it('never offers a way of working as a trust level', async () => {
     renderSection();
     fireEvent.click(screen.getByTestId('select-plan'));
+    await waitFor(() => expect(updateSession).toHaveBeenCalled());
 
     expect(screen.queryByTestId('make-default-offer')).not.toBeInTheDocument();
   });
 
-  it('remembers a dismissal for the rest of the session', () => {
+  it('remembers a dismissal for the rest of the session', async () => {
     renderSection();
     fireEvent.click(screen.getByTestId('select-act'));
-    fireEvent.click(screen.getByTestId('make-default-dismiss'));
+    fireEvent.click(await screen.findByTestId('make-default-dismiss'));
     expect(screen.queryByTestId('make-default-offer')).not.toBeInTheDocument();
     expect(useSessionChatStore.getState().defaultStopOfferDismissed[SESSION_ID]).toBe(true);
 
     fireEvent.click(screen.getByTestId('select-act'));
+    await waitFor(() => expect(updateSession).toHaveBeenCalledTimes(2));
     expect(screen.queryByTestId('make-default-offer')).not.toBeInTheDocument();
   });
 
-  it('offers nothing where the answer could not be stored', () => {
+  it('offers nothing where the answer could not be stored', async () => {
     // Obsidian: config does not round-trip, so an offer would save nothing and
     // report nothing — worse than never offering.
     canRemember.current = false;
     renderSection();
     fireEvent.click(screen.getByTestId('select-act'));
+    await waitFor(() => expect(updateSession).toHaveBeenCalled());
 
-    expect(screen.queryByTestId('make-default-slot')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('make-default-offer')).not.toBeInTheDocument();
+  });
+});
+
+describe('the offer writes the leaf it compared', () => {
+  it('writes THIS runtime’s override when that is what made it differ', async () => {
+    // The forever-no-op this exists to end: with an override at Ask first, a
+    // person picking Act was offered the default, the write went to the GLOBAL
+    // leaf, the override kept winning — and the same offer came back on the next
+    // stop change, changing nothing, forever.
+    executionDefaults.current = {
+      runtime: 'claude-code',
+      trustStop: null,
+      perRuntime: [
+        {
+          runtime: 'claude-code',
+          model: null,
+          effort: null,
+          supportsEffort: true,
+          trustStop: 'ask',
+        },
+      ],
+    };
+    renderSection();
+    fireEvent.click(screen.getByTestId('select-act'));
+    fireEvent.click(await screen.findByTestId('make-default-confirm'));
+
+    expect(updateConfig.mock.calls[0]![0]).toEqual({
+      runtimes: { claudeCode: { defaultTrustStop: 'act' } },
+    });
+  });
+
+  it('writes the global leaf when nothing overrides it', async () => {
+    executionDefaults.current = { ...executionDefaults.current, trustStop: 'ask' };
+    renderSection();
+    fireEvent.click(screen.getByTestId('select-act'));
+    fireEvent.click(await screen.findByTestId('make-default-confirm'));
+
+    expect(updateConfig.mock.calls[0]![0]).toEqual({ runtimes: { defaultTrustStop: 'act' } });
+  });
+});
+
+describe('a failed write is said, not swallowed', () => {
+  it('keeps the offer standing and names the refusal', async () => {
+    // A 428 (another tab pressed Reset between the read and the write) or a 403
+    // (login came on) has to be sayable and retryable.
+    updateConfig.mockImplementation(
+      (_patch: unknown, handlers?: { onError?: (err: unknown) => void }) => {
+        handlers?.onError?.(new Error('Turning on Full autonomy needs you to confirm it first.'));
+      }
+    );
+    renderSection();
+    fireEvent.click(screen.getByTestId('select-act'));
+    fireEvent.click(await screen.findByTestId('make-default-confirm'));
+
+    expect(await screen.findByTestId('make-default-offer')).toHaveTextContent(
+      'Turning on Full autonomy needs you to confirm it first.'
+    );
+    expect(screen.getByTestId('make-default-retry')).toBeInTheDocument();
   });
 });
 
@@ -410,36 +530,37 @@ describe('Full autonomy as the standing default asks first', () => {
     return screen.queryByTestId('autonomy-consent-note');
   }
 
-  it('offers the default right after the person confirms it for this session', () => {
+  it('offers the default right after the person confirms it for this session', async () => {
     // The person decision 6C was written for: they choose Full autonomy every
-    // morning, and they have just been told exactly what it means.
+    // morning, and they have just been told exactly what it means. The dialog
+    // has closed the picker by now, so this offer is the overlay's.
     renderSection();
     fireEvent.click(screen.getByTestId('select-autonomy'));
     fireEvent.click(screen.getByRole('button', { name: 'Turn on Full autonomy' }));
 
-    expect(screen.getByTestId('make-default-offer')).toHaveTextContent(
+    expect(await screen.findByTestId('make-default-offer')).toHaveTextContent(
       'Start every new session in Full autonomy?'
     );
   });
 
-  it('asks again before making it standing, and writes nothing until answered', () => {
+  it('asks again before making it standing, and writes nothing until answered', async () => {
     // A session-scoped confirmation is an answer about one conversation. Making
     // it the default is the wider claim, and the server requires a durable
     // record for it.
     renderSection();
     fireEvent.click(screen.getByTestId('select-autonomy'));
     fireEvent.click(screen.getByRole('button', { name: 'Turn on Full autonomy' }));
-    fireEvent.click(screen.getByTestId('make-default-confirm'));
+    fireEvent.click(await screen.findByTestId('make-default-confirm'));
 
     expect(defaultConsentDialog()).toBeInTheDocument();
     expect(updateConfig).not.toHaveBeenCalled();
   });
 
-  it('records the acknowledgement and the default in one write', () => {
+  it('records the acknowledgement and the default in one write', async () => {
     renderSection();
     fireEvent.click(screen.getByTestId('select-autonomy'));
     fireEvent.click(screen.getByRole('button', { name: 'Turn on Full autonomy' }));
-    fireEvent.click(screen.getByTestId('make-default-confirm'));
+    fireEvent.click(await screen.findByTestId('make-default-confirm'));
     fireEvent.click(screen.getByRole('button', { name: 'Turn on Full autonomy' }));
 
     expect(updateConfig).toHaveBeenCalledTimes(1);
@@ -451,11 +572,11 @@ describe('Full autonomy as the standing default asks first', () => {
     expect(typeof patch.ui.autonomyAcknowledgedAt).toBe('string');
   });
 
-  it('asks nothing of somebody who already has a standing acknowledgement', () => {
+  it('asks nothing of somebody who already has a standing acknowledgement', async () => {
     standingAck.current = '2026-08-01T09:30:00.000Z';
     renderSection();
     fireEvent.click(screen.getByTestId('select-autonomy'));
-    fireEvent.click(screen.getByTestId('make-default-confirm'));
+    fireEvent.click(await screen.findByTestId('make-default-confirm'));
 
     expect(defaultConsentDialog()).not.toBeInTheDocument();
     expect(updateConfig.mock.calls[0]![0]).toEqual({ runtimes: { defaultTrustStop: 'autonomy' } });

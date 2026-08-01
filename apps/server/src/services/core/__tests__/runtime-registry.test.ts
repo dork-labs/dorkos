@@ -762,13 +762,40 @@ describe('RuntimeRegistry', () => {
       // a session starts, would be the one place the default never applied.
       interactiveDefaults = { permissionMode: 'bypassPermissions' };
 
-      await registry.saveSessionSettings('pre-launch-stop', { model: 'sonnet' });
-      await registry.saveSessionSettings('pre-launch-chosen', { permissionMode: 'plan' });
+      await registry.saveSessionSettings(
+        'pre-launch-stop',
+        { model: 'sonnet' },
+        {
+          interactive: true,
+        }
+      );
+      await registry.saveSessionSettings(
+        'pre-launch-chosen',
+        { permissionMode: 'plan' },
+        {
+          interactive: true,
+        }
+      );
 
       const read = (id: string) =>
         db.select().from(sessionMetadata).where(eq(sessionMetadata.sessionId, id)).get();
       expect(read('pre-launch-stop')?.permissionMode).toBe('bypassPermissions');
       expect(read('pre-launch-chosen')?.permissionMode).toBe('plan');
+    });
+
+    it('withholds the trust stop from a settings write that did not claim to be interactive', async () => {
+      // The default is `false` so a future adapter has to make the claim rather
+      // than inherit the seed by saying nothing.
+      interactiveDefaults = { permissionMode: 'bypassPermissions' };
+
+      await registry.saveSessionSettings('pre-launch-unclaimed', { model: 'sonnet' });
+
+      const row = db
+        .select()
+        .from(sessionMetadata)
+        .where(eq(sessionMetadata.sessionId, 'pre-launch-unclaimed'))
+        .get();
+      expect(row?.permissionMode).toBeNull();
     });
 
     it('never lets a default reach a row that already exists', async () => {

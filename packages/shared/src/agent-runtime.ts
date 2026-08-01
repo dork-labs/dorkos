@@ -198,8 +198,21 @@ export interface RelayPort {
 export interface SessionSettingsPort {
   /** Read a session's persisted settings, or null when no row exists. */
   getSessionSettings(sessionId: string): Promise<SessionSettings | null>;
-  /** Persist (UPSERT) the provided settings fields for a session. */
-  saveSessionSettings(sessionId: string, settings: SessionSettings): Promise<void>;
+  /**
+   * Persist (UPSERT) the provided settings fields for a session.
+   *
+   * @param opts.interactive - Whether this write is a PERSON changing a session
+   *   they are watching. Only such a write may create a row carrying the
+   *   configured default trust stop (spec `trust-dial`, decision 6): an
+   *   unattended surface has its own permission mode and its own stricter gates.
+   *   Absent means `false`, so a new adapter has to say it is interactive rather
+   *   than inherit the seed by not knowing about it.
+   */
+  saveSessionSettings(
+    sessionId: string,
+    settings: SessionSettings,
+    opts?: { interactive?: boolean }
+  ): Promise<void>;
   /**
    * Move a session's stored settings to a new id, so they stay under exactly
    * one key. A runtime calls this the moment it rebinds a session to a new

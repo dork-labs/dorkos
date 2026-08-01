@@ -342,6 +342,46 @@ describe('ExecutionDefaultsCard — where new sessions start (trust-dial, decisi
     );
   });
 
+  it('says so when ONE runtime is set to run without asking, and names it', async () => {
+    // The disclosure can put a single runtime at autonomy while the shared
+    // setting reads Ask first. The server gates that write identically, so it is
+    // exactly as standing — and exactly as worth saying out loud.
+    renderCard({
+      ...DEFAULTS,
+      trustStop: 'ask',
+      perRuntime: [
+        {
+          runtime: 'claude-code',
+          model: null,
+          effort: null,
+          supportsEffort: true,
+          trustStop: 'autonomy',
+        },
+        { runtime: 'codex', model: null, effort: null, supportsEffort: true, trustStop: null },
+      ],
+    });
+
+    expect(await screen.findByTestId('default-trust-stop-standing-note')).toHaveTextContent(
+      'New sessions on Claude Code run without asking'
+    );
+  });
+
+  it('offers a runtime whose profile has not arrived a sentence, not a label over nothing', async () => {
+    // The same one-liner the binding and task dials give an agent that has not
+    // said what it can do (#681).
+    renderCard({
+      ...DEFAULTS,
+      perRuntime: [
+        { runtime: 'codex', model: null, effort: null, supportsEffort: true, trustStop: null },
+      ],
+    });
+    await userEvent.click(await screen.findByTestId('default-trust-stop-disclosure'));
+
+    expect(await screen.findByTestId('default-trust-stop-unavailable')).toHaveTextContent(
+      'hasn’t said what it can do'
+    );
+  });
+
   it('keeps the per-runtime overrides behind a disclosure', async () => {
     const { updateConfig } = renderCard();
     expect(screen.queryByTestId('default-trust-stop-per-runtime')).not.toBeInTheDocument();

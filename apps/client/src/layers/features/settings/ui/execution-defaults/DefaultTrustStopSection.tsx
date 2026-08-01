@@ -75,6 +75,17 @@ function resolveConsequence(
 }
 
 /**
+ * Name runtimes in a sentence: "Codex", "Codex and OpenCode", "A, B and C".
+ *
+ * @internal
+ */
+function listRuntimes(entries: readonly DefaultTrustStopRuntime[]): string {
+  const names = entries.map((entry) => entry.label);
+  if (names.length <= 1) return names[0] ?? '';
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
+/**
  * How much a NEW conversation may do without asking, answered once.
  *
  * Three things are load-bearing about the shape, and all three are decision 6's:
@@ -101,6 +112,11 @@ export function DefaultTrustStopSection({
 }: DefaultTrustStopSectionProps) {
   const [showPerRuntime, setShowPerRuntime] = useState(false);
   const selected = stop ?? effectiveStop;
+  // Every runtime whose EFFECTIVE answer is Full autonomy, whether that came
+  // from the shared dial or from its own override.
+  const runningWithoutAsking = runtimes.filter(
+    (entry) => resolveConsequence(entry, selected).stop === 'autonomy'
+  );
 
   return (
     <section className="flex flex-col gap-2" data-testid="default-trust-stop">
@@ -144,20 +160,34 @@ export function DefaultTrustStopSection({
         })}
       </ul>
 
-      {/* Findable, not buried: a person whose every session runs without asking
-          should be able to see that here, months later, without remembering. */}
-      {selected === 'autonomy' && (
+      {/* Findable, not buried: a person whose sessions run without asking should
+          be able to see that here, months later, without remembering they set
+          it. Fired on the EFFECTIVE resolution, not on the global selection —
+          the disclosure below can put one runtime at autonomy while the shared
+          setting reads Ask first, and the server gates that write identically,
+          so it is exactly as standing and exactly as worth saying. */}
+      {runningWithoutAsking.length > 0 && (
         <p
           className="flex items-start gap-1.5 px-1 text-xs text-red-600 dark:text-red-400"
           data-testid="default-trust-stop-standing-note"
         >
           <ShieldOff className="mt-px size-3 shrink-0" aria-hidden />
           <span>
-            New sessions run without asking —{' '}
+            {selected === 'autonomy'
+              ? 'New sessions run without asking'
+              : `New sessions on ${listRuntimes(runningWithoutAsking)} run without asking`}{' '}
+            —{' '}
             <button
               type="button"
-              className="underline underline-offset-2"
-              onClick={() => onChangeGlobal('ask')}
+              className="focus-ring rounded-sm underline underline-offset-2"
+              onClick={() => {
+                // Undo exactly what is set: the shared choice when it is the one
+                // at autonomy, otherwise each override that is.
+                if (selected === 'autonomy') onChangeGlobal('ask');
+                for (const entry of runtimes) {
+                  if (entry.stop === 'autonomy') onChangeRuntime(entry.runtime, null);
+                }
+              }}
             >
               change
             </button>
@@ -167,7 +197,7 @@ export function DefaultTrustStopSection({
 
       <button
         type="button"
-        className="text-muted-foreground hover:text-foreground flex items-center gap-1 self-start px-1 text-xs"
+        className="focus-ring text-muted-foreground hover:text-foreground flex items-center gap-1 self-start rounded-sm px-1 text-xs"
         aria-expanded={showPerRuntime}
         onClick={() => setShowPerRuntime((open) => !open)}
         data-testid="default-trust-stop-disclosure"
@@ -203,20 +233,32 @@ export function DefaultTrustStopSection({
                   )}
                 </div>
                 {/* THAT runtime's own descriptors, so the stops it cannot take
-                    are absent and the caption is its own sentence. */}
-                <TrustDial
-                  mode={
-                    resolveTrustStops(entry.descriptors).find((s) => s.stop === resolved)?.mode
-                      .id ?? ''
-                  }
-                  descriptors={entry.descriptors}
-                  strandsWorkingMode
-                  strandedNote={`${entry.label} has no setting at this stop, so new sessions start where it starts them.`}
-                  onChangeMode={(next) => {
-                    const picked = entry.descriptors.find((d) => d.id === next);
-                    if (picked) onChangeRuntime(entry.runtime, picked.stop);
-                  }}
-                />
+                    are absent and the caption is its own sentence. A runtime
+                    that has not answered yet gets the same one-liner the binding
+                    and task dials give it, rather than a label over nothing. */}
+                {entry.descriptors.length === 0 ? (
+                  <p
+                    data-testid="default-trust-stop-unavailable"
+                    className="text-muted-foreground px-1 text-xs leading-relaxed"
+                  >
+                    {entry.label} hasn’t said what it can do, so there is nothing to choose from yet
+                    — new sessions start where it starts them.
+                  </p>
+                ) : (
+                  <TrustDial
+                    mode={
+                      resolveTrustStops(entry.descriptors).find((s) => s.stop === resolved)?.mode
+                        .id ?? ''
+                    }
+                    descriptors={entry.descriptors}
+                    strandsWorkingMode
+                    strandedNote={`${entry.label} has no setting at this stop, so new sessions start where it starts them.`}
+                    onChangeMode={(next) => {
+                      const picked = entry.descriptors.find((d) => d.id === next);
+                      if (picked) onChangeRuntime(entry.runtime, picked.stop);
+                    }}
+                  />
+                )}
               </div>
             );
           })}

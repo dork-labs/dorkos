@@ -177,6 +177,42 @@ describe('a standing Full-autonomy default, end to end', () => {
     expect(patched.status).toBe(428);
   });
 
+  it('stops birthing bypassed sessions the moment the acknowledgement is Reset', async () => {
+    // The composition in reverse, and the failure it exists to make unreachable:
+    // clearing the record while the default stood left new sessions opening
+    // bypassed with no consent on file, and the cockpit's first mode change for
+    // one of them bounced off the session door — the person running without
+    // asking, unable to change it back without a dialog they thought they had
+    // just re-armed.
+    await request(app)
+      .patch('/api/config')
+      .send({
+        ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' },
+        runtimes: { defaultTrustStop: 'autonomy' },
+      })
+      .expect(200);
+
+    await request(app)
+      .patch('/api/config')
+      .send({ ui: { autonomyAcknowledgedAt: null } })
+      .expect(200);
+
+    const { runtimeRegistry } = await import('../../services/core/runtime-registry.js');
+    await runtimeRegistry.persistSessionRuntime(SESSION_ID, 'fake', undefined, {
+      interactive: true,
+    });
+
+    // Nothing seeded, because nothing is configured any more.
+    const settings = await runtimeRegistry.getSessionSettings(SESSION_ID);
+    expect(settings?.permissionMode).toBeUndefined();
+
+    // And the door asks again, which is what Reset promised.
+    const patched = await request(app)
+      .patch(`/api/sessions/${SESSION_ID}`)
+      .send({ permissionMode: autonomyModeId() });
+    expect(patched.status).toBe(428);
+  });
+
   it('starts a new session at a gentler configured stop with no ritual at all', async () => {
     await request(app)
       .patch('/api/config')

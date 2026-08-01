@@ -319,7 +319,6 @@ function LiveMakeDefaultOffer() {
           setOffered(null);
         }}
         onDismiss={() => setOffered(null)}
-        onExpire={() => setOffered(null)}
       />
       <p className="text-muted-foreground px-1 text-[10px]">
         New sessions currently start in: {madeDefault}

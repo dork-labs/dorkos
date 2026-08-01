@@ -51,7 +51,11 @@ vi.mock('@/layers/entities/session/model/use-sessions', async (importOriginal) =
 }));
 
 // updateSession spy shared across the test — exposed via a module-level holder.
-const updateSession = vi.fn();
+// Returns a promise, like the hook it stands in for: `useSessionStatus`'s
+// `updateSession` is an async function, and the status line now waits on it
+// before offering to make a stop the default (spec `trust-dial`, decision 6C).
+// A mock that answered `undefined` would be lying about the contract.
+const updateSession = vi.fn((..._args: unknown[]) => Promise.resolve(undefined));
 vi.mock('@/layers/entities/session/model/use-session-status', () => ({
   useSessionStatus: () => ({
     permissionMode: 'default',

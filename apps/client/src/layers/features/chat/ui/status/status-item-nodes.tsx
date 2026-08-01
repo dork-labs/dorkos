@@ -61,6 +61,8 @@ export interface StatusItemNodesInput {
    * or `null` when there is nothing to offer (spec `trust-dial`, decision 6C).
    */
   makeDefault: MakeDefaultStopLineProps | null;
+  /** Told whenever the permissions picker opens or closes. */
+  onPermissionPickerOpenChange: (open: boolean) => void;
   /**
    * The composer's Plan switch, or `null` when this runtime declares no way of
    * working. Resolved by the caller from the runtime's capability profile —
@@ -196,6 +198,7 @@ export function buildStatusItemNodes(
       planActive={input.plan?.active}
       compact={compactItems}
       makeDefault={input.makeDefault}
+      onOpenChange={input.onPermissionPickerOpenChange}
     />
   );
 
