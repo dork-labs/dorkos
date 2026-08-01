@@ -12,6 +12,7 @@ export {
   useRuntimeCapabilities,
   useCapabilitiesForRuntime,
 } from './model/use-runtime-capabilities';
+export type { UseRuntimeCapabilitiesOptions } from './model/use-runtime-capabilities';
 export {
   useRuntimeRequirements,
   useRuntimeReadiness,

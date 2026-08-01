@@ -3,6 +3,8 @@ covers:
   - 'feat(shared): permission modes carry machine-readable meaning'
   - 'feat(server): every runtime declares what each of its permission modes does'
   - 'feat(client): warnings about a permission mode come from what it does'
+  - 'fix(shared): a mode that cannot act cannot break an asking promise'
+  - 'fix(client): the banner fetches nothing on a page that shows no session'
 ---
 
 ### Changed

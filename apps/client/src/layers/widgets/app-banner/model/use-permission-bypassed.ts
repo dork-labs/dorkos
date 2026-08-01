@@ -17,13 +17,18 @@ import { useSafePathname } from '@/layers/shared/model';
  * back to the mode's name, which is the same answer for every runtime shipped
  * today and a better guess than silence.
  *
- * The banner is a passive reporter: it fetches the session row only on the route
- * that displays that session (the Obsidian embed is always one). Everywhere else
- * it still tracks the cache and warns off whatever is in it, but it does not go
- * request a row for a page — `/agents`, `/marketplace` — that shows nothing
- * about the session. Resolving the runtime keeps that promise: it reads the same
- * gated session row, one field over, rather than reaching for the session LIST —
- * which would drag the router in and start a query on pages that show none.
+ * The banner is a passive reporter: it fetches NOTHING on a route that displays
+ * no session (the Obsidian embed is always one). Everywhere else it still tracks
+ * the caches and warns off whatever is in them, but it does not go request a
+ * session row — or the capability map — for a page like `/agents` or
+ * `/marketplace` that shows nothing about the session.
+ *
+ * Both reads honour that gate. The runtime comes from the same session row, one
+ * field over, rather than the session LIST (which would drag the router in), and
+ * the capability lookup is short-circuited off-route so the banner is never the
+ * surface that goes and fetches `/api/capabilities` for a page that has no use
+ * for it. Off-route the name fallback answers, which is the same answer for
+ * every runtime shipped today.
  *
  * @param sessionId - The active session id, or null when none is selected.
  */
@@ -34,7 +39,7 @@ export function usePermissionBypassed(sessionId: string | null): boolean {
     enabled: isSessionRoute,
     select: (session) => session.runtime,
   });
-  const caps = useCapabilitiesForRuntime(runtime);
+  const caps = useCapabilitiesForRuntime(runtime, { enabled: isSessionRoute });
   const descriptor = caps?.permissionModes.values.find((d) => d.id === mode);
   return descriptor ? isBypassSemantics(descriptor) : isBypassPermissionMode(mode);
 }

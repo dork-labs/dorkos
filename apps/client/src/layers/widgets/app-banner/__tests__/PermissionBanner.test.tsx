@@ -175,10 +175,12 @@ describe('PermissionBanner', () => {
     expect(queryClient.getQueryData(sessionKeys.bySession('s1'))).toBeUndefined();
   });
 
-  it('does not fetch a session row on a page that shows no session', async () => {
-    // The banner reports on the session cache; it must not be the surface that
-    // goes and populates it for `/agents` or `/marketplace`, which display
-    // nothing about the session.
+  it('fetches nothing at all on a page that shows no session', async () => {
+    // The banner reports on caches other surfaces fill; it must not be the one
+    // that goes and populates them for `/agents` or `/marketplace`, which
+    // display nothing about the session. That covers the capability map as much
+    // as the session row: resolving what a mode MEANS is no excuse for a request
+    // on a page with no use for the answer.
     fixtures.pathname = '/agents';
     const transport = createMockTransport({
       getSession: vi.fn().mockResolvedValue(sessionRow('bypassPermissions')),
@@ -189,6 +191,7 @@ describe('PermissionBanner', () => {
 
     await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
     expect(transport.getSession).not.toHaveBeenCalled();
+    expect(transport.getCapabilities).not.toHaveBeenCalled();
 
     // It still warns off a cache another surface already filled — the gate stops
     // it fetching, not reading.
@@ -199,6 +202,9 @@ describe('PermissionBanner', () => {
     rerender(<PermissionBanner sessionId="s1" />);
     expect(await screen.findByRole('status')).toHaveTextContent('All permissions bypassed');
     expect(transport.getSession).not.toHaveBeenCalled();
+    // Off-route it still warns without a profile: the name fallback answers, and
+    // it did not go and fetch one to be sure.
+    expect(transport.getCapabilities).not.toHaveBeenCalled();
   });
 
   it('stays silent when no session is selected', async () => {
