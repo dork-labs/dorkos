@@ -8,6 +8,10 @@ allowed-tools: Read, Grep, Glob, Bash, Agent, TodoWrite, AskUserQuestion
 
 Systematically analyze server logs from the `.dork/logs/` directory to diagnose errors, exceptions, API failures, and unexpected behavior. DorkOS uses **NDJSON structured logging** — each line is a JSON object that can be filtered with `jq`.
 
+> **Read [`contributing/observability.md`](../../../contributing/observability.md) first.** It is the reference for what the log contains and how to read it: the field list, the level table, the refusal rule (`reason` + `visibility`), the tag registry, and a worked end-to-end walkthrough of a room incident.
+>
+> **`dispatchId` is the first filter to reach for.** One `dsp_<ULID>` joins every hop of one message's life — the room entry, the claim, the turn, the reply, the relay delivery — so `jq -c 'select(.dispatchId=="dsp_…")' "$L"` reconstructs a single exchange in order instead of guessing from timestamps. Start there, then widen. When the server is still running, `dorkos debug dispatches` and `dorkos debug refusals` answer what the log cannot, because the state is only in memory.
+
 ## Log System Overview
 
 - **Format**: NDJSON (newline-delimited JSON)
@@ -106,7 +110,9 @@ for line in sys.stdin:
 
 ### 2.2 Filter by Component Tag
 
-Common tags in the codebase:
+The `tag` field is populated for any line whose message opens with a `[tag]` prefix — the file reporter lifts it out — so `jq 'select(.tag=="rooms")'` matches. The dispatch-path tags (`rooms`, `stall-guard`, `relay`, `claude-code`, `canUseTool`, `DorkOS`) are registered in `contributing/observability.md` §4.2, which also carries the command that lists every tag currently in use.
+
+Other common tags in the codebase:
 
 | Tag                  | Component                |
 | -------------------- | ------------------------ |

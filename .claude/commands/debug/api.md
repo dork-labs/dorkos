@@ -8,6 +8,8 @@ allowed-tools: Read, Write, Edit, Grep, Glob, Bash, Agent, TodoWrite, AskUserQue
 
 Debug data-related issues by systematically tracing through the project's data flow layers. This command helps with API failures, data mismatches, stale cache, and service errors.
 
+> **For anything on the messaging path** — a room, a session turn, a task run, a chat integration — read [`contributing/observability.md`](../../../contributing/observability.md) and start from **`dispatchId`**. One `dsp_<ULID>` joins every hop of one message's life, so `jq -c 'select(.dispatchId=="dsp_…")'` gives you the whole chain in order rather than a layer at a time. If the server is still up, `dorkos debug session <id>` answers what is only in memory: the lifecycle, the write lock, and what the turn is parked on.
+
 ## Project Data Flow Architecture
 
 ```
@@ -73,6 +75,17 @@ for line in sys.stdin:
             print(f\"[{obj.get('time','')}] {obj.get('msg','')}\"[:200])
     except: pass
 " | tail -20
+```
+
+### 2.2b Read the live state, not just the file
+
+The log is the durable record; several answers only exist in process memory and are gone on restart.
+
+```bash
+dorkos debug dispatches        # agents mid-turn, and what ran recently
+dorkos debug refusals          # what was declined, and whether anyone was told
+dorkos debug session <id>      # lifecycle, lock holder, pending approvals
+dorkos debug projectors        # which sessions have a live stream, and who is watching
 ```
 
 ### 2.3 Identify the Data Path
