@@ -7,7 +7,7 @@
 import { Fragment, useCallback, useId, useMemo } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import type { MessagePart } from '@dorkos/shared/types';
-import { cn, getPlatform } from '@/layers/shared/lib';
+import { cn, getPlatform, revealCanvas } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
 import { accumulateTouchChips, type TouchChip as TouchChipData } from '../../lib/touch-chips';
 import { CHIP_FADE, CHIP_SETTLE, LIVE_WINDOW } from './chip-motion';
@@ -151,41 +151,44 @@ export function TouchChipStrip({ parts, turnActive = false }: TouchChipStripProp
   const [expanded, toggleExpanded] = useTrayExpansion(
     useMemo(() => trayExpansionKey(sessionId, parts), [sessionId, parts])
   );
-  const openCanvasDocument = useAppStore((s) => s.openCanvasDocument);
-  const setCanvasOpen = useAppStore((s) => s.setCanvasOpen);
+  const handleOpen = useCallback((chip: TouchChipData) => {
+    const embedded = getPlatform().isEmbedded;
 
-  const handleOpen = useCallback(
-    (chip: TouchChipData) => {
-      const embedded = getPlatform().isEmbedded;
+    // A glob names a set of files, so there is no one file to open — handing
+    // `src/**/*.ts` to the canvas opens an empty document named after the
+    // pattern. The chip says so in its tooltip and does nothing here.
+    if (chip.pattern === true) return;
 
-      // A glob names a set of files, so there is no one file to open — handing
-      // `src/**/*.ts` to the canvas opens an empty document named after the
-      // pattern. The chip says so in its tooltip and does nothing here.
-      if (chip.pattern === true) return;
+    // Opening a document and SHOWING it are two different acts, and a chip owes
+    // the reader both: the canvas lives in the right panel, which stays shut at
+    // width zero unless something opens it (DOR-97). `revealCanvas` is the one
+    // path that does all of it, shared with every agent-driven open — a chip
+    // that wrote `canvasOpen` alone put the document somewhere nobody could see
+    // it (DOR-829). `'user'` because a person pressed the chip, so the canvas
+    // tab is their choice and is remembered as one.
+    const store = useAppStore.getState();
 
-      if (chip.kind === 'url') {
-        // No canvas inside Obsidian, so the page opens where it can: a new tab.
-        if (embedded) {
-          window.open(chip.fullTarget, '_blank', 'noopener,noreferrer');
-          return;
-        }
-        openCanvasDocument({ type: 'url', url: chip.fullTarget });
-        setCanvasOpen(true);
+    if (chip.kind === 'url') {
+      // No canvas inside Obsidian, so the page opens where it can: a new tab.
+      if (embedded) {
+        window.open(chip.fullTarget, '_blank', 'noopener,noreferrer');
         return;
       }
+      store.openCanvasDocument({ type: 'url', url: chip.fullTarget });
+      revealCanvas(store, 'user');
+      return;
+    }
 
-      if (chip.kind === 'file') {
-        // A file chip in the plugin is a record with a tooltip and nothing more —
-        // there is no pane to open it into. Revisit when that surface is verified.
-        if (embedded) return;
-        openCanvasDocument({ type: 'file', sourcePath: chip.fullTarget });
-        setCanvasOpen(true);
-      }
+    if (chip.kind === 'file') {
+      // A file chip in the plugin is a record with a tooltip and nothing more —
+      // there is no pane to open it into. Revisit when that surface is verified.
+      if (embedded) return;
+      store.openCanvasDocument({ type: 'file', sourcePath: chip.fullTarget });
+      revealCanvas(store, 'user');
+    }
 
-      // A bare command or a search pattern has no target to open.
-    },
-    [openCanvasDocument, setCanvasOpen]
-  );
+    // A bare command or a search pattern has no target to open.
+  }, []);
 
   const groups = useMemo(() => groupChipsByVerb(chips), [chips]);
   // The turn is the authority. A tool still in flight keeps the row up for a

@@ -81,7 +81,13 @@ function sawTestId(moved: HTMLElement[], testId: string): boolean {
 }
 
 beforeEach(() => {
-  useAppStore.setState({ openDocuments: [], activeDocumentId: null, canvasOpen: false });
+  useAppStore.setState({
+    openDocuments: [],
+    activeDocumentId: null,
+    canvasOpen: false,
+    rightPanelOpen: false,
+    activeRightPanelTab: null,
+  });
   // Tray state outlives the strip on purpose (DOR-827), so it also outlives a
   // test — every case here starts from a shut tray, the way a fresh tab does.
   useTrayExpansionStore.setState({ open: {} });
@@ -521,21 +527,33 @@ describe('TouchChipStrip — the disclosure', () => {
   });
 });
 
+/**
+ * Everything that has to be true for a document to be ON SCREEN, not merely in
+ * the store: the canvas lives in the right panel, so a document opened without
+ * opening that panel and selecting its tab is invisible (DOR-829).
+ */
+function canvasState() {
+  const { openDocuments, canvasOpen, rightPanelOpen, activeRightPanelTab } = useAppStore.getState();
+  return { openDocuments, canvasOpen, rightPanelOpen, activeRightPanelTab };
+}
+
 describe('TouchChipStrip — clicking through to the canvas', () => {
-  it('opens a file chip as a canvas file document', async () => {
+  it('opens a file chip as a canvas file document, and shows it', async () => {
     const user = userEvent.setup();
     render(<TouchChipStrip parts={mixedParts()} />);
 
     const tray = await openTray(user);
     await user.click(within(tray).getByRole('button', { name: 'Read /repo/src/a.ts' }));
 
-    const { openDocuments, canvasOpen } = useAppStore.getState();
+    const { openDocuments, canvasOpen, rightPanelOpen, activeRightPanelTab } = canvasState();
     expect(openDocuments).toHaveLength(1);
     expect(openDocuments[0].content).toEqual({ type: 'file', sourcePath: '/repo/src/a.ts' });
     expect(canvasOpen).toBe(true);
+    expect(rightPanelOpen).toBe(true);
+    expect(activeRightPanelTab).toBe('canvas');
   });
 
-  it('opens a URL chip as a canvas url document', async () => {
+  it('opens a URL chip as a canvas url document, and shows it', async () => {
     const user = userEvent.setup();
     render(<TouchChipStrip parts={mixedParts()} />);
 
@@ -544,9 +562,12 @@ describe('TouchChipStrip — clicking through to the canvas', () => {
       within(tray).getByRole('button', { name: 'Fetched https://example.com/page' })
     );
 
-    const { openDocuments } = useAppStore.getState();
+    const { openDocuments, canvasOpen, rightPanelOpen, activeRightPanelTab } = canvasState();
     expect(openDocuments).toHaveLength(1);
     expect(openDocuments[0].content).toEqual({ type: 'url', url: 'https://example.com/page' });
+    expect(canvasOpen).toBe(true);
+    expect(rightPanelOpen).toBe(true);
+    expect(activeRightPanelTab).toBe('canvas');
   });
 
   it('opens nothing for a glob pattern, and says why in the tooltip', async () => {
@@ -559,7 +580,12 @@ describe('TouchChipStrip — clicking through to the canvas', () => {
     const chip = within(tray).getByTestId('touch-chip');
     await user.click(chip);
 
-    expect(useAppStore.getState().openDocuments).toHaveLength(0);
+    expect(canvasState()).toEqual({
+      openDocuments: [],
+      canvasOpen: false,
+      rightPanelOpen: false,
+      activeRightPanelTab: null,
+    });
     expect(chip.getAttribute('title')).toContain('A pattern, not one file');
   });
 
@@ -570,7 +596,14 @@ describe('TouchChipStrip — clicking through to the canvas', () => {
     const tray = await openTray(user);
     await user.click(within(tray).getByRole('button', { name: 'Ran pnpm test' }));
 
-    expect(useAppStore.getState().openDocuments).toHaveLength(0);
+    // Not just "no document": a chip with nowhere to go must not throw the
+    // reader's panel open at them either.
+    expect(canvasState()).toEqual({
+      openDocuments: [],
+      canvasOpen: false,
+      rightPanelOpen: false,
+      activeRightPanelTab: null,
+    });
   });
 
   it('leaves a file chip inert inside the plugin, where there is no canvas', async () => {
@@ -581,7 +614,12 @@ describe('TouchChipStrip — clicking through to the canvas', () => {
     const tray = await openTray(user);
     await user.click(within(tray).getByRole('button', { name: 'Read /repo/src/a.ts' }));
 
-    expect(useAppStore.getState().openDocuments).toHaveLength(0);
+    expect(canvasState()).toEqual({
+      openDocuments: [],
+      canvasOpen: false,
+      rightPanelOpen: false,
+      activeRightPanelTab: null,
+    });
   });
 });
 
