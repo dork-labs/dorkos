@@ -14,24 +14,32 @@
  * list anywhere below; every entry gets there the way it gets there in the app.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { renderHook, waitFor, act } from '@testing-library/react';
+import { renderHook, render, screen, waitFor, act } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Session } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
+import { TooltipProvider } from '@/layers/shared/ui';
 import {
   useSessions,
   useRecentSessions,
   useRenameSession,
   useGlobalSessionStream,
   useSessionListStore,
+  useSessionDetail,
+  useSessionStatus,
+  useSessionSettingsOverridesStore,
   resolveSessionForCwd,
+  SessionRow,
 } from '@/layers/entities/session';
 import { sessionRouteLoader } from '../router';
 
-const CWD = '/projects/api';
+// Hoisted so the `app-store` mock factory below — which vitest lifts above every
+// top-level statement — can read it without touching the temporal dead zone.
+const { CWD } = vi.hoisted(() => ({ CWD: '/projects/api' }));
 
 // The global stream's `connectList()` must not open a real SSE fetch in jsdom.
 // Everything else about the bridge stays real — it is the writer under test.
@@ -52,9 +60,16 @@ vi.mock('@/layers/entities/session/model/use-session-id', () => ({
   useSessionId: () => [null, vi.fn()] as const,
 }));
 
-vi.mock('@/layers/shared/model/app-store', () => ({
-  useAppStore: () => ({ selectedCwd: CWD }),
-}));
+// Both call styles are in use: `useSessions` destructures the whole store,
+// `useSessionDetail` passes a selector. A mock that answers only the first hands
+// the selector caller the state object where it expects a cwd string, which
+// empties the detail key and quietly disables the very query under test.
+vi.mock('@/layers/shared/model/app-store', () => {
+  const state = { selectedCwd: CWD };
+  return {
+    useAppStore: <T,>(select?: (s: typeof state) => T) => (select ? select(state) : state),
+  };
+});
 
 function makeSession(overrides: Partial<Session> = {}): Session {
   return {
@@ -125,6 +140,7 @@ function retireAnnounce(retiredSessionId: string, sessionId: string) {
 beforeEach(() => {
   vi.clearAllMocks();
   useSessionListStore.setState({ sessions: {}, rekeys: {} });
+  useSessionSettingsOverridesStore.setState({ bySession: {} });
 });
 
 describe('session list: one writer, many readers', () => {
@@ -242,5 +258,205 @@ describe('session list: what may live under the list prefix', () => {
 
     expect(result.current.recent.data?.agentActivity).toEqual(AGENT_ACTIVITY);
     expect(result.current.recent.data?.sessions.map((s) => s.id)).toEqual(['client-uuid']);
+  });
+});
+
+/**
+ * The rail's bypass shield, against the two caches that both claim to know a
+ * session's permission mode.
+ *
+ * A row reads the detail cache first and its own list row second. The detail
+ * entry belongs to whichever session the person last had open, and a row holds
+ * it open forever without ever refetching it — so the two can disagree, and the
+ * older one used to win. Every case below therefore mounts the REAL writers and
+ * lets each cache fill the way it fills in the app: seeding the detail key by
+ * hand is precisely the move that made the first round of these tests pass while
+ * the rail went quiet about a bypassing session (DOR-496).
+ */
+describe('session permission mode: the fresher answer wins', () => {
+  /** What the chat panel mounts while a session is open — the one fetch that fills the detail cache. */
+  function OpenSession({ sessionId }: { sessionId: string }) {
+    const { data } = useSessionDetail(sessionId);
+    return <span data-testid="open-session-mode">{data?.permissionMode ?? 'pending'}</span>;
+  }
+
+  /** The status line's real writer: applies optimism, PATCHes, writes the detail cache back. */
+  function StatusLine({ sessionId }: { sessionId: string }) {
+    const { updateSession } = useSessionStatus(sessionId, null, false);
+    return (
+      <button
+        type="button"
+        onClick={() => void updateSession({ permissionMode: 'bypassPermissions' })}
+      >
+        Switch to bypass
+      </button>
+    );
+  }
+
+  /** The sidebar rail, rendered from the same list cache the app renders it from. */
+  function Rail({ openSessionId }: { openSessionId: string | null }) {
+    useGlobalSessionStream();
+    const { sessions } = useSessions();
+    return (
+      <TooltipProvider>
+        {openSessionId !== null && (
+          <>
+            <OpenSession sessionId={openSessionId} />
+            <StatusLine sessionId={openSessionId} />
+          </>
+        )}
+        {sessions.map((session) => (
+          <SessionRow
+            key={session.id}
+            variant="full"
+            session={session}
+            isActive={false}
+            onClick={() => {}}
+          />
+        ))}
+      </TooltipProvider>
+    );
+  }
+
+  it('warns when a session starts bypassing after the person moved on from it', async () => {
+    // Red when: the row prefers a detail row nothing refreshes over the list row
+    // the `/api/events` bridge just wrote. The shield sits in the always-visible
+    // header, so a bypassing session loses its warning in the rail at a glance —
+    // the inverse of the property this indicator exists for (DOR-496).
+    const getSession = vi.fn().mockResolvedValue(makeSession({ permissionMode: 'default' }));
+    const { wrapper } = createHarness([makeSession({ permissionMode: 'default' })], { getSession });
+
+    const { rerender } = render(<Rail openSessionId="listed-1" />, { wrapper });
+    await waitFor(() =>
+      expect(screen.getByTestId('open-session-mode')).toHaveTextContent('default')
+    );
+    expect(screen.queryByLabelText('Permissions bypassed')).not.toBeInTheDocument();
+
+    // The person moves on. Their detail row stays in the cache: the rail's own
+    // read keeps a live observer on it, so it is never collected — and it is
+    // gated off from fetching, so it is never refreshed either.
+    rerender(<Rail openSessionId={null} />);
+
+    // The mode changes somewhere else — another window, a dispatched task — and
+    // reaches this client the only way live list changes ever do.
+    act(() => {
+      useSessionListStore.getState().applyListEvent({
+        type: 'session_upserted',
+        session: makeSession({
+          permissionMode: 'bypassPermissions',
+          updatedAt: '2026-03-02T00:00:00.000Z',
+        }),
+      });
+    });
+
+    expect(await screen.findByLabelText('Permissions bypassed')).toBeInTheDocument();
+  });
+
+  it('warns about a bypass only the runtime profile can name', async () => {
+    // The same staleness read through the row's other half. A row judges the mode
+    // by what its runtime declared the mode DOES whenever the capability map has
+    // landed, and by the mode's name only until then. `dontAsk` is the live case:
+    // no hardcoded name list knows it, so the profile is the only thing that can
+    // say it never asks. Both halves read the SAME mode string, so both inherit
+    // the same stale answer — red here means a fix that satisfies the four names
+    // DorkOS hardcodes would still leave this one silent.
+    const getSession = vi.fn().mockResolvedValue(makeSession({ permissionMode: 'default' }));
+    const { wrapper } = createHarness([makeSession({ permissionMode: 'default' })], {
+      getSession,
+      getCapabilities: vi.fn().mockResolvedValue({
+        defaultRuntime: 'claude-code',
+        capabilities: {
+          'claude-code': {
+            type: 'claude-code',
+            permissionModes: {
+              supported: true,
+              values: [
+                {
+                  id: 'default',
+                  label: 'Default',
+                  stop: 'ask',
+                  asks: 'always',
+                  reach: 'edit',
+                  promise: 'Asks before it edits a file or runs a command.',
+                },
+                {
+                  id: 'dontAsk',
+                  label: "Don't Ask",
+                  stop: 'autonomy',
+                  asks: 'never',
+                  reach: 'everything',
+                  promise: 'Runs everything without asking.',
+                },
+              ],
+            },
+            features: {},
+          },
+        },
+      }),
+    });
+
+    const { rerender } = render(<Rail openSessionId="listed-1" />, { wrapper });
+    await waitFor(() =>
+      expect(screen.getByTestId('open-session-mode')).toHaveTextContent('default')
+    );
+    rerender(<Rail openSessionId={null} />);
+
+    act(() => {
+      useSessionListStore.getState().applyListEvent({
+        type: 'session_upserted',
+        session: makeSession({
+          permissionMode: 'dontAsk',
+          updatedAt: '2026-03-02T00:00:00.000Z',
+        }),
+      });
+    });
+
+    expect(await screen.findByLabelText('Permissions bypassed')).toBeInTheDocument();
+  });
+
+  it('warns about a session the person has never opened, without fetching it', async () => {
+    // The reason the detail row outranks the caller's fallback in the first
+    // place: a detail-only answer would report `'default'` — a specific claim —
+    // for every session nobody has opened. Red when a fix trades this bug for
+    // that one, or when a rail of rows starts costing a request per row.
+    const getSession = vi.fn();
+    const { wrapper } = createHarness([makeSession({ permissionMode: 'bypassPermissions' })], {
+      getSession,
+    });
+
+    render(<Rail openSessionId={null} />, { wrapper });
+
+    expect(await screen.findByLabelText('Permissions bypassed')).toBeInTheDocument();
+    expect(getSession).not.toHaveBeenCalled();
+  });
+
+  it('warns the moment the person switches the open session to bypass', async () => {
+    // The other direction: the PATCH answer is the freshest thing anyone holds,
+    // and the list row will not hear about it until the runtime's watcher fires.
+    // Red when a fix makes the caller's list row outrank the detail cache — the
+    // rail would then go quiet about a bypass the person just switched on.
+    const getSession = vi.fn().mockResolvedValue(makeSession({ permissionMode: 'default' }));
+    const updateSession = vi
+      .fn()
+      .mockResolvedValue(makeSession({ permissionMode: 'bypassPermissions' }));
+    const { wrapper } = createHarness([makeSession({ permissionMode: 'default' })], {
+      getSession,
+      updateSession,
+    });
+
+    render(<Rail openSessionId="listed-1" />, { wrapper });
+    await waitFor(() =>
+      expect(screen.getByTestId('open-session-mode')).toHaveTextContent('default')
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Switch to bypass' }));
+
+    expect(await screen.findByLabelText('Permissions bypassed')).toBeInTheDocument();
+    // Not merely the optimistic flash: the row must still warn once the PATCH
+    // has settled and the optimistic override has been dropped.
+    await waitFor(() =>
+      expect(useSessionSettingsOverridesStore.getState().bySession['listed-1']).toBeUndefined()
+    );
+    expect(screen.getByLabelText('Permissions bypassed')).toBeInTheDocument();
   });
 });

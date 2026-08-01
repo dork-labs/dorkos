@@ -4,6 +4,7 @@ import { useSessionId } from './use-session-id';
 // Same-slice import via the sibling module (not the entities/session barrel) to
 // avoid a self-referential barrel import within this slice.
 import { sessionKeys } from '../api/query-keys';
+import { syncSessionDetailCache } from '../lib/sync-session-detail-cache';
 import type { Session, SessionListWarning, SessionOrigin } from '@dorkos/shared/types';
 
 /**
@@ -53,6 +54,12 @@ export function useSessions() {
         sessionListWarningsKey(selectedCwd),
         warnings ?? []
       );
+      // These rows are the same answer the detail endpoint gives, so any detail
+      // entry they cover is refreshed too. A refetch triggered from elsewhere —
+      // a Claude account switch, an agent-hub rename — would otherwise leave a
+      // frozen detail entry outranking a list row that had just been corrected
+      // (DOR-496).
+      syncSessionDetailCache(queryClient, sessions);
       return sessions;
     },
     enabled: selectedCwd !== null,
