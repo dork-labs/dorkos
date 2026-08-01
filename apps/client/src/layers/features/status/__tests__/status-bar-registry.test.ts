@@ -281,7 +281,16 @@ describe('gitPromotionState', () => {
 describe('isPinnable', () => {
   it('allows pinning exactly the Session rows that can appear in the line', () => {
     const pinnable = STATUS_BAR_REGISTRY.filter(isPinnable).map((item) => item.key);
-    expect(pinnable).toEqual(['cwd', 'git', 'runtime', 'model', 'context', 'usage', 'permission']);
+    expect(pinnable).toEqual([
+      'cwd',
+      'git',
+      'runtime',
+      'model',
+      'context',
+      'usage',
+      'permission',
+      'plan',
+    ]);
   });
 
   it('refuses to pin diagnostics rows', () => {

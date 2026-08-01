@@ -25,7 +25,7 @@ import {
 import { statusRowValue, type SessionDiagnostics } from '../model/session-diagnostics';
 import { CopyDiagnosticsButton } from './CopyDiagnosticsButton';
 
-/** The two settings that live in the panel rather than the line. */
+/** The settings the panel operates rather than merely reports. */
 export interface SessionControls {
   /** Whether a sound plays when a turn finishes. */
   sound: boolean;
@@ -35,6 +35,14 @@ export interface SessionControls {
   refresh: boolean;
   /** Flip the background-refresh setting. */
   onToggleRefresh: () => void;
+  /**
+   * Planning, when the runtime offers a way of working — `null` when it does
+   * not, and the row is then left out entirely rather than shown disabled.
+   *
+   * The panel carries it because the status line's width budget can drop the
+   * chip on a narrow bar, and planning must not be reachable only on a wide one.
+   */
+  plan: { active: boolean; onToggle: (next: boolean) => void } | null;
 }
 
 /** An action urgent enough to lead the panel on a phone, where the line has no room for it. */
@@ -154,16 +162,18 @@ export function SessionPopover({
               <h3 className="text-muted-foreground px-1 text-xs font-medium tracking-wide uppercase">
                 {group.label}
               </h3>
-              {sortRows(group.items, isMobile ? promotionContext : null).map((item) => (
-                <SessionRow
-                  key={item.key}
-                  item={item}
-                  value={statusRowValue(item.key, diagnostics)}
-                  pinned={pinned.has(item.key)}
-                  onTogglePin={isPinnable(item) ? () => toggle(item.key) : null}
-                  control={renderControl(item.key, controls)}
-                />
-              ))}
+              {sortRows(visibleRows(group.items, controls), isMobile ? promotionContext : null).map(
+                (item) => (
+                  <SessionRow
+                    key={item.key}
+                    item={item}
+                    value={statusRowValue(item.key, diagnostics)}
+                    pinned={pinned.has(item.key)}
+                    onTogglePin={isPinnable(item) ? () => toggle(item.key) : null}
+                    control={renderControl(item.key, controls)}
+                  />
+                )
+              )}
               {group.group === 'diagnostics' && (
                 <>
                   <PlainRow label="Queued messages" value={String(diagnostics.queueDepth)} />
@@ -206,7 +216,22 @@ function sortRows(
   return [...items].sort((a, b) => b.severity(ctx) - a.severity(ctx));
 }
 
-/** The Controls group's own switches — every other row has no control. */
+/**
+ * Rows whose subject exists for this session. A registry item is a claim that
+ * the item CAN appear; a runtime that declares no way of working has no Plan to
+ * report, and a row reading "Plan —" would be a question the session cannot
+ * answer.
+ *
+ * @internal
+ */
+function visibleRows(
+  items: StatusBarItemConfig[],
+  controls: SessionControls
+): StatusBarItemConfig[] {
+  return items.filter((row) => row.key !== 'plan' || controls.plan !== null);
+}
+
+/** The rows that operate something rather than report it. */
 function renderControl(key: StatusBarItemKey, controls: SessionControls): ReactNode {
   if (key === 'sound') {
     return (
@@ -223,6 +248,15 @@ function renderControl(key: StatusBarItemKey, controls: SessionControls): ReactN
         checked={controls.refresh}
         onCheckedChange={controls.onToggleRefresh}
         aria-label="Keep checking for updates in the background"
+      />
+    );
+  }
+  if (key === 'plan' && controls.plan) {
+    return (
+      <Switch
+        checked={controls.plan.active}
+        onCheckedChange={controls.plan.onToggle}
+        aria-label="Work out a plan first, and change nothing until you approve it"
       />
     );
   }

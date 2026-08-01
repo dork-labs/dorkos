@@ -391,10 +391,11 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
     label: 'Plan',
     description: 'Work out a plan first, and change nothing until you approve it',
     cluster: 'right',
-    // No popover row on purpose: the panel's rows report what a session IS, with
-    // a pin beside each. This is a control you reach for mid-work, like the
-    // agent chip, and a row that reported "Plan: off" would be wallpaper.
-    group: null,
+    // A Session row, and pinnable, because the line's width budget can drop this
+    // item on a narrow bar (a phone, the Obsidian panel) — and an item you can
+    // only reach in the line is an item a narrow bar can take away. The row
+    // carries the same switch, so planning stays reachable at every width.
+    group: 'session',
     icon: ClipboardList,
     // Offered whenever the runtime has one, on or off — a switch nobody can find
     // is not a switch. Runtimes that declare no way of working render nothing at
