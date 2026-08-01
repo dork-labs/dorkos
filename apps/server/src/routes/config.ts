@@ -243,6 +243,12 @@ router.get('/', async (_req, res) => {
       sidebar: configManager.get('ui')?.sidebar ?? SIDEBAR_PREFS_DEFAULTS,
       shapes: configManager.get('ui')?.shapes ?? SHAPE_USER_PREFS_DEFAULTS,
       statusBar: configManager.get('ui')?.statusBar ?? STATUS_BAR_PREFS_DEFAULTS,
+      // The standing Full-autonomy acknowledgement (spec `trust-dial`,
+      // decision 5). On the wire because the cockpit needs it on two surfaces:
+      // it sends the standing ack with every autonomy PATCH so the server's door
+      // opens without a second dialog, and Settings shows the date back with a
+      // way to clear it. `?? null` covers the pre-migration read window only.
+      autonomyAcknowledgedAt: configManager.get('ui')?.autonomyAcknowledgedAt ?? null,
     },
   });
 });

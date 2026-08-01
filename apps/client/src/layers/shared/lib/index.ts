@@ -60,6 +60,7 @@ export {
   isDivergent,
   warnTier,
   isBypassSemantics,
+  isAutonomyStop,
   isWorkingMode,
   resolveTrustStops,
   findWorkingMode,

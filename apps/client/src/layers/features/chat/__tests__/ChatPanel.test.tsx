@@ -6,6 +6,18 @@ import { useExtensionRegistry, createInitialSlots } from '@/layers/shared/model'
 
 // Mock useIsMobile — default to mobile
 const mockUseIsMobile = vi.fn(() => true);
+// The Trust Dial reads the standing Full-autonomy acknowledgement from user
+// config before it sends one. Stubbed to "nobody has acknowledged anything",
+// which is the shipped state and the one every case below assumes.
+vi.mock('@/layers/entities/config/model/use-autonomy-acknowledgement', () => ({
+  useAutonomyAcknowledgement: () => ({
+    acknowledgedAt: null,
+    acknowledge: vi.fn(),
+    clear: vi.fn(),
+    isPending: false,
+  }),
+}));
+
 vi.mock('@/layers/shared/model/media/use-is-mobile', () => ({
   useIsMobile: () => mockUseIsMobile(),
 }));

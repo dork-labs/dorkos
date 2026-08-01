@@ -734,6 +734,37 @@ export const UserConfigSchema = z.object({
       })),
       /** Person-scoped status-line pins (DOR-431, DOR-452). */
       statusBar: StatusBarPrefsSchema.default(() => ({ pins: [] })),
+      /**
+       * When this person last read what Full autonomy means and said "don't ask
+       * me again", as an ISO 8601 UTC string. `null` until they do, which is the
+       * shipped state (spec `trust-dial`, decision 5).
+       *
+       * A timestamp rather than a boolean because the record is only worth
+       * keeping if it says WHEN: Settings shows the date back, and a person who
+       * cannot remember agreeing to anything can see the moment they did and
+       * clear it.
+       *
+       * ## This is a consent ritual, not a security boundary
+       *
+       * Read that sentence before building anything on this field. The server
+       * refuses to put an interactive session into Full autonomy unless the
+       * request carries an acknowledgement — either `acknowledgedAutonomy: true`
+       * on the PATCH, or this standing record. That closes the gap where a
+       * *client* could skip the dialog. It does NOT stop an API caller: anything
+       * that can reach the route can send `acknowledgedAutonomy: true` itself,
+       * and nothing here would know the difference. The boundary against agent
+       * callers is a separate piece of work (`agent-approval-settings`, DOR-501)
+       * and this field is not it. Do not describe it as one.
+       *
+       * Lives under `ui` rather than `approvals` on purpose. `approvals.*` is
+       * security policy — every leaf there requires login to write, because those
+       * settings decide what the approval gate enforces. This one decides what a
+       * dialog does, and requiring login to dismiss a dialog would make the
+       * feature unreachable on the default login-off install. It is still
+       * `operator-only` to write, so an agent cannot forge a person's consent
+       * record.
+       */
+      autonomyAcknowledgedAt: z.string().datetime().nullable().default(null),
     })
     .default(() => ({
       theme: 'system' as const,
@@ -757,6 +788,7 @@ export const UserConfigSchema = z.object({
         autoFollowAgent: false,
       },
       statusBar: { pins: [] },
+      autonomyAcknowledgedAt: null,
     })),
   logging: LoggingConfigSchema.default(() => ({
     level: 'info' as const,

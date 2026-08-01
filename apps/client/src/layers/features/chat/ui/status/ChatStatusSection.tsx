@@ -35,7 +35,8 @@ import {
   applyStatusBudget,
   type StatusPromotionContext,
 } from '@/layers/features/status';
-import { findWorkingMode } from '@/layers/shared/lib';
+import { findWorkingMode, isAutonomyStop } from '@/layers/shared/lib';
+import { useAutonomyAcknowledgement } from '@/layers/entities/config';
 import { compactComposerGate } from '../../model/build-palette-commands';
 import { useCompactionChip } from '../../model/status/use-compaction-chip';
 import { useUsageReveal } from '../../model/use-usage-reveal';
@@ -142,6 +143,51 @@ export function ChatStatusSection({
   const recordAutonomyConfirmed = useSessionChatStore((s) => s.recordAutonomyConfirmed);
   const [pendingAutonomy, setPendingAutonomy] = useState<PermissionModeDescriptor | null>(null);
 
+  // The standing acknowledgement, off the config query the cockpit already
+  // subscribes to — no extra request. Present means this person has read what
+  // Full autonomy means and asked not to be told again.
+  const autonomyAck = useAutonomyAcknowledgement();
+
+  /**
+   * Whether this cockpit has an acknowledgement it can honestly assert for the
+   * server's autonomy door — the person's standing record, or the confirmation
+   * they gave in this session.
+   */
+  const canAssertAutonomyAck = autonomyAck.acknowledgedAt !== null || hasConfirmedAutonomy;
+
+  /**
+   * Write one mode, attaching the autonomy acknowledgement when the mode needs
+   * one.
+   *
+   * Every path that changes the mode goes through here, not just the dial: the
+   * Plan toggle restores whatever the session was on before planning, and that
+   * can be Full autonomy. A path that forgot the flag would 428 on the one click
+   * a person takes to get OUT of planning.
+   *
+   * A refusal is a question, not a fault. If the server says an acknowledgement
+   * is required — another tab cleared the standing record, or this client's copy
+   * of it is stale — the dialog opens instead of an error nobody can act on.
+   */
+  const applyMode = useCallback(
+    (nextMode: PermissionMode) => {
+      const descriptor = declaredModes.find((d) => d.id === nextMode);
+      const needsAck = descriptor !== undefined && isAutonomyStop(descriptor);
+      void status.updateSession(
+        {
+          permissionMode: nextMode,
+          ...(needsAck && canAssertAutonomyAck ? { acknowledgedAutonomy: true } : {}),
+        },
+        {
+          onError: (err) => {
+            if ((err as { code?: string })?.code !== 'AUTONOMY_ACK_REQUIRED') return;
+            if (descriptor) setPendingAutonomy(descriptor);
+          },
+        }
+      );
+    },
+    [declaredModes, canAssertAutonomyAck, status, setPendingAutonomy]
+  );
+
   const handleChangeMode = useCallback(
     (nextMode: PermissionMode) => {
       if (nextMode === 'auto' && !hasConfirmedAuto) {
@@ -153,21 +199,18 @@ export function ChatStatusSection({
       // notices they did not mean it, it has already happened. The dial selects
       // on arrow keys as well as clicks, which is the other half of why this
       // cannot be a straight write (`loop={false}` is the first half).
+      //
+      // Asking here is a courtesy, not the gate — the server refuses the write
+      // outright without an acknowledgement, so skipping this branch would land
+      // on the same dialog by a worse route.
       const descriptor = declaredModes.find((d) => d.id === nextMode);
-      if (descriptor?.stop === 'autonomy' && !hasConfirmedAutonomy) {
+      if (descriptor && isAutonomyStop(descriptor) && !canAssertAutonomyAck) {
         setPendingAutonomy(descriptor);
         return;
       }
-      status.updateSession({ permissionMode: nextMode });
+      applyMode(nextMode);
     },
-    [
-      hasConfirmedAuto,
-      hasConfirmedAutonomy,
-      declaredModes,
-      status,
-      setAutoConfirmOpen,
-      setPendingAutonomy,
-    ]
+    [hasConfirmedAuto, canAssertAutonomyAck, declaredModes, applyMode, setPendingAutonomy]
   );
 
   const handleConfirmAuto = useCallback(() => {
@@ -176,12 +219,28 @@ export function ChatStatusSection({
     setAutoConfirmOpen(false);
   }, [recordAutoConfirmed, sessionId, status, setAutoConfirmOpen]);
 
-  const handleConfirmAutonomy = useCallback(() => {
-    if (!pendingAutonomy) return;
-    recordAutonomyConfirmed(sessionId);
-    status.updateSession({ permissionMode: pendingAutonomy.id as PermissionMode });
-    setPendingAutonomy(null);
-  }, [pendingAutonomy, recordAutonomyConfirmed, sessionId, status, setPendingAutonomy]);
+  const handleConfirmAutonomy = useCallback(
+    (rememberChoice: boolean) => {
+      if (!pendingAutonomy) return;
+      recordAutonomyConfirmed(sessionId);
+      if (rememberChoice) {
+        // Recorded first, and not awaited. The mode change carries its own
+        // acknowledgement on the request, so it does not wait on this write —
+        // and a config write that fails leaves the person exactly where they
+        // were, being asked again next time, which is the safe direction.
+        autonomyAck.acknowledge();
+      }
+      // Explicit rather than via `applyMode`: the acknowledgement was given
+      // right here, in this click, and must ride this request even though the
+      // session-scoped memory that `applyMode` reads has not re-rendered yet.
+      void status.updateSession({
+        permissionMode: pendingAutonomy.id as PermissionMode,
+        acknowledgedAutonomy: true,
+      });
+      setPendingAutonomy(null);
+    },
+    [pendingAutonomy, recordAutonomyConfirmed, sessionId, status, autonomyAck, setPendingAutonomy]
+  );
 
   // Plan, where the runtime offers a way of working at all. Which mode that is
   // comes from the profile, never from the id `plan` (spec `trust-dial`).
@@ -211,13 +270,18 @@ export function ChatStatusSection({
         remembered !== undefined && declaredModes.some((d) => d.id === remembered);
       const viable = stillDeclared && (remembered !== 'auto' || modelSupportsAutoMode);
       const restored = viable ? remembered : runtimeDefaultMode;
-      if (restored) status.updateSession({ permissionMode: restored as PermissionMode });
+      // Through `applyMode`, because the mode being restored can be Full
+      // autonomy: a session that was running without asking, went into planning,
+      // and is now coming back out. The acknowledgement has to ride that request
+      // like any other, or leaving Plan would be the one click that 428s.
+      if (restored) applyMode(restored as PermissionMode);
     },
     [
       workingMode,
       recordModeBeforePlan,
       sessionId,
       status,
+      applyMode,
       modeBeforePlan,
       declaredModes,
       modelSupportsAutoMode,

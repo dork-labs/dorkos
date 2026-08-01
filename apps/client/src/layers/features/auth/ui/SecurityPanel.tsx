@@ -13,7 +13,10 @@ import {
   Switch,
 } from '@/layers/shared/ui';
 import { useConfig, useUpdateConfig } from '@/layers/entities/config';
-import { StandingPermissionsSettings } from '@/layers/features/approvals';
+import {
+  AutonomyAcknowledgementRow,
+  StandingPermissionsSettings,
+} from '@/layers/features/approvals';
 import { OwnerSetupScreen } from './OwnerSetupScreen';
 import { ApiKeysSection } from './ApiKeysSection';
 import { useCurrentUser, useSignOut } from '../model/use-auth-session';
@@ -104,6 +107,10 @@ export function SecurityPanel() {
       <FieldCard>
         <FieldCardContent>
           <StandingPermissionsSettings />
+          {/* The other standing answer a person can give about being asked —
+              in the same card, because "what am I no longer being asked about"
+              is one question. Draws nothing until there is something on file. */}
+          <AutonomyAcknowledgementRow />
         </FieldCardContent>
       </FieldCard>
 

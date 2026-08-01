@@ -97,6 +97,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'tunnel.authtoken',
       'tunnel.domain',
       'tunnel.enabled',
+      'ui.autonomyAcknowledgedAt',
       'workspace.rootPath',
     ]);
   });

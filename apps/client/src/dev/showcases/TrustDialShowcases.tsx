@@ -190,16 +190,29 @@ function LivePlanChip() {
 /** The door into Full autonomy, opened on demand. */
 function LiveAutonomyDialog() {
   const [open, setOpen] = useState(false);
+  const [lastAnswer, setLastAnswer] = useState<string | null>(null);
   const autonomy = CODEX[2];
   return (
     <div className="flex items-center gap-3">
       <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
         Choose Full autonomy (Codex)
       </Button>
+      {/* The playground shows what the checkbox ANSWERS rather than acting on
+          it: writing the real acknowledgement here would silence the dialog for
+          whoever opened the playground to look at it. */}
+      {lastAnswer && <span className="text-muted-foreground text-xs">{lastAnswer}</span>}
       <AutonomyConfirmDialog
         descriptor={open ? autonomy : null}
-        onCancel={() => setOpen(false)}
-        onConfirm={() => setOpen(false)}
+        onCancel={() => {
+          setOpen(false);
+          setLastAnswer('Cancelled');
+        }}
+        onConfirm={(rememberChoice) => {
+          setOpen(false);
+          setLastAnswer(
+            rememberChoice ? 'Confirmed — and asked not to be shown again' : 'Confirmed once'
+          );
+        }}
       />
     </div>
   );

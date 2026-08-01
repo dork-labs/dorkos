@@ -264,6 +264,11 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'approvals.standingGrants': false,
   'approvals.trustWindowMinutes': 480,
   'approvals.standingGrantsVoidBefore': null,
+  // Nobody has been told what Full autonomy means, so DorkOS still tells them:
+  // `null` is the value that keeps the door asking. A wipe landing here is the
+  // right outcome — losing a consent record only costs one dialog, while keeping
+  // one through a reset would silence a question nobody re-answered.
+  'ui.autonomyAcknowledgedAt': null,
   // No account link, so no identity leaves the machine.
   'cloud.instanceToken': null,
   'cloud.instanceName': null,

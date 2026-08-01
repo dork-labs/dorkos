@@ -13,6 +13,7 @@ import { describe, it, expect } from 'vitest';
 import type { PermissionModeDescriptor, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import {
   findWorkingMode,
+  isAutonomyStop,
   isBypassSemantics,
   isDivergent,
   resolveTrustStops,
@@ -111,6 +112,52 @@ describe('equivalence with the id tables it replaces', () => {
     const auto = CLAUDE_CODE_CAPABILITIES.permissionModes.values.find((v) => v.id === 'auto');
     expect(auto?.asks).toBe('when-risky');
     expect(warnTier(auto!)).toBe('none');
+  });
+});
+
+describe('the autonomy door’s reach across every runtime', () => {
+  // The one rule the server's session PATCH applies to decide whether a mode
+  // change needs the person's acknowledgement (spec `trust-dial`, decision 5).
+  // Asserted here, over real profiles, because a door that misses a runtime's
+  // autonomy mode is a door that is not there.
+
+  it('finds exactly one autonomy mode in every profile that has one', () => {
+    for (const caps of PROFILES) {
+      const autonomy = caps.permissionModes.values.filter(isAutonomyStop);
+      // Two modes at one stop is a shape `resolveTrustStops` already handles by
+      // demoting the second to a refinement — but the door has to gate BOTH, and
+      // nothing today declares two. Pinned so the day one does, this is read.
+      expect(autonomy.length, `${caps.type} autonomy modes`).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it.each(declaredModes())(
+    '%s/%o: the door gates exactly the modes the dial puts at the autonomy stop',
+    (_runtime, d) => {
+      const stops = resolveTrustStops(
+        PROFILES.find((c) => c.permissionModes.values.includes(d))!.permissionModes.values
+      );
+      const atAutonomy = stops.some((s) => s.stop === 'autonomy' && s.mode.id === d.id);
+      expect(isAutonomyStop(d)).toBe(atAutonomy);
+    }
+  );
+
+  it('gates a sandboxed autonomy stop too, where the danger tier would not', () => {
+    // The two rules answer different questions and must not be conflated. A mode
+    // that never asks but cannot leave the workspace earns `caution`, not
+    // `danger` — and still gets the door, because the door is about the position
+    // a person is choosing, not how far the blast reaches.
+    const sandboxedAutonomy: PermissionModeDescriptor = {
+      id: 'sandboxed-autonomy',
+      label: 'Sandboxed autonomy',
+      stop: 'autonomy',
+      asks: 'never',
+      reach: 'workspace',
+      promise: 'Works inside the project without asking.',
+    };
+    expect(isAutonomyStop(sandboxedAutonomy)).toBe(true);
+    expect(isBypassSemantics(sandboxedAutonomy)).toBe(false);
+    expect(warnTier(sandboxedAutonomy)).toBe('caution');
   });
 });
 

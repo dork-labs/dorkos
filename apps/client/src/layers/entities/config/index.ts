@@ -13,6 +13,7 @@ export { useEngagedWindow } from './model/use-engaged-window';
 export { useDefaultAgentSession, resolveDefaultAgentDir } from './model/use-default-agent-session';
 export type { DefaultAgentSession, DefaultAgentIdentity } from './model/use-default-agent-session';
 export { useUpdateConfig } from './model/use-update-config';
+export { useAutonomyAcknowledgement } from './model/use-autonomy-acknowledgement';
 export { useStatusBarPrefs, useUpdateStatusBarPrefs } from './model/use-status-bar-prefs';
 export { TelemetryPayloadBlock } from './ui/TelemetryPayloadBlock';
 export { TelemetryPayloadDisclosure } from './ui/TelemetryPayloadDisclosure';

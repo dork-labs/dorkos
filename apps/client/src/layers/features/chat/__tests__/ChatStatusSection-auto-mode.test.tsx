@@ -9,6 +9,18 @@ import { useSessionChatStore } from '@/layers/entities/session';
 // Mocks (hoisted before component import)
 // ──────────────────────────────────────────────────────────────────────────────
 
+// The Trust Dial reads the standing Full-autonomy acknowledgement from user
+// config before it sends one. Stubbed to "nobody has acknowledged anything",
+// which is the shipped state and the one every case below assumes.
+vi.mock('@/layers/entities/config/model/use-autonomy-acknowledgement', () => ({
+  useAutonomyAcknowledgement: () => ({
+    acknowledgedAt: null,
+    acknowledge: vi.fn(),
+    clear: vi.fn(),
+    isPending: false,
+  }),
+}));
+
 vi.mock('@/layers/shared/model/media/use-is-mobile', () => ({
   useIsMobile: () => false,
 }));
@@ -196,7 +208,9 @@ describe('ChatStatusSection — auto-mode entry confirmation', () => {
     // Second selection: applies directly, no modal.
     fireEvent.click(screen.getByTestId('select-auto'));
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
-    expect(updateSession).toHaveBeenCalledWith({ permissionMode: 'auto' });
+    // The first argument only: mode changes also carry an `onError` so a refused
+    // Full-autonomy write can reopen its door, which is nothing to do with Auto.
+    expect(updateSession.mock.calls[0]?.[0]).toEqual({ permissionMode: 'auto' });
   });
 
   it('cancel leaves the mode unchanged and does not record the session', () => {

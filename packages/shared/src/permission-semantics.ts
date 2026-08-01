@@ -146,6 +146,28 @@ export function isBypassSemantics(descriptor: PermissionModeDescriptor): boolean
 }
 
 /**
+ * Whether a mode sits at the dial's Full-autonomy stop — the one position a
+ * person is asked to confirm before they can take it (spec `trust-dial`,
+ * decision 5).
+ *
+ * The declared position, never the id. `bypassPermissions` is Claude's name for
+ * this stop and Codex's is `danger-full-access`; a door that opened on a string
+ * would stand wide open for the next runtime to declare a third spelling.
+ *
+ * Distinct from {@link isBypassSemantics} on purpose, and they can disagree.
+ * That one asks what a mode DOES (never asks, reaches everything) and drives how
+ * loudly a surface marks it. This one asks where a mode SITS on the dial, and
+ * drives what the person is asked before selecting it. A runtime whose autonomy
+ * stop is sandboxed still gets the door, because the door is about the position
+ * a person is choosing, not about how far the blast reaches.
+ *
+ * @param descriptor - A mode as its runtime declared it.
+ */
+export function isAutonomyStop(descriptor: PermissionModeDescriptor): boolean {
+  return descriptor.stop === 'autonomy';
+}
+
+/**
  * Whether a mode is a way of WORKING rather than a level of trust — off the
  * dial, offered beside the composer instead (spec `trust-dial`, decision 1).
  *
