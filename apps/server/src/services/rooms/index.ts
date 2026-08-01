@@ -37,18 +37,30 @@ export interface RoomSubsystem {
  * mesh cache, keyed on its directory. The default {@link RoomAgentLookup}.
  *
  * Keyed on `agents.project_path` (`NOT NULL UNIQUE`) rather than the manifest
- * ULID, so a reconciler rebuild that re-registers every agent under a fresh
- * ULID changes nothing here (ADR 260726-170126).
+ * ULID (ADR 260726-170126). The row's `id` is carried on the ANSWER, which is a
+ * different thing: it is what lets the handle and dispatch seams tell the
+ * current occupant of a directory from a previous one whose author row is still
+ * around (ADR 260801-003051).
+ *
+ * **A missing row is what makes an author a ghost**, and the absence of a status
+ * filter here is deliberate: an `unreachable` agent — a laptop that closed its
+ * lid — still has a row, still resolves, and keeps its name mid-conversation.
+ *
+ * Exported so the tests that pin ghost and stale-generation behaviour drive the
+ * reader that ships, rather than a second one written beside it: M2 and M3 must
+ * agree about which agent occupies a directory, and they only do because both
+ * read this table.
  *
  * @param db - The consolidated DB handle.
  */
-function createAgentLookup(db: Db): RoomAgentLookup {
+export function createAgentLookup(db: Db): RoomAgentLookup {
   return {
     byPath(agentPath) {
       const row = db.select().from(agents).where(eq(agents.projectPath, agentPath)).get();
       if (!row) return null;
       const behavior = AgentBehaviorSchema.safeParse(safeJson(row.behaviorJson));
       return {
+        id: row.id,
         name: row.name,
         displayName: row.displayName ?? row.name,
         responseMode: behavior.success ? behavior.data.responseMode : 'always',

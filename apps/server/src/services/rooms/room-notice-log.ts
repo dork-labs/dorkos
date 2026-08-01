@@ -31,9 +31,14 @@
  */
 import type { Room, RoomEntry, RoomEntryBody } from '@dorkos/shared/room-schemas';
 import { logger } from '../../lib/logger.js';
-import { logRefusal, type RefusalVisibility } from '../observability/refusals.js';
+import {
+  logRefusal,
+  type RefusalReason,
+  type RefusalVisibility,
+} from '../observability/refusals.js';
 import type { AuthorRegistry } from './author-registry.js';
 import {
+  buildAgentGoneNotice,
   buildBudgetNotice,
   buildBusyNotice,
   buildHaltedNotice,
@@ -59,8 +64,11 @@ export interface CascadeStamp {
  *
  * - `busy` — the agent was already working, so no turn ran.
  * - `failed` — a turn ran and ended in an error, or never finished at all.
+ * - `gone` — the member's directory no longer holds the agent it was added as,
+ *   so no turn was even attempted. Never produced by a runner: the dispatcher
+ *   decides it before a turn exists (ADR 260801-003051).
  */
-export type RoomTurnUnanswered = 'busy' | 'failed';
+export type RoomTurnUnanswered = 'busy' | 'failed' | 'gone';
 
 /** How a notice reaches the room's durable log. */
 export interface RoomNoticeWriter {
@@ -225,6 +233,13 @@ export class RoomNoticeLog {
    *    an event that just happened, and swallowing the second one leaves the
    *    room's last word describing a fault that has since been superseded.
    *
+   *    `gone` damps like `busy` rather than like `failed`, and for the reason
+   *    rule 1 gives: an agent that is not installed any more is a STATE, and it
+   *    is the most persistent one here — every ordinary message in a channel
+   *    where an `engaged` ghost sits would otherwise write another line saying
+   *    the same unchanged thing. A person who names it still gets an answer
+   *    every time they ask.
+   *
    * Every block clears the moment that agent's turn there reaches an OUTCOME —
    * {@link RoomNoticeLog.recovered}.
    *
@@ -253,7 +268,7 @@ export class RoomNoticeLog {
   ): void {
     const key = silenceKey(room.id, agent.authorId, reason);
     const damped =
-      reason === 'busy' &&
+      reason !== 'failed' &&
       !this.directlyAsked(room, entry, agent.authorId) &&
       this.noticedSilence.has(key);
     // Every refusal, damped ones included. A room that went forty-one minutes
@@ -267,7 +282,7 @@ export class RoomNoticeLog {
     // makes it invisible a second time.
     const record = (visibility: RefusalVisibility): void =>
       logRefusal('[rooms] an agent did not answer', {
-        reason: reason === 'busy' ? 'agent_busy' : 'turn_failed',
+        reason: REFUSAL_FOR_SILENCE[reason],
         visibility,
         dispatchId,
         roomId: room.id,
@@ -282,10 +297,7 @@ export class RoomNoticeLog {
       record('damped');
       return;
     }
-    const body =
-      reason === 'busy'
-        ? buildBusyNotice(agent.displayName, agent.authorId, busyWith)
-        : buildTurnFailedNotice(agent.displayName, agent.authorId);
+    const body = SILENCE_BODIES[reason](agent, busyWith);
     // Reported AFTER the write, so `visibility` says what actually happened
     // rather than what was intended: a notice the room could not write (an
     // archive between the post and the notice) leaves the person as uninformed
@@ -676,7 +688,34 @@ function cascadeNoticeKey(roomId: string, cascadeRoot: string, authorId: string)
 const SILENCE_REASONS = Object.keys({
   busy: true,
   failed: true,
+  gone: true,
 } satisfies Record<RoomTurnUnanswered, true>) as RoomTurnUnanswered[];
+
+/**
+ * The words each reason writes into the room, as a total map for the reason
+ * {@link SILENCE_REASONS} is a keyed object: a reason added to the union without
+ * words here is a type error at this line, not an agent that goes quiet with no
+ * notice at all.
+ */
+const SILENCE_BODIES: Record<
+  RoomTurnUnanswered,
+  (agent: NoticeSubject, busyWith: BusyContext) => RoomEntryBody
+> = {
+  busy: (agent, busyWith) => buildBusyNotice(agent.displayName, agent.authorId, busyWith),
+  failed: (agent) => buildTurnFailedNotice(agent.displayName, agent.authorId),
+  gone: (agent) => buildAgentGoneNotice(agent.displayName, agent.authorId),
+};
+
+/**
+ * Which closed-union refusal reason each silence is filed under, total for the
+ * same reason: `jq 'group_by(.reason)'` has to be able to tell a busy agent from
+ * a crashed one from one that is not installed any more.
+ */
+const REFUSAL_FOR_SILENCE: Record<RoomTurnUnanswered, RefusalReason> = {
+  busy: 'agent_busy',
+  failed: 'turn_failed',
+  gone: 'agent_gone',
+};
 
 /**
  * Record a key, evicting the oldest when the set is full.

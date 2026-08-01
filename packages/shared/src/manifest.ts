@@ -67,6 +67,63 @@ export async function readManifest(
 }
 
 /**
+ * What a directory has to say about the manifest it holds, with every failure
+ * kept apart from every other.
+ *
+ * - `absent` — there is demonstrably no manifest here (`ENOENT`/`ENOTDIR`).
+ * - `unreadable` — a manifest may well be here and we could not read it: a
+ *   permission drop, an I/O error, a descriptor limit, invalid JSON, a body
+ *   that fails the schema.
+ * - `present` — read and validated; `id` is the manifest's ULID.
+ */
+export type ManifestProbe =
+  | { state: 'absent' }
+  | { state: 'unreadable'; detail: string }
+  | { state: 'present'; id: string };
+
+/**
+ * Ask a directory whether it still holds a manifest, **without collapsing
+ * "gone" into "could not tell"**.
+ *
+ * {@link readManifest} answers `null` to both, which is right for its callers —
+ * a directory you cannot read is not an agent you can import. It is wrong for
+ * the one caller that has to decide whether an id has been GIVEN UP: treating a
+ * transient `EACCES` as "gone" would hand a live agent's identity to a duplicate
+ * checkout permanently, and the guard that reads this would then refuse the true
+ * owner's return (ADR 260801-003050). So the two cases get two answers here, and
+ * only `absent` may be read as "the incumbent released this".
+ *
+ * @param projectPath - Project directory that may contain `.dork/agent.json`.
+ * @returns Which of the three states the directory is in.
+ */
+export async function probeManifest(projectPath: string): Promise<ManifestProbe> {
+  const manifestPath = path.join(projectPath, MANIFEST_DIR, MANIFEST_FILE);
+
+  let content: string;
+  try {
+    content = await fs.readFile(manifestPath, 'utf-8');
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    // ENOENT: no such file. ENOTDIR: a path component is not a directory, which
+    // is the same fact arrived at one level up. Everything else — EACCES, EIO,
+    // EMFILE, ELOOP — means the file may be sitting right there.
+    if (code === 'ENOENT' || code === 'ENOTDIR') return { state: 'absent' };
+    return { state: 'unreadable', detail: code ?? (err as Error).message };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch (err) {
+    return { state: 'unreadable', detail: err instanceof Error ? err.message : String(err) };
+  }
+
+  const result = AgentManifestSchema.safeParse(parsed);
+  if (!result.success) return { state: 'unreadable', detail: 'failed schema validation' };
+  return { state: 'present', id: result.data.id };
+}
+
+/**
  * Write an agent manifest to a project directory atomically.
  *
  * Creates the `.dork/` directory if it doesn't exist. Writes to a temp

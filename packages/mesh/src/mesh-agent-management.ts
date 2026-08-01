@@ -23,6 +23,17 @@ import { readManifest, writeManifest, removeManifest } from './manifest.js';
 import type { DiscoveryDeps } from './mesh-discovery.js';
 import { upsertAutoImported } from './mesh-discovery.js';
 
+/**
+ * What {@link syncFromDisk} did with a directory.
+ *
+ * - `synced` — the manifest was read and its row written (a genuine relocation
+ *   counts, because the agent really did move).
+ * - `no-manifest` — there is no readable `.dork/agent.json` there.
+ * - `duplicate-id` — the manifest names an id another directory still holds, so
+ *   nothing was written.
+ */
+export type SyncFromDiskResult = 'synced' | 'no-manifest' | 'duplicate-id';
+
 /** Dependencies required by agent management functions. */
 export interface AgentManagementDeps {
   registry: AgentRegistry;
@@ -316,18 +327,26 @@ export async function removeAgent(
  * ADR-0043: enables immediate file-to-DB sync without waiting for the
  * 5-minute periodic reconciler. Reuses the auto-import upsert pipeline.
  *
+ * **Three outcomes, not two, and the third is why this stopped returning a
+ * boolean.** A manifest can now be found, read, and still refused — because
+ * another directory holds the same id (ADR 260801-003050). Reporting that as
+ * `false` would collapse it into "there is no manifest here", which is the exact
+ * collapse the relocation guard exists to reject one layer down.
+ *
  * @param projectPath - Absolute path to the agent's project directory
  * @param discoveryDeps - Discovery dependencies (needed for upsertAutoImported)
- * @returns true if the manifest was found and synced, false otherwise
+ * @returns `'synced'` when the manifest reached the DB (a genuine relocation
+ *   included), `'no-manifest'` when the directory holds none, `'duplicate-id'`
+ *   when another directory still holds this identity and nothing was written.
  */
 export async function syncFromDisk(
   projectPath: string,
   discoveryDeps: DiscoveryDeps
-): Promise<boolean> {
-  const manifest = await readManifest(projectPath);
-  if (!manifest) return false;
-  await upsertAutoImported(manifest, projectPath, discoveryDeps);
-  return true;
+): Promise<SyncFromDiskResult> {
+  const manifest = await readManifest(projectPath, discoveryDeps.logger);
+  if (!manifest) return 'no-manifest';
+  const result = await upsertAutoImported(manifest, projectPath, discoveryDeps);
+  return result === 'duplicate-id' ? 'duplicate-id' : 'synced';
 }
 
 // --- Health & Observability ---

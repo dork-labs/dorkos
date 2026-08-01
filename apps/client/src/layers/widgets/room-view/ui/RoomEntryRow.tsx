@@ -8,6 +8,7 @@ import {
   Info,
   Megaphone,
   TriangleAlert,
+  UserX,
   type LucideIcon,
 } from 'lucide-react';
 import type { RoomNoticeCode } from '@dorkos/shared/room-schemas';
@@ -126,6 +127,10 @@ const NOTICE_STYLES: Record<RoomNoticeCode, { Icon: LucideIcon; tone?: string }>
   turn_failed: { Icon: TriangleAlert, tone: 'text-status-warning' },
   // Occupied, not broken — and the message has to be sent again.
   agent_busy: { Icon: Hourglass },
+  // The agent is not installed here any more, so no answer is coming until
+  // somebody re-registers it. Warm for the same reason `turn_failed` is: this
+  // one is waiting on the reader, and waiting longer will not help.
+  agent_gone: { Icon: UserX, tone: 'text-status-warning' },
   // Stopped, and waiting for THIS reader to do something about it. Warm like
   // `turn_failed`, and for the same reason: both are lines a person has to act
   // on, and the rest are the room reporting that it is working as designed.

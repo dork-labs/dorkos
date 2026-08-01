@@ -1,7 +1,25 @@
 /**
  * The regression test ADR 260726-170126 exists to make impossible: an agent's
- * persisted author id must survive the mesh reconciler rebuilding its row under
- * a fresh manifest ULID.
+ * persisted author id must survive the mesh registry rebuilding its row.
+ *
+ * **One assertion in this file was deliberately narrowed by ADR 260801-003051,
+ * and it is the load-bearing thing to read before touching either.** The
+ * original pinned "a rebuild under a FRESH ULID keeps the author id", which is
+ * no longer true and must not be made true again: a different manifest id at a
+ * directory is exactly how a re-inited directory is told from a rebuilt cache,
+ * and treating the two the same is what let a new agent inherit the previous
+ * occupant's entire message history (DOR-790 H12).
+ *
+ * The premise it rested on is unreachable in current code anyway. No reconciler
+ * path mints ids — `reconciler.ts` only ever calls `registry.update(entry.id, …)`,
+ * and an ADR-0043 rebuild reads ids back from the `.dork/agent.json` files that
+ * store them — so a rebuild re-registers the SAME id, which is the case pinned
+ * below. What survives untouched is the invariant that actually protects
+ * history: an author id never changes and a row is never deleted, so every
+ * message ever written still resolves to whoever wrote it.
+ *
+ * `directory-reuse.test.ts` holds the other half — what happens when the id
+ * genuinely changes.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -44,25 +62,38 @@ describe('AuthorRegistry', () => {
     expect(db.select().from(authors).all()).toHaveLength(1);
   });
 
-  it('keeps the same author id when the reconciler rebuilds the agent under a new ULID', () => {
+  it('keeps the same author id when the registry cache is deleted and rebuilt', () => {
     // The state before: an agent registered under one ULID, with an author.
-    registerAgent(db, 'ULID_BEFORE_REBUILD', ANA_PATH, 'ana');
+    registerAgent(db, 'ULID_ANA', ANA_PATH, 'ana');
     const before = registry.resolveAgent(ANA_PATH, 'Ana');
 
-    // The ADR-0043 reconciler is licensed to delete the derived cache and
-    // rebuild it from `agent.json` on disk, re-registering under a fresh ULID.
+    // The ADR-0043 rebuild: the derived cache is dropped and rebuilt from
+    // `.dork/agent.json` on disk — which is where the id lives, so the id comes
+    // back the same. That is what makes this a rebuild rather than a re-init.
     db.delete(agents).where(eq(agents.projectPath, ANA_PATH)).run();
-    registerAgent(db, 'ULID_AFTER_REBUILD', ANA_PATH, 'ana');
+    registerAgent(db, 'ULID_ANA', ANA_PATH, 'ana');
 
     const after = registry.resolveAgent(ANA_PATH, 'Ana');
 
-    // The manifest id changed. The author id did not, so every message Ana ever
-    // wrote still resolves to her.
-    expect(db.select().from(agents).where(eq(agents.projectPath, ANA_PATH)).get()?.id).toBe(
-      'ULID_AFTER_REBUILD'
-    );
     expect(after.id).toBe(before.id);
     expect(db.select().from(authors).all()).toHaveLength(1);
+  });
+
+  it('never deletes or renumbers an author, so old messages keep their true writer', () => {
+    // The invariant the assertion above USED to carry, restated against a
+    // premise that is reachable: a directory changing hands starts a new author,
+    // and the old one stays exactly where it was. `directory-reuse.test.ts`
+    // proves the mint; this proves the half that protects history.
+    registerAgent(db, 'ULID_ANA', ANA_PATH, 'ana');
+    const ana = registry.resolveAgent(ANA_PATH, 'Ana');
+
+    db.delete(agents).where(eq(agents.projectPath, ANA_PATH)).run();
+    registerAgent(db, 'ULID_BO', ANA_PATH, 'bo');
+    const bo = registry.resolveAgent(ANA_PATH, 'Bo');
+
+    expect(bo.id).not.toBe(ana.id);
+    // Ana's row is still there, still hers, still named Ana.
+    expect(registry.getById(ana.id)).toMatchObject({ id: ana.id, displayName: 'Ana' });
   });
 
   it('gives a different agent directory a different author', () => {

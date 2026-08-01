@@ -145,7 +145,16 @@ export function outcomeRunner(
   };
 }
 
-/** An agent lookup over a fixed table, filled in with render defaults. */
+/**
+ * An agent lookup over a fixed table, filled in with render defaults.
+ *
+ * `id` defaults to the directory itself. It stands for the occupant's manifest
+ * ULID, and the only thing anything does with it is compare it against an author
+ * row's generation stamp — so what matters in a fake is that it is stable per
+ * directory and distinct between directories, which the key already is. A test
+ * about a directory CHANGING HANDS overrides it, and pairs that with a real
+ * `agents` row so the registry derives the same value.
+ */
 export function agentLookupFor(
   table: Record<string, Partial<RoomAgent> & { name: string }>
 ): RoomAgentLookup {
@@ -154,6 +163,7 @@ export function agentLookupFor(
       const agent = table[agentPath];
       if (!agent) return null;
       return {
+        id: agentPath,
         displayName: agent.name,
         responseMode: 'always',
         emoji: null,
@@ -190,7 +200,11 @@ export interface RoomHarness {
 /**
  * Wire a rooms subsystem over a fresh in-memory database.
  *
- * @param opts.agents - The agent table this install knows about.
+ * @param opts.agents - The agent table this install knows about. Pass a FUNCTION
+ *   to build the lookup from the harness's own database — that is how a test
+ *   about ghosts or a directory changing hands drives the reader that ships
+ *   (`createAgentLookup`), so the handle seam and the author registry agree
+ *   about which agent occupies a directory instead of agreeing by fixture.
  * @param opts.runner - The scripted runner; defaults to one that says "on it".
  * @param opts.maxAgentDepth - The cascade ceiling. Pinned to a literal on
  *   purpose — a test that read the same config the code reads could only prove
@@ -209,7 +223,7 @@ export interface RoomHarness {
  *   predicate that ships.
  */
 export function createRoomHarness(opts: {
-  agents: RoomAgentLookup;
+  agents: RoomAgentLookup | ((db: Db) => RoomAgentLookup);
   runner?: ScriptedTurnRunner;
   maxAgentDepth?: number;
   maxAutomaticTurnsPerRoomPerHour?: number;
@@ -234,7 +248,7 @@ export function createRoomHarness(opts: {
     reactions,
     authors,
     broadcaster: new RoomBroadcaster(),
-    agents: opts.agents,
+    agents: typeof opts.agents === 'function' ? opts.agents(db) : opts.agents,
     turns: runner,
     budget: new RoomTurnBudget({ limits: { perRoom: () => perRoom, global: () => global } }),
     maxAgentDepth: () => maxAgentDepth,

@@ -16,10 +16,70 @@ import type { RelayBridge } from './relay-bridge.js';
 import { resolveNamespace, normalizeNamespace } from './namespace-resolver.js';
 import { unifiedScan } from './discovery/unified-scanner.js';
 import type { ScanEvent, UnifiedScanOptions } from './discovery/types.js';
-import { writeManifest, removeManifest } from './manifest.js';
+import { writeManifest, removeManifest, probeManifest } from './manifest.js';
 
 /** Default registrar identifier when none is provided. */
 export const DEFAULT_REGISTRAR = 'mesh';
+
+/**
+ * What an auto-import did with one manifest.
+ *
+ * - `registered` — the row was written where the manifest was found.
+ * - `relocated` — the agent's directory genuinely changed, and the row followed.
+ * - `duplicate-id` — another directory still holds this manifest (or its state
+ *   could not be read), so nothing was written anywhere.
+ */
+export type AutoImportResult = 'registered' | 'relocated' | 'duplicate-id';
+
+/**
+ * Every duplicate manifest one scan refused, so the scan says it once.
+ *
+ * **Per scan run, not per `(id, path)` and not per process.** A per-pair damp
+ * would still print nine lines on the first scan of a repo with nine linked
+ * worktrees; a per-process damp would never speak again once the situation
+ * changed. Aggregating for the length of one traversal is what the damping is
+ * actually for: one line per stolen identity, naming every copy that tried.
+ */
+export class DuplicateManifestReport {
+  private readonly refused = new Map<string, { registeredPath: string; rejectedPaths: string[] }>();
+
+  /**
+   * Note that a directory tried to register an id another directory holds.
+   *
+   * @param agentId - The contested manifest ULID.
+   * @param registeredPath - Where the agent is actually registered.
+   * @param rejectedPath - The copy that was refused.
+   */
+  record(agentId: string, registeredPath: string, rejectedPath: string): void {
+    const seen = this.refused.get(agentId);
+    if (seen) {
+      if (!seen.rejectedPaths.includes(rejectedPath)) seen.rejectedPaths.push(rejectedPath);
+      return;
+    }
+    this.refused.set(agentId, { registeredPath, rejectedPaths: [rejectedPath] });
+  }
+
+  /**
+   * Write one warning per contested id, then forget them.
+   *
+   * `warn` rather than `info` because nobody is told any other way: a refused
+   * duplicate simply does not appear, and this line is the only record that a
+   * checkout on this machine is carrying somebody else's identity.
+   *
+   * @param logger - Where the warnings go.
+   */
+  flush(logger: import('@dorkos/shared/logger').Logger): void {
+    for (const [agentId, { registeredPath, rejectedPaths }] of this.refused) {
+      logger.warn('[mesh] a duplicate agent manifest was refused registration', {
+        event: 'mesh.identity.duplicate_manifest',
+        agentId,
+        registeredPath,
+        rejectedPaths,
+      });
+    }
+    this.refused.clear();
+  }
+}
 
 /** Dependencies required by discovery and registration functions. */
 export interface DiscoveryDeps {
@@ -49,22 +109,33 @@ export async function* discover(
   deps: DiscoveryDeps,
   options?: Omit<UnifiedScanOptions, 'root'>
 ): AsyncGenerator<ScanEvent> {
-  for (const root of roots) {
-    for await (const event of unifiedScan(
-      { ...options, root, logger: options?.logger ?? deps.logger },
-      deps.strategies,
-      deps.registry,
-      deps.denialList
-    )) {
-      if (event.type === 'auto-import') {
-        // Auto-import: upsert into registry before yielding, recording the
-        // actual root this manifest was found under — not defaultScanRoot,
-        // which in production falls back to the homedir and would poison
-        // later reconciler walks with a whole-home root.
-        await upsertAutoImported(event.data.manifest, event.data.path, deps, root);
+  const logger = options?.logger ?? deps.logger;
+  // One report for the whole run, across every root: a scan of two roots that
+  // both contain the same stolen manifest is still one theft to report.
+  const duplicates = new DuplicateManifestReport();
+  try {
+    for (const root of roots) {
+      for await (const event of unifiedScan(
+        { ...options, root, logger },
+        deps.strategies,
+        deps.registry,
+        deps.denialList
+      )) {
+        if (event.type === 'auto-import') {
+          // Auto-import: upsert into registry before yielding, recording the
+          // actual root this manifest was found under — not defaultScanRoot,
+          // which in production falls back to the homedir and would poison
+          // later reconciler walks with a whole-home root.
+          await upsertAutoImported(event.data.manifest, event.data.path, deps, root, duplicates);
+        }
+        yield event;
       }
-      yield event;
     }
+  } finally {
+    // In `finally` because a scan is routinely abandoned mid-stream — an SSE
+    // client disconnecting calls the generator's `return()` — and the refusals
+    // it already collected are exactly as real as a completed scan's.
+    duplicates.flush(logger);
   }
 }
 
@@ -194,6 +265,9 @@ async function registerInternal(
     scanRoot,
   };
   try {
+    // The id was minted a few lines up by `register`/`registerByPath`, so the
+    // `'duplicate-id'` branch is unreachable from here and there is nothing to
+    // handle: an id nothing has ever seen cannot already live somewhere else.
     deps.registry.upsert(entry);
   } catch (err) {
     // Compensate: remove manifest file
@@ -215,10 +289,25 @@ async function registerInternal(
 }
 
 /**
- * Upsert an auto-imported agent manifest into the registry.
+ * Upsert an auto-imported agent manifest into the registry — or refuse it,
+ * when another directory still holds the same manifest.
  *
- * Always syncs manifest data to the DB via idempotent upsert,
- * handling both new and previously-registered agents.
+ * Syncs manifest data to the DB via idempotent upsert, handling both new and
+ * previously-registered agents.
+ *
+ * **The relocation guard lives here**, because this is the layer that may do
+ * I/O (ADR 260801-003050). `AgentRegistry.upsert` refuses an id that has moved;
+ * this decides what that refusal means by reading the incumbent directory's
+ * manifest under strict errno discipline ({@link probeManifest}):
+ *
+ * - **absent** (`ENOENT`/`ENOTDIR`) — the incumbent released the manifest, so
+ *   this is a genuine move. {@link AgentRegistry.relocate}, one `info`.
+ * - **a different id** — the incumbent gave this id up. Same: a genuine move.
+ * - **the same id** — two directories carry one manifest. Refuse; write nothing.
+ * - **unreadable** (`EACCES`, `EIO`, a parse failure, a schema failure) —
+ *   refuse. Reading "could not tell" as "gone" would hand the identity to a
+ *   duplicate irreversibly, and the guard would then refuse the true owner's
+ *   return.
  *
  * The recorded scan root is, in order of preference: the root the manifest was
  * actually found under (`scanRoot`, passed by `discover()`), the scan root
@@ -232,13 +321,17 @@ async function registerInternal(
  * @param projectPath - Absolute path to the agent's project directory
  * @param deps - Discovery dependencies
  * @param scanRoot - The root directory the manifest was discovered under
+ * @param duplicates - The running scan's refusal report. Omitted outside a scan
+ *   (`syncFromDisk`), in which case a refusal is reported on the spot.
+ * @returns What happened to this manifest.
  */
 export async function upsertAutoImported(
   manifest: AgentManifest,
   projectPath: string,
   deps: DiscoveryDeps,
-  scanRoot?: string
-): Promise<void> {
+  scanRoot?: string,
+  duplicates?: DuplicateManifestReport
+): Promise<AutoImportResult> {
   // Registry rows persist scanRoot as '' when unknown — treat that as absent.
   const existingScanRoot = deps.registry.getByPath(projectPath)?.scanRoot || undefined;
   const effectiveScanRoot = scanRoot ?? existingScanRoot ?? deps.defaultScanRoot;
@@ -250,11 +343,69 @@ export async function upsertAutoImported(
     scanRoot: effectiveScanRoot,
   };
 
-  // Upsert handles both new and existing agents
-  deps.registry.upsert(entry);
+  // Upsert handles both new and existing agents — and refuses, writing nothing,
+  // when this id already belongs to another directory.
+  let outcome: AutoImportResult = 'registered';
+  if (deps.registry.upsert(entry) === 'duplicate-id') {
+    const incumbent = deps.registry.get(manifest.id);
+    // The row is what made `upsert` refuse, so it is there. Belt-and-braces
+    // against a concurrent unregister between the two reads: with no incumbent
+    // there is no conflict left, so let the registration through.
+    if (incumbent === undefined) {
+      deps.registry.upsert(entry);
+    } else if (await incumbentReleasedManifest(incumbent.projectPath, manifest.id, deps)) {
+      deps.registry.relocate(manifest.id, projectPath);
+      // Re-run so the move carries the manifest's current fields too: `relocate`
+      // moves the row, `upsert` syncs it, and the two together are what a
+      // genuine move means.
+      deps.registry.upsert(entry);
+      deps.logger.info('[mesh] an agent moved to a new directory', {
+        event: 'mesh.identity.relocated',
+        agentId: manifest.id,
+        from: incumbent.projectPath,
+        to: projectPath,
+      });
+      outcome = 'relocated';
+    } else {
+      const report = duplicates ?? new DuplicateManifestReport();
+      report.record(manifest.id, incumbent.projectPath, projectPath);
+      // Outside a scan there is nothing to aggregate against, so say it now.
+      if (!duplicates) report.flush(deps.logger);
+      return 'duplicate-id';
+    }
+  }
 
   // Ensure Relay endpoint exists
   await deps.relayBridge.registerAgent(manifest, projectPath, namespace, effectiveScanRoot);
+  return outcome;
+}
+
+/**
+ * Whether the directory that currently holds `agentId` has genuinely given it
+ * up — the one question that turns a refused registration into a relocation.
+ *
+ * Only two states say yes, and everything else says no. See
+ * {@link upsertAutoImported} for why "could not read it" must be a no.
+ *
+ * @param incumbentPath - Where the agent is registered today.
+ * @param agentId - The contested manifest ULID.
+ * @param deps - Discovery dependencies (for the logger).
+ */
+async function incumbentReleasedManifest(
+  incumbentPath: string,
+  agentId: string,
+  deps: DiscoveryDeps
+): Promise<boolean> {
+  const probe = await probeManifest(incumbentPath);
+  if (probe.state === 'absent') return true;
+  if (probe.state === 'present') return probe.id !== agentId;
+  deps.logger.warn('[mesh] could not read an agent manifest, so its identity was not moved', {
+    event: 'mesh.identity.incumbent_unreadable',
+    agentId,
+    incumbentPath,
+    detail: probe.detail,
+  });
+  return false;
 }
 
 /**

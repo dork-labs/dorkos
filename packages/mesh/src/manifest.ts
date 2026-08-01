@@ -8,6 +8,7 @@
  */
 export {
   readManifest,
+  probeManifest,
   writeManifest,
   removeManifest,
   MANIFEST_DIR,

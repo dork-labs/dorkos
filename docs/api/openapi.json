@@ -5589,6 +5589,7 @@
           "budget_reached",
           "agent_busy",
           "turn_failed",
+          "agent_gone",
           "awaiting_approval",
           "halted",
           "addressing_changed"

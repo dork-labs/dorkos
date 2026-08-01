@@ -27,6 +27,18 @@ import {
  *
  * `display_name` is a render cache, refreshed on every resolve. It is never
  * the key, and nothing may look an author up by it.
+ *
+ * `minted_for_manifest_id` **partially supersedes** that ADR's "the ULID is
+ * never written into an author column" clause (ADR 260801-003051), and the
+ * distinction it draws is narrow: the directory is still the identity key, and
+ * the stamp only says WHICH occupant of that directory a row was minted for. It
+ * exists because the inverse of the moved-agent case was unhandled — registering
+ * a NEW agent in a previously-occupied directory silently inherited the previous
+ * agent's entire message history. The clause's premise (a reconciler rebuild
+ * re-minting ids) is unreachable in current code: no reconciler path mints, and
+ * an ADR-0043 rebuild reads ids back from the files that store them. The one
+ * event that changes a manifest id — re-initializing it — is exactly the
+ * generation boundary this stamp detects.
  */
 export const authors = sqliteTable(
   'authors',
@@ -60,9 +72,34 @@ export const authors = sqliteTable(
      */
     color: text('color'),
 
+    /**
+     * The manifest ULID of the occupant this row was minted for, or null on a
+     * legacy row minted before the stamp existed (which adopts the current
+     * occupant the next time it resolves, and never retires on its own).
+     *
+     * Agent rows only — a human has no manifest to stamp.
+     */
+    mintedForManifestId: text('minted_for_manifest_id'),
+
+    /**
+     * When this row stopped being the active author for its directory, or null
+     * while it still is. A retired row keeps its id, its history and its
+     * memberships forever; it simply stops claiming handles and receiving turns.
+     */
+    retiredAt: text('retired_at'),
+
     createdAt: text('created_at').notNull(),
   },
-  (table) => [uniqueIndex('authors_kind_natural_key_unique').on(table.kind, table.naturalKey)]
+  (table) => [
+    // Partial: one ACTIVE author per directory, and any number of retired ones.
+    // A directory that changes hands retires its author and mints a fresh one
+    // (ADR 260801-003051), so the pair has to be able to coexist — while two
+    // live authors for one directory stay impossible. The predicate is raw SQL
+    // because that is what a partial index takes.
+    uniqueIndex('authors_kind_natural_key_unique')
+      .on(table.kind, table.naturalKey)
+      .where(sql`"retired_at" is null`),
+  ]
 );
 
 /**

@@ -256,6 +256,31 @@ export function buildTurnFailedNotice(agentName: string, subjectAuthorId: string
 }
 
 /**
+ * The durable `notice` for a member whose agent is no longer there.
+ *
+ * Deliberately not `turn_failed`, and the difference is the whole point of the
+ * line. A failed turn ran, has a session behind it, and may well work next time;
+ * this one never started and never will — the folder the member was added from
+ * either holds no registered agent at all, or holds a DIFFERENT one whose
+ * history is not this member's (ADR 260801-003051). So it points at the only
+ * thing that fixes it rather than at a session that has nothing in it.
+ *
+ * It does not say WHICH of the two happened. From the room, "gone" and "somebody
+ * else lives there now" have the same remedy, and the second would mean telling
+ * every member of the room about an agent they are not in a room with.
+ *
+ * @param agentName - Display name of the agent that is no longer registered.
+ * @param subjectAuthorId - Author id of that member, for rendering.
+ */
+export function buildAgentGoneNotice(agentName: string, subjectAuthorId: string): RoomEntryBody {
+  return {
+    text: `${agentName} isn't set up on this machine any more, so it can't answer here. Register it again, then add it back to this conversation.`,
+    notice: 'agent_gone',
+    subjectAuthorId,
+  };
+}
+
+/**
  * An answer that arrived after the room stopped waiting for it, saying which
  * message it belongs to.
  *

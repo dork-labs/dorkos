@@ -39,22 +39,38 @@ export class RoomError extends Error {
  * What the room domain needs to know about an agent, without reaching into mesh
  * internals.
  *
- * It never sees an agent's manifest ULID — that is the point of
- * ADR 260726-170126, enforced here by the interface simply having no field for
- * one. Everything is keyed on the directory, which is what survives the
- * reconciler.
+ * **Still keyed on the directory, and only on the directory** — that is the
+ * point of ADR 260726-170126, enforced here by the lookup taking a path and
+ * nothing else. What changed under ADR 260801-003051 is that the ANSWER now
+ * carries the occupant's manifest id: an author row is minted for one occupant
+ * of a directory, and telling one occupancy generation from the next needs the
+ * current occupant's id at the seam that decides who owns a handle. Nobody may
+ * look an agent up BY that id, and nobody may supply one.
  */
 export interface RoomAgentLookup {
   /**
    * Resolve an agent by its directory.
    *
    * @param agentPath - Absolute path to the agent's project directory.
+   * @returns The agent registered there, or `null` when none is — which is what
+   *   makes an author a ghost.
    */
   byPath(agentPath: string): RoomAgent | null;
 }
 
 /** What the room domain knows about one agent. */
 export interface RoomAgent {
+  /**
+   * The manifest ULID of the agent occupying this directory right now.
+   *
+   * **Derived, never caller-supplied.** It is read off the registry row by
+   * whoever implements {@link RoomAgentLookup}, and it exists for exactly one
+   * comparison: an author row stamped for a DIFFERENT occupant of this same
+   * directory is a previous generation, and claims no handle and receives no
+   * turn (ADR 260801-003051). Nothing keys identity, storage or routing on it
+   * here.
+   */
+  id: string;
   /** The agent's handle — what somebody types after an `@`. */
   name: string;
   /** The agent's rendered name. */

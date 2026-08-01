@@ -125,6 +125,7 @@ import {
   type TriggerTarget,
 } from './room-claims.js';
 import type { AuthorRegistry } from './author-registry.js';
+import { isLiveAuthor } from './author-handles.js';
 import { evaluateCascade } from './cascade-guard.js';
 import { engagementFor, type EngagedWindow, type EngagementWindow } from './engagement.js';
 import type { ReactionStore } from './reaction-store.js';
@@ -469,6 +470,28 @@ export class RoomTriggerDispatcher {
       // `naturalKey` is the agentPath — the only handle the turn machinery needs
       // and the one thing that survives a mesh reconciler rebuild.
       if (!record || record.kind !== 'agent') continue;
+      // A member whose directory no longer holds the agent it was added as
+      // cannot take a turn, and until now nothing SAID so: the trigger went to
+      // the runner, which failed somewhere inside on a path with no agent, and
+      // the room reported "ran into a problem — open its session to see what
+      // went wrong" about a session that does not exist. Refused here instead,
+      // in its own words, because the remedy is to register the agent again
+      // (ADR 260801-003051). The same test covers the subtler half: a DIFFERENT
+      // agent registered in that directory is not this member either, and its
+      // turns belong to its own author row.
+      if (!isLiveAuthor(record, this.deps.agents)) {
+        this.notices.reportSilence(
+          room,
+          entry,
+          { authorId, displayName: record.displayName },
+          'gone',
+          // No dispatch of its own — nothing was claimed — and the ambient one
+          // belongs to whoever's reply triggered this. Same rule as the cascade
+          // and busy refusals above.
+          null
+        );
+        continue;
+      }
       // ONE TURN PER AGENT PER ROOM, and this is the only thing that enforces it.
       // The cascade rules above are about an EXCHANGE — how deep it has gone and
       // who is already in it — so they are scoped to one `cascadeRoot`, and every

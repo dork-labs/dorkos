@@ -1193,7 +1193,7 @@ describe('syncFromDisk() (ADR-0043)', () => {
 
     // Sync from disk
     const synced = await mesh.syncFromDisk(projectDir);
-    expect(synced).toBe(true);
+    expect(synced).toBe('synced');
 
     // Verify DB was updated
     const agents = mesh.list();
@@ -1202,12 +1202,12 @@ describe('syncFromDisk() (ADR-0043)', () => {
     mesh.close();
   });
 
-  it('returns false when no manifest exists on disk', async () => {
+  it("says 'no-manifest' when no manifest exists on disk", async () => {
     const base = await makeTempDir();
     const mesh = new MeshCore({ db, defaultScanRoot: base });
 
     const synced = await mesh.syncFromDisk('/nonexistent/path');
-    expect(synced).toBe(false);
+    expect(synced).toBe('no-manifest');
 
     mesh.close();
   });

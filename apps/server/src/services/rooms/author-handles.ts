@@ -28,6 +28,36 @@ import { advertisedHandle, claimNames, type MentionCandidate } from './mentions.
 import type { RoomAgentLookup } from './room-errors.js';
 
 /**
+ * Whether an agent author still speaks for the directory it names.
+ *
+ * **Two conditions, and the second is not implied by the first.**
+ *
+ * 1. The directory resolves to a registered agent. When it does not, the author
+ *    is a GHOST — a row the reconciler's orphan sweep or a genuine relocation
+ *    left behind. Note what this is not: an agent with `status: 'unreachable'`
+ *    has a row, resolves, and keeps its handle. A laptop that closed its lid
+ *    must not lose its name mid-conversation.
+ * 2. The author's generation stamp, when it has one, names that same agent.
+ *    "An active row implies a matching stamp" is FALSE at this seam: the roster
+ *    path reaches it through `AuthorRegistry.getMany`, not `resolve`, so no
+ *    retirement decision has run. Agent B registered at agent A's old directory
+ *    but not yet posting leaves A's row active with A's stamp while the lookup
+ *    returns B — and without this comparison A's author would claim B's handle.
+ *
+ * Non-agent authors are always live: there is no directory behind a human or the
+ * system voice for anything to become vacant.
+ *
+ * @param author - The stored author.
+ * @param agents - The lookup that resolves an agent from its directory.
+ */
+export function isLiveAuthor(author: AuthorRecord, agents: RoomAgentLookup): boolean {
+  if (author.kind !== 'agent') return true;
+  const occupant = agents.byPath(author.naturalKey);
+  if (!occupant) return false;
+  return author.mintedForManifestId === null || author.mintedForManifestId === occupant.id;
+}
+
+/**
  * Every name an author answers to after an `@`, most preferred first: an agent's
  * handle, then whatever it renders as.
  *
@@ -37,10 +67,20 @@ import type { RoomAgentLookup } from './room-errors.js';
  * author answers to" is how a picker starts offering a handle the resolver does
  * not accept.
  *
+ * **An agent author that is not live answers to NOTHING** ({@link isLiveAuthor}).
+ * The old fallback to `[displayName]` is exactly how a ghost claimed a name:
+ * `claimNames` is first-claimant-wins over the roster, so a ghost ahead of a
+ * live agent with the same display name took the name and the live agent was
+ * unreachable by mention — verified by execution, not reasoning. Returning no
+ * names releases the claim at its source, which is also what keeps
+ * {@link advertisedHandles} from offering it: a candidate with no names owns
+ * nothing to advertise.
+ *
  * @param author - The stored author.
  * @param agents - The lookup that resolves an agent's handle from its directory.
  */
 export function mentionNamesFor(author: AuthorRecord, agents: RoomAgentLookup): string[] {
+  if (!isLiveAuthor(author, agents)) return [];
   const handle = author.kind === 'agent' ? agents.byPath(author.naturalKey)?.name : null;
   return handle ? [handle, author.displayName] : [author.displayName];
 }
@@ -53,6 +93,11 @@ export function mentionNamesFor(author: AuthorRecord, agents: RoomAgentLookup): 
  * caller's — and it matters, because it decides which member wins a contested
  * name. Every caller passes `RoomStore.listMembers` order, which is the order
  * `resolveMentions` sees at write time.
+ *
+ * A ghost member stays in the sequence carrying an EMPTY name list rather than
+ * being dropped from it. The sequence mirrors the roster, and a candidate with
+ * no names claims nothing and is offered nothing — so the exclusion lives in one
+ * place ({@link mentionNamesFor}) instead of being re-derived here.
  *
  * @param members - The room's memberships, in store order.
  * @param authors - The resolved authors, keyed by id. A member whose author row

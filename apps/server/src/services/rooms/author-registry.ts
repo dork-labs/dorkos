@@ -17,11 +17,22 @@
  *   of every member of every room, which is a privacy defect we would have to
  *   undo under migration.
  *
+ * **One thing above is narrower than it was** (ADR 260801-003051). A row now
+ * carries `minted_for_manifest_id`, the ULID of the occupant it was minted FOR,
+ * because keying purely on the directory left the inverse of the moved-agent
+ * case unhandled: a NEW agent registered where an old one lived inherited its
+ * entire message history. The directory is still the identity key and no caller
+ * may supply a ULID; the stamp is derived here, and it only decides which
+ * occupancy generation a row belongs to. The rebuild worry the paragraph above
+ * describes is unreachable in current code — no reconciler path mints, and an
+ * ADR-0043 rebuild reads ids back from the files that store them.
+ *
  * @module server/services/rooms/author-registry
  */
 import { ulid } from 'ulidx';
-import { authors, eq, and, inArray, type Db } from '@dorkos/db';
+import { agents, authors, roomMembers, eq, and, inArray, isNull, type Db } from '@dorkos/db';
 import { agentAuthorRef, type AuthorKind, type AuthorRef } from '@dorkos/shared/room-schemas';
+import { logger } from '../../lib/logger.js';
 
 /**
  * The natural key of the unbound human author — the one an install mints while
@@ -77,6 +88,16 @@ export interface AuthorRecord {
   emoji: string | null;
   /** Render cache: identity colour, or `null` when the author has none. */
   color: string | null;
+  /**
+   * The manifest ULID of the occupant this row was minted for, or `null` on a
+   * legacy row and on every non-agent author.
+   *
+   * **Not an identity key and never accepted from a caller** — it is derived by
+   * {@link AuthorRegistry} from the `agents` table and rides along so the handle
+   * and dispatch seams can tell one occupancy generation of a directory from the
+   * next (ADR 260801-003051). The directory is still what identity keys on.
+   */
+  mintedForManifestId: string | null;
 }
 
 /**
@@ -136,17 +157,41 @@ export class AuthorRegistry {
    * Resolve `(kind, naturalKey)` to an author, inserting the row the first time
    * it is seen and refreshing the cached `displayName` after that.
    *
+   * **For an agent, "the row for this directory" is also "the row for the
+   * occupant that directory currently holds"** (ADR 260801-003051). Four states,
+   * and the fourth is the one revision 1 of the spec had no row for:
+   *
+   * | Active row's stamp     | Live agent at the path | What happens                  |
+   * | ---------------------- | ---------------------- | ----------------------------- |
+   * | matches the occupant   | yes                    | return it (the ordinary case) |
+   * | null (legacy)          | yes                    | adopt: write the stamp        |
+   * | differs                | yes                    | retire it, mint a fresh one   |
+   * | anything               | **no**                 | return it unchanged — a ghost |
+   *
+   * The ghost row is left alone deliberately: retiring on absence would churn a
+   * new row on every resolve for an agent that is merely gone, and the seams
+   * that matter (handles, dispatch) already exclude it by asking the same
+   * liveness question. Every lookup here filters `retired_at IS NULL`, or `.get()`
+   * would be nondeterministic across a directory's retired siblings.
+   *
    * @param input - The author's kind, stable key, and current display name.
-   * @returns The resolved author, whose `id` is stable for this natural key.
+   * @returns The resolved author, whose `id` is stable for this occupancy of
+   *   this natural key.
    */
   resolve(input: ResolveAuthorInput): AuthorRecord {
-    const existing = this.db
-      .select()
-      .from(authors)
-      .where(and(eq(authors.kind, input.kind), eq(authors.naturalKey, input.naturalKey)))
-      .get();
+    const existing = this.activeRow(input.kind, input.naturalKey);
+    // Derived here, never accepted: `resolveAgent` has no parameter for a ULID
+    // precisely so no caller can key identity on one.
+    const occupantId = input.kind === 'agent' ? this.occupantIdAt(input.naturalKey) : null;
 
     if (existing) {
+      if (
+        occupantId !== null &&
+        existing.mintedForManifestId !== null &&
+        existing.mintedForManifestId !== occupantId
+      ) {
+        return this.retireAndMint(existing, input, occupantId);
+      }
       // Only the fields this caller actually knows are refreshed. `resolveAgent`
       // from the identity header carries a name and nothing else, and it must
       // not wipe the avatar the mesh-backed resolve stored.
@@ -155,18 +200,31 @@ export class AuthorRegistry {
         emoji: input.emoji === undefined ? existing.emoji : input.emoji,
         color: input.color === undefined ? existing.color : input.color,
       };
+      // Adoption: a legacy row with no stamp takes the current occupant's id,
+      // once, and is thereafter an ordinary stamped row. Only ever a write, so a
+      // row minted before this column existed never retires on its own.
+      const mintedForManifestId =
+        existing.mintedForManifestId === null && occupantId !== null
+          ? occupantId
+          : existing.mintedForManifestId;
       if (
         existing.displayName !== refreshed.displayName ||
         existing.emoji !== refreshed.emoji ||
-        existing.color !== refreshed.color
+        existing.color !== refreshed.color ||
+        existing.mintedForManifestId !== mintedForManifestId
       ) {
-        this.db.update(authors).set(refreshed).where(eq(authors.id, existing.id)).run();
+        this.db
+          .update(authors)
+          .set({ ...refreshed, mintedForManifestId })
+          .where(eq(authors.id, existing.id))
+          .run();
       }
       return {
         id: existing.id,
         kind: input.kind,
         naturalKey: input.naturalKey,
         ...refreshed,
+        mintedForManifestId,
       };
     }
 
@@ -177,17 +235,15 @@ export class AuthorRegistry {
       displayName: input.displayName,
       emoji: input.emoji ?? null,
       color: input.color ?? null,
+      mintedForManifestId: occupantId,
+      retiredAt: null,
       createdAt: new Date().toISOString(),
     };
     // A concurrent resolve of the same natural key would collide on the unique
     // index; ignoring the conflict and re-reading returns the winner's id
     // rather than throwing on a read path.
     this.db.insert(authors).values(row).onConflictDoNothing().run();
-    const settled = this.db
-      .select()
-      .from(authors)
-      .where(and(eq(authors.kind, input.kind), eq(authors.naturalKey, input.naturalKey)))
-      .get();
+    const settled = this.activeRow(input.kind, input.naturalKey);
     return {
       id: settled?.id ?? row.id,
       kind: input.kind,
@@ -195,6 +251,118 @@ export class AuthorRegistry {
       displayName: input.displayName,
       emoji: row.emoji,
       color: row.color,
+      mintedForManifestId: settled?.mintedForManifestId ?? row.mintedForManifestId,
+    };
+  }
+
+  /**
+   * The one ACTIVE row for a `(kind, naturalKey)`, or `undefined`.
+   *
+   * The `retired_at IS NULL` filter is what the partial unique index promises:
+   * without it, a directory that has changed hands has two rows matching and
+   * `.get()` picks between them by whatever order SQLite happens to use.
+   *
+   * @param kind - The author kind.
+   * @param naturalKey - The stable identity.
+   */
+  private activeRow(kind: AuthorKind, naturalKey: string): typeof authors.$inferSelect | undefined {
+    return this.db
+      .select()
+      .from(authors)
+      .where(
+        and(eq(authors.kind, kind), eq(authors.naturalKey, naturalKey), isNull(authors.retiredAt))
+      )
+      .get();
+  }
+
+  /**
+   * The manifest ULID of whatever agent is registered at a directory right now,
+   * or `null` when none is.
+   *
+   * Read from the `agents` table with the `db` handle this registry already
+   * owns, so the ULID is **derived** rather than accepted — the intent
+   * ADR 260726-170126 protected with a signature that had no parameter for one.
+   *
+   * @param agentPath - The agent's project directory.
+   */
+  private occupantIdAt(agentPath: string): string | null {
+    const row = this.db
+      .select({ id: agents.id })
+      .from(agents)
+      .where(eq(agents.projectPath, agentPath))
+      .get();
+    return row?.id ?? null;
+  }
+
+  /**
+   * Retire the previous occupant's author and mint the new occupant one, in a
+   * single transaction.
+   *
+   * **The memberships are deliberately not carried.** `room_members` is keyed
+   * `(roomId, authorId)` and room membership is an ACCESS fact: a new agent
+   * occupying a reused directory must not inherit the rooms the previous
+   * occupant was invited to. The consequence — re-initializing a manifest in
+   * place drops that agent out of every room until it is re-invited — is
+   * accepted in ADR 260801-003051, and it is loud rather than silent: the warn
+   * below names both author ids and every room left behind, the moment it
+   * happens.
+   *
+   * One transaction because the partial unique index makes the window real: a
+   * crash between the retire and the insert would leave a directory with no
+   * active author at all. (It self-heals — the next resolve finds none and mints
+   * — but the transaction means the window does not exist.)
+   *
+   * @param existing - The row being retired.
+   * @param input - What the new row is minted from.
+   * @param occupantId - The manifest ULID the fresh row is stamped with.
+   */
+  private retireAndMint(
+    existing: typeof authors.$inferSelect,
+    input: ResolveAuthorInput,
+    occupantId: string
+  ): AuthorRecord {
+    const now = new Date().toISOString();
+    const fresh = {
+      id: ulid(),
+      kind: input.kind,
+      naturalKey: input.naturalKey,
+      displayName: input.displayName,
+      emoji: input.emoji ?? null,
+      color: input.color ?? null,
+      mintedForManifestId: occupantId,
+      retiredAt: null,
+      createdAt: now,
+    };
+    const abandoned = this.db
+      .select({ roomId: roomMembers.roomId })
+      .from(roomMembers)
+      .where(eq(roomMembers.authorId, existing.id))
+      .all()
+      .map((row) => row.roomId);
+
+    this.db.transaction((tx) => {
+      tx.update(authors).set({ retiredAt: now }).where(eq(authors.id, existing.id)).run();
+      tx.insert(authors).values(fresh).run();
+    });
+
+    logger.warn('[rooms] an agent directory changed hands, so its rooms did not carry over', {
+      retiredAuthorId: existing.id,
+      authorId: fresh.id,
+      manifestId: occupantId,
+      previousManifestId: existing.mintedForManifestId,
+      displayName: input.displayName,
+      roomsLeftBehind: abandoned.length,
+      roomIds: abandoned,
+    });
+
+    return {
+      id: fresh.id,
+      kind: input.kind,
+      naturalKey: input.naturalKey,
+      displayName: fresh.displayName,
+      emoji: fresh.emoji,
+      color: fresh.color,
+      mintedForManifestId: occupantId,
     };
   }
 
@@ -202,6 +370,14 @@ export class AuthorRegistry {
    * Resolve an agent by its directory. This overload exists so no caller is
    * ever handed the opportunity to pass a manifest ULID: the signature simply
    * has no parameter for one.
+   *
+   * That is still true after ADR 260801-003051, and the distinction is worth
+   * holding. The registry now DERIVES the current occupant's manifest ULID from
+   * the `agents` table it already reads, and stamps it on the row, so a
+   * directory that changes hands starts a fresh author instead of inheriting the
+   * previous occupant's history. What no caller may do is SUPPLY one — identity
+   * still keys on the directory, and the id rides along only to tell one
+   * occupancy generation from the next.
    *
    * @param agentPath - Absolute path to the agent's project directory.
    * @param displayName - The agent's current name, for rendering.
@@ -296,18 +472,15 @@ export class AuthorRegistry {
    */
   bindOwner(userId: string): AuthorRecord {
     const naturalKey = accountNaturalKey(userId);
-    const bound = this.db
-      .select()
-      .from(authors)
-      .where(and(eq(authors.kind, 'human'), eq(authors.naturalKey, naturalKey)))
-      .get();
+    // Both reads go through the active-row filter for the same reason the
+    // resolve path does. A human author never retires — there is no manifest
+    // behind it to change hands — but a `(kind, natural_key)` lookup that does
+    // not say so is a lookup that would pick nondeterministically the day one
+    // ever does.
+    const bound = this.activeRow('human', naturalKey);
     if (bound) return toRecord(bound);
 
-    const sentinel = this.db
-      .select()
-      .from(authors)
-      .where(and(eq(authors.kind, 'human'), eq(authors.naturalKey, LOCAL_HUMAN_NATURAL_KEY)))
-      .get();
+    const sentinel = this.activeRow('human', LOCAL_HUMAN_NATURAL_KEY);
     if (!sentinel) {
       return this.resolve({ kind: 'human', naturalKey, displayName: LOCAL_HUMAN_DISPLAY_NAME });
     }
@@ -384,12 +557,7 @@ export class AuthorRegistry {
 
   /** The stored display name of a human author, or `null` when it has no row yet. */
   private storedHumanName(naturalKey: string): string | null {
-    const row = this.db
-      .select({ displayName: authors.displayName })
-      .from(authors)
-      .where(and(eq(authors.kind, 'human'), eq(authors.naturalKey, naturalKey)))
-      .get();
-    return row?.displayName ?? null;
+    return this.activeRow('human', naturalKey)?.displayName ?? null;
   }
 }
 
@@ -402,5 +570,6 @@ function toRecord(row: typeof authors.$inferSelect): AuthorRecord {
     displayName: row.displayName,
     emoji: row.emoji,
     color: row.color,
+    mintedForManifestId: row.mintedForManifestId,
   };
 }

@@ -9,7 +9,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import type { DiscoveryStrategy } from '../types.js';
-import { readManifest } from '../manifest.js';
+import { readManifest, MANIFEST_DIR, MANIFEST_FILE } from '../manifest.js';
 import type { ScanEvent, ScanProgress, UnifiedScanOptions } from './types.js';
 import { UNIFIED_EXCLUDE_PATTERNS, BACKUP_DIR_MARKER } from './types.js';
 
@@ -48,6 +48,31 @@ const ALLOWED_DOT_DIRS = new Set([
   '.kilocode',
   '.trae',
 ]);
+
+/**
+ * Whether a directory holds a `.dork/agent.json` FILE — the gate on whether it
+ * may be offered as a new-agent candidate.
+ *
+ * Deliberately not `readManifest`, whose `null` means both "no manifest" and
+ * "a manifest that will not parse". The second must NOT reopen the Register
+ * affordance: that would overwrite a git-tracked file with a fresh id rather
+ * than fixing it.
+ *
+ * A read error that is not `ENOENT`/`ENOTDIR` answers **yes**, on the same
+ * errno discipline the relocation guard uses: a directory whose `.dork/` cannot
+ * be stat'd may well hold a manifest, and offering it as a fresh agent is the
+ * irreversible direction to be wrong in.
+ *
+ * @param dir - The directory being walked.
+ */
+async function manifestFileExists(dir: string): Promise<boolean> {
+  try {
+    return (await fs.stat(path.join(dir, MANIFEST_DIR, MANIFEST_FILE))).isFile();
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    return !(code === 'ENOENT' || code === 'ENOTDIR');
+  }
+}
 
 /**
  * Unified async BFS scanner for agent discovery.
@@ -133,8 +158,19 @@ export async function* unifiedScan(
       // Denied paths: skip candidate and do not descend into children
       if (denialList.isDenied(dir)) continue;
 
-      // Check for existing .dork/agent.json — auto-import, then continue BFS
-      const manifest = await readManifest(dir);
+      // Check for existing .dork/agent.json — auto-import, then continue BFS.
+      //
+      // Two questions, deliberately asked separately. "Is there a manifest FILE
+      // here" decides whether this directory may be offered as a new-agent
+      // candidate below; "does it parse" decides whether it can be imported.
+      // `readManifest` answers `null` to both absent and invalid, and collapsing
+      // them here is what let a corrupt manifest surface as a fresh candidate.
+      const hasManifest = await manifestFileExists(dir);
+      // The logger is passed so a present-but-invalid manifest names itself in
+      // the scan's own log. Without it those warnings went to the console, where
+      // an operator running the server never sees them — and the recovery
+      // (fix or delete the file) is unguessable without the path.
+      const manifest = hasManifest ? await readManifest(dir, logger) : null;
       if (manifest) {
         progress.foundAgents++;
         yield { type: 'auto-import', data: { manifest, path: dir } };
@@ -156,8 +192,18 @@ export async function* unifiedScan(
         continue;
       }
 
-      // Apply strategies if not already registered
-      if (!registry.isRegistered(dir)) {
+      // Apply strategies unless this directory already has an identity.
+      //
+      // **A manifest-bearing directory is never a candidate, whatever its
+      // registration state.** `isRegistered` alone was not enough: a duplicate
+      // checkout the relocation guard refuses (ADR 260801-003050) has a manifest
+      // and no row, so it surfaced on every scan as a "new agent" whose Register
+      // button mints a fresh ULID and OVERWRITES the git-tracked manifest —
+      // dirtying a tracked file that would change the primary agent's id if it
+      // were merged. Imported, refused, or invalid, this directory already has
+      // an identity; someone who wants a clone to be its own agent re-inits it
+      // deliberately rather than clicking a scan surface.
+      if (!hasManifest && !registry.isRegistered(dir)) {
         for (const strategy of strategies) {
           try {
             if (await strategy.detect(dir)) {
@@ -186,8 +232,16 @@ export async function* unifiedScan(
         yield { type: 'progress', data: { ...progress } };
       }
 
-      // Enqueue subdirectories if within depth limit
+      // Enqueue subdirectories if within depth limit.
+      //
+      // Sorted, because `fs.readdir` order is filesystem-dependent: the same
+      // tree walked twice could yield candidates in two different orders, and
+      // before the relocation guard existed that order decided which copy of a
+      // duplicated manifest won the agent's identity. Identity is now sticky to
+      // the first registrant whatever the order (ADR 260801-003050); sorting is
+      // what makes a single traversal reproducible for everything else.
       if (depth < maxDepth) {
+        entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
         for (const entry of entries) {
           const isDir = entry.isDirectory();
           const isSymlink = entry.isSymbolicLink();
