@@ -259,6 +259,33 @@ export const TaskDispatchPayloadSchema = z
 
 export type TaskDispatchPayload = z.infer<typeof TaskDispatchPayloadSchema>;
 
+// === Task Cancel ===
+
+/**
+ * Subject prefix a stop request for one run is published to (DOR-808).
+ *
+ * Deliberately NOT under `relay.system.tasks.`, which the Claude Code adapter
+ * claims as a delivery prefix: a stop must reach a run that is already holding
+ * one of the adapter's concurrency slots, and anything routed through
+ * `deliver()` queues behind exactly the run it is trying to end. It travels the
+ * same way tool approvals do — a subscription the adapter registers on start —
+ * so the two control signals share one shape.
+ *
+ * The concrete subject is this prefix plus the run id, so a trace row names the
+ * run it belongs to.
+ */
+export const TASK_CANCEL_SUBJECT_PREFIX = 'relay.system.task-cancel.';
+
+export const TaskCancelPayloadSchema = z
+  .object({
+    type: z.literal('task_cancel'),
+    /** The run to stop. Authoritative — the subject's tail is for humans. */
+    runId: z.string(),
+  })
+  .openapi('TaskCancelPayload');
+
+export type TaskCancelPayload = z.infer<typeof TaskCancelPayloadSchema>;
+
 // === Console Relay Receipt ===
 
 export const RelayReceiptSchema = z

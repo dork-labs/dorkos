@@ -30,6 +30,7 @@ import type {
   GitStatusError,
   Task,
   TaskRun,
+  CancelTaskRunResponse,
   CreateTaskInput,
   UpdateTaskRequest,
   ListTaskRunsQuery,
@@ -1064,8 +1065,14 @@ export interface Transport extends RoomTransport {
   listTaskRuns(opts?: Partial<ListTaskRunsQuery>): Promise<TaskRun[]>;
   /** Get a specific Task run. */
   getTaskRun(id: string): Promise<TaskRun>;
-  /** Cancel a running Task. */
-  cancelTaskRun(id: string): Promise<{ success: boolean }>;
+  /**
+   * Ask a running Task to stop.
+   *
+   * Resolves only when a runner has the request or there was nothing left to
+   * stop; a request nothing acknowledged REJECTS, because "we asked" and "it
+   * stopped" are different facts and the second is the one people act on.
+   */
+  cancelTaskRun(id: string): Promise<CancelTaskRunResponse>;
   /** Fetch available Task templates for onboarding. */
   getTaskTemplates(): Promise<TaskTemplate[]>;
 

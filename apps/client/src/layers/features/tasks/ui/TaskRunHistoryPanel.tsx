@@ -344,10 +344,15 @@ export function TaskRunHistoryPanel({ scheduleId, scheduleCwd }: Props) {
           onNavigate={handleNavigateToRun}
           onCancel={(id) =>
             cancelTaskRun.mutate(id, {
-              onSuccess: () => toast('Run cancelled'),
+              onSuccess: (result) =>
+                toast(
+                  result.state === 'already_finished'
+                    ? 'That run had already finished'
+                    : 'Stopping the run'
+                ),
               onError: (err) =>
                 toast.error(
-                  `Failed to cancel: ${err instanceof Error ? err.message : 'Unknown error'}`
+                  `Couldn't stop the run: ${err instanceof Error ? err.message : 'Unknown error'}`
                 ),
             })
           }

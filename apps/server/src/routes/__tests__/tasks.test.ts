@@ -3,9 +3,13 @@ import express from 'express';
 import request from 'supertest';
 import { createTasksRouter } from '../tasks.js';
 import { TaskStore, type CreateTaskStoreInput } from '../../services/tasks/task-store.js';
-import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
+import {
+  TaskSchedulerService,
+  type SchedulerAgentManager,
+} from '../../services/tasks/task-scheduler-service.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
+import type { RelayCore } from '@dorkos/relay';
 
 vi.mock('../../lib/boundary.js', () => ({
   isWithinBoundary: vi.fn().mockResolvedValue(true),
@@ -69,7 +73,7 @@ function createMockScheduler(): TaskSchedulerService {
     registerTask: vi.fn(),
     unregisterTask: vi.fn(),
     triggerManualRun: vi.fn().mockResolvedValue(null),
-    cancelRun: vi.fn().mockReturnValue(false),
+    cancelRun: vi.fn().mockResolvedValue({ state: 'not_found' }),
     getNextRun: vi.fn().mockReturnValue(new Date('2026-03-01T00:00:00Z')),
     getActiveRunCount: vi.fn().mockReturnValue(0),
     isRegistered: vi.fn().mockReturnValue(false),
@@ -308,17 +312,123 @@ describe('Tasks routes', () => {
   });
 
   describe('POST /api/tasks/runs/:id/cancel', () => {
-    it('returns 404 when run not active', async () => {
+    it('returns 404 when there is no such run', async () => {
       const res = await request(app).post('/api/tasks/runs/nope/cancel');
       expect(res.status).toBe(404);
     });
 
     it('cancels an active run', async () => {
-      vi.mocked(scheduler.cancelRun).mockReturnValue(true);
+      vi.mocked(scheduler.cancelRun).mockResolvedValue({ state: 'stopping' });
 
       const res = await request(app).post('/api/tasks/runs/run-1/cancel');
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
+      expect(res.body.state).toBe('stopping');
     });
+
+    it('answers 200 for a run that had already finished', async () => {
+      vi.mocked(scheduler.cancelRun).mockResolvedValue({ state: 'already_finished' });
+
+      const res = await request(app).post('/api/tasks/runs/run-1/cancel');
+      expect(res.status).toBe(200);
+      expect(res.body.state).toBe('already_finished');
+    });
+
+    it('says so — and does not claim success — when the stop could not be confirmed', async () => {
+      vi.mocked(scheduler.cancelRun).mockResolvedValue({
+        state: 'unconfirmed',
+        reason: 'nothing picked it up',
+      });
+
+      const res = await request(app).post('/api/tasks/runs/run-1/cancel');
+      expect(res.status).toBe(502);
+      expect(res.body.error).toContain('nothing picked it up');
+    });
+  });
+});
+
+/**
+ * The cockpit's Stop button against a run the scheduler handed to the relay
+ * (DOR-808).
+ *
+ * Mounted on the REAL {@link TaskSchedulerService}, because the bug lived in
+ * exactly the seam a mocked scheduler hides: a relay-dispatched run is never
+ * held in the scheduler's in-process `activeRuns`, so `cancelRun` answered
+ * "not active" and the route turned that into a 404 on a run that was very
+ * much alive.
+ */
+describe('POST /api/tasks/runs/:id/cancel — relay-dispatched run', () => {
+  let app: express.Application;
+  let store: TaskStore;
+  let db: Db;
+  let relay: { publish: ReturnType<typeof vi.fn> };
+  let scheduler: TaskSchedulerService;
+
+  beforeEach(() => {
+    db = createTestDb();
+    store = new TaskStore(db);
+    relay = { publish: vi.fn().mockResolvedValue({ messageId: 'msg-1', deliveredTo: 1 }) };
+    scheduler = new TaskSchedulerService({
+      store,
+      agentManager: {
+        ensureSession: vi.fn(),
+        sendMessage: vi.fn(),
+        interruptQuery: vi.fn().mockResolvedValue(true),
+      } as unknown as SchedulerAgentManager,
+      config: {
+        maxConcurrentRuns: 1,
+        retentionCount: 100,
+        timezone: null,
+        mayFire: true,
+        firingReason: 'test',
+      },
+      relay: relay as unknown as RelayCore,
+    });
+    app = express();
+    app.use(express.json());
+    app.use('/api/tasks', createTasksRouter(store, scheduler, '/tmp/dork-test'));
+  });
+
+  afterEach(() => {
+    store.close();
+  });
+
+  it('stops a run the relay is carrying', async () => {
+    const task = store.createTask(taskInput({ name: 'Relay Run', prompt: 'p', cron: '0 * * * *' }));
+    const run = store.createRun(task.id, 'scheduled');
+
+    const res = await request(app).post(`/api/tasks/runs/${run.id}/cancel`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(relay.publish).toHaveBeenCalledOnce();
+    const [subject, payload] = relay.publish.mock.calls[0];
+    expect(subject).toBe(`relay.system.task-cancel.${run.id}`);
+    expect(payload).toEqual({ type: 'task_cancel', runId: run.id });
+  });
+
+  it('does not pretend to have stopped a run nothing was listening for', async () => {
+    relay.publish.mockResolvedValue({ messageId: 'msg-2', deliveredTo: 0 });
+    const task = store.createTask(taskInput({ name: 'Orphan', prompt: 'p', cron: '0 * * * *' }));
+    const run = store.createRun(task.id, 'scheduled');
+
+    const res = await request(app).post(`/api/tasks/runs/${run.id}/cancel`);
+
+    expect(res.status).toBe(502);
+    // The run is left alone: nobody confirmed it stopped, so claiming a
+    // terminal status here would be a guess written to the record.
+    expect(store.getRun(run.id)!.status).toBe('running');
+  });
+
+  it('is a no-op the second time — the run has already finished', async () => {
+    const task = store.createTask(taskInput({ name: 'Twice', prompt: 'p', cron: '0 * * * *' }));
+    const run = store.createRun(task.id, 'scheduled');
+    store.updateRun(run.id, { status: 'cancelled', finishedAt: new Date().toISOString() });
+
+    const res = await request(app).post(`/api/tasks/runs/${run.id}/cancel`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.state).toBe('already_finished');
+    expect(relay.publish).not.toHaveBeenCalled();
   });
 });

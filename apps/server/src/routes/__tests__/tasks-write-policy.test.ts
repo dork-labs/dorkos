@@ -66,7 +66,7 @@ function createMockScheduler(): TaskSchedulerService {
     registerTask: vi.fn(),
     unregisterTask: vi.fn(),
     triggerManualRun: vi.fn().mockResolvedValue(null),
-    cancelRun: vi.fn().mockReturnValue(false),
+    cancelRun: vi.fn().mockResolvedValue({ state: 'not_found' }),
     getNextRun: vi.fn().mockReturnValue(new Date('2026-03-01T00:00:00Z')),
     getActiveRunCount: vi.fn().mockReturnValue(0),
     isRegistered: vi.fn().mockReturnValue(false),

@@ -3,7 +3,7 @@ import type { RelayCore } from '@dorkos/relay';
 import type { MeshCore } from '@dorkos/mesh';
 import type { Task, TaskRun, PermissionMode, StreamEvent } from '@dorkos/shared/types';
 import type { TaskDispatchPayload } from '@dorkos/shared/relay-schemas';
-import type { TaskStore } from './task-store.js';
+import { isTerminalRunStatus, type TaskStore } from './task-store.js';
 import type { ActivityService } from '../activity/activity-service.js';
 import { isRelayEnabled } from '../relay/relay-state.js';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
@@ -14,6 +14,10 @@ import { formatDuration } from '../../lib/format-duration.js';
 import { SchedulerLock, SCHEDULER_HEARTBEAT_MS, type LeaderLock } from './scheduler-lock.js';
 import { withSpan, SPAN, ATTR } from '../observability/index.js';
 import { consumeRunStream, interruptRun } from './run-stream.js';
+import { publishRunStop, type CancelRunOutcome } from './run-cancel.js';
+import { buildTaskAppend } from './task-append.js';
+
+export type { CancelRunOutcome } from './run-cancel.js';
 
 const logger = createTaggedLogger('Tasks');
 
@@ -108,28 +112,6 @@ export interface SchedulerDeps {
    * scheduler build the real lock.
    */
   leaderLock?: LeaderLock;
-}
-
-/**
- * Build the system prompt append for a Task-dispatched agent run.
- *
- * Gives the agent context about the scheduled job so it can operate unattended.
- */
-export function buildTaskAppend(task: Task, run: TaskRun): string {
-  return [
-    '',
-    '=== TASK SCHEDULER CONTEXT ===',
-    `Job: ${task.name}`,
-    `Schedule: ${task.cron ?? 'on-demand'}`,
-    `Agent: ${task.agentId ?? '(global)'}`,
-    `Run ID: ${run.id}`,
-    `Trigger: ${run.trigger}`,
-    '',
-    'You are running as an unattended task via DorkOS Tasks.',
-    'Complete the task described in the prompt efficiently.',
-    'Do not ask questions — make reasonable decisions autonomously.',
-    '=== END TASK CONTEXT ===',
-  ].join('\n');
 }
 
 /**
@@ -316,17 +298,75 @@ export class TaskSchedulerService {
   }
 
   /**
-   * Cancel a running job by aborting its AbortController.
+   * Stop a run, whichever way it was dispatched.
    *
-   * Aborts with {@link OPERATOR_CANCEL} so finalization can tell an operator's
-   * cancel apart from a shutdown abort and skip a duplicate activity event —
-   * the cancel route already emitted one, with the truthful "You" actor.
+   * A run this process is driving itself is aborted in place. A run handed to
+   * the relay is executing inside an adapter that this process holds no handle
+   * on, so the stop travels the same bus the dispatch did — and the only honest
+   * report back is whether something took it (DOR-808).
+   *
+   * The direct abort carries {@link OPERATOR_CANCEL} so finalization can tell
+   * an operator's cancel apart from a shutdown abort and skip a duplicate
+   * activity event — the cancel route already emitted one, with the truthful
+   * "You" actor.
+   *
+   * @param runId - The run to stop.
+   * @returns What can honestly be said about the request.
    */
-  cancelRun(runId: string): boolean {
+  async cancelRun(runId: string): Promise<CancelRunOutcome> {
+    const run = this.store.getRun(runId);
+    if (!run) return { state: 'not_found' };
+    // Asked first, so a second Stop — and a Stop that lost the race with the
+    // run's own ending — is a plain no-op rather than a message on the bus.
+    if (isTerminalRunStatus(run.status)) return { state: 'already_finished' };
+
     const controller = this.activeRuns.get(runId);
-    if (!controller) return false;
-    controller.abort(OPERATOR_CANCEL);
-    return true;
+    if (controller) {
+      controller.abort(OPERATOR_CANCEL);
+      return { state: 'stopping' };
+    }
+
+    if (!this.relay) {
+      return {
+        state: 'unconfirmed',
+        reason: 'This run is not being driven by this server, and the message bus is off.',
+      };
+    }
+
+    let reachedRunners: number;
+    try {
+      reachedRunners = await publishRunStop(this.relay, runId);
+    } catch (err) {
+      // A stop that could not even be SENT is the same news for the person
+      // pressing the button as one nobody answered: the run may still be
+      // going. Reporting it as a 500 would be a truthful HTTP status and a
+      // useless answer.
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error(`could not send the stop request for run ${runId}: ${message}`);
+      return {
+        state: 'unconfirmed',
+        reason: `The stop request could not be sent: ${message}`,
+      };
+    }
+
+    if (reachedRunners > 0) {
+      logger.info(`stop request for run ${runId} reached ${reachedRunners} runner(s)`);
+      return { state: 'stopping' };
+    }
+
+    // Nobody took it. Either the run finished while the request was in flight —
+    // in which case the record now says so — or no runner recognises it. Only
+    // the first is good news, and the run record is the one that knows.
+    const after = this.store.getRun(runId);
+    if (after && isTerminalRunStatus(after.status)) return { state: 'already_finished' };
+
+    logger.warn(`no runner acknowledged the stop request for run ${runId}`);
+    return {
+      state: 'unconfirmed',
+      reason:
+        'Nothing picked up the stop request. The agent may still be working — ' +
+        'check the run again in a moment.',
+    };
   }
 
   /** Get the number of currently active runs. */
@@ -511,6 +551,17 @@ export class TaskSchedulerService {
     });
 
     if (result.deliveredTo === 0) {
+      // "Nobody was listening" and "it ran and was stopped" arrive here
+      // identically: the adapter reports an unsuccessful delivery for a run it
+      // ended on a deadline, and in-process delivery means the whole run has
+      // already happened by the time publish() resolves. The run record is the
+      // tiebreaker — a run that reached a terminal status was plainly received,
+      // and calling it failed would put a lie in the activity feed.
+      const current = this.store.getRun(run.id);
+      if (current && isTerminalRunStatus(current.status)) {
+        logger.debug(`relay dispatch for run ${run.id} finished as ${current.status}`);
+        return;
+      }
       this.store.updateRun(run.id, {
         status: 'failed',
         finishedAt: new Date().toISOString(),

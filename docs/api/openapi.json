@@ -3925,6 +3925,28 @@
           "agent"
         ]
       },
+      "CancelTaskRunResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "stopping",
+              "already_finished"
+            ]
+          }
+        },
+        "required": [
+          "success",
+          "state"
+        ]
+      },
       "RelaySendMessageRequest": {
         "type": "object",
         "properties": {
@@ -8482,7 +8504,7 @@
         "tags": [
           "Tasks"
         ],
-        "summary": "Cancel a running job",
+        "summary": "Stop a running job",
         "parameters": [
           {
             "schema": {
@@ -8495,25 +8517,27 @@
         ],
         "responses": {
           "200": {
-            "description": "Cancelled",
+            "description": "A runner has the stop request, or the run had already finished",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "success"
-                  ]
+                  "$ref": "#/components/schemas/CancelTaskRunResponse"
                 }
               }
             }
           },
           "404": {
-            "description": "Run not found or not active",
+            "description": "Run not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The stop request went out and nothing acknowledged it — the run may still be going",
             "content": {
               "application/json": {
                 "schema": {

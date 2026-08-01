@@ -52,6 +52,7 @@ import {
   TaskItemSchema,
   TaskSchema,
   TaskRunSchema,
+  CancelTaskRunResponseSchema,
   CreateTaskRequestSchema,
   UpdateTaskRequestSchema,
   ListTaskRunsQuerySchema,
@@ -1159,17 +1160,22 @@ registry.registerPath({
   method: 'post',
   path: '/api/tasks/runs/{id}/cancel',
   tags: ['Tasks'],
-  summary: 'Cancel a running job',
+  summary: 'Stop a running job',
   request: {
     params: z.object({ id: z.string() }),
   },
   responses: {
     200: {
-      description: 'Cancelled',
-      content: { 'application/json': { schema: z.object({ success: z.boolean() }) } },
+      description: 'A runner has the stop request, or the run had already finished',
+      content: { 'application/json': { schema: CancelTaskRunResponseSchema } },
     },
     404: {
-      description: 'Run not found or not active',
+      description: 'Run not found',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    502: {
+      description:
+        'The stop request went out and nothing acknowledged it — the run may still be going',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

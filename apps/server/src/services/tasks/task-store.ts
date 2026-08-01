@@ -88,8 +88,12 @@ const TERMINAL_RUN_STATUSES: ReadonlySet<TaskRunStatus> = new Set([
   'cancelled',
 ]);
 
-/** Whether a run status is terminal (see {@link TERMINAL_RUN_STATUSES}). */
-function isTerminalRunStatus(status: TaskRunStatus): boolean {
+/**
+ * Whether a run status is terminal (see {@link TERMINAL_RUN_STATUSES}).
+ *
+ * @param status - The run status to classify.
+ */
+export function isTerminalRunStatus(status: TaskRunStatus): boolean {
   return TERMINAL_RUN_STATUSES.has(status);
 }
 

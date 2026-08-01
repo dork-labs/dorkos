@@ -10,6 +10,7 @@ import type {
   UpdateTaskRequest,
   ListTaskRunsQuery,
   TaskTemplate,
+  CancelTaskRunResponse,
 } from '@dorkos/shared/types';
 import { fetchJSON, buildQueryString } from './http-client';
 
@@ -60,8 +61,8 @@ export function createTasksMethods(baseUrl: string) {
       return fetchJSON<TaskRun>(baseUrl, `/tasks/runs/${id}`);
     },
 
-    cancelTaskRun(id: string): Promise<{ success: boolean }> {
-      return fetchJSON<{ success: boolean }>(baseUrl, `/tasks/runs/${id}/cancel`, {
+    cancelTaskRun(id: string): Promise<CancelTaskRunResponse> {
+      return fetchJSON<CancelTaskRunResponse>(baseUrl, `/tasks/runs/${id}/cancel`, {
         method: 'POST',
       });
     },
