@@ -126,6 +126,30 @@ export function createEditBaselineCapture(
   };
 }
 
+/**
+ * A model entry as the SDK reports it from `supportedModels()`.
+ *
+ * This shape is the narrow waist between the SDK and the model cache: every
+ * capability field `mapSdkModelToModelOption` persists must be carried here,
+ * because a field dropped at this seam is a capability silently lost
+ * everywhere downstream. That is not hypothetical — a five-field pick at the
+ * `supportedModels()` call site dropped `supportsAdaptiveThinking`, so
+ * `resolveThinkingOptions` never engaged summarized thinking display and
+ * every Opus 4.8 session streamed empty thinking blocks (alongside starved
+ * `supportsAutoMode`/`supportsFastMode`). Pass the SDK's objects through
+ * whole; never re-pick them.
+ */
+export interface SdkReportedModel {
+  value: string;
+  displayName: string;
+  description: string;
+  supportsEffort?: boolean;
+  supportedEffortLevels?: EffortLevel[];
+  supportsAdaptiveThinking?: boolean;
+  supportsFastMode?: boolean;
+  supportsAutoMode?: boolean;
+}
+
 /** Options bundle for executeSdkQuery, grouping runtime dependencies. */
 export interface MessageSenderOpts {
   cwd: string;
@@ -138,15 +162,7 @@ export interface MessageSenderOpts {
   mcpServerFactory?:
     | ((session: AgentSession, sessionId: string) => Record<string, McpServerConfig>)
     | null;
-  onModelsReceived?: (
-    models: Array<{
-      value: string;
-      displayName: string;
-      description: string;
-      supportsEffort?: boolean;
-      supportedEffortLevels?: EffortLevel[];
-    }>
-  ) => void;
+  onModelsReceived?: (models: SdkReportedModel[]) => void;
   onMcpStatusReceived?: (servers: McpServerEntry[]) => void;
   /**
    * Server-only companion to {@link onMcpStatusReceived}: the resolved
@@ -644,16 +660,10 @@ export async function* executeSdkQuery(
   if (opts.onModelsReceived) {
     agentQuery
       .supportedModels()
+      // Whole objects, never a field pick — see the SdkReportedModel doc for
+      // the capability-starvation incident a pick here caused.
       .then((models) => {
-        opts.onModelsReceived!(
-          models.map((m) => ({
-            value: m.value,
-            displayName: m.displayName,
-            description: m.description,
-            supportsEffort: m.supportsEffort,
-            supportedEffortLevels: m.supportedEffortLevels,
-          }))
-        );
+        opts.onModelsReceived!(models);
       })
       .catch((err) => {
         logger.debug('[sendMessage] failed to fetch supported models', { err });

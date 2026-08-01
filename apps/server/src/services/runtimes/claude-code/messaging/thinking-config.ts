@@ -11,9 +11,11 @@
  *    thinking text. Opus 4.6 / Sonnet 4.6 already default to `"summarized"`; setting
  *    it explicitly is a harmless no-op there.
  *
- * 2. **Adaptive thinking is model-gated.** `thinking: { type: 'adaptive' }` is only
- *    valid on adaptive-capable models. Sending it to a non-adaptive model (Haiku,
- *    Opus/Sonnet 4.5, etc.) returns a 400. So we only attach a `thinking` config when
+ * 2. **Adaptive thinking is model-gated.** `thinking: { type: 'adaptive' }` is meant
+ *    for adaptive-capable models; non-adaptive ones (Haiku, Opus/Sonnet 4.5, etc.)
+ *    do not advertise the capability, and some reject the config outright (observed
+ *    behavior varies by model — Haiku currently tolerates it). So we only attach a
+ *    `thinking` config when
  *    the model reports `supportsAdaptiveThinking`; otherwise we leave `thinking` unset
  *    and rely on the model's own (already-summarized) default — which is exactly the
  *    behavior that works today.
