@@ -13,7 +13,7 @@ status: specified
 
 ## Overview
 
-Every assistant turn gets a **touch-chip strip**: a live, deduplicated row of the files, URLs, and commands the agent is touching, each chip animating a verb-specific motion signature while its tool runs, absorbing into a growing pile as new touches arrive, and settling into a one-line summary with an expandable tray when the turn completes. Clicking any chip opens its target in the canvas pane. Design authority: `04-design-decisions.md` + the checked-in animated mockups in `mockups/` (normative for timing/easing/choreography; port, don't copy).
+Every assistant turn gets a **touch-chip strip**: a live, deduplicated row of the files, URLs, and commands the agent is touching, each chip animating a verb-specific motion signature while its tool runs, absorbing into a growing pile as new touches arrive, and settling into a one-line summary with an expandable tray when the turn completes. Clicking any chip opens its target in the canvas pane. Design authority: `design-decisions.md` + the checked-in animated mockups in `mockups/` (normative for timing/easing/choreography; port, don't copy).
 
 ## Background / Problem Statement
 
@@ -150,7 +150,7 @@ No external requests (letter-tile favicons). Canvas file opens go through the ex
 
 ## References
 
-- `specs/chat-touch-chips/04-design-decisions.md` + `mockups/` (normative motion reference)
+- `specs/chat-touch-chips/design-decisions.md` + `mockups/` (normative motion reference)
 - `research/20260801_touched_file_chip_ui_patterns.md` (cross-product survey)
 - `research/20260320_chat_message_list_animations.md`, `research/20260309_chat_microinteractions_polish.md`
 - Client seams: `layers/shared/model/app-store/app-store-canvas.ts` (`openCanvasDocument`), `layers/features/chat/ui/message/AssistantMessageContent.tsx`, `layers/shared/model/chat-message-types.ts`, `layers/features/chat/ui/message/OutputRenderer.tsx` (`parseEditInput`), `dev/playground-registry.ts`, `dev/simulator/scenarios/`

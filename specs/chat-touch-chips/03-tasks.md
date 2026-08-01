@@ -1,7 +1,7 @@
 # Tasks — Chat Touch Chips
 
 Spec: `specs/chat-touch-chips/02-specification.md`
-Design authority: `specs/chat-touch-chips/04-design-decisions.md` + `specs/chat-touch-chips/mockups/*.html` (normative for motion timing/easing/choreography — port, don't copy)
+Design authority: `specs/chat-touch-chips/design-decisions.md` + `specs/chat-touch-chips/mockups/*.html` (normative for motion timing/easing/choreography — port, don't copy)
 Generated: 2026-08-01T14:23:06Z · Mode: full
 
 14 tasks across 3 phases. Critical path: **1.1 → 1.4 → 2.1 → 2.4 → 3.1 → 3.2 → 3.4** (7 steps).
@@ -139,7 +139,7 @@ Match the design-system's calm breathing band — a faster, quieter cousin of th
 
 Create the new FSD slice `apps/client/src/layers/features/chat/ui/chips/` (match the barrel convention already used by sibling slices `ui/tools/` and `ui/primitives/` in this same feature).
 
-**`TouchChip.tsx`** — renders one `TouchChip` (task 1.1's type) as a plain `<button>` (the `motion.button` pop-in lands in Phase 2, task 2.1). Props: `{ chip: TouchChip; onOpen: (chip: TouchChip) => void }`. Renders a verb icon (📖 read, 🔍 search, ✏️ edit, ✚ create, 🗑 delete, 🌐 fetch, ▮ run — per `04-design-decisions.md` §5), the `label`, an `×N` badge when `touches > 1`, and a `+A −D` diffstat badge in green/red using existing design tokens (never hardcoded hex — `.claude/rules/components.md`) when defined. Deleted chips render ghosted + `line-through` (persistent tombstone). Error chips get a destructive-tinted border (reuse the classes already used by `ErrorMessageBlock.tsx`, don't invent new ones). A `title` attribute carries the joined `chip.history` as the tooltip. `data-verb={chip.verb}` and `data-live={chip.live}` on the root — Phase 3's CSS keys off these even though nothing reads them yet.
+**`TouchChip.tsx`** — renders one `TouchChip` (task 1.1's type) as a plain `<button>` (the `motion.button` pop-in lands in Phase 2, task 2.1). Props: `{ chip: TouchChip; onOpen: (chip: TouchChip) => void }`. Renders a verb icon (📖 read, 🔍 search, ✏️ edit, ✚ create, 🗑 delete, 🌐 fetch, ▮ run — per `design-decisions.md` §5), the `label`, an `×N` badge when `touches > 1`, and a `+A −D` diffstat badge in green/red using existing design tokens (never hardcoded hex — `.claude/rules/components.md`) when defined. Deleted chips render ghosted + `line-through` (persistent tombstone). Error chips get a destructive-tinted border (reuse the classes already used by `ErrorMessageBlock.tsx`, don't invent new ones). A `title` attribute carries the joined `chip.history` as the tooltip. `data-verb={chip.verb}` and `data-live={chip.live}` on the root — Phase 3's CSS keys off these even though nothing reads them yet.
 
 Click handling (canvas integration, required now): `onClick={() => onOpen(chip)}`. `TouchChipStrip` implements `onOpen` via `useAppStore().openCanvasDocument` (`@/layers/shared/model`; signature at `apps/client/src/layers/shared/model/app-store/app-store-canvas.ts:96`). File kind → `openCanvasDocument({ type: 'file', sourcePath: chip.fullTarget })` (exact shape, `packages/shared/src/schemas.ts:3178-3186` — field is `sourcePath`). URL kind → `openCanvasDocument({ type: 'url', url: chip.fullTarget })` (`packages/shared/src/schemas.ts:3116-3120`). Command kind → click is a no-op (tooltip only).
 
@@ -201,9 +201,9 @@ Run `pnpm vitest run apps/client/src/layers/features/chat/ui/chips/__tests__/Tou
 
 Extend `TouchChipStrip.tsx` with the **live** state: while streaming and at least one chip has `live: true`, render a bounded row of the newest ≤4 live-or-recent chips (order by `lastSeq` descending, take 4, re-reverse for left-to-right newest-on-right — `02-specification.md:90`). Chips beyond the window are not removed here — task 2.2 (`ChipPile`) handles their fate; this task only owns windowing + entry animation.
 
-Convert `TouchChip.tsx`'s root to `motion.button` (import from `motion/react`, already installed — see `AssistantMessageContent.tsx:2`). Pop-in spring, verbatim: `initial={{ opacity: 0, y: 7 }}`, `animate={{ opacity: 1, y: 0 }}`, `transition={{ type: 'spring', stiffness: 320, damping: 28 }}` (from `02-specification.md:91` / `04-design-decisions.md:38`). Fires only on true mount of a new chip — use the chip's stable `key` as the React `key` prop so entry/exit tracks mount/unmount, not prop diffs.
+Convert `TouchChip.tsx`'s root to `motion.button` (import from `motion/react`, already installed — see `AssistantMessageContent.tsx:2`). Pop-in spring, verbatim: `initial={{ opacity: 0, y: 7 }}`, `animate={{ opacity: 1, y: 0 }}`, `transition={{ type: 'spring', stiffness: 320, damping: 28 }}` (from `02-specification.md:91` / `design-decisions.md:38`). Fires only on true mount of a new chip — use the chip's stable `key` as the React `key` prop so entry/exit tracks mount/unmount, not prop diffs.
 
-`useReducedMotion()` from `motion/react`: fallback pop-in becomes an opacity-only fade, no `y` offset (`04-design-decisions.md:73`). Confirm the app's `MotionConfig reducedMotion="user"` wraps the tree the strip renders under (grep `reducedMotion` in `apps/client/src`).
+`useReducedMotion()` from `motion/react`: fallback pop-in becomes an opacity-only fade, no `y` offset (`design-decisions.md:73`). Confirm the app's `MotionConfig reducedMotion="user"` wraps the tree the strip renders under (grep `reducedMotion` in `apps/client/src`).
 
 Strip mode: **live** when any chip has `live: true`; **settled** (task 1.4's summary line) once all are `false`. This task may do a hard swap between the two — the animated settle transition is task 2.3.
 
@@ -233,7 +233,7 @@ Wire into `TouchChipStrip.tsx`'s live-row rendering, positioned left of the row 
 
 ### Task 2.3: Implement the upgrade morph and live-to-settled settle transition
 
-**Upgrade morph** (`TouchChip.tsx`): when `chip.upgraded` flips false→true, animate icon flip + one expanding ring pulse + diffstat sliding in (`04-design-decisions.md:65`, `02-specification.md:100`). Drive off a `key` change (not re-render — spec is explicit, `02-specification.md:86`), e.g. `AnimatePresence mode="wait"` keyed on the icon identity. Ring pulse: `motion.span` overlay, `initial={{ scale: 0.6, opacity: 0.8 }}`, `animate={{ scale: 1.8, opacity: 0 }}`, `transition={{ duration: 0.3 }}`, removed via `onAnimationComplete` or `AnimatePresence` unmount — never left permanently mounted. Diffstat badge fades/slides in alongside.
+**Upgrade morph** (`TouchChip.tsx`): when `chip.upgraded` flips false→true, animate icon flip + one expanding ring pulse + diffstat sliding in (`design-decisions.md:65`, `02-specification.md:100`). Drive off a `key` change (not re-render — spec is explicit, `02-specification.md:86`), e.g. `AnimatePresence mode="wait"` keyed on the icon identity. Ring pulse: `motion.span` overlay, `initial={{ scale: 0.6, opacity: 0.8 }}`, `animate={{ scale: 1.8, opacity: 0 }}`, `transition={{ duration: 0.3 }}`, removed via `onAnimationComplete` or `AnimatePresence` unmount — never left permanently mounted. Diffstat badge fades/slides in alongside.
 
 **Settle transition** (`TouchChipStrip.tsx`): when the strip flips live→settled (task 2.1's hard swap becomes animated), wrap both containers in `AnimatePresence`: live row `exit={{ opacity: 0, height: 0 }}`, settled line `initial={{ opacity: 0 }}` fade-in, `transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}` — reuse the exact easing curve already used for tool-call auto-hide (`AssistantMessageContent.tsx:96`) rather than inventing a new one.
 
@@ -268,19 +268,19 @@ Run `pnpm vitest run apps/client/src/layers/features/chat/ui/chips/__tests__/` a
 
 ### Task 3.1: Add the seven verb CSS animations and reduced-motion fallbacks
 
-Add to the `/* touch chips */` block in `apps/client/src/index.css` (append to it if task 2.2 started it). Normative source: `specs/chat-touch-chips/mockups/04-verb-vocabulary.html` and `05-verbs-search-delete-round2.html` — port, don't copy; every loop gates on `data-verb` + `chip.live === true` and stops the instant the tool settles (`04-design-decisions.md:71`).
+Add to the `/* touch chips */` block in `apps/client/src/index.css` (append to it if task 2.2 started it). Normative source: `specs/chat-touch-chips/mockups/04-verb-vocabulary.html` and `05-verbs-search-delete-round2.html` — port, don't copy; every loop gates on `data-verb` + `chip.live === true` and stops the instant the tool settles (`design-decisions.md:71`).
 
 Seven animations, keyed off `data-verb` (wired in task 1.4):
 
 1. **Read — the scan**: soft highlight band sweeps across the chip.
-2. **Search — the beam**: one smooth skewed light beam. Beam only — no hit-marks/underlines (explicitly rejected in round 2, `04-design-decisions.md:59`/`:67`).
+2. **Search — the beam**: one smooth skewed light beam. Beam only — no hit-marks/underlines (explicitly rejected in round 2, `design-decisions.md:59`/`:67`).
 3. **Edit — the scribble**: pencil-icon wiggle + blinking caret (reuse `@keyframes blink-cursor` at `index.css:581` if it fits). Diffstat digits tick up live via a `motion` spring on value change in `TouchChip.tsx`, not a CSS "fake odometer" (`02-specification.md:98-100`) — implement here if not already done in 2.3.
 4. **Create — border-draw + spark**: chip border draws itself via SVG `stroke-dashoffset`, name fades in, one green spark. Single-shot (creates don't loop).
 5. **Delete — bin-swallow**: filename compresses/skews into the bin icon, a puff, a satisfied chomp. Single-shot into the static tombstone state from task 1.4.
 6. **Fetch — the ping**: radar rings from the favicon-tile position + three streaming dots (reuse/adapt `@keyframes typing-dot` at `index.css:568`).
 7. **Run — terminal pulse**: monospace styling, blinking block cursor (reuse `@keyframes blink-cursor`), faint green heartbeat border (reuse/adapt `@keyframes health-pulse` at `index.css:919`).
 
-Grammar across all seven (`04-design-decisions.md:69-74`): motion stays inside chip bounds, no neighbor-shifting; entries/transitions in the 100-300ms band, only the continuous loops (scan, beam, ping) run longer (match mockup cycle periods, don't guess).
+Grammar across all seven (`design-decisions.md:69-74`): motion stays inside chip bounds, no neighbor-shifting; entries/transitions in the 100-300ms band, only the continuous loops (scan, beam, ping) run longer (match mockup cycle periods, don't guess).
 
 **Reduced motion**: a `@media (prefers-reduced-motion: reduce)` block (plus the React-side `useReducedMotion()` gating from tasks 2.1-2.3) replacing all seven loops with a static icon + one subtle opacity pulse — reuse `@keyframes breathe` or `animate-tasks` (task 1.3), don't add an eighth keyframe.
 
@@ -340,7 +340,7 @@ Only needs the accumulator (1.1) and existing simulator infrastructure — build
 
 ### Task 3.4: Final polish pass against mockups and changelog fragment
 
-**Polish pass**: with the playground (3.2) and simulator scenario (3.3) available, compare side-by-side against every file in `specs/chat-touch-chips/mockups/` and `04-design-decisions.md`. Verify: (a) every verb's live animation reads calm, not jittery (`contributing/design-system.md`); (b) the pop-in spring's overshoot (2.1) matches the mockup feel; (c) the pile wobble (2.2) reads as a satisfying landing, not a jarring shake; (d) the settled summary line matches `📖 21 · ✏️ 3 +34 −11 · 🌐 9 — show all` spacing/separators exactly (`04-design-decisions.md:47`); (e) the tray's bounded scroll (1.5) never steals transcript scroll focus; (f) reduced-motion fallbacks (2.1-2.3, 3.1) genuinely eliminate all looping motion, verified in-browser via `pnpm dev:dogfood` at `/dev/chat` with reduced-motion toggled (check for an existing simulator animation toggle to extend before adding a new one — `04-design-decisions.md:91`). Fix any drift found; allowed to touch files from any earlier task, but no new components or new spec scope.
+**Polish pass**: with the playground (3.2) and simulator scenario (3.3) available, compare side-by-side against every file in `specs/chat-touch-chips/mockups/` and `design-decisions.md`. Verify: (a) every verb's live animation reads calm, not jittery (`contributing/design-system.md`); (b) the pop-in spring's overshoot (2.1) matches the mockup feel; (c) the pile wobble (2.2) reads as a satisfying landing, not a jarring shake; (d) the settled summary line matches `📖 21 · ✏️ 3 +34 −11 · 🌐 9 — show all` spacing/separators exactly (`design-decisions.md:47`); (e) the tray's bounded scroll (1.5) never steals transcript scroll focus; (f) reduced-motion fallbacks (2.1-2.3, 3.1) genuinely eliminate all looping motion, verified in-browser via `pnpm dev:dogfood` at `/dev/chat` with reduced-motion toggled (check for an existing simulator animation toggle to extend before adding a new one — `design-decisions.md:91`). Fix any drift found; allowed to touch files from any earlier task, but no new components or new spec scope.
 
 **Changelog fragment**: create `changelog/unreleased/<timestamp-id>-chat-touch-chips.md` (generate the id via `.claude/scripts/id.ts`'s `YYMMDD-HHMMSS` convention), following `changelog/README.md`'s format and an existing example (e.g. `changelog/unreleased/260715-150825-friendly-auth-error.md`) — YAML frontmatter with a `covers:` array of the conventional-commit-style PR title(s), then a `### Added`/`### Changed` section. Write the copy per the `writing-for-humans` skill; the spec's suggested line — "See every file and link your agent touches, live." — is a strong start; expand to 1-3 sentences covering the settling summary + expandable tray + verb-specific motion, matching the tone/length of neighboring fragments.
 
