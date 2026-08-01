@@ -223,7 +223,8 @@ Tasks enforces a configurable concurrency cap on simultaneous runs (1 by default
     active: { type: 'state', description: 'The schedule is running on its cron timing' },
     paused: {
       type: 'state',
-      description: 'The schedule is temporarily paused and will not trigger',
+      description:
+        'Set by DorkOS, not by you: the task file has gone missing, or its agent was disconnected. It clears on its own once the file is back',
     },
     pending_approval: {
       type: 'state',
@@ -231,6 +232,10 @@ Tasks enforces a configurable concurrency cap on simultaneous runs (1 by default
     },
   }}
 />
+
+To pause a task yourself, switch it off — that is saved in the task file, so it
+sticks. `paused` is DorkOS telling you something is missing, and it is not
+something you can set.
 
 ### Tasks + Relay
 

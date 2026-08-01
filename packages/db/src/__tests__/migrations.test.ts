@@ -439,6 +439,47 @@ describe('Database Migrations', () => {
     expect(raw.prepare('SELECT id FROM pulse_runs').all()).toEqual([]);
   });
 
+  it('the cascade rebuild survives an orphan run row instead of bricking startup', () => {
+    // The rebuild copies pulse_runs into a table that HAS the foreign key, so a
+    // run pointing at a missing schedule fails the copy. `runMigrations` is
+    // called uncaught at boot, so that is not a bad upgrade — it is a server
+    // that never starts again, with no way out from inside the app.
+    const db = createDb(':memory:');
+    migrate(db, { migrationsFolder: migrationsFolderThrough(PRE_CASCADE_MIGRATION_IDX) });
+    const raw = db.$client;
+
+    raw
+      .prepare(
+        "INSERT INTO pulse_schedules (id, name, cron, timezone, prompt, enabled, permission_mode, status, file_path, tags_json, created_at, updated_at) VALUES ('01SCHED', 'nightly', '0 3 * * *', 'UTC', 'go', 1, 'acceptEdits', 'active', '/tmp/tasks/nightly/SKILL.md', '[]', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')"
+      )
+      .run();
+    raw
+      .prepare(
+        "INSERT INTO pulse_runs (id, schedule_id, status, started_at, trigger, created_at) VALUES ('01RUNGOOD', '01SCHED', 'completed', '2026-01-01T03:00:00Z', 'scheduled', '2026-01-01T03:00:00Z')"
+      )
+      .run();
+
+    // How an orphan gets there: any tool that opens dork.db without turning the
+    // pragma on, which is the DEFAULT for the sqlite3 CLI and for a bare
+    // better-sqlite3 handle. The pre-cascade FK never cleaned up after itself.
+    raw.pragma('foreign_keys = OFF');
+    raw
+      .prepare(
+        "INSERT INTO pulse_runs (id, schedule_id, status, started_at, trigger, created_at) VALUES ('01ORPHAN', '01GONE', 'completed', '2026-01-01T03:00:00Z', 'scheduled', '2026-01-01T03:00:00Z')"
+      )
+      .run();
+    raw.pragma('foreign_keys = ON');
+
+    expect(() => runMigrations(db)).not.toThrow();
+
+    // The orphan is gone — it was unreadable history for a task that no longer
+    // exists — and everything real is untouched.
+    expect(raw.prepare('SELECT id FROM pulse_runs ORDER BY id').all()).toEqual([
+      { id: '01RUNGOOD' },
+    ]);
+    expect(raw.pragma('foreign_key_check')).toEqual([]);
+  });
+
   it('unique constraint on relay_traces.message_id is enforced', () => {
     const db = createDb(':memory:');
     runMigrations(db);

@@ -8,6 +8,10 @@ import { pulseSchedules, pulseRuns, pulseDispatchLog, type Db } from '@dorkos/db
 
 vi.mock('../../../lib/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+  // The real one, not a stub: assertions below check the exact shape the
+  // reconciler hands the logger, and a stub would let a regression through.
+  logError: (err: unknown) =>
+    err instanceof Error ? { error: err.message, stack: err.stack } : { error: String(err) },
 }));
 
 import { logger } from '../../../lib/logger.js';
@@ -105,7 +109,7 @@ describe('TaskReconciler', () => {
       expect(store.getTask(healthyId)).toBeNull();
       expect(logger.error).toHaveBeenCalledWith(
         expect.stringContaining(doomedId),
-        expect.any(Error)
+        expect.objectContaining({ error: expect.any(String) })
       );
     });
 
@@ -284,7 +288,7 @@ describe('TaskReconciler', () => {
         expect(store.getTasks().every((t) => t.status === 'active')).toBe(true);
         expect(logger.error).toHaveBeenCalledWith(
           expect.stringContaining(tasksDir),
-          expect.any(Error)
+          expect.objectContaining({ error: expect.any(String) })
         );
       }
     );
@@ -344,6 +348,58 @@ describe('TaskReconciler', () => {
       expect(store.getTask(task.id)).not.toBeNull();
       expect(store.countRuns(task.id)).toBe(1);
     });
+
+    it('leaves a task in an unregistered directory even when its file is gone too', async () => {
+      // The discriminating case for gate 1. In every other test here the file
+      // is still on disk, so gate 2 (`fs.access`) alone would keep the row and
+      // gate 1 could be deleted without a single failure. Here the file is
+      // gone AND nobody was watching the folder — the honest answer is "no
+      // idea", because the directory this row belongs to was never enumerated.
+      // A checkout moved or deleted while its agent was not registered looks
+      // exactly like this.
+      const { dir, filePath } = await unregisteredProjectTask();
+      const task = store.getTasks()[0];
+      store.createRun(task.id, 'scheduled');
+      await fs.rm(path.dirname(filePath), { recursive: true, force: true });
+      expireGracePeriod();
+
+      await expect(reconciler.reconcile()).resolves.toEqual({ upserted: 0, orphaned: 0 });
+
+      // Nobody looked in `dir`, so nothing there can be declared deleted.
+      expect(dir).toContain('late-project');
+      expect(store.getTask(task.id)).not.toBeNull();
+      expect(store.getTask(task.id)?.status).toBe('active');
+      expect(store.countRuns(task.id)).toBe(1);
+    });
+
+    it('leaves every task alone when a registered directory has vanished wholesale', async () => {
+      // A registered directory that no longer exists was also never looked at.
+      // `scanSkillDirectory` answers ENOENT with `[]` rather than a throw, so
+      // without an explicit existence check the pass treats a deleted checkout
+      // as "I enumerated it and it was empty" — and every task in it, files and
+      // run history included, is destroyed 24h later. Before this branch the FK
+      // error accidentally prevented that; the cascade removes that accident.
+      const projectDir = path.join(dorkHome, 'doomed-project', '.dork', 'tasks');
+      await fs.mkdir(path.join(projectDir, 'nightly'), { recursive: true });
+      await fs.writeFile(
+        path.join(projectDir, 'nightly', 'SKILL.md'),
+        skillFile('nightly'),
+        'utf-8'
+      );
+      reconciler.addDirectory(projectDir, 'project', path.join(dorkHome, 'doomed-project'));
+      await reconciler.reconcile();
+      const task = store.getTasks()[0];
+      store.createRun(task.id, 'scheduled');
+
+      // The whole checkout goes away — an unmounted volume, a deleted clone.
+      await fs.rm(path.join(dorkHome, 'doomed-project'), { recursive: true, force: true });
+      expireGracePeriod();
+
+      await expect(reconciler.reconcile()).resolves.toEqual({ upserted: 0, orphaned: 0 });
+
+      expect(store.getTask(task.id)).not.toBeNull();
+      expect(store.countRuns(task.id)).toBe(1);
+    });
   });
 
   describe('same slug in two directories', () => {
@@ -398,7 +454,27 @@ describe('TaskReconciler', () => {
       expect(store.getTasks()).toHaveLength(1);
       expect(logger.error).toHaveBeenCalledWith(
         expect.stringContaining(filePath),
-        expect.any(Error)
+        expect.objectContaining({ error: expect.any(String) })
+      );
+    });
+  });
+
+  describe('no single failure can disable the safety net', () => {
+    it('survives the whole-DB read for retirement throwing', async () => {
+      // The original bug in one sentence: a throw the pass did not contain
+      // aborts every future pass too, because the timer just calls it again.
+      // This read sits outside the per-row try, so it needs its own.
+      await writeTask('real-task', 'real-task');
+      vi.spyOn(store, 'getTasks').mockImplementation(() => {
+        throw new Error('database is locked');
+      });
+
+      // Resolves rather than rejects, and still reports the sync half it did.
+      await expect(reconciler.reconcile()).resolves.toEqual({ upserted: 1, orphaned: 0 });
+
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to read tasks'),
+        expect.objectContaining({ error: 'database is locked' })
       );
     });
   });
@@ -489,7 +565,7 @@ describe('TaskReconciler', () => {
       // Whatever a reader would have got before the damper, they still get.
       expect(logger.error).toHaveBeenCalledWith(
         expect.stringContaining(filePath),
-        expect.any(Error)
+        expect.objectContaining({ error: expect.any(String) })
       );
 
       for (let i = 1; i < PASSES_PER_HOUR; i++) {
@@ -518,8 +594,39 @@ describe('TaskReconciler', () => {
       expect(logger.error).toHaveBeenCalledTimes(2);
       expect(logger.error).toHaveBeenLastCalledWith(
         expect.stringContaining('flaky'),
-        expect.objectContaining({ message: 'disk is full' })
+        expect.objectContaining({ error: 'disk is full' })
       );
+    });
+
+    it('keeps each of two standing faults counting independently', async () => {
+      // Both faults report on the same 5-minute cadence, so when the first
+      // one's window closes it logs and runs the sweep — at which point the
+      // second's entry is exactly a window old and looks abandoned, though it
+      // is mid-suppression with a count to report. Losing it means the second
+      // fault re-introduces itself as brand new every hour, forever, and its
+      // suppressed count is silently discarded.
+      await writeBrokenTask('broken-a');
+      await writeBrokenTask('broken-b');
+
+      await reconciler.reconcile();
+      expect(logger.warn).toHaveBeenCalledTimes(2);
+
+      for (let i = 1; i <= PASSES_PER_HOUR; i++) {
+        vi.advanceTimersByTime(5 * 60 * 1000);
+        await reconciler.reconcile();
+      }
+
+      const lines = (logger.warn as unknown as { mock: { calls: string[][] } }).mock.calls.map(
+        (c) => c[0]
+      );
+      const closing = lines.filter((l) => l.includes('suppressed in the last hour'));
+      // One window-close line each, and BOTH carry what they held back.
+      expect(closing).toHaveLength(2);
+      expect(closing.some((l) => l.includes('broken-a'))).toBe(true);
+      expect(closing.some((l) => l.includes('broken-b'))).toBe(true);
+      for (const line of closing) {
+        expect(line).toContain('11 identical reports suppressed');
+      }
     });
 
     it('forgets a fault that stopped happening, so its return logs in full', async () => {

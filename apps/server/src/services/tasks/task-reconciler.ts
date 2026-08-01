@@ -12,7 +12,7 @@ import type { TaskStore } from './task-store.js';
 import { scanSkillDirectory } from '@dorkos/skills/scanner';
 import { TaskFrontmatterSchema } from '@dorkos/skills/task-schema';
 import { RESERVED_TASK_DIRNAMES } from './task-templates.js';
-import { logger } from '../../lib/logger.js';
+import { logger, logError } from '../../lib/logger.js';
 
 /** 5-minute reconciliation interval. */
 const RECONCILE_INTERVAL_MS = 300_000;
@@ -40,9 +40,18 @@ interface TaskDirectory {
 
 /** What is remembered about one distinct fault already written to the log. */
 interface ReportedFailure {
-  /** `Date.now()` when this fault was last logged. */
+  /** `Date.now()` when this fault was last logged. Drives the damping window. */
   lastLoggedAt: number;
-  /** Byte-identical recurrences swallowed since then. */
+  /**
+   * `Date.now()` when this fault last occurred, logged or suppressed.
+   *
+   * Distinct from {@link lastLoggedAt} because only this answers "has this
+   * fault gone quiet?", which is the question eviction is allowed to act on. A
+   * fault mid-suppression is an hour past its last log by design, and evicting
+   * it there would throw away the count it is holding.
+   */
+  lastSeenAt: number;
+  /** Byte-identical recurrences swallowed since the last log. */
   suppressed: number;
 }
 
@@ -120,6 +129,7 @@ export class TaskReconciler {
 
     const now = Date.now();
     const seen = this.reportedFailures.get(key);
+    if (seen) seen.lastSeenAt = now;
     if (seen && now - seen.lastLoggedAt < FAILURE_LOG_WINDOW_MS) {
       seen.suppressed++;
       return;
@@ -130,17 +140,31 @@ export class TaskReconciler {
       repeats > 0
         ? `${message} (still failing; ${repeats} identical ${repeats === 1 ? 'report' : 'reports'} suppressed in the last hour)`
         : message;
-    if (level === 'error') logger.error(line, err);
-    else logger.warn(line);
+    // `logError` rather than the raw error: the NDJSON file reporter builds its
+    // entry by SPREADING an object argument, and `message`/`stack` are
+    // non-enumerable on an Error, so passing one writes `{}` and the detail is
+    // lost in the very file an operator reads. Damping to one line an hour is
+    // worth nothing if that line does not say what failed.
+    const detail = err === undefined ? undefined : logError(err);
+    if (level === 'error') {
+      if (detail) logger.error(line, detail);
+      else logger.error(line);
+    } else {
+      if (detail) logger.warn(line, detail);
+      else logger.warn(line);
+    }
 
-    this.reportedFailures.set(key, { lastLoggedAt: now, suppressed: 0 });
+    this.reportedFailures.set(key, { lastLoggedAt: now, lastSeenAt: now, suppressed: 0 });
 
-    // Drop faults that have gone quiet for a full window. They are no longer
-    // being damped — if one recurs it logs in full, which is what a fault
-    // returning after an hour of silence deserves — so keeping them only grows
-    // the map.
+    // Drop faults that have gone QUIET for a full window — measured from when
+    // each was last seen, not last logged. A second standing fault on the same
+    // cadence is always a full window past its last log at the moment the
+    // first one's window closes, so evicting on `lastLoggedAt` would discard
+    // its entry, and with it the count it was holding, every hour forever.
+    // Once genuinely quiet, forgetting is right: a fault returning after an
+    // hour of silence deserves to log in full.
     for (const [otherKey, other] of this.reportedFailures) {
-      if (otherKey !== key && now - other.lastLoggedAt >= FAILURE_LOG_WINDOW_MS) {
+      if (otherKey !== key && now - other.lastSeenAt >= FAILURE_LOG_WINDOW_MS) {
         this.reportedFailures.delete(otherKey);
       }
     }
@@ -213,6 +237,20 @@ export class TaskReconciler {
         this.report('error', `[TaskReconciler] Failed to scan ${dir.tasksDir}`, err);
         continue;
       }
+
+      // A registered directory that no longer exists was also never looked at.
+      // `scanSkillDirectory` answers a missing directory with `[]`, which is
+      // indistinguishable from "I enumerated it and it was empty" — so without
+      // this check a deleted checkout or an unmounted volume reads as every
+      // task in it having been deleted, and 24h later they are, run history
+      // and all. Checked AFTER the scan on purpose: a directory that survived
+      // the scan was there for it, whereas checking first would leave a window
+      // in which it vanishes and the empty result still counts as testimony.
+      try {
+        await fs.access(dir.tasksDir);
+      } catch {
+        continue;
+      }
       scannedDirs.add(dir.tasksDir);
 
       for (const result of results) {
@@ -263,7 +301,18 @@ export class TaskReconciler {
     //    only means the scan did not return it, and the scan skips slots it
     //    enumerated fine (reserved names, dotfiles, symlinked directories) —
     //    all of which the watcher happily creates rows for.
-    const allTasks = this.store.getTasks();
+    // Contained for the same reason every other step here is: an uncaught throw
+    // from this one read would abort the pass and, on a fixed timer, abort
+    // every future pass the same way — which is precisely the original bug,
+    // just moved one line up.
+    let allTasks;
+    try {
+      allTasks = this.store.getTasks();
+    } catch (err) {
+      this.report('error', '[TaskReconciler] Failed to read tasks for retirement', err);
+      return { upserted, orphaned };
+    }
+
     const now = Date.now();
     for (const task of allTasks) {
       if (!task.filePath || seenFilePaths.has(task.filePath)) continue;
