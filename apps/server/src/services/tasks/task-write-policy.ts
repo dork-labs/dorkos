@@ -59,7 +59,7 @@
  *   `bypassPermissions` and logs the downgrade, so **a file can never INTRODUCE
  *   one**. A file may only KEEP a bypass already in the row, and only while that
  *   row is `active` AND still holds the same prompt and cron the file carries —
- *   so **a kept bypass is bound to a live task doing the work a person
+ *   so **a kept bypass is bound to an un-retired task doing the work a person
  *   approved**, never to a path. Rewriting the body under a kept grant clamps;
  *   dropping a file back where a paused task's row still sits clamps. Only a
  *   caller that cleared the bar above can have put the bypass in the row to

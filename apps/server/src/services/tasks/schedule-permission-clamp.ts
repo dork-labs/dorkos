@@ -95,8 +95,9 @@ export interface IncomingTaskContent {
  *   bypassPermissions` in the frontmatter and swaps the body: same path, same
  *   grant, entirely different instructions, running unattended at the next tick.
  *
- * Together they say the grant belongs to a specific piece of approved work on a
- * live task, not to a filename.
+ * Together they say the grant belongs to a specific piece of approved work on an
+ * un-retired task (`status: 'active'` — a switched-off task keeps its grant, a
+ * removed one does not), not to a filename.
  */
 function keepsApprovedBypass(
   existing: ApprovedSchedule | undefined,
