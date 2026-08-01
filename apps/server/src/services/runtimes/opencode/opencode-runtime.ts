@@ -443,8 +443,18 @@ export class OpenCodeRuntime implements AgentRuntime {
       return;
     }
     if (event.type === 'interaction_cancelled') {
-      const cancelled = event.data as { interactionId: string };
+      const cancelled = event.data as { interactionId: string; reason?: string };
       this.approvals.take(sessionId, cancelled.interactionId);
+      // An auto-deny is answered by the sidecar exactly like a person's
+      // rejection, so the echo comes back indistinguishable from one. Restore
+      // the reason here, where it is still known: downstream, `timeout` is what
+      // separates an interaction that EXPIRED — an answer the system gave on
+      // the person's behalf, and a receipt worth keeping — from one that was
+      // withdrawn before anybody could answer it.
+      if (this.approvals.consumeExpired(sessionId, cancelled.interactionId)) {
+        yield { ...event, data: { ...cancelled, reason: 'timeout' } };
+        return;
+      }
     }
     yield event;
   }

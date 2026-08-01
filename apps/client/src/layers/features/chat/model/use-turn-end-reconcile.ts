@@ -134,13 +134,13 @@ export function useTurnEndReconcile({
         // If a NEW turn started while this reload was in flight, the reload
         // predates it: folding it must not wipe the new turn's streamed events…
         const newTurnStreaming = fresh.status?.lifecycle === 'streaming';
-        // Canonical history is runtime-owned and carries no record of a DorkOS
-        // permission prompt, so replacing the projection with it would erase
-        // every receipt the session has earned — and turn a denial's suppressed
-        // card into a red error row for a tool that never ran. Re-apply what the
-        // client already derived: this turn's answers plus the ones an earlier
-        // reconcile carried, so repeated reloads keep all of them. See
-        // `lib/carry-approval-receipts` for what this does not cover.
+        // Canonical history is runtime-owned, so its record of a DorkOS
+        // permission prompt is whatever the server overlaid back onto it — and
+        // a turn's answers are only durable once the turn ENDS, while this
+        // reload also fires when a turn settles to `blocked` mid-turn. Re-apply
+        // what the client already derived: this turn's answers plus the ones an
+        // earlier reconcile carried, so repeated reloads keep all of them. See
+        // `lib/carry-approval-receipts` for the division of labour.
         const carried = new Map([
           ...collectApprovalReceipts(fresh.messages.flatMap((m) => m.parts ?? [])),
           ...settledReceipts,

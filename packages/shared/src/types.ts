@@ -39,6 +39,7 @@ export type {
   MemoryRecallEvent,
   TextPart,
   ToolCallPart,
+  ToolApprovalOutcome,
   MessagePart,
   MessageType,
   HistoryMessage,

@@ -44,6 +44,7 @@ import { logger } from '../../lib/logger.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import {
   getOrCreateProjector,
+  persistenceModeFor,
   rekeyProjector,
   readAgentExecutionDefaults,
   resolveSessionDefaults,
@@ -187,7 +188,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // for forty-one minutes on 2026-07-31 there was not a single row anywhere
       // to say whether it had run, failed, or never started (DOR-784).
       const projector = getOrCreateProjector(sessionId, request.agentPath, {
-        persist: runtime.getCapabilities().logBackedHistory === true ? 'history' : 'record',
+        persist: persistenceModeFor(runtime.getCapabilities()),
       });
       projector.cwd = request.agentPath;
 

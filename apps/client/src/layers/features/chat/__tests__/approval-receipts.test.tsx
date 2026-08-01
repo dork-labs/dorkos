@@ -298,9 +298,7 @@ describe('approval receipts', () => {
     // the reader the detail on demand.
     const threeAsks: SessionEvent[] = [
       { seq: 1, type: 'turn_start' },
-      ...['tc-1', 'tc-2', 'tc-3'].flatMap((id, i) =>
-        approvalRequested(id, `step-${i}`, 2 + i * 2)
-      ),
+      ...['tc-1', 'tc-2', 'tc-3'].flatMap((id, i) => approvalRequested(id, `step-${i}`, 2 + i * 2)),
     ];
     render(<Lifecycle initialEvents={threeAsks} />);
 
@@ -430,6 +428,137 @@ describe('approval receipts across the turn-end reconcile', () => {
     const history = historyWithoutTheAsk('complete', 'ok');
     const merged = applyApprovalReceipts(history, collectApprovalReceipts([]));
     expect(merged).toBe(history);
+  });
+});
+
+/**
+ * A COLD OPEN: the session is reopened tomorrow, in a browser that remembers
+ * nothing. No live events, no carried state — only the history the server
+ * hands back. If the receipts are not in that history, they do not exist.
+ */
+describe('approval receipts on a cold open', () => {
+  /**
+   * History as a LOG-BACKED runtime reconstructs it, where the answer rides the
+   * tool call itself (`reconstructHistoryFromEvents`, no `parts` on a clean
+   * turn).
+   */
+  const LOG_BACKED_HISTORY: HistoryMessage[] = [
+    { id: 'user-1', role: 'user', content: 'run the tests' },
+    {
+      id: 'assistant-1',
+      role: 'assistant',
+      content: 'Done.',
+      toolCalls: [
+        {
+          toolCallId: 'tc-1',
+          toolName: 'Bash',
+          status: 'complete',
+          input: JSON.stringify({ command: 'npm test' }),
+          result: 'ok',
+          approvalOutcome: 'allowed',
+          approvalResolvedAt: APPROVAL_STARTED_AT + 5_000,
+          approvalStartedAt: APPROVAL_STARTED_AT,
+        },
+      ],
+    },
+  ];
+
+  /**
+   * History as claude-code serves it: SDK JSONL parts with the recorded answers
+   * overlaid back on (`overlayApprovalReceipts`).
+   */
+  const OVERLAID_HISTORY: HistoryMessage[] = [
+    {
+      id: 'assistant-1',
+      role: 'assistant',
+      content: '',
+      parts: [
+        {
+          type: 'tool_call',
+          toolCallId: 'tc-1',
+          toolName: 'Bash',
+          input: JSON.stringify({ command: 'rm -rf /' }),
+          status: 'error',
+          result: 'User denied tool execution',
+          interactiveType: 'approval',
+          approvalOutcome: 'denied',
+          approvalResolvedAt: APPROVAL_STARTED_AT + 5_000,
+          approvalStartedAt: APPROVAL_STARTED_AT,
+        },
+      ],
+    },
+  ];
+
+  /** Project and render history with NO events at all — the cold path exactly. */
+  function renderColdOpen(history: HistoryMessage[]) {
+    const messages = projectSessionMessages(history, [], []);
+    const assistant = messages[messages.length - 1];
+    return render(
+      <MessageProvider
+        value={{
+          sessionId: 'cold-session',
+          isStreaming: false,
+          isLatestWidgetMessage: false,
+          activeToolCallId: null,
+          onToolRef: undefined,
+          focusedOptionIndex: -1,
+          onToolDecided: undefined,
+          inputZoneToolCallId: null,
+        }}
+      >
+        <AssistantMessageContent message={assistant} />
+      </MessageProvider>
+    );
+  }
+
+  it('shows what was allowed, from history alone', () => {
+    renderColdOpen(LOG_BACKED_HISTORY);
+
+    const receipt = screen.getByTestId('approval-receipt');
+    expect(receipt.getAttribute('data-outcome')).toBe('allowed');
+    expect(receipt.textContent).toContain('You allowed');
+    expect(receipt.textContent).toContain('Run "npm test"');
+  });
+
+  it('shows what was denied, and no error card for a tool that never ran', () => {
+    renderColdOpen(OVERLAID_HISTORY);
+
+    const receipt = screen.getByTestId('approval-receipt');
+    expect(receipt.getAttribute('data-outcome')).toBe('denied');
+    expect(screen.queryByText(/User denied tool execution/)).toBeNull();
+  });
+
+  it('says how long an expired request waited, a day later', () => {
+    renderColdOpen([
+      {
+        ...LOG_BACKED_HISTORY[1],
+        toolCalls: [
+          {
+            ...LOG_BACKED_HISTORY[1].toolCalls![0],
+            approvalOutcome: 'expired',
+            approvalResolvedAt: APPROVAL_STARTED_AT + TEN_MINUTES_MS,
+          },
+        ],
+      },
+    ]);
+
+    const receipt = screen.getByTestId('approval-receipt');
+    expect(receipt.textContent).toContain('Expired — denied after 10:00');
+  });
+
+  it('leaves an ordinary tool call alone', () => {
+    // The overwhelming majority of history: nobody was asked anything, and a
+    // receipt on a tool nobody gated would be an invented record.
+    renderColdOpen([
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: 'Done.',
+        toolCalls: [{ toolCallId: 'tc-9', toolName: 'Bash', status: 'complete', result: 'ok' }],
+      },
+    ]);
+
+    expect(screen.queryByTestId('approval-receipt')).toBeNull();
   });
 });
 

@@ -17,6 +17,7 @@ import type { ClientContext } from '@dorkos/shared/additional-context';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import { logger } from '../../lib/logger.js';
 import { getOrCreateProjector, rekeyProjector } from './session-state-projector.js';
+import { persistenceModeFor } from './projector-persistence.js';
 import { triggerTurn } from './trigger-turn.js';
 import type { TriggerTurnResult } from './trigger-turn.js';
 import { triggerCommandIntent } from './trigger-command-intent.js';
@@ -50,10 +51,9 @@ export function createEmbeddedTurnTrigger(runtime: AgentRuntime): EmbeddedTurnTr
       // Mirror the HTTP route: the caller-chosen cwd is authoritative —
       // overwrite any earlier first-writer-wins stamp from a subscribe-path
       // default so liveness aggregates under the correct project.
-      // Persist completed turns for LOG-BACKED runtimes (DOR-189), mirroring
-      // the HTTP route; claude-code opts out.
+      // Persist completed turns (DOR-189), mirroring the HTTP route.
       const projector = getOrCreateProjector(sessionId, cwd, {
-        persist: runtime.getCapabilities().logBackedHistory === true ? 'history' : undefined,
+        persist: persistenceModeFor(runtime.getCapabilities()),
       });
       if (cwd !== undefined) projector.cwd = cwd;
 
@@ -119,10 +119,9 @@ export function createEmbeddedCommandIntentTrigger(
 ): EmbeddedCommandIntentTrigger {
   return {
     trigger({ sessionId, clientId, intent, cwd, instructions }) {
-      // Persist completed runs for LOG-BACKED runtimes (DOR-189), mirroring the
-      // turn trigger; claude-code opts out.
+      // Persist completed runs (DOR-189), mirroring the turn trigger.
       const projector = getOrCreateProjector(sessionId, cwd, {
-        persist: runtime.getCapabilities().logBackedHistory === true ? 'history' : undefined,
+        persist: persistenceModeFor(runtime.getCapabilities()),
       });
       if (cwd !== undefined) projector.cwd = cwd;
 

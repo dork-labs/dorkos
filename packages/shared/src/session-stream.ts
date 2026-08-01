@@ -41,6 +41,7 @@ import {
   UiCommandEventSchema,
   ErrorEventSchema,
   UsageStatusSchema,
+  type ToolApprovalOutcome,
 } from './schemas.js';
 
 extendZodWithOpenApi(z);
@@ -473,6 +474,58 @@ export const SessionEventSchema = z
 
 /** Inferred type for {@link SessionEventSchema}. */
 export type SessionEvent = z.infer<typeof SessionEventSchema>;
+
+/** The `interaction_resolved` member of the session-event union. */
+export type InteractionResolvedEvent = Extract<SessionEvent, { type: 'interaction_resolved' }>;
+
+/**
+ * How an approval request was ANSWERED, as the transcript records it forever.
+ *
+ * Narrower than {@link InteractionResolvedEvent}'s `resolution` on purpose: an
+ * outcome exists only where there is an answer worth keeping. Re-exported from
+ * `ToolApprovalOutcomeSchema` rather than restated, so the one enum in the wire
+ * schema is the only place these three words are written down.
+ */
+export type { ToolApprovalOutcome };
+
+/**
+ * The receipt an answered approval leaves behind, keyed by resolution.
+ * `cancelled` and `answered` are absent on purpose: an SDK abort withdrew the
+ * ask before anyone answered it, and `answered` belongs to questions, which
+ * keep their own answered summary.
+ */
+const APPROVAL_OUTCOME_BY_RESOLUTION: Partial<
+  Record<NonNullable<InteractionResolvedEvent['resolution']>, ToolApprovalOutcome>
+> = { approved: 'allowed', denied: 'denied', expired: 'expired' };
+
+/**
+ * The permanent record a resolved interaction earns, or `undefined` when it
+ * earns none.
+ *
+ * ONE definition for every consumer: the client's live fold, the log-backed
+ * history reconstruction, and the server-side overlay onto runtime-owned
+ * history all read a receipt out of the same event, so a session's transcript
+ * says the same thing whether it is being watched live or reopened a week
+ * later. Two rules, and neither is inferable from the other half:
+ *
+ * - The KIND must be `approval`. The three interaction kinds share a
+ *   cancellation path, so a timed-out question resolves `expired` exactly as a
+ *   timed-out permission prompt does, and a declined elicitation carries the
+ *   same `denied` a refused permission does. Reading the kind out of the
+ *   outcome printed "Expired — denied" over questions nobody was asked to
+ *   approve.
+ * - The RESOLUTION must be one somebody (or the timer, on their behalf)
+ *   actually gave. A `cancelled` ask was withdrawn before it could be answered.
+ *
+ * @param event - The resolving `interaction_resolved` event.
+ * @returns The outcome to record, or `undefined` when there is nothing to record.
+ */
+export function approvalOutcomeOf(
+  event: Pick<InteractionResolvedEvent, 'resolution' | 'kind'>
+): ToolApprovalOutcome | undefined {
+  if (event.kind !== 'approval' || event.resolution === undefined) return undefined;
+  return APPROVAL_OUTCOME_BY_RESOLUTION[event.resolution];
+}
 
 // === Session Snapshot ===
 

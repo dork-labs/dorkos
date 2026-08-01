@@ -241,3 +241,209 @@ describe('reconstructHistoryFromEvents', () => {
     ]);
   });
 });
+
+// Purpose: receipt permanence for LOG-BACKED runtimes. The permission prompt is
+// a DorkOS event, so the answer has to survive in the same place the rest of
+// the turn does — reopening the session tomorrow must rebuild the same receipt
+// line the person saw when they answered.
+describe('reconstructHistoryFromEvents — answered approvals', () => {
+  /** A turn whose only tool call was gated on a permission prompt. */
+  function gatedTurn(...tail: SessionEvent[]): SessionEvent[] {
+    return events(
+      { seq: 1, type: 'turn_start', userMessage: 'run the tests' },
+      {
+        seq: 2,
+        type: 'tool_call',
+        toolCallId: 'tc-1',
+        toolName: 'Bash',
+        status: 'pending',
+        input: '{"command":"npm test"}',
+      },
+      ...tail
+    );
+  }
+
+  it('records how an approval was answered onto the tool call it gated', () => {
+    const messages = reconstructHistoryFromEvents(
+      gatedTurn(
+        {
+          seq: 3,
+          type: 'interaction_resolved',
+          id: 'tc-1',
+          kind: 'approval',
+          resolution: 'approved',
+          at: 1_700_000_005_000,
+          startedAt: 1_700_000_000_000,
+        },
+        {
+          seq: 4,
+          type: 'tool_result',
+          toolCallId: 'tc-1',
+          toolName: 'Bash',
+          status: 'complete',
+          result: 'ok',
+        },
+        { seq: 5, type: 'turn_end' }
+      )
+    );
+
+    expect(messages[1].toolCalls?.[0]).toEqual({
+      toolCallId: 'tc-1',
+      toolName: 'Bash',
+      status: 'complete',
+      input: '{"command":"npm test"}',
+      result: 'ok',
+      approvalOutcome: 'allowed',
+      approvalResolvedAt: 1_700_000_005_000,
+      approvalStartedAt: 1_700_000_000_000,
+    });
+  });
+
+  it('keeps a denial, which is the record most worth keeping', () => {
+    const messages = reconstructHistoryFromEvents(
+      gatedTurn(
+        {
+          seq: 3,
+          type: 'interaction_resolved',
+          id: 'tc-1',
+          kind: 'approval',
+          resolution: 'denied',
+          at: 1_700_000_005_000,
+        },
+        { seq: 4, type: 'turn_end' }
+      )
+    );
+
+    expect(messages[1].toolCalls?.[0].approvalOutcome).toBe('denied');
+  });
+
+  it('keeps an expiry as an expiry, not as something the person did', () => {
+    // Nobody answered; the timer denied it on their behalf. Recording that as
+    // `denied` would put words in the person's mouth.
+    const messages = reconstructHistoryFromEvents(
+      gatedTurn(
+        {
+          seq: 3,
+          type: 'interaction_resolved',
+          id: 'tc-1',
+          kind: 'approval',
+          resolution: 'expired',
+          at: 1_700_000_600_000,
+          startedAt: 1_700_000_000_000,
+        },
+        { seq: 4, type: 'turn_end' }
+      )
+    );
+
+    expect(messages[1].toolCalls?.[0].approvalOutcome).toBe('expired');
+    expect(messages[1].toolCalls?.[0].approvalStartedAt).toBe(1_700_000_000_000);
+  });
+
+  it('records nothing for a withdrawn ask', () => {
+    // `cancelled` means the request was pulled before anyone could answer it.
+    const messages = reconstructHistoryFromEvents(
+      gatedTurn(
+        {
+          seq: 3,
+          type: 'interaction_resolved',
+          id: 'tc-1',
+          kind: 'approval',
+          resolution: 'cancelled',
+          at: 1_700_000_005_000,
+        },
+        { seq: 4, type: 'turn_end' }
+      )
+    );
+
+    expect(messages[1].toolCalls?.[0]).not.toHaveProperty('approvalOutcome');
+  });
+
+  it('records nothing for a resolved QUESTION riding the same tool call id', () => {
+    // AskUserQuestion is an ordinary tool_use block, so a timed-out question
+    // resolves `expired` on a real tool call. Reading the kind out of the
+    // outcome would print a permission receipt over a question.
+    const messages = reconstructHistoryFromEvents(
+      events(
+        { seq: 1, type: 'turn_start', userMessage: 'ask me' },
+        {
+          seq: 2,
+          type: 'tool_call',
+          toolCallId: 'tc-q',
+          toolName: 'AskUserQuestion',
+          status: 'pending',
+        },
+        {
+          seq: 3,
+          type: 'interaction_resolved',
+          id: 'tc-q',
+          kind: 'question',
+          resolution: 'expired',
+          at: 1_700_000_600_000,
+        },
+        { seq: 4, type: 'turn_end' }
+      )
+    );
+
+    expect(messages[1].toolCalls?.[0]).not.toHaveProperty('approvalOutcome');
+  });
+
+  it('lands the answer even when the resolution is folded before the tool call', () => {
+    // Order independence: the receipt is applied once the turn closes, so a
+    // runtime that reports the answer before the call still gets it right.
+    const messages = reconstructHistoryFromEvents(
+      events(
+        { seq: 1, type: 'turn_start', userMessage: 'run it' },
+        {
+          seq: 2,
+          type: 'interaction_resolved',
+          id: 'tc-1',
+          kind: 'approval',
+          resolution: 'approved',
+          at: 1_700_000_005_000,
+        },
+        {
+          seq: 3,
+          type: 'tool_result',
+          toolCallId: 'tc-1',
+          toolName: 'Bash',
+          status: 'complete',
+          result: 'ok',
+        },
+        { seq: 4, type: 'turn_end' }
+      )
+    );
+
+    expect(messages[1].toolCalls?.[0].approvalOutcome).toBe('allowed');
+  });
+
+  it('carries the answer into a FAILED turn’s parts too', () => {
+    // A failed turn reconstructs through `parts`, which is what the client
+    // renders from when present — a receipt only on `toolCalls` would vanish.
+    const messages = reconstructHistoryFromEvents(
+      gatedTurn(
+        {
+          seq: 3,
+          type: 'interaction_resolved',
+          id: 'tc-1',
+          kind: 'approval',
+          resolution: 'denied',
+          at: 1_700_000_005_000,
+          startedAt: 1_700_000_000_000,
+        },
+        { seq: 4, type: 'error', message: 'turn failed' },
+        { seq: 5, type: 'turn_end', terminalReason: 'error' }
+      )
+    );
+
+    expect(messages[1].parts).toContainEqual(
+      expect.objectContaining({
+        type: 'tool_call',
+        toolCallId: 'tc-1',
+        interactiveType: 'approval',
+        approvalOutcome: 'denied',
+        approvalResolvedAt: 1_700_000_005_000,
+        approvalStartedAt: 1_700_000_000_000,
+      })
+    );
+  });
+});

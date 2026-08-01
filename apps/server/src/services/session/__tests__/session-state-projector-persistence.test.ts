@@ -261,6 +261,37 @@ describe("SessionStateProjector 'record' persistence (DOR-784)", () => {
     expect(store.readAll('room-sess').map((e) => e.seq)).toEqual([1, 3, 4, 6]);
   });
 
+  it('keeps the permission decisions the turn was gated on', () => {
+    // The ask and the answer happen in DorkOS, so no runtime transcript holds
+    // them — these rows are the only durable record that a person was asked
+    // anything, and the only way a receipt survives reopening the session.
+    const store = new SessionEventStore(createTestDb());
+    const projector = new SessionStateProjector('sess');
+    projector.enablePersistence(store, 'record');
+
+    projector.ingest({ type: 'turn_start', userMessage: 'run the tests' } as RawSessionEvent);
+    projector.ingest({
+      type: 'tool_call',
+      toolCallId: 'tc-1',
+      toolName: 'Bash',
+      status: 'pending',
+    } as RawSessionEvent);
+    projector.ingest({
+      type: 'interaction_resolved',
+      id: 'tc-1',
+      kind: 'approval',
+      resolution: 'approved',
+      at: 1_700_000_005_000,
+    } as RawSessionEvent);
+    projector.ingest({ type: 'turn_end' } as RawSessionEvent);
+
+    expect(store.readAll('sess')).toMatchObject([
+      { type: 'turn_start' },
+      { type: 'interaction_resolved', id: 'tc-1', kind: 'approval', resolution: 'approved' },
+      { type: 'turn_end' },
+    ]);
+  });
+
   it("leaves 'history' mode exactly as it was", () => {
     const store = new SessionEventStore(createTestDb());
     const projector = new SessionStateProjector('log-sess');

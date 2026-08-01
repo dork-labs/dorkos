@@ -15,7 +15,7 @@
  *
  * @module features/chat/lib/group-approval-receipts
  */
-import type { MessagePart } from '@dorkos/shared/types';
+import type { MessagePart, ToolApprovalOutcome } from '@dorkos/shared/types';
 
 /**
  * How far apart two answers can land and still read as one action, in ms.
@@ -34,9 +34,6 @@ const SAME_ANSWER_WINDOW_MS = 50;
 /** The tool-call member of {@link MessagePart}. */
 type ToolCallPart = Extract<MessagePart, { type: 'tool_call' }>;
 
-/** How the grouped requests were answered. */
-type ApprovalOutcome = NonNullable<ToolCallPart['approvalOutcome']>;
-
 /** One receipt: the answered approval parts it speaks for, in transcript order. */
 export interface ApprovalReceiptGroup {
   /** Index of the first part in the group — where the receipt renders. */
@@ -44,11 +41,11 @@ export interface ApprovalReceiptGroup {
   /** Every part index the receipt speaks for, including the lead. */
   indices: number[];
   /** The answer every part in the group shares. */
-  outcome: ApprovalOutcome;
+  outcome: ToolApprovalOutcome;
 }
 
 /** An approval part that carries its answer. */
-type AnsweredApprovalPart = ToolCallPart & { approvalOutcome: ApprovalOutcome };
+type AnsweredApprovalPart = ToolCallPart & { approvalOutcome: ToolApprovalOutcome };
 
 /** Whether a part is an approval that has been answered (so it has a receipt). */
 function isAnsweredApproval(part: MessagePart): part is AnsweredApprovalPart {

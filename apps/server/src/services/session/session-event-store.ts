@@ -15,21 +15,37 @@
  * its EventLog is only gap-replay overflow (ADR 260710-024641); persisting it in full
  * would double-store and inflate the hot path.
  *
- * One narrow exception writes here anyway, and it is a RECORD rather than a
- * history: a claude-code session driven by a ROOM keeps its turn boundaries and
- * errors (`'record'` mode, see `ProjectorPersistenceMode`). A room is the one
- * surface with no live client holding the session stream, so a turn that failed
- * there used to leave nothing durable at all — on 2026-07-31 an agent went quiet
- * in a room for forty-one minutes and this table held zero rows about it
- * (DOR-784). Three rows a turn is the smallest thing that makes that legible,
- * and nothing reads them as history. See ADR 260731-211050.
+ * It writes here anyway, and what it writes is a RECORD rather than a history:
+ * `'record'` mode (see `ProjectorPersistenceMode`) keeps a turn's boundaries,
+ * its errors, and the permission decisions it was gated on — a small constant
+ * per turn, whatever the model said, and nothing reads it as history.
+ *
+ * Two things wanted that record, a day apart. A room is the one surface with no
+ * live client holding the session stream, so a turn that failed there used to
+ * leave nothing durable at all — on 2026-07-31 an agent went quiet in a room for
+ * forty-one minutes and this table held zero rows about it (DOR-784, ADR
+ * 260731-211050). And a permission prompt is asked and answered entirely inside
+ * DorkOS, so the `interaction_resolved` rows are the only durable trace that a
+ * person was asked anything; they are what lets a reopened conversation show its
+ * receipts (ADR 260801-035912). The second is why every session records, not
+ * only room-driven ones.
  *
  * The composition root constructs this with the consolidated Drizzle `Db`
  * handle (never a filesystem path, per `.claude/rules/dork-home.md`).
  *
  * @module services/session/session-event-store
  */
-import { sessionEvents, eq, and, lt, desc, max, type Db, type SessionEventRow } from '@dorkos/db';
+import {
+  sessionEvents,
+  eq,
+  and,
+  lt,
+  desc,
+  max,
+  sql,
+  type Db,
+  type SessionEventRow,
+} from '@dorkos/db';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import { logger } from '../../lib/logger.js';
 import { EVENT_LOG_MAX_EVENTS } from './event-log.js';
@@ -122,6 +138,71 @@ export class SessionEventStore {
       if (event !== null) events.push(event);
     }
     return events;
+  }
+
+  /**
+   * A session's `interaction_resolved` rows only — the permission decisions,
+   * without the turns around them.
+   *
+   * Its own read rather than a filter over {@link SessionEventStore.readAll}
+   * because of WHERE it runs: every history read overlays these onto assembled
+   * history, so `readAll` would materialize and JSON-parse up to
+   * {@link EVENT_LOG_MAX_EVENTS} rows per reload to find the two that matter.
+   * The `LIKE` is a scan of one session's rows (the `(session_id, seq)` index
+   * bounds it) but it happens in SQLite over the raw text, and it hands back a
+   * handful of rows instead of thousands.
+   *
+   * The pattern matches the serialized discriminant, which is stable because
+   * this module authors the JSON itself. A row that somehow matched without
+   * being a resolution is dropped by the caller, which reads its fields.
+   *
+   * @param sessionId - DorkOS session identifier
+   */
+  readInteractionResolutions(sessionId: string): SessionEvent[] {
+    const rows = this.db
+      .select()
+      .from(sessionEvents)
+      .where(
+        and(
+          eq(sessionEvents.sessionId, sessionId),
+          sql`${sessionEvents.payload} LIKE '%"type":"interaction_resolved"%'`
+        )
+      )
+      .orderBy(sessionEvents.seq)
+      .all();
+    const events: SessionEvent[] = [];
+    for (const row of rows) {
+      const event = parsePayload(row);
+      if (event?.type === 'interaction_resolved') events.push(event);
+    }
+    return events;
+  }
+
+  /**
+   * Move a session's rows onto a new id, following the projector's canonical-id
+   * rekey ({@link rekeyProjector}).
+   *
+   * Without this the rows are stranded. The FIRST rename is harmless — a brand
+   * new session has flushed nothing yet — but the SDK assigns a new id on a
+   * resume too, and by then the session has turns behind it. Their rows would
+   * stay under the retired id while history renders under the new one, so every
+   * permission decision before the rename would quietly stop existing.
+   *
+   * `UPDATE OR IGNORE` rather than a plain update: the primary key is
+   * `(session_id, seq)`, and a target id that already holds a row at the same
+   * seq would otherwise throw and take the rekey down with it. Ignoring leaves
+   * that row where it is — stranded, which is what it already was — instead of
+   * turning a data-shaped edge case into a broken rename. Unreachable in
+   * practice: a rename target is an id the SDK has just minted.
+   *
+   * @param oldId - The id the rows were written under
+   * @param newId - The id the session is now known by
+   */
+  rekeySession(oldId: string, newId: string): void {
+    if (oldId === newId) return;
+    this.db.run(
+      sql`UPDATE OR IGNORE ${sessionEvents} SET ${sql.identifier('session_id')} = ${newId} WHERE ${sessionEvents.sessionId} = ${oldId}`
+    );
   }
 
   /**
