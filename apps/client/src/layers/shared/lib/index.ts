@@ -158,6 +158,7 @@ export type { AgentVisual, AgentVisualSource } from './resolve-agent-visual';
 export { useCopyFeedback } from './use-copy-feedback';
 export {
   executeUiCommand,
+  revealCanvas,
   type DispatcherContext,
   type DispatcherStore,
   type UiCommandOrigin,

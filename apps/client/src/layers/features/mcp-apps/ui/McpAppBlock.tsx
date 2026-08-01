@@ -13,6 +13,7 @@
  * @module features/mcp-apps/ui/McpAppBlock
  */
 import { AppWindow, Maximize2, PictureInPicture2 } from 'lucide-react';
+import { revealCanvas } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
 import { McpAppFrame } from './McpAppFrame';
 import { useRenderConsent } from '../model/render-consent';
@@ -38,13 +39,16 @@ const INLINE_HEIGHT = 'h-80';
  */
 export function McpAppBlock({ sessionId, serverName, uri, title }: McpAppBlockProps) {
   const { consented, grant } = useRenderConsent(serverName);
-  const setCanvasOpen = useAppStore((s) => s.setCanvasOpen);
-  const openCanvasDocument = useAppStore((s) => s.openCanvasDocument);
   const openPip = useAppStore((s) => s.openPip);
 
   const openFullscreen = () => {
-    openCanvasDocument({ type: 'mcp_app', serverName, uri, title });
-    setCanvasOpen(true);
+    // `revealCanvas` rather than `setCanvasOpen` alone: the canvas renders
+    // inside the right panel, so writing the legacy flag by itself moves the App
+    // somewhere the reader cannot see (DOR-97, DOR-829). `'user'` because a
+    // person pressed fullscreen, so the canvas tab is their choice (DOR-227).
+    const store = useAppStore.getState();
+    store.openCanvasDocument({ type: 'mcp_app', serverName, uri, title });
+    revealCanvas(store, 'user');
   };
 
   const popOut = () => {

@@ -676,20 +676,25 @@ body {
    silently dead CSS.
 
    It is a faster, quieter cousin of `breathe` above (which drives the DorkBot
-   avatar at a 3s cycle): the same opacity-and-scale breath, but at 1.6s so it
-   reads as attentive rather than sleepy, and with a smaller scale step because
-   this class lands on text labels and skeleton bars where a 3% grow would
-   visibly nudge the line. Both properties are compositor-friendly, so a page
-   full of skeletons stays cheap. */
+   avatar at a 3s cycle): 1.6s, so it reads as attentive rather than sleepy.
+
+   OPACITY ONLY, and that is load-bearing rather than a matter of taste. This
+   class lands on text labels, skeleton bars and 8px status dots, where the 2%
+   grow it used to carry read as a line that would not sit still — and an
+   element that never stops moving is one a browser driver can never act on:
+   Playwright's actionability check waits for two animation frames at the same
+   position and times out after 30s on anything wearing this class. So the
+   breath does what the design language asks of it everywhere else (chips, the
+   reduced-motion fallback below): it changes only how present the thing is, not
+   where it is. Opacity is compositor-friendly, so a page full of skeletons
+   stays cheap. */
 @keyframes tasks {
   0%,
   100% {
     opacity: 0.6;
-    transform: scale(1);
   }
   50% {
     opacity: 1;
-    transform: scale(1.02);
   }
 }
 
@@ -1430,24 +1435,16 @@ body {
    are transparent at rest, and the swallowed name is simply the name.
 
    What the design record asks for beyond stopping is a chip that still says it
-   is working: "static icon plus a subtle opacity pulse". Opacity only — the
-   chips do not borrow the app's `tasks` breath, because that rides a 2% scale
-   along with it, and a chip that grows is a chip that moves. It needs
-   `!important` to outrank the reset that just silenced everything, and it is
-   the only motion this whole block gives back. */
-@keyframes chip-breath {
-  0%,
-  100% {
-    opacity: 0.6;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
+   is working: "static icon plus a subtle opacity pulse". That is exactly the
+   app's `tasks` breath, so this borrows it rather than declaring a second set
+   of identical keyframes — only the pace differs, and the pace is stated here:
+   2.4s, slower than the 1.6s `tasks` runs at, because a reader who asked for
+   less motion is owed the calmer end of the same idea. It needs `!important` to
+   outrank the reset that just silenced everything, and it is the only motion
+   this whole block gives back. */
 @media (prefers-reduced-motion: reduce) {
   .touch-chip[data-live='true'] {
-    animation: chip-breath 2.4s ease-in-out infinite !important;
+    animation: tasks 2.4s ease-in-out infinite !important;
   }
 }
 

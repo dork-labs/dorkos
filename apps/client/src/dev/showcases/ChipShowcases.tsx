@@ -5,6 +5,7 @@ import type {
   TouchChip as TouchChipData,
   TouchChipVerb,
 } from '@/layers/features/chat/lib/touch-chips';
+import type { ChipOrder } from '@/layers/features/chat/model/view/use-tray-expansion';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -114,6 +115,10 @@ function ChipRow({ label, chips }: { label: string; chips: TouchChipData[] }) {
 export function ChipShowcases() {
   const [verb, setVerb] = useState<TouchChipVerb | 'all'>('all');
   const shown = verb === 'all' ? LIVE_VERB_CHIPS : LIVE_VERB_CHIPS.filter((c) => c.verb === verb);
+  // The standalone tray is controlled — in the app the strip owns this, out of
+  // reach of the remount that used to reset it (DOR-827). Here the page does.
+  const [trayFilter, setTrayFilter] = useState<TouchChipVerb | null>(null);
+  const [trayOrder, setTrayOrder] = useState<ChipOrder>('grouped');
 
   return (
     <>
@@ -220,7 +225,15 @@ export function ChipShowcases() {
         description="Everything a busy turn touched: filterable by what happened to it, sortable by kind or by when, and bounded so it scrolls itself instead of growing the transcript."
       >
         <ShowcaseDemo>
-          <ChipTray id="playground-chip-tray" chips={ROSTER} onOpen={noop} />
+          <ChipTray
+            id="playground-chip-tray"
+            chips={ROSTER}
+            onOpen={noop}
+            verbFilter={trayFilter}
+            onVerbFilterChange={setTrayFilter}
+            order={trayOrder}
+            onOrderChange={setTrayOrder}
+          />
         </ShowcaseDemo>
       </PlaygroundSection>
 
@@ -230,12 +243,12 @@ export function ChipShowcases() {
       >
         <ShowcaseLabel>Working</ShowcaseLabel>
         <ShowcaseDemo>
-          <TouchChipStrip parts={WORKING_PARTS} />
+          <TouchChipStrip sessionId="playground" parts={WORKING_PARTS} />
         </ShowcaseDemo>
 
         <ShowcaseLabel>Finished</ShowcaseLabel>
         <ShowcaseDemo>
-          <TouchChipStrip parts={SETTLED_PARTS} />
+          <TouchChipStrip sessionId="playground" parts={SETTLED_PARTS} />
         </ShowcaseDemo>
       </PlaygroundSection>
     </>

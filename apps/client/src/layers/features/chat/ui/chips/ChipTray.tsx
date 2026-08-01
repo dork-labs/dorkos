@@ -3,15 +3,15 @@
  *
  * @module features/chat/ui/chips/ChipTray
  */
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { cn } from '@/layers/shared/lib';
 import { SegmentedControl, SegmentedControlItem } from '@/layers/shared/ui';
 import type { TouchChip as TouchChipData, TouchChipVerb } from '../../lib/touch-chips';
+import type { ChipOrder } from '../../model/view/use-tray-expansion';
 import { TouchChip } from './TouchChip';
 import { groupChipsByVerb, VERB_ICON, VERB_LABEL, VERB_ORDER } from './chip-verbs';
 
-/** How the roster is sorted: grouped by what happened, or in the order it happened. */
-export type ChipOrder = 'grouped' | 'chronological';
+export type { ChipOrder };
 
 export interface ChipTrayProps {
   /** DOM id, so the disclosure button that opens the tray can point `aria-controls` at it. */
@@ -20,6 +20,14 @@ export interface ChipTrayProps {
   chips: TouchChipData[];
   /** Open a chip's target. */
   onOpen: (chip: TouchChipData) => void;
+  /** The verb the roster is narrowed to, or `null` for all of it. */
+  verbFilter: TouchChipVerb | null;
+  /** Narrow the roster to one verb, or back to all of it. */
+  onVerbFilterChange: (verb: TouchChipVerb | null) => void;
+  /** The order the roster is listed in. */
+  order: ChipOrder;
+  /** Re-order the roster. */
+  onOrderChange: (order: ChipOrder) => void;
 }
 
 /** Position of each verb in the canonical reading order, for the grouped sort. */
@@ -52,15 +60,25 @@ export function sortChips(chips: TouchChipData[], order: ChipOrder): TouchChipDa
  * sortable by kind or by when it happened, and bounded so it scrolls itself
  * rather than growing the transcript.
  *
- * Both the filter and the order are plain component state. They are a way of
- * looking at this one turn, not a preference worth carrying to the next one.
+ * The filter and the order are a way of looking at this one turn, not a
+ * preference worth carrying to the next one — but they are also not this
+ * component's own state. The row a tray lives in is rebuilt when the turn
+ * finishes and trades its id, which used to re-sort and unfilter the roster
+ * under the reader's eyes (DOR-827); the strip holds them one level up, keyed
+ * by something that survives that. See `model/view/use-tray-expansion`.
  *
- * @param props - The roster, an open handler, and the id its disclosure points at.
+ * @param props - The roster, an open handler, the current filter and order with
+ *   their setters, and the id its disclosure points at.
  */
-export function ChipTray({ id, chips, onOpen }: ChipTrayProps) {
-  const [verbFilter, setVerbFilter] = useState<TouchChipVerb | null>(null);
-  const [order, setOrder] = useState<ChipOrder>('grouped');
-
+export function ChipTray({
+  id,
+  chips,
+  onOpen,
+  verbFilter,
+  onVerbFilterChange,
+  order,
+  onOrderChange,
+}: ChipTrayProps) {
   // Counted over the whole roster, so a filter narrows the list without making
   // the other counts move under the cursor that is about to click them.
   const groups = useMemo(() => groupChipsByVerb(chips), [chips]);
@@ -88,7 +106,7 @@ export function ChipTray({ id, chips, onOpen }: ChipTrayProps) {
                 type="button"
                 aria-pressed={active}
                 data-testid={`chip-filter-${group.verb}`}
-                onClick={() => setVerbFilter(active ? null : group.verb)}
+                onClick={() => onVerbFilterChange(active ? null : group.verb)}
                 className={cn(
                   // Bordered whether or not it is on, so the row reads as a set
                   // of controls rather than as a line of text that turns out to
@@ -109,7 +127,7 @@ export function ChipTray({ id, chips, onOpen }: ChipTrayProps) {
         </div>
         <SegmentedControl
           value={order}
-          onValueChange={(next) => setOrder(next as ChipOrder)}
+          onValueChange={(next) => onOrderChange(next as ChipOrder)}
           aria-label="Order the roster"
           className="w-auto"
         >

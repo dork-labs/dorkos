@@ -20,7 +20,7 @@ Per-turn touch-chip strip in the chat transcript: deduplicated chips for every f
 
 ## Known residuals (filed as follow-ups on DOR-817 close)
 
-- Tray-open state resets when the in-progress turn id swaps at turn end.
-- `.animate-tasks` elements are permanently "unstable" to Playwright's actionability checker (no current test targets one).
-- Canvas click-through validated to dispatch correctly, but the playground renders no canvas; end-to-end canvas open unverified in the real cockpit.
+- ~~Tray-open state resets when the in-progress turn id swaps at turn end.~~ **Fixed (DOR-827):** expansion moved out of the row the swap rebuilds, filed under the turn's first tool call id scoped by session (`ui/chips/use-tray-expansion.ts`).
+- ~~`.animate-tasks` elements are permanently "unstable" to Playwright's actionability checker (no current test targets one).~~ **Fixed (DOR-828):** the `tasks` keyframe is opacity-only, and `chip-breath` folded into it. Measured on `/dev/chat`: `scrollIntoViewIfNeeded` + `click` went from 27.3s to 111ms (light) / 90ms (dark).
+- ~~Canvas click-through validated to dispatch correctly, but the playground renders no canvas; end-to-end canvas open unverified in the real cockpit.~~ **Fixed (DOR-829):** cockpit verification found the document opened invisibly — the strip wrote only the legacy `canvasOpen` flag, so the right panel hosting the canvas stayed shut at width zero. File and URL chips now go through the shared `revealCanvas` path every other opener uses.
 - Non-openable chips (commands, globs, searches) are focusable buttons with no action — kept for tooltip/AT reachability; revisit if tab-stop noise bothers keyboard users.

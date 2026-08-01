@@ -4,12 +4,13 @@
  *
  * @module features/chat/ui/chips/TouchChipStrip
  */
-import { Fragment, useCallback, useId, useMemo, useState } from 'react';
+import { Fragment, useCallback, useId, useMemo } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import type { MessagePart } from '@dorkos/shared/types';
-import { cn, getPlatform } from '@/layers/shared/lib';
+import { cn, getPlatform, revealCanvas } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
 import { accumulateTouchChips, type TouchChip as TouchChipData } from '../../lib/touch-chips';
+import { trayExpansionKey, useTrayExpansion } from '../../model/view/use-tray-expansion';
 import { CHIP_FADE, CHIP_SETTLE, LIVE_WINDOW } from './chip-motion';
 import { groupChipsByVerb, VERB_ICON, VERB_LABEL, type VerbGroup } from './chip-verbs';
 import { ChipPile } from './ChipPile';
@@ -20,6 +21,11 @@ import { useUpgradePulses } from './use-upgrade-pulse';
 export interface TouchChipStripProps {
   /** The assistant message's parts, in transcript order. */
   parts: MessagePart[];
+  /**
+   * The session this turn belongs to — what scopes the tray's arrangement, so
+   * two sessions never share one.
+   */
+  sessionId: string;
   /**
    * Whether the turn this strip belongs to is still running.
    *
@@ -121,8 +127,18 @@ function SummaryGroup({
  * store, so a replayed or rehydrated transcript can never disagree with what is
  * on screen. A turn that touched nothing renders nothing at all.
  *
- * Expansion is plain component state: the design calls for it to be per-message
- * and not remembered, so there is nothing here worth persisting.
+ * How the tray is arranged — open, filtered to one verb, in one order — is
+ * deliberately NOT this component's own state. The row a strip lives in is
+ * rebuilt when the turn finishes and the message trades its in-progress id for
+ * its real one, which used to shut an open tray, drop its filter and re-sort it
+ * at the exact moment the reader was reading it (DOR-827). It lives in
+ * {@link useTrayExpansion}, filed under an identity that survives that swap
+ * ({@link trayExpansionKey}), so it also survives a route change and back and
+ * the virtualizer recycling the row.
+ *
+ * That store is per session and lives for the tab: nothing is written to disk,
+ * so a reload starts every tray shut and grouped again, and no eviction is
+ * needed because an entry only ever appears where a person clicked.
  *
  * **On the virtualizer.** The strip changes height three times in a turn's life:
  * when the first chip arrives, when the row collapses into the summary line, and
@@ -135,49 +151,55 @@ function SummaryGroup({
  * live row is a single clipped line, the tray is capped and scrolls itself, and
  * the only animated height is the row's own 300ms collapse.
  *
- * @param props - The message's parts, and whether its turn is still running.
+ * @param props - The message's parts, the session it belongs to, and whether its
+ *   turn is still running.
  */
-export function TouchChipStrip({ parts, turnActive = false }: TouchChipStripProps) {
+export function TouchChipStrip({ parts, sessionId, turnActive = false }: TouchChipStripProps) {
   const reducedMotion = useReducedMotion() ?? false;
   const chips = useMemo(() => accumulateTouchChips(parts), [parts]);
-  const [expanded, setExpanded] = useState(false);
   const pulses = useUpgradePulses();
   const trayId = useId();
-  const openCanvasDocument = useAppStore((s) => s.openCanvasDocument);
-  const setCanvasOpen = useAppStore((s) => s.setCanvasOpen);
+  const tray = useTrayExpansion(
+    useMemo(() => trayExpansionKey(sessionId, parts), [sessionId, parts])
+  );
+  const handleOpen = useCallback((chip: TouchChipData) => {
+    const embedded = getPlatform().isEmbedded;
 
-  const handleOpen = useCallback(
-    (chip: TouchChipData) => {
-      const embedded = getPlatform().isEmbedded;
+    // A glob names a set of files, so there is no one file to open — handing
+    // `src/**/*.ts` to the canvas opens an empty document named after the
+    // pattern. The chip says so in its tooltip and does nothing here.
+    if (chip.pattern === true) return;
 
-      // A glob names a set of files, so there is no one file to open — handing
-      // `src/**/*.ts` to the canvas opens an empty document named after the
-      // pattern. The chip says so in its tooltip and does nothing here.
-      if (chip.pattern === true) return;
+    // Opening a document and SHOWING it are two different acts, and a chip owes
+    // the reader both: the canvas lives in the right panel, which stays shut at
+    // width zero unless something opens it (DOR-97). `revealCanvas` is the one
+    // path that does all of it, shared with every agent-driven open — a chip
+    // that wrote `canvasOpen` alone put the document somewhere nobody could see
+    // it (DOR-829). `'user'` because a person pressed the chip, so the canvas
+    // tab is their choice and is remembered as one.
+    const store = useAppStore.getState();
 
-      if (chip.kind === 'url') {
-        // No canvas inside Obsidian, so the page opens where it can: a new tab.
-        if (embedded) {
-          window.open(chip.fullTarget, '_blank', 'noopener,noreferrer');
-          return;
-        }
-        openCanvasDocument({ type: 'url', url: chip.fullTarget });
-        setCanvasOpen(true);
+    if (chip.kind === 'url') {
+      // No canvas inside Obsidian, so the page opens where it can: a new tab.
+      if (embedded) {
+        window.open(chip.fullTarget, '_blank', 'noopener,noreferrer');
         return;
       }
+      store.openCanvasDocument({ type: 'url', url: chip.fullTarget });
+      revealCanvas(store, 'user');
+      return;
+    }
 
-      if (chip.kind === 'file') {
-        // A file chip in the plugin is a record with a tooltip and nothing more —
-        // there is no pane to open it into. Revisit when that surface is verified.
-        if (embedded) return;
-        openCanvasDocument({ type: 'file', sourcePath: chip.fullTarget });
-        setCanvasOpen(true);
-      }
+    if (chip.kind === 'file') {
+      // A file chip in the plugin is a record with a tooltip and nothing more —
+      // there is no pane to open it into. Revisit when that surface is verified.
+      if (embedded) return;
+      store.openCanvasDocument({ type: 'file', sourcePath: chip.fullTarget });
+      revealCanvas(store, 'user');
+    }
 
-      // A bare command or a search pattern has no target to open.
-    },
-    [openCanvasDocument, setCanvasOpen]
-  );
+    // A bare command or a search pattern has no target to open.
+  }, []);
 
   const groups = useMemo(() => groupChipsByVerb(chips), [chips]);
   // The turn is the authority. A tool still in flight keeps the row up for a
@@ -209,9 +231,9 @@ export function TouchChipStrip({ parts, turnActive = false }: TouchChipStripProp
             {absorbed.length > 0 && (
               <ChipPile
                 chips={absorbed}
-                expanded={expanded}
+                expanded={tray.expanded}
                 controls={trayId}
-                onExpand={() => setExpanded((open) => !open)}
+                onExpand={tray.toggleExpanded}
               />
             )}
             {/* The chip leaving the window is not simply dropped: it shrinks away
@@ -254,20 +276,30 @@ export function TouchChipStrip({ parts, turnActive = false }: TouchChipStripProp
             <span aria-hidden="true">—</span>
             <button
               type="button"
-              aria-expanded={expanded}
+              aria-expanded={tray.expanded}
               aria-controls={trayId}
-              onClick={() => setExpanded((open) => !open)}
+              onClick={tray.toggleExpanded}
               className={cn(
                 'hover:text-foreground rounded-sm underline underline-offset-2',
                 'focus-visible:ring-ring/50 outline-none focus-visible:ring-2'
               )}
             >
-              {expanded ? 'hide' : 'show all'}
+              {tray.expanded ? 'hide' : 'show all'}
             </button>
           </motion.div>
         )}
       </AnimatePresence>
-      {expanded && <ChipTray id={trayId} chips={chips} onOpen={handleOpen} />}
+      {tray.expanded && (
+        <ChipTray
+          id={trayId}
+          chips={chips}
+          onOpen={handleOpen}
+          verbFilter={tray.verbFilter}
+          onVerbFilterChange={tray.setVerbFilter}
+          order={tray.order}
+          onOrderChange={tray.setOrder}
+        />
+      )}
     </div>
   );
 }

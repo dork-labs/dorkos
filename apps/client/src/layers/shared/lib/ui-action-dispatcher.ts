@@ -348,8 +348,18 @@ function tabSetterFor(
  * (init-extensions), so off that route RightPanelContainer's auto-select falls
  * back to the first visible tab — the command still lands (the document is
  * persisted per session) and shows on return to /session.
+ *
+ * Exported because opening a document is not the same act as showing it, and
+ * anything in the app that opens one owes the reader both. A caller that
+ * reaches only for `setCanvasOpen` writes a document nobody can see: the panel
+ * hosting the canvas stays shut, at width zero, with no sign anything happened
+ * (DOR-829). Call this instead of assembling the three writes by hand.
+ *
+ * @param store - `useAppStore.getState()`.
+ * @param origin - Who is revealing it: `'user'` persists the tab choice as a
+ *   preference, `'agent'` switches the view without overwriting one.
  */
-function revealCanvas(store: DispatcherStore, origin: UiCommandOrigin): void {
+export function revealCanvas(store: DispatcherStore, origin: UiCommandOrigin): void {
   store.setCanvasOpen(true);
   store.setRightPanelOpen(true);
   tabSetterFor(store, origin)(CANVAS_TAB_ID);
