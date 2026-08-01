@@ -21,6 +21,7 @@
 import type { MessagePart } from '@dorkos/shared/types';
 import {
   basename,
+  commandLabel,
   editDiffstat,
   formatDiffstat,
   grepHits,
@@ -29,6 +30,7 @@ import {
   normalizeUrl,
   parseDeletedPaths,
   parseToolInput,
+  pathsAlias,
   readString,
   urlLabel,
   writtenLines,
@@ -52,7 +54,7 @@ export interface TouchChip {
   key: string;
   /** File, URL, or bare command — the click behaviour follows from this. */
   kind: TouchChipKind;
-  /** Short display name: basename, domain, or the command itself. */
+  /** Short display name: basename, domain, or a command's first line, truncated. */
   label: string;
   /** Full path / URL / command — the tooltip text and the canvas open target. */
   fullTarget: string;
@@ -146,29 +148,49 @@ interface Touch {
   pattern?: boolean;
 }
 
+/** `1 hit` / `14 hits` — the badge text, the spoken one, and the history line, from one place. */
+export function hitsLabel(hits: number): string {
+  return hits === 1 ? '1 hit' : `${hits} hits`;
+}
+
+/**
+ * Shell metacharacters that make a word name a SET of files rather than one.
+ *
+ * `rm build/*.js` deleted whatever the glob matched, and nobody on this side
+ * knows what that was — so the chip is a record of the command, not a link to a
+ * file called `*.js`. `~` and `$` are here for the same reason: the shell
+ * expanded them, and this did not.
+ */
+const GLOB_CHARS = /[*?[\]~$]/;
+
 /**
  * Build a file touch from a path, with the label and key every file chip shares.
  *
  * The counts are partial because a create has additions and nothing else: the
  * chip shows `+86` rather than `+86 −0`, and a zero it never measured is not a
  * number it should print.
+ *
+ * A `pattern` touch names a set, so it is labelled with the whole pattern: the
+ * basename of `build/*.js` is `*.js`, which reads as a file nobody has.
  */
 function fileTouch(
   path: string,
   verb: TouchChipVerb,
   entry: string,
-  stat?: Partial<Diffstat>
+  stat?: Partial<Diffstat>,
+  pattern?: boolean
 ): Touch {
   const target = normalizePath(path);
   return {
     key: `file:${target}`,
     kind: 'file',
-    label: basename(target),
+    label: pattern === true ? target : basename(target),
     fullTarget: target,
     verb,
     entry,
     additions: stat?.additions,
     deletions: stat?.deletions,
+    pattern: pattern === true ? true : undefined,
   };
 }
 
@@ -207,7 +229,10 @@ function deriveTouches(part: Extract<MessagePart, { type: 'tool_call' }>): Touch
     case 'Grep': {
       const pattern = readString(input, 'pattern');
       if (!pattern) return [];
-      const hits = grepHits(part.result);
+      // A grep that failed found nothing it can report — whatever text came
+      // back is an error message, and counting its lines would badge the chip
+      // with a number of matches that never existed.
+      const hits = part.status === 'error' ? undefined : grepHits(part.result);
       return [
         {
           key: `grep:${pattern}`,
@@ -215,7 +240,7 @@ function deriveTouches(part: Extract<MessagePart, { type: 'tool_call' }>): Touch
           label: `"${pattern}"`,
           fullTarget: pattern,
           verb: 'search',
-          entry: hits === undefined ? 'searched' : `searched (${hits} hits)`,
+          entry: hits === undefined ? 'searched' : `searched (${hitsLabel(hits)})`,
           hits,
         },
       ];
@@ -251,16 +276,19 @@ function deriveTouches(part: Extract<MessagePart, { type: 'tool_call' }>): Touch
       if (!command) return [];
       const touches: Touch[] = [
         {
+          // The whole command is the identity — two `pnpm test` runs are the
+          // same command however long the script after them is — while the
+          // label is only as much of it as a pill can carry.
           key: `run:${command}`,
           kind: 'command',
-          label: command,
+          label: commandLabel(command),
           fullTarget: command,
           verb: 'run',
           entry: 'ran',
         },
       ];
       for (const path of parseDeletedPaths(command)) {
-        touches.push(fileTouch(path, 'delete', 'deleted'));
+        touches.push(fileTouch(path, 'delete', 'deleted', undefined, GLOB_CHARS.test(path)));
       }
       return touches;
     }
@@ -285,7 +313,9 @@ function deriveTouches(part: Extract<MessagePart, { type: 'tool_call' }>): Touch
         {
           key: `websearch:${query}`,
           kind: 'command',
-          label: `🔍 ${query}`,
+          // No glyph in the label: the chip renders the verb's own 🔍 beside it,
+          // and two magnifiers on one pill read as a rendering bug.
+          label: query,
           fullTarget: query,
           verb: 'search',
           entry: 'searched the web',
@@ -297,6 +327,25 @@ function deriveTouches(part: Extract<MessagePart, { type: 'tool_call' }>): Touch
   }
 }
 
+/**
+ * The chip a touch belongs to, which is not always the chip its own key names.
+ *
+ * Tools name a file by its full path and shells name it by where they are, so
+ * one file arrives under two spellings in a single turn: `Read /repo/src/old.ts`
+ * then `rm src/old.ts`. Folding those into two chips leaves a live link to a
+ * file that is gone sitting next to its own tombstone. Patterns are excluded —
+ * a glob names a set, and a set that ends in the same word as a file is still
+ * not that file.
+ */
+function resolveKey(chips: Map<string, TouchChip>, touch: Touch): string {
+  if (touch.kind !== 'file' || touch.pattern === true || chips.has(touch.key)) return touch.key;
+  for (const chip of chips.values()) {
+    if (chip.kind !== 'file' || chip.pattern === true) continue;
+    if (pathsAlias(chip.fullTarget, touch.fullTarget)) return chip.key;
+  }
+  return touch.key;
+}
+
 /** Fold one touch into the roster, creating its chip or merging into the existing one. */
 function fold(
   chips: Map<string, TouchChip>,
@@ -305,11 +354,12 @@ function fold(
   live: boolean,
   error: boolean
 ): void {
-  const existing = chips.get(touch.key);
+  const key = resolveKey(chips, touch);
+  const existing = chips.get(key);
 
   if (!existing) {
-    chips.set(touch.key, {
-      key: touch.key,
+    chips.set(key, {
+      key,
       kind: touch.kind,
       label: touch.label,
       fullTarget: touch.fullTarget,
@@ -352,6 +402,19 @@ function fold(
     existing.pattern = undefined;
   }
 
+  // The absolute spelling wins. A chip first seen as `src/a.ts` and later read
+  // as `/repo/src/a.ts` is one file, and the full path is the one the canvas can
+  // actually open — the key stays put so nothing above has to be re-sorted.
+  if (
+    existing.kind === 'file' &&
+    existing.pattern !== true &&
+    touch.fullTarget.startsWith('/') &&
+    !existing.fullTarget.startsWith('/')
+  ) {
+    existing.fullTarget = touch.fullTarget;
+    existing.label = basename(touch.fullTarget);
+  }
+
   // The read→edit morph fires exactly once: by the time a second edit lands the
   // chip's verb is already `edit`, so this branch cannot be re-entered.
   if (existing.verb === 'read' && touch.verb === 'edit') {
@@ -360,6 +423,56 @@ function fold(
   if (VERB_RANK[touch.verb] > VERB_RANK[existing.verb]) {
     existing.verb = touch.verb;
   }
+}
+
+/** What a part parsed to last time, and the three fields that would change the answer. */
+interface CachedTouches {
+  /** The tool input this was parsed from. */
+  input: string | undefined;
+  /** The result text this was parsed from. */
+  result: string | undefined;
+  /** The status this was parsed under. */
+  status: string | undefined;
+  /** What it parsed to. Never mutated by the fold, so it is safe to hand out again. */
+  touches: Touch[];
+}
+
+/**
+ * Parsed touches, remembered per part.
+ *
+ * The fold is pure and runs on every render, and a render happens on every
+ * stream frame — including each text delta, which changes nothing about any tool
+ * call. Without this, a turn that wrote a 600-line file re-ran `JSON.parse` over
+ * that file's whole content for every word the model then said.
+ *
+ * Keyed on the part OBJECT, which survives the array copies the stream makes,
+ * and validated against the three fields a parse reads: parts are mutated in
+ * place as a tool streams its input and lands its result, so object identity
+ * alone would serve a chip parsed from half an input.
+ *
+ * A `WeakMap` so a closed session's parts are collectable.
+ */
+const TOUCH_CACHE = new WeakMap<Extract<MessagePart, { type: 'tool_call' }>, CachedTouches>();
+
+/** The touches a part contributes, parsed once per distinct state of that part. */
+function cachedTouches(part: Extract<MessagePart, { type: 'tool_call' }>): Touch[] {
+  const cached = TOUCH_CACHE.get(part);
+  if (
+    cached &&
+    cached.input === part.input &&
+    cached.result === part.result &&
+    cached.status === part.status
+  ) {
+    return cached.touches;
+  }
+  const touches = deriveTouches(part);
+  TOUCH_CACHE.set(part, {
+    input: part.input,
+    result: part.result,
+    status: part.status,
+    touches,
+  });
+  return touches;
 }
 
 /**
@@ -379,7 +492,7 @@ export function accumulateTouchChips(parts: MessagePart[]): TouchChip[] {
     if (part.type !== 'tool_call') return;
     const live = part.status === 'pending' || part.status === 'running';
     const error = part.status === 'error';
-    for (const touch of deriveTouches(part)) {
+    for (const touch of cachedTouches(part)) {
       fold(chips, touch, seq, live, error);
     }
   });

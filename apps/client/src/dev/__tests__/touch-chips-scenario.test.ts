@@ -92,7 +92,12 @@ describe('the touch-chips scenario', () => {
   });
 
   it('deletes a file with an rm, which makes both a command chip and a tombstone', () => {
-    expect(byTarget(chips, 'src/legacy/event-mapper.ts').verb).toBe('delete');
+    // The scenario reads the file by its full path and deletes it by a relative
+    // one — the exact shape that used to leave a clickable chip for a file that
+    // is gone sitting beside its own tombstone. One chip, and it is the grave.
+    const tombstone = byTarget(chips, '/repo/src/legacy/event-mapper.ts');
+    expect(tombstone.verb).toBe('delete');
+    expect(tombstone.touches).toBe(2);
     expect(byTarget(chips, 'rm src/legacy/event-mapper.ts').verb).toBe('run');
   });
 

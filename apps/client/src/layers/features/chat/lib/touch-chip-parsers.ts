@@ -19,7 +19,23 @@ export interface Diffstat {
 }
 
 /** Sub-command separators a shell would honour, used to find `rm` inside a compound command. */
-const COMMAND_SEPARATORS = /\|\||&&|;|\||\n/;
+const INLINE_SEPARATORS = /\|\||&&|;|\|/;
+
+/**
+ * A heredoc marker or a redirect into a file. Once one of these appears, the
+ * lines that follow are the thing being written, not the thing being run — the
+ * `rm -rf /var/www/html` inside a deploy script is text, and claiming it as a
+ * deletion is a lie about what the agent did.
+ *
+ * Deliberately blunt: any `>` counts, including `2>&1`, so a genuine `rm` on a
+ * later line of the same command is sometimes missed. That is the safe
+ * direction. A deletion this never finds is a chip the reader does not get; a
+ * deletion this invents is a chip that says a file is gone when it is not.
+ */
+const WRITES_A_FILE = /<<|>/;
+
+/** How much of a command a chip shows and says. Enough to recognise, not enough to bury the row. */
+const COMMAND_LABEL_MAX = 60;
 
 /** Parse a tool call's JSON-encoded input. Returns null for anything that is not a JSON object. */
 export function parseToolInput(raw: string | undefined): Record<string, unknown> | null {
@@ -134,10 +150,57 @@ export function writtenLines(content: string): number {
   return content.replace(/\n$/, '').split('\n').length;
 }
 
-/** Strip trailing slashes so `dist/` and `dist` are the same target. */
+/**
+ * Reduce a path to the form two tools would have to agree on to mean one file:
+ * no trailing slash, no leading `./`, and no `..` left to walk.
+ *
+ * This is what stops `Read /repo/src/old.ts` followed by `rm ./src/old.ts` from
+ * becoming two chips — one of them a live link to a file that is gone. It is
+ * textual, not resolved against a working directory: nothing on the wire says
+ * what `src/a.ts` was relative to, so the absolute-vs-relative half of the same
+ * question is answered by {@link pathsAlias} at fold time instead.
+ */
 export function normalizePath(path: string): string {
   const trimmed = path.replace(/\/+$/, '');
-  return trimmed.length > 0 ? trimmed : path;
+  if (trimmed.length === 0) return path;
+
+  const absolute = trimmed.startsWith('/');
+  const segments: string[] = [];
+  for (const segment of trimmed.split('/')) {
+    if (segment === '' || segment === '.') continue;
+    if (segment === '..') {
+      const last = segments[segments.length - 1];
+      // A `..` only cancels a real segment. Above the root there is nowhere to
+      // go, so it is dropped; in a relative path it is kept, because
+      // `../src/a.ts` names a file this cannot resolve any further.
+      if (last !== undefined && last !== '..') segments.pop();
+      else if (!absolute) segments.push('..');
+      continue;
+    }
+    segments.push(segment);
+  }
+
+  const joined = segments.join('/');
+  if (joined.length === 0) return absolute ? '/' : path;
+  return absolute ? `/${joined}` : joined;
+}
+
+/**
+ * Whether two normalized paths name the same file, one of them absolute and the
+ * other relative to somewhere inside it.
+ *
+ * `/repo/src/a.ts` and `src/a.ts` are the same file the moment one of them ends
+ * with the other; two relative paths that merely look alike are not, because
+ * `a/x.ts` and `b/x.ts` both end with `x.ts` and are different files. Only the
+ * absolute-vs-relative pair is ever folded, which is exactly the case the wire
+ * produces: tools name a file by its full path, shells name it by where they are.
+ */
+export function pathsAlias(a: string, b: string): boolean {
+  if (a === b) return true;
+  const absolute = a.startsWith('/') ? a : b;
+  const relative = a.startsWith('/') ? b : a;
+  if (!absolute.startsWith('/') || relative.startsWith('/')) return false;
+  return absolute.endsWith(`/${relative}`);
 }
 
 /** Last path segment, falling back to the whole path when there is no segment to take. */
@@ -174,6 +237,13 @@ export function urlLabel(raw: string): string {
  * shape depends on its output mode, so this reads the count it states and
  * otherwise falls back to counting the lines it printed. A result it cannot read
  * carries no count at all rather than a wrong one.
+ *
+ * Two shapes are refused outright. A result that counts **files** is answering a
+ * different question — `files_with_matches` mode says how many files contain a
+ * match, never how many matches there are — so it yields no count rather than a
+ * file tally wearing an `N hits` badge. And an error result is not a result: a
+ * grep that failed found nothing it can report, and its text is a message, not
+ * matches.
  */
 export function grepHits(result: string | undefined): number | undefined {
   if (!result) return undefined;
@@ -184,10 +254,30 @@ export function grepHits(result: string | undefined): number | undefined {
   const bare = /^(\d+)$/.exec(text);
   if (bare) return Number(bare[1]);
 
-  const stated = /(\d+)\s+(?:matches?|lines?|files?)/i.exec(text);
+  const stated = /(\d+)\s+(?:matches?|lines?)/i.exec(text);
   if (stated) return Number(stated[1]);
 
+  if (/\d+\s+files?/i.test(text)) return undefined;
+
   return text.split('\n').filter((line) => line.trim().length > 0).length;
+}
+
+/**
+ * What a command chip is called: its first meaningful line, short enough to sit
+ * in a row of pills.
+ *
+ * A `Bash` command can be a whole script — a heredoc writing a deploy file runs
+ * to hundreds of characters — and the full text is still the chip's identity and
+ * its tooltip. This is only what the chip shows and says out loud.
+ */
+export function commandLabel(command: string): string {
+  const firstLine = command
+    .split('\n')
+    .find((line) => line.trim().length > 0)
+    ?.trim();
+  const line = firstLine ?? command.trim();
+  if (line.length <= COMMAND_LABEL_MAX) return line;
+  return `${line.slice(0, COMMAND_LABEL_MAX - 1).trimEnd()}…`;
 }
 
 /**
@@ -234,23 +324,34 @@ function shellWords(command: string): string[] {
  * deletion, and the design is explicit that deletions are never invisible.
  *
  * Conservative on purpose: anything it cannot read confidently yields no path,
- * because a guessed deletion is worse than a missing one.
+ * because a guessed deletion is worse than a missing one. The sharpest edge is a
+ * command that WRITES a script rather than running one — `cat > deploy.sh <<'EOF'`
+ * followed by lines that happen to contain `rm -rf`. Those lines are file
+ * contents, so reading past a heredoc or a redirect stops (see
+ * {@link WRITES_A_FILE}); the line carrying the marker is still read, so
+ * `rm old.ts > log.txt` keeps its deletion.
  */
 export function parseDeletedPaths(command: string): string[] {
   const paths: string[] = [];
-  for (const segment of command.split(COMMAND_SEPARATORS)) {
-    const words = shellWords(segment.trim());
-    if (words.length === 0) continue;
+  for (const line of command.split('\n')) {
+    for (const segment of line.split(INLINE_SEPARATORS)) {
+      const words = shellWords(segment.trim());
+      if (words.length === 0) continue;
 
-    let cursor = 0;
-    if (words[0] === 'git' && words[1] === 'rm') cursor = 2;
-    else if (words[0] === 'rm') cursor = 1;
-    else continue;
+      let cursor = 0;
+      if (words[0] === 'git' && words[1] === 'rm') cursor = 2;
+      else if (words[0] === 'rm') cursor = 1;
+      else continue;
 
-    for (const word of words.slice(cursor)) {
-      if (word === '--' || word.startsWith('-') || word.length === 0) continue;
-      paths.push(word);
+      for (const word of words.slice(cursor)) {
+        // A redirect ends the argument list. What follows it is where the output
+        // goes — `/dev/null` is not a file this command deleted.
+        if (word.includes('>') || word.includes('<')) break;
+        if (word === '--' || word.startsWith('-') || word.length === 0) continue;
+        paths.push(word);
+      }
     }
+    if (WRITES_A_FILE.test(line)) break;
   }
   return paths;
 }

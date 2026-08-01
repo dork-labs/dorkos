@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type { MessagePart } from '@dorkos/shared/types';
 import { accumulateTouchChips, type TouchChip } from '../touch-chips';
 
@@ -108,6 +108,80 @@ describe('accumulateTouchChips', () => {
       const chips = accumulateTouchChips([
         toolCall('Grep', { pattern: 'coordination' }),
         toolCall('WebSearch', { query: 'coordination' }),
+      ]);
+
+      expect(chips).toHaveLength(2);
+    });
+  });
+
+  describe('path identity', () => {
+    it('folds `./src/a.ts` into `src/a.ts`', () => {
+      const chip = only(
+        accumulateTouchChips([
+          toolCall('Read', { file_path: 'src/a.ts' }),
+          toolCall('Read', { file_path: './src/a.ts' }),
+        ])
+      );
+
+      expect(chip.touches).toBe(2);
+      expect(chip.fullTarget).toBe('src/a.ts');
+    });
+
+    it('walks `..` out of a path before comparing it', () => {
+      const chip = only(
+        accumulateTouchChips([
+          toolCall('Read', { file_path: '/repo/src/a.ts' }),
+          toolCall('Read', { file_path: '/repo/src/lib/../a.ts' }),
+        ])
+      );
+
+      expect(chip.touches).toBe(2);
+      expect(chip.fullTarget).toBe('/repo/src/a.ts');
+    });
+
+    it('folds a relative path into the absolute chip it names', () => {
+      // This is the shape that shipped a lie: the tool read the file by its full
+      // path, the shell deleted it by a relative one, and the turn showed a
+      // clickable chip for a file that is gone beside its own tombstone.
+      const chip = only(
+        accumulateTouchChips([
+          toolCall('Read', { file_path: '/repo/src/old.ts' }),
+          toolCall('Bash', { command: 'rm src/old.ts' }),
+        ]).filter((entry) => entry.kind === 'file')
+      );
+
+      expect(chip.verb).toBe('delete');
+      expect(chip.touches).toBe(2);
+      expect(chip.fullTarget).toBe('/repo/src/old.ts');
+    });
+
+    it('lets an absolute path claim the relative chip that arrived first', () => {
+      const chip = only(
+        accumulateTouchChips([
+          toolCall('Read', { file_path: './src/a.ts' }),
+          toolCall('Read', { file_path: '/repo/src/a.ts' }),
+        ])
+      );
+
+      expect(chip.touches).toBe(2);
+      // The full path is the one the canvas can actually open.
+      expect(chip.fullTarget).toBe('/repo/src/a.ts');
+      expect(chip.label).toBe('a.ts');
+    });
+
+    it('keeps two files that merely end alike apart', () => {
+      const chips = accumulateTouchChips([
+        toolCall('Read', { file_path: 'a/index.ts' }),
+        toolCall('Read', { file_path: 'b/index.ts' }),
+      ]);
+
+      expect(chips).toHaveLength(2);
+    });
+
+    it('never folds a glob into a file whose name it ends with', () => {
+      const chips = accumulateTouchChips([
+        toolCall('Read', { file_path: '/repo/src/a.ts' }),
+        toolCall('Glob', { pattern: 'src/a.ts' }),
       ]);
 
       expect(chips).toHaveLength(2);
@@ -303,6 +377,94 @@ describe('accumulateTouchChips', () => {
       expect(chips[0].verb).toBe('run');
       expect(chips[0].kind).toBe('command');
     });
+
+    it('still reads two deletions joined on one line', () => {
+      const chips = accumulateTouchChips([toolCall('Bash', { command: 'rm a.ts && rm b.ts' })]);
+
+      const deleted = chips.filter((chip) => chip.verb === 'delete').map((chip) => chip.fullTarget);
+      expect(deleted).toEqual(['a.ts', 'b.ts']);
+    });
+
+    it('claims nothing an rm inside a heredoc never deleted', () => {
+      // The `rm -rf` here is a line of a deploy script being written to disk.
+      // Reading it as a deletion tells the operator their web root is gone.
+      const chips = accumulateTouchChips([
+        toolCall('Bash', {
+          command:
+            "cat > deploy.sh <<'EOF'\nset -e\nrm -rf /var/www/html\ncp -r dist /var/www\nEOF",
+        }),
+      ]);
+
+      expect(chips).toHaveLength(1);
+      expect(chips[0].verb).toBe('run');
+    });
+
+    it('claims nothing an rm inside a quoted echo never deleted', () => {
+      const chips = accumulateTouchChips([
+        toolCall('Bash', { command: 'echo "rm -rf /" > x.sh\nchmod +x x.sh' }),
+      ]);
+
+      expect(chips.filter((chip) => chip.verb === 'delete')).toEqual([]);
+    });
+
+    it('keeps a deletion on the same line as the redirect that follows it', () => {
+      const chips = accumulateTouchChips([
+        toolCall('Bash', { command: 'rm stale.log > /dev/null 2>&1' }),
+      ]);
+
+      expect(byTarget(chips, 'stale.log').verb).toBe('delete');
+    });
+
+    it('leaves a glob it deleted as a record rather than a link to open', () => {
+      // Nobody on this side knows what `build/*.js` matched, so there is no one
+      // file to open — and `*.js` is not a filename anybody has.
+      const chips = accumulateTouchChips([toolCall('Bash', { command: 'rm build/*.js' })]);
+
+      const deleted = byTarget(chips, 'build/*.js');
+      expect(deleted.verb).toBe('delete');
+      expect(deleted.pattern).toBe(true);
+      expect(deleted.label).toBe('build/*.js');
+    });
+
+    it('flags a variable and a home-relative target as patterns too', () => {
+      const variable = accumulateTouchChips([
+        toolCall('Bash', { command: 'rm $BUILD_DIR/out.js' }),
+      ]);
+      expect(byTarget(variable, '$BUILD_DIR/out.js').pattern).toBe(true);
+
+      const home = accumulateTouchChips([toolCall('Bash', { command: 'rm ~/.cache/thing' })]);
+      expect(byTarget(home, '~/.cache/thing').pattern).toBe(true);
+    });
+
+    it('leaves a plainly-named deletion openable', () => {
+      const chips = accumulateTouchChips([toolCall('Bash', { command: 'rm src/old.ts' })]);
+      expect(byTarget(chips, 'src/old.ts').pattern).toBeUndefined();
+    });
+  });
+
+  describe('command labels', () => {
+    it('shows a long command by its first line, truncated', () => {
+      const command = `cat > deploy.sh <<'EOF'\n${'echo hello world; '.repeat(20)}\nEOF`;
+      const chip = only(accumulateTouchChips([toolCall('Bash', { command })]));
+
+      expect(chip.label).toBe("cat > deploy.sh <<'EOF'");
+      // The whole script is still the identity and the tooltip.
+      expect(chip.fullTarget).toBe(command);
+      expect(chip.key).toBe(`run:${command}`);
+    });
+
+    it('ellipsises a first line longer than the chip can carry', () => {
+      const command = `pnpm vitest run ${'a'.repeat(80)}.test.ts`;
+      const chip = only(accumulateTouchChips([toolCall('Bash', { command })]));
+
+      expect(chip.label).toHaveLength(60);
+      expect(chip.label.endsWith('…')).toBe(true);
+    });
+
+    it('leaves a short command exactly as it was typed', () => {
+      const chip = only(accumulateTouchChips([toolCall('Bash', { command: 'pnpm test' })]));
+      expect(chip.label).toBe('pnpm test');
+    });
   });
 
   describe('Write', () => {
@@ -411,20 +573,60 @@ describe('accumulateTouchChips', () => {
       expect(chip.touches).toBe(2);
     });
 
+    it('says "1 hit" rather than "1 hits" in the history line', () => {
+      const chip = only(
+        accumulateTouchChips([toolCall('Grep', { pattern: 'once' }, { result: 'Found 1 match' })])
+      );
+
+      expect(chip.hits).toBe(1);
+      expect(chip.history).toEqual(['searched (1 hit)']);
+    });
+
     it('omits hit details when the grep result says nothing countable', () => {
       const chip = only(accumulateTouchChips([toolCall('Grep', { pattern: 'accumulate' })]));
       expect(chip.hits).toBeUndefined();
       expect(chip.history).toEqual(['searched']);
     });
 
-    it('labels a web search with its query', () => {
+    it('counts no hits from a grep that failed', () => {
+      // The result of a failed grep is an error message. Counting its lines
+      // badges the chip with matches nothing ever found.
+      const chip = only(
+        accumulateTouchChips([
+          toolCall(
+            'Grep',
+            { pattern: 'accumulate' },
+            { result: 'rg: no such file or directory', status: 'error' }
+          ),
+        ])
+      );
+
+      expect(chip.hits).toBeUndefined();
+      expect(chip.history).toEqual(['searched']);
+    });
+
+    it('counts no hits from a result that only tallies files', () => {
+      // `files_with_matches` mode answers a different question — how many files
+      // contain a match, not how many matches there are.
+      const chip = only(
+        accumulateTouchChips([
+          toolCall('Grep', { pattern: 'accumulate' }, { result: 'Found 7 files' }),
+        ])
+      );
+
+      expect(chip.hits).toBeUndefined();
+    });
+
+    it('labels a web search with its query, and no glyph of its own', () => {
       const chip = only(
         accumulateTouchChips([toolCall('WebSearch', { query: 'calm tech motion' })])
       );
 
       expect(chip.verb).toBe('search');
       expect(chip.kind).toBe('command');
-      expect(chip.label).toBe('🔍 calm tech motion');
+      // The chip renders the verb's 🔍 itself; a second one in the label reads
+      // as a rendering bug.
+      expect(chip.label).toBe('calm tech motion');
       expect(chip.fullTarget).toBe('calm tech motion');
     });
 
@@ -485,6 +687,19 @@ describe('accumulateTouchChips', () => {
       expect(chip.error).toBe(true);
     });
 
+    it('keeps a chip live while an earlier touch of it is still running', () => {
+      // Tools run in parallel. A read that has not come back yet is still work
+      // in progress on that file, whatever the edit that landed first says.
+      const chip = only(
+        accumulateTouchChips([
+          toolCall('Read', { file_path: 'a.ts' }, { status: 'running' }),
+          toolCall('Edit', { file_path: 'a.ts', old_string: 'a', new_string: 'b' }),
+        ])
+      );
+
+      expect(chip.live).toBe(true);
+    });
+
     it('keeps the error sticky when a later touch succeeds', () => {
       const chip = only(
         accumulateTouchChips([
@@ -516,18 +731,9 @@ describe('accumulateTouchChips', () => {
       expect(chips.map((chip) => chip.firstSeq)).toEqual([0, 1, 2, 3]);
     });
 
-    it('groups by kind then first touch when the tray sorts that way', () => {
-      const chips = [...accumulateTouchChips(parts)].sort(
-        (a, b) => a.kind.localeCompare(b.kind) || a.firstSeq - b.firstSeq
-      );
-
-      expect(chips.map((chip) => chip.label)).toEqual([
-        'pnpm test',
-        'one.ts',
-        'two.ts',
-        'example.com',
-      ]);
-    });
+    // How the tray ORDERS this roster is the tray's own question, pinned against
+    // the comparator it actually ships in `ChipTray.test.tsx`. A comparator
+    // written out again here would stay green while the tray's changed.
 
     it('tracks last touch separately so the chronological lens can reorder', () => {
       const chips = accumulateTouchChips([
@@ -582,6 +788,47 @@ describe('accumulateTouchChips', () => {
 
     it('returns nothing for an empty turn', () => {
       expect(accumulateTouchChips([])).toEqual([]);
+    });
+  });
+
+  describe('re-parsing', () => {
+    it('does not re-parse a part that has not changed', () => {
+      // The fold runs on every render, and a render happens on every stream
+      // frame — including each text delta, which changes nothing about any tool
+      // call. Re-parsing there means `JSON.parse` over a whole written file for
+      // every word the model then says.
+      const write = toolCall('Write', {
+        file_path: '/repo/src/big.ts',
+        content: 'line\n'.repeat(500),
+      });
+      const parts = [write];
+      accumulateTouchChips(parts);
+
+      const parse = vi.spyOn(JSON, 'parse');
+      try {
+        // A fresh array holding the same part, which is exactly what the stream
+        // hands the strip on every frame.
+        accumulateTouchChips([...parts]);
+        accumulateTouchChips([...parts]);
+        expect(parse).not.toHaveBeenCalled();
+      } finally {
+        parse.mockRestore();
+      }
+    });
+
+    it('re-parses a part whose result has landed since', () => {
+      const grep = toolCall('Grep', { pattern: 'x' }, { status: 'running' }) as Extract<
+        MessagePart,
+        { type: 'tool_call' }
+      >;
+      expect(only(accumulateTouchChips([grep])).hits).toBeUndefined();
+
+      // Parts are mutated in place as a tool settles, so identity alone would
+      // serve the chip that was parsed before the result existed.
+      grep.result = 'Found 3 matches';
+      grep.status = 'complete';
+
+      expect(only(accumulateTouchChips([grep])).hits).toBe(3);
     });
   });
 });
