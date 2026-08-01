@@ -7782,6 +7782,10 @@
                               "supported": {
                                 "type": "boolean"
                               },
+                              "default": {
+                                "type": "string",
+                                "description": "Mode id used when a session has no stored preference. Always one of `values[].id`. Absent when the runtime declares none."
+                              },
                               "values": {
                                 "type": "array",
                                 "items": {
@@ -10382,15 +10386,7 @@
                                 ]
                               },
                               "permissionMode": {
-                                "type": "string",
-                                "enum": [
-                                  "default",
-                                  "plan",
-                                  "acceptEdits",
-                                  "dontAsk",
-                                  "bypassPermissions",
-                                  "auto"
-                                ]
+                                "$ref": "#/components/schemas/PermissionMode"
                               },
                               "startsEnabled": {
                                 "type": "boolean"
@@ -10692,15 +10688,7 @@
                                 ]
                               },
                               "permissionMode": {
-                                "type": "string",
-                                "enum": [
-                                  "default",
-                                  "plan",
-                                  "acceptEdits",
-                                  "dontAsk",
-                                  "bypassPermissions",
-                                  "auto"
-                                ]
+                                "$ref": "#/components/schemas/PermissionMode"
                               },
                               "startsEnabled": {
                                 "type": "boolean"

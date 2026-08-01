@@ -28,6 +28,7 @@
 import { OpenAPIRegistry, OpenApiGeneratorV31 } from '@asteasolutions/zod-to-openapi';
 import { env } from '../../env.js';
 import {
+  PermissionModeSchema,
   SessionSchema,
   SessionListResponseSchema,
   RecentSessionsQuerySchema,
@@ -236,14 +237,7 @@ const LocalPermissionPreviewSchema = z.object({
     z.object({
       name: z.string(),
       cron: z.string().nullable(),
-      permissionMode: z.enum([
-        'default',
-        'plan',
-        'acceptEdits',
-        'dontAsk',
-        'bypassPermissions',
-        'auto',
-      ]),
+      permissionMode: PermissionModeSchema,
       startsEnabled: z.boolean(),
     })
   ),
@@ -853,6 +847,10 @@ const RuntimeCapabilitiesSchema = z.object({
   permissionModes: z
     .object({
       supported: z.boolean(),
+      default: z.string().optional().openapi({
+        description:
+          'Mode id used when a session has no stored preference. Always one of `values[].id`. Absent when the runtime declares none.',
+      }),
       values: z.array(PermissionModeDescriptorSchema),
     })
     .openapi({
