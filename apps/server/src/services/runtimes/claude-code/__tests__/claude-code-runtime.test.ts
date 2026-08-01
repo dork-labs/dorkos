@@ -206,6 +206,49 @@ describe('ClaudeCodeRuntime', () => {
       expect(doneEvent).toBeDefined();
     });
 
+    it('carries supportedModels() capability fields into the next turn as summarized thinking', async () => {
+      // Regression pin for the omitted-thinking incident: the supportedModels()
+      // call site re-picked five fields and dropped supportsAdaptiveThinking,
+      // so the capability gate in resolveThinkingOptions never opened and every
+      // adaptive-capable session streamed empty thinking blocks. The SDK's
+      // model objects must reach the cache whole.
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+
+      const q1 = wrapSdkQuery(sdkSimpleText('first'));
+      q1.supportedModels.mockResolvedValue([
+        {
+          value: 'default',
+          displayName: 'Default (Opus 4.8)',
+          description: 'test model',
+          supportsEffort: true,
+          supportedEffortLevels: ['low', 'medium', 'high'],
+          supportsAdaptiveThinking: true,
+          supportsAutoMode: true,
+        },
+      ]);
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValueOnce(q1);
+
+      agentManager.ensureSession('s1', { permissionMode: 'default' });
+      for await (const event of agentManager.sendMessage('s1', 'hello')) {
+        void event;
+      }
+
+      // The model fetch is deliberately non-blocking on the send path — let its
+      // .then() continuation land before the next turn reads the cache.
+      await q1.supportedModels.mock.results[0]!.value;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const q2 = wrapSdkQuery(sdkSimpleText('second'));
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValueOnce(q2);
+      for await (const event of agentManager.sendMessage('s1', 'again')) {
+        void event;
+      }
+
+      const lastCall = (mockedQuery as ReturnType<typeof vi.fn>).mock.calls.at(-1)!;
+      const options = (lastCall[0] as { options: Record<string, unknown> }).options;
+      expect(options.thinking).toEqual({ type: 'adaptive', display: 'summarized' });
+    });
+
     it('streams SDK text_delta events', async () => {
       // Re-import to get the mocked query
       const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');

@@ -20,7 +20,7 @@ import type {
 } from '@dorkos/shared/types';
 import type { McpServerEntry } from '@dorkos/shared/transport';
 import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
-import type { SdkCommandEntry, MessageSenderOpts } from './message-sender.js';
+import type { SdkCommandEntry, MessageSenderOpts, SdkReportedModel } from './message-sender.js';
 import type { CommandRegistryService } from '../tooling/command-registry.js';
 import { logger } from '../../../../lib/logger.js';
 
@@ -68,18 +68,15 @@ function inferTier(value: string): 'flagship' | 'balanced' | 'fast' | undefined 
   return undefined;
 }
 
-/** Map an SDK ModelInfo to a universal ModelOption. */
-export function mapSdkModelToModelOption(m: {
-  value: string;
-  displayName: string;
-  description: string;
-  supportsEffort?: boolean;
-  supportedEffortLevels?: string[];
-  supportsAdaptiveThinking?: boolean;
-  supportsFastMode?: boolean;
-  supportsAutoMode?: boolean;
-  [key: string]: unknown;
-}): ModelOption {
+/**
+ * Map an SDK-reported model to a universal ModelOption.
+ *
+ * Takes the full {@link SdkReportedModel} shape so every capability field the
+ * SDK reports survives into the cache — both persistence paths (the warm-up
+ * probe and the per-send refresh) must feed this mapper the SDK's objects
+ * whole, never a re-picked subset.
+ */
+export function mapSdkModelToModelOption(m: SdkReportedModel): ModelOption {
   return {
     value: m.value,
     displayName: m.displayName,
@@ -89,8 +86,9 @@ export function mapSdkModelToModelOption(m: {
     supportsAdaptiveThinking: m.supportsAdaptiveThinking,
     supportsFastMode: m.supportsFastMode,
     supportsAutoMode: m.supportsAutoMode,
-    contextWindow: m['contextWindow'] as number | undefined,
-    maxOutputTokens: m['maxOutputTokens'] as number | undefined,
+    // contextWindow/maxOutputTokens: the Claude SDK's supportedModels() does not
+    // report them, so claude-code entries never carry them. Other runtimes
+    // populate them on ModelOption directly.
     provider: 'anthropic',
     family: extractFamily(m.value),
     tier: inferTier(m.value),
