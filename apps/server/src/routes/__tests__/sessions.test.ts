@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll, vi } from 'vitest';
-import type { SessionSettings, StreamEvent } from '@dorkos/shared/types';
+import type { PermissionMode, SessionSettings, StreamEvent } from '@dorkos/shared/types';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 
 // Mock boundary before importing app
@@ -274,6 +274,24 @@ describe('Sessions Routes', () => {
   // ---- PATCH /api/sessions/:id ----
 
   describe('PATCH /api/sessions/:id', () => {
+    /**
+     * Narrow the runtime's declared permission modes for one test, so the
+     * capability gate can be exercised against a realistic runtime posture.
+     * (The shared FakeAgentRuntime deliberately declares all six modes.)
+     */
+    function declareModes(ids: PermissionMode[]): void {
+      const capabilities = fakeRuntime.getCapabilities();
+      fakeRuntime.getCapabilities.mockReturnValue({
+        ...capabilities,
+        permissionModes: {
+          supported: true,
+          default: ids[0],
+          values: ids.map((id) => ({ id, label: id })),
+        },
+      });
+      fakeRuntime.getCapabilities.mockClear();
+    }
+
     it('returns 200 when permission mode update succeeds', async () => {
       fakeRuntime.updateSession.mockReturnValue(true);
       fakeRuntime.getSession.mockResolvedValue({
@@ -292,6 +310,66 @@ describe('Sessions Routes', () => {
       expect(fakeRuntime.updateSession).toHaveBeenCalledWith(S1, {
         permissionMode: 'dontAsk',
         model: undefined,
+        effort: undefined,
+        fastMode: undefined,
+      });
+    });
+
+    it.each([
+      // Codex declares no `auto`: a session PATCHed to auto would display
+      // "Auto" while the runtime kept running read-only.
+      { runtimeModes: ['default', 'acceptEdits', 'bypassPermissions'], asked: 'auto' },
+      // Claude Code declares no `dontAsk`.
+      {
+        runtimeModes: ['default', 'acceptEdits', 'plan', 'bypassPermissions', 'auto'],
+        asked: 'dontAsk',
+      },
+    ] as { runtimeModes: PermissionMode[]; asked: PermissionMode }[])(
+      'returns 400 for a permission mode the runtime does not declare ($asked)',
+      async ({ runtimeModes, asked }) => {
+        declareModes(runtimeModes);
+        fakeRuntime.updateSession.mockReturnValue(true);
+
+        const res = await request(server)
+          .patch(`/api/sessions/${S1}`)
+          .send({ permissionMode: asked });
+
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe('UNSUPPORTED_PERMISSION_MODE');
+        // The message must name the runtime and the modes it CAN run.
+        expect(res.body.error).toContain('fake');
+        expect(res.body.error).toContain(asked);
+        for (const mode of runtimeModes) expect(res.body.error).toContain(mode);
+        // Nothing is persisted for a rejected mode.
+        expect(fakeRuntime.updateSession).not.toHaveBeenCalled();
+      }
+    );
+
+    it('returns 200 for every mode the runtime does declare', async () => {
+      declareModes(['default', 'acceptEdits', 'bypassPermissions']);
+      fakeRuntime.updateSession.mockReturnValue(true);
+      fakeRuntime.getSession.mockResolvedValue(null);
+
+      for (const mode of ['default', 'acceptEdits', 'bypassPermissions'] as const) {
+        const res = await request(server)
+          .patch(`/api/sessions/${S1}`)
+          .send({ permissionMode: mode });
+        expect(res.status).toBe(200);
+      }
+    });
+
+    it('leaves non-mode settings unaffected by the capability gate', async () => {
+      // A PATCH that carries no permissionMode must never consult the gate.
+      declareModes(['default']);
+      fakeRuntime.updateSession.mockReturnValue(true);
+      fakeRuntime.getSession.mockResolvedValue(null);
+
+      const res = await request(server).patch(`/api/sessions/${S1}`).send({ model: 'some-model' });
+
+      expect(res.status).toBe(200);
+      expect(fakeRuntime.updateSession).toHaveBeenCalledWith(S1, {
+        permissionMode: undefined,
+        model: 'some-model',
         effort: undefined,
         fastMode: undefined,
       });

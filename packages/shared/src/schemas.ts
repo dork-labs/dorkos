@@ -181,15 +181,6 @@ export const SessionSchema = z
 
 export type Session = z.infer<typeof SessionSchema>;
 
-export const CreateSessionRequestSchema = z
-  .object({
-    permissionMode: PermissionModeSchema.optional(),
-    cwd: z.string().optional(),
-  })
-  .openapi('CreateSessionRequest');
-
-export type CreateSessionRequest = z.infer<typeof CreateSessionRequestSchema>;
-
 /**
  * The mutable per-session settings an operator can change. Defined once and
  * reused for the update request, the runtime `MessageOpts`/`SessionOpts`, and

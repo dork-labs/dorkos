@@ -13,6 +13,8 @@ import {
   ListSessionsQuerySchema,
   RecentSessionsQuerySchema,
 } from '@dorkos/shared/schemas';
+import type { PermissionMode } from '@dorkos/shared/types';
+import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { MeshCore } from '@dorkos/mesh';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
 import { readManifest } from '@dorkos/shared/manifest';
@@ -207,6 +209,27 @@ router.get('/:id/messages', async (req, res) => {
   res.json({ messages: filterKickoffHistory(messages) });
 });
 
+/**
+ * Check a requested permission mode against what the runtime declares it can
+ * run, returning an operator-readable message when it cannot (or `null` when
+ * the mode is fine).
+ *
+ * @param runtime - The runtime that owns the session being updated.
+ * @param permissionMode - The mode the request asks to store.
+ */
+function rejectUndeclaredPermissionMode(
+  runtime: AgentRuntime,
+  permissionMode: PermissionMode
+): string | null {
+  const declared = runtime.getCapabilities().permissionModes;
+  if (!declared.supported || declared.values.length === 0) {
+    return `The ${runtime.type} runtime has no permission modes to choose from.`;
+  }
+  const ids = declared.values.map((descriptor) => descriptor.id);
+  if (ids.includes(permissionMode)) return null;
+  return `The ${runtime.type} runtime cannot run permission mode '${permissionMode}'. It supports: ${ids.join(', ')}.`;
+}
+
 // PATCH /api/sessions/:id - Update session settings
 router.patch('/:id', async (req, res) => {
   const sessionId = parseSessionId(req.params.id);
@@ -218,6 +241,17 @@ router.patch('/:id', async (req, res) => {
   }
   const { permissionMode, model, effort, fastMode, title } = parsed.data;
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
+  // `PermissionModeSchema` says only that the id is one DorkOS knows about; it
+  // does NOT say the session's runtime can run it. Persisting an undeclared id
+  // would make the settings overlay display a safety posture the runtime never
+  // adopted — a codex session PATCHed to `auto` reads "Auto" everywhere while
+  // it keeps running read-only. The runtime's own capability declaration is the
+  // authority, so reject the write here. WRITE PATH ONLY: a session already
+  // persisted in a now-undeclared mode still loads and runs.
+  if (permissionMode !== undefined) {
+    const modeError = rejectUndeclaredPermissionMode(runtime, permissionMode);
+    if (modeError) return sendError(res, 400, modeError, 'UNSUPPORTED_PERMISSION_MODE');
+  }
   // Translate client-facing session ID to backend-internal session ID (same as GET /:id).
   // After a session remap the client uses the SDK UUID directly; without this translation
   // runtime.updateSession would fail to find the session by client-facing ID.

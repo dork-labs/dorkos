@@ -58,7 +58,7 @@ import type {
   SessionListEvent,
 } from '@dorkos/shared/session-stream';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
-import { getOrCreateProjector } from '../../session/session-state-projector.js';
+import { getOrCreateProjector, peekProjector } from '../../session/session-state-projector.js';
 import { readLogBackedHistory } from '../../session/log-backed-history.js';
 import { SessionLockManager } from '../../session/session-lock.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
@@ -476,6 +476,13 @@ export class OpenCodeRuntime implements AgentRuntime {
    * OpenCode's `always` would persist a rule in ITS store and diverge from
    * DorkOS's approval model (NOTES.md §2) — the mapper already advertises
    * `hasSuggestions: false` so the client never offers it.
+   *
+   * The projector is told directly rather than waiting for the sidecar's
+   * `permission.replied` echo. The echo is a courtesy, not a guarantee: if it
+   * is dropped (a resubscribed stream, a sidecar restart) the operator's card
+   * would hang forever and the session would stay `blocked`, which also holds
+   * the write-lock probe the next turn runs. When the echo does arrive it maps
+   * to a resolve for an id already gone, which the projector no-ops.
    */
   approveTool(
     sessionId: string,
@@ -485,6 +492,7 @@ export class OpenCodeRuntime implements AgentRuntime {
   ): boolean {
     const pending = this.approvals.take(sessionId, toolCallId);
     if (!pending) return false;
+    peekProjector(sessionId)?.resolveInteraction(toolCallId, approved ? 'approved' : 'denied');
     void this.respondPermission(
       pending.ocSessionId,
       pending.cwd,

@@ -14,7 +14,6 @@ export type {
   SessionListResponse,
   RecentSessionsQuery,
   RecentSessionsResponse,
-  CreateSessionRequest,
   UpdateSessionRequest,
   SessionSettings,
   ForkSessionRequest,
