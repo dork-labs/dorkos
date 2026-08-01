@@ -18,6 +18,7 @@ import {
   kitchenSink,
   deepRefactor,
   extendedConversation,
+  touchChips,
 } from './scenarios';
 import type { SimScenario } from './sim-types';
 
@@ -32,4 +33,5 @@ export const SCENARIOS: SimScenario[] = [
   kitchenSink,
   deepRefactor,
   extendedConversation,
+  touchChips,
 ];

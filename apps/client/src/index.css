@@ -670,6 +670,36 @@ body {
   animation-name: drain;
 }
 
+/* The "work is happening" breath, worn by ~20 call sites (ThinkingBlock,
+   MemoryRecallBlock, loading skeletons, connection dots) that referenced
+   `animate-tasks` for a long time while no keyframe existed — the pulse was
+   silently dead CSS.
+
+   It is a faster, quieter cousin of `breathe` above (which drives the DorkBot
+   avatar at a 3s cycle): the same opacity-and-scale breath, but at 1.6s so it
+   reads as attentive rather than sleepy, and with a smaller scale step because
+   this class lands on text labels and skeleton bars where a 3% grow would
+   visibly nudge the line. Both properties are compositor-friendly, so a page
+   full of skeletons stays cheap. */
+@keyframes tasks {
+  0%,
+  100% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.02);
+  }
+}
+
+@utility animate-tasks {
+  animation-name: tasks;
+  animation-duration: 1.6s;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+
 /* The message action capsule's entrance: a 5px rise that overshoots a pixel and
    settles (design record §5.1). The overshoot is a KEYFRAME, not the curve —
    cubic-bezier(.2,1.4,.4,1) alone only carries a 5px travel about a quarter of
@@ -927,6 +957,498 @@ body {
 }
 .animate-health-pulse {
   animation: health-pulse 2s ease-in-out infinite;
+}
+
+/* ===========================================================================
+   Touch chips — the verb motion vocabulary
+
+   One motion signature per verb, so a glance at a chip says what is happening
+   to the thing it names (design record §5,
+   `specs/chat-touch-chips/design-decisions.md`). Timing and easing are ported
+   from the approved mockups (`mockups/04-verb-vocabulary.html` and
+   `05-verbs-search-delete-round2.html`), not copied: the mockups loop forever
+   to demonstrate themselves, while everything here is gated on an attribute
+   `TouchChip.tsx` writes from the tool's own status.
+
+   **Motion means in-progress; stillness means done.** Three shapes:
+
+   - **Loops** — read, search, edit, fetch, run — run only while `data-live`,
+     and stop the frame the tool settles. Their 1.4–2.6s cycles are the
+     mockups' own, deliberately slower than the 100–300ms band
+     `.claude/rules/components.md` sets for entries and exits: a loop that fast
+     reads as agitation rather than as work being done.
+   - **Single shots** — create and delete — play once, on `data-arriving`,
+     which is set while the chip is in the live row. A file is born once and
+     dies once, and both gestures have to finish to read: keyed on `data-live`
+     they would be cut off mid-swallow by an `rm` that took 200ms.
+   - **Nothing at all** on a settled chip.
+
+   Everything animates transform, opacity, or colour only, and stays inside the
+   chip: no width, no margin, nothing that can move a neighbour.
+   =========================================================================== */
+
+.touch-chip {
+  /* The mockups' verb palette, as literal channels rather than theme tokens:
+     these are decoration on top of the chip's own colours, they must survive
+     Tailwind's theme tree-shaking, and `health-pulse` above already sets the
+     precedent for a literal accent in this file. */
+  --chip-read: 139 92 246; /* violet */
+  --chip-search: 6 182 212; /* cyan */
+  --chip-edit: 139 92 246; /* violet */
+  --chip-create: 16 185 129; /* emerald */
+  --chip-fetch: 6 182 212; /* cyan */
+  --chip-run: 16 185 129; /* emerald */
+}
+
+/* The clipped layer the sweeps travel through. It carries its own overflow so a
+   band stays inside the chip's rounded edge without clipping the upgrade ring,
+   which is deliberately allowed to overflow the chip it pulses on. */
+.chip-sweep {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+/* ---- 📖 Read — the scan -------------------------------------------------
+   A soft band sweeps across, like eyes moving over lines. Sized as a fraction
+   of the chip and moved with a transform, so it crosses a long name and a
+   short one at the same pace and never touches layout. */
+.touch-chip[data-verb='read'][data-live='true'] .chip-sweep::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, rgb(var(--chip-read) / 0.22), transparent);
+  /* `forwards` is dead weight on an infinite animation, which never reaches an
+     end to hold. It is here for the reduced-motion reset below, which cuts every
+     animation to one 0.01ms iteration: without a fill mode the band snaps back
+     to no transform at all and parks a violet blob over the left of the chip. */
+  animation: chip-scan 1.7s ease-in-out infinite forwards;
+}
+
+@keyframes chip-scan {
+  0% {
+    transform: translateX(-100%);
+  }
+  70%,
+  100% {
+    transform: translateX(260%);
+  }
+}
+
+/* ---- 🔍 Search — the beam -----------------------------------------------
+   One smooth angled beam, and nothing else. The hit-marks that flared in its
+   wake were shown and rejected (design record §5, S1 modified): they claimed
+   to know where in the file the matches were, which the chip cannot know. */
+.touch-chip[data-verb='search'][data-live='true'] .chip-sweep::before {
+  content: '';
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  left: 0;
+  /* Narrow, and a fraction of the chip, so the travel below can be stated in
+     multiples of the beam's own width and cross any chip in one cycle. */
+  width: max(10px, 9%);
+  background: linear-gradient(90deg, transparent, rgb(var(--chip-search) / 0.3), transparent);
+  /* `forwards` for the same reason as the scan above: it holds the beam off the
+     end of its clip when the reduced-motion reset stops it, instead of leaving a
+     cyan bar standing in the chip. */
+  animation: chip-beam 2.6s cubic-bezier(0.4, 0, 0.6, 1) infinite forwards;
+}
+
+@keyframes chip-beam {
+  0% {
+    transform: translateX(-100%) skewX(-18deg);
+  }
+  60%,
+  100% {
+    transform: translateX(1150%) skewX(-18deg);
+  }
+}
+
+/* ---- ✏️ Edit — the scribble ---------------------------------------------
+   The pencil wiggles as if writing and a caret blinks in the filename. The
+   diffstat climbing is not here: it is a spring on the number's own value
+   (`TickingNumber.tsx`), because the digits have to be the ones the transcript
+   reported rather than a rolling strip of invented ones. */
+.touch-chip[data-verb='edit'][data-live='true'] .chip-glyph {
+  transform-origin: 30% 80%;
+  animation: chip-scribble 1.4s ease-in-out infinite;
+}
+
+@keyframes chip-scribble {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  15% {
+    transform: rotate(-11deg) translateX(-1px);
+  }
+  30% {
+    transform: rotate(6deg) translateX(1px);
+  }
+  45% {
+    transform: rotate(-8deg);
+  }
+  60% {
+    transform: rotate(3deg);
+  }
+  75% {
+    transform: rotate(-4deg);
+  }
+}
+
+.chip-caret {
+  display: inline-block;
+  width: 1.5px;
+  height: 0.85em;
+  flex: none;
+  background: rgb(var(--chip-edit));
+  /* The transcript's own cursor blink, at the mockup's faster rate. */
+  animation: blink-cursor 0.7s step-end infinite;
+}
+
+/* ---- ✚ Create — penned into existence -----------------------------------
+   The border draws itself around empty space, the name fades in inside it, one
+   spark. `pathLength` normalises the rectangle's perimeter to 100, so the
+   stroke draws at one speed whatever the name's length makes the chip. */
+.chip-pen {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.chip-pen rect {
+  fill: none;
+  stroke: rgb(var(--chip-create));
+  stroke-width: 1.5;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+}
+
+.touch-chip[data-verb='create'][data-arriving] .chip-pen rect {
+  animation: chip-pen 1.2s ease-in-out both;
+}
+
+@keyframes chip-pen {
+  0% {
+    stroke-dashoffset: 100;
+    opacity: 0.9;
+  }
+  62% {
+    stroke-dashoffset: 0;
+    opacity: 0.9;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+
+/* The chip's own border is not there until the pen has drawn it. No fill mode:
+   at 100% the border returns to whatever the element itself says it is, so a
+   create that failed keeps its destructive tint afterwards. */
+.touch-chip[data-verb='create'][data-arriving] {
+  animation: chip-create-border 1.2s ease-in-out;
+}
+
+@keyframes chip-create-border {
+  0%,
+  55% {
+    border-color: transparent;
+  }
+}
+
+.touch-chip[data-verb='create'][data-arriving] .chip-glyph,
+.touch-chip[data-verb='create'][data-arriving] .chip-label {
+  animation: chip-born 1.2s ease both;
+}
+
+@keyframes chip-born {
+  0%,
+  18% {
+    opacity: 0;
+  }
+  45%,
+  100% {
+    opacity: 1;
+  }
+}
+
+.chip-spark {
+  position: absolute;
+  top: -2px;
+  right: 4px;
+  font-size: 9px;
+  line-height: 1;
+  color: rgb(var(--chip-create));
+  opacity: 0;
+  pointer-events: none;
+}
+
+.chip-spark::after {
+  /* In CSS rather than in the markup, so a chip's text is only ever its name. */
+  content: '✦';
+}
+
+.touch-chip[data-verb='create'][data-arriving] .chip-spark {
+  animation: chip-spark 0.75s ease 0.68s both;
+}
+
+@keyframes chip-spark {
+  0% {
+    opacity: 0;
+    transform: scale(0.4) rotate(0);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1.25) rotate(40deg);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.6) rotate(80deg);
+  }
+}
+
+/* ---- 🗑 Delete — swallowed by the bin ------------------------------------
+   The name is sucked into the trash icon, compressing and skewing as it goes,
+   a puff escapes, and the bin does a satisfied chomp (design record §5, D3).
+   The gesture ends where the chip already sits: no fill mode, so the name
+   returns to the ghosted, struck-through tombstone the chip renders anyway.
+
+   The mockup holds the name gone for a full second before bringing it back,
+   which is dead time in a loop that never has to end. Trimmed here; the suck
+   itself keeps the mockup's 0.7s and its curve. */
+.touch-chip[data-verb='delete'][data-arriving] .chip-label {
+  transform-origin: left center;
+  animation: chip-swallow 1.4s cubic-bezier(0.5, 0, 0.9, 0.4);
+}
+
+@keyframes chip-swallow {
+  0% {
+    transform: none;
+    opacity: 1;
+  }
+  50% {
+    transform: translateX(-16px) scaleX(0.12) skewX(-12deg);
+    opacity: 0.4;
+  }
+  57%,
+  75% {
+    transform: translateX(-16px) scaleX(0.05);
+    opacity: 0;
+  }
+}
+
+.touch-chip[data-verb='delete'][data-arriving] .chip-glyph {
+  transform-origin: bottom center;
+  animation: chip-chomp 0.72s ease 0.36s;
+}
+
+@keyframes chip-chomp {
+  0% {
+    transform: none;
+  }
+  40% {
+    transform: scale(1.25) rotate(-7deg);
+  }
+  70% {
+    transform: scale(0.95);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+.chip-puff {
+  position: absolute;
+  top: 2px;
+  left: 18px;
+  font-size: 8px;
+  line-height: 1;
+  color: var(--color-muted-foreground);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.chip-puff::after {
+  content: '✦';
+}
+
+.touch-chip[data-verb='delete'][data-arriving] .chip-puff {
+  animation: chip-puff 0.58s ease 0.58s;
+}
+
+@keyframes chip-puff {
+  0% {
+    opacity: 0;
+    transform: none;
+  }
+  25% {
+    opacity: 0.9;
+    transform: translate(-4px, -5px) scale(1.3);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-8px, -9px) scale(0.6);
+  }
+}
+
+/* ---- 🌐 Fetch — the ping -------------------------------------------------
+   Radar rings leave the site's tile while three dots stream down beside the
+   domain: something is arriving from out there. The rings are clipped by the
+   chip, which is where the mockup clips them too — a ring that escaped the
+   chip would read as belonging to the row rather than to this one link. */
+.touch-chip[data-verb='fetch'] {
+  overflow: hidden;
+}
+
+.touch-chip[data-verb='fetch'][data-live='true'] .chip-icon::before,
+.touch-chip[data-verb='fetch'][data-live='true'] .chip-icon::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 5px;
+  border: 1px solid rgb(var(--chip-fetch));
+  opacity: 0;
+  animation: chip-ping 1.8s ease-out infinite;
+}
+
+.touch-chip[data-verb='fetch'][data-live='true'] .chip-icon::after {
+  animation-delay: 0.6s;
+}
+
+@keyframes chip-ping {
+  0% {
+    opacity: 0.8;
+    transform: scale(0.7);
+  }
+  70%,
+  100% {
+    opacity: 0;
+    transform: scale(2.4);
+  }
+}
+
+.chip-dots {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+
+.chip-dots span {
+  display: inline-block;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgb(var(--chip-fetch));
+  animation: chip-stream 1.2s ease infinite;
+}
+
+.chip-dots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.chip-dots span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes chip-stream {
+  0% {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  40% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* ---- ▮ Run — the terminal pulse ------------------------------------------
+   A command is a command, so its name is monospace whether it is running or
+   done. While it runs, a block cursor blinks after it and a green heartbeat
+   beats twice on the border.
+
+   The heartbeat is an inset shadow sitting on the border line rather than the
+   mockup's `border-color`: a colour animation would have to end on a literal,
+   and that literal would then outlive the animation on a command that failed,
+   painting a red chip green. The rhythm is the mockup's, beat for beat. */
+.touch-chip[data-verb='run'] .chip-label {
+  font-family: var(--font-mono);
+}
+
+.touch-chip[data-verb='run'][data-live='true'] {
+  animation: chip-heartbeat 2.4s ease infinite;
+}
+
+@keyframes chip-heartbeat {
+  0% {
+    box-shadow: inset 0 0 0 1px rgb(var(--chip-run) / 0);
+  }
+  12% {
+    box-shadow: inset 0 0 0 1px rgb(var(--chip-run) / 0.45);
+  }
+  24% {
+    box-shadow: inset 0 0 0 1px rgb(var(--chip-run) / 0);
+  }
+  36% {
+    box-shadow: inset 0 0 0 1px rgb(var(--chip-run) / 0.28);
+  }
+  48%,
+  100% {
+    box-shadow: inset 0 0 0 1px rgb(var(--chip-run) / 0);
+  }
+}
+
+.chip-cursor {
+  display: inline-block;
+  width: 6px;
+  height: 0.8em;
+  flex: none;
+  background: rgb(var(--chip-run));
+  animation: blink-cursor 0.8s step-end infinite;
+}
+
+/* ---- Reduced motion ------------------------------------------------------
+   The global reset near the end of this file stops all seven signatures: it
+   forces every animation in the document to one 0.01ms iteration. What it does
+   NOT do is decide where each one lands — that is the animation's own fill mode,
+   which the reset leaves alone. A signature with no fill mode snaps back to the
+   element's un-animated state, which for the two coloured sweeps meant a violet
+   blob and a cyan bar sitting still on a working chip. Both now carry
+   `forwards`, so the reset holds them on their last frame, off the end of the
+   clip. The rest already end where they should: sparks, puffs and radar rings
+   are transparent at rest, and the swallowed name is simply the name.
+
+   What the design record asks for beyond stopping is a chip that still says it
+   is working: "static icon plus a subtle opacity pulse". Opacity only — the
+   chips do not borrow the app's `tasks` breath, because that rides a 2% scale
+   along with it, and a chip that grows is a chip that moves. It needs
+   `!important` to outrank the reset that just silenced everything, and it is
+   the only motion this whole block gives back. */
+@keyframes chip-breath {
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .touch-chip[data-live='true'] {
+    animation: chip-breath 2.4s ease-in-out infinite !important;
+  }
 }
 
 /* Assistant message typography */

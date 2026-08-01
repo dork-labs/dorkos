@@ -12,6 +12,7 @@ afterEach(() => {
   cleanup();
   window.localStorage.clear();
   mockIsAtEnd.mockImplementation(() => true);
+  mockMeasureElement.mockClear();
   // Reset store to defaults between tests
   useAppStore.getState().resetPreferences();
 });
@@ -63,6 +64,7 @@ vi.mock('@/layers/entities/session/model/use-session-runtime', () => ({
 const mockScrollToEnd = vi.fn();
 const mockScrollToIndex = vi.fn();
 const mockIsAtEnd = vi.fn(() => true);
+const mockMeasureElement = vi.fn();
 vi.mock('@tanstack/react-virtual', () => ({
   useVirtualizer: ({ count }: { count: number }) => ({
     getVirtualItems: () =>
@@ -73,7 +75,7 @@ vi.mock('@tanstack/react-virtual', () => ({
         size: 80,
       })),
     getTotalSize: () => count * 80,
-    measureElement: () => {},
+    measureElement: mockMeasureElement,
     scrollToEnd: mockScrollToEnd,
     scrollToIndex: mockScrollToIndex,
     isAtEnd: () => mockIsAtEnd(),
@@ -114,6 +116,26 @@ describe('MessageList rows', () => {
     expect(screen.getAllByTestId('day-divider')).toHaveLength(2);
     expect(screen.getByText('Yesterday')).toBeDefined();
     expect(screen.getByText('Today')).toBeDefined();
+  });
+
+  it('hands every rendered row to the virtualizer to be measured', () => {
+    // The row element is where measurement is wired up, and it is the only
+    // place it is: the real virtualizer observes each row it is given with a
+    // ResizeObserver, so anything inside a message that changes height later —
+    // a tool card expanding, a touch-chip strip settling or opening its tray —
+    // is re-measured without telling the list anything. Lose this ref and every
+    // row keeps its first height forever, and the transcript scrolls to the
+    // wrong place.
+    const messages = [messageOnDay('1', 0, 'A'), messageOnDay('2', 0, 'B')];
+    render(<MessageList sessionId="test-session" messages={messages} />);
+
+    const measured = mockMeasureElement.mock.calls
+      .map(([node]) => node as HTMLElement | null)
+      .filter((node): node is HTMLElement => node !== null);
+
+    // Three rows: the day divider these two messages sit under, and each of
+    // them. Every one measured, with the index the virtualizer knows it by.
+    expect(measured.map((node) => node.getAttribute('data-index'))).toEqual(['0', '1', '2']);
   });
 
   it('counts dividers as virtualized rows alongside the messages', () => {

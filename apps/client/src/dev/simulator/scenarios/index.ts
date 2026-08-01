@@ -12,3 +12,4 @@ export { multiToolChain } from './multi-tool-chain';
 export { kitchenSink } from './kitchen-sink';
 export { deepRefactor } from './deep-refactor';
 export { extendedConversation } from './extended-conversation';
+export { touchChips } from './touch-chips';

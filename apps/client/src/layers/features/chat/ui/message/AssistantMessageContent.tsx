@@ -22,6 +22,7 @@ import { MemoryRecallBlock } from './MemoryRecallBlock';
 import { PermissionDeniedChip } from './PermissionDeniedChip';
 import { CompactBoundaryRow } from './CompactBoundaryRow';
 import { CompactPendingRow, CollapsibleCard } from '../primitives';
+import { TouchChipStrip } from '../chips';
 import { McpAppBlock } from '@/layers/features/mcp-apps';
 
 /**
@@ -537,6 +538,16 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
           </div>
         );
       })}
+      {/* The turn's own record of what it touched. It sits after the parts, at
+          the turn level, because that is what lets it outlive the tool cards
+          above it once they auto-hide.
+
+          `_streaming` marks the in-progress bubble — the turn that is running
+          right now — which is what keeps the strip's live row up through the
+          gaps between tool calls instead of collapsing and reopening on each
+          one. A message read back from history never carries it, so a reopened
+          transcript shows the settled summary and nothing moves. */}
+      <TouchChipStrip parts={parts} turnActive={message._streaming === true} />
     </>
   );
 }

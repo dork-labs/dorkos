@@ -2,13 +2,13 @@
 
 **Animated mockups (normative for motion): `specs/chat-touch-chips/mockups/`** — the five visual-companion screens, checked in so implementors get the real animations, not prose about them. Open any file in a browser; each is a self-contained HTML fragment with inline CSS (screens 01–03 wrap content for the companion frame but the animations run standalone). The mockups are the source of truth for **timing, easing, and choreography**; the CSS is demo-loop code (infinite loops, fixed pixel slots, faked odometers) and must be **ported, not copied** — real components animate once per state change, driven by stream events, with the loops reserved for genuine in-progress states. Once built, the `/dev/chat` showcases supersede these mockups as the living reference.
 
-Original sessions (superset, includes rejected iterations): `.dork/visual-companion/39852-1785548919/` (direction), `43050-1785584693/` (chips v1/v2, verbs), `18009-1785589506/` (verb refinement).
+Original sessions (historical, and no longer on disk anywhere durable — `.dork/visual-companion/` session directories are scratch and are swept): `39852-1785548919/` (direction), `43050-1785584693/` (chips v1/v2, verbs), `18009-1785589506/` (verb refinement). They held the rejected iterations too; the five checked-in mockups above are the surviving record.
 
 Companion research: `research/20260801_touched_file_chip_ui_patterns.md` (cross-product survey: Cursor, Copilot, Claude Code `/diff`, Codex, Devin, Perplexity, ChatGPT Deep Research). Prior research consumed: `20260316_extended_thinking_visibility_ui_patterns.md`, `20260316_subagent_activity_streaming_ui_patterns.md`, `20260320_chat_message_list_animations.md`, `20260320_llm_streaming_text_animation_techniques.md`, `20260309_chat_microinteractions_polish.md`, `20260316_hook_lifecycle_events_ui_patterns.md`.
 
 ## 1. Overall ambition level
 
-**Screen:** `direction.html`
+**Screen:** `mockups/01-direction.html`
 **Options:** A) Calm+ — refined Claude.ai-grade polish, zero server work. B) Alive — shimmer/orbit light, live tool-input typing, visible stream-of-consciousness. C) Mission Control — aurora borders, activity EKG, orbiting subagent dots, file-touch chips, context fuel gauge, cost-odometer turn receipt (built from SDK fields the adapters currently drop).
 **Chosen:** **A (Calm+) as the base, plus C's file-touch chips** — Dorian: "I like option A overall, but I like that Option C shows the file touch chips."
 
@@ -18,7 +18,7 @@ Incidental discovery to fix regardless: the `animate-tasks` class used ~20× acr
 
 ## 2. What a chip is (anatomy — locked)
 
-**Screens:** `chips.html` (anatomy section), `chips-v2.html` (locked section)
+**Screens:** `mockups/02-chips-v1.html` (anatomy section), `mockups/03-chips-v2-hybrid.html` (locked section)
 
 - A chip represents one unique **target** (file path or URL), never one event. **One chip per target, always** — dedup by folding every tool event into an append-then-merge accumulator, _not_ by "currently tracked state" (Cursor has a confirmed bug where state-tracked dedup silently drops real edits).
 - Chip states form a machine: `reading → read → edited`, with **edit-wins**: a read file that later gets edited **upgrades in place** — the 📖 icon morphs to ✏️ with a flip + one ring pulse, and the diffstat appears. Repeat touches accumulate a `×N` count badge and tooltip history ("read ×2, then edited +12 −4"), never duplicate chips.
@@ -29,7 +29,7 @@ Incidental discovery to fix regardless: the `animate-tasks` class used ~20× acr
 
 ## 3. Live overflow behavior
 
-**Screens:** `chips.html` (v1: wrap-fold vs flow-ticker vs kind-decks) → rejected; `chips-v2.html` (v2 hybrid)
+**Screens:** `mockups/02-chips-v1.html` (v1: wrap-fold vs flow-ticker vs kind-decks) → rejected; `mockups/03-chips-v2-hybrid.html` (v2 hybrid)
 **v1 feedback:** Dorian liked the dynamism of the ticker but correctly objected: arrivals are bursty/random, sliding off-screen makes past chips unreachable. Asked for a hybrid.
 **Research verdict:** no product uses a continuous conveyor or per-file toasts; convention is "quiet accretion" (bounded recent window + incrementing count) with **two-tier disclosure** (compact summary → click-through full view). Documented anti-patterns avoided: Copilot's expanded file panel eating the chat by default (vscode#261081); Codex refusing to show even a file roster when the aggregate diff is large (codex#20233).
 
@@ -42,7 +42,7 @@ Incidental discovery to fix regardless: the `animate-tasks` class used ~20× acr
 
 ## 4. Settled state & the tray
 
-**Screen:** `chips-v2.html`
+**Screen:** `mockups/03-chips-v2-hybrid.html`
 
 - After the turn completes, the live row settles into **one quiet collapsed line**: `📖 21 · ✏️ 3 +34 −11 · 🌐 9 — show all`. Collapsed by default (the #1 community complaint about Copilot's panel is that it isn't).
 - Expanding opens the **tray**: the full deduped roster, grouped by kind, with per-kind counter-filters (`📖 21 / ✏️ 3 / 🌐 9`) and an **order toggle: kind ⇄ chronological** (precedent: Claude Code `/diff`'s Current-vs-per-turn lenses — aggregate is the default, chronological is the opt-in audit view).
@@ -50,7 +50,7 @@ Incidental discovery to fix regardless: the `animate-tasks` class used ~20× acr
 
 ## 5. The verb motion vocabulary
 
-**Screens:** `chips-verbs.html` (multi-select), `verbs-refine.html` (search/delete round 2)
+**Screens:** `mockups/04-verb-vocabulary.html` (multi-select), `mockups/05-verbs-search-delete-round2.html` (search/delete round 2)
 **Feedback:** "These look really good" — all approved except search and delete, which got a second round.
 
 | Verb          | Signature (live)                                                                                                                                                                                          | Settled                                    |
