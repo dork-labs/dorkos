@@ -320,6 +320,15 @@ export interface PublishOptions {
   from: string;
   replyTo?: string;
   budget?: Partial<RelayBudget>;
+  /**
+   * The dispatch this publish belongs to, when the caller knows it.
+   *
+   * Stamped onto the envelope so the next hop inherits it, and used as the
+   * `traceId` of the recorded span so all hops of one dispatch join into one
+   * trace. Omitted, the span keeps its historical `traceId === messageId` and
+   * the trace is a single row, exactly as before.
+   */
+  dispatchId?: string;
 }
 
 // === Adapter Logger ===

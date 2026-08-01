@@ -37,6 +37,7 @@ import type {
   TaskItem,
 } from '@dorkos/shared/types';
 import { listPendingInteractions } from './pending-interactions.js';
+import type { SessionDebugCounters } from './session-debug-counters.js';
 import { logger } from '../../lib/logger.js';
 import { EventLog } from './event-log.js';
 import { RingBuffer } from './ring-buffer.js';
@@ -943,6 +944,29 @@ export class SessionStateProjector {
   getWaiterCount(): number {
     return this.waiters.length;
   }
+
+  /**
+   * The projector's own bookkeeping, for the diagnostic read surface.
+   *
+   * One accessor rather than five getters, and content-free by construction:
+   * every value is a count, a coarse enum, or a cursor. The events themselves
+   * are never reachable from here — the buffers hold message text, and this is
+   * a surface that answers "how much" and "what state", never "what was said".
+   */
+  debugCounters(): SessionDebugCounters {
+    return {
+      lifecycle: this.status.lifecycle,
+      seq: this.counter,
+      subscribers: this.subscriberCount,
+      waiters: this.waiters.length,
+      eventLogSize: this.log.size(),
+      // Counted, never replayed: `replayFrom(0)` copies the array AND runs the
+      // ring's lazy TTL sweep, so reading the debug surface would mutate the
+      // state it is reporting.
+      ringSize: this.ring.size(),
+      persistence: this.persistence?.mode ?? 'off',
+    };
+  }
 }
 
 /** Live projector registry keyed by DorkOS session id. */
@@ -1013,6 +1037,23 @@ export function getOrCreateProjector(
     projector.enablePersistence(sessionEventStore, opts.persist);
   }
   return projector;
+}
+
+/**
+ * Every session with a live projector, for the diagnostic read surface.
+ *
+ * The registry is a module-private `Map` and there has never been a way to ask
+ * it anything from outside the process — which is how "which projector owns this
+ * session, and who is subscribed?" became a question the 2026-07-31 incident
+ * could not answer.
+ *
+ * @returns One entry per live projector, ids and counts only.
+ */
+export function listProjectorDebugCounters(): Array<{ sessionId: string } & SessionDebugCounters> {
+  return [...projectors.entries()].map(([sessionId, projector]) => ({
+    sessionId,
+    ...projector.debugCounters(),
+  }));
 }
 
 /**

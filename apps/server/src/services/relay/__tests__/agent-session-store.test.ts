@@ -11,6 +11,10 @@ vi.mock('../../../lib/logger.js', () => ({
     error: vi.fn(),
     debug: vi.fn(),
   },
+  // The store's persist failures go through `logError`, not a bare `{ err }`:
+  // `JSON.stringify` drops an Error's message and stack (both non-enumerable),
+  // so the old shape recorded `{}` in the file.
+  logError: (err: unknown) => ({ error: err instanceof Error ? err.message : String(err) }),
 }));
 
 describe('AgentSessionStore', () => {

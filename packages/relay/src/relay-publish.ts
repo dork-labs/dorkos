@@ -242,6 +242,7 @@ export class RelayPublishPipeline {
           createdAt,
           error: reason,
           rejectionCode: 'rate_limited',
+          ...(options.dispatchId !== undefined ? { dispatchId: options.dispatchId } : {}),
         });
         return { messageId, deliveredTo: 0, rejected };
       }
@@ -262,6 +263,9 @@ export class RelayPublishPipeline {
       budget,
       createdAt,
       payload,
+      // Stamped only when the caller supplied one — an unset field keeps the
+      // envelope byte-identical to what every pre-existing producer writes.
+      ...(options.dispatchId !== undefined ? { dispatchId: options.dispatchId } : {}),
     };
 
     // Index for rate-limit counting (before fan-out so every published
@@ -412,6 +416,7 @@ export class RelayPublishPipeline {
       adapterResult,
       createdAt: envelope.createdAt,
       ...(deliveredTo === 0 && refusal ? { error: refusal } : {}),
+      ...(envelope.dispatchId !== undefined ? { dispatchId: envelope.dispatchId } : {}),
     });
 
     return {
@@ -554,6 +559,7 @@ export class RelayPublishPipeline {
       error: reason,
       rejectionCode,
       ...(budgetCode ? { budgetCode } : {}),
+      ...(envelope.dispatchId !== undefined ? { dispatchId: envelope.dispatchId } : {}),
     });
     return { messageId, deliveredTo: 0, rejected };
   }
@@ -601,6 +607,15 @@ export class RelayPublishPipeline {
     rejectionCode?: string;
     /** The budget check that rejected it, for the budget-rejection counters. */
     budgetCode?: BudgetRejectionCode;
+    /**
+     * The dispatch this publish belongs to, when the caller knows it.
+     *
+     * This is what turns the `relayTraces` table into the thing it was built
+     * for. `traceId` was set to `messageId` on every row, so every trace had
+     * exactly one span and `getTrace(traceId)` could only return the row you
+     * already had. Sharing the dispatch id across hops makes it a real trace.
+     */
+    dispatchId?: string;
   }): void {
     if (!this.deps.traceStore) return;
     const { messageId, subject, deliveredTo, rejected, adapterResult, createdAt } = span;
@@ -614,7 +629,7 @@ export class RelayPublishPipeline {
     try {
       this.deps.traceStore.insertSpan({
         messageId,
-        traceId: messageId,
+        traceId: span.dispatchId ?? messageId,
         subject,
         status,
         // A delivery that happened has a time it happened at. Leaving this null

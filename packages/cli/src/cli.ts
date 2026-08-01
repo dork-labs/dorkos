@@ -363,6 +363,7 @@ if (
   process.argv[2] === 'activity' ||
   process.argv[2] === 'capabilities' ||
   process.argv[2] === 'call' ||
+  process.argv[2] === 'debug' ||
   process.argv[2] === 'version'
 ) {
   process.env.DORK_HOME = DORK_HOME;
@@ -398,6 +399,20 @@ if (
     const { runCapabilities, parseCapabilitiesArgs } = await import('./commands/capabilities.js');
     try {
       process.exit(await runCapabilities(parseCapabilitiesArgs(subArgs)));
+    } catch (err) {
+      console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
+  }
+  if (process.argv[2] === 'debug') {
+    if (subArgs[0] === undefined || subArgs[0] === '--help' || subArgs[0] === '-h') {
+      const { DEBUG_HELP } = await import('./commands/debug.js');
+      console.log(DEBUG_HELP);
+      process.exit(subArgs[0] === undefined ? 1 : 0);
+    }
+    const { runDebug, parseDebugArgs } = await import('./commands/debug.js');
+    try {
+      process.exit(await runDebug(parseDebugArgs(subArgs)));
     } catch (err) {
       console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
       process.exit(1);
@@ -502,6 +517,7 @@ Commands:
   activity             Show the activity feed (--actor|--category|--type|--limit)
   capabilities         List capabilities you can invoke by id (--json for raw catalog)
   call <capability-id> Invoke any capability by id (--input <json>; prints JSON)
+  debug <subject>      Read live state: dispatches|refusals|projectors|session|room|trace
   version --check      Show server + latest version (falls back to local cache)
   harness sync         Project agent files across harnesses (--check|--fix)
   auth enable          Create the owner account and require login

@@ -18,9 +18,16 @@ import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { MeshCore } from '@dorkos/mesh';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
 import { readManifest } from '@dorkos/shared/manifest';
+import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { assertBoundary, parseSessionId, sendError } from '../lib/route-utils.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
-import { logger } from '../lib/logger.js';
+import { logError, logger } from '../lib/logger.js';
+import { runInDispatch } from '../lib/dispatch-context.js';
+import { logRefusal } from '../services/observability/refusals.js';
+import {
+  recordDispatchEnd,
+  recordDispatchStart,
+} from '../services/observability/dispatch-buffers.js';
 import {
   aggregateSessionList,
   listRecentSessions,
@@ -479,7 +486,11 @@ router.post('/:id/messages', async (req, res) => {
 
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
 
-  logger.info('[POST /messages] trigger', { sessionId, contentLength: content.length });
+  // One id for this whole dispatch, minted BEFORE the trigger so the line that
+  // announces it already carries it and a reader can start there.
+  const dispatchId = newDispatchId();
+  logger.info('[POST /messages] trigger', { sessionId, contentLength: content.length, dispatchId });
+  recordDispatchStart({ dispatchId, origin: 'session', sessionId });
 
   // The POST body's cwd is operator-chosen and authoritative — overwrite any
   // earlier stamp from a subscribe-path default (an /events connect without
@@ -499,35 +510,68 @@ router.post('/:id/messages', async (req, res) => {
   // Trigger the detached turn. The projector is keyed by the client-facing id
   // (stable across the new-session remap, since the projector registry and
   // `/events` both resolve by it); the canonical id is captured for the body.
-  const result = await triggerTurn({
-    sessionId,
-    clientId,
-    content,
-    cwd: effectiveCwd,
-    context,
-    projector,
-    deps: {
-      acquireLock: (sid, cid, lifecycle, token) => runtime.acquireLock(sid, cid, lifecycle, token),
-      releaseLock: (sid, cid, token) => runtime.releaseLock(sid, cid, token),
-      sendMessage: (sid, text, opts) => runtime.sendMessage(sid, text, opts),
-      interruptQuery: (sid) => runtime.interruptQuery(sid),
-      getInternalSessionId: (sid) => runtime.getInternalSessionId(sid),
-      rekeyProjector: (oldId, newId) => rekeyProjector(oldId, newId),
-      getCapabilities: () => runtime.getCapabilities(),
-    },
-    onError: (err) => {
-      logger.warn('[POST /messages] detached turn error', {
-        sessionId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    },
-  });
+  //
+  // **The scope wraps `triggerTurn`, and that placement is the whole phase.**
+  // `triggerTurn` CONSTRUCTS the detached generator chain and then awaits only
+  // the canonical-id race, so entering the dispatch here binds the context to
+  // the chain itself — an async generator created inside an ALS scope keeps
+  // that scope for its whole life. The turn therefore stays correlated long
+  // after this `await` resolves and the 202 has been sent (ADR-0264's `void
+  // turn;`). A scope placed around the awaited race INSIDE `triggerTurn` would
+  // expire at the 202 and correlate nothing; see
+  // `__tests__/sessions-dispatch-correlation.test.ts`, which fails if it moves.
+  const result = await runInDispatch({ dispatchId, origin: 'session' }, () =>
+    triggerTurn({
+      sessionId,
+      clientId,
+      content,
+      cwd: effectiveCwd,
+      context,
+      projector,
+      deps: {
+        acquireLock: (sid, cid, lifecycle, token) =>
+          runtime.acquireLock(sid, cid, lifecycle, token),
+        releaseLock: (sid, cid, token) => runtime.releaseLock(sid, cid, token),
+        sendMessage: (sid, text, opts) => runtime.sendMessage(sid, text, opts),
+        interruptQuery: (sid) => runtime.interruptQuery(sid),
+        getInternalSessionId: (sid) => runtime.getInternalSessionId(sid),
+        rekeyProjector: (oldId, newId) => rekeyProjector(oldId, newId),
+        getCapabilities: () => runtime.getCapabilities(),
+      },
+      onError: (err) => {
+        logger.warn('[POST /messages] detached turn error', {
+          sessionId,
+          ...logError(err),
+        });
+      },
+      // The 202 has long since gone out by the time this fires. It is the only
+      // moment the server learns how a detached turn ended, which is exactly
+      // what the debug buffer is asked for during an incident.
+      onSettled: (outcome) =>
+        recordDispatchEnd(dispatchId, outcome === 'failed' ? 'failed' : 'answered'),
+    })
+  );
 
   if (!result.accepted) {
     const lockInfo = runtime.getLockInfo(sessionId);
-    logger.warn('[POST /messages] session locked', {
+    // A refused trigger still opened a dispatch above, and `onSettled` fires
+    // only for a turn that STARTED — so nothing else will ever close this one.
+    // Left open, the most common interactive refusal sat at the top of
+    // `GET /api/debug/dispatches` reading as a turn still running.
+    recordDispatchEnd(dispatchId, 'refused');
+    // `shown`, so `info`: the caller gets a 409 naming the holder, which is a
+    // refusal the person can see and act on. It is deliberately not a `warn` —
+    // the level is reserved for refusals that left no other trace.
+    //
+    // The id is passed explicitly because this line runs AFTER `runInDispatch`
+    // has returned: the scope that would have supplied it ambiently is gone by
+    // the time the 409 is written.
+    logRefusal('[POST /messages] session locked', {
+      reason: 'session_locked',
+      visibility: 'shown',
+      dispatchId,
       sessionId,
-      lockedBy: lockInfo?.clientId ?? 'unknown',
+      detail: { lockedBy: lockInfo?.clientId ?? 'unknown' },
     });
     return res.status(409).json({
       error: 'Session locked',

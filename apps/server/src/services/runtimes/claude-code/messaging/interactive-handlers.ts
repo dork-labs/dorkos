@@ -7,7 +7,7 @@ import type {
 import type { StreamEvent, QuestionItem } from '@dorkos/shared/types';
 import { UI_COMMAND_REACH, UiCommandSchema } from '@dorkos/shared/schemas';
 import type { PermissionMode } from '@dorkos/shared/schemas';
-import { logger } from '../../../../lib/logger.js';
+import { logRefusal } from '../../../observability/refusals.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import { toSdkQuestionAnswers } from '../sessions/question-answers.js';
 import { randomUUID } from 'node:crypto';
@@ -339,12 +339,20 @@ function logInteractionTimeout(
   session: InteractiveSession,
   interaction: { id: string; kind: 'approval' | 'question' | 'elicitation'; toolName?: string }
 ): void {
-  logger.warn('[claude-code] nobody answered in time, so this was denied', {
-    sessionId: session.sdkSessionId,
-    interactionId: interaction.id,
-    kind: interaction.kind,
-    ...(interaction.toolName !== undefined ? { toolName: interaction.toolName } : {}),
-    waitedMs: SESSIONS.INTERACTION_TIMEOUT_MS,
+  logRefusal('[claude-code] nobody answered in time, so this was denied', {
+    reason: 'interaction_expired',
+    // `silent` is the fact this line exists for: no notice is written anywhere
+    // for an expired prompt. The card vanishes from whatever client happened to
+    // be watching, the turn carries on as though a person refused, and nothing
+    // says the refusal was a clock rather than a decision.
+    visibility: 'silent',
+    ...(session.sdkSessionId !== undefined ? { sessionId: session.sdkSessionId } : {}),
+    detail: {
+      interactionId: interaction.id,
+      kind: interaction.kind,
+      toolName: interaction.toolName,
+      waitedMs: SESSIONS.INTERACTION_TIMEOUT_MS,
+    },
   });
 }
 

@@ -189,6 +189,10 @@
       "types": "./src/diff-tools.ts",
       "default": "./dist/diff-tools.js"
     },
+    "./dispatch-id": {
+      "types": "./src/dispatch-id.ts",
+      "default": "./dist/dispatch-id.js"
+    },
     "./terminal-schemas": {
       "types": "./src/terminal-schemas.ts",
       "default": "./dist/terminal-schemas.js"
@@ -218,6 +222,7 @@
   },
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^8.5.0",
+    "ulidx": "^2.4.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {

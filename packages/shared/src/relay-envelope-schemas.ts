@@ -59,6 +59,17 @@ export const RelayEnvelopeSchema = z
     budget: RelayBudgetSchema,
     createdAt: z.string().datetime(),
     payload: z.unknown(),
+    // The one hop AsyncLocalStorage provably cannot cross: a republish mints a
+    // fresh ULID, so the inbound and outbound `id`s of one logical delivery are
+    // unrelated values. The correlation id therefore has to ride the envelope.
+    //
+    // OPTIONAL, and it must stay optional: every existing producer and every
+    // envelope already sitting in a maildir predates this field and must keep
+    // parsing.
+    dispatchId: z
+      .string()
+      .optional()
+      .describe('Opaque correlation id joining every hop of one dispatch'),
   })
   .openapi('RelayEnvelope');
 

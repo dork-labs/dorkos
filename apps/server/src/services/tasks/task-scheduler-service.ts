@@ -6,7 +6,10 @@ import type { TaskDispatchPayload } from '@dorkos/shared/relay-schemas';
 import type { TaskStore } from './task-store.js';
 import type { ActivityService } from '../activity/activity-service.js';
 import { isRelayEnabled } from '../relay/relay-state.js';
+import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { createTaggedLogger } from '../../lib/logger.js';
+import { runInDispatch } from '../../lib/dispatch-context.js';
+import { recordDispatchEnd, recordDispatchStart } from '../observability/dispatch-buffers.js';
 import { formatDuration } from '../../lib/format-duration.js';
 import { SchedulerLock, SCHEDULER_HEARTBEAT_MS, type LeaderLock } from './scheduler-lock.js';
 import { withSpan, SPAN, ATTR } from '../observability/index.js';
@@ -422,13 +425,34 @@ export class TaskSchedulerService {
     await this.executeRun(current, run);
   }
 
-  /** Execute a run — branches between Relay dispatch and direct AgentManager execution. */
+  /**
+   * Execute a run — branches between Relay dispatch and direct AgentManager
+   * execution, inside this run's own dispatch scope.
+   *
+   * The scope is the OUTERMOST thing here, so the span it wraps carries the id
+   * too: a task that dispatches through the relay is one dispatch that crosses
+   * the bus, and the envelope's `dispatchId` is what keeps it one on the far
+   * side.
+   */
   private async executeRun(task: Task, run: TaskRun): Promise<void> {
-    return withSpan(SPAN.TASK_RUN, { [ATTR.TASK_TRIGGER]: run.trigger }, async (span) => {
-      const viaRelay = isRelayEnabled() && this.relay;
-      span.setAttr(ATTR.TASK_DISPATCH, viaRelay ? 'relay' : 'direct');
-      return viaRelay ? this.executeRunViaRelay(task, run) : this.executeRunDirect(task, run);
-    });
+    const dispatchId = newDispatchId();
+    recordDispatchStart({ dispatchId, origin: 'task' });
+    return runInDispatch({ dispatchId, origin: 'task' }, () =>
+      withSpan(SPAN.TASK_RUN, { [ATTR.TASK_TRIGGER]: run.trigger }, async (span) => {
+        const viaRelay = isRelayEnabled() && this.relay;
+        span.setAttr(ATTR.TASK_DISPATCH, viaRelay ? 'relay' : 'direct');
+        try {
+          const result = viaRelay
+            ? await this.executeRunViaRelay(task, run)
+            : await this.executeRunDirect(task, run);
+          recordDispatchEnd(dispatchId, 'answered');
+          return result;
+        } catch (err) {
+          recordDispatchEnd(dispatchId, 'failed');
+          throw err;
+        }
+      })
+    );
   }
 
   /**

@@ -155,6 +155,7 @@ import {
 } from './services/core/approvals/index.js';
 import { createApprovalsRouter } from './routes/approvals.js';
 import type { DeepHealthDeps } from './services/observability/deep-health/index.js';
+import type { DebugDeps } from './routes/debug.js';
 import { createCapabilitiesCatalogRouter } from './routes/capabilities-catalog.js';
 import { createCapabilitiesInvokeRouter } from './routes/capabilities-invoke.js';
 import {
@@ -265,6 +266,15 @@ let terminalManager: TerminalManager | undefined;
 let releaseInstanceLock: (() => void) | undefined;
 
 async function start() {
+  /**
+   * Which optional routers this boot actually mounted, reported as ONE line.
+   *
+   * It used to be eleven `[X] Routes mounted` lines, which was eleven lines to
+   * say "routes mounted" — a fifth of a healthy startup's whole output, none of
+   * it varying, and none of it something anybody has ever read. What a person
+   * wants to know is WHICH optional subsystems came up, and that is one line.
+   */
+  const mountedRouters: string[] = [];
   // KEEP IN SYNC with `bootInProcessTestServer()` in `harness-boot.ts`: the
   // eval harness mirrors the subset of this function's singleton wiring a
   // driven turn needs (config store, boundary, DB + session-event store,
@@ -1369,7 +1379,7 @@ async function start() {
       createTasksRouter(taskStore, schedulerService, dorkHome, meshCore, activityService)
     );
     setTasksEnabled(true);
-    logger.info('[Tasks] Routes mounted and scheduler configured');
+    mountedRouters.push('tasks');
 
     // Cascade-disable: when an agent is unregistered from Mesh, disable its linked task schedules.
     // The callback receives the project path captured before registry removal —
@@ -1453,7 +1463,7 @@ async function start() {
   // with its single-segment `/:id` routes). The binder itself was created up
   // front so the MCP factory closure could reference it.
   app.use('/api/sessions', createSessionConnectorsRouter({ service: sessionConnectorService }));
-  logger.info('[Connectors] Routes mounted');
+  mountedRouters.push('connectors');
 
   // Mount Relay routes if enabled
   if (relayEnabled && relayCore) {
@@ -1478,7 +1488,7 @@ async function start() {
       connectedAt: new Date().toISOString(),
     });
 
-    logger.info('[Relay] Routes mounted');
+    mountedRouters.push('relay');
   }
 
   // Wire global session-list discovery → unified SSE stream (ADR-0265/0266).
@@ -1500,7 +1510,7 @@ async function start() {
     // Expose the registry to the (statically-mounted) sessions router so
     // GET /api/sessions/recent can resolve agent project paths (DOR-329).
     app.locals.meshCore = meshCore;
-    logger.info('[Mesh] Routes mounted');
+    mountedRouters.push('mesh');
   }
 
   // Deep health (`GET /api/health/deep`) — the checks `dorkos doctor --deep`
@@ -1524,6 +1534,17 @@ async function start() {
     adaptersFailedToStart: relayEnabled && Boolean(relayCore) && !adapterManager,
     meshFailedToStart: !meshCore,
   } satisfies DeepHealthDeps;
+
+  // The same live reads, for `GET /api/debug/*`. A separate bag from the one
+  // above and deliberately so: deep health ANSWERS questions ("is anything
+  // broken?"), and this one hands over raw state for a person to read. They
+  // overlap today; conflating them would mean a new debug read could only be
+  // added by widening the health checks' dependency surface.
+  app.locals.debugDeps = {
+    roomSessions: roomStore,
+    transcriptProjectRoots: () => claudeRuntime?.getTranscriptReader().getProjectsRootSet() ?? [],
+    ...(relayCore ? { relayTraceStore: traceStore } : {}),
+  } satisfies DebugDeps;
 
   // Session-origin Pulse overlay (session-origin-legibility): expose a narrow
   // batched lookup to the sessions router via app.locals, mirroring the
@@ -1615,7 +1636,7 @@ async function start() {
   // Activity feed — always available, not behind a feature flag.
   app.use('/api/activity', createActivityRouter(activityService));
   app.locals.activityService = activityService;
-  logger.info('[Activity] Routes mounted');
+  mountedRouters.push('activity');
 
   // Mount Extensions routes if extension system initialized successfully.
   if (extensionManager) {
@@ -1627,13 +1648,13 @@ async function start() {
     // Delegate /api/ext/:id/* to extension-registered Express routers
     app.use('/api/ext/:id', createExtensionRoutesMiddleware(extensionManager));
 
-    logger.info('[Extensions] Routes mounted');
+    mountedRouters.push('extensions');
   }
 
   // Mount Discovery routes when MeshCore is available (delegates to meshCore.discover())
   if (meshCore) {
     app.use('/api/discovery', createDiscoveryRouter(meshCore));
-    logger.info('[Discovery] Routes mounted');
+    mountedRouters.push('discovery');
   }
 
   // Mount A2A gateway if enabled — requires both Relay (message routing) and Mesh (agent registry)
@@ -1719,7 +1740,7 @@ async function start() {
       closeDb: () => db.$client.close(),
     })
   );
-  logger.info('[Admin] Routes mounted');
+  mountedRouters.push('admin');
 
   // Mount Marketplace routes. The install pipeline has two optional
   // collaborators — `extensionManager` (needed by plugin + uninstall flows)
@@ -1866,7 +1887,7 @@ async function start() {
         },
       })
     );
-    logger.info('[Marketplace] Routes mounted');
+    mountedRouters.push('marketplace');
 
     // Mount Shape routes (DOR-355). Apply/fork ride the marketplace block
     // because apply enables extensions (needs `extensionManager`). Schedules
@@ -1886,7 +1907,7 @@ async function start() {
         },
       })
     );
-    logger.info('[Shapes] Routes mounted');
+    mountedRouters.push('shapes');
 
     // Personal marketplace bootstrap — runs after the source manager is wired
     // but before the MCP server fields its first request so the personal
@@ -1946,7 +1967,8 @@ async function start() {
     idleTimeoutMs: terminalGraceTtlMinutes * 60_000,
   });
   app.use('/api/terminal', createTerminalRouter(terminalManager));
-  logger.info('[Terminal] Routes mounted');
+  mountedRouters.push('terminal');
+  logger.info('[DorkOS] routes mounted', { routers: mountedRouters.join(' ') });
 
   // ── Capability Registry (spec `capability-registry`) ─────────────────────
   // Compose the single registry now that its dependency bags are settled:
@@ -2052,7 +2074,7 @@ async function start() {
   }
 
   const server = app.listen(PORT, host, () => {
-    logger.info(`DorkOS server running on http://${host}:${PORT}`);
+    logger.info(`[DorkOS] server running on http://${host}:${PORT}`);
 
     // Attach the embedded-terminal WebSocket byte channel once the server is
     // listening (it is the sole HTTP upgrade consumer).
@@ -2187,7 +2209,7 @@ async function start() {
 // Ordered teardown of all running services WITHOUT calling process.exit().
 // Extracted so the admin router can invoke it before a restart.
 async function shutdownServices() {
-  logger.info('Shutting down services...');
+  logger.info('[DorkOS] shutting down services');
   if (healthCheckInterval) {
     clearInterval(healthCheckInterval);
   }
@@ -2247,7 +2269,7 @@ let shuttingDown = false;
 async function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
-  logger.info('Shutting down...');
+  logger.info('[DorkOS] shutting down');
   await shutdownServices();
   process.exit(0);
 }

@@ -77,6 +77,20 @@ export class RingBuffer {
     return this.events.filter((e) => e.seq > sinceCursor);
   }
 
+  /**
+   * How many events the ring currently holds, WITHOUT sweeping.
+   *
+   * Deliberately not `replayFrom(0).length`: that materialises the array and,
+   * worse, runs the lazy TTL sweep — a mutation. The diagnostic read surface is
+   * the one caller here, and a read that changes what the next read sees is a
+   * read that cannot be trusted mid-incident. The count may therefore include
+   * events an expired turn still holds, which is the honest answer to "what is
+   * in memory right now".
+   */
+  size(): number {
+    return this.events.length;
+  }
+
   /** Evict retained events once the post-`turn_end` TTL has elapsed. */
   private sweepIfExpired(): void {
     if (this.endedAt !== null && Date.now() - this.endedAt >= RING_BUFFER_TTL_MS) {

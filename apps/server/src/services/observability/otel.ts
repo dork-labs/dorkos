@@ -34,6 +34,7 @@ import { trace, SpanStatusCode } from '@opentelemetry/api';
 import type { Attributes, AttributeValue } from '@opentelemetry/api';
 import type { NodeTracerProvider, SpanProcessor } from '@opentelemetry/sdk-trace-node';
 import { env } from '../../env.js';
+import { currentDispatchId } from '../../lib/dispatch-context.js';
 import { ATTR } from './attributes.js';
 
 const TRACER_NAME = 'dorkos-server';
@@ -233,14 +234,23 @@ const NOOP_SPAN: DorkSpan = {
  * off — the caller does not branch. Only allowlisted, non-content attributes
  * should ever be passed.
  *
+ * Every span started inside a dispatch carries that dispatch's id, stamped
+ * here rather than at each of the four seams: one place cannot drift, and a
+ * future seam gets the join key without remembering to ask for it. The read
+ * sits AFTER the `enabled` check, so tracing that is off pays nothing for it
+ * (ADR 260711-154514 §2).
+ *
  * @param name - A stable span name from `SPAN`.
  * @param attributes - Allowlisted attributes to seed the span with.
  */
 export function startSpan(name: string, attributes?: Attributes): DorkSpan {
   if (!enabled) return NOOP_SPAN;
+  const dispatchId = currentDispatchId();
+  const seeded: Attributes | undefined =
+    dispatchId !== undefined ? { ...attributes, [ATTR.DISPATCH_ID]: dispatchId } : attributes;
   const span = trace
     .getTracer(TRACER_NAME)
-    .startSpan(name, attributes ? { attributes } : undefined);
+    .startSpan(name, seeded ? { attributes: seeded } : undefined);
   return {
     setAttr(key, value) {
       span.setAttribute(key, value);

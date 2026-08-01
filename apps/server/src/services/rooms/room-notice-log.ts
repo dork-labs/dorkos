@@ -31,6 +31,7 @@
  */
 import type { Room, RoomEntry, RoomEntryBody } from '@dorkos/shared/room-schemas';
 import { logger } from '../../lib/logger.js';
+import { logRefusal, type RefusalVisibility } from '../observability/refusals.js';
 import type { AuthorRegistry } from './author-registry.js';
 import {
   buildBudgetNotice,
@@ -235,12 +236,19 @@ export class RoomNoticeLog {
    * @param reason - Why it stayed quiet, which picks the words.
    * @param busyWith - What the room KNOWS the agent is doing, for a `busy`
    *   reason. Ignored for a failure, which has nothing to describe.
+   * @param dispatchId - The dispatch this refusal belongs to, or `null` when
+   *   there is none. Required rather than ambient, and required rather than
+   *   optional: a refusal decided in `claimTargets` runs synchronously inside
+   *   `RoomService.post`, which for an agent's reply is inside the REPLYING
+   *   agent's dispatch scope — so the ambient id there names somebody else.
+   *   Every call site has to say which it is.
    */
   reportSilence(
     room: Room,
     entry: RoomEntry,
     agent: NoticeSubject,
     reason: RoomTurnUnanswered,
+    dispatchId: string | null,
     busyWith: BusyContext = 'unknown'
   ): void {
     const key = silenceKey(room.id, agent.authorId, reason);
@@ -252,21 +260,39 @@ export class RoomNoticeLog {
     // saying nothing left three lines in the log to explain it, and the two
     // silences that mattered most — the ones a damping key swallowed — left
     // none at all.
-    logger.info('[rooms] an agent did not answer', {
-      roomId: room.id,
-      authorId: agent.authorId,
-      reason,
-      ...(reason === 'busy' ? { busyWith } : {}),
-      damped,
-      cascadeRoot: entry.cascadeRoot,
-      entryId: entry.id,
-    });
-    if (damped) return;
+    //
+    // **The level follows the visibility, and that is the whole amendment.** A
+    // damped refusal is one the person was never told about, so this line is the
+    // only place it exists; filing it at `info` beside the ones they DID see
+    // makes it invisible a second time.
+    const record = (visibility: RefusalVisibility): void =>
+      logRefusal('[rooms] an agent did not answer', {
+        reason: reason === 'busy' ? 'agent_busy' : 'turn_failed',
+        visibility,
+        dispatchId,
+        roomId: room.id,
+        authorId: agent.authorId,
+        entryId: entry.id,
+        detail: {
+          cascadeRoot: entry.cascadeRoot,
+          ...(reason === 'busy' ? { busyWith } : {}),
+        },
+      });
+    if (damped) {
+      record('damped');
+      return;
+    }
     const body =
       reason === 'busy'
         ? buildBusyNotice(agent.displayName, agent.authorId, busyWith)
         : buildTurnFailedNotice(agent.displayName, agent.authorId);
-    if (this.writeNotice(room, entry, agent.authorId, body)) {
+    // Reported AFTER the write, so `visibility` says what actually happened
+    // rather than what was intended: a notice the room could not write (an
+    // archive between the post and the notice) leaves the person as uninformed
+    // as a damped one, and the line has to say so.
+    const written = this.writeNotice(room, entry, agent.authorId, body);
+    record(written ? 'shown' : 'silent');
+    if (written) {
       // Recorded even when it was never consulted. A failure that writes
       // unconditionally still arms the key a LATER busy line reads, which is
       // what keeps "one busy line per state" true after an error.
@@ -304,6 +330,10 @@ export class RoomNoticeLog {
   ): void {
     const key = agentNoticeKey(room.id, agent.authorId);
     const damped = this.noticedWaiting.has(key);
+    // Not a refusal — nothing was declined, the turn is simply parked — so it
+    // keeps `info` and stays outside `logRefusal`. It carries `damped` for the
+    // same reason a refusal carries `visibility`: a wait nobody was told about
+    // is the forty-one minutes this notice exists to prevent.
     logger.info('[rooms] a turn stopped to wait for a person', {
       roomId: room.id,
       authorId: agent.authorId,
@@ -330,14 +360,40 @@ export class RoomNoticeLog {
    * @param entry - The entry whose trigger was refused.
    * @param authorId - The agent that was refused.
    * @param body - The notice copy, from `room-notices.ts`.
+   * @param cause - Which guard rule refused, for the log.
+   * @param dispatchId - The dispatch this refusal belongs to, or `null` when
+   *   there is none — which is every reachable case today, since a target the
+   *   guard refuses is never claimed and so never mints one.
    */
-  announce(room: Room, entry: RoomEntry, authorId: string, body: RoomEntryBody): void {
+  announce(
+    room: Room,
+    entry: RoomEntry,
+    authorId: string,
+    body: RoomEntryBody,
+    cause: 'cascade_depth' | 'cascade_ancestry',
+    dispatchId: string | null
+  ): void {
     const key = cascadeNoticeKey(room.id, entry.cascadeRoot, authorId);
-    if (this.noticedCascades.has(key)) return;
+    const record = (visibility: RefusalVisibility): void =>
+      logRefusal('[rooms] the guard stopped an exchange', {
+        reason: cause,
+        visibility,
+        dispatchId,
+        roomId: room.id,
+        authorId,
+        entryId: entry.id,
+        detail: { cascadeRoot: entry.cascadeRoot, cascadeDepth: entry.cascadeDepth },
+      });
+    if (this.noticedCascades.has(key)) {
+      record('damped');
+      return;
+    }
     // Remembered only once it is actually in the log. Marking first meant a
     // cascade whose FIRST notice threw went silent for good — precisely the
     // state the notice exists to prevent.
-    if (this.writeNotice(room, entry, authorId, body)) remember(this.noticedCascades, key);
+    const written = this.writeNotice(room, entry, authorId, body);
+    record(written ? 'shown' : 'silent');
+    if (written) remember(this.noticedCascades, key);
   }
 
   /**
@@ -352,12 +408,32 @@ export class RoomNoticeLog {
    * @param room - The room that ran out.
    * @param entry - The entry whose trigger could not be afforded.
    * @param scope - Which cap refused, so the copy points at the right setting.
+   * @param dispatchId - The dispatch this refusal belongs to. Unlike the guard's,
+   *   a budget refusal DOES have one: the target has already survived the guard
+   *   and been given an id by the time the room is asked to afford it.
    */
-  reportBudget(room: Room, entry: RoomEntry, scope: BudgetRefusalScope): void {
-    if (this.noticedBudget.has(room.id)) return;
-    if (this.writeNotice(room, entry, null, buildBudgetNotice(scope))) {
-      this.noticedBudget.add(room.id);
+  reportBudget(
+    room: Room,
+    entry: RoomEntry,
+    scope: BudgetRefusalScope,
+    dispatchId: string | null
+  ): void {
+    const record = (visibility: RefusalVisibility): void =>
+      logRefusal('[rooms] the room is out of automatic turns', {
+        reason: 'room_budget',
+        visibility,
+        dispatchId,
+        roomId: room.id,
+        entryId: entry.id,
+        detail: { scope },
+      });
+    if (this.noticedBudget.has(room.id)) {
+      record('damped');
+      return;
     }
+    const written = this.writeNotice(room, entry, null, buildBudgetNotice(scope));
+    record(written ? 'shown' : 'silent');
+    if (written) this.noticedBudget.add(room.id);
   }
 
   /**

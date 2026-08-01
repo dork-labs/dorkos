@@ -62,6 +62,7 @@ import { assembleAdditionalContext } from './context-assembler.js';
 import { withStallGuard } from './stall-guard.js';
 import { SESSIONS } from '../../config/constants.js';
 import { startSpan, SPAN, ATTR } from '../observability/index.js';
+import { logError, logger } from '../../lib/logger.js';
 
 /**
  * The `seq`-less shape of a single {@link SessionEvent} member, selected by its
@@ -203,6 +204,21 @@ export interface TriggerTurnOpts {
   stallTimeoutMs?: number;
   /** Records a detached-turn failure (logging is the caller's concern). */
   onError?(err: unknown): void;
+  /**
+   * Fired once when the DETACHED turn settles, however it settles.
+   *
+   * The 202 resolves long before this. A caller that wants to record how a turn
+   * ended — the diagnostic dispatch buffer does — has nowhere else to learn it,
+   * because the request is gone and `onError` only fires on a failure.
+   *
+   * A throw here is caught and logged rather than allowed to escape: this runs
+   * on the turn's own settlement path, where an unhandled rejection would take
+   * down work that has already succeeded. An observability hook must be
+   * structurally unable to kill a turn.
+   *
+   * @param outcome - `'failed'` when the turn reported an error, else `'ok'`.
+   */
+  onSettled?(outcome: 'ok' | 'failed'): void;
   /**
    * Receives the `seq` of THIS turn's `turn_start` — its identity on the durable
    * stream.
@@ -349,7 +365,11 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     onStall: () => deps.interruptQuery(sessionId),
     onError: (err) => opts.onError?.(err),
   });
-  const guarded = guardTurnErrors(projector, stallGuarded, (err) => opts.onError?.(err));
+  let failed = false;
+  const guarded = guardTurnErrors(projector, stallGuarded, (err) => {
+    failed = true;
+    opts.onError?.(err);
+  });
   // The trigger content rides the turn_start (userMessage) so the EventLog is a
   // self-sufficient history source for log-backed runtimes (ADR-0263).
   const turn = feedProjector(projector, guarded, {
@@ -360,6 +380,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     // of defense against a feedProjector-internal rejection so the detached
     // promise never becomes an unhandled rejection. The lock still releases below.
     .catch((err) => {
+      failed = true;
       turnSpan.markError();
       return opts.onError?.(err);
     })
@@ -367,6 +388,18 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
       turnSpan.setAttr(ATTR.EVENT_COUNT, eventCount);
       turnSpan.end();
       releaseOnce();
+      // Contained: this is the turn's own settlement path, where a throw becomes
+      // an unhandled rejection. An observability hook must be structurally
+      // unable to kill a turn, so the guarantee is enforced here rather than
+      // asked for in the hook's doc.
+      try {
+        opts.onSettled?.(failed ? 'failed' : 'ok');
+      } catch (err) {
+        logger.warn('[trigger-turn] a turn-settled observer threw', {
+          sessionId,
+          ...logError(err),
+        });
+      }
     });
   // The turn runs to completion in the background; the request does not await it.
   void turn;

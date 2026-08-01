@@ -36,6 +36,12 @@ function buildApp(): express.Express {
   app.get('/api/health/deep', (_req, res) => res.json({ checks: [] }));
   // Gated: stands in for the `/mcp` mount that `index.ts` adds after createApp.
   app.get('/mcp', (_req, res) => res.json({ ok: true }));
+  // Gated with no carve-out of its own: the diagnostic read surface is always
+  // mounted, so the gate is the only thing standing between it and an
+  // unauthenticated caller. It is registered with a trailing wildcard the way a
+  // router mount matches, so the spelling variants that once slipped past the
+  // health carve-out can be asked of it too.
+  app.get('/api/debug/{*splat}', (_req, res) => res.json({ claims: [] }));
   // Non-API path (SPA asset): must never be gated.
   app.get('/', (_req, res) => res.json({ spa: true }));
   return app;
@@ -178,6 +184,34 @@ describe('sessionGate — /api/* and /mcp credential gate (integration)', () => 
       const res = await request(app).get(path);
       expect(res.status).toBe(401);
       expect(res.body?.code).toBe('AUTH_REQUIRED');
+    });
+
+    // The diagnostic surface is ALWAYS mounted — that is the whole posture — so
+    // nothing but this gate keeps it operator-only. An exact-string carve-out
+    // out of a prefix exemption is precisely how `/api/health/deep/` once
+    // leaked the full report with no credential; these pin that this surface
+    // has no such carve-out to slip out of, however the path is spelled.
+    it.each([
+      ['plain', '/api/debug/dispatches'],
+      ['trailing slash', '/api/debug/dispatches/'],
+      ['doubled trailing slash', '/api/debug/dispatches//'],
+      ['doubled inner slash', '/api/debug//dispatches'],
+      ['uppercase', '/API/DEBUG/DISPATCHES'],
+      ['mixed case with trailing slash', '/Api/Debug/Refusals/'],
+      ['dot segment', '/api/debug/./refusals'],
+    ])('gates /api/debug spelled with a %s', async (_name, spelling) => {
+      setAuthEnabled(true);
+      const res = await request(app).get(spelling);
+      expect(res.status).toBe(401);
+      expect(res.body?.code).toBe('AUTH_REQUIRED');
+    });
+
+    it('lets the operator through to /api/debug once signed in', async () => {
+      // The other half: a gate that refused everybody would pass the test above
+      // while making the surface useless.
+      setAuthEnabled(true);
+      const res = await request(app).get('/api/debug/dispatches').set('Cookie', cookies);
+      expect(res.status).toBe(200);
     });
 
     it('still exempts the liveness probe with a trailing slash', async () => {
