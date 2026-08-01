@@ -84,16 +84,31 @@ export class SessionStore {
    * flight is being tracked by the id it started under. Eviction sweeps the
    * whole chain, so nothing outlives the session.
    *
-   * The row moves FIRST, and a failure to move it can neither fail the turn nor
-   * hold back the index. This runs mid-stream: before DOR-493 the rebind was Map
-   * writes that could not throw, and a settings store that is briefly
-   * unavailable must not become a lost turn on a step that never used to have a
-   * failure mode. Publishing the alias anyway is deliberate — `sdkSessionId` has
-   * ALREADY changed by the time this is called, so the index is only catching up
-   * to a fact, and withholding it would leave approvals, interrupt, and the
-   * event stream unable to resolve the canonical id for the rest of the session.
-   * A store failure therefore lands exactly where the pre-DOR-493 code always
-   * did — row under the old id, turn unaffected — plus a warning.
+   * **WHEN this is called is load-bearing; the order of the two writes inside it
+   * is not.** The caller (`message-sender`) invokes this BEFORE yielding the
+   * event that lets `trigger-turn` announce the canonical id to the cockpit. A
+   * client can only send a message under an id it has been told, so moving the
+   * row first is what stops the session's own next POST from looking like a
+   * brand-new session to `persistSessionRuntime` — which would mint a second
+   * row, pre-seeded with the server's default trust stop, and leave the re-key
+   * merging the operator's choice against a default nobody picked (DOR-838).
+   * Do not move this call back after the yield.
+   *
+   * The two writes below may run in either order — that was measured, not
+   * assumed: swapping them reddens nothing, because everything that could
+   * observe the gap between them is downstream of the announcement this call
+   * precedes. The row is written first only because the index write cannot fail.
+   *
+   * A failure to move the row can neither fail the turn nor hold back the index.
+   * This runs mid-stream: before DOR-493 the rebind was Map writes that could
+   * not throw, and a settings store that is briefly unavailable must not become
+   * a lost turn on a step that never used to have a failure mode. Publishing the
+   * alias anyway is deliberate — `sdkSessionId` has ALREADY changed by the time
+   * this is called, so the index is only catching up to a fact, and withholding
+   * it would leave approvals, interrupt, and the event stream unable to resolve
+   * the canonical id for the rest of the session. A store failure therefore
+   * lands exactly where the pre-DOR-493 code always did — row under the old id,
+   * turn unaffected — plus a warning.
    *
    * @param previousSdkSessionId - The canonical id held until now
    * @param nextSdkSessionId - The canonical id the SDK just assigned
@@ -106,7 +121,9 @@ export class SessionStore {
   ): Promise<void> {
     if (previousSdkSessionId === nextSdkSessionId) return;
     // Resolved before the await: the maps can be swept while it is pending, and
-    // the key this rebind is about is the one that existed when it started.
+    // the key this rebind is about is the one that existed when it started. This
+    // is also why the row moves first — not an ordering guarantee (see the doc
+    // above), just the write that can throw going before the one that cannot.
     const sessionMapKey =
       this.resolveMapKey(requestedSessionId) ?? this.resolveMapKey(previousSdkSessionId);
     try {

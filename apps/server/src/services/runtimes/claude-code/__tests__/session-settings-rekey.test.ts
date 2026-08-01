@@ -61,8 +61,15 @@ vi.mock('../../../relay/relay-state.js', () => ({
   isRelayEnabled: vi.fn().mockReturnValue(false),
 }));
 vi.mock('../../../tasks/task-state.js', () => ({ isTasksEnabled: vi.fn().mockReturnValue(false) }));
+// The server's execution defaults, as `resolveSessionDefaults` reads them.
+// Mutable because the seeded-default direction below needs
+// `runtimes.defaultTrustStop` set — that config is what makes
+// `persistSessionRuntime` write a permission mode nobody chose.
+const { serverConfig } = vi.hoisted(() => ({
+  serverConfig: { runtimes: {} as Record<string, unknown> },
+}));
 vi.mock('../../../core/config-manager.js', () => ({
-  configManager: { get: vi.fn().mockReturnValue({}) },
+  configManager: { get: vi.fn(() => serverConfig.runtimes) },
 }));
 vi.mock('../../../../lib/boundary.js', () => ({
   validateBoundary: vi.fn().mockResolvedValue('/mock/path'),
@@ -102,6 +109,8 @@ describe('claude-code session-settings re-key on canonical-id rebind (DOR-493)',
   let mockedQuery: Mock;
 
   beforeEach(async () => {
+    // No server defaults unless a test asks for them.
+    serverConfig.runtimes = {};
     // Reset the module graph so each test gets a fresh runtime AND a fresh
     // `query` spy (the top-level vi.mock factory re-runs on re-import).
     vi.resetModules();
@@ -259,6 +268,70 @@ describe('claude-code session-settings re-key on canonical-id rebind (DOR-493)',
     expect(rows[0]?.permissionMode).toBe('plan');
   });
 
+  it('never lets a SEEDED default outrank the operator choice, mid-turn', async () => {
+    // The mirror of the test above, and the reason recency of the ROW cannot be
+    // the rule. The cockpit adopts the canonical id the instant `trigger-turn`
+    // announces it as `retiredSessionId`, and its next message is POSTed under
+    // that id. If the row has not moved yet, that POST reaches
+    // `persistSessionRuntime` with an id the table has never seen: it mints a
+    // second row, pre-seeded from the server's configured trust stop, and
+    // reports a brand-new session. The seeded row is NEWER than the operator's
+    // and nothing in it was chosen by anybody, so destination-wins hands the
+    // session a default the operator had already overridden — while source-wins
+    // loses the other direction. The fix is not a better merge rule: the row
+    // moves before the id is ever announced, so the rival is never minted.
+    serverConfig.runtimes = { defaultTrustStop: 'act' };
+    await registry.persistSessionRuntime(REQUEST_ID, 'claude-code', undefined, {
+      interactive: true,
+    });
+    await runtime.updateSession(REQUEST_ID, { permissionMode: 'plan', model: 'opus' });
+
+    // The control: this config really does seed `acceptEdits` for an id nobody
+    // has touched. Without it, every assertion below could pass because the
+    // fixture never armed the seed at all.
+    await registry.persistSessionRuntime('unrelated-session', 'claude-code', undefined, {
+      interactive: true,
+    });
+    expect(
+      (await registry.getSessionSettings('unrelated-session'))?.permissionMode,
+      'the trust-stop seed is not armed — this test proves nothing'
+    ).toBe('acceptEdits');
+
+    mockedQuery.mockClear();
+    mockedQuery.mockReturnValue(wrapSdkQuery(sdkSimpleText('ok', CANONICAL_ID)));
+    let posted = false;
+    let countedAsNew: boolean | undefined;
+    for await (const _event of runtime.sendMessage(REQUEST_ID, 'hello')) {
+      // The client has adopted the canonical id and sends its next message. The
+      // route persists on the id it was called with, so this binds CANONICAL_ID
+      // — exactly what `POST /api/sessions/:id/messages` does.
+      if (!posted && runtime.getInternalSessionId(REQUEST_ID) === CANONICAL_ID) {
+        posted = true;
+        countedAsNew = await registry.persistSessionRuntime(
+          CANONICAL_ID,
+          'claude-code',
+          undefined,
+          { interactive: true }
+        );
+      }
+    }
+    expect(posted, 'the interleaving never happened — this test proved nothing').toBe(true);
+
+    const rows = db
+      .select()
+      .from(sessionMetadata)
+      .all()
+      .filter((r) => r.sessionId !== 'unrelated-session');
+    expect(rows.map((r) => r.sessionId)).toEqual([CANONICAL_ID]);
+    // The operator chose `plan`. Nobody chose `acceptEdits`.
+    expect(rows[0]?.permissionMode).toBe('plan');
+    expect(rows[0]?.model).toBe('opus');
+
+    // The same mid-turn write is what double-fired `session_created`: this is
+    // the session's own next message, not a second session (DOR-838).
+    expect(countedAsNew, 'a message under the canonical id is not a NEW session').toBe(false);
+  });
+
   it('does not let the next turn under the canonical id count as a second new session', async () => {
     // `persistSessionRuntime` returning true is the once-per-session signal the
     // POST /messages route fires `session_created` usage telemetry on. The row
@@ -303,6 +376,23 @@ describe('claude-code session-settings re-key on canonical-id rebind (DOR-493)',
     // The alias is published even though the row could not move.
     expect(runtime.hasSession(CANONICAL_ID)).toBe(true);
     expect(runtime.getInternalSessionId(CANONICAL_ID)).toBe(CANONICAL_ID);
+
+    // The two facts that separate a handled failure from a swallowed one. The
+    // row really is stranded under the retired id — that is the cost being
+    // accepted, so it is asserted rather than implied — and the failure was
+    // REPORTED. Without these, an empty `catch {}` passes every line above.
+    const rows = db.select().from(sessionMetadata).all();
+    expect(rows.map((r) => r.sessionId)).toEqual([REQUEST_ID]);
+    expect(rows[0]?.permissionMode).toBe('plan');
+    const { logger } = await import('../../../../lib/logger.js');
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('settings re-key failed'),
+      expect.objectContaining({
+        previousSdkSessionId: REQUEST_ID,
+        nextSdkSessionId: CANONICAL_ID,
+        err: 'database is locked',
+      })
+    );
     boom.mockRestore();
   });
 

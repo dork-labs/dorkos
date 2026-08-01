@@ -314,29 +314,32 @@ export function runtimeConformance(
         const sessionId = nextSessionId();
         runtime.ensureSession(sessionId, sessionOpts());
 
-        if (!runtime.setSessionSettings) {
-          // No durable-settings port at all (a stateless adapter). Nothing can be
-          // stranded — but only for as long as it also never aliases, so that is
-          // what the contract holds it to.
-          expect(
-            runtime.getInternalSessionId(sessionId) ?? sessionId,
-            'a runtime that aliases session ids must accept a settings port so it can re-key'
-          ).toBe(sessionId);
-          return;
-        }
+        // The port is OPTIONAL on the interface, so a stateless adapter may have
+        // none. That is not a second case with its own assertion — it is the
+        // same one with no re-keys recorded, which is why this reads the calls
+        // through `?? []` instead of branching. A portless runtime that aliases
+        // therefore fails the very same expectation, and says why.
+        const port = runtime.setSessionSettings ? recordingSettingsPort() : undefined;
+        if (port) runtime.setSessionSettings?.(port);
 
-        const port = recordingSettingsPort();
-        runtime.setSessionSettings(port);
+        // AFTER a turn, deliberately. An alias is minted when the backend names
+        // the session, which for claude-code is the first turn's init message —
+        // reading `getInternalSessionId` before that asks a question no runtime
+        // can answer yet, and would pass for every adapter ever written.
         await drainTurn(runtime, sessionId);
 
         const canonical = runtime.getInternalSessionId(sessionId);
         if (canonical !== undefined && canonical !== sessionId) {
           expect(
-            port.rekeyCalls,
-            `rebound '${sessionId}' to '${canonical}' but left its settings row behind`
+            port?.rekeyCalls ?? [],
+            port
+              ? `rebound '${sessionId}' to '${canonical}' but left its settings row behind`
+              : `rebound '${sessionId}' to '${canonical}' with no settings port to re-key through — a runtime that aliases must accept one`
           ).toContainEqual([sessionId, canonical]);
         } else {
-          expect(port.rekeyCalls, 'no alias was minted, so nothing may be re-keyed').toEqual([]);
+          expect(port?.rekeyCalls ?? [], 'no alias was minted, so nothing may be re-keyed').toEqual(
+            []
+          );
         }
       });
     });

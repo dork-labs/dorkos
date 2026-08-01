@@ -519,15 +519,36 @@ export class RuntimeRegistry {
    * binding travels with the row it belongs to. The source row is deleted in the
    * same transaction, so the move never leaves a second copy behind.
    *
-   * **The DESTINATION wins each settings field it has a value for, and the
-   * source only fills the gaps** — a re-key must never replace a newer operator
-   * choice with an older one. The source row is by construction the older of the
-   * two: nobody can write under `toId` before the runtime announces that id, and
-   * from the instant it does, every write resolves there. So a non-NULL
-   * destination column can only have been written AFTER the source row — which
-   * happens for real, in the window between the SDK assigning the canonical id
-   * and this call completing. Source-wins in that window reinstated the mode the
-   * operator had just moved away from, including "act without asking".
+   * **The property this has to keep: an operator's explicit choice never loses
+   * to anything that is not a NEWER operator's explicit choice.** Read that
+   * twice before touching the merge, because the rows cannot express it on their
+   * own — nothing in `session_metadata` records who wrote a column, so an
+   * operator's `plan` and a server-seeded `acceptEdits` are the same shape once
+   * written, and recency of the ROW is therefore not a stand-in for provenance.
+   * Both merge directions have been measured wrong on some input:
+   *
+   * - **Source-wins** loses a newer operator choice to the retired row, because
+   *   the source row is normally the older of the two.
+   * - **Destination-wins** loses a genuine operator choice to a SEEDED default,
+   *   because {@link RuntimeRegistry.persistSessionRuntime} INSERTs rows
+   *   pre-filled from `runtimes.defaultTrustStop` (see
+   *   {@link RuntimeRegistry.seedForNewRow}) — a newer row nobody chose.
+   *
+   * So the merge is not where the property is kept. It is kept by ORDERING, one
+   * layer up: `message-sender` moves this row BEFORE it yields the event that
+   * lets `trigger-turn` announce the canonical id, and a caller can only name an
+   * id it has been told. By the time any POST or PATCH can arrive under `toId`,
+   * the row is already there and already bound — so `persistSessionRuntime`
+   * finds a bound row, seeds nothing, and reports no new session. That is what
+   * removes the seeded rival from this merge's inputs rather than teaching the
+   * merge to guess which value a person picked.
+   *
+   * Destination-wins per field is what remains, and it is right for the input
+   * that is still reachable: two rows that both hold OPERATOR choices, where the
+   * destination's is the later one. Keep both facts together — the rule is only
+   * sound while the ordering above holds, and a future author who moves the
+   * re-key back after the announcement re-opens the seeded direction. The
+   * `session-settings-rekey` tests fail in exactly that case.
    *
    * What this does NOT promise: that a session can never have two rows again. A
    * stale client still holding the retired id and POSTing under it makes
