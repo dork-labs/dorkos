@@ -2,13 +2,29 @@ import { useState } from 'react';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
+import type { UnattendedAutonomyDriver } from '@dorkos/shared/permission-semantics';
 import { Banner, Button } from '@/layers/shared/ui';
+import { UnattendedAutonomyBanner } from '@/layers/widgets/app-banner';
 
 const SAMPLE_DETAILS = (
   <pre className="text-muted-foreground bg-background/60 max-w-full overflow-x-auto rounded-md border p-3 text-xs">
     <code>{'{\n  "event": "example",\n  "count": 3\n}'}</code>
   </pre>
 );
+
+/** A relay integration whose turns run with nothing left to ask. */
+const UNATTENDED_BINDING: UnattendedAutonomyDriver = {
+  kind: 'binding',
+  id: 'b1',
+  name: 'Deploys',
+};
+
+/** A scheduled task in the same posture. */
+const UNATTENDED_TASK: UnattendedAutonomyDriver = {
+  kind: 'task',
+  id: 't1',
+  name: 'Nightly cleanup',
+};
 
 /** Banner showcases: the four severity variants, a dismissible banner, and the collapsible details region. */
 export function BannerShowcases() {
@@ -76,6 +92,28 @@ export function BannerShowcases() {
               See what&apos;s sent
             </button>
           </Banner>
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Unattended autonomy — one, two, and truncated</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="flex w-full flex-col gap-3">
+          <div className="w-full overflow-hidden rounded-md border">
+            <UnattendedAutonomyBanner drivers={[UNATTENDED_TASK]} />
+          </div>
+          <div className="w-full overflow-hidden rounded-md border">
+            <UnattendedAutonomyBanner drivers={[UNATTENDED_BINDING, UNATTENDED_TASK]} />
+          </div>
+          <div className="w-full overflow-hidden rounded-md border">
+            <UnattendedAutonomyBanner
+              drivers={[
+                UNATTENDED_BINDING,
+                UNATTENDED_TASK,
+                { ...UNATTENDED_BINDING, id: 'b2', name: 'Support inbox' },
+                { ...UNATTENDED_TASK, id: 't2', name: 'Morning digest' },
+              ]}
+            />
+          </div>
         </div>
       </ShowcaseDemo>
     </PlaygroundSection>

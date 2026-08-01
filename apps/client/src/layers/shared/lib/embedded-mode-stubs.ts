@@ -15,6 +15,7 @@ import type {
   RuntimeProvisionResult,
 } from '@dorkos/shared/transport';
 import type { RecentSessionsResponse } from '@dorkos/shared/types';
+import type { UnattendedAutonomyState } from '@dorkos/shared/permission-semantics';
 import type {
   ApprovalDecisionResponse,
   PendingApprovalsResponse,
@@ -469,6 +470,13 @@ export const serverOnlyStubs = {
     // Embedded mode has no multi-agent roster — the cross-agent Recent section
     // does not apply, so this returns an empty envelope.
     return { sessions: [], agentActivity: {}, warnings: [] };
+  },
+
+  async getUnattendedAutonomy(): Promise<UnattendedAutonomyState> {
+    // The embed has neither relay bindings nor scheduled tasks, so no surface
+    // here can be running unattended — the standing banner is correct to be
+    // silent rather than merely unwired.
+    return { drivers: [] };
   },
 
   async startTunnel(): Promise<{ url: string }> {

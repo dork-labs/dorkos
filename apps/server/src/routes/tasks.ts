@@ -27,6 +27,7 @@ import { parseDuration } from '@dorkos/skills/duration';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { loadTemplates, RESERVED_TASK_DIRNAMES } from '../services/tasks/task-templates.js';
 import { parseBody } from '../lib/route-utils.js';
+import { broadcastTasksChanged } from '../services/tasks/task-sse-events.js';
 import { resolveDecisionAuthority } from '../services/core/approvals/index.js';
 import { readCallerAuthority } from '../lib/caller-authority.js';
 import {
@@ -315,6 +316,8 @@ export function createTasksRouter(
       linkPath: '/',
     });
 
+    broadcastTasksChanged();
+
     // nextRun is derived from the scheduler (not persisted on the schedule row),
     // so it must be attached here the same way the list endpoint does below —
     // otherwise a freshly created task reports nextRun: null until the next list fetch.
@@ -395,6 +398,8 @@ export function createTasksRouter(
       });
     }
 
+    broadcastTasksChanged();
+
     return res.json(updated);
   });
 
@@ -430,6 +435,8 @@ export function createTasksRouter(
       resourceLabel: schedule.displayName ?? schedule.name,
       summary: `Deleted task ${schedule.displayName ?? schedule.name}`,
     });
+
+    broadcastTasksChanged();
 
     return res.json({ success: true });
   });

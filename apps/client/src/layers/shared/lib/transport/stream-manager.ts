@@ -164,6 +164,10 @@ export const GENERIC_EVENTS = [
   'relay_flow',
   'relay_dead_letter',
   'task_run_failed',
+  // A task definition changed (created, edited, deleted). The standing
+  // unattended-autonomy banner reads it: a task dialled up to Full autonomy has
+  // to raise the banner as the form closes, not on the next page load.
+  'tasks_changed',
   'mesh_liveness_changed',
   'approval_pending',
   'approval_resolved',

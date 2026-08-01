@@ -47,6 +47,7 @@ import type {
 import type { ListActivityQuery, ListActivityResponse } from '@dorkos/shared/activity-schemas';
 import type { TemplateEntry } from '@dorkos/shared/template-catalog';
 import type { RuntimeCapabilities, SystemRequirements } from '@dorkos/shared/agent-runtime';
+import type { UnattendedAutonomyState } from '@dorkos/shared/permission-semantics';
 import type { TransportScanOptions, TransportScanEvent } from '@dorkos/shared/mesh-schemas';
 import { fetchJSON, buildQueryString } from './http-client';
 import { parseSSEStream } from './sse-parser';
@@ -374,6 +375,10 @@ export function createSystemMethods(baseUrl: string) {
 
     checkRequirements(): Promise<SystemRequirements> {
       return fetchJSON<SystemRequirements>(baseUrl, '/system/requirements');
+    },
+
+    getUnattendedAutonomy(): Promise<UnattendedAutonomyState> {
+      return fetchJSON<UnattendedAutonomyState>(baseUrl, '/system/unattended-autonomy');
     },
 
     provisionRuntime(

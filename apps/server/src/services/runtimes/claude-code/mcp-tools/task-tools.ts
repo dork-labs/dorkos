@@ -20,6 +20,7 @@ import {
   OPERATOR_ONLY_TASK_CODE,
   OPERATOR_ONLY_TASK_ERROR,
 } from '../../../tasks/task-write-policy.js';
+import { broadcastTasksChanged } from '../../../tasks/task-sse-events.js';
 
 /** Guard that returns an error response when Tasks is disabled. */
 function requireTasks(deps: McpToolDeps) {
@@ -202,6 +203,7 @@ export function createUpdateScheduleHandler(deps: McpToolDeps) {
       ...(args.maxRuntime !== undefined && { maxRuntime: args.maxRuntime }),
     });
     if (!updated) return jsonContent({ error: `Schedule ${args.id} not found` }, true);
+    broadcastTasksChanged();
     return jsonContent({ schedule: updated });
   };
 }
@@ -213,6 +215,7 @@ export function createDeleteScheduleHandler(deps: McpToolDeps) {
     if (err) return err;
     const deleted = deps.taskStore!.deleteTask(args.id);
     if (!deleted) return jsonContent({ error: `Schedule ${args.id} not found` }, true);
+    broadcastTasksChanged();
     return jsonContent({ success: true, id: args.id });
   };
 }
