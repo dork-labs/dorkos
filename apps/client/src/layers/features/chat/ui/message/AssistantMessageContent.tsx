@@ -547,7 +547,11 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
           gaps between tool calls instead of collapsing and reopening on each
           one. A message read back from history never carries it, so a reopened
           transcript shows the settled summary and nothing moves. */}
-      <TouchChipStrip parts={parts} turnActive={message._streaming === true} />
+      <TouchChipStrip
+        parts={parts}
+        sessionId={sessionId}
+        turnActive={message._streaming === true}
+      />
     </>
   );
 }

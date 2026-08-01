@@ -14,6 +14,7 @@ import { render, screen, cleanup, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { ChipShowcases } from '../showcases/ChipShowcases';
+import { SETTLED_PARTS, WORKING_PARTS } from '../showcases/chip-showcase-data';
 import { CHAT_SECTIONS } from '../sections/chat-sections';
 
 describe('ChipShowcases', () => {
@@ -83,5 +84,21 @@ describe('ChipShowcases', () => {
 
     expect(screen.getByTestId('chip-live-row')).toBeInTheDocument();
     expect(screen.getByTestId('chip-summary-read')).toBeInTheDocument();
+  });
+
+  it('gives the two side-by-side strips trays of their own', () => {
+    // They are the same turn at two moments, so the settled fixture derives
+    // from the working one — but a strip files its tray under the turn's first
+    // tool id (DOR-827), so shared ids would mean opening one tray opened the
+    // other, on one page, in front of the reviewer.
+    const working = WORKING_PARTS.filter((part) => part.type === 'tool_call').map(
+      (part) => part.toolCallId
+    );
+    const settled = SETTLED_PARTS.filter((part) => part.type === 'tool_call').map(
+      (part) => part.toolCallId
+    );
+
+    expect(working).not.toHaveLength(0);
+    expect(settled.filter((id) => working.includes(id))).toEqual([]);
   });
 });

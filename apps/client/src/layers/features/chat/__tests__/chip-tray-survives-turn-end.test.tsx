@@ -15,7 +15,7 @@
  * the row but does not decide its identity.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, act } from '@testing-library/react';
+import { render, screen, cleanup, act, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { HistoryMessage, MessagePart } from '@dorkos/shared/types';
@@ -26,7 +26,7 @@ import { setPlatformAdapter } from '@/layers/shared/lib';
 import { buildListRows } from '../lib/build-list-rows';
 import { selectRenderedMessages } from '../model/stream/derive-rendered-state';
 import { MessageItem } from '../ui/message';
-import { useTrayExpansionStore } from '../ui/chips/use-tray-expansion';
+import { useTrayExpansionStore } from '../model/view/use-tray-expansion';
 
 const SESSION_ID = 'session-under-test';
 const NOW = Date.parse('2026-08-01T12:00:00Z');
@@ -34,17 +34,20 @@ const NOW = Date.parse('2026-08-01T12:00:00Z');
 /** Five files, so one chip is absorbed into the pile and the pile is clickable. */
 const FILES = ['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts'];
 
+/** The tool each file was touched with — a mix, so a verb filter has work to do. */
+const TOOLS = ['Read', 'Read', 'Read', 'Read', 'Write'];
+
 /** The author every message in this transcript is attributed to. */
 const AUTHOR: MessageAuthor = { kind: 'agent', id: 'agent-1', displayName: 'Test Agent' };
 
-/** One `Read` tool call, as the durable stream delivers it. */
+/** One tool call, as the durable stream delivers it. */
 function readEvent(index: number): SessionEvent {
   return {
     seq: index + 2,
     type: 'tool_call',
     toolCallId: `toolu_${index}`,
-    toolName: 'Read',
-    input: JSON.stringify({ file_path: `/repo/src/${FILES[index]}` }),
+    toolName: TOOLS[index]!,
+    input: JSON.stringify({ file_path: `/repo/src/${FILES[index]}`, content: 'x' }),
     status: 'complete',
   };
 }
@@ -54,8 +57,8 @@ function settledHistory(): HistoryMessage[] {
   const parts: MessagePart[] = FILES.map((file, index) => ({
     type: 'tool_call',
     toolCallId: `toolu_${index}`,
-    toolName: 'Read',
-    input: JSON.stringify({ file_path: `/repo/src/${file}` }),
+    toolName: TOOLS[index]!,
+    input: JSON.stringify({ file_path: `/repo/src/${file}`, content: 'x' }),
     status: 'complete',
   }));
   return [
@@ -106,9 +109,16 @@ function rowKey(): string | undefined {
   return screen.getByTestId('assistant-row').dataset.rowKey;
 }
 
+/** The roster's chip labels, in the order the tray is currently listing them. */
+function rosterLabels(): string[] {
+  return within(screen.getByTestId('chip-tray-roster'))
+    .getAllByTestId('touch-chip')
+    .map((node) => node.textContent ?? '');
+}
+
 beforeEach(() => {
   useSessionStreamStore.getState().removeSession(SESSION_ID);
-  useTrayExpansionStore.setState({ open: {} });
+  useTrayExpansionStore.setState({ views: {} });
   useAppStore.setState({ sessionId: SESSION_ID, openDocuments: [], canvasOpen: false });
   setPlatformAdapter({ isEmbedded: false, openFile: async () => {} });
 });
@@ -152,6 +162,39 @@ describe('the chip tray across turn end', () => {
     // …and the tray the reader opened is still open behind the settled line.
     expect(screen.getByTestId('chip-tray')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'hide' })).toBeInTheDocument();
+  });
+
+  it('keeps the order and the filter the reader chose, not just the open tray', async () => {
+    const user = userEvent.setup();
+    const store = useSessionStreamStore.getState();
+
+    act(() => {
+      store.applyEvent(SESSION_ID, { seq: 1, type: 'turn_start' });
+      for (let i = 0; i < FILES.length; i++) store.applyEvent(SESSION_ID, readEvent(i));
+    });
+    render(<Transcript />);
+    await user.click(screen.getByTestId('chip-pile'));
+
+    // Grouped is the default, and it puts the four reads before the write.
+    expect(rosterLabels()[0]).toContain('a.ts');
+    await user.click(screen.getByRole('radio', { name: 'Chronological' }));
+    await user.click(screen.getByTestId('chip-filter-read'));
+
+    const arranged = rosterLabels();
+    expect(arranged).toHaveLength(4);
+    expect(arranged.join(' ')).not.toContain('e.ts');
+
+    act(() => {
+      store.applyEvent(SESSION_ID, { seq: 99, type: 'turn_end', terminalReason: 'completed' });
+      store.setHistoryMessages(SESSION_ID, settledHistory());
+    });
+
+    // The row was rebuilt under a new id — and the roster did not re-sort or
+    // un-narrow itself while the reader was looking at it.
+    expect(rowKey()).toBe('msg-real-transcript-uuid');
+    expect(rosterLabels()).toEqual(arranged);
+    expect(screen.getByRole('radio', { name: 'Chronological' })).toBeChecked();
+    expect(screen.getByTestId('chip-filter-read')).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('closes on the reader’s word after the swap, not on the swap', async () => {

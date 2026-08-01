@@ -95,4 +95,34 @@ describe('McpAppBlock pop-out (PIP) affordance', () => {
     // The canvas (maximize) affordance still works on mobile too.
     expect(screen.getByRole('button', { name: /open in canvas/i })).toBeInTheDocument();
   });
+
+  it('opens the App in the canvas AND reveals it, rather than into a shut panel', async () => {
+    // The canvas renders inside the right panel, so writing the legacy
+    // `canvasOpen` flag alone put the App somewhere nobody could see it
+    // (DOR-97, DOR-829). All three writes, or nothing happened.
+    useAppStore.setState({
+      openDocuments: [],
+      activeDocumentId: null,
+      canvasOpen: false,
+      rightPanelOpen: false,
+      activeRightPanelTab: null,
+    });
+    const user = userEvent.setup();
+    renderBlock();
+
+    await user.click(screen.getByRole('button', { name: /open in canvas/i }));
+
+    const { openDocuments, canvasOpen, rightPanelOpen, activeRightPanelTab } =
+      useAppStore.getState();
+    expect(openDocuments).toHaveLength(1);
+    expect(openDocuments[0].content).toEqual({
+      type: 'mcp_app',
+      serverName: 'fixture-app',
+      uri: 'ui://dash/main',
+      title: 'Dash',
+    });
+    expect(canvasOpen).toBe(true);
+    expect(rightPanelOpen).toBe(true);
+    expect(activeRightPanelTab).toBe('canvas');
+  });
 });

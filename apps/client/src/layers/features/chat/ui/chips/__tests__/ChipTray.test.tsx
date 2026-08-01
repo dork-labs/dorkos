@@ -5,8 +5,43 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
-import type { TouchChip } from '../../../lib/touch-chips';
+import { useState } from 'react';
+import type { TouchChip, TouchChipVerb } from '../../../lib/touch-chips';
+import type { ChipOrder } from '../../../model/view/use-tray-expansion';
 import { ChipTray, sortChips } from '../ChipTray';
+
+/**
+ * The tray, driven the way the strip drives it.
+ *
+ * The tray is controlled: its filter and order belong to the strip, which holds
+ * them where a turn ending cannot destroy them (DOR-827). These tests are about
+ * what the tray does with them, so this supplies the smallest thing that owns
+ * them. The wiring to the real store is pinned end-to-end in
+ * `features/chat/__tests__/chip-tray-survives-turn-end.test.tsx`.
+ */
+function Tray({
+  chips,
+  onOpen,
+  id,
+}: {
+  chips: TouchChip[];
+  onOpen: (chip: TouchChip) => void;
+  id?: string;
+}) {
+  const [verbFilter, setVerbFilter] = useState<TouchChipVerb | null>(null);
+  const [order, setOrder] = useState<ChipOrder>('grouped');
+  return (
+    <ChipTray
+      id={id}
+      chips={chips}
+      onOpen={onOpen}
+      verbFilter={verbFilter}
+      onVerbFilterChange={setVerbFilter}
+      order={order}
+      onOrderChange={setOrder}
+    />
+  );
+}
 
 /** Build a chip directly — the tray takes a roster, not a transcript. */
 function chip(overrides: Partial<TouchChip> & Pick<TouchChip, 'label' | 'verb'>): TouchChip {
@@ -47,7 +82,7 @@ afterEach(() => {
 
 describe('ChipTray', () => {
   it('renders the whole roster and counts each verb', () => {
-    render(<ChipTray chips={ROSTER} onOpen={vi.fn()} />);
+    render(<Tray chips={ROSTER} onOpen={vi.fn()} />);
 
     expect(renderedLabels()).toHaveLength(3);
     expect(screen.getByTestId('chip-filter-read').textContent).toBe('📖Read2');
@@ -56,7 +91,7 @@ describe('ChipTray', () => {
 
   it('narrows to one verb, then back to everything', async () => {
     const user = userEvent.setup();
-    render(<ChipTray chips={ROSTER} onOpen={vi.fn()} />);
+    render(<Tray chips={ROSTER} onOpen={vi.fn()} />);
 
     await user.click(screen.getByTestId('chip-filter-read'));
     expect(renderedLabels()).toHaveLength(2);
@@ -70,7 +105,7 @@ describe('ChipTray', () => {
 
   it('keeps the filter counts steady while a filter is on', async () => {
     const user = userEvent.setup();
-    render(<ChipTray chips={ROSTER} onOpen={vi.fn()} />);
+    render(<Tray chips={ROSTER} onOpen={vi.fn()} />);
 
     await user.click(screen.getByTestId('chip-filter-read'));
 
@@ -80,7 +115,7 @@ describe('ChipTray', () => {
 
   it('reorders between grouped and chronological', async () => {
     const user = userEvent.setup();
-    render(<ChipTray chips={ROSTER} onOpen={vi.fn()} />);
+    render(<Tray chips={ROSTER} onOpen={vi.fn()} />);
 
     // Grouped: reads come before edits in the canonical verb order, even though
     // the edit happened first.
@@ -96,7 +131,7 @@ describe('ChipTray', () => {
   it('names its default order for what it groups by', () => {
     // "Kind" was the wrong word: this groups by what HAPPENED to a target, and
     // a chip's kind is the different question of file-vs-link-vs-command.
-    render(<ChipTray chips={ROSTER} onOpen={vi.fn()} />);
+    render(<Tray chips={ROSTER} onOpen={vi.fn()} />);
 
     expect(screen.getByRole('radio', { name: 'Grouped' })).toBeChecked();
   });
@@ -138,7 +173,7 @@ describe('sortChips', () => {
   });
 
   it('is a labelled region the disclosure can point at', () => {
-    render(<ChipTray id="tray-1" chips={ROSTER} onOpen={vi.fn()} />);
+    render(<Tray id="tray-1" chips={ROSTER} onOpen={vi.fn()} />);
 
     const tray = screen.getByTestId('chip-tray');
     expect(tray).toHaveAttribute('id', 'tray-1');
@@ -147,7 +182,7 @@ describe('sortChips', () => {
   });
 
   it('bounds its own height rather than growing the transcript', () => {
-    render(<ChipTray chips={ROSTER} onOpen={vi.fn()} />);
+    render(<Tray chips={ROSTER} onOpen={vi.fn()} />);
 
     const roster = screen.getByTestId('chip-tray-roster');
     expect(roster.className).toContain('max-h-60');
@@ -157,7 +192,7 @@ describe('sortChips', () => {
   it('hands a clicked chip back to its opener', async () => {
     const user = userEvent.setup();
     const onOpen = vi.fn();
-    render(<ChipTray chips={ROSTER} onOpen={onOpen} />);
+    render(<Tray chips={ROSTER} onOpen={onOpen} />);
 
     await user.click(screen.getByRole('button', { name: 'Read /repo/read-early.ts' }));
 
