@@ -18,7 +18,11 @@
  * @module test-utils/runtime-conformance
  */
 import { describe, expect, it } from 'vitest';
-import type { AgentRuntime, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
+import type {
+  AgentRuntime,
+  RuntimeCapabilities,
+  SessionSettingsPort,
+} from '@dorkos/shared/agent-runtime';
 import { needsConsentRitual } from '@dorkos/shared/permission-semantics';
 import {
   ErrorEventSchema,
@@ -159,6 +163,24 @@ function nextSessionId(): string {
 }
 
 /**
+ * The durable settings store as a runtime sees it (ADR-0260), recording every
+ * re-key it is asked to perform. Reads return nothing so the runtime falls back
+ * to its own defaults — the subject here is which id the settings are FILED
+ * under, not what they contain.
+ */
+function recordingSettingsPort(): SessionSettingsPort & { rekeyCalls: Array<[string, string]> } {
+  const rekeyCalls: Array<[string, string]> = [];
+  return {
+    rekeyCalls,
+    getSessionSettings: async () => null,
+    saveSessionSettings: async () => {},
+    rekeySessionSettings: async (fromId: string, toId: string) => {
+      rekeyCalls.push([fromId, toId]);
+    },
+  };
+}
+
+/**
  * Register the shared AgentRuntime conformance suite for one runtime.
  *
  * Call at the top level of a Vitest test file. The factory is invoked once
@@ -278,6 +300,43 @@ export function runtimeConformance(
         for (const id of [sessionId, nextSessionId()]) {
           const canonical = runtime.getInternalSessionId(id) ?? id;
           expect(runtime.getInternalSessionId(canonical) ?? canonical).toBe(canonical);
+        }
+      });
+
+      it('a session that gains a canonical id takes its stored settings with it', async () => {
+        // The other half of the alias contract above (DOR-493). An alias splits
+        // the id a session's settings were written under from the id every later
+        // read and turn will ask by, so a runtime that mints one MUST move the
+        // row. Leaving it behind reverts the ENFORCED permission mode to the
+        // runtime default on the first turn after an eviction or restart — the
+        // agent silently stops asking, or starts.
+        const runtime = makeRuntime();
+        const sessionId = nextSessionId();
+        runtime.ensureSession(sessionId, sessionOpts());
+
+        if (!runtime.setSessionSettings) {
+          // No durable-settings port at all (a stateless adapter). Nothing can be
+          // stranded — but only for as long as it also never aliases, so that is
+          // what the contract holds it to.
+          expect(
+            runtime.getInternalSessionId(sessionId) ?? sessionId,
+            'a runtime that aliases session ids must accept a settings port so it can re-key'
+          ).toBe(sessionId);
+          return;
+        }
+
+        const port = recordingSettingsPort();
+        runtime.setSessionSettings(port);
+        await drainTurn(runtime, sessionId);
+
+        const canonical = runtime.getInternalSessionId(sessionId);
+        if (canonical !== undefined && canonical !== sessionId) {
+          expect(
+            port.rekeyCalls,
+            `rebound '${sessionId}' to '${canonical}' but left its settings row behind`
+          ).toContainEqual([sessionId, canonical]);
+        } else {
+          expect(port.rekeyCalls, 'no alias was minted, so nothing may be re-keyed').toEqual([]);
         }
       });
     });

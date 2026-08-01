@@ -513,13 +513,28 @@ export class RuntimeRegistry {
    * The whole row moves, not just the settings columns: the row describes ONE
    * session, and that session's id changed — `runtime`, `agentPath` and
    * `createdAt` belong with it. Ownership stays immutable (ADR-0255): when a row
-   * already exists under `toId` its `runtime` is left untouched and only the
-   * settings are merged in, source-wins per field, with a NULL source column
-   * leaving the destination's value alone. A destination that has no runtime yet
-   * is the one exception, and it is the same rule rather than a hole in it —
-   * there is no ownership there to keep, so the source's binding travels with
-   * the row it belongs to. The source row is deleted in the same transaction, so
-   * no id ever holds a second copy.
+   * already exists under `toId` its `runtime` is left untouched. A destination
+   * that has no runtime yet is the one exception, and it is the same rule rather
+   * than a hole in it — there is no ownership there to keep, so the source's
+   * binding travels with the row it belongs to. The source row is deleted in the
+   * same transaction, so the move never leaves a second copy behind.
+   *
+   * **The DESTINATION wins each settings field it has a value for, and the
+   * source only fills the gaps** — a re-key must never replace a newer operator
+   * choice with an older one. The source row is by construction the older of the
+   * two: nobody can write under `toId` before the runtime announces that id, and
+   * from the instant it does, every write resolves there. So a non-NULL
+   * destination column can only have been written AFTER the source row — which
+   * happens for real, in the window between the SDK assigning the canonical id
+   * and this call completing. Source-wins in that window reinstated the mode the
+   * operator had just moved away from, including "act without asking".
+   *
+   * What this does NOT promise: that a session can never have two rows again. A
+   * stale client still holding the retired id and POSTing under it makes
+   * {@link RuntimeRegistry.persistSessionRuntime} mint a fresh row for that id —
+   * this moves the row, it does not reserve the id it left. Re-minting is
+   * tracked separately (DOR-837); do not read this as a uniqueness guarantee the
+   * schema does not enforce.
    *
    * @param fromId - The id the row is stored under today
    * @param toId - The canonical id the session is now known by
@@ -549,10 +564,10 @@ export class RuntimeRegistry {
       tx.update(sessionMetadata)
         .set({
           runtime: destination.runtime ?? source.runtime,
-          permissionMode: source.permissionMode ?? destination.permissionMode,
-          model: source.model ?? destination.model,
-          effort: source.effort ?? destination.effort,
-          fastMode: source.fastMode ?? destination.fastMode,
+          permissionMode: destination.permissionMode ?? source.permissionMode,
+          model: destination.model ?? source.model,
+          effort: destination.effort ?? source.effort,
+          fastMode: destination.fastMode ?? source.fastMode,
           agentPath: destination.agentPath ?? source.agentPath,
         })
         .where(eq(sessionMetadata.sessionId, toId))

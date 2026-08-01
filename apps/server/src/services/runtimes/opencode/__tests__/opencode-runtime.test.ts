@@ -139,10 +139,13 @@ function createProvider(client: MockClient | null) {
 function createSettingsPort(): SessionSettingsPort & {
   getSessionSettings: ReturnType<typeof vi.fn>;
   saveSessionSettings: ReturnType<typeof vi.fn>;
+  rekeySessionSettings: ReturnType<typeof vi.fn>;
 } {
   return {
     getSessionSettings: vi.fn(async () => null),
     saveSessionSettings: vi.fn(async () => undefined),
+    // OpenCode never aliases a session id, so it never re-keys (DOR-493).
+    rekeySessionSettings: vi.fn(async () => undefined),
   };
 }
 

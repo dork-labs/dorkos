@@ -231,6 +231,81 @@ describe('claude-code session-settings re-key on canonical-id rebind (DOR-493)',
     expect(sessions[0]?.permissionMode).toBe('plan');
   });
 
+  it('never lets the retired row overwrite a newer choice made under the canonical id', async () => {
+    // The re-key merges two rows, and the source is the OLDER of the two. A
+    // settings write can land on the canonical id between the SDK announcing it
+    // and the re-key firing, so a source-wins merge would reinstate the mode the
+    // operator just moved away from — an agent acting without asking, which is
+    // the exact failure this ticket exists to remove.
+    await registry.persistSessionRuntime(REQUEST_ID, 'claude-code');
+    await runtime.updateSession(REQUEST_ID, { permissionMode: 'bypassPermissions' });
+
+    mockedQuery.mockClear();
+    mockedQuery.mockReturnValue(wrapSdkQuery(sdkSimpleText('ok', CANONICAL_ID)));
+    let wrote = false;
+    for await (const _event of runtime.sendMessage(REQUEST_ID, 'hello')) {
+      // The first mapped event proves the SDK has announced the canonical id;
+      // the PATCH route resolves to it from here on, so this is where a
+      // concurrent settings write lands.
+      if (!wrote && runtime.getInternalSessionId(REQUEST_ID) === CANONICAL_ID) {
+        wrote = true;
+        await registry.saveSessionSettings(CANONICAL_ID, { permissionMode: 'plan' });
+      }
+    }
+    expect(wrote, 'the interleaving never happened — this test proved nothing').toBe(true);
+
+    const rows = db.select().from(sessionMetadata).all();
+    expect(rows.map((r) => r.sessionId)).toEqual([CANONICAL_ID]);
+    expect(rows[0]?.permissionMode).toBe('plan');
+  });
+
+  it('does not let the next turn under the canonical id count as a second new session', async () => {
+    // `persistSessionRuntime` returning true is the once-per-session signal the
+    // POST /messages route fires `session_created` usage telemetry on. The row
+    // used to stay under the request id, so the FIRST post under the canonical
+    // id — which is every post after the client re-keys — inserted a fresh row,
+    // returned true, and counted the same session twice.
+    const firstPost = await registry.persistSessionRuntime(REQUEST_ID, 'claude-code');
+    expect(firstPost, 'the session was never minted — this test proved nothing').toBe(true);
+
+    await runTurn(REQUEST_ID, CANONICAL_ID);
+
+    // The client re-keyed to the canonical id; this is its next message.
+    const nextPost = await registry.persistSessionRuntime(CANONICAL_ID, 'claude-code');
+
+    expect(nextPost).toBe(false);
+    expect(db.select().from(sessionMetadata).all()).toHaveLength(1);
+  });
+
+  it('survives a settings-store failure without killing the turn', async () => {
+    // Before DOR-493 the rebind was Map writes that could not throw. It now
+    // awaits a database write, so a failing store must not take the turn — and
+    // the id alias must still be published, or approvals, interrupt and the
+    // event stream all stop resolving by the canonical id for the rest of the
+    // session's life.
+    const boom = vi
+      .spyOn(registry, 'rekeySessionSettings')
+      .mockRejectedValue(new Error('database is locked'));
+    await registry.persistSessionRuntime(REQUEST_ID, 'claude-code');
+    await runtime.updateSession(REQUEST_ID, { permissionMode: 'plan' });
+
+    mockedQuery.mockClear();
+    mockedQuery.mockReturnValue(wrapSdkQuery(sdkSimpleText('ok', CANONICAL_ID)));
+    const events: string[] = [];
+    for await (const event of runtime.sendMessage(REQUEST_ID, 'hello')) {
+      events.push(event.type);
+    }
+
+    expect(boom).toHaveBeenCalledWith(REQUEST_ID, CANONICAL_ID);
+    // The turn ran to its terminal event and reported no failure to the client.
+    expect(events).toContain('done');
+    expect(events).not.toContain('error');
+    // The alias is published even though the row could not move.
+    expect(runtime.hasSession(CANONICAL_ID)).toBe(true);
+    expect(runtime.getInternalSessionId(CANONICAL_ID)).toBe(CANONICAL_ID);
+    boom.mockRestore();
+  });
+
   it('does not re-key when the SDK keeps the id it was given (resumed session)', async () => {
     await registry.persistSessionRuntime(CANONICAL_ID, 'claude-code');
     await runtime.updateSession(CANONICAL_ID, { permissionMode: 'acceptEdits' });

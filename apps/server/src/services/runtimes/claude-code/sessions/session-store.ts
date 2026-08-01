@@ -84,6 +84,17 @@ export class SessionStore {
    * flight is being tracked by the id it started under. Eviction sweeps the
    * whole chain, so nothing outlives the session.
    *
+   * The row moves FIRST, and a failure to move it can neither fail the turn nor
+   * hold back the index. This runs mid-stream: before DOR-493 the rebind was Map
+   * writes that could not throw, and a settings store that is briefly
+   * unavailable must not become a lost turn on a step that never used to have a
+   * failure mode. Publishing the alias anyway is deliberate — `sdkSessionId` has
+   * ALREADY changed by the time this is called, so the index is only catching up
+   * to a fact, and withholding it would leave approvals, interrupt, and the
+   * event stream unable to resolve the canonical id for the rest of the session.
+   * A store failure therefore lands exactly where the pre-DOR-493 code always
+   * did — row under the old id, turn unaffected — plus a warning.
+   *
    * @param previousSdkSessionId - The canonical id held until now
    * @param nextSdkSessionId - The canonical id the SDK just assigned
    * @param requestedSessionId - The id the turn was asked with, as a lookup hint
@@ -94,22 +105,32 @@ export class SessionStore {
     requestedSessionId: string
   ): Promise<void> {
     if (previousSdkSessionId === nextSdkSessionId) return;
+    // Resolved before the await: the maps can be swept while it is pending, and
+    // the key this rebind is about is the one that existed when it started.
     const sessionMapKey =
       this.resolveMapKey(requestedSessionId) ?? this.resolveMapKey(previousSdkSessionId);
+    try {
+      await this.settingsPort?.rekeySessionSettings(previousSdkSessionId, nextSdkSessionId);
+    } catch (err) {
+      logger.warn('[rebindSdkSession] settings re-key failed; row stays under the previous id', {
+        previousSdkSessionId,
+        nextSdkSessionId,
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
     if (sessionMapKey) {
       this.sdkSessionIndex.set(previousSdkSessionId, sessionMapKey);
       this.sdkSessionIndex.set(nextSdkSessionId, sessionMapKey);
     } else {
-      // The session was evicted mid-turn. Nothing to index, but the durable
-      // settings row below still has to follow the id, or the operator's mode
-      // reverts on the next cold resume.
+      // The session was evicted mid-turn. Nothing to index — but the settings
+      // row still had to follow the id above, or the operator's mode reverts on
+      // the next cold resume.
       logger.warn('[rebindSdkSession] no live session for rebind; indexed nothing', {
         requestedSessionId,
         previousSdkSessionId,
         nextSdkSessionId,
       });
     }
-    await this.settingsPort?.rekeySessionSettings(previousSdkSessionId, nextSdkSessionId);
   }
 
   /** The key a session is stored under, given any id it answers to. */
