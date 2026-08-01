@@ -11,7 +11,6 @@ import { useSessionId, useDefaultCwd, useDirectoryState } from '@/layers/entitie
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
 import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import { PanelLeft } from 'lucide-react';
-import { PermissionBanner } from '@/layers/widgets/app-banner';
 import { EmbedSidebar } from '@/layers/features/session-list';
 import { ChatPanel } from '@/layers/features/chat';
 import {
@@ -130,7 +129,6 @@ export function App({ transformContent }: AppProps) {
           data-testid="app-shell"
           className="bg-background text-foreground relative flex h-full flex-col"
         >
-          <PermissionBanner sessionId={activeSessionId} />
           <div className="relative flex-1 overflow-hidden">
             {/* Overlay sidebar — always uses overlay pattern in embedded mode */}
             <AnimatePresence>

@@ -2,25 +2,6 @@ import { useConfig } from '@/layers/entities/config';
 import { TelemetryConsentBanner } from '@/layers/features/telemetry-consent';
 
 import { BANNER_PRIORITY, type BannerDescriptor } from './banner-descriptor';
-import { usePermissionBypassed } from './use-permission-bypassed';
-import { PermissionBanner } from '../ui/PermissionBanner';
-
-/**
- * Permission-bypass banner descriptor — warning severity, eligible only while the
- * active session runs with every permission bypassed.
- *
- * @param sessionId - The active session id, or null when none is selected.
- */
-function usePermissionBannerDescriptor(sessionId: string | null): BannerDescriptor | null {
-  const bypassed = usePermissionBypassed(sessionId);
-  if (!bypassed) return null;
-  return {
-    id: 'permission-bypass',
-    variant: 'warning',
-    priority: BANNER_PRIORITY.warning,
-    render: () => <PermissionBanner sessionId={sessionId} />,
-  };
-}
 
 /**
  * First-run telemetry-consent descriptor — neutral severity, eligible until the
@@ -43,10 +24,24 @@ function useTelemetryBannerDescriptor(): BannerDescriptor | null {
  * the result and shows the highest-priority one. Add a banner by writing a
  * descriptor hook and appending its result here — no other wiring is required.
  *
+ * ## The bypass banner that used to live here
+ *
+ * A session running with every permission bypassed raised a standing app-wide
+ * banner. It is gone (spec `trust-dial`, decision 3A): it said the same thing the
+ * status strip already says, in a second voice, about a session the person was
+ * sitting in front of — and two alarms for one fact teach people to read neither.
+ * The signal now lives where the setting does: the strip's word and tint, and the
+ * per-row glyph in the session list.
+ *
+ * The case it was right about is **unattended** autonomy — an agent left running
+ * without asking behind a relay binding or a scheduled task, where nobody is
+ * watching the strip. That banner is not built: it needs binding and task state
+ * this widget does not fetch (and must not fetch on every route), and its own
+ * rules about what counts as unattended. Tracked as follow-up, not forgotten.
+ *
  * @param sessionId - The active session id, or null when none is selected.
  */
-export function useAppBanners(sessionId: string | null): BannerDescriptor[] {
-  const permission = usePermissionBannerDescriptor(sessionId);
+export function useAppBanners(_sessionId: string | null): BannerDescriptor[] {
   const telemetry = useTelemetryBannerDescriptor();
-  return [permission, telemetry].filter((d): d is BannerDescriptor => d !== null);
+  return [telemetry].filter((d): d is BannerDescriptor => d !== null);
 }
