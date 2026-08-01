@@ -1,7 +1,7 @@
 ---
 id: 260801-141804
 title: Touch chips derive client-side from transcript parts, append-then-merge
-status: draft
+status: accepted
 created: 2026-08-01
 spec: chat-touch-chips
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: chat-touch-chips)
+Accepted (implemented 2026-08-01, main `b9625af05`, PR #694)
 
 ## Context
 
