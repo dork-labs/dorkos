@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
+import { configManager } from '../services/core/config-manager.js';
 import { reportUsageEvent } from '../services/core/usage-reporter.js';
 import {
   UpdateSessionRequestSchema,
@@ -17,6 +18,7 @@ import type { PermissionMode } from '@dorkos/shared/types';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { MeshCore } from '@dorkos/mesh';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
+import { isAutonomyStop } from '@dorkos/shared/permission-semantics';
 import { readManifest } from '@dorkos/shared/manifest';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { assertBoundary, parseSessionId, sendError } from '../lib/route-utils.js';
@@ -238,6 +240,34 @@ function rejectUndeclaredPermissionMode(
   return `The ${runtime.type} runtime cannot run permission mode '${permissionMode}'. It supports: ${ids.join(', ')}.`;
 }
 
+/**
+ * Whether the mode this request asks for is the runtime's Full-autonomy stop.
+ *
+ * Resolves the descriptor and applies the ONE shared rule
+ * ({@link isAutonomyStop}) the dial itself applies, so the door and the control
+ * that opens it can never disagree about which mode is which.
+ *
+ * @param runtime - The runtime that owns the session being updated.
+ * @param permissionMode - The mode the request asks to store.
+ */
+function asksForAutonomy(runtime: AgentRuntime, permissionMode: PermissionMode): boolean {
+  const declared = runtime.getCapabilities().permissionModes;
+  const descriptor = declared.values.find((d) => d.id === permissionMode);
+  return descriptor !== undefined && isAutonomyStop(descriptor);
+}
+
+/**
+ * Whether this person has a standing acknowledgement of what Full autonomy
+ * means on file (`ui.autonomyAcknowledgedAt`, spec `trust-dial` decision 5).
+ *
+ * Read fresh on each request rather than cached: clearing it in Settings has to
+ * bring the dialog back on the very next mode change, not after a restart.
+ */
+function hasStandingAutonomyAck(): boolean {
+  const ui = configManager.get('ui') as { autonomyAcknowledgedAt?: string | null } | undefined;
+  return typeof ui?.autonomyAcknowledgedAt === 'string' && ui.autonomyAcknowledgedAt.length > 0;
+}
+
 // PATCH /api/sessions/:id - Update session settings
 router.patch('/:id', async (req, res) => {
   const sessionId = parseSessionId(req.params.id);
@@ -247,7 +277,7 @@ router.patch('/:id', async (req, res) => {
   if (!parsed.success) {
     return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
   }
-  const { permissionMode, model, effort, fastMode, title } = parsed.data;
+  const { permissionMode, model, effort, fastMode, title, acknowledgedAutonomy } = parsed.data;
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
   // `PermissionModeSchema` says only that the id is one DorkOS knows about; it
   // does NOT say the session's runtime can run it. Persisting an undeclared id
@@ -259,6 +289,69 @@ router.patch('/:id', async (req, res) => {
   if (permissionMode !== undefined) {
     const modeError = rejectUndeclaredPermissionMode(runtime, permissionMode);
     if (modeError) return sendError(res, 400, modeError, 'UNSUPPORTED_PERMISSION_MODE');
+    // ## THE AUTONOMY DOOR (spec `trust-dial`, decision 5)
+    //
+    // Full autonomy is the one stop a person cannot walk back: the agent stops
+    // asking, so by the time they notice they did not mean it, it has already
+    // happened. Every other stop is one click and instantly reversible. So this
+    // one asks first — and the asking is checked HERE, because a gate that only
+    // exists in one client's dialog is not a gate. A second cockpit tab, a
+    // script, or a keyboard arrow that selects on focus would each walk straight
+    // past it.
+    //
+    // The request satisfies the door with `acknowledgedAutonomy: true`, or with
+    // the standing record a person leaves behind by ticking "don't show this
+    // again". Both are checked on EVERY autonomy PATCH: the checkbox trades a
+    // repeated ritual for a recorded one, and never weakens the contract.
+    //
+    // ### What this is not
+    //
+    // It is a consent ritual for a person, not a boundary against a caller. Any
+    // program that can reach this route can send `acknowledgedAutonomy: true`
+    // itself, and nothing here can tell it from the cockpit. What it buys is
+    // that a person cannot arrive in Full autonomy without having been told what
+    // it means. The boundary for agent callers is separate work
+    // (`agent-approval-settings`, DOR-501); do not describe this as covering it.
+    //
+    // ### Scope: this route is not the only way into an autonomy mode
+    //
+    // It gates the interactive CHANGE, and nothing else, so read the other ways
+    // in as deliberately out of scope rather than as gaps nobody noticed:
+    //
+    // - **Relay bindings, task execution, room turns.** All create and drive
+    //   sessions in-process via `ensureSession` and never reach this route. They
+    //   keep their own, stricter gates — the bypass clamp on file-sourced
+    //   schedules among them.
+    // - **A runtime's own default.** A session is BORN at whatever mode its
+    //   runtime declares as default, with no PATCH and therefore no door;
+    //   `test-mode` is born at its autonomy stop, which is the entire point of
+    //   that runtime. What keeps that honest is the separate invariant that no
+    //   production runtime may default to a stop that stops asking, enforced per
+    //   runtime by the conformance suite and across the whole set by
+    //   `services/runtimes/__tests__/permission-semantics.test.ts`. This door
+    //   would be the wrong place for it: there is no request to refuse.
+    // - **Obsidian.** `DirectTransport` calls `runtime.updateSession` in-process
+    //   and bypasses this route entirely, so the embedded cockpit's dial is
+    //   gated by its dialog alone. Pre-existing property of that seam, widened
+    //   by nothing here; the checkbox is withheld there for a related reason
+    //   (see `AutonomyConfirmDialog`).
+    if (asksForAutonomy(runtime, permissionMode) && !acknowledgedAutonomy) {
+      if (!hasStandingAutonomyAck()) {
+        // 428, not 400. The body is well-formed and the mode is one this runtime
+        // genuinely offers — nothing about the request is malformed, so calling
+        // it a validation failure would be false. What is missing is a
+        // precondition the caller can go and satisfy before retrying the
+        // identical request, which is the one thing 428 says and no other 4xx
+        // does: 403 would claim they may never do this, and 409 would claim
+        // something changed underneath them.
+        return sendError(
+          res,
+          428,
+          'Turning on Full autonomy needs you to confirm what it means first.',
+          'AUTONOMY_ACK_REQUIRED'
+        );
+      }
+    }
   }
   // Translate client-facing session ID to backend-internal session ID (same as GET /:id).
   // After a session remap the client uses the SDK UUID directly; without this translation

@@ -9,6 +9,18 @@ import type { SessionSnapshot } from '@dorkos/shared/session-stream';
 // Mocks (hoisted before the component import)
 // ──────────────────────────────────────────────────────────────────────────────
 
+// The Trust Dial reads the standing Full-autonomy acknowledgement from user
+// config before it sends one. Stubbed to "nobody has acknowledged anything",
+// which is the shipped state and the one every case below assumes.
+vi.mock('@/layers/entities/config/model/use-autonomy-acknowledgement', () => ({
+  useAutonomyAcknowledgement: () => ({
+    acknowledgedAt: null,
+    acknowledge: vi.fn(),
+    clear: vi.fn(),
+    isPending: false,
+  }),
+}));
+
 vi.mock('@/layers/shared/model/media/use-is-mobile', () => ({ useIsMobile: () => false }));
 
 vi.mock('@/layers/entities/runtime', async (importOriginal) => ({

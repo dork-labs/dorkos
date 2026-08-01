@@ -198,6 +198,20 @@ export type SessionSettings = z.infer<typeof SessionSettingsSchema>;
 
 export const UpdateSessionRequestSchema = SessionSettingsSchema.extend({
   title: z.string().min(1).max(200).optional(),
+  /**
+   * "The person asked for this, and they were told what it means." Required —
+   * as this flag or as the standing record in `ui.autonomyAcknowledgedAt` — on
+   * any request that moves an interactive session to a Full-autonomy mode, and
+   * ignored on every other request (spec `trust-dial`, decision 5).
+   *
+   * Deliberately NOT part of {@link SessionSettingsSchema}: it is a statement
+   * about this one request, not a setting. Nothing persists it, and the next
+   * PATCH has to say it again.
+   *
+   * It proves a ritual happened, not an identity. Any caller can send `true`;
+   * see `ui.autonomyAcknowledgedAt` for what this does and does not defend.
+   */
+  acknowledgedAutonomy: z.boolean().optional(),
 }).openapi('UpdateSessionRequest');
 
 export type UpdateSessionRequest = z.infer<typeof UpdateSessionRequestSchema>;
@@ -2560,6 +2574,10 @@ export const ServerConfigSchema = z
         // config-schema.ts; promoted from client localStorage so agents/devices
         // can read and flip status-bar item visibility.
         statusBar: StatusBarPrefsSchema,
+        autonomyAcknowledgedAt: z.string().nullable().openapi({
+          description:
+            'When this person last acknowledged what Full autonomy means and asked not to be shown the dialog again (ISO 8601), or null. The cockpit sends the standing acknowledgement on every autonomy PATCH from here',
+        }),
       })
       .optional()
       .openapi({ description: 'Cockpit UI preferences surfaced to the client' }),

@@ -528,6 +528,14 @@ registry.registerPath({
   path: '/api/sessions/{id}',
   tags: ['Sessions'],
   summary: 'Update session settings',
+  description:
+    'Moving an interactive session to a Full-autonomy permission mode (one the ' +
+    'runtime declares at the `autonomy` stop) requires an acknowledgement: either ' +
+    '`acknowledgedAutonomy: true` on this request, or the standing record in ' +
+    '`ui.autonomyAcknowledgedAt`. Without one the response is `428 ' +
+    'AUTONOMY_ACK_REQUIRED` and nothing is persisted — obtain consent and retry ' +
+    'the identical request (spec `trust-dial`, decision 5). This is a consent ' +
+    'ritual for a person, not a boundary against a caller.',
   request: {
     params: z.object({ id: z.string().uuid() }),
     body: {
@@ -540,11 +548,16 @@ registry.registerPath({
       content: { 'application/json': { schema: SessionSchema } },
     },
     400: {
-      description: 'Validation error',
+      description: 'Validation error, or a permission mode the runtime does not declare',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     404: {
       description: 'Session not found',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    428: {
+      description:
+        'Full autonomy was requested without an acknowledgement (`AUTONOMY_ACK_REQUIRED`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

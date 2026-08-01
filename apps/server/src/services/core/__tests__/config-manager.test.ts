@@ -13,6 +13,7 @@ import {
   backfillSidebarDefaults,
   backfillShapesDefaults,
   migrateStatusBarToPins,
+  backfillAutonomyAcknowledgement,
   backfillSidebarSettingsDefaults,
   backfillSidebarRoomSections,
   backfillRoomsDefaults,
@@ -1057,6 +1058,56 @@ describe('backfillShapesDefaults migration (DOR-355)', () => {
   });
 });
 
+describe('backfillAutonomyAcknowledgement migration (spec trust-dial, decision 5)', () => {
+  it('fresh install: nobody has acknowledged anything', () => {
+    expect(USER_CONFIG_DEFAULTS.ui.autonomyAcknowledgedAt).toBeNull();
+  });
+
+  it('upgraded install: seeds null onto an existing ui block, preserving the rest', () => {
+    const store = createMockStore({
+      ui: { theme: 'dark', statusBar: { pins: ['git'] } },
+    });
+    backfillAutonomyAcknowledgement(store);
+    expect(store.data.ui).toEqual({
+      theme: 'dark',
+      statusBar: { pins: ['git'] },
+      autonomyAcknowledgedAt: null,
+    });
+  });
+
+  it('never hands out a consent nobody gave', () => {
+    // The direction that matters. An upgrade that seeded a timestamp would
+    // silence the door for every existing install, and nobody would have chosen
+    // that — so the seeded value is the one that keeps asking.
+    const store = createMockStore({ ui: { theme: 'system' } });
+    backfillAutonomyAcknowledgement(store);
+    const parsed = UserConfigSchema.parse({ version: 1, ui: store.data.ui });
+    expect(parsed.ui.autonomyAcknowledgedAt).toBeNull();
+  });
+
+  it('is idempotent — never overwrites an acknowledgement already on file', () => {
+    const existing = { theme: 'system', autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' };
+    const store = createMockStore({ ui: structuredClone(existing) });
+    backfillAutonomyAcknowledgement(store);
+    expect(store.data.ui).toEqual(existing);
+  });
+
+  it('leaves a cleared acknowledgement cleared', () => {
+    // `null` is a real, chosen value here — somebody pressed Reset in Settings.
+    // Re-running the migration (corrupt recovery, a hand-edited version key)
+    // must not read "no timestamp" as "never migrated".
+    const store = createMockStore({ ui: { theme: 'system', autonomyAcknowledgedAt: null } });
+    backfillAutonomyAcknowledgement(store);
+    expect(store.data.ui).toEqual({ theme: 'system', autonomyAcknowledgedAt: null });
+  });
+
+  it('is a no-op when the ui section is absent (the defaults merge owns that case)', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    backfillAutonomyAcknowledgement(store);
+    expect(store.data.ui).toBeUndefined();
+  });
+});
+
 describe('migrateStatusBarToPins migration (DOR-431, DOR-452)', () => {
   /** The retired ten-boolean visibility shape, only ever written pre-release. */
   const RETIRED_TOGGLES = {
@@ -1162,6 +1213,14 @@ describe('migrateStatusBarToPins migration (DOR-431, DOR-452)', () => {
     });
     // The connector-completion `connectors` backfill rides the same composite.
     expect(store.data.connectors).toEqual({ rawMcpServers: [] });
+  });
+
+  it('composes the autonomy-acknowledgement backfill into the same key', () => {
+    // The standing Full-autonomy acknowledgement (spec `trust-dial`, decision 5)
+    // rides this composite too — asserted by effect, since the key is shared.
+    const store = createMockStore({ ui: { theme: 'dark' } });
+    CONFIG_MIGRATIONS['0.57.0'](store);
+    expect(store.data.ui).toMatchObject({ autonomyAcknowledgedAt: null });
   });
 
   it('composes the claude-code-accounts backfill into the same key', () => {

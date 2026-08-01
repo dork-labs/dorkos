@@ -24,4 +24,5 @@ export { usePendingApprovals } from './model/use-pending-approvals';
 export { StandingPermissionList } from './ui/StandingPermissionList';
 export { StandingPermissionsUnavailable } from './ui/StandingPermissionsUnavailable';
 export { StandingPermissionsSettings } from './ui/StandingPermissionsSettings';
+export { AutonomyAcknowledgementRow } from './ui/AutonomyAcknowledgementRow';
 export { useStandingPermissions } from './model/use-standing-permissions';

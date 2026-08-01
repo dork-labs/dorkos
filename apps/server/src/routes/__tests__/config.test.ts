@@ -814,6 +814,39 @@ describe('GET /api/config', () => {
     expect(res.body.ui.statusBar).toBeDefined();
     expect(res.body.ui.statusBar).toEqual({ pins: [] });
   });
+
+  it('includes the standing Full-autonomy acknowledgement, unset by default', async () => {
+    const res = await request(app).get('/api/config').expect(200);
+
+    expect(res.body.ui.autonomyAcknowledgedAt).toBeNull();
+  });
+
+  it('records the standing acknowledgement, and reads it back on the next GET', async () => {
+    // The round trip the cockpit relies on: the dialog's "don't show this again"
+    // writes here, and every later autonomy PATCH is answered from this read.
+    const acknowledgedAt = '2026-08-01T09:30:00.000Z';
+    await request(app)
+      .patch('/api/config')
+      .send({ ui: { autonomyAcknowledgedAt: acknowledgedAt } })
+      .expect(200);
+
+    const res = await request(app).get('/api/config').expect(200);
+    expect(res.body.ui.autonomyAcknowledgedAt).toBe(acknowledgedAt);
+  });
+
+  it('lets Settings clear the acknowledgement, which brings the dialog back', async () => {
+    await request(app)
+      .patch('/api/config')
+      .send({ ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' } })
+      .expect(200);
+
+    await request(app)
+      .patch('/api/config')
+      .send({ ui: { autonomyAcknowledgedAt: null } });
+
+    const res = await request(app).get('/api/config').expect(200);
+    expect(res.body.ui.autonomyAcknowledgedAt).toBeNull();
+  });
 });
 
 describe('PUT /api/config/agents/defaultAgent', () => {

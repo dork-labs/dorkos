@@ -866,6 +866,35 @@ export function migrateStatusBarToPins(store: {
 }
 
 /**
+ * Migration body: backfill `ui.autonomyAcknowledgedAt: null` onto an EXISTING
+ * `ui` block (the standing Full-autonomy acknowledgement; spec `trust-dial`,
+ * decision 5). conf merges top-level defaults SHALLOWLY, so a `ui` object
+ * already on disk never inherits a newly-added nested key; the whole-`ui`-absent
+ * case needs nothing, because the shallow merge brings in the default `ui` with
+ * this key already in it.
+ *
+ * Seeds `null` — nobody has acknowledged anything. That direction is the whole
+ * point: an upgrade must never hand out a consent nobody gave, so every
+ * upgrading install sees the dialog the first time it reaches for Full autonomy,
+ * exactly as a fresh one does.
+ *
+ * Additive + idempotent: an existing value, including one somebody has already
+ * cleared back to `null`, is left exactly as it stands.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillAutonomyAcknowledgement(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const ui = store.get('ui');
+  if (!ui || typeof ui !== 'object') return;
+  if ('autonomyAcknowledgedAt' in (ui as Record<string, unknown>)) return;
+  store.set('ui', { ...(ui as Record<string, unknown>), autonomyAcknowledgedAt: null });
+}
+
+/**
  * Migration body: backfill the DOR-339 display-filter/mute fields onto an
  * EXISTING `ui.sidebar` — `muted: []` and `ungroupedDisplayFilter: 'all'` on
  * the section itself, plus `displayFilter: 'all'` and `muted: false` on every
@@ -1550,6 +1579,11 @@ export const CONFIG_MIGRATIONS = {
     // exists on every config. Additive + idempotent; every leaf seeds `null`,
     // which is "let the runtime choose" — today's behavior exactly.
     backfillRuntimeExecutionDefaults(store);
+    // `ui.autonomyAcknowledgedAt` (the standing Full-autonomy acknowledgement;
+    // spec `trust-dial`, decision 5). Additive + idempotent; seeds `null`, so an
+    // upgrade never hands out a consent nobody gave and everyone meets the
+    // dialog once before their first Full-autonomy session.
+    backfillAutonomyAcknowledgement(store);
   },
 } as const;
 

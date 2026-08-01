@@ -179,6 +179,15 @@ export const CONFIG_WRITE_POLICY = {
   'ui.shapes.agentDefaults': 'agent-writable',
   'ui.shapes.autoFollowAgent': 'agent-writable',
   'ui.statusBar.pins': 'agent-writable',
+  // A record of what a PERSON read and agreed to. Writing it stops DorkOS ever
+  // explaining Full autonomy to them again, and an agent forging that record
+  // would be signing a consent form on somebody else's behalf. It is the only
+  // `ui.*` leaf that is not a preference.
+  //
+  // It buys the agent no new REACH — anything that can reach `PATCH
+  // /api/sessions/:id` can put `acknowledgedAutonomy: true` on the request and
+  // open the same door once. What this stops is the durable, silent version.
+  'ui.autonomyAcknowledgedAt': 'operator-only',
 
   'logging.level': 'agent-writable',
   'logging.maxLogSizeKb': 'agent-writable',

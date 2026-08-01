@@ -83,6 +83,7 @@ import {
   RuntimeNotRegisteredError,
 } from '../../services/core/runtime-registry.js';
 import { disposeProjector } from '../../services/session/session-state-projector.js';
+import { configManager } from '../../services/core/config-manager.js';
 
 const app = createApp();
 finalizeApp(app);
@@ -357,9 +358,138 @@ describe('Sessions Routes', () => {
       for (const mode of ['default', 'acceptEdits', 'bypassPermissions'] as const) {
         const res = await request(server)
           .patch(`/api/sessions/${S1}`)
-          .send({ permissionMode: mode });
+          // `bypassPermissions` is this runtime's autonomy stop, so it also has
+          // to clear the autonomy door below. Sent unconditionally: the flag is
+          // ignored on the modes that do not need it, and spelling out which
+          // ones do would put a mode-id table in a test about capability ids.
+          .send({ permissionMode: mode, acknowledgedAutonomy: true });
         expect(res.status).toBe(200);
       }
+    });
+
+    // ---- The autonomy door (spec `trust-dial`, decision 5) ----
+    //
+    // Entering Full autonomy needs an acknowledgement the SERVER checks, so no
+    // client can skip the dialog by writing its own PATCH. Every case here is
+    // stated in terms of the DECLARED SEMANTICS (`stop: 'autonomy'`), never a
+    // mode id: `bypassPermissions` is merely the id the shared fake happens to
+    // give its autonomy stop, and a runtime that names it something else must
+    // land in exactly the same place.
+    describe('the autonomy door', () => {
+      /** The id of whichever mode this runtime declares at the autonomy stop. */
+      function autonomyModeId(): PermissionMode {
+        const descriptor = fakeRuntime
+          .getCapabilities()
+          .permissionModes.values.find((d) => d.stop === 'autonomy');
+        if (!descriptor) throw new Error('the fake runtime declares no autonomy stop');
+        fakeRuntime.getCapabilities.mockClear();
+        return descriptor.id as PermissionMode;
+      }
+
+      /** The id of a mode that stops to ask — anything but the autonomy stop. */
+      function nonAutonomyModeId(): PermissionMode {
+        const descriptor = fakeRuntime
+          .getCapabilities()
+          .permissionModes.values.find((d) => d.stop !== 'autonomy');
+        if (!descriptor) throw new Error('the fake runtime declares only an autonomy stop');
+        fakeRuntime.getCapabilities.mockClear();
+        return descriptor.id as PermissionMode;
+      }
+
+      beforeEach(() => {
+        fakeRuntime.updateSession.mockReturnValue(true);
+        fakeRuntime.getSession.mockResolvedValue(null);
+        // No standing acknowledgement on file unless a test puts one there.
+        vi.mocked(configManager.get).mockReturnValue(null);
+      });
+
+      it('refuses autonomy when nothing acknowledges it', async () => {
+        const res = await request(server)
+          .patch(`/api/sessions/${S1}`)
+          .send({ permissionMode: autonomyModeId() });
+
+        expect(res.status).toBe(428);
+        expect(res.body.code).toBe('AUTONOMY_ACK_REQUIRED');
+        // Nothing is persisted for a refused request — the session keeps the
+        // mode it had, which is the whole point of refusing.
+        expect(fakeRuntime.updateSession).not.toHaveBeenCalled();
+      });
+
+      it('accepts autonomy when the request carries the acknowledgement', async () => {
+        const mode = autonomyModeId();
+        const res = await request(server)
+          .patch(`/api/sessions/${S1}`)
+          .send({ permissionMode: mode, acknowledgedAutonomy: true });
+
+        expect(res.status).toBe(200);
+        expect(fakeRuntime.updateSession).toHaveBeenCalledWith(S1, {
+          permissionMode: mode,
+          model: undefined,
+          effort: undefined,
+          fastMode: undefined,
+        });
+      });
+
+      it('refuses autonomy when the request explicitly declines it', async () => {
+        const res = await request(server)
+          .patch(`/api/sessions/${S1}`)
+          .send({ permissionMode: autonomyModeId(), acknowledgedAutonomy: false });
+
+        expect(res.status).toBe(428);
+        expect(res.body.code).toBe('AUTONOMY_ACK_REQUIRED');
+      });
+
+      it('accepts autonomy on the standing acknowledgement alone', async () => {
+        vi.mocked(configManager.get).mockImplementation((key: string) =>
+          key === 'ui' ? { autonomyAcknowledgedAt: '2026-08-01T10:00:00.000Z' } : null
+        );
+
+        const res = await request(server)
+          .patch(`/api/sessions/${S1}`)
+          .send({ permissionMode: autonomyModeId() });
+
+        expect(res.status).toBe(200);
+      });
+
+      it('does not read a cleared standing acknowledgement as consent', async () => {
+        vi.mocked(configManager.get).mockImplementation((key: string) =>
+          key === 'ui' ? { autonomyAcknowledgedAt: null } : null
+        );
+
+        const res = await request(server)
+          .patch(`/api/sessions/${S1}`)
+          .send({ permissionMode: autonomyModeId() });
+
+        expect(res.status).toBe(428);
+      });
+
+      it('leaves every other stop alone', async () => {
+        const res = await request(server)
+          .patch(`/api/sessions/${S1}`)
+          .send({ permissionMode: nonAutonomyModeId() });
+
+        expect(res.status).toBe(200);
+      });
+
+      it('leaves a PATCH that changes no mode alone', async () => {
+        const res = await request(server)
+          .patch(`/api/sessions/${S1}`)
+          .send({ model: 'some-model' });
+
+        expect(res.status).toBe(200);
+      });
+
+      it('never forwards the acknowledgement to the runtime', async () => {
+        // It is a statement about the request, not a session setting. Leaking it
+        // into `updateSession` would persist it beside model and effort and make
+        // the next PATCH inherit consent nobody gave.
+        await request(server)
+          .patch(`/api/sessions/${S1}`)
+          .send({ permissionMode: autonomyModeId(), acknowledgedAutonomy: true });
+
+        const [, settings] = fakeRuntime.updateSession.mock.calls[0]!;
+        expect(settings).not.toHaveProperty('acknowledgedAutonomy');
+      });
     });
 
     it('leaves non-mode settings unaffected by the capability gate', async () => {
