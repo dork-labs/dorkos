@@ -191,6 +191,11 @@ export const DISPATCH_OUTCOMES: Record<ClaimOutcome, DispatchOutcome> = {
   halted: 'halted',
   busy: 'refused',
   failed: 'failed',
+  // Refused before anything was claimed, so this row is unreachable today —
+  // `ClaimOutcome` unions in every `RoomTurnUnanswered`, and a member whose
+  // agent is gone never becomes a target. It is a `refused` because that is
+  // what it would be: no turn ran, and none was going to.
+  gone: 'refused',
 };
 
 /**

@@ -61,9 +61,9 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   that writes no room entry is indistinguishable from a broken agent, and the
   person who notices is not the person who configured it. If you add a path that
   can decline to run a turn — or one where a turn stops producing anything and
-  waits — it writes a durable room notice in the room's own voice. All six live
+  waits — it writes a durable room notice in the room's own voice. All seven live
   in `room-notices.ts` (`cascade_stopped`, `budget_reached`, `agent_busy`,
-  `turn_failed`, `awaiting_approval`, `halted`), and every one of them is
+  `turn_failed`, `agent_gone`, `awaiting_approval`, `halted`), and every one of them is
   written through `room-notice-log.ts` — its `write` is the single writer, and
   each damping key sits beside the write it damps. Nothing outside that module
   reaches `postNotice` in production; a second call site hand-rolling its own `try` is how a
@@ -130,7 +130,15 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   addressing — one dispatch triggers each agent once, so a person gets back
   exactly as many lines as they wrote messages naming it. `turn_failed` is never
   damped at all: each error is a distinct event (room-participation spec §5.2,
-  as amended by DOR-781). Both halves are load-bearing and both have shipped
+  as amended by DOR-781). `agent_gone` follows the same split for the same
+  reason: damped when the member was merely SELECTED (an agent that is not
+  installed any more is a state, and the most persistent one there is), never
+  damped when the message typed its name. That second half needs its own route —
+  a ghost claims no names, so `@ana are you there?` stores an EMPTY `mentions`
+  list and the most direct question in the room would read as chatter. The
+  named-but-unreachable set is resolved once at write time alongside the
+  mentions (`resolveAddressing`) and handed to the dispatcher; nothing re-parses
+  the text (DOR-790). Both halves are load-bearing and both have shipped
   broken — too wide sprayed apologies about agents nobody had addressed, too
   narrow answered "are you there?" with silence.
 - **Other members' text is untrusted input.** Anything another person wrote that

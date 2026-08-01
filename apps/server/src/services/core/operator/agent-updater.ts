@@ -18,6 +18,7 @@ import {
   UpdateAgentConventionsSchema,
 } from '@dorkos/shared/mesh-schemas';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import type { SyncFromDiskResult } from '@dorkos/mesh';
 import { writeConventionFile } from '@dorkos/shared/convention-files-io';
 
 /**
@@ -66,7 +67,7 @@ export class AgentUpdateError extends Error {
 
 /** Minimal MeshCore surface needed for the post-write DB sync (ADR-0043). */
 interface MeshSyncLike {
-  syncFromDisk(projectPath: string): Promise<boolean>;
+  syncFromDisk(projectPath: string): Promise<SyncFromDiskResult>;
 }
 
 /**

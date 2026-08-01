@@ -26,6 +26,7 @@ function mutableLookup(table: Record<string, Partial<RoomAgent> & { name: string
         const agent = current[agentPath];
         if (!agent) return null;
         return {
+          id: agentPath,
           displayName: agent.name,
           responseMode: 'silent',
           emoji: null,

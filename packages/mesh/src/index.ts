@@ -38,6 +38,13 @@ export { DenialList } from './denial-list.js';
 // Manifest
 export { readManifest, writeManifest, removeManifest } from './manifest.js';
 
+// The contract that stopped collapsing a refused duplicate manifest into
+// "there is nothing here" (ADR 260801-003050). Only this one leaves the
+// package: `UpsertResult`, `AutoImportResult` and `ManifestProbe` are internal
+// steps on the way to it, and the server's three MeshCore-shaped interfaces
+// need this one to stay honest.
+export type { SyncFromDiskResult } from './mesh-agent-management.js';
+
 // Namespace
 export { resolveNamespace, normalizeNamespace, validateNamespace } from './namespace-resolver.js';
 

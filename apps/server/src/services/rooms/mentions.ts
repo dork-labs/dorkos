@@ -279,16 +279,88 @@ function closingFence(lines: readonly string[], from: number, opener: string): n
  * @returns Distinct author ids, in the order they were first mentioned.
  */
 export function resolveMentions(text: string, roster: readonly MentionCandidate[]): string[] {
-  const byName = claimNames(roster);
+  return addressingIn(text, roster, []).mentions;
+}
 
-  const resolved: string[] = [];
+/** Who a message reached, and who it tried to reach and could not. */
+export interface Addressing {
+  /** Distinct author ids addressed, in the order they were first mentioned. */
+  mentions: string[];
+  /**
+   * Distinct roster members a name in this message NAMED but could not reach,
+   * because their author no longer speaks for its directory.
+   *
+   * Never overlaps {@link Addressing.mentions}: a token is only ever weighed
+   * against this set once resolution against the live roster has missed, so a
+   * ghost sharing a live member's display name costs that live member nothing.
+   */
+  unreachable: string[];
+}
+
+/**
+ * Resolve a message against a roster that has ghosts in it, answering both
+ * halves in ONE pass over the text.
+ *
+ * **A released name must not become a silent name.** Releasing a ghost's claims
+ * is what lets a live room-mate be reached again — but it also means
+ * `@ana are you there?` resolves to nobody, and a message that addresses nobody
+ * triggers nobody and used to write nothing at all. From inside the room that is
+ * indistinguishable from an agent ignoring you, which is the one failure this
+ * domain is not allowed to have (`.claude/rules/room-conduct.md`). So the same
+ * pass that finds who a message reached also reports who it plainly meant.
+ *
+ * One pass, one grammar, one ownership rule: the alternative — a second scan of
+ * the text somewhere else — would be a second answer to "who does this name
+ * address", and mentions resolve once, at write time.
+ *
+ * @param text - The raw message body.
+ * @param roster - The room's live and unreachable candidates.
+ */
+export function resolveAddressing(
+  text: string,
+  roster: { live: readonly MentionCandidate[]; unreachable: readonly MentionCandidate[] }
+): Addressing {
+  return addressingIn(text, roster.live, roster.unreachable);
+}
+
+/**
+ * The single resolution pass behind {@link resolveMentions} and
+ * {@link resolveAddressing}.
+ *
+ * @param text - The raw message body.
+ * @param live - Who a name may reach, in the order that decides ties.
+ * @param unreachable - Who a name would have reached, consulted only for tokens
+ *   the live roster did not claim.
+ */
+function addressingIn(
+  text: string,
+  live: readonly MentionCandidate[],
+  unreachable: readonly MentionCandidate[]
+): Addressing {
+  const byName = claimNames(live);
+  // Built only when there is something to build it from, so an ordinary room
+  // pays nothing for a mechanism about a state it is not in.
+  const byGhostName = unreachable.length > 0 ? claimNames(unreachable) : null;
+
+  const mentions: string[] = [];
+  const missed: string[] = [];
   const seen = new Set<string>();
   for (const match of speakingParts(text).matchAll(MENTION_PATTERN)) {
     const raw = match[1].toLowerCase();
-    const authorId = byName.get(raw) ?? byName.get(raw.replace(TRAILING_PUNCTUATION, ''));
-    if (!authorId || seen.has(authorId)) continue;
-    seen.add(authorId);
-    resolved.push(authorId);
+    const bare = raw.replace(TRAILING_PUNCTUATION, '');
+    const authorId = byName.get(raw) ?? byName.get(bare);
+    if (authorId) {
+      if (seen.has(authorId)) continue;
+      seen.add(authorId);
+      mentions.push(authorId);
+      continue;
+    }
+    // Only now — a name a live member owns is that member's, and a ghost behind
+    // it is not news to anybody.
+    const ghostId = byGhostName?.get(raw) ?? byGhostName?.get(bare);
+    if (!ghostId || seen.has(ghostId)) continue;
+    seen.add(ghostId);
+    missed.push(ghostId);
   }
-  return resolved;
+  return { mentions, unreachable: missed };
 }

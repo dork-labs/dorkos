@@ -222,8 +222,13 @@ export class MeshCore {
     return agentMgmt.update(this.agentDeps, agentId, partial);
   }
 
-  /** Sync a single agent from its `.dork/agent.json` file into the DB. */
-  async syncFromDisk(projectPath: string): Promise<boolean> {
+  /**
+   * Sync a single agent from its `.dork/agent.json` file into the DB.
+   *
+   * @param projectPath - Absolute path to the agent's project directory.
+   * @returns Whether the manifest was synced, absent, or refused as a duplicate.
+   */
+  async syncFromDisk(projectPath: string): Promise<agentMgmt.SyncFromDiskResult> {
     return agentMgmt.syncFromDisk(projectPath, this.discoveryDeps);
   }
 

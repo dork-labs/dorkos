@@ -30,10 +30,11 @@ import { updateAgentManifest, AgentUpdateError } from '../services/core/operator
 import { notifyAgentCreated } from '../services/core/agent-created-hook.js';
 import { logger } from '../lib/logger.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
+import type { SyncFromDiskResult } from '@dorkos/mesh';
 
 /** Minimal MeshCore interface for sync-on-write. */
 interface MeshCoreLike {
-  syncFromDisk(projectPath: string): Promise<boolean>;
+  syncFromDisk(projectPath: string): Promise<SyncFromDiskResult>;
 }
 
 /**

@@ -31,9 +31,14 @@
  */
 import type { Room, RoomEntry, RoomEntryBody } from '@dorkos/shared/room-schemas';
 import { logger } from '../../lib/logger.js';
-import { logRefusal, type RefusalVisibility } from '../observability/refusals.js';
+import {
+  logRefusal,
+  type RefusalReason,
+  type RefusalVisibility,
+} from '../observability/refusals.js';
 import type { AuthorRegistry } from './author-registry.js';
 import {
+  buildAgentGoneNotice,
   buildBudgetNotice,
   buildBusyNotice,
   buildHaltedNotice,
@@ -59,8 +64,11 @@ export interface CascadeStamp {
  *
  * - `busy` — the agent was already working, so no turn ran.
  * - `failed` — a turn ran and ended in an error, or never finished at all.
+ * - `gone` — the member's directory no longer holds the agent it was added as,
+ *   so no turn was even attempted. Never produced by a runner: the dispatcher
+ *   decides it before a turn exists (ADR 260801-003051).
  */
-export type RoomTurnUnanswered = 'busy' | 'failed';
+export type RoomTurnUnanswered = 'busy' | 'failed' | 'gone';
 
 /** How a notice reaches the room's durable log. */
 export interface RoomNoticeWriter {
@@ -83,6 +91,36 @@ export interface RoomNoticeLogDeps {
 export interface NoticeSubject {
   authorId: string;
   displayName: string;
+}
+
+/** What the caller knows about one silence, beyond the reason for it. */
+export interface SilenceContext {
+  /**
+   * What the room KNOWS the agent is doing, for a `busy` reason. Ignored for
+   * every other reason, which has nothing to describe.
+   */
+  busyWith?: BusyContext;
+  /**
+   * This message named this agent, even though no stored mention says so.
+   *
+   * The third route into {@link RoomNoticeLog.directlyAsked}, and it exists
+   * because of a state the other two cannot see: a ghost claims no names, so a
+   * person typing `@ana are you there?` at one produces an entry whose
+   * `mentions` is EMPTY. Read through the stored list alone, the most direct
+   * question in the room looks like ordinary chatter and is damped after the
+   * first — the "answered 'are you there?' with silence" failure, arrived at
+   * from the other side.
+   *
+   * **It is a third ROUTE, not a third rule**, and the distinction is the whole
+   * safety of it: it is weighed only after the depth-0 and human-author guards
+   * have both passed. Set beside them instead, it reopened the other half of the
+   * failure this damping exists for — five AGENT-authored posts three deep in a
+   * cascade, each quoting `@ana`, wrote five apologies about an agent no person
+   * had asked anything. The bound that makes an undamped path safe (per
+   * addressed message, and the sender sets the count) only holds while a PERSON
+   * is the one addressing.
+   */
+  namedDirectly?: boolean;
 }
 
 /**
@@ -225,6 +263,13 @@ export class RoomNoticeLog {
    *    an event that just happened, and swallowing the second one leaves the
    *    room's last word describing a fault that has since been superseded.
    *
+   *    `gone` damps like `busy` rather than like `failed`, and for the reason
+   *    rule 1 gives: an agent that is not installed any more is a STATE, and it
+   *    is the most persistent one here — every ordinary message in a channel
+   *    where an `engaged` ghost sits would otherwise write another line saying
+   *    the same unchanged thing. A person who names it still gets an answer
+   *    every time they ask.
+   *
    * Every block clears the moment that agent's turn there reaches an OUTCOME —
    * {@link RoomNoticeLog.recovered}.
    *
@@ -234,14 +279,14 @@ export class RoomNoticeLog {
    *   not a claimed target: a trigger refused before it was claimed never became
    *   one, and it owes the same line as a turn that ran and could not.
    * @param reason - Why it stayed quiet, which picks the words.
-   * @param busyWith - What the room KNOWS the agent is doing, for a `busy`
-   *   reason. Ignored for a failure, which has nothing to describe.
    * @param dispatchId - The dispatch this refusal belongs to, or `null` when
    *   there is none. Required rather than ambient, and required rather than
    *   optional: a refusal decided in `claimTargets` runs synchronously inside
    *   `RoomService.post`, which for an agent's reply is inside the REPLYING
    *   agent's dispatch scope — so the ambient id there names somebody else.
    *   Every call site has to say which it is.
+   * @param context - What else is known: what a busy agent is doing, and
+   *   whether this message named it by a string no stored mention records.
    */
   reportSilence(
     room: Room,
@@ -249,13 +294,12 @@ export class RoomNoticeLog {
     agent: NoticeSubject,
     reason: RoomTurnUnanswered,
     dispatchId: string | null,
-    busyWith: BusyContext = 'unknown'
+    context: SilenceContext = {}
   ): void {
+    const busyWith = context.busyWith ?? 'unknown';
     const key = silenceKey(room.id, agent.authorId, reason);
-    const damped =
-      reason === 'busy' &&
-      !this.directlyAsked(room, entry, agent.authorId) &&
-      this.noticedSilence.has(key);
+    const asked = this.directlyAsked(room, entry, agent.authorId, context.namedDirectly === true);
+    const damped = reason !== 'failed' && !asked && this.noticedSilence.has(key);
     // Every refusal, damped ones included. A room that went forty-one minutes
     // saying nothing left three lines in the log to explain it, and the two
     // silences that mattered most — the ones a damping key swallowed — left
@@ -267,7 +311,7 @@ export class RoomNoticeLog {
     // makes it invisible a second time.
     const record = (visibility: RefusalVisibility): void =>
       logRefusal('[rooms] an agent did not answer', {
-        reason: reason === 'busy' ? 'agent_busy' : 'turn_failed',
+        reason: REFUSAL_FOR_SILENCE[reason],
         visibility,
         dispatchId,
         roomId: room.id,
@@ -282,10 +326,7 @@ export class RoomNoticeLog {
       record('damped');
       return;
     }
-    const body =
-      reason === 'busy'
-        ? buildBusyNotice(agent.displayName, agent.authorId, busyWith)
-        : buildTurnFailedNotice(agent.displayName, agent.authorId);
+    const body = SILENCE_BODIES[reason](agent, busyWith);
     // Reported AFTER the write, so `visibility` says what actually happened
     // rather than what was intended: a notice the room could not write (an
     // archive between the post and the notice) leaves the person as uninformed
@@ -606,7 +647,9 @@ export class RoomNoticeLog {
    *   (ADR 260727-184933 D6), and the rule should still read correctly then.
    * - **Addressed to this agent** — named in `entry.mentions`, or in a direct
    *   message, where every message a person sends is addressed to whoever is on
-   *   the other side and no `@` is needed to mean it.
+   *   the other side and no `@` is needed to mean it. A third route exists for
+   *   the one case a stored mention cannot record — see
+   *   {@link SilenceContext.namedDirectly}.
    *
    * `mentions` is the resolved list stored at write time, never a re-parse of
    * the text (`.claude/rules/room-conduct.md`), so this asks exactly the question
@@ -615,11 +658,19 @@ export class RoomNoticeLog {
    * @param room - The room the message landed in; its kind decides the DM case.
    * @param entry - The entry whose trigger is being refused.
    * @param agentAuthorId - The agent that did not answer.
+   * @param namedDirectly - The caller saw this message name this agent by a
+   *   string no stored mention records. **Weighed AFTER the two guards above,
+   *   never instead of them** — see {@link SilenceContext.namedDirectly}.
    */
-  private directlyAsked(room: Room, entry: RoomEntry, agentAuthorId: string): boolean {
+  private directlyAsked(
+    room: Room,
+    entry: RoomEntry,
+    agentAuthorId: string,
+    namedDirectly = false
+  ): boolean {
     if (entry.cascadeDepth !== 0) return false;
     if (this.deps.authors.getById(entry.authorId)?.kind !== 'human') return false;
-    return room.kind === 'dm' || entry.mentions.includes(agentAuthorId);
+    return room.kind === 'dm' || entry.mentions.includes(agentAuthorId) || namedDirectly;
   }
 }
 
@@ -676,7 +727,34 @@ function cascadeNoticeKey(roomId: string, cascadeRoot: string, authorId: string)
 const SILENCE_REASONS = Object.keys({
   busy: true,
   failed: true,
+  gone: true,
 } satisfies Record<RoomTurnUnanswered, true>) as RoomTurnUnanswered[];
+
+/**
+ * The words each reason writes into the room, as a total map for the reason
+ * {@link SILENCE_REASONS} is a keyed object: a reason added to the union without
+ * words here is a type error at this line, not an agent that goes quiet with no
+ * notice at all.
+ */
+const SILENCE_BODIES: Record<
+  RoomTurnUnanswered,
+  (agent: NoticeSubject, busyWith: BusyContext) => RoomEntryBody
+> = {
+  busy: (agent, busyWith) => buildBusyNotice(agent.displayName, agent.authorId, busyWith),
+  failed: (agent) => buildTurnFailedNotice(agent.displayName, agent.authorId),
+  gone: (agent) => buildAgentGoneNotice(agent.displayName, agent.authorId),
+};
+
+/**
+ * Which closed-union refusal reason each silence is filed under, total for the
+ * same reason: `jq 'group_by(.reason)'` has to be able to tell a busy agent from
+ * a crashed one from one that is not installed any more.
+ */
+const REFUSAL_FOR_SILENCE: Record<RoomTurnUnanswered, RefusalReason> = {
+  busy: 'agent_busy',
+  failed: 'turn_failed',
+  gone: 'agent_gone',
+};
 
 /**
  * Record a key, evicting the oldest when the set is full.

@@ -41,7 +41,7 @@ import type {
 } from '@dorkos/shared/additional-context';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
-import { advertisedHandles, mentionCandidatesFrom } from './author-handles.js';
+import { advertisedHandles, rosterMentionCandidates } from './author-handles.js';
 import type { EngagementWindow } from './engagement.js';
 import type { AuthorRecord, AuthorRegistry } from './author-registry.js';
 import type { ReactionStore } from './reaction-store.js';
@@ -201,7 +201,7 @@ export function buildRoomContext(deps: RoomContextDeps, input: RoomContextInput)
   // → `RoomRoster.mentionCandidates`). Not a second rule that happens to agree:
   // the defect this replaced was exactly that, one function returning
   // `agents.name` unfiltered while the picker refused the same string.
-  const handles = advertisedHandles(mentionCandidatesFrom(members, records, deps.agents));
+  const handles = advertisedHandles(rosterMentionCandidates(members, records, deps.agents).live);
 
   const flatten = (entry: RoomEntry): RoomContextEntry => {
     const author = nameOf(entry.authorId);

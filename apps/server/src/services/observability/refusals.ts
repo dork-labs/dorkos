@@ -50,6 +50,13 @@ export const REFUSAL_REASONS = {
   agent_busy: 'the agent was already working',
   /** A turn ran and ended in an error, or never finished at all. */
   turn_failed: 'the turn failed',
+  /**
+   * A room member's directory no longer holds the agent it was added as, so no
+   * turn was started. Distinct from `agent_missing`, which is the inbound-chat
+   * path failing to find a bound agent: this one is a room author that outlived
+   * its agent, or was minted for a previous occupant of that directory.
+   */
+  agent_gone: 'the agent that owned this identity is gone',
   /** The cascade guard stopped an exchange that had gone around enough times. */
   cascade_depth: 'the exchange reached its automatic-reply limit',
   /** The cascade guard refused an agent already inside this exchange. */

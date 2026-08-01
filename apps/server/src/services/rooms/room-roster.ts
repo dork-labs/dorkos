@@ -12,9 +12,12 @@
  */
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { AuthorRef, Room, RoomMember, RoomRosterEntry } from '@dorkos/shared/room-schemas';
-import { advertisedHandles, mentionCandidatesFrom } from './author-handles.js';
+import {
+  advertisedHandles,
+  rosterMentionCandidates,
+  type RosterCandidates,
+} from './author-handles.js';
 import { toAuthorRef, type AuthorRecord, type AuthorRegistry } from './author-registry.js';
-import type { MentionCandidate } from './mentions.js';
 import { RoomError, type RoomAgentLookup } from './room-errors.js';
 import type { RoomStore } from './room-store.js';
 
@@ -137,7 +140,7 @@ export class RoomRoster {
     // `mentionCandidates` hands `resolveMentions` — so a handle is advertised to
     // a member only when that member is the one it would actually reach, and the
     // roster an agent reads cannot disagree with the roster a picker reads.
-    const handles = advertisedHandles(mentionCandidatesFrom(members, authors, this.agents));
+    const handles = advertisedHandles(rosterMentionCandidates(members, authors, this.agents).live);
     return members.map((member) => {
       const author = authors.get(member.authorId);
       if (!author) return { ...member, author: unknownAuthor(member.authorId) };
@@ -171,14 +174,16 @@ export class RoomRoster {
 
   /**
    * The names each member answers to for `@` resolution: an agent's handle
-   * first, then whatever it renders as.
+   * first, then whatever it renders as — plus the names a member whose agent is
+   * gone WOULD have answered to, so typing one of those is answered instead of
+   * swallowed (ADR 260801-003051).
    *
    * @param roomId - The room.
    */
-  mentionCandidates(roomId: string): MentionCandidate[] {
+  addressingCandidates(roomId: string): RosterCandidates {
     const members = this.store.listMembers(roomId);
     const authors = this.authors.getMany(members.map((m) => m.authorId));
-    return mentionCandidatesFrom(members, authors, this.agents);
+    return rosterMentionCandidates(members, authors, this.agents);
   }
 
   /**

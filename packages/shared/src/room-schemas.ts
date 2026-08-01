@@ -64,6 +64,11 @@ export type RoomEntryKind = z.infer<typeof RoomEntryKindSchema>;
  *   trigger was skipped. Nothing is wrong with the agent; it was just occupied.
  * - `turn_failed` — the agent started answering and the turn ended in an error,
  *   or it never finished at all.
+ * - `agent_gone` — the member's project folder no longer holds the agent it was
+ *   added as: nothing is registered there, or a DIFFERENT agent is. No turn ran
+ *   and none ever will until somebody re-registers it, which is why this is its
+ *   own code rather than `turn_failed` — nothing failed, and there is no session
+ *   to go and look at (ADR 260801-003051).
  * - `awaiting_approval` — the agent's turn STARTED and then stopped, waiting for
  *   a person: a tool approval, a question it asked, or an MCP prompt. All three
  *   park the turn until somebody answers in that agent's own session, and the
@@ -88,6 +93,7 @@ export const RoomNoticeCodeSchema = z
     'budget_reached',
     'agent_busy',
     'turn_failed',
+    'agent_gone',
     'awaiting_approval',
     'halted',
     'addressing_changed',

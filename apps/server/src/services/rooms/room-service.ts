@@ -81,7 +81,7 @@ import { eventFanOut } from '../core/event-fan-out.js';
 import type { AuthorRecord, AuthorRegistry } from './author-registry.js';
 import { deriveCascade } from './cascade-guard.js';
 import type { EngagedWindow } from './engagement.js';
-import { resolveMentions } from './mentions.js';
+import { resolveAddressing } from './mentions.js';
 import type { ReactionStore } from './reaction-store.js';
 import { RoomError, type RoomAgentLookup } from './room-errors.js';
 import { RoomRoster, type AddMemberInput } from './room-roster.js';
@@ -710,6 +710,12 @@ export class RoomService {
     const author = this.authors.getById(input.authorId);
     const trigger = input.trigger ?? this.triggers.activeTurnFor(input.authorId);
 
+    // Resolved ONCE, here, and both halves of the answer are kept: who this
+    // message reached, and who it named but could not reach because that
+    // member's agent is gone. The second half is what stops a released name
+    // becoming a silent one (ADR 260801-003051) — the dispatcher writes the
+    // room's answer to it below.
+    const addressed = resolveAddressing(input.text, this.roster.addressingCandidates(roomId));
     const id = ulid();
     const entry = this.store.appendEntry({
       roomId,
@@ -717,7 +723,7 @@ export class RoomService {
       authorId: input.authorId,
       kind: 'post',
       body: { text: input.text },
-      mentions: resolveMentions(input.text, this.roster.mentionCandidates(roomId)),
+      mentions: addressed.mentions,
       sessionId: input.sessionId ?? null,
       ...this.threadPointers(roomId, input.replyTo),
       ...deriveCascade(id, {
@@ -745,7 +751,7 @@ export class RoomService {
     // fail. Losing the replies to it is bad and visible in the room; losing the
     // message is worse and looks like a broken product.
     try {
-      this.triggers.dispatch(room, entry);
+      this.triggers.dispatch(room, entry, addressed.unreachable);
     } catch (err) {
       logger.error('[rooms] a committed post could not be dispatched from', {
         roomId,

@@ -32,6 +32,18 @@ export interface AgentListFilters {
   capability?: string;
 }
 
+/**
+ * What {@link AgentRegistry.upsert} did.
+ *
+ * - `registered` — the row was inserted or updated in place.
+ * - `duplicate-id` — this id already belongs to a row at a DIFFERENT directory,
+ *   so nothing at all was written. A value rather than a throw, because the
+ *   caller (the discovery layer) has to go and read the incumbent's manifest
+ *   before it can tell a theft from a genuine move — and a scan must not abort
+ *   on either.
+ */
+export type UpsertResult = 'registered' | 'duplicate-id';
+
 /** An agent entry with computed health status. */
 export interface AgentHealthEntry extends AgentRegistryEntry {
   lastSeenAt: string | null;
@@ -79,15 +91,37 @@ export class AgentRegistry {
   constructor(private readonly db: Db) {}
 
   /**
-   * Insert or update an agent in the registry.
+   * Insert or update an agent in the registry — and refuse, writing nothing at
+   * all, when the incoming id already lives somewhere else.
    *
-   * Uses ON CONFLICT(id) DO UPDATE for idempotent registration.
-   * Handles path conflicts by removing the stale entry first.
+   * **`upsert` never moves a row between directories.** `.dork/agent.json` is
+   * git-tracked, so every clone and linked worktree of an agent's repo carries
+   * the same manifest ULID; the old `ON CONFLICT(id) DO UPDATE` rewrote
+   * `project_path` to whichever copy a scan reached last, and the agent's
+   * `@handle`, `responseMode` and room membership silently followed it
+   * (ADR 260801-003050). A genuine move goes through {@link AgentRegistry.relocate},
+   * which the discovery layer calls only after reading the incumbent directory's
+   * manifest and finding the id released.
+   *
+   * **The refusal is decided before any mutation, and the ordering is the whole
+   * safety of it.** This method used to delete a different-id row sitting at the
+   * incoming path FIRST. Combined with a refusal that would have destroyed data:
+   * `/w` registered as agent X, `/w` checks out a branch carrying agent D's
+   * committed manifest, the scan yields D at `/w` — X deleted, D refused, `/w`
+   * agent-less and X gone. So the id conflict is resolved first and the
+   * path-incumbent delete fires only when the registration actually proceeds.
    *
    * @param agent - The agent entry to upsert
+   * @returns `registered` when the row was written, `duplicate-id` when this id
+   *   already sits at another directory and nothing was touched.
    */
-  upsert(agent: AgentRegistryEntry): void {
+  upsert(agent: AgentRegistryEntry): UpsertResult {
     const now = new Date().toISOString();
+
+    // FIRST: would this move an existing row to a new directory? If so, nothing
+    // below runs — not the path-incumbent delete, not the write.
+    const existingById = this.get(agent.id);
+    if (existingById && existingById.projectPath !== agent.projectPath) return 'duplicate-id';
 
     // Check for path conflict: different agent ID at same path
     const existingAtPath = this.getByPath(agent.projectPath);
@@ -143,6 +177,50 @@ export class AgentRegistry {
         },
       })
       .run();
+
+    return 'registered';
+  }
+
+  /**
+   * Move a registered agent to a new directory — the one write path that may.
+   *
+   * Explicit, so relocation can never happen by accident: {@link AgentRegistry.upsert}
+   * refuses an id that has moved, and only the discovery layer calls this, only
+   * after reading the incumbent directory's manifest and finding the id
+   * genuinely released (ADR 260801-003050).
+   *
+   * **It owns the destination's incumbent, in one transaction.**
+   * `agents.project_path` is `NOT NULL UNIQUE`, so a different-id row already
+   * sitting at `newPath` would otherwise make this throw a constraint error
+   * inside the discovery generator and abort a whole scan. That state is
+   * reachable, not theoretical: `/w` registered as X, D's manifest appears at
+   * `/w`, and D's old home has lost its manifest. Deleting the incumbent and
+   * moving the row is the same replace-the-path-incumbent semantics `upsert`
+   * applies when a registration proceeds — done atomically so a crash between
+   * the two cannot leave the agent nowhere.
+   *
+   * @param id - The agent's ULID.
+   * @param newPath - Absolute path the agent now lives at.
+   * @returns `true` when the row was moved, `false` when no agent carries that id.
+   */
+  relocate(id: string, newPath: string): boolean {
+    const existing = this.get(id);
+    if (!existing) return false;
+    if (existing.projectPath === newPath) return true;
+
+    const now = new Date().toISOString();
+    return this.db.transaction((tx) => {
+      const incumbent = tx.select().from(agents).where(eq(agents.projectPath, newPath)).all()[0];
+      if (incumbent && incumbent.id !== id) {
+        tx.delete(agents).where(eq(agents.id, incumbent.id)).run();
+      }
+      const result = tx
+        .update(agents)
+        .set({ projectPath: newPath, updatedAt: now, status: 'active' })
+        .where(eq(agents.id, id))
+        .run();
+      return result.changes > 0;
+    });
   }
 
   /**

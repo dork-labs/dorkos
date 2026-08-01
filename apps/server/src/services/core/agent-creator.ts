@@ -33,10 +33,11 @@ import { configManager } from './config-manager.js';
 import { notifyAgentCreated } from './agent-created-hook.js';
 import { ScaffoldLedger } from '../../lib/scaffold-ledger.js';
 import { logger } from '../../lib/logger.js';
+import type { SyncFromDiskResult } from '@dorkos/mesh';
 
 /** Minimal MeshCore interface for sync-on-write. */
 interface MeshCoreLike {
-  syncFromDisk(projectPath: string): Promise<boolean>;
+  syncFromDisk(projectPath: string): Promise<SyncFromDiskResult>;
 }
 
 /** Error thrown when agent creation fails due to a known condition. */

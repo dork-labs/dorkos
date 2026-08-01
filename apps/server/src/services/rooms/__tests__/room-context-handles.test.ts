@@ -174,7 +174,7 @@ describe('every @name in the room-context block reaches the member it names', ()
       authors: harness.authors,
       agents: AGENTS,
     });
-    return roster.mentionCandidates(room.id);
+    return roster.addressingCandidates(room.id).live;
   }
 
   /**
