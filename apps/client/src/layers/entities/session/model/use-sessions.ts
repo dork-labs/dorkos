@@ -4,6 +4,7 @@ import { useSessionId } from './use-session-id';
 // Same-slice import via the sibling module (not the entities/session barrel) to
 // avoid a self-referential barrel import within this slice.
 import { sessionKeys } from '../api/query-keys';
+import { syncSessionDetailCache } from '../lib/sync-session-detail-cache';
 import type { Session, SessionListWarning, SessionOrigin } from '@dorkos/shared/types';
 
 /**
@@ -48,11 +49,21 @@ export function useSessions() {
   const sessionsQuery = useQuery({
     queryKey: sessionKeys.list(selectedCwd),
     queryFn: async () => {
+      // Taken BEFORE the request: these rows describe the server as it was when
+      // it answered, which is no later than now and no earlier than this. The
+      // detail-cache sync needs that lower bound to tell an answer that predates
+      // a settings PATCH from one that supersedes it (DOR-496).
+      const observedAt = Date.now();
       const { sessions, warnings } = await transport.listSessions(selectedCwd ?? undefined);
       queryClient.setQueryData<SessionListWarning[]>(
         sessionListWarningsKey(selectedCwd),
         warnings ?? []
       );
+      // These rows are the same answer the detail endpoint gives, so any detail
+      // entry they cover is refreshed too. A refetch triggered from elsewhere —
+      // a Claude account switch, an agent-hub rename — would otherwise leave a
+      // frozen detail entry outranking a list row that had just been corrected.
+      syncSessionDetailCache(queryClient, sessions, observedAt);
       return sessions;
     },
     enabled: selectedCwd !== null,

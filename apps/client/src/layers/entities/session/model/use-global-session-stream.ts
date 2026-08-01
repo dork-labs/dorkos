@@ -23,6 +23,7 @@ import { useSessionListStore } from './session-list-store';
 // Same-slice import via the sibling module (not the entities/session barrel) to
 // avoid a self-referential barrel import within this slice.
 import { sessionKeys } from '../api/query-keys';
+import { syncSessionDetailCache } from '../lib/sync-session-detail-cache';
 
 /**
  * Invalidate the cross-agent Recent-sessions query (DOR-329) so the sidebar's
@@ -107,6 +108,11 @@ export function reconcileRetiredSessions(
  * identity changed (immer preserves identity for untouched entries) and removes
  * ids dropped from the map — never rebuilds a cache wholesale.
  *
+ * Each changed row also refreshes that session's cached detail entry
+ * ({@link syncSessionDetailCache}). The two caches describe the same session and
+ * surfaces read both, so a live update that reached only one of them left the
+ * other outranking it with older news (DOR-496).
+ *
  * @param queryClient - The TanStack Query client whose caches to patch.
  * @param next - The new `sessions` map from the list store.
  * @param prev - The previously reconciled `sessions` map.
@@ -117,10 +123,17 @@ export function reconcileSessionsCache(
   next: Record<string, Session>,
   prev: Record<string, Session>
 ): void {
+  // The store notifies its subscribers synchronously, so this is the instant the
+  // frame arrived — the earliest moment about this answer the client can
+  // observe. See the sync's own note on the hop it therefore cannot account for.
+  const observedAt = Date.now();
+  const changed: Session[] = [];
   for (const [id, session] of Object.entries(next)) {
     if (prev[id] === session) continue; // unchanged reference → skip
     upsertSessionInCache(queryClient, session);
+    changed.push(session);
   }
+  syncSessionDetailCache(queryClient, changed, observedAt);
   for (const [id, session] of Object.entries(prev)) {
     if (next[id]) continue;
     removeSessionFromCache(queryClient, id, session.cwd ?? null);
