@@ -176,13 +176,59 @@ export class FakeAgentRuntime implements AgentRuntime {
     nativeContext: [],
     permissionModes: {
       supported: true,
+      // All six `PermissionMode` ids, each with the semantics its real
+      // counterpart carries, so a test that renders this double sees what a
+      // person would see.
       values: [
-        { id: 'default', label: 'Default' },
-        { id: 'plan', label: 'Plan' },
-        { id: 'acceptEdits', label: 'Accept edits' },
-        { id: 'dontAsk', label: "Don't ask" },
-        { id: 'bypassPermissions', label: 'Bypass permissions' },
-        { id: 'auto', label: 'Auto' },
+        {
+          id: 'default',
+          label: 'Default',
+          stop: 'ask',
+          asks: 'always',
+          reach: 'edit',
+          promise: 'Asks before it edits a file or runs a command.',
+        },
+        {
+          id: 'plan',
+          label: 'Plan',
+          stop: 'ask',
+          asks: 'always',
+          reach: 'read',
+          promise: 'Reads and plans only. Nothing changes until you approve the plan.',
+        },
+        {
+          id: 'acceptEdits',
+          label: 'Accept edits',
+          stop: 'act',
+          asks: 'when-risky',
+          reach: 'edit',
+          promise: 'Edits files on its own. Asks before it runs a command.',
+        },
+        {
+          id: 'dontAsk',
+          label: "Don't ask",
+          stop: 'act',
+          asks: 'never',
+          reach: 'workspace',
+          promise: 'Works inside the project without asking.',
+        },
+        {
+          id: 'bypassPermissions',
+          label: 'Bypass permissions',
+          stop: 'autonomy',
+          asks: 'never',
+          reach: 'everything',
+          promise: 'Runs everything without asking, including outside this project.',
+        },
+        {
+          id: 'auto',
+          label: 'Auto',
+          stop: 'act',
+          asks: 'when-risky',
+          reach: 'edit',
+          promise:
+            'Edits files on its own and weighs each command, asking you about the risky ones.',
+        },
       ],
     },
     // The test double is the one supported runtime that Phase-1 conformance

@@ -43,7 +43,16 @@ function createMockRuntime(type: string, overrides?: Partial<RuntimeCapabilities
       supportsPlugins: true,
       permissionModes: {
         supported: true,
-        values: [{ id: 'default', label: 'Default' }],
+        values: [
+          {
+            id: 'default',
+            label: 'Default',
+            stop: 'ask',
+            asks: 'always',
+            reach: 'edit',
+            promise: 'Asks first.',
+          },
+        ],
       },
       features: {},
       ...overrides,

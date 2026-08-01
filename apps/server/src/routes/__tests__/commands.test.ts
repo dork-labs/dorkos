@@ -48,8 +48,22 @@ const mockRuntime = {
     permissionModes: {
       supported: true,
       values: [
-        { id: 'default', label: 'Default' },
-        { id: 'plan', label: 'Plan' },
+        {
+          id: 'default',
+          label: 'Default',
+          stop: 'ask',
+          asks: 'always',
+          reach: 'edit',
+          promise: 'Asks first.',
+        },
+        {
+          id: 'plan',
+          label: 'Plan',
+          stop: 'ask',
+          asks: 'always',
+          reach: 'read',
+          promise: 'Plans.',
+        },
       ],
     },
     features: {},

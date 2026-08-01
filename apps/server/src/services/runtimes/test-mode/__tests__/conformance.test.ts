@@ -20,6 +20,11 @@ runtimeConformance(() => new TestModeRuntime(), {
   // Stateless by design: native history is [] — completed messages live in the
   // DorkOS-owned EventLog, not the runtime (ADR-0263).
   expectHistory: false,
+  // The one runtime allowed to default to autonomy: `always-allow` IS the
+  // fixture. Nothing a person drives runs on it — it exists so e2e and
+  // conformance runs never wait on an approval card.
+  autonomyDefaultReason:
+    'test-mode exists to answer every approval deterministically; always-allow is its whole purpose',
   // Turn failure rides the scenario store: the built-in 'error' scenario is
   // the runtime's production failing turn (typed error, then terminal done).
   makeFailingRuntime: () => {
