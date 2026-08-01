@@ -1,6 +1,8 @@
 /**
- * The Trust Dial across every runtime that ships, plus the three states a dial
- * can be in that are easy to get wrong (spec `trust-dial`, decisions 1–3).
+ * The Trust Dial across every runtime that ships, the states a dial can be in
+ * that are easy to get wrong, and the two surfaces nobody is watching — an
+ * integration binding and a scheduled task (spec `trust-dial`, decisions 1–3
+ * and 5).
  *
  * Every demo is the REAL component driven by the REAL declared modes, copied from
  * each adapter's `runtime-constants`. That is the whole point: the dial's job is
@@ -10,10 +12,10 @@
  *
  * @module dev/showcases/TrustDialShowcases
  */
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
-import { TrustDial, PlanModeItem, AutonomyConfirmDialog } from '@/layers/features/status';
-import { Button } from '@/layers/shared/ui';
+import { PlanModeItem, AutonomyConfirmDialog } from '@/layers/features/status';
+import { Button, TrustDial, UnattendedAutonomyDialog } from '@/layers/shared/ui';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -176,6 +178,89 @@ function LiveDial({
   );
 }
 
+/**
+ * The same dial on a surface nobody is watching — a relay binding or a scheduled
+ * task. Two things change and nothing else does: a stored mode with no stop is
+ * kept until somebody picks one and SAVES, and the autonomy stop asks first with
+ * copy about what stops happening on this particular surface.
+ */
+function UnattendedDial({
+  descriptors,
+  initial,
+  strandedNote,
+  consequence,
+}: {
+  descriptors: PermissionModeDescriptor[];
+  initial: string;
+  strandedNote: ReactNode;
+  consequence: ReactNode;
+}) {
+  const [mode, setMode] = useState(initial);
+  const [pending, setPending] = useState<PermissionModeDescriptor | null>(null);
+  return (
+    <div className="w-72">
+      <TrustDial
+        mode={mode}
+        descriptors={descriptors}
+        strandsWorkingMode
+        strandedNote={strandedNote}
+        onChangeMode={(next) => {
+          const descriptor = descriptors.find((d) => d.id === next);
+          if (descriptor?.stop === 'autonomy') {
+            setPending(descriptor);
+            return;
+          }
+          setMode(next);
+        }}
+      />
+      <UnattendedAutonomyDialog
+        descriptor={pending}
+        consequence={consequence}
+        onCancel={() => setPending(null)}
+        onConfirm={() => {
+          if (pending) setMode(pending.id);
+          setPending(null);
+        }}
+      />
+    </div>
+  );
+}
+
+/** What a binding's dial says about a mode it has no stop for. */
+const BINDING_STRANDED = (
+  <>
+    This integration is set to “Plan”, which is not one of these. Saving keeps it as it is — pick a
+    stop to change it.
+  </>
+);
+
+/** What a binding gives up at the autonomy stop. */
+const BINDING_CONSEQUENCE = (
+  <>
+    At every other stop, an action this agent needs permission for arrives in the chat as Approve
+    and Deny buttons, only the people on the approver list can answer, and an ask nobody answers is
+    denied after 10 minutes. Here nothing is asked: anyone who can send a message through this
+    integration sets off whatever the agent decides to do.
+  </>
+);
+
+/** What a task's dial says about a mode it has no stop for. */
+const TASK_STRANDED = (
+  <>
+    This task is set to “Auto”, which is not one of these. Saving keeps it as it is — pick a stop to
+    change it.
+  </>
+);
+
+/** What a scheduled run gives up at the autonomy stop. */
+const TASK_CONSEQUENCE = (
+  <>
+    A scheduled run has nobody to ask, so nothing is asked: no approval card, no message, no record
+    of a decision anybody made. The run does whatever it decides to, until it finishes or hits its
+    time limit.
+  </>
+);
+
 /** The composer's Plan switch, wired to its own state. */
 function LivePlanChip() {
   const [active, setActive] = useState(false);
@@ -272,6 +357,55 @@ export function TrustDialShowcases() {
         <ShowcaseLabel>The confirmation, on a Codex session</ShowcaseLabel>
         <ShowcaseDemo>
           <LiveAutonomyDialog />
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="Trust Dial — the surfaces nobody is watching"
+        description="An integration binding and a scheduled task ask the same question with the same control. Two things differ: a stored mode with no stop is kept until somebody picks one AND saves, and the autonomy stop's confirmation names what stops happening HERE — the approval that would have arrived in a chat, the card a run would have waited on."
+      >
+        <ShowcaseLabel>
+          A binding saved at Plan — kept and named, never quietly widened
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <UnattendedDial
+            descriptors={CLAUDE}
+            initial="plan"
+            strandedNote={BINDING_STRANDED}
+            consequence={BINDING_CONSEQUENCE}
+          />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>A task saved at a mode this runtime no longer declares</ShowcaseLabel>
+        <ShowcaseDemo>
+          <UnattendedDial
+            descriptors={CLAUDE.filter((d) => d.id !== 'auto')}
+            initial="auto"
+            strandedNote={TASK_STRANDED}
+            consequence={TASK_CONSEQUENCE}
+          />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          The binding’s door into Full autonomy — the approver list, and the 10-minute deny
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <UnattendedDial
+            descriptors={CODEX}
+            initial="default"
+            strandedNote={BINDING_STRANDED}
+            consequence={BINDING_CONSEQUENCE}
+          />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>The task’s door — an unattended run is never shown a card</ShowcaseLabel>
+        <ShowcaseDemo>
+          <UnattendedDial
+            descriptors={CLAUDE}
+            initial="acceptEdits"
+            strandedNote={TASK_STRANDED}
+            consequence={TASK_CONSEQUENCE}
+          />
         </ShowcaseDemo>
       </PlaygroundSection>
 
