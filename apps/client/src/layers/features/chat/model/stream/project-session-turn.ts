@@ -203,6 +203,10 @@ function foldApproval(
     interactiveType: 'approval' as const,
     input: event.input,
     status: 'pending' as const,
+    // The countdown and its draining bar are both gated on `timeoutMs`: the
+    // card renders without a deadline anywhere on it when the emission omits
+    // one, which is exactly what production did before DOR-810.
+    timeoutMs: event.timeoutMs,
     approvalStartedAt: event.startedAt,
     approvalRemainingMs: event.remainingMs,
     approvalTitle: event.title,
@@ -334,6 +338,10 @@ function foldInteractionResolved(parts: MessagePart[], event: InteractionResolve
       toolCall.interactiveType = 'approval';
       toolCall.approvalOutcome = outcome;
       toolCall.approvalResolvedAt = event.at;
+      // Only the server can say a reason reached the agent, so the receipt's
+      // claim is copied from the resolution and never inferred here. An
+      // `expired` auto-deny never carries it: the clock explained nothing.
+      if (event.reasonGiven === true) toolCall.approvalReasonGiven = true;
       // The live path also loses `startedAt` with the DTO, so prefer the
       // server's backfill and fall back to whatever the part already holds.
       toolCall.approvalStartedAt = event.startedAt ?? toolCall.approvalStartedAt;
@@ -598,11 +606,45 @@ function foldPendingInteraction(parts: MessagePart[], event: InteractionEvent): 
 }
 
 /**
- * Fold any snapshot-authoritative pending interactions onto the part list,
- * skipping those already represented (the in-progress turn owns the live
- * ordering for an interaction present in BOTH). This surfaces an interaction
- * that lives ONLY in `pendingInteractions` — e.g. a session still `blocked`
- * after `turn_end`, whose `inProgressTurn` was cleared (DOR-73 recovery).
+ * Overwrite an already-represented interaction's countdown with the snapshot's.
+ *
+ * THE ONLY FRESH TIMER IN THE PAYLOAD. A replayed `approval_required` carries
+ * the remainder it had at EMISSION — which for a live ask is the whole budget —
+ * so a card rebuilt from the turn alone jumps back to the start of its
+ * countdown on every reload, every second window, and every replay from
+ * `Last-Event-ID`. The pending DTO's `remainingMs` is computed when the
+ * snapshot is built, so it is the one number that is true now (DOR-810).
+ *
+ * Only the timer is taken. The rest of the DTO is the same payload the turn
+ * already folded, and re-applying it would re-pend a card the turn may have
+ * settled.
+ */
+function applyRecoveredTimer(parts: MessagePart[], dto: PendingInteractionDTO): void {
+  const toolCall = findToolCallPart(parts, dto.id);
+  if (toolCall) {
+    toolCall.approvalStartedAt = dto.startedAt;
+    toolCall.approvalRemainingMs = dto.remainingMs;
+    // Only when the DTO actually declares a budget: absent means "this runtime
+    // did not say", not "no deadline", so clearing one the turn supplied would
+    // take the countdown away rather than correct it.
+    if (dto.type === 'approval' && dto.timeoutMs !== undefined) toolCall.timeoutMs = dto.timeoutMs;
+    return;
+  }
+  const elicitation = findElicitationPart(parts, dto.id);
+  if (elicitation) {
+    elicitation.startedAt = dto.startedAt;
+    elicitation.remainingMs = dto.remainingMs;
+  }
+}
+
+/**
+ * Fold any snapshot-authoritative pending interactions onto the part list.
+ *
+ * An interaction the turn does not represent is folded whole — this is what
+ * surfaces a session still `blocked` after `turn_end`, whose `inProgressTurn`
+ * was cleared (DOR-73 recovery). An interaction present in BOTH keeps the
+ * turn's part (which owns the live ordering) and takes only the DTO's
+ * countdown, via {@link applyRecoveredTimer}.
  *
  * @param parts - Parts folded from the in-progress turn (mutated in place).
  * @param pendingInteractions - The snapshot's recoverable pending interactions.
@@ -612,7 +654,10 @@ function foldPendingInteractions(
   pendingInteractions: PendingInteractionDTO[]
 ): void {
   for (const dto of pendingInteractions) {
-    if (partsContainInteraction(parts, dto.id)) continue;
+    if (partsContainInteraction(parts, dto.id)) {
+      applyRecoveredTimer(parts, dto);
+      continue;
+    }
     foldPendingInteraction(parts, pendingInteractionToEvent(dto));
   }
 }

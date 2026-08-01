@@ -2,8 +2,9 @@ import { useState, useEffect, useRef, useMemo, useImperativeHandle, useCallback 
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { Check, X, Shield, ShieldCheck } from 'lucide-react';
 import { useTransport } from '@/layers/shared/model';
+import { DENY_REASON_MAX_LENGTH } from '@dorkos/shared/schemas';
 import { ToolArgumentsDisplay, cn, getToolLabel, getMcpServerBadge } from '@/layers/shared/lib';
-import { Kbd, Button } from '@/layers/shared/ui';
+import { Kbd, Button, Input } from '@/layers/shared/ui';
 import { CompactResultRow, InteractiveCard } from '../primitives';
 
 // --- Animation constants (module-scope to avoid per-render allocation) ---
@@ -135,25 +136,51 @@ export function ToolApproval({
   const [decided, setDecided] = useState<'approved' | 'denied' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // The optional "why". Held in a ref as well as state so the deny handler —
+  // which the keyboard shortcut also calls through an imperative handle — reads
+  // the current text without being rebuilt on every keystroke.
+  const [reasonOpen, setReasonOpen] = useState(false);
+  const [reason, setReason] = useState('');
+  const reasonRef = useRef('');
+  // While the field holds focus, Enter belongs to it — so the card stops
+  // advertising Enter as Approve. A hint for a shortcut that is not live is
+  // worse than no hint.
+  const [reasonFocused, setReasonFocused] = useState(false);
+  const showKeyHints = isActive && !reasonFocused;
+
   // Countdown state
   const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null);
   const timedOut = useRef(false);
   const [announcement, setAnnouncement] = useState('');
 
-  // Initialize countdown. Priority for the deadline:
+  // ONE deadline for the whole card — the ticking text and the draining bar
+  // both read it, so they cannot disagree. Priority:
   //   1. Recovery offset — `Date.now() + approvalRemainingMs` (server-authoritative
   //      remaining time on reconnect, so the countdown resumes without resetting).
   //   2. Drift-free start — `approvalStartedAt + timeoutMs` (live foreground turn).
   //   3. Local fallback — `Date.now() + timeoutMs`.
-  useEffect(() => {
-    if (decided || !timeoutMs) return;
-
+  //
+  // Recomputed only when its inputs change, never per tick: the bar's anchor is
+  // derived from it, and re-writing an animation's delay mid-flight restarts it.
+  const deadline = useMemo(() => {
+    if (!timeoutMs) return null;
     const expiresAt =
       approvalRemainingMs !== undefined
         ? Date.now() + approvalRemainingMs
         : approvalStartedAt
           ? approvalStartedAt + timeoutMs
           : Date.now() + timeoutMs;
+    // How much of the budget is already gone. The bar is a CSS animation over
+    // the FULL budget, so a card mounted mid-wait — a reload, a second window,
+    // a card scrolled back into view — has to seek the animation forward by
+    // this much or it draws a nearly-full bar over an ask with a minute left.
+    const elapsedMs = Math.min(timeoutMs, Math.max(0, timeoutMs - (expiresAt - Date.now())));
+    return { expiresAt, elapsedMs };
+  }, [timeoutMs, approvalStartedAt, approvalRemainingMs]);
+
+  useEffect(() => {
+    if (decided || !timeoutMs || !deadline) return;
+    const { expiresAt } = deadline;
     setSecondsRemaining(Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000)));
 
     const interval = setInterval(() => {
@@ -166,7 +193,7 @@ export function ToolApproval({
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [timeoutMs, approvalStartedAt, approvalRemainingMs, decided]);
+  }, [timeoutMs, deadline, decided]);
 
   // Timeout detection — transition to denied state and clear active interaction
   useEffect(() => {
@@ -258,7 +285,9 @@ export function ToolApproval({
     setResponding(true);
     setError(null);
     try {
-      await transport.denyTool(sessionId, toolCallId);
+      // Whatever is in the field rides along, including from the Esc shortcut —
+      // a person who typed a reason and then hit Esc still meant to send it.
+      await transport.denyTool(sessionId, toolCallId, reasonRef.current.trim() || undefined);
       setDecided('denied');
       onDecided?.();
     } catch (err) {
@@ -401,6 +430,11 @@ export function ToolApproval({
               )}
               style={{
                 animationDuration: `${timeoutMs}ms`,
+                // Negative delay = seek. The animation runs over the whole
+                // budget, so a card that mounts partway through starts partway
+                // through — otherwise every reload redraws a full bar over an
+                // ask that is nearly out of time (DOR-810).
+                animationDelay: `-${deadline?.elapsedMs ?? 0}ms`,
                 animationTimingFunction: 'linear',
                 animationFillMode: 'forwards',
               }}
@@ -445,7 +479,41 @@ export function ToolApproval({
           </div>
         )}
         {error && <p className="text-status-error text-2xs mb-2">{error}</p>}
-        <div className="flex flex-wrap gap-2">
+        {/* The optional "why". Hidden until asked for, so the fast path — read
+            the command, allow or deny — is untouched; revealed, it is one line
+            and the agent gets it with the refusal. */}
+        {reasonOpen && (
+          <div className="mb-2">
+            <Input
+              autoFocus
+              // Opts this field out of the card's document-wide Enter shortcut,
+              // which would otherwise APPROVE the call being refused.
+              data-approval-field=""
+              value={reason}
+              maxLength={DENY_REASON_MAX_LENGTH}
+              disabled={responding}
+              onFocus={() => setReasonFocused(true)}
+              onBlur={() => setReasonFocused(false)}
+              onChange={(e) => {
+                setReason(e.target.value);
+                reasonRef.current = e.target.value;
+              }}
+              onKeyDown={(e) => {
+                // Enter sends the denial with this reason. The card's global
+                // Enter shortcut stands down while a field has focus, so this
+                // cannot approve by accident.
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleDeny();
+                }
+              }}
+              placeholder="Why not? The agent gets this and can try another way"
+              aria-label="Reason for denying"
+              className="text-xs"
+            />
+          </div>
+        )}
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             size="sm"
             onClick={handleApprove}
@@ -453,7 +521,7 @@ export function ToolApproval({
             className="transition-opacity duration-150"
           >
             <Check className="size-(--size-icon-xs)" /> Approve
-            {isActive && <Kbd className="ml-1.5">Enter</Kbd>}
+            {showKeyHints && <Kbd className="ml-1.5">Enter</Kbd>}
           </Button>
           {approvalHasSuggestions && (
             <Button
@@ -464,7 +532,7 @@ export function ToolApproval({
               className="transition-opacity duration-150"
             >
               <ShieldCheck className="size-(--size-icon-xs)" /> Always Allow
-              {isActive && <Kbd className="ml-1.5">Shift+Enter</Kbd>}
+              {showKeyHints && <Kbd className="ml-1.5">Shift+Enter</Kbd>}
             </Button>
           )}
           <Button
@@ -477,6 +545,20 @@ export function ToolApproval({
             <X className="size-(--size-icon-xs)" /> Deny
             {isActive && <Kbd className="ml-1.5">Esc</Kbd>}
           </Button>
+          {!reasonOpen && (
+            <button
+              type="button"
+              onClick={() => setReasonOpen(true)}
+              disabled={responding}
+              className={cn(
+                'text-muted-foreground hover:text-foreground text-2xs rounded underline',
+                'focus-visible:ring-ring/50 underline-offset-2 focus-visible:ring-2',
+                'focus-visible:outline-none disabled:opacity-50'
+              )}
+            >
+              Add a reason
+            </button>
+          )}
         </div>
       </InteractiveCard>
       {liveRegion}

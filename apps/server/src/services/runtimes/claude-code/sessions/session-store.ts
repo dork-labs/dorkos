@@ -13,7 +13,12 @@ import type {
   Session,
   PendingInteractionDTO,
 } from '@dorkos/shared/types';
-import type { SessionOpts, MessageOpts, SessionSettingsPort } from '@dorkos/shared/agent-runtime';
+import type {
+  SessionOpts,
+  MessageOpts,
+  SessionSettingsPort,
+  ToolDecisionOptions,
+} from '@dorkos/shared/agent-runtime';
 import type { AgentSession } from '../agent-types.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
@@ -391,22 +396,28 @@ export class SessionStore {
   // Interactive flows
   // ---------------------------------------------------------------------------
 
-  /** Approve or deny a pending tool call. When `alwaysAllow` is true, forwards SDK suggestions. */
+  /**
+   * Approve or deny a pending tool call.
+   *
+   * `alwaysAllow` forwards the SDK's permission suggestions; `denyReason`
+   * rides the refusal into the message the model reads, so a person who
+   * explained themselves is heard rather than merely obeyed.
+   */
   approveTool(
     sessionId: string,
     toolCallId: string,
     approved: boolean,
-    alwaysAllow?: boolean
+    options?: ToolDecisionOptions
   ): boolean {
     const session = this.findSession(sessionId);
     const pending = session?.pendingInteractions.get(toolCallId);
     if (!pending || pending.type !== 'approval') return false;
 
-    if (approved && alwaysAllow && pending.suggestions?.length) {
+    if (approved && options?.alwaysAllow && pending.suggestions?.length) {
       // "Always Allow" — pass the SDK permission suggestions array
       pending.resolve(pending.suggestions);
     } else {
-      pending.resolve(approved);
+      pending.resolve(approved, approved ? undefined : options?.denyReason);
     }
     return true;
   }

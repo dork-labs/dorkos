@@ -46,6 +46,7 @@ export function mapHistoryMessage(m: HistoryMessage): ChatMessage {
                 approvalOutcome: tc.approvalOutcome,
                 approvalResolvedAt: tc.approvalResolvedAt,
                 approvalStartedAt: tc.approvalStartedAt,
+                approvalReasonGiven: tc.approvalReasonGiven,
               }
             : {}),
         });

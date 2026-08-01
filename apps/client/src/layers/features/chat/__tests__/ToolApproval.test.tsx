@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor, act } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, act, fireEvent } from '@testing-library/react';
 import { createRef } from 'react';
 import { ToolApproval, type ToolApprovalHandle } from '../ui/tools/ToolApproval';
 
@@ -47,6 +47,61 @@ describe('ToolApproval', () => {
   it('renders tool arguments display', () => {
     render(<ToolApproval {...baseProps} />);
     expect(screen.getByTestId('tool-args')).toBeDefined();
+  });
+
+  describe('deny reason', () => {
+    it('stays out of the way until asked for', () => {
+      // The fast path is read the command, allow or deny. The field is an
+      // affordance for the times you want to say more, not a step in the flow.
+      render(<ToolApproval {...baseProps} />);
+      expect(screen.queryByLabelText('Reason for denying')).toBeNull();
+      expect(screen.getByRole('button', { name: /add a reason/i })).toBeDefined();
+    });
+
+    it('sends what was typed with the denial', async () => {
+      render(<ToolApproval {...baseProps} />);
+      fireEvent.click(screen.getByRole('button', { name: /add a reason/i }));
+
+      const field = screen.getByLabelText('Reason for denying');
+      fireEvent.change(field, { target: { value: 'Write it under tmp/ instead' } });
+      fireEvent.click(screen.getByRole('button', { name: /^deny/i }));
+
+      await waitFor(() => {
+        expect(mockDenyTool).toHaveBeenCalledWith(
+          'session-1',
+          'tc-1',
+          'Write it under tmp/ instead'
+        );
+      });
+    });
+
+    it('denies on Enter in the field — never approves', async () => {
+      // Enter inside the card normally means Approve. From inside this field it
+      // must mean "send this refusal", or the reason someone typed would allow
+      // the call they were refusing.
+      render(<ToolApproval {...baseProps} isActive />);
+      fireEvent.click(screen.getByRole('button', { name: /add a reason/i }));
+
+      const field = screen.getByLabelText('Reason for denying');
+      fireEvent.change(field, { target: { value: 'not that path' } });
+      fireEvent.keyDown(field, { key: 'Enter' });
+
+      await waitFor(() => {
+        expect(mockDenyTool).toHaveBeenCalledWith('session-1', 'tc-1', 'not that path');
+      });
+      expect(mockApproveTool).not.toHaveBeenCalled();
+    });
+
+    it('sends nothing when the field was opened and left blank', async () => {
+      render(<ToolApproval {...baseProps} />);
+      fireEvent.click(screen.getByRole('button', { name: /add a reason/i }));
+      fireEvent.change(screen.getByLabelText('Reason for denying'), { target: { value: '   ' } });
+      fireEvent.click(screen.getByRole('button', { name: /^deny/i }));
+
+      await waitFor(() => {
+        expect(mockDenyTool).toHaveBeenCalledWith('session-1', 'tc-1', undefined);
+      });
+    });
   });
 
   describe('isActive prop', () => {
@@ -110,7 +165,8 @@ describe('ToolApproval', () => {
       ref.current!.deny();
 
       await waitFor(() => {
-        expect(mockDenyTool).toHaveBeenCalledWith('session-1', 'tc-1');
+        // The third argument is the optional reason; nobody typed one here.
+        expect(mockDenyTool).toHaveBeenCalledWith('session-1', 'tc-1', undefined);
       });
     });
 
@@ -302,6 +358,26 @@ describe('ToolApproval', () => {
       expect(progressBar).toBeDefined();
       expect(progressBar.getAttribute('aria-valuemax')).toBe('600');
       expect(progressBar.getAttribute('aria-valuenow')).toBe('600');
+    });
+
+    it('anchors the draining bar to the time actually left, not to a fresh start', async () => {
+      // DOR-810. The bar is a CSS animation over the FULL budget, so a card
+      // mounted mid-wait — a reload, a second window, a card scrolled back
+      // into view — restarted it from full and drew a nearly-full bar over an
+      // ask with a minute left. A negative delay of the elapsed time seeks the
+      // animation to where the clock actually is.
+      await renderAsync({ ...baseProps, timeoutMs: 600_000, approvalRemainingMs: 61_000 });
+      const drain = screen.getByRole('progressbar').firstElementChild as HTMLElement;
+      expect(drain.style.animationDuration).toBe('600000ms');
+      expect(drain.style.animationDelay).toBe('-539000ms');
+      // And the announced position agrees with the bar, rather than contradicting it.
+      expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('61');
+    });
+
+    it('starts the bar at full when the ask is brand new', async () => {
+      await renderAsync({ ...baseProps, timeoutMs: 600_000 });
+      const drain = screen.getByRole('progressbar').firstElementChild as HTMLElement;
+      expect(drain.style.animationDelay).toBe('0ms');
     });
 
     it('does not render progress bar when timeoutMs is undefined', async () => {

@@ -260,7 +260,12 @@ export interface ElicitationSnapshot {
 interface PendingApproval {
   type: 'approval';
   toolCallId: string;
-  resolve: (result: boolean | PermissionUpdate[]) => void;
+  /**
+   * Answer the ask. `denyReason` is the person's own words, forwarded to the
+   * model as the refusal message when they refused and said why; it is ignored
+   * for an approval, which has nothing to explain.
+   */
+  resolve: (result: boolean | PermissionUpdate[], denyReason?: string) => void;
   reject: (reason: unknown) => void;
   timeout: ReturnType<typeof setTimeout>;
   /** SDK permission suggestions for "Always Allow" — stored so session-store can forward them. */
@@ -644,6 +649,22 @@ export function createCanUseTool(
 }
 
 /**
+ * What the model is told when a person refuses a tool call.
+ *
+ * The reason is the whole point of carrying one: told only "denied", an agent
+ * typically retries the same call or stalls; told why, it can take another
+ * route. A blank reason is treated as no reason — the transcript receipt claims
+ * the agent was told why only when something was actually delivered, so an
+ * empty string must not quietly become a claim.
+ *
+ * @param reason - The person's own words, when they gave any.
+ */
+function denialMessage(reason?: string): string {
+  const said = reason?.trim();
+  return said ? `User denied tool execution. Reason: ${said}` : 'User denied tool execution';
+}
+
+/**
  * Handle tool approval — pause and wait for a person.
  *
  * Reached for every mode except `bypassPermissions` (see
@@ -717,7 +738,7 @@ export function handleToolApproval(
         decisionReason: context.decisionReason,
         hasSuggestions: (context.suggestions?.length ?? 0) > 0,
       },
-      resolve: (result) => {
+      resolve: (result, denyReason) => {
         clearTimeout(timeout);
         context.signal.removeEventListener('abort', onAbort);
         session.pendingInteractions.delete(toolUseId);
@@ -728,7 +749,7 @@ export function handleToolApproval(
         } else if (result) {
           resolve({ behavior: 'allow', updatedInput: input });
         } else {
-          deny('User denied tool execution');
+          deny(denialMessage(denyReason));
         }
       },
       reject: () => {

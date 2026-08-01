@@ -76,7 +76,7 @@ interface Transport {
   // differ from the id passed in on session creation
   stopTask(sessionId, taskId) → Promise<{ success: boolean; taskId: string }>
   approveTool(sessionId, toolCallId, alwaysAllow?) → Promise<{ ok: boolean }>
-  denyTool(sessionId, toolCallId) → Promise<{ ok: boolean }>
+  denyTool(sessionId, toolCallId, reason?) → Promise<{ ok: boolean }>
   getCommands(refresh?)    → Promise<CommandRegistry>
   getModels(opts?)         → Promise<ModelOption[]>
   getCapabilities()        → Promise<{ capabilities, defaultRuntime }>

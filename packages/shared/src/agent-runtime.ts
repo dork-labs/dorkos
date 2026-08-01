@@ -545,6 +545,29 @@ export interface CommandIntentOpts extends MessageOpts {
 }
 
 /**
+ * How a tool-approval decision was made, beyond allow-versus-deny.
+ *
+ * One object rather than two trailing positional flags, because the two fields
+ * belong to opposite answers: `alwaysAllow` only means something on an
+ * approval, `denyReason` only on a refusal. A caller passes the one that fits
+ * its answer instead of padding the other with `undefined`.
+ */
+export interface ToolDecisionOptions {
+  /**
+   * Approve persistently — forwards the runtime's own permission suggestions so
+   * the same call is not asked about again. Ignored on a denial.
+   */
+  alwaysAllow?: boolean;
+  /**
+   * Why the person refused, in their own words, delivered to the agent with the
+   * denial so it can adjust rather than retry. Ignored on an approval, and
+   * absent whenever nobody said anything — the transcript receipt only claims
+   * the agent was told why when this was actually carried.
+   */
+  denyReason?: string;
+}
+
+/**
  * Universal contract for agent backends.
  *
  * All session lifecycle, messaging, storage queries, and synchronization operations
@@ -643,14 +666,14 @@ export interface AgentRuntime {
    * @param sessionId - Target session
    * @param toolCallId - The tool call to approve/deny
    * @param approved - Whether to approve (true) or deny (false)
-   * @param alwaysAllow - When true, forwards SDK permission suggestions for persistent approval
+   * @param options - How the decision was made; see {@link ToolDecisionOptions}
    * @returns false if the session or interaction was not found
    */
   approveTool(
     sessionId: string,
     toolCallId: string,
     approved: boolean,
-    alwaysAllow?: boolean
+    options?: ToolDecisionOptions
   ): boolean;
 
   /**

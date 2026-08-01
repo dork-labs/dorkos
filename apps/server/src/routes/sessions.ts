@@ -685,7 +685,7 @@ router.post('/:id/approve', async (req, res) => {
   }
   const { toolCallId, alwaysAllow } = parsed.data;
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
-  const approved = runtime.approveTool(sessionId, toolCallId, true, alwaysAllow);
+  const approved = runtime.approveTool(sessionId, toolCallId, true, { alwaysAllow });
   if (!approved) {
     if (runtime.hasSession(sessionId)) {
       return sendError(res, 409, 'Interaction already resolved', 'INTERACTION_ALREADY_RESOLVED');
@@ -704,9 +704,12 @@ router.post('/:id/deny', async (req, res) => {
   if (!parsed.success) {
     return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
   }
-  const { toolCallId } = parsed.data;
+  const { toolCallId, reason } = parsed.data;
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
-  const denied = runtime.approveTool(sessionId, toolCallId, false);
+  // A blank field is not a reason. Normalising here keeps every runtime and the
+  // receipt copy from having to re-decide what an empty string means.
+  const denyReason = reason?.trim() ? reason.trim() : undefined;
+  const denied = runtime.approveTool(sessionId, toolCallId, false, { denyReason });
   if (!denied) {
     if (runtime.hasSession(sessionId)) {
       return sendError(res, 409, 'Interaction already resolved', 'INTERACTION_ALREADY_RESOLVED');
@@ -734,6 +737,11 @@ router.post('/:id/batch-approve', async (req, res) => {
 });
 
 // POST /api/sessions/:id/batch-deny - Deny multiple pending tool calls
+//
+// Carries no reason, and the UI offers no field for one: "Deny all" answers a
+// stack of unrelated asks at once, so a single sentence would be attached to
+// requests it was never about. Each refusal therefore reports honestly that
+// nobody explained it, and the transcript receipts say so.
 router.post('/:id/batch-deny', async (req, res) => {
   const sessionId = parseSessionId(req.params.id);
   if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');

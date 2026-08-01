@@ -332,6 +332,11 @@ function toApprovalEvent(data: StreamData): RawOf<'approval_required'> {
     toolName: String(data.toolName ?? ''),
     input: String(data.input ?? ''),
     hasSuggestions: Boolean(data.hasSuggestions),
+    // The client gates its countdown on this, so it has to survive the hop from
+    // the runtime's StreamEvent onto the durable member (DOR-810). Carried only
+    // when the runtime declared one — an invented budget would draw a deadline
+    // nothing enforces.
+    ...(data.timeoutMs !== undefined ? { timeoutMs: Number(data.timeoutMs) } : {}),
     ...(data.title !== undefined ? { title: String(data.title) } : {}),
     ...(data.displayName !== undefined ? { displayName: String(data.displayName) } : {}),
     ...(data.description !== undefined ? { description: String(data.description) } : {}),

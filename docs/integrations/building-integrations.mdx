@@ -44,7 +44,9 @@ interface Transport {
     toolCallId: string,
     alwaysAllow?: boolean
   ): Promise<{ ok: boolean }>;
-  denyTool(sessionId: string, toolCallId: string): Promise<{ ok: boolean }>;
+  denyTool(sessionId: string, toolCallId: string, reason?: string): Promise<{ ok: boolean }>;
+  // `reason` is optional free text (max 1000 chars) handed to the agent with the
+  // refusal, so it can adjust instead of retrying the same call.
   submitAnswers(sessionId, toolCallId, answers): Promise<{ ok: boolean }>;
   stopTask(sessionId: string, taskId: string): Promise<{ success: boolean; taskId: string }>;
   interruptSession(sessionId: string): Promise<{ ok: boolean }>;

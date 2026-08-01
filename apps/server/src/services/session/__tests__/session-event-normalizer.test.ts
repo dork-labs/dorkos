@@ -96,6 +96,9 @@ describe('toRawSessionEvent', () => {
         id: 'a1',
         startedAt: 1000,
         remainingMs: 600000,
+        // The full budget rides along with what is left of it — the client
+        // gates its countdown on this (DOR-810).
+        timeoutMs: 600000,
         toolName: 'Bash',
         input: '{}',
         hasSuggestions: true,

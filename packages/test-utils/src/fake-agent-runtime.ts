@@ -8,6 +8,7 @@ import type {
   CommandIntentOpts,
   RuntimeCapabilities,
   McpAppServerConnection,
+  ToolDecisionOptions,
 } from '@dorkos/shared/agent-runtime';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import type { McpServerEntry } from '@dorkos/shared/transport';
@@ -257,7 +258,12 @@ export class FakeAgentRuntime implements AgentRuntime {
   checkSessionHealth = vi.fn<() => void>();
   approveTool =
     vi.fn<
-      (sessionId: string, toolCallId: string, approved: boolean, alwaysAllow?: boolean) => boolean
+      (
+        sessionId: string,
+        toolCallId: string,
+        approved: boolean,
+        options?: ToolDecisionOptions
+      ) => boolean
     >();
   submitAnswers = vi
     .fn<(sessionId: string, toolCallId: string, answers: Record<string, string>) => boolean>()
@@ -296,8 +302,16 @@ export class FakeAgentRuntime implements AgentRuntime {
       pendingInteractions: [],
       cursor: 0,
     });
+  // The 4th parameter mirrors `AgentRuntime.subscribeSession`: a test that
+  // hands the real projector its abort signal (every durable-stream test does)
+  // cannot type its implementation without it.
   subscribeSession = vi.fn<
-    (ctx: SessionOpts, sessionId: string, sinceCursor?: number) => AsyncIterable<SessionEvent>
+    (
+      ctx: SessionOpts,
+      sessionId: string,
+      sinceCursor?: number,
+      signal?: AbortSignal
+    ) => AsyncIterable<SessionEvent>
     // eslint-disable-next-line require-yield
   >(async function* () {});
   subscribeSessionList = vi.fn<(ctx: SessionOpts) => AsyncIterable<SessionListEvent>>(

@@ -46,6 +46,11 @@ export interface ApprovalReceipt {
   resolvedAt?: number;
   /** Epoch ms the prompt was raised, when the resolver said. */
   startedAt?: number;
+  /**
+   * Whether the person's own words were delivered to the agent with a denial —
+   * the durable half of the receipt's "agent was told why" clause.
+   */
+  reasonGiven?: boolean;
 }
 
 /**
@@ -62,7 +67,12 @@ export function collectApprovalReceipts(events: SessionEvent[]): Map<string, App
     if (event.type !== 'interaction_resolved') continue;
     const outcome = approvalOutcomeOf(event);
     if (outcome === undefined) continue;
-    receipts.set(event.id, { outcome, resolvedAt: event.at, startedAt: event.startedAt });
+    receipts.set(event.id, {
+      outcome,
+      resolvedAt: event.at,
+      startedAt: event.startedAt,
+      reasonGiven: event.reasonGiven,
+    });
   }
   return receipts;
 }
@@ -81,6 +91,7 @@ function annotatePart(part: MessagePart, receipts: Map<string, ApprovalReceipt>)
     approvalOutcome: receipt.outcome,
     approvalResolvedAt: receipt.resolvedAt,
     approvalStartedAt: receipt.startedAt,
+    approvalReasonGiven: receipt.reasonGiven,
   };
 }
 
@@ -129,6 +140,7 @@ export function applyApprovalReceipts(
                     approvalOutcome: receipt.outcome,
                     approvalResolvedAt: receipt.resolvedAt,
                     approvalStartedAt: receipt.startedAt,
+                    approvalReasonGiven: receipt.reasonGiven,
                   };
             }),
           }

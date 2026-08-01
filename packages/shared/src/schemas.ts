@@ -327,11 +327,24 @@ export const SendMessageResponseSchema = z
 
 export type SendMessageResponse = z.infer<typeof SendMessageResponseSchema>;
 
+/**
+ * Longest deny reason accepted. Generous enough for a couple of sentences of
+ * context and short enough that a paste accident cannot flood the agent's
+ * next prompt.
+ */
+export const DENY_REASON_MAX_LENGTH = 1_000;
+
 export const ApprovalRequestSchema = z
   .object({
     toolCallId: z.string(),
     /** When true, resolves as "Always Allow" — forwards SDK permission suggestions. */
     alwaysAllow: z.boolean().optional(),
+    /**
+     * Why the person refused, in their own words — delivered to the agent with
+     * the denial so it can adjust instead of retrying the same call. Ignored on
+     * the approve route. Blank is the same as absent: no reason was given.
+     */
+    reason: z.string().max(DENY_REASON_MAX_LENGTH).optional(),
   })
   .openapi('ApprovalRequest');
 
@@ -698,6 +711,13 @@ export const PendingInteractionDTOSchema = z
       id: z.string(),
       startedAt: z.number(),
       remainingMs: z.number(),
+      /**
+       * The full budget the ask was given, from the runtime that will enforce
+       * the auto-deny. `remainingMs` says how much is left; this says of what,
+       * which is what the card's draining bar is drawn against. Optional so a
+       * recovered interaction recorded before this field existed still replays.
+       */
+      timeoutMs: z.number().optional(),
       toolName: z.string(),
       input: z.string(),
       title: z.string().optional(),
@@ -1447,6 +1467,14 @@ export const ToolCallPartSchema = z
       'How an approval was answered — drives the transcript receipt line'
     ),
     /**
+     * Whether the denial carried the person's own words to the agent. Only the
+     * server can say this, because only the server knows what was actually
+     * delivered — so the receipt's "agent was told why" clause is a fact, not
+     * an inference from the deny UI having a text field. Never set for an
+     * `expired` outcome: a clock explains nothing.
+     */
+    approvalReasonGiven: z.boolean().optional(),
+    /**
      * Server epoch ms when the approval was answered. Timestamps the receipt,
      * and paired with `approvalStartedAt` it states how long an `expired`
      * request waited before auto-denial.
@@ -1673,6 +1701,12 @@ export const HistoryToolCallSchema = z
     approvalOutcome: ToolApprovalOutcomeSchema.optional(),
     /** Epoch ms the answer landed. Timestamps the receipt. */
     approvalResolvedAt: z.number().optional(),
+    /**
+     * Whether the person's own words rode along with the denial. The durable
+     * half of the receipt's "agent was told why" clause, so a conversation
+     * reopened tomorrow reads exactly as it did live.
+     */
+    approvalReasonGiven: z.boolean().optional(),
     /**
      * Epoch ms the permission prompt was raised. With `approvalResolvedAt` it
      * says how long an `expired` request waited before being auto-denied.

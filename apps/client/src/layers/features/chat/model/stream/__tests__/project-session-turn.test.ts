@@ -133,6 +133,26 @@ describe('projectInProgressTurn', () => {
     });
   });
 
+  it('carries the approval timeout onto the part, so the card can count down', () => {
+    // Purpose: the countdown and the draining progress bar are both gated on
+    // `timeoutMs`. The stream carries the server's own auto-deny budget; a part
+    // folded without it renders a card with no deadline anywhere on it.
+    const events: SessionEvent[] = [
+      {
+        seq: 1,
+        type: 'approval_required',
+        id: 'tc1',
+        toolName: 'Bash',
+        input: 'rm -rf /tmp/x',
+        startedAt: 1000,
+        remainingMs: 25000,
+        timeoutMs: 600_000,
+        hasSuggestions: false,
+      },
+    ];
+    expect(projectInProgressTurn(events)[0]).toMatchObject({ timeoutMs: 600_000 });
+  });
+
   it('surfaces a question_prompt interaction as a pending question tool-call part', () => {
     // Purpose: a recovered AskUserQuestion must render as a pending question
     // tool-call part carrying its questions.
@@ -707,6 +727,55 @@ describe('projectSessionMessages', () => {
     });
   });
 
+  it('takes the countdown from the snapshot DTO, not the replayed ask (DOR-810)', () => {
+    // THE RELOAD CASE, and the one the durable stream cannot answer alone. A
+    // replayed `approval_required` carries the remainder it had when it was
+    // EMITTED — the full budget — so a card rebuilt from the turn alone jumps
+    // back to the start of the countdown on every reload. Measured in a browser
+    // before this was fixed: a card twenty seconds old came back reading 598
+    // of 600. The snapshot's pending DTO is computed at snapshot time and is
+    // the only fresh timer in the payload, so it wins even though the turn
+    // already represents the interaction.
+    const askedAt = 1_700_000_000_000;
+    const staleAsk: SessionEvent = {
+      seq: 2,
+      type: 'approval_required',
+      id: 'rec-1',
+      toolName: 'Bash',
+      input: 'ls',
+      startedAt: askedAt,
+      remainingMs: 600_000,
+      timeoutMs: 600_000,
+      hasSuggestions: false,
+    };
+    const freshDto: PendingInteractionDTO = {
+      type: 'approval',
+      id: 'rec-1',
+      startedAt: askedAt,
+      remainingMs: 61_000,
+      timeoutMs: 600_000,
+      toolName: 'Bash',
+      input: 'ls',
+      hasSuggestions: false,
+    };
+
+    const messages = projectSessionMessages(
+      history,
+      [{ seq: 1, type: 'turn_start' }, staleAsk],
+      [freshDto]
+    );
+    const parts = (messages[2].parts ?? []).filter((p) => p.type === 'tool_call');
+    expect(parts).toHaveLength(1);
+    expect(parts[0]).toMatchObject({
+      toolCallId: 'rec-1',
+      interactiveType: 'approval',
+      status: 'pending',
+      approvalRemainingMs: 61_000,
+      approvalStartedAt: askedAt,
+      timeoutMs: 600_000,
+    });
+  });
+
   it('interaction_resolved settles a pending part folded from snapshot-carried events', () => {
     // Purpose: a snapshot's inProgressTurn carries the interaction EVENT (which
     // sets interactiveType directly), so removing the pending DTO alone cannot
@@ -819,6 +888,35 @@ describe('projectInProgressTurn — approval receipts', () => {
     expect(part.approvalOutcome).toBe('allowed');
     // The server's backfill is the only source for this on the live path.
     expect(part.approvalStartedAt).toBe(1_000);
+  });
+
+  it('records that a reason reached the agent, on the LIVE path', () => {
+    // Purpose: the receipt's "agent was told why" clause is a claim about what
+    // the agent received, so only the server can authorize it. Pinned on the
+    // live shape (a bare tool_call the resolution lands on) because that is
+    // what production produces — the ask itself never enters the turn.
+    const part = projectInProgressTurn([
+      { seq: 1, type: 'tool_call', toolCallId: 'tc-1', toolName: 'Bash', status: 'pending' },
+      {
+        seq: 2,
+        type: 'interaction_resolved',
+        id: 'tc-1',
+        kind: 'approval',
+        resolution: 'denied',
+        at: 5_000,
+        reasonGiven: true,
+      },
+    ])[0] as { approvalOutcome?: string; approvalReasonGiven?: boolean };
+    expect(part.approvalOutcome).toBe('denied');
+    expect(part.approvalReasonGiven).toBe(true);
+  });
+
+  it('claims nothing about a reason when a denial carried none', () => {
+    const part = projectInProgressTurn([
+      ask('tc-1'),
+      { seq: 2, type: 'interaction_resolved', id: 'tc-1', kind: 'approval', resolution: 'denied' },
+    ])[0] as { approvalReasonGiven?: boolean };
+    expect(part.approvalReasonGiven).toBeUndefined();
   });
 
   it('does NOT mint a receipt for a timed-out question', () => {

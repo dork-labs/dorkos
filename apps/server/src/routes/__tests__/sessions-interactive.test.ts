@@ -143,7 +143,9 @@ describe('POST /api/sessions/:id/approve', () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true });
-    expect(fakeRuntime.approveTool).toHaveBeenCalledWith(SESSION_ID, 'tc-1', true, undefined);
+    expect(fakeRuntime.approveTool).toHaveBeenCalledWith(SESSION_ID, 'tc-1', true, {
+      alwaysAllow: undefined,
+    });
   });
 
   it('returns 404 when session does not exist (approve)', async () => {
@@ -182,7 +184,9 @@ describe('POST /api/sessions/:id/deny', () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true });
-    expect(fakeRuntime.approveTool).toHaveBeenCalledWith(SESSION_ID, 'tc-1', false);
+    expect(fakeRuntime.approveTool).toHaveBeenCalledWith(SESSION_ID, 'tc-1', false, {
+      denyReason: undefined,
+    });
   });
 });
 
@@ -250,8 +254,12 @@ describe('single-resolve guard — stale/duplicate answers are a benign no-op', 
     expect(staleApprove.body.code).toBe('INTERACTION_ALREADY_RESOLVED');
 
     // First call was the deny (approved=false), second the stale approve.
-    expect(fakeRuntime.approveTool).toHaveBeenNthCalledWith(1, SESSION_ID, 'tc-1', false);
-    expect(fakeRuntime.approveTool).toHaveBeenNthCalledWith(2, SESSION_ID, 'tc-1', true, undefined);
+    expect(fakeRuntime.approveTool).toHaveBeenNthCalledWith(1, SESSION_ID, 'tc-1', false, {
+      denyReason: undefined,
+    });
+    expect(fakeRuntime.approveTool).toHaveBeenNthCalledWith(2, SESSION_ID, 'tc-1', true, {
+      alwaysAllow: undefined,
+    });
     expect(fakeRuntime.approveTool.mock.results[1].value).toBe(false);
   });
 

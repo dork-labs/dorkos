@@ -479,8 +479,15 @@ export interface Transport extends RoomTransport {
     toolCallId: string,
     alwaysAllow?: boolean
   ): Promise<{ ok: boolean }>;
-  /** Deny a pending tool call that requires user confirmation. */
-  denyTool(sessionId: string, toolCallId: string): Promise<{ ok: boolean }>;
+  /**
+   * Deny a pending tool call that requires user confirmation.
+   *
+   * @param sessionId - Session holding the pending request.
+   * @param toolCallId - The tool call being refused.
+   * @param reason - Why, in the person's own words. Delivered to the agent so
+   *   it can adjust instead of retrying; omitted when nobody said anything.
+   */
+  denyTool(sessionId: string, toolCallId: string, reason?: string): Promise<{ ok: boolean }>;
   /** Approve multiple pending tool calls at once. */
   batchApprove(
     sessionId: string,

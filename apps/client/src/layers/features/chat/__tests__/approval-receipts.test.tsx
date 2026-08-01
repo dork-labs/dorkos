@@ -208,6 +208,30 @@ describe('approval receipts', () => {
     expect(receipt.textContent).not.toContain('told why');
   });
 
+  it('says the agent was told why, when a reason rode along with the denial', () => {
+    // Purpose: the clause is earned, never decorative. It appears only because
+    // the server said a reason was actually delivered to the agent — so a
+    // reader can trust that the agent got an explanation and adjusted, rather
+    // than being left to guess and retry.
+    renderTranscript([
+      ...turnWithAsk('tc-1', 'rm -rf /'),
+      {
+        seq: 99,
+        type: 'interaction_resolved',
+        id: 'tc-1',
+        kind: 'approval',
+        resolution: 'denied',
+        at: APPROVAL_STARTED_AT + 5_000,
+        reasonGiven: true,
+      },
+    ]);
+
+    const receipt = screen.getByTestId('approval-receipt');
+    expect(receipt.getAttribute('data-outcome')).toBe('denied');
+    expect(receipt.textContent).toContain('You denied');
+    expect(receipt.textContent).toContain('agent was told why');
+  });
+
   it('an expired request says how long it waited before being auto-denied', () => {
     // Purpose: nobody answered, so "You denied" would be a lie. The duration
     // comes from the interaction's own timer (asked → answered), so a changed
@@ -221,6 +245,9 @@ describe('approval receipts', () => {
     expect(receipt.getAttribute('data-outcome')).toBe('expired');
     expect(receipt.textContent).toContain('Expired — denied after 10:00');
     expect(receipt.textContent).not.toContain('You denied');
+    // The clock answered on the person's behalf. Nobody told the agent
+    // anything, so the reason clause must never appear here.
+    expect(receipt.textContent).not.toContain('told why');
   });
 
   it('an abort withdraws the ask without inventing a receipt', () => {

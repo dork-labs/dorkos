@@ -27,7 +27,7 @@ Transport
   postMessage(id, content, cwd?, options?) -> { sessionId }   # trigger-only, 202
                                           # options: { clientMessageId?, uiState? }
   approveTool(sessionId, toolCallId)  -> { ok: boolean }
-  denyTool(sessionId, toolCallId)     -> { ok: boolean }
+  denyTool(sessionId, toolCallId, reason?) -> { ok: boolean }
   submitAnswers(sessionId, toolCallId, answers) -> { ok: boolean }
   stopTask(sessionId, taskId)         -> { success: boolean, taskId: string }
   interruptSession(sessionId)         -> { ok: boolean }

@@ -422,6 +422,7 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
             }))}
             resolvedAt={toolPart.approvalResolvedAt}
             startedAt={toolPart.approvalStartedAt}
+            reasonGiven={receipt.reasonGiven}
           />
           {/* A denied or expired tool never ran — there is no result worth a
               card, and the receipt already says what happened. An allowed one
