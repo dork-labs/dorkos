@@ -1023,7 +1023,11 @@ body {
   left: 0;
   width: 40%;
   background: linear-gradient(90deg, transparent, rgb(var(--chip-read) / 0.22), transparent);
-  animation: chip-scan 1.7s ease-in-out infinite;
+  /* `forwards` is dead weight on an infinite animation, which never reaches an
+     end to hold. It is here for the reduced-motion reset below, which cuts every
+     animation to one 0.01ms iteration: without a fill mode the band snaps back
+     to no transform at all and parks a violet blob over the left of the chip. */
+  animation: chip-scan 1.7s ease-in-out infinite forwards;
 }
 
 @keyframes chip-scan {
@@ -1050,7 +1054,10 @@ body {
      multiples of the beam's own width and cross any chip in one cycle. */
   width: max(10px, 9%);
   background: linear-gradient(90deg, transparent, rgb(var(--chip-search) / 0.3), transparent);
-  animation: chip-beam 2.6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  /* `forwards` for the same reason as the scan above: it holds the beam off the
+     end of its clip when the reduced-motion reset stops it, instead of leaving a
+     cyan bar standing in the chip. */
+  animation: chip-beam 2.6s cubic-bezier(0.4, 0, 0.6, 1) infinite forwards;
 }
 
 @keyframes chip-beam {
@@ -1412,21 +1419,35 @@ body {
 }
 
 /* ---- Reduced motion ------------------------------------------------------
-   The global reset above already stops all seven signatures: it forces every
-   animation in the document to one 0.01ms iteration, which lands each of them
-   on its resting frame — sweeps off the end of their clip, dots and sparks at
-   zero opacity, the swallowed name back where it started.
+   The global reset near the end of this file stops all seven signatures: it
+   forces every animation in the document to one 0.01ms iteration. What it does
+   NOT do is decide where each one lands — that is the animation's own fill mode,
+   which the reset leaves alone. A signature with no fill mode snaps back to the
+   element's un-animated state, which for the two coloured sweeps meant a violet
+   blob and a cyan bar sitting still on a working chip. Both now carry
+   `forwards`, so the reset holds them on their last frame, off the end of the
+   clip. The rest already end where they should: sparks, puffs and radar rings
+   are transparent at rest, and the swallowed name is simply the name.
 
-   What the design record asks for beyond that is a chip that still says it is
-   working: "static icon plus a subtle opacity pulse". That is the app's own
-   `tasks` breath, the one the thinking label wears — reinstated here rather
-   than defined again. It needs `!important` to outrank the reset that just
-   silenced everything, and it is the only motion this whole file gives back:
-   opacity carries it, and the 2% scale that rides along is below the threshold
-   the reset exists to protect against. */
+   What the design record asks for beyond stopping is a chip that still says it
+   is working: "static icon plus a subtle opacity pulse". Opacity only — the
+   chips do not borrow the app's `tasks` breath, because that rides a 2% scale
+   along with it, and a chip that grows is a chip that moves. It needs
+   `!important` to outrank the reset that just silenced everything, and it is
+   the only motion this whole block gives back. */
+@keyframes chip-breath {
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .touch-chip[data-live='true'] {
-    animation: tasks 2.4s ease-in-out infinite !important;
+    animation: chip-breath 2.4s ease-in-out infinite !important;
   }
 }
 
