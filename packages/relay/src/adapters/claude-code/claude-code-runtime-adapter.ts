@@ -11,7 +11,7 @@
  * @module relay/adapters/claude-code-runtime-adapter
  */
 
-import type { StreamEvent } from '@dorkos/shared/types';
+import type { PermissionMode, StreamEvent } from '@dorkos/shared/types';
 import {
   RuntimeAdapter,
   type RuntimeAdapterContext,
@@ -28,7 +28,7 @@ import type { AgentRuntimeLike } from './types.js';
  * `sendMessage` without requiring a second plumbing path.
  */
 export interface ClaudeCodeRuntimeSessionOpts {
-  readonly permissionMode: string;
+  readonly permissionMode: PermissionMode;
   readonly cwd?: string;
   readonly hasStarted?: boolean;
   readonly systemPromptAppend?: string;
