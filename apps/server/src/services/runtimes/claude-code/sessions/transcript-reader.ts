@@ -30,6 +30,37 @@ import { logger } from '../../../../lib/logger.js';
 export type { HistoryMessage, HistoryToolCall };
 
 /**
+ * Translate the permission mode the SDK recorded in a transcript into the
+ * DorkOS mode a session row reports, or `undefined` when the value is not one
+ * this build knows.
+ *
+ * Every mode Claude Code declares needs its own entry here. A missing arm does
+ * not fail loudly — it silently reports a permissive session as `default`, so
+ * the list tells the operator a session is prompting on every tool while it is
+ * really running unattended. `dangerously-skip` is the SDK's older spelling of
+ * `bypassPermissions` and still appears in transcripts written by older CLIs.
+ */
+function normalizeTranscriptPermissionMode(sdkMode: string): PermissionMode | undefined {
+  switch (sdkMode) {
+    case 'bypassPermissions':
+    case 'dangerously-skip':
+      return 'bypassPermissions';
+    case 'plan':
+      return 'plan';
+    case 'acceptEdits':
+      return 'acceptEdits';
+    case 'auto':
+      return 'auto';
+    case 'dontAsk':
+      return 'dontAsk';
+    case 'default':
+      return 'default';
+    default:
+      return undefined;
+  }
+}
+
+/**
  * Single source of truth for session data — reads SDK JSONL transcript files
  * from `{claudeRoot}/projects/{slug}/`, where `claudeRoot` is a Claude Code
  * account's config directory (`~/.claude` by default; see
@@ -400,16 +431,9 @@ export class TranscriptReader {
             }
           }
           if (parsed.type === 'user' && parsed.permissionMode) {
-            const sdkMode = parsed.permissionMode;
-            if (sdkMode === 'bypassPermissions' || sdkMode === 'dangerously-skip') {
-              permissionMode = 'bypassPermissions';
-            } else if (sdkMode === 'plan') {
-              permissionMode = 'plan';
-            } else if (sdkMode === 'acceptEdits') {
-              permissionMode = 'acceptEdits';
-            } else {
-              permissionMode = 'default';
-            }
+            // An unrecognized mode degrades to the SAFEST posture, never a
+            // permissive one.
+            permissionMode = normalizeTranscriptPermissionMode(parsed.permissionMode) ?? 'default';
           }
           // Auto-triggered compaction is a context-pressure signal; a manual
           // compaction is user-driven and deliberately ignored. The top-level
@@ -499,26 +523,15 @@ export class TranscriptReader {
 
       // Extract permission mode from init message or user messages
       if (parsed.type === 'system' && parsed.subtype === 'init' && parsed.permissionMode) {
-        const sdkMode = parsed.permissionMode as string;
-        if (sdkMode === 'bypassPermissions' || sdkMode === 'dangerously-skip') {
-          permissionMode = 'bypassPermissions';
-        } else if (sdkMode === 'plan') {
-          permissionMode = 'plan';
-        } else if (sdkMode === 'acceptEdits') {
-          permissionMode = 'acceptEdits';
-        }
+        // Init only ever RAISES what we know: an unrecognized value leaves the
+        // running answer alone rather than overwriting it with a guess.
+        const initMode = normalizeTranscriptPermissionMode(parsed.permissionMode);
+        if (initMode) permissionMode = initMode;
       }
       if (parsed.type === 'user' && parsed.permissionMode) {
-        const sdkMode = parsed.permissionMode as string;
-        if (sdkMode === 'bypassPermissions' || sdkMode === 'dangerously-skip') {
-          permissionMode = 'bypassPermissions';
-        } else if (sdkMode === 'plan') {
-          permissionMode = 'plan';
-        } else if (sdkMode === 'acceptEdits') {
-          permissionMode = 'acceptEdits';
-        } else {
-          permissionMode = 'default';
-        }
+        // A user record is the authoritative per-turn mode; an unrecognized one
+        // degrades to the SAFEST posture, never a permissive one.
+        permissionMode = normalizeTranscriptPermissionMode(parsed.permissionMode) ?? 'default';
       }
 
       // Extract model from assistant messages
