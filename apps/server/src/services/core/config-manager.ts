@@ -1358,6 +1358,55 @@ export function backfillRuntimeExecutionDefaults(store: {
   });
 }
 
+/**
+ * Migration body: backfill the default-trust-stop leaves — the global
+ * `runtimes.defaultTrustStop` and the per-runtime override on each of the three
+ * runtime sections (spec `trust-dial`, decision 6).
+ *
+ * Needed for the same reason {@link backfillRuntimeExecutionDefaults} is: conf's
+ * defaults-merge is SHALLOW, so a `runtimes` block already on disk never gains a
+ * new key — nested or top-level — from the schema default alone.
+ *
+ * Additive + idempotent: every leaf is written only when absent, and every value
+ * is `null`, which means "let the runtime decide". An upgrade therefore never
+ * moves anybody's new sessions to a stop they did not choose, least of all the
+ * one that stops asking.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillDefaultTrustStops(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const runtimes = store.get('runtimes');
+  if (runtimes == null || typeof runtimes !== 'object') return;
+  const current = runtimes as Record<string, unknown>;
+
+  /** The section object with `defaultTrustStop: null` added, or null when it already has one. */
+  const seed = (section: string): Record<string, unknown> | null => {
+    const value = current[section];
+    if (value == null || typeof value !== 'object') return null;
+    const block = value as Record<string, unknown>;
+    if ('defaultTrustStop' in block) return null;
+    return { ...block, defaultTrustStop: null };
+  };
+
+  const claudeCode = seed('claudeCode');
+  const codex = seed('codex');
+  const opencode = seed('opencode');
+  const global = 'defaultTrustStop' in current ? null : { defaultTrustStop: null };
+  if (!claudeCode && !codex && !opencode && !global) return;
+
+  store.set('runtimes', {
+    ...current,
+    ...(global ?? {}),
+    ...(claudeCode ? { claudeCode } : {}),
+    ...(codex ? { codex } : {}),
+    ...(opencode ? { opencode } : {}),
+  });
+}
+
 export const CONFIG_MIGRATIONS = {
   '1.0.0': (store: {
     has: (key: string) => boolean;
@@ -1584,6 +1633,12 @@ export const CONFIG_MIGRATIONS = {
     // upgrade never hands out a consent nobody gave and everyone meets the
     // dialog once before their first Full-autonomy session.
     backfillAutonomyAcknowledgement(store);
+    // The default trust stops (`runtimes.defaultTrustStop` and the per-runtime
+    // override on each section; spec `trust-dial`, decision 6). Runs AFTER the
+    // two `runtimes` backfills above so it seeds into the same sections they
+    // guarantee exist. Additive + idempotent; every leaf seeds `null`, which
+    // leaves each runtime starting new sessions exactly where it does today.
+    backfillDefaultTrustStops(store);
   },
 } as const;
 

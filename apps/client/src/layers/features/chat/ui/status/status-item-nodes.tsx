@@ -28,6 +28,7 @@ import {
   type StatusBarItemKey,
   type StatusDensity,
   type RuntimeChipState,
+  type MakeDefaultStopLineProps,
 } from '@/layers/features/status';
 import { AgentIdentityChip } from './AgentIdentityChip';
 
@@ -55,6 +56,13 @@ export interface StatusItemNodesInput {
   onChangeMode: (mode: PermissionMode) => void;
   /** Whether the active model can run the `auto` permission mode. */
   modelSupportsAutoMode: boolean;
+  /**
+   * The offer to make the stop just chosen the default for every new session,
+   * or `null` when there is nothing to offer (spec `trust-dial`, decision 6C).
+   */
+  makeDefault: MakeDefaultStopLineProps | null;
+  /** Told whenever the permissions picker opens or closes. */
+  onPermissionPickerOpenChange: (open: boolean) => void;
   /**
    * The composer's Plan switch, or `null` when this runtime declares no way of
    * working. Resolved by the caller from the runtime's capability profile —
@@ -189,6 +197,8 @@ export function buildStatusItemNodes(
       modelSupportsAutoMode={input.modelSupportsAutoMode}
       planActive={input.plan?.active}
       compact={compactItems}
+      makeDefault={input.makeDefault}
+      onOpenChange={input.onPermissionPickerOpenChange}
     />
   );
 

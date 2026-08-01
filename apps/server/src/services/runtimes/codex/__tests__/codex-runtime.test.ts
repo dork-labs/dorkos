@@ -302,9 +302,11 @@ describe('CodexRuntime', () => {
 
       expect(updated).toBe(true);
       expect(runtime.hasSession(sessionId)).toBe(true);
-      expect(port.saveSessionSettings).toHaveBeenCalledWith(sessionId, {
-        permissionMode: 'acceptEdits',
-      });
+      expect(port.saveSessionSettings).toHaveBeenCalledWith(
+        sessionId,
+        { permissionMode: 'acceptEdits' },
+        { interactive: true }
+      );
       const session = await runtime.getSession('/projects/demo', sessionId);
       expect(session?.permissionMode).toBe('acceptEdits');
     });

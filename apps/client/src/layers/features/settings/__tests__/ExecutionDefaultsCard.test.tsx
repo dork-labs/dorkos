@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -42,10 +42,17 @@ afterEach(() => {
 
 const DEFAULTS: ExecutionDefaults = {
   runtime: 'claude-code',
+  trustStop: null,
   perRuntime: [
-    { runtime: 'claude-code', model: 'claude-opus-4-6', effort: 'high', supportsEffort: true },
-    { runtime: 'codex', model: null, effort: null, supportsEffort: true },
-    { runtime: 'opencode', model: null, effort: null, supportsEffort: false },
+    {
+      runtime: 'claude-code',
+      model: 'claude-opus-4-6',
+      effort: 'high',
+      supportsEffort: true,
+      trustStop: null,
+    },
+    { runtime: 'codex', model: null, effort: null, supportsEffort: true, trustStop: null },
+    { runtime: 'opencode', model: null, effort: null, supportsEffort: false, trustStop: null },
   ],
 };
 
@@ -68,10 +75,20 @@ const MODELS = [
     description: 'Capable model',
     supportsEffort: true,
   },
-  { value: 'haiku', displayName: 'Haiku', description: 'Small model', supportsEffort: false },
+  {
+    value: 'haiku',
+    displayName: 'Haiku',
+    description: 'Small model',
+    supportsEffort: false,
+    trustStop: null,
+  },
 ];
 
-function renderCard(executionDefaults: ExecutionDefaults = DEFAULTS, models = MODELS) {
+function renderCard(
+  executionDefaults: ExecutionDefaults = DEFAULTS,
+  models = MODELS,
+  ui?: { autonomyAcknowledgedAt: string | null }
+) {
   const updateConfig = vi.fn().mockResolvedValue(undefined);
   const transport = createMockTransport({
     getModels: vi.fn().mockResolvedValue(models),
@@ -85,6 +102,7 @@ function renderCard(executionDefaults: ExecutionDefaults = DEFAULTS, models = MO
       runtimes: ['claude-code'],
       claudeCliPath: null,
       executionDefaults,
+      ...(ui ? { ui } : {}),
       tunnel: {
         enabled: false,
         connected: false,
@@ -164,7 +182,15 @@ describe('ExecutionDefaultsCard', () => {
   it('will not let the default model be paired with an effort it cannot take', async () => {
     renderCard({
       ...DEFAULTS,
-      perRuntime: [{ runtime: 'claude-code', model: 'haiku', effort: null, supportsEffort: true }],
+      perRuntime: [
+        {
+          runtime: 'claude-code',
+          model: 'haiku',
+          effort: null,
+          supportsEffort: true,
+          trustStop: null,
+        },
+      ],
     });
     // The runtime supports effort; the model chosen above does not. Said, not
     // hidden — and the select that would have offered High is gone.
@@ -178,7 +204,13 @@ describe('ExecutionDefaultsCard', () => {
     const { updateConfig } = renderCard({
       ...DEFAULTS,
       perRuntime: [
-        { runtime: 'claude-code', model: 'haiku', effort: 'high', supportsEffort: true },
+        {
+          runtime: 'claude-code',
+          model: 'haiku',
+          effort: 'high',
+          supportsEffort: true,
+          trustStop: null,
+        },
       ],
     });
     const clear = await screen.findByTestId('default-effort-clear');
@@ -196,7 +228,13 @@ describe('ExecutionDefaultsCard', () => {
       {
         ...DEFAULTS,
         perRuntime: [
-          { runtime: 'claude-code', model: 'claude-opus-4-6', effort: null, supportsEffort: true },
+          {
+            runtime: 'claude-code',
+            model: 'claude-opus-4-6',
+            effort: null,
+            supportsEffort: true,
+            trustStop: null,
+          },
         ],
       },
       [
@@ -219,10 +257,169 @@ describe('ExecutionDefaultsCard', () => {
   it('keeps a model that is no longer offered selectable rather than showing a blank', async () => {
     renderCard({
       ...DEFAULTS,
-      perRuntime: [{ runtime: 'claude-code', model: 'opus-3', effort: null, supportsEffort: true }],
+      perRuntime: [
+        {
+          runtime: 'claude-code',
+          model: 'opus-3',
+          effort: null,
+          supportsEffort: true,
+          trustStop: null,
+        },
+      ],
     });
     await waitFor(() =>
       expect(screen.getByTestId('default-model-select')).toHaveTextContent('no longer offered')
+    );
+  });
+});
+
+describe('ExecutionDefaultsCard — where new sessions start (trust-dial, decision 6B)', () => {
+  it('shows one dial and spells out what the chosen stop means on each runtime', async () => {
+    renderCard();
+    // Ask first is where a fresh install stands, resolved from the runtime's own
+    // starting mode rather than from a stored value there is none of.
+    expect(await screen.findByRole('radio', { name: 'Ask first' })).toBeChecked();
+    // The caption is the runtime's own sentence, not copy written in Settings.
+    await waitFor(() =>
+      expect(screen.getByTestId('default-trust-stop-consequences')).toHaveTextContent(
+        'Asks before it edits a file or runs a command.'
+      )
+    );
+  });
+
+  it('writes the runtime-neutral stop, never a mode id', async () => {
+    const { updateConfig } = renderCard();
+    await userEvent.click(await screen.findByRole('radio', { name: 'Act' }));
+
+    await waitFor(() =>
+      expect(updateConfig).toHaveBeenCalledWith({ runtimes: { defaultTrustStop: 'act' } })
+    );
+  });
+
+  it('asks before Full autonomy becomes the default, and writes nothing until it is answered', async () => {
+    const { updateConfig } = renderCard();
+    await userEvent.click(await screen.findByRole('radio', { name: 'Full autonomy' }));
+
+    // The dialog reads the RUNTIME's own promise — what Full autonomy means
+    // differs by agent, so Settings never writes its own sentence.
+    expect(
+      await screen.findByText(/Runs everything without asking, including outside this project/)
+    ).toBeInTheDocument();
+    expect(updateConfig).not.toHaveBeenCalled();
+  });
+
+  it('records the acknowledgement and the new default in ONE write', async () => {
+    // Set-time is consent-time. Two requests would race — the server refuses the
+    // stop without a record — so the dialog sends both together.
+    const { updateConfig } = renderCard();
+    await userEvent.click(await screen.findByRole('radio', { name: 'Full autonomy' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Turn on Full autonomy' }));
+
+    await waitFor(() => expect(updateConfig).toHaveBeenCalledTimes(1));
+    const patch = updateConfig.mock.calls[0]![0] as {
+      ui: { autonomyAcknowledgedAt: string };
+      runtimes: { defaultTrustStop: string };
+    };
+    expect(patch.runtimes).toEqual({ defaultTrustStop: 'autonomy' });
+    expect(typeof patch.ui.autonomyAcknowledgedAt).toBe('string');
+  });
+
+  it('asks nothing of somebody who already acknowledged it', async () => {
+    const { updateConfig } = renderCard(DEFAULTS, MODELS, {
+      autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z',
+    });
+    await userEvent.click(await screen.findByRole('radio', { name: 'Full autonomy' }));
+
+    await waitFor(() =>
+      expect(updateConfig).toHaveBeenCalledWith({ runtimes: { defaultTrustStop: 'autonomy' } })
+    );
+  });
+
+  it('says so, quietly and permanently, while autonomy is the standing default', async () => {
+    renderCard({ ...DEFAULTS, trustStop: 'autonomy' });
+    expect(await screen.findByTestId('default-trust-stop-standing-note')).toHaveTextContent(
+      'New sessions run without asking'
+    );
+  });
+
+  it('says so when ONE runtime is set to run without asking, and names it', async () => {
+    // The disclosure can put a single runtime at autonomy while the shared
+    // setting reads Ask first. The server gates that write identically, so it is
+    // exactly as standing — and exactly as worth saying out loud.
+    renderCard({
+      ...DEFAULTS,
+      trustStop: 'ask',
+      perRuntime: [
+        {
+          runtime: 'claude-code',
+          model: null,
+          effort: null,
+          supportsEffort: true,
+          trustStop: 'autonomy',
+        },
+        { runtime: 'codex', model: null, effort: null, supportsEffort: true, trustStop: null },
+      ],
+    });
+
+    expect(await screen.findByTestId('default-trust-stop-standing-note')).toHaveTextContent(
+      'New sessions on Claude Code run without asking'
+    );
+  });
+
+  it('offers a runtime whose profile has not arrived a sentence, not a label over nothing', async () => {
+    // The same one-liner the binding and task dials give an agent that has not
+    // said what it can do (#681).
+    renderCard({
+      ...DEFAULTS,
+      perRuntime: [
+        { runtime: 'codex', model: null, effort: null, supportsEffort: true, trustStop: null },
+      ],
+    });
+    await userEvent.click(await screen.findByTestId('default-trust-stop-disclosure'));
+
+    expect(await screen.findByTestId('default-trust-stop-unavailable')).toHaveTextContent(
+      'hasn’t said what it can do'
+    );
+  });
+
+  it('keeps the per-runtime overrides behind a disclosure', async () => {
+    const { updateConfig } = renderCard();
+    expect(screen.queryByTestId('default-trust-stop-per-runtime')).not.toBeInTheDocument();
+
+    await userEvent.click(await screen.findByTestId('default-trust-stop-disclosure'));
+    const rows = await screen.findByTestId('default-trust-stop-per-runtime');
+    // That runtime's OWN dial: the stop it lands on is resolved through its
+    // profile, so the row writes a mode's stop rather than a stop word guessed here.
+    await userEvent.click(within(rows).getAllByRole('radio', { name: 'Act' })[0]!);
+
+    await waitFor(() =>
+      expect(updateConfig).toHaveBeenCalledWith({
+        runtimes: { claudeCode: { defaultTrustStop: 'act' } },
+      })
+    );
+  });
+
+  it('returns a runtime to the global setting with a null, never a copied stop', async () => {
+    const { updateConfig } = renderCard({
+      ...DEFAULTS,
+      trustStop: 'act',
+      perRuntime: [
+        {
+          runtime: 'claude-code',
+          model: null,
+          effort: null,
+          supportsEffort: true,
+          trustStop: 'ask',
+        },
+      ],
+    });
+    await userEvent.click(await screen.findByTestId('default-trust-stop-disclosure'));
+    await userEvent.click(await screen.findByRole('button', { name: 'Use the setting above' }));
+
+    await waitFor(() =>
+      expect(updateConfig).toHaveBeenCalledWith({
+        runtimes: { claudeCode: { defaultTrustStop: null } },
+      })
     );
   });
 });

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { EFFORT_LEVELS } from '../constants.js';
+import { PERMISSION_STOPS } from '../permission-semantics.js';
 import {
   UserConfigSchema,
   USER_CONFIG_DEFAULTS,
@@ -108,7 +109,14 @@ describe('UserConfigSchema', () => {
       workbench: { defaultViewers: {}, terminalGraceTtlMinutes: 10, autoOpenDiff: true },
       runtimes: {
         default: 'claude-code',
-        claudeCode: { activeAccount: null, accounts: [], defaultModel: null, defaultEffort: null },
+        defaultTrustStop: null,
+        claudeCode: {
+          activeAccount: null,
+          accounts: [],
+          defaultModel: null,
+          defaultEffort: null,
+          defaultTrustStop: null,
+        },
         opencode: {
           enabled: true,
           binaryPath: null,
@@ -116,6 +124,7 @@ describe('UserConfigSchema', () => {
           provider: null,
           baseURL: null,
           defaultModel: null,
+          defaultTrustStop: null,
         },
         codex: {
           enabled: true,
@@ -123,6 +132,7 @@ describe('UserConfigSchema', () => {
           credentialRef: null,
           defaultModel: null,
           defaultEffort: null,
+          defaultTrustStop: null,
         },
       },
       auth: { enabled: false },
@@ -435,7 +445,14 @@ describe('USER_CONFIG_DEFAULTS', () => {
       workbench: { defaultViewers: {}, terminalGraceTtlMinutes: 10, autoOpenDiff: true },
       runtimes: {
         default: 'claude-code',
-        claudeCode: { activeAccount: null, accounts: [], defaultModel: null, defaultEffort: null },
+        defaultTrustStop: null,
+        claudeCode: {
+          activeAccount: null,
+          accounts: [],
+          defaultModel: null,
+          defaultEffort: null,
+          defaultTrustStop: null,
+        },
         opencode: {
           enabled: true,
           binaryPath: null,
@@ -443,6 +460,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
           provider: null,
           baseURL: null,
           defaultModel: null,
+          defaultTrustStop: null,
         },
         codex: {
           enabled: true,
@@ -450,6 +468,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
           credentialRef: null,
           defaultModel: null,
           defaultEffort: null,
+          defaultTrustStop: null,
         },
       },
       auth: { enabled: false },
@@ -717,7 +736,14 @@ describe('UserConfigSchema runtimes', () => {
     const result = UserConfigSchema.parse({ version: 1 });
     expect(result.runtimes).toEqual({
       default: 'claude-code',
-      claudeCode: { activeAccount: null, accounts: [], defaultModel: null, defaultEffort: null },
+      defaultTrustStop: null,
+      claudeCode: {
+        activeAccount: null,
+        accounts: [],
+        defaultModel: null,
+        defaultEffort: null,
+        defaultTrustStop: null,
+      },
       opencode: {
         enabled: true,
         binaryPath: null,
@@ -726,6 +752,7 @@ describe('UserConfigSchema runtimes', () => {
         baseURL: null,
         // OpenCode gets a model default and no effort default: its API takes none.
         defaultModel: null,
+        defaultTrustStop: null,
       },
       codex: {
         enabled: true,
@@ -733,6 +760,7 @@ describe('UserConfigSchema runtimes', () => {
         credentialRef: null,
         defaultModel: null,
         defaultEffort: null,
+        defaultTrustStop: null,
       },
     });
   });
@@ -741,7 +769,14 @@ describe('UserConfigSchema runtimes', () => {
     const result = UserConfigSchema.parse({ version: 1, runtimes: {} });
     expect(result.runtimes).toEqual({
       default: 'claude-code',
-      claudeCode: { activeAccount: null, accounts: [], defaultModel: null, defaultEffort: null },
+      defaultTrustStop: null,
+      claudeCode: {
+        activeAccount: null,
+        accounts: [],
+        defaultModel: null,
+        defaultEffort: null,
+        defaultTrustStop: null,
+      },
       opencode: {
         enabled: true,
         binaryPath: null,
@@ -750,6 +785,7 @@ describe('UserConfigSchema runtimes', () => {
         baseURL: null,
         // OpenCode gets a model default and no effort default: its API takes none.
         defaultModel: null,
+        defaultTrustStop: null,
       },
       codex: {
         enabled: true,
@@ -757,6 +793,7 @@ describe('UserConfigSchema runtimes', () => {
         credentialRef: null,
         defaultModel: null,
         defaultEffort: null,
+        defaultTrustStop: null,
       },
     });
   });
@@ -771,6 +808,7 @@ describe('UserConfigSchema runtimes', () => {
       provider: null,
       baseURL: null,
       defaultModel: null,
+      defaultTrustStop: null,
     });
   });
 
@@ -786,6 +824,7 @@ describe('UserConfigSchema runtimes', () => {
       provider: null,
       baseURL: null,
       defaultModel: null,
+      defaultTrustStop: null,
     });
   });
 
@@ -873,6 +912,51 @@ describe('UserConfigSchema runtimes.*.defaultModel / defaultEffort (spec executi
   });
 });
 
+describe('UserConfigSchema defaultTrustStop (spec trust-dial, decision 6)', () => {
+  it('ships null everywhere, so every runtime keeps its own starting mode', () => {
+    const runtimes = UserConfigSchema.parse({ version: 1 }).runtimes;
+    expect(runtimes.defaultTrustStop).toBeNull();
+    expect(runtimes.claudeCode.defaultTrustStop).toBeNull();
+    expect(runtimes.codex.defaultTrustStop).toBeNull();
+    expect(runtimes.opencode.defaultTrustStop).toBeNull();
+  });
+
+  it('takes exactly the three dial positions, globally and per runtime', () => {
+    // The vocabulary's home is `PermissionStop` in `agent-runtime.ts`; this is
+    // the stored half of it, and a fourth word here would be a stop no runtime
+    // declares. `PERMISSION_STOPS` is the list both sides read.
+    for (const stop of PERMISSION_STOPS) {
+      const parsed = UserConfigSchema.parse({
+        version: 1,
+        runtimes: { defaultTrustStop: stop, codex: { defaultTrustStop: stop } },
+      }).runtimes;
+      expect(parsed.defaultTrustStop).toBe(stop);
+      expect(parsed.codex.defaultTrustStop).toBe(stop);
+    }
+    expect(() =>
+      UserConfigSchema.parse({ version: 1, runtimes: { defaultTrustStop: 'yolo' } })
+    ).toThrow();
+    // Never a mode id: config stores the stop, and `bypassPermissions` is one
+    // runtime's word for one of them.
+    expect(() =>
+      UserConfigSchema.parse({
+        version: 1,
+        runtimes: { claudeCode: { defaultTrustStop: 'bypassPermissions' } },
+      })
+    ).toThrow();
+  });
+
+  it('keeps a global stop and a per-runtime override side by side', () => {
+    const runtimes = UserConfigSchema.parse({
+      version: 1,
+      runtimes: { defaultTrustStop: 'autonomy', codex: { defaultTrustStop: 'ask' } },
+    }).runtimes;
+    expect(runtimes.defaultTrustStop).toBe('autonomy');
+    expect(runtimes.codex.defaultTrustStop).toBe('ask');
+    expect(runtimes.claudeCode.defaultTrustStop).toBeNull();
+  });
+});
+
 describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () => {
   it('defaults to no account chosen and none registered', () => {
     // The default IS today's behavior: nothing selected, so resolution falls
@@ -882,6 +966,7 @@ describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () 
       accounts: [],
       defaultModel: null,
       defaultEffort: null,
+      defaultTrustStop: null,
     });
   });
 
@@ -897,6 +982,7 @@ describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () 
       accounts: [],
       defaultModel: null,
       defaultEffort: null,
+      defaultTrustStop: null,
     });
   });
 
@@ -921,6 +1007,7 @@ describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () 
       ],
       defaultModel: null,
       defaultEffort: null,
+      defaultTrustStop: null,
     });
   });
 

@@ -147,6 +147,18 @@ interface SessionChatStoreState {
    * courtesy — it may soften the ritual, never the gate.
    */
   autonomyConfirmedSessions: Record<string, true>;
+  /**
+   * Session ids where a person has waved away the offer to make the stop they
+   * just picked the default for every new session (spec `trust-dial`, decision
+   * 6C).
+   *
+   * Per session and ephemeral, which is the whole point: "not now" is an answer
+   * about this conversation, not a preference worth storing on the server. It
+   * keeps the offer from reappearing every time they move the dial in the
+   * session where they already said no, and a new session asks again — by which
+   * time they may well want it.
+   */
+  defaultStopOfferDismissed: Record<string, true>;
 }
 
 /**
@@ -161,6 +173,7 @@ function forgetSession(state: SessionChatStoreState, sessionId: string): void {
   delete state.autoConfirmedSessions[sessionId];
   delete state.modeBeforePlan[sessionId];
   delete state.autonomyConfirmedSessions[sessionId];
+  delete state.defaultStopOfferDismissed[sessionId];
 }
 
 /**
@@ -214,6 +227,8 @@ interface SessionChatStoreActions {
   recordModeBeforePlan: (sessionId: string, mode: string) => void;
   /** Record that a session has acknowledged what Full autonomy means. */
   recordAutonomyConfirmed: (sessionId: string) => void;
+  /** Stop offering to make a stop the default in this session. */
+  dismissDefaultStopOffer: (sessionId: string) => void;
 }
 
 /**
@@ -231,6 +246,7 @@ export const useSessionChatStore = create<SessionChatStoreState & SessionChatSto
       autoConfirmedSessions: {},
       modeBeforePlan: {},
       autonomyConfirmedSessions: {},
+      defaultStopOfferDismissed: {},
 
       initSession: (sessionId) => {
         // Skip store mutation if session already exists — prevents setState-during-render
@@ -324,6 +340,15 @@ export const useSessionChatStore = create<SessionChatStoreState & SessionChatSto
           false,
           'session-chat/recordAutonomyConfirmed'
         ),
+
+      dismissDefaultStopOffer: (sessionId) =>
+        set(
+          (state) => {
+            state.defaultStopOfferDismissed[sessionId] = true;
+          },
+          false,
+          'session-chat/dismissDefaultStopOffer'
+        ),
     })),
     { name: 'SessionChatStore', enabled: import.meta.env.DEV }
   )
@@ -370,6 +395,16 @@ export function useModeBeforePlan(sessionId: string): string | undefined {
 export function useHasConfirmedAutonomy(sessionId: string): boolean {
   return useSessionChatStore(
     useCallback((s) => s.autonomyConfirmedSessions[sessionId] === true, [sessionId])
+  );
+}
+
+/**
+ * Reactive selector: whether this session has waved away the offer to make a
+ * stop the default. Re-renders only when this session's answer flips.
+ */
+export function useHasDismissedDefaultStopOffer(sessionId: string): boolean {
+  return useSessionChatStore(
+    useCallback((s) => s.defaultStopOfferDismissed[sessionId] === true, [sessionId])
   );
 }
 

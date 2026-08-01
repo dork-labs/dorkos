@@ -24,6 +24,12 @@ import {
   OPERATOR_ONLY_CONFIG_ERROR,
   REQUIRES_LOGIN_CONFIG_ERROR,
 } from '../services/core/operator/config-write-policy.js';
+import {
+  AUTONOMY_ACK_REQUIRED_CODE,
+  AUTONOMY_DEFAULT_ACK_MESSAGE,
+  demoteAutonomyDefaultsOnAckClear,
+  findUnacknowledgedAutonomyDefaults,
+} from '../services/core/approvals/autonomy-consent.js';
 import { trustedCaller } from '../services/core/capabilities/index.js';
 import {
   readCallerAuthority,
@@ -373,8 +379,59 @@ router.patch('/', (req, res) => {
       }
     }
 
+    // ## THE AUTONOMY DOOR, at set-time (spec `trust-dial`, decision 6)
+    //
+    // Making Full autonomy the stop new sessions START at is a wider claim than
+    // putting one session there: it applies to sessions that do not exist yet, it
+    // is durable, and a session born from it opens already bypassed with no
+    // dialog to show. So the asking happens HERE, at the moment of choosing —
+    // and the record left here is what satisfies the session door
+    // (`PATCH /api/sessions/:id`) for every session this default births, which is
+    // the whole point of a standing default being allowed at all.
+    //
+    // Checked after the two policy bars above, because "you may not change this"
+    // outranks "confirm what this means" for a caller failing both, and before
+    // the write, because a refusal must change nothing. Same 428 as the session
+    // door, for the same reason: nothing about the request is malformed, and a
+    // precondition the caller can go and satisfy is exactly what 428 says.
+    //
+    // The cockpit satisfies it in ONE patch — the consent dialog writes
+    // `ui.autonomyAcknowledgedAt` and the new stop together — so there is no
+    // window where the stop landed without the consent.
+    //
+    // ### Reset takes the standing default with it
+    //
+    // The other half of the same policy: clearing the acknowledgement demotes
+    // every default-trust-stop leaf still holding `'autonomy'`, in THIS write.
+    // The record is that default's licence, so a Reset that left it standing
+    // would keep birthing bypassed sessions with no consent on file — and the
+    // cockpit's first mode change for one of them would 428 against a door the
+    // person believed they had just re-armed. See
+    // `demoteAutonomyDefaultsOnAckClear` for why it is a fragment merged here
+    // rather than a second write.
+    const demotion = demoteAutonomyDefaultsOnAckClear(req.body);
+    const patch = demotion
+      ? deepMerge(req.body as Record<string, unknown>, demotion)
+      : (req.body as Record<string, unknown>);
+
+    // Asked of the MERGED patch, not the raw body: the question is what is about
+    // to be written, and a Reset that demotes a stop in the same breath is not
+    // asking for autonomy at all.
+    const unacknowledged = findUnacknowledgedAutonomyDefaults(patch);
+    if (unacknowledged.length > 0) {
+      return res.status(428).json({
+        error: AUTONOMY_DEFAULT_ACK_MESSAGE,
+        code: AUTONOMY_ACK_REQUIRED_CODE,
+        paths: unacknowledged,
+        message: AUTONOMY_DEFAULT_ACK_MESSAGE,
+      });
+    }
+    if (demotion) {
+      logger.info('[Config] Full-autonomy acknowledgement cleared; standing defaults demoted');
+    }
+
     const postureBefore = readStandingGrantPosture();
-    const result = applyConfigPatch(req.body);
+    const result = applyConfigPatch(patch);
     if (!result.ok) {
       return res.status(400).json({
         error: result.error,

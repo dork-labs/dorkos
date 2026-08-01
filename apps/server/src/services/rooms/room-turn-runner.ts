@@ -266,6 +266,12 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
 
       // The turn started, so the session is real: record which runtime owns it.
       // INSERT-OR-IGNORE at the registry, so a resumed session is a no-op.
+      //
+      // No `interactive` flag, deliberately: the configured default trust stop
+      // is for sessions a person is watching (spec `trust-dial`, decision 6).
+      // A room turn runs into the dark, so it keeps the runtime's own default —
+      // the same reason the seed above carries model and effort and nothing
+      // about permissions.
       if (result.accepted) {
         await runtimeRegistry.persistSessionRuntime(
           result.canonicalId ?? sessionId,

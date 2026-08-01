@@ -23,8 +23,12 @@ function formatAcknowledgedAt(iso: string): string {
  * "not acknowledged" would advertise a switch nobody has touched and invite
  * people to go looking for the dialog they have not seen yet.
  *
- * Reset clears the record. It does not change any running session's permission
- * mode, and does not claim to — what comes back is the asking.
+ * Reset clears the record, and takes the standing default with it: a
+ * `defaultTrustStop` sitting at Full autonomy is demoted in the same write
+ * (spec `trust-dial`, decision 6, enforced at `PATCH /api/config`). The record
+ * is that default's licence, so keeping the default after erasing the licence
+ * would leave new sessions born without asking and no consent on file. Running
+ * sessions are untouched either way — what comes back is the asking.
  */
 export function AutonomyAcknowledgementRow() {
   const { acknowledgedAt, clear, isPending } = useAutonomyAcknowledgement();
@@ -34,7 +38,7 @@ export function AutonomyAcknowledgementRow() {
   return (
     <SettingRow
       label="Full autonomy"
-      description={`You acknowledged what this means on ${formatAcknowledgedAt(acknowledgedAt)}, and asked not to be shown it again.`}
+      description={`You acknowledged what this means on ${formatAcknowledgedAt(acknowledgedAt)}, and asked not to be shown it again. Resetting also turns off any Full-autonomy default for new sessions.`}
     >
       <Button
         variant="outline"

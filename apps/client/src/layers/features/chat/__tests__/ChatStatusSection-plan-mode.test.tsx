@@ -25,6 +25,18 @@ vi.mock('@/layers/entities/config/model/use-autonomy-acknowledgement', () => ({
   }),
 }));
 
+// The status line now also asks where NEW sessions start, so it reads config and
+// can write it (spec `trust-dial`, decision 6C). Stubbed to "nothing configured,
+// writes go nowhere" — the offer is its own suite's subject
+// (`ChatStatusSection-make-default.test.tsx`), and every case below is about
+// something else.
+vi.mock('@/layers/entities/config/model/use-config', () => ({
+  useConfig: () => ({ data: undefined }),
+}));
+vi.mock('@/layers/entities/config/model/use-update-config', () => ({
+  useUpdateConfig: () => ({ mutate: vi.fn(), isPending: false }),
+}));
+
 vi.mock('@/layers/shared/model/media/use-is-mobile', () => ({
   useIsMobile: () => false,
 }));
@@ -106,7 +118,11 @@ vi.mock('@/layers/entities/session/model/use-sessions', async (importOriginal) =
   useSessions: () => ({ sessions: [], isLoading: false }) as never,
 }));
 
-const updateSession = vi.fn();
+// Returns a promise, like the hook it stands in for: `useSessionStatus`'s
+// `updateSession` is an async function, and the status line now waits on it
+// before offering to make a stop the default (spec `trust-dial`, decision 6C).
+// A mock that answered `undefined` would be lying about the contract.
+const updateSession = vi.fn((..._args: unknown[]) => Promise.resolve(undefined));
 const permissionMode = { current: 'default' };
 vi.mock('@/layers/entities/session/model/use-session-status', () => ({
   useSessionStatus: () => ({

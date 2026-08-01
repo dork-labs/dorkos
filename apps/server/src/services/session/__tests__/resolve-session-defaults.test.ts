@@ -1,5 +1,5 @@
 /**
- * The inheritance ladder for a new session's model and effort.
+ * The inheritance ladder for a new session's model, effort and trust stop.
  *
  * The config section is passed in rather than mocked: the resolver's whole job is
  * turning a stored `runtimes` block into session settings, and handing it one is
@@ -14,6 +14,10 @@ import { writeManifest } from '@dorkos/shared/manifest';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { RuntimeRegistry } from '../../core/runtime-registry.js';
+import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
+import { CODEX_CAPABILITIES } from '../../runtimes/codex/runtime-constants.js';
+import { OPENCODE_CAPABILITIES } from '../../runtimes/opencode/runtime-constants.js';
+import { TEST_MODE_CAPABILITIES } from '../../runtimes/test-mode/runtime-constants.js';
 import {
   resolveSessionDefaults,
   readAgentExecutionDefaults,
@@ -333,6 +337,7 @@ describe('describeExecutionDefaults', () => {
       model: 'opus',
       effort: 'high',
       supportsEffort: true,
+      trustStop: null,
     });
     expect(view.perRuntime.find((e) => e.runtime === 'codex')?.model).toBe('gpt-5.3-codex');
   });
@@ -348,11 +353,187 @@ describe('describeExecutionDefaults', () => {
       model: null,
       effort: null,
       supportsEffort: false,
+      trustStop: null,
     });
   });
 
   it('reports the configured default runtime', () => {
     const view = describeExecutionDefaults(runtimes({ default: 'codex' }));
     expect(view.runtime).toBe('codex');
+  });
+
+  it('reports the global trust stop and each override, unresolved', () => {
+    // Unresolved on purpose: which MODE a stop lands on is the runtime's
+    // capability profile's answer, and the cockpit holds those profiles. A
+    // resolved id here would be a second copy of that translation for the screen
+    // to disagree with.
+    const view = describeExecutionDefaults(
+      runtimes({
+        defaultTrustStop: 'act',
+        codex: { ...USER_CONFIG_DEFAULTS.runtimes.codex, defaultTrustStop: 'ask' },
+      })
+    );
+    expect(view.trustStop).toBe('act');
+    expect(view.perRuntime.find((e) => e.runtime === 'codex')?.trustStop).toBe('ask');
+    expect(view.perRuntime.find((e) => e.runtime === 'claude-code')?.trustStop).toBeNull();
+  });
+});
+
+describe('resolveSessionDefaults — the trust stop', () => {
+  it('resolves a configured stop into the mode THAT runtime calls it', () => {
+    const config = runtimes({ defaultTrustStop: 'act' });
+    // Same stop, three different mode ids — which is the entire reason config
+    // stores the stop and not the id.
+    expect(
+      resolveSessionDefaults({
+        runtimeType: 'claude-code',
+        runtimes: config,
+        permissionModes: CLAUDE_CODE_CAPABILITIES.permissionModes.values,
+      })
+    ).toEqual({ permissionMode: 'acceptEdits' });
+    expect(
+      resolveSessionDefaults({
+        runtimeType: 'codex',
+        runtimes: config,
+        permissionModes: CODEX_CAPABILITIES.permissionModes.values,
+      })
+    ).toEqual({ permissionMode: 'acceptEdits' });
+    expect(
+      resolveSessionDefaults({
+        runtimeType: 'test-mode',
+        runtimes: config,
+        permissionModes: TEST_MODE_CAPABILITIES.permissionModes.values,
+      })
+    ).toEqual({ permissionMode: 'scripted' });
+  });
+
+  it('picks the first-declared mode where a runtime has two at one stop', () => {
+    // Claude Code declares `acceptEdits` before `auto`, both at 'act'. The dial
+    // resolves the position to the first and offers the second as a switch
+    // inside it, and a default has to land on the same one or Settings would
+    // promise a stop the session does not show as selected.
+    expect(
+      resolveSessionDefaults({
+        runtimeType: 'claude-code',
+        runtimes: runtimes({ defaultTrustStop: 'act' }),
+        permissionModes: CLAUDE_CODE_CAPABILITIES.permissionModes.values,
+      }).permissionMode
+    ).toBe('acceptEdits');
+  });
+
+  it('never resolves a way of working — Plan sits at the ask stop but is not it', () => {
+    expect(
+      resolveSessionDefaults({
+        runtimeType: 'claude-code',
+        runtimes: runtimes({ defaultTrustStop: 'ask' }),
+        permissionModes: CLAUDE_CODE_CAPABILITIES.permissionModes.values,
+      }).permissionMode
+    ).toBe('default');
+  });
+
+  it('resolves the autonomy stop to each runtime’s own word for it', () => {
+    const config = runtimes({ defaultTrustStop: 'autonomy' });
+    expect(
+      resolveSessionDefaults({
+        runtimeType: 'opencode',
+        runtimes: config,
+        permissionModes: OPENCODE_CAPABILITIES.permissionModes.values,
+      })
+    ).toEqual({ permissionMode: 'bypassPermissions' });
+    expect(
+      resolveSessionDefaults({
+        runtimeType: 'test-mode',
+        runtimes: config,
+        permissionModes: TEST_MODE_CAPABILITIES.permissionModes.values,
+      })
+    ).toEqual({ permissionMode: 'always-allow' });
+  });
+
+  it('lets a per-runtime override beat the global stop', () => {
+    const config = runtimes({
+      defaultTrustStop: 'autonomy',
+      codex: { ...USER_CONFIG_DEFAULTS.runtimes.codex, defaultTrustStop: 'ask' },
+    });
+    expect(
+      resolveSessionDefaults({
+        runtimeType: 'codex',
+        runtimes: config,
+        permissionModes: CODEX_CAPABILITIES.permissionModes.values,
+      })
+    ).toEqual({ permissionMode: 'default' });
+    // And leaves every runtime that did not override it on the global answer.
+    expect(
+      resolveSessionDefaults({
+        runtimeType: 'claude-code',
+        runtimes: config,
+        permissionModes: CLAUDE_CODE_CAPABILITIES.permissionModes.values,
+      })
+    ).toEqual({ permissionMode: 'bypassPermissions' });
+  });
+
+  it('reads a per-runtime null as "no answer here", not as "no answer at all"', () => {
+    expect(
+      resolveSessionDefaults({
+        runtimeType: 'claude-code',
+        runtimes: runtimes({ defaultTrustStop: 'act' }),
+        permissionModes: CLAUDE_CODE_CAPABILITIES.permissionModes.values,
+      }).permissionMode
+    ).toBe('acceptEdits');
+  });
+
+  it('resolves nothing on a fresh install, so each runtime keeps its own default', () => {
+    expect(
+      resolveSessionDefaults({
+        runtimeType: 'claude-code',
+        runtimes: runtimes(),
+        permissionModes: CLAUDE_CODE_CAPABILITIES.permissionModes.values,
+      })
+    ).toEqual({});
+  });
+
+  it('resolves nothing for a runtime that declares no mode at the configured stop', () => {
+    // A stop this runtime cannot take is a preference it has no way to honor —
+    // not an error, and never rounded off to a neighbouring stop.
+    const noMiddleGround = CLAUDE_CODE_CAPABILITIES.permissionModes.values.filter(
+      (d) => d.stop !== 'act'
+    );
+    expect(
+      resolveSessionDefaults({
+        runtimeType: 'claude-code',
+        runtimes: runtimes({ defaultTrustStop: 'act' }),
+        permissionModes: noMiddleGround,
+      })
+    ).toEqual({});
+  });
+
+  it('resolves nothing when the caller passes no declared modes — the unattended path', () => {
+    // THE interactive-only boundary, in the shape it actually holds: a room
+    // turn, a scheduled task and a relay binding all resolve their defaults
+    // without handing over a profile, so the stop cannot reach them however it
+    // is configured.
+    expect(
+      resolveSessionDefaults({
+        runtimeType: 'claude-code',
+        runtimes: runtimes({ defaultTrustStop: 'autonomy' }),
+      })
+    ).toEqual({});
+  });
+
+  it('resolves alongside model and effort without disturbing either', () => {
+    const config = runtimes({
+      defaultTrustStop: 'act',
+      claudeCode: {
+        ...USER_CONFIG_DEFAULTS.runtimes.claudeCode,
+        defaultModel: 'opus',
+        defaultEffort: 'high',
+      },
+    });
+    expect(
+      resolveSessionDefaults({
+        runtimeType: 'claude-code',
+        runtimes: config,
+        permissionModes: CLAUDE_CODE_CAPABILITIES.permissionModes.values,
+      })
+    ).toEqual({ model: 'opus', effort: 'high', permissionMode: 'acceptEdits' });
   });
 });

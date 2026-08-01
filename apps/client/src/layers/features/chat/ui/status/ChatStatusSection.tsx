@@ -33,6 +33,8 @@ import {
   gitPromotionState,
   selectPromotedItems,
   applyStatusBudget,
+  useMakeDefaultStop,
+  MakeDefaultStopLine,
   type StatusPromotionContext,
 } from '@/layers/features/status';
 import { findWorkingMode, isAutonomyStop } from '@/layers/shared/lib';
@@ -159,6 +161,28 @@ export function ChatStatusSection({
   // Full autonomy means and asked not to be told again.
   const autonomyAck = useAutonomyAcknowledgement();
 
+  // "Start every new session here?" — offered under the dial after a stop
+  // change, and only where it would tell the person something they have not
+  // already said (spec `trust-dial`, decision 6C).
+  const makeDefault = useMakeDefaultStop({
+    sessionId,
+    runtime: runtimeChip.runtime,
+    declaredModes,
+    runtimeDefaultMode,
+  });
+  /**
+   * Whether the permissions picker is open, which decides WHICH of the offer's
+   * two homes speaks.
+   *
+   * Not bookkeeping: entering Full autonomy opens a modal dialog, and the
+   * dialog's focus grab closes the popover underneath it — verified in a browser
+   * on 2026-08-01, where the offer set on confirming was drawn into an unmounted
+   * tree and then reappeared, stale, the next time the popover was opened. So
+   * the inline instance is offered only while the popover is up, and the overlay
+   * takes over the moment it is not.
+   */
+  const [pickerOpen, setPickerOpen] = useState(false);
+
   /**
    * Whether this cockpit has an acknowledgement it can honestly assert for the
    * server's autonomy door — the person's standing record, or the confirmation
@@ -188,7 +212,12 @@ export function ChatStatusSection({
     (nextMode: PermissionMode) => {
       const descriptor = declaredModes.find((d) => d.id === nextMode);
       const needsAck = descriptor !== undefined && isAutonomyStop(descriptor);
-      void status.updateSession(
+      // The promise is RETURNED, not swallowed, so a caller can tell a landed
+      // write from a refused one: `updateSession` answers with the updated
+      // session on success and `undefined` after it has handed the failure to
+      // `onError`. Only one caller needs that today — nothing should offer to
+      // make a stop the default when the stop itself did not take.
+      return status.updateSession(
         {
           permissionMode: nextMode,
           ...(needsAck && canAssertAutonomyAck ? { acknowledgedAutonomy: true } : {}),
@@ -231,13 +260,23 @@ export function ChatStatusSection({
         setPendingAutonomy(descriptor);
         return;
       }
-      applyMode(nextMode);
+      // The person just told DorkOS how much they want this agent to do. Noticing
+      // that here is the whole of decision 6C — the alternative is a trip to
+      // Settings to repeat a choice they have already made ten times.
+      //
+      // Only once the write LANDS, though: offering to make a stop the standing
+      // default while the session itself failed to take it would be the product
+      // proposing to spread a change that did not happen.
+      void applyMode(nextMode).then((updated) => {
+        if (updated) makeDefault.offerFor(nextMode);
+      });
     },
     [
       hasConfirmedAuto,
       canAssertAutonomyAck,
       declaredModes,
       applyMode,
+      makeDefault,
       setPendingAutonomy,
       setAutoConfirmOpen,
     ]
@@ -270,13 +309,31 @@ export function ChatStatusSection({
       // read — the session memory recorded a line above — has not re-rendered
       // yet, so routing through it would send the request without the flag and
       // bounce the person off the dialog they just answered.
-      void status.updateSession({
-        permissionMode: pendingAutonomy.id as PermissionMode,
-        acknowledgedAutonomy: true,
-      });
+      const applied = pendingAutonomy.id;
+      void status
+        .updateSession({
+          permissionMode: applied as PermissionMode,
+          acknowledgedAutonomy: true,
+        })
+        .then((updated) => {
+          // Offered here too, and this is the person decision 6C was written
+          // for: the operator who chooses Full autonomy every morning. They have
+          // just been told exactly what it means, so the offer lands at the one
+          // moment it cannot be a surprise. The dialog has closed the dial's
+          // popover by now, so this offer is drawn by the overlay instance.
+          if (updated) makeDefault.offerFor(applied);
+        });
       setPendingAutonomy(null);
     },
-    [pendingAutonomy, recordAutonomyConfirmed, sessionId, status, autonomyAck, setPendingAutonomy]
+    [
+      pendingAutonomy,
+      recordAutonomyConfirmed,
+      sessionId,
+      status,
+      autonomyAck,
+      makeDefault,
+      setPendingAutonomy,
+    ]
   );
 
   // Plan, where the runtime offers a way of working at all. Which mode that is
@@ -394,6 +451,8 @@ export function ChatStatusSection({
     status,
     onUpdateSession: status.updateSession,
     onChangeMode: handleChangeMode,
+    makeDefault: pickerOpen ? makeDefault.line : null,
+    onPermissionPickerOpenChange: setPickerOpen,
     modelSupportsAutoMode,
     plan: workingMode
       ? { descriptor: workingMode, active: planActive, onToggle: handleTogglePlan }
@@ -422,7 +481,14 @@ export function ChatStatusSection({
     // `barRef` measures this block, whose width comes from the composer around it
     // and never from the line's own content — otherwise trimming the line would
     // shrink the box that decides how much the line may hold.
-    <div ref={barRef} className="pt-2">
+    // `relative` for the offer overlay below, which floats above this strip
+    // rather than taking a row in it — see `MakeDefaultStopLine`'s `placement`.
+    <div ref={barRef} className="relative pt-2">
+      {/* The offer, when the dial's popover is shut. Floating, so the composer
+          never gains a blank line for a remark that is usually not there. */}
+      {!pickerOpen && makeDefault.line && (
+        <MakeDefaultStopLine {...makeDefault.line} placement="overlay" />
+      )}
       <StatusLine
         items={items}
         trailing={
@@ -470,6 +536,18 @@ export function ChatStatusSection({
         onCancel={() => setPendingAutonomy(null)}
         onConfirm={handleConfirmAutonomy}
         canRemember={autonomyAck.canRemember}
+      />
+      {/* The same door, asked about a wider scope: making Full autonomy the
+          stop EVERY new session starts at. A separate instance rather than a
+          mode on the one above, because the two answer different questions and
+          only one of them is about this session — and here the confirmation IS
+          the standing record, which is why no checkbox is offered. */}
+      <AutonomyConfirmDialog
+        descriptor={makeDefault.pendingDescriptor}
+        canRemember={false}
+        consentNote="Every new session will start here, and DorkOS will remember that you have read this."
+        onCancel={makeDefault.cancel}
+        onConfirm={makeDefault.confirm}
       />
     </div>
   );

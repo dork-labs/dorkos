@@ -663,6 +663,32 @@ const DefaultModelSchema = z.string().min(1).nullable().default(null);
  */
 const DefaultEffortSchema = z.enum(EFFORT_LEVELS).nullable().default(null);
 
+/**
+ * How much a NEW session may do without asking, or `null` to let the runtime
+ * decide — which is byte-for-byte the behavior before this field existed, and
+ * the shipped default (spec `trust-dial`, decision 6).
+ *
+ * **A stop, never a mode id.** `'ask' | 'act' | 'autonomy'` are the three
+ * positions of the Trust Dial, and they mean the same thing on every runtime;
+ * the mode id that sits at a position does not (`bypassPermissions` on Claude
+ * Code, `danger-full-access` on Codex). Storing the stop is what lets one
+ * setting be true for a person who runs all three runtimes, and it is resolved
+ * against whichever runtime a session actually lands on, through that runtime's
+ * own capability profile. A runtime with no mode at the stored stop contributes
+ * nothing and starts at its own default.
+ *
+ * Mirrors {@link PermissionStop} in `agent-runtime.ts`, which is the authority
+ * on the vocabulary. Restated as a Zod enum rather than imported because this
+ * module is deliberately dependency-light (it is bridged to JSON Schema and read
+ * by the CLI); the two are pinned together by
+ * `packages/shared/src/__tests__/config-schema.test.ts`.
+ *
+ * Writing `'autonomy'` into one of these leaves is consent-gated at the config
+ * route — see `AUTONOMY_ACK_REQUIRED` — because it decides how every future
+ * session starts, not just this one.
+ */
+const DefaultTrustStopSchema = z.enum(['ask', 'act', 'autonomy']).nullable().default(null);
+
 const LoggingConfigSchema = z.object({
   level: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
   maxLogSizeKb: z.number().int().min(100).max(10240).default(500),
@@ -1213,6 +1239,12 @@ export const UserConfigSchema = z.object({
     .object({
       /** Runtime id the registry selects as its default at boot. */
       default: z.string().default('claude-code'),
+      /**
+       * How much a new session may do without asking, on every runtime that has
+       * no answer of its own. See {@link DefaultTrustStopSchema}; a
+       * `runtimes.<runtime>.defaultTrustStop` beats this one.
+       */
+      defaultTrustStop: DefaultTrustStopSchema,
       claudeCode: z
         .object({
           /**
@@ -1240,12 +1272,18 @@ export const UserConfigSchema = z.object({
           defaultModel: DefaultModelSchema,
           /** Effort a new claude-code session starts at. See {@link DefaultEffortSchema}. */
           defaultEffort: DefaultEffortSchema,
+          /**
+           * Trust stop a new claude-code session starts at, overriding
+           * `runtimes.defaultTrustStop`. See {@link DefaultTrustStopSchema}.
+           */
+          defaultTrustStop: DefaultTrustStopSchema,
         })
         .default(() => ({
           activeAccount: null,
           accounts: [],
           defaultModel: null,
           defaultEffort: null,
+          defaultTrustStop: null,
         })),
       opencode: z
         .object({
@@ -1271,6 +1309,11 @@ export const UserConfigSchema = z.object({
            * sibling — OpenCode's API takes no effort at all.
            */
           defaultModel: DefaultModelSchema,
+          /**
+           * Trust stop a new OpenCode session starts at, overriding
+           * `runtimes.defaultTrustStop`. See {@link DefaultTrustStopSchema}.
+           */
+          defaultTrustStop: DefaultTrustStopSchema,
         })
         .default(() => ({
           enabled: true,
@@ -1279,6 +1322,7 @@ export const UserConfigSchema = z.object({
           provider: null,
           baseURL: null,
           defaultModel: null,
+          defaultTrustStop: null,
         })),
       codex: z
         .object({
@@ -1296,6 +1340,11 @@ export const UserConfigSchema = z.object({
           defaultModel: DefaultModelSchema,
           /** Effort a new codex session starts at. See {@link DefaultEffortSchema}. */
           defaultEffort: DefaultEffortSchema,
+          /**
+           * Trust stop a new codex session starts at, overriding
+           * `runtimes.defaultTrustStop`. See {@link DefaultTrustStopSchema}.
+           */
+          defaultTrustStop: DefaultTrustStopSchema,
         })
         .default(() => ({
           enabled: true,
@@ -1303,11 +1352,19 @@ export const UserConfigSchema = z.object({
           credentialRef: null,
           defaultModel: null,
           defaultEffort: null,
+          defaultTrustStop: null,
         })),
     })
     .default(() => ({
       default: 'claude-code',
-      claudeCode: { activeAccount: null, accounts: [], defaultModel: null, defaultEffort: null },
+      defaultTrustStop: null,
+      claudeCode: {
+        activeAccount: null,
+        accounts: [],
+        defaultModel: null,
+        defaultEffort: null,
+        defaultTrustStop: null,
+      },
       opencode: {
         enabled: true,
         binaryPath: null,
@@ -1315,6 +1372,7 @@ export const UserConfigSchema = z.object({
         provider: null,
         baseURL: null,
         defaultModel: null,
+        defaultTrustStop: null,
       },
       codex: {
         enabled: true,
@@ -1322,6 +1380,7 @@ export const UserConfigSchema = z.object({
         credentialRef: null,
         defaultModel: null,
         defaultEffort: null,
+        defaultTrustStop: null,
       },
     })),
   auth: z

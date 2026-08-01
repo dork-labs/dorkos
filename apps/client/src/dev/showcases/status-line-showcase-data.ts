@@ -260,6 +260,10 @@ export const HEALTHY: StatusScenario = {
     status: HEALTHY_STATUS,
     onUpdateSession: () => {},
     onChangeMode: () => {},
+    // No offer in a static showcase: the line under the dial is a response to
+    // somebody moving it, and there is nobody here to have moved it.
+    makeDefault: null,
+    onPermissionPickerOpenChange: () => {},
     modelSupportsAutoMode: true,
     plan: PLAN_OFF,
     gitStatus: CLEAN_GIT,
@@ -309,6 +313,10 @@ export const DEGRADED: StatusScenario = {
     status: DEGRADED_STATUS,
     onUpdateSession: () => {},
     onChangeMode: () => {},
+    // No offer in a static showcase: the line under the dial is a response to
+    // somebody moving it, and there is nobody here to have moved it.
+    makeDefault: null,
+    onPermissionPickerOpenChange: () => {},
     modelSupportsAutoMode: false,
     plan: null,
     gitStatus: DIRTY_GIT,

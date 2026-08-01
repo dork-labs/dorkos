@@ -991,9 +991,11 @@ describe('OpenCodeRuntime', () => {
       await expect(
         runtime.updateSession(sessionId, { permissionMode: 'bypassPermissions' })
       ).resolves.toBe(true);
-      expect(settingsPort.saveSessionSettings).toHaveBeenCalledWith(sessionId, {
-        permissionMode: 'bypassPermissions',
-      });
+      expect(settingsPort.saveSessionSettings).toHaveBeenCalledWith(
+        sessionId,
+        { permissionMode: 'bypassPermissions' },
+        { interactive: true }
+      );
 
       const sessions = await runtime.listSessions(DIRECTORY);
       expect(sessions.find((s) => s.id === sessionId)!.permissionMode).toBe('bypassPermissions');
@@ -1011,9 +1013,11 @@ describe('OpenCodeRuntime', () => {
       return runtime
         .updateSession(sessionId, { model: 'openrouter/x', effort: 'high' })
         .then(async () => {
-          expect(settingsPort.saveSessionSettings).toHaveBeenCalledWith(sessionId, {
-            model: 'openrouter/x',
-          });
+          expect(settingsPort.saveSessionSettings).toHaveBeenCalledWith(
+            sessionId,
+            { model: 'openrouter/x' },
+            { interactive: true }
+          );
           const sessions = await runtime.listSessions(DIRECTORY);
           expect(sessions.find((s) => s.id === sessionId)!.effort).toBeUndefined();
         });

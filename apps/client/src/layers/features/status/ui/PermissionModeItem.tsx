@@ -4,6 +4,7 @@ import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
 import { permissionModeLabel, resolveTrustStops, warnTier } from '@/layers/shared/lib';
 import { compactStatusValue } from '../lib/status-labels';
+import { MakeDefaultStopLine, type MakeDefaultStopLineProps } from './MakeDefaultStopLine';
 import {
   ResponsivePopover,
   ResponsivePopoverTrigger,
@@ -71,6 +72,26 @@ interface PermissionModeItemProps {
    * not DorkOS's to promise; this bounds them.
    */
   compact?: boolean;
+  /**
+   * The offer to make the stop just chosen the default for every new session
+   * (spec `trust-dial`, decision 6C), or `null` on a surface that has no config
+   * to write.
+   *
+   * Passed in whole rather than derived here: whether an offer is warranted
+   * depends on what the effective default already is, and on an answer this
+   * session gave earlier — neither of which a picker should be reading.
+   */
+  makeDefault?: MakeDefaultStopLineProps | null;
+  /**
+   * Told whenever the picker opens or closes.
+   *
+   * The caller needs it because the offer above has TWO homes and only one may
+   * speak at a time: inside this popover while it is open, and floating over the
+   * status strip once it is not. Entering Full autonomy opens a modal dialog
+   * whose focus grab closes this popover (observed in a browser, 2026-08-01), so
+   * the offer that follows would otherwise be drawn into an unmounted tree.
+   */
+  onOpenChange?: (open: boolean) => void;
 }
 
 /**
@@ -93,6 +114,8 @@ export function PermissionModeItem({
   modelSupportsAutoMode,
   planActive,
   compact,
+  makeDefault,
+  onOpenChange,
 }: PermissionModeItemProps) {
   // Static per-runtime lookup — nullish runtime (no session context, or the
   // display runtime is still resolving) falls back to the server default.
@@ -150,7 +173,7 @@ export function PermissionModeItem({
   }
 
   return (
-    <ResponsivePopover>
+    <ResponsivePopover onOpenChange={onOpenChange}>
       <ResponsivePopoverTrigger asChild>{trigger}</ResponsivePopoverTrigger>
       <ResponsivePopoverContent
         side="top"
@@ -165,6 +188,11 @@ export function PermissionModeItem({
           onChangeMode={(next) => onChangeMode(next as PermissionMode)}
           planActive={planActive}
         />
+        {/* Directly under the dial, in a row that is always there: the offer
+            arrives while a person is still pointing at the control, so it must
+            not move what they are pointing at. The caller withholds this one
+            while the popover is shut — see `onOpenChange`. */}
+        {makeDefault && <MakeDefaultStopLine {...makeDefault} />}
         {showAutoHint && (
           <Tooltip>
             <TooltipTrigger asChild>

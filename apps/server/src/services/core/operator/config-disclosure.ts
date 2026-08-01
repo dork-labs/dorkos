@@ -257,6 +257,15 @@ export const CONFIG_DISCLOSURE = {
   'workbench.autoOpenDiff': 'expose',
 
   'runtimes.default': 'expose',
+  // How much a new session may do without asking, globally and per runtime (spec
+  // `trust-dial`, decision 6). Exposed although it is operator-only to WRITE, and
+  // the asymmetry is the point of having two tables: reading it lets an agent
+  // explain why the session it is in started where it did, and say out loud that
+  // new sessions here run without asking. Knowing the posture is not holding it.
+  'runtimes.defaultTrustStop': 'expose',
+  'runtimes.claudeCode.defaultTrustStop': 'expose',
+  'runtimes.codex.defaultTrustStop': 'expose',
+  'runtimes.opencode.defaultTrustStop': 'expose',
   // Which Claude account new work runs on, and the accounts registered here
   // (spec claude-code-accounts). Directories and a human label — the same class
   // as `runtimes.*.binaryPath`, exposed on purpose: an absolute path is how this

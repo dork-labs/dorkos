@@ -42,16 +42,29 @@ afterEach(() => {
 
 const DEFAULTS: ExecutionDefaults = {
   runtime: 'claude-code',
+  trustStop: null,
   perRuntime: [
-    { runtime: 'claude-code', model: 'opus', effort: 'medium', supportsEffort: true },
-    { runtime: 'opencode', model: null, effort: null, supportsEffort: false },
+    {
+      runtime: 'claude-code',
+      model: 'opus',
+      effort: 'medium',
+      supportsEffort: true,
+      trustStop: null,
+    },
+    { runtime: 'opencode', model: null, effort: null, supportsEffort: false, trustStop: null },
   ],
 };
 
 const MODELS = [
-  { value: 'opus', displayName: 'Opus', description: '', supportsEffort: true },
-  { value: 'sonnet', displayName: 'Sonnet', description: '', supportsEffort: true },
-  { value: 'haiku', displayName: 'Haiku', description: '', supportsEffort: false },
+  { value: 'opus', displayName: 'Opus', description: '', supportsEffort: true, trustStop: null },
+  {
+    value: 'sonnet',
+    displayName: 'Sonnet',
+    description: '',
+    supportsEffort: true,
+    trustStop: null,
+  },
+  { value: 'haiku', displayName: 'Haiku', description: '', supportsEffort: false, trustStop: null },
 ];
 
 function manifest(extra: Partial<AgentManifest> = {}): AgentManifest {
@@ -249,7 +262,16 @@ describe('AgentExecutionRows', () => {
   it('names an inherited model that cannot take the effort this agent set', async () => {
     renderRows(manifest({ effort: 'high' }), {
       runtime: 'claude-code',
-      perRuntime: [{ runtime: 'claude-code', model: 'haiku', effort: null, supportsEffort: true }],
+      trustStop: null,
+      perRuntime: [
+        {
+          runtime: 'claude-code',
+          model: 'haiku',
+          effort: null,
+          supportsEffort: true,
+          trustStop: null,
+        },
+      ],
     });
     expect(await screen.findByTestId('agent-effort-unsupported-model')).toHaveTextContent(
       'haiku does not take an effort setting'

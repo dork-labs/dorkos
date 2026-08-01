@@ -1,7 +1,10 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
-import { configManager } from '../services/core/config-manager.js';
+import {
+  AUTONOMY_ACK_REQUIRED_CODE,
+  hasStandingAutonomyAck,
+} from '../services/core/approvals/autonomy-consent.js';
 import { reportUsageEvent } from '../services/core/usage-reporter.js';
 import {
   UpdateSessionRequestSchema,
@@ -256,18 +259,6 @@ function asksForAutonomy(runtime: AgentRuntime, permissionMode: PermissionMode):
   return descriptor !== undefined && isAutonomyStop(descriptor);
 }
 
-/**
- * Whether this person has a standing acknowledgement of what Full autonomy
- * means on file (`ui.autonomyAcknowledgedAt`, spec `trust-dial` decision 5).
- *
- * Read fresh on each request rather than cached: clearing it in Settings has to
- * bring the dialog back on the very next mode change, not after a restart.
- */
-function hasStandingAutonomyAck(): boolean {
-  const ui = configManager.get('ui') as { autonomyAcknowledgedAt?: string | null } | undefined;
-  return typeof ui?.autonomyAcknowledgedAt === 'string' && ui.autonomyAcknowledgedAt.length > 0;
-}
-
 // PATCH /api/sessions/:id - Update session settings
 router.patch('/:id', async (req, res) => {
   const sessionId = parseSessionId(req.params.id);
@@ -348,7 +339,7 @@ router.patch('/:id', async (req, res) => {
           res,
           428,
           'Turning on Full autonomy needs you to confirm what it means first.',
-          'AUTONOMY_ACK_REQUIRED'
+          AUTONOMY_ACK_REQUIRED_CODE
         );
       }
     }
@@ -560,14 +551,20 @@ router.post('/:id/messages', async (req, res) => {
   if (!runtimeRegistry.has(runtimeType)) {
     return sendError(res, 400, `Unknown runtime: ${runtimeType}`, 'UNKNOWN_RUNTIME');
   }
-  // The registry seeds this session's model/effort from the server defaults if
-  // this call is what creates its row — see `resolveSessionDefaults`. Nothing is
-  // written for a session that already has one, so a running conversation keeps
-  // whatever it is running with.
+  // The registry seeds this session's model, effort and trust stop from the
+  // server defaults if this call is what creates its row — see
+  // `resolveSessionDefaults`. Nothing is written for a session that already has
+  // one, so a running conversation keeps whatever it is running with.
+  //
+  // `interactive: true` is what unlocks the trust stop, and this route is where
+  // that claim is true: a message posted to `/api/sessions/:id/messages` came
+  // from a person at a cockpit holding the session's event stream open. Rooms,
+  // tasks and bindings never pass through here.
   const isNewSession = await runtimeRegistry.persistSessionRuntime(
     sessionId,
     runtimeType,
-    agentPath
+    agentPath,
+    { interactive: true }
   );
   // Fire the anonymous `session_created` usage event exactly once, on the
   // first-write that mints the session (no-op unless usage telemetry is on).

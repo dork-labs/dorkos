@@ -264,6 +264,17 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'approvals.standingGrants': false,
   'approvals.trustWindowMinutes': 480,
   'approvals.standingGrantsVoidBefore': null,
+  // No standing answer to "how much may a new session do without asking", so
+  // every runtime keeps its own default — and no shipped runtime defaults to a
+  // stop that stops asking (pinned across the whole set by
+  // `services/runtimes/__tests__/permission-semantics.test.ts`). `null` is
+  // therefore the protective value on a real axis: the permissive one is
+  // reachable here, it is `'autonomy'`, and it takes a person and a consent
+  // dialog to write (spec `trust-dial`, decision 6).
+  'runtimes.defaultTrustStop': null,
+  'runtimes.claudeCode.defaultTrustStop': null,
+  'runtimes.codex.defaultTrustStop': null,
+  'runtimes.opencode.defaultTrustStop': null,
   // Nobody has been told what Full autonomy means, so DorkOS still tells them:
   // `null` is the value that keeps the door asking. A wipe landing here is the
   // right outcome — losing a consent record only costs one dialog, while keeping

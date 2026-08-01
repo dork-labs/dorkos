@@ -728,7 +728,11 @@ describe('Sessions Routes', () => {
       expect(runtimeRegistry.persistSessionRuntime).toHaveBeenCalledWith(
         S1,
         'claude-code',
-        undefined
+        undefined,
+        // A message posted here came from a person at a cockpit, which is what
+        // unlocks the configured default trust stop (spec `trust-dial`,
+        // decision 6). Rooms, tasks and bindings never pass through this route.
+        { interactive: true }
       );
     });
 
@@ -740,7 +744,10 @@ describe('Sessions Routes', () => {
       expect(runtimeRegistry.persistSessionRuntime).toHaveBeenCalledWith(
         S1,
         'test-mode',
-        undefined
+        undefined,
+        {
+          interactive: true,
+        }
       );
     });
 
@@ -754,7 +761,8 @@ describe('Sessions Routes', () => {
       expect(runtimeRegistry.persistSessionRuntime).toHaveBeenCalledWith(
         S1,
         'test-mode',
-        '/projects/my-agent'
+        '/projects/my-agent',
+        { interactive: true }
       );
     });
 
@@ -821,7 +829,9 @@ describe('Sessions Routes', () => {
       const res = await sendMessageOnce(S1, { content: 'hi', cwd: '/projects/seeded-agent' });
 
       expect(res.status).toBe(202);
-      expect(runtimeRegistry.persistSessionRuntime).toHaveBeenCalledWith(S1, 'fake', undefined);
+      expect(runtimeRegistry.persistSessionRuntime).toHaveBeenCalledWith(S1, 'fake', undefined, {
+        interactive: true,
+      });
     });
 
     it('resolves via resolveForSession after persisting', async () => {

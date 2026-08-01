@@ -174,6 +174,12 @@ export class RuntimeRegistry {
    * @param sessionId - Session identifier (any runtime's session id)
    * @param runtime - Runtime type string (e.g. `'claude-code'`, `'codex'`)
    * @param agentPath - Optional path to the agent that owns this session
+   * @param opts.interactive - Whether a PERSON is starting this session and will
+   *   be watching it. Only then does the row inherit the configured default trust
+   *   stop (spec `trust-dial`, decision 6) — a room, a scheduled task and a relay
+   *   binding each carry their own permission mode and their own stricter gates,
+   *   and must never be handed the cockpit's. Defaults to `false`, so the
+   *   dangerous direction is the one a caller has to ask for by name.
    * @returns `true` when this call inserted a NEW binding row (i.e. a genuinely
    *   new session), `false` when a row already existed. Lets the caller fire a
    *   once-per-session side effect (e.g. the `session_created` usage event)
@@ -182,7 +188,8 @@ export class RuntimeRegistry {
   async persistSessionRuntime(
     sessionId: string,
     runtime: string,
-    agentPath?: string
+    agentPath?: string,
+    opts?: { interactive?: boolean }
   ): Promise<boolean> {
     const db = this.requireDb('persistSessionRuntime');
     // The agent tier is read here, where the owning agent is actually known.
@@ -196,7 +203,7 @@ export class RuntimeRegistry {
         runtime,
         agentPath: agentPath ?? null,
         createdAt: new Date().toISOString(),
-        ...this.seedForNewRow(runtime, agent),
+        ...this.seedForNewRow(runtime, { agent, interactive: opts?.interactive === true }),
       })
       .onConflictDoNothing();
     // better-sqlite3 RunResult: `changes` is the number of rows actually written
@@ -299,8 +306,16 @@ export class RuntimeRegistry {
    *
    * @param sessionId - Session identifier
    * @param settings - Partial settings to persist (omitted keys are untouched)
+   * @param opts.interactive - Whether a PERSON is changing a session they are
+   *   watching. Only then may the row this write creates inherit the configured
+   *   default trust stop. Defaults to `false`: the seed is something a caller
+   *   asks for by name, never something a new caller inherits by saying nothing.
    */
-  async saveSessionSettings(sessionId: string, settings: SessionSettings): Promise<void> {
+  async saveSessionSettings(
+    sessionId: string,
+    settings: SessionSettings,
+    opts?: { interactive?: boolean }
+  ): Promise<void> {
     const db = this.requireDb('saveSessionSettings');
     const patch = pickSettings(settings);
     if (Object.keys(patch).length === 0) return;
@@ -327,7 +342,12 @@ export class RuntimeRegistry {
         sessionId,
         runtime,
         createdAt: new Date().toISOString(),
-        ...this.seedForNewRow(runtime),
+        // Interactive only when the caller said so. Today every caller is the
+        // operator's own settings write (each adapter's `updateSession`, whose
+        // only caller is `PATCH /api/sessions/:id`) and says so at its call
+        // site; the default is `false` so a future one has to make the claim
+        // rather than inherit it.
+        ...this.seedForNewRow(runtime, { interactive: opts?.interactive === true }),
         ...patch,
       })
       // The UPDATE branch carries the patch alone: an existing row is a running
@@ -354,14 +374,32 @@ export class RuntimeRegistry {
    * inference itself is DOR-764's subject, not this seam's.
    *
    * @param runtime - The runtime type the row is being created for.
-   * @param agent - The owning agent's manifest model/effort, when the caller
+   * @param opts.agent - The owning agent's manifest model/effort, when the caller
    *   knows which agent that is. Omitted → the server default alone.
+   * @param opts.interactive - Whether this row belongs to a session a person is
+   *   watching. The permission mode rides ONLY on those: the runtime's declared
+   *   modes are what turns a configured stop into a mode id, and withholding
+   *   them is how an unattended surface is told "not for you" (see
+   *   {@link resolveSessionDefaults}).
    */
   private seedForNewRow(
     runtime: string,
-    agent?: AgentExecutionDefaults
+    opts: { agent?: AgentExecutionDefaults; interactive: boolean }
   ): Partial<typeof sessionMetadata.$inferInsert> {
-    return pickSettings(resolveSessionDefaults({ runtimeType: runtime, agent }));
+    return pickSettings(
+      resolveSessionDefaults({
+        runtimeType: runtime,
+        agent: opts.agent,
+        // Read off the REGISTERED runtime, not a table here: a runtime that is
+        // not registered on this server has no profile to read and therefore no
+        // stop to resolve, which is the same answer as no preference.
+        ...(opts.interactive
+          ? {
+              permissionModes: this.runtimes.get(runtime)?.getCapabilities().permissionModes.values,
+            }
+          : {}),
+      })
+    );
   }
 
   /**
