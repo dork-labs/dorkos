@@ -354,8 +354,20 @@ describe('cross-client: second-client POST during an open turn', () => {
     // Now the turn goes DARK — its last proof of life recedes past the TTL, the
     // shape of a client that vanished. The reclaim path must still work, or a
     // crashed turn would lock the session forever.
+    //
+    // The dark instant is PINNED, not recomputed per probe. `() => Date.now() -
+    // TTL - 1` reads like the same thing and is not: the manager samples `now`
+    // first and calls the probe a moment later, so the probe answered
+    // `now + drift - TTL - 1` and the lock looked expired only while `drift` was
+    // 0. One millisecond boundary crossing between those two reads — routine on
+    // a loaded CI runner — put the holder exactly ON the TTL, which is not past
+    // it, and the takeover below came back 409 (DOR-801). A fixed instant can
+    // only recede further as the test runs, so the answer no longer depends on
+    // when the clock is read. It is also the truer model: a turn that went dark
+    // does not keep refreshing its own last-seen time.
     expect(holder?.lastActivityAt).toBeTypeOf('function');
-    holder!.lastActivityAt = () => Date.now() - SESSIONS.LOCK_TTL_MS - 1;
+    const wentDarkAt = Date.now() - SESSIONS.LOCK_TTL_MS - 1;
+    holder!.lastActivityAt = () => wentDarkAt;
 
     // Abandoned lock → the second client's POST is ACCEPTED and its message is
     // dispatched to the runtime. (The Claude CLI delivers such a
