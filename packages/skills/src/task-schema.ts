@@ -57,15 +57,30 @@ export const TaskFrontmatterSchema = SkillFrontmatterSchema.extend({
    * Agent permission mode during task execution. One of
    * {@link TASK_PERMISSION_MODES}.
    *
-   * - `acceptEdits` (the default): file edits inside the workspace are accepted
-   *   WITHOUT asking; every other tool still raises an approval.
-   * - `bypassPermissions`: nothing asks. The run does whatever it decides to.
-   * - `default`: every tool raises an approval.
+   * **A mode id is a request, not a description.** What each one actually does
+   * is declared by the runtime the task runs on
+   * (`PermissionModeDescriptor.promise` in its capability profile), and the same
+   * id can mean materially different things: `acceptEdits` on Claude Code edits
+   * files and stops before a command, while on Codex it runs commands inside the
+   * workspace too and cannot pause to ask at all. Read the runtime's profile —
+   * or the Trust Dial, which renders it — for the sentence that is true for a
+   * given task.
+   *
+   * What holds across runtimes:
+   *
+   * - `default`: the most careful setting the runtime offers.
+   * - `acceptEdits` (the schema default): the agent changes files on its own.
    * - `plan`: read-only planning; nothing is written.
+   * - `bypassPermissions`: nothing asks. The run does whatever it decides to.
    * - `auto`, `dontAsk`: the remaining runtime modes, carried through as-is.
    *
-   * A task run is unattended, so an approval nobody answers stalls the run —
-   * the stricter modes trade throughput for safety, deliberately.
+   * A task run is unattended, so nobody answers an approval it raises. It is
+   * **refused** after `SESSIONS.INTERACTION_TIMEOUT_MS` (10 minutes) and the
+   * turn carries on without it — it does not stall until `max-runtime`. A long
+   * task under a strict mode therefore finishes, having quietly spent ten
+   * minutes per ask and skipped the work behind each one. The stricter modes
+   * trade throughput for safety, deliberately; budget `max-runtime` for the
+   * asks you expect.
    */
   permissions: z.enum(TASK_PERMISSION_MODES).default('acceptEdits'),
 

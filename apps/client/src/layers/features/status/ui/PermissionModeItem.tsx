@@ -13,8 +13,9 @@ import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
+  TrustDial,
+  TrustModeIcon,
 } from '@/layers/shared/ui';
-import { TrustDial, TrustModeIcon } from './TrustDial';
 
 /** Copy shown in the tooltip when a refinement is hidden because the model can't run it. */
 const AUTO_UNSUPPORTED_TOOLTIP = 'Auto mode requires Opus 4.6+ or Sonnet 4.6';

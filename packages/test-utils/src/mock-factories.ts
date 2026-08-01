@@ -359,6 +359,12 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
                 id: 'plan',
                 label: 'Plan',
                 stop: 'ask',
+                // A way of working, not a level of trust — mirroring the real
+                // profile in `claude-code/runtime-constants.ts`. Without it every
+                // dial rendered against this mock offers planning as a second
+                // answer to "how much may this agent do?", which the shipped
+                // profile does not.
+                axis: 'working',
                 asks: 'always',
                 reach: 'read',
                 promise: 'Reads and plans only. Nothing changes until you approve the plan.',

@@ -43,8 +43,14 @@ vi.mock('@/layers/entities/mesh', () => ({
   useRegisteredAgents: (...args: unknown[]) => mockUseRegisteredAgents(...args),
 }));
 
-// Mock adapter logos — renders a simple span for testability
-vi.mock('@dorkos/icons/adapter-logos', () => ({
+// Mock adapter logos — renders a simple span for testability.
+//
+// Partial, not total: the real module also exports the per-brand components the
+// runtime descriptor registry names, and this file's import graph reaches that
+// registry (the binding dialog resolves a runtime profile to build its Trust
+// Dial from). A total mock drops those exports and the whole file fails to load.
+vi.mock('@dorkos/icons/adapter-logos', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@dorkos/icons/adapter-logos')>()),
   ADAPTER_LOGO_MAP: {
     telegram: ({ className }: { size?: number; className?: string }) => (
       <span data-testid="adapter-logo" data-icon="telegram" className={className}>

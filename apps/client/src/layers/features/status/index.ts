@@ -9,8 +9,6 @@ export { GitStatusItem } from './ui/GitStatusItem';
 export { PermissionModeItem } from './ui/PermissionModeItem';
 export { PlanModeItem } from './ui/PlanModeItem';
 export type { PlanModeItemProps } from './ui/PlanModeItem';
-export { TrustDial, TrustModeIcon } from './ui/TrustDial';
-export type { TrustDialProps } from './ui/TrustDial';
 export { RuntimeItem } from './ui/RuntimeItem';
 export { AutoModeConfirmDialog } from './ui/AutoModeConfirmDialog';
 export { AutonomyConfirmDialog } from './ui/AutonomyConfirmDialog';

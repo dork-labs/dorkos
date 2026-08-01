@@ -32,8 +32,12 @@ export interface PermissionModeScopeNoteProps {
  * binding, and a scheduled task. One component and one condition, so the three
  * cannot drift into saying different things — `isBypassSemantics` where the
  * runtime's profile is at hand, {@link isBypassPermissionMode} on the name where
- * it is not (a binding and a task form pick a mode with no session, so no
- * runtime, behind them).
+ * it is not.
+ *
+ * All three pass a descriptor today: the binding dialog and the task form
+ * resolve a runtime profile of their own to build the Trust Dial from. The
+ * name-based fallback stays for the frames before that profile lands, and for a
+ * mode the runtime no longer declares.
  *
  * Deliberately quiet: muted body text, no icon, no color. It is a clarification,
  * not a warning — the warning about the mode itself already exists next to it,

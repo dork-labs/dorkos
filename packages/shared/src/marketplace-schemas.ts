@@ -193,14 +193,29 @@ export type SchedulePermissionMode = PermissionMode;
  * sentence "This job ...". Use {@link describeSchedulePermissionMode} rather
  * than indexing this map directly, so a mode the server learns before the
  * client does still renders something true.
+ *
+ * ## Why these sentences say less than they used to
+ *
+ * A mode id means different things on different runtimes. `acceptEdits` on
+ * Claude Code edits files and stops before a command; on Codex the same id runs
+ * commands too and cannot pause to ask at all. This map used to assert Claude
+ * Code's behavior for everyone, which shipped a false promise to anyone running
+ * a package's schedule on another runtime.
+ *
+ * A package manifest names no runtime, and an install preview has no session, so
+ * there is nothing here to resolve a runtime profile from — the honest fix is to
+ * claim only what is true of the mode on every runtime that declares it. Where a
+ * runtime IS known, say more, not less: read
+ * `PermissionModeDescriptor.promise` from its capability profile, which is what
+ * the Trust Dial renders (spec `trust-dial`, decision 2A).
  */
 export const SCHEDULE_PERMISSION_MODE_SUMMARY: Record<SchedulePermissionMode, string> = {
-  default: 'asks you before it uses any tool',
+  default: 'runs at the most careful setting its agent offers',
   plan: 'can only read and plan, and cannot change anything',
-  acceptEdits: 'can change files on its own, but asks before running commands',
+  acceptEdits: 'can change files on its own, and on some agents run commands too',
   dontAsk: 'runs its tools without asking you',
   bypassPermissions: 'can run any command without asking you',
-  auto: 'decides on its own which tools to run, without asking you',
+  auto: 'decides for itself which actions are safe to take',
 };
 
 /**

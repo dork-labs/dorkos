@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Shield } from 'lucide-react';
 import {
   Badge,
@@ -10,16 +11,13 @@ import {
   SelectValue,
   CollapsibleFieldCard,
   PermissionModeScopeNote,
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
+  TrustDial,
+  UnattendedAutonomyDialog,
 } from '@/layers/shared/ui';
+import { permissionModeLabel } from '@/layers/shared/lib';
+import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
 import type { SessionStrategy } from '@dorkos/shared/relay-schemas';
+import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import type { PermissionMode } from '@dorkos/shared/schemas';
 
 /** Options for the session strategy selector with human-readable descriptions. */
@@ -42,38 +40,31 @@ const SESSION_STRATEGIES: { value: SessionStrategy; label: string; description: 
   },
 ];
 
-/** Human-readable labels and descriptions for each permission mode. */
-const PERMISSION_MODES: { value: PermissionMode; label: string; description: string }[] = [
-  {
-    value: 'default',
-    label: 'Default',
-    description: 'Agent asks for approval before using any tools',
-  },
-  {
-    value: 'plan',
-    label: 'Plan Only',
-    description: 'Agent can read files but asks before making changes',
-  },
-  {
-    value: 'acceptEdits',
-    label: 'Accept Edits',
-    description: 'Agent can read and write files; asks before running shell commands',
-  },
-  {
-    value: 'bypassPermissions',
-    label: 'Full Access',
-    description: 'Agent can use all tools without asking for approval',
-  },
-];
+/**
+ * The runtime a binding's turns actually run on.
+ *
+ * **This is an assumption, and it is narrow on purpose.** A relay binding names
+ * an agent, not a runtime, and nothing in the binding record carries one. What
+ * decides is the relay: an inbound message is handled by the Claude Code adapter
+ * (`packages/relay/src/adapters/claude-code/agent-handler.ts`), which passes the
+ * binding's `permissionMode` straight to that runtime. So the honest profile to
+ * render a binding's dial from is Claude Code's, whatever the server's default
+ * runtime happens to be.
+ *
+ * **Where this breaks:** the day the relay grows a second runtime adapter, or
+ * routes a binding by the agent's own runtime. At that point the dial here would
+ * show Claude Code's stops for a turn Codex is about to run — which is exactly
+ * the per-runtime dishonesty this screen was fixed to end. The fix then is to
+ * resolve the runtime from the binding (or its agent) and pass it in, not to
+ * widen this constant.
+ */
+const BINDING_RUNTIME = 'claude-code';
 
 export interface BindingAdvancedSectionProps {
   strategy: SessionStrategy;
   onStrategyChange: (value: SessionStrategy) => void;
   permissionMode: PermissionMode;
   onPermissionModeChange: (value: string) => void;
-  bypassWarningOpen: boolean;
-  onBypassWarningOpenChange: (open: boolean) => void;
-  onBypassConfirm: () => void;
   canInitiate: boolean;
   onCanInitiateChange: (value: boolean) => void;
   canReply: boolean;
@@ -95,18 +86,28 @@ export interface BindingAdvancedSectionProps {
 /**
  * Collapsible "Advanced" section for the binding dialog.
  *
- * Renders the session strategy selector, permission mode selector,
- * bypass-permissions security warning dialog, and per-direction permission toggles
- * (canInitiate, canReply, canReceive).
+ * Renders the session strategy selector, the Trust Dial, and the per-direction
+ * message toggles (canInitiate, canReply, canReceive).
+ *
+ * ## Why the mode list here is gone
+ *
+ * This screen used to answer "how much may this agent do?" from four hand-written
+ * entries. Two of them were false on Codex ("asks before running shell commands"
+ * describes a runtime that can pause mid-turn; Codex cannot), and one — Plan —
+ * was not a level of trust at all but a way of working, offered to runtimes that
+ * have no such mode. It now renders {@link TrustDial}, which derives every word
+ * on screen from what the runtime declared (spec `trust-dial`).
+ *
+ * The choice is owned here rather than by the dialog around it, because the two
+ * things guarding it — which runtime's profile the dial is built from, and the
+ * confirmation the autonomy stop needs — are both facts about the permission
+ * mode and nothing else.
  */
 export function BindingAdvancedSection({
   strategy,
   onStrategyChange,
   permissionMode,
   onPermissionModeChange,
-  bypassWarningOpen,
-  onBypassWarningOpenChange,
-  onBypassConfirm,
   canInitiate,
   onCanInitiateChange,
   canReply,
@@ -121,7 +122,29 @@ export function BindingAdvancedSection({
   hasChanges,
 }: BindingAdvancedSectionProps) {
   const selectedStrategy = SESSION_STRATEGIES.find((s) => s.value === strategy);
-  const selectedPermissionMode = PERMISSION_MODES.find((m) => m.value === permissionMode);
+  const caps = useCapabilitiesForRuntime(BINDING_RUNTIME);
+  const descriptors = caps?.permissionModes.values ?? [];
+  const currentDescriptor = descriptors.find((d) => d.id === permissionMode);
+  // The runtime's own word for the mode wherever it declared one; the client's
+  // id table only where it did not.
+  const modeLabel = currentDescriptor?.label ?? permissionModeLabel(permissionMode);
+  const [pendingAutonomy, setPendingAutonomy] = useState<PermissionModeDescriptor | null>(null);
+
+  /**
+   * Apply a stop, asking first at the one that stops the asking.
+   *
+   * Unlike a session's dial, this is not remembered: there is no session to
+   * remember it for, and a binding is configured rarely enough that a second
+   * question costs nothing.
+   */
+  function handleChangeMode(next: string) {
+    const descriptor = descriptors.find((d) => d.id === next);
+    if (descriptor?.stop === 'autonomy') {
+      setPendingAutonomy(descriptor);
+      return;
+    }
+    onPermissionModeChange(next);
+  }
 
   return (
     <>
@@ -157,25 +180,45 @@ export function BindingAdvancedSection({
           )}
         </div>
 
-        {/* Permission mode selector */}
-        <div className="space-y-1.5 px-4 py-3">
-          <Label htmlFor="binding-permission-mode">Permission Mode</Label>
-          <Select value={permissionMode} onValueChange={onPermissionModeChange}>
-            <SelectTrigger id="binding-permission-mode" className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {PERMISSION_MODES.map((m) => (
-                <SelectItem key={m.value} value={m.value}>
-                  {m.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {selectedPermissionMode && (
-            <p className="text-muted-foreground text-xs">{selectedPermissionMode.description}</p>
+        {/* How much this agent may do without asking — the Trust Dial */}
+        <div className="space-y-2 px-4 py-3">
+          <p className="text-muted-foreground text-xs font-medium">Permissions</p>
+          {descriptors.length === 0 ? (
+            // No profile in hand — one round trip on a cold open, and forever
+            // under a test-mode boot, where `claude-code` is never registered.
+            // A heading over an empty caption and a note about a control that is
+            // not there says nothing; this says what the binding is set to and
+            // why it cannot be changed yet.
+            <p
+              data-testid="trust-dial-unavailable"
+              className="text-muted-foreground px-1 text-xs leading-relaxed"
+            >
+              This integration is set to “{modeLabel}”. The agent behind it hasn’t said what it can
+              do, so there is nothing to choose from yet — saving keeps it as it is.
+            </p>
+          ) : (
+            <>
+              <TrustDial
+                mode={permissionMode}
+                descriptors={descriptors}
+                onChangeMode={handleChangeMode}
+                // A binding has no Plan switch. One saved at `plan` is kept and
+                // named, not frozen behind a control this screen does not have.
+                strandsWorkingMode
+                strandedNote={
+                  <>
+                    This integration is set to “{modeLabel}”, which is not one of these. Saving
+                    keeps it as it is — pick a stop to change it.
+                  </>
+                }
+              />
+              <PermissionModeScopeNote
+                mode={permissionMode}
+                {...(currentDescriptor ? { descriptor: currentDescriptor } : {})}
+                className="px-1"
+              />
+            </>
           )}
-          <PermissionModeScopeNote mode={permissionMode} />
         </div>
 
         {/* Message direction toggles */}
@@ -247,28 +290,25 @@ export function BindingAdvancedSection({
         </div>
       </CollapsibleFieldCard>
 
-      {/* bypassPermissions security warning */}
-      <AlertDialog open={bypassWarningOpen} onOpenChange={onBypassWarningOpenChange}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Enable Full Access?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Any user who can send messages through this adapter (e.g., members of your Slack
-              workspace) will be able to trigger unrestricted agent actions, including file system
-              access and command execution.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={onBypassConfirm}
-              className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
-            >
-              Enable Full Access
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* The one stop nobody is watching. */}
+      <UnattendedAutonomyDialog
+        descriptor={pendingAutonomy}
+        consequence={
+          <>
+            At every other stop, an action this agent needs permission for waits for an answer:
+            where your integration can show buttons, it arrives in the chat as Approve and Deny, and
+            only the people on the approver list may answer. Either way an ask nobody answers is
+            refused after 10 minutes and the agent carries on without it. Here nothing is asked at
+            all — anyone who can send a message through this integration sets off whatever the agent
+            decides to do.
+          </>
+        }
+        onCancel={() => setPendingAutonomy(null)}
+        onConfirm={() => {
+          if (pendingAutonomy) onPermissionModeChange(pendingAutonomy.id);
+          setPendingAutonomy(null);
+        }}
+      />
     </>
   );
 }

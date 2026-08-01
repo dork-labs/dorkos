@@ -97,8 +97,6 @@ export function BindingDialog({
     () => !!(initialValues?.chatId || initialValues?.channelType)
   );
   const [advancedOpen, setAdvancedOpen] = useState(() => hasNonDefaultAdvanced(initialValues));
-  // Track whether the bypass-permissions security warning is open.
-  const [bypassWarningOpen, setBypassWarningOpen] = useState(false);
 
   // Snapshot the initial defaults once — used for value-based dirty tracking in edit mode.
   // TanStack Form's built-in isDirty is a one-way ratchet (never resets on revert),
@@ -153,15 +151,6 @@ export function BindingDialog({
   );
 
   const agentOptions = agentsData?.agents ?? [];
-
-  /** Handle permission mode selection with security warning for bypassPermissions. */
-  function handlePermissionModeChange(value: string) {
-    if (value === 'bypassPermissions') {
-      setBypassWarningOpen(true);
-    } else {
-      form.setFieldValue('permissionMode', value as PermissionMode);
-    }
-  }
 
   function handleClearFilters() {
     form.setFieldValue('chatId', SELECT_ANY);
@@ -403,11 +392,8 @@ export function BindingDialog({
                     strategy={values.strategy}
                     onStrategyChange={(v) => form.setFieldValue('strategy', v)}
                     permissionMode={values.permissionMode}
-                    onPermissionModeChange={handlePermissionModeChange}
-                    bypassWarningOpen={bypassWarningOpen}
-                    onBypassWarningOpenChange={setBypassWarningOpen}
-                    onBypassConfirm={() =>
-                      form.setFieldValue('permissionMode', 'bypassPermissions')
+                    onPermissionModeChange={(v) =>
+                      form.setFieldValue('permissionMode', v as PermissionMode)
                     }
                     canInitiate={values.canInitiate}
                     onCanInitiateChange={(v) => form.setFieldValue('canInitiate', v)}
