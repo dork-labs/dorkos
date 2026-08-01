@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { HistoryMessage } from '@dorkos/shared/types';
@@ -8,7 +8,12 @@ import {
   overlayApprovalReceipts,
 } from '../approval-receipt-overlay.js';
 import { SessionEventStore } from '../session-event-store.js';
-import { setSessionEventStore, disposeProjector } from '../session-state-projector.js';
+import type { RawSessionEvent } from '../session-state-projector.js';
+import {
+  setSessionEventStore,
+  disposeProjector,
+  getOrCreateProjector,
+} from '../session-state-projector.js';
 
 // Purpose: a permission prompt is asked and answered entirely inside DorkOS, so
 // a runtime that derives its history from its own transcript (claude-code, from
@@ -31,6 +36,15 @@ function resolved(
     startedAt: 1_700_000_000_000,
     ...extra,
   } as SessionEvent;
+}
+
+/** The same resolution as an adapter hands it to `ingest` (no seq yet). */
+function resolvedRaw(id: string, resolution: 'approved' | 'denied'): RawSessionEvent {
+  const { seq: _seq, ...rest } = resolved(id, resolution) as Extract<
+    SessionEvent,
+    { type: 'interaction_resolved' }
+  >;
+  return rest as RawSessionEvent;
 }
 
 /** An assistant history message carrying one tool call, in both shapes. */
@@ -154,5 +168,38 @@ describe('overlayApprovalReceipts', () => {
   it('works with no durable store wired at all', () => {
     const messages = [assistantWithTool('tc-1')];
     expect(overlayApprovalReceipts('sess', messages)).toBe(messages);
+  });
+
+  it('hands back the conversation when the database is locked', () => {
+    // This runs on a path that was a pure JSONL read before it existed, and it
+    // feeds BOTH the /messages route and the cold-open snapshot. SQLITE_BUSY is
+    // an ordinary event on a machine running several agents against one
+    // ~/.dork/dork.db — it must cost the annotations and nothing else, or a
+    // locked database empties a person's conversation.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    setSessionEventStore({
+      readInteractionResolutions: () => {
+        throw new Error('SQLITE_BUSY: database is locked');
+      },
+    } as unknown as SessionEventStore);
+    const messages = [assistantWithTool('tc-1')];
+
+    expect(() => overlayApprovalReceipts('sess', messages)).not.toThrow();
+    expect(overlayApprovalReceipts('sess', messages)).toBe(messages);
+    warn.mockRestore();
+  });
+
+  it('reads the OPEN turn, so an answer given this turn is not waited on', () => {
+    // Rows reach the store when a turn ENDS. A reload fired mid-turn (a session
+    // settling to `blocked` with a second request still pending) has to see the
+    // answers already given, and they exist only on the live projector.
+    setSessionEventStore(new SessionEventStore(createTestDb()));
+    const projector = getOrCreateProjector('sess');
+    projector.ingest({ type: 'turn_start', userMessage: 'run it' } as RawSessionEvent);
+    projector.ingest(resolvedRaw('tc-1', 'approved'));
+
+    const [message] = overlayApprovalReceipts('sess', [assistantWithTool('tc-1')]);
+
+    expect(message.toolCalls?.[0].approvalOutcome).toBe('allowed');
   });
 });

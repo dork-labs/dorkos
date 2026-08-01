@@ -35,6 +35,7 @@
  */
 import { approvalOutcomeOf, type SessionEvent } from '@dorkos/shared/session-stream';
 import type { HistoryMessage, MessagePart, ToolApprovalOutcome } from '@dorkos/shared/types';
+import { logger } from '../../lib/logger.js';
 import { getSessionEventStore, peekProjector } from './session-state-projector.js';
 
 /** What a person's answer to one permission prompt leaves behind. */
@@ -139,15 +140,38 @@ export function applyApprovalReceipts(
 }
 
 /**
+ * Read a session's recorded resolutions, durable rows first and the open turn
+ * second so the live answer wins where both hold one.
+ *
+ * Both reads are NARROW on purpose, because this runs on every history read —
+ * once per turn-end reload, for the whole transcript's life. The store filters
+ * to resolution rows in SQL rather than materializing and JSON-parsing every
+ * row of a 5,000-row session, and the live half asks only for the OPEN turn
+ * (the unflushed window this exists to cover) rather than replaying the whole
+ * event log through its merge-and-sort.
+ */
+function readRecordedResolutions(sessionId: string): SessionEvent[] {
+  const durable = getSessionEventStore()?.readInteractionResolutions(sessionId) ?? [];
+  const openTurn = peekProjector(sessionId)?.peekInProgressTurn() ?? [];
+  if (openTurn.length === 0) return durable;
+  return [...durable, ...openTurn];
+}
+
+/**
  * Overlay a session's recorded permission decisions onto history a runtime
  * assembled from its own transcript.
  *
- * Reads the durable rows first and the live projector's log second, so a turn
- * that has not been flushed yet (or a host running without a database) is still
- * annotated, and the live answer wins if both hold one. A session with no
- * recorded answers — an old one, a pruned log, a conversation nobody was ever
- * asked about — comes back exactly as it went in. Never throws: an unreadable
- * record costs the annotations, never the history.
+ * A session with no recorded answers — an old one, a pruned log, a conversation
+ * nobody was ever asked about — comes back exactly as it went in.
+ *
+ * **Never throws, and that is a contract rather than a courtesy.** This sits on
+ * a path that was a pure JSONL read before it existed, feeding BOTH `GET
+ * /api/sessions/:id/messages` and the cold-open snapshot, and
+ * `AgentRuntime.getMessageHistory` promises an array. The store is SQLite on a
+ * machine that routinely runs several agents at once, so `SQLITE_BUSY` is an
+ * ordinary event and not a disaster — but a disaster is exactly what it would
+ * become if a locked database could empty a person's conversation. A failed
+ * read costs the annotations and nothing else.
  *
  * @param sessionId - The id the answers were recorded under (canonical, i.e.
  *   the same internal id the history read used).
@@ -157,8 +181,16 @@ export function overlayApprovalReceipts(
   sessionId: string,
   messages: HistoryMessage[]
 ): HistoryMessage[] {
-  const durable = getSessionEventStore()?.readAll(sessionId) ?? [];
-  const live = peekProjector(sessionId)?.replayFrom(0) ?? [];
-  if (durable.length === 0 && live.length === 0) return messages;
-  return applyApprovalReceipts(messages, collectApprovalReceipts([...durable, ...live]));
+  let recorded: SessionEvent[];
+  try {
+    recorded = readRecordedResolutions(sessionId);
+  } catch (err) {
+    logger.warn('[approval-receipts] could not read recorded decisions — history unannotated', {
+      sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return messages;
+  }
+  if (recorded.length === 0) return messages;
+  return applyApprovalReceipts(messages, collectApprovalReceipts(recorded));
 }

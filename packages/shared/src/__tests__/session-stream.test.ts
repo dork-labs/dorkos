@@ -7,6 +7,8 @@ import {
   BLOCKING_INTERACTION_EVENT_TYPES,
   isBlockingInteractionEventType,
   isBlockingInteractionEvent,
+  approvalOutcomeOf,
+  type ToolApprovalOutcome,
 } from '../session-stream.js';
 
 const coldStatus = {
@@ -284,4 +286,46 @@ describe('blocking interaction predicates', () => {
       expect(blocking.id).toBe('q-1');
     }
   });
+});
+
+/**
+ * The full (kind × resolution) matrix for the one definition of what a resolved
+ * interaction earns.
+ *
+ * Enumerated rather than sampled because the two rules are independent and each
+ * has a history of being read out of the other. The KIND gate exists because a
+ * timed-out question resolves `expired` exactly as a timed-out permission
+ * prompt does — and AskUserQuestion is an ordinary tool_use block, so it lands
+ * on a real tool call — which printed "Expired — denied" over questions nobody
+ * was asked to approve. The RESOLUTION gate exists because `cancelled` means
+ * the ask was withdrawn before anyone could answer it, and recording that as a
+ * decision puts an answer in the transcript that no one gave.
+ */
+describe('approvalOutcomeOf', () => {
+  const kinds = ['approval', 'question', 'elicitation', undefined] as const;
+  const resolutions = [
+    'approved',
+    'denied',
+    'answered',
+    'expired',
+    'cancelled',
+    undefined,
+  ] as const;
+
+  /** Only these three (kind, resolution) pairs earn a permanent record. */
+  const EARNED: Record<string, ToolApprovalOutcome> = {
+    'approval/approved': 'allowed',
+    'approval/denied': 'denied',
+    'approval/expired': 'expired',
+  };
+
+  for (const kind of kinds) {
+    for (const resolution of resolutions) {
+      const key = `${String(kind)}/${String(resolution)}`;
+      const expected = EARNED[key];
+      it(`${key} → ${expected ?? 'no receipt'}`, () => {
+        expect(approvalOutcomeOf({ kind, resolution })).toBe(expected);
+      });
+    }
+  }
 });

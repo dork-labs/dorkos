@@ -92,6 +92,20 @@ export default defineConfig({
     // and stays green is an alias symptom, not a cleanup. The existence check
     // above catches the rename that caused it here; it cannot catch every route
     // to the same state, so recognising the shape is still worth something.
+    // - `session-stream` backs the approval-receipt gate. `approvalOutcomeOf` is
+    //   the single definition of which resolved interaction earns a permanent
+    //   record, and both server halves that write one — the log-backed history
+    //   fold and the overlay onto claude-code's JSONL — assert its NEGATIVE
+    //   cases (a resolved question earns nothing, a withdrawn ask earns
+    //   nothing). Same family as `untrusted-text`: a pure gate whose source text
+    //   is the subject. Measured: deleting the `kind` gate in `src/` reddened 0
+    //   of the 27 server approval tests without this alias — they read the dist
+    //   and passed — and 2 with it, while the client's copy of the same
+    //   assertion caught it immediately. Cost re-measured back to back in one
+    //   session over the full server suite: aliased 35.1s (transform 19.1s)
+    //   against un-aliased 38.9s (transform 21.0s). The aliased run being the
+    //   faster one is the point — that spread is machine noise, so read it as
+    //   "no measurable cost", not as an improvement.
     // - `constants` backs `model-catalog-labels`, which asserts every runtime's
     //   model display name fits inside `STATUS_VALUE_MAX_CHARS`. Shrink the budget
     //   in `src/` and a stale dist measures against the old, roomier one.
@@ -188,6 +202,12 @@ export default defineConfig({
         find: '@dorkos/shared/trait-renderer',
         replacement: fileURLToPath(
           new URL('../../packages/shared/src/trait-renderer.ts', import.meta.url)
+        ),
+      },
+      {
+        find: '@dorkos/shared/session-stream',
+        replacement: fileURLToPath(
+          new URL('../../packages/shared/src/session-stream.ts', import.meta.url)
         ),
       },
       {

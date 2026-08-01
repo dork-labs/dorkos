@@ -102,8 +102,13 @@ export class PendingApprovalStore {
     onTimeout: () => void
   ): void {
     // Re-registration (an upstream re-publish of the same permission) replaces
-    // the record — cancel the superseded timer so it cannot double-deny.
+    // the record — cancel the superseded timer so it cannot double-deny, and
+    // drop any expiry recorded for the PREVIOUS incarnation of this id. A
+    // re-published permission is a live question again; leaving the old mark
+    // set would stamp `timeout` on the echo of a person's real answer and file
+    // their decision as "nobody was there".
     this.take(sessionId, permissionId);
+    this.consumeExpired(sessionId, permissionId);
     const timer = setTimeout(() => {
       if (!this.take(sessionId, permissionId)) return;
       const forSession = this.expired.get(sessionId) ?? new Set<string>();

@@ -16,11 +16,8 @@ import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { ClientContext } from '@dorkos/shared/additional-context';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import { logger } from '../../lib/logger.js';
-import {
-  getOrCreateProjector,
-  persistenceModeFor,
-  rekeyProjector,
-} from './session-state-projector.js';
+import { getOrCreateProjector, rekeyProjector } from './session-state-projector.js';
+import { persistenceModeFor } from './projector-persistence.js';
 import { triggerTurn } from './trigger-turn.js';
 import type { TriggerTurnResult } from './trigger-turn.js';
 import { triggerCommandIntent } from './trigger-command-intent.js';

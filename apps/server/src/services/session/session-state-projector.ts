@@ -42,6 +42,11 @@ import { EventLog } from './event-log.js';
 import { RingBuffer } from './ring-buffer.js';
 import { devtoolsCaptureStore } from './devtools-capture-store.js';
 import type { SessionEventStore } from './session-event-store.js';
+import {
+  RECORDED_EVENT_TYPES,
+  type ProjectorPersistence,
+  type ProjectorPersistenceMode,
+} from './projector-persistence.js';
 
 /**
  * An event as produced by an adapter: a {@link SessionEvent} union member with
@@ -128,94 +133,6 @@ interface TrackedInteraction {
  * retired ({@link SessionStateProjector.terminate}).
  */
 type Waiter = (event: SessionEvent | typeof TERMINATED) => void;
-
-/**
- * What a session's durable rows are FOR — the two answers being different is
- * why this is a mode and not a boolean.
- *
- * - `'history'` — the log-backed runtimes (codex, opencode, test-mode). Their
- *   completed history has no other home, so every event of a completed turn is
- *   flushed and a fresh projector HYDRATES its in-memory log back from the
- *   store. This is DOR-189's original behaviour, unchanged.
- * - `'record'` — every other session, which today means claude-code. Its history
- *   is SDK JSONL and always will be (ADR 260710-024641: persisting it in full
- *   would double-store and inflate the hot path), so this mode writes only the
- *   handful of events the JSONL cannot answer for — see
- *   {@link RECORDED_EVENT_TYPES} — and never hydrates, because a sparse log
- *   presented as a replay source would hand a resuming client a turn with its
- *   middle missing.
- *
- * The decision is ADR 260731-211050, which retires 260710-024641's
- * "claude-code opts out" clause.
- *
- * `'record'` began as a room-only answer to invisible failures: a person
- * triggers a turn from a room, no client holds that session's stream, and a turn
- * that fails leaves no trace anywhere a person will look — on 2026-07-31 an
- * agent went silent in a room for forty-one minutes and `session_events` held
- * zero rows for it (DOR-784). Receipt permanence extends it to every session for
- * the same reason at a different surface: a permission prompt is asked and
- * answered entirely inside DorkOS, so the answer is durable here or it is
- * nowhere.
- */
-export type ProjectorPersistenceMode = 'history' | 'record';
-
-/**
- * Event types `'record'` mode keeps. The turn's two boundaries carry what
- * triggered it (`turn_start.userMessage`) and how it ended
- * (`turn_end.terminalReason`); `error` carries the fault itself. Everything
- * between them is in the JSONL transcript already.
- *
- * `interaction_resolved` is the one exception to "it is in the transcript
- * already", and it is why an ordinary cockpit session records too. A permission
- * prompt is asked and answered entirely inside DorkOS — the SDK's JSONL knows
- * only that a tool ran or did not — so these rows are the ONLY durable record
- * that a person was asked anything. Without them the transcript's receipt lived
- * exactly as long as the browser tab, and reopening the conversation showed a
- * tool with no sign it had ever been gated. A handful of bytes per decision,
- * against the one record a person most wants when reviewing what an agent did.
- */
-const RECORDED_EVENT_TYPES: ReadonlySet<string> = new Set([
-  'turn_start',
-  'turn_end',
-  'error',
-  'interaction_resolved',
-]);
-
-/**
- * The durable persistence collaborator attached to a projector (DOR-189).
- * Present only when the owning runtime opted the session in
- * (`getOrCreateProjector(…, { persist: … })`) AND a store was injected at boot.
- * Absent for an ordinary claude-code session and whenever no store is wired.
- *
- * Durable rows are always keyed by the LIVE {@link SessionStateProjector.sessionId}
- * (read at flush time, never captured at enable time), so a
- * {@link rekeyProjector} between enable and flush can never write rows under a
- * retired id. In practice log-backed runtimes never rekey — their
- * `getInternalSessionId` returns `undefined`, so the DorkOS id IS canonical —
- * but the live read means that invariant is a nicety, not a correctness
- * dependency. Note the hydrate-time id and a hypothetical post-rekey flush id
- * could differ; that is the correct outcome (rows follow the canonical id).
- *
- * **The `seq` counter restore is the one thing keyed at ENABLE time**, and that
- * asymmetry is worth knowing before trusting it. `enablePersistence` reads
- * `store.maxSeq(this.sessionId)` under whatever id the projector is registered
- * under at that instant. A {@link rekeyProjector} AFTER that point moves the
- * flush to the canonical id but does not re-read the maximum, so a session with
- * pre-existing rows under its canonical id — and a projector that enabled
- * persistence while still keyed by the request UUID — can flush onto seqs that
- * id has already used, and `INSERT OR IGNORE` drops them. That window is
- * unreached today: a rekeying runtime is claude-code, whose only persisting
- * caller is a room turn, whose canonical id has no rows before its first turn.
- * It is written down rather than closed because closing it means re-reading the
- * maximum on every rekey, which is a query on a path that runs for every new
- * session on the machine.
- */
-interface ProjectorPersistence {
-  /** The shared durable store (injected once at boot). */
-  store: SessionEventStore;
-  /** What the rows are for; see {@link ProjectorPersistenceMode}. */
-  mode: ProjectorPersistenceMode;
-}
 
 /**
  * A lifecycle-bearing status update fanned out to global listeners (the
@@ -417,10 +334,10 @@ export class SessionStateProjector {
    * refuses a stale cursor instead, and the client takes the cold snapshot —
    * which for claude-code is read from JSONL and is complete.
    *
-   * The first enable wins the mode. In practice a session has one owner, and the
-   * two callers are disjoint: log-backed runtimes ask for `'history'` on their
-   * own read paths, the room runner asks for `'record'` only when the runtime is
-   * not log-backed.
+   * The first enable wins the mode, which is safe because the mode is a function
+   * of the RUNTIME rather than of the caller: every caller derives it the same
+   * way ({@link persistenceModeFor}), so two callers on one session cannot
+   * disagree about which it should be.
    *
    * @param store - The shared durable session-event store (injected at boot).
    * @param mode - What the rows are for; see {@link ProjectorPersistenceMode}.
@@ -435,10 +352,11 @@ export class SessionStateProjector {
     // Carry the counter past the durable max (and past any
     // unparseable-and-skipped rows), whatever the mode and whatever this
     // projector has already ingested. `Math.max` rather than an assignment
-    // because persistence can now be enabled MID-LIFE: a claude-code session
-    // touched by the cockpit first and by a room second has a counter above
-    // zero and below the durable max, and assigning would move it backwards
-    // while subscribers are reading forwards. Leaving it low is the other
+    // because persistence can now be enabled MID-LIFE: a session whose
+    // projector was minted by an /events subscribe and only later opted in by
+    // its first turn has a counter above zero and below the durable max, and
+    // assigning would move it backwards while subscribers are reading
+    // forwards. Leaving it low is the other
     // failure — the flush would land on seqs a previous process already used and
     // `INSERT OR IGNORE` would drop the whole turn without a word.
     this.counter = Math.max(this.counter, store.maxSeq(this.sessionId));
@@ -798,6 +716,21 @@ export class SessionStateProjector {
   }
 
   /**
+   * The OPEN turn's events, or `null` when no turn is in flight.
+   *
+   * Read-only and uncopied, for readers that want the not-yet-durable window
+   * specifically — a turn's events reach the store only when it ends, so this
+   * is exactly the set that exists nowhere else yet. Cheaper than
+   * `replayFrom(0)` for that question by the whole event log, which matters
+   * because the approval-receipt overlay asks it on every history read.
+   * {@link SessionStateProjector.buildSnapshot} still copies, because a
+   * snapshot leaves the process.
+   */
+  peekInProgressTurn(): readonly SessionEvent[] | null {
+    return this.inProgressTurn;
+  }
+
+  /**
    * Assemble a {@link SessionSnapshot}: completed messages from the injected
    * loader, the live in-progress turn, the held status, recovery DTOs for
    * pending interactions, and the current cursor as the resume point.
@@ -1040,24 +973,6 @@ export function getSessionEventStore(): SessionEventStore | undefined {
 }
 
 /**
- * Which durable rows a session's turns should leave behind, from what its
- * runtime says about its own history.
- *
- * One expression, one place: a runtime whose history has no home but the DorkOS
- * event stream persists all of it (`'history'`); everything else persists the
- * narrow record its own transcript cannot answer for (`'record'`). Every caller
- * that starts a turn goes through here, so a new runtime cannot accidentally
- * pick a third answer.
- *
- * @param capabilities - The owning runtime's declared capabilities.
- */
-export function persistenceModeFor(capabilities: {
-  logBackedHistory?: boolean;
-}): ProjectorPersistenceMode {
-  return capabilities.logBackedHistory === true ? 'history' : 'record';
-}
-
-/**
  * Remove `sessionId`'s registry entry only if it still maps to `instance`.
  * Guards the self-dispose path: between a subscriber detaching and this call,
  * the id could (in principle) have been re-keyed or re-created — deleting an
@@ -1184,6 +1099,22 @@ export function rekeyProjector(oldId: string, newId: string): void {
   // Carry any DevTools capture buffer across the same rekey so a preview opened
   // under the request UUID keeps feeding the canonical session (DOR-213).
   devtoolsCaptureStore.rekeySession(oldId, newId);
+  // Carry the DURABLE rows too, or every permission decision made before the
+  // rename stops existing. Rows key by the id held at flush time and readers
+  // ask one id, so a session renamed after it has turns behind it would leave
+  // them stranded — invisible on a cold open, which is the whole thing the
+  // rows are for. The FIRST rename has nothing to move (a new session has
+  // flushed nothing); the SECOND does, and the SDK issues one on a resume.
+  // Failure costs the older receipts, never the rename.
+  try {
+    sessionEventStore?.rekeySession(oldId, newId);
+  } catch (err) {
+    logger.warn('[SessionStateProjector] durable rows not carried across rekey', {
+      oldId,
+      newId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
   // Re-announce under the canonical id, carrying the request UUID as retired:
   // transitions broadcast before the rekey landed in client stores under the
   // UUID, and no session_removed will ever fire for it — without the retire

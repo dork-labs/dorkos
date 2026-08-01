@@ -41,6 +41,7 @@ import {
   UiCommandEventSchema,
   ErrorEventSchema,
   UsageStatusSchema,
+  type ToolApprovalOutcome,
 } from './schemas.js';
 
 extendZodWithOpenApi(z);
@@ -481,9 +482,11 @@ export type InteractionResolvedEvent = Extract<SessionEvent, { type: 'interactio
  * How an approval request was ANSWERED, as the transcript records it forever.
  *
  * Narrower than {@link InteractionResolvedEvent}'s `resolution` on purpose: an
- * outcome exists only where there is an answer worth keeping.
+ * outcome exists only where there is an answer worth keeping. Re-exported from
+ * `ToolApprovalOutcomeSchema` rather than restated, so the one enum in the wire
+ * schema is the only place these three words are written down.
  */
-export type ApprovalOutcome = 'allowed' | 'denied' | 'expired';
+export type { ToolApprovalOutcome };
 
 /**
  * The receipt an answered approval leaves behind, keyed by resolution.
@@ -492,7 +495,7 @@ export type ApprovalOutcome = 'allowed' | 'denied' | 'expired';
  * keep their own answered summary.
  */
 const APPROVAL_OUTCOME_BY_RESOLUTION: Partial<
-  Record<NonNullable<InteractionResolvedEvent['resolution']>, ApprovalOutcome>
+  Record<NonNullable<InteractionResolvedEvent['resolution']>, ToolApprovalOutcome>
 > = { approved: 'allowed', denied: 'denied', expired: 'expired' };
 
 /**
@@ -519,7 +522,7 @@ const APPROVAL_OUTCOME_BY_RESOLUTION: Partial<
  */
 export function approvalOutcomeOf(
   event: Pick<InteractionResolvedEvent, 'resolution' | 'kind'>
-): ApprovalOutcome | undefined {
+): ToolApprovalOutcome | undefined {
   if (event.kind !== 'approval' || event.resolution === undefined) return undefined;
   return APPROVAL_OUTCOME_BY_RESOLUTION[event.resolution];
 }

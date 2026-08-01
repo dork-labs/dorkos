@@ -33,15 +33,12 @@ export {
   rekeyProjector,
   onProjectorRekey,
   onProjectorStatusChange,
-  persistenceModeFor,
   setSessionEventStore,
   getSessionEventStore,
 } from './session-state-projector.js';
-export type {
-  RawSessionEvent,
-  ProjectorStatusUpdate,
-  ProjectorPersistenceMode,
-} from './session-state-projector.js';
+export type { RawSessionEvent, ProjectorStatusUpdate } from './session-state-projector.js';
+export { persistenceModeFor } from './projector-persistence.js';
+export type { ProjectorPersistenceMode } from './projector-persistence.js';
 export { EventLog, EVENT_LOG_MAX_EVENTS } from './event-log.js';
 export { reconstructHistoryFromEvents } from './event-log-history.js';
 // --- Durable session-event store for LOG-BACKED runtimes (DOR-189) ---
