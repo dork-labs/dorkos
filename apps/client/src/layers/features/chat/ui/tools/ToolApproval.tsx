@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useImperativeHandle, useCallback } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { Check, X, Shield, ShieldCheck } from 'lucide-react';
 import { useTransport } from '@/layers/shared/model';
 import { ToolArgumentsDisplay, cn, getToolLabel, getMcpServerBadge } from '@/layers/shared/lib';
@@ -9,6 +9,12 @@ import { CompactResultRow, InteractiveCard } from '../primitives';
 // --- Animation constants (module-scope to avoid per-render allocation) ---
 
 const fadeTransition = { duration: 0.15, ease: 'easeOut' as const } as const;
+
+/** The answered card's confirmation beat, before it compresses out of the way. */
+const confirmTransition = { duration: 0.12, ease: 'easeOut' as const } as const;
+
+/** Reduced motion gets the end state with no travel and no time. */
+const instantTransition = { duration: 0 } as const;
 
 const WARNING_THRESHOLD_S = 120; // 2 minutes — amber
 const URGENT_THRESHOLD_S = 60; // 1 minute — red
@@ -119,6 +125,7 @@ export function ToolApproval({
   approvalHasSuggestions,
 }: ToolApprovalProps) {
   const transport = useTransport();
+  const reducedMotion = useReducedMotion();
   const riskLevel = useMemo(() => classifyToolRisk(toolName), [toolName]);
   const badge = getMcpServerBadge(toolName);
   const rawLabel = getToolLabel(toolName, input);
@@ -180,6 +187,20 @@ export function ToolApproval({
       setAnnouncement('Tool approval timed out. Execution denied.');
     }
   }, [secondsRemaining]);
+
+  // Announce the resolution itself, not only the countdown phases — the card
+  // is about to leave the input zone, and the receipt it becomes lands mid-
+  // transcript where a screen reader is not looking.
+  useEffect(() => {
+    if (!decided) return;
+    // The timeout path already announced itself above; do not say it twice.
+    if (timedOut.current) return;
+    setAnnouncement(
+      decided === 'approved'
+        ? `Allowed ${label}. Recorded in the conversation.`
+        : `Denied ${label}. Recorded in the conversation.`
+    );
+  }, [decided, label]);
 
   const phase: ApprovalPhase = useMemo(() => {
     if (secondsRemaining === null) return 'normal';
@@ -274,7 +295,14 @@ export function ToolApproval({
   if (decided) {
     const isApproved = decided === 'approved';
     return (
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={fadeTransition}>
+      <motion.div
+        // The card confirms and compresses; the permanent record of this answer
+        // is the receipt line that rises into the transcript, not this row.
+        initial={reducedMotion ? false : { opacity: 0, scaleY: 0.9 }}
+        animate={{ opacity: 1, scaleY: 1 }}
+        transition={reducedMotion ? instantTransition : confirmTransition}
+        style={{ originY: 0 }}
+      >
         <CompactResultRow
           data-testid="tool-approval-decided"
           data-decision={decided}

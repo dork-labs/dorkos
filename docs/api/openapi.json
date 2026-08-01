@@ -574,6 +574,18 @@
             "type": "boolean",
             "description": "Whether \"Always Allow\" is available"
           },
+          "approvalOutcome": {
+            "type": "string",
+            "enum": [
+              "allowed",
+              "denied",
+              "expired"
+            ],
+            "description": "How an approval was answered — drives the transcript receipt line"
+          },
+          "approvalResolvedAt": {
+            "type": "number"
+          },
           "hooks": {
             "type": "array",
             "items": {
@@ -1783,8 +1795,12 @@
                   "approved",
                   "denied",
                   "answered",
+                  "expired",
                   "cancelled"
                 ]
+              },
+              "at": {
+                "type": "number"
               }
             },
             "required": [
@@ -7065,8 +7081,12 @@
                             "approved",
                             "denied",
                             "answered",
+                            "expired",
                             "cancelled"
                           ]
+                        },
+                        "at": {
+                          "type": "number"
                         }
                       },
                       "required": [

@@ -615,6 +615,9 @@ export class SessionStateProjector {
       type: 'interaction_resolved',
       id: interactionId,
       resolution,
+      // When the answer landed — the client keeps this as the timestamp on its
+      // durable record of the decision.
+      at: Date.now(),
     } as unknown as RawSessionEvent);
   }
 

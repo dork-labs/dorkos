@@ -3,11 +3,13 @@ import { AnimatePresence, motion } from 'motion/react';
 import { ChevronRight } from 'lucide-react';
 import type { ChatMessage, HookState } from '../../model/use-chat-session';
 import { useAppStore } from '@/layers/shared/model';
-import { TIMING } from '@/layers/shared/lib';
+import { TIMING, getToolLabel } from '@/layers/shared/lib';
+import { groupApprovalReceipts } from '../../lib/group-approval-receipts';
 import { StreamingText } from './StreamingText';
 import { ToolCallCard } from '../tools/ToolCallCard';
 import { ToolApproval } from '../tools/ToolApproval';
 import type { ToolApprovalHandle } from '../tools/ToolApproval';
+import { ApprovalReceipt } from '../tools/ApprovalReceipt';
 import { QuestionPrompt } from '../tools/QuestionPrompt';
 import type { QuestionPromptHandle } from '../tools/QuestionPrompt';
 import { ElicitationPrompt } from '../tools/ElicitationPrompt';
@@ -228,6 +230,10 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
     [onToolRef]
   );
 
+  // Which receipt speaks for each answered approval — computed once per render
+  // so a batch answer collapses to a single line instead of one line per ask.
+  const receiptGroups = groupApprovalReceipts(parts);
+
   // Find the last text part for streaming cursor placement
   let lastTextPartIndex = -1;
   for (let i = parts.length - 1; i >= 0; i--) {
@@ -360,6 +366,41 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
           isActive={isActive}
           onDecided={onToolDecided ? () => onToolDecided(toolPart.toolCallId) : undefined}
         />
+      );
+    }
+    // An answered approval leaves a permanent receipt where it was asked. The
+    // record is the point, so the line renders regardless of what the
+    // tool-call auto-hide setting does to the tool card beneath it.
+    const receipt = receiptGroups.get(i);
+    if (receipt) {
+      if (receipt.leadIndex !== i) return null; // Its lead already speaks for it.
+      const members = receipt.indices
+        .map((index) => parts[index])
+        .filter((member) => member.type === 'tool_call');
+      return (
+        <div key={`approval-receipt-${toolPart.toolCallId}`} className="flex flex-col">
+          <ApprovalReceipt
+            outcome={receipt.outcome}
+            items={members.map((member) => ({
+              toolCallId: member.toolCallId,
+              label:
+                member.approvalDisplayName || getToolLabel(member.toolName, member.input ?? ''),
+            }))}
+            resolvedAt={toolPart.approvalResolvedAt}
+            startedAt={toolPart.approvalStartedAt}
+          />
+          {/* A denied or expired tool never ran — there is no result worth a
+              card, and the receipt already says what happened. */}
+          {receipt.outcome === 'allowed' &&
+            members.map((member) => (
+              <AutoHideToolCall
+                key={member.toolCallId}
+                part={member}
+                autoHide={autoHideToolCalls}
+                expandToolCalls={expandToolCalls}
+              />
+            ))}
+        </div>
       );
     }
     if (toolPart.interactiveType === 'question' && toolPart.questions) {

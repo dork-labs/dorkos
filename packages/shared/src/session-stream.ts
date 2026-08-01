@@ -387,19 +387,30 @@ export const SessionEventSchema = z
     // error latch fills `terminalReason: 'error'` when no explicit reason came).
     z.object({ ...seqShape, type: z.literal('error'), ...ErrorEventSchema.shape }),
     // A pending interaction was resolved — by the operator (approved / denied /
-    // answered) or WITHOUT operator action (`cancelled`: the SDK aborted the
-    // gating tool call, e.g. a mid-turn steer superseding a pending question,
-    // or the interaction timed out). Live clients remove the pending card and
-    // stop its countdown — without this, resolution was only observable via
-    // the next snapshot, leaving ghost (even answerable) cards on every other
-    // window and after reconnect.
+    // answered) or WITHOUT operator action (`expired`: the interaction ran out
+    // its timer and was auto-denied; `cancelled`: the SDK aborted the gating
+    // tool call, e.g. a mid-turn steer superseding a pending question). Live
+    // clients remove the pending card and stop its countdown — without this,
+    // resolution was only observable via the next snapshot, leaving ghost (even
+    // answerable) cards on every other window and after reconnect.
+    //
+    // `expired` and `cancelled` both mean "no operator action", but they are
+    // NOT interchangeable to a reader: an expiry is an answer the system gave
+    // on the person's behalf and belongs in the transcript as a receipt, while
+    // an abort is a request nobody was ever asked to answer.
     z.object({
       ...seqShape,
       type: z.literal('interaction_resolved'),
       /** The interaction's id (toolCallId for approvals/questions). */
       id: z.string(),
       /** Outcome, when the resolver knows it; absent for generic clears. */
-      resolution: z.enum(['approved', 'denied', 'answered', 'cancelled']).optional(),
+      resolution: z.enum(['approved', 'denied', 'answered', 'expired', 'cancelled']).optional(),
+      /**
+       * Server epoch ms when the interaction resolved. Timestamps the durable
+       * record a client keeps of the answer; optional so a runtime that cannot
+       * say when simply omits it (the record renders without a time).
+       */
+      at: z.number().optional(),
     }),
     // The start of an assistant turn. Carries the user message that triggered
     // it (when the turn was DorkOS-triggered): the POST is trigger-only

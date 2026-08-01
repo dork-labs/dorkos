@@ -1380,6 +1380,25 @@ export const ToolCallPartSchema = z
       .optional()
       .describe('Why this permission request was triggered'),
     approvalHasSuggestions: z.boolean().optional().describe('Whether "Always Allow" is available'),
+    /**
+     * How an approval interaction was ANSWERED, folded from the resolving
+     * `interaction_resolved` event. This is what gives an answered approval an
+     * afterlife: the pending card leaves a permanent one-line receipt at its
+     * chronological place in the transcript instead of disappearing. Absent
+     * while the ask is still pending, and for a `cancelled` clear (an SDK abort
+     * supersedes the ask — nobody answered, so there is nothing to record).
+     * Client-derived from the event stream; never serialized to the transcript.
+     */
+    approvalOutcome: z
+      .enum(['allowed', 'denied', 'expired'])
+      .optional()
+      .describe('How an approval was answered — drives the transcript receipt line'),
+    /**
+     * Server epoch ms when the approval was answered. Timestamps the receipt,
+     * and paired with `approvalStartedAt` it states how long an `expired`
+     * request waited before auto-denial. Client-only.
+     */
+    approvalResolvedAt: z.number().optional(),
     hooks: z.array(HookPartSchema).optional(),
     /** Client-only: timestamp (ms since epoch) when tool_call_start was received. Never serialized. */
     startedAt: z.number().optional(),

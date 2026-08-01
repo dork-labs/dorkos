@@ -144,6 +144,13 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
     category: 'Tools',
     keywords: ['approval', 'tool', 'approve', 'deny', 'pending', 'interactive', 'timeout'],
   },
+  {
+    id: 'approvalreceipt',
+    title: 'ApprovalReceipt',
+    page: 'chat',
+    category: 'Tools',
+    keywords: ['receipt', 'approval', 'allowed', 'denied', 'expired', 'record', 'transcript'],
+  },
   // InputShowcases
   {
     id: 'chatinput',

@@ -751,3 +751,111 @@ describe('projectSessionMessages', () => {
     expect(parts[0]).toMatchObject({ toolCallId: 'rec-1', status: 'error' });
   });
 });
+
+describe('projectInProgressTurn — approval receipts', () => {
+  /** The ask, as the durable stream carries it. */
+  function ask(id: string): SessionEvent {
+    return {
+      seq: 1,
+      type: 'approval_required',
+      id,
+      toolName: 'Bash',
+      input: '{"command":"npm test"}',
+      startedAt: 1_000,
+      remainingMs: 600_000,
+      hasSuggestions: false,
+    };
+  }
+
+  /** The tool-call part the fold produced, with its approval fields visible. */
+  function approvalPart(events: SessionEvent[]) {
+    return projectInProgressTurn(events)[0] as {
+      approvalOutcome?: string;
+      approvalResolvedAt?: number;
+      status: string;
+    };
+  }
+
+  it('records an approval as allowed, with when it was answered', () => {
+    // Purpose: the answer has to survive on the part, not in a component — this
+    // is the whole basis for a receipt that outlives the card.
+    const part = approvalPart([
+      ask('tc-1'),
+      { seq: 2, type: 'interaction_resolved', id: 'tc-1', resolution: 'approved', at: 5_000 },
+    ]);
+    expect(part.approvalOutcome).toBe('allowed');
+    expect(part.approvalResolvedAt).toBe(5_000);
+  });
+
+  it('records a denial as denied', () => {
+    const part = approvalPart([
+      ask('tc-1'),
+      { seq: 2, type: 'interaction_resolved', id: 'tc-1', resolution: 'denied', at: 5_000 },
+    ]);
+    expect(part.approvalOutcome).toBe('denied');
+    expect(part.status).toBe('error');
+  });
+
+  it('records a timed-out request as expired, distinct from a denial', () => {
+    // Purpose: nobody answered an expired request. Folding it as `denied` would
+    // put words in the operator's mouth.
+    const part = approvalPart([
+      ask('tc-1'),
+      { seq: 2, type: 'interaction_resolved', id: 'tc-1', resolution: 'expired', at: 601_000 },
+    ]);
+    expect(part.approvalOutcome).toBe('expired');
+    expect(part.status).toBe('error');
+  });
+
+  it('leaves no outcome on a cancelled ask', () => {
+    // Purpose: an SDK abort withdrew the question before anyone could answer —
+    // there is no decision to record.
+    const part = approvalPart([
+      ask('tc-1'),
+      { seq: 2, type: 'interaction_resolved', id: 'tc-1', resolution: 'cancelled' },
+    ]);
+    expect(part.approvalOutcome).toBeUndefined();
+    expect(part.status).toBe('error');
+  });
+
+  it('keeps the outcome when the tool result races ahead of the resolution', () => {
+    // Purpose: ordering between the runtime's tool_result and the projector's
+    // resolution is not guaranteed. The receipt must not depend on winning it.
+    const part = approvalPart([
+      ask('tc-1'),
+      { seq: 2, type: 'tool_result', toolCallId: 'tc-1', toolName: 'Bash', status: 'complete' },
+      { seq: 3, type: 'interaction_resolved', id: 'tc-1', resolution: 'approved', at: 5_000 },
+    ]);
+    expect(part.approvalOutcome).toBe('allowed');
+    expect(part.status).toBe('complete');
+  });
+
+  it('leaves an answered question alone', () => {
+    // Purpose: `answered` belongs to AskUserQuestion, which keeps its own
+    // summary — an approval receipt would be the wrong shape for it.
+    const parts = projectInProgressTurn([
+      {
+        seq: 1,
+        type: 'question_prompt',
+        id: 'q-1',
+        startedAt: 1_000,
+        remainingMs: 600_000,
+        questions: [
+          { header: 'Color', question: 'Which?', options: [{ label: 'Blue' }], multiSelect: false },
+        ],
+      },
+      { seq: 2, type: 'interaction_resolved', id: 'q-1', resolution: 'answered', at: 5_000 },
+    ]);
+    expect((parts[0] as { approvalOutcome?: string }).approvalOutcome).toBeUndefined();
+  });
+
+  it('is stable across a replay of the same events', () => {
+    // Purpose: a reconnect replays from Last-Event-ID. Projecting twice must
+    // produce byte-identical parts, or the receipt would flicker or change.
+    const events: SessionEvent[] = [
+      ask('tc-1'),
+      { seq: 2, type: 'interaction_resolved', id: 'tc-1', resolution: 'approved', at: 5_000 },
+    ];
+    expect(projectInProgressTurn(events)).toEqual(projectInProgressTurn(events));
+  });
+});
