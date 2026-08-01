@@ -111,10 +111,14 @@ export interface SilenceContext {
    * first — the "answered 'are you there?' with silence" failure, arrived at
    * from the other side.
    *
-   * Safe to be undamped for the same reason a resolved mention is: the bound is
-   * per addressed message and the sender is the one addressing. Ordinary
-   * chatter can never land here, because a ghost owns no name for chatter to
-   * match.
+   * **It is a third ROUTE, not a third rule**, and the distinction is the whole
+   * safety of it: it is weighed only after the depth-0 and human-author guards
+   * have both passed. Set beside them instead, it reopened the other half of the
+   * failure this damping exists for — five AGENT-authored posts three deep in a
+   * cascade, each quoting `@ana`, wrote five apologies about an agent no person
+   * had asked anything. The bound that makes an undamped path safe (per
+   * addressed message, and the sender sets the count) only holds while a PERSON
+   * is the one addressing.
    */
   namedDirectly?: boolean;
 }
@@ -294,7 +298,7 @@ export class RoomNoticeLog {
   ): void {
     const busyWith = context.busyWith ?? 'unknown';
     const key = silenceKey(room.id, agent.authorId, reason);
-    const asked = context.namedDirectly === true || this.directlyAsked(room, entry, agent.authorId);
+    const asked = this.directlyAsked(room, entry, agent.authorId, context.namedDirectly === true);
     const damped = reason !== 'failed' && !asked && this.noticedSilence.has(key);
     // Every refusal, damped ones included. A room that went forty-one minutes
     // saying nothing left three lines in the log to explain it, and the two
@@ -654,11 +658,19 @@ export class RoomNoticeLog {
    * @param room - The room the message landed in; its kind decides the DM case.
    * @param entry - The entry whose trigger is being refused.
    * @param agentAuthorId - The agent that did not answer.
+   * @param namedDirectly - The caller saw this message name this agent by a
+   *   string no stored mention records. **Weighed AFTER the two guards above,
+   *   never instead of them** — see {@link SilenceContext.namedDirectly}.
    */
-  private directlyAsked(room: Room, entry: RoomEntry, agentAuthorId: string): boolean {
+  private directlyAsked(
+    room: Room,
+    entry: RoomEntry,
+    agentAuthorId: string,
+    namedDirectly = false
+  ): boolean {
     if (entry.cascadeDepth !== 0) return false;
     if (this.deps.authors.getById(entry.authorId)?.kind !== 'human') return false;
-    return room.kind === 'dm' || entry.mentions.includes(agentAuthorId);
+    return room.kind === 'dm' || entry.mentions.includes(agentAuthorId) || namedDirectly;
   }
 }
 

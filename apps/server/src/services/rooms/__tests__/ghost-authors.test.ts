@@ -303,6 +303,37 @@ describe('how often the room says an agent is gone', () => {
     expect(noticeCodes(harness, seeded.id).filter((code) => code === 'agent_gone')).toHaveLength(1);
   });
 
+  it('damps an AGENT quoting the ghost inside a cascade — the other half of the rule', async () => {
+    // **The direction the never-damp route reopened.** "Named by this message"
+    // is only a direct question while a PERSON is the one asking: an agent three
+    // hops deep in a cascade, quoting `@ana` in each of five replies, is not
+    // five people asking five times. Weighed beside the depth-0 and
+    // human-author guards instead of behind them, that wrote five apologies
+    // about an agent nobody had asked anything — the "sprayed apologies" half of
+    // the failure this damping exists for, arrived at from the other side.
+    const harness = liveHarness();
+    registerAgent(harness.db, { id: 'ULID_ANA', projectPath: ANA_PATH, name: 'ana' });
+    registerAgent(harness.db, { id: 'ULID_BO', projectPath: BO_PATH, name: 'bo' });
+    const seeded = channelWith(harness, [ANA_PATH, BO_PATH]);
+    const bo = harness.authors.resolveAgent(BO_PATH, 'bo');
+    harness.db.delete(agents).where(eq(agents.projectPath, ANA_PATH)).run();
+
+    // Bo posts five times, mid-cascade, naming the ghost every time. The
+    // explicit trigger is what a reply carries — provenance follows the turn.
+    for (let hop = 0; hop < 5; hop += 1) {
+      harness.service.post(seeded.id, {
+        authorId: bo.id,
+        text: `@ana can you take this one`,
+        trigger: { root: 'cascade-root', depth: 3 },
+      });
+      await harness.service.triggersIdle();
+    }
+
+    // Once, not five times — and the room did say it once, because the first
+    // time an agent cannot be reached is still news.
+    expect(noticeCodes(harness, seeded.id).filter((code) => code === 'agent_gone')).toHaveLength(1);
+  });
+
   it('says it EVERY time in a DM, where every message is addressed', async () => {
     // In a direct message naming is implicit, so all three are direct questions
     // and all three are owed an answer.

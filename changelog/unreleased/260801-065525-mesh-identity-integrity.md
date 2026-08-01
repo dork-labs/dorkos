@@ -2,6 +2,7 @@
 covers:
   - 'fix(mesh): an agent keeps its identity when its project is checked out twice (DOR-790)'
   - "fix(rooms): typing a departed agent's name is answered, not swallowed (DOR-790)"
+  - 'fix(rooms): only a person naming a departed agent escapes the damping (DOR-790)'
 ---
 
 ### Fixed
