@@ -16,13 +16,25 @@ describe('resolveEffectivePermissionMode', () => {
     ).toEqual({ permissionMode: 'auto', downgradedFromAuto: false });
   });
 
-  it('keeps auto when support is unknown (never downgrades on uncertainty)', () => {
-    // Cold cache / unrecognized model — undefined must NOT trigger a downgrade, or we
-    // would strip auto from a supported model whose capability simply has not loaded.
+  it('coerces auto -> default when support is UNKNOWN (cold model cache)', () => {
+    // `undefined` means the model-capability cache is cold or the model is
+    // unrecognized. Passing auto through on a hunch is how the send 400s — the
+    // one failure this guard exists to prevent. Downgrading costs at most one
+    // turn of Auto on a model that does support it, and the stored mode is
+    // untouched, so Auto returns as soon as the capability loads.
     expect(
       resolveEffectivePermissionMode({ permissionMode: 'auto', modelSupportsAutoMode: undefined })
-    ).toEqual({ permissionMode: 'auto', downgradedFromAuto: false });
+    ).toEqual({ permissionMode: 'default', downgradedFromAuto: true });
   });
+
+  it.each([undefined, false] as const)(
+    'leaves non-auto modes untouched when auto support is %s',
+    (support) => {
+      expect(
+        resolveEffectivePermissionMode({ permissionMode: 'plan', modelSupportsAutoMode: support })
+      ).toEqual({ permissionMode: 'plan', downgradedFromAuto: false });
+    }
+  );
 
   it.each(['default', 'acceptEdits', 'plan', 'bypassPermissions'] as const)(
     'leaves non-auto mode "%s" untouched even when the model lacks auto support',
