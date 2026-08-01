@@ -569,7 +569,11 @@ export class BindingRouter {
     // `shown` when a notifier exists to carry the one-line notice back into the
     // chat, `silent` when none is wired — an install with no notice path drops
     // the message with nothing but this line to show for it.
-    recordDispatchEnd(currentDispatchId() ?? '', 'refused');
+    // The dispatch ends here: nothing reached an agent, so no ingress downstream
+    // will close it. Guarded rather than passed a sentinel — a refusal reached
+    // from outside a dispatch scope has no dispatch to close.
+    const dispatchId = currentDispatchId();
+    if (dispatchId !== undefined) recordDispatchEnd(dispatchId, 'refused');
     logRefusal('[relay] an inbound chat message was dropped', {
       reason: notice,
       visibility: this.deps.chatNotice !== undefined ? 'shown' : 'silent',

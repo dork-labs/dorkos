@@ -78,13 +78,26 @@ function buildApp(deps?: DebugDeps) {
 
 beforeEach(() => {
   resetDispatchBuffers();
-  vi.restoreAllMocks();
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   disposeProjector(SESSION_ID);
   resetDispatchBuffers();
 });
+
+/**
+ * Fetch a debug route, failing with the status and body when it did not answer.
+ *
+ * A bare `expect(res.body.x).toHaveLength(1)` against a non-200 reports
+ * "Target cannot be null or undefined", which names neither the route nor what
+ * came back instead — the shape that cost an hour once already.
+ */
+async function get(app: ReturnType<typeof buildApp>, route: string) {
+  const res = await request(app).get(route);
+  expect(res.status, `${route} answered ${res.status}: ${JSON.stringify(res.body)}`).toBe(200);
+  return res;
+}
 
 describe('GET /api/debug/dispatches', () => {
   it('reports recent dispatches newest first', async () => {
@@ -92,7 +105,7 @@ describe('GET /api/debug/dispatches', () => {
     recordDispatchStart({ dispatchId: 'dsp_B', origin: 'session', sessionId: SESSION_ID });
     recordDispatchEnd('dsp_A', 'answered');
 
-    const res = await request(buildApp()).get('/api/debug/dispatches');
+    const res = await get(buildApp(), '/api/debug/dispatches');
     expect(res.status).toBe(200);
     expect(res.body.recent.map((d: { dispatchId: string }) => d.dispatchId)).toEqual([
       'dsp_B',
@@ -128,7 +141,7 @@ describe('GET /api/debug/dispatches', () => {
   it('answers with an empty claim list when no room service is wired', async () => {
     // Read during an incident is exactly when a subsystem is mid-crash. A 500
     // here would lose the recent-dispatch buffer along with the claims.
-    const res = await request(buildApp()).get('/api/debug/dispatches');
+    const res = await get(buildApp(), '/api/debug/dispatches');
     expect(res.status).toBe(200);
     expect(res.body.claims).toEqual([]);
   });
@@ -145,8 +158,7 @@ describe('GET /api/debug/refusals', () => {
         authorId: 'author-1',
       });
     });
-    const res = await request(buildApp()).get('/api/debug/refusals');
-    expect(res.status).toBe(200);
+    const res = await get(buildApp(), '/api/debug/refusals');
     expect(res.body.refusals).toHaveLength(1);
     expect(res.body.refusals[0]).toMatchObject({
       dispatchId: 'dsp_R',
@@ -164,9 +176,12 @@ describe('GET /api/debug/refusals', () => {
       reason: 'no_binding',
       visibility: 'silent',
     });
-    const res = await request(buildApp()).get('/api/debug/refusals');
-    expect(res.body.refusals).toHaveLength(1);
-    expect(res.body.refusals[0].dispatchId).toBeUndefined();
+    const res = await get(buildApp(), '/api/debug/refusals');
+    const kept = (res.body.refusals as Array<{ reason: string; dispatchId?: string }>).find(
+      (r) => r.reason === 'no_binding'
+    );
+    expect(kept).toBeDefined();
+    expect(kept?.dispatchId).toBeUndefined();
   });
 });
 
@@ -175,7 +190,7 @@ describe('GET /api/debug/projectors and /sessions/:id', () => {
     const projector = getOrCreateProjector(SESSION_ID);
     projector.ingest({ type: 'text_delta', text: POISON.text } as RawSessionEvent);
 
-    const res = await request(buildApp()).get('/api/debug/projectors');
+    const res = await get(buildApp(), '/api/debug/projectors');
     expect(res.status).toBe(200);
     const entry = res.body.projectors.find(
       (p: { sessionId: string }) => p.sessionId === SESSION_ID
@@ -188,7 +203,7 @@ describe('GET /api/debug/projectors and /sessions/:id', () => {
     const projector = getOrCreateProjector(SESSION_ID);
     projector.ingest({ type: 'text_delta', text: POISON.text } as RawSessionEvent);
 
-    const res = await request(buildApp()).get(`/api/debug/sessions/${SESSION_ID}`);
+    const res = await get(buildApp(), `/api/debug/sessions/${SESSION_ID}`);
     expect(res.status).toBe(200);
     expect(res.body.sessionId).toBe(SESSION_ID);
     expect(res.body.projectorLive).toBe(true);
@@ -202,7 +217,7 @@ describe('GET /api/debug/projectors and /sessions/:id', () => {
   });
 
   it('answers for a session with no live projector', async () => {
-    const res = await request(buildApp()).get(`/api/debug/sessions/${SESSION_ID}`);
+    const res = await get(buildApp(), `/api/debug/sessions/${SESSION_ID}`);
     expect(res.status).toBe(200);
     expect(res.body.projectorLive).toBe(false);
     expect(res.body.lifecycle).toBeNull();
@@ -236,7 +251,7 @@ describe('GET /api/debug/rooms/:id/bindings', () => {
       transcriptProjectRoots: () => [transcriptRoot],
     });
 
-    const res = await request(app).get('/api/debug/rooms/room-1/bindings');
+    const res = await get(app, '/api/debug/rooms/room-1/bindings');
     expect(res.status).toBe(200);
     expect(res.body.bindings).toEqual([
       { authorId: 'ana', sessionId: 'has-one', transcriptExists: true },
@@ -250,7 +265,7 @@ describe('GET /api/debug/rooms/:id/bindings', () => {
   });
 
   it('degrades to nothing when no room store is wired', async () => {
-    const res = await request(buildApp()).get('/api/debug/rooms/room-1/bindings');
+    const res = await get(buildApp(), '/api/debug/rooms/room-1/bindings');
     expect(res.status).toBe(200);
     expect(res.body.bindings).toEqual([]);
   });
@@ -258,7 +273,7 @@ describe('GET /api/debug/rooms/:id/bindings', () => {
 
 describe('GET /api/debug/relay/traces/:traceId', () => {
   it('says so plainly when the relay is off, rather than 500ing', async () => {
-    const res = await request(buildApp()).get('/api/debug/relay/traces/dsp_X');
+    const res = await get(buildApp(), '/api/debug/relay/traces/dsp_X');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ spans: [], available: false });
   });
@@ -286,7 +301,7 @@ describe('GET /api/debug/relay/traces/:traceId', () => {
       } as unknown as DebugDeps['relayTraceStore'],
     });
 
-    const res = await request(app).get('/api/debug/relay/traces/dsp_X');
+    const res = await get(app, '/api/debug/relay/traces/dsp_X');
     expect(res.status).toBe(200);
     expect(res.body.spans).toEqual([
       {
