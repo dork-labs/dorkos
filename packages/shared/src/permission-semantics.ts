@@ -175,6 +175,58 @@ export function isAutonomyStop(descriptor: PermissionModeDescriptor): boolean {
 }
 
 /**
+ * Whether choosing this mode should ask the person first — the rule the consent
+ * door is built on (spec `trust-dial`, decision 5, widened 2026-08-01).
+ *
+ * True for two shapes, and they are one question asked twice:
+ *
+ * 1. **The autonomy stop**, whatever it can reach. It is the position a person
+ *    deliberately takes, and consent is about the position.
+ * 2. **Any mode that never asks and can do more than read**, wherever its
+ *    runtime filed it. Codex's middle stop is the live case: `workspace-write`
+ *    sits at "act, ask when risky" and runs shell commands with no way to pause
+ *    and ask. Nothing about the dial's position makes that walk-back-able, so
+ *    gating the position alone let it in through a door held open.
+ *
+ * `reach: 'read'` is excluded for the reason {@link isDivergent} and
+ * {@link warnTier} exclude it: a mode that can only read never asks because it
+ * has nothing to ask about, and a consent dialog in front of the safest setting
+ * on offer is how a consent dialog stops being read.
+ *
+ * ## Why this is not composed from the predicates beside it
+ *
+ * {@link isBypassSemantics} is this same never-asking shape narrowed to
+ * `reach: 'everything'` — a strict subset of clause 2, so OR-ing it in would add
+ * a term that can never change the answer. Widening THAT predicate instead is
+ * the tempting shortcut and the wrong one: it drives the standing banner and the
+ * status line's red, and a mode confined to the workspace does not earn either
+ * (`warnTier` puts it at `caution` on purpose). {@link isUnattendedAutonomy} is
+ * built on that one and was left where it stood for the same reason: widening a
+ * door decides what a person is asked before choosing, and widening an always-on
+ * banner decides what a standing alarm is for. Three questions, three answers,
+ * allowed to disagree.
+ *
+ * ## Who consumes it
+ *
+ * The server's door (`PATCH /api/sessions/:id`, which answers `428
+ * AUTONOMY_ACK_REQUIRED` without an acknowledgement) and every client surface
+ * that opens a mode-change dialog before sending one: the session's Trust Dial,
+ * the relay binding dialog, and the scheduled-task form. All four must apply the
+ * same rule, or a mode is gated on one surface and slips through on another.
+ *
+ * Not consumed by the `defaultTrustStop` config door: that axis stores one of
+ * the dial's three STOPS, not a runtime mode, so `'autonomy'` is the only value
+ * there that can mean "never asks" and its own gate stays stop-shaped
+ * (`services/core/approvals/autonomy-consent.ts`).
+ *
+ * @param descriptor - A mode as its runtime declared it.
+ */
+export function needsConsentRitual(descriptor: PermissionModeDescriptor): boolean {
+  if (isAutonomyStop(descriptor)) return true;
+  return descriptor.asks === 'never' && descriptor.reach !== 'read';
+}
+
+/**
  * Whether a mode is a way of WORKING rather than a level of trust — off the
  * dial, offered beside the composer instead (spec `trust-dial`, decision 1).
  *

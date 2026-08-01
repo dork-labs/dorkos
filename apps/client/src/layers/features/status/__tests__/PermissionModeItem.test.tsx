@@ -451,9 +451,23 @@ describe('PermissionModeItem', () => {
       expect(screen.getByText(/covers tools inside the session/i)).toBeInTheDocument();
     });
 
-    it('stays away from a mode that is bounded, even when it never asks', () => {
+    it('appears for a bounded mode that never asks, too (DOR-816)', () => {
+      // It used to stay away here, on the reasoning that the note is about
+      // "runs everything". The note now follows the consent door, which gates
+      // this mode: the sentence is true of any session mode, and the dialog
+      // this one opens carries the strongest promise on any screen. See the
+      // note's own suite for the full reasoning.
       mockCapabilitiesForRuntime.mockReturnValue(CODEX_CAPABILITIES);
       render(<PermissionModeItem mode="acceptEdits" onChangeMode={vi.fn()} runtime="codex" />);
+
+      expect(screen.getByText(/covers tools inside the session/i)).toBeInTheDocument();
+    });
+
+    it('stays away from a mode that still stops to ask', () => {
+      mockCapabilitiesForRuntime.mockReturnValue(CLAUDE_CAPABILITIES);
+      render(
+        <PermissionModeItem mode="acceptEdits" onChangeMode={vi.fn()} runtime="claude-code" />
+      );
 
       expect(screen.queryByText(/covers tools inside the session/i)).not.toBeInTheDocument();
     });

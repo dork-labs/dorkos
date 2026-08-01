@@ -2,9 +2,12 @@ import { describe, it, expect } from 'vitest';
 import type { PermissionModeDescriptor } from '../agent-runtime.js';
 import {
   findWorkingMode,
+  isAutonomyStop,
   isBypassSemantics,
   isDivergent,
+  isUnattendedAutonomy,
   isWorkingMode,
+  needsConsentRitual,
   resolveTrustStops,
   stopExpectation,
   warnTier,
@@ -95,6 +98,60 @@ describe('isBypassSemantics', () => {
     expect(isBypassSemantics(descriptor({ asks: 'never', reach: 'workspace' }))).toBe(false);
     expect(isBypassSemantics(descriptor({ asks: 'never', reach: 'read' }))).toBe(false);
     expect(isBypassSemantics(descriptor({ asks: 'when-risky', reach: 'everything' }))).toBe(false);
+  });
+});
+
+describe('needsConsentRitual', () => {
+  it('is true at the autonomy stop, whatever that stop can reach', () => {
+    expect(
+      needsConsentRitual(descriptor({ stop: 'autonomy', asks: 'never', reach: 'everything' }))
+    ).toBe(true);
+    // A sandboxed autonomy stop is still the position a person deliberately took.
+    expect(
+      needsConsentRitual(descriptor({ stop: 'autonomy', asks: 'never', reach: 'workspace' }))
+    ).toBe(true);
+  });
+
+  it('is true for a middle stop that never asks and can do more than read', () => {
+    // Codex's workspace-write: filed at the middle stop, runs shell commands
+    // with nothing to ask. The shape this predicate exists for (DOR-816).
+    expect(needsConsentRitual(descriptor({ stop: 'act', asks: 'never', reach: 'workspace' }))).toBe(
+      true
+    );
+    expect(needsConsentRitual(descriptor({ stop: 'act', asks: 'never', reach: 'edit' }))).toBe(
+      true
+    );
+  });
+
+  it('is false for a read-only mode that never asks — it has nothing to ask about', () => {
+    expect(needsConsentRitual(descriptor({ stop: 'ask', asks: 'never', reach: 'read' }))).toBe(
+      false
+    );
+  });
+
+  it('is false for anything that still stops for the person', () => {
+    expect(needsConsentRitual(descriptor({ stop: 'ask', asks: 'always', reach: 'edit' }))).toBe(
+      false
+    );
+    expect(
+      needsConsentRitual(descriptor({ stop: 'act', asks: 'when-risky', reach: 'workspace' }))
+    ).toBe(false);
+    // Even reaching everything, if it asks it is one refusal away from stopping.
+    expect(
+      needsConsentRitual(descriptor({ stop: 'act', asks: 'when-risky', reach: 'everything' }))
+    ).toBe(false);
+  });
+
+  it('is strictly wider than the door it replaced and than the banner’s rule', () => {
+    // The three predicates are allowed to disagree, and this is the disagreement
+    // that matters: the never-asking middle stop is gated by the door, marked
+    // `caution` rather than `danger`, and reported by neither of the others.
+    const neverAskingMiddle = descriptor({ stop: 'act', asks: 'never', reach: 'workspace' });
+    expect(needsConsentRitual(neverAskingMiddle)).toBe(true);
+    expect(isAutonomyStop(neverAskingMiddle)).toBe(false);
+    expect(isBypassSemantics(neverAskingMiddle)).toBe(false);
+    expect(isUnattendedAutonomy(neverAskingMiddle)).toBe(false);
+    expect(warnTier(neverAskingMiddle)).toBe('caution');
   });
 });
 

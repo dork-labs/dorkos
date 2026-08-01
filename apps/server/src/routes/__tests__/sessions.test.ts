@@ -312,7 +312,11 @@ describe('Sessions Routes', () => {
 
       const res = await request(server)
         .patch(`/api/sessions/${S1}`)
-        .send({ permissionMode: 'dontAsk' });
+        // The fake declares `dontAsk` as a stop that never asks, so it goes
+        // through the consent door (DOR-816). The door is the subject of its own
+        // suite below; here the acknowledgement is just the price of asking
+        // about the plumbing.
+        .send({ permissionMode: 'dontAsk', acknowledgedAutonomy: true });
 
       expect(res.status).toBe(200);
       expect(fakeRuntime.updateSession).toHaveBeenCalledWith(S1, {
@@ -563,6 +567,116 @@ describe('Sessions Routes', () => {
 
         const [, settings] = fakeRuntime.updateSession.mock.calls[0]!;
         expect(settings).not.toHaveProperty('acknowledgedAutonomy');
+      });
+
+      // ---- The stop below autonomy that never asks either (DOR-816) ----
+      //
+      // A runtime may file a mode that never asks anywhere on the dial. Codex
+      // does: its middle stop runs shell commands in the workspace and has no
+      // way to pause and ask. The door gates on THAT — never asks, can do more
+      // than read — rather than on the autonomy position alone, so a runtime
+      // with this shape is caught without being named. The fake declares one
+      // (`dontAsk`: act / never / workspace), and every case below resolves it
+      // from the declared semantics rather than from that id.
+      describe('a middle stop that never asks', () => {
+        /** The id of whichever non-autonomy mode this runtime declares that never asks. */
+        function neverAskingMiddleModeId(): PermissionMode {
+          const descriptor = fakeRuntime
+            .getCapabilities()
+            .permissionModes.values.find(
+              (d) => d.stop !== 'autonomy' && d.asks === 'never' && d.reach !== 'read'
+            );
+          if (!descriptor) throw new Error('the fake runtime declares no never-asking middle stop');
+          fakeRuntime.getCapabilities.mockClear();
+          return descriptor.id as PermissionMode;
+        }
+
+        it('refuses it when nothing acknowledges it', async () => {
+          const res = await request(server)
+            .patch(`/api/sessions/${S1}`)
+            .send({ permissionMode: neverAskingMiddleModeId() });
+
+          expect(res.status).toBe(428);
+          expect(res.body.code).toBe('AUTONOMY_ACK_REQUIRED');
+          expect(fakeRuntime.updateSession).not.toHaveBeenCalled();
+        });
+
+        it('accepts it when the request carries the acknowledgement', async () => {
+          const mode = neverAskingMiddleModeId();
+          const res = await request(server)
+            .patch(`/api/sessions/${S1}`)
+            .send({ permissionMode: mode, acknowledgedAutonomy: true });
+
+          expect(res.status).toBe(200);
+          expect(fakeRuntime.updateSession).toHaveBeenCalledWith(S1, {
+            permissionMode: mode,
+            model: undefined,
+            effort: undefined,
+            fastMode: undefined,
+          });
+        });
+
+        it('accepts it on the standing acknowledgement alone', async () => {
+          // One record, one door. What a person acknowledged is what the door
+          // asks about — that a mode will not stop to ask — so the standing
+          // record covers this stop exactly as it covers autonomy.
+          vi.mocked(configManager.get).mockImplementation((key: string) =>
+            key === 'ui' ? { autonomyAcknowledgedAt: '2026-08-01T10:00:00.000Z' } : null
+          );
+
+          const res = await request(server)
+            .patch(`/api/sessions/${S1}`)
+            .send({ permissionMode: neverAskingMiddleModeId() });
+
+          expect(res.status).toBe(200);
+        });
+
+        it('leaves a mode that still stops to ask alone', async () => {
+          // Asking is the whole test — a mode that stops for the person is one
+          // refusal away from stopping, whatever it could otherwise touch.
+          const asking = fakeRuntime
+            .getCapabilities()
+            .permissionModes.values.find((d) => d.asks !== 'never');
+          expect(asking, 'the fake runtime declares no mode that asks').toBeDefined();
+          fakeRuntime.getCapabilities.mockClear();
+
+          const res = await request(server)
+            .patch(`/api/sessions/${S1}`)
+            .send({ permissionMode: asking!.id });
+
+          expect(res.status).toBe(200);
+        });
+
+        it('leaves a read-only mode alone even though it never asks', async () => {
+          // Codex's read-only default is the live case: `asks: 'never'` because
+          // there is nothing to ask about. A door in front of the safest setting
+          // on offer is how a door stops being read.
+          const capabilities = fakeRuntime.getCapabilities();
+          fakeRuntime.getCapabilities.mockReturnValue({
+            ...capabilities,
+            permissionModes: {
+              supported: true,
+              default: 'default',
+              values: [
+                {
+                  id: 'default',
+                  label: 'Read only',
+                  stop: 'ask',
+                  asks: 'never',
+                  reach: 'read',
+                  promise: 'Reads files and answers questions. Nothing on your machine changes.',
+                },
+              ],
+            },
+          });
+          fakeRuntime.getCapabilities.mockClear();
+
+          const res = await request(server)
+            .patch(`/api/sessions/${S1}`)
+            .send({ permissionMode: 'default' });
+
+          expect(res.status).toBe(200);
+        });
       });
     });
 

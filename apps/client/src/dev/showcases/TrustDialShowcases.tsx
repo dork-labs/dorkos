@@ -17,6 +17,7 @@ import type { PermissionModeDescriptor, PermissionStop } from '@dorkos/shared/ag
 import { PlanModeItem, AutonomyConfirmDialog, MakeDefaultStopLine } from '@/layers/features/status';
 import { DefaultTrustStopSection, type DefaultTrustStopRuntime } from '@/layers/features/settings';
 import { Button, TrustDial, UnattendedAutonomyDialog } from '@/layers/shared/ui';
+import { needsConsentRitual } from '@/layers/shared/lib';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -182,8 +183,8 @@ function LiveDial({
 /**
  * The same dial on a surface nobody is watching — a relay binding or a scheduled
  * task. Two things change and nothing else does: a stored mode with no stop is
- * kept until somebody picks one and SAVES, and the autonomy stop asks first with
- * copy about what stops happening on this particular surface.
+ * kept until somebody picks one and SAVES, and any stop that never asks asks first
+ * — with copy about what stops happening on this particular surface.
  */
 function UnattendedDial({
   descriptors,
@@ -216,8 +217,10 @@ function UnattendedDial({
           </>
         }
         onChangeMode={(next) => {
+          // The same rule the real callers apply, so the playground shows the
+          // dialog on Codex's never-asking middle stop exactly as they do.
           const descriptor = descriptors.find((d) => d.id === next);
-          if (descriptor?.stop === 'autonomy') {
+          if (descriptor && needsConsentRitual(descriptor)) {
             setPending(descriptor);
             return;
           }
@@ -237,10 +240,10 @@ function UnattendedDial({
   );
 }
 
-/** What a binding gives up at the autonomy stop. */
+/** What a binding gives up at a stop that never asks. */
 const BINDING_CONSEQUENCE = (
   <>
-    At every other stop, an action this agent needs permission for waits for an answer: where your
+    At a stop that asks, an action this agent needs permission for waits for an answer: where your
     integration can show buttons, it arrives in the chat as Approve and Deny, and only the people on
     the approver list may answer. Either way an ask nobody answers is refused after 10 minutes and
     the agent carries on without it. Here nothing is asked at all — anyone who can send a message
@@ -248,11 +251,11 @@ const BINDING_CONSEQUENCE = (
   </>
 );
 
-/** What a scheduled run gives up at the autonomy stop. */
+/** What a scheduled run gives up at a stop that never asks. */
 const TASK_CONSEQUENCE = (
   <>
     A scheduled run has nobody to ask, so nothing is asked: no approval card, no message, no record
-    of a decision anybody made. At every other stop an action it cannot take is refused and the run
+    of a decision anybody made. At a stop that asks, an action it cannot take is refused and the run
     works around it. Here it simply happens.
   </>
 );
@@ -338,15 +341,27 @@ function LivePlanChip() {
   );
 }
 
-/** The door into Full autonomy, opened on demand. */
-function LiveAutonomyDialog() {
+/**
+ * The consent door, opened on demand.
+ *
+ * Two modes reach it and they must not look identical: Codex's full access is
+ * red and names itself, while its middle stop is amber, keeps the dial's word
+ * ("Act"), and carries the sentence that says what the word does not.
+ */
+function LiveAutonomyDialog({
+  descriptor,
+  trigger,
+}: {
+  descriptor: PermissionModeDescriptor;
+  trigger: string;
+}) {
   const [open, setOpen] = useState(false);
   const [lastAnswer, setLastAnswer] = useState<string | null>(null);
-  const autonomy = CODEX[2];
+  const autonomy = descriptor;
   return (
     <div className="flex items-center gap-3">
       <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
-        Choose Full autonomy (Codex)
+        {trigger}
       </Button>
       {/* The playground shows what the checkbox ANSWERS rather than acting on
           it: writing the real acknowledgement here would silence the dialog for
@@ -431,18 +446,25 @@ export function TrustDialShowcases() {
       </PlaygroundSection>
 
       <PlaygroundSection
-        title="Trust Dial — the door into Full autonomy"
-        description="The one stop a person cannot walk back asks twice. The consequence sentence is the runtime's own — what Full autonomy means differs by agent — and the scope note says what it does not cover. Asked once per session, and the segmented control stops at the ends so an arrow key cannot wander in."
+        title="Trust Dial — the door into a mode that never asks"
+        description="A stop that stops the asking cannot be walked back, so it asks twice — and that is not only the top of the dial. On a runtime that cannot pause mid-turn, the MIDDLE stop never asks either, and it goes through the same door in its own words. The consequence sentence is always the runtime's own; the scope note says what it does not cover."
       >
-        <ShowcaseLabel>The confirmation, on a Codex session</ShowcaseLabel>
+        <ShowcaseLabel>Full autonomy, on a Codex session — red, and it names itself</ShowcaseLabel>
         <ShowcaseDemo>
-          <LiveAutonomyDialog />
+          <LiveAutonomyDialog descriptor={CODEX[2]!} trigger="Choose Full autonomy (Codex)" />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          Codex&rsquo;s middle stop — amber, keeps the dial&rsquo;s word, says what the word hides
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <LiveAutonomyDialog descriptor={CODEX[1]!} trigger="Choose Act (Codex)" />
         </ShowcaseDemo>
       </PlaygroundSection>
 
       <PlaygroundSection
         title="Trust Dial — the surfaces nobody is watching"
-        description="An integration binding and a scheduled task ask the same question with the same control. Two things differ: a stored mode with no stop is kept until somebody picks one AND saves, and the autonomy stop's confirmation names what stops happening HERE — the approval that would have arrived in a chat, the card a run would have waited on."
+        description="An integration binding and a scheduled task ask the same question with the same control. Two things differ: a stored mode with no stop is kept until somebody picks one AND saves, and the confirmation for a stop that never asks names what stops happening HERE — the approval that would have arrived in a chat, the card a run would have waited on."
       >
         <ShowcaseLabel>
           A binding saved at Plan — kept and named, never quietly widened
@@ -467,7 +489,8 @@ export function TrustDialShowcases() {
         </ShowcaseDemo>
 
         <ShowcaseLabel>
-          The binding’s door into Full autonomy — the approver list, and the 10-minute deny
+          The binding’s door — the approver list, and the 10-minute deny (try Act as well as Full
+          autonomy)
         </ShowcaseLabel>
         <ShowcaseDemo>
           <UnattendedDial

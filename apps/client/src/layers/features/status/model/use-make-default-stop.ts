@@ -9,6 +9,17 @@
  * whether this person has ever been told what that means. The offer's few-second
  * life is owned here too, for a reason the browser showed: see {@link OFFER_MS}.
  *
+ * ## Why this one still gates on the stop
+ *
+ * The session dial gates on `needsConsentRitual`, which is wider than the
+ * autonomy position (DOR-816). This hook does not, and that is not an oversight:
+ * what it writes is `defaultTrustStop`, a runtime-NEUTRAL stop resolved through
+ * each runtime's own profile when a session is born. Only `'autonomy'` can mean
+ * "does not ask" there — the same middle stop asks on one runtime and cannot on
+ * another, so there is no never-asking value to gate. The per-runtime
+ * consequence of the chosen stop is disclosed by Settings' living caption
+ * instead (spec `trust-dial`, decisions 2A and 6).
+ *
  * @module features/status/model/use-make-default-stop
  */
 import { useCallback, useEffect, useState } from 'react';

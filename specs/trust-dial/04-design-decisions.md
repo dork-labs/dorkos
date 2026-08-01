@@ -64,7 +64,9 @@ Substrate: "Always allow" is **withheld with a stated reason** (shown disabled, 
 
 The dialog explains the consequence in plain language (runs everything without asking; covers tools inside this session only; switch back anytime — the scope note lives at the moment of choice, as today). The acknowledgement travels with the PATCH and **the server refuses autonomy without it** — no client can skip the gate.
 
-"Don't show this again" writes a **durable user-level acknowledgement** (persisted in user config: this person has read what Full autonomy means). Thereafter the client sends the standing ack automatically and the dialog is suppressed. The server still requires an ack on every autonomy PATCH — interactive or standing — so the API contract never weakens; the checkbox trades a repeated ritual for recorded consent. It does **not** touch unattended surfaces: tasks, bindings, and rooms keep their own separate, stricter gates (e.g. the bypass clamp on file-sourced schedules).
+"Don't show this again" writes a **durable user-level acknowledgement** (persisted in user config: this person has read what a mode that never asks means). Thereafter the client sends the standing ack automatically and the dialog is suppressed. The server still requires an ack on every gated PATCH — interactive or standing — so the API contract never weakens; the checkbox trades a repeated ritual for recorded consent. It does **not** touch unattended surfaces: tasks, bindings, and rooms keep their own separate, stricter gates (e.g. the bypass clamp on file-sourced schedules).
+
+**Widened 2026-08-01 (DOR-816):** the door gates on consent-ritual semantics rather than the autonomy stop alone — see the resolved entry at the foot of this file.
 
 ## 6. Setting the default trust level
 
@@ -104,19 +106,34 @@ Implementation invariants: wire/persistence keep runtime mode ids; app code cont
   exists, an agent left running without asking behind a binding or a task is signalled
   only on the surfaces that show that binding or task.
 
+- **The unattended banner still reports only the autonomy stop.** DOR-816 widened the
+  consent DOOR, not the banner: `isUnattendedAutonomy` is unchanged, so a binding or task
+  at a never-asking middle stop would be gated on the way in and then not reported by the
+  banner. Nothing can reach that state today — the binding dial resolves Claude Code's
+  profile and the scheduler runs Claude Code, neither of which declares such a mode — so
+  this is a latent inconsistency, not a live gap. Widening the banner is a separate
+  decision about what a standing alarm is for.
+
 ## Deliberately not decided here (open for SPECIFY)
 
 - The **rooms** story: forwarding approval cards into rooms vs. an explicit ask-fallback declared at room configuration.
 - Keyboard shortcut / command-palette entry for the dial.
 - ~~Migration of the binding dialog and task form onto the shared capability-driven picker~~ — **done.** Both render the Trust Dial from a runtime capability profile; the dial itself moved to `shared/ui` so an entity and a feature can share it. Neither coerces a stored mode: one the dial has no stop for is kept, named, and replaced only on purpose. Binding and task each gate their autonomy stop with copy about what stops happening on an _unattended_ surface — the approval buttons that would have arrived in a chat, the card a run would have waited on. Two limits worth knowing: the binding dial resolves Claude Code's profile because the relay's only runtime adapter is Claude Code's (named at `BINDING_RUNTIME`), and the task dial resolves the server default because a task carries no runtime of its own.
 - Trust receipts ("Ran 14 actions without asking · 2 would have paused") and learned always-allow suggestions — investigation ideas endorsed in principle, unscheduled.
-- **Codex's middle stop enters without an acknowledgement.** The autonomy door (#682)
-  gates the autonomy *stop*, per Decision 5. Codex's Act stop (`workspace-write`)
-  declares `asks: 'never'` — it runs shell commands in the workspace with nothing to
-  ask — and enters with no consent ritual. The amber divergent caption (Decision 2A)
-  is the disclosure that covers it. This is design-faithful, and it is also the
-  sharpest residual gap between what the door gates and what can surprise someone;
-  if it ever earns a gate of its own, that is a new decision, not an oversight.
+- ~~**Codex's middle stop enters without an acknowledgement.**~~ — **decided 2026-08-01
+  by Dorian (DOR-816): the door gates on consent-ritual semantics, not on the autonomy
+  stop alone.** A mode goes through the door when it is at the autonomy stop, OR when it
+  never asks and can do more than read (`needsConsentRitual` in
+  `@dorkos/shared/permission-semantics`). Codex's Act stop (`workspace-write`) is caught
+  by the second clause without being named, and any future runtime with the same shape is
+  caught for free; a read-only mode that "never asks" because it has nothing to ask about
+  is not. The dialog's title, button and tint come from the descriptor, so a
+  workspace-scoped stop is not dressed up as Full autonomy. One durable acknowledgement
+  covers the whole door whichever mode opened it — what a person acknowledged is that a
+  mode will not stop to ask. The server (`PATCH /api/sessions/:id`), the session dial, the
+  binding dialog and the task form all apply the one predicate. The `defaultTrustStop`
+  config axis is unaffected: it stores one of the three stops, where only `autonomy` can
+  mean "does not ask".
 - **Implementation record.** The program shipped as twelve PRs on 2026-08-01:
   #668 (spec), #671, #672, #674, #675 (Wave 1 safety + receipts), #677 (semantics
   substrate), #678 (receipt permanence, ADR 260801-035912), #680 (the Trust Dial),

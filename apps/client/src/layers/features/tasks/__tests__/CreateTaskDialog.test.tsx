@@ -506,6 +506,76 @@ describe('CreateTaskDialog', () => {
         expect(screen.getByRole('radio', { name: 'Full autonomy' })).toBeChecked()
       );
     });
+
+    it('asks before a middle stop that never asks, too (DOR-816)', async () => {
+      // The scheduler's runtime declares Codex's shape: its Act stop runs
+      // commands and cannot pause to ask. A run nobody is watching is exactly
+      // where that has to be said out loud rather than left to the caption.
+      const transport = createMockTransport({
+        getCapabilities: vi.fn().mockResolvedValue({
+          defaultRuntime: 'claude-code',
+          capabilities: {
+            'claude-code': {
+              type: 'claude-code',
+              supportsToolApproval: true,
+              supportsCostTracking: false,
+              supportsResume: true,
+              supportsMcp: true,
+              supportsQuestionPrompt: true,
+              supportsPlugins: true,
+              permissionModes: {
+                supported: true,
+                values: [
+                  {
+                    id: 'default',
+                    label: 'Read only',
+                    stop: 'ask',
+                    asks: 'never',
+                    reach: 'read',
+                    promise: 'Reads files and answers questions. Nothing changes.',
+                  },
+                  {
+                    id: 'acceptEdits',
+                    label: 'Workspace write',
+                    stop: 'act',
+                    asks: 'never',
+                    reach: 'workspace',
+                    promise: 'Edits files and runs commands inside the workspace.',
+                  },
+                ],
+              },
+              features: {},
+            },
+          },
+        }),
+      });
+      const Wrapper = createWrapper(transport);
+      // Opened on a task that sits at Ask first, so pressing Act is a change.
+      const schedule = createMockSchedule({ id: 'sched-read-only', permissionMode: 'default' });
+
+      render(
+        <Wrapper>
+          <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={schedule} />
+        </Wrapper>
+      );
+
+      await screen.findByRole('radiogroup', { name: /how much/i });
+      fireEvent.click(screen.getByRole('radio', { name: 'Act' }));
+
+      const alert = await screen.findByRole('alertdialog');
+      // The dial's own word for what they pressed — not "Full autonomy", which
+      // this mode is not.
+      expect(alert).toHaveTextContent('Turn on Act');
+      expect(alert).not.toHaveTextContent(/Full autonomy/);
+      expect(within(alert).getByTestId('consent-asks-note')).toHaveTextContent(
+        /never pauses to ask/i
+      );
+      // And the unattended consequence the form has always carried.
+      expect(alert).toHaveTextContent(/nobody to ask/i);
+
+      fireEvent.click(within(alert).getByRole('button', { name: 'Turn on Act' }));
+      await waitFor(() => expect(screen.getByRole('radio', { name: 'Act' })).toBeChecked());
+    });
   });
 
   describe('a task set to a mode this form does not offer', () => {

@@ -32,6 +32,29 @@
  * {@link CONFIG_WRITE_POLICY} — and this gate sits on top of that, for the person
  * who does have the right to change it.
  *
+ * ## Why only this module stayed stop-shaped
+ *
+ * The SESSION door was widened on 2026-08-01 (DOR-816): it now asks first about
+ * any mode that never asks and can do more than read, not just the autonomy stop
+ * — Codex files such a mode at the MIDDLE stop. Nothing here moved with it, and
+ * that is the design rather than an omission.
+ *
+ * The two doors read different axes. A session PATCH carries a runtime MODE, and
+ * a runtime may put "never asks" wherever it likes. `defaultTrustStop` stores one
+ * of the dial's three STOPS — a runtime-neutral value resolved through each
+ * runtime's profile when a session is born — and only `'autonomy'` can mean "do
+ * not ask" there. There is no default-able value for "Codex's middle stop", so
+ * there is nothing extra for {@link findUnacknowledgedAutonomyDefaults} to catch
+ * and nothing extra for {@link demoteAutonomyDefaultsOnAckClear} to demote.
+ *
+ * What follows from that pairing is worth stating plainly, because it looks like
+ * a hole and is not: a person who sets the middle stop as their default, on a
+ * runtime that never asks there, gets no dialog at set-time — the same stop is
+ * gated on other runtimes by nothing, because on them it still asks. The
+ * disclosure that covers it is Settings' living caption, which spells out the
+ * per-runtime consequence of the selected stop in amber (spec `trust-dial`,
+ * decisions 2A and 6).
+ *
  * @module services/core/approvals/autonomy-consent
  */
 import { configManager } from '../config-manager.js';

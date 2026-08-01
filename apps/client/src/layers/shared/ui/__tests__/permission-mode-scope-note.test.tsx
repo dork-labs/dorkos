@@ -1,7 +1,7 @@
 /**
- * The one line that says what a bypass permission mode does NOT cover, and the
+ * The one line that says what a mode which stops asking does NOT cover, and the
  * guard that keeps all three places saying it (spec `agent-approval-settings`
- * §3.7).
+ * §3.7; widened with the consent door by DOR-816).
  *
  * @vitest-environment jsdom
  */
@@ -78,9 +78,16 @@ describe('PermissionModeScopeNote', () => {
     expect(screen.getByText(/This covers tools inside the session/)).toBeInTheDocument();
   });
 
-  it('stays quiet for a mode that never asks but cannot leave the workspace', () => {
-    // Codex's workspace-write. It is not the "everything" this note is about,
-    // and saying it is would make the sentence untrue.
+  it('appears for a mode that never asks but cannot leave the workspace (DOR-816)', () => {
+    // Codex's workspace-write. This case was deliberately QUIET until the
+    // consent door widened, on the reasoning that the note is about "run
+    // everything". Both halves of that turned out to be wrong. The sentence is
+    // true of any session mode — a session's permission mode never governs
+    // DorkOS's own approvals, whatever its reach — so the old condition was not
+    // protecting accuracy, it was rationing a correction. And the dialog this
+    // mode now opens carries the strongest promise on any screen ("whatever it
+    // decides to do, it does"), which is exactly the one that must arrive with
+    // its correction attached.
     render(
       <PermissionModeScopeNote
         mode="acceptEdits"
@@ -92,6 +99,45 @@ describe('PermissionModeScopeNote', () => {
           reach: 'workspace',
           promise: "Edits files and runs commands inside the workspace — Codex can't pause to ask.",
           native: 'workspace-write',
+        }}
+      />
+    );
+    expect(screen.getByText(/This covers tools inside the session/)).toBeInTheDocument();
+  });
+
+  it('stays quiet for a read-only mode, though it never asks either', () => {
+    // Codex's default. It never asks because it has nothing to ask about, and a
+    // clarification about what a mode does not cover is noise on a mode that
+    // covers nothing. The note follows the consent door, and the door skips
+    // this one too.
+    render(
+      <PermissionModeScopeNote
+        mode="default"
+        descriptor={{
+          id: 'default',
+          label: 'Read only',
+          stop: 'ask',
+          asks: 'never',
+          reach: 'read',
+          promise: 'Reads files and answers questions. Nothing on your machine changes.',
+          native: 'read-only',
+        }}
+      />
+    );
+    expect(screen.queryByText(/This covers tools inside the session/)).not.toBeInTheDocument();
+  });
+
+  it('stays quiet for a mode that still stops to ask, however far it reaches', () => {
+    render(
+      <PermissionModeScopeNote
+        mode="acceptEdits"
+        descriptor={{
+          id: 'acceptEdits',
+          label: 'Accept edits',
+          stop: 'act',
+          asks: 'when-risky',
+          reach: 'everything',
+          promise: 'Edits files on its own. Asks before it runs a command.',
         }}
       />
     );

@@ -530,10 +530,12 @@ registry.registerPath({
   tags: ['Sessions'],
   summary: 'Update session settings',
   description:
-    'Moving an interactive session to a Full-autonomy permission mode (one the ' +
-    'runtime declares at the `autonomy` stop) requires an acknowledgement: either ' +
-    '`acknowledgedAutonomy: true` on this request, or the standing record in ' +
-    '`ui.autonomyAcknowledgedAt`. Without one the response is `428 ' +
+    'Moving an interactive session to a permission mode that never stops to ask ' +
+    'requires an acknowledgement. That means any mode the runtime declares at the ' +
+    '`autonomy` stop, and any mode it declares with `asks: "never"` and a `reach` ' +
+    'other than `"read"` — Codex files such a mode at the middle stop. Satisfy it ' +
+    'with `acknowledgedAutonomy: true` on this request, or with the standing ' +
+    'record in `ui.autonomyAcknowledgedAt`. Without one the response is `428 ' +
     'AUTONOMY_ACK_REQUIRED` and nothing is persisted — obtain consent and retry ' +
     'the identical request (spec `trust-dial`, decision 5). This is a consent ' +
     'ritual for a person, not a boundary against a caller.',
@@ -558,7 +560,8 @@ registry.registerPath({
     },
     428: {
       description:
-        'Full autonomy was requested without an acknowledgement (`AUTONOMY_ACK_REQUIRED`)',
+        'A mode that never stops to ask was requested without an acknowledgement ' +
+        '(`AUTONOMY_ACK_REQUIRED`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

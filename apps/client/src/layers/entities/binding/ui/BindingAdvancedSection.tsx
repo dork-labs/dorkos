@@ -14,7 +14,7 @@ import {
   TrustDial,
   UnattendedAutonomyDialog,
 } from '@/layers/shared/ui';
-import { permissionModeLabel } from '@/layers/shared/lib';
+import { needsConsentRitual, permissionModeLabel } from '@/layers/shared/lib';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
 import type { SessionStrategy } from '@dorkos/shared/relay-schemas';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
@@ -131,7 +131,13 @@ export function BindingAdvancedSection({
   const [pendingAutonomy, setPendingAutonomy] = useState<PermissionModeDescriptor | null>(null);
 
   /**
-   * Apply a stop, asking first at the one that stops the asking.
+   * Apply a stop, asking first at any stop that stops the asking.
+   *
+   * The rule is `needsConsentRitual` — the same one the server's door applies —
+   * rather than a stop comparison, so a runtime that files a mode that never
+   * asks at the MIDDLE stop is caught here too (DOR-816). That matters more on
+   * this screen than on a session's: an integration nobody is watching sets the
+   * agent off, and there is no one to notice it did not ask.
    *
    * Unlike a session's dial, this is not remembered: there is no session to
    * remember it for, and a binding is configured rarely enough that a second
@@ -139,7 +145,7 @@ export function BindingAdvancedSection({
    */
   function handleChangeMode(next: string) {
     const descriptor = descriptors.find((d) => d.id === next);
-    if (descriptor?.stop === 'autonomy') {
+    if (descriptor && needsConsentRitual(descriptor)) {
       setPendingAutonomy(descriptor);
       return;
     }
@@ -295,7 +301,7 @@ export function BindingAdvancedSection({
         descriptor={pendingAutonomy}
         consequence={
           <>
-            At every other stop, an action this agent needs permission for waits for an answer:
+            At a stop that asks, an action this agent needs permission for waits for an answer:
             where your integration can show buttons, it arrives in the chat as Approve and Deny, and
             only the people on the approver list may answer. Either way an ask nobody answers is
             refused after 10 minutes and the agent carries on without it. Here nothing is asked at
