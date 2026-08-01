@@ -63,8 +63,13 @@ function SummaryGroup({
       <span className="tabular-nums">{count}</span>
       {(additions !== undefined || deletions !== undefined) && (
         <span className="tabular-nums">
-          <span className="text-emerald-600 dark:text-emerald-400">+{additions ?? 0}</span>{' '}
-          <span className="text-red-600 dark:text-red-400">−{deletions ?? 0}</span>
+          {additions !== undefined && (
+            <span className="text-emerald-600 dark:text-emerald-400">+{additions}</span>
+          )}
+          {additions !== undefined && deletions !== undefined && ' '}
+          {deletions !== undefined && (
+            <span className="text-red-600 dark:text-red-400">−{deletions}</span>
+          )}
         </span>
       )}
     </span>
@@ -109,6 +114,11 @@ export function TouchChipStrip({ parts }: TouchChipStripProps) {
   const handleOpen = useCallback(
     (chip: TouchChipData) => {
       const embedded = getPlatform().isEmbedded;
+
+      // A glob names a set of files, so there is no one file to open — handing
+      // `src/**/*.ts` to the canvas opens an empty document named after the
+      // pattern. The chip says so in its tooltip and does nothing here.
+      if (chip.pattern === true) return;
 
       if (chip.kind === 'url') {
         // No canvas inside Obsidian, so the page opens where it can: a new tab.

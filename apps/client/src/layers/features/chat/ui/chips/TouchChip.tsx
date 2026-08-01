@@ -25,16 +25,26 @@ export interface TouchChipProps {
 
 /**
  * Whether clicking this chip goes anywhere. Files and URLs open in the canvas;
- * a bare command or a search pattern has no surface to open, so its chip is a
- * record rather than a control and is styled as one.
+ * a bare command, a search query, or a glob pattern has no single surface to
+ * open, so its chip is a record rather than a control and is styled as one.
+ *
+ * The pattern case reads the accumulator's flag rather than looking for a `*`
+ * in the string: `index.ts` is both a valid path and a valid glob, and only the
+ * tool that produced it knows which it meant.
  */
 function isOpenable(chip: TouchChipData): boolean {
-  return chip.kind !== 'command';
+  return chip.kind !== 'command' && chip.pattern !== true;
 }
 
-/** The native tooltip: the full target, then the audit trail of every touch. */
+/** The native tooltip: the full target, the audit trail, and why a chip is inert. */
 function tooltipFor(chip: TouchChipData): string {
-  return [chip.fullTarget, chip.history.join(', ')].filter(Boolean).join('\n');
+  return [
+    chip.fullTarget,
+    chip.history.join(', '),
+    chip.pattern === true ? 'A pattern, not one file — there is nothing to open.' : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 /**
@@ -45,11 +55,16 @@ function tooltipFor(chip: TouchChipData): string {
 function accessibleNameFor(chip: TouchChipData): string {
   const parts = [`${VERB_LABEL[chip.verb]} ${chip.fullTarget}`];
   if (chip.touches > 1) parts.push(`${chip.touches} times`);
-  if (chip.additions !== undefined || chip.deletions !== undefined) {
-    parts.push(`${chip.additions ?? 0} added, ${chip.deletions ?? 0} removed`);
-  }
+  if (chip.hits !== undefined) parts.push(hitsLabel(chip.hits));
+  if (chip.additions !== undefined) parts.push(`${chip.additions} added`);
+  if (chip.deletions !== undefined) parts.push(`${chip.deletions} removed`);
   if (chip.error) parts.push('failed');
   return parts.join(', ');
+}
+
+/** `1 hit` / `14 hits` — the badge text and the spoken one, from one place. */
+function hitsLabel(hits: number): string {
+  return hits === 1 ? '1 hit' : `${hits} hits`;
 }
 
 /**
@@ -128,6 +143,9 @@ export function TouchChip({ chip, onOpen, animated = false }: TouchChipProps) {
       {chip.touches > 1 && (
         <span className="text-muted-foreground shrink-0 tabular-nums">×{chip.touches}</span>
       )}
+      {chip.hits !== undefined && (
+        <span className="text-muted-foreground shrink-0 tabular-nums">{hitsLabel(chip.hits)}</span>
+      )}
       {hasDiffstat && (
         <motion.span
           className="shrink-0 tabular-nums"
@@ -137,8 +155,16 @@ export function TouchChip({ chip, onOpen, animated = false }: TouchChipProps) {
           animate={{ opacity: 1, x: 0 }}
           transition={CHIP_MORPH}
         >
-          <span className="text-emerald-600 dark:text-emerald-400">+{chip.additions ?? 0}</span>{' '}
-          <span className="text-red-600 dark:text-red-400">−{chip.deletions ?? 0}</span>
+          {/* Each half appears only if something measured it. A created file
+              gained lines and lost none, and `−0` would state a measurement
+              nothing ever made. */}
+          {chip.additions !== undefined && (
+            <span className="text-emerald-600 dark:text-emerald-400">+{chip.additions}</span>
+          )}
+          {chip.additions !== undefined && chip.deletions !== undefined && ' '}
+          {chip.deletions !== undefined && (
+            <span className="text-red-600 dark:text-red-400">−{chip.deletions}</span>
+          )}
         </motion.span>
       )}
     </motion.button>

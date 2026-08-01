@@ -355,6 +355,20 @@ describe('TouchChipStrip — clicking through to the canvas', () => {
     expect(openDocuments[0].content).toEqual({ type: 'url', url: 'https://example.com/page' });
   });
 
+  it('opens nothing for a glob pattern, and says why in the tooltip', async () => {
+    // A pattern names a set of files. Handing `src/**/*.ts` to the canvas as if
+    // it were a path opens an empty document titled with the pattern.
+    const user = userEvent.setup();
+    render(<TouchChipStrip parts={[toolCall('Glob', { pattern: 'src/**/*.ts' })]} />);
+
+    const tray = await openTray(user);
+    const chip = within(tray).getByTestId('touch-chip');
+    await user.click(chip);
+
+    expect(useAppStore.getState().openDocuments).toHaveLength(0);
+    expect(chip.getAttribute('title')).toContain('A pattern, not one file');
+  });
+
   it('opens nothing for a bare command, which has no surface to open', async () => {
     const user = userEvent.setup();
     render(<TouchChipStrip parts={[toolCall('Bash', { command: 'pnpm test' })]} />);
@@ -406,6 +420,56 @@ describe('TouchChipStrip — chip anatomy', () => {
 
     expect(tombstone).toHaveAttribute('data-verb', 'delete');
     expect(tombstone.className).toContain('line-through');
+  });
+
+  it('shows a created file as gained lines and nothing lost', async () => {
+    const user = userEvent.setup();
+    render(
+      <TouchChipStrip
+        parts={[
+          toolCall(
+            'Write',
+            { file_path: '/repo/src/new.ts', content: 'a\nb\nc\nd' },
+            { result: 'File created successfully at: /repo/src/new.ts' }
+          ),
+        ]}
+      />
+    );
+
+    // `✚ new.ts +4` — no `−0`, which would state a measurement nobody made.
+    expect(screen.getByTestId('chip-summary-create').textContent).toBe('✚Created1+4');
+
+    const tray = await openTray(user);
+    const chip = within(tray).getByTestId('touch-chip');
+    expect(chip.textContent).toBe('✚new.ts+4');
+    expect(chip).toHaveAccessibleName('Created /repo/src/new.ts, 4 added');
+  });
+
+  it('badges a search with the matches it found', async () => {
+    const user = userEvent.setup();
+    render(
+      <TouchChipStrip
+        parts={[toolCall('Grep', { pattern: 'Last-Event-ID' }, { result: 'Found 14 matches' })]}
+      />
+    );
+
+    const tray = await openTray(user);
+    const chip = within(tray).getByTestId('touch-chip');
+
+    expect(chip.textContent).toBe('🔍"Last-Event-ID"14 hits');
+    expect(chip).toHaveAccessibleName('Searched Last-Event-ID, 14 hits');
+  });
+
+  it('says "1 hit" rather than "1 hits"', async () => {
+    const user = userEvent.setup();
+    render(
+      <TouchChipStrip
+        parts={[toolCall('Grep', { pattern: 'once' }, { result: 'Found 1 match' })]}
+      />
+    );
+
+    const tray = await openTray(user);
+    expect(within(tray).getByTestId('touch-chip').textContent).toContain('1 hit');
   });
 
   it('tints a chip whose tool failed', async () => {

@@ -31,6 +31,7 @@ import {
   parseToolInput,
   readString,
   urlLabel,
+  writtenLines,
   type Diffstat,
 } from './touch-chip-parsers';
 
@@ -63,10 +64,31 @@ export interface TouchChip {
   error: boolean;
   /** How many tool calls folded into this chip (the `×N` badge). */
   touches: number;
-  /** Lines added across every edit to this target. Absent when nothing reported a diffstat. */
+  /**
+   * Lines this target gained. Edits contribute what they changed; a file that
+   * was created contributes its whole length, because all of it is new. Absent
+   * when nothing reported a count.
+   */
   additions?: number;
-  /** Lines removed across every edit to this target. Absent when nothing reported a diffstat. */
+  /**
+   * Lines this target lost, across every edit to it. Absent when nothing
+   * reported a count — a created file has additions and no deletions, which is
+   * why the two are counted separately rather than as one diffstat.
+   */
   deletions?: number;
+  /**
+   * Matches found across every search of this target (the `N hits` badge).
+   * Absent when no result could be read confidently.
+   */
+  hits?: number;
+  /**
+   * Set when the target names a set of files rather than one — a glob pattern.
+   * A pattern has nothing single to open, so its chip is a record instead of a
+   * control. An explicit flag rather than a guess at the string: `index.ts` is
+   * a valid glob and a valid path, and only the tool that produced it knows
+   * which one it meant.
+   */
+  pattern?: boolean;
   /** Set once, the first time a read target becomes an edited one — drives the morph. */
   upgraded?: boolean;
   /** Index of the part that first touched this target (default chip order). */
@@ -114,14 +136,29 @@ interface Touch {
   verb: TouchChipVerb;
   /** History line for this one touch, e.g. `edited +12 −4`. */
   entry: string;
-  /** Lines this one touch added, when it reported a diffstat. */
+  /** Lines this one touch added, when it reported a count. */
   additions?: number;
-  /** Lines this one touch removed, when it reported a diffstat. */
+  /** Lines this one touch removed, when it reported a count. */
   deletions?: number;
+  /** Matches this one search found, when its result could be read. */
+  hits?: number;
+  /** Whether this touch named a set of files rather than one. */
+  pattern?: boolean;
 }
 
-/** Build a file touch from a path, with the label and key every file chip shares. */
-function fileTouch(path: string, verb: TouchChipVerb, entry: string, stat?: Diffstat): Touch {
+/**
+ * Build a file touch from a path, with the label and key every file chip shares.
+ *
+ * The counts are partial because a create has additions and nothing else: the
+ * chip shows `+86` rather than `+86 −0`, and a zero it never measured is not a
+ * number it should print.
+ */
+function fileTouch(
+  path: string,
+  verb: TouchChipVerb,
+  entry: string,
+  stat?: Partial<Diffstat>
+): Touch {
   const target = normalizePath(path);
   return {
     key: `file:${target}`,
@@ -163,6 +200,7 @@ function deriveTouches(part: Extract<MessagePart, { type: 'tool_call' }>): Touch
           fullTarget: pattern,
           verb: 'read',
           entry: 'globbed',
+          pattern: true,
         },
       ];
     }
@@ -178,6 +216,7 @@ function deriveTouches(part: Extract<MessagePart, { type: 'tool_call' }>): Touch
           fullTarget: pattern,
           verb: 'search',
           entry: hits === undefined ? 'searched' : `searched (${hits} hits)`,
+          hits,
         },
       ];
     }
@@ -199,7 +238,13 @@ function deriveTouches(part: Extract<MessagePart, { type: 'tool_call' }>): Touch
       // what separates the two. Runtime-specific phrasing: a runtime that words
       // it differently degrades to `edit`, which is the safer of the two reads.
       const created = /created/i.test(part.result ?? '');
-      return [fileTouch(path, created ? 'create' : 'edit', created ? 'created' : 'wrote')];
+      if (!created) return [fileTouch(path, 'edit', 'wrote')];
+
+      // Every line of a new file is a new line, so a create carries additions
+      // and no deletions — `✚ name +86`, the settled form the design asks for.
+      const content = readString(input, 'content');
+      const stat = content === undefined ? undefined : { additions: writtenLines(content) };
+      return [fileTouch(path, 'create', `created${stat ? ` +${stat.additions}` : ''}`, stat)];
     }
     case 'Bash': {
       const command = readString(input, 'command');
@@ -274,6 +319,8 @@ function fold(
       touches: 1,
       additions: touch.additions,
       deletions: touch.deletions,
+      hits: touch.hits,
+      pattern: touch.pattern,
       firstSeq: seq,
       lastSeq: seq,
       history: [touch.entry],
@@ -292,6 +339,17 @@ function fold(
   }
   if (touch.deletions !== undefined) {
     existing.deletions = (existing.deletions ?? 0) + touch.deletions;
+  }
+  // Hits accumulate like every other counter here. Two searches for one pattern
+  // are usually two different searches — the same words asked of a different
+  // directory — so their matches add up rather than replacing each other.
+  if (touch.hits !== undefined) {
+    existing.hits = (existing.hits ?? 0) + touch.hits;
+  }
+  // A target something reached by an exact path is a real file, whatever a glob
+  // called it: one concrete touch is enough to make the chip openable again.
+  if (!touch.pattern) {
+    existing.pattern = undefined;
   }
 
   // The read→edit morph fires exactly once: by the time a second edit lands the

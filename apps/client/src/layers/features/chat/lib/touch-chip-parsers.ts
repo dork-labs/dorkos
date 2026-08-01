@@ -119,6 +119,21 @@ export function formatDiffstat(stat: Diffstat | undefined): string {
   return ` +${stat.additions} −${stat.deletions}`;
 }
 
+/**
+ * How many lines a `Write` put on disk.
+ *
+ * A created file is entirely new, so its line count is an honest `+A` — and it
+ * is the only write that can report one. Nothing on the wire says what an
+ * overwrite replaced, so counting an overwrite's lines as additions would claim
+ * a file grew by 90 lines when it may have shrunk.
+ *
+ * A single trailing newline is the end of the last line, not an extra one.
+ */
+export function writtenLines(content: string): number {
+  if (content.length === 0) return 0;
+  return content.replace(/\n$/, '').split('\n').length;
+}
+
 /** Strip trailing slashes so `dist/` and `dist` are the same target. */
 export function normalizePath(path: string): string {
   const trimmed = path.replace(/\/+$/, '');

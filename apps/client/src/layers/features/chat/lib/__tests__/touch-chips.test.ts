@@ -321,6 +321,51 @@ describe('accumulateTouchChips', () => {
       expect(chip.history).toEqual(['created']);
     });
 
+    it('counts every line of a created file as an addition, and nothing as removed', () => {
+      const chip = only(
+        accumulateTouchChips([
+          toolCall(
+            'Write',
+            { file_path: '/tmp/new.ts', content: 'one\ntwo\nthree\n' },
+            { result: 'File created successfully at: /tmp/new.ts' }
+          ),
+        ])
+      );
+
+      // A trailing newline ends the last line rather than starting a fourth.
+      expect(chip.additions).toBe(3);
+      // Not `0`: nothing was removed, and nothing measured a removal either.
+      expect(chip.deletions).toBeUndefined();
+      expect(chip.history).toEqual(['created +3']);
+    });
+
+    it('counts nothing for a created file the wire gave no content for', () => {
+      const chip = only(
+        accumulateTouchChips([
+          toolCall('Write', { file_path: '/tmp/new.ts' }, { result: 'File created successfully' }),
+        ])
+      );
+
+      expect(chip.additions).toBeUndefined();
+      expect(chip.history).toEqual(['created']);
+    });
+
+    it('claims no additions for an overwrite, whose replaced lines nobody counted', () => {
+      const chip = only(
+        accumulateTouchChips([
+          toolCall(
+            'Write',
+            { file_path: '/tmp/existing.ts', content: 'one\ntwo\nthree' },
+            { result: 'The file /tmp/existing.ts has been updated.' }
+          ),
+        ])
+      );
+
+      expect(chip.verb).toBe('edit');
+      expect(chip.additions).toBeUndefined();
+      expect(chip.deletions).toBeUndefined();
+    });
+
     it('reads any other result as an edit', () => {
       const chip = only(
         accumulateTouchChips([
@@ -347,11 +392,28 @@ describe('accumulateTouchChips', () => {
       expect(chip.verb).toBe('search');
       expect(chip.kind).toBe('command');
       expect(chip.label).toBe('"accumulate"');
+      expect(chip.hits).toBe(12);
       expect(chip.history).toEqual(['searched (12 hits)']);
+    });
+
+    it('adds up the matches of two searches for the same words', () => {
+      // Two searches for one pattern are usually two different searches — the
+      // same words asked of a different directory — so their matches add up,
+      // the way every other counter on a chip does.
+      const chip = only(
+        accumulateTouchChips([
+          toolCall('Grep', { pattern: 'accumulate', path: 'src/' }, { result: 'Found 12 matches' }),
+          toolCall('Grep', { pattern: 'accumulate', path: 'test/' }, { result: 'Found 2 matches' }),
+        ])
+      );
+
+      expect(chip.hits).toBe(14);
+      expect(chip.touches).toBe(2);
     });
 
     it('omits hit details when the grep result says nothing countable', () => {
       const chip = only(accumulateTouchChips([toolCall('Grep', { pattern: 'accumulate' })]));
+      expect(chip.hits).toBeUndefined();
       expect(chip.history).toEqual(['searched']);
     });
 
@@ -366,12 +428,33 @@ describe('accumulateTouchChips', () => {
       expect(chip.fullTarget).toBe('calm tech motion');
     });
 
-    it('makes one read chip out of a glob pattern', () => {
+    it('makes one read chip out of a glob pattern, flagged as naming many files', () => {
       const chip = only(accumulateTouchChips([toolCall('Glob', { pattern: 'src/**/*.ts' })]));
 
       expect(chip.verb).toBe('read');
       expect(chip.kind).toBe('file');
       expect(chip.label).toBe('src/**/*.ts');
+      // The flag is what stops the chip trying to open `src/**/*.ts` as a file.
+      expect(chip.pattern).toBe(true);
+    });
+
+    it('leaves a file reached by an exact path openable, whatever a glob called it', () => {
+      // `index.ts` is a valid path and a valid glob. Once something has opened
+      // it by name, the chip points at a real file again.
+      const chip = only(
+        accumulateTouchChips([
+          toolCall('Glob', { pattern: 'index.ts' }),
+          toolCall('Read', { file_path: 'index.ts' }),
+        ])
+      );
+
+      expect(chip.touches).toBe(2);
+      expect(chip.pattern).toBeUndefined();
+    });
+
+    it('flags nothing as a pattern when a real file is read', () => {
+      const chip = only(accumulateTouchChips([toolCall('Read', { file_path: '/repo/src/a.ts' })]));
+      expect(chip.pattern).toBeUndefined();
     });
   });
 
