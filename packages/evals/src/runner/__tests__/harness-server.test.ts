@@ -240,36 +240,74 @@ describe('startChildProcessServer (isolation seam)', () => {
   });
 });
 
-// Gated: only runs when a real ANTHROPIC_API_KEY is present (the judgment CI
-// tier), never in the default vitest run. Proves the real child-process boot
-// end-to-end: spawn the server from its TS source (via tsx), drive a trivial
-// prompt, collect a terminal `done`.
+// THE ONE TEST IN THIS PACKAGE THAT SPENDS REAL MONEY. It boots the real server
+// from its TS source (via tsx) and drives a real prompt to a terminal `done`, so
+// running it is a billed model turn. Everything else in `packages/evals` is unit
+// tests over injected seams.
 //
-// Deliberately still gated on the KEY, not on `resolveModelCredential()`. This
-// file is part of the default `pnpm test` run, and a developer signed in to
-// `claude` would otherwise start spending money every time they ran the unit
-// suite. Spending on a local machine has to be something a person asked for.
+// It needs TWO things, and a key alone is deliberately not enough:
+//
+//   DORKOS_EVALS_CREDENTIALED=1 ANTHROPIC_API_KEY=sk-… \
+//     pnpm vitest run packages/evals/src/runner/__tests__/harness-server.test.ts
+//
+// The flag is the fix for a real hole. Gating on the key alone reads as explicit
+// only if you assume nobody has `ANTHROPIC_API_KEY` exported already — and plenty
+// of people do, because half the toolchain wants it. An ambient key in a shell
+// profile is not a person asking to spend money, and "spending has to be
+// something a person asked for" is what this gate claimed to enforce all along.
+// `describe.skipIf` also reads its condition at MODULE scope, so no other file's
+// `vi.stubEnv` can blank it: this expression is the entire defense.
+//
+// What kept it from firing was luck plus an accident. `turbo.json` lists no
+// `ANTHROPIC_API_KEY` in `globalPassThroughEnv` and the `test` task declares no
+// `passThroughEnv`, so turbo runs strict and strips the key — `pnpm test`, `pnpm
+// verify`, pre-push and CI never see it. But `pnpm --filter @dorkos/evals test`
+// does no such filtering, and neither does a bare `pnpm vitest run`, which
+// reached this file the moment `packages/evals` joined the root project list
+// (DOR-670). Two of those three paths were already open on a keyed machine.
+//
+// The key was never even the thing that paid. `ChildProcessLauncher` spreads
+// `...process.env`, so the child inherits PATH and HOME and finds the machine's
+// own `claude` sign-in — deliberately; that inheritance is how the local-
+// credential path works at all. Measured while adding this gate: with a
+// deliberately invalid `ANTHROPIC_API_KEY`, the old condition still armed and the
+// test still drove a real turn to `done` in 7.45s, billed to the sign-in.
+//
+// Two consequences follow. Setting a bogus key is NOT a safe way to run this
+// file. And the gate cannot move to `resolveModelCredential()`, which accepts
+// that sign-in outright and would arm this test for anyone merely logged in to
+// `claude`. The key stays in the condition as a second deliberate act, not as
+// the payment instrument.
+//
+// No CI job runs this today: evals.yml's credentialed tier invokes `bin/evals.ts`,
+// not vitest, and no workflow runs vitest with a model credential in scope. A job
+// that ever wants this test must set both variables.
+// eslint-disable-next-line no-restricted-syntax -- the opt-in flag is the gate itself.
+const CREDENTIALED_OPT_IN = process.env.DORKOS_EVALS_CREDENTIALED === '1';
 // eslint-disable-next-line no-restricted-syntax -- gating on the real credentialed secret is the whole point of this test.
 const HAS_ANTHROPIC_KEY = !!process.env.ANTHROPIC_API_KEY;
 
-describe.skipIf(!HAS_ANTHROPIC_KEY)('startChildProcessServer (credentialed, real)', () => {
-  it('boots the real server as a child process and drives a trivial prompt to a terminal done', async () => {
-    sandbox = await createSandbox();
-    // eslint-disable-next-line no-restricted-syntax -- the gated test reads the real secret to pass it to the credentialed boot.
-    const apiKey = process.env.ANTHROPIC_API_KEY ?? '';
-    server = await startChildProcessServer({
-      dorkHome: sandbox.dorkHome,
-      env: { ANTHROPIC_API_KEY: apiKey },
-    });
+describe.skipIf(!CREDENTIALED_OPT_IN || !HAS_ANTHROPIC_KEY)(
+  'startChildProcessServer (credentialed, real)',
+  () => {
+    it('boots the real server as a child process and drives a trivial prompt to a terminal done', async () => {
+      sandbox = await createSandbox();
+      // eslint-disable-next-line no-restricted-syntax -- the gated test reads the real secret to pass it to the credentialed boot.
+      const apiKey = process.env.ANTHROPIC_API_KEY ?? '';
+      server = await startChildProcessServer({
+        dorkHome: sandbox.dorkHome,
+        env: { ANTHROPIC_API_KEY: apiKey },
+      });
 
-    const res = await driveTurn({
-      baseUrl: server.baseUrl,
-      sessionId: randomUUID(),
-      content: 'Reply with the single word: pong.',
-      cwd: sandbox.projectCwd,
-      timeoutMs: 90_000,
-    });
+      const res = await driveTurn({
+        baseUrl: server.baseUrl,
+        sessionId: randomUUID(),
+        content: 'Reply with the single word: pong.',
+        cwd: sandbox.projectCwd,
+        timeoutMs: 90_000,
+      });
 
-    expect(res.outcome).toBe('done');
-  }, 180_000);
-});
+      expect(res.outcome).toBe('done');
+    }, 180_000);
+  }
+);

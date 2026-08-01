@@ -48,13 +48,25 @@ name: scripts-test
 # suites: locally it is one command (and `pnpm verify` calls it), but in CI
 # running it from either job would re-run the other job's suite for nothing.
 
-### The `harness` job depends on two files OUTSIDE scripts/: the root package.json
-### (defines typecheck:scripts and holds @types/node) and the root vitest.config.ts
-### (registers the scripts project for path-based bare-vitest runs from the repo
-### root; the harness job itself no longer reads it, so that entry is conservative).
-### Without them
-### in the filter, a PR touching only those could break this job without triggering
-### it, and the breakage would surface later on an unrelated scripts/ PR.
+### The `harness` job depends on files OUTSIDE scripts/: the root package.json
+### (defines typecheck:scripts and holds @types/node) and the root vitest.config.ts,
+### which registers the scripts project for path-based bare-vitest runs from the
+### repo root and is now imported directly by
+### scripts/__tests__/vitest-projects.test.ts. That vitest.config.ts entry used to
+### be conservative; since DOR-670 it is load-bearing, because that test reads the
+### real project list and asserts it still covers every workspace package with
+### tests. Without these in the filter, a PR touching only them could break this
+### job without triggering it, and the breakage would surface later on an
+### unrelated scripts/ PR.
+###
+### Every workspace package.json is in the filter for the OTHER half of that same
+### guard. A package gains tests by editing its own manifest and nothing else, and
+### such a PR need not touch scripts/, the root package.json or vitest.config.ts —
+### so without these globs the one guard that catches an unregistered package
+### would sit out the one PR that creates one. That is how DOR-670 went unnoticed
+### across ten packages. Dependency bumps trigger this workflow too; a few seconds
+### of bash plus a one-minute harness job is the honest price of a guard that
+### fires when it matters.
 ###
 ### `.claude/hooks/**` is in the filter for the `fixtures` job, which tests the
 ### git-guard hook that lives there rather than under scripts/.
@@ -78,7 +90,10 @@ on:
     paths:
       - 'scripts/**'
       - 'package.json'
+      - 'apps/*/package.json'
+      - 'packages/*/package.json'
       - 'vitest.config.ts'
+      - 'pnpm-workspace.yaml'
       - '.claude/hooks/**'
       - 'apps/server/eslint.config.js'
       - 'packages/eslint-config/**'
@@ -91,7 +106,10 @@ on:
     paths:
       - 'scripts/**'
       - 'package.json'
+      - 'apps/*/package.json'
+      - 'packages/*/package.json'
       - 'vitest.config.ts'
+      - 'pnpm-workspace.yaml'
       - '.claude/hooks/**'
       - 'apps/server/eslint.config.js'
       - 'packages/eslint-config/**'

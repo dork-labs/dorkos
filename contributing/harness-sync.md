@@ -43,7 +43,7 @@ Run this when bumping the pinned rulesync snapshot (new tool, renamed event, cha
      Apply only the deltas. Do not re-vendor tools we do not project.
 4. **Leave Gemini alone.** `vendor/gemini-maps.ts` is hand-authored and is NOT part of the rulesync snapshot — never overwrite it from upstream. If Gemini's own docs change, update it independently and clear the relevant `TODO(B9/DOR-143)`.
 5. **Re-derive reverse maps for free.** Every `*_TO_CANONICAL_EVENT_NAMES` map is `Object.fromEntries(Object.entries(forward).map(([k, v]) => [v, k]))` — never hand-edit a reverse map. If a forward map gains two canonical keys with the same tool spelling, the reverse collapses and the round-trip test will fail; that is the signal to reconcile.
-6. **Run the tests.** From `packages/harness`: `pnpm exec vitest run src/vendor` (round-trip, non-empty, attribution) and `pnpm exec tsc --noEmit`.
+6. **Run the tests.** From the repo root: `pnpm vitest run packages/harness/src/vendor` (round-trip, non-empty, attribution) and `pnpm --filter @dorkos/harness typecheck`.
 7. **Run the engine self-check.** `dorkos harness sync --check` — confirms the projected layout still matches every harness on disk before you commit.
 8. **Confirm TSDoc.** Every exported const/type needs a `/** ... */` block; the repo's ESLint fails the build on a missing-TSDoc export.
 
