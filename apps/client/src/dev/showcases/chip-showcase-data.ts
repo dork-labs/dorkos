@@ -272,7 +272,16 @@ export const WORKING_PARTS: MessagePart[] = [
   toolCall('Bash', { command: 'pnpm vitest run' }, { status: 'running' }),
 ];
 
-/** The same turn, finished — every tool settled, so the strip collapses. */
+/**
+ * The same turn, finished — every tool settled, so the strip collapses.
+ *
+ * Its tool ids are re-namespaced rather than shared with {@link WORKING_PARTS}.
+ * A strip files its tray state under the turn's first tool id (see
+ * `trayExpansionKey`), and these two turns stand side by side on one page, so
+ * sharing ids would mean opening one tray opened the other.
+ */
 export const SETTLED_PARTS: MessagePart[] = WORKING_PARTS.map((part) =>
-  part.type === 'tool_call' ? { ...part, status: 'complete' as const } : part
+  part.type === 'tool_call'
+    ? { ...part, toolCallId: `settled-${part.toolCallId}`, status: 'complete' as const }
+    : part
 );

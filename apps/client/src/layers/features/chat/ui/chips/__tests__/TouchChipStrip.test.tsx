@@ -9,6 +9,7 @@ import type { MessagePart } from '@dorkos/shared/types';
 import { useAppStore } from '@/layers/shared/model';
 import { setPlatformAdapter } from '@/layers/shared/lib';
 import { TouchChipStrip } from '../TouchChipStrip';
+import { useTrayExpansionStore } from '../use-tray-expansion';
 
 type ToolStatus = 'pending' | 'running' | 'complete' | 'error';
 
@@ -81,6 +82,9 @@ function sawTestId(moved: HTMLElement[], testId: string): boolean {
 
 beforeEach(() => {
   useAppStore.setState({ openDocuments: [], activeDocumentId: null, canvasOpen: false });
+  // Tray state outlives the strip on purpose (DOR-827), so it also outlives a
+  // test — every case here starts from a shut tray, the way a fresh tab does.
+  useTrayExpansionStore.setState({ open: {} });
   setPlatformAdapter({ isEmbedded: false, openFile: async () => {} });
 });
 

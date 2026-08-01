@@ -4,7 +4,7 @@
  *
  * @module features/chat/ui/chips/TouchChipStrip
  */
-import { Fragment, useCallback, useId, useMemo, useState } from 'react';
+import { Fragment, useCallback, useId, useMemo } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import type { MessagePart } from '@dorkos/shared/types';
 import { cn, getPlatform } from '@/layers/shared/lib';
@@ -15,6 +15,7 @@ import { groupChipsByVerb, VERB_ICON, VERB_LABEL, type VerbGroup } from './chip-
 import { ChipPile } from './ChipPile';
 import { ChipTray } from './ChipTray';
 import { TouchChip } from './TouchChip';
+import { trayExpansionKey, useTrayExpansion } from './use-tray-expansion';
 import { useUpgradePulses } from './use-upgrade-pulse';
 
 export interface TouchChipStripProps {
@@ -121,8 +122,12 @@ function SummaryGroup({
  * store, so a replayed or rehydrated transcript can never disagree with what is
  * on screen. A turn that touched nothing renders nothing at all.
  *
- * Expansion is plain component state: the design calls for it to be per-message
- * and not remembered, so there is nothing here worth persisting.
+ * Expansion is per-turn and never persisted, but it is deliberately NOT this
+ * component's own state: the row a strip lives in is rebuilt when the turn
+ * finishes and the message trades its in-progress id for its real one, which
+ * would slam an open tray shut at the exact moment the reader was reading it.
+ * It lives in {@link useTrayExpansion} instead, filed under an identity that
+ * survives that swap. See {@link trayExpansionKey}.
  *
  * **On the virtualizer.** The strip changes height three times in a turn's life:
  * when the first chip arrives, when the row collapses into the summary line, and
@@ -140,9 +145,12 @@ function SummaryGroup({
 export function TouchChipStrip({ parts, turnActive = false }: TouchChipStripProps) {
   const reducedMotion = useReducedMotion() ?? false;
   const chips = useMemo(() => accumulateTouchChips(parts), [parts]);
-  const [expanded, setExpanded] = useState(false);
   const pulses = useUpgradePulses();
   const trayId = useId();
+  const sessionId = useAppStore((s) => s.sessionId);
+  const [expanded, toggleExpanded] = useTrayExpansion(
+    useMemo(() => trayExpansionKey(sessionId, parts), [sessionId, parts])
+  );
   const openCanvasDocument = useAppStore((s) => s.openCanvasDocument);
   const setCanvasOpen = useAppStore((s) => s.setCanvasOpen);
 
@@ -211,7 +219,7 @@ export function TouchChipStrip({ parts, turnActive = false }: TouchChipStripProp
                 chips={absorbed}
                 expanded={expanded}
                 controls={trayId}
-                onExpand={() => setExpanded((open) => !open)}
+                onExpand={toggleExpanded}
               />
             )}
             {/* The chip leaving the window is not simply dropped: it shrinks away
@@ -256,7 +264,7 @@ export function TouchChipStrip({ parts, turnActive = false }: TouchChipStripProp
               type="button"
               aria-expanded={expanded}
               aria-controls={trayId}
-              onClick={() => setExpanded((open) => !open)}
+              onClick={toggleExpanded}
               className={cn(
                 'hover:text-foreground rounded-sm underline underline-offset-2',
                 'focus-visible:ring-ring/50 outline-none focus-visible:ring-2'
