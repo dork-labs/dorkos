@@ -1,7 +1,9 @@
 import { useCallback, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import {
   CircleSlash,
+  CircleStop,
   Gauge,
+  Hand,
   Hourglass,
   Info,
   Megaphone,
@@ -97,18 +99,20 @@ function formatTime(timestamp: string): string {
 /**
  * How each kind of notice is drawn.
  *
- * The room says five different things in its own voice and used to draw all
- * five identically — one italic muted line, with `body.notice` read by nothing
- * anywhere in the client. So "your agent hit an error and could not answer"
- * looked exactly like "this room widened who answers here", and a reader
- * skimming had no way to tell a problem from an aside without reading every
- * line in full.
+ * The room speaks in its own voice about several different things and used to
+ * draw them all identically — one italic muted line, with `body.notice` read by
+ * nothing anywhere in the client. So "your agent hit an error and could not
+ * answer" looked exactly like "this room widened who answers here", and a
+ * reader skimming had no way to tell a problem from an aside without reading
+ * every line in full.
  *
- * A mark and, for one of them, a tone. **Only `turn_failed` is warm**, because
- * only one of these is something going wrong: the others are the room working
- * as designed and saying so, and a column of amber over a busy afternoon would
- * teach a reader to stop looking. The mark is what tells them apart at a glance;
- * the colour is reserved for the one that wants a decision.
+ * A mark each, and a tone for the two that need one. **Warm is reserved for a
+ * line that wants the reader to DO something** — `turn_failed`, where the
+ * answer is not coming, and `awaiting_approval`, where the agent has stopped
+ * and cannot go on until somebody answers it. Everything else is the room
+ * working as designed and saying so, and a column of amber over a busy
+ * afternoon would teach a reader to stop looking. The mark is what tells them
+ * apart at a glance; the colour is what says one of them is waiting on you.
  *
  * The WORDS are never touched here. The server owns them (`room-notices.ts`)
  * and writes them for a person who did not configure this room; a second
@@ -120,6 +124,12 @@ const NOTICE_STYLES: Record<RoomNoticeCode, { Icon: LucideIcon; tone?: string }>
   turn_failed: { Icon: TriangleAlert, tone: 'text-status-warning' },
   // Occupied, not broken — and the message has to be sent again.
   agent_busy: { Icon: Hourglass },
+  // Stopped, and waiting for THIS reader to do something about it. Warm like
+  // `turn_failed`, and for the same reason: both are lines a person has to act
+  // on, and the rest are the room reporting that it is working as designed.
+  awaiting_approval: { Icon: Hand, tone: 'text-status-warning' },
+  // Somebody stopped everything here, on purpose.
+  halted: { Icon: CircleStop },
   // A cap was reached. Nothing is wrong; the room is doing what it was told.
   budget_reached: { Icon: Gauge },
   // A back-and-forth reached its depth and stopped itself.

@@ -198,6 +198,8 @@ describe('cascade guard, wired', () => {
 
     const selfPosting: ScriptedTurnRunner = {
       turns,
+      interrupted: [],
+      interrupt: () => Promise.resolve(),
       run(request) {
         turns.push({
           roomId: request.room.id,
@@ -315,6 +317,8 @@ describe('cascade guard, wired', () => {
 
     const chatty: ScriptedTurnRunner = {
       turns,
+      interrupted: [],
+      interrupt: () => Promise.resolve(),
       run(req) {
         turns.push({
           roomId: req.room.id,
@@ -490,6 +494,8 @@ describe('triggering', () => {
       agents: agentLookupFor({ '/agents/ana': { name: 'ana', displayName: 'Ana' } }),
       runner: {
         turns: [],
+        interrupted: [],
+        interrupt: () => Promise.resolve(),
         run: () => Promise.reject(new Error('runtime exploded')),
       },
     });

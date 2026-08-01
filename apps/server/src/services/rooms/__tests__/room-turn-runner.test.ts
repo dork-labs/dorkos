@@ -10,7 +10,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
-import type { RoomTurnRequest } from '../room-trigger.js';
+import type { RoomTurnRequest, RoomTurnWaiting } from '../room-trigger.js';
 import { USER_CONFIG_DEFAULTS, type UserConfig } from '@dorkos/shared/config-schema';
 
 const persistSessionRuntime = vi.fn().mockResolvedValue(true);
@@ -75,7 +75,7 @@ vi.mock('../../core/config-manager.js', () => ({
 
 /** The projector the stub is handed, as this file drives it. */
 interface TestProjector {
-  ingest: (event: Record<string, unknown>) => unknown;
+  ingest: (event: Record<string, unknown>) => { seq: number };
 }
 
 /** Everything the runner hands `triggerTurn`, as this file inspects it. */
@@ -88,6 +88,15 @@ interface TriggerCall {
   settings?: Record<string, unknown>;
   /** The runtime port the real `triggerTurn` resolves the canonical id through. */
   deps: { getInternalSessionId: (sessionId: string) => string | undefined };
+  /**
+   * How the real `triggerTurn` tells the room which `turn_start` is its own.
+   *
+   * Every stub here has to call it, exactly as the real one does, because the
+   * collector now matches on that identity rather than on the trigger text. A
+   * stub that opened a turn without it would be modelling somebody ELSE's turn
+   * — which is a thing worth being able to model, and {@link openTurn} is how.
+   */
+  onTurnStart?: (seq: number) => void;
 }
 
 /** What the stubbed `triggerTurn` does with the projector it is handed. */
@@ -189,8 +198,29 @@ function request(
         repliesLeftInThisChain: 3,
       },
     },
+    // A no-op by default: most of this file is about what a turn PRODUCES, and
+    // only the two tests that are about a turn stopping supply their own.
+    onWaiting: () => undefined,
     ...rest,
   };
+}
+
+/**
+ * Open the turn the runner is waiting for, telling it which turn is its own.
+ *
+ * The real `triggerTurn` reports the `turn_start`'s seq the instant it stamps
+ * it; a stub that skips this is opening a turn the room did not start, which is
+ * how `readsSomebodyElsesTurn` below models the case that used to be
+ * indistinguishable.
+ *
+ * @param opts - The trigger call the stub is answering.
+ * @param userMessage - The trigger text to carry, when the test cares.
+ */
+function openTurn(opts: TriggerCall, userMessage?: string): void {
+  const start = opts.projector.ingest(
+    userMessage === undefined ? { type: 'turn_start' } : { type: 'turn_start', userMessage }
+  );
+  opts.onTurnStart?.(start.seq);
 }
 
 /**
@@ -200,8 +230,9 @@ function request(
  * id-drift bug hide in this suite.
  */
 function saysAndCloses(...parts: string[]): typeof turnBehaviour {
-  return ({ sessionId, projector, deps }) => {
-    projector.ingest({ type: 'turn_start' });
+  return (opts) => {
+    const { sessionId, projector, deps } = opts;
+    openTurn(opts);
     for (const text of parts) projector.ingest({ type: 'text_delta', text });
     projector.ingest({ type: 'turn_end' });
     return { accepted: true, canonicalId: deps.getInternalSessionId(sessionId) ?? sessionId };
@@ -235,8 +266,9 @@ describe('createSessionRoomTurnRunner', () => {
     //
     // Nothing is dropped. Posting only the last block was considered and is not
     // approved: a preamble is something the agent chose to say.
-    turnBehaviour = ({ sessionId, projector }) => {
-      projector.ingest({ type: 'turn_start' });
+    turnBehaviour = (opts) => {
+      const { sessionId, projector } = opts;
+      openTurn(opts);
       projector.ingest({ type: 'text_delta', text: 'Let me read the release notes first.' });
       projector.ingest({
         type: 'tool_call',
@@ -266,8 +298,9 @@ describe('createSessionRoomTurnRunner', () => {
     // land at the end of every assistant message — the SDK's `message_delta`
     // carries the output-token count — but it also lands mid-message, so
     // breaking on it would cut single sentences at unpredictable points.
-    turnBehaviour = ({ sessionId, projector }) => {
-      projector.ingest({ type: 'turn_start' });
+    turnBehaviour = (opts) => {
+      const { sessionId, projector } = opts;
+      openTurn(opts);
       projector.ingest({ type: 'text_delta', text: 'The build is ' });
       projector.ingest({ type: 'status_change', status: { outputTokens: 12 } });
       projector.ingest({ type: 'text_delta', text: 'green.' });
@@ -332,8 +365,9 @@ describe('createSessionRoomTurnRunner', () => {
   });
 
   it('reports a turn that ended in an error, rather than an empty answer', async () => {
-    turnBehaviour = ({ sessionId, projector }) => {
-      projector.ingest({ type: 'turn_start' });
+    turnBehaviour = (opts) => {
+      const { sessionId, projector } = opts;
+      openTurn(opts);
       projector.ingest({ type: 'turn_end', terminalReason: 'error' });
       return { accepted: true, canonicalId: sessionId };
     };
@@ -353,8 +387,9 @@ describe('createSessionRoomTurnRunner', () => {
     // The turn is still open when the runner returns, so `run` cannot resolve
     // before the deadline and the assertion below cannot race it.
     let finishTurn = (): void => undefined;
-    turnBehaviour = ({ sessionId, projector }) => {
-      projector.ingest({ type: 'turn_start' });
+    turnBehaviour = (opts) => {
+      const { sessionId, projector } = opts;
+      openTurn(opts);
       finishTurn = () => {
         projector.ingest({ type: 'text_delta', text: 'green' });
         projector.ingest({ type: 'turn_end' });
@@ -378,8 +413,9 @@ describe('createSessionRoomTurnRunner', () => {
     // The old timeout aborted the read, so whatever had streamed by then was
     // returned as if it were the whole answer.
     let finishTurn = (): void => undefined;
-    turnBehaviour = ({ sessionId, projector }) => {
-      projector.ingest({ type: 'turn_start' });
+    turnBehaviour = (opts) => {
+      const { sessionId, projector } = opts;
+      openTurn(opts);
       projector.ingest({ type: 'text_delta', text: 'the build is ' });
       finishTurn = () => {
         projector.ingest({ type: 'text_delta', text: 'green' });
@@ -402,18 +438,18 @@ describe('createSessionRoomTurnRunner', () => {
     // break at turn one's `turn_end` and post the tail it had caught —
     // mid-sentence, and a duplicate of what turn one was already posting.
     let stream: TestProjector | undefined;
-    const prompts: string[] = [];
-    turnBehaviour = ({ sessionId, projector, content }) => {
-      stream = projector;
-      prompts.push(content);
-      return { accepted: true, canonicalId: sessionId };
+    const calls: TriggerCall[] = [];
+    turnBehaviour = (opts) => {
+      stream = opts.projector;
+      calls.push(opts);
+      return { accepted: true, canonicalId: opts.sessionId };
     };
     const runner = createSessionRoomTurnRunner();
     const shared = 'session-two-messages';
 
     const first = runner.run(request({ sessionId: shared }));
     await settle();
-    stream?.ingest({ type: 'turn_start', userMessage: prompts[0] });
+    openTurn(calls[0], calls[0].content);
     stream?.ingest({ type: 'text_delta', text: 'the build is ' });
 
     // The follow-up lands mid-turn. Its cursor is now inside turn one.
@@ -424,10 +460,244 @@ describe('createSessionRoomTurnRunner', () => {
     stream?.ingest({ type: 'turn_end' });
     expect((await first).text).toBe('the build is green and here is why');
 
-    stream?.ingest({ type: 'turn_start', userMessage: prompts[1] });
+    openTurn(calls[1], calls[1].content);
     stream?.ingest({ type: 'text_delta', text: 'the tests pass' });
     stream?.ingest({ type: 'turn_end' });
     expect((await second).text).toBe('the tests pass');
+  });
+
+  it('ignores a turn it did not start, even one carrying the same words', async () => {
+    // Two holes, one shape. The collector used to decide "is this turn mine?"
+    // by comparing the trigger text on the `turn_start` — so a turn triggered
+    // with the SAME message satisfied it, and a turn carrying NO message at all
+    // (a `/compact`-style command intent, whose `turn_start` has no
+    // `userMessage`) satisfied it by default. Either one made the next thing
+    // that session said the room's answer to a question it never asked.
+    //
+    // Identity replaces resemblance: the room learns its own turn's seq from
+    // the trigger that stamped it, and a `turn_start` that is not that seq is
+    // somebody else's whatever it says.
+    let stream: TestProjector | undefined;
+    let ownCall: TriggerCall | undefined;
+    turnBehaviour = (opts) => {
+      stream = opts.projector;
+      ownCall = opts;
+      return { accepted: true, canonicalId: opts.sessionId };
+    };
+
+    const answered = createSessionRoomTurnRunner({ waitMs: () => 50 }).run(
+      request({ entryText: 'is the build green?' })
+    );
+    await settle();
+
+    // A foreign turn, opened on the same session with the identical prompt, and
+    // then one with no prompt at all. Neither is the room's.
+    stream?.ingest({ type: 'turn_start', userMessage: 'is the build green?' });
+    stream?.ingest({ type: 'text_delta', text: 'not the answer to the room' });
+    stream?.ingest({ type: 'turn_end' });
+    stream?.ingest({ type: 'turn_start' });
+    stream?.ingest({ type: 'text_delta', text: 'compacted the transcript' });
+    stream?.ingest({ type: 'turn_end' });
+
+    // The room's own turn, last, and the only one it reads.
+    openTurn(ownCall as TriggerCall, ownCall?.content);
+    stream?.ingest({ type: 'text_delta', text: 'green' });
+    stream?.ingest({ type: 'turn_end' });
+
+    expect((await answered).text).toBe('green');
+  });
+
+  describe('the grace before it says so', () => {
+    /** A turn that opens and then waits for the test to feed it. */
+    function openAndHold(): { call: () => TriggerCall; waited: RoomTurnWaiting[] } {
+      const waited: RoomTurnWaiting[] = [];
+      let opened: TriggerCall | undefined;
+      turnBehaviour = (opts) => {
+        opened = opts;
+        openTurn(opts);
+        return { accepted: true, canonicalId: opts.sessionId };
+      };
+      return {
+        call: () => {
+          if (!opened) throw new Error('the turn never started');
+          return opened;
+        },
+        waited,
+      };
+    }
+
+    /** An `approval_required` for `id`, as the adapter pushes one. */
+    function approvalRequired(id: string): Record<string, unknown> {
+      return {
+        type: 'approval_required',
+        id,
+        startedAt: Date.now(),
+        toolCallId: id,
+        toolName: 'Bash',
+        input: '{}',
+      };
+    }
+
+    it('says nothing at all about an approval somebody answers straight away', async () => {
+      // **The over-participation guard.** Nearly every gated tool call is
+      // answered in seconds by whoever is already watching that agent, and a
+      // durable line above every one of them would put a permanent "Ana is
+      // waiting for you to approve something" in the room for a state that
+      // lasted three seconds — once per gated turn, in every room, forever.
+      vi.useFakeTimers();
+      try {
+        const turn = openAndHold();
+        const answered = createSessionRoomTurnRunner({
+          waitMs: () => 10 * 60_000,
+          waitingGraceMs: () => 60_000,
+        }).run(request({ onWaiting: (waiting) => turn.waited.push(waiting) }));
+        await vi.advanceTimersByTimeAsync(1);
+
+        turn.call().projector.ingest(approvalRequired('call-1'));
+        await vi.advanceTimersByTimeAsync(3_000);
+        turn.call().projector.ingest({
+          type: 'interaction_resolved',
+          id: 'call-1',
+          resolution: 'approved',
+        });
+        await vi.advanceTimersByTimeAsync(120_000);
+
+        expect(turn.waited).toEqual([]);
+
+        turn.call().projector.ingest({ type: 'text_delta', text: 'green' });
+        turn.call().projector.ingest({ type: 'turn_end' });
+        await vi.advanceTimersByTimeAsync(1);
+        expect((await answered).text).toBe('green');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('says so once when the prompt is still standing a minute later', async () => {
+      vi.useFakeTimers();
+      try {
+        const turn = openAndHold();
+        const answered = createSessionRoomTurnRunner({
+          waitMs: () => 10 * 60_000,
+          waitingGraceMs: () => 60_000,
+        }).run(request({ onWaiting: (waiting) => turn.waited.push(waiting) }));
+        await vi.advanceTimersByTimeAsync(1);
+
+        turn.call().projector.ingest(approvalRequired('call-1'));
+        await vi.advanceTimersByTimeAsync(59_000);
+        // Still nothing: the grace has not run out.
+        expect(turn.waited).toEqual([]);
+
+        await vi.advanceTimersByTimeAsync(2_000);
+        expect(turn.waited).toEqual([{ kind: 'approval', toolName: 'Bash' }]);
+
+        turn.call().projector.ingest({ type: 'turn_end' });
+        await vi.advanceTimersByTimeAsync(1);
+        await answered;
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('reports the wait first and the failure after, when a stall kills the turn', async () => {
+      // Order matters to the reader: "it is waiting on you" and then "it fell
+      // over" is a story; the other way round is a contradiction.
+      vi.useFakeTimers();
+      try {
+        const turn = openAndHold();
+        const answered = createSessionRoomTurnRunner({
+          waitMs: () => 10 * 60_000,
+          waitingGraceMs: () => 60_000,
+        }).run(request({ onWaiting: (waiting) => turn.waited.push(waiting) }));
+        await vi.advanceTimersByTimeAsync(1);
+
+        turn.call().projector.ingest(approvalRequired('call-1'));
+        await vi.advanceTimersByTimeAsync(60_500);
+        expect(turn.waited).toHaveLength(1);
+
+        // The stall watchdog's terminal sequence, a second later.
+        await vi.advanceTimersByTimeAsync(1_000);
+        turn.call().projector.ingest({ type: 'turn_end', terminalReason: 'error' });
+        await vi.advanceTimersByTimeAsync(1);
+
+        const result = await answered;
+        expect(result.unanswered).toBe('failed');
+        // And nothing more is said afterwards: the turn is over, so the prompt
+        // it was stopped on can no longer be answered by anybody.
+        await vi.advanceTimersByTimeAsync(120_000);
+        expect(turn.waited).toHaveLength(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('forgets a standing prompt when the turn ends without resolving it', async () => {
+      // A timer that outlived its turn would tell a room to go and answer a
+      // prompt that no longer exists.
+      vi.useFakeTimers();
+      try {
+        const turn = openAndHold();
+        const answered = createSessionRoomTurnRunner({
+          waitMs: () => 10 * 60_000,
+          waitingGraceMs: () => 60_000,
+        }).run(request({ onWaiting: (waiting) => turn.waited.push(waiting) }));
+        await vi.advanceTimersByTimeAsync(1);
+
+        turn.call().projector.ingest(approvalRequired('call-1'));
+        await vi.advanceTimersByTimeAsync(1_000);
+        turn.call().projector.ingest({ type: 'turn_end' });
+        await vi.advanceTimersByTimeAsync(1);
+        await answered;
+
+        await vi.advanceTimersByTimeAsync(120_000);
+        expect(turn.waited).toEqual([]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  it('says nothing about a prompt raised inside somebody else s turn', async () => {
+    // The counter-assertion, and the reason it is not enough to watch the
+    // session for approval cards: a prompt belonging to a turn the room did not
+    // start is not the room's news, and reporting it would put a line in a
+    // shared conversation about work nobody there asked for.
+    const waited: RoomTurnWaiting[] = [];
+    let stream: TestProjector | undefined;
+    let ownCall: TriggerCall | undefined;
+    turnBehaviour = (opts) => {
+      stream = opts.projector;
+      ownCall = opts;
+      return { accepted: true, canonicalId: opts.sessionId };
+    };
+
+    // No grace, so this test can only stay green because the prompt belongs to
+    // somebody else's turn — never because the room simply had not spoken yet.
+    const answered = createSessionRoomTurnRunner({
+      waitMs: () => 50,
+      waitingGraceMs: () => 0,
+    }).run(request({ onWaiting: (waiting) => waited.push(waiting) }));
+    await settle();
+
+    stream?.ingest({ type: 'turn_start' });
+    stream?.ingest({
+      type: 'approval_required',
+      id: 'call-elsewhere',
+      startedAt: Date.now(),
+      toolCallId: 'call-elsewhere',
+      toolName: 'Bash',
+      input: '{}',
+    });
+    stream?.ingest({ type: 'turn_end' });
+
+    openTurn(ownCall as TriggerCall);
+    stream?.ingest({ type: 'text_delta', text: 'green' });
+    stream?.ingest({ type: 'turn_end' });
+
+    expect((await answered).text).toBe('green');
+    // Long enough for a zero-grace timer to have fired several times over.
+    await settle();
+    expect(waited).toEqual([]);
   });
 
   it('keeps listening for at least as long as it waits, whatever the pair says', async () => {
@@ -441,8 +711,9 @@ describe('createSessionRoomTurnRunner', () => {
     // in this test can reach, and a ceiling that has already expired many times
     // over by the time the turn answers.
     let finishTurn = (): void => undefined;
-    turnBehaviour = ({ sessionId, projector, content }) => {
-      projector.ingest({ type: 'turn_start', userMessage: content });
+    turnBehaviour = (opts) => {
+      const { sessionId, projector, content } = opts;
+      openTurn(opts, content);
       finishTurn = () => {
         projector.ingest({ type: 'text_delta', text: 'green' });
         projector.ingest({ type: 'turn_end' });
@@ -464,9 +735,9 @@ describe('createSessionRoomTurnRunner', () => {
   });
 
   it('gives up on a turn that never closes, and says the turn failed', async () => {
-    turnBehaviour = ({ sessionId, projector }) => {
-      projector.ingest({ type: 'turn_start' });
-      return { accepted: true, canonicalId: sessionId };
+    turnBehaviour = (opts) => {
+      openTurn(opts);
+      return { accepted: true, canonicalId: opts.sessionId };
     };
 
     const result = await createSessionRoomTurnRunner({ waitMs: () => 5, ceilingMs: () => 30 }).run(
@@ -500,8 +771,9 @@ describe('createSessionRoomTurnRunner', () => {
   });
 
   it('stops at the turn boundary rather than swallowing the next turn', async () => {
-    turnBehaviour = ({ sessionId, projector }) => {
-      projector.ingest({ type: 'turn_start' });
+    turnBehaviour = (opts) => {
+      const { sessionId, projector } = opts;
+      openTurn(opts);
       projector.ingest({ type: 'text_delta', text: 'first' });
       projector.ingest({ type: 'turn_end' });
       // Whatever happens on this session afterwards is not this room's answer.
@@ -719,8 +991,9 @@ describe('a room turn is recorded durably', () => {
   it('records the failure of a turn that ended in an error', async () => {
     // The incident's actual question — did it run and break, or never run? The
     // terminal reason is the answer, and it is on the row.
-    turnBehaviour = ({ sessionId, projector }) => {
-      projector.ingest({ type: 'turn_start' });
+    turnBehaviour = (opts) => {
+      const { sessionId, projector } = opts;
+      openTurn(opts);
       projector.ingest({ type: 'turn_end', terminalReason: 'error' });
       return { accepted: true, canonicalId: sessionId };
     };

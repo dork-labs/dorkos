@@ -64,27 +64,38 @@ export function buildBudgetNotice(scope: BudgetRefusalScope = 'room'): RoomEntry
 /**
  * What the room knows about why an agent could not pick a message up.
  *
- * Exactly two states, because exactly two are knowable.
+ * Three states, because three are now knowable — and each one is a different
+ * remedy for the reader, which is the only reason to have more than one.
  *
  * - `working-here` — this room holds a live claim for that agent. The claim map
  *   is keyed `(room, agent)`, so a claim existing AT ALL means the agent is
  *   mid-turn on an earlier message **in this room**. Waiting is the remedy: that
  *   answer is coming, here, and the reader will see it.
- * - `unknown` — no claim, which happens when the turn never started because
- *   another writer held the agent's session (most often the person typing into
- *   that agent directly). The room has nothing to read, so it does not guess.
+ * - `working-elsewhere` — the agent holds a claim in a DIFFERENT room. One
+ *   agent is one working directory, so two turns in it are two writers on one
+ *   checkout; the dispatcher refuses the second (room-participation spec,
+ *   constraint 8). Waiting is still the remedy, but the answer is NOT coming
+ *   here, so the reader has to send the message again.
+ * - `unknown` — no claim anywhere, which happens when the turn never started
+ *   because another writer held the agent's session (most often the person
+ *   typing into that agent directly). The room has nothing to read, so it does
+ *   not guess.
  *
- * **There is deliberately no "busy somewhere else" variant.** An earlier draft
- * had one, chosen by comparing the claim's `cascadeRoot` against the refused
- * entry's — which is wrong, because every message a person sends mints its own
- * root, so an ordinary follow-up compared root A against root B and was told the
- * agent was "working on something else". It was working on that person's
- * previous message, in front of them. Answering "is it elsewhere?" honestly
- * needs claim awareness ACROSS rooms, which nothing here has: the dispatcher can
- * only see the room it was asked about. A variant no caller can truthfully
- * reach is worse than an absent one — it reads as a supported answer.
+ * **`working-elsewhere` is earned, not guessed, and an earlier draft of it was
+ * neither.** That draft chose it by comparing the claim's `cascadeRoot` against
+ * the refused entry's — which is wrong, because every message a person sends
+ * mints its own root, so an ordinary follow-up compared root A against root B
+ * and was told the agent was "working on something else". It was working on that
+ * person's previous message, in front of them. What makes the variant honest now
+ * is that the dispatcher holds every room's claims and looks the agent's own
+ * working directory up across all of them, so "elsewhere" means a claim that
+ * demonstrably exists somewhere this reader cannot see.
+ *
+ * **It never names the other room**, and that is deliberate rather than terse: a
+ * reader in this room may not be a member of that one, and a busy line is not a
+ * way to learn which conversations somebody else is having.
  */
-export type BusyContext = 'working-here' | 'unknown';
+export type BusyContext = 'working-here' | 'working-elsewhere' | 'unknown';
 
 /**
  * The durable `notice` for a trigger that was skipped because that agent was
@@ -109,12 +120,119 @@ export function buildBusyNotice(
   busyWith: BusyContext = 'unknown'
 ): RoomEntryBody {
   return {
-    text:
-      busyWith === 'working-here'
-        ? `${agentName} is still working on an earlier message here. It didn't pick this one up — that answer will land in this conversation.`
-        : `${agentName} was busy and didn't pick this up. Send it again in a moment.`,
+    text: BUSY_LINES[busyWith](agentName),
     notice: 'agent_busy',
     subjectAuthorId,
+  };
+}
+
+/**
+ * One sentence per {@link BusyContext}, as a total map rather than a chain of
+ * ternaries: a new variant that forgot its words would otherwise fall through to
+ * the vaguest line in the set, which is the one it was added to stop saying.
+ */
+const BUSY_LINES: Record<BusyContext, (agentName: string) => string> = {
+  'working-here': (agentName) =>
+    `${agentName} is still working on an earlier message here. It didn't pick this one up — that answer will land in this conversation.`,
+  'working-elsewhere': (agentName) =>
+    `${agentName} is working in another conversation right now, so it didn't pick this up. Send it again in a few minutes.`,
+  unknown: (agentName) =>
+    `${agentName} was busy and didn't pick this up. Send it again in a moment.`,
+};
+
+/**
+ * What an agent has stopped to wait for. All three park the turn on a person and
+ * produce nothing until that person acts; they differ only in what the person
+ * has to do, which is the whole content of the line the room writes.
+ *
+ * The names are the projector's own (`PendingInteractionDTO['type']`), so the
+ * two cannot drift into meaning different things.
+ */
+export type WaitingKind = 'approval' | 'question' | 'elicitation';
+
+/**
+ * The durable `notice` for a turn that has stopped and is waiting for a person.
+ *
+ * **This is the one the 2026-07-31 incident needed and did not have.** Agents
+ * addressed in a room sat silent for up to forty-one minutes because their turns
+ * had stopped on a tool-approval prompt that only their own session showed —
+ * nothing in the room, nothing in the log — and each prompt auto-denied ten
+ * minutes later. From inside the room, an agent waiting on a person and an agent
+ * that had crashed looked exactly the same.
+ *
+ * So the line says two things and no more: what it is waiting for, and where to
+ * go and answer it. It deliberately does NOT carry the tool name or the
+ * question: those live in the session, in front of the person who can act on
+ * them, and repeating them into a shared room would put one member's approval
+ * decision — file paths and commands included — in front of everybody else.
+ *
+ * It is also deliberately LATE. The room holds its tongue for
+ * `WAITING_NOTICE_GRACE_MS` first, so the approvals somebody answers in seconds
+ * — nearly all of them — never leave a line behind at all. Only a real wait
+ * gets one.
+ *
+ * @param agentName - Display name of the agent that stopped.
+ * @param subjectAuthorId - Author id of that agent, for rendering.
+ * @param kind - What sort of answer it stopped for.
+ */
+export function buildWaitingNotice(
+  agentName: string,
+  subjectAuthorId: string,
+  kind: WaitingKind
+): RoomEntryBody {
+  return {
+    text: WAITING_LINES[kind](agentName),
+    notice: 'awaiting_approval',
+    subjectAuthorId,
+  };
+}
+
+/**
+ * One sentence per {@link WaitingKind}, total for the same reason
+ * {@link BUSY_LINES} is.
+ *
+ * **No countdown, deliberately.** An earlier draft ended each line with "it
+ * gives up after 10 minutes", read off `SESSIONS.INTERACTION_TIMEOUT_MS`. That
+ * number was true of the PROMPT and false of the sentence: the room waits a
+ * grace minute before writing anything (`WAITING_NOTICE_GRACE_MS`), the entry
+ * then sits in a log somebody reads whenever they next look, and a line that
+ * promises ten minutes to a reader who has eight is worse than one that
+ * promises nothing. What a person needs is that there IS a deadline and that
+ * only they can beat it, which is what these say.
+ */
+const WAITING_LINES: Record<WaitingKind, (agentName: string) => string> = {
+  approval: (agentName) =>
+    `${agentName} is waiting for you to approve something before it can carry on. Open ${agentName}'s session to answer — it gives up if nobody does.`,
+  question: (agentName) =>
+    `${agentName} has a question for you before it can carry on. Open ${agentName}'s session to answer — it gives up if nobody does.`,
+  elicitation: (agentName) =>
+    `${agentName} needs something from you before it can carry on. Open ${agentName}'s session to answer — it gives up if nobody does.`,
+};
+
+/**
+ * The durable `notice` a halt writes: somebody stopped everything running here.
+ *
+ * **A halt is a control action, never a message** (room-participation spec
+ * §10.4). In the Hermes loop incident an operator typed "you are in a loop,
+ * stop" and the bot treated it as one more conversational turn, so the verb has
+ * to reach the transport rather than the model — and having reached it, it has
+ * to be visible, or a room full of half-finished turns simply goes quiet with no
+ * explanation. Everyone in the room sees this line, including the people who did
+ * not press the button.
+ *
+ * @param stopped - How many in-flight turns were actually interrupted. Zero is a
+ *   real and useful answer: it says the room was already idle, which is what a
+ *   second press means.
+ */
+export function buildHaltedNotice(stopped: number): RoomEntryBody {
+  return {
+    text:
+      stopped === 0
+        ? 'Everything here was stopped. Nothing was running at the time.'
+        : stopped === 1
+          ? 'Everything here was stopped. One agent was working and has been interrupted; send a message to start again.'
+          : `Everything here was stopped. ${stopped} agents were working and have been interrupted; send a message to start again.`,
+    notice: 'halted',
   };
 }
 

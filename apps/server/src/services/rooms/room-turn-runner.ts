@@ -36,6 +36,10 @@
  */
 import { randomUUID } from 'node:crypto';
 import { readManifest } from '@dorkos/shared/manifest';
+import {
+  isBlockingInteractionEvent,
+  type BlockingInteractionEventType,
+} from '@dorkos/shared/session-stream';
 import { logger } from '../../lib/logger.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import {
@@ -51,6 +55,7 @@ import type {
   RoomTurnRequest,
   RoomTurnResult,
   RoomTurnRunner,
+  RoomTurnWaiting,
 } from './room-trigger.js';
 
 /**
@@ -95,6 +100,15 @@ export interface RoomTurnRunnerOptions {
   waitMs?: () => number;
   /** How long the late collector keeps listening before giving the turn up. */
   ceilingMs?: () => number;
+  /**
+   * How long a prompt may stand before the room mentions it
+   * ({@link WAITING_NOTICE_GRACE_MS}).
+   *
+   * Unlike its two siblings this is NOT user config — it is here so a test can
+   * shorten it without shortening the wall clock, and it has no reader in
+   * production.
+   */
+  waitingGraceMs?: () => number;
 }
 
 /** The shipped wait, used when a caller supplies no reader. */
@@ -112,6 +126,7 @@ const DEFAULT_LATE_REPLY_CEILING_MS = 60 * 60_000;
 export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {}): RoomTurnRunner {
   const readWaitMs = options.waitMs ?? (() => DEFAULT_REPLY_WAIT_MS);
   const readCeilingMs = options.ceilingMs ?? (() => DEFAULT_LATE_REPLY_CEILING_MS);
+  const readGraceMs = options.waitingGraceMs ?? (() => WAITING_NOTICE_GRACE_MS);
   return {
     async run(request: RoomTurnRequest): Promise<RoomTurnResult> {
       const sessionId = request.sessionId ?? randomUUID();
@@ -177,10 +192,10 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       projector.cwd = request.agentPath;
 
       // Take the cursor BEFORE triggering. Everything the turn emits has a seq
-      // above it, so the collector cannot miss the opening of a fast turn. The
-      // prompt goes with it: it is what the collector matches its own
-      // `turn_start` on, which is what keeps a second room message from reading
-      // the first turn's stream.
+      // above it, so the collector cannot miss the opening of a fast turn — and
+      // which of the turns above it is OURS is settled by identity, not by the
+      // cursor: `triggerTurn` reports the seq it stamps this turn's `turn_start`
+      // with, and the collector reads for exactly that one.
       //
       // The prompt IS the message, byte for byte. Everything else the agent
       // needs to know — the room, the roster, who is a person, what it missed —
@@ -189,6 +204,14 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // turn and told the agent almost nothing.
       const prompt = request.entry.body.text;
       const waitMs = readWaitMs();
+      // The turn's identity, filled in by `triggerTurn` the instant this turn's
+      // `turn_start` is stamped and read by the collector to tell that event
+      // from every other turn's. It is a shared box rather than a promise on
+      // purpose: the collector must never AWAIT it, because a turn that is
+      // refused never fills it and a collector parked on it would never settle
+      // — which is a claim held, and an agent shown as working, for the life of
+      // the process. Unknown means "not mine", which is exactly right.
+      const ownTurn: OwnTurn = { startSeq: null };
       const collecting = collectReply(projector, projector.getCursor(), {
         waitMs,
         // A ceiling below the wait would stop the room listening before it
@@ -205,7 +228,9 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         // ceiling above the wait still governs exactly as written. If this ever
         // needs to be surfaced, Settings is where it belongs, not here.
         ceilingMs: Math.max(readCeilingMs(), waitMs),
-        prompt,
+        ownTurn,
+        onWaiting: request.onWaiting,
+        graceMs: readGraceMs(),
       });
 
       const result = await triggerTurn({
@@ -216,6 +241,9 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         roomContext: request.roomContext,
         settings: seed,
         projector,
+        onTurnStart: (seq) => {
+          ownTurn.startSeq = seq;
+        },
         deps: {
           acquireLock: (sid, cid, lifecycle, token) =>
             runtime.acquireLock(sid, cid, lifecycle, token),
@@ -279,6 +307,17 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         ...(reply.failed ? { unanswered: 'failed' as const } : {}),
       };
     },
+
+    async interrupt({ sessionId, agentPath }): Promise<void> {
+      // The runtime is resolved from the AGENT, exactly as `run` resolves it,
+      // rather than from the session's registry row: a first turn's row is
+      // written after the turn starts, so a halt arriving early would otherwise
+      // find nothing to stop.
+      const runtime = runtimeRegistry.get(await resolveRoomRuntimeType(agentPath));
+      if (!runtime) return;
+      const stopped = await runtime.interruptQuery(sessionId);
+      logger.info('[rooms] interrupted a turn', { sessionId, stopped });
+    },
   };
 }
 
@@ -331,6 +370,60 @@ interface ReplyCollector {
 const MESSAGE_BOUNDARY = new Set(['tool_call', 'tool_result']);
 
 /**
+ * How long a turn may sit on a prompt before the room mentions it.
+ *
+ * **The notice is for a WAIT, not for a pause.** Nearly every gated tool call
+ * is answered in seconds by whoever is already looking at that agent, and a
+ * durable "Ana is waiting for you to approve something" above every one of
+ * those answers would put a permanent line in the room for a state that lasted
+ * three seconds — one per gated turn, in every room, forever. Over-participation
+ * is the failure mode people actually complain about
+ * (`meta/agent-etiquette.md`), and this notice would be the loudest source of
+ * it in the product.
+ *
+ * A minute is the number because of what sits either side of it. Below it are
+ * the approvals somebody is already handling, which need no announcement at
+ * all. Above it is the incident this notice exists for: agents stopped for
+ * twenty to forty-one minutes with nothing said anywhere (DOR-784). And it
+ * spends only a tenth of the ten-minute auto-deny window
+ * (`SESSIONS.INTERACTION_TIMEOUT_MS`), so a person reading the line still has
+ * about nine minutes to act on it — the room is late to speak, never too late
+ * to be useful.
+ *
+ * Deliberately a constant rather than configuration: it changes how chatty one
+ * notice is, never what the room does, and there is no honest guidance to give
+ * somebody tuning it (room-presence spec §10). Like every other threshold in
+ * this domain it is **unsourced** — `meta/agent-etiquette.md` §9 — and picked to
+ * be corrected by using the product.
+ */
+const WAITING_NOTICE_GRACE_MS = 60_000;
+
+/**
+ * One turn's identity on the durable stream, shared between the trigger that
+ * mints it and the collector that reads for it.
+ *
+ * `null` until the turn actually opens, and a collector treats `null` as "not
+ * mine" rather than waiting — see where it is constructed.
+ */
+interface OwnTurn {
+  /** The `seq` of this turn's `turn_start`, or `null` before it has one. */
+  startSeq: number | null;
+}
+
+/**
+ * Which kind of wait each blocking event is, in the room's vocabulary.
+ *
+ * A total map over {@link BlockingInteractionEventType} rather than a chain of
+ * comparisons: a fourth way to park a turn on a person would be a type error
+ * here rather than a room that silently stopped mentioning it.
+ */
+const WAITING_KINDS: Record<BlockingInteractionEventType, RoomTurnWaiting['kind']> = {
+  approval_required: 'approval',
+  question_prompt: 'question',
+  elicitation_prompt: 'elicitation',
+};
+
+/**
  * Accumulate a turn's assistant text from the session's own event stream.
  *
  * **Bounded by its own turn, at both ends.** The read starts at this turn's
@@ -369,12 +462,21 @@ const MESSAGE_BOUNDARY = new Set(['tool_call', 'tool_result']);
  * @param sinceCursor - The seq to resume from — taken before the turn starts.
  * @param bounds.waitMs - How long the room waits before moving on.
  * @param bounds.ceilingMs - When to give up on a turn that never closes.
- * @param bounds.prompt - The content this turn was triggered with.
+ * @param bounds.ownTurn - This turn's identity, filled in when it opens.
+ * @param bounds.onWaiting - Called when the turn has been stopped for a person
+ *   for longer than `graceMs`, and is still stopped.
+ * @param bounds.graceMs - How long a prompt may stand before it is mentioned.
  */
 function collectReply(
   projector: SessionStateProjector,
   sinceCursor: number,
-  bounds: { waitMs: number; ceilingMs: number; prompt: string }
+  bounds: {
+    waitMs: number;
+    ceilingMs: number;
+    ownTurn: OwnTurn;
+    onWaiting: (waiting: RoomTurnWaiting) => void;
+    graceMs: number;
+  }
 ): ReplyCollector {
   const abort = new AbortController();
   const startedAt = Date.now();
@@ -384,6 +486,26 @@ function collectReply(
 
   // Never rejects: both phases read this one promise, and the busy path reads
   // neither, so a rejection would surface as an unhandled one.
+  /**
+   * The grace timer for each prompt this turn is currently stopped on.
+   *
+   * Keyed by the interaction's own id so a turn stopped on two prompts at once
+   * cancels exactly the one that was answered.
+   */
+  const waitingOn = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Forget one prompt's grace timer — it was answered, or the turn is over. */
+  const stopWaitingOn = (id: string): void => {
+    const grace = waitingOn.get(id);
+    if (grace === undefined) return;
+    clearTimeout(grace);
+    waitingOn.delete(id);
+  };
+  /** Drop every outstanding grace timer. The turn is over; the wait is too. */
+  const stopWaitingOnEverything = (): void => {
+    for (const grace of waitingOn.values()) clearTimeout(grace);
+    waitingOn.clear();
+  };
+
   const closed: Promise<CollectedTurn> = (async () => {
     /** One assistant message's text, finished. */
     const paragraphs: string[] = [];
@@ -400,12 +522,32 @@ function collectReply(
     try {
       for await (const event of projector.subscribe(sinceCursor, abort.signal)) {
         if (!started) {
-          // Everything before our own turn opens belongs to somebody else's.
-          if (event.type !== 'turn_start') continue;
-          if (event.userMessage !== undefined && event.userMessage !== bounds.prompt) continue;
+          // Everything before our own turn opens belongs to somebody else's,
+          // and "our own" is an identity rather than a resemblance.
+          if (event.type !== 'turn_start' || event.seq !== bounds.ownTurn.startSeq) continue;
           started = true;
           continue;
         }
+        // A prompt the turn has stopped on. It is reported after
+        // {@link WAITING_NOTICE_GRACE_MS} and only if it is STILL unanswered
+        // then — see that constant. Reported per prompt; the room damps
+        // repeats, so a turn that stops three times still says so once.
+        if (isBlockingInteractionEvent(event)) {
+          const waiting: RoomTurnWaiting = {
+            kind: WAITING_KINDS[event.type],
+            ...(event.type === 'approval_required' ? { toolName: event.toolName } : {}),
+          };
+          const grace = setTimeout(() => {
+            waitingOn.delete(event.id);
+            bounds.onWaiting(waiting);
+          }, bounds.graceMs);
+          grace.unref?.();
+          waitingOn.set(event.id, grace);
+        }
+        // Answered, denied, cancelled or timed out — every ending arrives here
+        // (`interaction_cancelled` is normalized into this event), so the room
+        // says nothing about a wait that is already over.
+        if (event.type === 'interaction_resolved') stopWaitingOn(event.id);
         if (event.type === 'text_delta') collecting += event.text;
         else if (MESSAGE_BOUNDARY.has(event.type)) endParagraph();
         if (event.type === 'turn_end') {
@@ -422,6 +564,11 @@ function collectReply(
       failed = true;
     } finally {
       clearTimeout(ceiling);
+      // The turn has ended, one way or another. A prompt it was stopped on can
+      // no longer be answered, so a notice about it now would be advice nobody
+      // can act on — and a timer outliving its turn is a room that speaks about
+      // work that is over.
+      stopWaitingOnEverything();
     }
     // Whatever was streaming when the turn closed — or when the ceiling gave up
     // on it — is a paragraph too. An abandoned read still keeps what it heard.
@@ -458,6 +605,7 @@ function collectReply(
       abort.abort();
       clearTimeout(ceiling);
       clearTimeout(deadline);
+      stopWaitingOnEverything();
     },
   };
 }

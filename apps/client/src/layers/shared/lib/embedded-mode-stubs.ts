@@ -36,6 +36,7 @@ import type {
 import type {
   AddRoomMemberRequest,
   CreateRoomRequest,
+  HaltRoomResponse,
   ListRoomEntriesQuery,
   ListRoomsQuery,
   ListThreadsQuery,
@@ -787,6 +788,10 @@ export const roomStubs = {
   },
 
   async replyInThread(_id: string, _req: PostThreadReplyRequest): Promise<PostToRoomResponse> {
+    throw new Error('Rooms are not supported in embedded mode');
+  },
+
+  async haltRoom(_id: string): Promise<HaltRoomResponse> {
     throw new Error('Rooms are not supported in embedded mode');
   },
 

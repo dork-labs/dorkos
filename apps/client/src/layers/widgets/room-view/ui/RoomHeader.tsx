@@ -1,12 +1,15 @@
 import { useMemo } from 'react';
+import { CircleStop } from 'lucide-react';
 import type { RoomWithRoster } from '@/layers/entities/room';
 import {
   MemberList,
   RoomAvatar,
   RoomTitle,
   roomDisplayTitle,
+  useHaltRoom,
   useOpenRoomWorking,
 } from '@/layers/entities/room';
+import { Button } from '@/layers/shared/ui';
 
 interface RoomHeaderProps {
   /** The room on screen, with its roster resolved. */
@@ -37,6 +40,7 @@ export function RoomHeader({ room, onOpenMembers }: RoomHeaderProps) {
   // same place the sidebar's does — the members, not a hash of the room id.
   const participants = useMemo(() => room.members.map((member) => member.author), [room.members]);
   const working = useOpenRoomWorking(room.id);
+  const halt = useHaltRoom();
 
   return (
     <header className="flex items-center gap-3 border-b px-4 py-3">
@@ -71,6 +75,31 @@ export function RoomHeader({ room, onOpenMembers }: RoomHeaderProps) {
           />
           {working === 1 ? '1 agent working' : `${working} agents working`}
         </span>
+      )}
+      {working > 0 && (
+        // **Beside the count, and only while there is a count.** Stopping a room
+        // that is doing nothing is a button that does nothing, and a control
+        // panel that offers one teaches its reader to distrust the rest.
+        //
+        // It is also the only way to stop a room, and that is the whole design:
+        // typing "stop" into the composer sends a message, which is what a
+        // person means about a third of the time and never what a looping agent
+        // hears (room-participation spec §10.4). Pressing this reaches the
+        // runtimes instead.
+        //
+        // Deliberately NOT `destructive`. Nothing is destroyed — the turns stop
+        // and what they already said stays — and red would put the room's most
+        // ordinary recovery action in the same register as deleting something.
+        <Button
+          data-testid="room-header-halt"
+          variant="outline"
+          size="xs"
+          disabled={halt.isPending}
+          onClick={() => halt.mutate({ roomId: room.id })}
+        >
+          <CircleStop aria-hidden className="size-3.5" />
+          Stop
+        </Button>
       )}
       <MemberList
         members={room.members}

@@ -20,6 +20,8 @@ export type { PresenceScope, RoomPresenceAuthor } from './model/use-room-presenc
 export { useRoomWorking, useRoomWorkingStore, useOpenRoomWorking } from './model/use-room-working';
 export { usePostToRoom } from './model/use-post-to-room';
 export type { PostToRoomInput } from './model/use-post-to-room';
+export { useHaltRoom } from './model/use-halt-room';
+export type { HaltRoomInput } from './model/use-halt-room';
 export {
   usePendingPosts,
   usePendingPostStore,

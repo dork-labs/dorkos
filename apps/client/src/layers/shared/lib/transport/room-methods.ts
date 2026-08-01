@@ -15,6 +15,7 @@ import {
   RoomEventSchema,
   type AddRoomMemberRequest,
   type CreateRoomRequest,
+  type HaltRoomResponse,
   type ListRoomEntriesQuery,
   type ListRoomsQuery,
   type ListThreadsQuery,
@@ -155,6 +156,15 @@ export function createRoomMethods(baseUrl: string) {
         method: 'POST',
         body: JSON.stringify(req),
       });
+    },
+
+    /**
+     * Stop every turn running in this room. A control action: it reaches the
+     * runtimes, never the models, and the room's own `halted` notice arrives on
+     * `subscribeRoom` like any other entry.
+     */
+    haltRoom(id: string): Promise<HaltRoomResponse> {
+      return fetchJSON<HaltRoomResponse>(baseUrl, `/rooms/${id}/halt`, { method: 'POST' });
     },
 
     /**

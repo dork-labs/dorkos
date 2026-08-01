@@ -130,6 +130,8 @@ function drivenRunner(opts: {
   }
   return {
     turns,
+    interrupted: [],
+    interrupt: () => Promise.resolve(),
     land(authorId, reply) {
       takeHeld(authorId, 'land').land(reply);
     },

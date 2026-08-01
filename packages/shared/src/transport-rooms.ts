@@ -13,6 +13,7 @@
 import type {
   AddRoomMemberRequest,
   CreateRoomRequest,
+  HaltRoomResponse,
   ListRoomEntriesQuery,
   ListRoomsQuery,
   ListThreadsQuery,
@@ -135,6 +136,22 @@ export interface RoomTransport {
    * @param req - The entry to hang the reply off, and what to say.
    */
   replyInThread(id: string, req: PostThreadReplyRequest): Promise<PostToRoomResponse>;
+  /**
+   * Stop every agent turn running in this room.
+   *
+   * **A control action, never a message.** It interrupts the turns and writes
+   * one `halted` notice everyone in the room can see; it is not inferred from
+   * anything anybody typed, and a person who sends the word "stop" as a message
+   * has simply sent a message.
+   *
+   * Unlike every other write here it is allowed on an ARCHIVED room: archiving
+   * stops a room gaining messages, and a turn that was already running when it
+   * was archived is still running.
+   *
+   * @param id - The room to stop.
+   * @returns How many in-flight turns were interrupted; `0` when it was idle.
+   */
+  haltRoom(id: string): Promise<HaltRoomResponse>;
   /**
    * Put one emoji on one entry, or take it back.
    *

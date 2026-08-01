@@ -474,17 +474,29 @@ function readTerminalReason(event: StreamEvent): TerminalReason | undefined {
  *   on the synthesized `turn_start` so log-backed runtimes can reconstruct the
  *   user side of the conversation from the EventLog alone (the POST is
  *   trigger-only, so the durable stream is the only place it can ride).
+ * @param opts.onTurnStart - Receives the `seq` this turn's `turn_start` was
+ *   stamped with — the turn's identity, for a caller that also reads the stream
+ *   and has to know which turn on it is the one it started. Called
+ *   SYNCHRONOUSLY, in the same block as the ingest, so it always runs before any
+ *   subscriber's continuation can observe the event; a caller may therefore
+ *   treat "a `turn_start` arrived and I still have no identity" as proof the
+ *   turn is somebody else's.
  */
 export async function feedProjector(
   projector: SessionStateProjector,
   events: AsyncIterable<StreamEvent>,
-  opts: { userMessage?: string } = {}
+  opts: { userMessage?: string; onTurnStart?: (seq: number) => void } = {}
 ): Promise<void> {
   const start: RawOf<'turn_start'> = {
     type: 'turn_start',
     ...(opts.userMessage !== undefined ? { userMessage: opts.userMessage } : {}),
   };
-  projector.ingest(start);
+  // Two statements, and they must stay two. Folded into
+  // `opts.onTurnStart?.(projector.ingest(start).seq)` the optional CALL
+  // short-circuits its own arguments, so a caller that passed no callback — which
+  // is every caller but the room — never opened its turn at all.
+  const started = projector.ingest(start);
+  opts.onTurnStart?.(started.seq);
   let terminalReason: TerminalReason | undefined;
   // Error latch: a turn that carried a typed `error` but whose runtime never
   // attached an explicit terminalReason (OpenCode/Codex crash paths) must still

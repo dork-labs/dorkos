@@ -233,6 +233,36 @@ export class RoomService {
     return this.triggers.idle();
   }
 
+  /**
+   * Stop everything running in one room.
+   *
+   * RP8's halt verb (room-participation spec §10.4), and the only entry point
+   * to it. **It is a control action and is never inferred from anything anybody
+   * typed** — no phase of this product pattern-matches a message for "stop",
+   * because a person telling a looping agent to stop is exactly the message a
+   * looping agent will treat as one more turn to answer.
+   *
+   * Refuses like every other room verb: a caller who cannot see the room gets
+   * the same `ROOM_NOT_FOUND` they get for a room that does not exist, and only
+   * a person may halt — an agent stopping its room-mates mid-sentence is
+   * arbitration, which this domain has declined twice (ADR 260726-170125).
+   *
+   * An archived room is NOT refused, deliberately, and it is the one place this
+   * differs from `post`. Archiving stops a room gaining messages; a turn that
+   * was already running when the room was archived is still running, and
+   * refusing to stop it would leave the only way to stop it behind a door that
+   * has just been shut.
+   *
+   * @param roomId - The room to stop.
+   * @param viewerAuthorId - Who is stopping it.
+   * @returns How many in-flight turns were interrupted; `0` when it was idle.
+   */
+  async haltRoom(roomId: string, viewerAuthorId: string): Promise<number> {
+    const room = this.requireVisibleRoom(roomId, viewerAuthorId);
+    this.requirePersonAuthor(viewerAuthorId, 'stop a room');
+    return this.triggers.halt(room);
+  }
+
   // === Rooms ===
 
   /**
@@ -822,7 +852,7 @@ export class RoomService {
       throw new RoomError('MEMBER_NOT_FOUND', 'Not a member of this room');
     }
     if (room.archived) throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
-    this.requirePersonAuthor(viewerAuthorId);
+    this.requirePersonAuthor(viewerAuthorId, 'send reactions');
     if (!this.store.getEntryById(roomId, entryId)) {
       throw new RoomError('ENTRY_NOT_FOUND', 'No such entry in this room');
     }
@@ -1109,7 +1139,9 @@ export class RoomService {
   }
 
   /**
-   * Refuse a reaction from anything that is not a person.
+   * Refuse anything that is not a person.
+   *
+   * Two verbs take it, for the same reason in two shapes.
    *
    * **Agents do not send reactions** (`meta/agent-etiquette.md` E16b, and
    * `specs/room-messaging-design` §2.5, which parks the question rather than
@@ -1118,19 +1150,25 @@ export class RoomService {
    * the room with a resolved author id, and without this gate the same identity
    * would reach the reaction route.
    *
+   * **Agents do not stop each other.** A halt cuts every in-flight turn in a
+   * room; an agent reaching for it would be electing itself referee over its
+   * room-mates, which is the arbitration this domain has declined twice
+   * (ADR 260726-170125). The verb belongs to the person watching.
+   *
    * A 403 rather than a 404: the caller is a member of a room it can see, so
    * there is nothing left to hide, and telling an agent "this is not yours to
    * send" is more useful than pretending the entry vanished.
    *
    * An author row that has vanished is refused too — the same conservative read
    * `post` takes when it cannot find one, since the only thing this decides is
-   * whether a non-person gets to nudge a person's message.
+   * whether a non-person gets to act on a person's behalf.
    *
    * @param authorId - The caller.
+   * @param what - What they were trying to do, for the refusal's own words.
    */
-  private requirePersonAuthor(authorId: string): void {
+  private requirePersonAuthor(authorId: string, what: string): void {
     if (this.authors.getById(authorId)?.kind === 'human') return;
-    throw new RoomError('PEOPLE_ONLY', 'Only people send reactions');
+    throw new RoomError('PEOPLE_ONLY', `Only people ${what}`);
   }
 
   /**

@@ -64,6 +64,18 @@ export type RoomEntryKind = z.infer<typeof RoomEntryKindSchema>;
  *   trigger was skipped. Nothing is wrong with the agent; it was just occupied.
  * - `turn_failed` — the agent started answering and the turn ended in an error,
  *   or it never finished at all.
+ * - `awaiting_approval` — the agent's turn STARTED and then stopped, waiting for
+ *   a person: a tool approval, a question it asked, or an MCP prompt. All three
+ *   park the turn until somebody answers in that agent's own session, and the
+ *   one code covers all three because what a reader has to do about them is
+ *   identical. Without it a room shows nothing at all while an agent waits, and
+ *   the prompt auto-denies ten minutes later — the 2026-07-31 incident, where
+ *   agents were silent for up to forty-one minutes with nothing written
+ *   anywhere (DOR-784).
+ * - `halted` — somebody stopped everything running in this room. A control
+ *   action, never inferred from anything anybody typed (room-participation spec
+ *   §10.4). About the room rather than one member, so it carries no
+ *   `subjectAuthorId`.
  * - `addressing_changed` — DorkOS itself changed when the agents in this room
  *   answer. The only code not written by `room-notices.ts`: migration 0039 wrote
  *   it once, into every channel whose members it moved from `mention-only` to
@@ -71,7 +83,15 @@ export type RoomEntryKind = z.infer<typeof RoomEntryKindSchema>;
  *   say so, because absence is never consent.
  */
 export const RoomNoticeCodeSchema = z
-  .enum(['cascade_stopped', 'budget_reached', 'agent_busy', 'turn_failed', 'addressing_changed'])
+  .enum([
+    'cascade_stopped',
+    'budget_reached',
+    'agent_busy',
+    'turn_failed',
+    'awaiting_approval',
+    'halted',
+    'addressing_changed',
+  ])
   .openapi('RoomNoticeCode');
 
 export type RoomNoticeCode = z.infer<typeof RoomNoticeCodeSchema>;
@@ -773,6 +793,21 @@ export const PostToRoomResponseSchema = z
   .openapi('PostToRoomResponse');
 
 export type PostToRoomResponse = z.infer<typeof PostToRoomResponseSchema>;
+
+/**
+ * What stopping a room did.
+ *
+ * `stopped: 0` is a real and useful answer rather than a failure: it says the
+ * room was already idle, which is what pressing stop a second time means. The
+ * room's own `halted` notice says the same thing to everybody in it.
+ */
+export const HaltRoomResponseSchema = z
+  .object({
+    stopped: z.number().int().min(0),
+  })
+  .openapi('HaltRoomResponse');
+
+export type HaltRoomResponse = z.infer<typeof HaltRoomResponseSchema>;
 
 // === SSE ===
 
