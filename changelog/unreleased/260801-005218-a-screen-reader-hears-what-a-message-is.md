@@ -5,6 +5,7 @@ covers:
   - "fix(rooms): closing a thread puts you back where you were, and a room stops counting history it hasn't loaded"
   - 'fix(client): static markdown carries its own styling instead of three class names nothing generates'
   - 'refactor(rooms): drop the redundant `after:content` from the new touch targets'
+  - 'fix(rooms): a tap target another control is standing on is not a tap target'
 ---
 
 ### Fixed
