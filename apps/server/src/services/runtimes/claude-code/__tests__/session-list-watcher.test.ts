@@ -80,34 +80,50 @@ describe('watchSessionList', () => {
       listSessionsInDir,
     };
     // Fake ONLY the debounce timers: the initial inventory does real fs.readdir
-    // I/O, which must still complete on the real event loop (see flushIo).
+    // I/O, which must still complete on the real event loop (see flushIoUntil).
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   });
 
-  /** Let pending fs I/O (the detached initial-inventory scan) settle. */
-  async function flushIo(): Promise<void> {
-    for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
+  /**
+   * Turn the real event loop until `settled()` reports the pending fs I/O (the
+   * detached initial-inventory scan) has landed.
+   *
+   * Waiting a fixed number of turns is a guess about how long real fs I/O takes,
+   * and the guess is machine-dependent: ten turns of an otherwise-idle loop go by
+   * in well under a millisecond, while `fs.readdir` is a threadpool call a busy
+   * CI runner can take far longer to answer. Both flakes this file has thrown in
+   * CI were that guess coming up short. Waiting on the condition cannot flake in
+   * either direction — it returns as soon as the work is done, and it says so
+   * loudly if the work never arrives at all.
+   *
+   * Fake timers are on for `setTimeout` here, so `vi.waitFor` is not usable;
+   * `setImmediate` and `Date.now` are deliberately left real (see the `toFake`
+   * list above).
+   */
+  async function flushIoUntil(settled: () => boolean, timeoutMs = 10_000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (!settled()) {
+      if (Date.now() > deadline) {
+        throw new Error(`flushIoUntil: pending fs I/O never settled within ${timeoutMs}ms`);
+      }
+      await new Promise((resolve) => setImmediate(resolve));
+    }
   }
 
   /**
-   * Like `flushIo`, but keeps turning the real event loop until `settled()`
-   * reports the scan has landed, up to a generous bound.
+   * Wait until the detached initial inventory has listed BOTH seeded slug dirs.
    *
-   * A fixed turn count is a guess about how many event-loop turns some real fs
-   * I/O needs, and the guess is machine-dependent: 10 turns is plenty on a
-   * developer SSD and not always enough on a CI runner, where this suite's
-   * missing-root case failed twice with the assertion simply never having
-   * anything to read yet. Waiting on the condition instead of on a number is
-   * what `.claude/rules/testing.md` asks for, and it cannot flake in the fast
-   * direction either — it returns as soon as the work is done.
-   *
-   * Fake timers are on for `setTimeout` here, so `vi.waitFor` is not usable;
-   * `setImmediate` is deliberately left real (see the `toFake` list above).
+   * Every `listSessionsInDir.mockClear()` below must follow this. The initial
+   * scan runs off the event loop, so a clear that lands mid-scan is followed by
+   * the scan's own listing calls, and a test asserting "this event triggered no
+   * rescan" then counts those as the rescan. That is exactly how CI read it:
+   * `expected "vi.fn()" to not be called at all, but actually been called 2
+   * times` — one late call per seeded dir.
    */
-  async function flushIoUntil(settled: () => boolean, turns = 500): Promise<void> {
-    for (let i = 0; i < turns && !settled(); i++) {
-      await new Promise((resolve) => setImmediate(resolve));
-    }
+  async function awaitInitialScan(): Promise<void> {
+    await flushIoUntil(() =>
+      [dirA, dirB].every((dir) => listSessionsInDir.mock.calls.some(([arg]) => arg === dir))
+    );
   }
 
   afterEach(async () => {
@@ -171,7 +187,7 @@ describe('watchSessionList', () => {
   it('ignores non-jsonl file events', async () => {
     const it = start();
     // Drain the (empty) initial inventory's listing calls.
-    await flushIo();
+    await awaitInitialScan();
     listSessionsInDir.mockClear();
 
     handlerFor('add')(join(dirA, 'notes.txt'));
@@ -207,7 +223,7 @@ describe('watchSessionList', () => {
     inventory[dirA] = [makeSession('alpha-1')];
     const it = start();
     await it.next(); // drain the initial upsert
-    await flushIo();
+    await awaitInitialScan();
     listSessionsInDir.mockClear();
 
     const nextPromise = it.next();
@@ -223,7 +239,7 @@ describe('watchSessionList', () => {
   // root itself is not a slug dir and must not trigger a rescan.
   it('ignores addDir for the projects root itself', async () => {
     const it = start();
-    await flushIo();
+    await awaitInitialScan();
     listSessionsInDir.mockClear();
 
     handlerFor('addDir')(projectsRoot);
@@ -241,7 +257,7 @@ describe('watchSessionList', () => {
     const it = start();
     await it.next();
     await it.next(); // drain the two initial upserts
-    await flushIo();
+    await awaitInitialScan();
     listSessionsInDir.mockClear();
 
     const nextPromise = it.next();
@@ -262,7 +278,7 @@ describe('watchSessionList', () => {
     inventory[dirA] = [makeSession('alpha-1')];
     const it = start();
     await it.next(); // initial upsert
-    await flushIo();
+    await awaitInitialScan();
     listSessionsInDir.mockClear();
 
     handlerFor('change')(join(dirA, 'alpha-1.jsonl'));
