@@ -282,11 +282,24 @@ describe('RoomThreadPanel', () => {
     const articles = screen.getAllByRole('article');
 
     expect(articles).toHaveLength(2);
-    expect(articles[0]).toHaveAttribute('aria-posinset', '1');
     // `-1`, not `2`: the panel reads this thread out of the room's loaded page,
     // and a root that is not in that page means the page begins somewhere
     // inside the thread. What is on screen is not what there is.
     expect(articles[0]).toHaveAttribute('aria-setsize', '-1');
+    // And no position either — the two travel together. "1 of unknown" states a
+    // position in the loaded page as though it were a position in the thread.
+    expect(articles[0]).not.toHaveAttribute('aria-posinset');
+  });
+
+  it('numbers a thread exactly when its root is on the page', () => {
+    // The complement, and why the rule above is about knowledge rather than
+    // about threads: with the root loaded, every reply after it is loaded too,
+    // so the set really is complete and Page Down can promise a total.
+    renderPanel({ entries: [entry(1), reply(2, 1), reply(3, 1)] });
+    const articles = screen.getAllByRole('article');
+
+    expect(articles.map((a) => a.getAttribute('aria-posinset'))).toEqual(['1', '2', '3']);
+    expect(articles.map((a) => a.getAttribute('aria-setsize'))).toEqual(['3', '3', '3']);
   });
 
   it('moves root to reply on Page Down and back on Page Up', () => {

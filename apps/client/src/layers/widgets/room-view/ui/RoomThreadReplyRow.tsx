@@ -78,16 +78,25 @@ export function RoomThreadReplyRow({
       onClick={onOpen}
       className={cn(
         'focus-ring ml-[calc(var(--msg-padding-x)_+_var(--msg-gutter-width)_+_var(--msg-gap))]',
-        'relative mb-1 w-fit rounded px-1 py-0.5 text-left text-xs transition-colors',
-        // **On a phone this is the ONLY way into a thread**, and it was a 20px
-        // target — under half what a finger is designed against. It stays
-        // visually small on purpose (the row is meant to be quiet), so the
-        // TARGET grows rather than the glyph: the same `after:` trick
-        // `SidebarGroupAction` uses, 12px of reach on every side, which takes a
-        // 20px row to a 44px one. Off above the breakpoint, where a pointer is
-        // exact and the extra reach would only steal clicks from the messages
-        // above and below.
-        'after:absolute after:-inset-3 md:after:hidden',
+        'mb-1 w-fit rounded text-left text-xs transition-colors',
+        // **On a phone this is the ONLY way into a thread**, so it is the one
+        // control down here that gets BIGGER rather than merely reaching
+        // further: `px-2 py-2` below the breakpoint, the original `px-1 py-0.5`
+        // above it.
+        //
+        // It reached instead, once — 12px of invisible `::after` on every side,
+        // the `SidebarGroupAction` trick. Measured in Chromium at 390×844, that
+        // spanned y160–208 while the reaction pills above claimed y128–178, so
+        // `elementFromPoint` handed this row 18px of the pills' target: a tap
+        // meant for a reaction opened a thread. Its bottom edge also landed 2px
+        // inside the next message's text. An invisible box cannot be seen
+        // colliding, which is most of why it did.
+        //
+        // A real box cannot collide: it occupies what it claims, so everything
+        // below moves down by however much this grows. It also lets a reader
+        // SEE the target they are aiming at, which an `::after` never gives
+        // anybody.
+        'px-2 py-2 md:px-1 md:py-0.5',
         // Accent is the unread signal, and it colours the WHOLE row rather than
         // a badge on the end of it: the row is small and quiet by design, and a
         // reader scanning a long history is looking for colour, not for a

@@ -224,7 +224,10 @@ export function RoomEntryRow({
   const time = formatTime(entry.createdAt);
   const absoluteTime = formatAbsoluteTime(entry.createdAt);
   // `null` for a message that already reads as one line — see `entrySummary`.
-  const summary = entrySummary(entry.body.text);
+  // Memoised on the text: six passes over a message body is not much, but it is
+  // six passes per row per render of a feed that re-renders on every arriving
+  // reaction, and the answer only changes when the words do.
+  const summary = useMemo(() => entrySummary(entry.body.text), [entry.body.text]);
   const domId = useId();
   const headerId = `${domId}-author`;
   const contentId = `${domId}-content`;
@@ -273,6 +276,11 @@ export function RoomEntryRow({
       (entry.body.notice && NOTICE_STYLES[entry.body.notice]) ?? UNKNOWN_NOTICE;
     return (
       <p
+        // Addressable like any other row. A notice heads no thread today, so
+        // nothing looks it up — but "which rows can be found again" must not
+        // quietly become "the rows somebody remembered to pass an id to", and a
+        // room's focus restore looks up entry ids, not entry kinds.
+        id={rowId}
         data-testid="room-notice"
         data-notice={entry.body.notice ?? 'unknown'}
         {...(feedPosition && { role: 'article', 'aria-label': noticeName(entry.body.text) })}

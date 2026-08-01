@@ -212,15 +212,20 @@ describe('RoomTimeline — thread reply rows', () => {
     expect(row).toHaveTextContent('1 reply');
   });
 
-  it('is big enough to hit with a finger, without getting any bigger to look at', () => {
-    // On a phone this row is the ONLY way into a thread, and it was a 20px
-    // target. The glyph stays small — the row is meant to be quiet — so the
-    // reach grows instead, and only below the breakpoint where it is needed.
+  it('grows its own box on a phone rather than reaching invisibly past it', () => {
+    // On a phone this row is the ONLY way into a thread. It briefly claimed a
+    // 44px target with an invisible `::after` and measured 40px of THEFT from
+    // the reaction pills above it — so it takes real padding below the
+    // breakpoint instead, which cannot overlap anything because everything
+    // under it moves down. Geometry, not class names, is the evidence:
+    // `contributing/` has the Chromium numbers in the DOR-785 report.
     renderTimeline({ entries: [entry(1), reply(2, 1)] });
 
     const row = screen.getByTestId('room-thread-replies');
-    expect(row.className).toContain('after:-inset-3');
-    expect(row.className).toContain('md:after:hidden');
+    expect(row.className).toContain('px-2 py-2');
+    expect(row.className).toContain('md:px-1 md:py-0.5');
+    // No invisible reach, at any breakpoint.
+    expect(row.className).not.toContain('after:');
   });
 
   it('carries the last reply’s whole date, not just a clock reading', () => {
@@ -493,25 +498,16 @@ describe('RoomTimeline as a feed', () => {
     const articles = screen.getAllByRole('article');
 
     expect(articles).toHaveLength(3);
-    articles.forEach((article, index) => {
-      expect(article).toHaveAttribute('aria-posinset', String(index + 1));
+    articles.forEach((article) => {
       // `-1` — the APG's "unknown". This is the trailing page of a room's
       // history, so "3 of 3" over a month-old room would tell a reader they
       // were at the end of a conversation that has barely started.
       expect(article).toHaveAttribute('aria-setsize', '-1');
+      // And NO position. "Message 1 of unknown" over the 471st message in a
+      // room states where the row sits in what happens to be loaded as though
+      // it were where the message sits in the conversation.
+      expect(article).not.toHaveAttribute('aria-posinset');
     });
-  });
-
-  it('says it is busy while a re-read is landing under a room already on screen', () => {
-    // `aria-busy` was only ever written by the skeleton, so it was never once
-    // true on the feed a reader is actually standing in — which is the case the
-    // APG asks it to cover: articles changing underneath somebody.
-    renderTimeline({ entries: THREE, members: ROSTER, inserting: true });
-    expect(screen.getByTestId('room-timeline')).toHaveAttribute('aria-busy', 'true');
-
-    cleanup();
-    renderTimeline({ entries: THREE, members: ROSTER });
-    expect(screen.getByTestId('room-timeline')).toHaveAttribute('aria-busy', 'false');
   });
 
   it('gives every message row a DOM id, so a closing thread can find it again', () => {
@@ -558,7 +554,10 @@ describe('RoomTimeline as a feed', () => {
 
     const notice = screen.getByTestId('room-notice');
     expect(notice).toHaveAttribute('role', 'article');
-    expect(notice).toHaveAttribute('aria-posinset', '2');
+    // In the set, and — like every other row in this feed — without a claimed
+    // position in it, because the room's own size is unknown. It is still an
+    // article Page Down lands on, which is what this test is about.
+    expect(notice).toHaveAttribute('aria-setsize', '-1');
     expect(notice).toHaveAccessibleName('Ana stopped replying here');
   });
 

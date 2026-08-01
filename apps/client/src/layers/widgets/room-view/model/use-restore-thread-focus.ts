@@ -57,10 +57,15 @@ function originRow(rootEntryId: string): HTMLElement | null {
  * - **A retry, not one pass.** The room may not be mounted yet when the close
  *   commits — see {@link RESTORE_WINDOW_MS}. It looks again on each animation
  *   frame until the row exists or the window closes.
- * - **Only when focus was actually lost.** If the reader has already put the
- *   caret somewhere themselves — clicked the composer, tabbed into the sidebar —
- *   the restore stands down rather than yanking them back to a message they have
- *   moved on from.
+ * - **Only into focus that was actually LOST.** The caret is taken only while
+ *   nothing holds it — `document.body`, `null`, or an element already detached
+ *   from the document. A real, still-connected element is somebody's place, and
+ *   this never takes it: not the composer a reader is typing in, not a control
+ *   in the panel that is still on its way out. That is a WAIT rather than a
+ *   stand-down — the panel's own close button is focused and connected while its
+ *   exit animation runs, so giving up on the first sight of it would break the
+ *   very case the retry exists for. If the window closes with the caret still
+ *   somewhere real, nothing happens at all, which is the stand-down.
  *
  * @returns The arming function to call as a thread is closed.
  */
@@ -75,33 +80,30 @@ export function useRestoreThreadFocus(): RestoreThreadFocus {
     let frame = 0;
     const deadline = Date.now() + RESTORE_WINDOW_MS;
     let cancelled = false;
-    // Whatever had the caret at the moment of the close — the panel's own close
-    // button, or the panel itself when Escape did it. Both are still focused and
-    // still in the document for as long as the exit animation runs, so "has the
-    // reader moved on?" cannot be asked as "is focus on the body?" alone.
-    const closedFrom = document.activeElement;
 
     const attempt = () => {
       if (cancelled) return;
-      // The reader has taken the caret somewhere themselves. Their choice wins
-      // over ours — anything still on the way out is not their choice.
+      // Nothing holds the caret: the body, or an element already detached from
+      // the document. Anything else is somebody's place — the reader's own, or
+      // a control in the panel that has not finished leaving — and neither is
+      // ours to take. Both cases WAIT rather than give up, because the second
+      // one resolves by itself a frame or two later.
       const active = document.activeElement;
-      const ours =
-        active === null || active === document.body || active === closedFrom || !active.isConnected;
-      if (!ours) return;
-
-      const row = originRow(rootEntryId);
-      if (row !== null) {
-        row.focus();
-        return;
+      const lost = active === null || active === document.body || !active.isConnected;
+      if (lost) {
+        const row = originRow(rootEntryId);
+        if (row !== null) {
+          row.focus();
+          return;
+        }
       }
       if (Date.now() >= deadline) return;
       frame = requestAnimationFrame(attempt);
     };
 
-    // The first look is deferred a frame on purpose: React has not committed the
-    // removal of the panel at the moment the close is dispatched, so looking now
-    // would find the panel still up and the room still gone.
+    // Deferred a frame: React has not committed the removal of the panel at the
+    // moment the close is dispatched, so looking now would find the panel still
+    // up and the room still gone.
     frame = requestAnimationFrame(attempt);
     cancelRef.current = () => {
       cancelled = true;

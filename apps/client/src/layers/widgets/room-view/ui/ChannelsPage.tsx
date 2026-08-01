@@ -211,10 +211,6 @@ export function ChannelsPage() {
           reactionFrequents={room.reactionFrequents}
           streamStalled={stream.stalled}
           isLoading={entriesQuery.isLoading}
-          // A re-read landing under a room that is already drawn. The first
-          // load is `isLoading` and swaps the whole feed for a skeleton; this
-          // is the case where the articles change underneath a reader.
-          inserting={entriesQuery.isFetching && !entriesQuery.isLoading}
           error={entriesQuery.error}
           onAddAgents={() => setDetailsFocus('add')}
           openThreadId={openThreadId}

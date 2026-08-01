@@ -520,17 +520,15 @@ describe('RoomEntryRow — the pills under a message', () => {
     expect(screen.getByTestId('entry-reaction')).toHaveAttribute('title', 'You and Ana reacted 👍');
   });
 
-  it('gives a pill a target a finger can hit, without making the pill bigger', () => {
-    // A pill is ~20px tall and stays that way — it is a quiet mark under a
-    // message, not a control competing with it — so the reach grows instead.
-    // Vertical only: pills sit 4px apart, and reaching sideways would have each
-    // one stealing taps from its neighbour.
+  it('gives a pill no invisible reach, because measurement said it made things worse', () => {
+    // A pill renders 50.7×26 on a 390px phone, which clears WCAG 2.5.8 on its
+    // own. It briefly carried 12px of `::after` reach to claim 44px, and in
+    // Chromium that put it under the thread reply row's own reach — the pill's
+    // real target dropped to 30px and 18px of it opened a thread instead. The
+    // reach is gone; the size is the size.
     renderRow(entry({ reactions: [pill('👍', ['ana'])] }));
 
-    const className = screen.getByTestId('entry-reaction').className;
-    expect(className).toContain('after:-inset-y-3');
-    expect(className).toContain('after:inset-x-0');
-    expect(className).toContain('md:after:hidden');
+    expect(screen.getByTestId('entry-reaction').className).not.toContain('after:');
   });
 
   it('takes a reaction back when its own pill is pressed', async () => {

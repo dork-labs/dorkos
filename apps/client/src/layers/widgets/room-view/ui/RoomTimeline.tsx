@@ -46,19 +46,19 @@ interface RoomTimelineProps {
   reactionFrequents: readonly string[];
   /** True when the room's live stream has given up — reactions go with it. */
   streamStalled?: boolean;
-  /** True while the first page of history is loading. */
-  isLoading: boolean;
   /**
-   * True while the feed is putting articles INTO itself — a re-read of the
-   * history landing under a room that is already drawn.
+   * True while the first page of history is loading.
    *
-   * Separate from {@link RoomTimelineProps.isLoading}, which replaces the whole
-   * feed with a skeleton. This one is about a feed that is on screen and about
-   * to change under the reader, which is the case the APG asks `aria-busy` to
-   * cover: a screen reader that is told an insertion is coming waits for it to
-   * finish instead of reading a half-updated room out loud.
+   * The ONLY wait this feed has, which is why it is the only thing that sets
+   * `aria-busy`. There is no second "articles are landing in the drawn feed"
+   * state to report: the history query is `staleTime: Infinity` and nothing
+   * invalidates it (`query-keys.ts` says why), so it is fetched exactly once —
+   * and the live stream merges arriving entries one at a time with
+   * `setQueryData`, which is a single commit per entry with no window around it
+   * to call busy. A flag for that would have been a `false` dressed up as
+   * bookkeeping.
    */
-  inserting?: boolean;
+  isLoading: boolean;
   /** Set when the history could not be read. */
   error: unknown;
   /**
@@ -146,7 +146,6 @@ export function RoomTimeline({
   reactionFrequents,
   streamStalled,
   isLoading,
-  inserting,
   error,
   onAddAgents,
   openThreadId,
@@ -226,7 +225,6 @@ export function RoomTimeline({
     <>
       <Feed
         label={`Messages in ${roomName}`}
-        busy={inserting}
         className="flex flex-col py-4"
         data-testid="room-timeline"
       >

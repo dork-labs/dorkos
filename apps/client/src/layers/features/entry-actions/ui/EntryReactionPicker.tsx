@@ -207,14 +207,12 @@ export function EntryReactionPicker({
             'leading-none',
             capsule
               ? 'text-[0.8125rem]'
-              : // The ghost + ends the pill row and is the same ~20px height,
-                // so it takes the same reach the pills do — see
-                // `EntryReactionRow`. The capsule's own buttons are not in this
-                // case: a capsule is never on screen on a touch device.
-                [
-                  'text-muted-foreground/60 hover:text-foreground relative h-auto rounded-full px-2 py-0.5 text-xs',
-                  'after:absolute after:inset-x-0 after:-inset-y-3 md:after:hidden',
-                ]
+              : // The ghost + ends the pill row and measures 45×24 on a phone,
+                // which clears WCAG 2.5.8 on its own. It carries no invisible
+                // reach for the reason `EntryReactionRow` measures out: down
+                // here, reach overlaps the thread reply row and costs more than
+                // it buys.
+                'text-muted-foreground/60 hover:text-foreground h-auto rounded-full px-2 py-0.5 text-xs'
           )}
         >
           <span aria-hidden>🙂+</span>

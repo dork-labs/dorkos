@@ -45,7 +45,13 @@ export function entrySummary(text: string): string | null {
   // only flatten shorter, and a fence is the one thing whose length says
   // nothing about how much there is to hear.
   if (text.length <= SUMMARY_MAX && !text.includes('```')) return null;
-  return summarize(text);
+  const summary = summarize(text);
+  // Nothing survived the flatten — a bare image, a rule, a run of underscores.
+  // `null` sends the row back to describing itself with its own content, which
+  // is the one answer that is never empty. An empty summary would have pointed
+  // `aria-describedby` at an empty element, which is a description of nothing:
+  // strictly worse than the body it replaced.
+  return summary.length === 0 ? null : summary;
 }
 
 /**
@@ -65,15 +71,53 @@ function summarize(text: string): string {
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
     // Line-leading markup: headings, quotes, list bullets.
     .replace(/^\s{0,3}(?:#{1,6}\s+|>\s?|[-*+]\s+)/gm, '')
+    // A table's own scaffolding. Its CELLS are words and stay; the pipes and the
+    // `|---|:--:|` alignment rule are drawing, and read aloud they are a fence
+    // of vertical bars between every value. A separator row is nothing but
+    // drawing, so it goes entirely.
+    .replace(/^\s{0,3}\|?[\s:|-]*\|[\s:|-]*$/gm, ' ')
+    .replace(/\|/g, ' ')
     // Emphasis marks, which are punctuation a screen reader would spell out.
     .replace(/[*_~]{1,3}/g, '')
     .replace(/\s+/g, ' ')
     .trim();
 
   if (flattened.length <= SUMMARY_MAX) return flattened;
-  const cut = flattened.slice(0, SUMMARY_MAX);
+  const cut = cutToLength(flattened, SUMMARY_MAX);
   const lastSpace = cut.lastIndexOf(' ');
   // Cut on a word where there is one within reach: a description is spoken, and
   // a chopped word is heard as a mistake.
   return `${(lastSpace > SUMMARY_MAX / 2 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`;
+}
+
+/**
+ * The first `max` UTF-16 units of `text`, never splitting a character a person
+ * would call one.
+ *
+ * `slice` counts UTF-16 code units, so cutting at a fixed offset lands inside a
+ * surrogate pair or in the middle of a ZWJ sequence — which is how "👩‍👩‍👧" becomes
+ * a lone woman plus a replacement character, or an unpaired surrogate that a
+ * screen reader spells out. `Intl.Segmenter` knows where the boundaries a reader
+ * perceives actually are; where it is missing, code points are still a better
+ * floor than code units, because they at least keep surrogate pairs whole.
+ *
+ * @param text - The flattened summary.
+ * @param max - How many UTF-16 units to keep at most.
+ */
+function cutToLength(text: string, max: number): string {
+  if (typeof Intl.Segmenter === 'function') {
+    const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+    let out = '';
+    for (const { segment } of segmenter.segment(text)) {
+      if (out.length + segment.length > max) break;
+      out += segment;
+    }
+    return out;
+  }
+  let out = '';
+  for (const point of text) {
+    if (out.length + point.length > max) break;
+    out += point;
+  }
+  return out;
 }

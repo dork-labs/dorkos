@@ -43,11 +43,32 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => () => {},
 }));
 
+/**
+ * Whether this test is running on a phone-sized viewport.
+ *
+ * The page branches on it — on a phone the thread panel REPLACES the room
+ * rather than sitting beside it — so it is a per-test choice, not a fixture.
+ * Reset to the desktop in `afterEach`.
+ */
+let phoneViewport = false;
+
+/** Run the rest of this test below the 768px breakpoint. */
+function onPhone() {
+  phoneViewport = true;
+}
+
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
     value: vi.fn().mockImplementation((query: string) => ({
-      matches: false,
+      // A phone is a viewport AND a pointer, and both halves matter here: the
+      // composer's autofocus-on-mount is gated on `useIsTouchOnly`, so a
+      // fixture that reported a phone-sized window with a mouse attached would
+      // have the room's composer grab the caret the moment the room came back
+      // — which is not what a phone does. `(pointer: coarse)` matches and
+      // `(any-pointer: fine)` does not, which is exactly a phone.
+      matches:
+        phoneViewport && (query.includes('max-width') || query.includes('(pointer: coarse)')),
       media: query,
       onchange: null,
       addListener: vi.fn(),
@@ -63,6 +84,7 @@ afterEach(() => {
   cleanup();
   toastError.mockClear();
   openRoomId = 'room-1';
+  phoneViewport = false;
   // The open thread outlives an unmounted page on purpose — it is per-room
   // state, not per-render — so a test that opened one has to put it back, or
   // the next test starts with a panel already beside its room.
@@ -815,6 +837,33 @@ describe('ChannelsPage — switching between threads', () => {
 
     await waitFor(() => expect(screen.queryByTestId('room-thread-panel')).not.toBeInTheDocument());
     await waitFor(() => expect(unanswered).toHaveFocus());
+  });
+
+  it('puts the caret back on a phone, where the room is unmounted while the thread is open', async () => {
+    // The mobile shape is a different code path, not a narrower one: the room
+    // and the panel are siblings under one `AnimatePresence` in `mode="wait"`,
+    // so the room does not exist at all while the thread is up and the restore
+    // has to survive the panel's exit. Every other test in this file runs on
+    // the desktop branch, where the room never leaves.
+    //
+    // What jsdom can and cannot show here is worth stating: `motion` resolves
+    // its exit immediately without a compositor, so this proves the mobile
+    // BRANCH restores focus, not that it survives a 150ms animation. The
+    // frame-by-frame proof of that is `use-restore-thread-focus.test.tsx`.
+    onPhone();
+    const user = userEvent.setup();
+    renderRoom();
+
+    const row = (await screen.findAllByTestId('room-thread-replies'))[0]!;
+    await user.click(row);
+    expect(await screen.findByTestId('room-thread-panel')).toBeInTheDocument();
+    // The room really is gone — the push replaced it rather than covering it.
+    expect(screen.queryByTestId('room-timeline')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^Back to/ }));
+
+    await waitFor(() => expect(screen.queryByTestId('room-thread-panel')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.getAllByTestId('room-thread-replies')[0]!).toHaveFocus());
   });
 
   it('gives the room’s presence announcer and the thread’s different names', async () => {
