@@ -5,12 +5,14 @@
  * @module features/chat/ui/chips/TouchChipStrip
  */
 import { Fragment, useCallback, useId, useMemo, useState } from 'react';
+import { AnimatePresence } from 'motion/react';
 import type { MessagePart } from '@dorkos/shared/types';
 import { cn, getPlatform } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
 import { accumulateTouchChips, type TouchChip as TouchChipData } from '../../lib/touch-chips';
 import { LIVE_WINDOW } from './chip-motion';
 import { groupChipsByVerb, VERB_ICON, VERB_LABEL } from './chip-verbs';
+import { ChipPile } from './ChipPile';
 import { ChipTray } from './ChipTray';
 import { TouchChip } from './TouchChip';
 
@@ -122,7 +124,7 @@ export function TouchChipStrip({ parts }: TouchChipStripProps) {
 
   const groups = useMemo(() => groupChipsByVerb(chips), [chips]);
   const live = chips.some((chip) => chip.live);
-  const { visible } = useMemo(() => splitLiveWindow(chips), [chips]);
+  const { visible, absorbed } = useMemo(() => splitLiveWindow(chips), [chips]);
 
   if (chips.length === 0) return null;
 
@@ -135,9 +137,21 @@ export function TouchChipStrip({ parts }: TouchChipStripProps) {
           aria-label="Being handled now"
           className="flex min-w-0 items-center gap-1.5 overflow-hidden"
         >
-          {visible.map((chip) => (
-            <TouchChip key={chip.key} chip={chip} onOpen={handleOpen} animated />
-          ))}
+          {absorbed.length > 0 && (
+            <ChipPile
+              chips={absorbed}
+              expanded={expanded}
+              controls={trayId}
+              onExpand={() => setExpanded((open) => !open)}
+            />
+          )}
+          {/* The chip leaving the window is not simply dropped: it shrinks away
+              toward the pile, which is where it has gone. */}
+          <AnimatePresence initial={false}>
+            {visible.map((chip) => (
+              <TouchChip key={chip.key} chip={chip} onOpen={handleOpen} animated />
+            ))}
+          </AnimatePresence>
         </div>
       ) : (
         <div className="text-muted-foreground flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs">

@@ -160,6 +160,49 @@ describe('TouchChipStrip — the live row', () => {
     expect(liveRowLabels()).toEqual(['📖d.ts', '📖e.ts', '✏️a.ts×2+1 −1', '📖f.ts']);
   });
 
+  it('counts what has aged out into the pile, and opens the whole roster from it', async () => {
+    const user = userEvent.setup();
+    render(
+      <TouchChipStrip
+        parts={[
+          toolCall('Read', { file_path: '/repo/a.ts' }),
+          toolCall('Read', { file_path: '/repo/b.ts' }),
+          toolCall('Read', { file_path: '/repo/c.ts' }),
+          toolCall('Read', { file_path: '/repo/d.ts' }),
+          toolCall('Read', { file_path: '/repo/e.ts' }),
+          toolCall('Read', { file_path: '/repo/f.ts' }, { status: 'running' }),
+        ]}
+      />
+    );
+
+    const pile = screen.getByTestId('chip-pile');
+    expect(within(pile).getByTestId('chip-pile-count')).toHaveTextContent('2');
+    expect(pile).toHaveAttribute('aria-expanded', 'false');
+    // The two oldest are out of the row entirely — the pile is where they went.
+    expect(liveRowLabels()).not.toContain('📖a.ts');
+
+    await user.click(pile);
+
+    const tray = screen.getByTestId('chip-tray');
+    expect(within(tray).getAllByTestId('touch-chip')).toHaveLength(6);
+    expect(within(tray).getByRole('button', { name: 'Read /repo/a.ts' })).toBeInTheDocument();
+    expect(pile).toHaveAttribute('aria-expanded', 'true');
+    expect(pile.getAttribute('aria-controls')).toBe(tray.getAttribute('id'));
+  });
+
+  it('has no pile until something has actually aged out', () => {
+    render(
+      <TouchChipStrip
+        parts={[
+          toolCall('Read', { file_path: '/repo/a.ts' }),
+          toolCall('Read', { file_path: '/repo/b.ts' }, { status: 'running' }),
+        ]}
+      />
+    );
+
+    expect(screen.queryByTestId('chip-pile')).toBeNull();
+  });
+
   it('settles into the summary line once nothing is live', () => {
     const running = [
       toolCall('Read', { file_path: '/repo/src/a.ts' }, { status: 'running' }),
