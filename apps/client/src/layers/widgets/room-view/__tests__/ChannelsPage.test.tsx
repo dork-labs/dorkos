@@ -43,11 +43,32 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => () => {},
 }));
 
+/**
+ * Whether this test is running on a phone-sized viewport.
+ *
+ * The page branches on it — on a phone the thread panel REPLACES the room
+ * rather than sitting beside it — so it is a per-test choice, not a fixture.
+ * Reset to the desktop in `afterEach`.
+ */
+let phoneViewport = false;
+
+/** Run the rest of this test below the 768px breakpoint. */
+function onPhone() {
+  phoneViewport = true;
+}
+
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
     value: vi.fn().mockImplementation((query: string) => ({
-      matches: false,
+      // A phone is a viewport AND a pointer, and both halves matter here: the
+      // composer's autofocus-on-mount is gated on `useIsTouchOnly`, so a
+      // fixture that reported a phone-sized window with a mouse attached would
+      // have the room's composer grab the caret the moment the room came back
+      // — which is not what a phone does. `(pointer: coarse)` matches and
+      // `(any-pointer: fine)` does not, which is exactly a phone.
+      matches:
+        phoneViewport && (query.includes('max-width') || query.includes('(pointer: coarse)')),
       media: query,
       onchange: null,
       addListener: vi.fn(),
@@ -63,6 +84,7 @@ afterEach(() => {
   cleanup();
   toastError.mockClear();
   openRoomId = 'room-1';
+  phoneViewport = false;
   // The open thread outlives an unmounted page on purpose — it is per-room
   // state, not per-render — so a test that opened one has to put it back, or
   // the next test starts with a panel already beside its room.
@@ -156,6 +178,23 @@ function renderPage(overrides: Partial<Transport> = {}) {
  * surface that happened to look similar is the failure this covers: one place
  * to learn, one place a change lands.
  */
+describe('ChannelsPage — saying the room has stopped hearing', () => {
+  it('has the announcer up and empty BEFORE anything goes wrong', async () => {
+    // The whole of the fix. The stall line used to be `role="status"` mounted at
+    // the moment it had something to say, and a live region that ARRIVES with
+    // its text in it is the classic case assistive technology never announces.
+    // So the announcer is here from the start, empty, watching.
+    renderPage();
+    await screen.findByRole('combobox', { name: /Message/ });
+
+    const announcer = screen.getByTestId('room-stalled-announcer');
+    expect(announcer).toHaveAttribute('aria-live', 'polite');
+    expect(announcer).toBeEmptyDOMElement();
+    // And nothing is drawn, because nothing is wrong.
+    expect(screen.queryByTestId('room-stalled')).not.toBeInTheDocument();
+  });
+});
+
 describe('ChannelsPage members-panel entry points', () => {
   /**
    * A fleet the page can offer, read through the same two transport calls the
@@ -715,6 +754,9 @@ describe('ChannelsPage — switching between threads', () => {
     make(2, 'entry-1', 'answering the first'),
     make(3, null, 'second question'),
     make(4, 'entry-3', 'answering the second'),
+    // A message nobody has answered, so it draws NO reply row — the one shape
+    // the focus restore used to have nothing to aim at.
+    make(5, null, 'nobody answered this'),
   ];
 
   function renderRoom() {
@@ -772,7 +814,71 @@ describe('ChannelsPage — switching between threads', () => {
     await user.click(screen.getByRole('button', { name: 'Close thread' }));
 
     await waitFor(() => expect(screen.queryByTestId('room-thread-panel')).not.toBeInTheDocument());
-    expect(screen.getAllByTestId('room-thread-replies')[0]!).toHaveFocus();
+    // Awaited, because the restore looks for its row on an animation frame
+    // rather than in the commit that removed the panel — the room is not
+    // necessarily back by then. See `useRestoreThreadFocus`.
+    await waitFor(() => expect(screen.getAllByTestId('room-thread-replies')[0]!).toHaveFocus());
+  });
+
+  it('puts the caret back on the MESSAGE when the thread has no reply row', async () => {
+    // "Reply in thread" from the capsule opens a thread on a message nobody has
+    // answered, so there is no "↳ N replies" row under it — the only thing the
+    // restore used to look for. Focus went to `document.body` on every close of
+    // a thread opened that way, which is the commonest way to open one.
+    const user = userEvent.setup();
+    renderRoom();
+
+    const rows = await screen.findAllByTestId('room-entry');
+    const unanswered = rows.find((row) => row.textContent?.includes('nobody answered this'))!;
+    await user.click(within(unanswered).getByRole('button', { name: 'Reply in thread' }));
+
+    expect(await screen.findByTestId('room-thread-panel')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Close thread' }));
+
+    await waitFor(() => expect(screen.queryByTestId('room-thread-panel')).not.toBeInTheDocument());
+    await waitFor(() => expect(unanswered).toHaveFocus());
+  });
+
+  it('puts the caret back on a phone, where the room is unmounted while the thread is open', async () => {
+    // The mobile shape is a different code path, not a narrower one: the room
+    // and the panel are siblings under one `AnimatePresence` in `mode="wait"`,
+    // so the room does not exist at all while the thread is up and the restore
+    // has to survive the panel's exit. Every other test in this file runs on
+    // the desktop branch, where the room never leaves.
+    //
+    // What jsdom can and cannot show here is worth stating: `motion` resolves
+    // its exit immediately without a compositor, so this proves the mobile
+    // BRANCH restores focus, not that it survives a 150ms animation. The
+    // frame-by-frame proof of that is `use-restore-thread-focus.test.tsx`.
+    onPhone();
+    const user = userEvent.setup();
+    renderRoom();
+
+    const row = (await screen.findAllByTestId('room-thread-replies'))[0]!;
+    await user.click(row);
+    expect(await screen.findByTestId('room-thread-panel')).toBeInTheDocument();
+    // The room really is gone — the push replaced it rather than covering it.
+    expect(screen.queryByTestId('room-timeline')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^Back to/ }));
+
+    await waitFor(() => expect(screen.queryByTestId('room-thread-panel')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.getAllByTestId('room-thread-replies')[0]!).toHaveFocus());
+  });
+
+  it('gives the room’s presence announcer and the thread’s different names', async () => {
+    // Two `role="status"` regions are on the page while a thread is open — the
+    // room speaks for everything outside it, the panel for everything inside.
+    // Sharing one testid made "did the ROOM announce it?" unaskable.
+    const user = userEvent.setup();
+    renderRoom();
+
+    await user.click((await screen.findAllByTestId('room-thread-replies'))[0]!);
+
+    // `getByTestId` throws on a second match, so this only passes if each name
+    // belongs to exactly one of them.
+    expect(screen.getByTestId('room-presence-announcer')).toBeInTheDocument();
+    expect(screen.getByTestId('thread-presence-announcer')).toBeInTheDocument();
   });
 
   it('leaves an Escape the mention palette answered to the palette', async () => {

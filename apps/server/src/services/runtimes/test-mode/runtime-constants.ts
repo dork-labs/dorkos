@@ -41,21 +41,37 @@ export const TEST_MODE_CAPABILITIES: RuntimeCapabilities = {
   permissionModes: {
     supported: true,
     default: 'always-allow',
+    // These three ids are deliberately outside `PermissionModeSchema` — that is
+    // the point of them (see the module note above). Known and backlogged: the
+    // schema still enumerates Claude's ids, so a test-mode mode id only
+    // type-checks through the descriptor's loose `id: string`.
     values: [
       {
         id: 'always-allow',
         label: 'Always allow',
         description: 'Deterministic allow for integration tests.',
+        stop: 'autonomy',
+        asks: 'never',
+        reach: 'everything',
+        promise: 'Approves every request without asking. For tests only.',
       },
       {
         id: 'always-deny',
         label: 'Always deny',
         description: 'Deterministic deny for integration tests.',
+        stop: 'ask',
+        asks: 'always',
+        reach: 'read',
+        promise: 'Refuses every request. For tests only.',
       },
       {
         id: 'scripted',
         label: 'Scripted',
         description: 'Follow a test-scenario script for approvals.',
+        stop: 'act',
+        asks: 'when-risky',
+        reach: 'edit',
+        promise: "Answers each request the way the test scenario's script says. For tests only.",
       },
     ],
   },

@@ -37,7 +37,12 @@ export function AutoModeConfirmDialog({
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
-            <Sparkles className="size-4 text-red-500" />
+            {/* Not red. Red is reserved for the one setting that never asks
+                about anything, anywhere — and Auto still raises a card for the
+                calls its classifier will not resolve (spec `trust-dial`,
+                decision 3). Spending the alarm colour here is what taught people
+                to stop reading it. */}
+            <Sparkles className="text-muted-foreground size-4" />
             Turn on Auto mode
             <Badge variant="secondary" className="text-[10px] tracking-wide uppercase">
               Preview

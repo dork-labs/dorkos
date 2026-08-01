@@ -111,6 +111,22 @@ function ReactionPill({
       className={cn(
         'focus-ring relative inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs',
         'disabled:pointer-events-none disabled:opacity-50',
+        // **No invisible reach on a pill, and that is measured rather than
+        // assumed.** A pill renders 50.7×26 CSS px on a 390px phone (the mobile
+        // type scale does it — `text-xs` is 1.25× below 768px), which clears
+        // WCAG 2.5.8's 24×24 minimum on its own.
+        //
+        // It briefly had 12px of `::after` reach above and below to make 44px,
+        // and that made it WORSE. Measured in Chromium at 390×844: the reach
+        // spanned y128–178, the thread reply row's reach spanned y160–208, and
+        // `elementFromPoint` down the middle of the pill returned
+        // `room-thread-replies` for every pixel from y159 — so the pill's real
+        // target shrank to 30px and an 18px band inside its own claimed area
+        // opened a thread instead of adding a reaction. The reach also reached
+        // up over the last 8px of the message's own text.
+        //
+        // A real 26px target with clear space around it beats a claimed 44px
+        // that another control is standing on.
         mine
           ? 'border-brand/70 bg-brand/12 text-foreground'
           : 'border-border bg-muted/60 text-muted-foreground hover:bg-muted',
@@ -281,6 +297,8 @@ export const EntryReactionRow = forwardRef<RovingGroupHandle, EntryReactionRowPr
             onKeyDown={keyAt(drawn.length)}
             onClick={() => setExpanded(true)}
             data-testid="entry-reactions-more"
+            // Sized like the pills it sits beside, and with the same measured
+            // reason for carrying no invisible reach.
             className="focus-ring text-muted-foreground hover:text-foreground rounded-full px-2 py-0.5 text-xs"
           >
             +{hidden} more

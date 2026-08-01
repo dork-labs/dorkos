@@ -41,6 +41,7 @@ import {
   UiCommandEventSchema,
   ErrorEventSchema,
   UsageStatusSchema,
+  type ToolApprovalOutcome,
 } from './schemas.js';
 
 extendZodWithOpenApi(z);
@@ -387,19 +388,51 @@ export const SessionEventSchema = z
     // error latch fills `terminalReason: 'error'` when no explicit reason came).
     z.object({ ...seqShape, type: z.literal('error'), ...ErrorEventSchema.shape }),
     // A pending interaction was resolved — by the operator (approved / denied /
-    // answered) or WITHOUT operator action (`cancelled`: the SDK aborted the
-    // gating tool call, e.g. a mid-turn steer superseding a pending question,
-    // or the interaction timed out). Live clients remove the pending card and
-    // stop its countdown — without this, resolution was only observable via
-    // the next snapshot, leaving ghost (even answerable) cards on every other
-    // window and after reconnect.
+    // answered) or WITHOUT operator action (`expired`: the interaction ran out
+    // its timer and was auto-denied; `cancelled`: the SDK aborted the gating
+    // tool call, e.g. a mid-turn steer superseding a pending question). Live
+    // clients remove the pending card and stop its countdown — without this,
+    // resolution was only observable via the next snapshot, leaving ghost (even
+    // answerable) cards on every other window and after reconnect.
+    //
+    // `expired` and `cancelled` both mean "no operator action", but they are
+    // NOT interchangeable to a reader: an expiry is an answer the system gave
+    // on the person's behalf and belongs in the transcript as a receipt, while
+    // an abort is a request nobody was ever asked to answer.
     z.object({
       ...seqShape,
       type: z.literal('interaction_resolved'),
       /** The interaction's id (toolCallId for approvals/questions). */
       id: z.string(),
       /** Outcome, when the resolver knows it; absent for generic clears. */
-      resolution: z.enum(['approved', 'denied', 'answered', 'cancelled']).optional(),
+      resolution: z.enum(['approved', 'denied', 'answered', 'expired', 'cancelled']).optional(),
+      /**
+       * WHICH KIND of interaction this resolved, backfilled by the projector
+       * from the entry it is about to drop.
+       *
+       * Not redundant with `resolution`, and not inferable from it: the three
+       * interaction kinds share a cancellation path, so a timed-out question
+       * and a timed-out permission prompt both resolve `expired`, and a
+       * declined elicitation carries the same `denied` a refused permission
+       * does. A consumer that renders one kind differently from another has to
+       * be told which it has — inferring it from the outcome put "Expired —
+       * denied" over questions nobody was ever asked to approve.
+       */
+      kind: z.enum(['approval', 'question', 'elicitation']).optional(),
+      /**
+       * Server epoch ms when the interaction resolved. Timestamps the durable
+       * record a client keeps of the answer; optional so a runtime that cannot
+       * say when simply omits it (the record renders without a time).
+       */
+      at: z.number().optional(),
+      /**
+       * Server epoch ms when the interaction BEGAN, backfilled by the projector
+       * from the entry it is about to drop. Paired with `at` it says how long
+       * the request waited — the only way a client can state that, because a
+       * live client never sees `approval_required` inside the turn (it arrives
+       * as a pending DTO, which this very event retires).
+       */
+      startedAt: z.number().optional(),
     }),
     // The start of an assistant turn. Carries the user message that triggered
     // it (when the turn was DorkOS-triggered): the POST is trigger-only
@@ -441,6 +474,58 @@ export const SessionEventSchema = z
 
 /** Inferred type for {@link SessionEventSchema}. */
 export type SessionEvent = z.infer<typeof SessionEventSchema>;
+
+/** The `interaction_resolved` member of the session-event union. */
+export type InteractionResolvedEvent = Extract<SessionEvent, { type: 'interaction_resolved' }>;
+
+/**
+ * How an approval request was ANSWERED, as the transcript records it forever.
+ *
+ * Narrower than {@link InteractionResolvedEvent}'s `resolution` on purpose: an
+ * outcome exists only where there is an answer worth keeping. Re-exported from
+ * `ToolApprovalOutcomeSchema` rather than restated, so the one enum in the wire
+ * schema is the only place these three words are written down.
+ */
+export type { ToolApprovalOutcome };
+
+/**
+ * The receipt an answered approval leaves behind, keyed by resolution.
+ * `cancelled` and `answered` are absent on purpose: an SDK abort withdrew the
+ * ask before anyone answered it, and `answered` belongs to questions, which
+ * keep their own answered summary.
+ */
+const APPROVAL_OUTCOME_BY_RESOLUTION: Partial<
+  Record<NonNullable<InteractionResolvedEvent['resolution']>, ToolApprovalOutcome>
+> = { approved: 'allowed', denied: 'denied', expired: 'expired' };
+
+/**
+ * The permanent record a resolved interaction earns, or `undefined` when it
+ * earns none.
+ *
+ * ONE definition for every consumer: the client's live fold, the log-backed
+ * history reconstruction, and the server-side overlay onto runtime-owned
+ * history all read a receipt out of the same event, so a session's transcript
+ * says the same thing whether it is being watched live or reopened a week
+ * later. Two rules, and neither is inferable from the other half:
+ *
+ * - The KIND must be `approval`. The three interaction kinds share a
+ *   cancellation path, so a timed-out question resolves `expired` exactly as a
+ *   timed-out permission prompt does, and a declined elicitation carries the
+ *   same `denied` a refused permission does. Reading the kind out of the
+ *   outcome printed "Expired — denied" over questions nobody was asked to
+ *   approve.
+ * - The RESOLUTION must be one somebody (or the timer, on their behalf)
+ *   actually gave. A `cancelled` ask was withdrawn before it could be answered.
+ *
+ * @param event - The resolving `interaction_resolved` event.
+ * @returns The outcome to record, or `undefined` when there is nothing to record.
+ */
+export function approvalOutcomeOf(
+  event: Pick<InteractionResolvedEvent, 'resolution' | 'kind'>
+): ToolApprovalOutcome | undefined {
+  if (event.kind !== 'approval' || event.resolution === undefined) return undefined;
+  return APPROVAL_OUTCOME_BY_RESOLUTION[event.resolution];
+}
 
 // === Session Snapshot ===
 

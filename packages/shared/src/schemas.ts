@@ -181,15 +181,6 @@ export const SessionSchema = z
 
 export type Session = z.infer<typeof SessionSchema>;
 
-export const CreateSessionRequestSchema = z
-  .object({
-    permissionMode: PermissionModeSchema.optional(),
-    cwd: z.string().optional(),
-  })
-  .openapi('CreateSessionRequest');
-
-export type CreateSessionRequest = z.infer<typeof CreateSessionRequestSchema>;
-
 /**
  * The mutable per-session settings an operator can change. Defined once and
  * reused for the update request, the runtime `MessageOpts`/`SessionOpts`, and
@@ -1347,6 +1338,19 @@ export const HookPartSchema = z.object({
 
 export type HookPart = z.infer<typeof HookPartSchema>;
 
+/**
+ * How a tool-approval request was answered, as the transcript records it.
+ *
+ * Distinct from `ApprovalOutcome` in `approval-schemas.ts`, which is about the
+ * capability-approval primitive (`granted`/`consumed`/…). This one is about a
+ * permission prompt inside a conversation: the person allowed it, denied it, or
+ * never answered and the timer denied it for them.
+ */
+export const ToolApprovalOutcomeSchema = z.enum(['allowed', 'denied', 'expired']);
+
+/** How a tool-approval request was answered. */
+export type ToolApprovalOutcome = z.infer<typeof ToolApprovalOutcomeSchema>;
+
 export const ToolCallPartSchema = z
   .object({
     type: z.literal('tool_call'),
@@ -1380,6 +1384,27 @@ export const ToolCallPartSchema = z
       .optional()
       .describe('Why this permission request was triggered'),
     approvalHasSuggestions: z.boolean().optional().describe('Whether "Always Allow" is available'),
+    /**
+     * How an approval interaction was ANSWERED, folded from the resolving
+     * `interaction_resolved` event. This is what gives an answered approval an
+     * afterlife: the pending card leaves a one-line receipt at its
+     * chronological place in the transcript instead of disappearing. Absent
+     * while the ask is still pending, and for a `cancelled` clear (an SDK abort
+     * supersedes the ask — nobody answered, so there is nothing to record).
+     *
+     * Permanent, not session-scoped: the server records the answer alongside
+     * the turn it gated and re-applies it to history, so reopening the
+     * conversation tomorrow shows the same receipt in the same place.
+     */
+    approvalOutcome: ToolApprovalOutcomeSchema.optional().describe(
+      'How an approval was answered — drives the transcript receipt line'
+    ),
+    /**
+     * Server epoch ms when the approval was answered. Timestamps the receipt,
+     * and paired with `approvalStartedAt` it states how long an `expired`
+     * request waited before auto-denial.
+     */
+    approvalResolvedAt: z.number().optional(),
     hooks: z.array(HookPartSchema).optional(),
     /** Client-only: timestamp (ms since epoch) when tool_call_start was received. Never serialized. */
     startedAt: z.number().optional(),
@@ -1584,6 +1609,28 @@ export const HistoryToolCallSchema = z
     status: z.literal('complete'),
     questions: z.array(QuestionItemSchema).optional(),
     answers: z.record(z.string(), z.string()).optional(),
+    /**
+     * How a permission prompt that gated this tool was ANSWERED — the durable
+     * half of the transcript receipt.
+     *
+     * The ask happened in DorkOS, so no runtime's own transcript carries it: a
+     * log-backed runtime folds it out of the DorkOS event stream, and
+     * claude-code's JSONL-derived history has it overlaid from the same
+     * recorded answers. Absent on every tool nobody was asked about.
+     *
+     * Its presence is ALSO what marks this tool call as an approval — the
+     * client maps it to `interactiveType: 'approval'`, exactly as `questions`
+     * marks a `'question'`. An outcome is only ever minted for an interaction
+     * the server said was an approval, so no second field is needed to say so.
+     */
+    approvalOutcome: ToolApprovalOutcomeSchema.optional(),
+    /** Epoch ms the answer landed. Timestamps the receipt. */
+    approvalResolvedAt: z.number().optional(),
+    /**
+     * Epoch ms the permission prompt was raised. With `approvalResolvedAt` it
+     * says how long an `expired` request waited before being auto-denied.
+     */
+    approvalStartedAt: z.number().optional(),
   })
   .openapi('HistoryToolCall');
 

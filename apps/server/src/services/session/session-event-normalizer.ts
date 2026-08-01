@@ -230,11 +230,16 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
     // abort — e.g. a mid-turn steer superseding a pending question — or
     // timeout). Projects to the same `interaction_resolved` member the
     // operator paths use, so every consumer drops the card identically.
+    //
+    // The two reasons stay distinguishable downstream: a `timeout` was answered
+    // (auto-denied) on the person's behalf and is worth recording, an `aborted`
+    // ask was withdrawn before anyone could answer it and is not.
     case 'interaction_cancelled': {
       const resolved: RawOf<'interaction_resolved'> = {
         type: 'interaction_resolved',
         id: String(data.interactionId ?? ''),
-        resolution: 'cancelled',
+        resolution: data.reason === 'timeout' ? 'expired' : 'cancelled',
+        at: Date.now(),
       };
       return resolved;
     }

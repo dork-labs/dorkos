@@ -31,7 +31,7 @@ import { fetchContextBreakdown } from '../sdk/context-usage.js';
 import { fetchSubscriptionUsage } from '../sdk/subscription-usage.js';
 import { buildSystemPromptAppend, renderContextEntry } from './context-builder.js';
 import { resolveThinkingOptions, type ModelThinkingCapability } from './thinking-config.js';
-import { resolveEffectivePermissionMode } from './permission-mode-guard.js';
+import { resolveEffectivePermissionMode, AUTO_DOWNGRADE_STATUS } from './permission-mode-guard.js';
 import type { ClaudeAgentSdkPlugin } from './plugin-activation.js';
 import type { BindingRouter } from '../../../relay/binding-router.js';
 import type { BindingStore } from '../../../relay/binding-store.js';
@@ -523,21 +523,23 @@ export async function* executeSdkQuery(
   });
 
   // Reconcile the permission mode against the active model: `'auto'` only works on
-  // models that support it, so coerce it to `'default'` here (the runtime is the
+  // models KNOWN to support it, so coerce it to `'default'` here (the runtime is the
   // authoritative chokepoint) rather than letting the SDK 400. This is a per-query
   // coercion only — we deliberately do NOT mutate `session.permissionMode`, so the
   // operator's Auto choice isn't silently destroyed: the displayed mode stays honest,
-  // the status note fires each send while the model can't honor it, and Auto resumes
-  // automatically if they switch back to a supporting model.
-  const { permissionMode: effectivePermissionMode, downgradedFromAuto } =
-    resolveEffectivePermissionMode({
+  // the status note fires each send the model can't be trusted with Auto, and Auto
+  // resumes automatically once it can be. The note's wording follows the REASON —
+  // an unconfirmed model must not be described as one that lacks Auto.
+  const { permissionMode: effectivePermissionMode, autoDowngrade } = resolveEffectivePermissionMode(
+    {
       permissionMode: session.permissionMode,
       modelSupportsAutoMode: opts.modelSupportsAutoMode,
-    });
-  if (downgradedFromAuto) {
+    }
+  );
+  if (autoDowngrade) {
     yield {
       type: 'system_status',
-      data: { message: "Auto mode isn't available on this model — using Default instead." },
+      data: { message: AUTO_DOWNGRADE_STATUS[autoDowngrade] },
     };
   }
   // The schema validates valid values upstream; no allowlist needed here.

@@ -22,53 +22,12 @@
 import type { ShapePackageManifest } from '@dorkos/marketplace';
 import type { ShapeUserPrefs } from '@dorkos/shared/config-schema';
 import { describeCronSchedule } from '@dorkos/shared/cron';
-import type { CreateTaskRequest, PermissionMode } from '@dorkos/shared/schemas';
+import type { CreateTaskRequest } from '@dorkos/shared/schemas';
 import { slugify } from '@dorkos/skills/slug';
+import { clampSchedulePermissionMode } from '../tasks/schedule-permission-clamp.js';
 
 /** A single agents[] entry as declared on a Shape manifest. */
 type ShapeAgentEntry = ShapePackageManifest['agents'][number];
-
-/**
- * The mode a clamped schedule falls back to — the same value the manifest
- * schema defaults `permissionMode` to, so a clamp lands a Shape exactly where
- * declaring nothing would have.
- */
-const CLAMPED_PERMISSION_MODE = 'acceptEdits' as const;
-
-/**
- * Decide the permission mode a Shape-declared schedule actually gets (DOR-607).
- *
- * `task-write-policy.ts` classifies `permissionMode` as operator-only: an agent
- * that names itself cannot hand a future unattended run a mode it does not have
- * itself. Package CONTENT reaching the same field is the identical risk, and
- * until now it got the opposite verdict — installing a third-party Shape could
- * stand up a cron job running with every approval prompt turned off, without a
- * person ever seeing the word.
- *
- * So `bypassPermissions` is refused here rather than rejected in the manifest
- * schema: a package may legitimately DECLARE what it would like, and telling the
- * operator "this asked for more than it got" is more legible than a validation
- * error at install time that names no consequence. Raising it back is a person's
- * call, in the cockpit, on a task they can see.
- *
- * Exported because the install permission preview
- * (`services/marketplace/permission-preview.ts`) has to disclose the mode a
- * schedule will ACTUALLY get, not the one it asked for. A second copy of this
- * rule there could drift from this one, and the direction it would drift is a
- * preview warning a person about an unattended `bypassPermissions` job the
- * installer would never create.
- *
- * @param declared - The mode the manifest asked for.
- * @returns The mode to create the schedule with, and whether it was clamped.
- */
-export function clampSchedulePermissionMode(declared: PermissionMode): {
-  mode: PermissionMode;
-  clamped: boolean;
-} {
-  return declared === 'bypassPermissions'
-    ? { mode: CLAMPED_PERMISSION_MODE, clamped: true }
-    : { mode: declared, clamped: false };
-}
 
 /** The resolved workspace chrome a Shape restores (spec §2 `ShapeLayoutSchema`). */
 export type ShapeLayout = ShapePackageManifest['layout'];

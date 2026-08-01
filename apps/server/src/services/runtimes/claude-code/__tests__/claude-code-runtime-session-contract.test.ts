@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { HistoryMessage } from '@dorkos/shared/types';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 
@@ -20,9 +20,13 @@ vi.mock('../../../../lib/logger.js', () => ({
   initLogger: vi.fn(),
 }));
 
+import { createTestDb } from '@dorkos/test-utils/db';
 import {
   getOrCreateProjector,
   disposeProjector,
+  setSessionEventStore,
+  SessionEventStore,
+  TranscriptReader,
   type SessionStateProjector,
 } from '../../../session/index.js';
 import { ClaudeCodeRuntime } from '../claude-code-runtime.js';
@@ -158,6 +162,77 @@ describe('ClaudeCodeRuntime session contract', () => {
 
       expect(replayed.map((e) => e.seq)).toEqual([2, 3]);
       expect(replayed.map((e) => (e.type === 'text_delta' ? e.text : e.type))).toEqual(['a', 'b']);
+    });
+  });
+
+  // A permission prompt is asked and answered inside DorkOS; the SDK's JSONL
+  // records only that a tool ran or did not. So reopening a conversation used
+  // to lose every receipt it had earned. The answers are recorded durably, and
+  // the history read overlays them back on — which is the one seam BOTH history
+  // consumers pass through (the /messages route and the cold-open snapshot).
+  describe('answered approvals overlaid onto JSONL history', () => {
+    const GATED: HistoryMessage[] = [
+      {
+        id: 'm1',
+        role: 'assistant',
+        content: 'Running it.',
+        toolCalls: [{ toolCallId: 'tc-1', toolName: 'Bash', status: 'complete' }],
+        parts: [{ type: 'tool_call', toolCallId: 'tc-1', toolName: 'Bash', status: 'complete' }],
+      },
+    ] as unknown as HistoryMessage[];
+
+    /** Record an answered approval for `sessionId`, as a completed turn would. */
+    function recordApproval(resolution: 'approved' | 'denied'): void {
+      const store = new SessionEventStore(createTestDb());
+      store.appendTurn(sessionId, [
+        { seq: 1, type: 'turn_start', userMessage: 'run it' },
+        {
+          seq: 2,
+          type: 'interaction_resolved',
+          id: 'tc-1',
+          kind: 'approval',
+          resolution,
+          at: 1_700_000_005_000,
+          startedAt: 1_700_000_000_000,
+        },
+        { seq: 3, type: 'turn_end' },
+      ] as unknown as SessionEvent[]);
+      setSessionEventStore(store);
+    }
+
+    afterEach(() => setSessionEventStore(undefined));
+
+    it('restores the answer on a cold read of the transcript', async () => {
+      recordApproval('denied');
+      vi.spyOn(TranscriptReader.prototype, 'readTranscript').mockResolvedValue(GATED);
+
+      const messages = await runtime.getMessageHistory('/repo', sessionId);
+
+      expect(messages[0].toolCalls?.[0].approvalOutcome).toBe('denied');
+      expect(messages[0].parts?.[0]).toMatchObject({
+        interactiveType: 'approval',
+        approvalOutcome: 'denied',
+        approvalResolvedAt: 1_700_000_005_000,
+        approvalStartedAt: 1_700_000_000_000,
+      });
+    });
+
+    it('reaches the cold-open snapshot, not just the /messages reload', async () => {
+      recordApproval('approved');
+      vi.spyOn(TranscriptReader.prototype, 'readTranscript').mockResolvedValue(GATED);
+
+      const snapshot = await runtime.getSessionSnapshot({ permissionMode: 'default' }, sessionId);
+
+      expect(snapshot.messages[0].toolCalls?.[0].approvalOutcome).toBe('allowed');
+    });
+
+    it('leaves a session nobody was asked about exactly as it was', async () => {
+      setSessionEventStore(new SessionEventStore(createTestDb()));
+      vi.spyOn(TranscriptReader.prototype, 'readTranscript').mockResolvedValue(GATED);
+
+      const messages = await runtime.getMessageHistory('/repo', sessionId);
+
+      expect(messages[0].toolCalls?.[0]).not.toHaveProperty('approvalOutcome');
     });
   });
 });

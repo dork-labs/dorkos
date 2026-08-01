@@ -122,6 +122,7 @@ export {
   PopoverDescription,
 } from './popover';
 export { RadioGroup, RadioGroupItem } from './radio-group';
+export { SegmentedControl, SegmentedControlItem } from './segmented-control';
 export {
   NavigationLayout,
   NavigationLayoutBody,

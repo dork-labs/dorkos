@@ -216,3 +216,23 @@ export function unreadPlacement(
 export function threadRowId(rootEntryId: string): string {
   return `thread-row-${rootEntryId}`;
 }
+
+/**
+ * The DOM id of a message row in the ROOM's own timeline.
+ *
+ * The fallback the reply row cannot be: a thread opened from the capsule's
+ * "Reply in thread" has no replies yet, so there is no "↳ N replies" row under
+ * its root and {@link threadRowId} points at nothing. The message itself is
+ * always there, and it is where a reader was standing when they opened the
+ * thread.
+ *
+ * **Only the timeline's copy carries it.** A thread's root is on screen twice
+ * on a wide screen — in the room's flow and at the head of the panel — and two
+ * elements answering to one id is a lookup whose answer depends on document
+ * order.
+ *
+ * @param entryId - The entry the row draws.
+ */
+export function entryRowId(entryId: string): string {
+  return `room-entry-${entryId}`;
+}

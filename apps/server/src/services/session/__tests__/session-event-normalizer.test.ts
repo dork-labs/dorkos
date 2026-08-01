@@ -436,12 +436,33 @@ describe('toRawSessionEvent', () => {
       },
     },
     {
-      name: 'interaction_cancelled → interaction_resolved with cancelled resolution (F5)',
+      name: 'interaction_cancelled (aborted) → interaction_resolved with cancelled resolution (F5)',
       input: {
         type: 'interaction_cancelled',
         data: { interactionId: 'toolu_q1', reason: 'aborted' },
       },
-      expected: { type: 'interaction_resolved', id: 'toolu_q1', resolution: 'cancelled' },
+      expected: {
+        type: 'interaction_resolved',
+        id: 'toolu_q1',
+        resolution: 'cancelled',
+        at: expect.any(Number),
+      },
+    },
+    {
+      // An expiry was ANSWERED (auto-denied) on the operator's behalf, unlike an
+      // abort that withdrew the question. Clients keep a record of the first and
+      // not the second, so collapsing both to `cancelled` erased a decision.
+      name: 'interaction_cancelled (timeout) → interaction_resolved with expired resolution',
+      input: {
+        type: 'interaction_cancelled',
+        data: { interactionId: 'toolu_q2', reason: 'timeout' },
+      },
+      expected: {
+        type: 'interaction_resolved',
+        id: 'toolu_q2',
+        resolution: 'expired',
+        at: expect.any(Number),
+      },
     },
     // Typed turn errors ride the durable stream (adapter-yielded or injected by
     // guardTurnErrors): live clients render them inline and the projector

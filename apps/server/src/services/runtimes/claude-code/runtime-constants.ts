@@ -37,27 +37,59 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
         id: 'default',
         label: 'Default',
         description: 'Prompt on tool use and respect project permission settings.',
+        stop: 'ask',
+        asks: 'always',
+        reach: 'edit',
+        promise: 'Asks before it edits a file or runs a command.',
       },
       {
         id: 'acceptEdits',
         label: 'Accept edits',
         description: 'Auto-accept file edits; still prompt for other tools.',
+        stop: 'act',
+        asks: 'when-risky',
+        reach: 'edit',
+        promise: 'Edits files on its own. Asks before it runs a command.',
       },
       {
+        // The one mode that is not a trust level: `axis: 'working'` takes it off
+        // the dial and puts it beside the composer, where a person switches it on
+        // for a stretch of work rather than leaving a session parked at it (spec
+        // `trust-dial`, decision 1). `stop: 'ask'` stays honest for the surfaces
+        // that still have to place it — plan changes nothing until the person
+        // approves the plan it hands back.
         id: 'plan',
         label: 'Plan',
         description: 'Read-only planning mode — the agent cannot execute tools.',
+        stop: 'ask',
+        axis: 'working',
+        asks: 'always',
+        reach: 'read',
+        promise: 'Reads and plans only. Nothing changes until you approve the plan.',
       },
       {
         id: 'bypassPermissions',
         label: 'Bypass permissions',
         description: 'Skip all tool approval prompts — use only in trusted contexts.',
+        stop: 'autonomy',
+        asks: 'never',
+        reach: 'everything',
+        promise: 'Runs everything without asking, including outside this project.',
       },
       {
+        // Research preview, and the middle stop's intelligence rather than a
+        // stop of its own (spec `trust-dial`, decision 1). `asks: 'when-risky'`
+        // is measured, not assumed: under `auto` the classifier resolves most
+        // calls, and DorkOS still raises an approval card for the ones it
+        // escalates (`resolveModeDecision` in `messaging/interactive-handlers`).
         id: 'auto',
         label: 'Auto',
         description:
           'A safety classifier approves or denies tool calls automatically — fewer interruptions on long autonomous runs. Research preview.',
+        stop: 'act',
+        asks: 'when-risky',
+        reach: 'edit',
+        promise: 'Edits files on its own and weighs each command, asking you about the risky ones.',
       },
     ],
   },

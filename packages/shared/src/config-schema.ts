@@ -510,6 +510,11 @@ export const SHAPE_USER_PREFS_DEFAULTS: ShapeUserPrefs = ShapeUserPrefsSchema.pa
  * status, and diagnostics rows are system-managed, so neither is pinnable; that
  * exclusion is what stops pins from quietly becoming ten visibility toggles
  * again. A client-side drift test keeps this enum and the registry in step.
+ *
+ * Widening this list is backward compatible — every pin already on disk stays
+ * valid — so it needs no migration. Narrowing it would: a stored pin whose key
+ * left the enum fails validation, which is why the client ignores an unknown pin
+ * downstream rather than rejecting the whole preference.
  */
 export const StatusBarPinSchema = z.enum([
   'cwd',
@@ -519,6 +524,7 @@ export const StatusBarPinSchema = z.enum([
   'context',
   'usage',
   'permission',
+  'plan',
 ]);
 
 /** One pinnable status-line item key. */

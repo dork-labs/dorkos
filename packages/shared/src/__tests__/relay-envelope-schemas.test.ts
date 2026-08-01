@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { RelayFlowEventSchema } from '../relay-schemas.js';
+import { RelayFlowEventSchema, TaskDispatchPayloadSchema } from '../relay-schemas.js';
 
 // === Fixtures ===
 
@@ -60,5 +60,35 @@ describe('RelayFlowEventSchema', () => {
         ['adapterId', 'agentId', 'at', 'bindingId', 'direction'].sort()
       );
     }
+  });
+});
+
+describe('TaskDispatchPayloadSchema', () => {
+  const validDispatch = {
+    type: 'task_dispatch' as const,
+    taskId: 'task-1',
+    runId: 'run-1',
+    prompt: 'do the thing',
+    cwd: '/work',
+    permissionMode: 'acceptEdits',
+    taskName: 'Nightly digest',
+    cron: '0 9 * * *',
+    trigger: 'schedule',
+  };
+
+  it('accepts a dispatch carrying a real permission mode', () => {
+    const result = TaskDispatchPayloadSchema.safeParse(validDispatch);
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a dispatch carrying a mode nothing can run', () => {
+    // Purpose: a scheduled run hands its mode straight to the agent session.
+    // An arbitrary string used to pass the wire contract and only fail (or,
+    // worse, silently degrade) deep inside the runtime.
+    const result = TaskDispatchPayloadSchema.safeParse({
+      ...validDispatch,
+      permissionMode: 'yolo',
+    });
+    expect(result.success).toBe(false);
   });
 });

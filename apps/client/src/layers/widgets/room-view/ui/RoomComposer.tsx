@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence } from 'motion/react';
-import { ChatInput, type ChatInputHandle } from '@/layers/features/chat';
+import { ChatInput, ClearArmedHint, type ChatInputHandle } from '@/layers/features/chat';
 import {
   MentionPalette,
   useMentionAutocomplete,
@@ -144,6 +144,25 @@ export function RoomComposer({ room, threadRootId, focusOnMount }: RoomComposerP
    */
   const [pendingCaret, setPendingCaret] = useState<{ pos: number } | null>(null);
 
+  /**
+   * Whether a second Escape would wipe what is in the box.
+   *
+   * The wipe is `ChatInput`'s and has always worked here; what was missing is
+   * the half that makes it a shortcut rather than a trap. A reader with a draft
+   * in a thread pressed Escape expecting the panel to close — the panel stays,
+   * deliberately, because a keystroke aimed at a draft must not also throw away
+   * the place it was being written — and nothing on screen said what the press
+   * had done or what the next one would do. Two taps later the draft was gone.
+   *
+   * The same readout session chat draws, in the same lane above the box, from
+   * the same state inside the same component. `ChatInput` folds in whether the
+   * labelled Clear button is reachable before raising this, which is why the
+   * button below is wired at all: the hint is hidden from assistive tech, so
+   * without a labelled equivalent it would hand sighted people a destructive
+   * shortcut and nobody else.
+   */
+  const [clearArmed, setClearArmed] = useState(false);
+
   useLayoutEffect(() => {
     if (pendingCaret === null) return;
     // Also returns focus to the composer, which is what a click on a row costs:
@@ -198,6 +217,21 @@ export function RoomComposer({ room, threadRootId, focusOnMount }: RoomComposerP
 
   return (
     <div className="relative border-t p-3">
+      {/* Mounted whether or not the picker is open, and empty until it has
+          something to say. The picker itself cannot carry this: it arrives with
+          its "No one by that name." already in it, which is the classic case
+          assistive technology does not announce — the region has to be watched
+          BEFORE the words land in it. Same shape as `RoomPresenceLine`'s
+          announcer, and the same reason.
+
+          Only the empty answer is spoken. A picker with rows in it already
+          reports itself: the composer publishes the highlighted row as its
+          `aria-activedescendant`, so a screen reader reads that row on every
+          keystroke. Silence was only ever the answer for the one case where
+          there is no row to read. */}
+      <span role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+        {mentions.isOpen && mentions.rows.length === 0 ? 'No one by that name.' : ''}
+      </span>
       <div className="absolute right-3 bottom-full left-3 mb-2">
         <AnimatePresence>
           {mentions.isOpen && (
@@ -208,6 +242,10 @@ export function RoomComposer({ room, threadRootId, focusOnMount }: RoomComposerP
             />
           )}
         </AnimatePresence>
+        {/* Above the box, in the lane the picker uses, for the reason
+            `ClearArmedHint` sets out: anchored to the field it lands on top of
+            whatever is stacked over the composer. */}
+        {clearArmed && <ClearArmedHint />}
       </div>
       <ChatInput
         ref={inputRef}
@@ -228,6 +266,15 @@ export function RoomComposer({ room, threadRootId, focusOnMount }: RoomComposerP
         onArrowDown={mentions.moveDown}
         onCommandSelect={takeHighlighted}
         onEscape={mentions.dismiss}
+        // Wiring this is what puts a labelled "Clear message" button on the
+        // composer — and `ChatInput` refuses to raise the armed readout at all
+        // without one, because a destructive shortcut that only sighted people
+        // are told about is worse than no shortcut.
+        onClear={() => {
+          setDraft('');
+          mentions.dismiss();
+        }}
+        onClearArmedChange={setClearArmed}
         activeDescendantId={mentions.activeDescendantId}
         paletteListboxId={mentions.listboxId}
         // Deliberately NOT gated on a post being in flight. Sending is a

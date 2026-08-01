@@ -8,9 +8,10 @@ import {
 import { TaskStore, type CreateTaskStoreInput } from '../task-store.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
-import type { Task, TaskRun } from '@dorkos/shared/types';
+import type { StreamEvent, Task, TaskRun } from '@dorkos/shared/types';
 import type { RelayCore } from '@dorkos/relay';
 import type { MeshCore } from '@dorkos/mesh';
+import type { ActivityService } from '../../activity/activity-service.js';
 import type { TaskDispatchPayload } from '@dorkos/shared/relay-schemas';
 
 vi.mock('../../relay/relay-state.js', () => ({
@@ -25,7 +26,36 @@ function createMockAgentManager(): SchedulerAgentManager {
     sendMessage: vi.fn().mockImplementation(async function* () {
       // Default: no events (immediate completion)
     }),
-  } as SchedulerAgentManager;
+    interruptQuery: vi.fn().mockResolvedValue(true),
+  } as unknown as SchedulerAgentManager;
+}
+
+/**
+ * A turn that emits one event and then parks forever — the shape of a run
+ * blocked on a tool-approval prompt nobody will answer. It yields no further
+ * events, so anything that only runs inside the consumer's loop body never runs
+ * again.
+ *
+ * `parked` resolves once the consumer has asked for the event that will never
+ * come. Tests must await it before stopping the run: an abort that lands while
+ * the first event is still in flight is caught by the loop body and proves
+ * nothing about a genuinely parked turn.
+ */
+function parkedTurn(): {
+  impl: () => AsyncGenerator<StreamEvent>;
+  parked: Promise<void>;
+} {
+  let signalParked!: () => void;
+  const parked = new Promise<void>((resolve) => {
+    signalParked = resolve;
+  });
+  const impl = async function* (): AsyncGenerator<StreamEvent> {
+    yield { type: 'text_delta', data: { text: 'starting' } };
+    signalParked();
+    // Never settles: the run is waiting on a person who never arrives.
+    await new Promise(() => {});
+  };
+  return { impl, parked };
 }
 
 /** Build a minimal CreateTaskStoreInput with defaults for required fields. */
@@ -374,6 +404,159 @@ describe('TaskSchedulerService', () => {
     it('returns false when run is not active', () => {
       const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
       expect(service.cancelRun('nonexistent')).toBe(false);
+    });
+  });
+
+  describe('interrupting a run in flight', () => {
+    /** The interrupt hook, typed for assertions. */
+    function interruptSpy(agent: SchedulerAgentManager) {
+      return vi.mocked(agent.interruptQuery);
+    }
+
+    it('stops a parked run when maxRuntime expires', async () => {
+      const turn = parkedTurn();
+      vi.mocked(mockAgent.sendMessage).mockImplementation(turn.impl);
+      const task = store.createTask(
+        taskInput({ name: 'Parked', prompt: 'test', cron: '0 * * * *', maxRuntime: 50 })
+      );
+
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      const run = await service.triggerManualRun(task.id);
+      await turn.parked;
+
+      await vi.waitFor(
+        () => {
+          expect(store.getRun(run!.id)!.status).toBe('cancelled');
+        },
+        { timeout: 2000 }
+      );
+
+      // The runtime is told to stop, not merely marked stopped in the DB.
+      expect(interruptSpy(mockAgent)).toHaveBeenCalledWith(run!.id);
+      // A deadline reads differently from an operator cancel in the run record.
+      expect(store.getRun(run!.id)!.error).toContain('time limit');
+      // The concurrency slot is released, so the next tick can fire.
+      expect(service.getActiveRunCount()).toBe(0);
+
+      await service.stop();
+    });
+
+    it('cancelRun interrupts a parked run and finalizes it as cancelled', async () => {
+      const turn = parkedTurn();
+      vi.mocked(mockAgent.sendMessage).mockImplementation(turn.impl);
+      const task = store.createTask(
+        taskInput({ name: 'Cancelme', prompt: 'test', cron: '0 * * * *', maxRuntime: null })
+      );
+
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      const run = await service.triggerManualRun(task.id);
+
+      await turn.parked;
+      expect(service.getActiveRunCount()).toBe(1);
+      expect(service.cancelRun(run!.id)).toBe(true);
+
+      await vi.waitFor(
+        () => {
+          expect(store.getRun(run!.id)!.status).toBe('cancelled');
+        },
+        { timeout: 2000 }
+      );
+
+      expect(interruptSpy(mockAgent)).toHaveBeenCalledWith(run!.id);
+      expect(store.getRun(run!.id)!.error).toBe('Run cancelled');
+      expect(service.getActiveRunCount()).toBe(0);
+
+      await service.stop();
+    });
+
+    it('leaves a normal run alone — it completes and is never interrupted', async () => {
+      vi.mocked(mockAgent.sendMessage).mockImplementation(async function* () {
+        yield { type: 'text_delta', data: { text: 'all done' } };
+      });
+      const task = store.createTask(
+        taskInput({ name: 'Healthy', prompt: 'test', cron: '0 * * * *', maxRuntime: 60_000 })
+      );
+
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      const run = await service.triggerManualRun(task.id);
+
+      await vi.waitFor(() => {
+        expect(store.getRun(run!.id)!.status).toBe('completed');
+      });
+
+      expect(interruptSpy(mockAgent)).not.toHaveBeenCalled();
+      expect(store.getRun(run!.id)!.outputSummary).toBe('all done');
+
+      await service.stop();
+    });
+
+    it('does not re-emit run_cancelled for an operator cancel, but does for a deadline', async () => {
+      // The cancel route emits its own activity event when the operator asks;
+      // a second one here would show the same cancel twice.
+      const activityService = { emit: vi.fn() };
+      const cancelTurn = parkedTurn();
+      vi.mocked(mockAgent.sendMessage).mockImplementation(cancelTurn.impl);
+      const task = store.createTask(
+        taskInput({ name: 'Dedupe', prompt: 'test', cron: '0 * * * *', maxRuntime: null })
+      );
+      const service = new TaskSchedulerService({
+        store,
+        agentManager: mockAgent,
+        config: DEFAULT_CONFIG,
+        activityService: activityService as unknown as ActivityService,
+      });
+
+      const cancelled = await service.triggerManualRun(task.id);
+      await cancelTurn.parked;
+      service.cancelRun(cancelled!.id);
+      await vi.waitFor(() => {
+        expect(store.getRun(cancelled!.id)!.status).toBe('cancelled');
+      });
+      expect(activityService.emit).not.toHaveBeenCalled();
+
+      // A deadline has no route emit behind it, so it must still be reported.
+      const timeoutTurn = parkedTurn();
+      vi.mocked(mockAgent.sendMessage).mockImplementation(timeoutTurn.impl);
+      const timedTask = store.createTask(
+        taskInput({ name: 'Deadline', prompt: 'test', cron: '0 * * * *', maxRuntime: 50 })
+      );
+      const timedRun = await service.triggerManualRun(timedTask.id);
+      await vi.waitFor(
+        () => {
+          expect(store.getRun(timedRun!.id)!.status).toBe('cancelled');
+        },
+        { timeout: 2000 }
+      );
+      expect(activityService.emit).toHaveBeenCalledWith(
+        expect.objectContaining({ eventType: 'tasks.run_cancelled' })
+      );
+
+      await service.stop();
+    });
+
+    it('survives an interrupt that fails — the run still finalizes', async () => {
+      const turn = parkedTurn();
+      vi.mocked(mockAgent.sendMessage).mockImplementation(turn.impl);
+      vi.mocked(mockAgent.interruptQuery).mockRejectedValue(new Error('runtime is wedged'));
+      const task = store.createTask(
+        taskInput({ name: 'Wedged', prompt: 'test', cron: '0 * * * *', maxRuntime: 50 })
+      );
+
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      const run = await service.triggerManualRun(task.id);
+      await turn.parked;
+
+      // A rejected interrupt must not become an unhandled rejection, and must
+      // not leave the run pinned to `running` holding a concurrency slot.
+      await vi.waitFor(
+        () => {
+          expect(store.getRun(run!.id)!.status).toBe('cancelled');
+        },
+        { timeout: 2000 }
+      );
+      expect(service.getActiveRunCount()).toBe(0);
+
+      await service.stop();
     });
   });
 

@@ -23,7 +23,11 @@ import type {
   MessagePart,
   PendingInteractionDTO,
 } from '@dorkos/shared/types';
-import type { SessionEvent } from '@dorkos/shared/session-stream';
+import {
+  approvalOutcomeOf,
+  type InteractionResolvedEvent,
+  type SessionEvent,
+} from '@dorkos/shared/session-stream';
 import type { ChatMessage } from '../chat-types';
 import { deriveFromParts } from './stream-event-helpers';
 import { mapHistoryMessage } from './stream-history-helpers';
@@ -274,14 +278,17 @@ function foldElicitation(
   }
 }
 
+/** The resolution kinds an interaction can settle with. */
+type InteractionResolution = NonNullable<InteractionResolvedEvent['resolution']>;
+
 /** The settled tool-part status for a resolution outcome. */
 function resolvedToolStatus(
-  resolution: 'approved' | 'denied' | 'answered' | 'cancelled' | undefined
+  resolution: InteractionResolution | undefined
 ): 'running' | 'complete' | 'error' {
   if (resolution === 'denied') return 'error';
-  // Cancelled (SDK abort/timeout, no operator action): the gated tool never
-  // ran and no real tool_result is guaranteed to follow — settle as error.
-  if (resolution === 'cancelled') return 'error';
+  // Expired / cancelled (no operator action): the gated tool never ran and no
+  // real tool_result is guaranteed to follow — settle as error.
+  if (resolution === 'expired' || resolution === 'cancelled') return 'error';
   if (resolution === 'answered') return 'complete';
   // Approved (or unknown): the tool is now executing; the following
   // tool_result event carries the real terminal status.
@@ -289,19 +296,48 @@ function resolvedToolStatus(
 }
 
 /**
- * Settle the pending state on the part matching a resolved interaction. Needed
- * for parts folded from snapshot-carried interaction EVENTS (which set
- * `interactiveType` directly): removing the pending DTO alone cannot un-pend
- * those, so without this a resolved card kept rendering with a dead countdown.
+ * Settle the pending state on the part matching a resolved interaction, and —
+ * for an approval — record HOW it was answered.
+ *
+ * Settling is needed for parts folded from snapshot-carried interaction EVENTS
+ * (which set `interactiveType` directly): removing the pending DTO alone cannot
+ * un-pend those, so without it a resolved card kept rendering with a dead
+ * countdown. The recorded outcome is what gives the answered card its
+ * afterlife: it lives on the projected part, not in component state, so every
+ * consumer of the same event stream — a re-render, another window, a replay
+ * from `Last-Event-ID`, a cold snapshot carrying the turn — reconstructs the
+ * identical receipt.
  */
-function foldInteractionResolved(
-  parts: MessagePart[],
-  event: Extract<SessionEvent, { type: 'interaction_resolved' }>
-) {
+function foldInteractionResolved(parts: MessagePart[], event: InteractionResolvedEvent) {
   const toolCall = findToolCallPart(parts, event.id);
-  if (toolCall && toolCall.status === 'pending') {
-    toolCall.status = resolvedToolStatus(event.resolution);
-    toolCall.approvalRemainingMs = undefined;
+  if (toolCall) {
+    if (toolCall.status === 'pending') {
+      toolCall.status = resolvedToolStatus(event.resolution);
+      toolCall.approvalRemainingMs = undefined;
+    }
+    // `approvalOutcomeOf` is the one definition of what a resolution earns,
+    // shared with the server's history derivation so a reopened session
+    // rebuilds the identical line. It insists the server SAY this was an
+    // approval: all three kinds share a cancellation path, so a timed-out
+    // question resolves `expired` exactly as a timed-out permission prompt
+    // does — and AskUserQuestion is an ordinary tool_use block, so it has a
+    // real tool_call part under the same id for this to land on. Reading the
+    // kind out of the resolution printed "Expired — denied" over questions.
+    const outcome = approvalOutcomeOf(event);
+    if (outcome) {
+      // Tagging the part is the point of doing this here: on the live path
+      // `approval_required` never enters the turn (it arrives as a pending DTO
+      // that this event retires), so by the time the answer lands the part is a
+      // bare tool_call with nothing marking it as gated. Deliberately NOT gated
+      // on `status === 'pending'`: an approval whose tool_result raced ahead of
+      // its resolution still earns its receipt.
+      toolCall.interactiveType = 'approval';
+      toolCall.approvalOutcome = outcome;
+      toolCall.approvalResolvedAt = event.at;
+      // The live path also loses `startedAt` with the DTO, so prefer the
+      // server's backfill and fall back to whatever the part already holds.
+      toolCall.approvalStartedAt = event.startedAt ?? toolCall.approvalStartedAt;
+    }
   }
   const elicitation = findElicitationPart(parts, event.id);
   if (elicitation && elicitation.status === 'pending') {

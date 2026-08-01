@@ -326,7 +326,9 @@ Usage: `import { toast } from 'sonner'` then `toast('message')` or `toast.error(
 
 ### Banners
 
-Full-width app banner from `shared/ui/banner.tsx` (`Banner`), for a **standing condition** that stays until it resolves — telemetry consent, all-permissions-bypassed, connection lost. A banner is not a toast: a toast fires once for a transient event and fades; a banner persists while the condition is true.
+Full-width app banner from `shared/ui/banner.tsx` (`Banner`), for a **standing condition** that stays until it resolves — telemetry consent, a waiting update, connection lost. A banner is not a toast: a toast fires once for a transient event and fades; a banner persists while the condition is true.
+
+**A banner is the second voice, so it needs the fact to be worth two.** The all-permissions-bypassed banner was retired for this reason (spec `trust-dial`, decision 3A): the status strip already carried the word and the tint for a session the person was sitting in front of, and two alarms about one fact teach people to read neither. Ask what the banner says that the surface the person is looking at does not.
 
 **Banner vs toast:**
 
@@ -337,12 +339,12 @@ Full-width app banner from `shared/ui/banner.tsx` (`Banner`), for a **standing c
 
 **Variants** (severity ladder, `critical > warning > info > neutral`):
 
-| Variant    | Use                                           | Announce        |
-| ---------- | --------------------------------------------- | --------------- |
-| `critical` | An error blocking the user right now          | `role="alert"`  |
-| `warning`  | A risky standing state (e.g. permissions off) | `role="status"` |
-| `info`     | A neutral heads-up                            | `role="status"` |
-| `neutral`  | Announcements and consent (the default)       | `role="status"` |
+| Variant    | Use                                                  | Announce        |
+| ---------- | ---------------------------------------------------- | --------------- |
+| `critical` | An error blocking the user right now                 | `role="alert"`  |
+| `warning`  | A risky standing state (e.g. usage near its ceiling) | `role="status"` |
+| `info`     | A neutral heads-up                                   | `role="status"` |
+| `neutral`  | Announcements and consent (the default)              | `role="status"` |
 
 There is **no `success` banner** — a success is a toast. Colors come from the `--status-*` tokens, so light/dark and the Obsidian bridge stay correct. Pass `onDismiss` only for a dismissible banner; pass `details` + `detailsOpen` for a collapsible progressive-disclosure region (as the telemetry banner does with its payload).
 

@@ -16,6 +16,8 @@ import { useEffect, useRef } from 'react';
 import type { QueryClient } from '@tanstack/react-query';
 import type { useTransport } from '@/layers/shared/model';
 import { useSessionStreamStore, type SessionStreamState } from '@/layers/entities/session';
+import { projectInProgressTurn } from './stream/project-session-turn';
+import { collectApprovalReceipts, applyApprovalReceipts } from '../lib/carry-approval-receipts';
 
 interface UseTurnEndReconcileParams {
   sessionId: string | null;
@@ -114,6 +116,14 @@ export function useTurnEndReconcile({
 
     const reloadId = sessionId;
     const ownedOptimisticId = turnOptimisticIdRef.current.get(reloadId) ?? null;
+
+    // Capture the settling turn's answered approvals NOW, before the await: a
+    // new turn starting while the reload is in flight replaces `inProgressTurn`
+    // and would take this turn's answers with it.
+    const settledReceipts = collectApprovalReceipts(
+      projectInProgressTurn(useSessionStreamStore.getState().getSession(reloadId).inProgressTurn)
+    );
+
     void transport
       .getMessages(reloadId, selectedCwdRef.current ?? undefined)
       .then((result) => {
@@ -124,7 +134,18 @@ export function useTurnEndReconcile({
         // If a NEW turn started while this reload was in flight, the reload
         // predates it: folding it must not wipe the new turn's streamed events…
         const newTurnStreaming = fresh.status?.lifecycle === 'streaming';
-        store.setHistoryMessages(reloadId, result.messages, {
+        // Canonical history is runtime-owned, so its record of a DorkOS
+        // permission prompt is whatever the server overlaid back onto it — and
+        // a turn's answers are only durable once the turn ENDS, while this
+        // reload also fires when a turn settles to `blocked` mid-turn. Re-apply
+        // what the client already derived: this turn's answers plus the ones an
+        // earlier reconcile carried, so repeated reloads keep all of them. See
+        // `lib/carry-approval-receipts` for the division of labour.
+        const carried = new Map([
+          ...collectApprovalReceipts(fresh.messages.flatMap((m) => m.parts ?? [])),
+          ...settledReceipts,
+        ]);
+        store.setHistoryMessages(reloadId, applyApprovalReceipts(result.messages, carried), {
           preserveInProgressTurn: newTurnStreaming,
         });
         // …nor clear an optimistic message belonging to the newer send. Only

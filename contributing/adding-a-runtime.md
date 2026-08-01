@@ -87,7 +87,55 @@ capability flag.
 
 `getCapabilities()` returns a static `RuntimeCapabilities` object. Keep it in a `runtime-constants.ts` (`CODEX_CAPABILITIES`, `OPENCODE_CAPABILITIES` are the models). Two parts deserve care:
 
-- **`permissionModes` is structured, not boolean.** Enumerate the modes your backend genuinely supports as `PermissionModeDescriptor[]` (`{ id, label, description? }`) plus a `default` id, or declare `{ supported: false, values: [] }` for no picker at all. Draw ids from the shared `PermissionModeSchema` enum (`packages/shared/src/schemas.ts`) when a mode must persist in `session_metadata`; the conformance suite asserts `default` references a declared descriptor.
+- **`permissionModes` is structured, and every mode declares what it does.** Enumerate the modes your backend genuinely supports as `PermissionModeDescriptor[]` plus a `default` id, or declare `{ supported: false, values: [] }` for no picker at all. Draw ids from the shared `PermissionModeSchema` enum (`packages/shared/src/schemas.ts`) when a mode must persist in `session_metadata`.
+
+  Beyond `id`/`label`, four fields are **required** and carry the mode's meaning. The client derives every warning, tint, and caption from them by uniform rules (`@dorkos/shared/permission-semantics`) — there is no id table anywhere that a new runtime can be missing from, which is exactly why these are not optional:
+
+  | Field     | Values                                          | What it answers                                                     |
+  | --------- | ----------------------------------------------- | ------------------------------------------------------------------- |
+  | `stop`    | `ask` \| `act` \| `autonomy`                    | Which of the three fixed dial positions this mode is                |
+  | `asks`    | `always` \| `when-risky` \| `never`             | How often it actually stops to ask, as YOUR backend behaves         |
+  | `reach`   | `read` \| `edit` \| `workspace` \| `everything` | How far its actions can go, whether or not it asks first            |
+  | `promise` | one plain sentence                              | What happens, in the person's words — shown verbatim as the caption |
+
+  `native` is optional: your own name for the mode when it differs from `id` (Codex declares `native: 'workspace-write'`).
+
+  **Declare `asks` from measured behavior, not from the mode's name.** Where it disagrees with the position's canonical expectation (`ask`→always, `act`→when-risky, `autonomy`→never) the UI says so out loud rather than hiding it — that divergence signal is the whole reason the field is separate from `stop`. Codex is the worked example: `workspace-write` sits at the middle stop but has no approval channel at all, so it declares `asks: 'never'` and its `promise` names the consequence.
+
+  ```typescript
+  permissionModes: {
+    supported: true,
+    default: 'default',
+    values: [
+      {
+        id: 'default',
+        label: 'Read only',
+        description: 'Sandboxed reads — no edits, no commands, no network.',
+        stop: 'ask',
+        // Nothing to ask about: this mode cannot write, run, or fetch.
+        asks: 'never',
+        reach: 'read',
+        promise: 'Reads files and answers questions. Nothing on your machine changes.',
+        native: 'read-only',
+      },
+      {
+        id: 'acceptEdits',
+        label: 'Workspace write',
+        stop: 'act',
+        // Measured: this backend cannot pause mid-turn, so it never asks.
+        asks: 'never',
+        reach: 'workspace',
+        promise: "Edits files and runs commands inside the workspace — Codex can't pause to ask.",
+        native: 'workspace-write',
+      },
+    ],
+  }
+  ```
+
+  Two conformance assertions to know about: `default` must reference a declared descriptor, **and** that descriptor's `stop` must not be `'autonomy'` — a runtime whose fresh sessions start with the keys handed over fails. If yours genuinely must (test doubles), declare `autonomyDefaultReason` in your `runtimeConformance` call; it takes a sentence, not a boolean.
+
+  `reach: 'read'` is load-bearing and narrow: it means no writes, no commands, **and no network**. The derivation rules treat a read-only mode as having nothing to warn about, so a mode that can still fetch a URL must declare `'edit'` or wider.
+
 - **`features` is a typed extension point** (`Record<string, unknown>`, ADR-0256) for runtime-specific metadata that does not merit a first-class field. Consumers must validate what they read.
 
 ### Labels are budgeted: `STATUS_VALUE_MAX_CHARS`

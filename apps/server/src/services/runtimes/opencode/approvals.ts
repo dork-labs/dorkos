@@ -75,6 +75,19 @@ export class PendingApprovalStore {
   private readonly pending = new Map<string, Map<string, PendingApproval>>();
 
   /**
+   * Permission ids this store auto-denied because nobody answered, per session,
+   * waiting for their echo to claim them.
+   *
+   * The auto-deny is answered by the sidecar exactly like a person's rejection —
+   * one ordinary `permission.replied` — so the echo alone cannot say whether a
+   * person decided or a timer did. That distinction is the whole difference
+   * between "expired" and "withdrawn" in the transcript, and this is the only
+   * place that still knows it. An id is consumed by its echo, and
+   * {@link PendingApprovalStore.clearSession} drops any whose echo never came.
+   */
+  private readonly expired = new Map<string, Set<string>>();
+
+  /**
    * Track a forwarded request and arm its auto-deny timer.
    *
    * @param sessionId - DorkOS session the request belongs to
@@ -89,10 +102,19 @@ export class PendingApprovalStore {
     onTimeout: () => void
   ): void {
     // Re-registration (an upstream re-publish of the same permission) replaces
-    // the record — cancel the superseded timer so it cannot double-deny.
+    // the record — cancel the superseded timer so it cannot double-deny, and
+    // drop any expiry recorded for the PREVIOUS incarnation of this id. A
+    // re-published permission is a live question again; leaving the old mark
+    // set would stamp `timeout` on the echo of a person's real answer and file
+    // their decision as "nobody was there".
     this.take(sessionId, permissionId);
+    this.consumeExpired(sessionId, permissionId);
     const timer = setTimeout(() => {
-      if (this.take(sessionId, permissionId)) onTimeout();
+      if (!this.take(sessionId, permissionId)) return;
+      const forSession = this.expired.get(sessionId) ?? new Set<string>();
+      forSession.add(permissionId);
+      this.expired.set(sessionId, forSession);
+      onTimeout();
     }, SESSIONS.INTERACTION_TIMEOUT_MS);
     // Never hold the event loop open for an approval countdown.
     timer.unref?.();
@@ -119,11 +141,28 @@ export class PendingApprovalStore {
   }
 
   /**
+   * Whether this permission was auto-denied by its timer rather than by a
+   * person, consuming the fact. Answered once: the echo that clears the card is
+   * the one event that needs to carry the reason.
+   *
+   * @param sessionId - DorkOS session the request belonged to
+   * @param permissionId - `Permission.id` from the resolution echo
+   */
+  consumeExpired(sessionId: string, permissionId: string): boolean {
+    const forSession = this.expired.get(sessionId);
+    if (!forSession?.delete(permissionId)) return false;
+    if (forSession.size === 0) this.expired.delete(sessionId);
+    return true;
+  }
+
+  /**
    * Drop every pending record for a session (turn teardown) — timers are
    * disarmed; nothing is responded (the turn ending already resolved them
-   * upstream, or the sidecar is gone).
+   * upstream, or the sidecar is gone). Unclaimed expiries go with them: an echo
+   * that has not arrived by teardown is never going to.
    */
   clearSession(sessionId: string): void {
+    this.expired.delete(sessionId);
     const forSession = this.pending.get(sessionId);
     if (!forSession) return;
     for (const entry of forSession.values()) clearTimeout(entry.timer);

@@ -6,10 +6,15 @@ import {
   cn,
   formatRelativeTime,
   isBypassPermissionMode,
+  isBypassSemantics,
   permissionModeLabel,
 } from '@/layers/shared/lib';
 import { CopyButton, Tooltip, TooltipContent, TooltipTrigger } from '@/layers/shared/ui';
-import { RuntimeMark, getRuntimeDescriptor } from '@/layers/entities/runtime';
+import {
+  RuntimeMark,
+  getRuntimeDescriptor,
+  useCapabilitiesForRuntime,
+} from '@/layers/entities/runtime';
 import { useSessionBorderState, type SessionBorderState } from '../model/use-session-border-state';
 import { useSessionPermissionMode } from '../model/use-session-detail';
 import { usePulseMotion } from '../model/use-pulse-motion';
@@ -68,7 +73,17 @@ export function SessionRowFull({
       enabled: false,
       fallback: session.permissionMode,
     }) ?? 'default';
-  const isUnsafe = isBypassPermissionMode(permissionMode);
+  // What the mode DOES, not what it is called. The row already carries its
+  // session's runtime (`Session.runtime` is required), and the capability map is
+  // one `staleTime: Infinity` query the shell has already mounted — so a rail of
+  // fifty rows shares a single lookup and none of them fetches anything new. The
+  // name fallback still answers for the frames before the map lands, which is the
+  // same answer for every runtime shipped today.
+  const caps = useCapabilitiesForRuntime(session.runtime);
+  const descriptor = caps?.permissionModes.values.find((d) => d.id === permissionMode);
+  const isUnsafe = descriptor
+    ? isBypassSemantics(descriptor)
+    : isBypassPermissionMode(permissionMode);
 
   const now = useNow(60_000);
   const relativeTime = useMemo(

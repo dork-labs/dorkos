@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { STATUS_BAR_PIN_KEYS, STATUS_BAR_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
+import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import {
   STATUS_BAR_REGISTRY,
   getGroupedRegistryItems,
@@ -18,6 +19,8 @@ function restingContext(overrides: Partial<StatusPromotionContext> = {}): Status
     contextPercent: 12,
     connectionState: 'connected',
     permissionMode: 'default',
+    permissionDescriptor: null,
+    plan: null,
     runtime: { isDefault: true, canSelect: false },
     usage: { kind: 'pay-as-you-go', costUsd: 0.03 },
     subagentsInFlight: 0,
@@ -141,6 +144,22 @@ describe('STATUS_BAR_REGISTRY — promotion rules', () => {
     );
   });
 
+  it('offers Plan whenever the runtime has one, on or off — a switch nobody can find is not a switch', () => {
+    expect(promotedKeys(restingContext({ plan: { active: false } }))).toContain('plan');
+    expect(promotedKeys(restingContext({ plan: { active: true } }))).toContain('plan');
+  });
+
+  it('never offers Plan on a runtime that declares no way of working', () => {
+    expect(promotedKeys(restingContext({ plan: null }))).not.toContain('plan');
+  });
+
+  it('ranks planning with an elevated permission mode, and an idle switch with the wallpaper', () => {
+    const planning = severityOf('plan', restingContext({ plan: { active: true } }));
+    const idle = severityOf('plan', restingContext({ plan: { active: false } }));
+    expect(planning).toBe(severityOf('permission', restingContext({ permissionMode: 'plan' })));
+    expect(idle).toBeLessThan(planning);
+  });
+
   it('keeps the directory out when it is unresolved', () => {
     expect(promotedKeys(restingContext({ cwd: null }))).not.toContain('cwd');
   });
@@ -262,7 +281,16 @@ describe('gitPromotionState', () => {
 describe('isPinnable', () => {
   it('allows pinning exactly the Session rows that can appear in the line', () => {
     const pinnable = STATUS_BAR_REGISTRY.filter(isPinnable).map((item) => item.key);
-    expect(pinnable).toEqual(['cwd', 'git', 'runtime', 'model', 'context', 'usage', 'permission']);
+    expect(pinnable).toEqual([
+      'cwd',
+      'git',
+      'runtime',
+      'model',
+      'context',
+      'usage',
+      'permission',
+      'plan',
+    ]);
   });
 
   it('refuses to pin diagnostics rows', () => {
@@ -324,5 +352,65 @@ describe('getGroupedRegistryItems', () => {
 
   it('leaves the identity anchor out — it is always there, so it has nothing to configure', () => {
     expect(getStatusBarItem('agent')!.group).toBeNull();
+  });
+});
+
+describe('STATUS_BAR_REGISTRY — permission severity comes from the mode’s meaning', () => {
+  /** A declared mode, with only the semantics under test spelled out. */
+  function descriptor(overrides: Partial<PermissionModeDescriptor> = {}): PermissionModeDescriptor {
+    return {
+      id: 'acceptEdits',
+      label: 'Workspace write',
+      stop: 'act',
+      asks: 'when-risky',
+      reach: 'edit',
+      promise: 'Edits files on its own.',
+      ...overrides,
+    };
+  }
+
+  it('ranks a keys-handed-over mode top, whatever the runtime calls it', () => {
+    // Codex spells it 'Full access'; the ranking reads what it does.
+    const ctx = restingContext({
+      permissionMode: 'acceptEdits',
+      permissionDescriptor: descriptor({ asks: 'never', reach: 'everything', stop: 'autonomy' }),
+    });
+    expect(severityOf('permission', ctx)).toBe(
+      severityOf('permission', restingContext({ permissionMode: 'bypassPermissions' }))
+    );
+  });
+
+  it('does not rank a never-asking mode top when its reach is bounded', () => {
+    // Codex's workspace-write: no approval channel, but it cannot leave the
+    // project. Loud in the caption, not the same rank as full autonomy.
+    const bounded = severityOf(
+      'permission',
+      restingContext({
+        permissionMode: 'acceptEdits',
+        permissionDescriptor: descriptor({ asks: 'never', reach: 'workspace' }),
+      })
+    );
+    const bypass = severityOf(
+      'permission',
+      restingContext({ permissionMode: 'bypassPermissions' })
+    );
+    expect(bounded).toBeLessThan(bypass);
+  });
+
+  it('falls back to the mode’s name before the capability map arrives', () => {
+    const ctx = restingContext({
+      permissionMode: 'bypassPermissions',
+      permissionDescriptor: null,
+    });
+    const withProfile = restingContext({
+      permissionMode: 'bypassPermissions',
+      permissionDescriptor: descriptor({
+        id: 'bypassPermissions',
+        stop: 'autonomy',
+        asks: 'never',
+        reach: 'everything',
+      }),
+    });
+    expect(severityOf('permission', ctx)).toBe(severityOf('permission', withProfile));
   });
 });

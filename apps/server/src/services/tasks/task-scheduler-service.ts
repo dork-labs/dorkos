@@ -13,6 +13,7 @@ import { recordDispatchEnd, recordDispatchStart } from '../observability/dispatc
 import { formatDuration } from '../../lib/format-duration.js';
 import { SchedulerLock, SCHEDULER_HEARTBEAT_MS, type LeaderLock } from './scheduler-lock.js';
 import { withSpan, SPAN, ATTR } from '../observability/index.js';
+import { consumeRunStream, interruptRun } from './run-stream.js';
 
 const logger = createTaggedLogger('Tasks');
 
@@ -41,6 +42,12 @@ export function scheduledTickKey(cron: string, firedAt: Date): number {
   return Math.floor(firedAt.getTime() / resolutionMs) * resolutionMs;
 }
 
+/**
+ * Abort reason used by {@link TaskSchedulerService.cancelRun}, distinguishing an
+ * operator's cancel from a shutdown abort and from the runtime deadline.
+ */
+const OPERATOR_CANCEL = Symbol('operator-cancel');
+
 /** Narrow interface for the AgentManager methods used by the scheduler. */
 export interface SchedulerAgentManager {
   ensureSession(
@@ -52,6 +59,14 @@ export interface SchedulerAgentManager {
     content: string,
     opts?: { permissionMode?: PermissionMode; cwd?: string; systemPromptAppend?: string }
   ): AsyncGenerator<StreamEvent>;
+  /**
+   * End the in-flight turn for a session (`AgentRuntime.interruptQuery`).
+   *
+   * This is the ONLY way to stop a scheduled run: `sendMessage` takes no
+   * `AbortSignal` (see `MessageOpts`), so abandoning its stream leaves the agent
+   * running. Resolves false when the runtime found no in-flight turn to abort.
+   */
+  interruptQuery(sessionId: string): Promise<boolean>;
 }
 
 /** Configuration for the task scheduler service. */
@@ -300,11 +315,17 @@ export class TaskSchedulerService {
     return run;
   }
 
-  /** Cancel a running job by aborting its AbortController. */
+  /**
+   * Cancel a running job by aborting its AbortController.
+   *
+   * Aborts with {@link OPERATOR_CANCEL} so finalization can tell an operator's
+   * cancel apart from a shutdown abort and skip a duplicate activity event —
+   * the cancel route already emitted one, with the truthful "You" actor.
+   */
   cancelRun(runId: string): boolean {
     const controller = this.activeRuns.get(runId);
     if (!controller) return false;
-    controller.abort();
+    controller.abort(OPERATOR_CANCEL);
     return true;
   }
 
@@ -528,12 +549,14 @@ export class TaskSchedulerService {
     const controller = new AbortController();
     this.activeRuns.set(run.id, controller);
 
-    // Combine manual abort with optional timeout
-    const signals: AbortSignal[] = [controller.signal];
-    if (task.maxRuntime) {
-      signals.push(AbortSignal.timeout(task.maxRuntime));
-    }
-    const combinedSignal = signals.length > 1 ? AbortSignal.any(signals) : controller.signal;
+    // Two ways a run stops early: an operator cancels it, or it outlives its
+    // maxRuntime. `AbortSignal.any` adopts the reason of whichever fired FIRST,
+    // and `AbortSignal.timeout` aborts with a DOMException named 'TimeoutError' —
+    // which is how the finalized row below tells the two apart.
+    const timeoutSignal = task.maxRuntime ? AbortSignal.timeout(task.maxRuntime) : null;
+    const combinedSignal = timeoutSignal
+      ? AbortSignal.any([controller.signal, timeoutSignal])
+      : controller.signal;
 
     const startTime = Date.now();
     let outputChars = 0;
@@ -556,29 +579,46 @@ export class TaskSchedulerService {
         systemPromptAppend: taskAppend,
       });
 
-      for await (const event of stream) {
-        if (combinedSignal.aborted) break;
-
-        // Collect first 500 chars of text output as summary
-        if (event.type === 'text_delta' && outputChars < 500) {
-          const data = event.data as { text: string };
-          outputSummary += data.text;
-          outputChars += data.text.length;
+      await consumeRunStream(
+        stream,
+        combinedSignal,
+        () => void interruptRun(this.agentManager, sessionId),
+        (event) => {
+          // Collect first 500 chars of text output as summary
+          if (event.type === 'text_delta' && outputChars < 500) {
+            const data = event.data as { text: string };
+            outputSummary += data.text;
+            outputChars += data.text.length;
+          }
         }
-      }
+      );
 
       const durationMs = Date.now() - startTime;
 
       if (combinedSignal.aborted) {
+        // Both stops record `cancelled` — the run-status vocabulary has no
+        // separate timeout — so the error line is what tells a person which
+        // happened.
+        const timedOut =
+          (combinedSignal.reason as { name?: string } | null)?.name === 'TimeoutError';
+        const operatorCancelled = combinedSignal.reason === OPERATOR_CANCEL;
         this.store.updateRun(run.id, {
           status: 'cancelled',
           finishedAt: new Date().toISOString(),
           durationMs,
           outputSummary: outputSummary.slice(0, 500),
-          error: 'Run cancelled',
+          error:
+            timedOut && task.maxRuntime
+              ? `Run stopped after passing its ${formatDuration(task.maxRuntime)} time limit`
+              : 'Run cancelled',
           sessionId,
         });
-        this.emitRunEvent(task, run, 'cancelled', durationMs);
+        // The cancel route emits its own `tasks.run_cancelled` the moment the
+        // operator asks, attributed to "You". Emitting again here would put the
+        // same cancel in the activity feed twice, the second time attributed to
+        // Tasks. A deadline or a shutdown abort has no such route emit, so it
+        // still needs this one.
+        if (!operatorCancelled) this.emitRunEvent(task, run, 'cancelled', durationMs);
       } else {
         this.store.updateRun(run.id, {
           status: 'completed',

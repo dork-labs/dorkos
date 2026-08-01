@@ -1,11 +1,14 @@
 import { useCallback, useState } from 'react';
 import type { SessionStatusEvent, ConnectionState, PermissionMode } from '@dorkos/shared/types';
+import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import { useAppStore } from '@/layers/shared/model';
 import {
   useSessionStatus,
   useSessionChatStore,
   useModels,
   useHasConfirmedAuto,
+  useHasConfirmedAutonomy,
+  useModeBeforePlan,
 } from '@/layers/entities/session';
 import { useWorkspaceForSession } from '@/layers/entities/workspace';
 import {
@@ -17,6 +20,7 @@ import {
   StatusLine,
   SessionPopover,
   AutoModeConfirmDialog,
+  AutonomyConfirmDialog,
   UsageRevealPopover,
   useGitStatus,
   isGitStatusOk,
@@ -31,6 +35,7 @@ import {
   applyStatusBudget,
   type StatusPromotionContext,
 } from '@/layers/features/status';
+import { findWorkingMode } from '@/layers/shared/lib';
 import { compactComposerGate } from '../../model/build-palette-commands';
 import { useCompactionChip } from '../../model/status/use-compaction-chip';
 import { useUsageReveal } from '../../model/use-usage-reveal';
@@ -120,10 +125,22 @@ export function ChatStatusSection({
   const modelSupportsAutoMode =
     models?.find((m) => m.value === status.model)?.supportsAutoMode ?? false;
 
-  // Once-per-session confirmation gate for entering 'auto' mode.
+  // The active runtime's capability profile drives the honesty gates: a runtime
+  // that declares `supportsCostTracking: false` must never show a cost item —
+  // and every permission decision below reads what the runtime declared rather
+  // than a mode id.
+  const activeCaps = useCapabilitiesForRuntime(runtimeChip.runtime);
+  const declaredModes = activeCaps?.permissionModes.values ?? [];
+  const runtimeDefaultMode = activeCaps?.permissionModes.default;
+
+  // Once-per-session confirmation gates: the `auto` research preview, and the
+  // one stop a person cannot walk back.
   const hasConfirmedAuto = useHasConfirmedAuto(sessionId);
   const recordAutoConfirmed = useSessionChatStore((s) => s.recordAutoConfirmed);
   const [autoConfirmOpen, setAutoConfirmOpen] = useState(false);
+  const hasConfirmedAutonomy = useHasConfirmedAutonomy(sessionId);
+  const recordAutonomyConfirmed = useSessionChatStore((s) => s.recordAutonomyConfirmed);
+  const [pendingAutonomy, setPendingAutonomy] = useState<PermissionModeDescriptor | null>(null);
 
   const handleChangeMode = useCallback(
     (nextMode: PermissionMode) => {
@@ -131,20 +148,82 @@ export function ChatStatusSection({
         setAutoConfirmOpen(true);
         return;
       }
+      // The autonomy stop asks twice. Every other stop is one click and
+      // instantly reversible; this one stops the asking, so by the time a person
+      // notices they did not mean it, it has already happened. The dial selects
+      // on arrow keys as well as clicks, which is the other half of why this
+      // cannot be a straight write (`loop={false}` is the first half).
+      const descriptor = declaredModes.find((d) => d.id === nextMode);
+      if (descriptor?.stop === 'autonomy' && !hasConfirmedAutonomy) {
+        setPendingAutonomy(descriptor);
+        return;
+      }
       status.updateSession({ permissionMode: nextMode });
     },
-    [hasConfirmedAuto, status]
+    [
+      hasConfirmedAuto,
+      hasConfirmedAutonomy,
+      declaredModes,
+      status,
+      setAutoConfirmOpen,
+      setPendingAutonomy,
+    ]
   );
 
   const handleConfirmAuto = useCallback(() => {
     recordAutoConfirmed(sessionId);
     status.updateSession({ permissionMode: 'auto' });
     setAutoConfirmOpen(false);
-  }, [recordAutoConfirmed, sessionId, status]);
+  }, [recordAutoConfirmed, sessionId, status, setAutoConfirmOpen]);
 
-  // The active runtime's capability profile drives the honesty gates: a runtime
-  // that declares `supportsCostTracking: false` must never show a cost item.
-  const activeCaps = useCapabilitiesForRuntime(runtimeChip.runtime);
+  const handleConfirmAutonomy = useCallback(() => {
+    if (!pendingAutonomy) return;
+    recordAutonomyConfirmed(sessionId);
+    status.updateSession({ permissionMode: pendingAutonomy.id as PermissionMode });
+    setPendingAutonomy(null);
+  }, [pendingAutonomy, recordAutonomyConfirmed, sessionId, status, setPendingAutonomy]);
+
+  // Plan, where the runtime offers a way of working at all. Which mode that is
+  // comes from the profile, never from the id `plan` (spec `trust-dial`).
+  const workingMode = findWorkingMode(declaredModes);
+  const planActive = workingMode !== undefined && status.permissionMode === workingMode.id;
+  const modeBeforePlan = useModeBeforePlan(sessionId);
+  const recordModeBeforePlan = useSessionChatStore((s) => s.recordModeBeforePlan);
+
+  const handleTogglePlan = useCallback(
+    (next: boolean) => {
+      if (!workingMode) return;
+      if (next) {
+        // Remember where the dial stood, so switching Plan off is a return
+        // rather than a guess.
+        recordModeBeforePlan(sessionId, status.permissionMode);
+        status.updateSession({ permissionMode: workingMode.id as PermissionMode });
+        return;
+      }
+      // A remembered mode is only worth restoring if it still exists. The
+      // runtime can change under a session (a switch before the first message),
+      // and `auto` can stop being available when the model changes — restoring
+      // either would PATCH a mode the server now rejects, on the ONE path a
+      // person takes to get out of planning. Anything unviable falls back to
+      // what a fresh session on this runtime would have started at.
+      const remembered = modeBeforePlan;
+      const stillDeclared =
+        remembered !== undefined && declaredModes.some((d) => d.id === remembered);
+      const viable = stillDeclared && (remembered !== 'auto' || modelSupportsAutoMode);
+      const restored = viable ? remembered : runtimeDefaultMode;
+      if (restored) status.updateSession({ permissionMode: restored as PermissionMode });
+    },
+    [
+      workingMode,
+      recordModeBeforePlan,
+      sessionId,
+      status,
+      modeBeforePlan,
+      declaredModes,
+      modelSupportsAutoMode,
+      runtimeDefaultMode,
+    ]
+  );
   const runtimeLabel = runtimeChip.runtime ? getRuntimeDescriptor(runtimeChip.runtime).label : '';
   // Same runtime-support gate the composer's `/compact` dispatch uses — the
   // inline compact action must never disagree with the palette.
@@ -168,6 +247,12 @@ export function ChatStatusSection({
     contextPercent: displayContextPercent,
     connectionState: syncConnectionState,
     permissionMode: status.permissionMode,
+    // The same profile the picker renders from, so the line's severity and the
+    // picker's tint can never disagree about one mode.
+    permissionDescriptor:
+      activeCaps?.permissionModes.values.find((d) => d.id === status.permissionMode) ?? null,
+    // `null` on a runtime with no way of working to offer, which is most of them.
+    plan: workingMode ? { active: planActive } : null,
     // `runtimeCaps === undefined` is "the capability map has not arrived", not
     // "this runtime is not the default": treating it as the latter would promote
     // the item at RUNTIME_NON_DEFAULT for the frames before the query resolves,
@@ -202,6 +287,9 @@ export function ChatStatusSection({
     onUpdateSession: status.updateSession,
     onChangeMode: handleChangeMode,
     modelSupportsAutoMode,
+    plan: workingMode
+      ? { descriptor: workingMode, active: planActive, onToggle: handleTogglePlan }
+      : null,
     gitStatus,
     workspace,
     runtimeChip,
@@ -239,6 +327,9 @@ export function ChatStatusSection({
               onToggleSound: () => setEnableNotificationSound(!enableNotificationSound),
               refresh: enableMessagePolling,
               onToggleRefresh: () => setEnableMessagePolling(!enableMessagePolling),
+              // The same switch the line's chip carries, so a bar too narrow to
+              // hold the chip cannot take planning away.
+              plan: workingMode ? { active: planActive, onToggle: handleTogglePlan } : null,
             }}
             promotionContext={promotionContext}
             overflowCount={overflow}
@@ -265,6 +356,11 @@ export function ChatStatusSection({
         open={autoConfirmOpen}
         onOpenChange={setAutoConfirmOpen}
         onConfirm={handleConfirmAuto}
+      />
+      <AutonomyConfirmDialog
+        descriptor={pendingAutonomy}
+        onCancel={() => setPendingAutonomy(null)}
+        onConfirm={handleConfirmAutonomy}
       />
     </div>
   );

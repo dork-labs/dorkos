@@ -7,7 +7,10 @@ import {
   peekProjector,
   disposeProjector,
   readLogBackedHistory,
+  overlayApprovalReceipts,
+  rekeyProjector,
 } from '../index.js';
+import type { HistoryMessage } from '@dorkos/shared/types';
 import type { RawSessionEvent } from '../session-state-projector.js';
 
 /**
@@ -72,6 +75,44 @@ describe('durable session history survives a restart (DOR-189)', () => {
     const next = revived.ingest({ type: 'turn_start', userMessage: 'q2' } as RawSessionEvent);
     expect(next.seq).toBe(4);
     disposeProjector(id);
+  });
+
+  // A permission decision has to survive the SDK renaming the session under it.
+  // Rows key by whatever id the projector held at flush time and the overlay
+  // asks exactly one id, so a rename after the session has turns behind it
+  // would strand every earlier answer — invisible on the cold open the rows
+  // exist for. The FIRST rename is harmless (nothing flushed yet); this is the
+  // SECOND, which the SDK issues on a resume.
+  it('carries recorded permission decisions across a session rename', () => {
+    const first = nextId();
+    const renamed = `${first}-renamed`;
+    const projector = getOrCreateProjector(first, '/projects/x', { persist: 'record' });
+    projector.ingest({ type: 'turn_start', userMessage: 'run it' } as RawSessionEvent);
+    projector.ingest({
+      type: 'interaction_resolved',
+      id: 'tc-1',
+      kind: 'approval',
+      resolution: 'approved',
+      at: 1_700_000_005_000,
+    } as RawSessionEvent);
+    projector.ingest({ type: 'turn_end' } as RawSessionEvent);
+
+    rekeyProjector(first, renamed);
+    disposeProjector(renamed); // reopened tomorrow: nothing live
+
+    const history: HistoryMessage[] = [
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '',
+        toolCalls: [{ toolCallId: 'tc-1', toolName: 'Bash', status: 'complete' }],
+      },
+    ];
+    const [message] = overlayApprovalReceipts(renamed, history);
+
+    expect(message.toolCalls?.[0].approvalOutcome).toBe('allowed');
+    // …and the retired id keeps nothing, so one id remains the truth.
+    expect(overlayApprovalReceipts(first, history)).toBe(history);
   });
 
   it('a NON-persisted (claude-code-style) projector writes nothing durable', () => {

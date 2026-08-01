@@ -6,6 +6,7 @@
  */
 import { z } from 'zod';
 import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
+import { PermissionModeSchema } from './schemas.js';
 
 extendZodWithOpenApi(z);
 
@@ -246,7 +247,10 @@ export const TaskDispatchPayloadSchema = z
     runId: z.string(),
     prompt: z.string(),
     cwd: z.string().nullable(),
-    permissionMode: z.string(),
+    // The scheduled run's safety posture, handed straight to the agent session
+    // it starts — so the wire contract holds it to the same enum every other
+    // surface uses, rather than any string.
+    permissionMode: PermissionModeSchema,
     taskName: z.string(),
     cron: z.string().nullable(),
     trigger: z.string(),

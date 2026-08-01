@@ -28,6 +28,7 @@ import { logger } from '../lib/logger.js';
 import {
   getOrCreateProjector,
   peekProjector,
+  persistenceModeFor,
   rekeyProjector,
   triggerTurn,
 } from '../services/session/index.js';
@@ -76,13 +77,13 @@ export async function sessionUiActionHandler(req: Request, res: Response): Promi
 
   logger.info('[POST /ui-action] trigger', { sessionId, actionId: parsed.data.actionId });
 
-  // Persist completed turns for LOG-BACKED runtimes (DOR-189), mirroring the
-  // /messages route: a widget-triggered turn may be this process's FIRST touch
-  // of the projector (e.g. right after a restart), and minting it without
-  // persistence would both skip this turn's flush and — once its counter moves
-  // past 0 — block a later hydrate for the process's lifetime.
+  // Persist this turn (DOR-189), mirroring the /messages route: a
+  // widget-triggered turn may be this process's FIRST touch of the projector
+  // (e.g. right after a restart), and minting it without persistence would both
+  // skip this turn's flush and — once its counter moves past 0 — block a later
+  // hydrate for the process's lifetime.
   const projector = getOrCreateProjector(sessionId, cwd, {
-    persist: runtime.getCapabilities().logBackedHistory === true ? 'history' : undefined,
+    persist: persistenceModeFor(runtime.getCapabilities()),
   });
   if (cwd !== undefined) projector.cwd = cwd;
 

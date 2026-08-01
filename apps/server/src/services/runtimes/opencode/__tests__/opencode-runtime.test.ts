@@ -4,6 +4,10 @@ import type { DependencyCheck, SessionSettingsPort } from '@dorkos/shared/agent-
 import type { StreamEvent } from '@dorkos/shared/types';
 import { wrapKickoff, filterKickoffHistory } from '@dorkos/shared/kickoff';
 import { SESSIONS } from '../../../../config/constants.js';
+import {
+  getOrCreateProjector,
+  disposeProjector,
+} from '../../../session/session-state-projector.js';
 import { OpenCodeRuntime } from '../opencode-runtime.js';
 import { OPENCODE_CAPABILITIES } from '../runtime-constants.js';
 import { checkOpenCodeDependencies, getConnectedOpenCodeProvider } from '../check-dependencies.js';
@@ -522,6 +526,41 @@ describe('OpenCodeRuntime', () => {
       await finished;
     });
 
+    it('says an auto-denied approval EXPIRED rather than that it was withdrawn', async () => {
+      // Both mean "nobody clicked", and they are not the same record. An expiry
+      // is an answer the system gave on the person's behalf and belongs in the
+      // transcript; a withdrawn ask is a question nobody was ever asked. The
+      // auto-deny reaches the sidecar and comes back as an ordinary
+      // `permission.replied` echo, so without carrying the reason across, an
+      // expired permission read as cancelled and left no receipt at all.
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      const harness = makeRuntime();
+      const { client } = harness;
+      const { connection, events, finished } = await turnWithPermission(harness, 'default');
+      await vi.waitFor(() => expect(events.some((e) => e.type === 'approval_required')).toBe(true));
+
+      await vi.advanceTimersByTimeAsync(SESSIONS.INTERACTION_TIMEOUT_MS + 1);
+      await vi.waitFor(() =>
+        expect(client.postSessionIdPermissionsPermissionId).toHaveBeenCalledWith({
+          path: { id: OC_SESSION_A, permissionID: 'per_0001' },
+          body: { response: 'reject' },
+        })
+      );
+
+      // The sidecar echoes the reject DorkOS just sent.
+      connection.push(globalEvent(DIRECTORY, permissionReplied(OC_SESSION_A, 'per_0001')));
+
+      await vi.waitFor(() =>
+        expect(events.find((e) => e.type === 'interaction_cancelled')?.data).toMatchObject({
+          interactionId: 'per_0001',
+          reason: 'timeout',
+        })
+      );
+
+      finishTurn(connection);
+      await finished;
+    });
+
     it('a stale turn teardown leaves the newer turn pending approvals intact', async () => {
       const harness = makeRuntime();
       const { runtime, client } = harness;
@@ -590,6 +629,47 @@ describe('OpenCodeRuntime', () => {
       expect(client.postSessionIdPermissionsPermissionId).not.toHaveBeenCalled();
       expect(runtime.approveTool(sessionId, 'per_0001', true)).toBe(false);
 
+      finishTurn(connection);
+      await finished;
+    });
+
+    it('clears the pending card on approve WITHOUT waiting for the sidecar echo', async () => {
+      // The echo is the sidecar's courtesy, not a guarantee. When it never
+      // arrives the card used to hang forever and the session stayed `blocked`,
+      // which also holds the write lock the next turn probes.
+      const harness = makeRuntime();
+      const { runtime } = harness;
+      const { sessionId, connection, events, finished } = await turnWithPermission(
+        harness,
+        'default'
+      );
+      await vi.waitFor(() => expect(events.some((e) => e.type === 'approval_required')).toBe(true));
+
+      // Stand in for the platform's turn feeder: the projector is what every
+      // client actually reads, and it holds the pending card.
+      const projector = getOrCreateProjector(sessionId, DIRECTORY);
+      const approval = events.find((e) => e.type === 'approval_required')!;
+      const data = approval.data as { toolCallId: string; toolName: string };
+      projector.ingest({
+        type: 'approval_required',
+        id: data.toolCallId,
+        startedAt: Date.now(),
+        remainingMs: SESSIONS.INTERACTION_TIMEOUT_MS,
+        toolName: data.toolName,
+        input: '',
+        hasSuggestions: false,
+      } as Parameters<typeof projector.ingest>[0]);
+      expect(projector.hasPendingInteractions()).toBe(true);
+
+      expect(runtime.approveTool(sessionId, 'per_0001', true)).toBe(true);
+
+      // No `permission.replied` is ever pushed on this connection.
+      expect(projector.hasPendingInteractions()).toBe(false);
+      const snapshot = await projector.buildSnapshot(async () => []);
+      expect(snapshot.status.lifecycle).not.toBe('blocked');
+      expect(snapshot.pendingInteractions).toEqual([]);
+
+      disposeProjector(sessionId);
       finishTurn(connection);
       await finished;
     });

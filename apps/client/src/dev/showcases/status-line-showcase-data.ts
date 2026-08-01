@@ -16,7 +16,11 @@ import type {
   SessionDiagnostics,
   StatusPromotionContext,
 } from '@/layers/features/status';
-import type { StatusItemNodesInput } from '@/layers/features/chat/ui/status/status-item-nodes';
+import type {
+  PlanChipState,
+  StatusItemNodesInput,
+} from '@/layers/features/chat/ui/status/status-item-nodes';
+import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import type { RuntimeChipState } from '@/layers/features/status';
 
 export const AGENT = {
@@ -52,6 +56,28 @@ const DIRTY_GIT: GitStatusResponse = {
   clean: false,
   detached: false,
   tracking: 'origin/dor-452-status-line',
+};
+
+/**
+ * Claude's way of working, as its profile declares it — the mode behind the
+ * composer's Plan switch. Codex and OpenCode declare none, which is why the
+ * degraded (Codex) scenario carries `plan: null` and draws no chip.
+ */
+const PLAN_MODE: PermissionModeDescriptor = {
+  id: 'plan',
+  label: 'Plan',
+  stop: 'ask',
+  axis: 'working',
+  asks: 'always',
+  reach: 'read',
+  promise: 'Reads and plans only. Nothing changes until you approve the plan.',
+};
+
+/** The Plan switch, offered and off. */
+const PLAN_OFF: PlanChipState = {
+  descriptor: PLAN_MODE,
+  active: false,
+  onToggle: () => {},
 };
 
 const DEFAULT_RUNTIME_CHIP: RuntimeChipState = {
@@ -222,6 +248,8 @@ export const HEALTHY: StatusScenario = {
     contextPercent: 31,
     connectionState: 'connected',
     permissionMode: 'default',
+    permissionDescriptor: null,
+    plan: { active: false },
     runtime: { isDefault: true, canSelect: false },
     usage: USAGE_OK,
     subagentsInFlight: 0,
@@ -233,6 +261,7 @@ export const HEALTHY: StatusScenario = {
     onUpdateSession: () => {},
     onChangeMode: () => {},
     modelSupportsAutoMode: true,
+    plan: PLAN_OFF,
     gitStatus: CLEAN_GIT,
     workspace: null,
     runtimeChip: DEFAULT_RUNTIME_CHIP,
@@ -261,6 +290,15 @@ export const DEGRADED: StatusScenario = {
     contextPercent: 88,
     connectionState: 'disconnected',
     permissionMode: 'bypassPermissions',
+    permissionDescriptor: {
+      id: 'bypassPermissions',
+      label: 'Bypass permissions',
+      stop: 'autonomy',
+      asks: 'never',
+      reach: 'everything',
+      promise: 'Runs everything without asking, including outside this project.',
+    },
+    plan: null,
     runtime: { isDefault: false, canSelect: false },
     usage: USAGE_WARNING,
     subagentsInFlight: RUNNING_SUBAGENTS.length,
@@ -272,6 +310,7 @@ export const DEGRADED: StatusScenario = {
     onUpdateSession: () => {},
     onChangeMode: () => {},
     modelSupportsAutoMode: false,
+    plan: null,
     gitStatus: DIRTY_GIT,
     workspace: null,
     runtimeChip: CODEX_RUNTIME_CHIP,
@@ -328,6 +367,7 @@ export const RATE_LIMITED: StatusScenario = {
   ctx: {
     ...DEGRADED.ctx,
     permissionMode: 'default',
+    permissionDescriptor: null,
     usage: USAGE_EXHAUSTED,
   },
   input: {
@@ -359,6 +399,8 @@ export const DELEGATING: StatusScenario = {
     ...DEGRADED.ctx,
     connectionState: 'connected',
     permissionMode: 'default',
+    permissionDescriptor: null,
+    plan: { active: false },
     runtime: { isDefault: true, canSelect: false },
     usage: USAGE_OK,
   },

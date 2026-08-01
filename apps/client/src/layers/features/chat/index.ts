@@ -19,6 +19,13 @@ export { resolveMessageAuthor } from './lib/resolve-message-author';
 export type { MessageAuthorAgent, MessageAuthorContext } from './lib/resolve-message-author';
 export { TypingDots } from './ui/primitives';
 export { ChatInput, type ChatInputHandle } from './ui/input/ChatInput';
+/**
+ * The composer's "press Esc again to clear" readout, surfaced so a room's
+ * composer draws the SAME one session chat does. The double-Escape wipe is
+ * built into `ChatInput`, so any host that does not render this ships a
+ * destructive shortcut with nothing on screen to say it is armed.
+ */
+export { ClearArmedHint } from './ui/input/ClearArmedHint';
 export { FirstLight } from './ui/FirstLight';
 export { ChatStatusStrip } from './ui/status/ChatStatusStrip';
 export { deriveStripState } from './ui/status/strip-state';

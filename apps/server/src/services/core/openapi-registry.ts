@@ -28,6 +28,7 @@
 import { OpenAPIRegistry, OpenApiGeneratorV31 } from '@asteasolutions/zod-to-openapi';
 import { env } from '../../env.js';
 import {
+  PermissionModeSchema,
   SessionSchema,
   SessionListResponseSchema,
   RecentSessionsQuerySchema,
@@ -237,14 +238,7 @@ const LocalPermissionPreviewSchema = z.object({
     z.object({
       name: z.string(),
       cron: z.string().nullable(),
-      permissionMode: z.enum([
-        'default',
-        'plan',
-        'acceptEdits',
-        'dontAsk',
-        'bypassPermissions',
-        'auto',
-      ]),
+      permissionMode: PermissionModeSchema,
       startsEnabled: z.boolean(),
     })
   ),
@@ -839,6 +833,50 @@ const PermissionModeDescriptorSchema = z.object({
   description: z.string().optional().openapi({
     description: 'Optional helper copy shown beneath the label in rich pickers.',
   }),
+  stop: z.enum(['ask', 'act', 'autonomy']).openapi({
+    description:
+      'Which of the three fixed dial positions this mode belongs to: `ask` (stop before ' +
+      'changing anything), `act` (work on, stop for the risky parts), `autonomy` (never stop). ' +
+      'Clients render the position; they never invent a fourth or rename one.',
+  }),
+  promise: z.string().openapi({
+    description:
+      'One plain sentence about what happens under this mode, shown verbatim as the caption ' +
+      'beneath the picker. Product copy — the consequence, not the mechanism.',
+  }),
+  asks: z.enum(['always', 'when-risky', 'never']).openapi({
+    description:
+      'How often this mode stops to ask the person, as the runtime measures its own behavior. ' +
+      'Where it disagrees with `stop`’s canonical expectation (`ask`→always, `act`→when-risky, ' +
+      '`autonomy`→never) the surface says so out loud rather than hiding the difference.',
+  }),
+  reach: z.enum(['read', 'edit', 'workspace', 'everything']).openapi({
+    description:
+      'How far this mode’s actions can reach, whether or not it asks first: `read` (nothing ' +
+      'changes), `edit` (project files), `workspace` (files and commands inside the project), ' +
+      '`everything` (no sandbox — the whole machine and the network). With `asks`, decides how ' +
+      'loudly a client marks the mode: never-asking plus everything-reaching is the one ' +
+      'combination that earns red.',
+  }),
+  axis: z
+    .enum(['trust', 'working'])
+    .optional()
+    .openapi({
+      description:
+        'Which question this mode answers: `trust` (how much the agent may do without asking — ' +
+        'the modes the three dial positions select between) or `working` (how it goes about the ' +
+        'work, whatever the trust level, e.g. Claude’s `plan`). **Absent means `trust`**, so a ' +
+        'runtime that says nothing gets the common answer and keeps its place on the dial. ' +
+        'Declare `working` only for a mode that is not a point on the trust axis at all.',
+    }),
+  native: z
+    .string()
+    .optional()
+    .openapi({
+      description:
+        'The runtime’s own name for this mode when it differs from `id` — e.g. Codex’s ' +
+        '`workspace-write`. Shown in detail views; absent when the id is the native name.',
+    }),
 });
 
 const RuntimeCapabilitiesSchema = z.object({
@@ -854,6 +892,10 @@ const RuntimeCapabilitiesSchema = z.object({
   permissionModes: z
     .object({
       supported: z.boolean(),
+      default: z.string().optional().openapi({
+        description:
+          'Mode id used when a session has no stored preference. Always one of `values[].id`. Absent when the runtime declares none.',
+      }),
       values: z.array(PermissionModeDescriptorSchema),
     })
     .openapi({

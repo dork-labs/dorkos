@@ -37,11 +37,15 @@ export {
   getSessionEventStore,
 } from './session-state-projector.js';
 export type { RawSessionEvent, ProjectorStatusUpdate } from './session-state-projector.js';
+export { persistenceModeFor } from './projector-persistence.js';
+export type { ProjectorPersistenceMode } from './projector-persistence.js';
 export { EventLog, EVENT_LOG_MAX_EVENTS } from './event-log.js';
 export { reconstructHistoryFromEvents } from './event-log-history.js';
 // --- Durable session-event store for LOG-BACKED runtimes (DOR-189) ---
 export { SessionEventStore } from './session-event-store.js';
 export { readLogBackedHistory } from './log-backed-history.js';
+// --- Answered permission decisions, re-applied to runtime-owned history ---
+export { overlayApprovalReceipts } from './approval-receipt-overlay.js';
 export { RingBuffer, RING_BUFFER_MAX_EVENTS, RING_BUFFER_TTL_MS } from './ring-buffer.js';
 export { DevtoolsCaptureStore, devtoolsCaptureStore } from './devtools-capture-store.js';
 export type {

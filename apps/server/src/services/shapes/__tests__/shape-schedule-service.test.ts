@@ -265,8 +265,19 @@ describe('ShapeScheduleService.createSchedule — every declarable permission mo
       );
       expect(parsed.ok, parsed.ok ? '' : parsed.error).toBe(true);
 
+      // The row matches the file for every mode a package may declare, EXCEPT
+      // the one the store refuses to take from a file: `upsertFromFile` clamps
+      // `bypassPermissions` back, because a SKILL.md on disk is nobody's
+      // approval (`tasks/schedule-permission-clamp.ts`). `apply-shape.ts` has
+      // already applied the same rule before it ever gets here, so in
+      // production this second refusal is belt and braces — this test calls the
+      // service directly, which is exactly the path that skips the first one.
+      // Spelled out rather than computed with the function under test: deriving
+      // the expectation from `clampSchedulePermissionMode` would move both sides
+      // together if the clamp were ever widened to refuse more modes, and this
+      // assertion would keep passing while saying nothing.
       const row = store.getTasks().find((t) => t.name === request.name);
-      expect(row?.permissionMode).toBe(mode);
+      expect(row?.permissionMode).toBe(mode === 'bypassPermissions' ? 'acceptEdits' : mode);
     }
   );
 });

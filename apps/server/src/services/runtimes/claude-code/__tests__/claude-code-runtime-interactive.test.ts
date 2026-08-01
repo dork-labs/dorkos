@@ -635,7 +635,13 @@ describe('ClaudeCodeRuntime interactive tools', () => {
       expect(callArgs.options.permissionMode).toBe('dontAsk');
     });
 
-    it('passes auto permissionMode through to SDK options', async () => {
+    it('sends default instead of auto while the model cache cannot confirm auto support', async () => {
+      // Auto only works on models that report it, and the SDK rejects the whole
+      // query otherwise. With no cached capability for this model (cold cache),
+      // the runtime sends the safe mode rather than gambling the turn. The
+      // operator's stored choice is untouched and the send explains itself —
+      // both pinned in message-sender-auto-mode.test.ts, along with the
+      // pass-through once the capability IS known.
       manager.ensureSession('sess-1', { permissionMode: 'auto' });
 
       const mockIterator = {
@@ -653,13 +659,15 @@ describe('ClaudeCodeRuntime interactive tools', () => {
         }) as unknown as ReturnType<typeof query>
       );
 
-      for await (const _event of manager.sendMessage('sess-1', 'hi')) {
-        // drain
+      const events: StreamEvent[] = [];
+      for await (const event of manager.sendMessage('sess-1', 'hi')) {
+        events.push(event);
       }
 
       expect(mockedQuery).toHaveBeenCalledOnce();
       const callArgs = mockedQuery.mock.calls[0][0] as { options: { permissionMode: string } };
-      expect(callArgs.options.permissionMode).toBe('auto');
+      expect(callArgs.options.permissionMode).toBe('default');
+      expect(events.some((event) => event.type === 'system_status')).toBe(true);
     });
 
     it('sets allowDangerouslySkipPermissions for bypassPermissions mode', async () => {

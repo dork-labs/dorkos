@@ -34,6 +34,20 @@ export function mapHistoryMessage(m: HistoryMessage): ChatMessage {
                 answers: tc.answers,
               }
             : {}),
+          // A recorded answer is what turns a tool call back into a receipt on
+          // a cold open. Its presence is also what identifies the call as a
+          // permission prompt — the server only ever records an outcome for one
+          // — exactly as `questions` identifies a question above. Dropping
+          // these here left the server's durable answers stranded one step from
+          // the renderer.
+          ...(tc.approvalOutcome
+            ? {
+                interactiveType: 'approval' as const,
+                approvalOutcome: tc.approvalOutcome,
+                approvalResolvedAt: tc.approvalResolvedAt,
+                approvalStartedAt: tc.approvalStartedAt,
+              }
+            : {}),
         });
       }
     }

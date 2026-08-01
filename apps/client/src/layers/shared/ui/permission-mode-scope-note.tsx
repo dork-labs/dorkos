@@ -1,8 +1,15 @@
-import { cn, isBypassPermissionMode } from '@/layers/shared/lib';
+import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
+import { cn, isBypassPermissionMode, isBypassSemantics } from '@/layers/shared/lib';
 
 export interface PermissionModeScopeNoteProps {
   /** The permission mode currently selected. Anything that still asks renders nothing. */
   mode: string | null | undefined;
+  /**
+   * The selected mode as its runtime declared it, when the render site has the
+   * runtime's capability profile. Given one, the note is decided by what the
+   * mode DOES; without one it falls back to the mode's name.
+   */
+  descriptor?: PermissionModeDescriptor;
   /** Extra classes for the surrounding paragraph. */
   className?: string;
 }
@@ -22,16 +29,23 @@ export interface PermissionModeScopeNoteProps {
  *
  * So the sentence appears at the moment of the choice, in all three places a
  * permission mode is actually picked: the session status line, an integration
- * binding, and a scheduled task. One component and one condition
- * ({@link isBypassPermissionMode}), so the three cannot drift into saying
- * different things.
+ * binding, and a scheduled task. One component and one condition, so the three
+ * cannot drift into saying different things — `isBypassSemantics` where the
+ * runtime's profile is at hand, {@link isBypassPermissionMode} on the name where
+ * it is not (a binding and a task form pick a mode with no session, so no
+ * runtime, behind them).
  *
  * Deliberately quiet: muted body text, no icon, no color. It is a clarification,
  * not a warning — the warning about the mode itself already exists next to it,
  * and two alarms about one setting teach a person to read neither.
  */
-export function PermissionModeScopeNote({ mode, className }: PermissionModeScopeNoteProps) {
-  if (!isBypassPermissionMode(mode)) return null;
+export function PermissionModeScopeNote({
+  mode,
+  descriptor,
+  className,
+}: PermissionModeScopeNoteProps) {
+  const covers = descriptor ? isBypassSemantics(descriptor) : isBypassPermissionMode(mode);
+  if (!covers) return null;
   return (
     <p
       data-slot="permission-mode-scope-note"

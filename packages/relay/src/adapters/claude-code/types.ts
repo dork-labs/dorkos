@@ -8,7 +8,7 @@
  * @module relay/adapters/claude-code-types
  */
 
-import type { StreamEvent } from '@dorkos/shared/types';
+import type { PermissionMode, StreamEvent } from '@dorkos/shared/types';
 
 /**
  * Minimal interface for agent session management.
@@ -18,9 +18,11 @@ import type { StreamEvent } from '@dorkos/shared/types';
  * (e.g., `ClaudeCodeRuntime`) satisfies this interface without explicit
  * casting, so callers can pass a runtime instance directly as `agentManager`.
  *
- * Kept as a separate interface (rather than importing `AgentRuntime`) to avoid
- * adding a compile-time dependency from `@dorkos/relay` to `@dorkos/shared` for
- * types that are not relevant to the adapter's narrow concerns.
+ * Kept as a separate interface (rather than importing `AgentRuntime`) so the
+ * adapter states only the narrow surface it actually calls. The VALUE types it
+ * exchanges are still the shared ones — a permission mode narrowed to `string`
+ * here would let a mode nothing can run travel from a relay dispatch into a
+ * live session with no compiler objection anywhere along the way.
  */
 export interface AgentRuntimeLike {
   /**
@@ -37,12 +39,12 @@ export interface AgentRuntimeLike {
 
   ensureSession(
     sessionId: string,
-    opts: { permissionMode: string; cwd?: string; hasStarted?: boolean }
+    opts: { permissionMode: PermissionMode; cwd?: string; hasStarted?: boolean }
   ): void;
   sendMessage(
     sessionId: string,
     content: string,
-    opts?: { permissionMode?: string; cwd?: string; systemPromptAppend?: string }
+    opts?: { permissionMode?: PermissionMode; cwd?: string; systemPromptAppend?: string }
   ): AsyncGenerator<StreamEvent>;
   /**
    * Get the SDK-assigned session UUID for a given session key.
@@ -67,6 +69,18 @@ export interface AgentRuntimeLike {
    * @returns false if the session or pending interaction was not found
    */
   approveTool(sessionId: string, toolCallId: string, approved: boolean): boolean;
+
+  /**
+   * End the in-flight turn for a session.
+   *
+   * The only way to stop a running turn: `sendMessage` takes no `AbortSignal`,
+   * so abandoning its stream leaves the agent running. The tasks handler calls
+   * this when a run's TTL budget expires.
+   *
+   * @param sessionId - The session key used in ensureSession/sendMessage
+   * @returns false if the runtime found no in-flight turn to abort
+   */
+  interruptQuery(sessionId: string): Promise<boolean>;
 }
 
 /**

@@ -38,6 +38,8 @@ function promotionContext(overrides: Partial<StatusPromotionContext> = {}): Stat
     contextPercent: 88,
     connectionState: 'connected',
     permissionMode: 'plan',
+    permissionDescriptor: null,
+    plan: null,
     runtime: { isDefault: true, canSelect: false },
     usage: { kind: 'pay-as-you-go', costUsd: 0.35 },
     subagentsInFlight: 0,
@@ -50,6 +52,7 @@ const controls = {
   onToggleSound: vi.fn(),
   refresh: false,
   onToggleRefresh: vi.fn(),
+  plan: null,
 };
 
 /**
@@ -249,6 +252,37 @@ describe('SessionPopover — controls', () => {
       name: 'Keep checking for updates in the background',
     });
     expect(refresh).not.toBeChecked();
+  });
+});
+
+describe('SessionPopover — planning, at any width', () => {
+  /** The Plan switch as this panel offers it. */
+  const PLAN_SWITCH = 'Work out a plan first, and change nothing until you approve it';
+
+  it('offers the same switch the line’s chip carries', () => {
+    // The line's width budget can drop the chip on a narrow bar; the panel is
+    // where planning stays reachable when it does.
+    const onToggle = vi.fn();
+    renderPanel({ controls: { ...controls, plan: { active: false, onToggle } } });
+
+    const plan = screen.getByRole('switch', { name: PLAN_SWITCH });
+    expect(plan).not.toBeChecked();
+    fireEvent.click(plan);
+    expect(onToggle).toHaveBeenCalledWith(true);
+  });
+
+  it('reads as on while the session is planning', () => {
+    renderPanel({ controls: { ...controls, plan: { active: true, onToggle: vi.fn() } } });
+
+    expect(screen.getByRole('switch', { name: PLAN_SWITCH })).toBeChecked();
+  });
+
+  it('has no row at all on a runtime that cannot plan', () => {
+    // A row reading "Plan —" would be a question this session cannot answer.
+    renderPanel();
+
+    expect(screen.queryByRole('switch', { name: PLAN_SWITCH })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('session-row-plan')).not.toBeInTheDocument();
   });
 });
 

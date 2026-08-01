@@ -261,7 +261,9 @@ test.describe('Rooms — the @ mention picker @smoke', () => {
     await composer.click();
     // A price, not a mention — and the panel that opens has nothing to pick.
     await composer.pressSequentially('refunded @99');
-    await expect(page.getByText('No one by that name.')).toBeVisible({
+    // Scoped to the listbox: the same sentence also lives in the composer's
+    // screen-reader announcer, so a bare text match resolves to two elements.
+    await expect(page.getByRole('listbox').getByText('No one by that name.')).toBeVisible({
       timeout: SERVER_ROUND_TRIP_MS,
     });
 
