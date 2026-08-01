@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted.
 
+**Partially superseded by ADR `260801-003051` (2026-08-01):** the clause "the ULID is never written into an author column" no longer holds — the manifest ULID may be stored on the author row as a _generation stamp_ that decides which occupancy of a directory a row belongs to. The directory remains the identity key; the stamp is derived, never caller-supplied. The original clause guarded against reconciler ULID churn, a premise that is unreachable in current code (no reconciler path mints ids; an ADR-0043 rebuild reads ids back from the files that store them). Everything else in this ADR stands.
+
 ## Context
 
 Phase 1 of the multi-participant message list gave every message an author, and it picked the obvious key: `resolve-message-author.ts:101-104` returns `{ kind: 'agent', id }` straight from `ctx.agent.id`. That id is the agent manifest's ULID — `AgentManifestSchema.id`, documented as "ULID assigned at registration" (`packages/shared/src/mesh-schemas.ts:128`).

@@ -2,6 +2,22 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260801-003051",
+      "slug": "an-author-row-belongs-to-the-occupant-it-was-minted-for",
+      "title": "An author row belongs to the occupant it was minted for \u2014 a reused directory starts a fresh author",
+      "status": "proposed",
+      "created": "2026-08-01",
+      "specSlug": "mesh-identity-integrity"
+    },
+    {
+      "id": "260801-003050",
+      "slug": "a-duplicate-manifest-never-registers",
+      "title": "A duplicate manifest never registers \u2014 relocation requires the incumbent path to give the manifest up",
+      "status": "proposed",
+      "created": "2026-08-01",
+      "specSlug": "mesh-identity-integrity"
+    },
+    {
       "id": "260729-234626",
       "slug": "direct-connections-are-the-front-door",
       "title": "Direct connections are the front door: vendor MCP + OAuth first, the aggregator is the long-tail engine, no DorkOS-held platform key",
