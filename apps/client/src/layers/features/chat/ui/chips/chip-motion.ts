@@ -14,7 +14,7 @@
  *
  * @module features/chat/ui/chips/chip-motion
  */
-import type { MotionProps, Transition } from 'motion/react';
+import type { MotionProps, SpringOptions, Transition } from 'motion/react';
 
 /** How many chips stay in the live row; older ones are absorbed into the pile. */
 export const LIVE_WINDOW = 4;
@@ -45,6 +45,13 @@ export const CHIP_MORPH: Transition = { duration: 0.15, ease: EASE };
 
 /** One expanding ring, the whole of the upgrade's punctuation. */
 export const CHIP_RING: Transition = { duration: 0.3, ease: EASE };
+
+/**
+ * The diffstat climbing to a new count. Critically damped on purpose: a count
+ * that overshoots shows a number of lines the edit did not add, and a diffstat
+ * that lies for 80ms is worse than one that simply arrives.
+ */
+export const DIFFSTAT_TICK: SpringOptions = { stiffness: 220, damping: 30 };
 
 /** The pile acknowledging a landing: a nudge and a settle, never a shake. */
 export const PILE_WOBBLE: MotionProps['animate'] = {

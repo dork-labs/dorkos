@@ -220,6 +220,14 @@ vi.mock('motion/react', () => ({
     stop: vi.fn(),
     set: vi.fn(),
   }),
+  // A spring that has already arrived, and a transform read straight off it.
+  // Same principle as `animate` below: a test reads the number a component
+  // reports, never a frame of its way there. Because the mock re-reads its
+  // argument on every render, a value that changes is simply the new value.
+  useMotionValue: (value: unknown) => ({ get: () => value, set: () => {}, on: () => () => {} }),
+  useSpring: (value: unknown) => ({ get: () => value, set: () => {}, on: () => () => {} }),
+  useTransform: (source: { get: () => unknown }, transform: (latest: unknown) => unknown) =>
+    transform(source.get()),
   // Imperative animate: settle to the target immediately so counted values show
   // their final state synchronously in tests.
   animate: (_from: unknown, to: unknown, opts?: { onUpdate?: (v: unknown) => void }) => {

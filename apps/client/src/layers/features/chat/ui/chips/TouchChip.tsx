@@ -8,6 +8,7 @@ import { cn } from '@/layers/shared/lib';
 import type { TouchChip as TouchChipData } from '../../lib/touch-chips';
 import { CHIP_MORPH, CHIP_RING, chipEntryMotion } from './chip-motion';
 import { VERB_ICON, VERB_LABEL } from './chip-verbs';
+import { TickingNumber } from './TickingNumber';
 import { useUpgradePulse } from './use-upgrade-pulse';
 
 export interface TouchChipProps {
@@ -79,8 +80,15 @@ function hitsLabel(hits: number): string {
  * one morphs in place, the icon flipping to the pencil with a single ring pulse
  * and the diffstat sliding in beside it.
  *
- * `data-verb` and `data-live` are what the verb animations key off once they
- * land; they are written here so nothing has to be re-plumbed to switch them on.
+ * **What drives the verb animations.** The signatures themselves are CSS
+ * (`index.css`, the touch-chip block); this component supplies the three things
+ * they key off. `data-verb` says which signature. `data-live` runs the looping
+ * ones — read, search, edit, fetch, run — and stops them the frame the tool
+ * settles. `data-arriving` plays the two single shots, create and delete, which
+ * happen once and have to finish to read at all. The decorations those
+ * signatures need — a caret, a block cursor, streaming dots, the pen that draws
+ * the border, a spark, a puff — are rendered only for the verb and the moment
+ * that uses them, so a settled chip is markup as still as it looks.
  *
  * @param props - The chip model, the open handler, and whether it is in the live row.
  */
@@ -90,6 +98,10 @@ export function TouchChip({ chip, onOpen, animated = false }: TouchChipProps) {
   const openable = isOpenable(chip);
   const tombstone = chip.verb === 'delete';
   const hasDiffstat = chip.additions !== undefined || chip.deletions !== undefined;
+  // A create and a delete are events, not states: the chip plays them as it
+  // lands in the live row. Everywhere else — the tray, a showcase, a reopened
+  // transcript — is a record being read, and a record does not re-enact itself.
+  const arriving = animated && (chip.verb === 'create' || chip.verb === 'delete');
 
   return (
     <motion.button
@@ -98,11 +110,13 @@ export function TouchChip({ chip, onOpen, animated = false }: TouchChipProps) {
       data-testid="touch-chip"
       data-verb={chip.verb}
       data-live={chip.live}
+      data-arriving={arriving ? 'true' : undefined}
       title={tooltipFor(chip)}
       aria-label={accessibleNameFor(chip)}
       onClick={() => onOpen(chip)}
       className={cn(
-        'inline-flex max-w-56 items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs',
+        'touch-chip relative inline-flex max-w-56 items-center gap-1 rounded-md border',
+        'px-1.5 py-0.5 text-xs',
         'bg-card text-foreground border-border',
         'focus-visible:ring-ring/50 outline-none focus-visible:ring-2',
         openable ? 'hover:bg-accent hover:text-accent-foreground' : 'cursor-default',
@@ -110,23 +124,29 @@ export function TouchChip({ chip, onOpen, animated = false }: TouchChipProps) {
         chip.error && 'border-destructive/40 bg-destructive/10 text-destructive'
       )}
     >
+      {/* The clipped layer the read scan and the search beam travel through. */}
+      <span aria-hidden="true" className="chip-sweep" />
       {/* Fixed width: the glyph swaps mid-flip, and a wider one must not push
           the name along with it. */}
-      <span className="relative inline-flex w-4 shrink-0 items-center justify-center leading-none [perspective:400px]">
-        <AnimatePresence initial={false} mode="wait">
-          <motion.span
-            // The verb is the key, so the icon flips exactly when the verb
-            // changes — once per upgrade, not once per render.
-            key={chip.verb}
-            aria-hidden="true"
-            initial={reducedMotion ? { opacity: 0 } : { opacity: 0, rotateX: -90 }}
-            animate={reducedMotion ? { opacity: 1 } : { opacity: 1, rotateX: 0 }}
-            exit={reducedMotion ? { opacity: 0 } : { opacity: 0, rotateX: 90 }}
-            transition={CHIP_MORPH}
-          >
-            {VERB_ICON[chip.verb]}
-          </motion.span>
-        </AnimatePresence>
+      <span className="chip-icon relative inline-flex w-4 shrink-0 items-center justify-center leading-none">
+        {/* The glyph's own wrapper, so the scribble wiggle and the bin's chomp
+            have a transform to write on that the flip below is not using. */}
+        <span className="chip-glyph inline-flex items-center justify-center [perspective:400px]">
+          <AnimatePresence initial={false} mode="wait">
+            <motion.span
+              // The verb is the key, so the icon flips exactly when the verb
+              // changes — once per upgrade, not once per render.
+              key={chip.verb}
+              aria-hidden="true"
+              initial={reducedMotion ? { opacity: 0 } : { opacity: 0, rotateX: -90 }}
+              animate={reducedMotion ? { opacity: 1 } : { opacity: 1, rotateX: 0 }}
+              exit={reducedMotion ? { opacity: 0 } : { opacity: 0, rotateX: 90 }}
+              transition={CHIP_MORPH}
+            >
+              {VERB_ICON[chip.verb]}
+            </motion.span>
+          </AnimatePresence>
+        </span>
         {pulse.pulsing && !reducedMotion && (
           <motion.span
             aria-hidden="true"
@@ -139,7 +159,33 @@ export function TouchChip({ chip, onOpen, animated = false }: TouchChipProps) {
           />
         )}
       </span>
-      <span className="truncate">{chip.label}</span>
+      <span className="chip-label truncate">{chip.label}</span>
+      {chip.verb === 'edit' && chip.live && (
+        <span aria-hidden="true" data-testid="chip-caret" className="chip-caret" />
+      )}
+      {chip.verb === 'run' && chip.live && (
+        <span aria-hidden="true" data-testid="chip-cursor" className="chip-cursor" />
+      )}
+      {chip.verb === 'fetch' && chip.live && (
+        <span aria-hidden="true" data-testid="chip-dots" className="chip-dots">
+          <span />
+          <span />
+          <span />
+        </span>
+      )}
+      {chip.verb === 'create' && arriving && (
+        <>
+          <svg aria-hidden="true" data-testid="chip-pen" className="chip-pen">
+            {/* `pathLength` normalises the perimeter to 100, so the stroke draws
+                at one speed however long the name makes the chip. */}
+            <rect x="0" y="0" width="100%" height="100%" rx="6" pathLength="100" />
+          </svg>
+          <span aria-hidden="true" className="chip-spark" />
+        </>
+      )}
+      {chip.verb === 'delete' && arriving && (
+        <span aria-hidden="true" data-testid="chip-puff" className="chip-puff" />
+      )}
       {chip.touches > 1 && (
         <span className="text-muted-foreground shrink-0 tabular-nums">×{chip.touches}</span>
       )}
@@ -159,11 +205,15 @@ export function TouchChip({ chip, onOpen, animated = false }: TouchChipProps) {
               gained lines and lost none, and `−0` would state a measurement
               nothing ever made. */}
           {chip.additions !== undefined && (
-            <span className="text-emerald-600 dark:text-emerald-400">+{chip.additions}</span>
+            <span className="text-emerald-600 dark:text-emerald-400">
+              +<TickingNumber value={chip.additions} live={chip.live} />
+            </span>
           )}
           {chip.additions !== undefined && chip.deletions !== undefined && ' '}
           {chip.deletions !== undefined && (
-            <span className="text-red-600 dark:text-red-400">−{chip.deletions}</span>
+            <span className="text-red-600 dark:text-red-400">
+              −<TickingNumber value={chip.deletions} live={chip.live} />
+            </span>
           )}
         </motion.span>
       )}

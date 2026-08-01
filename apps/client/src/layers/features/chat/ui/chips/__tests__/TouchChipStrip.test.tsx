@@ -501,11 +501,9 @@ describe('TouchChipStrip — chip anatomy', () => {
   });
 
   it('carries no looping-animation class, live or settled', () => {
-    // `data-verb` and `data-live` are wired so the verb signatures can key off
-    // them; the loops themselves are Phase 3. The real reduced-motion
-    // assertion — that every verb loop stops when a reader has asked for less
-    // motion — belongs to the phase that adds those loops, and needs a browser
-    // to mean anything. This only pins that nothing crept in early.
+    // The verb signatures are CSS keyed off `data-verb` and `data-live`, not
+    // Tailwind animation utilities. Whether they *look* right is a browser
+    // question; this only pins that no chip carries a loop of its own.
     render(
       <TouchChipStrip
         parts={[
@@ -518,5 +516,114 @@ describe('TouchChipStrip — chip anatomy', () => {
     for (const chip of within(screen.getByTestId('chip-live-row')).getAllByTestId('touch-chip')) {
       expect(chip.className).not.toMatch(/animate-/);
     }
+  });
+});
+
+describe('TouchChipStrip — what the verb signatures are given to animate', () => {
+  /** The chip for `label` in the live row. */
+  function liveChip(label: string): HTMLElement {
+    const row = screen.getByTestId('chip-live-row');
+    const found = within(row)
+      .getAllByTestId('touch-chip')
+      .find((chip) => chip.textContent?.includes(label));
+    expect(found, `no live chip for ${label}`).toBeDefined();
+    return found as HTMLElement;
+  }
+
+  it('gives an edit its blinking caret only while it is being written', () => {
+    const editing = toolCall(
+      'Edit',
+      { file_path: '/repo/a.ts', old_string: 'a', new_string: 'b' },
+      { status: 'running' }
+    );
+    const { rerender } = render(<TouchChipStrip parts={[editing]} />);
+
+    expect(within(liveChip('a.ts')).getByTestId('chip-caret')).toBeInTheDocument();
+
+    rerender(
+      <TouchChipStrip
+        parts={[
+          { ...editing, status: 'complete' },
+          toolCall('Read', { file_path: '/repo/b.ts' }, { status: 'running' }),
+        ]}
+      />
+    );
+
+    expect(within(liveChip('a.ts')).queryByTestId('chip-caret')).toBeNull();
+  });
+
+  it('gives a running command its block cursor, and takes it back when it exits', () => {
+    const running = toolCall('Bash', { command: 'pnpm test' }, { status: 'running' });
+    const { rerender } = render(<TouchChipStrip parts={[running]} />);
+
+    const chip = liveChip('pnpm test');
+    expect(chip).toHaveAttribute('data-verb', 'run');
+    expect(within(chip).getByTestId('chip-cursor')).toBeInTheDocument();
+
+    rerender(
+      <TouchChipStrip
+        parts={[
+          { ...running, status: 'complete' },
+          toolCall('Read', { file_path: '/repo/b.ts' }, { status: 'running' }),
+        ]}
+      />
+    );
+
+    expect(within(liveChip('pnpm test')).queryByTestId('chip-cursor')).toBeNull();
+  });
+
+  it('streams dots beside a page that is still being fetched', () => {
+    render(
+      <TouchChipStrip
+        parts={[toolCall('WebFetch', { url: 'https://example.com/a' }, { status: 'running' })]}
+      />
+    );
+
+    expect(within(liveChip('example.com')).getByTestId('chip-dots')).toBeInTheDocument();
+  });
+
+  it('pens a created file into existence as it lands', () => {
+    // The pen and the swallow are single shots on arrival: `data-arriving` is
+    // what plays them, so the same chip read back in the tray sits still.
+    render(
+      <TouchChipStrip
+        parts={[
+          toolCall(
+            'Write',
+            { file_path: '/repo/new.ts', content: 'a\nb' },
+            { result: 'File created successfully at: /repo/new.ts', status: 'running' }
+          ),
+        ]}
+      />
+    );
+
+    const arriving = liveChip('new.ts');
+    expect(arriving).toHaveAttribute('data-arriving', 'true');
+    expect(within(arriving).getByTestId('chip-pen')).toBeInTheDocument();
+  });
+
+  it('leaves a chip in the tray with nothing to re-enact', async () => {
+    const user = userEvent.setup();
+    render(<TouchChipStrip parts={[toolCall('Bash', { command: 'rm old.ts' })]} />);
+
+    const tray = await openTray(user);
+    const tombstone = within(tray).getByRole('button', { name: 'Deleted old.ts' });
+
+    expect(tombstone).not.toHaveAttribute('data-arriving');
+    expect(within(tombstone).queryByTestId('chip-puff')).toBeNull();
+  });
+
+  it('swallows a deleted file into the bin as the chip lands', () => {
+    render(
+      <TouchChipStrip parts={[toolCall('Bash', { command: 'rm old.ts' }, { status: 'running' })]} />
+    );
+
+    // `rm old.ts` makes two chips — the command that ran and the file it took.
+    const tombstone = within(screen.getByTestId('chip-live-row')).getByRole('button', {
+      name: 'Deleted old.ts',
+    });
+    expect(tombstone).toHaveAttribute('data-verb', 'delete');
+    expect(tombstone).toHaveAttribute('data-arriving', 'true');
+    expect(within(tombstone).getByTestId('chip-puff')).toBeInTheDocument();
   });
 });
