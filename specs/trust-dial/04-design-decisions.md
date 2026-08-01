@@ -97,22 +97,24 @@ Implementation invariants: wire/persistence keep runtime mode ids; app code cont
 
 ## Follow-ups opened by the implementation
 
-- **The unattended-autonomy banner.** Decision 3A retires the standing bypass banner
-  "except for autonomy on unattended surfaces". The retirement shipped with the Trust
-  Dial; the unattended half did not. The banner that existed only ever fired for the
-  session a person was looking at, so scoping it was not a narrowing but a new feature:
-  it needs relay-binding and scheduled-task state the banner widget does not fetch (and
-  must not fetch on every route), plus its own definition of "unattended". Until it
-  exists, an agent left running without asking behind a binding or a task is signalled
-  only on the surfaces that show that binding or task.
+- ~~**The unattended-autonomy banner.**~~ — **shipped 2026-08-01 (DOR-814, PR #691).**
+  Decision 3A retired the standing bypass banner "except for autonomy on unattended
+  surfaces"; the unattended half now exists. A driver (relay binding or scheduled task) is
+  reported when it is live by its owning subsystem's own predicate — including adapter
+  registration and mesh agent presence — and its declared descriptor satisfies
+  `isUnattendedAutonomy` (autonomy stop or bypass semantics; never a mode id). One calm
+  amber row in the app-shell banner slot names the drivers, links to their surfaces, and
+  is non-dismissible by design: it reports a standing condition and self-clears. Freshness
+  rides SSE (`relay_bindings_changed`, `relay_adapters_changed`, `tasks_changed`); the
+  honest staleness window (file-sourced task edits) is enumerated in the collector's docs.
 
-- **The unattended banner still reports only the autonomy stop.** DOR-816 widened the
-  consent DOOR, not the banner: `isUnattendedAutonomy` is unchanged, so a binding or task
-  at a never-asking middle stop would be gated on the way in and then not reported by the
-  banner. Nothing can reach that state today — the binding dial resolves Claude Code's
-  profile and the scheduler runs Claude Code, neither of which declares such a mode — so
-  this is a latent inconsistency, not a live gap. Widening the banner is a separate
-  decision about what a standing alarm is for.
+- **The unattended banner still reports only the autonomy stop** (DOR-836). DOR-816
+  widened the consent DOOR, not the banner: `isUnattendedAutonomy` is unchanged, so a
+  binding or task at a never-asking middle stop would be gated on the way in and then not
+  reported by the banner. Nothing can reach that state today — the binding dial resolves
+  Claude Code's profile and the scheduler runs Claude Code, neither of which declares such
+  a mode — so this is a latent inconsistency, not a live gap. Widening the banner is a
+  separate decision about what a standing alarm is for.
 
 ## Deliberately not decided here (open for SPECIFY)
 
@@ -139,3 +141,16 @@ Implementation invariants: wire/persistence keep runtime mode ids; app code cont
   substrate), #678 (receipt permanence, ADR 260801-035912), #680 (the Trust Dial),
   #681 (picker unification), #682 (the autonomy door), #686 (the default trust
   level). Every code PR passed adversarial review before it was opened.
+
+  The follow-up program (also 2026-08-01) shipped six more: #688 (DOR-811 —
+  runtime-declared mode ids settable over the wire), #689 (DOR-812 — unbound
+  metadata rows; an early settings write no longer pins a runtime), #691 (DOR-814 —
+  the unattended-autonomy banner), #692 (DOR-808 — stopping a relay-dispatched run,
+  with the `relay.control.` reserved namespace and scheduler-principal check), #693
+  (DOR-809/810 — deny reasons the agent hears + the approval countdown that survives
+  reload), #695 (DOR-816 — the consent door widened to `needsConsentRitual`). Same
+  pipeline, same bar: every branch passed a separate adversarial review, and the
+  four FIX-FIRST verdicts were re-verified by the same reviewer re-running its
+  original exploit before the PR opened. DOR-813 and DOR-815 were deferred with
+  pickup plans recorded on the issues; second-order findings were filed as
+  DOR-819..825 and DOR-836.
