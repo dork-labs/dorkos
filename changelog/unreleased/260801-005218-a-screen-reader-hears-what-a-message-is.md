@@ -4,6 +4,7 @@ covers:
   - "fix(rooms): a room's composer says when Escape is about to clear your draft"
   - "fix(rooms): closing a thread puts you back where you were, and a room stops counting history it hasn't loaded"
   - 'fix(client): static markdown carries its own styling instead of three class names nothing generates'
+  - 'refactor(rooms): drop the redundant `after:content` from the new touch targets'
 ---
 
 ### Fixed
