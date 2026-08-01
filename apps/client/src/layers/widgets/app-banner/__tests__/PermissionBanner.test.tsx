@@ -220,4 +220,54 @@ describe('PermissionBanner', () => {
       expect(screen.queryByRole('status')).not.toBeInTheDocument();
     }
   );
+
+  it('warns about a runtime whose run-everything mode has a name it has never seen', async () => {
+    // The reason the banner reads the runtime's declared semantics instead of a
+    // list of mode ids: this session is bypassing, and no list in the client
+    // contains the word `yolo`.
+    const transport = createMockTransport({
+      getSession: vi.fn().mockResolvedValue({
+        id: 's1',
+        cwd: SELECTED_CWD,
+        runtime: 'exotic',
+        permissionMode: 'yolo',
+      } as unknown as Session),
+      getModels: vi.fn().mockResolvedValue([]),
+      getCapabilities: vi.fn().mockResolvedValue({
+        defaultRuntime: 'exotic',
+        capabilities: {
+          exotic: {
+            type: 'exotic',
+            supportsToolApproval: true,
+            supportsCostTracking: false,
+            supportsResume: false,
+            supportsMcp: false,
+            supportsQuestionPrompt: false,
+            supportsPlugins: false,
+            nativeContext: [],
+            permissionModes: {
+              supported: true,
+              default: 'yolo',
+              values: [
+                {
+                  id: 'yolo',
+                  label: 'Yolo',
+                  stop: 'autonomy',
+                  asks: 'never',
+                  reach: 'everything',
+                  promise: 'Runs everything without asking.',
+                },
+              ],
+            },
+            commandIntents: { compact: { supported: false } },
+            features: {},
+          },
+        },
+      }),
+    });
+    const { wrapper } = harness(transport);
+    render(<PermissionBanner sessionId="s1" />, { wrapper });
+
+    expect(await screen.findByRole('status')).toHaveTextContent('All permissions bypassed');
+  });
 });

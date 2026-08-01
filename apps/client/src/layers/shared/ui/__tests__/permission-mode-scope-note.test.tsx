@@ -57,6 +57,46 @@ describe('PermissionModeScopeNote', () => {
       unmount();
     }
   });
+
+  it('follows what the runtime says the mode does, when the runtime has said', () => {
+    // Codex's 'Full access' is the same promise under a name this component has
+    // never heard of. Given the descriptor, the note does not need to have.
+    render(
+      <PermissionModeScopeNote
+        mode="bypassPermissions"
+        descriptor={{
+          id: 'bypassPermissions',
+          label: 'Full access',
+          stop: 'autonomy',
+          asks: 'never',
+          reach: 'everything',
+          promise: 'Runs everything without asking, network included.',
+          native: 'danger-full-access',
+        }}
+      />
+    );
+    expect(screen.getByText(/This covers tools inside the session/)).toBeInTheDocument();
+  });
+
+  it('stays quiet for a mode that never asks but cannot leave the workspace', () => {
+    // Codex's workspace-write. It is not the "everything" this note is about,
+    // and saying it is would make the sentence untrue.
+    render(
+      <PermissionModeScopeNote
+        mode="acceptEdits"
+        descriptor={{
+          id: 'acceptEdits',
+          label: 'Workspace write',
+          stop: 'act',
+          asks: 'never',
+          reach: 'workspace',
+          promise: "Edits files and runs commands inside the workspace — Codex can't pause to ask.",
+          native: 'workspace-write',
+        }}
+      />
+    );
+    expect(screen.queryByText(/This covers tools inside the session/)).not.toBeInTheDocument();
+  });
 });
 
 describe('every place a permission mode is chosen carries the note', () => {

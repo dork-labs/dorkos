@@ -52,6 +52,16 @@ export {
   type ClaudeAccountRef,
 } from './claude-accounts';
 export { isBypassPermissionMode, permissionModeLabel } from './permission-mode';
+// The permission-mode derivation rules live in `@dorkos/shared` so the server's
+// tests can run every runtime's declared modes through the real functions (see
+// that module's header). Re-exported here so client code has one import path.
+export {
+  stopExpectation,
+  isDivergent,
+  warnTier,
+  isBypassSemantics,
+  type TrustWarnTier,
+} from '@dorkos/shared/permission-semantics';
 export { isSessionRequestReady } from './session-request-scope';
 export { rankMatch, type MatchTier, type RankMatchResult } from './rank-match';
 export { buildClientReport } from './build-issue-report';

@@ -155,11 +155,51 @@ const CLAUDE_CAPABILITIES: RuntimeCapabilities = {
   permissionModes: {
     supported: true,
     values: [
-      { id: 'default', label: 'Default', description: 'Prompt for each tool call' },
-      { id: 'acceptEdits', label: 'Accept edits', description: 'Auto-approve file edits' },
-      { id: 'plan', label: 'Plan', description: 'Research only, no edits' },
-      { id: 'bypassPermissions', label: 'Bypass permissions', description: 'Auto-approve all' },
-      { id: 'auto', label: 'Auto', description: 'Classifier approves or denies' },
+      {
+        id: 'default',
+        label: 'Default',
+        description: 'Prompt for each tool call',
+        stop: 'ask',
+        asks: 'always',
+        reach: 'edit',
+        promise: 'Asks before it edits a file or runs a command.',
+      },
+      {
+        id: 'acceptEdits',
+        label: 'Accept edits',
+        description: 'Auto-approve file edits',
+        stop: 'act',
+        asks: 'when-risky',
+        reach: 'edit',
+        promise: 'Edits files on its own. Asks before it runs a command.',
+      },
+      {
+        id: 'plan',
+        label: 'Plan',
+        description: 'Research only, no edits',
+        stop: 'ask',
+        asks: 'always',
+        reach: 'read',
+        promise: 'Reads and plans only. Nothing changes until you approve the plan.',
+      },
+      {
+        id: 'bypassPermissions',
+        label: 'Bypass permissions',
+        description: 'Auto-approve all',
+        stop: 'autonomy',
+        asks: 'never',
+        reach: 'everything',
+        promise: 'Runs everything without asking, including outside this project.',
+      },
+      {
+        id: 'auto',
+        label: 'Auto',
+        description: 'Classifier approves or denies',
+        stop: 'act',
+        asks: 'when-risky',
+        reach: 'edit',
+        promise: 'Edits files on its own and weighs each command, asking you about the risky ones.',
+      },
     ],
   },
   commandIntents: { compact: { supported: false } },
@@ -182,9 +222,30 @@ const TEST_MODE_CAPABILITIES: RuntimeCapabilities = {
   permissionModes: {
     supported: true,
     values: [
-      { id: 'always-allow', label: 'Always allow' },
-      { id: 'always-deny', label: 'Always deny' },
-      { id: 'scripted', label: 'Scripted' },
+      {
+        id: 'always-allow',
+        label: 'Always allow',
+        stop: 'autonomy',
+        asks: 'never',
+        reach: 'everything',
+        promise: 'Approves every request without asking.',
+      },
+      {
+        id: 'always-deny',
+        label: 'Always deny',
+        stop: 'ask',
+        asks: 'always',
+        reach: 'read',
+        promise: 'Refuses every request.',
+      },
+      {
+        id: 'scripted',
+        label: 'Scripted',
+        stop: 'act',
+        asks: 'when-risky',
+        reach: 'edit',
+        promise: "Answers each request the way the test scenario's script says.",
+      },
     ],
   },
   commandIntents: { compact: { supported: false } },
@@ -207,9 +268,36 @@ const CODEX_CAPABILITIES: RuntimeCapabilities = {
     supported: true,
     default: 'default',
     values: [
-      { id: 'default', label: 'Read only', description: 'Sandboxed reads.' },
-      { id: 'acceptEdits', label: 'Workspace write', description: 'Edits inside the workspace.' },
-      { id: 'bypassPermissions', label: 'Full access', description: 'No sandbox.' },
+      {
+        id: 'default',
+        label: 'Read only',
+        description: 'Sandboxed reads.',
+        stop: 'ask',
+        asks: 'never',
+        reach: 'read',
+        promise: 'Reads files and answers questions. Nothing changes.',
+        native: 'read-only',
+      },
+      {
+        id: 'acceptEdits',
+        label: 'Workspace write',
+        description: 'Edits inside the workspace.',
+        stop: 'act',
+        asks: 'never',
+        reach: 'workspace',
+        promise: "Edits files and runs commands inside the workspace — Codex can't pause to ask.",
+        native: 'workspace-write',
+      },
+      {
+        id: 'bypassPermissions',
+        label: 'Full access',
+        description: 'No sandbox.',
+        stop: 'autonomy',
+        asks: 'never',
+        reach: 'everything',
+        promise: 'Runs everything without asking, network included.',
+        native: 'danger-full-access',
+      },
     ],
   },
   commandIntents: { compact: { supported: false } },
@@ -229,9 +317,33 @@ const OPENCODE_CAPABILITIES: RuntimeCapabilities = {
     supported: true,
     default: 'default',
     values: [
-      { id: 'default', label: 'Default', description: 'Ask before edits.' },
-      { id: 'acceptEdits', label: 'Accept edits', description: 'Auto-accept file edits.' },
-      { id: 'bypassPermissions', label: 'Bypass permissions', description: 'Skip all prompts.' },
+      {
+        id: 'default',
+        label: 'Default',
+        description: 'Ask before edits.',
+        stop: 'ask',
+        asks: 'always',
+        reach: 'edit',
+        promise: 'Asks before it edits a file or runs a command.',
+      },
+      {
+        id: 'acceptEdits',
+        label: 'Accept edits',
+        description: 'Auto-accept file edits.',
+        stop: 'act',
+        asks: 'when-risky',
+        reach: 'edit',
+        promise: 'Edits files on its own. Asks before it runs a command.',
+      },
+      {
+        id: 'bypassPermissions',
+        label: 'Bypass permissions',
+        description: 'Skip all prompts.',
+        stop: 'autonomy',
+        asks: 'never',
+        reach: 'everything',
+        promise: 'Runs everything without asking, including outside this project.',
+      },
     ],
   },
   commandIntents: { compact: { supported: false } },
@@ -340,6 +452,99 @@ describe('PermissionModeItem', () => {
       expect(group).toHaveTextContent('Bypass permissions');
       expect(screen.queryByText('Plan')).not.toBeInTheDocument();
       expect(group.querySelector('[data-radio-value="auto"]')).toBeNull();
+    });
+  });
+
+  describe('what gets marked red', () => {
+    /** The trigger's classes, where the current mode's tint lands. */
+    function triggerClasses(): string {
+      return screen.getByTestId('dropdown-trigger').querySelector('button')!.className;
+    }
+
+    it('marks the mode that never asks about anything, anywhere', () => {
+      mockCapabilitiesForRuntime.mockReturnValue(CLAUDE_CAPABILITIES);
+      render(
+        <PermissionModeItem mode="bypassPermissions" onChangeMode={vi.fn()} runtime="claude-code" />
+      );
+
+      expect(triggerClasses()).toContain('text-red-500');
+      expect(
+        screen.getByRole('radiogroup').querySelector('[data-radio-value="bypassPermissions"]')
+          ?.className
+      ).toContain('text-red-500');
+    });
+
+    it("marks Codex's full access too, from its own words rather than its id", () => {
+      // Codex calls it 'Full access', not 'Bypass permissions'. The mark follows
+      // what the mode does, so the label it happens to carry is irrelevant.
+      mockCapabilitiesForRuntime.mockReturnValue(CODEX_CAPABILITIES);
+      render(
+        <PermissionModeItem mode="bypassPermissions" onChangeMode={vi.fn()} runtime="codex" />
+      );
+
+      expect(triggerClasses()).toContain('text-red-500');
+    });
+
+    it("leaves Codex's workspace-write unmarked, loud as its caption is", () => {
+      // It never asks, but it is bounded to the workspace — a different promise
+      // from full autonomy, and it gets its own treatment beside the caption
+      // rather than the same red.
+      mockCapabilitiesForRuntime.mockReturnValue(CODEX_CAPABILITIES);
+      render(<PermissionModeItem mode="acceptEdits" onChangeMode={vi.fn()} runtime="codex" />);
+
+      expect(triggerClasses()).not.toContain('text-red-500');
+    });
+
+    it("leaves Codex's read-only mode unmarked", () => {
+      mockCapabilitiesForRuntime.mockReturnValue(CODEX_CAPABILITIES);
+      render(<PermissionModeItem mode="default" onChangeMode={vi.fn()} runtime="codex" />);
+
+      expect(triggerClasses()).not.toContain('text-red-500');
+    });
+
+    it("leaves Claude's auto mode unmarked — it still asks about the risky calls", () => {
+      // The one visible difference this change makes. `auto` used to be red
+      // because a hand-kept table said so; what it does is raise an approval
+      // card for the calls its classifier will not resolve.
+      mockCapabilitiesForRuntime.mockReturnValue(CLAUDE_CAPABILITIES);
+      render(
+        <PermissionModeItem
+          mode="auto"
+          onChangeMode={vi.fn()}
+          runtime="claude-code"
+          modelSupportsAutoMode
+        />
+      );
+
+      expect(triggerClasses()).not.toContain('text-red-500');
+    });
+
+    it('marks nothing while the capability map is still arriving', () => {
+      // No profile, no claim — the same rule every other status item follows.
+      mockCapabilitiesForRuntime.mockReturnValue(undefined);
+      render(
+        <PermissionModeItem mode="bypassPermissions" onChangeMode={vi.fn()} runtime="claude-code" />
+      );
+
+      expect(triggerClasses()).not.toContain('text-red-500');
+    });
+  });
+
+  describe('the scope note beside the picker', () => {
+    it('appears for a mode that runs everything, under whatever name the runtime gives it', () => {
+      mockCapabilitiesForRuntime.mockReturnValue(CODEX_CAPABILITIES);
+      render(
+        <PermissionModeItem mode="bypassPermissions" onChangeMode={vi.fn()} runtime="codex" />
+      );
+
+      expect(screen.getByText(/covers tools inside the session/i)).toBeInTheDocument();
+    });
+
+    it('stays away from a mode that is bounded, even when it never asks', () => {
+      mockCapabilitiesForRuntime.mockReturnValue(CODEX_CAPABILITIES);
+      render(<PermissionModeItem mode="acceptEdits" onChangeMode={vi.fn()} runtime="codex" />);
+
+      expect(screen.queryByText(/covers tools inside the session/i)).not.toBeInTheDocument();
     });
   });
 

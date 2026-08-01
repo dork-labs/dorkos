@@ -13,7 +13,7 @@ import type { PermissionMode } from '@dorkos/shared/types';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import type { LucideIcon } from 'lucide-react';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
-import { permissionModeLabel } from '@/layers/shared/lib';
+import { permissionModeLabel, warnTier } from '@/layers/shared/lib';
 import { compactStatusValue } from '../lib/status-labels';
 import {
   ResponsiveDropdownMenu,
@@ -28,10 +28,14 @@ import {
   TooltipContent,
 } from '@/layers/shared/ui';
 
-// Presentation metadata keyed by permission-mode id. Icons and warn flags are
-// runtime-agnostic UX signals (e.g. "bypass-ish" modes get a red tint). If a
-// runtime surfaces a mode id we don't recognise, we fall back to the default
-// icon and warn=false rather than crashing.
+// Icons keyed by permission-mode id, and the last id-keyed table left here.
+// It survives this change on purpose: the Trust Dial gives icons to the three
+// STOPS rather than to individual modes, and moving them is that PR's job
+// (spec `trust-dial`, decision 1). Until then an unrecognised id falls back to
+// the default icon rather than crashing.
+//
+// Its sibling `MODE_WARN` is gone: which modes read as dangerous now comes from
+// what the runtime declared they do (`warnTier`), not from a list kept here.
 const MODE_ICONS: Record<string, LucideIcon> = {
   default: Shield,
   acceptEdits: ShieldCheck,
@@ -44,13 +48,25 @@ const MODE_ICONS: Record<string, LucideIcon> = {
   scripted: Cog,
 };
 
-const MODE_WARN: Record<string, boolean> = {
-  bypassPermissions: true,
-  auto: true,
-  'always-allow': true,
-};
-
 const DEFAULT_ICON: LucideIcon = Shield;
+
+/**
+ * Whether a declared mode is marked red here.
+ *
+ * Only the `'danger'` tier — a mode that never asks about anything, anywhere.
+ * `'caution'` (never asks, but bounded, like Codex's workspace-write) gets its
+ * own amber treatment beside the caption when the Trust Dial lands; giving it
+ * the same red as full autonomy today would make two very different promises
+ * look identical.
+ *
+ * A mode with no descriptor yet — capabilities still loading — is not marked,
+ * matching every other item on this line: data hasn't arrived, so no claim.
+ *
+ * @param descriptor - The mode as its runtime declared it, if resolved.
+ */
+function isMarkedDangerous(descriptor: PermissionModeDescriptor | undefined): boolean {
+  return descriptor !== undefined && warnTier(descriptor) === 'danger';
+}
 
 // Small inline tags shown next to a mode's label in the dropdown. Used to flag
 // research-preview modes (e.g. 'auto') without crowding the descriptor copy.
@@ -128,7 +144,7 @@ export function PermissionModeItem({
   const fullLabel = currentDescriptor?.label ?? permissionModeLabel(mode);
   const currentLabel = compact ? compactStatusValue(fullLabel) : fullLabel;
   const CurrentIcon = MODE_ICONS[mode] ?? DEFAULT_ICON;
-  const currentIsDangerous = MODE_WARN[mode] ?? false;
+  const currentIsDangerous = isMarkedDangerous(currentDescriptor);
 
   const trigger = (
     <button
@@ -165,7 +181,7 @@ export function PermissionModeItem({
         >
           {descriptors.map((d) => {
             const Icon = MODE_ICONS[d.id] ?? DEFAULT_ICON;
-            const warn = MODE_WARN[d.id] ?? false;
+            const warn = isMarkedDangerous(d);
             const tag = MODE_TAGS[d.id];
             return (
               <ResponsiveDropdownMenuRadioItem
@@ -189,7 +205,11 @@ export function PermissionModeItem({
         </ResponsiveDropdownMenuRadioGroup>
         {/* Sits under the list, so it reads as a note about the choice just made
             rather than as part of any one option. */}
-        <PermissionModeScopeNote mode={mode} className="px-2 py-1.5" />
+        <PermissionModeScopeNote
+          mode={mode}
+          descriptor={currentDescriptor}
+          className="px-2 py-1.5"
+        />
         {autoFiltered && (
           <Tooltip>
             <TooltipTrigger asChild>

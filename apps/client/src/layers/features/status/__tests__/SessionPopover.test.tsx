@@ -38,6 +38,7 @@ function promotionContext(overrides: Partial<StatusPromotionContext> = {}): Stat
     contextPercent: 88,
     connectionState: 'connected',
     permissionMode: 'plan',
+    permissionDescriptor: null,
     runtime: { isDefault: true, canSelect: false },
     usage: { kind: 'pay-as-you-go', costUsd: 0.35 },
     subagentsInFlight: 0,

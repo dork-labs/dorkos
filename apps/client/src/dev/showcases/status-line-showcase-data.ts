@@ -222,6 +222,7 @@ export const HEALTHY: StatusScenario = {
     contextPercent: 31,
     connectionState: 'connected',
     permissionMode: 'default',
+    permissionDescriptor: null,
     runtime: { isDefault: true, canSelect: false },
     usage: USAGE_OK,
     subagentsInFlight: 0,
@@ -261,6 +262,14 @@ export const DEGRADED: StatusScenario = {
     contextPercent: 88,
     connectionState: 'disconnected',
     permissionMode: 'bypassPermissions',
+    permissionDescriptor: {
+      id: 'bypassPermissions',
+      label: 'Bypass permissions',
+      stop: 'autonomy',
+      asks: 'never',
+      reach: 'everything',
+      promise: 'Runs everything without asking, including outside this project.',
+    },
     runtime: { isDefault: false, canSelect: false },
     usage: USAGE_WARNING,
     subagentsInFlight: RUNNING_SUBAGENTS.length,
@@ -328,6 +337,7 @@ export const RATE_LIMITED: StatusScenario = {
   ctx: {
     ...DEGRADED.ctx,
     permissionMode: 'default',
+    permissionDescriptor: null,
     usage: USAGE_EXHAUSTED,
   },
   input: {
@@ -359,6 +369,7 @@ export const DELEGATING: StatusScenario = {
     ...DEGRADED.ctx,
     connectionState: 'connected',
     permissionMode: 'default',
+    permissionDescriptor: null,
     runtime: { isDefault: true, canSelect: false },
     usage: USAGE_OK,
   },
