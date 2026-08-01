@@ -86,7 +86,7 @@ plan, so a negative memo would mean that plan never shows up.
 
 ## Relationships
 
-- **Deliberately unlike [ADR-0255](0255-per-session-runtime-binding.md)** (per-session runtime binding).
+- **Deliberately unlike [ADR-0255](0255-per-session-runtime-in-session-metadata-table.md)** (per-session runtime binding).
   That ADR is untouched and still governs runtime binding; this records why its pattern is the wrong
   tool for a fact that lives on disk and that a person can change from outside the product.
 - **Depends on 260801-204126** for the set of roots it probes.
