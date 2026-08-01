@@ -110,3 +110,15 @@ Implementation invariants: wire/persistence keep runtime mode ids; app code cont
 - Keyboard shortcut / command-palette entry for the dial.
 - ~~Migration of the binding dialog and task form onto the shared capability-driven picker~~ — **done.** Both render the Trust Dial from a runtime capability profile; the dial itself moved to `shared/ui` so an entity and a feature can share it. Neither coerces a stored mode: one the dial has no stop for is kept, named, and replaced only on purpose. Binding and task each gate their autonomy stop with copy about what stops happening on an _unattended_ surface — the approval buttons that would have arrived in a chat, the card a run would have waited on. Two limits worth knowing: the binding dial resolves Claude Code's profile because the relay's only runtime adapter is Claude Code's (named at `BINDING_RUNTIME`), and the task dial resolves the server default because a task carries no runtime of its own.
 - Trust receipts ("Ran 14 actions without asking · 2 would have paused") and learned always-allow suggestions — investigation ideas endorsed in principle, unscheduled.
+- **Codex's middle stop enters without an acknowledgement.** The autonomy door (#682)
+  gates the autonomy *stop*, per Decision 5. Codex's Act stop (`workspace-write`)
+  declares `asks: 'never'` — it runs shell commands in the workspace with nothing to
+  ask — and enters with no consent ritual. The amber divergent caption (Decision 2A)
+  is the disclosure that covers it. This is design-faithful, and it is also the
+  sharpest residual gap between what the door gates and what can surprise someone;
+  if it ever earns a gate of its own, that is a new decision, not an oversight.
+- **Implementation record.** The program shipped as twelve PRs on 2026-08-01:
+  #668 (spec), #671, #672, #674, #675 (Wave 1 safety + receipts), #677 (semantics
+  substrate), #678 (receipt permanence, ADR 260801-035912), #680 (the Trust Dial),
+  #681 (picker unification), #682 (the autonomy door), #686 (the default trust
+  level). Every code PR passed adversarial review before it was opened.
