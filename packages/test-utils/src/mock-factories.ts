@@ -436,7 +436,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     triggerTask: vi.fn().mockResolvedValue({ runId: 'run-1' }),
     listTaskRuns: vi.fn().mockResolvedValue([]),
     getTaskRun: vi.fn(),
-    cancelTaskRun: vi.fn().mockResolvedValue({ success: true }),
+    cancelTaskRun: vi.fn().mockResolvedValue({ success: true, state: 'stopping' }),
     getTaskTemplates: vi.fn().mockResolvedValue([]),
     // Relay
     listRelayMessages: vi.fn().mockResolvedValue({ messages: [] }),

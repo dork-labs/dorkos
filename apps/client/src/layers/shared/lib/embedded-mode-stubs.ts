@@ -101,6 +101,7 @@ import type {
   UpdateTaskRequest,
   ListTaskRunsQuery,
   TaskTemplate,
+  CancelTaskRunResponse,
 } from '@dorkos/shared/types';
 import type {
   AggregatedPackage,
@@ -164,7 +165,7 @@ export const tasksStubs = {
     throw new Error('Tasks scheduler is not supported in embedded mode');
   },
 
-  async cancelTaskRun(_id: string): Promise<{ success: boolean }> {
+  async cancelTaskRun(_id: string): Promise<CancelTaskRunResponse> {
     throw new Error('Tasks scheduler is not supported in embedded mode');
   },
 

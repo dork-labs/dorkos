@@ -472,11 +472,21 @@ export function createTasksRouter(
     res.json(run);
   });
 
-  router.post('/runs/:id/cancel', (req, res) => {
+  router.post('/runs/:id/cancel', async (req, res) => {
     const run = store.getRun(req.params.id);
-    const cancelled = scheduler.cancelRun(req.params.id);
-    if (!cancelled) {
-      return res.status(404).json({ error: 'Run not found or not active' });
+    const outcome = await scheduler.cancelRun(req.params.id);
+
+    if (outcome.state === 'not_found') {
+      return res.status(404).json({ error: 'Run not found' });
+    }
+    if (outcome.state === 'unconfirmed') {
+      // 502: the request left this server and nothing answered for it. Saying
+      // "cancelled" here would be a claim about a run we cannot see.
+      return res.status(502).json({ error: outcome.reason });
+    }
+    // Nothing was stopped, so nothing happened worth telling the activity feed.
+    if (outcome.state === 'already_finished') {
+      return res.json({ success: true, state: 'already_finished' });
     }
 
     if (activityService && run) {
@@ -494,7 +504,7 @@ export function createTasksRouter(
       });
     }
 
-    return res.json({ success: true });
+    return res.json({ success: true, state: 'stopping' });
   });
 
   return router;

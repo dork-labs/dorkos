@@ -4,6 +4,8 @@ import request from 'supertest';
 import { createRelayRouter, buildConversations } from '../relay.js';
 import type { RelayCore, AdapterRegistry, WebhookAdapter, DeadLetterEntry } from '@dorkos/relay';
 import { AdapterError, type AdapterManager } from '../../services/relay/adapter-manager.js';
+import { TASK_CANCEL_SUBJECT_PREFIX } from '@dorkos/shared/relay-schemas';
+import { SERVER_MANAGED_PREFIXES } from '@dorkos/relay';
 
 function createMockRelayCore(): RelayCore {
   return {
@@ -299,11 +301,11 @@ describe('Relay routes', () => {
     it('registers an endpoint', async () => {
       const res = await request(app)
         .post('/api/relay/endpoints')
-        .send({ subject: 'relay.agent.new' });
+        .send({ subject: 'relay.test.mine' });
 
       expect(res.status).toBe(201);
       expect(res.body.subject).toBe('relay.test.endpoint');
-      expect(vi.mocked(relayCore.registerEndpoint)).toHaveBeenCalledWith('relay.agent.new');
+      expect(vi.mocked(relayCore.registerEndpoint)).toHaveBeenCalledWith('relay.test.mine');
     });
 
     it('returns 400 for missing subject', async () => {
@@ -318,10 +320,32 @@ describe('Relay routes', () => {
 
       const res = await request(app)
         .post('/api/relay/endpoints')
-        .send({ subject: 'relay.agent.dup' });
+        .send({ subject: 'relay.test.dup' });
 
       expect(res.status).toBe(422);
       expect(res.body.error).toBe('Duplicate endpoint');
+    });
+
+    // Login is off by default, so this route is reachable by anything that can
+    // reach the port. A mailbox in a namespace the server manages intercepts
+    // somebody else's mail; on a control subject it also manufactures a false
+    // confirmation for every signal published there (DOR-808).
+    it.each(SERVER_MANAGED_PREFIXES)('refuses a mailbox under %s', async (prefix) => {
+      const res = await request(app)
+        .post('/api/relay/endpoints')
+        .send({ subject: `${prefix}squatted` });
+
+      expect(res.status).toBe(403);
+      expect(vi.mocked(relayCore.registerEndpoint)).not.toHaveBeenCalled();
+    });
+
+    it('refuses a mailbox on the run stop subject specifically', async () => {
+      const res = await request(app)
+        .post('/api/relay/endpoints')
+        .send({ subject: `${TASK_CANCEL_SUBJECT_PREFIX}01JRUNID` });
+
+      expect(res.status).toBe(403);
+      expect(vi.mocked(relayCore.registerEndpoint)).not.toHaveBeenCalled();
     });
   });
 
@@ -546,6 +570,23 @@ describe('Relay routes', () => {
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Invalid subscription pattern');
+    });
+
+    it('cannot be pointed at run stop requests', async () => {
+      // A subscriber here is PASSIVE, and the publish pipeline counts any
+      // handler that does not refuse as a delivery — so a watcher whose
+      // pattern covered a stop request would make every Stop report success
+      // while nothing was stopped (DOR-808). The stop namespace is therefore
+      // not streamable at all, and no prefix this route allows may grow to
+      // cover it.
+      const res = await request(app).get(
+        `/api/relay/stream?subject=${TASK_CANCEL_SUBJECT_PREFIX}>`
+      );
+
+      expect(res.status).toBe(400);
+      expect(
+        res.body.allowedPrefixes.some((p: string) => TASK_CANCEL_SUBJECT_PREFIX.startsWith(p))
+      ).toBe(false);
     });
   });
 });

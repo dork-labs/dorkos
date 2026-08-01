@@ -10,6 +10,12 @@ import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { createMockRun } from '@dorkos/test-utils';
 import { TaskRunHistoryPanel } from '../ui/TaskRunHistoryPanel';
+import { toast } from 'sonner';
+
+vi.mock('sonner', () => {
+  const toast = Object.assign(vi.fn(), { error: vi.fn() });
+  return { toast };
+});
 
 const mockSetActiveSession = vi.fn();
 const mockSetSelectedCwd = vi.fn();
@@ -85,7 +91,7 @@ describe('TaskRunHistoryPanel', () => {
     });
   });
 
-  it('shows cancel button only for running jobs', async () => {
+  it('shows the stop button only for running jobs', async () => {
     const runs = [
       createMockRun({ id: 'run-1', status: 'running', trigger: 'scheduled' }),
       createMockRun({ id: 'run-2', status: 'completed', trigger: 'manual' }),
@@ -105,9 +111,61 @@ describe('TaskRunHistoryPanel', () => {
       expect(screen.getByTitle('Running')).toBeTruthy();
     });
 
-    // Only one Cancel button should exist (for the running job)
-    const cancelButtons = screen.getAllByText('Cancel');
-    expect(cancelButtons).toHaveLength(1);
+    // Only one Stop button should exist (for the running job)
+    const stopButtons = screen.getAllByText('Stop');
+    expect(stopButtons).toHaveLength(1);
+  });
+
+  describe('pressing Stop', () => {
+    /** Render one running job and press its Stop button. */
+    async function pressStop(cancelTaskRun: Transport['cancelTaskRun']) {
+      const transport = createMockTransport({
+        listTaskRuns: vi
+          .fn()
+          .mockResolvedValue([createMockRun({ id: 'run-1', status: 'running' })]),
+        cancelTaskRun: cancelTaskRun as never,
+      });
+      const Wrapper = createWrapper(transport);
+      render(
+        <Wrapper>
+          <TaskRunHistoryPanel scheduleId="sched-1" scheduleCwd="/test/cwd" />
+        </Wrapper>
+      );
+      await waitFor(() => {
+        expect(screen.getByText('Stop')).toBeTruthy();
+      });
+      fireEvent.click(screen.getByText('Stop'));
+    }
+
+    it('says the run is stopping when a runner took the request', async () => {
+      await pressStop(vi.fn().mockResolvedValue({ success: true, state: 'stopping' }));
+
+      await waitFor(() => {
+        expect(toast).toHaveBeenCalledWith('Stopping the run');
+      });
+    });
+
+    it('says so when the run had already finished, rather than claiming a stop', async () => {
+      await pressStop(vi.fn().mockResolvedValue({ success: true, state: 'already_finished' }));
+
+      await waitFor(() => {
+        expect(toast).toHaveBeenCalledWith('That run had already finished');
+      });
+    });
+
+    it('never claims success when the stop could not be confirmed', async () => {
+      // The server answers 502 for a stop nothing acknowledged, and the run may
+      // still be going. "Run cancelled" here would be the visible half of the
+      // lie (DOR-808).
+      await pressStop(vi.fn().mockRejectedValue(new Error('Nothing picked up the stop request')));
+
+      await waitFor(() => {
+        expect(toast.error).toHaveBeenCalledWith(
+          expect.stringContaining('Nothing picked up the stop request')
+        );
+      });
+      expect(toast).not.toHaveBeenCalled();
+    });
   });
 
   it('clicking a run navigates to its session (same cwd)', async () => {

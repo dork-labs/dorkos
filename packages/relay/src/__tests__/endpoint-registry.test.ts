@@ -49,6 +49,17 @@ describe('EndpointRegistry', () => {
       expect(new Date(info.registeredAt).toISOString()).toBe(info.registeredAt);
     });
 
+    it('refuses a control subject outright — nobody may hold that mailbox', async () => {
+      // Not an ownership rule with an exception for the server: an endpoint on
+      // a control subject makes `publish` count the mailbox delivery, so every
+      // control signal there reports confirmed whether or not a subscriber
+      // acted on it. There is no caller who wants that (DOR-808).
+      await expect(registry.registerEndpoint('relay.control.task-cancel.run-1')).rejects.toThrow(
+        /control channel/
+      );
+      expect(registry.listEndpoints()).toHaveLength(0);
+    });
+
     it('creates Maildir directory structure (tmp, new, cur, failed)', async () => {
       const info = await registry.registerEndpoint('relay.agent.test');
 

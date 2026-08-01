@@ -88,6 +88,7 @@ export type {
   TaskRunTrigger,
   Task,
   TaskRun,
+  CancelTaskRunResponse,
   TaskTemplate,
   CreateTaskRequest,
   CreateTaskInput,

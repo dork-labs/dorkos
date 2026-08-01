@@ -2925,6 +2925,22 @@ export const TaskRunSchema = z
 
 export type TaskRun = z.infer<typeof TaskRunSchema>;
 
+/**
+ * What happened when somebody asked to stop a run.
+ *
+ * `stopping` means a runner has the request. `already_finished` means there was
+ * nothing left to stop. A request nothing acknowledged is not a success and
+ * never answers 200 — see the cancel route.
+ */
+export const CancelTaskRunResponseSchema = z
+  .object({
+    success: z.literal(true),
+    state: z.enum(['stopping', 'already_finished']),
+  })
+  .openapi('CancelTaskRunResponse');
+
+export type CancelTaskRunResponse = z.infer<typeof CancelTaskRunResponseSchema>;
+
 export const TaskTemplateSchema = z
   .object({
     id: z.string(),

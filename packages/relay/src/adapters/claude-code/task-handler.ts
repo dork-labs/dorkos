@@ -21,13 +21,14 @@ import type {
   TraceStoreLike,
 } from '../../types.js';
 import type { AgentRuntimeLike, TasksStoreLike } from './types.js';
+import { OPERATOR_CANCEL, type RunningTasks } from './task-cancel-handler.js';
 
 /** Maximum characters to collect for run output summary. */
 const OUTPUT_SUMMARY_MAX_CHARS = 1000;
 
 /**
- * Race sentinel: the run's TTL budget expired before the agent produced its
- * next event.
+ * Race sentinel: the run was stopped — by a person or by its TTL budget —
+ * before the agent produced its next event.
  */
 const RUN_STOPPED = Symbol('run-stopped');
 
@@ -64,16 +65,20 @@ const INTERRUPT_TIMEOUT_MS = 30_000;
  * async publish). Fix both if you fix one.
  *
  * @param stream - The agent's per-turn event stream.
- * @param signal - Aborts when the run is out of budget.
+ * @param signal - Aborts when the run is stopped or out of budget.
  * @param onStop - Runs once when the signal aborts; ends the turn at the agent.
  * @param onEvent - Receives each event that arrives before the stop.
+ * @returns Whether a stop is what ended the run. Read this rather than the
+ *   signal: a stop that lands in the moment between the stream's last event and
+ *   this function returning aborts a signal nobody is waiting on any more, and
+ *   a run that finished must not be recorded as one somebody stopped.
  */
 async function consumeRunStream(
   stream: AsyncIterable<StreamEvent>,
   signal: AbortSignal,
   onStop: () => void,
   onEvent: (event: StreamEvent) => Promise<void> | void
-): Promise<void> {
+): Promise<boolean> {
   const iterator = stream[Symbol.asyncIterator]();
   let onAbort!: () => void;
   const stopped = new Promise<typeof RUN_STOPPED>((resolve) => {
@@ -95,9 +100,9 @@ async function consumeRunStream(
       if (winner === RUN_STOPPED) {
         void pending.catch(() => {});
         void Promise.resolve(iterator.return?.()).catch(() => {});
-        return;
+        return true;
       }
-      if (winner.done) return;
+      if (winner.done) return false;
       await onEvent(winner.value);
       pending = iterator.next();
     }
@@ -153,6 +158,14 @@ export interface TasksHandlerDeps {
   agentManager: AgentRuntimeLike;
   traceStore: TraceStoreLike;
   taskStore?: TasksStoreLike;
+  /**
+   * The adapter's in-flight run registry — the only handle anything outside
+   * this function has on a running task (DOR-808). Required, not optional: a
+   * handler that forgot to register its run is a Stop button that answers
+   * "not found" for a run that is plainly executing, which is the exact bug
+   * this registry exists to close.
+   */
+  runningTasks: RunningTasks;
   logger?: import('@dorkos/shared/logger').Logger;
 }
 
@@ -246,6 +259,10 @@ export async function handleTasksMessage(
     timeout = setTimeout(() => controller.abort(), ttlRemaining);
   }
 
+  // From here until the `finally` below, this run can be stopped from the
+  // cockpit: the registry is what the stop-request subscription reaches for.
+  deps.runningTasks.register(runId, controller);
+
   let outputSummary = '';
 
   try {
@@ -263,7 +280,7 @@ export async function handleTasksMessage(
       cwd: effectiveCwd,
     });
 
-    await consumeRunStream(
+    const stopped = await consumeRunStream(
       eventStream,
       controller.signal,
       () => void interruptRun(deps, runId),
@@ -281,16 +298,19 @@ export async function handleTasksMessage(
 
     const durationMs = Date.now() - startTime;
     const truncatedSummary = outputSummary.slice(0, OUTPUT_SUMMARY_MAX_CHARS);
-    const aborted = controller.signal.aborted;
+    // Both stops record `cancelled` — the run-status vocabulary has no separate
+    // timeout — so the error line is what tells a person which one happened,
+    // and it matches the direct-dispatch path word for word.
+    const stoppedByOperator = stopped && controller.signal.reason === OPERATOR_CANCEL;
 
     if (deps.taskStore) {
-      if (aborted) {
+      if (stopped) {
         deps.taskStore.updateRun(runId, {
           status: 'cancelled',
           finishedAt: new Date().toISOString(),
           durationMs,
           outputSummary: truncatedSummary,
-          error: 'Run timed out (TTL budget expired)',
+          error: stoppedByOperator ? 'Run cancelled' : 'Run timed out (TTL budget expired)',
           sessionId: runId,
         });
       } else {
@@ -310,8 +330,11 @@ export async function handleTasksMessage(
     });
 
     return {
-      success: !aborted,
-      error: aborted ? 'TTL budget expired' : undefined,
+      // A run somebody stopped on purpose was DELIVERED and acted on — the
+      // delivery did its job, and the run's own record is where the stop is
+      // written. Only the deadline is a delivery that did not work out.
+      success: !stopped || stoppedByOperator,
+      error: stopped && !stoppedByOperator ? 'TTL budget expired' : undefined,
       durationMs,
     };
   } catch (err) {
@@ -343,6 +366,10 @@ export async function handleTasksMessage(
     };
   } finally {
     if (timeout) clearTimeout(timeout);
+    // Nothing awaits between the run's terminal write above and this line, so
+    // a stop request either reached a run that was genuinely still going or
+    // finds it gone — never a half-finalized run it could stop twice.
+    deps.runningTasks.release(runId, controller);
   }
 }
 

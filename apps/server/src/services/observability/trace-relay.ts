@@ -15,14 +15,17 @@ import { isTracingEnabled, withSpan } from './otel.js';
 import { SPAN, ATTR } from './attributes.js';
 
 /**
- * Bucket a relay subject into a coarse, non-identifying kind. System subjects
- * (`relay.system.*`, e.g. task dispatch) are `'system'`; everything else is
- * `'agent'`. The raw subject is never recorded.
+ * Bucket a relay subject into a coarse, non-identifying kind. Subjects the
+ * server owns — `relay.system.*` (e.g. task dispatch) and `relay.control.*`
+ * (e.g. stopping a run) — are `'system'`; everything else is `'agent'`. The raw
+ * subject is never recorded.
  *
  * @param subject - The relay subject being published to.
  */
 function subjectKind(subject: string): 'system' | 'agent' {
-  return subject.startsWith('relay.system') ? 'system' : 'agent';
+  return subject.startsWith('relay.system') || subject.startsWith('relay.control')
+    ? 'system'
+    : 'agent';
 }
 
 /**

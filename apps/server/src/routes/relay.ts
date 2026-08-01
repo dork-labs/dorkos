@@ -7,7 +7,11 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import type { RelayCore, DeadLetterEntry } from '@dorkos/relay';
-import { extractSessionIdFromSubject } from '@dorkos/relay';
+import {
+  extractSessionIdFromSubject,
+  isServerManagedSubject,
+  SERVER_MANAGED_PREFIXES,
+} from '@dorkos/relay';
 import {
   SendMessageRequestSchema,
   MessageListQuerySchema,
@@ -337,6 +341,23 @@ export function createRelayRouter(
         .status(400)
         .json({ error: 'Validation failed', details: z.flattenError(result.error) });
     }
+
+    // This route takes a client-supplied subject and, with login off by
+    // default, is reachable by anything that can reach the port. A mailbox in a
+    // namespace the server manages intercepts mail addressed to an agent, to
+    // the person, or to the server — and on a subject the server publishes
+    // control signals to it manufactures a false confirmation (see
+    // `isControlSubject`). The same list the agent tool surface enforces, asked
+    // here too rather than trusted to a caller.
+    if (isServerManagedSubject(result.data.subject)) {
+      return res.status(403).json({
+        error:
+          `Subject "${result.data.subject}" is in a namespace DorkOS manages and cannot be ` +
+          'registered here. Use a subject outside ' +
+          `${SERVER_MANAGED_PREFIXES.join(', ')}.`,
+      });
+    }
+
     try {
       const endpoint = await relayCore.registerEndpoint(result.data.subject);
       return res.status(201).json(endpoint);

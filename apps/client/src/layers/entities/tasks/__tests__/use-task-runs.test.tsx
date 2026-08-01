@@ -197,7 +197,7 @@ describe('useCancelTaskRun', () => {
 
   it('calls transport.cancelTaskRun with the run ID', async () => {
     const transport = createMockTransport({
-      cancelTaskRun: vi.fn().mockResolvedValue({ success: true }),
+      cancelTaskRun: vi.fn().mockResolvedValue({ success: true, state: 'stopping' }),
     });
 
     const { result } = renderHook(() => useCancelTaskRun(), {
@@ -219,7 +219,7 @@ describe('useCancelTaskRun', () => {
     const runs = [createMockRun({ id: 'run-1', status: 'running' })];
     const transport = createMockTransport({
       listTaskRuns: vi.fn().mockResolvedValue(runs),
-      cancelTaskRun: vi.fn().mockResolvedValue({ success: true }),
+      cancelTaskRun: vi.fn().mockResolvedValue({ success: true, state: 'stopping' }),
     });
 
     const wrapper = createWrapper(transport);

@@ -259,6 +259,56 @@ export const TaskDispatchPayloadSchema = z
 
 export type TaskDispatchPayload = z.infer<typeof TaskDispatchPayloadSchema>;
 
+// === Task Cancel ===
+
+/**
+ * Subject prefix a stop request for one run is published to (DOR-808).
+ *
+ * Two namespaces were ruled out, and both for reasons that bite.
+ *
+ * NOT under `relay.system.tasks.`, which the Claude Code adapter claims as a
+ * delivery prefix: a stop must reach a run that is already holding one of the
+ * adapter's concurrency slots, and anything routed through `deliver()` queues
+ * behind exactly the run it is trying to end. It travels the way tool approvals
+ * do instead — a subscription the adapter registers on start.
+ *
+ * NOT under `relay.system.` at all, which is subtler and worse. A subscriber is
+ * counted as a DELIVERY unless it explicitly refuses, and `GET
+ * /api/relay/stream` lets anyone watch `relay.system.>` with a handler that
+ * only forwards what it sees. A watcher attached to a stop's subject therefore
+ * makes every stop report "delivered" while nothing was stopped — the honest
+ * "nobody took it" answer becomes unreachable precisely when it is true.
+ * `relay.control.` is outside every prefix that route will accept, and the bus
+ * refuses a mailbox there outright — not because a mailbox would swallow the
+ * stop (it would not: the Maildir watcher re-dispatches to the same
+ * subscribers, so the handler still runs), but because `deliveredTo` would
+ * then count the mailbox and report the same false confirmation by a second
+ * route.
+ *
+ * The concrete subject is this prefix plus the run id, so a trace row names the
+ * run it belongs to.
+ */
+export const TASK_CANCEL_SUBJECT_PREFIX = 'relay.control.task-cancel.';
+
+/**
+ * The only principal allowed to stop a run.
+ *
+ * Server-injected on publish and not reachable from a model, so a handler that
+ * checks it knows the request came from the scheduler acting on a person's
+ * button press — not from an agent that guessed a run id.
+ */
+export const TASK_SCHEDULER_PRINCIPAL = 'relay.system.tasks.scheduler';
+
+export const TaskCancelPayloadSchema = z
+  .object({
+    type: z.literal('task_cancel'),
+    /** The run to stop. Authoritative — the subject's tail is for humans. */
+    runId: z.string(),
+  })
+  .openapi('TaskCancelPayload');
+
+export type TaskCancelPayload = z.infer<typeof TaskCancelPayloadSchema>;
+
 // === Console Relay Receipt ===
 
 export const RelayReceiptSchema = z

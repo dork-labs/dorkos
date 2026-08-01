@@ -45,6 +45,12 @@ export { SignalEmitter } from './signal-emitter.js';
 
 // Pure functions
 export { validateSubject, matchesPattern } from './subject-matcher.js';
+export {
+  SERVER_MANAGED_PREFIXES,
+  CONTROL_SUBJECT_PREFIX,
+  isServerManagedSubject,
+  isControlSubject,
+} from './lib/reserved-subjects.js';
 export type { SubjectValidationResult, SubjectValidationError } from './subject-matcher.js';
 export { enforceBudget, createDefaultBudget } from './budget-enforcer.js';
 

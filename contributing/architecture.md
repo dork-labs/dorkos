@@ -1097,6 +1097,8 @@ It handles two subject prefixes:
 - `relay.agent.>` — delivers messages to an existing agent session (via the runtime's `sendMessage()`)
 - `relay.system.tasks.>` — dispatches Tasks scheduler jobs (via the runtime's `sendMessage()`)
 
+It also **subscribes** to two control subjects — `relay.system.approval.>` (tool approvals) and `relay.control.task-cancel.>` (run stop requests). Both must reach a turn that is already holding one of the adapter's concurrency slots, which delivery cannot do.
+
 On deliver, it extracts payload content via shared `extractPayloadContent()` utilities, streams the SDK response back to the `replyTo` subject as individual `StreamEvent` chunks, and records delivery spans in `TraceStore`.
 
 ### Adapter Catalog Management
@@ -1138,9 +1140,9 @@ The `BindingRouter` (`apps/server/src/services/relay/binding-router.ts`) routes 
 
 See `contributing/relay-adapters.md` for the full developer guide on creating custom adapters.
 
-## Relay Message Routing (when DORKOS_RELAY_ENABLED=true)
+## Relay Message Routing (on by default)
 
-When the Relay feature flag is enabled, Tasks (scheduled) message flows are routed through the Relay message bus instead of calling the runtime directly. The web client always uses direct SSE regardless of this flag.
+When the Relay feature flag is on — which it is unless `relay.enabled` is set false or `DORKOS_RELAY_ENABLED=false` — Tasks (scheduled) message flows are routed through the Relay message bus instead of calling the runtime directly. The web client always uses direct SSE regardless of this flag.
 
 ### Tasks Dispatch Flow
 
@@ -1222,21 +1224,50 @@ The Tasks subsystem provides cron-based agent scheduling. It lives entirely in `
 
 ### Key Components
 
-| Module                 | Purpose                                                                 |
-| ---------------------- | ----------------------------------------------------------------------- |
-| `tasks-store.ts`       | SQLite database + JSON file for schedule and run state                  |
-| `scheduler-service.ts` | Cron engine using `croner` with overrun protection and concurrency caps |
+| Module                      | Purpose                                                                 |
+| --------------------------- | ----------------------------------------------------------------------- |
+| `task-store.ts`             | SQLite database + JSON file for task and run state                      |
+| `task-scheduler-service.ts` | Cron engine using `croner` with overrun protection and concurrency caps |
 
 ### Dispatch Modes
 
-- **Direct mode** (default): `SchedulerService` calls the active runtime's `sendMessage()` directly to start agent sessions
-- **Relay mode** (`DORKOS_RELAY_ENABLED=true`): Publishes to `relay.system.tasks.{scheduleId}` instead; `ClaudeCodeAdapter` handles dispatch
+- **Relay dispatch** (the default): the scheduler publishes to `relay.system.tasks.{taskId}` and `ClaudeCodeAdapter` runs the turn. `relay.enabled` defaults to **true** in user config, so this is what a fresh install does; `DORKOS_RELAY_ENABLED` overrides the config when it is set
+- **Direct dispatch**: with Relay off (or failed to start), `TaskSchedulerService` calls the active runtime's `sendMessage()` itself
+
+The two paths stop a run differently, which is why the difference matters
+beyond trivia (DOR-808). A directly dispatched run is aborted in place — the
+scheduler holds its `AbortController`. A relay-dispatched run is executing
+inside the adapter, so `POST /api/tasks/runs/:id/cancel` publishes a
+`task_cancel` payload to `relay.control.task-cancel.{runId}`; the adapter's
+subscription aborts the run through the same path its time limit uses. Either
+way the run record ends `cancelled` with `Run cancelled`, and the route answers
+honestly — 200 when a runner took the request, 502 when nothing acknowledged it.
+
+**`relay.control.` is a namespace, not a name.** Two things it is deliberately
+not: it is not under `relay.system.tasks.`, which the adapter claims for
+delivery — `deliver()` holds a concurrency slot for the whole run, so a stop
+routed through it queues behind the run it is trying to end. And it is not under
+`relay.system.` at all, because a subscriber counts as a DELIVERY unless it
+explicitly refuses, and `GET /api/relay/stream` lets anyone watch
+`relay.system.>` with a handler that only forwards what it sees — a watcher on a
+stop's subject makes every Stop report success while nothing was stopped. The
+namespace is reserved in the bus itself (`packages/relay/src/lib/reserved-subjects.ts`),
+which both the agent tool surface and `POST /api/relay/endpoints` consult, and
+`EndpointRegistry` refuses a `relay.control.*` mailbox outright with no opt-out.
+Note what a mailbox there would actually do, since the obvious guess is wrong:
+it would not swallow the stop — the Maildir watcher re-dispatches to the same
+subscribers, so the handler still runs — but `deliveredTo` would count the
+mailbox delivery, reproducing the false confirmation by another route. Finally,
+the adapter refuses any stop whose `from` is not `relay.system.tasks.scheduler`;
+that name must stay under `relay.system.`, because `POST /api/relay/messages`
+rejects exactly the principals `isConsentExemptPrincipal` covers, and that is
+what stops an HTTP caller asserting it.
 
 Agent-created schedules enter `pending_approval` state and require human approval before activation.
 
 ### Cascade Disable on Agent Unregister
 
-When an agent is unregistered from Mesh, all Tasks schedules linked to that `agentId` are automatically disabled via `TasksStore.disableSchedulesByAgentId()`. Agent-linked schedule runs that cannot resolve the agent's project path fail with a descriptive error rather than falling back silently.
+When an agent is unregistered from Mesh, all Tasks schedules linked to that `agentId` are automatically disabled via `TaskStore.disableTasksByAgentId()`. Agent-linked schedule runs that cannot resolve the agent's project path fail with a descriptive error rather than falling back silently.
 
 ## Testing
 

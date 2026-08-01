@@ -129,6 +129,17 @@ export default defineConfig({
     //   construction. Measured both ways with the same seed (a 7th key on
     //   `DEFAULT_TRAITS` in `src/`, `dist` left stale): with this alias, 5 failed
     //   across the two files; with the alias removed, all green.
+    // - `relay-schemas` backs the two subject pins for run stop requests
+    //   (`routes/__tests__/tasks.test.ts`, `tasks/__tests__/task-scheduler-service.test.ts`),
+    //   which assert the literal `relay.control.task-cancel.{runId}` the adapter
+    //   subscribes to on the other side of the bus. Same family as the others: a
+    //   hardcoded literal checked against a shared constant is a drift guard, and it
+    //   only guards anything if the constant under test comes from `src/`. The wire
+    //   subject is load-bearing beyond formatting — moving it back under
+    //   `relay.system.` puts it inside the pattern `GET /api/relay/stream` will
+    //   accept, where a passive watcher makes every Stop report success (DOR-808).
+    //   Measured: changing the prefix in `src/` with `dist/` left stale reddens 2 with
+    //   this alias and 0 without it.
     // - `@dorkos/marketplace/package-types` backs `install-roots`, which iterates
     //   `PackageTypeSchema.options` to prove no package type installs somewhere the
     //   scanners never look. The test used to import the schema from the package
@@ -225,6 +236,12 @@ export default defineConfig({
         find: '@dorkos/shared/permission-semantics',
         replacement: fileURLToPath(
           new URL('../../packages/shared/src/permission-semantics.ts', import.meta.url)
+        ),
+      },
+      {
+        find: '@dorkos/shared/relay-schemas',
+        replacement: fileURLToPath(
+          new URL('../../packages/shared/src/relay-schemas.ts', import.meta.url)
         ),
       },
       {

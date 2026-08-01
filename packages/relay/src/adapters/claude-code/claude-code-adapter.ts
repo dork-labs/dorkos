@@ -38,6 +38,7 @@ import { handleAgentMessage } from './agent-handler.js';
 import { handleTasksMessage } from './task-handler.js';
 import { ClaudeCodeRuntimeAdapter } from './claude-code-runtime-adapter.js';
 import { subscribeApprovalHandler } from './approval-handler.js';
+import { RunningTasks, subscribeTaskCancelHandler } from './task-cancel-handler.js';
 import { extractSessionIdFromSubject } from '../../lib/subjects.js';
 import type { ClaudeCodeAdapterConfig, ClaudeCodeAdapterDeps, ResolvedConfig } from './types.js';
 
@@ -119,6 +120,10 @@ const TASKS_SUBJECT_PREFIX = 'relay.system.tasks.';
  * Handles agent-directed messages (`relay.agent.>`) and Tasks scheduler
  * dispatch (`relay.system.tasks.>`). Enforces a concurrency semaphore,
  * TTL budget timeouts, and records trace spans through the delivery lifecycle.
+ *
+ * Two control signals arrive by SUBSCRIPTION rather than delivery — tool
+ * approvals and run stop requests — because each must reach a turn that is
+ * already holding one of those concurrency slots.
  */
 export class ClaudeCodeAdapter implements RelayAdapter {
   readonly id: string;
@@ -142,6 +147,10 @@ export class ClaudeCodeAdapter implements RelayAdapter {
   private readonly runtimeAdapter: ClaudeCodeRuntimeAdapter;
   /** Unsubscribe function for the `relay.system.approval.>` subscription. */
   private approvalUnsub: (() => void) | null = null;
+  /** Unsubscribe function for the run stop-request subscription (DOR-808). */
+  private taskCancelUnsub: (() => void) | null = null;
+  /** The task runs this adapter is executing, so a stop can reach them. */
+  private readonly runningTasks = new RunningTasks();
   private status: AdapterStatus = {
     state: 'disconnected',
     messageCount: { inbound: 0, outbound: 0 },
@@ -181,6 +190,11 @@ export class ClaudeCodeAdapter implements RelayAdapter {
       this.deps.agentManager,
       this.deps.logger ?? console
     );
+    this.taskCancelUnsub = subscribeTaskCancelHandler(
+      relay,
+      this.runningTasks,
+      this.deps.logger ?? console
+    );
     this.status = {
       state: 'connected',
       messageCount: { inbound: 0, outbound: 0 },
@@ -196,6 +210,12 @@ export class ClaudeCodeAdapter implements RelayAdapter {
     // Unsubscribe from approval responses before clearing relay reference
     this.approvalUnsub?.();
     this.approvalUnsub = null;
+    this.taskCancelUnsub?.();
+    this.taskCancelUnsub = null;
+    // The runs themselves are finalized by their own handlers; only the
+    // registry is torn down here, so a stop request arriving after a restart
+    // is answered with the truth instead of aborting a stranger's run.
+    this.runningTasks.clear();
     this.relay = null;
     this.runtimeAdapter.reset();
     this.status = { ...this.status, state: 'disconnected' };
@@ -258,6 +278,7 @@ export class ClaudeCodeAdapter implements RelayAdapter {
             agentManager: this.deps.agentManager,
             traceStore: this.deps.traceStore,
             taskStore: this.deps.taskStore,
+            runningTasks: this.runningTasks,
             logger: this.deps.logger,
           },
           this.relay
