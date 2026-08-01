@@ -304,3 +304,42 @@ describe('RoomComposer', () => {
     expect(transport.postToRoom).toHaveBeenCalledWith('room-1', { text: 'ship it' });
   });
 });
+
+describe('RoomComposer — clearing a draft you can see coming', () => {
+  it('shows the armed readout on the first Escape over a draft', async () => {
+    // The double-Escape wipe has always worked here; what was missing is the
+    // half that makes it a shortcut rather than a trap. A reader with a draft
+    // in a thread pressed Escape expecting the panel to close, nothing on
+    // screen said what had happened, and two taps later the draft was gone.
+    const field = renderComposer(createMockTransport());
+    type(field, 'half a thought');
+
+    expect(screen.queryByTestId('clear-armed-hint')).not.toBeInTheDocument();
+    fireEvent.keyDown(field, { key: 'Escape' });
+
+    expect(await screen.findByTestId('clear-armed-hint')).toHaveTextContent(
+      'Press Esc again to clear'
+    );
+  });
+
+  it('offers the labelled button the readout is only defensible beside', () => {
+    // The hint is hidden from assistive tech, so `ChatInput` refuses to raise
+    // it at all unless a labelled equivalent is reachable — otherwise it hands
+    // sighted people a destructive shortcut and nobody else.
+    const field = renderComposer(createMockTransport());
+    type(field, 'half a thought');
+
+    expect(screen.getByRole('button', { name: /clear/i })).toBeEnabled();
+  });
+
+  it('raises nothing over an empty box, so Escape still reaches the thread panel', () => {
+    // The panel closes on an Escape nothing else claimed. Arming over an empty
+    // composer would consume the key and leave a thread that cannot be closed
+    // from its own box.
+    const field = renderComposer(createMockTransport());
+
+    fireEvent.keyDown(field, { key: 'Escape' });
+
+    expect(screen.queryByTestId('clear-armed-hint')).not.toBeInTheDocument();
+  });
+});

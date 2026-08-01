@@ -13,17 +13,26 @@ describe('MarkdownContent', () => {
 
   it('handles empty string gracefully', () => {
     const { container } = render(<MarkdownContent content="" />);
-    expect(container.querySelector('.prose')).toBeTruthy();
+    expect(container.firstElementChild).toBeTruthy();
   });
 
   it('applies className prop to the container', () => {
     const { container } = render(
       <MarkdownContent content="test" className="text-xs text-blue-800" />
     );
-    const prose = container.querySelector('.prose');
-    expect(prose).toBeTruthy();
-    expect(prose!.className).toContain('text-xs');
-    expect(prose!.className).toContain('text-blue-800');
+    const host = container.firstElementChild!;
+    expect(host.className).toContain('text-xs');
+    expect(host.className).toContain('text-blue-800');
+  });
+
+  it('carries no `prose` classes, because there is no plugin to make them mean anything', () => {
+    // `@tailwindcss/typography` is not a dependency of this app, so `prose`,
+    // `prose-sm` and `dark:prose-invert` sat here for a long time generating no
+    // CSS at all. Streamdown styles its own output. Pinned so they cannot drift
+    // back in on the assumption that they do something.
+    const { container } = render(<MarkdownContent content="# Title" />);
+
+    expect(container.querySelector('[class*="prose"]')).toBeNull();
   });
 
   it('renders links in markdown', () => {

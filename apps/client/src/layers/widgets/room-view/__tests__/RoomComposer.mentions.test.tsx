@@ -9,7 +9,7 @@
  * back out of `aria-activedescendant` rather than assuming it.
  */
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -340,14 +340,45 @@ describe('RoomComposer — Enter still sends when there is nothing to pick', () 
     const { field, transport } = renderComposer();
     type(field, 'ping @zzz');
 
-    // The panel is up and says so, but it has no row for Enter to take.
-    expect(screen.getByText('No one by that name.')).toBeInTheDocument();
+    // The panel is up and says so, but it has no row for Enter to take. Scoped
+    // to the panel: the composer keeps a live region carrying the same sentence
+    // for a screen reader, so the page holds two copies of it on purpose.
+    expect(
+      within(screen.getByRole('listbox')).getByText('No one by that name.')
+    ).toBeInTheDocument();
     expect(field).not.toHaveAttribute('aria-activedescendant');
 
     fireEvent.keyDown(field, { key: 'Enter' });
 
     await waitFor(() => expect(transport.postToRoom).toHaveBeenCalledTimes(1));
     expect(transport.postToRoom).toHaveBeenCalledWith('room-1', { text: 'ping @zzz' });
+  });
+
+  it('says out loud that nobody matched, from a region that was already there', async () => {
+    // "No one by that name." was drawn inside a panel that mounts with the
+    // sentence already in it, which is the classic case assistive technology
+    // never announces — so for a screen reader, typing `@zzz` did nothing at
+    // all. The announcer is mounted from the start and empty until there is
+    // something to say.
+    const { field } = renderComposer();
+    const announcer = screen.getByRole('status');
+    expect(announcer).toBeEmptyDOMElement();
+
+    type(field, 'ping @zzz');
+
+    await waitFor(() => expect(announcer).toHaveTextContent('No one by that name.'));
+  });
+
+  it('says nothing while the picker has rows, because the rows already speak', () => {
+    // The composer publishes the highlighted row as `aria-activedescendant`, so
+    // a screen reader reads it on every keystroke. A second voice repeating the
+    // same thing is the duplicate-announcement defect this repo has shipped
+    // before.
+    const { field } = renderComposer();
+
+    type(field, 'ping @a');
+
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
   });
 
   it('closes the no-match panel when the message goes', async () => {

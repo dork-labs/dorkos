@@ -207,7 +207,12 @@ export function EntryReactionPicker({
             'leading-none',
             capsule
               ? 'text-[0.8125rem]'
-              : 'text-muted-foreground/60 hover:text-foreground h-auto rounded-full px-2 py-0.5 text-xs'
+              : // The ghost + ends the pill row and measures 45×24 on a phone,
+                // which clears WCAG 2.5.8 on its own. It carries no invisible
+                // reach for the reason `EntryReactionRow` measures out: down
+                // here, reach overlaps the thread reply row and costs more than
+                // it buys.
+                'text-muted-foreground/60 hover:text-foreground h-auto rounded-full px-2 py-0.5 text-xs'
           )}
         >
           <span aria-hidden>🙂+</span>

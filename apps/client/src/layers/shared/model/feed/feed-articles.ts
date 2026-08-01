@@ -29,6 +29,14 @@ export interface FeedArticleProps {
   [FEED_ARTICLE_ATTR]: string;
   /** Focusable, because an article is where Page Down puts the reader. */
   tabIndex: 0;
+  /**
+   * Where this article sits — omitted entirely when the set's size is unknown.
+   *
+   * The two travel together or not at all. A feed showing the trailing page of
+   * a long history knows the row is the first one IT rendered, and does not
+   * know that it is the 471st message; announcing "item 1" beside a set size of
+   * "unknown" states the first of those as though it were the second.
+   */
   'aria-posinset': number;
   'aria-setsize': number;
 }
@@ -50,7 +58,13 @@ export function feedArticleProps(position: FeedPosition | undefined): Partial<Fe
   return {
     [FEED_ARTICLE_ATTR]: '',
     tabIndex: 0,
-    'aria-posinset': position.index,
-    'aria-setsize': position.total,
+    // Both, or neither — see {@link FeedArticleProps}. A position counted over
+    // what happens to be loaded is not a position in the set, and paired with
+    // an unknown size it reads as one.
+    ...(position.total >= 0 && {
+      'aria-posinset': position.index,
+      'aria-setsize': position.total,
+    }),
+    ...(position.total < 0 && { 'aria-setsize': -1 }),
   };
 }

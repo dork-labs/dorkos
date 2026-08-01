@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -210,6 +210,48 @@ describe('RoomTimeline — thread reply rows', () => {
 
     const row = screen.getByTestId('room-thread-replies');
     expect(row).toHaveTextContent('1 reply');
+  });
+
+  it('grows its own box on a phone rather than reaching invisibly past it', () => {
+    // On a phone this row is the ONLY way into a thread. It briefly claimed a
+    // 44px target with an invisible `::after`, and that stole from the pills
+    // above it — so it takes real padding below the breakpoint instead, which
+    // cannot overlap anything because everything under it moves down.
+    //
+    // **Geometry is the evidence; these assertions are only its fingerprint.**
+    // Measured in Chromium at 390×844, on a message carrying both reactions and
+    // a thread, with `elementFromPoint` scanned a pixel at a time down the
+    // centre of each control:
+    //
+    //   before — pill reach y128–178, this row's reach y160–208. The 18px they
+    //     shared went to this row, so the pill's real target was 30px of the
+    //     50px it claimed and a tap meant for a reaction opened a thread. The
+    //     top of the pill's reach also sat over the last 8px of message text
+    //     (text ended y136), and the bottom of this row's landed 2px inside the
+    //     next message's text (y206).
+    //   after  — msg text ⋯136 │ 4px │ pill 140–166 (26px) │ 6px │ this row
+    //     172–208 (36px) │ 10px │ next msg text 218⋯. The column scan is
+    //     strictly ordered with a non-interactive gap between every control:
+    //     pill 26px effective, this row 35px, nothing overlapping anything.
+    //
+    // Rerun by rendering this component at 390×844 with the built CSS and
+    // walking `document.elementFromPoint` down each control's centre line.
+    renderTimeline({ entries: [entry(1), reply(2, 1)] });
+
+    const row = screen.getByTestId('room-thread-replies');
+    expect(row.className).toContain('px-2 py-2');
+    expect(row.className).toContain('md:px-1 md:py-0.5');
+    // No invisible reach, at any breakpoint.
+    expect(row.className).not.toContain('after:');
+  });
+
+  it('carries the last reply’s whole date, not just a clock reading', () => {
+    renderTimeline({ entries: [entry(1), reply(2, 1)] });
+
+    const stamp = within(screen.getByTestId('room-thread-replies')).getByText(/^\d{1,2}:\d\d/);
+    expect(stamp.tagName).toBe('TIME');
+    expect(stamp).toHaveAttribute('datetime', '2026-07-26T10:00:00.000Z');
+    expect(stamp.getAttribute('title')).toMatch(/2026/);
   });
 
   it('hangs the row off its own root, not off whatever precedes it', () => {
@@ -473,10 +515,28 @@ describe('RoomTimeline as a feed', () => {
     const articles = screen.getAllByRole('article');
 
     expect(articles).toHaveLength(3);
-    articles.forEach((article, index) => {
-      expect(article).toHaveAttribute('aria-posinset', String(index + 1));
-      expect(article).toHaveAttribute('aria-setsize', '3');
+    articles.forEach((article) => {
+      // `-1` — the APG's "unknown". This is the trailing page of a room's
+      // history, so "3 of 3" over a month-old room would tell a reader they
+      // were at the end of a conversation that has barely started.
+      expect(article).toHaveAttribute('aria-setsize', '-1');
+      // And NO position. "Message 1 of unknown" over the 471st message in a
+      // room states where the row sits in what happens to be loaded as though
+      // it were where the message sits in the conversation.
+      expect(article).not.toHaveAttribute('aria-posinset');
     });
+  });
+
+  it('gives every message row a DOM id, so a closing thread can find it again', () => {
+    // The fallback the reply row cannot be: a thread opened from the capsule
+    // has no replies, so no "↳ N replies" row exists to hand focus back to.
+    renderTimeline({ entries: THREE, members: ROSTER });
+
+    expect(screen.getAllByRole('article').map((row) => row.id)).toEqual([
+      'room-entry-entry-1',
+      'room-entry-entry-2',
+      'room-entry-entry-3',
+    ]);
   });
 
   it('names each message from the author line already on screen', () => {
@@ -511,7 +571,10 @@ describe('RoomTimeline as a feed', () => {
 
     const notice = screen.getByTestId('room-notice');
     expect(notice).toHaveAttribute('role', 'article');
-    expect(notice).toHaveAttribute('aria-posinset', '2');
+    // In the set, and — like every other row in this feed — without a claimed
+    // position in it, because the room's own size is unknown. It is still an
+    // article Page Down lands on, which is what this test is about.
+    expect(notice).toHaveAttribute('aria-setsize', '-1');
     expect(notice).toHaveAccessibleName('Ana stopped replying here');
   });
 
