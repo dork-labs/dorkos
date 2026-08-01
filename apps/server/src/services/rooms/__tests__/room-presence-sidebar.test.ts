@@ -59,6 +59,8 @@ function gatedRunner(): GatedRunner {
   const gates = new Map<string, Array<() => void>>();
   return {
     turns,
+    interrupted: [],
+    interrupt: () => Promise.resolve(),
     run(request: RoomTurnRequest): Promise<RoomTurnResult> {
       turns.push({
         roomId: request.room.id,

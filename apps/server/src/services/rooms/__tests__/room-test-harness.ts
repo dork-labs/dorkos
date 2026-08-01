@@ -71,6 +71,14 @@ export interface RecordedTurn {
 export interface ScriptedTurnRunner extends RoomTurnRunner {
   /** Every turn the dispatcher has asked for, in the order it asked. */
   readonly turns: RecordedTurn[];
+  /**
+   * Every turn a halt asked it to stop, in the order it asked.
+   *
+   * Recorded rather than stubbed away because "the halt route interrupts every
+   * in-flight turn in the room" is the assertion RP8 asks for, and a no-op
+   * `interrupt` would let a halt that stopped nothing pass it.
+   */
+  readonly interrupted: Array<{ sessionId: string; agentPath: string }>;
 }
 
 /**
@@ -108,9 +116,15 @@ export function outcomeRunner(
   ) => (Omit<RoomTurnResult, 'sessionId'> & { sessionId?: string }) | { throws: Error }
 ): ScriptedTurnRunner {
   const turns: RecordedTurn[] = [];
+  const interrupted: Array<{ sessionId: string; agentPath: string }> = [];
   let minted = 0;
   return {
     turns,
+    interrupted,
+    interrupt(request): Promise<void> {
+      interrupted.push(request);
+      return Promise.resolve();
+    },
     run(request: RoomTurnRequest): Promise<RoomTurnResult> {
       turns.push({
         roomId: request.room.id,

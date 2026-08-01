@@ -203,6 +203,23 @@ export interface TriggerTurnOpts {
   stallTimeoutMs?: number;
   /** Records a detached-turn failure (logging is the caller's concern). */
   onError?(err: unknown): void;
+  /**
+   * Receives the `seq` of THIS turn's `turn_start` — its identity on the durable
+   * stream.
+   *
+   * For the one caller that both triggers a turn and reads the same stream back:
+   * a room. Without it the room had to guess which `turn_start` was its own by
+   * comparing the trigger text, which any other turn carrying the same words
+   * satisfies — and which a turn carrying NO text (a `/compact`-style command
+   * intent, whose `turn_start` has no `userMessage` at all) satisfied by
+   * default. A seq is the identity itself, so neither is a question any more.
+   *
+   * Fired synchronously, before the turn's first event can reach any subscriber
+   * — see `feedProjector`.
+   *
+   * @param seq - The `turn_start`'s seq.
+   */
+  onTurnStart?(seq: number): void;
 }
 
 /** Outcome of a {@link triggerTurn} attempt. */
@@ -335,7 +352,10 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
   const guarded = guardTurnErrors(projector, stallGuarded, (err) => opts.onError?.(err));
   // The trigger content rides the turn_start (userMessage) so the EventLog is a
   // self-sufficient history source for log-backed runtimes (ADR-0263).
-  const turn = feedProjector(projector, guarded, { userMessage: content })
+  const turn = feedProjector(projector, guarded, {
+    userMessage: content,
+    ...(opts.onTurnStart ? { onTurnStart: opts.onTurnStart } : {}),
+  })
     // guardTurnErrors already swallows source throws; this catch is the last line
     // of defense against a feedProjector-internal rejection so the detached
     // promise never becomes an unhandled rejection. The lock still releases below.

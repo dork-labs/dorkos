@@ -1,0 +1,488 @@
+/**
+ * A turn that has stopped, and the three ways a room can be honest about it.
+ *
+ * All three come out of the 2026-07-31 incident (DOR-784), where agents named in
+ * a room were silent for between twenty and forty-one minutes and the room said
+ * nothing at all:
+ *
+ * 1. **Waiting on a person.** Each turn had stopped on a tool-approval prompt
+ *    that only that agent's own session showed. The room had no way to say so,
+ *    and ten minutes later every prompt auto-denied.
+ * 2. **Busy in a different room.** One agent is one working directory, and
+ *    nothing stopped it running turns for three rooms at once in that one
+ *    checkout — the `(room, agent)` claim key cannot see across rooms.
+ * 3. **Stopped on purpose.** There was no way to stop a room at all, so the only
+ *    remedy anyone had was to type "stop", which agents answer like any other
+ *    message.
+ *
+ * Driven through the real service and the real dispatcher, like the other room
+ * suites: only the runner stands in, because the alternative is a model call.
+ */
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
+import { eventFanOut } from '../../core/event-fan-out.js';
+import type { AuthorRegistry } from '../author-registry.js';
+import type { RoomService } from '../room-service.js';
+import type { RoomTurnRequest, RoomTurnResult, RoomTurnWaiting } from '../room-trigger.js';
+import {
+  agentLookupFor,
+  createRoomHarness,
+  settleUntil,
+  type ScriptedTurnRunner,
+} from './room-test-harness.js';
+
+const agents = agentLookupFor({
+  '/agents/ana': { name: 'ana', displayName: 'Ana', responseMode: 'always' },
+  '/agents/bo': { name: 'bo', displayName: 'Bo', responseMode: 'always' },
+  '/agents/cy': { name: 'cy', displayName: 'Cy', responseMode: 'always' },
+});
+
+/** A runner whose turns only finish when the test says so. */
+interface GatedRunner extends ScriptedTurnRunner {
+  /** How many turns are being held for one agent right now. */
+  holdsFor(authorId: string): number;
+  /** Let one agent's oldest held turn answer now. */
+  release(authorId: string): void;
+  /**
+   * Make one agent's oldest held turn report that it has stopped for a person.
+   *
+   * The turn keeps running — that is the whole state being modelled. A turn
+   * parked on an approval is not over; it is producing nothing until somebody
+   * acts, which is why the report rides a callback rather than the result.
+   */
+  waitOnPerson(authorId: string, waiting: RoomTurnWaiting): void;
+}
+
+/**
+ * Build a runner that holds every turn open until released.
+ *
+ * Holding is what makes any of this observable: a turn that answered would take
+ * and release its claim inside one `await`, and every state in between — parked
+ * on a person, blocking another room, interruptible — is a state the test never
+ * gets to look at.
+ *
+ * @param opts.interruptEndsTurn - Whether an interrupt finishes the turn it
+ *   stops. `true` is the ordinary runtime: the query aborts, the stream closes,
+ *   and the turn settles a moment later. `false` is the runtime that does not
+ *   come back — a hung subprocess, a lost socket — which is the case the halt's
+ *   own claim release exists for.
+ */
+function gatedRunner({ interruptEndsTurn = true } = {}): GatedRunner {
+  const turns: ScriptedTurnRunner['turns'] = [];
+  const interrupted: ScriptedTurnRunner['interrupted'] = [];
+  const held = new Map<
+    string,
+    Array<{ request: RoomTurnRequest; finish: () => void; stop: () => void }>
+  >();
+  /** The oldest held turn for one agent, or a failure naming what was wanted. */
+  const oldest = (authorId: string, verb: string) => {
+    const turn = held.get(authorId)?.[0];
+    if (!turn) throw new Error(`no turn is being held for ${authorId}, so it cannot ${verb}`);
+    return turn;
+  };
+  return {
+    turns,
+    interrupted,
+    interrupt(request): Promise<void> {
+      interrupted.push(request);
+      // A real interrupt ENDS the turn: the runtime stops, the stream closes,
+      // and the collector resolves with whatever there was. A fake that only
+      // recorded the call would leave the dispatcher awaiting a turn nothing can
+      // finish — which is not what a halt does, and would let a halt that never
+      // reached the runtime pass.
+      if (!interruptEndsTurn) return Promise.resolve();
+      for (const [authorId, queued] of held) {
+        if (queued[0]?.request.agentPath !== request.agentPath) continue;
+        for (const turn of queued.splice(0)) turn.stop();
+        held.delete(authorId);
+      }
+      return Promise.resolve();
+    },
+    run(request: RoomTurnRequest): Promise<RoomTurnResult> {
+      turns.push({
+        roomId: request.room.id,
+        authorId: request.authorId,
+        agentPath: request.agentPath,
+        sessionId: request.sessionId,
+        prompt: request.entry.body.text,
+        roomContext: request.roomContext,
+      });
+      return new Promise<RoomTurnResult>((resolve) => {
+        const queued = held.get(request.authorId) ?? [];
+        const sessionId = request.sessionId ?? 'session-1';
+        queued.push({
+          request,
+          finish: () => resolve({ sessionId, text: 'on it' }),
+          // Interrupted turns say nothing: the room's `halted` notice is the
+          // durable line, and a stopped turn posting half an answer under it
+          // would be the fragment DOR-621 removed.
+          stop: () => resolve({ sessionId, text: null }),
+        });
+        held.set(request.authorId, queued);
+      });
+    },
+    holdsFor(authorId) {
+      return held.get(authorId)?.length ?? 0;
+    },
+    release(authorId) {
+      held.get(authorId)?.shift()?.finish();
+    },
+    waitOnPerson(authorId, waiting) {
+      oldest(authorId, 'wait on a person').request.onWaiting(waiting);
+    },
+  };
+}
+
+/** Ana's author id inside one wired harness. */
+function anaIn(wired: ReturnType<typeof createRoomHarness>): string {
+  return wired.authors.resolveAgent('/agents/ana', 'Ana').id;
+}
+
+describe('a room says when a turn has stopped', () => {
+  let service: RoomService;
+  let authors: AuthorRegistry;
+  let runner: GatedRunner;
+  let room: RoomWithRoster;
+  let human: string;
+  let ana: string;
+  /** Every `room_presence` count the global fan-out carried, in order. */
+  let counts: Array<{ roomId: string; working: number }> = [];
+  let unsubscribe = (): void => {};
+
+  /** Every entry in a room, oldest first. */
+  function log(roomId = room.id): RoomEntry[] {
+    return service.listEntries(roomId, human, { limit: 200 });
+  }
+
+  /** Just the notices — the room speaking in its own voice. */
+  function notices(roomId = room.id): RoomEntry[] {
+    return log(roomId).filter((entry) => entry.kind === 'notice');
+  }
+
+  beforeEach(() => {
+    runner = gatedRunner();
+    ({ service, authors, human } = createRoomHarness({ agents, runner }));
+    room = service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: ['/agents/ana'] },
+      human
+    );
+    ana = authors.resolveAgent('/agents/ana', 'Ana').id;
+    // `mention-only`, so a second message in a scenario cannot re-trigger an
+    // agent whose first turn is still held and turn a one-claim test into two.
+    service.updateMembership(room.id, human, ana, 'mention-only');
+    counts = [];
+    unsubscribe = eventFanOut.subscribe((name, data) => {
+      if (name === 'room_presence') counts.push(data as { roomId: string; working: number });
+    });
+  });
+
+  afterEach(() => {
+    unsubscribe();
+  });
+
+  describe('waiting for a person', () => {
+    /** Trigger Ana and wait until her turn is actually being held. */
+    async function triggerAna(text = '@ana can you check the build?'): Promise<void> {
+      service.post(room.id, { authorId: human, text });
+      await settleUntil(() => runner.holdsFor(ana) > 0, 'Ana to be mid-turn');
+    }
+
+    it('says so, in the room own voice, while the turn is still running', async () => {
+      // The incident itself. Nothing about this state is an OUTCOME — the turn
+      // has not ended and will not until a person acts — so a room that could
+      // only report outcomes reported nothing for forty-one minutes.
+      await triggerAna();
+      runner.waitOnPerson(ana, { kind: 'approval', toolName: 'Bash' });
+
+      expect(notices()).toHaveLength(1);
+      expect(notices()[0].body.notice).toBe('awaiting_approval');
+      expect(notices()[0].body.subjectAuthorId).toBe(ana);
+      expect(notices()[0].authorId).toBe(authors.system().id);
+      expect(notices()[0].body.text).toBe(
+        "Ana is waiting for you to approve something before it can carry on. Open Ana's session to answer — it gives up if nobody does."
+      );
+      // The tool's name is for the log, never the room: an approval's arguments
+      // are file paths and commands, and a shared room is not where they go.
+      expect(notices()[0].body.text).not.toContain('Bash');
+      // And the agent is still working, so the room still says so.
+      expect(service.listRooms(human, {})[0].working).toBe(1);
+    });
+
+    it('says it once for one turn, however many times that turn stops', async () => {
+      // A turn that asks for three approvals in a row is one wait from the
+      // reader's side; three lines about it would be the over-participation
+      // every other notice in this domain is damped against.
+      await triggerAna();
+      runner.waitOnPerson(ana, { kind: 'approval', toolName: 'Bash' });
+      runner.waitOnPerson(ana, { kind: 'approval', toolName: 'Write' });
+      runner.waitOnPerson(ana, { kind: 'question' });
+
+      expect(notices()).toHaveLength(1);
+    });
+
+    it('says it again for the NEXT turn that stops', async () => {
+      // The other half, and the half that makes the damping safe: the key is
+      // scoped to the turn, so it cannot leave a later wait unmentioned. Two
+      // agents in the incident hit two approvals each in separate turns; a
+      // memory that outlived the turn would have reported one of them.
+      await triggerAna();
+      runner.waitOnPerson(ana, { kind: 'approval' });
+      runner.release(ana);
+      await service.triggersIdle();
+
+      await triggerAna('@ana and the tests?');
+      runner.waitOnPerson(ana, { kind: 'approval' });
+
+      expect(notices().filter((entry) => entry.body.notice === 'awaiting_approval')).toHaveLength(
+        2
+      );
+    });
+  });
+
+  describe('busy in another room', () => {
+    let second: RoomWithRoster;
+
+    beforeEach(() => {
+      second = service.createRoom(
+        { kind: 'channel', title: 'Frontend', members: [], agentPaths: ['/agents/ana'] },
+        human
+      );
+      service.updateMembership(second.id, human, ana, 'mention-only');
+    });
+
+    it('refuses a second turn in the same checkout, and says where it is', async () => {
+      // One agent is one working directory. The `(room, agent)` claim key bounds
+      // one transcript and cannot see across rooms, so an agent in three rooms
+      // ran three turns in one tree — three processes editing the same files.
+      service.post(room.id, { authorId: human, text: '@ana check the build' });
+      await settleUntil(() => runner.holdsFor(ana) > 0, 'Ana to be mid-turn in the first room');
+
+      service.post(second.id, { authorId: human, text: '@ana and the styles?' });
+      await settleUntil(() => notices(second.id).length > 0, 'the second room to say something');
+
+      // No second turn started, whatever the second room asked.
+      expect(runner.turns).toHaveLength(1);
+      expect(notices(second.id)).toHaveLength(1);
+      expect(notices(second.id)[0].body.notice).toBe('agent_busy');
+      expect(notices(second.id)[0].body.text).toBe(
+        "Ana is working in another conversation right now, so it didn't pick this up. Send it again in a few minutes."
+      );
+      // Never which conversation: the reader of this room may not be in that one.
+      expect(notices(second.id)[0].body.text).not.toContain('Backend');
+    });
+
+    it('still says "here" for a second message in the room it is working in', async () => {
+      // The counter-assertion, and the reason the two questions are asked in
+      // this order: "wait, the answer is coming here" and "it is busy somewhere
+      // you cannot see" are different instructions, and getting them the wrong
+      // way round tells a person to wait for an answer that will never arrive.
+      service.post(room.id, { authorId: human, text: '@ana check the build' });
+      await settleUntil(() => runner.holdsFor(ana) > 0, 'Ana to be mid-turn');
+
+      service.post(room.id, { authorId: human, text: '@ana still there?' });
+      await settleUntil(() => notices().length > 0, 'the room to say something');
+
+      expect(notices()[0].body.text).toBe(
+        "Ana is still working on an earlier message here. It didn't pick this one up — that answer will land in this conversation."
+      );
+    });
+
+    it('lets the turn run once the other room is finished with it', async () => {
+      // The refusal is a refusal, never a queue (ADR 260726-170125) — but it is
+      // also not a lockout: the moment the claim goes, the next message runs.
+      service.post(room.id, { authorId: human, text: '@ana check the build' });
+      await settleUntil(() => runner.holdsFor(ana) > 0, 'Ana to be mid-turn');
+      runner.release(ana);
+      await service.triggersIdle();
+
+      service.post(second.id, { authorId: human, text: '@ana and the styles?' });
+      await settleUntil(() => runner.turns.length === 2, 'the second room to get its turn');
+      expect(runner.turns[1].roomId).toBe(second.id);
+    });
+  });
+
+  describe('stopping a room', () => {
+    it('interrupts every turn running in it and says so once', async () => {
+      // A third agent, working in a DIFFERENT room, is what makes "in it" an
+      // assertion rather than a description: a halt scoped to the process
+      // instead of the room would stop that one too, and the count alone would
+      // not notice.
+      const other = service.createRoom(
+        { kind: 'channel', title: 'Frontend', members: [], agentPaths: ['/agents/cy'] },
+        human
+      );
+      const bo = authors.resolveAgent('/agents/bo', 'Bo').id;
+      const cy = authors.resolveAgent('/agents/cy', 'Cy').id;
+      service.addMember(room.id, human, { authorId: bo });
+      service.updateMembership(room.id, human, bo, 'mention-only');
+      service.updateMembership(other.id, human, cy, 'mention-only');
+
+      service.post(other.id, { authorId: human, text: '@cy have a look' });
+      service.post(room.id, { authorId: human, text: '@ana @bo take a look' });
+      await settleUntil(() => runner.turns.length === 3, 'all three agents to be mid-turn');
+
+      const stopped = await service.haltRoom(room.id, human);
+
+      expect(stopped).toBe(2);
+      expect(runner.interrupted.map((call) => call.agentPath).sort()).toEqual([
+        '/agents/ana',
+        '/agents/bo',
+      ]);
+      // One line for the whole room, not one per agent.
+      const halted = notices().filter((entry) => entry.body.notice === 'halted');
+      expect(halted).toHaveLength(1);
+      expect(halted[0].body.text).toBe(
+        'Everything here was stopped. 2 agents were working and have been interrupted; send a message to start again.'
+      );
+      // The indicators go with the claims, and only this room's claims went.
+      const rooms = service.listRooms(human, {});
+      expect(rooms.find((r) => r.id === room.id)?.working).toBe(0);
+      expect(rooms.find((r) => r.id === other.id)?.working).toBe(1);
+      // The fan-out agrees with the map. This does NOT prove the release went
+      // through the seam — with a runtime that stops promptly, `runOne`'s own
+      // `finally` releases the claim a moment later and publishes the same
+      // zero, so a halt that deleted from the map would still end up here. The
+      // test that proves it is the stubborn-runtime one below, where no turn
+      // ever settles and the halt's release is the only one there is.
+      expect(counts.filter((count) => count.roomId === room.id).at(-1)).toEqual({
+        roomId: room.id,
+        working: 0,
+      });
+      expect(notices(other.id)).toHaveLength(0);
+      runner.release(cy);
+      await service.triggersIdle();
+    });
+
+    it('drops the indicator even when the runtime does not come back', async () => {
+      // **Why the halt releases its own claims instead of leaving it to the
+      // turns.** Ordinarily an interrupt ends the turn and `runOne` releases in
+      // its `finally`, so both paths agree and neither is load-bearing. A
+      // runtime that hangs is where they part: nothing ever settles that turn,
+      // so nothing ever releases its claim, and the room would show an agent
+      // working — republished every ten seconds, forever — for work that was
+      // stopped minutes ago.
+      //
+      // It also has to go through `releaseClaim`, not the map. `done` is
+      // published there and nowhere else, so a halt that deleted the entry
+      // would leave the map right and every watching client wrong.
+      const stubborn = gatedRunner({ interruptEndsTurn: false });
+      const wired = createRoomHarness({ agents, runner: stubborn });
+      const stuckRoom = wired.service.createRoom(
+        { kind: 'channel', title: 'Stuck', members: [], agentPaths: ['/agents/ana'] },
+        wired.human
+      );
+      const seen: Array<{ roomId: string; working: number }> = [];
+      // Whether the room's own explanation was already on the log at the instant
+      // the indicator dropped. Sampled inside the subscriber because the
+      // ordering is what is being measured, and it is unobservable afterwards —
+      // both facts are true once the dust settles, whichever order they landed
+      // in.
+      let noticeWasAlreadyThere: boolean | null = null;
+      const stop = eventFanOut.subscribe((name, data) => {
+        if (name !== 'room_presence') return;
+        const count = data as { roomId: string; working: number };
+        seen.push(count);
+        if (
+          count.roomId === stuckRoom.id &&
+          count.working === 0 &&
+          noticeWasAlreadyThere === null
+        ) {
+          noticeWasAlreadyThere = wired.service
+            .listEntries(stuckRoom.id, wired.human, { limit: 50 })
+            .some((entry) => entry.body.notice === 'halted');
+        }
+      });
+      try {
+        wired.service.post(stuckRoom.id, { authorId: wired.human, text: '@ana go' });
+        await settleUntil(() => stubborn.holdsFor(anaIn(wired)) > 0, 'Ana to be mid-turn');
+
+        await wired.service.haltRoom(stuckRoom.id, wired.human);
+
+        expect(stubborn.interrupted).toHaveLength(1);
+        expect(wired.service.listRooms(wired.human, {})[0].working).toBe(0);
+        expect(seen.filter((count) => count.roomId === stuckRoom.id).at(-1)).toEqual({
+          roomId: stuckRoom.id,
+          working: 0,
+        });
+        // **And the notice came FIRST.** Releasing a claim publishes `done`, so
+        // a halt that stopped the turns before saying so would drop every
+        // working indicator in the room a beat ahead of the line explaining
+        // why — a room going silent for no visible reason, which is the exact
+        // shape the durable-sibling invariant exists to prevent
+        // (`.claude/rules/room-conduct.md`). Nothing else pins the ORDER: move
+        // the write below the release loop and every other assertion in this
+        // file stays green.
+        expect(noticeWasAlreadyThere).toBe(true);
+      } finally {
+        stop();
+        stubborn.release(anaIn(wired));
+        await wired.service.triggersIdle();
+      }
+    });
+
+    it('does not repeat itself when a quiet room is stopped twice', async () => {
+      // Pressing Stop again in a room where nothing has happened since is the
+      // same question asked twice, and answering it twice would put the thing
+      // that reports over-participation into it.
+      await service.haltRoom(room.id, human);
+      await service.haltRoom(room.id, human);
+
+      expect(notices().filter((entry) => entry.body.notice === 'halted')).toHaveLength(1);
+    });
+
+    it('says so again once something has actually happened since', async () => {
+      // Recovery IS the re-arm, exactly as it is for the budget: a claim being
+      // taken is precisely something happening, so the next halt is news.
+      await service.haltRoom(room.id, human);
+      service.post(room.id, { authorId: human, text: '@ana try again' });
+      await settleUntil(() => runner.holdsFor(ana) > 0, 'Ana to take a turn');
+
+      await service.haltRoom(room.id, human);
+
+      expect(notices().filter((entry) => entry.body.notice === 'halted')).toHaveLength(2);
+    });
+
+    it('says so even when nothing was running', async () => {
+      // Pressing stop in a quiet room is a question, and silence is not an
+      // answer to it.
+      expect(await service.haltRoom(room.id, human)).toBe(0);
+      expect(notices()).toHaveLength(1);
+      expect(notices()[0].body.text).toBe(
+        'Everything here was stopped. Nothing was running at the time.'
+      );
+    });
+
+    it('runs a normal turn for a message whose text is "stop"', async () => {
+      // **The guard on the rule, and the rule is the whole design.** In the
+      // Hermes loop incident an operator typed "you are in a loop, stop" and the
+      // bot answered it like any other turn. The fix is not to teach the model
+      // to notice the word — it is to make stopping a control action that never
+      // touches the model. So this test exists to fail loudly if anybody ever
+      // makes the room read message text for it (room-participation spec §10.4).
+      service.post(room.id, { authorId: human, text: '@ana stop' });
+      await settleUntil(() => runner.holdsFor(ana) > 0, 'Ana to take the turn anyway');
+
+      expect(runner.turns).toHaveLength(1);
+      expect(runner.turns[0].prompt).toBe('@ana stop');
+      expect(runner.interrupted).toHaveLength(0);
+      expect(notices()).toHaveLength(0);
+      runner.release(ana);
+      await service.triggersIdle();
+    });
+
+    it('refuses an agent that tries to stop its room-mates', async () => {
+      // An agent electing itself referee over the room is the arbitration this
+      // domain has declined twice.
+      await expect(service.haltRoom(room.id, ana)).rejects.toMatchObject({ code: 'PEOPLE_ONLY' });
+      expect(notices()).toHaveLength(0);
+    });
+
+    it('refuses a room it cannot resolve, in the same shape everything else does', async () => {
+      // A room that does not exist and a room the caller may not see are
+      // deliberately indistinguishable, here as everywhere else in this domain.
+      await expect(service.haltRoom('no-such-room', human)).rejects.toMatchObject({
+        code: 'ROOM_NOT_FOUND',
+      });
+    });
+  });
+});

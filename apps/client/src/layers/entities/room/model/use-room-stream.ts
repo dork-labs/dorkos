@@ -71,11 +71,24 @@ export function mergeRoomEntry(
  * has ended: the turn errored or never finished, and no `done` signal is coming
  * because the thing that would have published one is gone.
  *
- * `agent_busy` reads like a stop and is the opposite. The trigger was skipped
- * because that agent's session was ALREADY being written to — so the agent is
- * genuinely working, on the older message, and clearing its indicator would
- * blank the one true thing on screen. `cascade_stopped` and `budget_reached`
- * describe a turn that was never started, so there is no indicator to retire.
+ * Every other code is deliberately left alone, and each for its own reason:
+ *
+ * - `agent_busy` reads like a stop and is the opposite. The trigger was skipped
+ *   because that agent's session was ALREADY being written to — so the agent is
+ *   genuinely working, on the older message, and clearing its indicator would
+ *   blank the one true thing on screen.
+ * - `awaiting_approval` is the same trap in sharper form. The turn is very much
+ *   alive; it is stopped on a person and will carry straight on when they
+ *   answer, so the indicator is telling the truth and the notice is telling the
+ *   reader what to do about it. Retiring it here would say the work had ended
+ *   at the exact moment the room is asking somebody to keep it going.
+ * - `cascade_stopped` and `budget_reached` describe a turn that was never
+ *   started, so there is no indicator to retire.
+ * - `halted` retires nothing here BECAUSE it does not need to: the halt drops
+ *   every claim through the dispatcher, so a real `done` signal is already on
+ *   its way for each one (`room-trigger.ts`'s `releaseClaim`). This is the one
+ *   code where the server does the clearing, which is why it stays out of the
+ *   list rather than being an oversight in it.
  *
  * @param roomId - The room the notice landed in.
  * @param entry - The entry that just arrived, of any kind.

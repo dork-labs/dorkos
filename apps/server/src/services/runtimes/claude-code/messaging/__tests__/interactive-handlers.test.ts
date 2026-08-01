@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { logger } from '../../../../../lib/logger.js';
 import {
   createCanUseTool,
   handleAskUserQuestion,
@@ -388,6 +389,7 @@ function makeBareSession(): InteractiveSession {
   return {
     pendingInteractions: new Map<string, PendingInteraction>(),
     eventQueue: [] as StreamEvent[],
+    sdkSessionId: 'session-under-test',
   };
 }
 
@@ -517,6 +519,70 @@ describe('pending interaction snapshots', () => {
       });
     } finally {
       vi.useRealTimers();
+    }
+  });
+
+  it('says in the log that nobody answered, for every kind of prompt', async () => {
+    // **The only trace an expired prompt leaves.** All three handlers hand the
+    // model a denial ten minutes on and used to write nothing anywhere: the
+    // card vanished from any client that happened to be watching, the turn
+    // carried on as though a person had refused, and nothing recorded that the
+    // refusal was a clock rather than a decision. Reconstructing the
+    // 2026-07-31 incident — two agents, two expired approvals each, forty-one
+    // minutes of silence — needed the SDK transcripts, because the server log
+    // held nothing at all (DOR-784).
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    vi.useFakeTimers();
+    try {
+      const session = makeBareSession();
+      const approval = handleToolApproval(
+        session,
+        'tool-1',
+        'Bash',
+        { command: 'ls' },
+        { signal: new AbortController().signal, toolUseID: 'tool-1' }
+      );
+      const question = handleAskUserQuestion(session, 'tool-2', {
+        questions: [{ question: 'which branch?', header: 'Branch', options: [] }],
+      });
+      const elicitation = handleElicitation(
+        session,
+        { serverName: 'test-mcp', message: 'sign in', mode: 'url' } as ElicitationRequest,
+        new AbortController().signal
+      );
+      vi.advanceTimersByTime(10 * 60 * 1000);
+      await Promise.all([approval, question, elicitation]);
+
+      const said = warn.mock.calls.filter(
+        ([message]) => message === '[claude-code] nobody answered in time, so this was denied'
+      );
+      expect(said.map(([, fields]) => fields)).toEqual([
+        {
+          sessionId: 'session-under-test',
+          interactionId: 'tool-1',
+          kind: 'approval',
+          toolName: 'Bash',
+          waitedMs: 10 * 60 * 1000,
+        },
+        {
+          sessionId: 'session-under-test',
+          interactionId: 'tool-2',
+          kind: 'question',
+          waitedMs: 10 * 60 * 1000,
+        },
+        {
+          sessionId: 'session-under-test',
+          interactionId: expect.any(String),
+          kind: 'elicitation',
+          waitedMs: 10 * 60 * 1000,
+        },
+      ]);
+      // Nothing from the prompt's input: a tool's arguments are file paths,
+      // commands and occasionally secrets, and none of that belongs in a log.
+      expect(JSON.stringify(said)).not.toContain('ls');
+    } finally {
+      vi.useRealTimers();
+      warn.mockRestore();
     }
   });
 

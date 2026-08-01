@@ -81,6 +81,7 @@ import {
   CreateRoomRequestSchema,
   ListRoomEntriesQuerySchema,
   ListRoomsQuerySchema,
+  HaltRoomResponseSchema,
   PostThreadReplyRequestSchema,
   PostToRoomRequestSchema,
   PostToRoomResponseSchema,
@@ -3147,6 +3148,30 @@ registry.registerPath({
     },
     409: {
       description: 'The room is archived',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/rooms/{id}/halt',
+  tags: ['Rooms'],
+  summary: 'Stop every turn running in a room',
+  description:
+    'A control action, not a message. It interrupts every in-flight agent turn in the room, drops the working indicators, and writes one `halted` notice everyone in the room can see. Stopping is NEVER inferred from message text: a person who sends the word "stop" as a message has sent a message, and the agents answer it like any other. Takes no body. Only a person may call it — an agent stopping its room-mates would be arbitration this domain has declined. Allowed on an archived room, unlike every other write here: archiving stops a room gaining messages, and a turn that was already running is still running.',
+  request: { params: RoomIdParams },
+  responses: {
+    200: {
+      description: 'How many in-flight turns were interrupted; 0 when the room was idle',
+      content: { 'application/json': { schema: HaltRoomResponseSchema } },
+    },
+    403: {
+      description: 'The caller is not a person; agents do not stop each other',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'No such room, or not a member of it',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

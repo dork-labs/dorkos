@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup, act } from '@testing-library/react';
+import { render, screen, cleanup, act, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -66,6 +67,38 @@ function renderHeader(listed: RoomSummary | undefined) {
 afterEach(() => {
   cleanup();
   useRoomWorkingStore.setState({ rooms: {} });
+});
+
+describe('RoomHeader — the stop control', () => {
+  it('is not offered when nothing is running', () => {
+    // A button that would do nothing is a button that teaches its reader to
+    // distrust every other one on the screen.
+    renderHeader(listedRoom(0));
+
+    expect(screen.queryByTestId('room-header-halt')).not.toBeInTheDocument();
+  });
+
+  it('stops the room when pressed, and never by anything anyone typed', async () => {
+    // The whole reason this is a button. In the Hermes loop incident an
+    // operator typed "you are in a loop, stop" and the bot answered it like any
+    // other turn, because to a model in a conversation that is what it is. So
+    // stopping reaches the runtimes through a route, and nothing in this
+    // product reads message text for it (room-participation spec §10.4).
+    const { transport } = renderHeader(listedRoom(1));
+
+    await userEvent.click(screen.getByTestId('room-header-halt'));
+
+    await waitFor(() => expect(transport.haltRoom).toHaveBeenCalledWith(ROOM_ID));
+  });
+
+  it('goes when the work goes', () => {
+    renderHeader(listedRoom(1));
+    expect(screen.getByTestId('room-header-halt')).toBeInTheDocument();
+
+    act(() => useRoomWorkingStore.getState().observe({ roomId: ROOM_ID, working: 0 }));
+
+    expect(screen.queryByTestId('room-header-halt')).not.toBeInTheDocument();
+  });
 });
 
 describe('RoomHeader — the working chip', () => {

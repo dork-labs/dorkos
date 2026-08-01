@@ -33,13 +33,23 @@ import { THREAD_AGENT_KAI, THREAD_ROOM_ID } from './room-thread-showcase-data';
 const NOTICES: ReadonlyArray<{ code: RoomNoticeCode; text: string; label: string }> = [
   {
     code: 'turn_failed',
-    label: 'turn_failed — the only one drawn warm',
+    label: 'turn_failed — warm, because the answer is not coming',
     text: "Kai ran into a problem and could not answer here. Open Kai's session to see what went wrong.",
+  },
+  {
+    code: 'awaiting_approval',
+    label: 'awaiting_approval — warm, because it is waiting on YOU',
+    text: "Kai is waiting for you to approve something before it can carry on. Open Kai's session to answer — it gives up if nobody does.",
   },
   {
     code: 'agent_busy',
     label: 'agent_busy — occupied, not broken',
     text: 'Kai was busy with something else and did not pick this up. Send it again when Kai is free.',
+  },
+  {
+    code: 'halted',
+    label: 'halted — somebody pressed Stop',
+    text: 'Everything here was stopped. 2 agents were working and have been interrupted; send a message to start again.',
   },
   {
     code: 'cascade_stopped',

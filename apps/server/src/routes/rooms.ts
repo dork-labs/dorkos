@@ -315,6 +315,31 @@ router.post('/:id/threads', (req, res) => {
 });
 
 /**
+ * POST /:id/halt — stop every agent turn running in this room.
+ *
+ * **The whole point of this route is that it is a route.** Stopping a room is a
+ * control action that reaches the runtimes; it is never inferred from a message,
+ * in this phase or any later one (room-participation spec §10.4). A person who
+ * types "stop" into the composer has sent a message, and the agents answer it
+ * like any other — which is exactly why the button has to exist.
+ *
+ * Takes no body: there is nothing to say, only a thing to do. Express 5 leaves
+ * `req.body` undefined on an empty POST, so asking for one would refuse every
+ * honest caller.
+ */
+router.post('/:id/halt', (req, res) => {
+  void (async () => {
+    try {
+      const caller = resolveCaller(res);
+      const stopped = await getRoomService().haltRoom(req.params.id, caller.id);
+      res.json({ stopped });
+    } catch (err) {
+      sendRoomError(res, err, 'POST /:id/halt');
+    }
+  })();
+});
+
+/**
  * GET /:id/events — the durable room stream (snapshot → replay → live). The
  * handler lives in `room-events-handler.ts` so this file stays under the
  * file-size rule.

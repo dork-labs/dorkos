@@ -316,6 +316,47 @@ describe('/api/rooms', () => {
     });
   });
 
+  describe('POST /:id/halt', () => {
+    it('answers with how many turns it stopped, and writes the room a notice', async () => {
+      const room = await createChannel();
+
+      const res = await request(app).post(`/api/rooms/${room.id}/halt`);
+
+      // Nothing was running, and that is a real answer rather than a failure —
+      // pressing stop in a quiet room is a question, and the room answers it.
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ stopped: 0 });
+      const entries = await request(app).get(`/api/rooms/${room.id}/entries`);
+      expect(entries.body.entries.at(-1).body.notice).toBe('halted');
+    });
+
+    it('takes no body, because there is nothing to say', async () => {
+      // Express 5 leaves `req.body` undefined on an empty POST, so a handler
+      // that parsed one would refuse every honest caller.
+      const room = await createChannel();
+      expect((await request(app).post(`/api/rooms/${room.id}/halt`)).status).toBe(200);
+    });
+
+    it('404s a room that is not there', async () => {
+      const res = await request(app).post('/api/rooms/no-such-room/halt');
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('ROOM_NOT_FOUND');
+    });
+
+    it('still works on an archived room', async () => {
+      // The one write that an archived room does not refuse. Archiving stops a
+      // room GAINING messages; a turn that was already running when it was
+      // archived is still running, and refusing here would put the only way to
+      // stop it behind a door that has just been shut.
+      const room = await createChannel();
+      await request(app).patch(`/api/rooms/${room.id}`).send({ archived: true });
+
+      const res = await request(app).post(`/api/rooms/${room.id}/halt`);
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ stopped: 0 });
+    });
+  });
+
   describe('GET /:id/entries', () => {
     it('pages backwards from a seq', async () => {
       const room = await createChannel();
