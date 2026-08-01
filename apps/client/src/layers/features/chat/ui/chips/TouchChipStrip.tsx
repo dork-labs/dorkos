@@ -11,14 +11,26 @@ import { cn, getPlatform } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
 import { accumulateTouchChips, type TouchChip as TouchChipData } from '../../lib/touch-chips';
 import { CHIP_FADE, CHIP_SETTLE, LIVE_WINDOW } from './chip-motion';
-import { groupChipsByVerb, VERB_ICON, VERB_LABEL } from './chip-verbs';
+import { groupChipsByVerb, VERB_ICON, VERB_LABEL, type VerbGroup } from './chip-verbs';
 import { ChipPile } from './ChipPile';
 import { ChipTray } from './ChipTray';
 import { TouchChip } from './TouchChip';
+import { useUpgradePulses } from './use-upgrade-pulse';
 
 export interface TouchChipStripProps {
   /** The assistant message's parts, in transcript order. */
   parts: MessagePart[];
+  /**
+   * Whether the turn this strip belongs to is still running.
+   *
+   * The strip's live layout follows the TURN, not whichever tool happens to be
+   * in flight this millisecond. Between two tool calls nothing is pending, and
+   * gating on that made the row unmount and remount its way through a turn —
+   * a dozen or more collapses, each one a chip strip flickering into a summary
+   * line and back. A settled turn is the one thing that ends the live row, and
+   * it ends it once.
+   */
+  turnActive?: boolean;
 }
 
 /**
@@ -30,8 +42,11 @@ export interface TouchChipStripProps {
  * eye already is and travel left as they age, which is the direction the pile
  * sits in.
  *
- * The absorbed set only ever grows: a turn accumulates chips and never loses
- * them, so nothing can fall out of the pile once it has landed there.
+ * The pile's COUNT only ever grows — a turn accumulates chips and never loses
+ * them, so `chips.length - LIVE_WINDOW` climbs and never falls. Its MEMBERSHIP
+ * churns: a file touched again returns to the row and something else takes its
+ * place in the pile. Nothing is ever unreachable either way, because the tray
+ * holds the whole roster regardless of where a chip currently sits.
  */
 function splitLiveWindow(chips: TouchChipData[]): {
   visible: TouchChipData[];
@@ -42,6 +57,25 @@ function splitLiveWindow(chips: TouchChipData[]): {
     visible: byRecency.slice(-LIVE_WINDOW),
     absorbed: byRecency.slice(0, Math.max(0, byRecency.length - LIVE_WINDOW)),
   };
+}
+
+/**
+ * The collapsed line as one spoken sentence: `2 read; 1 edited, 12 added, 4
+ * removed; 1 fetched`.
+ *
+ * The line itself is glyphs and bare numbers with the words hidden beside them,
+ * which a screen reader reads as a run of disconnected fragments. This gives the
+ * container a single name that says the same thing in order.
+ */
+function summaryName(groups: VerbGroup[]): string {
+  return groups
+    .map((group) => {
+      const said = [`${group.chips.length} ${VERB_LABEL[group.verb].toLowerCase()}`];
+      if (group.additions !== undefined) said.push(`${group.additions} added`);
+      if (group.deletions !== undefined) said.push(`${group.deletions} removed`);
+      return said.join(', ');
+    })
+    .join('; ');
 }
 
 /** One verb's tally in the collapsed line: `📖 21`, or `✏️ 3 +34 −11`. */
@@ -101,12 +135,13 @@ function SummaryGroup({
  * live row is a single clipped line, the tray is capped and scrolls itself, and
  * the only animated height is the row's own 300ms collapse.
  *
- * @param props - The message's parts.
+ * @param props - The message's parts, and whether its turn is still running.
  */
-export function TouchChipStrip({ parts }: TouchChipStripProps) {
+export function TouchChipStrip({ parts, turnActive = false }: TouchChipStripProps) {
   const reducedMotion = useReducedMotion() ?? false;
   const chips = useMemo(() => accumulateTouchChips(parts), [parts]);
   const [expanded, setExpanded] = useState(false);
+  const pulses = useUpgradePulses();
   const trayId = useId();
   const openCanvasDocument = useAppStore((s) => s.openCanvasDocument);
   const setCanvasOpen = useAppStore((s) => s.setCanvasOpen);
@@ -145,7 +180,11 @@ export function TouchChipStrip({ parts }: TouchChipStripProps) {
   );
 
   const groups = useMemo(() => groupChipsByVerb(chips), [chips]);
-  const live = chips.some((chip) => chip.live);
+  // The turn is the authority. A tool still in flight keeps the row up for a
+  // strip whose caller does not track the turn (a showcase, a test), but a
+  // running turn holds it up on its own — including through the gaps between
+  // tool calls, where nothing is pending and the row used to collapse.
+  const live = turnActive || chips.some((chip) => chip.live);
   const { visible, absorbed } = useMemo(() => splitLiveWindow(chips), [chips]);
 
   if (chips.length === 0) return null;
@@ -160,7 +199,9 @@ export function TouchChipStrip({ parts }: TouchChipStripProps) {
             key="live"
             data-testid="chip-live-row"
             role="group"
-            aria-label="Being handled now"
+            // Not "being handled now": the row holds the newest few touches,
+            // and most of them have already finished.
+            aria-label="Latest activity"
             exit={reducedMotion ? { opacity: 0 } : { opacity: 0, height: 0 }}
             transition={reducedMotion ? CHIP_FADE : CHIP_SETTLE}
             className="flex min-w-0 items-center gap-1.5 overflow-hidden"
@@ -177,13 +218,23 @@ export function TouchChipStrip({ parts }: TouchChipStripProps) {
                 toward the pile, which is where it has gone. */}
             <AnimatePresence initial={false}>
               {visible.map((chip) => (
-                <TouchChip key={chip.key} chip={chip} onOpen={handleOpen} animated />
+                <TouchChip
+                  key={chip.key}
+                  chip={chip}
+                  onOpen={handleOpen}
+                  animated
+                  pulseUpgrade={pulses.shouldPulse(chip.key, chip.upgraded)}
+                  onUpgradeSeen={pulses.acknowledge}
+                />
               ))}
             </AnimatePresence>
           </motion.div>
         ) : (
           <motion.div
             key="settled"
+            data-testid="chip-summary-line"
+            role="group"
+            aria-label={summaryName(groups)}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={reducedMotion ? CHIP_FADE : CHIP_SETTLE}

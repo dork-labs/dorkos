@@ -13,6 +13,12 @@ const ASST_MSG = createAssistantMessage({
   id: 'sim-tc-asst',
   content: '',
   parts: [{ type: 'text', text: '' }],
+  // The turn is running. Real streaming tags the in-progress bubble the same
+  // way, and it is what holds the chip strip's live row up through the gaps
+  // between tool calls — without it the row would collapse into the summary
+  // line and reopen a dozen times in this scenario, which is the thing the
+  // scenario exists to let a reviewer watch NOT happen.
+  _streaming: true,
 });
 
 const INTRO_TEXT = "Let me look at what's there first, then work through it.\n\n";
@@ -245,6 +251,8 @@ export const touchChips: SimScenario = {
     { type: 'set_streaming', isTextStreaming: true },
     ...buildStreamingTextSteps(MSG, CLOSING_TEXT),
     { type: 'set_streaming', isTextStreaming: false, delayMs: 200 },
+    // The turn ends, and the strip settles — once, here, and nowhere else.
+    { type: 'update_message', messageId: MSG, patch: { _streaming: false } },
     { type: 'set_status', status: 'idle' },
   ],
 };

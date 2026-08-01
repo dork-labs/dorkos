@@ -47,6 +47,38 @@ async function openTray(user: ReturnType<typeof userEvent.setup>) {
   return screen.getByTestId('chip-tray');
 }
 
+/**
+ * Every element that entered or left the document while `run` ran.
+ *
+ * The upgrade ring removes itself the moment it finishes, and the test motion
+ * mock finishes it on the spot — so by the time a render has settled the ring is
+ * gone, exactly as it is a third of a second later in a browser. Both halves of
+ * its life are collected because a ring that mounts inside a chip that mounts in
+ * the same commit is never an addition of its own: React builds that subtree
+ * before attaching it, and the only record naming the ring is the one that takes
+ * it away again. A node that left was, necessarily, there.
+ */
+function movedDuring(run: () => void): HTMLElement[] {
+  const observer = new MutationObserver(() => {});
+  observer.observe(document.body, { childList: true, subtree: true });
+  run();
+
+  const moved: HTMLElement[] = [];
+  for (const record of observer.takeRecords()) {
+    for (const node of [...record.addedNodes, ...record.removedNodes]) {
+      if (!(node instanceof HTMLElement)) continue;
+      moved.push(node, ...node.querySelectorAll<HTMLElement>('*'));
+    }
+  }
+  observer.disconnect();
+  return moved;
+}
+
+/** Whether a testid was among the elements that moved. */
+function sawTestId(moved: HTMLElement[], testId: string): boolean {
+  return moved.some((node) => node.dataset.testid === testId);
+}
+
 beforeEach(() => {
   useAppStore.setState({ openDocuments: [], activeDocumentId: null, canvasOpen: false });
   setPlatformAdapter({ isEmbedded: false, openFile: async () => {} });
@@ -240,7 +272,155 @@ describe('TouchChipStrip — the live row', () => {
   });
 });
 
+describe('TouchChipStrip — live for as long as the turn is', () => {
+  it('keeps the row up between tool calls, when nothing at all is running', () => {
+    // The gap between one tool finishing and the next starting is most of a
+    // turn. Gating the row on instantaneous tool liveness collapsed it into the
+    // summary line and reopened it on every one of those gaps.
+    render(
+      <TouchChipStrip
+        parts={[
+          toolCall('Read', { file_path: '/repo/a.ts' }),
+          toolCall('Read', { file_path: '/repo/b.ts' }),
+        ]}
+        turnActive
+      />
+    );
+
+    expect(screen.getByTestId('chip-live-row')).toBeInTheDocument();
+    expect(screen.queryByTestId('chip-summary-line')).toBeNull();
+  });
+
+  it('holds the row through a whole turn and settles once, when the turn ends', () => {
+    const a = toolCall('Read', { file_path: '/repo/a.ts' }, { status: 'running' });
+    const b = toolCall('Read', { file_path: '/repo/b.ts' }, { status: 'running' });
+    const { rerender } = render(<TouchChipStrip parts={[a]} turnActive />);
+
+    // Every frame of a turn: a tool lands, a gap where nothing runs, the next
+    // tool starts, and it lands. The row must survive all of it.
+    const frames: MessagePart[][] = [
+      [{ ...a, status: 'complete' }],
+      [{ ...a, status: 'complete' }, b],
+      [
+        { ...a, status: 'complete' },
+        { ...b, status: 'complete' },
+      ],
+    ];
+    for (const parts of frames) {
+      rerender(<TouchChipStrip parts={parts} turnActive />);
+      expect(screen.getByTestId('chip-live-row')).toBeInTheDocument();
+    }
+
+    rerender(
+      <TouchChipStrip
+        parts={[
+          { ...a, status: 'complete' },
+          { ...b, status: 'complete' },
+        ]}
+      />
+    );
+
+    expect(screen.queryByTestId('chip-live-row')).toBeNull();
+    expect(screen.getByTestId('chip-summary-line')).toBeInTheDocument();
+  });
+
+  it('settles a turn read back from history, where nothing is active', () => {
+    render(<TouchChipStrip parts={mixedParts()} />);
+
+    expect(screen.queryByTestId('chip-live-row')).toBeNull();
+    expect(screen.getByTestId('chip-summary-line')).toBeInTheDocument();
+  });
+});
+
 describe('TouchChipStrip — the read→edit upgrade', () => {
+  it('rings a file already in the pile when it comes back as an edit', () => {
+    // The production sequence, exactly: a file is read early, four more touches
+    // push it out of the live row and into the pile, and then it is edited — so
+    // it re-enters the row as a FRESH mount already carrying `upgraded`. A pulse
+    // remembered in the chip's own state is destroyed by that remount and
+    // re-seeded from what it mounts with, which is how the one animation the
+    // design asks for became the one animation that never played.
+    const read = toolCall('Read', { file_path: '/repo/a.ts' });
+    const filler = ['b', 'c', 'd', 'e'].map((name) =>
+      toolCall('Read', { file_path: `/repo/${name}.ts` })
+    );
+    const { rerender } = render(<TouchChipStrip parts={[read, ...filler]} turnActive />);
+
+    // Gone from the row: it is in the pile, and its component is unmounted.
+    expect(within(screen.getByTestId('chip-live-row')).queryByText('a.ts')).toBeNull();
+
+    const moved = movedDuring(() =>
+      rerender(
+        <TouchChipStrip
+          parts={[
+            read,
+            ...filler,
+            toolCall('Edit', {
+              file_path: '/repo/a.ts',
+              old_string: 'a\nb',
+              new_string: 'a\nX\nY',
+            }),
+          ]}
+          turnActive
+        />
+      )
+    );
+
+    expect(sawTestId(moved, 'chip-upgrade-pulse')).toBe(true);
+  });
+
+  it('rings an upgrade in place, without the chip having left the row', () => {
+    const read = toolCall('Read', { file_path: '/repo/a.ts' }, { status: 'running' });
+    const { rerender } = render(<TouchChipStrip parts={[read]} turnActive />);
+
+    const moved = movedDuring(() =>
+      rerender(
+        <TouchChipStrip
+          parts={[
+            { ...read, status: 'complete' },
+            toolCall('Edit', { file_path: '/repo/a.ts', old_string: 'a', new_string: 'b' }),
+          ]}
+          turnActive
+        />
+      )
+    );
+
+    expect(sawTestId(moved, 'chip-upgrade-pulse')).toBe(true);
+  });
+
+  it('rings once, and never again however many edits follow', () => {
+    const read = toolCall('Read', { file_path: '/repo/a.ts' });
+    const edit = () =>
+      toolCall('Edit', { file_path: '/repo/a.ts', old_string: 'a', new_string: 'b' });
+    const first = edit();
+    const { rerender } = render(<TouchChipStrip parts={[read, first]} turnActive />);
+
+    const moved = movedDuring(() =>
+      rerender(<TouchChipStrip parts={[read, first, edit(), edit()]} turnActive />)
+    );
+
+    expect(sawTestId(moved, 'chip-upgrade-pulse')).toBe(false);
+  });
+
+  it('never rings a chip being read back in the tray', async () => {
+    // Opening a record is not an upgrade happening, and celebrating it would
+    // make motion mean something other than "this is happening now".
+    const user = userEvent.setup();
+    render(
+      <TouchChipStrip
+        parts={[
+          toolCall('Read', { file_path: '/repo/a.ts' }),
+          toolCall('Edit', { file_path: '/repo/a.ts', old_string: 'a', new_string: 'b' }),
+        ]}
+      />
+    );
+
+    const tray = await openTray(user);
+
+    expect(within(tray).getByTestId('touch-chip')).toHaveAttribute('data-verb', 'edit');
+    expect(within(tray).queryByTestId('chip-upgrade-pulse')).toBeNull();
+  });
+
   it('morphs the chip in place instead of adding a second one', () => {
     const read = toolCall('Read', { file_path: '/repo/a.ts' }, { status: 'running' });
     const { rerender } = render(<TouchChipStrip parts={[read]} />);

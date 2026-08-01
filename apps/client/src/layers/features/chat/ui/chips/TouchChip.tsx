@@ -5,11 +5,10 @@
  */
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { cn } from '@/layers/shared/lib';
-import type { TouchChip as TouchChipData } from '../../lib/touch-chips';
+import { hitsLabel, type TouchChip as TouchChipData } from '../../lib/touch-chips';
 import { CHIP_MORPH, CHIP_RING, chipEntryMotion } from './chip-motion';
 import { VERB_ICON, VERB_LABEL } from './chip-verbs';
 import { TickingNumber } from './TickingNumber';
-import { useUpgradePulse } from './use-upgrade-pulse';
 
 export interface TouchChipProps {
   /** The folded record of everything that happened to this target. */
@@ -22,6 +21,14 @@ export interface TouchChipProps {
    * read rather than something arriving, so they default to still.
    */
   animated?: boolean;
+  /**
+   * Whether this chip's read→edit upgrade still owes the reader its ring. Owned
+   * by the strip's upgrade ledger, because the row remounts a chip every time it
+   * re-enters. A record being read — the tray, a showcase — is given nothing.
+   */
+  pulseUpgrade?: boolean;
+  /** Called once the ring has been seen, so the same upgrade is never announced twice. */
+  onUpgradeSeen?: (key: string) => void;
 }
 
 /**
@@ -52,9 +59,19 @@ function tooltipFor(chip: TouchChipData): string {
  * What the chip is called out loud. The glyph and the badges are decoration to a
  * screen reader, so everything they carry — the verb, the repeat count, the
  * diffstat — is said here instead.
+ *
+ * Two substitutions the eye makes for itself and a screen reader cannot. A
+ * pattern that was read was **globbed**: the tool named a set of files, and
+ * "Read src/**\/*.ts" claims it opened one. (A pattern that was deleted really
+ * was deleted, so only the read case is renamed.) And a command is said by its
+ * label rather than its full text, because a `Bash` call can carry a
+ * three-hundred-character script and reading it aloud is not an answer to "what
+ * did this turn touch".
  */
 function accessibleNameFor(chip: TouchChipData): string {
-  const parts = [`${VERB_LABEL[chip.verb]} ${chip.fullTarget}`];
+  const verb = chip.pattern === true && chip.verb === 'read' ? 'Globbed' : VERB_LABEL[chip.verb];
+  const target = chip.verb === 'run' ? chip.label : chip.fullTarget;
+  const parts = [`${verb} ${target}`];
   if (chip.touches > 1) parts.push(`${chip.touches} times`);
   if (chip.hits !== undefined) parts.push(hitsLabel(chip.hits));
   if (chip.additions !== undefined) parts.push(`${chip.additions} added`);
@@ -66,11 +83,6 @@ function accessibleNameFor(chip: TouchChipData): string {
 /** The pill a count sits in: the repeat badge and the hit badge share it. */
 const COUNT_BADGE =
   'bg-muted text-muted-foreground shrink-0 rounded-full px-1.5 text-[10px] leading-[1.4] tabular-nums';
-
-/** `1 hit` / `14 hits` — the badge text and the spoken one, from one place. */
-function hitsLabel(hits: number): string {
-  return hits === 1 ? '1 hit' : `${hits} hits`;
-}
 
 /**
  * Render one chip: its verb glyph, its name, a `×N` badge once it has been
@@ -96,9 +108,15 @@ function hitsLabel(hits: number): string {
  *
  * @param props - The chip model, the open handler, and whether it is in the live row.
  */
-export function TouchChip({ chip, onOpen, animated = false }: TouchChipProps) {
+export function TouchChip({
+  chip,
+  onOpen,
+  animated = false,
+  pulseUpgrade = false,
+  onUpgradeSeen,
+}: TouchChipProps) {
   const reducedMotion = useReducedMotion() ?? false;
-  const pulse = useUpgradePulse(chip.upgraded === true);
+  const pulsing = pulseUpgrade && !reducedMotion;
   const openable = isOpenable(chip);
   const tombstone = chip.verb === 'delete';
   const hasDiffstat = chip.additions !== undefined || chip.deletions !== undefined;
@@ -153,7 +171,7 @@ export function TouchChip({ chip, onOpen, animated = false }: TouchChipProps) {
             </motion.span>
           </AnimatePresence>
         </span>
-        {pulse.pulsing && !reducedMotion && (
+        {pulsing && (
           <motion.span
             aria-hidden="true"
             data-testid="chip-upgrade-pulse"
@@ -161,7 +179,7 @@ export function TouchChip({ chip, onOpen, animated = false }: TouchChipProps) {
             initial={{ scale: 0.6, opacity: 0.8 }}
             animate={{ scale: 1.8, opacity: 0 }}
             transition={CHIP_RING}
-            onAnimationComplete={pulse.end}
+            onAnimationComplete={() => onUpgradeSeen?.(chip.key)}
           />
         )}
       </span>
@@ -202,7 +220,7 @@ export function TouchChip({ chip, onOpen, animated = false }: TouchChipProps) {
           className="shrink-0 tabular-nums"
           // The numbers slide in with the morph that earned them, and are simply
           // there on a chip that was already edited when it mounted.
-          initial={pulse.pulsing && !reducedMotion ? { opacity: 0, x: -4 } : false}
+          initial={pulsing ? { opacity: 0, x: -4 } : false}
           animate={{ opacity: 1, x: 0 }}
           transition={CHIP_MORPH}
         >
