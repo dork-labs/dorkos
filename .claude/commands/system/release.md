@@ -230,9 +230,23 @@ Include the current version (from VERSION) and last tag in the prompt. Parse the
 
 ---
 
-## Phase 4: Present, and Confirm Only on a Major
+## Phase 4: Curate, Present, and Confirm Only on a Major
 
-Present the release plan compactly: current → new version, bump type and reasoning, the changelog/commit signals, the changes to be released, and the mechanical steps ahead (files modified: `VERSION`, `packages/cli/package.json`, root `package.json`, `apps/desktop/package.json`, `CHANGELOG.md`, `docs/changelog.mdx`, blog post; `changelog/unreleased/` fragments deleted; media freshness check + `apps/site/public/product/archive/vX.Y.Z/` written for the embedded shots; plus `changelog/archive/` + `docs/changelog-archive.mdx` if any version ages past the 10-version cap; git commit `chore(release): vX.Y.Z` + annotated tag; **npm publish, push to origin, and the draft GitHub Release** — a patch/minor run carries all the way through these without another stop).
+### Curation: drop fixes to unreleased changes
+
+A `### Fixed` bullet belongs in the notes only if a user could have hit the bug. Before presenting the plan, classify every Fixed (and fix-flavored Changed) bullet across the fragments:
+
+- **Fixes pre-existing behavior** — the buggy behavior existed at the last tag → **keep**.
+- **Fixes behavior introduced this cycle** — the change that introduced the bug is itself in this release; typically its `### Added`/`### Changed` entry sits in the same fragment set, and `git log [last_tag] -- <path>` settles ambiguous cases → **drop**. If the fix changed what a user should _know_ about the feature (a limitation lifted, behavior that settled differently than the feature's entry says), **fold** that substance into the feature's entry instead of keeping a separate Fixed line.
+- **Unsure** → **keep**. Over-including a fix is harmless; wrongly dropping a real one is not.
+
+With a large fragment set (~30+ fragments), delegate classification to a `context-isolator` agent: give it the last tag and `changelog/unreleased/`, and have it return a keep/drop/fold verdict per bullet with a one-line reason each. Judgment stays here — spot-check any drop that names a surface you know predates the last tag.
+
+The verdicts apply during Phase 6.4 compilation. No `covers:` bookkeeping is needed: the PR check already ran, and the fragments are deleted at compile either way.
+
+### Present the plan
+
+Present the release plan compactly: current → new version, bump type and reasoning, the changelog/commit signals, the changes to be released, the curation outcome (kept/dropped/folded counts **plus the dropped bullets themselves**, so a wrong drop is visible before it happens), and the mechanical steps ahead (files modified: `VERSION`, `packages/cli/package.json`, root `package.json`, `apps/desktop/package.json`, `CHANGELOG.md`, `docs/changelog.mdx`, blog post; `changelog/unreleased/` fragments deleted; media freshness check + `apps/site/public/product/archive/vX.Y.Z/` written for the embedded shots; plus `changelog/archive/` + `docs/changelog-archive.mdx` if any version ages past the 10-version cap; git commit `chore(release): vX.Y.Z` + annotated tag; **npm publish, push to origin, and the draft GitHub Release** — a patch/minor run carries all the way through these without another stop).
 
 Also note: pushing the `vX.Y.Z` tag triggers the "Desktop Release" workflow (`.github/workflows/desktop-release.yml`), which asynchronously builds the macOS (signed + notarized) and Windows apps, attaches their installers + `latest*.yml` to the **draft** release created in Phase 6.11, and then publishes that draft. That runs in a separate workflow, so a desktop build failure can never unwind the product release created here (npm + changelog are already published). Publishing the GitHub Release is gated on macOS only: `publish-release` flips the draft to published when the macOS build and its install-verification pass, so a macOS failure deliberately holds the release as a draft. The Windows alpha is non-gating (`continue-on-error`) and can never block it.
 
@@ -310,7 +324,7 @@ Bumping the desktop app keeps its artifact version (`DorkOS-X.Y.Z-arm64.dmg`) an
 Compile every fragment in `changelog/unreleased/` into a new version section (see `changelog/README.md` for the semantics):
 
 1. Collect all fragments, sorted by filename (chronological).
-2. For each category in standard order (Added, Changed, Deprecated, Removed, Fixed, Security), merge every bullet from every fragment under a single `### Category` heading. **Never compile a fragment's `covers:` frontmatter** — it declares which commits the fragment covers for the PR check and is not changelog content.
+2. For each category in standard order (Added, Changed, Deprecated, Removed, Fixed, Security), merge every bullet from every fragment under a single `### Category` heading — applying the Phase 4 curation verdicts: skip bullets marked **drop**, and apply each **fold** by amending the surviving feature entry. A fragment whose every bullet was dropped is still deleted in step 4 like the rest. **Never compile a fragment's `covers:` frontmatter** — it declares which commits the fragment covers for the PR check and is not changelog content.
 3. Insert that as `## [X.Y.Z] - YYYY-MM-DD` (today's date) directly below the `## [Unreleased]` note at the top of `CHANGELOG.md`. Leave the `## [Unreleased]` heading + its "add a fragment" HTML comment in place.
 4. **Delete the compiled fragment files** (`git rm changelog/unreleased/*.md`) so `changelog/unreleased/` holds only `.gitkeep`.
 5. **Refresh the `[Unreleased]` link-reference** at the bottom of `CHANGELOG.md` to point at the new release: `[Unreleased]: https://github.com/dork-labs/dorkos/compare/vX.Y.Z...HEAD`.

@@ -206,8 +206,11 @@ embed, and runs `capture:archive` for exactly those before the release commit.
 
 1. Collect all fragments, sorted by filename (chronological).
 2. For each category in standard order (Added, Changed, Deprecated, Removed, Fixed,
-   Security), merge every bullet from every fragment under a single heading. `covers:`
-   frontmatter is build metadata for the PR check: it never reaches `CHANGELOG.md`.
+   Security), merge every bullet from every fragment under a single heading. Fixes to
+   bugs introduced since the last tag are dropped here (or folded into the feature's own
+   entry) — no user ever saw those bugs, so the feature simply ships working (rule and
+   rationale: the `writing-changelogs` skill). `covers:` frontmatter is build metadata
+   for the PR check: it never reaches `CHANGELOG.md`.
 3. Write that as `## [X.Y.Z] - YYYY-MM-DD` at the top of `CHANGELOG.md`.
 4. Delete the compiled fragment files in the release commit.
 5. Keep the 10 most recent versions in `CHANGELOG.md`; move any older section (with its
