@@ -93,10 +93,14 @@
  * client can observe, and a frame serialized just BEFORE a PATCH persisted but
  * delivered just after it can still win. The event carries the settings overlay
  * applied at serialization time, so this is only reachable inside the PATCH's own
- * response tail — and unlike the list case that made this a defect, the entry's
- * staleness clock is left intact above, so it re-consults the server rather than
- * sitting wrong until something else happens to touch it. Closing it completely
- * needs a server-side emit timestamp on the event.
+ * response tail.
+ *
+ * When it is reached, the consequence is the full one, not a softened version:
+ * arrival time IS "now", so the accepted write dates the entry now, and the row
+ * sits wrong for the whole `staleTime` — and a session nobody is inside has no
+ * observer that may fetch, so nothing ends it until another answer happens to
+ * cover that session. Scoping the window is the honest claim here; self-healing
+ * is not. Closing it needs a server-side emit timestamp on the event.
  *
  * ## Why not simply prefer the list row
  *
@@ -156,9 +160,17 @@ export function syncSessionDetailCache(
     if (!isSessionRow(cached)) continue;
     const incoming = fresh.get(cached.id);
     if (incoming === undefined) continue;
-    // Ties go to the entry already there. A tie means the two answers cannot be
-    // ordered, and of the two ways to be wrong about a permission mode, leaving
-    // a warning up a moment longer than needed is the harmless one.
+    // Ties go to the entry already there, and that is symmetric: a tie discards
+    // the later answer whichever way it points, so it can drop one that would
+    // RAISE a warning just as readily as one that would lower it. The incumbent
+    // wins anyway, because the alternative on an unorderable pair is "whatever
+    // arrived last" — the exact rule this module exists to stop trusting.
+    //
+    // Reaching it needs two answers about ONE session stamped in the same
+    // millisecond. The claude-code watcher, which produces nearly all of these
+    // frames, debounces per slug directory (`SESSION_LIST_DEBOUNCE_MS`, 250ms)
+    // and drops rows whose metadata is unchanged (`sessionMetaEqual`), so its
+    // frames for a single session land a quarter-second apart.
     if (query.state.dataUpdatedAt >= observedAt) continue;
     queryClient.setQueryData<Session>(
       query.queryKey,

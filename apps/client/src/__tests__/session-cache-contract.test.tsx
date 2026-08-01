@@ -589,10 +589,13 @@ describe('session permission mode: the fresher answer wins', () => {
     );
     expect(screen.getByLabelText('Permissions bypassed')).toBeInTheDocument();
 
-    // Now the older answer arrives. The sync runs INSIDE the query function, so
-    // waiting for the refetch to settle is a guarantee it has already had its
-    // chance — no sleep, and no window where this passes because the damage has
-    // not landed yet.
+    // Now the older answer arrives. The sync is a synchronous call INSIDE the
+    // query function, so waiting for the refetch to settle is a guarantee it has
+    // already had its chance — no sleep, and no window where this passes because
+    // the damage has not landed yet. That guarantee is the whole reason this
+    // waits on `isFetching`: move the sync to `onSuccess` or any other
+    // post-settle hook and the wait stops proving anything, so the wait has to
+    // move with it.
     answerSecondList({ sessions: [makeSession({ permissionMode: 'default' })] });
     await waitFor(() =>
       expect(queryClient.isFetching({ queryKey: sessionKeys.list(CWD) })).toBe(0)
