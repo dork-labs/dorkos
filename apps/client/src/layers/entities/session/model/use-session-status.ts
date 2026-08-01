@@ -133,7 +133,13 @@ export function useSessionStatus(
       // `clear` contract: reverting by KEY would clobber a later writer.
       const applied: SessionSettingsOverride = {
         ...(opts.model ? { model: opts.model } : {}),
-        ...(opts.permissionMode ? { permissionMode: opts.permissionMode } : {}),
+        // A request carries any id the session's runtime declares, which is
+        // wider than the shared enum names (DOR-811) — the picker already hands
+        // this hook descriptor ids verbatim. The override is a DISPLAY value
+        // that rides the same rendering path as the runtime's own reported mode,
+        // so the id passes through unchanged; nothing here reads meaning off the
+        // name.
+        ...(opts.permissionMode ? { permissionMode: opts.permissionMode as PermissionMode } : {}),
         ...(opts.effort ? { effort: opts.effort } : {}),
         ...(opts.fastMode !== undefined ? { fastMode: opts.fastMode } : {}),
       };

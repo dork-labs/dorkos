@@ -16,9 +16,28 @@
  */
 import type { Session, PermissionMode } from '@dorkos/shared/types';
 import type { SessionListEvent } from '@dorkos/shared/session-stream';
+import { TEST_MODE_CAPABILITIES } from './runtime-constants.js';
 
 /** Max characters of a first message used as the derived session title/preview. */
 const PREVIEW_MAX_CHARS = 80;
+
+/**
+ * The mode a session is BORN in when nothing asks for one — read off this
+ * runtime's own declaration rather than restated here.
+ *
+ * It used to be the literal `'default'`, which `test-mode` does not declare.
+ * A fresh session therefore opened showing a mode its own picker could not
+ * offer, and once the session PATCH started checking the request against the
+ * runtime's declaration (DOR-811), switching BACK to that mode was refused —
+ * a session stuck in a state it could not return to.
+ *
+ * The `??` is a type bound, not a policy: `RuntimeCapabilities` types `default`
+ * as optional, and `TEST_MODE_CAPABILITIES` always declares it. Falling back to
+ * the first declared descriptor keeps the one property that matters — the birth
+ * mode is always a mode this runtime declares — without a second copy of an id.
+ */
+const BIRTH_PERMISSION_MODE = (TEST_MODE_CAPABILITIES.permissionModes.default ??
+  TEST_MODE_CAPABILITIES.permissionModes.values[0]!.id) as PermissionMode;
 
 /** Metadata fields the registry can update on an already-tracked session. */
 export interface TrackedSessionPatch {
@@ -219,7 +238,7 @@ export class TestModeSessionRegistry {
         title: '',
         createdAt: now,
         updatedAt: now,
-        permissionMode: patch.permissionMode ?? 'default',
+        permissionMode: patch.permissionMode ?? BIRTH_PERMISSION_MODE,
         runtime: this.runtimeType,
       };
       this.sessions.set(sessionId, session);

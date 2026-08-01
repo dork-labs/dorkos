@@ -42,9 +42,11 @@ export const TEST_MODE_CAPABILITIES: RuntimeCapabilities = {
     supported: true,
     default: 'always-allow',
     // These three ids are deliberately outside `PermissionModeSchema` — that is
-    // the point of them (see the module note above). Known and backlogged: the
-    // schema still enumerates Claude's ids, so a test-mode mode id only
-    // type-checks through the descriptor's loose `id: string`.
+    // the point of them (see the module note above), and they are settable:
+    // `PATCH /api/sessions/:id` takes any well-formed id and asks the session's
+    // OWN runtime whether it declares it (DOR-811), so this list is what makes
+    // these modes real. `PermissionModeSchema` remains the narrower shared enum
+    // for everything that still speaks in Claude-shaped names.
     values: [
       {
         id: 'always-allow',

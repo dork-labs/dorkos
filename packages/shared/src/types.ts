@@ -8,6 +8,7 @@
  */
 export type {
   PermissionMode,
+  PermissionModeId,
   Session,
   SessionOrigin,
   SessionListWarning,

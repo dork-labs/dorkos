@@ -3119,7 +3119,7 @@
         "type": "object",
         "properties": {
           "permissionMode": {
-            "$ref": "#/components/schemas/PermissionMode"
+            "$ref": "#/components/schemas/PermissionModeId"
           },
           "model": {
             "type": "string"
@@ -3139,6 +3139,12 @@
             "type": "boolean"
           }
         }
+      },
+      "PermissionModeId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64,
+        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]*$"
       },
       "SendMessageResponse": {
         "type": "object",
