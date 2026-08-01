@@ -335,7 +335,8 @@ describe('approval receipts', () => {
     expect(receipt.textContent).toContain('You allowed 3 actions');
     expect(screen.queryByTestId('approval-receipt-items')).toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: /show/i }));
+    // Exact name: the turn's touch-chip strip carries a "show all" of its own.
+    fireEvent.click(screen.getByRole('button', { name: 'Show' }));
     const items = screen.getByTestId('approval-receipt-items');
     expect(items.textContent).toContain('Run "step-0"');
     expect(items.textContent).toContain('Run "step-2"');

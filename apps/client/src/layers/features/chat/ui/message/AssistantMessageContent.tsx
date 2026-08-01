@@ -22,6 +22,7 @@ import { MemoryRecallBlock } from './MemoryRecallBlock';
 import { PermissionDeniedChip } from './PermissionDeniedChip';
 import { CompactBoundaryRow } from './CompactBoundaryRow';
 import { CompactPendingRow, CollapsibleCard } from '../primitives';
+import { TouchChipStrip } from '../chips';
 import { McpAppBlock } from '@/layers/features/mcp-apps';
 
 /**
@@ -537,6 +538,10 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
           </div>
         );
       })}
+      {/* The turn's own record of what it touched. It sits after the parts, at
+          the turn level, because that is what lets it outlive the tool cards
+          above it once they auto-hide. */}
+      <TouchChipStrip parts={parts} />
     </>
   );
 }
