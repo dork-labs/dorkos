@@ -15,6 +15,7 @@ function restingContext(overrides: Partial<StatusPromotionContext> = {}): Status
     connectionState: 'connected',
     permissionMode: 'default',
     permissionDescriptor: null,
+    plan: null,
     runtime: { isDefault: true, canSelect: false },
     usage: { kind: 'pay-as-you-go', costUsd: 0.03 },
     subagentsInFlight: 0,

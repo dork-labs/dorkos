@@ -6,6 +6,7 @@ import {
   useSessionChatStore,
   useModels,
   useHasConfirmedAuto,
+  useModeBeforePlan,
 } from '@/layers/entities/session';
 import { useWorkspaceForSession } from '@/layers/entities/workspace';
 import {
@@ -31,6 +32,7 @@ import {
   applyStatusBudget,
   type StatusPromotionContext,
 } from '@/layers/features/status';
+import { findWorkingMode } from '@/layers/shared/lib';
 import { compactComposerGate } from '../../model/build-palette-commands';
 import { useCompactionChip } from '../../model/status/use-compaction-chip';
 import { useUsageReveal } from '../../model/use-usage-reveal';
@@ -145,6 +147,32 @@ export function ChatStatusSection({
   // The active runtime's capability profile drives the honesty gates: a runtime
   // that declares `supportsCostTracking: false` must never show a cost item.
   const activeCaps = useCapabilitiesForRuntime(runtimeChip.runtime);
+
+  // Plan, where the runtime offers a way of working at all. Which mode that is
+  // comes from the profile, never from the id `plan` (spec `trust-dial`).
+  const workingMode = findWorkingMode(activeCaps?.permissionModes.values ?? []);
+  const planActive = workingMode !== undefined && status.permissionMode === workingMode.id;
+  const modeBeforePlan = useModeBeforePlan(sessionId);
+  const recordModeBeforePlan = useSessionChatStore((s) => s.recordModeBeforePlan);
+  const runtimeDefaultMode = activeCaps?.permissionModes.default;
+
+  const handleTogglePlan = useCallback(
+    (next: boolean) => {
+      if (!workingMode) return;
+      if (next) {
+        // Remember where the dial stood, so switching Plan off is a return
+        // rather than a guess.
+        recordModeBeforePlan(sessionId, status.permissionMode);
+        status.updateSession({ permissionMode: workingMode.id as PermissionMode });
+        return;
+      }
+      // Nothing remembered — a session opened while already planning — falls
+      // back to what a fresh session on this runtime would have started at.
+      const restored = modeBeforePlan ?? runtimeDefaultMode;
+      if (restored) status.updateSession({ permissionMode: restored as PermissionMode });
+    },
+    [workingMode, recordModeBeforePlan, sessionId, status, modeBeforePlan, runtimeDefaultMode]
+  );
   const runtimeLabel = runtimeChip.runtime ? getRuntimeDescriptor(runtimeChip.runtime).label : '';
   // Same runtime-support gate the composer's `/compact` dispatch uses — the
   // inline compact action must never disagree with the palette.
@@ -172,6 +200,8 @@ export function ChatStatusSection({
     // picker's tint can never disagree about one mode.
     permissionDescriptor:
       activeCaps?.permissionModes.values.find((d) => d.id === status.permissionMode) ?? null,
+    // `null` on a runtime with no way of working to offer, which is most of them.
+    plan: workingMode ? { active: planActive } : null,
     // `runtimeCaps === undefined` is "the capability map has not arrived", not
     // "this runtime is not the default": treating it as the latter would promote
     // the item at RUNTIME_NON_DEFAULT for the frames before the query resolves,
@@ -206,6 +236,9 @@ export function ChatStatusSection({
     onUpdateSession: status.updateSession,
     onChangeMode: handleChangeMode,
     modelSupportsAutoMode,
+    plan: workingMode
+      ? { descriptor: workingMode, active: planActive, onToggle: handleTogglePlan }
+      : null,
     gitStatus,
     workspace,
     runtimeChip,

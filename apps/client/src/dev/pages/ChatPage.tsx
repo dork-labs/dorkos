@@ -5,6 +5,7 @@ import { ToolShowcases } from '../showcases/ToolShowcases';
 import { InputShowcases } from '../showcases/InputShowcases';
 import { StatusShowcases } from '../showcases/StatusShowcases';
 import { StatusLineShowcases } from '../showcases/StatusLineShowcases';
+import { TrustDialShowcases } from '../showcases/TrustDialShowcases';
 import { SessionInspectorShowcases } from '../showcases/SessionInspectorShowcases';
 import { MiscShowcases } from '../showcases/MiscShowcases';
 
@@ -21,6 +22,7 @@ export function ChatPage() {
       <InputShowcases />
       <StatusShowcases />
       <StatusLineShowcases />
+      <TrustDialShowcases />
       <SessionInspectorShowcases />
       <MiscShowcases />
     </PlaygroundPageLayout>

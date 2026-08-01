@@ -126,6 +126,17 @@ interface SessionChatStoreState {
    * producer handles it natively without the MapSet plugin.
    */
   autoConfirmedSessions: Record<string, true>;
+  /**
+   * Where each session's trust dial stood when Plan was switched on, so
+   * switching Plan off puts it back rather than guessing.
+   *
+   * Client-only and ephemeral, like the auto confirmation beside it: the server
+   * stores one permission mode per session, and "the mode you were in before"
+   * is a fact about this person's last few clicks, not about the session. A
+   * session with nothing remembered falls back to the runtime's own default,
+   * which is what a fresh session would have had.
+   */
+  modeBeforePlan: Record<string, string>;
 }
 
 /**
@@ -175,6 +186,8 @@ interface SessionChatStoreActions {
   recordAutoConfirmed: (sessionId: string) => void;
   /** Whether a session has already confirmed the `'auto'` permission-mode preview. */
   hasConfirmedAuto: (sessionId: string) => boolean;
+  /** Remember the trust mode a session was in before Plan took over. */
+  recordModeBeforePlan: (sessionId: string, mode: string) => void;
 }
 
 /**
@@ -190,6 +203,7 @@ export const useSessionChatStore = create<SessionChatStoreState & SessionChatSto
       sessions: {},
       sessionAccessOrder: [],
       autoConfirmedSessions: {},
+      modeBeforePlan: {},
 
       initSession: (sessionId) => {
         // Skip store mutation if session already exists — prevents setState-during-render
@@ -265,6 +279,15 @@ export const useSessionChatStore = create<SessionChatStoreState & SessionChatSto
       hasConfirmedAuto: (sessionId) => {
         return get().autoConfirmedSessions[sessionId] === true;
       },
+
+      recordModeBeforePlan: (sessionId, mode) =>
+        set(
+          (state) => {
+            state.modeBeforePlan[sessionId] = mode;
+          },
+          false,
+          'session-chat/recordModeBeforePlan'
+        ),
     })),
     { name: 'SessionChatStore', enabled: import.meta.env.DEV }
   )
@@ -289,6 +312,17 @@ export function useSessionStatus(sessionId: string): ChatStatus {
   return useSessionChatStore(
     useCallback((s) => s.sessions[sessionId]?.status ?? 'idle', [sessionId])
   );
+}
+
+/**
+ * Reactive selector: the trust mode this session was in before Plan was switched
+ * on, or `undefined` when nothing is remembered (a session that was already in
+ * Plan when it was opened, or one the store has since evicted).
+ *
+ * @param sessionId - The session to ask about.
+ */
+export function useModeBeforePlan(sessionId: string): string | undefined {
+  return useSessionChatStore(useCallback((s) => s.modeBeforePlan[sessionId], [sessionId]));
 }
 
 /**
