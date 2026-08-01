@@ -63,6 +63,10 @@ function accessibleNameFor(chip: TouchChipData): string {
   return parts.join(', ');
 }
 
+/** The pill a count sits in: the repeat badge and the hit badge share it. */
+const COUNT_BADGE =
+  'bg-muted text-muted-foreground shrink-0 rounded-full px-1.5 text-[10px] leading-[1.4] tabular-nums';
+
 /** `1 hit` / `14 hits` — the badge text and the spoken one, from one place. */
 function hitsLabel(hits: number): string {
   return hits === 1 ? '1 hit' : `${hits} hits`;
@@ -115,8 +119,10 @@ export function TouchChip({ chip, onOpen, animated = false }: TouchChipProps) {
       aria-label={accessibleNameFor(chip)}
       onClick={() => onOpen(chip)}
       className={cn(
-        'touch-chip relative inline-flex max-w-56 items-center gap-1 rounded-md border',
-        'px-1.5 py-0.5 text-xs',
+        // Pill, not a card: the mockups draw every chip this way, and it is the
+        // shape the app's other inline metadata chips already wear.
+        'touch-chip relative inline-flex max-w-56 items-center gap-1.5 rounded-full border',
+        'px-2 py-0.5 text-xs',
         'bg-card text-foreground border-border',
         'focus-visible:ring-ring/50 outline-none focus-visible:ring-2',
         openable ? 'hover:bg-accent hover:text-accent-foreground' : 'cursor-default',
@@ -177,8 +183,9 @@ export function TouchChip({ chip, onOpen, animated = false }: TouchChipProps) {
         <>
           <svg aria-hidden="true" data-testid="chip-pen" className="chip-pen">
             {/* `pathLength` normalises the perimeter to 100, so the stroke draws
-                at one speed however long the name makes the chip. */}
-            <rect x="0" y="0" width="100%" height="100%" rx="6" pathLength="100" />
+                at one speed however long the name makes the chip. `rx` is half
+                the chip's own height, which is what makes it the same pill. */}
+            <rect x="0" y="0" width="100%" height="100%" rx="11" ry="11" pathLength="100" />
           </svg>
           <span aria-hidden="true" className="chip-spark" />
         </>
@@ -186,12 +193,10 @@ export function TouchChip({ chip, onOpen, animated = false }: TouchChipProps) {
       {chip.verb === 'delete' && arriving && (
         <span aria-hidden="true" data-testid="chip-puff" className="chip-puff" />
       )}
-      {chip.touches > 1 && (
-        <span className="text-muted-foreground shrink-0 tabular-nums">×{chip.touches}</span>
-      )}
-      {chip.hits !== undefined && (
-        <span className="text-muted-foreground shrink-0 tabular-nums">{hitsLabel(chip.hits)}</span>
-      )}
+      {/* Counts are badges rather than more text on the line: they are about the
+          chip, not part of the name, and the mockups set them in their own pill. */}
+      {chip.touches > 1 && <span className={COUNT_BADGE}>×{chip.touches}</span>}
+      {chip.hits !== undefined && <span className={COUNT_BADGE}>{hitsLabel(chip.hits)}</span>}
       {hasDiffstat && (
         <motion.span
           className="shrink-0 tabular-nums"

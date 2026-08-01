@@ -82,11 +82,14 @@ export function ChipTray({ id, chips, onOpen }: ChipTrayProps) {
                 data-testid={`chip-filter-${group.verb}`}
                 onClick={() => setVerbFilter(active ? null : group.verb)}
                 className={cn(
-                  'inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs',
+                  // Bordered whether or not it is on, so the row reads as a set
+                  // of controls rather than as a line of text that turns out to
+                  // be clickable. The active one takes the accent border.
+                  'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs',
                   'focus-visible:ring-ring/50 outline-none focus-visible:ring-2',
                   active
-                    ? 'border-border bg-accent text-accent-foreground'
-                    : 'text-muted-foreground hover:text-foreground border-transparent'
+                    ? 'border-primary text-foreground'
+                    : 'border-border text-muted-foreground hover:text-foreground'
                 )}
               >
                 <span aria-hidden="true">{VERB_ICON[group.verb]}</span>
@@ -107,10 +110,13 @@ export function ChipTray({ id, chips, onOpen }: ChipTrayProps) {
         </SegmentedControl>
       </div>
       {/* Bounded and self-scrolling: the tray never grows the transcript's own
-          scroll height, however much a turn touched. */}
+          scroll height, however much a turn touched. `overscroll-contain` is
+          what keeps it from handing the scroll back — without it, reaching the
+          bottom of the roster carries on into the transcript, which jumps the
+          tray out from under the cursor that was reading it. */}
       <div
         data-testid="chip-tray-roster"
-        className="flex max-h-60 flex-wrap items-start gap-1.5 overflow-y-auto"
+        className="flex max-h-60 flex-wrap items-start gap-1.5 overflow-y-auto overscroll-contain"
       >
         {visible.map((chip) => (
           <TouchChip key={chip.key} chip={chip} onOpen={onOpen} />
