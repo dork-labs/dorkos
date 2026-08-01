@@ -15,16 +15,24 @@ import { cn } from '@/layers/shared/lib/utils';
  * Trust Dial's three stops are the reference case. A list that has to scroll, or
  * options whose labels are sentences, wants a menu instead.
  *
+ * **Arrow keys stop at the ends.** Radix wraps by default, and because a radio
+ * group selects as focus moves, wrapping means one ArrowLeft on the first
+ * segment silently commits the last one. On a control whose ends are "safest"
+ * and "most dangerous" — which is what a segmented control usually is — that is
+ * a keypress nobody meant to make. Pass `loop` explicitly to opt back in.
+ *
  * @param props - Radix radio-group props; `value`, `onValueChange`, `disabled`.
  */
 function SegmentedControl({
   className,
+  loop = false,
   ...props
 }: React.ComponentProps<typeof RadioGroupPrimitive.Root>) {
   return (
     <RadioGroupPrimitive.Root
       data-slot="segmented-control"
       orientation="horizontal"
+      loop={loop}
       className={cn(
         'bg-muted border-border flex w-full items-stretch gap-0.5 rounded-lg border p-0.5',
         'data-[disabled]:opacity-50',

@@ -137,6 +137,30 @@ interface SessionChatStoreState {
    * which is what a fresh session would have had.
    */
   modeBeforePlan: Record<string, string>;
+  /**
+   * Session ids that have acknowledged what Full autonomy means, so the dial's
+   * confirmation is asked once rather than on every switch back.
+   *
+   * Ephemeral like the two above, and deliberately so for now: decision 5 of the
+   * `trust-dial` spec makes this a durable user-level acknowledgement the SERVER
+   * requires on every autonomy write. Until that lands, this is a client-side
+   * courtesy — it may soften the ritual, never the gate.
+   */
+  autonomyConfirmedSessions: Record<string, true>;
+}
+
+/**
+ * Forget everything keyed by a session id.
+ *
+ * Every one of these maps is session-keyed and unbounded, and none of them is
+ * reachable once the session entry is gone — so a map that is not swept here
+ * grows for the life of the tab. Add a session-keyed field above, add it here.
+ */
+function forgetSession(state: SessionChatStoreState, sessionId: string): void {
+  delete state.sessions[sessionId];
+  delete state.autoConfirmedSessions[sessionId];
+  delete state.modeBeforePlan[sessionId];
+  delete state.autonomyConfirmedSessions[sessionId];
 }
 
 /**
@@ -162,7 +186,7 @@ function isEvictable(session: SessionState | undefined): boolean {
 function touchAndEvict(state: SessionChatStoreState, sessionId: string): void {
   const order = [sessionId, ...state.sessionAccessOrder.filter((id: string) => id !== sessionId)];
   for (const id of order.slice(MAX_RETAINED_SESSIONS)) {
-    if (isEvictable(state.sessions[id])) delete state.sessions[id];
+    if (isEvictable(state.sessions[id])) forgetSession(state, id);
   }
   state.sessionAccessOrder = order.filter((id: string) => id in state.sessions);
 }
@@ -188,6 +212,8 @@ interface SessionChatStoreActions {
   hasConfirmedAuto: (sessionId: string) => boolean;
   /** Remember the trust mode a session was in before Plan took over. */
   recordModeBeforePlan: (sessionId: string, mode: string) => void;
+  /** Record that a session has acknowledged what Full autonomy means. */
+  recordAutonomyConfirmed: (sessionId: string) => void;
 }
 
 /**
@@ -204,6 +230,7 @@ export const useSessionChatStore = create<SessionChatStoreState & SessionChatSto
       sessionAccessOrder: [],
       autoConfirmedSessions: {},
       modeBeforePlan: {},
+      autonomyConfirmedSessions: {},
 
       initSession: (sessionId) => {
         // Skip store mutation if session already exists — prevents setState-during-render
@@ -233,7 +260,7 @@ export const useSessionChatStore = create<SessionChatStoreState & SessionChatSto
       destroySession: (sessionId) =>
         set(
           (state) => {
-            delete state.sessions[sessionId];
+            forgetSession(state, sessionId);
             state.sessionAccessOrder = state.sessionAccessOrder.filter(
               (id: string) => id !== sessionId
             );
@@ -288,6 +315,15 @@ export const useSessionChatStore = create<SessionChatStoreState & SessionChatSto
           false,
           'session-chat/recordModeBeforePlan'
         ),
+
+      recordAutonomyConfirmed: (sessionId) =>
+        set(
+          (state) => {
+            state.autonomyConfirmedSessions[sessionId] = true;
+          },
+          false,
+          'session-chat/recordAutonomyConfirmed'
+        ),
     })),
     { name: 'SessionChatStore', enabled: import.meta.env.DEV }
   )
@@ -323,6 +359,18 @@ export function useSessionStatus(sessionId: string): ChatStatus {
  */
 export function useModeBeforePlan(sessionId: string): string | undefined {
   return useSessionChatStore(useCallback((s) => s.modeBeforePlan[sessionId], [sessionId]));
+}
+
+/**
+ * Reactive selector: whether a session has already acknowledged what Full
+ * autonomy means.
+ *
+ * @param sessionId - The session to ask about.
+ */
+export function useHasConfirmedAutonomy(sessionId: string): boolean {
+  return useSessionChatStore(
+    useCallback((s) => s.autonomyConfirmedSessions[sessionId] === true, [sessionId])
+  );
 }
 
 /**

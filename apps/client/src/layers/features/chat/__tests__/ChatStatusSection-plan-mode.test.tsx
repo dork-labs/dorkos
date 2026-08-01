@@ -162,7 +162,20 @@ vi.mock('@/layers/features/status', async (importOriginal) => {
     ),
     CwdItem: () => null,
     GitStatusItem: () => null,
-    PermissionModeItem: () => null,
+    PermissionModeItem: ({ onChangeMode }: { onChangeMode: (m: string) => void }) => (
+      <>
+        <button
+          type="button"
+          data-testid="select-autonomy"
+          onClick={() => onChangeMode('bypassPermissions')}
+        >
+          select autonomy
+        </button>
+        <button type="button" data-testid="select-act" onClick={() => onChangeMode('acceptEdits')}>
+          select act
+        </button>
+      </>
+    ),
     ModelConfigPopover: () => null,
     ContextItem: () => null,
     UsageStatusItem: () => null,
@@ -170,7 +183,10 @@ vi.mock('@/layers/features/status', async (importOriginal) => {
     SubagentsItem: () => null,
     SessionPopover: ({ children }: { children: React.ReactNode }) => <>{children}</>,
     useGitStatus: vi.fn(() => ({ data: undefined })),
-    useStatusBarPins: () => ({ pins: [], toggle: vi.fn(), reset: vi.fn() }),
+    // `default` permissions are quiet by design, and this suite drives mode
+    // changes from that item — pin it into the line. Pins live in server config;
+    // stub the bridge so no query client or transport is needed.
+    useStatusBarPins: () => ({ pins: ['permission'], toggle: vi.fn(), reset: vi.fn() }),
   };
 });
 
@@ -221,10 +237,74 @@ beforeEach(() => {
   updateSession.mockClear();
   caps.current = CLAUDE_CAPS;
   permissionMode.current = 'default';
-  useSessionChatStore.setState({ modeBeforePlan: {} });
+  useSessionChatStore.setState({ modeBeforePlan: {}, autonomyConfirmedSessions: {} });
 });
 
 afterEach(cleanup);
+
+describe('ChatStatusSection — the door into Full autonomy', () => {
+  it('asks before it writes — selecting the autonomy stop patches nothing', () => {
+    renderSection();
+
+    fireEvent.click(screen.getByTestId('select-autonomy'));
+
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    expect(updateSession).not.toHaveBeenCalled();
+  });
+
+  it('says what THIS agent means by it, in the runtime’s own sentence', () => {
+    renderSection();
+
+    fireEvent.click(screen.getByTestId('select-autonomy'));
+
+    expect(screen.getByRole('alertdialog')).toHaveTextContent(
+      'Runs everything without asking, including outside this project.'
+    );
+    // …and what it does not cover.
+    expect(screen.getByText(/covers tools inside the session/i)).toBeInTheDocument();
+  });
+
+  it('applies the mode once confirmed, and remembers the session said yes', () => {
+    renderSection();
+
+    fireEvent.click(screen.getByTestId('select-autonomy'));
+    fireEvent.click(screen.getByRole('button', { name: 'Turn on Full autonomy' }));
+
+    expect(updateSession).toHaveBeenCalledWith({ permissionMode: 'bypassPermissions' });
+    expect(useSessionChatStore.getState().autonomyConfirmedSessions[SESSION_ID]).toBe(true);
+  });
+
+  it('leaves the session alone when cancelled', () => {
+    renderSection();
+
+    fireEvent.click(screen.getByTestId('select-autonomy'));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(updateSession).not.toHaveBeenCalled();
+    expect(useSessionChatStore.getState().autonomyConfirmedSessions[SESSION_ID]).toBeUndefined();
+  });
+
+  it('asks once per session, not once per switch', () => {
+    renderSection();
+
+    fireEvent.click(screen.getByTestId('select-autonomy'));
+    fireEvent.click(screen.getByRole('button', { name: 'Turn on Full autonomy' }));
+    updateSession.mockClear();
+
+    fireEvent.click(screen.getByTestId('select-autonomy'));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(updateSession).toHaveBeenCalledWith({ permissionMode: 'bypassPermissions' });
+  });
+
+  it('never stands between a person and a stop that still asks', () => {
+    renderSection();
+
+    fireEvent.click(screen.getByTestId('select-act'));
+
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(updateSession).toHaveBeenCalledWith({ permissionMode: 'acceptEdits' });
+  });
+});
 
 describe('ChatStatusSection — the composer’s Plan switch', () => {
   it('is offered on a runtime that declares a way of working', () => {
@@ -271,6 +351,18 @@ describe('ChatStatusSection — the composer’s Plan switch', () => {
     updateSession.mockClear();
     fireEvent.click(planChip());
     expect(updateSession).toHaveBeenCalledWith({ permissionMode: 'acceptEdits' });
+  });
+
+  it('does not restore a remembered mode the runtime no longer offers', () => {
+    // The runtime can change under a session before its first message. Restoring
+    // a mode that is gone would PATCH something the server rejects, on the one
+    // path out of planning.
+    useSessionChatStore.setState({ modeBeforePlan: { [SESSION_ID]: 'auto' } });
+    permissionMode.current = 'plan';
+    renderSection();
+
+    fireEvent.click(planChip());
+    expect(updateSession).toHaveBeenCalledWith({ permissionMode: 'default' });
   });
 
   it('falls back to the runtime’s default when it was already planning on arrival', () => {

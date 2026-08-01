@@ -317,6 +317,23 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
     ],
   },
   {
+    id: 'trust-dial-the-door-into-full-autonomy',
+    title: 'Trust Dial — the door into Full autonomy',
+    page: 'chat',
+    category: 'Status',
+    keywords: [
+      'trust',
+      'dial',
+      'autonomy',
+      'confirm',
+      'dialog',
+      'consent',
+      'bypass',
+      'permission',
+      'scope',
+    ],
+  },
+  {
     id: 'plan-a-way-of-working-beside-the-composer',
     title: 'Plan — a way of working, beside the composer',
     page: 'chat',

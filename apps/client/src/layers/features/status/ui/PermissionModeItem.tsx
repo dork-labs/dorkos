@@ -117,8 +117,12 @@ export function PermissionModeItem({
   const currentIsDangerous = isMarkedDangerous(currentDescriptor);
   // The hidden refinement is only worth mentioning where it would have been —
   // beside the stop that holds it.
+  // `mode === 'auto'` matters as much as the stop: a session ALREADY in auto on a
+  // model that cannot run it has no selected stop at all, and that is exactly the
+  // person who needs the reason — the dial says the mode is not one of the stops,
+  // and this says why it went away.
   const selectedStop = resolveTrustStops(descriptors).find((s) => s.mode.id === mode)?.stop;
-  const showAutoHint = autoFiltered && selectedStop === 'act';
+  const showAutoHint = autoFiltered && (selectedStop === 'act' || mode === 'auto');
 
   const trigger = (
     <button

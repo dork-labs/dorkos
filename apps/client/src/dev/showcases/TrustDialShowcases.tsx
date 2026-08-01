@@ -12,7 +12,8 @@
  */
 import { useState } from 'react';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
-import { TrustDial, PlanModeItem } from '@/layers/features/status';
+import { TrustDial, PlanModeItem, AutonomyConfirmDialog } from '@/layers/features/status';
+import { Button } from '@/layers/shared/ui';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -186,6 +187,24 @@ function LivePlanChip() {
   );
 }
 
+/** The door into Full autonomy, opened on demand. */
+function LiveAutonomyDialog() {
+  const [open, setOpen] = useState(false);
+  const autonomy = CODEX[2];
+  return (
+    <div className="flex items-center gap-3">
+      <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
+        Choose Full autonomy (Codex)
+      </Button>
+      <AutonomyConfirmDialog
+        descriptor={open ? autonomy : null}
+        onCancel={() => setOpen(false)}
+        onConfirm={() => setOpen(false)}
+      />
+    </div>
+  );
+}
+
 /** Trust Dial showcases for the dev playground. */
 export function TrustDialShowcases() {
   return (
@@ -243,6 +262,16 @@ export function TrustDialShowcases() {
         <ShowcaseLabel>Before the runtime has answered — no stops, no claims</ShowcaseLabel>
         <ShowcaseDemo>
           <LiveDial descriptors={[]} initial="default" />
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="Trust Dial — the door into Full autonomy"
+        description="The one stop a person cannot walk back asks twice. The consequence sentence is the runtime's own — what Full autonomy means differs by agent — and the scope note says what it does not cover. Asked once per session, and the segmented control stops at the ends so an arrow key cannot wander in."
+      >
+        <ShowcaseLabel>The confirmation, on a Codex session</ShowcaseLabel>
+        <ShowcaseDemo>
+          <LiveAutonomyDialog />
         </ShowcaseDemo>
       </PlaygroundSection>
 

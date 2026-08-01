@@ -8,6 +8,7 @@ import {
   isWorkingMode,
   permissionModeLabel,
   resolveTrustStops,
+  warnTier,
   type TrustStop,
 } from '@/layers/shared/lib';
 import { SegmentedControl, SegmentedControlItem, Switch } from '@/layers/shared/ui';
@@ -102,7 +103,9 @@ export interface TrustDialProps {
  *   "this agent cannot do that", which the missing stop already says.
  * - **The caption is the runtime's own sentence**, rendered verbatim. It turns
  *   amber when the runtime asks less often than the stop promised — Codex's
- *   workspace-write is the case the whole design exists for.
+ *   workspace-write is the case the whole design exists for — and red at the one
+ *   stop that never asks about anything, anywhere, so the moment of choosing it
+ *   does not look identical to the moment of choosing Act.
  * - **The current state is always visible.** A session sitting at a mode with no
  *   stop (one the runtime dropped, or one this model cannot run) shows no
  *   selection AND a line naming the mode, because a dial with nothing lit and no
@@ -118,8 +121,16 @@ export function TrustDial({ mode, descriptors, onChangeMode, planActive }: Trust
   const selected = stops.find(
     (s) => s.mode.id === mode || s.refinements.some((r) => r.id === mode)
   );
+  // A way of working holds the session — Plan, or whatever a future runtime calls
+  // its own. Read from the descriptor as well as the prop: conformance forbids a
+  // runtime whose only ask-stop mode is a way of working, but a dial that shows
+  // nothing lit and no reason is the failure this component exists to end, so it
+  // does not depend on the caller passing the flag.
+  const working = current !== undefined && isWorkingMode(current);
+  const frozen = planActive === true || working;
   // A mode the dial cannot place: dropped by the runtime, or filtered out for
-  // this model. `plan` is not stranded — it is declared, it is just not a stop.
+  // this model. A way of working is not stranded — it is declared, it is just
+  // not a stop.
   const stranded = current === undefined && stops.length > 0;
 
   return (
@@ -129,7 +140,7 @@ export function TrustDial({ mode, descriptors, onChangeMode, planActive }: Trust
           aria-label="How much this agent may do without asking"
           aria-describedby={captionId}
           value={selected?.stop ?? ''}
-          disabled={planActive}
+          disabled={frozen}
           onValueChange={(stop) => {
             const next = stops.find((s) => s.stop === stop);
             if (next) onChangeMode(next.mode.id);
@@ -150,16 +161,11 @@ export function TrustDial({ mode, descriptors, onChangeMode, planActive }: Trust
       <p
         id={captionId}
         data-testid="trust-dial-caption"
-        className={cn(
-          'px-1 text-xs leading-relaxed',
-          current && isDivergent(current)
-            ? 'text-amber-600 dark:text-amber-400'
-            : 'text-muted-foreground'
-        )}
+        className={cn('px-1 text-xs leading-relaxed', captionTone(current))}
       >
         {current?.promise}
-        {planActive && (
-          <span className="text-muted-foreground"> Turn off Plan to change this.</span>
+        {frozen && current && (
+          <span className="text-muted-foreground"> Turn off {current.label} to change this.</span>
         )}
       </p>
 
@@ -181,11 +187,29 @@ export function TrustDial({ mode, descriptors, onChangeMode, planActive }: Trust
           stop={selected}
           mode={mode}
           onChangeMode={onChangeMode}
-          disabled={planActive}
+          disabled={frozen}
         />
       ))}
     </div>
   );
+}
+
+/**
+ * How loudly the caption reads, from what the selected mode does.
+ *
+ * Three tones, and no more: red for the one combination a person cannot walk
+ * back (never asks, reaches everything), amber where the runtime asks less often
+ * than the stop promised, muted for everything else. Ask first is deliberately
+ * colourless — safety is the resting state, not a third colour to spend.
+ *
+ * @param descriptor - The selected mode, if the runtime declares it.
+ * @internal
+ */
+function captionTone(descriptor: PermissionModeDescriptor | undefined): string {
+  if (!descriptor) return 'text-muted-foreground';
+  if (warnTier(descriptor) === 'danger') return 'text-red-600 dark:text-red-400';
+  if (isDivergent(descriptor)) return 'text-amber-600 dark:text-amber-400';
+  return 'text-muted-foreground';
 }
 
 /**

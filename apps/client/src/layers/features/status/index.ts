@@ -13,6 +13,7 @@ export { TrustDial, TrustModeIcon } from './ui/TrustDial';
 export type { TrustDialProps } from './ui/TrustDial';
 export { RuntimeItem } from './ui/RuntimeItem';
 export { AutoModeConfirmDialog } from './ui/AutoModeConfirmDialog';
+export { AutonomyConfirmDialog } from './ui/AutonomyConfirmDialog';
 export { ModelConfigPopover } from './ui/ModelConfigPopover';
 export { ContextItem } from './ui/ContextItem';
 export type { ContextCompactAction } from './ui/ContextItem';

@@ -521,6 +521,10 @@ describe('PermissionModeItem', () => {
 
       expect(screen.getByTestId('popover-trigger')).toHaveTextContent('Auto');
       expect(screen.getByTestId('trust-dial-stranded')).toHaveTextContent('Auto');
+      // …and says WHY it is not one of the stops any more. This is the person
+      // who most needs the model reason, and the stop-based condition alone hid
+      // it from them, because a stranded session has no selected stop.
+      expect(screen.getByTestId('auto-unsupported-hint')).toBeInTheDocument();
     });
   });
 

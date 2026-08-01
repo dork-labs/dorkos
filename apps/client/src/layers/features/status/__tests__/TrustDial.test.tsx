@@ -151,6 +151,34 @@ describe('TrustDial', () => {
       await waitFor(() => expect(onChangeMode).toHaveBeenCalledWith('acceptEdits'));
     });
 
+    it('does not wrap from the first stop into Full autonomy', () => {
+      // A radio group selects as focus moves, and Radix wraps by default — which
+      // made ONE ArrowLeft on the safest stop commit the most dangerous one, with
+      // no dialog and nothing to undo.
+      const onChangeMode = vi.fn();
+      render(<TrustDial mode="default" descriptors={CLAUDE} onChangeMode={onChangeMode} />);
+
+      return (async () => {
+        await userEvent.tab();
+        await userEvent.keyboard('{ArrowLeft>}');
+        await new Promise((r) => setTimeout(r, 10));
+        expect(onChangeMode).not.toHaveBeenCalled();
+        expect(screen.getByRole('radio', { name: 'Ask first' })).toBeChecked();
+      })();
+    });
+
+    it('does not wrap off the last stop either', async () => {
+      const onChangeMode = vi.fn();
+      render(
+        <TrustDial mode="bypassPermissions" descriptors={CLAUDE} onChangeMode={onChangeMode} />
+      );
+
+      await userEvent.tab();
+      await userEvent.keyboard('{ArrowRight>}');
+      await new Promise((r) => setTimeout(r, 10));
+      expect(onChangeMode).not.toHaveBeenCalled();
+    });
+
     it('shows a refinement as selecting the stop that holds it', () => {
       // A session in `auto` is at Act — auto is a setting inside the stop.
       render(<TrustDial mode="auto" descriptors={CLAUDE} onChangeMode={vi.fn()} />);
@@ -191,6 +219,22 @@ describe('TrustDial', () => {
       render(<TrustDial mode="default" descriptors={CODEX} onChangeMode={vi.fn()} />);
 
       expect(screen.getByTestId('trust-dial-caption').className).not.toContain('amber');
+    });
+
+    it('goes red at the stop that never asks about anything, anywhere', () => {
+      // Choosing autonomy must not look identical to choosing Act. Amber is the
+      // runtime breaking a promise; red is the setting nobody can walk back.
+      render(<TrustDial mode="bypassPermissions" descriptors={CLAUDE} onChangeMode={vi.fn()} />);
+
+      expect(screen.getByTestId('trust-dial-caption').className).toContain('red');
+    });
+
+    it('leaves Ask first colourless — safety is the resting state', () => {
+      render(<TrustDial mode="default" descriptors={CLAUDE} onChangeMode={vi.fn()} />);
+
+      const caption = screen.getByTestId('trust-dial-caption').className;
+      expect(caption).not.toContain('red');
+      expect(caption).not.toContain('amber');
     });
 
     it('is what the dial is described by', () => {
@@ -277,6 +321,19 @@ describe('TrustDial', () => {
       for (const stop of within(dial()).getAllByRole('radio')) {
         expect(stop).toBeDisabled();
       }
+    });
+
+    it('freezes the stops from the mode itself, even when nobody passed the flag', () => {
+      // Defence in depth: conformance forbids the shape that would strand a way
+      // of working, but a dial with nothing lit and no reason is the exact
+      // failure this component exists to end.
+      render(<TrustDial mode="plan" descriptors={CLAUDE} onChangeMode={vi.fn()} />);
+
+      for (const stop of within(dial()).getAllByRole('radio')) {
+        expect(stop).toBeDisabled();
+      }
+      expect(screen.getByTestId('trust-dial-caption')).toHaveTextContent(/turn off plan/i);
+      expect(screen.queryByTestId('trust-dial-stranded')).not.toBeInTheDocument();
     });
 
     it('does not call plan a stranded mode — it is a mode this runtime offers', () => {
