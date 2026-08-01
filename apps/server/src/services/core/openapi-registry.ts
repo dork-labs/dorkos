@@ -858,6 +858,17 @@ const PermissionModeDescriptorSchema = z.object({
       'loudly a client marks the mode: never-asking plus everything-reaching is the one ' +
       'combination that earns red.',
   }),
+  axis: z
+    .enum(['trust', 'working'])
+    .optional()
+    .openapi({
+      description:
+        'Which question this mode answers: `trust` (how much the agent may do without asking — ' +
+        'the modes the three dial positions select between) or `working` (how it goes about the ' +
+        'work, whatever the trust level, e.g. Claude’s `plan`). **Absent means `trust`**, so a ' +
+        'runtime that says nothing gets the common answer and keeps its place on the dial. ' +
+        'Declare `working` only for a mode that is not a point on the trust axis at all.',
+    }),
   native: z
     .string()
     .optional()

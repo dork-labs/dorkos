@@ -11,7 +11,13 @@
  */
 import { describe, it, expect } from 'vitest';
 import type { PermissionModeDescriptor, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
-import { isBypassSemantics, warnTier, isDivergent } from '@dorkos/shared/permission-semantics';
+import {
+  findWorkingMode,
+  isBypassSemantics,
+  isDivergent,
+  resolveTrustStops,
+  warnTier,
+} from '@dorkos/shared/permission-semantics';
 import { CLAUDE_CODE_CAPABILITIES } from '../claude-code/runtime-constants.js';
 import { CODEX_CAPABILITIES } from '../codex/runtime-constants.js';
 import { OPENCODE_CAPABILITIES } from '../opencode/runtime-constants.js';
@@ -167,5 +173,71 @@ describe('divergence', () => {
       (v) => v.id === 'bypassPermissions'
     );
     expect(isDivergent(fullAccess!)).toBe(false);
+  });
+});
+
+describe('the dial every runtime can offer', () => {
+  /** `stop → mode id` for one runtime, as `resolveTrustStops` resolves it. */
+  function dial(caps: RuntimeCapabilities): Array<[string, string]> {
+    return resolveTrustStops(caps.permissionModes.values).map((s) => [s.stop, s.mode.id]);
+  }
+
+  it('gives each runtime the stops it can actually take, and the mode behind each', () => {
+    // The shipped mapping, in one place, checkable against the profiles rather
+    // than against a table in the client that nobody can compare to a runtime.
+    expect(dial(CLAUDE_CODE_CAPABILITIES)).toEqual([
+      ['ask', 'default'],
+      ['act', 'acceptEdits'],
+      ['autonomy', 'bypassPermissions'],
+    ]);
+    expect(dial(CODEX_CAPABILITIES)).toEqual([
+      ['ask', 'default'],
+      ['act', 'acceptEdits'],
+      ['autonomy', 'bypassPermissions'],
+    ]);
+    expect(dial(OPENCODE_CAPABILITIES)).toEqual([
+      ['ask', 'default'],
+      ['act', 'acceptEdits'],
+      ['autonomy', 'bypassPermissions'],
+    ]);
+    expect(dial(TEST_MODE_CAPABILITIES)).toEqual([
+      ['ask', 'always-deny'],
+      ['act', 'scripted'],
+      ['autonomy', 'always-allow'],
+    ]);
+  });
+
+  it('keeps Claude’s auto inside the middle stop instead of beside it', () => {
+    const act = resolveTrustStops(CLAUDE_CODE_CAPABILITIES.permissionModes.values).find(
+      (s) => s.stop === 'act'
+    );
+    expect(act?.mode.id).toBe('acceptEdits');
+    expect(act?.refinements.map((d) => d.id)).toEqual(['auto']);
+  });
+
+  it('takes plan off the dial and offers it as the way of working it is', () => {
+    const stops = resolveTrustStops(CLAUDE_CODE_CAPABILITIES.permissionModes.values);
+    expect(stops.flatMap((s) => [s.mode.id, ...s.refinements.map((d) => d.id)])).not.toContain(
+      'plan'
+    );
+    expect(findWorkingMode(CLAUDE_CODE_CAPABILITIES.permissionModes.values)?.id).toBe('plan');
+  });
+
+  it('leaves every other runtime with no way of working to offer', () => {
+    for (const caps of [CODEX_CAPABILITIES, OPENCODE_CAPABILITIES, TEST_MODE_CAPABILITIES]) {
+      expect(findWorkingMode(caps.permissionModes.values), caps.type).toBeUndefined();
+    }
+  });
+
+  it('never leaves a runtime with a stop it declares two trust modes for by accident', () => {
+    // A second mode at a stop is a REFINEMENT — a switch inside the stop, which
+    // something has to render. Claude's `auto` is the only one that ships, so a
+    // new one showing up here is a UI decision, not a data detail.
+    const refined = PROFILES.flatMap((caps) =>
+      resolveTrustStops(caps.permissionModes.values)
+        .filter((s) => s.refinements.length > 0)
+        .map((s) => `${caps.type}/${s.stop}`)
+    );
+    expect(refined).toEqual(['claude-code/act']);
   });
 });

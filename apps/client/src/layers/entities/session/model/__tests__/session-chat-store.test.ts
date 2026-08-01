@@ -60,6 +60,62 @@ describe('useSessionChatStore', () => {
     expect(sessions['s0']).toBeUndefined();
   });
 
+  it('forgets everything keyed by an evicted session, not just its entry', () => {
+    // Every one of these maps is session-keyed and unbounded, and none is
+    // reachable once the entry is gone — a map left behind here grows for the
+    // life of the tab.
+    const { initSession, recordAutoConfirmed, recordAutonomyConfirmed, recordModeBeforePlan } =
+      useSessionChatStore.getState();
+    initSession('s0');
+    recordAutoConfirmed('s0');
+    recordAutonomyConfirmed('s0');
+    recordModeBeforePlan('s0', 'acceptEdits');
+
+    for (let i = 1; i < 21; i++) initSession(`s${i}`);
+
+    const state = useSessionChatStore.getState();
+    expect(state.sessions['s0']).toBeUndefined();
+    expect(state.autoConfirmedSessions['s0']).toBeUndefined();
+    expect(state.autonomyConfirmedSessions['s0']).toBeUndefined();
+    expect(state.modeBeforePlan['s0']).toBeUndefined();
+  });
+
+  it('forgets the same things when a session is destroyed outright', () => {
+    const {
+      initSession,
+      destroySession,
+      recordAutoConfirmed,
+      recordAutonomyConfirmed,
+      recordModeBeforePlan,
+    } = useSessionChatStore.getState();
+    initSession('gone');
+    recordAutoConfirmed('gone');
+    recordAutonomyConfirmed('gone');
+    recordModeBeforePlan('gone', 'default');
+
+    destroySession('gone');
+
+    const state = useSessionChatStore.getState();
+    expect(state.autoConfirmedSessions['gone']).toBeUndefined();
+    expect(state.autonomyConfirmedSessions['gone']).toBeUndefined();
+    expect(state.modeBeforePlan['gone']).toBeUndefined();
+  });
+
+  it('keeps them for a session the LRU refused to evict', () => {
+    // The draft guard protects the entry; the maps beside it must follow the
+    // same decision, or a protected session loses its confirmations anyway.
+    const { initSession, updateSession, recordAutonomyConfirmed } = useSessionChatStore.getState();
+    initSession('kept');
+    updateSession('kept', { input: 'half-written message' });
+    recordAutonomyConfirmed('kept');
+
+    for (let i = 0; i < 25; i++) initSession(`filler${i}`);
+
+    const state = useSessionChatStore.getState();
+    expect(state.sessions['kept']).toBeDefined();
+    expect(state.autonomyConfirmedSessions['kept']).toBe(true);
+  });
+
   it('never evicts sessions with status === streaming', () => {
     const { initSession, updateSession } = useSessionChatStore.getState();
     for (let i = 0; i < 20; i++) {

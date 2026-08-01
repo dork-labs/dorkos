@@ -1,8 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import type { PermissionModeDescriptor } from '../agent-runtime.js';
 import {
+  findWorkingMode,
   isBypassSemantics,
   isDivergent,
+  isWorkingMode,
+  resolveTrustStops,
   stopExpectation,
   warnTier,
 } from '../permission-semantics.js';
@@ -92,5 +95,70 @@ describe('isBypassSemantics', () => {
     expect(isBypassSemantics(descriptor({ asks: 'never', reach: 'workspace' }))).toBe(false);
     expect(isBypassSemantics(descriptor({ asks: 'never', reach: 'read' }))).toBe(false);
     expect(isBypassSemantics(descriptor({ asks: 'when-risky', reach: 'everything' }))).toBe(false);
+  });
+});
+
+describe('isWorkingMode', () => {
+  it('is false for a mode that says nothing — a trust level is the ordinary case', () => {
+    expect(isWorkingMode(descriptor({}))).toBe(false);
+  });
+
+  it('is true only for a mode the runtime declared as a way of working', () => {
+    expect(isWorkingMode(descriptor({ axis: 'working' }))).toBe(true);
+    expect(isWorkingMode(descriptor({ axis: 'trust' }))).toBe(false);
+  });
+});
+
+describe('resolveTrustStops', () => {
+  /** Claude Code's declared set, in its declared order. */
+  const CLAUDE = [
+    descriptor({ id: 'default', stop: 'ask' }),
+    descriptor({ id: 'acceptEdits', stop: 'act', asks: 'when-risky' }),
+    descriptor({ id: 'plan', stop: 'ask', reach: 'read', axis: 'working' }),
+    descriptor({ id: 'bypassPermissions', stop: 'autonomy', asks: 'never', reach: 'everything' }),
+    descriptor({ id: 'auto', stop: 'act', asks: 'when-risky' }),
+  ];
+
+  it('gives each stop the mode selecting it selects, in dial order', () => {
+    expect(resolveTrustStops(CLAUDE).map((s) => [s.stop, s.mode.id])).toEqual([
+      ['ask', 'default'],
+      ['act', 'acceptEdits'],
+      ['autonomy', 'bypassPermissions'],
+    ]);
+  });
+
+  it('keeps a further mode at the same stop as a refinement inside it', () => {
+    const act = resolveTrustStops(CLAUDE).find((s) => s.stop === 'act');
+    expect(act?.refinements.map((d) => d.id)).toEqual(['auto']);
+    expect(resolveTrustStops(CLAUDE).find((s) => s.stop === 'ask')?.refinements).toEqual([]);
+  });
+
+  it('leaves a way of working off the dial entirely', () => {
+    const ask = resolveTrustStops(CLAUDE).find((s) => s.stop === 'ask');
+    expect(ask?.mode.id).toBe('default');
+    expect(ask?.refinements.map((d) => d.id)).not.toContain('plan');
+  });
+
+  it('omits a stop the runtime declares no mode for, rather than offering a dead one', () => {
+    const stops = resolveTrustStops([
+      descriptor({ id: 'default', stop: 'ask' }),
+      descriptor({ id: 'bypassPermissions', stop: 'autonomy', asks: 'never', reach: 'everything' }),
+    ]);
+    expect(stops.map((s) => s.stop)).toEqual(['ask', 'autonomy']);
+  });
+
+  it('answers with nothing when the runtime declares nothing', () => {
+    expect(resolveTrustStops([])).toEqual([]);
+  });
+});
+
+describe('findWorkingMode', () => {
+  it('finds the way of working a runtime offers', () => {
+    const plan = descriptor({ id: 'plan', axis: 'working', reach: 'read' });
+    expect(findWorkingMode([descriptor({ id: 'default' }), plan])).toBe(plan);
+  });
+
+  it('is undefined on a runtime that offers none', () => {
+    expect(findWorkingMode([descriptor({ id: 'default' })])).toBeUndefined();
   });
 });

@@ -20,6 +20,7 @@ import {
   Zap,
   Gauge,
   Shield,
+  ClipboardList,
   Volume2,
   RefreshCw,
   Wifi,
@@ -46,6 +47,7 @@ export type StatusBarItemKey =
   | 'context'
   | 'usage'
   | 'permission'
+  | 'plan'
   | 'subagents'
   | 'connection'
   | 'sound'
@@ -81,6 +83,12 @@ export interface StatusPromotionContext {
    * runtime shipped today.
    */
   permissionDescriptor: PermissionModeDescriptor | null;
+  /**
+   * The way of working this runtime offers and whether the session is in it, or
+   * `null` when the runtime offers none (most of them) — the same rule every
+   * other nullable field here follows: nothing to say, no slot.
+   */
+  plan: PlanPromotionState | null;
   /** Runtime identity, or `null` while it is still resolving. */
   runtime: RuntimePromotionState | null;
   /** Runtime-neutral usage descriptor, or `null` when the session has none. */
@@ -109,6 +117,12 @@ export interface GitPromotionState {
   dirty: boolean;
   /** Whether HEAD is on a conventional default branch (`main`/`master`, not detached). */
   onDefaultBranch: boolean;
+}
+
+/** What the composer's Plan switch needs in order to rank itself. */
+interface PlanPromotionState {
+  /** Whether the session is planning right now. */
+  active: boolean;
 }
 
 /** The two things about a runtime that can make it news. */
@@ -163,6 +177,12 @@ const SEVERITY = {
   CONTEXT_WARNING: 50,
   USAGE_WARNING: 50,
   PERMISSION_ELEVATED: 40,
+  /**
+   * Planning is on. Ranked with an elevated permission mode because it is the
+   * same kind of fact — how much this agent will do on its own — and a person
+   * who has forgotten it is on wonders why nothing is happening.
+   */
+  PLAN_ACTIVE: 40,
   /**
    * Work is being delegated — news, but never a problem, so it sits below every
    * warning and above the configuration facts.
@@ -365,6 +385,23 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
       if (bypassed) return SEVERITY.PERMISSION_BYPASS;
       return ctx.permissionMode === 'default' ? SEVERITY.QUIET : SEVERITY.PERMISSION_ELEVATED;
     },
+  },
+  {
+    key: 'plan',
+    label: 'Plan',
+    description: 'Work out a plan first, and change nothing until you approve it',
+    cluster: 'right',
+    // A Session row, and pinnable, because the line's width budget can drop this
+    // item on a narrow bar (a phone, the Obsidian panel) — and an item you can
+    // only reach in the line is an item a narrow bar can take away. The row
+    // carries the same switch, so planning stays reachable at every width.
+    group: 'session',
+    icon: ClipboardList,
+    // Offered whenever the runtime has one, on or off — a switch nobody can find
+    // is not a switch. Runtimes that declare no way of working render nothing at
+    // all, so this costs a slot on Claude sessions only.
+    promote: (ctx) => ctx.plan !== null,
+    severity: (ctx) => (ctx.plan?.active ? SEVERITY.PLAN_ACTIVE : SEVERITY.QUIET),
   },
   {
     key: 'subagents',

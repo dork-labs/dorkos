@@ -60,6 +60,10 @@ export {
   isDivergent,
   warnTier,
   isBypassSemantics,
+  isWorkingMode,
+  resolveTrustStops,
+  findWorkingMode,
+  type TrustStop,
   type TrustWarnTier,
 } from '@dorkos/shared/permission-semantics';
 export { isSessionRequestReady } from './session-request-scope';

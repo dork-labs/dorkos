@@ -105,6 +105,12 @@ const PERMISSION_ASKS = ['always', 'when-risky', 'never'];
 /** Every valid {@link PermissionModeDescriptor.reach} value. */
 const PERMISSION_REACHES = ['read', 'edit', 'workspace', 'everything'];
 
+/**
+ * Every valid {@link PermissionModeDescriptor.axis} value. Absent is legal and
+ * means `'trust'` — the common case, and the one that keeps a mode on the dial.
+ */
+const PERMISSION_AXES = ['trust', 'working'];
+
 /** The turn-terminating event type every sendMessage stream must end with. */
 const TERMINAL_EVENT_TYPE = 'done';
 
@@ -537,6 +543,25 @@ export function runtimeConformance(
               descriptor.promise.trim().length,
               `${descriptor.id}.promise must say what happens`
             ).toBeGreaterThan(0);
+            if (descriptor.axis !== undefined) {
+              expect(PERMISSION_AXES, `${descriptor.id}.axis`).toContain(descriptor.axis);
+            }
+          }
+
+          // A way of working is not a trust level, so it leaves the dial — which
+          // means a runtime whose ONLY `stop: 'ask'` mode declares
+          // `axis: 'working'` ships a dial with no Ask stop: nothing to select,
+          // and a session sitting in that mode with nowhere to go back to. The
+          // client defends against it anyway, but this is where it is cheap to
+          // catch, because only the runtime can fix it.
+          const askModes = modes!.values.filter((d) => d.stop === 'ask');
+          if (askModes.length > 0) {
+            expect(
+              askModes.some((d) => d.axis !== 'working'),
+              'a runtime that declares any `stop: "ask"` mode must declare at least ' +
+                'one that is a trust level — a way of working (axis: "working") ' +
+                'leaves the dial, so it cannot be the only mode holding the Ask stop'
+            ).toBe(true);
           }
           if (modes!.default !== undefined) {
             expect(

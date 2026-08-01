@@ -357,7 +357,7 @@ The React client (`apps/client/`) uses Feature-Sliced Design (FSD):
 | `entities/marketplace/`  | Marketplace data hooks            | useMarketplacePackages, useInstallPackage, usePermissionPreview               |
 | `features/marketplace/`  | Marketplace browse and install UI | Marketplace, PackageCard, PackageDetailSheet, InstallConfirmationDialog       |
 | `widgets/marketplace/`   | Marketplace pages                 | MarketplacePage (/marketplace), MarketplaceSourcesPage (/marketplace/sources) |
-| `widgets/app-layout/`    | App-level layout                  | PermissionBanner                                                              |
+| `widgets/app-banner/`    | The one standing banner slot      | AppBannerSlot, useAppBanners                                                  |
 
 <Callout type="warn">
   Layer imports are strictly unidirectional: `shared` ← `entities` ← `features` ← `widgets` ← `app`.

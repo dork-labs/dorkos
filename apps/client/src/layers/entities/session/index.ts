@@ -36,7 +36,7 @@ export { sessionKeys } from './api/query-keys';
 // `isBypassPermissionMode` is in `shared/lib`, not here: an integration binding is
 // an entity and cannot import a sibling entity, and it is one of the three surfaces
 // that must agree about what a bypass mode covers.
-export { useSessionDetail, useSessionPermissionMode } from './model/use-session-detail';
+export { useSessionDetail } from './model/use-session-detail';
 // The store itself is published (tests reset it between cases); the per-session
 // selector and its types stay slice-private — `useSessionStatus` is the only
 // legitimate reader of a pending change.
@@ -53,6 +53,8 @@ export {
   useSessionMessages,
   useSessionStatus as useSessionChatStatus,
   useHasConfirmedAuto,
+  useHasConfirmedAutonomy,
+  useModeBeforePlan,
   DEFAULT_SESSION_STATE,
 } from './model/session-chat-store';
 export type { SessionState } from './model/session-chat-store';

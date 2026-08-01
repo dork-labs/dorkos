@@ -24,9 +24,7 @@ export function BannerShowcases() {
       <ShowcaseDemo>
         <div className="w-full overflow-hidden rounded-md border">
           <Banner variant="critical">Runtime crashed — restart to keep working.</Banner>
-          <Banner variant="warning">
-            All permissions bypassed — the agent can execute any tool without approval.
-          </Banner>
+          <Banner variant="warning">Your Claude usage limit resets in 42 minutes.</Banner>
           <Banner variant="info">A new version is ready to install.</Banner>
           <Banner variant="neutral">DorkOS shares a little anonymous data.</Banner>
         </div>

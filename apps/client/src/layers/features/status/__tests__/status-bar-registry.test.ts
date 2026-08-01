@@ -20,6 +20,7 @@ function restingContext(overrides: Partial<StatusPromotionContext> = {}): Status
     connectionState: 'connected',
     permissionMode: 'default',
     permissionDescriptor: null,
+    plan: null,
     runtime: { isDefault: true, canSelect: false },
     usage: { kind: 'pay-as-you-go', costUsd: 0.03 },
     subagentsInFlight: 0,
@@ -143,6 +144,22 @@ describe('STATUS_BAR_REGISTRY — promotion rules', () => {
     );
   });
 
+  it('offers Plan whenever the runtime has one, on or off — a switch nobody can find is not a switch', () => {
+    expect(promotedKeys(restingContext({ plan: { active: false } }))).toContain('plan');
+    expect(promotedKeys(restingContext({ plan: { active: true } }))).toContain('plan');
+  });
+
+  it('never offers Plan on a runtime that declares no way of working', () => {
+    expect(promotedKeys(restingContext({ plan: null }))).not.toContain('plan');
+  });
+
+  it('ranks planning with an elevated permission mode, and an idle switch with the wallpaper', () => {
+    const planning = severityOf('plan', restingContext({ plan: { active: true } }));
+    const idle = severityOf('plan', restingContext({ plan: { active: false } }));
+    expect(planning).toBe(severityOf('permission', restingContext({ permissionMode: 'plan' })));
+    expect(idle).toBeLessThan(planning);
+  });
+
   it('keeps the directory out when it is unresolved', () => {
     expect(promotedKeys(restingContext({ cwd: null }))).not.toContain('cwd');
   });
@@ -264,7 +281,16 @@ describe('gitPromotionState', () => {
 describe('isPinnable', () => {
   it('allows pinning exactly the Session rows that can appear in the line', () => {
     const pinnable = STATUS_BAR_REGISTRY.filter(isPinnable).map((item) => item.key);
-    expect(pinnable).toEqual(['cwd', 'git', 'runtime', 'model', 'context', 'usage', 'permission']);
+    expect(pinnable).toEqual([
+      'cwd',
+      'git',
+      'runtime',
+      'model',
+      'context',
+      'usage',
+      'permission',
+      'plan',
+    ]);
   });
 
   it('refuses to pin diagnostics rows', () => {

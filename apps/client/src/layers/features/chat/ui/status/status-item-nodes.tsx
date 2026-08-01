@@ -8,12 +8,14 @@ import type {
   UpdateSessionRequest,
   UsageStatus,
 } from '@dorkos/shared/types';
+import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import type { Workspace } from '@dorkos/shared/workspace';
 import type { SessionStatusData } from '@/layers/entities/session';
 import {
   CwdItem,
   GitStatusItem,
   PermissionModeItem,
+  PlanModeItem,
   RuntimeItem,
   ModelConfigPopover,
   ContextItem,
@@ -29,6 +31,16 @@ import {
 } from '@/layers/features/status';
 import { AgentIdentityChip } from './AgentIdentityChip';
 
+/** The Plan switch's declared mode, current state, and toggle. */
+export interface PlanChipState {
+  /** The way-of-working mode this runtime declares. */
+  descriptor: PermissionModeDescriptor;
+  /** Whether the session is planning right now. */
+  active: boolean;
+  /** Switch planning on, or off and back to the stop the session came from. */
+  onToggle: (next: boolean) => void;
+}
+
 /** Everything the status line's items need in order to render. */
 export interface StatusItemNodesInput {
   /** Session id; empty until the route has one. */
@@ -43,6 +55,12 @@ export interface StatusItemNodesInput {
   onChangeMode: (mode: PermissionMode) => void;
   /** Whether the active model can run the `auto` permission mode. */
   modelSupportsAutoMode: boolean;
+  /**
+   * The composer's Plan switch, or `null` when this runtime declares no way of
+   * working. Resolved by the caller from the runtime's capability profile —
+   * nothing here decides which mode counts as planning.
+   */
+  plan: PlanChipState | null;
   /** Git status for the session's directory, when the query has resolved. */
   gitStatus: GitStatusResponse | GitStatusError | undefined;
   /** The managed workspace this session is bound to, if any. */
@@ -169,9 +187,21 @@ export function buildStatusItemNodes(
       disabled={!sessionId}
       runtime={runtimeChip.runtime}
       modelSupportsAutoMode={input.modelSupportsAutoMode}
+      planActive={input.plan?.active}
       compact={compactItems}
     />
   );
+
+  if (input.plan) {
+    nodes.plan = (
+      <PlanModeItem
+        descriptor={input.plan.descriptor}
+        active={input.plan.active}
+        onToggle={input.plan.onToggle}
+        disabled={!sessionId}
+      />
+    );
+  }
 
   if (input.contextPercent !== null) {
     nodes.context = (

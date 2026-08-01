@@ -93,6 +93,17 @@ The default trust level for new sessions is set once in Settings via a single Tr
 
 Implementation invariants: wire/persistence keep runtime mode ids; app code contains no runtime-name checks — all per-runtime presentation flows through the capability profile; a mode the runtime doesn't declare is a 400; semantics-derived styling replaces every id-keyed client table; unattended-surface gates are untouched by all six decisions.
 
+## Follow-ups opened by the implementation
+
+- **The unattended-autonomy banner.** Decision 3A retires the standing bypass banner
+  "except for autonomy on unattended surfaces". The retirement shipped with the Trust
+  Dial; the unattended half did not. The banner that existed only ever fired for the
+  session a person was looking at, so scoping it was not a narrowing but a new feature:
+  it needs relay-binding and scheduled-task state the banner widget does not fetch (and
+  must not fetch on every route), plus its own definition of "unattended". Until it
+  exists, an agent left running without asking behind a binding or a task is signalled
+  only on the surfaces that show that binding or task.
+
 ## Deliberately not decided here (open for SPECIFY)
 
 - The **rooms** story: forwarding approval cards into rooms vs. an explicit ask-fallback declared at room configuration.

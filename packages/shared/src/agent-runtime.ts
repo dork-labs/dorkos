@@ -65,6 +65,19 @@ export type PermissionAsks = 'always' | 'when-risky' | 'never';
 export type PermissionReach = 'read' | 'edit' | 'workspace' | 'everything';
 
 /**
+ * Which question a mode answers.
+ *
+ * - `'trust'` — how much the agent may do without asking. These are the modes
+ *   the Trust Dial's three stops select between.
+ * - `'working'` — how the agent goes about the work, whatever the trust level.
+ *   Claude's `plan` is the only one today: it reads and proposes, and nothing
+ *   happens until the person approves the plan. It is a thing you switch on for
+ *   a while, not a level you leave a session sitting at, so it is offered beside
+ *   the composer instead of on the dial (spec `trust-dial`, decision 1).
+ */
+export type PermissionAxis = 'trust' | 'working';
+
+/**
  * Describes a single permission mode a runtime supports. Runtimes enumerate
  * these so the UI can render a picker without hard-coding a shared enum.
  *
@@ -115,6 +128,16 @@ export interface PermissionModeDescriptor {
    * that earns red.
    */
   reach: PermissionReach;
+  /**
+   * Which question this mode answers — a level of trust, or a way of working.
+   *
+   * Optional, and absent means `'trust'`: nearly every mode is a trust level,
+   * and a runtime that says nothing gets the common answer rather than
+   * disappearing from the dial. Declare `'working'` only for a mode that is not
+   * a point on the trust axis at all, or the dial will offer two modes at one
+   * stop and pick between them by declaration order.
+   */
+  axis?: PermissionAxis;
   /**
    * The runtime's own name for this mode, when it differs from {@link id} —
    * e.g. Codex's `'workspace-write'`. Detail views show it so somebody reading
