@@ -39,6 +39,26 @@ describe('isDivergent', () => {
     // Codex's workspace-write: the middle stop, but no way to pause and ask.
     expect(isDivergent(descriptor({ stop: 'act', asks: 'never', reach: 'workspace' }))).toBe(true);
   });
+
+  it('flags asking only sometimes where the position promised always', () => {
+    expect(isDivergent(descriptor({ stop: 'ask', asks: 'when-risky', reach: 'edit' }))).toBe(true);
+  });
+
+  it('is quiet when a mode asks MORE often than its position promised', () => {
+    // Over-delivering on safety is not the surprise the caption exists to warn
+    // about; flagging it teaches people the mark means "unusual" rather than
+    // "this will do more than you agreed to".
+    expect(isDivergent(descriptor({ stop: 'autonomy', asks: 'always', reach: 'everything' }))).toBe(
+      false
+    );
+    expect(isDivergent(descriptor({ stop: 'act', asks: 'always', reach: 'edit' }))).toBe(false);
+  });
+
+  it('is quiet for a read-only mode that never asks — it cannot break a promise', () => {
+    // Codex's read-only default. It never asks because it cannot write, run, or
+    // reach the network. Plain inequality would amber the safest mode on offer.
+    expect(isDivergent(descriptor({ stop: 'ask', asks: 'never', reach: 'read' }))).toBe(false);
+  });
 });
 
 describe('warnTier', () => {

@@ -70,22 +70,44 @@ export function stopExpectation(stop: PermissionStop): PermissionAsks {
 }
 
 /**
- * Whether this runtime's mode does something other than its dial position
- * promises — Codex's workspace-write sitting at "act, ask when risky" while
- * never asking at all, because Codex has no way to pause mid-turn.
+ * How much asking each value represents, so two can be compared. Asking more
+ * often is never the surprise a caption has to warn about; asking less is.
+ */
+const ASKS_RANK: Record<PermissionAsks, number> = {
+  always: 2,
+  'when-risky': 1,
+  never: 0,
+};
+
+/**
+ * Whether this runtime's mode asks LESS than its dial position promises —
+ * Codex's workspace-write sitting at "act, ask when risky" while never asking at
+ * all, because Codex has no way to pause mid-turn.
  *
  * Divergence is a fact to SAY, not a thing to hide: the stop words stay fixed
  * and the caption carries the difference (spec `trust-dial`, decision 2A).
  *
- * Note for the surface that renders it: a read-only mode can also register as
- * divergent (it never asks because it never needs to). That direction is
- * harmless, and emphasis should follow the mode's {@link TrustWarnTier}, which
- * already leaves read-only modes alone.
+ * Two deliberate narrowings, both of which exist so the caption's emphasis lands
+ * only where a person could actually be caught out:
+ *
+ * 1. **Directional.** Only asking less than promised counts. A runtime that
+ *    stops more often than its position pledged has over-delivered on safety,
+ *    and flagging that would teach people the flag means "unusual" rather than
+ *    "this will do more than you agreed to".
+ * 2. **A mode that cannot act cannot break an asking promise.** Codex's
+ *    read-only default technically never asks — because it has nothing to ask
+ *    about; it cannot write a file, run a command, or reach the network. Plain
+ *    inequality marks the safest setting on offer as promise-breaking, which
+ *    would put the caption's amber on it. So `reach: 'read'` is excluded.
+ *
+ * The pairing that matters is pinned in the server's cross-runtime test: Codex's
+ * `workspace-write` diverges, Codex's read-only default does not.
  *
  * @param descriptor - A mode as its runtime declared it.
  */
 export function isDivergent(descriptor: PermissionModeDescriptor): boolean {
-  return descriptor.asks !== stopExpectation(descriptor.stop);
+  if (descriptor.reach === 'read') return false;
+  return ASKS_RANK[descriptor.asks] < ASKS_RANK[stopExpectation(descriptor.stop)];
 }
 
 /**

@@ -86,7 +86,8 @@ export interface RuntimeConformanceOpts {
    * Waives the safety invariant that a runtime's DEFAULT permission mode must
    * still stop for the person (`stop: 'ask'` or `'act'`). The string is the
    * reason, and it is required rather than a boolean so the waiver is a sentence
-   * somebody wrote, not a flag somebody flipped.
+   * somebody wrote, not a flag somebody flipped — an empty or whitespace-only
+   * string does not waive anything.
    *
    * There is exactly one legitimate use today: `test-mode`, whose entire purpose
    * is a deterministic always-allow fixture. A production runtime that wants
@@ -548,7 +549,10 @@ export function runtimeConformance(
             // over before anybody chose to, and no capability flag can make that
             // acceptable — only a written-down reason can (autonomyDefaultReason).
             const defaultDescriptor = modes!.values.find((d) => d.id === modes!.default);
-            if (autonomyDefaultReason === undefined) {
+            // Trimmed, like the promise check above: a waiver has to BE a reason.
+            // An empty or whitespace string is somebody silencing the invariant
+            // without writing down why, which is the one thing it exists to stop.
+            if ((autonomyDefaultReason ?? '').trim().length === 0) {
               expect(
                 defaultDescriptor?.stop,
                 'permissionModes.default must not be an autonomy mode — declare ' +

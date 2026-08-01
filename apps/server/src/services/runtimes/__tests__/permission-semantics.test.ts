@@ -109,13 +109,48 @@ describe('equivalence with the id tables it replaces', () => {
 });
 
 describe('divergence', () => {
-  it('flags Codex’s workspace-write, the mode that cannot pause to ask', () => {
+  /**
+   * The pair that defines what divergence means — read both before changing
+   * `isDivergent`, and before the caption PR decides where its amber goes.
+   *
+   * Codex declares `asks: 'never'` on BOTH of these modes, so plain inequality
+   * against the stop's expectation flags both. Only one of them is a broken
+   * promise. `workspace-write` runs shell commands the middle stop said it would
+   * pause for; `read-only` "never asks" because it cannot write, run, or reach
+   * the network — there is nothing to ask about. Ambering the safest setting on
+   * offer is how a caption stops being read, so a mode that cannot act cannot
+   * break an asking promise.
+   */
+  it.each([
+    ['acceptEdits', true, 'runs commands the middle stop promised to pause for'],
+    ['default', false, 'read-only: nothing to ask about, so no promise to break'],
+  ])('codex/%s divergent=%s — %s', (id, expected) => {
+    const descriptor = CODEX_CAPABILITIES.permissionModes.values.find((v) => v.id === id);
+    expect(descriptor, `codex must declare ${id}`).toBeDefined();
+    expect(descriptor!.asks, 'both of these declare never — that is the whole point').toBe('never');
+    expect(isDivergent(descriptor!)).toBe(expected);
+  });
+
+  it('flags Codex’s workspace-write with a promise that says so in plain words', () => {
     const workspaceWrite = CODEX_CAPABILITIES.permissionModes.values.find(
       (v) => v.id === 'acceptEdits'
     );
     expect(workspaceWrite?.native).toBe('workspace-write');
-    expect(isDivergent(workspaceWrite!)).toBe(true);
     expect(workspaceWrite!.promise).toContain("can't pause to ask");
+  });
+
+  it('never flags a mode for asking MORE often than its position promised', () => {
+    // Over-delivering on safety is not a surprise a caption has to warn about.
+    expect(
+      isDivergent({
+        id: 'cautious',
+        label: 'Cautious',
+        stop: 'autonomy',
+        asks: 'always',
+        reach: 'everything',
+        promise: 'Asks anyway.',
+      })
+    ).toBe(false);
   });
 
   it('leaves every mode that keeps its stop’s promise unflagged', () => {
@@ -125,5 +160,12 @@ describe('divergence', () => {
         expect(isDivergent(descriptor), `${caps.type}/${descriptor.id}`).toBe(false);
       }
     }
+  });
+
+  it('leaves Codex’s full access unflagged — it never claimed it would ask', () => {
+    const fullAccess = CODEX_CAPABILITIES.permissionModes.values.find(
+      (v) => v.id === 'bypassPermissions'
+    );
+    expect(isDivergent(fullAccess!)).toBe(false);
   });
 });

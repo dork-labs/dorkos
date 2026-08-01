@@ -50,7 +50,13 @@ export type PermissionAsks = 'always' | 'when-risky' | 'never';
  * The blast radius a person agrees to when they pick a mode — how far its
  * actions can reach, whether or not it asks first. Ordered least to most:
  *
- * - `'read'` — reads and answers only; nothing on disk changes.
+ * - `'read'` — reads and answers only. **Nothing leaves and nothing changes**:
+ *   no writes, no commands, and no network. Codex's `read-only` sandbox is the
+ *   reference — it blocks network access as well as writes, and that is what
+ *   makes it safe for the derivation rules to treat `'read'` as "there is
+ *   nothing here to warn about or to ask permission for". A runtime whose
+ *   read-ish mode can still fetch a URL or phone home must declare `'edit'` or
+ *   wider, or it will be described as harmless when it is not.
  * - `'edit'` — files in the project may change; commands still go through the
  *   mode's asking rule.
  * - `'workspace'` — files *and* commands, inside the project directory.
