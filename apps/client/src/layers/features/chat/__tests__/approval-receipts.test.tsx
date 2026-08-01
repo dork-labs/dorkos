@@ -11,9 +11,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useState } from 'react';
 import { render, screen, cleanup, fireEvent, waitFor, act } from '@testing-library/react';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
+import type { HistoryMessage } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
 import { TransportProvider, useAppStore } from '@/layers/shared/model';
-import { projectSessionMessages } from '../model/stream/project-session-turn';
+import { useSessionStreamStore } from '@/layers/entities/session';
+import {
+  projectSessionMessages,
+  projectInProgressTurn,
+} from '../model/stream/project-session-turn';
+import { collectApprovalReceipts, applyApprovalReceipts } from '../lib/carry-approval-receipts';
 import { AssistantMessageContent } from '../ui/message/AssistantMessageContent';
 import { MessageProvider } from '../ui/message/MessageContext';
 import { InteractiveInputPanel } from '../ui/input/InteractiveInputPanel';
@@ -26,16 +32,34 @@ vi.mock('../ui/message/StreamingText', () => ({
 vi.mock('@/layers/shared/lib/tool-arguments-formatter', () => ({
   ToolArgumentsDisplay: () => <div data-testid="tool-args" />,
 }));
+// The App host owns an iframe and its own transport traffic; the parity test
+// only needs to see whether one was asked for.
+vi.mock('@/layers/features/mcp-apps', () => ({
+  McpAppBlock: ({ uri }: { uri: string }) => <div data-testid="mcp-app-block" data-uri={uri} />,
+}));
 
 const APPROVAL_STARTED_AT = 1_700_000_000_000;
 const TEN_MINUTES_MS = 600_000;
 
-/** The ask: agent wants to run `npm test`, gated on the operator. */
-function approvalRequested(id: string, command = 'npm test'): SessionEvent[] {
+/**
+ * The ask: agent wants to run a command, gated on the operator.
+ *
+ * The `tool_call` comes first because that is the order the runtime emits in —
+ * and on the live path it is the ONLY one of the two that reaches the turn, the
+ * approval arriving separately as a pending interaction.
+ */
+function approvalRequested(id: string, command = 'npm test', seq = 2): SessionEvent[] {
   return [
-    { seq: 1, type: 'turn_start' },
     {
-      seq: 2,
+      seq,
+      type: 'tool_call',
+      toolCallId: id,
+      toolName: 'Bash',
+      input: JSON.stringify({ command }),
+      status: 'pending',
+    },
+    {
+      seq: seq + 1,
       type: 'approval_required',
       id,
       toolName: 'Bash',
@@ -45,6 +69,11 @@ function approvalRequested(id: string, command = 'npm test'): SessionEvent[] {
       hasSuggestions: false,
     },
   ];
+}
+
+/** A turn that opens, then asks. */
+function turnWithAsk(id: string, command = 'npm test'): SessionEvent[] {
+  return [{ seq: 1, type: 'turn_start' }, ...approvalRequested(id, command)];
 }
 
 /** The answer, exactly as the server re-emits it onto the durable stream. */
@@ -149,8 +178,8 @@ describe('approval receipts', () => {
   it('an approved request leaves an allowed receipt in the transcript', async () => {
     // Purpose: the pending card is a question and the receipt is the answer
     // kept. Before the answer the transcript holds only the waiting placeholder;
-    // after it, a permanent line naming what was allowed.
-    render(<Lifecycle initialEvents={approvalRequested('tc-1')} />);
+    // after it, a line naming what was allowed.
+    render(<Lifecycle initialEvents={turnWithAsk('tc-1')} />);
 
     expect(screen.queryByTestId('approval-receipt')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /approve/i }));
@@ -165,7 +194,7 @@ describe('approval receipts', () => {
     // Purpose: a denial is a decision worth keeping. The gated tool never ran,
     // so an error-status tool card below the receipt would be noise about a
     // failure that did not happen.
-    render(<Lifecycle initialEvents={approvalRequested('tc-1', 'rm -rf /')} />);
+    render(<Lifecycle initialEvents={turnWithAsk('tc-1', 'rm -rf /')} />);
 
     fireEvent.click(screen.getByRole('button', { name: /deny/i }));
 
@@ -182,7 +211,7 @@ describe('approval receipts', () => {
     // comes from the interaction's own timer (asked → answered), so a changed
     // approval budget reads correctly instead of a baked-in 10 minutes.
     renderTranscript([
-      ...approvalRequested('tc-1'),
+      ...turnWithAsk('tc-1'),
       resolved('tc-1', 'expired', APPROVAL_STARTED_AT + TEN_MINUTES_MS),
     ]);
 
@@ -197,7 +226,7 @@ describe('approval receipts', () => {
     // answer it (a mid-turn steer superseded it). Recording that as a decision
     // would put an answer in the transcript that no one gave.
     renderTranscript([
-      ...approvalRequested('tc-1'),
+      ...turnWithAsk('tc-1'),
       { seq: 99, type: 'interaction_resolved', id: 'tc-1', resolution: 'cancelled' },
     ]);
 
@@ -208,7 +237,7 @@ describe('approval receipts', () => {
     // Purpose: THE durability property. Receipts live on the projected part,
     // not in component state, so a reconnect replaying from Last-Event-ID (or a
     // cold snapshot carrying the turn) rebuilds the identical line.
-    const events = [...approvalRequested('tc-1'), resolved('tc-1', 'approved')];
+    const events = [...turnWithAsk('tc-1'), resolved('tc-1', 'approved')];
 
     const first = renderTranscript(events);
     const before = screen.getByTestId('approval-receipt').textContent;
@@ -223,7 +252,7 @@ describe('approval receipts', () => {
     // Purpose: the turn keeps streaming after an approval settles. The receipt
     // must not be a transient that the next fold overwrites.
     const settled: SessionEvent[] = [
-      ...approvalRequested('tc-1'),
+      ...turnWithAsk('tc-1'),
       resolved('tc-1', 'approved'),
       { seq: 100, type: 'tool_result', toolCallId: 'tc-1', toolName: 'Bash', status: 'complete' },
       { seq: 101, type: 'text_delta', text: 'Tests passed.' },
@@ -238,17 +267,8 @@ describe('approval receipts', () => {
     // Purpose: with a queue, the answered card must not take its successor with
     // it — the person sees one settled record and one new question, not a gap.
     const twoAsks: SessionEvent[] = [
-      ...approvalRequested('tc-1', 'npm test'),
-      {
-        seq: 3,
-        type: 'approval_required',
-        id: 'tc-2',
-        toolName: 'Bash',
-        input: JSON.stringify({ command: 'npm run build' }),
-        startedAt: APPROVAL_STARTED_AT,
-        remainingMs: TEN_MINUTES_MS,
-        hasSuggestions: false,
-      },
+      ...turnWithAsk('tc-1', 'npm test'),
+      ...approvalRequested('tc-2', 'npm run build', 4),
     ];
     render(<Lifecycle initialEvents={twoAsks} />);
 
@@ -276,17 +296,8 @@ describe('approval receipts', () => {
     // the reader the detail on demand.
     const threeAsks: SessionEvent[] = [
       { seq: 1, type: 'turn_start' },
-      ...['tc-1', 'tc-2', 'tc-3'].map(
-        (id, i): SessionEvent => ({
-          seq: 2 + i,
-          type: 'approval_required',
-          id,
-          toolName: 'Bash',
-          input: JSON.stringify({ command: `step-${i}` }),
-          startedAt: APPROVAL_STARTED_AT,
-          remainingMs: TEN_MINUTES_MS,
-          hasSuggestions: false,
-        })
+      ...['tc-1', 'tc-2', 'tc-3'].flatMap((id, i) =>
+        approvalRequested(id, `step-${i}`, 2 + i * 2)
       ),
     ];
     render(<Lifecycle initialEvents={threeAsks} />);
@@ -301,5 +312,195 @@ describe('approval receipts', () => {
     const items = screen.getByTestId('approval-receipt-items');
     expect(items.textContent).toContain('Run "step-0"');
     expect(items.textContent).toContain('Run "step-2"');
+  });
+});
+
+describe('approval receipts across the turn-end reconcile', () => {
+  const SESSION_ID = 'reconcile-session';
+
+  /** Canonical history exactly as a runtime returns it: no trace of the ask. */
+  function historyWithoutTheAsk(status: 'complete' | 'error', result: string): HistoryMessage[] {
+    return [
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '',
+        parts: [
+          {
+            type: 'tool_call',
+            toolCallId: 'tc-1',
+            toolName: 'Bash',
+            input: JSON.stringify({ command: 'npm test' }),
+            status,
+            result,
+          },
+        ],
+        timestamp: '2026-07-31T14:32:00.000Z',
+      },
+    ];
+  }
+
+  /**
+   * Drive the real reconcile shape: the settled turn's events go into the
+   * store, the merge runs the way `useTurnEndReconcile` runs it, and
+   * `setHistoryMessages` replaces the projection and clears the turn.
+   */
+  function reconcile(turn: SessionEvent[], history: HistoryMessage[]) {
+    const store = useSessionStreamStore.getState();
+    store.ensureSession(SESSION_ID);
+    // Feed the turn through the real ingest so the store holds it the way a
+    // live `/events` stream would — including routing `approval_required` to
+    // `pendingInteractions` rather than into the turn.
+    for (const event of turn) store.applyEvent(SESSION_ID, event);
+    const held = useSessionStreamStore.getState().getSession(SESSION_ID);
+    expect(held.inProgressTurn.length).toBeGreaterThan(0);
+    const carried = collectApprovalReceipts(projectInProgressTurn(held.inProgressTurn));
+    expect(carried.size).toBe(1);
+    store.setHistoryMessages(SESSION_ID, applyApprovalReceipts(history, carried), {});
+    const settled = useSessionStreamStore.getState().getSession(SESSION_ID);
+    expect(settled.inProgressTurn).toHaveLength(0); // the projection really is gone
+    return projectSessionMessages(settled.messages, settled.inProgressTurn, []);
+  }
+
+  afterEach(() => {
+    useSessionStreamStore.getState().removeSession(SESSION_ID);
+  });
+
+  it('a denied receipt survives the reconcile, and no error card takes its place', () => {
+    // Purpose: THE seam. Canonical history knows only that a tool errored, so
+    // an unmerged reconcile both erased the receipt and put a red failure card
+    // in the transcript for a tool that was never allowed to run.
+    const turn: SessionEvent[] = [...turnWithAsk('tc-1'), resolved('tc-1', 'denied')];
+    const messages = reconcile(turn, historyWithoutTheAsk('error', 'User denied tool execution'));
+
+    render(
+      <MessageProvider
+        value={{
+          sessionId: SESSION_ID,
+          isStreaming: false,
+          isLatestWidgetMessage: false,
+          activeToolCallId: null,
+          onToolRef: undefined,
+          focusedOptionIndex: -1,
+          onToolDecided: undefined,
+          inputZoneToolCallId: null,
+        }}
+      >
+        <AssistantMessageContent message={messages[0]} />
+      </MessageProvider>
+    );
+
+    const receipt = screen.getByTestId('approval-receipt');
+    expect(receipt.getAttribute('data-outcome')).toBe('denied');
+    expect(screen.queryByTestId('tool-call-card')).toBeNull();
+    expect(screen.queryByText(/User denied tool execution/)).toBeNull();
+  });
+
+  it('a receipt carried onto history survives the NEXT reload too', () => {
+    // Purpose: a session reloads history once per turn. Carrying only from the
+    // settling turn would keep each receipt for exactly one turn and then drop
+    // it; the merge has to read what earlier reconciles already carried.
+    const turn: SessionEvent[] = [...turnWithAsk('tc-1'), resolved('tc-1', 'approved')];
+    const afterFirst = reconcile(turn, historyWithoutTheAsk('complete', 'ok'));
+    expect(afterFirst[0].parts[0]).toMatchObject({ approvalOutcome: 'allowed' });
+
+    // Second reload: fresh server history again, no turn events left to carry.
+    const store = useSessionStreamStore.getState();
+    const carried = collectApprovalReceipts(
+      store.getSession(SESSION_ID).messages.flatMap((m) => m.parts ?? [])
+    );
+    store.setHistoryMessages(
+      SESSION_ID,
+      applyApprovalReceipts(historyWithoutTheAsk('complete', 'ok'), carried),
+      {}
+    );
+
+    const reloaded = useSessionStreamStore.getState().getSession(SESSION_ID).messages;
+    expect(reloaded[0].parts?.[0]).toMatchObject({
+      approvalOutcome: 'allowed',
+      interactiveType: 'approval',
+    });
+  });
+
+  it('leaves history alone when the turn answered nothing', () => {
+    // Purpose: the merge must be inert for the overwhelming majority of turns —
+    // same references out, so it cannot invalidate memoized renders.
+    const history = historyWithoutTheAsk('complete', 'ok');
+    const merged = applyApprovalReceipts(history, collectApprovalReceipts([]));
+    expect(merged).toBe(history);
+  });
+});
+
+describe('approval receipts and MCP Apps', () => {
+  /** A completed MCP tool whose result points at an inline App (SEP-1865). */
+  const APP_TOOL = {
+    toolCallId: 'tc-app',
+    toolName: 'mcp__acme__render_chart',
+    input: '{}',
+    status: 'complete' as const,
+    result: 'ok',
+    ui: { resourceUri: 'ui://acme/chart' },
+  };
+
+  function renderParts(parts: HistoryMessage['parts']) {
+    const messages = projectSessionMessages(
+      [{ id: 'm1', role: 'assistant', content: '', parts, timestamp: '' }],
+      [],
+      []
+    );
+    return render(
+      <MessageProvider
+        value={{
+          sessionId: 'session-1',
+          isStreaming: false,
+          isLatestWidgetMessage: false,
+          activeToolCallId: null,
+          onToolRef: undefined,
+          focusedOptionIndex: -1,
+          onToolDecided: undefined,
+          inputZoneToolCallId: null,
+        }}
+      >
+        <AssistantMessageContent message={messages[0]} />
+      </MessageProvider>
+    );
+  }
+
+  it('an approved MCP tool keeps the App an ungated one would have shown', () => {
+    // Purpose: gating a tool behind a permission prompt must cost it nothing.
+    // The approval and the tool result land on the SAME part, so the receipt
+    // branch returning early silently swallowed the App block.
+    const ungated = renderParts([{ type: 'tool_call', ...APP_TOOL }]);
+    expect(screen.getAllByTestId('mcp-app-block')).toHaveLength(1);
+    ungated.unmount();
+
+    renderParts([
+      {
+        type: 'tool_call',
+        ...APP_TOOL,
+        interactiveType: 'approval',
+        approvalOutcome: 'allowed',
+        approvalResolvedAt: 1_700_000_005_000,
+      },
+    ]);
+    expect(screen.getByTestId('approval-receipt')).toBeDefined();
+    const app = screen.getAllByTestId('mcp-app-block');
+    expect(app).toHaveLength(1);
+    expect(app[0].getAttribute('data-uri')).toBe('ui://acme/chart');
+  });
+
+  it('a denied MCP tool shows no App — it never ran', () => {
+    renderParts([
+      {
+        type: 'tool_call',
+        ...APP_TOOL,
+        status: 'error',
+        interactiveType: 'approval',
+        approvalOutcome: 'denied',
+        approvalResolvedAt: 1_700_000_005_000,
+      },
+    ]);
+    expect(screen.getByTestId('approval-receipt')).toBeDefined();
+    expect(screen.queryByTestId('mcp-app-block')).toBeNull();
   });
 });

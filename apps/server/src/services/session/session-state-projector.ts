@@ -507,6 +507,13 @@ export class SessionStateProjector {
         this.trackInteraction(event);
         break;
       case 'interaction_resolved':
+        // Backfill when the interaction began before dropping it. `project()`
+        // runs before the event is logged, buffered, or fanned out, so this
+        // reaches every consumer. A client cannot recover this itself: the
+        // pending DTO carrying `startedAt` is retired by this same event.
+        if (event.startedAt === undefined) {
+          event.startedAt = this.interactions.get(event.id)?.startedAt;
+        }
         this.untrackInteraction(event.id);
         break;
       default:

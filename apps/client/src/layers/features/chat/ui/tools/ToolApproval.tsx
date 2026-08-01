@@ -177,8 +177,15 @@ export function ToolApproval({
     }
   }, [secondsRemaining, decided, onDecided]);
 
-  // Screen reader announcements at threshold crossings
+  // Screen reader announcements at threshold crossings. An answered card has
+  // nothing left to warn about, so the region empties the moment it settles —
+  // which also keeps it empty at rest, the state a live region has to be in for
+  // its next change to be heard as news.
   useEffect(() => {
+    if (decided) {
+      setAnnouncement('');
+      return;
+    }
     if (secondsRemaining === WARNING_THRESHOLD_S) {
       setAnnouncement('Tool approval required. 2 minutes remaining.');
     } else if (secondsRemaining === URGENT_THRESHOLD_S) {
@@ -186,21 +193,13 @@ export function ToolApproval({
     } else if (secondsRemaining === 0) {
       setAnnouncement('Tool approval timed out. Execution denied.');
     }
-  }, [secondsRemaining]);
+  }, [secondsRemaining, decided]);
 
-  // Announce the resolution itself, not only the countdown phases — the card
-  // is about to leave the input zone, and the receipt it becomes lands mid-
-  // transcript where a screen reader is not looking.
-  useEffect(() => {
-    if (!decided) return;
-    // The timeout path already announced itself above; do not say it twice.
-    if (timedOut.current) return;
-    setAnnouncement(
-      decided === 'approved'
-        ? `Allowed ${label}. Recorded in the conversation.`
-        : `Denied ${label}. Recorded in the conversation.`
-    );
-  }, [decided, label]);
+  // NOTE: the RESOLUTION is deliberately not announced from here. Answering
+  // resolves the interaction, which clears the input zone and unmounts this
+  // component, so anything written to a region it owns is removed in the same
+  // commit and never read. That announcement lives with the transcript, which
+  // outlives the card — `model/stream/use-approval-announcer`.
 
   const phase: ApprovalPhase = useMemo(() => {
     if (secondsRemaining === null) return 'normal';
@@ -292,182 +291,195 @@ export function ToolApproval({
     [handleApprove, handleAlwaysAllow, handleDeny]
   );
 
+  /**
+   * The countdown-phase warnings. Rendered OUTSIDE the decided/undecided branch
+   * so the region is one continuous node for as long as the card exists —
+   * inside the branch, a warning issued as the card settles was written to a
+   * node React removed in the same paint.
+   */
+  const liveRegion = (
+    <span role="status" aria-live="assertive" aria-atomic="true" className="sr-only">
+      {announcement}
+    </span>
+  );
+
   if (decided) {
     const isApproved = decided === 'approved';
     return (
-      <motion.div
-        // The card confirms and compresses; the permanent record of this answer
-        // is the receipt line that rises into the transcript, not this row.
-        initial={reducedMotion ? false : { opacity: 0, scaleY: 0.9 }}
-        animate={{ opacity: 1, scaleY: 1 }}
-        transition={reducedMotion ? instantTransition : confirmTransition}
-        style={{ originY: 0 }}
-      >
-        <CompactResultRow
-          data-testid="tool-approval-decided"
-          data-decision={decided}
-          icon={
-            isApproved ? (
-              <Check className="text-status-success size-(--size-icon-sm) shrink-0" />
-            ) : (
-              <X className="text-status-error size-(--size-icon-sm) shrink-0" />
-            )
-          }
-          label={<span className="text-3xs font-mono">{label}</span>}
-          trailing={
-            <span
-              className={cn(
-                'text-2xs rounded-full px-1.5 py-0.5 font-medium',
-                isApproved
-                  ? 'bg-status-success-bg text-status-success-fg'
-                  : 'bg-status-error-bg text-status-error-fg'
-              )}
-            >
-              {isApproved ? 'Approved' : 'Denied'}
-            </span>
-          }
+      <>
+        <motion.div
+          // The card confirms and compresses; the record of this answer is the
+          // receipt line that rises into the transcript, not this row.
+          initial={reducedMotion ? false : { opacity: 0, scaleY: 0.9 }}
+          animate={{ opacity: 1, scaleY: 1 }}
+          transition={reducedMotion ? instantTransition : confirmTransition}
+          style={{ originY: 0 }}
         >
-          {decided === 'denied' && timedOut.current && (
-            <p className="text-2xs text-muted-foreground mt-1">
-              Auto-denied — approval timed out after {Math.ceil((timeoutMs ?? 0) / 60000)} minutes.
-              The agent continued without this tool.
-            </p>
-          )}
-        </CompactResultRow>
-      </motion.div>
+          <CompactResultRow
+            data-testid="tool-approval-decided"
+            data-decision={decided}
+            icon={
+              isApproved ? (
+                <Check className="text-status-success size-(--size-icon-sm) shrink-0" />
+              ) : (
+                <X className="text-status-error size-(--size-icon-sm) shrink-0" />
+              )
+            }
+            label={<span className="text-3xs font-mono">{label}</span>}
+            trailing={
+              <span
+                className={cn(
+                  'text-2xs rounded-full px-1.5 py-0.5 font-medium',
+                  isApproved
+                    ? 'bg-status-success-bg text-status-success-fg'
+                    : 'bg-status-error-bg text-status-error-fg'
+                )}
+              >
+                {isApproved ? 'Approved' : 'Denied'}
+              </span>
+            }
+          >
+            {decided === 'denied' && timedOut.current && (
+              <p className="text-2xs text-muted-foreground mt-1">
+                Auto-denied — approval timed out after {Math.ceil((timeoutMs ?? 0) / 60000)}{' '}
+                minutes. The agent continued without this tool.
+              </p>
+            )}
+          </CompactResultRow>
+        </motion.div>
+        {liveRegion}
+      </>
     );
   }
 
   return (
-    <InteractiveCard
-      isActive={isActive}
-      isResolved={!!decided}
-      className="my-1"
-      data-testid="tool-approval"
-    >
-      <div className="mb-1 flex items-center gap-2">
-        <Shield
-          className={cn(
-            'size-(--size-icon-md)',
-            riskLevel === 'high' && 'text-status-error',
-            riskLevel === 'medium' && 'text-status-warning',
-            riskLevel === 'low' && 'text-muted-foreground'
-          )}
-        />
-        <span className="font-semibold">{approvalTitle || 'Tool approval required'}</span>
-      </div>
-
-      {/* SDK-provided context: description, decision reason, blocked path */}
-      {(approvalDescription || approvalDecisionReason || approvalBlockedPath) && (
-        <div className="text-muted-foreground text-2xs mb-2 space-y-0.5">
-          {approvalDescription && <p>{approvalDescription}</p>}
-          {approvalDecisionReason && !approvalDescription && <p>{approvalDecisionReason}</p>}
-          {approvalBlockedPath && <p className="font-mono">Path: {approvalBlockedPath}</p>}
-        </div>
-      )}
-
-      {/* Progress bar — drains via CSS animation over timeoutMs */}
-      {timeoutMs && !decided && (
-        <div
-          role="progressbar"
-          aria-valuemin={0}
-          aria-valuemax={Math.ceil(timeoutMs / 1000)}
-          aria-valuenow={secondsRemaining ?? 0}
-          aria-valuetext={formatAriaTimeRemaining(secondsRemaining)}
-          className="bg-muted mb-2 h-1 w-full overflow-hidden rounded-full"
-        >
-          <div
+    <>
+      <InteractiveCard
+        isActive={isActive}
+        isResolved={!!decided}
+        className="my-1"
+        data-testid="tool-approval"
+      >
+        <div className="mb-1 flex items-center gap-2">
+          <Shield
             className={cn(
-              'h-full rounded-full transition-colors duration-500',
-              phase === 'normal' && 'bg-muted-foreground/30',
-              phase === 'warning' && 'bg-status-warning',
-              phase === 'urgent' && 'bg-status-error',
-              'motion-safe:animate-drain'
+              'size-(--size-icon-md)',
+              riskLevel === 'high' && 'text-status-error',
+              riskLevel === 'medium' && 'text-status-warning',
+              riskLevel === 'low' && 'text-muted-foreground'
             )}
-            style={{
-              animationDuration: `${timeoutMs}ms`,
-              animationTimingFunction: 'linear',
-              animationFillMode: 'forwards',
-            }}
           />
+          <span className="font-semibold">{approvalTitle || 'Tool approval required'}</span>
         </div>
-      )}
 
-      {/* Text countdown — fades in at warning threshold, updates through urgent */}
-      <AnimatePresence>
-        {(phase === 'warning' || phase === 'urgent') && secondsRemaining !== null && (
-          <motion.div
-            initial={{ opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            transition={fadeTransition}
-            className="mb-2"
+        {/* SDK-provided context: description, decision reason, blocked path */}
+        {(approvalDescription || approvalDecisionReason || approvalBlockedPath) && (
+          <div className="text-muted-foreground text-2xs mb-2 space-y-0.5">
+            {approvalDescription && <p>{approvalDescription}</p>}
+            {approvalDecisionReason && !approvalDescription && <p>{approvalDecisionReason}</p>}
+            {approvalBlockedPath && <p className="font-mono">Path: {approvalBlockedPath}</p>}
+          </div>
+        )}
+
+        {/* Progress bar — drains via CSS animation over timeoutMs */}
+        {timeoutMs && !decided && (
+          <div
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={Math.ceil(timeoutMs / 1000)}
+            aria-valuenow={secondsRemaining ?? 0}
+            aria-valuetext={formatAriaTimeRemaining(secondsRemaining)}
+            className="bg-muted mb-2 h-1 w-full overflow-hidden rounded-full"
           >
-            <span
+            <div
               className={cn(
-                'text-2xs tabular-nums',
-                phase === 'warning' && 'text-status-warning',
-                phase === 'urgent' && 'text-status-error'
+                'h-full rounded-full transition-colors duration-500',
+                phase === 'normal' && 'bg-muted-foreground/30',
+                phase === 'warning' && 'bg-status-warning',
+                phase === 'urgent' && 'bg-status-error',
+                'motion-safe:animate-drain'
               )}
-            >
-              {formatCountdown(secondsRemaining)} remaining
-            </span>
-          </motion.div>
+              style={{
+                animationDuration: `${timeoutMs}ms`,
+                animationTimingFunction: 'linear',
+                animationFillMode: 'forwards',
+              }}
+            />
+          </div>
         )}
-      </AnimatePresence>
 
-      <div className="mb-2 flex items-center gap-1.5">
-        {badge && (
-          <span className="bg-muted text-muted-foreground text-3xs rounded px-1 py-0.5 font-medium">
-            {badge}
-          </span>
-        )}
-        <span className="font-mono text-xs">{label}</span>
-      </div>
-      {input && (
-        <div className="bg-muted mb-3 rounded p-2">
-          <ToolArgumentsDisplay toolName={toolName} input={input} />
+        {/* Text countdown — fades in at warning threshold, updates through urgent */}
+        <AnimatePresence>
+          {(phase === 'warning' || phase === 'urgent') && secondsRemaining !== null && (
+            <motion.div
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={fadeTransition}
+              className="mb-2"
+            >
+              <span
+                className={cn(
+                  'text-2xs tabular-nums',
+                  phase === 'warning' && 'text-status-warning',
+                  phase === 'urgent' && 'text-status-error'
+                )}
+              >
+                {formatCountdown(secondsRemaining)} remaining
+              </span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <div className="mb-2 flex items-center gap-1.5">
+          {badge && (
+            <span className="bg-muted text-muted-foreground text-3xs rounded px-1 py-0.5 font-medium">
+              {badge}
+            </span>
+          )}
+          <span className="font-mono text-xs">{label}</span>
         </div>
-      )}
-      {error && <p className="text-status-error text-2xs mb-2">{error}</p>}
-      <div className="flex flex-wrap gap-2">
-        <Button
-          size="sm"
-          onClick={handleApprove}
-          disabled={responding}
-          className="transition-opacity duration-150"
-        >
-          <Check className="size-(--size-icon-xs)" /> Approve
-          {isActive && <Kbd className="ml-1.5">Enter</Kbd>}
-        </Button>
-        {approvalHasSuggestions && (
+        {input && (
+          <div className="bg-muted mb-3 rounded p-2">
+            <ToolArgumentsDisplay toolName={toolName} input={input} />
+          </div>
+        )}
+        {error && <p className="text-status-error text-2xs mb-2">{error}</p>}
+        <div className="flex flex-wrap gap-2">
           <Button
             size="sm"
-            variant="outline"
-            onClick={handleAlwaysAllow}
+            onClick={handleApprove}
             disabled={responding}
             className="transition-opacity duration-150"
           >
-            <ShieldCheck className="size-(--size-icon-xs)" /> Always Allow
-            {isActive && <Kbd className="ml-1.5">Shift+Enter</Kbd>}
+            <Check className="size-(--size-icon-xs)" /> Approve
+            {isActive && <Kbd className="ml-1.5">Enter</Kbd>}
           </Button>
-        )}
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={handleDeny}
-          disabled={responding}
-          className="transition-opacity duration-150"
-        >
-          <X className="size-(--size-icon-xs)" /> Deny
-          {isActive && <Kbd className="ml-1.5">Esc</Kbd>}
-        </Button>
-      </div>
-
-      {/* Screen reader announcements — only at threshold crossings */}
-      <span role="status" aria-live="assertive" aria-atomic="true" className="sr-only">
-        {announcement}
-      </span>
-    </InteractiveCard>
+          {approvalHasSuggestions && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleAlwaysAllow}
+              disabled={responding}
+              className="transition-opacity duration-150"
+            >
+              <ShieldCheck className="size-(--size-icon-xs)" /> Always Allow
+              {isActive && <Kbd className="ml-1.5">Shift+Enter</Kbd>}
+            </Button>
+          )}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleDeny}
+            disabled={responding}
+            className="transition-opacity duration-150"
+          >
+            <X className="size-(--size-icon-xs)" /> Deny
+            {isActive && <Kbd className="ml-1.5">Esc</Kbd>}
+          </Button>
+        </div>
+      </InteractiveCard>
+      {liveRegion}
+    </>
   );
 }

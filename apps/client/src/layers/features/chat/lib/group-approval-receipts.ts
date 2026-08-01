@@ -19,10 +19,17 @@ import type { MessagePart } from '@dorkos/shared/types';
 
 /**
  * How far apart two answers can land and still read as one action, in ms.
- * A batch answer resolves its requests within the same request handler; a
- * person clicking two cards in a row takes far longer than this.
+ *
+ * Deliberately tiny. The batch endpoints resolve their whole list inside one
+ * synchronous loop (`toolCallIds.map(id => runtime.approveTool(…))`), so every
+ * resolution in a batch is stamped in the same tick — usually the same
+ * millisecond. A person answering two cards in a row cannot get near that: each
+ * answer is its own HTTP round-trip, and the second card does not exist to
+ * answer until the first resolution has come back and re-rendered. A wide
+ * window (the 2s this started at) would happily merge two real Enter-Enter
+ * decisions into one line that claims the person made a single choice.
  */
-const SAME_ANSWER_WINDOW_MS = 2_000;
+const SAME_ANSWER_WINDOW_MS = 50;
 
 /** The tool-call member of {@link MessagePart}. */
 type ToolCallPart = Extract<MessagePart, { type: 'tool_call' }>;
@@ -52,12 +59,16 @@ function isAnsweredApproval(part: MessagePart): part is AnsweredApprovalPart {
   );
 }
 
-/** Whether two answered approvals read as one decision. */
+/**
+ * Whether two answered approvals read as one decision.
+ *
+ * A missing timestamp is never enough to merge on. Events written before `at`
+ * existed replay without it, and two undated answers say nothing about whether
+ * they were one action or two — merging them would invent a claim about how
+ * the person answered. Separate lines are always safe; a wrong merge is not.
+ */
 function sameDecision(a: AnsweredApprovalPart, b: AnsweredApprovalPart): boolean {
   if (a.approvalOutcome !== b.approvalOutcome) return false;
-  // Neither side timestamped: nothing says they were separate decisions, and
-  // they already share an outcome and adjacency.
-  if (a.approvalResolvedAt === undefined && b.approvalResolvedAt === undefined) return true;
   if (a.approvalResolvedAt === undefined || b.approvalResolvedAt === undefined) return false;
   return Math.abs(a.approvalResolvedAt - b.approvalResolvedAt) <= SAME_ANSWER_WINDOW_MS;
 }
@@ -82,6 +93,10 @@ export function groupApprovalReceipts(parts: MessagePart[]): Map<number, Approva
       open = null;
       continue;
     }
+    // Compared against the run's LEAD, not its previous member: chaining would
+    // let a long enough series of near-misses drift arbitrarily far from the
+    // first answer while still reading as one. Every member of a merged line
+    // was answered within the window of the line's first.
     if (open && sameDecision(open.part, part)) {
       open.group.indices.push(i);
       groups.set(i, open.group);

@@ -1801,6 +1801,9 @@
               },
               "at": {
                 "type": "number"
+              },
+              "startedAt": {
+                "type": "number"
               }
             },
             "required": [
@@ -7086,6 +7089,9 @@
                           ]
                         },
                         "at": {
+                          "type": "number"
+                        },
+                        "startedAt": {
                           "type": "number"
                         }
                       },

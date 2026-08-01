@@ -65,7 +65,7 @@ function actionCount(n: number): string {
 }
 
 /**
- * A permanent one-line record of an answered permission request, sitting at the
+ * A one-line record of an answered permission request, sitting at the
  * interaction's own place in the transcript.
  *
  * The pending card is a question; this is the answer, kept. It is deliberately
@@ -73,7 +73,11 @@ function actionCount(n: number): string {
  * later, not to compete with the conversation now.
  *
  * Every field comes from the projected event stream, so a re-render, a replay,
- * or another window reconstructs the identical line.
+ * or another window reconstructs the identical line, and
+ * `lib/carry-approval-receipts` re-applies it across the turn-end history
+ * reconcile. It is NOT durable across a cold open yet: runtime-owned history
+ * carries no record of a DorkOS permission prompt, so reopening the session
+ * later shows the tool without the ask that gated it.
  */
 export function ApprovalReceipt({
   outcome,

@@ -9,6 +9,7 @@ import {
   forwardRef,
 } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import type { MessagePart } from '@dorkos/shared/types';
 import type { ChatMessage } from '../model/use-chat-session';
 import type { TextEffectConfig } from '@/layers/shared/lib';
 import { getAgentDisplayName, resolveAgentVisual } from '@/layers/shared/lib';
@@ -25,6 +26,7 @@ import { resolveMessageAuthor } from '../lib/resolve-message-author';
 import type { MessageAuthorContext } from '../lib/resolve-message-author';
 import { useUnreadCursor } from '../model/view/use-unread-cursor';
 import { useStreamingAnnouncer } from '../model/stream/use-streaming-announcer';
+import { useApprovalAnnouncer } from '../model/stream/use-approval-announcer';
 import { ScrollThumb } from './ScrollThumb';
 
 /**
@@ -34,6 +36,12 @@ import { ScrollThumb } from './ScrollThumb';
  * inventing one would name the feed after something the reader cannot see.
  */
 export const TRANSCRIPT_FEED_LABEL = 'Conversation';
+
+/**
+ * Stable empty part list. A fresh `[]` per render would re-run the approval
+ * announcer's effect on every render of a message that has no parts.
+ */
+const EMPTY_PARTS: MessagePart[] = [];
 
 /**
  * How close to the bottom (px) still counts as "pinned". Within this band the
@@ -180,6 +188,10 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     text: streamingTail?.content ?? '',
     isStreaming: streamingTail !== undefined && isTextStreaming === true,
   });
+
+  // A permission request getting its answer, said out loud. It is announced
+  // from here rather than from the card because answering the card unmounts it.
+  const approvalAnnouncement = useApprovalAnnouncer(newest?.parts ?? EMPTY_PARTS);
 
   const newestMessageId = messages[messages.length - 1]?.id;
   const { lastSeenMessageId, markSeen } = useUnreadCursor(sessionId, newestMessageId);
@@ -478,6 +490,21 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
         className="sr-only"
       >
         {announcement}
+      </div>
+      {/*
+        The answer to a permission request, confirmed out loud. Polite, not
+        assertive: it reports something the reader just did, so it waits its
+        turn rather than cutting in. Emptied after it speaks, for the same
+        reason the log above is.
+      */}
+      <div
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        data-testid="approval-announcer"
+        className="sr-only"
+      >
+        {approvalAnnouncement}
       </div>
       <ScrollThumb scrollRef={scrollRef} />
     </div>

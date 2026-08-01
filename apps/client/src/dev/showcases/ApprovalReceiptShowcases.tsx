@@ -9,12 +9,12 @@ import { ShowcaseDemo } from '../ShowcaseDemo';
  */
 const RECEIPT_ASKED_AT = new Date('2026-07-31T14:32:00Z').getTime();
 
-/** The permanent record an answered permission request leaves in the transcript. */
+/** The record an answered permission request leaves in the transcript. */
 export function ApprovalReceiptShowcases() {
   return (
     <PlaygroundSection
       title="ApprovalReceipt"
-      description="What an answered approval leaves behind — the permanent one-line record at the ask's own place in the transcript. Quiet by design: it is meant to be findable later, not loud now."
+      description="What an answered approval leaves behind — a one-line record at the ask's own place in the transcript. Quiet by design: it is meant to be findable later, not loud now."
     >
       <ShowcaseLabel>Allowed</ShowcaseLabel>
       <ShowcaseDemo>

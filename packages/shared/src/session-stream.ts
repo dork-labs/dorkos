@@ -411,6 +411,14 @@ export const SessionEventSchema = z
        * say when simply omits it (the record renders without a time).
        */
       at: z.number().optional(),
+      /**
+       * Server epoch ms when the interaction BEGAN, backfilled by the projector
+       * from the entry it is about to drop. Paired with `at` it says how long
+       * the request waited — the only way a client can state that, because a
+       * live client never sees `approval_required` inside the turn (it arrives
+       * as a pending DTO, which this very event retires).
+       */
+      startedAt: z.number().optional(),
     }),
     // The start of an assistant turn. Carries the user message that triggered
     // it (when the turn was DorkOS-triggered): the POST is trigger-only

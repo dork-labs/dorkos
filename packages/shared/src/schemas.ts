@@ -1383,11 +1383,14 @@ export const ToolCallPartSchema = z
     /**
      * How an approval interaction was ANSWERED, folded from the resolving
      * `interaction_resolved` event. This is what gives an answered approval an
-     * afterlife: the pending card leaves a permanent one-line receipt at its
+     * afterlife: the pending card leaves a one-line receipt at its
      * chronological place in the transcript instead of disappearing. Absent
      * while the ask is still pending, and for a `cancelled` clear (an SDK abort
      * supersedes the ask — nobody answered, so there is nothing to record).
-     * Client-derived from the event stream; never serialized to the transcript.
+     *
+     * Client-derived from the event stream and never serialized to the
+     * transcript, so it lives only as long as the loaded session does — a cold
+     * open re-reads runtime-owned history, which has no record of the ask.
      */
     approvalOutcome: z
       .enum(['allowed', 'denied', 'expired'])

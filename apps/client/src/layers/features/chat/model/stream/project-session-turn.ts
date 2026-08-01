@@ -324,12 +324,23 @@ function foldInteractionResolved(parts: MessagePart[], event: ResolvedEvent) {
       toolCall.status = resolvedToolStatus(event.resolution);
       toolCall.approvalRemainingMs = undefined;
     }
-    // Guarded on `interactiveType` rather than status: an approval whose
-    // tool_result raced ahead of its resolution still earns its receipt.
     const outcome = event.resolution && APPROVAL_OUTCOME_BY_RESOLUTION[event.resolution];
-    if (toolCall.interactiveType === 'approval' && outcome) {
+    if (outcome) {
+      // The resolution is ALSO the proof that this part is an approval, and
+      // that is not redundant: on the live path `approval_required` never
+      // enters the turn (it arrives as a pending DTO, which this event
+      // retires), so by the time the answer lands the part is a bare tool_call
+      // with nothing marking it as gated. Only an approval is ever resolved
+      // `approved` / `denied` / `expired` — a question resolves `answered` —
+      // so the tag is safe to assert here. Deliberately NOT gated on
+      // `status === 'pending'` either: an approval whose tool_result raced
+      // ahead of its resolution still earns its receipt.
+      toolCall.interactiveType = 'approval';
       toolCall.approvalOutcome = outcome;
       toolCall.approvalResolvedAt = event.at;
+      // The live path also loses `startedAt` with the DTO, so prefer the
+      // server's backfill and fall back to whatever the part already holds.
+      toolCall.approvalStartedAt = event.startedAt ?? toolCall.approvalStartedAt;
     }
   }
   const elicitation = findElicitationPart(parts, event.id);

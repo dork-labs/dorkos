@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect, useCallback, Fragment } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ChevronRight } from 'lucide-react';
+import type { MessagePart } from '@dorkos/shared/types';
 import type { ChatMessage, HookState } from '../../model/use-chat-session';
 import { useAppStore } from '@/layers/shared/model';
 import { TIMING, getToolLabel } from '@/layers/shared/lib';
@@ -112,6 +113,39 @@ function AutoHideToolCall({
         </motion.div>
       )}
     </AnimatePresence>
+  );
+}
+
+/**
+ * A tool card plus the inline MCP App its result points at (SEP-1865), when it
+ * has one.
+ *
+ * Shared by the plain tool path and the approval-receipt path: an MCP tool that
+ * had to ask permission first is still an MCP tool, and gating it must not cost
+ * it its App. Renders exactly the card alone when there is no `ui://` reference
+ * or the tool has not completed.
+ */
+function ToolCallWithApp({
+  part,
+  sessionId,
+  autoHide,
+  expandToolCalls,
+}: {
+  part: Extract<MessagePart, { type: 'tool_call' }>;
+  sessionId: string;
+  autoHide: boolean;
+  expandToolCalls: boolean;
+}) {
+  const mcpServer = part.ui ? mcpServerFromToolName(part.toolName) : undefined;
+  const card = (
+    <AutoHideToolCall part={part} autoHide={autoHide} expandToolCalls={expandToolCalls} />
+  );
+  if (!part.ui || part.status !== 'complete' || !mcpServer) return card;
+  return (
+    <div className="flex flex-col gap-2">
+      {card}
+      <McpAppBlock sessionId={sessionId} serverName={mcpServer} uri={part.ui.resourceUri} />
+    </div>
   );
 }
 
@@ -368,9 +402,9 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
         />
       );
     }
-    // An answered approval leaves a permanent receipt where it was asked. The
-    // record is the point, so the line renders regardless of what the
-    // tool-call auto-hide setting does to the tool card beneath it.
+    // An answered approval leaves a record where it was asked. The record is
+    // the point, so the line renders regardless of what the tool-call auto-hide
+    // setting does to the tool card beneath it.
     const receipt = receiptGroups.get(i);
     if (receipt) {
       if (receipt.leadIndex !== i) return null; // Its lead already speaks for it.
@@ -390,12 +424,15 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
             startedAt={toolPart.approvalStartedAt}
           />
           {/* A denied or expired tool never ran — there is no result worth a
-              card, and the receipt already says what happened. */}
+              card, and the receipt already says what happened. An allowed one
+              did run, so it keeps everything an ungated tool would show,
+              inline MCP App included. */}
           {receipt.outcome === 'allowed' &&
             members.map((member) => (
-              <AutoHideToolCall
+              <ToolCallWithApp
                 key={member.toolCallId}
                 part={member}
+                sessionId={sessionId}
                 autoHide={autoHideToolCalls}
                 expandToolCalls={expandToolCalls}
               />
@@ -431,25 +468,13 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
         />
       );
     }
-    // MCP App (SEP-1865): a completed tool result carrying a ui:// reference
-    // renders an inline App block below the (auto-hiding) tool card.
-    const mcpServer = toolPart.ui ? mcpServerFromToolName(toolPart.toolName) : undefined;
-    if (toolPart.ui && toolPart.status === 'complete' && mcpServer) {
-      return (
-        <div key={toolPart.toolCallId} className="flex flex-col gap-2">
-          <AutoHideToolCall
-            part={toolPart}
-            autoHide={autoHideToolCalls}
-            expandToolCalls={expandToolCalls}
-          />
-          <McpAppBlock sessionId={sessionId} serverName={mcpServer} uri={toolPart.ui.resourceUri} />
-        </div>
-      );
-    }
+    // A plain tool call: its card, plus the inline MCP App (SEP-1865) when its
+    // completed result carries a `ui://` reference.
     return (
-      <AutoHideToolCall
+      <ToolCallWithApp
         key={toolPart.toolCallId}
         part={toolPart}
+        sessionId={sessionId}
         autoHide={autoHideToolCalls}
         expandToolCalls={expandToolCalls}
       />

@@ -787,6 +787,32 @@ describe('projectInProgressTurn — approval receipts', () => {
     expect(part.approvalResolvedAt).toBe(5_000);
   });
 
+  it('records the answer on the LIVE path, where the turn never saw the ask', () => {
+    // Purpose: the shape production actually produces. A live client's store
+    // routes `approval_required` to `pendingInteractions`, NOT into the turn,
+    // and the resolution retires that DTO — so when the answer arrives the turn
+    // holds a BARE tool_call with nothing marking it as gated. Every test that
+    // seeds `approval_required` into the turn is testing the cold-snapshot
+    // shape and would pass while live sessions showed no receipt at all.
+    const part = approvalPart([
+      { seq: 1, type: 'tool_call', toolCallId: 'tc-1', toolName: 'Bash', status: 'pending' },
+      {
+        seq: 2,
+        type: 'interaction_resolved',
+        id: 'tc-1',
+        resolution: 'approved',
+        at: 5_000,
+        startedAt: 1_000,
+      },
+    ]) as unknown as { interactiveType?: string; approvalStartedAt?: number } & {
+      approvalOutcome?: string;
+    };
+    expect(part.interactiveType).toBe('approval');
+    expect(part.approvalOutcome).toBe('allowed');
+    // The server's backfill is the only source for this on the live path.
+    expect(part.approvalStartedAt).toBe(1_000);
+  });
+
   it('records a denial as denied', () => {
     const part = approvalPart([
       ask('tc-1'),
@@ -849,13 +875,20 @@ describe('projectInProgressTurn — approval receipts', () => {
     expect((parts[0] as { approvalOutcome?: string }).approvalOutcome).toBeUndefined();
   });
 
-  it('is stable across a replay of the same events', () => {
-    // Purpose: a reconnect replays from Last-Event-ID. Projecting twice must
-    // produce byte-identical parts, or the receipt would flicker or change.
+  it('is stable across a replay that crosses the wire', () => {
+    // Purpose: a reconnect replays from Last-Event-ID, and those events arrive
+    // as JSON off an SSE stream — not as the objects this process happens to
+    // hold. Round-tripping through serialization is what makes this a replay
+    // test rather than an identity check on one array.
     const events: SessionEvent[] = [
       ask('tc-1'),
       { seq: 2, type: 'interaction_resolved', id: 'tc-1', resolution: 'approved', at: 5_000 },
     ];
-    expect(projectInProgressTurn(events)).toEqual(projectInProgressTurn(events));
+    const replayed = JSON.parse(JSON.stringify(events)) as SessionEvent[];
+    expect(replayed).not.toBe(events);
+    expect(projectInProgressTurn(replayed)).toEqual(projectInProgressTurn(events));
+    expect(
+      (projectInProgressTurn(replayed)[0] as { approvalOutcome?: string }).approvalOutcome
+    ).toBe('allowed');
   });
 });
