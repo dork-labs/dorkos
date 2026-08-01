@@ -4,6 +4,7 @@ import request from 'supertest';
 import { createRelayRouter, buildConversations } from '../relay.js';
 import type { RelayCore, AdapterRegistry, WebhookAdapter, DeadLetterEntry } from '@dorkos/relay';
 import { AdapterError, type AdapterManager } from '../../services/relay/adapter-manager.js';
+import { TASK_CANCEL_SUBJECT_PREFIX } from '@dorkos/shared/relay-schemas';
 
 function createMockRelayCore(): RelayCore {
   return {
@@ -546,6 +547,23 @@ describe('Relay routes', () => {
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Invalid subscription pattern');
+    });
+
+    it('cannot be pointed at run stop requests', async () => {
+      // A subscriber here is PASSIVE, and the publish pipeline counts any
+      // handler that does not refuse as a delivery — so a watcher whose
+      // pattern covered a stop request would make every Stop report success
+      // while nothing was stopped (DOR-808). The stop namespace is therefore
+      // not streamable at all, and no prefix this route allows may grow to
+      // cover it.
+      const res = await request(app).get(
+        `/api/relay/stream?subject=${TASK_CANCEL_SUBJECT_PREFIX}>`
+      );
+
+      expect(res.status).toBe(400);
+      expect(
+        res.body.allowedPrefixes.some((p: string) => TASK_CANCEL_SUBJECT_PREFIX.startsWith(p))
+      ).toBe(false);
     });
   });
 });

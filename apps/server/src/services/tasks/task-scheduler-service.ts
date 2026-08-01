@@ -3,6 +3,7 @@ import type { RelayCore } from '@dorkos/relay';
 import type { MeshCore } from '@dorkos/mesh';
 import type { Task, TaskRun, PermissionMode, StreamEvent } from '@dorkos/shared/types';
 import type { TaskDispatchPayload } from '@dorkos/shared/relay-schemas';
+import { TASK_SCHEDULER_PRINCIPAL } from '@dorkos/shared/relay-schemas';
 import { isTerminalRunStatus, type TaskStore } from './task-store.js';
 import type { ActivityService } from '../activity/activity-service.js';
 import { isRelayEnabled } from '../relay/relay-state.js';
@@ -14,7 +15,7 @@ import { formatDuration } from '../../lib/format-duration.js';
 import { SchedulerLock, SCHEDULER_HEARTBEAT_MS, type LeaderLock } from './scheduler-lock.js';
 import { withSpan, SPAN, ATTR } from '../observability/index.js';
 import { consumeRunStream, interruptRun } from './run-stream.js';
-import { publishRunStop, type CancelRunOutcome } from './run-cancel.js';
+import { publishRunStop, type CancelRunOutcome, type RunStopDelivery } from './run-cancel.js';
 import { buildTaskAppend } from './task-append.js';
 
 export type { CancelRunOutcome } from './run-cancel.js';
@@ -333,9 +334,9 @@ export class TaskSchedulerService {
       };
     }
 
-    let reachedRunners: number;
+    let delivery: RunStopDelivery;
     try {
-      reachedRunners = await publishRunStop(this.relay, runId);
+      delivery = await publishRunStop(this.relay, runId);
     } catch (err) {
       // A stop that could not even be SENT is the same news for the person
       // pressing the button as one nobody answered: the run may still be
@@ -349,8 +350,8 @@ export class TaskSchedulerService {
       };
     }
 
-    if (reachedRunners > 0) {
-      logger.info(`stop request for run ${runId} reached ${reachedRunners} runner(s)`);
+    if (delivery.deliveredTo > 0) {
+      logger.info(`stop request for run ${runId} reached ${delivery.deliveredTo} runner(s)`);
       return { state: 'stopping' };
     }
 
@@ -359,6 +360,18 @@ export class TaskSchedulerService {
     // the first is good news, and the run record is the one that knows.
     const after = this.store.getRun(runId);
     if (after && isTerminalRunStatus(after.status)) return { state: 'already_finished' };
+
+    // A refusal and a silence both land here as zero. Only one of them has a
+    // cause worth telling somebody, and it is never the one they would guess.
+    if (delivery.rejection) {
+      logger.warn(`stop request for run ${runId} was refused: ${delivery.rejection}`);
+      return {
+        state: 'unconfirmed',
+        reason:
+          `The stop request could not be sent because ${delivery.rejection}. ` +
+          'The agent may still be working — try again in a moment.',
+      };
+    }
 
     logger.warn(`no runner acknowledged the stop request for run ${runId}`);
     return {
@@ -541,7 +554,7 @@ export class TaskSchedulerService {
 
     const subject = `relay.system.tasks.${task.id}`;
     const result = await this.relay!.publish(subject, payload, {
-      from: 'relay.system.tasks.scheduler',
+      from: TASK_SCHEDULER_PRINCIPAL,
       replyTo: `relay.system.tasks.${task.id}.response`,
       budget: {
         maxHops: 3,
@@ -630,7 +643,7 @@ export class TaskSchedulerService {
         systemPromptAppend: taskAppend,
       });
 
-      await consumeRunStream(
+      const stopped = await consumeRunStream(
         stream,
         combinedSignal,
         () => void interruptRun(this.agentManager, sessionId),
@@ -646,7 +659,7 @@ export class TaskSchedulerService {
 
       const durationMs = Date.now() - startTime;
 
-      if (combinedSignal.aborted) {
+      if (stopped) {
         // Both stops record `cancelled` — the run-status vocabulary has no
         // separate timeout — so the error line is what tells a person which
         // happened.

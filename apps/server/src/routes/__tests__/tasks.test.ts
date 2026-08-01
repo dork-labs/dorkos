@@ -403,7 +403,7 @@ describe('POST /api/tasks/runs/:id/cancel — relay-dispatched run', () => {
     expect(res.body.success).toBe(true);
     expect(relay.publish).toHaveBeenCalledOnce();
     const [subject, payload] = relay.publish.mock.calls[0];
-    expect(subject).toBe(`relay.system.task-cancel.${run.id}`);
+    expect(subject).toBe(`relay.control.task-cancel.${run.id}`);
     expect(payload).toEqual({ type: 'task_cancel', runId: run.id });
   });
 

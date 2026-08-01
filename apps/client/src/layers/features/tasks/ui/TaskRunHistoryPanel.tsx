@@ -234,7 +234,7 @@ function RunRow({ run, onNavigate, onCancel, isCancelling }: RunRowProps) {
               'disabled:pointer-events-none disabled:opacity-50'
             )}
           >
-            Cancel
+            Stop
           </button>
         )}
       </span>

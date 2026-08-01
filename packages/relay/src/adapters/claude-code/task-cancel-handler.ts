@@ -15,7 +15,11 @@
  * @module relay/adapters/claude-code-task-cancel-handler
  */
 
-import { TASK_CANCEL_SUBJECT_PREFIX, TaskCancelPayloadSchema } from '@dorkos/shared/relay-schemas';
+import {
+  TASK_CANCEL_SUBJECT_PREFIX,
+  TASK_SCHEDULER_PRINCIPAL,
+  TaskCancelPayloadSchema,
+} from '@dorkos/shared/relay-schemas';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { RelayPublisher, SubscriberVerdict, Unsubscribe } from '../../types.js';
 
@@ -115,6 +119,20 @@ export function handleTaskCancel(
   running: RunningTasks,
   log: Pick<Console, 'warn' | 'debug'>
 ): SubscriberVerdict | void {
+  // Stopping somebody's work is the server's business. `from` is stamped by
+  // the publish pipeline and is not reachable from a model, so this is what
+  // stands between "the person pressed Stop" and "an agent with relay_send
+  // guessed a run id". The same rule the MCP relay tools state for control
+  // namespaces (`relay-helpers.ts`: `relay.system.*` belongs to the server),
+  // enforced here because a subscription has no other gate in front of it.
+  if (envelope.from !== TASK_SCHEDULER_PRINCIPAL) {
+    log.warn(
+      `[CCA] task-cancel: refusing a stop from ${envelope.from} on ${envelope.subject} — ` +
+        `only ${TASK_SCHEDULER_PRINCIPAL} may stop a run`
+    );
+    return { handled: false, reason: 'only the task scheduler may stop a run' };
+  }
+
   const parsed = TaskCancelPayloadSchema.safeParse(envelope.payload);
   if (!parsed.success) {
     log.warn(

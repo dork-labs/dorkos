@@ -57,13 +57,17 @@ export interface RunInterrupter {
  * @param signal - Aborts when the run is cancelled or out of time.
  * @param onStop - Runs once when the signal aborts; ends the turn at the agent.
  * @param onEvent - Receives each event that arrives before the stop.
+ * @returns Whether a stop is what ended the run. Read this rather than the
+ *   signal: a stop landing between the stream's last event and this function
+ *   returning aborts a signal nobody is waiting on any more, and a run that
+ *   finished its work must not be filed as one somebody stopped.
  */
 export async function consumeRunStream(
   stream: AsyncIterable<StreamEvent>,
   signal: AbortSignal,
   onStop: () => void,
   onEvent: (event: StreamEvent) => void
-): Promise<void> {
+): Promise<boolean> {
   const iterator = stream[Symbol.asyncIterator]();
   let onAbort!: () => void;
   const stopped = new Promise<typeof RUN_STOPPED>((resolve) => {
@@ -85,9 +89,9 @@ export async function consumeRunStream(
       if (winner === RUN_STOPPED) {
         void pending.catch(() => {});
         void Promise.resolve(iterator.return?.()).catch(() => {});
-        return;
+        return true;
       }
-      if (winner.done) return;
+      if (winner.done) return false;
       onEvent(winner.value);
       pending = iterator.next();
     }

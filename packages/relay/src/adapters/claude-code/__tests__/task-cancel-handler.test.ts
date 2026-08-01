@@ -9,7 +9,12 @@ import type {
   TraceStoreLike,
 } from '../index.js';
 import type { MessageHandler, RelayPublisher } from '../../../types.js';
-import { RunningTasks, handleTaskCancel } from '../task-cancel-handler.js';
+import {
+  RunningTasks,
+  handleTaskCancel,
+  TASK_CANCEL_SUBJECT_PATTERN,
+} from '../task-cancel-handler.js';
+import { TASK_CANCEL_SUBJECT_PREFIX, TASK_SCHEDULER_PRINCIPAL } from '@dorkos/shared/relay-schemas';
 
 function createMockAgentManager(): AgentRuntimeLike {
   return {
@@ -70,11 +75,46 @@ function releasableTurn(): {
   return { stream, parked, release };
 }
 
+/**
+ * A turn that ends normally, but whose LAST event lands in the same instant
+ * something stops the run.
+ *
+ * This is the one window where "did a stop end this run?" and "is the signal
+ * aborted?" give different answers, and it is not reachable with a plain
+ * generator — the abort has to be queued between the final `next()` resolving
+ * and the consumer's continuation running. A hand-rolled iterator is the only
+ * way to put it exactly there, so the race is deterministic instead of a
+ * coin-flip that reproduces once a fortnight. Twin of the direct-dispatch case
+ * in `apps/server/src/services/tasks/__tests__/task-scheduler-service.test.ts`.
+ *
+ * @param stopAtEnd - Called as the stream ends; queued so it lands after the
+ *   final `next()` has already resolved `done`.
+ */
+function turnThatEndsAsItIsStopped(stopAtEnd: () => void): AsyncGenerator<StreamEvent> {
+  let calls = 0;
+  return {
+    [Symbol.asyncIterator]() {
+      return this;
+    },
+    next(): Promise<IteratorResult<StreamEvent>> {
+      calls++;
+      if (calls === 1) {
+        return Promise.resolve({
+          done: false,
+          value: { type: 'text_delta', data: { text: 'ok' } } as StreamEvent,
+        });
+      }
+      queueMicrotask(stopAtEnd);
+      return Promise.resolve({ done: true, value: undefined });
+    },
+  } as AsyncGenerator<StreamEvent>;
+}
+
 function createTasksEnvelope(overrides?: Partial<RelayEnvelope>): RelayEnvelope {
   return {
     id: 'msg-dispatch',
     subject: 'relay.system.tasks.sched-1',
-    from: 'relay.system.tasks.scheduler',
+    from: TASK_SCHEDULER_PRINCIPAL,
     budget: {
       hopCount: 0,
       maxHops: 5,
@@ -101,8 +141,8 @@ function createTasksEnvelope(overrides?: Partial<RelayEnvelope>): RelayEnvelope 
 function cancelEnvelope(runId: string, payload?: unknown): RelayEnvelope {
   return {
     id: `msg-cancel-${runId}`,
-    subject: `relay.system.task-cancel.${runId}`,
-    from: 'relay.system.tasks.scheduler',
+    subject: `${TASK_CANCEL_SUBJECT_PREFIX}${runId}`,
+    from: TASK_SCHEDULER_PRINCIPAL,
     budget: {
       hopCount: 0,
       maxHops: 1,
@@ -137,6 +177,21 @@ describe('handleTaskCancel', () => {
     // A refusal, not a silent success: it is what makes the publisher's
     // deliveredTo an honest answer to "did anything take this?".
     expect(verdict).toEqual({ handled: false, reason: expect.stringContaining('ghost-run') });
+  });
+
+  it('refuses a stop from anyone but the scheduler, without touching the run', () => {
+    const running = new RunningTasks();
+    const controller = new AbortController();
+    running.register('run-1', controller);
+
+    const verdict = handleTaskCancel(
+      { ...cancelEnvelope('run-1'), from: 'relay.agent.some-other-agent' },
+      running,
+      silentLog
+    );
+
+    expect(verdict).toEqual({ handled: false, reason: expect.stringContaining('scheduler') });
+    expect(controller.signal.aborted).toBe(false);
   });
 
   it('refuses a payload that is not a stop request', () => {
@@ -189,7 +244,7 @@ describe('ClaudeCodeAdapter — stopping a relay-dispatched run', () => {
   function cancelHandler(): MessageHandler {
     const call = vi
       .mocked(relay.subscribe)
-      .mock.calls.find(([pattern]) => pattern.startsWith('relay.system.task-cancel.'));
+      .mock.calls.find(([pattern]) => pattern === TASK_CANCEL_SUBJECT_PATTERN);
     if (!call) throw new Error('adapter never subscribed to stop requests');
     return call[1];
   }
@@ -279,6 +334,29 @@ describe('ClaudeCodeAdapter — stopping a relay-dispatched run', () => {
       })
     );
     expect(result.success).toBe(false);
+  });
+
+  it('records a run that FINISHED as completed, even when a stop lands in the same instant', async () => {
+    // The stop lost, by a microtask. Reading `signal.aborted` after the fact
+    // cannot tell that from a stop that won, so a run that finished its work
+    // was filed as cancelled — with output, and with nothing interrupted.
+    await adapter.start(relay);
+    const handler = cancelHandler();
+    vi.mocked(agentManager.sendMessage).mockReturnValue(
+      turnThatEndsAsItIsStopped(() => void handler(cancelEnvelope('run-1')))
+    );
+
+    const result = await adapter.deliver('relay.system.tasks.sched-1', createTasksEnvelope());
+
+    expect(taskStore.updateRun).toHaveBeenCalledWith(
+      'run-1',
+      expect.objectContaining({ status: 'completed' })
+    );
+    expect(taskStore.updateRun).not.toHaveBeenCalledWith(
+      'run-1',
+      expect.objectContaining({ status: 'cancelled' })
+    );
+    expect(result.success).toBe(true);
   });
 
   it('refuses a stop for a run that already completed, and leaves its record alone', async () => {

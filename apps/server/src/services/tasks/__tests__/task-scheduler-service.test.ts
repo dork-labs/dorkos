@@ -58,6 +58,43 @@ function parkedTurn(): {
   return { impl, parked };
 }
 
+/**
+ * A turn that ends normally, but whose LAST event lands in the same instant
+ * something stops the run.
+ *
+ * This is the one window where "did a stop end this run?" and "is the signal
+ * aborted?" give different answers, and it is not reachable with a plain
+ * generator — the abort has to be queued between the final `next()` resolving
+ * and the consumer's continuation running. A hand-rolled iterator is the only
+ * way to put it exactly there, so the race is deterministic instead of a
+ * coin-flip that reproduces once a fortnight.
+ *
+ * @param stopAtEnd - Called as the stream ends; queued so it lands after the
+ *   final `next()` has already resolved `done`.
+ */
+function turnThatEndsAsItIsStopped(stopAtEnd: () => void): AsyncGenerator<StreamEvent> {
+  let calls = 0;
+  const iterator: AsyncIterator<StreamEvent> = {
+    next(): Promise<IteratorResult<StreamEvent>> {
+      calls++;
+      if (calls === 1) {
+        return Promise.resolve({
+          done: false,
+          value: { type: 'text_delta', data: { text: 'ok' } },
+        });
+      }
+      queueMicrotask(stopAtEnd);
+      return Promise.resolve({ done: true, value: undefined });
+    },
+  };
+  return {
+    [Symbol.asyncIterator]() {
+      return this;
+    },
+    ...iterator,
+  } as AsyncGenerator<StreamEvent>;
+}
+
 /** Build a minimal CreateTaskStoreInput with defaults for required fields. */
 function taskInput(
   overrides: Partial<CreateTaskStoreInput> & { name: string }
@@ -465,6 +502,33 @@ describe('TaskSchedulerService', () => {
       expect(interruptSpy(mockAgent)).toHaveBeenCalledWith(run!.id);
       expect(store.getRun(run!.id)!.error).toBe('Run cancelled');
       expect(service.getActiveRunCount()).toBe(0);
+
+      await service.stop();
+    });
+
+    it('records a run that FINISHED as completed, even when a stop lands in the same instant', async () => {
+      // The stop lost, by a microtask. Reading `signal.aborted` after the fact
+      // cannot tell that from a stop that won, so a run that finished its work
+      // was filed as cancelled — with output, and with nothing interrupted.
+      const task = store.createTask(
+        taskInput({ name: 'PhotoFinish', prompt: 'test', cron: '0 * * * *', maxRuntime: null })
+      );
+      const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+      // The session key IS the run id, so the turn can stop the very run it is
+      // ending — at the instant it ends.
+      vi.mocked(mockAgent.sendMessage).mockImplementation(((sessionId: string) =>
+        turnThatEndsAsItIsStopped(
+          () => void service.cancelRun(sessionId)
+        )) as unknown as SchedulerAgentManager['sendMessage']);
+
+      const run = await service.triggerManualRun(task.id);
+
+      await vi.waitFor(() => {
+        expect(store.getRun(run!.id)!.finishedAt).not.toBeNull();
+      });
+
+      expect(store.getRun(run!.id)!.status).toBe('completed');
+      expect(store.getRun(run!.id)!.error).toBeNull();
 
       await service.stop();
     });
@@ -921,7 +985,7 @@ describe('TaskSchedulerService', () => {
       await expect(service.cancelRun(run.id)).resolves.toEqual({ state: 'stopping' });
 
       const [subject, payload, options] = mockRelay.publish.mock.calls[0];
-      expect(subject).toBe(`relay.system.task-cancel.${run.id}`);
+      expect(subject).toBe(`relay.control.task-cancel.${run.id}`);
       expect(payload).toEqual({ type: 'task_cancel', runId: run.id });
       expect(options.from).toBe('relay.system.tasks.scheduler');
       expect(options.budget.maxHops).toBe(1);
@@ -970,6 +1034,28 @@ describe('TaskSchedulerService', () => {
 
       await expect(service.cancelRun(run.id)).resolves.toEqual({ state: 'already_finished' });
       expect(mockRelay.publish).not.toHaveBeenCalled();
+
+      await service.stop();
+    });
+
+    it('names the rate limit rather than blaming a silent runner', async () => {
+      // A refused publish and an unanswered one both come back as zero. The
+      // scheduler shares one principal across every task, so hitting the bus's
+      // per-sender limit is realistic — and "nothing picked it up" would send
+      // somebody hunting a runner that is fine.
+      mockRelay.publish.mockResolvedValue({
+        messageId: 'cancel-rl',
+        deliveredTo: 0,
+        rejected: [{ endpointHash: '*', reason: 'rate_limited' }],
+      });
+      const run = relayRun('Rate Limited');
+      const service = schedulerWithRelay();
+
+      const outcome = await service.cancelRun(run.id);
+
+      expect(outcome.state).toBe('unconfirmed');
+      expect(outcome).toMatchObject({ reason: expect.stringContaining('rate-limiting') });
+      expect(outcome).not.toMatchObject({ reason: expect.stringContaining('Nothing picked up') });
 
       await service.stop();
     });

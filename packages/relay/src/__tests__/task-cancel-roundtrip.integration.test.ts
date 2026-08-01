@@ -26,7 +26,7 @@ import type {
   DeliveryResult,
 } from '../types.js';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
-import { TASK_CANCEL_SUBJECT_PREFIX } from '@dorkos/shared/relay-schemas';
+import { TASK_CANCEL_SUBJECT_PREFIX, TASK_SCHEDULER_PRINCIPAL } from '@dorkos/shared/relay-schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
 
 /** The one thing `RelayCore` needs to reach the adapter under test. */
@@ -123,7 +123,7 @@ describe('stopping a relay-dispatched run, end to end', () => {
     // NOT awaited: a tasks dispatch is delivered inline, so this publish does
     // not resolve until the run ends — which is the whole problem.
     const dispatch = relay.publish('relay.system.tasks.sched-1', dispatchPayload('run-1'), {
-      from: 'relay.system.tasks.scheduler',
+      from: TASK_SCHEDULER_PRINCIPAL,
       budget: { maxHops: 3, ttl: Date.now() + 3_600_000, callBudgetRemaining: 5 },
     });
     await turn.parked;
@@ -132,7 +132,7 @@ describe('stopping a relay-dispatched run, end to end', () => {
       `${TASK_CANCEL_SUBJECT_PREFIX}run-1`,
       { type: 'task_cancel', runId: 'run-1' },
       {
-        from: 'relay.system.tasks.scheduler',
+        from: TASK_SCHEDULER_PRINCIPAL,
         budget: { maxHops: 1, ttl: Date.now() + 30_000, callBudgetRemaining: 1 },
       }
     );
@@ -148,12 +148,75 @@ describe('stopping a relay-dispatched run, end to end', () => {
     );
   });
 
+  it('is not made to look delivered by somebody merely WATCHING the bus', async () => {
+    // `GET /api/relay/stream?subject=relay.system.>` registers a passive
+    // handler exactly like this one, and the publish pipeline counts any
+    // handler that does not refuse as a delivery. If a stop can match a
+    // watcher's pattern, every Stop answers 200 while nothing was stopped and
+    // the honest `unconfirmed` answer becomes unreachable. The stop subject
+    // lives outside every pattern that route will accept, which is what this
+    // pins — the widest one it allows is `relay.system.>`.
+    const observed: RelayEnvelope[] = [];
+    relay.subscribe('relay.system.>', (envelope) => {
+      observed.push(envelope);
+    });
+
+    const stop = await relay.publish(
+      `${TASK_CANCEL_SUBJECT_PREFIX}run-nobody-is-running`,
+      { type: 'task_cancel', runId: 'run-nobody-is-running' },
+      {
+        from: TASK_SCHEDULER_PRINCIPAL,
+        budget: { maxHops: 1, ttl: Date.now() + 30_000, callBudgetRemaining: 1 },
+      }
+    );
+
+    expect(stop.deliveredTo).toBe(0);
+    expect(observed).toHaveLength(0);
+  });
+
+  it('refuses a stop that did not come from the scheduler', async () => {
+    const turn = parkedTurn();
+    vi.mocked(agentManager.sendMessage).mockReturnValue(turn.stream);
+    const dispatch = relay.publish('relay.system.tasks.sched-1', dispatchPayload('run-1'), {
+      from: TASK_SCHEDULER_PRINCIPAL,
+      budget: { maxHops: 3, ttl: Date.now() + 3_600_000, callBudgetRemaining: 5 },
+    });
+    await turn.parked;
+
+    // Any agent can publish, and a run id is guessable. Stopping other
+    // people's work is the server's business, not an agent's.
+    const stop = await relay.publish(
+      `${TASK_CANCEL_SUBJECT_PREFIX}run-1`,
+      { type: 'task_cancel', runId: 'run-1' },
+      {
+        from: 'relay.agent.some-other-agent',
+        budget: { maxHops: 1, ttl: Date.now() + 30_000, callBudgetRemaining: 1 },
+      }
+    );
+
+    expect(stop.deliveredTo).toBe(0);
+    expect(agentManager.interruptQuery).not.toHaveBeenCalled();
+    expect(taskStore.updateRun).not.toHaveBeenCalled();
+
+    // The run is still going, and a real stop still reaches it.
+    await relay.publish(
+      `${TASK_CANCEL_SUBJECT_PREFIX}run-1`,
+      { type: 'task_cancel', runId: 'run-1' },
+      {
+        from: TASK_SCHEDULER_PRINCIPAL,
+        budget: { maxHops: 1, ttl: Date.now() + 30_000, callBudgetRemaining: 1 },
+      }
+    );
+    await dispatch;
+    expect(agentManager.interruptQuery).toHaveBeenCalledWith('run-1');
+  });
+
   it('reports zero — and dead-letters nothing — for a run nobody is executing', async () => {
     const stop = await relay.publish(
       `${TASK_CANCEL_SUBJECT_PREFIX}ghost-run`,
       { type: 'task_cancel', runId: 'ghost-run' },
       {
-        from: 'relay.system.tasks.scheduler',
+        from: TASK_SCHEDULER_PRINCIPAL,
         budget: { maxHops: 1, ttl: Date.now() + 30_000, callBudgetRemaining: 1 },
       }
     );

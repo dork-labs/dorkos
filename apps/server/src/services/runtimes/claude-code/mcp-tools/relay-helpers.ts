@@ -118,11 +118,18 @@ export function ownsEndpoint(
  * using it. The two ephemeral inbox namespaces are minted per tool call by
  * `relay_send_and_wait` and `relay_send_async`, which register them directly
  * rather than through the tool, so reserving them here costs nothing.
+ *
+ * `relay.control.*` carries the server's control signals — today, stopping a
+ * task run (DOR-808). Registering a mailbox there would not merely read those
+ * signals, it would CONSUME them: a matching endpoint makes the publish
+ * pipeline skip subscriber dispatch entirely, so the adapter's stop handler
+ * would never run while the publish still reported a delivery.
  */
 const SERVER_MANAGED_PREFIXES = [
   'relay.agent.',
   'relay.system.',
   'relay.human.',
+  'relay.control.',
   'relay.inbox.dispatch.',
   'relay.inbox.query.',
 ] as const;
