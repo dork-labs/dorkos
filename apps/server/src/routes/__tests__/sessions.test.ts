@@ -84,6 +84,9 @@ import {
 } from '../../services/core/runtime-registry.js';
 import { disposeProjector } from '../../services/session/session-state-projector.js';
 import { configManager } from '../../services/core/config-manager.js';
+// The real profile of the one shipped runtime whose mode ids sit outside the
+// shared enum — see the DOR-811 block in the PATCH suite.
+import { TEST_MODE_CAPABILITIES } from '../../services/runtimes/test-mode/runtime-constants.js';
 
 const app = createApp();
 finalizeApp(app);
@@ -367,6 +370,77 @@ describe('Sessions Routes', () => {
       }
     });
 
+    // ---- Mode ids the shared enum never heard of (DOR-811) ----
+    //
+    // A runtime names its own modes (`PermissionModeDescriptor.id` is a
+    // `string`), and `test-mode` names all three of its own outside the shared
+    // `PermissionModeSchema` enum on purpose — it is the runtime whose whole job
+    // is to catch code that assumes Claude's ids. The REAL descriptors are used
+    // here rather than invented ones, so this stays honest about the ids a
+    // shipped runtime actually declares.
+    describe('a runtime whose mode ids are outside the shared enum', () => {
+      beforeEach(() => {
+        fakeRuntime.getCapabilities.mockReturnValue(TEST_MODE_CAPABILITIES);
+        fakeRuntime.getCapabilities.mockClear();
+        fakeRuntime.updateSession.mockReturnValue(true);
+        fakeRuntime.getSession.mockResolvedValue(null);
+        // No standing autonomy acknowledgement unless a request carries one.
+        vi.mocked(configManager.get).mockReturnValue(null);
+      });
+
+      it('accepts every mode that runtime declares', async () => {
+        for (const descriptor of TEST_MODE_CAPABILITIES.permissionModes.values) {
+          fakeRuntime.updateSession.mockClear();
+          const res = await request(server)
+            .patch(`/api/sessions/${S1}`)
+            // Sent unconditionally — ignored on the modes that do not need it,
+            // and naming which ones do would put a mode-id table in a test
+            // about capability ids.
+            .send({ permissionMode: descriptor.id, acknowledgedAutonomy: true });
+
+          expect(res.status, `PATCH to declared mode '${descriptor.id}'`).toBe(200);
+          expect(fakeRuntime.updateSession).toHaveBeenCalledWith(S1, {
+            permissionMode: descriptor.id,
+            model: undefined,
+            effort: undefined,
+            fastMode: undefined,
+          });
+        }
+      });
+
+      it.each([
+        // A shared-enum member this runtime does NOT declare — the exact case
+        // the capability gate exists for, and the one a looser wire type could
+        // have let through.
+        'acceptEdits',
+        // An id no runtime anywhere declares.
+        'totally-made-up',
+      ])('still refuses an undeclared mode (%s)', async (asked) => {
+        const res = await request(server)
+          .patch(`/api/sessions/${S1}`)
+          .send({ permissionMode: asked, acknowledgedAutonomy: true });
+
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe('UNSUPPORTED_PERMISSION_MODE');
+        expect(fakeRuntime.updateSession).not.toHaveBeenCalled();
+      });
+
+      it('still asks for an acknowledgement before its autonomy stop', async () => {
+        const autonomy = TEST_MODE_CAPABILITIES.permissionModes.values.find(
+          (d) => d.stop === 'autonomy'
+        );
+        expect(autonomy, 'test-mode declares no autonomy stop').toBeDefined();
+
+        const res = await request(server)
+          .patch(`/api/sessions/${S1}`)
+          .send({ permissionMode: autonomy!.id });
+
+        expect(res.status).toBe(428);
+        expect(res.body.code).toBe('AUTONOMY_ACK_REQUIRED');
+        expect(fakeRuntime.updateSession).not.toHaveBeenCalled();
+      });
+    });
+
     // ---- The autonomy door (spec `trust-dial`, decision 5) ----
     //
     // Entering Full autonomy needs an acknowledgement the SERVER checks, so no
@@ -551,13 +625,24 @@ describe('Sessions Routes', () => {
       expect(res.body.code).toBe('INVALID_SESSION_ID');
     });
 
-    it('returns 400 for invalid request body', async () => {
-      const res = await request(server)
-        .patch(`/api/sessions/${S1}`)
-        .send({ permissionMode: 'invalid_mode' });
+    it.each([
+      // Not a string at all.
+      { body: { permissionMode: 42 }, why: 'a non-string mode' },
+      // A string, but not a shape any runtime could name a mode.
+      { body: { permissionMode: '' }, why: 'an empty mode id' },
+      { body: { permissionMode: '-leading-dash' }, why: 'a malformed mode id' },
+      { body: { permissionMode: 'x'.repeat(65) }, why: 'an over-long mode id' },
+      { body: { title: '' }, why: 'an empty title' },
+    ])('returns 400 for invalid request body ($why)', async ({ body }) => {
+      // The wire accepts any well-formed mode id and leaves "does this runtime
+      // declare it?" to the capability gate (DOR-811), so what is checked HERE
+      // is only shape. A well-formed-but-undeclared id is a different refusal —
+      // `UNSUPPORTED_PERMISSION_MODE`, covered above.
+      const res = await request(server).patch(`/api/sessions/${S1}`).send(body);
 
       expect(res.status).toBe(400);
       expect(res.body.code).toBe('VALIDATION_ERROR');
+      expect(fakeRuntime.updateSession).not.toHaveBeenCalled();
     });
 
     it('translates session ID via getInternalSessionId', async () => {

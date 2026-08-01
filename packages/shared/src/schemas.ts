@@ -31,10 +31,22 @@ extendZodWithOpenApi(z);
 
 // === Enums ===
 
+/**
+ * The permission-mode ids DorkOS's own long-lived surfaces name directly —
+ * scheduled tasks, relay bindings, config defaults.
+ *
+ * NOT the set of ids that exist. A runtime names its own modes and declares
+ * what each one does, so this enum is the union of the names DorkOS's runtimes
+ * happen to use, not a definition. Do NOT reach for it to validate a mode id
+ * arriving from a client: use {@link PermissionModeIdSchema} and let the
+ * session's own runtime say whether it declares the id (`test-mode` names all
+ * three of its modes outside this enum on purpose).
+ */
 export const PermissionModeSchema = z
   .enum(['default', 'plan', 'acceptEdits', 'dontAsk', 'bypassPermissions', 'auto'])
   .openapi('PermissionMode');
 
+/** A permission-mode id DorkOS names directly. See {@link PermissionModeSchema}. */
 export type PermissionMode = z.infer<typeof PermissionModeSchema>;
 
 /**
@@ -229,7 +241,63 @@ export const SessionSettingsSchema = z.object({
 
 export type SessionSettings = z.infer<typeof SessionSettingsSchema>;
 
+/**
+ * A permission-mode id as a REQUEST carries it — any well-formed id, not a
+ * member of {@link PermissionModeSchema}.
+ *
+ * ## Why this is a string and not the enum
+ *
+ * A runtime names its own permission modes: `PermissionModeDescriptor.id` is a
+ * `string`, and what a mode MEANS is read off the descriptor's semantics
+ * (`stop`/`asks`/`reach`), never off its name. `PermissionModeSchema` is the
+ * union of the ids DorkOS's own runtimes happened to pick, so validating a
+ * request against it is a hardcoded id list wearing a schema — and it was
+ * wrong in practice: `test-mode` deliberately names its three modes outside
+ * that union, so its mode picker could never be applied. The request was
+ * refused at the schema boundary before anything that knows about runtimes got
+ * to look at it.
+ *
+ * ## What still validates the id
+ *
+ * This shape check is a bound, not the authority. The authority is the owning
+ * runtime's own capability declaration, enforced server-side in
+ * `PATCH /api/sessions/:id`: an id that runtime does not declare is refused
+ * with `UNSUPPORTED_PERMISSION_MODE`, whether or not the shared enum contains
+ * it. The refusal moved from a list of names to the runtime that owns the
+ * session, which is the only thing that can answer the question correctly.
+ *
+ * The pattern and length bound keep an id that no runtime could ever declare
+ * out of a persisted settings row or a log line.
+ *
+ * ## This shape is a CONTRACT on declared ids, not just a filter on requests
+ *
+ * A bound only stays honest if every id a runtime can declare fits through it —
+ * otherwise a runtime naming a mode `_internal` or `read only` gets the DOR-811
+ * defect back, refused for its shape before its own runtime is consulted, with
+ * the enum swapped for a regex. So every mode every shipped runtime declares is
+ * checked against this schema by
+ * `apps/server/src/services/runtimes/__tests__/permission-semantics.test.ts`,
+ * alongside the rest of the descriptor contract. A profile that names a mode
+ * outside this shape fails that suite; widen the pattern here rather than
+ * working around it there.
+ */
+export const PermissionModeIdSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/, 'Not a valid permission mode id')
+  .openapi('PermissionModeId');
+
+/** A permission-mode id as a request carries it. See {@link PermissionModeIdSchema}. */
+export type PermissionModeId = z.infer<typeof PermissionModeIdSchema>;
+
 export const UpdateSessionRequestSchema = SessionSettingsSchema.extend({
+  /**
+   * The mode to switch to — any id the session's runtime declares, checked
+   * against that runtime rather than against a fixed list of names. See
+   * {@link PermissionModeIdSchema}.
+   */
+  permissionMode: PermissionModeIdSchema.optional(),
   title: z.string().min(1).max(200).optional(),
   /**
    * "The person asked for this, and they were told what it means." Required —

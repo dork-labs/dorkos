@@ -17,7 +17,7 @@ import {
   ListSessionsQuerySchema,
   RecentSessionsQuerySchema,
 } from '@dorkos/shared/schemas';
-import type { PermissionMode } from '@dorkos/shared/types';
+import type { PermissionMode, PermissionModeId } from '@dorkos/shared/types';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { MeshCore } from '@dorkos/mesh';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
@@ -232,7 +232,7 @@ router.get('/:id/messages', async (req, res) => {
  */
 function rejectUndeclaredPermissionMode(
   runtime: AgentRuntime,
-  permissionMode: PermissionMode
+  permissionMode: PermissionModeId
 ): string | null {
   const declared = runtime.getCapabilities().permissionModes;
   if (!declared.supported || declared.values.length === 0) {
@@ -253,7 +253,7 @@ function rejectUndeclaredPermissionMode(
  * @param runtime - The runtime that owns the session being updated.
  * @param permissionMode - The mode the request asks to store.
  */
-function asksForAutonomy(runtime: AgentRuntime, permissionMode: PermissionMode): boolean {
+function asksForAutonomy(runtime: AgentRuntime, permissionMode: PermissionModeId): boolean {
   const declared = runtime.getCapabilities().permissionModes;
   const descriptor = declared.values.find((d) => d.id === permissionMode);
   return descriptor !== undefined && isAutonomyStop(descriptor);
@@ -268,17 +268,27 @@ router.patch('/:id', async (req, res) => {
   if (!parsed.success) {
     return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
   }
-  const { permissionMode, model, effort, fastMode, title, acknowledgedAutonomy } = parsed.data;
+  const {
+    permissionMode: requestedMode,
+    model,
+    effort,
+    fastMode,
+    title,
+    acknowledgedAutonomy,
+  } = parsed.data;
+  // Fail-closed by construction: an unresolvable session throws here, before
+  // any check below can be skipped and before anything is written.
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
-  // `PermissionModeSchema` says only that the id is one DorkOS knows about; it
-  // does NOT say the session's runtime can run it. Persisting an undeclared id
+  // The wire carries any well-formed mode id, because a runtime names its own
+  // modes (`PermissionModeIdSchema`). The session's runtime is the ONLY thing
+  // that can say whether the id it was handed is real, so it is the authority
+  // and this is the single place that asks it. Persisting an undeclared id
   // would make the settings overlay display a safety posture the runtime never
   // adopted — a codex session PATCHed to `auto` reads "Auto" everywhere while
-  // it keeps running read-only. The runtime's own capability declaration is the
-  // authority, so reject the write here. WRITE PATH ONLY: a session already
-  // persisted in a now-undeclared mode still loads and runs.
-  if (permissionMode !== undefined) {
-    const modeError = rejectUndeclaredPermissionMode(runtime, permissionMode);
+  // it keeps running read-only. WRITE PATH ONLY: a session already persisted in
+  // a now-undeclared mode still loads and runs.
+  if (requestedMode !== undefined) {
+    const modeError = rejectUndeclaredPermissionMode(runtime, requestedMode);
     if (modeError) return sendError(res, 400, modeError, 'UNSUPPORTED_PERMISSION_MODE');
     // ## THE AUTONOMY DOOR (spec `trust-dial`, decision 5)
     //
@@ -326,7 +336,7 @@ router.patch('/:id', async (req, res) => {
     //   gated by its dialog alone. Pre-existing property of that seam, widened
     //   by nothing here; the checkbox is withheld there for a related reason
     //   (see `AutonomyConfirmDialog`).
-    if (asksForAutonomy(runtime, permissionMode) && !acknowledgedAutonomy) {
+    if (asksForAutonomy(runtime, requestedMode) && !acknowledgedAutonomy) {
       if (!hasStandingAutonomyAck()) {
         // 428, not 400. The body is well-formed and the mode is one this runtime
         // genuinely offers — nothing about the request is malformed, so calling
@@ -344,6 +354,13 @@ router.patch('/:id', async (req, res) => {
       }
     }
   }
+  // Past the gate the id is one THIS runtime declares, so it is a real mode by
+  // the only definition that matters. `PermissionMode` is the narrower name the
+  // rest of the server still uses for the same thing (descriptors have always
+  // typed their `id` as a plain `string`), and this is the single seam where
+  // the two meet — the assertion is bounded by the check directly above it, and
+  // nothing downstream re-derives meaning from the id anyway.
+  const permissionMode = requestedMode as PermissionMode | undefined;
   // Translate client-facing session ID to backend-internal session ID (same as GET /:id).
   // After a session remap the client uses the SDK UUID directly; without this translation
   // runtime.updateSession would fail to find the session by client-facing ID.

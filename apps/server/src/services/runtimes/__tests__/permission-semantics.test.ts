@@ -19,6 +19,7 @@ import {
   resolveTrustStops,
   warnTier,
 } from '@dorkos/shared/permission-semantics';
+import { PermissionModeIdSchema } from '@dorkos/shared/schemas';
 import { CLAUDE_CODE_CAPABILITIES } from '../claude-code/runtime-constants.js';
 import { CODEX_CAPABILITIES } from '../codex/runtime-constants.js';
 import { OPENCODE_CAPABILITIES } from '../opencode/runtime-constants.js';
@@ -56,6 +57,31 @@ describe('declared permission-mode semantics', () => {
     expect(['always', 'when-risky', 'never']).toContain(d.asks);
     expect(['read', 'edit', 'workspace', 'everything']).toContain(d.reach);
     expect(d.promise.trim().length).toBeGreaterThan(0);
+  });
+
+  // THE PIN that makes the session-PATCH wire honest (DOR-811).
+  //
+  // `PATCH /api/sessions/:id` deliberately does not validate `permissionMode`
+  // against a fixed enum — a runtime names its own modes, so the wire takes any
+  // id matching `PermissionModeIdSchema` and the owning runtime's declaration
+  // decides the rest. That only holds if every id a runtime CAN declare fits
+  // through the wire. `PermissionModeDescriptor.id` is a plain `string` and
+  // nothing else checks it, so a future profile naming a mode `_internal`,
+  // `read only`, or something 65 characters long would be refused with a
+  // shape error before its own runtime was ever consulted — the exact DOR-811
+  // defect, moved from an enum to a regex.
+  //
+  // So the shape is a CONTRACT on declared ids, and this is where it is
+  // enforced. A new profile that breaks it fails here, next to the rest of its
+  // descriptor contract, instead of at a route somebody has to reproduce.
+  it.each(declaredModes())('%s/%o declares an id the session PATCH wire accepts', (runtime, d) => {
+    const parsed = PermissionModeIdSchema.safeParse(d.id);
+    expect(
+      parsed.success,
+      `${runtime} declares mode id '${d.id}', which PATCH /api/sessions/:id would ` +
+        `refuse as malformed before asking ${runtime} about it. Mode ids must match ` +
+        `PermissionModeIdSchema (1-64 chars, alphanumeric start, then [A-Za-z0-9_.-]).`
+    ).toBe(true);
   });
 
   it('never lets a runtime default to a stop that stops asking', () => {

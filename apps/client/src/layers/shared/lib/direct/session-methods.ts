@@ -11,6 +11,7 @@ import type {
   Session,
   SessionListResponse,
   UpdateSessionRequest,
+  PermissionMode,
   HistoryMessage,
   TaskItem,
   SessionLockedError,
@@ -76,7 +77,15 @@ export function createDirectSessionMethods(
     },
 
     async updateSession(id: string, opts: UpdateSessionRequest, cwd?: string): Promise<Session> {
-      const updated = await services.runtime.updateSession(id, opts);
+      const updated = await services.runtime.updateSession(id, {
+        ...opts,
+        // The request type carries any id the owning runtime declares (DOR-811);
+        // the runtime interface still names the narrower shared enum for the
+        // same field. Safe to assert HERE and only here: an embedded host wires
+        // exactly ONE runtime, and the only thing that ever fills this field is
+        // that runtime's own mode descriptors, read from `getCapabilities()`.
+        permissionMode: opts.permissionMode as PermissionMode | undefined,
+      });
       if (!updated) throw new Error(`Session not found: ${id}`);
       return getSession(id, cwd);
     },
