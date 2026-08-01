@@ -4,7 +4,7 @@ import { render, screen, cleanup, within, waitFor } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
-import { TrustDial } from '../ui/TrustDial';
+import { TrustDial } from '../trust-dial';
 
 afterEach(cleanup);
 
@@ -265,6 +265,24 @@ describe('TrustDial', () => {
       render(<TrustDial mode="auto" descriptors={withoutAuto} onChangeMode={vi.fn()} />);
 
       expect(screen.getByTestId('trust-dial-stranded')).toHaveTextContent(/Auto/);
+    });
+
+    it('lets a form say it in its own words, because saving is what decides there', () => {
+      // A session applies a stop the moment it is picked. A binding or a task
+      // keeps the stored mode until somebody picks one AND saves, so the default
+      // sentence would be describing the wrong mechanism.
+      render(
+        <TrustDial
+          mode="plan"
+          descriptors={CLAUDE.filter((d) => d.id !== 'plan')}
+          onChangeMode={vi.fn()}
+          strandedNote="Saving keeps it as it is."
+        />
+      );
+
+      const note = screen.getByTestId('trust-dial-stranded');
+      expect(note).toHaveTextContent('Saving keeps it as it is.');
+      expect(note).not.toHaveTextContent(/This session is set to/);
     });
 
     it('keeps quiet when the session is at a stop it can see', () => {

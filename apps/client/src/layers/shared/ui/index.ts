@@ -204,6 +204,10 @@ export { PermissionModeScopeNote } from './permission-mode-scope-note';
 export type { PermissionModeScopeNoteProps } from './permission-mode-scope-note';
 export { Switch } from './switch';
 export type { SwitchSize, SwitchProps } from './switch';
+export { TrustDial, TrustModeIcon } from './trust-dial';
+export type { TrustDialProps } from './trust-dial';
+export { UnattendedAutonomyDialog } from './unattended-autonomy-dialog';
+export type { UnattendedAutonomyDialogProps } from './unattended-autonomy-dialog';
 export {
   Table,
   TableHeader,

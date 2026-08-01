@@ -1,4 +1,24 @@
-import { useId } from 'react';
+/**
+ * The Trust Dial — the one control every surface uses to answer *when should
+ * this agent ask me?*
+ *
+ * ## Why it lives in `shared/ui`
+ *
+ * A dial that only the chat status line could render is how the product ended up
+ * with three different permission pickers telling three different stories. This
+ * one is purely presentational — descriptors in, a mode id out — with no session,
+ * no binding, no task and no query anywhere in it, so a session popover, a relay
+ * binding dialog (`entities/`) and the task form (`features/`) can all render the
+ * same control without any of them importing another's layer. Its neighbours here
+ * are the two pieces it is made of: `segmented-control` and
+ * `permission-mode-scope-note`.
+ *
+ * The wiring — which runtime's profile, what a change costs, whether it needs
+ * confirming — stays with each caller, because that part genuinely differs.
+ *
+ * @module shared/ui/trust-dial
+ */
+import { useId, type ReactNode } from 'react';
 import { ClipboardList, Shield, Sparkles, Zap } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { PermissionModeDescriptor, PermissionStop } from '@dorkos/shared/agent-runtime';
@@ -11,7 +31,8 @@ import {
   warnTier,
   type TrustStop,
 } from '@/layers/shared/lib';
-import { SegmentedControl, SegmentedControlItem, Switch } from '@/layers/shared/ui';
+import { SegmentedControl, SegmentedControlItem } from './segmented-control';
+import { Switch } from './switch';
 
 /**
  * The three stops, in the person's words. Fixed across every runtime on purpose
@@ -88,6 +109,31 @@ export interface TrustDialProps {
   onChangeMode: (mode: string) => void;
   /** True while a way of working (Plan) holds the session, freezing the stops. */
   planActive?: boolean;
+  /**
+   * What to say when the current mode is not one of the stops — replacing the
+   * default sentence, which is written for a live session where picking a stop
+   * takes effect at once.
+   *
+   * A form is the other case: a binding or a task saved at a mode the dial does
+   * not offer keeps that mode until somebody picks a stop, and *saving* is what
+   * decides. Those callers say so in their own words rather than coercing the
+   * stored mode into one of the stops, which is the bug this replaces (DOR-496).
+   */
+  strandedNote?: ReactNode;
+  /**
+   * Treat a way of working (Plan) as a mode the dial cannot place, instead of
+   * freezing the stops behind it.
+   *
+   * The freeze exists because a session has a Plan switch *somewhere else* that
+   * owns the mode, so the dial points at it and waits. A form has no such switch:
+   * a binding or a task saved at `plan` would freeze on a control nobody can
+   * unfreeze, and the person could not change the setting at all. On those
+   * surfaces a stored way of working is exactly like any other mode with no stop
+   * — kept as it is, named, and replaced only when somebody picks a stop.
+   *
+   * Defaults to false, which is the session behaviour.
+   */
+  strandsWorkingMode?: boolean;
 }
 
 /**
@@ -114,7 +160,14 @@ export interface TrustDialProps {
  * @param props - The current mode, the runtime's declared modes, and the change
  *   handler.
  */
-export function TrustDial({ mode, descriptors, onChangeMode, planActive }: TrustDialProps) {
+export function TrustDial({
+  mode,
+  descriptors,
+  onChangeMode,
+  planActive,
+  strandedNote,
+  strandsWorkingMode,
+}: TrustDialProps) {
   const captionId = useId();
   const stops = resolveTrustStops(descriptors);
   const current = descriptors.find((d) => d.id === mode);
@@ -127,11 +180,14 @@ export function TrustDial({ mode, descriptors, onChangeMode, planActive }: Trust
   // nothing lit and no reason is the failure this component exists to end, so it
   // does not depend on the caller passing the flag.
   const working = current !== undefined && isWorkingMode(current);
-  const frozen = planActive === true || working;
+  const frozen = planActive === true || (working && strandsWorkingMode !== true);
   // A mode the dial cannot place: dropped by the runtime, or filtered out for
-  // this model. A way of working is not stranded — it is declared, it is just
-  // not a stop.
-  const stranded = current === undefined && stops.length > 0;
+  // this model. In a session a way of working is not stranded — it is declared,
+  // it is just not a stop, and the switch that owns it is one strip away. On a
+  // surface with no such switch it is stranded like anything else, or the dial
+  // freezes on a control nobody can unfreeze (`strandsWorkingMode`).
+  const unplaceable = current === undefined || (working && strandsWorkingMode === true);
+  const stranded = unplaceable && stops.length > 0;
 
   return (
     <div className="flex flex-col gap-2">
@@ -175,8 +231,12 @@ export function TrustDial({ mode, descriptors, onChangeMode, planActive }: Trust
           data-testid="trust-dial-stranded"
           className="text-muted-foreground px-1 text-xs leading-relaxed"
         >
-          This session is set to “{permissionModeLabel(mode)}”, which is not one of these. Pick a
-          stop to change it.
+          {strandedNote ?? (
+            <>
+              This session is set to “{permissionModeLabel(mode)}”, which is not one of these. Pick
+              a stop to change it.
+            </>
+          )}
         </p>
       )}
 
