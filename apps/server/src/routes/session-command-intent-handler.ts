@@ -30,6 +30,7 @@ import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logger } from '../lib/logger.js';
 import {
   getOrCreateProjector,
+  persistenceModeFor,
   peekProjector,
   triggerCommandIntent,
 } from '../services/session/index.js';
@@ -128,10 +129,10 @@ export async function sessionCommandIntentHandler(req: Request, res: Response): 
     hasInstructions: instructions !== undefined,
   });
 
-  // Persist completed runs for LOG-BACKED runtimes (DOR-189), mirroring
-  // /messages so the compact_boundary survives a restart.
+  // Persist completed runs (DOR-189), mirroring /messages so the
+  // compact_boundary survives a restart.
   const projector = getOrCreateProjector(sessionId, cwd, {
-    persist: caps.logBackedHistory === true ? 'history' : undefined,
+    persist: persistenceModeFor(caps),
   });
 
   const result = triggerCommandIntent({

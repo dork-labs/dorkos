@@ -29,11 +29,17 @@
  *
  * @module services/session/event-log-history
  */
-import type { SessionEvent } from '@dorkos/shared/session-stream';
+import { approvalOutcomeOf, type SessionEvent } from '@dorkos/shared/session-stream';
 import type { ErrorPart, HistoryMessage, HistoryToolCall, MessagePart } from '@dorkos/shared/types';
 
 /** The `error` session-event member, the per-turn error accumulator entry. */
 type ErrorSessionEvent = Extract<SessionEvent, { type: 'error' }>;
+
+/** The answered-approval fields a tool call carries into history. */
+type ApprovalReceipt = Pick<
+  HistoryToolCall,
+  'approvalOutcome' | 'approvalResolvedAt' | 'approvalStartedAt'
+>;
 
 /** Accumulator for one turn while folding the event stream. */
 interface TurnAccumulator {
@@ -45,6 +51,12 @@ interface TurnAccumulator {
   tools: Map<string, HistoryToolCall>;
   /** Typed turn errors, in arrival order. */
   errors: ErrorSessionEvent[];
+  /**
+   * Answered approvals, by the id of the tool call each one gated. Applied when
+   * the turn closes rather than on arrival, so a runtime that reports the
+   * answer before the call it gated still annotates the right tool.
+   */
+  receipts: Map<string, ApprovalReceipt>;
 }
 
 /** Get-or-create the merged tool entry for a toolCallId. */
@@ -55,6 +67,21 @@ function toolEntry(turn: TurnAccumulator, toolCallId: string, toolName: string):
     turn.tools.set(toolCallId, entry);
   }
   return entry;
+}
+
+/**
+ * Apply the turn's answered approvals onto the tool calls they gated.
+ *
+ * A receipt whose tool call is not in this turn is dropped: history annotates
+ * what it holds and invents nothing. (That is the ordinary shape for a runtime
+ * whose permission ids live in their own id space — OpenCode answers a
+ * `Permission.id`, which is not any tool call's id.)
+ */
+function applyReceipts(turn: TurnAccumulator): void {
+  for (const [toolCallId, receipt] of turn.receipts) {
+    const tool = turn.tools.get(toolCallId);
+    if (tool) Object.assign(tool, receipt);
+  }
 }
 
 /**
@@ -96,6 +123,17 @@ function buildFailedTurnParts(turn: TurnAccumulator): MessagePart[] {
       ...(tool.input !== undefined ? { input: tool.input } : {}),
       ...(tool.result !== undefined ? { result: tool.result } : {}),
       ...(tool.progressOutput !== undefined ? { progressOutput: tool.progressOutput } : {}),
+      // A part list is what the client renders from when present, so a receipt
+      // that lived only on `toolCalls` would vanish on a failed turn.
+      // `interactiveType` is what marks the part as a permission prompt at all.
+      ...(tool.approvalOutcome !== undefined
+        ? {
+            interactiveType: 'approval' as const,
+            approvalOutcome: tool.approvalOutcome,
+            approvalResolvedAt: tool.approvalResolvedAt,
+            approvalStartedAt: tool.approvalStartedAt,
+          }
+        : {}),
     });
   }
   for (const error of turn.errors) parts.push(toErrorPart(error));
@@ -118,7 +156,7 @@ export function reconstructHistoryFromEvents(events: SessionEvent[]): HistoryMes
   for (const event of events) {
     switch (event.type) {
       case 'turn_start':
-        turn = { seq: event.seq, text: '', tools: new Map(), errors: [] };
+        turn = { seq: event.seq, text: '', tools: new Map(), errors: [], receipts: new Map() };
         if (event.userMessage !== undefined) {
           messages.push({ id: `user-${event.seq}`, role: 'user', content: event.userMessage });
         }
@@ -148,8 +186,26 @@ export function reconstructHistoryFromEvents(events: SessionEvent[]): HistoryMes
       case 'error':
         if (turn) turn.errors.push(event);
         break;
+      case 'interaction_resolved': {
+        // The permission prompt is a DorkOS event, so its answer has no other
+        // home: for a log-backed runtime this stream IS the transcript, and
+        // dropping the answer here is what made a receipt die at the next cold
+        // open. `approvalOutcomeOf` is the one place the two rules live (an
+        // approval, actually answered) — shared with the client's live fold so
+        // the reopened line matches the one the person saw.
+        if (!turn) break;
+        const outcome = approvalOutcomeOf(event);
+        if (outcome === undefined) break;
+        turn.receipts.set(event.id, {
+          approvalOutcome: outcome,
+          approvalResolvedAt: event.at,
+          approvalStartedAt: event.startedAt,
+        });
+        break;
+      }
       case 'turn_end': {
         if (!turn) break;
+        applyReceipts(turn);
         // An errors-only turn still emits an assistant message: the failure IS
         // the turn's output, and dropping it would make a failed turn vanish
         // from a log-backed runtime's history.

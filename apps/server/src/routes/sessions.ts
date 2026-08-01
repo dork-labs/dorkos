@@ -25,6 +25,7 @@ import {
   aggregateSessionList,
   listRecentSessions,
   getOrCreateProjector,
+  persistenceModeFor,
   rekeyProjector,
   triggerTurn,
   applyTaskOriginOverlay,
@@ -484,13 +485,14 @@ router.post('/:id/messages', async (req, res) => {
   // earlier stamp from a subscribe-path default (an /events connect without
   // ?cwd falls back to the workspace root, which would otherwise pin this
   // session's liveness to the wrong agent first-writer-wins).
-  // Persist the completed-turn stream for LOG-BACKED runtimes (DOR-189) so
-  // their history survives a server restart; claude-code opts out (its
-  // transcript is SDK JSONL). Enabling here — before the turn is fed —
+  // Persist the completed-turn stream (DOR-189) so it survives a server
+  // restart: everything for a log-backed runtime, and for the rest the narrow
+  // record its own transcript cannot answer for — including the permission
+  // decisions this turn was gated on. Enabling here — before the turn is fed —
   // guarantees the turn_end flush regardless of whether an /events subscribe
   // has already minted (and persistence-enabled) the projector.
   const projector = getOrCreateProjector(sessionId, effectiveCwd, {
-    persist: runtime.getCapabilities().logBackedHistory === true ? 'history' : undefined,
+    persist: persistenceModeFor(runtime.getCapabilities()),
   });
   if (effectiveCwd !== undefined) projector.cwd = effectiveCwd;
 

@@ -526,6 +526,41 @@ describe('OpenCodeRuntime', () => {
       await finished;
     });
 
+    it('says an auto-denied approval EXPIRED rather than that it was withdrawn', async () => {
+      // Both mean "nobody clicked", and they are not the same record. An expiry
+      // is an answer the system gave on the person's behalf and belongs in the
+      // transcript; a withdrawn ask is a question nobody was ever asked. The
+      // auto-deny reaches the sidecar and comes back as an ordinary
+      // `permission.replied` echo, so without carrying the reason across, an
+      // expired permission read as cancelled and left no receipt at all.
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      const harness = makeRuntime();
+      const { client } = harness;
+      const { connection, events, finished } = await turnWithPermission(harness, 'default');
+      await vi.waitFor(() => expect(events.some((e) => e.type === 'approval_required')).toBe(true));
+
+      await vi.advanceTimersByTimeAsync(SESSIONS.INTERACTION_TIMEOUT_MS + 1);
+      await vi.waitFor(() =>
+        expect(client.postSessionIdPermissionsPermissionId).toHaveBeenCalledWith({
+          path: { id: OC_SESSION_A, permissionID: 'per_0001' },
+          body: { response: 'reject' },
+        })
+      );
+
+      // The sidecar echoes the reject DorkOS just sent.
+      connection.push(globalEvent(DIRECTORY, permissionReplied(OC_SESSION_A, 'per_0001')));
+
+      await vi.waitFor(() =>
+        expect(events.find((e) => e.type === 'interaction_cancelled')?.data).toMatchObject({
+          interactionId: 'per_0001',
+          reason: 'timeout',
+        })
+      );
+
+      finishTurn(connection);
+      await finished;
+    });
+
     it('a stale turn teardown leaves the newer turn pending approvals intact', async () => {
       const harness = makeRuntime();
       const { runtime, client } = harness;

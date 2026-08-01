@@ -422,6 +422,20 @@
             "additionalProperties": {
               "type": "string"
             }
+          },
+          "approvalOutcome": {
+            "type": "string",
+            "enum": [
+              "allowed",
+              "denied",
+              "expired"
+            ]
+          },
+          "approvalResolvedAt": {
+            "type": "number"
+          },
+          "approvalStartedAt": {
+            "type": "number"
           }
         },
         "required": [

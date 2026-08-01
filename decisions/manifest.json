@@ -2,6 +2,13 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260801-035912",
+      "slug": "a-permission-decision-is-recorded-for-every-session",
+      "title": "A permission decision is recorded for every session, and overlaid back onto runtime-owned history",
+      "status": "accepted",
+      "created": "2026-08-01"
+    },
+    {
       "id": "260801-003051",
       "slug": "an-author-row-belongs-to-the-occupant-it-was-minted-for",
       "title": "An author row belongs to the occupant it was minted for \u2014 a reused directory starts a fresh author",

@@ -55,7 +55,12 @@ import { CommandRegistryService } from './tooling/command-registry.js';
 import { executeSdkQuery } from './messaging/message-sender.js';
 import { watchSessionList } from './sessions/session-list-watcher.js';
 import { eventFanOut } from '../../core/event-fan-out.js';
-import { disposeProjector, getOrCreateProjector, peekProjector } from '../../session/index.js';
+import {
+  disposeProjector,
+  getOrCreateProjector,
+  overlayApprovalReceipts,
+  peekProjector,
+} from '../../session/index.js';
 import { editBaselineStore } from '../../diff/index.js';
 import type { SessionStateProjector } from '../../session/index.js';
 
@@ -602,9 +607,21 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     return this.transcriptReader.getSession(projectDir, sessionId);
   }
 
-  /** @inheritdoc */
+  /**
+   * @inheritdoc
+   *
+   * The transcript is SDK JSONL, which records that a tool ran or did not and
+   * nothing about a person having been asked first — so the permission
+   * decisions DorkOS recorded for this session are overlaid back on
+   * ({@link overlayApprovalReceipts}). This is the seam BOTH history consumers
+   * pass through — `GET /:id/messages` and `getSessionSnapshot`'s loader — so
+   * reopening a conversation shows the same receipts a live one does. The
+   * transcript reader stays a JSONL parser and learns nothing about DorkOS
+   * interactions.
+   */
   async getMessageHistory(projectDir: string, sessionId: string): Promise<HistoryMessage[]> {
-    return this.transcriptReader.readTranscript(projectDir, sessionId);
+    const messages = await this.transcriptReader.readTranscript(projectDir, sessionId);
+    return overlayApprovalReceipts(sessionId, messages);
   }
 
   /**

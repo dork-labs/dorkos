@@ -18,10 +18,20 @@
  * a session that reloads history many times keeps every receipt, not just the
  * newest turn's.
  *
- * What it does NOT do is survive a cold open: reopening the session tomorrow
- * re-reads a transcript that still has no record of the ask. Closing that needs
- * the server to persist approval outcomes into its history derivation, which is
- * a server change and its own piece of work.
+ * ## What the server now covers, and what is left here
+ *
+ * Outcomes are durable now: the server records every answered approval with the
+ * turn it gated and overlays them back onto history, so a reopened conversation
+ * rebuilds its receipts with no help from this module. Two jobs are still this
+ * module's alone:
+ *
+ * - The window BEFORE the answer is durable. Rows are flushed when a turn ends,
+ *   and the reconcile also fires when a turn settles to `blocked` — mid-turn,
+ *   with a second request still pending. The answers already given belong on
+ *   that reload.
+ * - `approvalDisplayName`. The SDK's short noun phrase arrives on the pending
+ *   request and is never recorded, so only the client can keep the receipt's
+ *   label from changing at the seam.
  *
  * @module features/chat/lib/carry-approval-receipts
  */

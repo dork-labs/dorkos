@@ -1,15 +1,8 @@
 import { useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { Check, Clock, X } from 'lucide-react';
+import type { ToolApprovalOutcome } from '@dorkos/shared/types';
 import { cn } from '@/layers/shared/lib';
-
-/**
- * How an approval request was answered, as the transcript records it.
- *
- * Mirrors `ToolCallPart.approvalOutcome` — the projection's durable fold of the
- * resolving `interaction_resolved` event.
- */
-export type ApprovalOutcome = 'allowed' | 'denied' | 'expired';
 
 /** One answered request inside a receipt. */
 export interface ApprovalReceiptItem {
@@ -21,7 +14,7 @@ export interface ApprovalReceiptItem {
 
 interface ApprovalReceiptProps {
   /** How the request(s) were answered. */
-  outcome: ApprovalOutcome;
+  outcome: ToolApprovalOutcome;
   /** The answered requests. More than one renders the combined line. */
   items: ApprovalReceiptItem[];
   /** Server epoch ms when the answer landed. Omitted when the runtime cannot say. */
@@ -73,11 +66,10 @@ function actionCount(n: number): string {
  * later, not to compete with the conversation now.
  *
  * Every field comes from the projected event stream, so a re-render, a replay,
- * or another window reconstructs the identical line, and
- * `lib/carry-approval-receipts` re-applies it across the turn-end history
- * reconcile. It is NOT durable across a cold open yet: runtime-owned history
- * carries no record of a DorkOS permission prompt, so reopening the session
- * later shows the tool without the ask that gated it.
+ * or another window reconstructs the identical line — and the record is
+ * permanent, not session-scoped: the server keeps the answer with the turn it
+ * gated and puts it back into history, so reopening the conversation tomorrow
+ * shows the same line in the same place.
  */
 export function ApprovalReceipt({
   outcome,

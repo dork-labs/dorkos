@@ -137,21 +137,25 @@ type Waiter = (event: SessionEvent | typeof TERMINATED) => void;
  *   completed history has no other home, so every event of a completed turn is
  *   flushed and a fresh projector HYDRATES its in-memory log back from the
  *   store. This is DOR-189's original behaviour, unchanged.
- * - `'record'` — claude-code sessions a ROOM drives. Their history is SDK JSONL
- *   and always will be (ADR 260710-024641: persisting it in full would double-store and
- *   inflate the hot path), so this mode writes only the turn's boundary and
- *   error events — enough to prove a turn ran and how it ended — and never
- *   hydrates, because a sparse log presented as a replay source would hand a
- *   resuming client a turn with its middle missing.
+ * - `'record'` — every other session, which today means claude-code. Its history
+ *   is SDK JSONL and always will be (ADR 260710-024641: persisting it in full
+ *   would double-store and inflate the hot path), so this mode writes only the
+ *   handful of events the JSONL cannot answer for — see
+ *   {@link RECORDED_EVENT_TYPES} — and never hydrates, because a sparse log
+ *   presented as a replay source would hand a resuming client a turn with its
+ *   middle missing.
  *
  * The decision is ADR 260731-211050, which retires 260710-024641's
- * "claude-code opts out" clause down to this one caller.
+ * "claude-code opts out" clause.
  *
- * Rooms are the one surface with nobody watching: a person triggers a turn from
- * a room and no client holds that session's stream, so a turn that fails leaves
- * no trace anywhere a person will look. On 2026-07-31 an agent went silent in a
- * room for forty-one minutes and `session_events` held zero rows for it
- * (DOR-784). `'record'` is what makes that failure legible afterwards.
+ * `'record'` began as a room-only answer to invisible failures: a person
+ * triggers a turn from a room, no client holds that session's stream, and a turn
+ * that fails leaves no trace anywhere a person will look — on 2026-07-31 an
+ * agent went silent in a room for forty-one minutes and `session_events` held
+ * zero rows for it (DOR-784). Receipt permanence extends it to every session for
+ * the same reason at a different surface: a permission prompt is asked and
+ * answered entirely inside DorkOS, so the answer is durable here or it is
+ * nowhere.
  */
 export type ProjectorPersistenceMode = 'history' | 'record';
 
@@ -160,8 +164,22 @@ export type ProjectorPersistenceMode = 'history' | 'record';
  * triggered it (`turn_start.userMessage`) and how it ended
  * (`turn_end.terminalReason`); `error` carries the fault itself. Everything
  * between them is in the JSONL transcript already.
+ *
+ * `interaction_resolved` is the one exception to "it is in the transcript
+ * already", and it is why an ordinary cockpit session records too. A permission
+ * prompt is asked and answered entirely inside DorkOS — the SDK's JSONL knows
+ * only that a tool ran or did not — so these rows are the ONLY durable record
+ * that a person was asked anything. Without them the transcript's receipt lived
+ * exactly as long as the browser tab, and reopening the conversation showed a
+ * tool with no sign it had ever been gated. A handful of bytes per decision,
+ * against the one record a person most wants when reviewing what an agent did.
  */
-const RECORDED_EVENT_TYPES: ReadonlySet<string> = new Set(['turn_start', 'turn_end', 'error']);
+const RECORDED_EVENT_TYPES: ReadonlySet<string> = new Set([
+  'turn_start',
+  'turn_end',
+  'error',
+  'interaction_resolved',
+]);
 
 /**
  * The durable persistence collaborator attached to a projector (DOR-189).
@@ -1022,6 +1040,24 @@ export function getSessionEventStore(): SessionEventStore | undefined {
 }
 
 /**
+ * Which durable rows a session's turns should leave behind, from what its
+ * runtime says about its own history.
+ *
+ * One expression, one place: a runtime whose history has no home but the DorkOS
+ * event stream persists all of it (`'history'`); everything else persists the
+ * narrow record its own transcript cannot answer for (`'record'`). Every caller
+ * that starts a turn goes through here, so a new runtime cannot accidentally
+ * pick a third answer.
+ *
+ * @param capabilities - The owning runtime's declared capabilities.
+ */
+export function persistenceModeFor(capabilities: {
+  logBackedHistory?: boolean;
+}): ProjectorPersistenceMode {
+  return capabilities.logBackedHistory === true ? 'history' : 'record';
+}
+
+/**
  * Remove `sessionId`'s registry entry only if it still maps to `instance`.
  * Guards the self-dispose path: between a subscriber detaching and this call,
  * the id could (in principle) have been re-keyed or re-created — deleting an
@@ -1042,9 +1078,10 @@ function disposeProjectorIfCurrent(sessionId: string, instance: SessionStateProj
  * @param opts.persist - Opts the session into durable session-event storage
  *   (DOR-189). `'history'` is the LOG-BACKED runtimes (codex/opencode/test-mode)
  *   on their read/subscribe paths, where the store IS the history; `'record'` is
- *   a room-driven claude-code session, where the store is only evidence that a
- *   turn ran (DOR-784). A no-op when no store is wired, or on a projector that
- *   already persists. An ordinary claude-code session passes nothing.
+ *   everything else, where the store holds only what the runtime's own
+ *   transcript cannot answer for. Callers that own a turn pick between them with
+ *   {@link persistenceModeFor}. A no-op when no store is wired, or on a
+ *   projector that already persists.
  */
 export function getOrCreateProjector(
   sessionId: string,

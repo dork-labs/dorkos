@@ -23,7 +23,11 @@ import type {
   MessagePart,
   PendingInteractionDTO,
 } from '@dorkos/shared/types';
-import type { SessionEvent } from '@dorkos/shared/session-stream';
+import {
+  approvalOutcomeOf,
+  type InteractionResolvedEvent,
+  type SessionEvent,
+} from '@dorkos/shared/session-stream';
 import type { ChatMessage } from '../chat-types';
 import { deriveFromParts } from './stream-event-helpers';
 import { mapHistoryMessage } from './stream-history-helpers';
@@ -274,11 +278,8 @@ function foldElicitation(
   }
 }
 
-/** The `interaction_resolved` member of the session-event union. */
-type ResolvedEvent = Extract<SessionEvent, { type: 'interaction_resolved' }>;
-
 /** The resolution kinds an interaction can settle with. */
-type InteractionResolution = NonNullable<ResolvedEvent['resolution']>;
+type InteractionResolution = NonNullable<InteractionResolvedEvent['resolution']>;
 
 /** The settled tool-part status for a resolution outcome. */
 function resolvedToolStatus(
@@ -295,16 +296,6 @@ function resolvedToolStatus(
 }
 
 /**
- * The receipt an answered approval leaves behind, keyed by resolution.
- * `cancelled` and `answered` are absent on purpose: an SDK abort withdrew the
- * ask before anyone answered it, and `answered` belongs to questions, which
- * keep their own answered summary.
- */
-const APPROVAL_OUTCOME_BY_RESOLUTION: Partial<
-  Record<InteractionResolution, 'allowed' | 'denied' | 'expired'>
-> = { approved: 'allowed', denied: 'denied', expired: 'expired' };
-
-/**
  * Settle the pending state on the part matching a resolved interaction, and —
  * for an approval — record HOW it was answered.
  *
@@ -317,21 +308,23 @@ const APPROVAL_OUTCOME_BY_RESOLUTION: Partial<
  * from `Last-Event-ID`, a cold snapshot carrying the turn — reconstructs the
  * identical receipt.
  */
-function foldInteractionResolved(parts: MessagePart[], event: ResolvedEvent) {
+function foldInteractionResolved(parts: MessagePart[], event: InteractionResolvedEvent) {
   const toolCall = findToolCallPart(parts, event.id);
   if (toolCall) {
     if (toolCall.status === 'pending') {
       toolCall.status = resolvedToolStatus(event.resolution);
       toolCall.approvalRemainingMs = undefined;
     }
-    const outcome = event.resolution && APPROVAL_OUTCOME_BY_RESOLUTION[event.resolution];
-    // The server says WHICH interaction this was; the outcome is not evidence
-    // of it. All three kinds share a cancellation path, so a timed-out question
-    // resolves `expired` exactly as a timed-out permission prompt does — and
-    // AskUserQuestion is an ordinary tool_use block, so it has a real tool_call
-    // part under the same id for this to land on. Reading the kind out of the
-    // resolution printed "Expired — denied" over questions.
-    if (outcome && event.kind === 'approval') {
+    // `approvalOutcomeOf` is the one definition of what a resolution earns,
+    // shared with the server's history derivation so a reopened session
+    // rebuilds the identical line. It insists the server SAY this was an
+    // approval: all three kinds share a cancellation path, so a timed-out
+    // question resolves `expired` exactly as a timed-out permission prompt
+    // does — and AskUserQuestion is an ordinary tool_use block, so it has a
+    // real tool_call part under the same id for this to land on. Reading the
+    // kind out of the resolution printed "Expired — denied" over questions.
+    const outcome = approvalOutcomeOf(event);
+    if (outcome) {
       // Tagging the part is the point of doing this here: on the live path
       // `approval_required` never enters the turn (it arrives as a pending DTO
       // that this event retires), so by the time the answer lands the part is a
