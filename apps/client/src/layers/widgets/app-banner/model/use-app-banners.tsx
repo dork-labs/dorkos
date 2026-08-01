@@ -37,7 +37,9 @@ function useTelemetryBannerDescriptor(): BannerDescriptor | null {
  * without asking behind a relay binding or a scheduled task, where nobody is
  * watching the strip. That banner is not built: it needs binding and task state
  * this widget does not fetch (and must not fetch on every route), and its own
- * rules about what counts as unattended. Tracked as follow-up, not forgotten.
+ * rules about what counts as unattended. It is written down as a follow-up in
+ * `specs/trust-dial/04-design-decisions.md`, under "Follow-ups opened by the
+ * implementation".
  *
  * @param sessionId - The active session id, or null when none is selected.
  */
