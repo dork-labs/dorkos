@@ -433,10 +433,13 @@ test.describe('Rooms — every message gets a menu', () => {
 
     const feed = page.getByRole('feed');
     await expect(feed).toHaveAttribute('aria-busy', 'false');
-    // Each message says where it sits, so a reader is told "2 of 3" rather than
-    // left to count.
-    await expect(roomsPage.entries.nth(1)).toHaveAttribute('aria-posinset', '2');
-    await expect(roomsPage.entries.nth(1)).toHaveAttribute('aria-setsize', '3');
+    // The room feed loads a trailing page, so it cannot know the true size or
+    // any message's true position — it says so (`aria-setsize: -1`) and claims
+    // no position at all, rather than announcing "item 1" for the 471st
+    // message. Exact positions live in the thread panel, where the set is
+    // complete.
+    await expect(roomsPage.entries.nth(1)).toHaveAttribute('aria-setsize', '-1');
+    await expect(roomsPage.entries.nth(1)).not.toHaveAttribute('aria-posinset');
 
     await roomsPage.entries.first().focus();
     await page.keyboard.press('PageDown');

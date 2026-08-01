@@ -107,7 +107,10 @@ export class RoomsPage {
     this.notices = page.getByTestId('room-notice');
     this.presenceLine = page.getByTestId('room-presence');
     this.presenceAnnouncer = page.getByTestId('room-presence-announcer');
-    this.stalledNotice = page.getByText("New messages aren't coming through right now.");
+    // The visible banner. Its sentence also lives in a screen-reader-only
+    // announcer twin (`room-stalled-announcer`), so matching by text resolves
+    // to two elements — target the banner's own testid.
+    this.stalledNotice = page.getByTestId('room-stalled');
     this.reconnectButton = page.getByRole('button', { name: 'Reconnect' });
   }
 
