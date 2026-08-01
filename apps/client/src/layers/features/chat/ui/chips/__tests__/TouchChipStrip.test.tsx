@@ -110,6 +110,16 @@ describe('TouchChipStrip — the settled summary line', () => {
     expect(within(strip).getByText('Fetched')).toBeInTheDocument();
   });
 
+  it('says the whole line as one sentence rather than a run of fragments', () => {
+    // Glyphs and bare numbers with the words hidden beside them read as
+    // disconnected pieces. The container carries the sentence they add up to.
+    render(<TouchChipStrip parts={mixedParts()} />);
+
+    expect(screen.getByTestId('chip-summary-line')).toHaveAccessibleName(
+      '2 read; 1 edited, 2 added, 1 removed; 1 fetched'
+    );
+  });
+
   it('renders nothing at all for a turn that touched nothing', () => {
     render(<TouchChipStrip parts={[{ type: 'text', text: 'just talking' }]} />);
 
@@ -650,6 +660,36 @@ describe('TouchChipStrip — chip anatomy', () => {
 
     const tray = await openTray(user);
     expect(within(tray).getByTestId('touch-chip').textContent).toContain('1 hit');
+  });
+
+  it('says a glob was globbed, not read', async () => {
+    // "Read src/**/*.ts" claims it opened one file. The tool named a set.
+    const user = userEvent.setup();
+    render(<TouchChipStrip parts={[toolCall('Glob', { pattern: 'src/**/*.ts' })]} />);
+
+    const tray = await openTray(user);
+    expect(within(tray).getByTestId('touch-chip')).toHaveAccessibleName('Globbed src/**/*.ts');
+  });
+
+  it('says a deleted glob was deleted, because it was', async () => {
+    const user = userEvent.setup();
+    render(<TouchChipStrip parts={[toolCall('Bash', { command: 'rm build/*.js' })]} />);
+
+    const tray = await openTray(user);
+    expect(within(tray).getByRole('button', { name: 'Deleted build/*.js' })).toBeInTheDocument();
+  });
+
+  it('says a long command by its first line, not by three hundred characters', async () => {
+    const user = userEvent.setup();
+    const command = `cat > deploy.sh <<'EOF'\n${'echo shipping; '.repeat(30)}\nEOF`;
+    render(<TouchChipStrip parts={[toolCall('Bash', { command })]} />);
+
+    const tray = await openTray(user);
+    const chip = within(tray).getByTestId('touch-chip');
+
+    expect(chip).toHaveAccessibleName("Ran cat > deploy.sh <<'EOF'");
+    // The whole script is still there to hover.
+    expect(chip.getAttribute('title')).toContain(command);
   });
 
   it('tints a chip whose tool failed', async () => {

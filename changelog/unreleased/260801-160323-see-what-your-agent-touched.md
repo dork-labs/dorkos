@@ -12,6 +12,11 @@ covers:
   - 'feat(client): the playground shows every state a touch chip can be in'
   - 'feat(client): a simulator run that puts the chip strip through its paces'
   - 'fix(client): the chips and the tray take the shape the design record drew'
+  - 'fix(client): a touch chip never claims a file it did not touch'
+  - 'fix(client): the chip row stays up for the whole turn, and the morph plays'
+  - 'fix(client): the tray labels its own sort, and a screen reader hears the strip'
+  - 'fix(client): reduced motion leaves no colour parked on a chip'
+  - 'fix(client): the playground and the design record match what shipped'
 ---
 
 ### Added

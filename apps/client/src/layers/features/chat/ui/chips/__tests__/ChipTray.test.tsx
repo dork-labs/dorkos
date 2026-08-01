@@ -6,7 +6,7 @@ import { render, screen, cleanup, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { TouchChip } from '../../../lib/touch-chips';
-import { ChipTray } from '../ChipTray';
+import { ChipTray, sortChips } from '../ChipTray';
 
 /** Build a chip directly — the tray takes a roster, not a transcript. */
 function chip(overrides: Partial<TouchChip> & Pick<TouchChip, 'label' | 'verb'>): TouchChip {
@@ -91,6 +91,50 @@ describe('ChipTray', () => {
 
     expect(renderedLabels()[0]).toContain('edited-first.ts');
     expect(renderedLabels()[2]).toContain('read-late.ts');
+  });
+
+  it('names its default order for what it groups by', () => {
+    // "Kind" was the wrong word: this groups by what HAPPENED to a target, and
+    // a chip's kind is the different question of file-vs-link-vs-command.
+    render(<ChipTray chips={ROSTER} onOpen={vi.fn()} />);
+
+    expect(screen.getByRole('radio', { name: 'Grouped' })).toBeChecked();
+  });
+});
+
+describe('sortChips', () => {
+  // The comparator the tray actually ships, not one written out again here: a
+  // copy stays green while the real one changes.
+  const MIXED: TouchChip[] = [
+    chip({ label: 'ran.sh', verb: 'run', firstSeq: 0, lastSeq: 0 }),
+    chip({ label: 'read-first.ts', verb: 'read', firstSeq: 1, lastSeq: 4 }),
+    chip({ label: 'created.ts', verb: 'create', firstSeq: 2, lastSeq: 2 }),
+    chip({ label: 'read-second.ts', verb: 'read', firstSeq: 3, lastSeq: 3 }),
+  ];
+
+  it('groups by the canonical verb order, then by first touch', () => {
+    expect(sortChips(MIXED, 'grouped').map((entry) => entry.label)).toEqual([
+      'read-first.ts',
+      'read-second.ts',
+      'created.ts',
+      'ran.sh',
+    ]);
+  });
+
+  it('orders chronologically by LAST touch, which is what moved most recently', () => {
+    expect(sortChips(MIXED, 'chronological').map((entry) => entry.label)).toEqual([
+      'ran.sh',
+      'created.ts',
+      'read-second.ts',
+      'read-first.ts',
+    ]);
+  });
+
+  it('leaves the roster it was given alone', () => {
+    const before = MIXED.map((entry) => entry.label);
+    sortChips(MIXED, 'chronological');
+
+    expect(MIXED.map((entry) => entry.label)).toEqual(before);
   });
 
   it('is a labelled region the disclosure can point at', () => {

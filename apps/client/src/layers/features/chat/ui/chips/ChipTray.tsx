@@ -11,7 +11,7 @@ import { TouchChip } from './TouchChip';
 import { groupChipsByVerb, VERB_ICON, VERB_LABEL, VERB_ORDER } from './chip-verbs';
 
 /** How the roster is sorted: grouped by what happened, or in the order it happened. */
-type ChipOrder = 'kind' | 'chronological';
+export type ChipOrder = 'grouped' | 'chronological';
 
 export interface ChipTrayProps {
   /** DOM id, so the disclosure button that opens the tray can point `aria-controls` at it. */
@@ -28,8 +28,16 @@ const VERB_RANK = new Map(VERB_ORDER.map((verb, index) => [verb, index]));
 /**
  * Sort a roster for display. Neither order re-derives anything — both are views
  * over the same accumulated chips.
+ *
+ * Exported so the order the tray actually ships is the order under test. A
+ * comparator written out again in a test file stays green while this one
+ * changes, which is a test of nothing.
+ *
+ * @param chips - The roster to order, left as it was.
+ * @param order - Grouped by verb, or in the order the turn touched things.
+ * @returns A new array in the requested order.
  */
-function sortChips(chips: TouchChipData[], order: ChipOrder): TouchChipData[] {
+export function sortChips(chips: TouchChipData[], order: ChipOrder): TouchChipData[] {
   const sorted = [...chips];
   if (order === 'chronological') {
     return sorted.sort((a, b) => a.lastSeq - b.lastSeq);
@@ -51,7 +59,7 @@ function sortChips(chips: TouchChipData[], order: ChipOrder): TouchChipData[] {
  */
 export function ChipTray({ id, chips, onOpen }: ChipTrayProps) {
   const [verbFilter, setVerbFilter] = useState<TouchChipVerb | null>(null);
-  const [order, setOrder] = useState<ChipOrder>('kind');
+  const [order, setOrder] = useState<ChipOrder>('grouped');
 
   // Counted over the whole roster, so a filter narrows the list without making
   // the other counts move under the cursor that is about to click them.
@@ -105,7 +113,9 @@ export function ChipTray({ id, chips, onOpen }: ChipTrayProps) {
           aria-label="Order the roster"
           className="w-auto"
         >
-          <SegmentedControlItem value="kind">Kind</SegmentedControlItem>
+          {/* "Grouped", not "Kind": this groups by what HAPPENED to a target,
+              and a chip's kind is the different question of file-vs-link-vs-command. */}
+          <SegmentedControlItem value="grouped">Grouped</SegmentedControlItem>
           <SegmentedControlItem value="chronological">Chronological</SegmentedControlItem>
         </SegmentedControl>
       </div>
