@@ -52,18 +52,17 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
         promise: 'Edits files on its own. Asks before it runs a command.',
       },
       {
-        // `plan` leaves the trust axis in the Trust Dial UI and moves next to
-        // the composer as a way of working (spec `trust-dial`, decision 1); the
-        // substrate still has to describe it, because a session can be in it and
-        // every surface has to say what that means. `'ask'` is the honest
-        // position while it is still on the list — plan changes nothing until
-        // the person approves the plan it hands back — and no fourth "not on the
-        // dial" marker is invented here, because nothing would read it until the
-        // UI that removes plan ships, and a field with no reader is drift.
+        // The one mode that is not a trust level: `axis: 'working'` takes it off
+        // the dial and puts it beside the composer, where a person switches it on
+        // for a stretch of work rather than leaving a session parked at it (spec
+        // `trust-dial`, decision 1). `stop: 'ask'` stays honest for the surfaces
+        // that still have to place it — plan changes nothing until the person
+        // approves the plan it hands back.
         id: 'plan',
         label: 'Plan',
         description: 'Read-only planning mode — the agent cannot execute tools.',
         stop: 'ask',
+        axis: 'working',
         asks: 'always',
         reach: 'read',
         promise: 'Reads and plans only. Nothing changes until you approve the plan.',

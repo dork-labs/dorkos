@@ -36,6 +36,9 @@
  */
 import type { PermissionAsks, PermissionModeDescriptor, PermissionStop } from './agent-runtime.js';
 
+/** The dial's three positions, in the order a person reads them. */
+const STOP_ORDER: readonly PermissionStop[] = ['ask', 'act', 'autonomy'];
+
 /**
  * How severely a surface should mark a mode. Deliberately three values and not
  * a boolean: "never asks" and "never asks about anything, anywhere" are
@@ -140,4 +143,73 @@ export function warnTier(descriptor: PermissionModeDescriptor): TrustWarnTier {
  */
 export function isBypassSemantics(descriptor: PermissionModeDescriptor): boolean {
   return descriptor.asks === 'never' && descriptor.reach === 'everything';
+}
+
+/**
+ * Whether a mode is a way of WORKING rather than a level of trust — off the
+ * dial, offered beside the composer instead (spec `trust-dial`, decision 1).
+ *
+ * Reads the runtime's declaration, never the mode's id: `plan` is Claude's name
+ * for it, and the next runtime's will be something else.
+ *
+ * @param descriptor - A mode as its runtime declared it.
+ */
+export function isWorkingMode(descriptor: PermissionModeDescriptor): boolean {
+  return descriptor.axis === 'working';
+}
+
+/** One position on the Trust Dial, resolved against a runtime's declared modes. */
+export interface TrustStop {
+  /** The dial position. */
+  stop: PermissionStop;
+  /** The mode selecting this position selects. */
+  mode: PermissionModeDescriptor;
+  /**
+   * Further modes the runtime declares at the same position — settings INSIDE
+   * the stop rather than stops of their own. Claude's `auto` is the only one
+   * today: it sits where "act" sits and changes how the agent decides, not how
+   * far the person has let it go.
+   */
+  refinements: PermissionModeDescriptor[];
+}
+
+/**
+ * Turn a runtime's declared modes into the dial it can offer.
+ *
+ * Three rules, all uniform — no mode ids, no runtime names, so a runtime the
+ * client has never heard of gets a correct dial the day it declares itself:
+ *
+ * 1. **Ways of working are not stops.** They come off the dial entirely.
+ * 2. **A stop with no mode is absent, not disabled.** A dial that offers a
+ *    position this runtime cannot take is a promise the product cannot keep, and
+ *    greying it out just makes the person click it to find out why.
+ * 3. **First declared wins the stop; the rest are refinements.** Where a runtime
+ *    declares two modes at one position, its own ordering says which one the
+ *    position means — Claude lists `acceptEdits` before `auto`, so picking "Act"
+ *    picks `acceptEdits` and `auto` becomes a switch inside it.
+ *
+ * @param descriptors - Every mode the runtime declares, in its declared order.
+ */
+export function resolveTrustStops(descriptors: readonly PermissionModeDescriptor[]): TrustStop[] {
+  const trust = descriptors.filter((d) => !isWorkingMode(d));
+  return STOP_ORDER.flatMap((stop) => {
+    const [mode, ...refinements] = trust.filter((d) => d.stop === stop);
+    return mode ? [{ stop, mode, refinements }] : [];
+  });
+}
+
+/**
+ * The way of working a runtime offers, if it offers one — the mode behind the
+ * composer's Plan toggle.
+ *
+ * Answers with the first declared, because a runtime offering two ways of
+ * working is not a shape anything renders yet; when one does, this is where that
+ * decision belongs rather than in the component that draws the chip.
+ *
+ * @param descriptors - Every mode the runtime declares, in its declared order.
+ */
+export function findWorkingMode(
+  descriptors: readonly PermissionModeDescriptor[]
+): PermissionModeDescriptor | undefined {
+  return descriptors.find(isWorkingMode);
 }
