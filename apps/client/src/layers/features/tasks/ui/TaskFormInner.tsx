@@ -19,6 +19,31 @@ export type DialogStep = 'preset-picker' | 'form';
  */
 const OFFERED_MODES: readonly PermissionMode[] = ['acceptEdits', 'bypassPermissions'];
 
+/**
+ * What the modes this form does NOT offer let a task do, in the same plain
+ * words as the two it does ("Allow file edits", "Full autonomy") — a task's
+ * mode sits next to those two, so an id like "Bypass All" reads as a different
+ * kind of thing and tells a non-developer nothing.
+ *
+ * `auto` and `dontAsk` are deliberately absent. `packages/skills/src/task-schema.ts`
+ * carries them "as-is" without saying what they do, and inventing a description
+ * for a mode nobody has documented is how a person ends up trusting the wrong
+ * sentence. Those fall back to {@link permissionModeLabel}, which returns an
+ * unknown mode's own spelling for exactly this reason (DOR-496).
+ */
+const CARRIED_MODE_DESCRIPTIONS: Partial<Record<PermissionMode, string>> = {
+  default: 'ask before every action',
+  plan: 'plan only, change nothing',
+};
+
+/** Id tying the carried-mode explanation to the radio it describes. */
+const CARRIED_MODE_NOTE_ID = 'schedule-permission-carried-note';
+
+/** How a mode the form cannot change is named on its own radio. */
+function carriedModeLabel(mode: PermissionMode): string {
+  return `Keep current: ${CARRIED_MODE_DESCRIPTIONS[mode] ?? permissionModeLabel(mode)}`;
+}
+
 export const DEFAULT_MAX_RUNTIME = '10m';
 const MAX_NAME_LENGTH = 100;
 
@@ -305,13 +330,19 @@ export function ScheduleForm({
                     {!OFFERED_MODES.includes(field.state.value) && (
                       <>
                         <label className="text-muted-foreground flex items-center gap-2 text-sm">
-                          <input type="radio" name="permissionMode" checked disabled readOnly />
-                          {permissionModeLabel(field.state.value)}
+                          <input
+                            type="radio"
+                            name="permissionMode"
+                            checked
+                            disabled
+                            readOnly
+                            aria-describedby={CARRIED_MODE_NOTE_ID}
+                          />
+                          {carriedModeLabel(field.state.value)}
                         </label>
-                        <p className="text-muted-foreground text-xs">
-                          This task was set to {permissionModeLabel(field.state.value)} somewhere
-                          else. Saving keeps it that way — pick one of the options above to change
-                          it.
+                        <p id={CARRIED_MODE_NOTE_ID} className="text-muted-foreground text-xs">
+                          This task was set up somewhere else. Saving keeps it as it is — pick one
+                          of the options above to change it.
                         </p>
                       </>
                     )}

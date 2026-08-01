@@ -54,11 +54,17 @@
  *   it — and that bar is LOWER than it sounds: an agent already running in
  *   `acceptEdits` writes that file with no prompt and no shell. Do not read this
  *   as only the shell-access adversary of `approvals/decision-authority.ts`.
- *   CLOSED: `TaskStore.upsertFromFile` refuses a file-declared
- *   `bypassPermissions` and logs the downgrade, so a file can never INTRODUCE
- *   one. It can still keep a bypass the row already carries, which only a caller
- *   that cleared the bar above can have put there — that is a person's decision
- *   on record, and the cockpit writes it straight back into the file.
+ *   CLOSED, and the invariant is worth stating exactly, because the exception is
+ *   where the risk lives: `TaskStore.upsertFromFile` refuses a file-declared
+ *   `bypassPermissions` and logs the downgrade, so **a file can never INTRODUCE
+ *   one**. A file may only KEEP a bypass already in the row, and only while that
+ *   row is `active` AND still holds the same prompt and cron the file carries —
+ *   so **a kept bypass is bound to a live task doing the work a person
+ *   approved**, never to a path. Rewriting the body under a kept grant clamps;
+ *   dropping a file back where a paused task's row still sits clamps. Only a
+ *   caller that cleared the bar above can have put the bypass in the row to
+ *   begin with, and the cockpit writes that decision straight back into the
+ *   file, which is the whole reason the exception exists.
  * - A Shape package manifest declaring a schedule with a `permissionMode`
  *   (`shapes/apply-shape.ts` → `shapes/shape-schedule-service.ts`). There the
  *   field comes from installed package CONTENT, not from the caller, so refusing

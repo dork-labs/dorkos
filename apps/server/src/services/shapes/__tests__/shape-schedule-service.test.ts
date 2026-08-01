@@ -20,7 +20,6 @@ import { parseSkillFile } from '@dorkos/skills/parser';
 import { TaskFrontmatterSchema } from '@dorkos/skills/task-schema';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
-import { clampSchedulePermissionMode } from '../../tasks/schedule-permission-clamp.js';
 import { TaskStore } from '../../tasks/task-store.js';
 import type { TaskSchedulerService } from '../../tasks/task-scheduler-service.js';
 import { ShapeScheduleService } from '../shape-schedule-service.js';
@@ -273,8 +272,12 @@ describe('ShapeScheduleService.createSchedule — every declarable permission mo
       // already applied the same rule before it ever gets here, so in
       // production this second refusal is belt and braces — this test calls the
       // service directly, which is exactly the path that skips the first one.
+      // Spelled out rather than computed with the function under test: deriving
+      // the expectation from `clampSchedulePermissionMode` would move both sides
+      // together if the clamp were ever widened to refuse more modes, and this
+      // assertion would keep passing while saying nothing.
       const row = store.getTasks().find((t) => t.name === request.name);
-      expect(row?.permissionMode).toBe(clampSchedulePermissionMode(mode).mode);
+      expect(row?.permissionMode).toBe(mode === 'bypassPermissions' ? 'acceptEdits' : mode);
     }
   );
 });

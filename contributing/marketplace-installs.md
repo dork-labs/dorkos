@@ -254,7 +254,10 @@ The builder (`services/marketplace/permission-preview.ts`) walks the staged pack
 
 - `.dork/tasks/*/SKILL.md` for scheduled jobs (name, cron, `permissions`, `enabled`).
 - `manifest.schedules` for a Shape's scheduled jobs. Both disclosed fields report what the install will ACTUALLY do, not what the manifest asked for, because two apply-time rules override it (DOR-607) and echoing the raw declaration would be wrong in the alarming direction:
-  - `permissionMode` runs through `clampSchedulePermissionMode` — the same function `apply-shape.ts` uses, imported rather than copied, so the preview cannot drift into warning about a `bypassPermissions` job the installer would never create.
+  - `permissionMode` runs through `clampSchedulePermissionMode`, which lives in `services/tasks/schedule-permission-clamp.ts` — one function, imported by `apply-shape.ts` and by this preview rather than copied into either, so the preview cannot drift into warning about a `bypassPermissions` job the installer would never create.
+
+    **The task SKILL.md path goes through the same clamp**, because both sources end at the same schedule row. `TaskStore.upsertFromFile` applies it too, so a package's `.dork/tasks/*/SKILL.md` cannot arm an unattended bypass any more than a Shape manifest can — a file on disk is nobody's approval, and the bar to write one is low (an agent already running in `acceptEdits` writes it with no prompt and no shell). The single exception is a bypass **already in the row**, kept only while that row is `active` and still holds the same prompt and cron the file carries, so the grant is bound to a live task doing the work a person approved rather than to a path. That exception is the one thing the preview under-reports (an unchanged reinstall over a task the person raised themselves); `readTaskSkills` names it in full.
+
   - `startsEnabled` reads `startEnabled`. The retired `startDisabled` is deliberately not consulted: it survives in the schema only so apply-time can tell an author it is stale, and inverting an absent key would report every schedule in a modern manifest as starting switched on.
 
   `apply-shape.ts` may still force a schedule off when its bound agent is missing at apply time, which the preview cannot know in advance, so a `true` remains the more permissive of the two outcomes.

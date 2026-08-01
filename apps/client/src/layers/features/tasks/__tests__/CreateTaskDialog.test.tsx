@@ -322,9 +322,14 @@ describe('CreateTaskDialog', () => {
         </Wrapper>
       );
 
-      const stored = await screen.findByLabelText('Plan Mode');
+      const stored = await screen.findByLabelText('Keep current: plan only, change nothing');
       expect((stored as HTMLInputElement).checked).toBe(true);
       expect((stored as HTMLInputElement).disabled).toBe(true);
+      // The explanation is tied to the radio, not just sitting near it.
+      expect(stored.getAttribute('aria-describedby')).toBe('schedule-permission-carried-note');
+      expect(document.getElementById('schedule-permission-carried-note')?.textContent).toContain(
+        'Saving keeps it as it is'
+      );
       expect((screen.getByLabelText('Allow file edits') as HTMLInputElement).checked).toBe(false);
     });
 
@@ -381,7 +386,7 @@ describe('CreateTaskDialog', () => {
         expect(screen.getByDisplayValue('Old Name')).toBeTruthy();
       });
       fireEvent.click(screen.getByLabelText('Allow file edits'));
-      expect(screen.queryByLabelText('Default')).toBeNull();
+      expect(screen.queryByLabelText(/^Keep current:/)).toBeNull();
 
       fireEvent.click(screen.getByText('Save'));
 
@@ -391,6 +396,23 @@ describe('CreateTaskDialog', () => {
           expect.objectContaining({ permissionMode: 'acceptEdits' })
         );
       });
+    });
+
+    it('falls back to the mode id when nobody has written plain words for it', async () => {
+      // `auto` and `dontAsk` are carried through the task schema without a
+      // description. Making one up would be worse than showing the id: the
+      // person would trust a sentence nothing in the codebase stands behind.
+      const transport = createMockTransport();
+      const Wrapper = createWrapper(transport);
+      const schedule = createMockSchedule({ id: 'sched-auto', permissionMode: 'auto' });
+
+      render(
+        <Wrapper>
+          <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={schedule} />
+        </Wrapper>
+      );
+
+      expect(await screen.findByLabelText('Keep current: Auto')).toBeTruthy();
     });
 
     it('offers only the two real options for a task already on one of them', async () => {

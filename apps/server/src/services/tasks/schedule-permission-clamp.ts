@@ -57,8 +57,60 @@ export function clampSchedulePermissionMode(declared: PermissionMode): {
 }
 
 /**
+ * The parts of an existing schedule row that decide whether a file may keep the
+ * bypass that row already carries. Structural on purpose — the store passes the
+ * four columns it read, and nothing here needs a Drizzle type.
+ */
+export interface ApprovedSchedule {
+  /** The mode the row holds. */
+  permissionMode: PermissionMode;
+  /** The row's lifecycle status. Only `active` is a live approval. */
+  status: string;
+  /** The prompt text the row holds — the work a person actually approved. */
+  prompt: string;
+  /** The row's cron, `''` for a task with no timer. */
+  cron: string;
+}
+
+/** The material content of the SKILL.md being synced into that row. */
+export interface IncomingTaskContent {
+  /** The file's body, which becomes the row's prompt. */
+  prompt: string;
+  /** The file's `cron:` frontmatter, `''` when absent. */
+  cron: string;
+}
+
+/**
+ * Whether a file's `bypassPermissions` is the SAME grant a person already made,
+ * rather than a new one arriving from disk.
+ *
+ * Both conditions are load-bearing, and each closes a proven exploit:
+ *
+ * - **Active.** `markRemovedByFilePath` only PAUSES a task whose file vanished,
+ *   so the row and its grant outlive the file. Without this, anything that can
+ *   later write that path resurrects the task — `upsertFromFile` un-pauses a
+ *   returning file by design — and inherits the bypass.
+ * - **Unchanged content.** The row's prompt and cron are overwritten from the
+ *   file on every sync. Without this, an attacker keeps `permissions:
+ *   bypassPermissions` in the frontmatter and swaps the body: same path, same
+ *   grant, entirely different instructions, running unattended at the next tick.
+ *
+ * Together they say the grant belongs to a specific piece of approved work on a
+ * live task, not to a filename.
+ */
+function keepsApprovedBypass(
+  existing: ApprovedSchedule | undefined,
+  incoming: IncomingTaskContent
+): boolean {
+  if (!existing) return false;
+  if (existing.permissionMode !== 'bypassPermissions') return false;
+  if (existing.status !== 'active') return false;
+  return existing.prompt === incoming.prompt && existing.cron === incoming.cron;
+}
+
+/**
  * Decide the permission mode a task's SKILL.md frontmatter actually gets, given
- * what the schedule row already holds.
+ * the schedule row it is landing on.
  *
  * A file on disk is nobody's approval. Anything that can write a project file
  * can set `permissions: bypassPermissions` — and that bar is LOWER than it
@@ -66,25 +118,37 @@ export function clampSchedulePermissionMode(declared: PermissionMode): {
  * prompt and no shell. So a file may never INTRODUCE a bypass; the clamp above
  * applies exactly as it does to a Shape manifest.
  *
- * The one exception is a task that already carries a bypass in the row. Only a
- * caller that cleared the agent bar can have put it there
- * (`task-write-policy.ts`), so it is a person's decision on record — and the
- * cockpit writes that decision straight back into the file, which the watcher
- * and the five-minute reconciler then re-read. Clamping on the way back in would
- * undo a person's choice seconds after they made it, which is why this asks what
- * the row holds rather than clamping the file blind. A file can still LOWER a
- * mode: the file stays the source of truth in the safe direction.
+ * The one exception is a bypass a person already granted on THIS task, which
+ * only a caller that cleared the agent bar can have put in the row
+ * (`task-write-policy.ts`). The cockpit writes that decision straight back into
+ * the file, and the watcher and the five-minute reconciler re-read it within
+ * seconds; clamping on the way back in would undo a person's choice moments
+ * after they made it. {@link keepsApprovedBypass} is what keeps that exception
+ * from widening into "whatever content lives at this path inherits the grant".
+ *
+ * A file can still LOWER a mode: in the safe direction the file stays the source
+ * of truth.
+ *
+ * One ordering note, because it is a real dependency and not an accident:
+ * `PATCH /api/tasks/:id` writes the file and then the row, so a watcher event
+ * landing in between would see the new file against the old row, find the
+ * content changed, and clamp. That window is the gap between two adjacent
+ * statements and chokidar's debounce is orders of magnitude longer — and the
+ * outcome if it ever lost that race is a task dropped to `acceptEdits`, which is
+ * the safe direction to fail in.
  *
  * @param declared - The mode the SKILL.md frontmatter asked for.
- * @param stored - The mode the existing schedule row holds, or undefined when
- *   this file is landing as a new task.
+ * @param existing - The schedule row this file is landing on, or undefined when
+ *   it is landing as a new task.
+ * @param incoming - The material content of the file being synced.
  * @returns The mode to write, and whether the file asked for more than it got.
  */
 export function resolveFilePermissionMode(
   declared: PermissionMode,
-  stored: PermissionMode | undefined
+  existing: ApprovedSchedule | undefined,
+  incoming: IncomingTaskContent
 ): { mode: PermissionMode; clamped: boolean } {
-  if (declared === 'bypassPermissions' && stored === 'bypassPermissions') {
+  if (declared === 'bypassPermissions' && keepsApprovedBypass(existing, incoming)) {
     return { mode: 'bypassPermissions', clamped: false };
   }
   return clampSchedulePermissionMode(declared);

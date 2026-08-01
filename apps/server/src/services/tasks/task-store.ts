@@ -116,12 +116,13 @@ export class TaskStore {
   /** Optional listener fired once per run's terminal transition (DOR-240). */
   private onRunTerminal: RunTerminalListener | null = null;
   /**
-   * Task files already reported as asking for a permission mode they cannot
-   * have (see {@link resolveFilePermissionMode}). Keyed by absolute file path,
-   * and dropped again as soon as the file stops asking, so the refusal is stated
-   * once per standing conflict rather than once per sync.
+   * The last refused version of each task file that asked for a permission mode
+   * it cannot have (see {@link resolveFilePermissionMode}) — absolute file path
+   * to the declared mode and content that were refused. Dropped when the file
+   * stops asking, when its task is deleted, and when the file goes away, so the
+   * refusal is stated once per standing conflict rather than once per sync.
    */
-  private readonly clampedTaskFiles = new Set<string>();
+  private readonly refusedFileGrants = new Map<string, string>();
 
   constructor(db: Db) {
     this.db = db;
@@ -229,12 +230,25 @@ export class TaskStore {
    *   the task they belong to.
    */
   deleteTask(id: string): boolean {
-    return this.db.transaction((tx) => {
+    // Read the path before the row goes: the reconciler deletes tasks whose file
+    // has been gone for 24 hours, and a refusal remembered against a path with
+    // no task left would silence the first warning about whatever lands there
+    // next.
+    const filePath = this.db
+      .select({ filePath: pulseSchedules.filePath })
+      .from(pulseSchedules)
+      .where(eq(pulseSchedules.id, id))
+      .get()?.filePath;
+
+    const deleted = this.db.transaction((tx) => {
       tx.delete(pulseRuns).where(eq(pulseRuns.scheduleId, id)).run();
       tx.delete(pulseDispatchLog).where(eq(pulseDispatchLog.taskId, id)).run();
       const result = tx.delete(pulseSchedules).where(eq(pulseSchedules.id, id)).run();
       return result.changes > 0;
     });
+
+    if (deleted && filePath) this.refusedFileGrants.delete(filePath);
+    return deleted;
   }
 
   // === Run CRUD ===
@@ -576,22 +590,37 @@ export class TaskStore {
       .where(eq(pulseSchedules.filePath, def.filePath))
       .get();
 
+    const incomingCron = def.meta.cron ?? '';
     const { mode: permissionMode, clamped } = resolveFilePermissionMode(
       def.meta.permissions,
-      existing?.permissionMode as PermissionMode | undefined
+      existing && {
+        permissionMode: existing.permissionMode as PermissionMode,
+        status: existing.status,
+        prompt: existing.prompt,
+        cron: existing.cron,
+      },
+      { prompt: def.body, cron: incomingCron }
     );
-    // Said once per file rather than on every sync: the reconciler re-reads
-    // every task file every five minutes, and a file left declaring a mode it
-    // cannot have would otherwise turn one standing refusal into a log line
-    // every five minutes for as long as it sits there.
-    if (clamped && !this.clampedTaskFiles.has(def.filePath)) {
-      this.clampedTaskFiles.add(def.filePath);
+    // Said once per refused VERSION of a file, not once per sync and not once
+    // per path. The reconciler re-reads every task file every five minutes, so
+    // warning per sync turns one standing refusal into a log line every five
+    // minutes; but keying on the path alone would swallow the line that matters
+    // most — a file rewritten under a grant it used to hold is a NEW refusal,
+    // and it must not be silenced by an earlier one at the same path.
+    //
+    // Serialized rather than concatenated: a prompt can hold any text at
+    // all, and a separator the prompt can also hold lets two different
+    // files share one key — swallowing exactly the warning this keying
+    // exists to preserve.
+    const refusal = JSON.stringify([def.meta.permissions, def.body, incomingCron]);
+    if (clamped && this.refusedFileGrants.get(def.filePath) !== refusal) {
+      this.refusedFileGrants.set(def.filePath, refusal);
       logger.warn(
         `TaskStore: ${def.filePath} asked to run with every approval prompt turned off. ` +
           `DorkOS synced it with the normal prompts instead; you can change that on the task.`
       );
     }
-    if (!clamped) this.clampedTaskFiles.delete(def.filePath);
+    if (!clamped) this.refusedFileGrants.delete(def.filePath);
 
     if (existing) {
       this.db
@@ -601,7 +630,7 @@ export class TaskStore {
           displayName: def.meta['display-name'] ?? null,
           description: def.meta.description ?? null,
           prompt: def.body,
-          cron: def.meta.cron ?? '',
+          cron: incomingCron,
           timezone: def.meta.timezone,
           agentId: agentId ?? null,
           enabled: def.meta.enabled,
@@ -639,7 +668,7 @@ export class TaskStore {
         displayName: def.meta['display-name'] ?? null,
         description: def.meta.description ?? null,
         prompt: def.body,
-        cron: def.meta.cron ?? '',
+        cron: incomingCron,
         timezone: def.meta.timezone,
         agentId: agentId ?? null,
         enabled: def.meta.enabled,
@@ -670,7 +699,7 @@ export class TaskStore {
    */
   markRemovedByFilePath(filePath: string): number {
     // A file that came back is a fresh conflict, worth stating again.
-    this.clampedTaskFiles.delete(filePath);
+    this.refusedFileGrants.delete(filePath);
     const now = new Date().toISOString();
     const result = this.db
       .update(pulseSchedules)
