@@ -21,6 +21,7 @@ import { assertBoundary, parseSessionId, sendError } from '../lib/route-utils.js
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logger } from '../lib/logger.js';
 import { runInDispatch } from '../lib/dispatch-context.js';
+import { logRefusal } from '../services/observability/refusals.js';
 import {
   aggregateSessionList,
   listRecentSessions,
@@ -507,9 +508,14 @@ router.post('/:id/messages', async (req, res) => {
 
   if (!result.accepted) {
     const lockInfo = runtime.getLockInfo(sessionId);
-    logger.warn('[POST /messages] session locked', {
+    // `shown`, so `info`: the caller gets a 409 naming the holder, which is a
+    // refusal the person can see and act on. It is deliberately not a `warn` —
+    // the level is reserved for refusals that left no other trace.
+    logRefusal('[POST /messages] session locked', {
+      reason: 'session_locked',
+      visibility: 'shown',
       sessionId,
-      lockedBy: lockInfo?.clientId ?? 'unknown',
+      detail: { lockedBy: lockInfo?.clientId ?? 'unknown' },
     });
     return res.status(409).json({
       error: 'Session locked',

@@ -253,7 +253,13 @@ describe('a room says why an agent did not answer', () => {
       // that mattered most — the refusals a damping key swallowed — left none:
       // from outside, a damped refusal and a trigger that never happened are the
       // same absence. A damped notice is still a decision the room MADE.
+      //
+      // And the LEVEL follows the visibility. A refusal the person saw is
+      // `info` — the room already told them. A refusal that was damped is
+      // `warn`, because this line is then the only place it exists, and filing
+      // it beside the ones they saw makes it invisible a second time.
       const reported = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+      const warned = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
       let landAna: (reply: { text: string; waitedMs: number }) => void = () => undefined;
       const late = new Promise<{ text: string; waitedMs: number }>((resolve) => {
         landAna = resolve;
@@ -283,16 +289,20 @@ describe('a room says why an agent did not answer', () => {
       expect(noticesAbout(ana)[0].body.notice).toBe('agent_busy');
 
       // Two refusals happened. One was written into the room; both are on the
-      // log, and the one that was swallowed says so.
-      const refusals = reported.mock.calls.filter(
-        ([message]) => message === '[rooms] an agent did not answer'
-      );
-      expect(refusals).toHaveLength(2);
-      expect(refusals.map(([, context]) => (context as { damped: boolean }).damped)).toEqual([
-        false,
-        true,
-      ]);
+      // log, and the one that was swallowed says so — louder, not quieter.
+      const refusalsOf = (spy: typeof reported): Array<{ reason: string; visibility: string }> =>
+        spy.mock.calls
+          .filter(([message]) => message === '[rooms] an agent did not answer')
+          .map(([, context]) => context as { reason: string; visibility: string });
+
+      const shown = refusalsOf(reported);
+      const damped = refusalsOf(warned);
+      expect(shown).toHaveLength(1);
+      expect(shown[0]).toMatchObject({ reason: 'agent_busy', visibility: 'shown' });
+      expect(damped).toHaveLength(1);
+      expect(damped[0]).toMatchObject({ reason: 'agent_busy', visibility: 'damped' });
       reported.mockRestore();
+      warned.mockRestore();
 
       landAna({ text: 'green', waitedMs: 12 * 60_000 });
       await service.triggersIdle();

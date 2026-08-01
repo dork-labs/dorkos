@@ -556,6 +556,9 @@ describe('pending interaction snapshots', () => {
       const said = warn.mock.calls.filter(
         ([message]) => message === '[claude-code] nobody answered in time, so this was denied'
       );
+      // `warn` is not incidental — it is the refusal rule. `visibility: 'silent'`
+      // says no notice was written anywhere, which is what makes this line the
+      // only record, and the level follows from that.
       expect(said.map(([, fields]) => fields)).toEqual([
         {
           sessionId: 'session-under-test',
@@ -563,18 +566,24 @@ describe('pending interaction snapshots', () => {
           kind: 'approval',
           toolName: 'Bash',
           waitedMs: 10 * 60 * 1000,
+          reason: 'interaction_expired',
+          visibility: 'silent',
         },
         {
           sessionId: 'session-under-test',
           interactionId: 'tool-2',
           kind: 'question',
           waitedMs: 10 * 60 * 1000,
+          reason: 'interaction_expired',
+          visibility: 'silent',
         },
         {
           sessionId: 'session-under-test',
           interactionId: expect.any(String),
           kind: 'elicitation',
           waitedMs: 10 * 60 * 1000,
+          reason: 'interaction_expired',
+          visibility: 'silent',
         },
       ]);
       // Nothing from the prompt's input: a tool's arguments are file paths,

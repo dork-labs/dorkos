@@ -35,8 +35,10 @@ import type {
 } from '@dorkos/relay';
 import { runtimeSessionSubject, legacyAgentSubject } from '@dorkos/relay';
 import { isDispatchId, newDispatchId } from '@dorkos/shared/dispatch-id';
-import { logger } from '../../lib/logger.js';
+import { logError, logger } from '../../lib/logger.js';
 import { runInDispatch } from '../../lib/dispatch-context.js';
+import { describeSession, parseSessionEntry, type SessionRecord } from './binding-session-map.js';
+import { logRefusal } from '../observability/refusals.js';
 import type { BindingStore } from './binding-store.js';
 import type { AdapterMeshCoreLike } from './adapter-manager.js';
 import { parseHumanSubject } from './human-subject.js';
@@ -185,13 +187,6 @@ export interface BindingSessionEntry {
    * known to exist, never yet seen active. Recency comparisons treat it as the
    * oldest possible, which is what it is.
    */
-  lastActivityAt: number;
-}
-
-/** What the router remembers about one session. */
-interface SessionRecord {
-  sessionId: string;
-  /** Epoch ms of the last message routed through it; 0 when never observed. */
   lastActivityAt: number;
 }
 
@@ -366,178 +361,176 @@ export class BindingRouter {
     const inherited = envelope.dispatchId;
     const dispatchId =
       inherited !== undefined && isDispatchId(inherited) ? inherited : newDispatchId();
-    return runInDispatch({ dispatchId, origin: 'relay' }, () =>
-      this.routeInbound(envelope, dispatchId)
-    );
-  }
+    // The scope wraps the whole routing body rather than delegating to a second
+    // method, so every line the routing writes — the refusals, the session
+    // resolution, the dispatch — carries the id without being edited to.
+    return runInDispatch(
+      { dispatchId, origin: 'relay' },
+      async (): Promise<void | SubscriberVerdict> => {
+        try {
+          // Skip messages this server produced. Agent replies (`agent:*`) are
+          // published to relay.human.* subjects for adapter delivery, and system
+          // notices (`relay.system.*`) — including the refusal notices below — go
+          // out the same way. Routing either back to an agent is a feedback loop:
+          // the notice would arrive as a fresh prompt.
+          if (envelope.from.startsWith('agent:') || envelope.from.startsWith('relay.system.')) {
+            return { handled: false, reason: 'not an inbound message from a person' };
+          }
 
-  /**
-   * The body of {@link BindingRouter.handleInbound}, already inside its dispatch
-   * scope.
-   *
-   * @param envelope - The inbound `relay.human.*` envelope.
-   * @param dispatchId - This delivery's correlation id, forwarded on the
-   *   republish so the outbound hop is the same dispatch rather than an
-   *   unrelated ULID.
-   * @returns Nothing when routed; a {@link SubscriberVerdict} when refused.
-   */
-  private async routeInbound(
-    envelope: RelayEnvelope,
-    dispatchId: string
-  ): Promise<void | SubscriberVerdict> {
-    try {
-      // Skip messages this server produced. Agent replies (`agent:*`) are
-      // published to relay.human.* subjects for adapter delivery, and system
-      // notices (`relay.system.*`) — including the refusal notices below — go
-      // out the same way. Routing either back to an agent is a feedback loop:
-      // the notice would arrive as a fresh prompt.
-      if (envelope.from.startsWith('agent:') || envelope.from.startsWith('relay.system.')) {
-        return { handled: false, reason: 'not an inbound message from a person' };
-      }
+          const { adapterId, chatId, channelType } = parseHumanSubject(envelope.subject);
+          if (!adapterId) {
+            // Nothing to speak into: without an adapter id there is no chat to
+            // answer in, so the log is the only record.
+            logRefusal('[relay] could not read the chat subject of an inbound message', {
+              reason: 'unreadable_subject',
+              visibility: 'silent',
+            });
+            return { handled: false, reason: `unreadable chat subject '${envelope.subject}'` };
+          }
 
-      const { adapterId, chatId, channelType } = parseHumanSubject(envelope.subject);
-      if (!adapterId) {
-        logger.warn(`BindingRouter: could not parse subject '${envelope.subject}'`);
-        return { handled: false, reason: `unreadable chat subject '${envelope.subject}'` };
-      }
+          const binding = this.deps.bindingStore.resolve(adapterId, chatId, channelType);
+          if (!binding) {
+            // Deliberately silent in-chat: nobody connected this conversation to
+            // anything here, so there is no agent whose silence needs explaining,
+            // and speaking would be this machine starting a conversation it has no
+            // consent for. The trace and the log carry it instead.
+            logRefusal('[relay] nothing connects this chat to an agent', {
+              reason: 'no_binding',
+              visibility: 'silent',
+              detail: { adapterId },
+            });
+            return { handled: false, reason: 'no binding connects this chat to an agent' };
+          }
 
-      const binding = this.deps.bindingStore.resolve(adapterId, chatId, channelType);
-      if (!binding) {
-        // Deliberately silent in-chat: nobody connected this conversation to
-        // anything here, so there is no agent whose silence needs explaining,
-        // and speaking would be this machine starting a conversation it has no
-        // consent for. The trace and the log carry it instead.
-        logger.info(`BindingRouter: no binding for adapter=${adapterId} chat=${chatId}, skipping`);
-        return { handled: false, reason: 'no binding connects this chat to an agent' };
-      }
+          // Skip paused bindings — they do not participate in routing
+          if (binding.enabled === false) {
+            return this.refuse(
+              envelope,
+              binding,
+              'binding_paused',
+              `binding ${binding.id} is paused`
+            );
+          }
 
-      // Skip paused bindings — they do not participate in routing
-      if (binding.enabled === false) {
-        return this.refuse(envelope, binding, 'binding_paused', `binding ${binding.id} is paused`);
-      }
+          // Permission check: drop inbound if canReceive is false
+          if (binding.canReceive === false) {
+            return this.refuse(
+              envelope,
+              binding,
+              'receive_denied',
+              `binding ${binding.id} is set not to send messages to its agent`
+            );
+          }
 
-      // Permission check: drop inbound if canReceive is false
-      if (binding.canReceive === false) {
-        return this.refuse(
-          envelope,
-          binding,
-          'receive_denied',
-          `binding ${binding.id} is set not to send messages to its agent`
-        );
-      }
+          const projectPath = this.deps.meshCore.getProjectPath(binding.agentId);
+          if (!projectPath) {
+            this.deps.eventRecorder?.insertAdapterEvent(
+              binding.adapterId,
+              'binding.routing_failed',
+              `Agent '${binding.agentId}' not found in mesh registry`
+            );
+            return this.refuse(
+              envelope,
+              binding,
+              'agent_missing',
+              `agent '${binding.agentId}' is not in the mesh registry`
+            );
+          }
 
-      const projectPath = this.deps.meshCore.getProjectPath(binding.agentId);
-      if (!projectPath) {
-        this.deps.eventRecorder?.insertAdapterEvent(
-          binding.adapterId,
-          'binding.routing_failed',
-          `Agent '${binding.agentId}' not found in mesh registry`
-        );
-        return this.refuse(
-          envelope,
-          binding,
-          'agent_missing',
-          `agent '${binding.agentId}' is not in the mesh registry`
-        );
-      }
+          let sessionId: string;
+          try {
+            sessionId = await this.resolveSession(binding, chatId, envelope);
+          } catch (err) {
+            // A session that cannot be created is the one refusal that used to
+            // reach only the catch-all below, where it became a log line with no
+            // binding attached and no way for the person to know.
+            return this.refuse(envelope, binding, 'session_failed', logError(err).error);
+          }
 
-      let sessionId: string;
-      try {
-        sessionId = await this.resolveSession(binding, chatId, envelope);
-      } catch (err) {
-        // A session that cannot be created is the one refusal that used to
-        // reach only the catch-all below, where it became a log line with no
-        // binding attached and no way for the person to know.
-        return this.refuse(
-          envelope,
-          binding,
-          'session_failed',
-          err instanceof Error ? err.message : String(err)
-        );
-      }
+          const enrichedPayload =
+            envelope.payload && typeof envelope.payload === 'object'
+              ? {
+                  ...(envelope.payload as Record<string, unknown>),
+                  cwd: projectPath,
+                  __bindingPermissions: {
+                    canReply: binding.canReply,
+                    canInitiate: binding.canInitiate,
+                    // No fallback: `AdapterBindingSchema` resolves this on parse and
+                    // `safe-defaults.ts` carries legacy entries forward, so a
+                    // binding always carries a mode (DOR-604). The consumer
+                    // (`agent-handler.ts`) does keep one, because it reads this back
+                    // off the wire as JSON where the field can genuinely be absent —
+                    // that one lands on the prompting mode, not `acceptEdits`.
+                    permissionMode: binding.permissionMode,
+                  },
+                }
+              : envelope.payload;
 
-      const enrichedPayload =
-        envelope.payload && typeof envelope.payload === 'object'
-          ? {
-              ...(envelope.payload as Record<string, unknown>),
-              cwd: projectPath,
-              __bindingPermissions: {
-                canReply: binding.canReply,
-                canInitiate: binding.canInitiate,
-                // No fallback: `AdapterBindingSchema` resolves this on parse and
-                // `safe-defaults.ts` carries legacy entries forward, so a
-                // binding always carries a mode (DOR-604). The consumer
-                // (`agent-handler.ts`) does keep one, because it reads this back
-                // off the wire as JSON where the field can genuinely be absent —
-                // that one lands on the prompting mode, not `acceptEdits`.
-                permissionMode: binding.permissionMode,
-              },
+          const dispatchSubject = await this.buildDispatchSubject(sessionId);
+
+          const { deliveredTo, rejected } = await this.deps.relayCore.publish(
+            dispatchSubject,
+            enrichedPayload,
+            {
+              from: envelope.from,
+              replyTo: envelope.replyTo,
+              budget: envelope.budget,
+              // The republish is the SAME logical delivery, so it carries the same
+              // dispatch id. Without this the inbound and outbound `messageId`s of
+              // one message are unrelated ULIDs and the two spans never join.
+              dispatchId,
             }
-          : envelope.payload;
+          );
 
-      const dispatchSubject = await this.buildDispatchSubject(sessionId);
+          // One accepted inbound message = one pulse. deliveredTo === 0 means the
+          // message was budget-rejected (DOR-260), consent-denied (DOR-277), or had
+          // no subscriber — it never reached the agent, so it must not pulse.
+          //
+          // What a pulse means, exactly: the runtime ACCEPTED the turn. Agent
+          // deliveries are detached — an agent turn outlives any publish timeout —
+          // so nothing here can wait for the turn to run. A turn that is accepted
+          // and then fails (adapter at capacity, a thrown runtime) is dead-lettered
+          // and the person is told through the chat-failure notice wired into
+          // `AdapterDelivery`, not by retracting this pulse.
+          if (deliveredTo > 0) {
+            this.deps.onFlow?.({
+              bindingId: binding.id,
+              adapterId: binding.adapterId,
+              agentId: binding.agentId,
+              direction: 'inbound',
+              at: new Date().toISOString(),
+            });
+            this.touchSession(binding, chatId, envelope);
+            logger.info(
+              `BindingRouter: dispatched ${envelope.subject} → ${dispatchSubject} ` +
+                `(binding=${binding.id}, projectPath=${projectPath})`
+            );
+            return;
+          }
 
-      const { deliveredTo, rejected } = await this.deps.relayCore.publish(
-        dispatchSubject,
-        enrichedPayload,
-        {
-          from: envelope.from,
-          replyTo: envelope.replyTo,
-          budget: envelope.budget,
-          // The republish is the SAME logical delivery, so it carries the same
-          // dispatch id. Without this the inbound and outbound `messageId`s of
-          // one message are unrelated ULIDs and the two spans never join.
-          dispatchId,
+          // Accepted by nobody. The gate that said so names itself in `rejected`;
+          // that is the honest thing to put in front of the person, rather than a
+          // silence that looks exactly like an agent thinking.
+          const gate = rejected?.[0]?.reason;
+          const noticeReason: ChatNoticeReason =
+            gate === 'rate_limited'
+              ? 'rate_limited'
+              : gate === 'budget_exceeded'
+                ? 'budget_exceeded'
+                : 'delivery_failed';
+          return this.refuse(
+            envelope,
+            binding,
+            noticeReason,
+            `the runtime did not accept the turn${gate ? ` (${gate})` : ''}`
+          );
+        } catch (err) {
+          const { error } = logError(err);
+          logger.error(`BindingRouter: failed to route ${envelope.subject}:`, error);
+          return { handled: false, reason: error };
         }
-      );
-
-      // One accepted inbound message = one pulse. deliveredTo === 0 means the
-      // message was budget-rejected (DOR-260), consent-denied (DOR-277), or had
-      // no subscriber — it never reached the agent, so it must not pulse.
-      //
-      // What a pulse means, exactly: the runtime ACCEPTED the turn. Agent
-      // deliveries are detached — an agent turn outlives any publish timeout —
-      // so nothing here can wait for the turn to run. A turn that is accepted
-      // and then fails (adapter at capacity, a thrown runtime) is dead-lettered
-      // and the person is told through the chat-failure notice wired into
-      // `AdapterDelivery`, not by retracting this pulse.
-      if (deliveredTo > 0) {
-        this.deps.onFlow?.({
-          bindingId: binding.id,
-          adapterId: binding.adapterId,
-          agentId: binding.agentId,
-          direction: 'inbound',
-          at: new Date().toISOString(),
-        });
-        this.touchSession(binding, chatId, envelope);
-        logger.info(
-          `BindingRouter: dispatched ${envelope.subject} → ${dispatchSubject} ` +
-            `(binding=${binding.id}, projectPath=${projectPath})`
-        );
-        return;
       }
-
-      // Accepted by nobody. The gate that said so names itself in `rejected`;
-      // that is the honest thing to put in front of the person, rather than a
-      // silence that looks exactly like an agent thinking.
-      const gate = rejected?.[0]?.reason;
-      const noticeReason: ChatNoticeReason =
-        gate === 'rate_limited'
-          ? 'rate_limited'
-          : gate === 'budget_exceeded'
-            ? 'budget_exceeded'
-            : 'delivery_failed';
-      return this.refuse(
-        envelope,
-        binding,
-        noticeReason,
-        `the runtime did not accept the turn${gate ? ` (${gate})` : ''}`
-      );
-    } catch (err) {
-      const reason = err instanceof Error ? err.message : String(err);
-      logger.error(`BindingRouter: failed to route ${envelope.subject}:`, reason);
-      return { handled: false, reason };
-    }
+    );
   }
 
   /**
@@ -545,22 +538,34 @@ export class BindingRouter {
    *
    * @param envelope - The message being dropped.
    * @param binding - The binding it resolved to.
-   * @param notice - Which one-line notice the person should read.
+   * @param notice - Which one-line notice the person should read. Narrowed to
+   *   exclude `empty_response`, which is the one {@link ChatNoticeReason} that
+   *   is NOT a refusal — a turn that ran and said nothing is the agent's own
+   *   choice, rendered by the adapter, and nothing here can produce it. The
+   *   narrowing is what lets the notice double as the structured `reason` on
+   *   the refusal line without a cast.
    * @param reason - The operator-facing reason, recorded on the trace.
    */
   private async refuse(
     envelope: RelayEnvelope,
     binding: AdapterBinding,
-    notice: ChatNoticeReason,
+    notice: Exclude<ChatNoticeReason, 'empty_response'>,
     reason: string
   ): Promise<SubscriberVerdict> {
-    logger.warn(`BindingRouter: dropped ${envelope.subject} (binding=${binding.id}): ${reason}`);
     // The binding is named rather than re-resolved: this router just resolved
     // it from the store for this very message, and it is the only caller that
     // can honestly say so. It is also what lets a PAUSED binding be spoken
     // about at all — the sender's own resolver requires an enabled one, and
     // "this chat is paused" is exactly what a paused chat needs to hear.
     await this.deps.chatNotice?.(envelope.subject, notice, { binding: { id: binding.id } });
+    // `shown` when a notifier exists to carry the one-line notice back into the
+    // chat, `silent` when none is wired — an install with no notice path drops
+    // the message with nothing but this line to show for it.
+    logRefusal('[relay] an inbound chat message was dropped', {
+      reason: notice,
+      visibility: this.deps.chatNotice !== undefined ? 'shown' : 'silent',
+      detail: { bindingId: binding.id, agentId: binding.agentId, cause: reason },
+    });
     return { handled: false, reason };
   }
 
@@ -793,60 +798,4 @@ export class BindingRouter {
     }
     this.sessionMap.clear();
   }
-}
-
-/**
- * Read one persisted session entry, in either shape it can be on disk.
- *
- * The file used to hold `[key, sessionId]` pairs and now holds
- * `[key, {sessionId, lastActivityAt}]`. A file written by an older build is
- * read, not discarded: its sessions are real, they simply have no recorded
- * activity yet, which is exactly what `lastActivityAt: 0` says.
- *
- * @param entry - One parsed JSON array element.
- * @returns The key/record pair, or `null` when the entry is malformed.
- */
-function parseSessionEntry(entry: unknown): [string, SessionRecord] | null {
-  if (!Array.isArray(entry) || entry.length !== 2 || typeof entry[0] !== 'string') return null;
-  const [key, value] = entry as [string, unknown];
-
-  if (typeof value === 'string') return [key, { sessionId: value, lastActivityAt: 0 }];
-
-  if (value !== null && typeof value === 'object') {
-    const { sessionId, lastActivityAt } = value as Record<string, unknown>;
-    if (typeof sessionId !== 'string') return null;
-    return [
-      key,
-      {
-        sessionId,
-        lastActivityAt: typeof lastActivityAt === 'number' ? lastActivityAt : 0,
-      },
-    ];
-  }
-
-  return null;
-}
-
-/**
- * Describe one session-map entry without guessing what its key means.
- *
- * The key is `bindingId:(chat|user):id`, and the middle segment is the whole
- * point: read blindly, a per-user session's person id was reported as a chat id
- * and messages addressed to it went to the wrong conversation.
- *
- * @param key - The session-map key.
- * @param record - What the router remembers about that session.
- */
-function describeSession(key: string, record: SessionRecord): BindingSessionEntry {
-  const parts = key.split(':');
-  const scope = parts[1] === 'user' ? 'user' : 'chat';
-  // Ids can contain colons (Slack thread keys do), so the tail is rejoined.
-  const id = parts.length >= 3 ? parts.slice(2).join(':') : 'unknown';
-  return {
-    key,
-    scope,
-    ...(scope === 'user' ? { userId: id } : { chatId: id }),
-    sessionId: record.sessionId,
-    lastActivityAt: record.lastActivityAt,
-  };
 }

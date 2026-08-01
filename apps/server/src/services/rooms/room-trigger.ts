@@ -108,8 +108,9 @@ import type {
   RoomPresenceState,
 } from '@dorkos/shared/room-schemas';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
-import { logger } from '../../lib/logger.js';
+import { logError, logger } from '../../lib/logger.js';
 import { runInDispatch } from '../../lib/dispatch-context.js';
+import { logRefusal } from '../observability/refusals.js';
 import { selectTriggerTargets, type AddressingMember } from './addressing.js';
 import {
   agentKey,
@@ -547,7 +548,13 @@ export class RoomTriggerDispatcher {
         const fromRealChain = entry.cascadeRoot !== entry.id;
         if (decision.reason === 'ancestry' || fromRealChain) {
           const name = record?.displayName ?? 'An agent';
-          this.notices.announce(room, entry, authorId, buildCascadeNotice(name, authorId));
+          this.notices.announce(
+            room,
+            entry,
+            authorId,
+            buildCascadeNotice(name, authorId),
+            decision.reason === 'ancestry' ? 'cascade_ancestry' : 'cascade_depth'
+          );
         }
         continue;
       }
@@ -683,10 +690,16 @@ export class RoomTriggerDispatcher {
         // refunded — `tryReserve` has no counterpart, and inventing one to
         // return a single turn on a path that only fires under database
         // contention would be more machinery than the fault is worth.
-        logger.warn('[rooms] could not bind a room session, so this agent was not triggered', {
+        // Silent: nothing was ever claimed here, so the room writes no notice
+        // and this line is the only record that an agent the person addressed
+        // was quietly dropped.
+        logRefusal('[rooms] could not bind a room session, so this agent was not triggered', {
+          reason: 'session_bind_failed',
+          visibility: 'silent',
           roomId: room.id,
           authorId: target.authorId,
-          error: err instanceof Error ? err.message : String(err),
+          entryId: entry.id,
+          detail: logError(err),
         });
       }
     }

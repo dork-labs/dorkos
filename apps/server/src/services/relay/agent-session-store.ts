@@ -14,7 +14,7 @@
 import { join } from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { writeFileAtomic } from '@dorkos/shared/atomic-write';
-import { logger } from '../../lib/logger.js';
+import { logError, logger } from '../../lib/logger.js';
 
 export interface AgentSessionRecord {
   /** SDK session UUID assigned by Claude Agent SDK on first message. */
@@ -109,7 +109,7 @@ export class AgentSessionStore implements AgentSessionStoreLike {
       updatedAt: now,
     });
     this.persist().catch((err) => {
-      logger.warn('[AgentSessionStore] Failed to persist session mapping', { err });
+      logger.warn('[AgentSessionStore] Failed to persist session mapping', logError(err));
     });
   }
 
@@ -121,7 +121,7 @@ export class AgentSessionStore implements AgentSessionStoreLike {
   delete(agentId: string): void {
     this.sessions.delete(agentId);
     this.persist().catch((err) => {
-      logger.warn('[AgentSessionStore] Failed to persist after delete', { err });
+      logger.warn('[AgentSessionStore] Failed to persist after delete', logError(err));
     });
   }
 
