@@ -34,7 +34,9 @@ import type {
   Unsubscribe,
 } from '@dorkos/relay';
 import { runtimeSessionSubject, legacyAgentSubject } from '@dorkos/relay';
+import { isDispatchId, newDispatchId } from '@dorkos/shared/dispatch-id';
 import { logger } from '../../lib/logger.js';
+import { runInDispatch } from '../../lib/dispatch-context.js';
 import type { BindingStore } from './binding-store.js';
 import type { AdapterMeshCoreLike } from './adapter-manager.js';
 import { parseHumanSubject } from './human-subject.js';
@@ -353,7 +355,36 @@ export class BindingRouter {
    * @param envelope - The inbound `relay.human.*` envelope.
    * @returns Nothing when routed; a {@link SubscriberVerdict} when refused.
    */
-  private async handleInbound(envelope: RelayEnvelope): Promise<void | SubscriberVerdict> {
+  private handleInbound(envelope: RelayEnvelope): Promise<void | SubscriberVerdict> {
+    // The bus is the one hop AsyncLocalStorage provably cannot cross, so the id
+    // rides the envelope instead. An inbound message that already carries a
+    // well-formed one CONTINUES that dispatch; anything else starts a fresh one.
+    // The validity check is not ceremony: an envelope arrives from another
+    // process (and, with a remote adapter, from another machine), and a
+    // malformed value adopted verbatim would become a `traceId` that groups
+    // unrelated spans into one fictitious trace.
+    const inherited = envelope.dispatchId;
+    const dispatchId =
+      inherited !== undefined && isDispatchId(inherited) ? inherited : newDispatchId();
+    return runInDispatch({ dispatchId, origin: 'relay' }, () =>
+      this.routeInbound(envelope, dispatchId)
+    );
+  }
+
+  /**
+   * The body of {@link BindingRouter.handleInbound}, already inside its dispatch
+   * scope.
+   *
+   * @param envelope - The inbound `relay.human.*` envelope.
+   * @param dispatchId - This delivery's correlation id, forwarded on the
+   *   republish so the outbound hop is the same dispatch rather than an
+   *   unrelated ULID.
+   * @returns Nothing when routed; a {@link SubscriberVerdict} when refused.
+   */
+  private async routeInbound(
+    envelope: RelayEnvelope,
+    dispatchId: string
+  ): Promise<void | SubscriberVerdict> {
     try {
       // Skip messages this server produced. Agent replies (`agent:*`) are
       // published to relay.human.* subjects for adapter delivery, and system
@@ -453,6 +484,10 @@ export class BindingRouter {
           from: envelope.from,
           replyTo: envelope.replyTo,
           budget: envelope.budget,
+          // The republish is the SAME logical delivery, so it carries the same
+          // dispatch id. Without this the inbound and outbound `messageId`s of
+          // one message are unrelated ULIDs and the two spans never join.
+          dispatchId,
         }
       );
 

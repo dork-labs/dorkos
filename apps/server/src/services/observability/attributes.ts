@@ -37,6 +37,20 @@ export const ATTR = {
    * content-bearing value — which is a precondition on any future runtime.
    */
   SESSION_ID: 'dorkos.session_id',
+  /**
+   * Opaque `dsp_`-prefixed dispatch correlation id; joins spans to the NDJSON
+   * log lines of the same dispatch.
+   *
+   * Admissible on the same grounds as {@link ATTR.SESSION_ID} and no others: it
+   * is random, opaque, and derives from nothing — not a path, not a name, not a
+   * session id. `isDispatchId` from `@dorkos/shared/dispatch-id` makes that
+   * checkable rather than asserted.
+   *
+   * This is the bridge that closes the gap ADR 260711-154514 recorded as an
+   * accepted negative. Spans stay FLAT: no `startActiveSpan`, no context
+   * propagation, no span tree. The dispatch id is what joins them.
+   */
+  DISPATCH_ID: 'dorkos.dispatch_id',
   /** Runtime type, e.g. `'claude-code'` | `'codex'` | `'opencode'`. */
   RUNTIME: 'dorkos.runtime',
   /** Number of stream events observed during a runtime turn. */

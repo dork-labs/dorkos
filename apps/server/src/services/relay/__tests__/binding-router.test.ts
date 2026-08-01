@@ -10,6 +10,8 @@ import {
 import type { BindingStore } from '../binding-store.js';
 import type { AdapterMeshCoreLike } from '../adapter-manager.js';
 import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
+import { isDispatchId, newDispatchId } from '@dorkos/shared/dispatch-id';
+import { currentDispatchId } from '../../../lib/dispatch-context.js';
 
 vi.mock('node:fs/promises');
 
@@ -215,6 +217,91 @@ describe('BindingRouter', () => {
       expect.objectContaining({ text: 'hello', cwd: '/agents/a' }),
       expect.objectContaining({ from: 'tg' })
     );
+  });
+
+  describe('the dispatch id crosses the bus', () => {
+    /** The binding every case below routes through. */
+    function bindOne(): void {
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue({
+        id: 'bind-1',
+        adapterId: 'tg-bot',
+        agentId: 'agent-a',
+        permissionMode: 'acceptEdits' as const,
+        sessionStrategy: 'per-chat',
+        label: '',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      });
+    }
+
+    /** One inbound chat envelope, optionally carrying a correlation id. */
+    function inbound(dispatchId?: string): Record<string, unknown> {
+      return {
+        id: 'msg-inbound',
+        subject: 'relay.human.telegram.tg-bot.123',
+        payload: { text: 'hello' },
+        from: 'tg',
+        budget: {
+          hopCount: 0,
+          maxHops: 5,
+          ttl: Date.now() + 60000,
+          callBudgetRemaining: 10,
+          ancestorChain: [],
+        },
+        createdAt: '2026-01-01T00:00:00.000Z',
+        ...(dispatchId !== undefined ? { dispatchId } : {}),
+      };
+    }
+
+    /** The `dispatchId` the router forwarded on its republish. */
+    function forwardedId(): unknown {
+      const options = vi.mocked(mockRelayCore.publish).mock.calls.at(-1)?.[2] as
+        | { dispatchId?: unknown }
+        | undefined;
+      return options?.dispatchId;
+    }
+
+    it('continues a dispatch the envelope already carries', async () => {
+      // The gap this closes: a republish mints a FRESH ULID, so the inbound and
+      // outbound message ids of one logical delivery are unrelated values and
+      // nothing joins the two hops.
+      bindOne();
+      const carried = newDispatchId();
+      await capturedHandler!(inbound(carried));
+      expect(forwardedId()).toBe(carried);
+    });
+
+    it('starts a fresh dispatch when the envelope carries none', async () => {
+      bindOne();
+      await capturedHandler!(inbound());
+      expect(isDispatchId(forwardedId() as string)).toBe(true);
+    });
+
+    it('refuses to adopt a malformed id from the wire', async () => {
+      // An envelope arrives from another process, and with a remote adapter from
+      // another machine. Adopting whatever it says would make the traceId a
+      // value a stranger chose — grouping unrelated spans into one fiction.
+      bindOne();
+      await capturedHandler!(inbound('../../etc/passwd'));
+      const minted = forwardedId() as string;
+      expect(minted).not.toBe('../../etc/passwd');
+      expect(isDispatchId(minted)).toBe(true);
+    });
+
+    it('makes the id ambient for everything the routing does', async () => {
+      // The publish call itself is what carries the id onward; this proves the
+      // ALS scope is live for the work in between, so every existing log line on
+      // the inbound path gains the id without being edited.
+      bindOne();
+      const carried = newDispatchId();
+      let ambient: string | undefined;
+      vi.mocked(mockAgentManager.createSession).mockImplementation(async () => {
+        ambient = currentDispatchId();
+        return { id: 'session-abc' };
+      });
+      await capturedHandler!(inbound(carried));
+      expect(ambient).toBe(carried);
+    });
   });
 
   it('resolves binding with adapterId (instance ID) and chatId from subject', async () => {

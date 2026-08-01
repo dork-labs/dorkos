@@ -107,8 +107,16 @@ import type {
   RoomPresencePayload,
   RoomPresenceState,
 } from '@dorkos/shared/room-schemas';
+import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { logger } from '../../lib/logger.js';
+import { runInDispatch } from '../../lib/dispatch-context.js';
 import { selectTriggerTargets, type AddressingMember } from './addressing.js';
+import {
+  agentKey,
+  type ActiveClaim,
+  type ClaimOutcome,
+  type TriggerTarget,
+} from './room-claims.js';
 import type { AuthorRegistry } from './author-registry.js';
 import { evaluateCascade } from './cascade-guard.js';
 import { engagementFor, type EngagedWindow, type EngagementWindow } from './engagement.js';
@@ -596,6 +604,13 @@ export class RoomTriggerDispatcher {
         displayName: record.displayName,
         depth: decision.depth,
         engaged: engaged.get(authorId) ?? null,
+        // ONE ID PER (entry, target), minted here rather than per entry. A
+        // message addressed to three agents is three dispatches sharing one
+        // `entryId`: the fan-out is recovered by the entry, and each agent's own
+        // chain — claim, turn, reply, relay hop — is recovered by its dispatch.
+        // Minting one id for the entry would put three interleaved turns on one
+        // filter and answer no question at all.
+        dispatchId: newDispatchId(),
         // Replaced with the real binding once the budget has been charged; a
         // target that never becomes affordable never mints a session.
         sessionId: '',
@@ -682,6 +697,7 @@ export class RoomTriggerDispatcher {
         authorId: target.authorId,
         agentPath: target.agentPath,
         entryId: entry.id,
+        dispatchId: target.dispatchId,
         depth: target.depth,
         claimedAt: new Date().toISOString(),
         pastDeadline: false,
@@ -732,8 +748,33 @@ export class RoomTriggerDispatcher {
     return active;
   }
 
-  /** Run one agent's turn and post whatever it said back into the room. */
-  private async runOne(room: Room, entry: RoomEntry, target: TriggerTarget): Promise<void> {
+  /**
+   * Run one agent's turn and post whatever it said back into the room, inside
+   * that dispatch's correlation scope.
+   *
+   * The scope wraps the whole turn rather than any part of it: the claim, the
+   * runtime call, the reply post, the notices and the release all belong to one
+   * dispatch, and every line any of them writes should say so without being
+   * edited to. A late answer is covered too, and for free: `deliverLate`
+   * registers its continuations from inside this scope, so an answer that lands
+   * an hour later still writes lines carrying the id of the message it answers.
+   *
+   * @param room - The room the entry landed in.
+   * @param entry - The entry being answered.
+   * @param target - The agent answering it, carrying its own dispatch id.
+   */
+  private runOne(room: Room, entry: RoomEntry, target: TriggerTarget): Promise<void> {
+    return runInDispatch({ dispatchId: target.dispatchId, origin: 'room', entryId: entry.id }, () =>
+      this.runOneInDispatch(room, entry, target)
+    );
+  }
+
+  /** The body of {@link RoomTriggerDispatcher.runOne}, already inside its scope. */
+  private async runOneInDispatch(
+    room: Room,
+    entry: RoomEntry,
+    target: TriggerTarget
+  ): Promise<void> {
     const key = agentKey(room.id, target.authorId);
     // What the release in the `finally` will report. Only the paths that reach a
     // terminal here set it; a turn handed to `deliverLate` does not release from
@@ -1009,10 +1050,15 @@ export class RoomTriggerDispatcher {
    * @param claim - The claim being taken, already fully resolved.
    */
   private holdClaim(claim: ActiveClaim): void {
+    // `dispatchId` is passed explicitly on both claim lines, and that is not
+    // belt-and-braces: a claim is TAKEN synchronously inside `RoomService.post`,
+    // before `runOne` enters the dispatch scope, and RELEASED from `halt()` on
+    // a path with no scope at all. The reporter's ambient read cannot see either.
     logger.info('[rooms] an agent took a room turn', {
       roomId: claim.roomId,
       authorId: claim.authorId,
       entryId: claim.entryId,
+      dispatchId: claim.dispatchId,
       cascadeRoot: claim.cascadeRoot,
     });
     // Something is happening here again, so a halt is news again.
@@ -1059,6 +1105,7 @@ export class RoomTriggerDispatcher {
       roomId: claim.roomId,
       authorId: claim.authorId,
       entryId: claim.entryId,
+      dispatchId: claim.dispatchId,
       heldMs: Math.max(0, Date.now() - Date.parse(claim.claimedAt)),
       outcome,
     });
@@ -1298,116 +1345,4 @@ export class RoomTriggerDispatcher {
     }
     return claims.length;
   }
-}
-
-/**
- * One turn in flight: which cascade it belongs to, how deep it sits, what it is
- * answering, and whether the room has stopped waiting for it.
- *
- * A claim is taken before its turn runs and released when that turn reaches a
- * terminal — an answer, a notice, or the agent choosing to say nothing. It is
- * the only live record that an agent is working, so three readers depend on it
- * today, and holding it for the whole turn changed what each of them sees:
- *
- * 1. {@link RoomTriggerDispatcher.busyIn} — whether this agent is already
- *    working here. A late turn is still running, so a fresh trigger for it is
- *    refused rather than started beside it on the same session.
- * 2. {@link RoomTriggerDispatcher.workingIn} — `room_context.working`. A late
- *    turn is still reported there, because it is still work.
- * 3. {@link RoomTriggerDispatcher.activeTurnFor} — the provenance an agent's own
- *    direct post inherits. **This is the one whose behaviour moved furthest.** A
- *    post an agent makes during its own late window used to be read as a post
- *    with no turn behind it and stamped at the ceiling, which silently refused
- *    everything downstream of it; it now carries the real cascade, so a message
- *    it addresses is triggered and a turn runs that previously did not.
- *
- * 4. {@link RoomTriggerDispatcher.publishPresence} — the working indicator a
- *    person watching the room sees. It is why `entryId` is recorded here rather
- *    than derived later: by the time a turn ends, the entry it answered is no
- *    longer in hand, and `cascadeRoot` is not a substitute for it (room-presence
- *    spec §3.1).
- *
- * The session the turn runs on is deliberately NOT here. A claim used to carry
- * it, and nothing ever read it: the presence signal does not carry a session id
- * (room-presence spec §15), and every writer that needs one — the reply post,
- * the runtime binding — takes it from the turn's own result, which is the only
- * place it is known to be correct. A second copy taken at claim time could only
- * ever be the id the room GUESSED with, which is exactly the stale id that used
- * to cost an agent its memory of a room.
- */
-interface ActiveClaim {
-  roomId: string;
-  cascadeRoot: string;
-  authorId: string;
-  /**
-   * The agent's directory — its identity and its working tree.
-   *
-   * Recorded because it is the grain of the SECOND ceiling
-   * ({@link RoomTriggerDispatcher.busyWith}): the `(room, agent)` key bounds one
-   * transcript, and this bounds one checkout, which is shared by every room the
-   * agent is in. It is also what tells {@link RoomTriggerDispatcher.halt} which
-   * runtime owns the turn it is stopping.
-   */
-  agentPath: string;
-  /**
-   * The entry whose trigger this claim answers. NOT interchangeable with
-   * `cascadeRoot`: the two coincide only at depth 0, and every deeper hop
-   * answers a reply rather than the message that began the exchange.
-   */
-  entryId: string;
-  depth: number;
-  /** When the claim was taken — what `room_context.working` reports as `since`. */
-  claimedAt: string;
-  /**
-   * The room stopped waiting; the turn did not stop. Set once the runner reports
-   * the wait deadline passed, and the reason this claim outlives
-   * {@link RoomTriggerDispatcher.runOne} — see the `finally` there.
-   */
-  pastDeadline: boolean;
-}
-
-/**
- * How a claim ended, for the log and nowhere else.
- *
- * Never rendered and never persisted: a person reads the room's own entries for
- * this, and the four values here would be jargon in front of them. What it is
- * for is the other half of an incident — reconstructing, from the log, which
- * turns ran and how each one finished, when the durable answer is exactly what
- * is missing.
- */
-type ClaimOutcome = 'answered' | 'quiet' | 'halted' | RoomTurnUnanswered;
-
-/** One agent that survived the guard, with the depth its reply will carry. */
-interface TriggerTarget {
-  authorId: string;
-  agentPath: string;
-  displayName: string;
-  depth: number;
-  /**
-   * Its open engaged window, or `null` when it is not in one. Carried from the
-   * per-entry evaluation rather than recomputed for the turn: the same clock,
-   * the same answer.
-   */
-  engaged: EngagementWindow | null;
-  /** The `(room, agent)` session, bound at claim time so a race resolves to one. */
-  sessionId: string;
-}
-
-/**
- * Separator for a claim key. Named, rather than a literal in a template, because
- * it used to be an invisible NUL that a doc comment described as a space — and
- * the next reader wrote a lookup against the space.
- */
-const CLAIM_KEY_SEPARATOR = '\u0000';
-
-/**
- * The `(room, agent)` identity, for map keys only. Nothing parses it back apart.
- *
- * The grain of a live claim: a room binds one session per agent, so one turn is
- * all there can honestly be. The absence of a cascade is the design — every
- * message a person sends starts its own, so a cascade in this key would never
- * collide with anything.
- */
-function agentKey(roomId: string, authorId: string): string {
-  return [roomId, authorId].join(CLAIM_KEY_SEPARATOR);
 }

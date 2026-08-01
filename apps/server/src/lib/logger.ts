@@ -1,6 +1,7 @@
 import { createConsola, type LogObject } from 'consola';
 import fs from 'fs';
 import path from 'path';
+import { currentDispatchId } from './dispatch-context.js';
 
 /**
  * Central logger module for DorkOS server.
@@ -25,6 +26,22 @@ let configuredLevel = 3; // info
 
 /**
  * Create an NDJSON file reporter that appends structured log entries to disk.
+ *
+ * Two things happen here that happen nowhere else, and both are retrofits — they
+ * give hundreds of existing call sites a field they never asked for:
+ *
+ * 1. **The ambient dispatch id.** If a dispatch is in scope, every line written
+ *    inside it carries `dispatchId` without the call site mentioning it. The
+ *    read happens only when a line is actually written — after the level filter
+ *    — so a suppressed `debug` costs nothing.
+ * 2. **The tag.** `logObj.tag` (set by `createTaggedLogger`) is populated on
+ *    three call sites in the whole server; the `'[tag] message'` string prefix
+ *    is used by hundreds. Lifting the prefix into the field is what makes
+ *    `jq 'select(.tag=="rooms")'` match anything at all.
+ *
+ * An explicit `dispatchId` in a call site's context object wins over the ambient
+ * one, so a caller that legitimately logs about a DIFFERENT dispatch is not
+ * silently mislabelled. Same for an explicit `tag`.
  */
 function createFileReporter() {
   return {
@@ -44,16 +61,40 @@ function createFileReporter() {
         }
       }
 
+      const dispatchId = currentDispatchId();
       const entry = JSON.stringify({
         level: logObj.type,
         time: logObj.date.toISOString(),
         msg: msgParts.join(' '),
-        tag: logObj.tag || undefined,
+        tag: logObj.tag || extractTag(msgParts[0]),
+        ...(dispatchId !== undefined ? { dispatchId } : {}),
         ...context,
       });
       fs.appendFileSync(logFile, entry + '\n');
     },
   };
+}
+
+/**
+ * A leading `[tag]` in a log message, for the NDJSON `tag` field.
+ *
+ * Anchored and character-bounded on purpose: `[rooms]` and `[stall-guard]` are
+ * tags, while the `[object Object]` a stringified argument produces and the
+ * `[2026-07-31]` a message might open with are not. The message itself is left
+ * untouched — the tag stays where every existing `grep` expects to find it, and
+ * gains a field where `jq` can reach it.
+ */
+const TAG_PREFIX_PATTERN = /^\[([a-zA-Z0-9:_-]+)\]\s/;
+
+/**
+ * Lift a leading `[tag]` out of a message.
+ *
+ * @param message - The first string argument of the log call, if there was one.
+ * @returns The tag, or `undefined` when the message does not open with one.
+ */
+function extractTag(message: string | undefined): string | undefined {
+  if (message === undefined) return undefined;
+  return TAG_PREFIX_PATTERN.exec(message)?.[1];
 }
 
 /** Format a date as YYYY-MM-DD. */

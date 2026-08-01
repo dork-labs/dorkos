@@ -3941,7 +3941,11 @@
             "type": "string",
             "format": "date-time"
           },
-          "payload": {}
+          "payload": {},
+          "dispatchId": {
+            "type": "string",
+            "description": "Opaque correlation id joining every hop of one dispatch"
+          }
         },
         "required": [
           "id",
