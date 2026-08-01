@@ -18,6 +18,7 @@ import type {
   ShapePackageManifest,
   SkillPackPackageManifest,
 } from '@dorkos/marketplace';
+import { TASK_PERMISSION_MODES } from '@dorkos/skills/task-schema';
 import type { AdapterManager } from '../../relay/adapter-manager.js';
 import { ConflictDetector } from '../conflict-detector.js';
 import { AgentInstallFlow, type AgentCreatorLike } from '../flows/install-agent.js';
@@ -34,7 +35,7 @@ interface SkillFixture {
   name: string;
   description: string;
   cron?: string;
-  permissions?: 'acceptEdits' | 'bypassPermissions';
+  permissions?: (typeof TASK_PERMISSION_MODES)[number];
   enabled?: boolean;
 }
 
@@ -410,7 +411,7 @@ describe('PermissionPreviewBuilder', () => {
             name: 'unattended-sweep',
             description: 'Sweep the repo overnight',
             cron: '0 3 * * *',
-            permissions: 'bypassPermissions',
+            permissions: 'plan',
           },
           {
             name: 'manual-audit',
@@ -428,7 +429,7 @@ describe('PermissionPreviewBuilder', () => {
           {
             name: 'unattended-sweep',
             cron: '0 3 * * *',
-            permissionMode: 'bypassPermissions',
+            permissionMode: 'plan',
             startsEnabled: true,
           },
           {
@@ -439,6 +440,36 @@ describe('PermissionPreviewBuilder', () => {
           },
         ])
       );
+    });
+
+    it('discloses the mode a task SKILL.md GETS, not the one it asked for', async () => {
+      const manifest = pluginManifest('greedy-task-plugin');
+      const pkgPath = await createFixturePackage(pkgRoot, manifest, {
+        tasks: [
+          {
+            name: 'overnight-sweep',
+            description: 'Sweep everything',
+            cron: '0 3 * * *',
+            // `TaskStore.upsertFromFile` clamps this to `acceptEdits`: a file on
+            // disk is nobody's approval, so a package cannot hand its own
+            // unattended cron every approval prompt turned off. Echoing the
+            // request here would warn a person about a job the install would
+            // never create — the same false alarm the Shape path avoids.
+            permissions: 'bypassPermissions',
+          },
+        ],
+      });
+
+      const preview = await builder.build(pkgPath, manifest);
+
+      expect(preview.schedules).toEqual([
+        {
+          name: 'overnight-sweep',
+          cron: '0 3 * * *',
+          permissionMode: 'acceptEdits',
+          startsEnabled: true,
+        },
+      ]);
     });
 
     it('defaults an unstated task permission mode to acceptEdits, enabled', async () => {

@@ -18,7 +18,7 @@ import { PackageTypeSchema } from '@dorkos/marketplace';
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { TaskFrontmatterSchema } from '@dorkos/skills';
 import { ExtensionManifestSchema } from '@dorkos/extension-api';
-import { clampSchedulePermissionMode } from '../shapes/apply-shape.js';
+import { clampSchedulePermissionMode } from '../tasks/schedule-permission-clamp.js';
 import { installRootDirForType } from './lib/install-roots.js';
 import type {
   ConflictReport,
@@ -160,7 +160,29 @@ async function readExtensionManifests(
  * A task SKILL.md declares its own permission mode (`permissions`, default
  * `acceptEdits`) and whether it is active on arrival (`enabled`, default
  * `true`), so a scheduled job from this source is disclosed with exactly the
- * same detail as a Shape's `schedules[]` entry.
+ * same detail as a Shape's `schedules[]` entry — including the clamp. A file on
+ * disk cannot arm an unattended bypass any more than a manifest can
+ * (`services/tasks/schedule-permission-clamp.ts`), so reporting the raw
+ * declaration would warn a person about a job the install would never create.
+ * See {@link readManifestSchedules} for the whole of that reasoning.
+ *
+ * ## The one case this under-reports, said rather than papered over
+ *
+ * `upsertFromFile` lets a file KEEP a `bypassPermissions` the schedule row
+ * already holds, when the row is active and its prompt and cron still match the
+ * file. So re-installing a package over a task whose bypass a person raised
+ * themselves, with byte-identical content, keeps that bypass while this preview
+ * says `acceptEdits`.
+ *
+ * Reporting it truthfully means resolving each staged SKILL.md to its install
+ * destination, reading the row there, and re-running the keep rule — a second
+ * copy of the decision in the one place a drifting copy does most harm, plus a
+ * `TaskStore` dependency on a builder that is otherwise pure. It is not worth
+ * that: the case is narrow (an unchanged reinstall over a mode the person set),
+ * and the direction of the error is under-claiming a permission the person
+ * granted on that exact task and can see on it. Every case where the install
+ * would GRANT more than the preview shows is already impossible — a changed
+ * file, or a task that is not already raised, clamps.
  */
 async function readTaskSkills(packagePath: string): Promise<PreviewSchedule[]> {
   const tasksRoot = join(packagePath, '.dork', 'tasks');
@@ -180,7 +202,7 @@ async function readTaskSkills(packagePath: string): Promise<PreviewSchedule[]> {
         results.push({
           name: parsed.definition.meta.name,
           cron: parsed.definition.meta.cron ?? null,
-          permissionMode: parsed.definition.meta.permissions,
+          permissionMode: clampSchedulePermissionMode(parsed.definition.meta.permissions).mode,
           startsEnabled: parsed.definition.meta.enabled,
         });
       }
@@ -203,7 +225,10 @@ async function readTaskSkills(packagePath: string): Promise<PreviewSchedule[]> {
  * - `permissionMode` is run through the same clamp `apply-shape.ts` applies, so
  *   a Shape that requests `bypassPermissions` is disclosed as the mode it
  *   actually gets. Echoing the request would warn a person that an unattended
- *   job can run any command when the installer would never allow it.
+ *   job can run any command when the installer would never allow it. The same
+ *   clamp covers `.dork/tasks/<name>/SKILL.md` (see {@link readTaskSkills}),
+ *   because both sources end at the same schedule row — with one narrow
+ *   under-report on the file path, named there.
  * - `startsEnabled` reads `startEnabled`, the field that decides this since
  *   DOR-607. The retired `startDisabled` is deliberately NOT consulted: it is
  *   declared in the schema only so apply-time can tell an author it is stale,
