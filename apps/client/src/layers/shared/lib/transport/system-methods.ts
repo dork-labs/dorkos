@@ -51,6 +51,7 @@ import type { UnattendedAutonomyState } from '@dorkos/shared/permission-semantic
 import type { TransportScanOptions, TransportScanEvent } from '@dorkos/shared/mesh-schemas';
 import { fetchJSON, buildQueryString } from './http-client';
 import { parseSSEStream } from './sse-parser';
+import { uploadFilesOverHttp } from './upload-methods';
 
 /**
  * POST an SSE-streaming action and fold its frames into a single terminal result.
@@ -564,54 +565,13 @@ export function createSystemMethods(baseUrl: string) {
 
     // ── File Uploads ──────────────────────────────────────────────────────
 
-    async uploadFiles(
+    uploadFiles(
       files: UploadFile[],
       cwd: string,
-      onProgress?: (progress: UploadProgress) => void
+      onProgress?: (progress: UploadProgress) => void,
+      signal?: AbortSignal
     ): Promise<UploadResult[]> {
-      const formData = new FormData();
-      for (const file of files) {
-        const buffer = await file.arrayBuffer();
-        formData.append('files', new Blob([buffer], { type: file.type }), file.name);
-      }
-
-      return new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', `${baseUrl}/uploads?cwd=${encodeURIComponent(cwd)}`);
-        // Ride the Better Auth session cookie on the multipart upload (login enabled).
-        xhr.withCredentials = true;
-
-        if (onProgress) {
-          xhr.upload.addEventListener('progress', (e) => {
-            if (e.lengthComputable) {
-              onProgress({
-                loaded: e.loaded,
-                total: e.total,
-                percentage: Math.round((e.loaded / e.total) * 100),
-              });
-            }
-          });
-        }
-
-        xhr.addEventListener('load', () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            resolve((JSON.parse(xhr.responseText) as { uploads: UploadResult[] }).uploads);
-          } else {
-            try {
-              const error =
-                (JSON.parse(xhr.responseText) as { error?: string }).error ?? `HTTP ${xhr.status}`;
-              reject(new Error(error));
-            } catch {
-              reject(new Error(`HTTP ${xhr.status}`));
-            }
-          }
-        });
-
-        xhr.addEventListener('error', () => reject(new Error('Upload failed')));
-        xhr.addEventListener('abort', () => reject(new Error('Upload aborted')));
-
-        xhr.send(formData);
-      });
+      return uploadFilesOverHttp(baseUrl, files, cwd, onProgress, signal);
     },
 
     // ── Default Agent ─────────────────────────────────────────────────────

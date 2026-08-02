@@ -2,7 +2,15 @@ import { AnimatePresence, motion } from 'motion/react';
 import { ArrowUp, CornerDownLeft, Square, Clock, Check, X, Loader2 } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 
-type ButtonState = 'send' | 'stop' | 'queue' | 'update' | 'cancel' | 'uploading' | 'dispatching';
+type ButtonState =
+  | 'send'
+  | 'stop'
+  | 'queue'
+  | 'update'
+  | 'cancel'
+  | 'uploading'
+  | 'cancel-upload'
+  | 'dispatching';
 
 interface InputActionButtonProps {
   hasText: boolean;
@@ -28,6 +36,13 @@ interface InputActionButtonProps {
   onSaveEdit?: () => void;
   /** Leave the queue-item edit without saving — the way out of an emptied edit. */
   onCancelEdit?: () => void;
+  /**
+   * Stop the attachment upload that is in flight. When given, the upload's
+   * progress spinner becomes the control that ends it; when omitted it stays an
+   * inert progress readout, because a button that stops nothing is worse than
+   * no button.
+   */
+  onCancelUpload?: () => void;
 }
 
 const BUTTON_CONFIG = {
@@ -55,6 +70,12 @@ const BUTTON_CONFIG = {
     className: 'bg-muted text-muted-foreground',
     label: 'Uploading attachment',
   },
+  'cancel-upload': {
+    // Turns red under the pointer for the same reason Stop is red: this ends
+    // the send that is happening.
+    className: 'bg-muted text-muted-foreground hover:bg-destructive/90 hover:text-white',
+    label: 'Cancel upload',
+  },
   dispatching: {
     className: 'bg-muted text-muted-foreground',
     label: 'Running command',
@@ -65,7 +86,7 @@ const BUTTON_CONFIG = {
  * The glyph per state. Send is the one that depends on the pointer — an
  * up-arrow reads as "send" where Enter inserts a newline — so it is swapped at
  * the use site rather than stored twice. Total over the union, so resolving an
- * icon needs no non-null assertion; the two progress states draw their own
+ * icon needs no non-null assertion; the inert progress states draw their own
  * spinner and never read this.
  */
 const BUTTON_ICON: Record<ButtonState, React.ElementType> = {
@@ -75,6 +96,9 @@ const BUTTON_ICON: Record<ButtonState, React.ElementType> = {
   update: Check,
   cancel: X,
   uploading: Loader2,
+  // Keeps spinning while it waits — the upload's progress and its off switch are
+  // the same control, so neither costs the other its place.
+  'cancel-upload': Loader2,
   dispatching: Loader2,
 };
 
@@ -82,6 +106,7 @@ function resolveButtonState(
   hasText: boolean,
   isStreaming: boolean,
   isUploading: boolean,
+  canCancelUpload: boolean,
   editingQueueItem: boolean,
   commandPending: boolean
 ): ButtonState | null {
@@ -98,8 +123,11 @@ function resolveButtonState(
   // Only show stop for actual streaming — uploading alone should not show stop
   if (isStreaming) return 'stop';
   // An attachment upload IS this send, already in flight. Show its progress
-  // rather than a Send the click cannot start or a Stop with no turn to stop.
-  if (isUploading) return 'uploading';
+  // rather than a Send the click cannot start or a Stop with no turn to stop —
+  // and, where the host can stop it, make that progress the off switch. A
+  // spinner with nothing behind it is how a hung upload used to trap the whole
+  // composer (DOR-494).
+  if (isUploading) return canCancelUpload ? 'cancel-upload' : 'uploading';
   if (hasText) return 'send';
   return null;
 }
@@ -113,6 +141,7 @@ function resolveOnClick(
     onQueue?: () => void;
     onSaveEdit?: () => void;
     onCancelEdit?: () => void;
+    onCancelUpload?: () => void;
   }
 ): (() => void) | undefined {
   switch (state) {
@@ -126,7 +155,9 @@ function resolveOnClick(
       return handlers.onSaveEdit;
     case 'cancel':
       return handlers.onCancelEdit;
-    // 'uploading' is a progress indicator, not a control.
+    case 'cancel-upload':
+      return handlers.onCancelUpload;
+    // 'uploading' and 'dispatching' are progress indicators, not controls.
     default:
       return undefined;
   }
@@ -148,11 +179,13 @@ export function InputActionButton({
   onQueue,
   onSaveEdit,
   onCancelEdit,
+  onCancelUpload,
 }: InputActionButtonProps) {
   const buttonState = resolveButtonState(
     hasText,
     isStreaming,
     isUploading,
+    Boolean(onCancelUpload),
     editingQueueItem,
     commandPending
   );
@@ -162,7 +195,14 @@ export function InputActionButton({
   const onClick =
     sendBlocked || buttonState === null
       ? undefined
-      : resolveOnClick(buttonState, { onSubmit, onStop, onQueue, onSaveEdit, onCancelEdit });
+      : resolveOnClick(buttonState, {
+          onSubmit,
+          onStop,
+          onQueue,
+          onSaveEdit,
+          onCancelEdit,
+          onCancelUpload,
+        });
   // The send icon has to name the same gesture the Enter rule uses, or it
   // advertises a contract the keyboard does not honour (see `useIsTouchOnly`).
   const ActionIcon =
@@ -171,9 +211,11 @@ export function InputActionButton({
       : buttonState === 'send' && isTouchOnly
         ? ArrowUp
         : BUTTON_ICON[buttonState];
-  // Progress, not a control: rendered as a live region rather than a disabled
-  // button, since several screen readers skip disabled controls entirely and
-  // these are the only things on screen saying the send is already happening.
+  // Progress with nothing to press: rendered as a live region rather than a
+  // disabled button, since several screen readers skip disabled controls
+  // entirely and these are the only things on screen saying the send is already
+  // happening. `cancel-upload` is deliberately NOT here — it is a real button,
+  // announced as one, and it does something.
   const isProgress = buttonState === 'uploading' || buttonState === 'dispatching';
 
   return (
@@ -231,7 +273,12 @@ export function InputActionButton({
             )}
             aria-label={BUTTON_CONFIG[buttonState].label}
           >
-            <ActionIcon className="size-(--size-icon-sm)" />
+            <ActionIcon
+              className={cn(
+                'size-(--size-icon-sm)',
+                buttonState === 'cancel-upload' && 'animate-spin'
+              )}
+            />
           </motion.button>
         ) : (
           <div aria-hidden="true" data-testid="action-slot-spacer" className="p-1.5 max-md:p-2">

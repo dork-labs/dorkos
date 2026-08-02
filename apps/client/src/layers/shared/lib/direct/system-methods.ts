@@ -34,6 +34,7 @@ import type {
   SubagentInfo,
 } from '@dorkos/shared/types';
 import type { DirectTransportServices } from './services';
+import { UPLOAD_CANCELED_MESSAGE } from '../transport/upload-contract';
 
 /**
  * Directories the in-process file explorer hides by default (no `git
@@ -682,11 +683,18 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
 
     // ── File Uploads ───────────────────────────────────────────────────────
 
-    /** Upload files to `{cwd}/.dork/.temp/uploads/` using direct filesystem access. */
+    /**
+     * Upload files to `{cwd}/.dork/.temp/uploads/` using direct filesystem access.
+     *
+     * A cancel lands between files rather than mid-write: there is no network to
+     * interrupt here, and a half-written file left on disk would be worse than
+     * one more small one finished.
+     */
     async uploadFiles(
       files: UploadFile[],
       cwd: string,
-      _onProgress?: (progress: UploadProgress) => void
+      _onProgress?: (progress: UploadProgress) => void,
+      signal?: AbortSignal
     ): Promise<UploadResult[]> {
       const fs = await import('fs/promises');
       const pathMod = await import('path');
@@ -697,6 +705,7 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
 
       const results: UploadResult[] = [];
       for (const file of files) {
+        if (signal?.aborted) throw new Error(UPLOAD_CANCELED_MESSAGE);
         const base = pathMod.default.basename(file.name);
         const safe = base.replace(/[^a-zA-Z0-9._-]/g, '_');
         const filename = `${randomUUID().slice(0, 8)}-${safe}`;

@@ -37,6 +37,13 @@ interface ChatInputProps {
   /** File upload is in progress. */
   isUploading?: boolean;
   /**
+   * Stop the upload that is in flight. When given, the composer's progress
+   * control becomes a cancel control and Escape ends the upload — the same way
+   * Escape stops a streaming turn. Omit only in hosts where an upload genuinely
+   * cannot be stopped; the spinner then stays inert.
+   */
+  onCancelUpload?: () => void;
+  /**
    * A dispatched native command (`/compact`, `/rename`) has not settled yet.
    * The composer keeps its text across that window on purpose, so this is what
    * stops a second Enter from turning one intent into two triggers.
@@ -146,6 +153,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     onSubmit,
     isStreaming,
     isUploading = false,
+    onCancelUpload,
     commandPending = false,
     sessionBusy = false,
     editingQueueItem = false,
@@ -218,6 +226,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
     isTouchOnly,
     sessionBusy,
     isUploading,
+    onCancelUpload,
     commandPending,
     canSubmit,
     editingQueueItem,
@@ -377,6 +386,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
           hasText={hasText}
           isStreaming={isStreaming}
           isUploading={isUploading}
+          onCancelUpload={onCancelUpload}
           commandPending={commandPending}
           sessionBusy={sessionBusy}
           submitDisabled={!canSubmit}

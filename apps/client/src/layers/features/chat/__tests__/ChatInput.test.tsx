@@ -1644,19 +1644,8 @@ describe('ChatInput', () => {
   describe('attachment upload in flight', () => {
     it('shows the upload rather than a Stop with no turn to stop', () => {
       render(<ChatInput {...defaultProps} value="here you go" isUploading={true} />);
-      expect(screen.getByRole('status')).toBeDefined();
       expect(screen.queryByLabelText('Stop generating')).toBeNull();
       expect(screen.queryByLabelText('Send message')).toBeNull();
-    });
-
-    // Not a disabled button: several screen readers skip disabled controls, and
-    // this is the only thing on screen saying the send is under way.
-    it('announces the upload through a live region, not a disabled button', () => {
-      render(<ChatInput {...defaultProps} value="here you go" isUploading={true} />);
-      const status = screen.getByRole('status');
-      expect(status.tagName).not.toBe('BUTTON');
-      expect(status).toHaveTextContent('Uploading attachment');
-      expect(screen.queryByRole('button', { name: /upload/i })).toBeNull();
     });
 
     it('does not submit on Enter — the send is already happening', () => {
@@ -1679,6 +1668,55 @@ describe('ChatInput', () => {
         />
       );
       expect(screen.getByLabelText('Stop generating')).toBeDefined();
+    });
+
+    describe('when the host can stop it', () => {
+      it('makes the progress spinner the control that cancels', () => {
+        const onCancelUpload = vi.fn();
+        render(
+          <ChatInput
+            {...defaultProps}
+            value="here you go"
+            isUploading={true}
+            onCancelUpload={onCancelUpload}
+          />
+        );
+        fireEvent.click(screen.getByRole('button', { name: 'Cancel upload' }));
+        expect(onCancelUpload).toHaveBeenCalledOnce();
+      });
+
+      // Escape stops a streaming turn; the upload IS the send, so it stops that
+      // too rather than falling through to arming the draft wipe.
+      it('cancels the upload on Escape', () => {
+        const onCancelUpload = vi.fn();
+        const onClear = vi.fn();
+        render(
+          <ChatInput
+            {...defaultProps}
+            value="here you go"
+            isUploading={true}
+            onCancelUpload={onCancelUpload}
+            onClear={onClear}
+          />
+        );
+        const combobox = screen.getByRole('combobox');
+        fireEvent.keyDown(combobox, { key: 'Escape' });
+        fireEvent.keyDown(combobox, { key: 'Escape' });
+        expect(onCancelUpload).toHaveBeenCalledTimes(2);
+        expect(onClear).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('when the host cannot stop it', () => {
+      // Not a disabled button: several screen readers skip disabled controls,
+      // and this is the only thing on screen saying the send is under way.
+      it('announces the upload through a live region, not a disabled button', () => {
+        render(<ChatInput {...defaultProps} value="here you go" isUploading={true} />);
+        const status = screen.getByRole('status');
+        expect(status.tagName).not.toBe('BUTTON');
+        expect(status).toHaveTextContent('Uploading attachment');
+        expect(screen.queryByRole('button', { name: /upload/i })).toBeNull();
+      });
     });
   });
 
