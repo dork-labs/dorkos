@@ -244,11 +244,13 @@ export function useSessionSubmit({
       // Latching first made the session read `streaming` for the whole upload:
       // the button turned into a red Stop that called `interruptSession` on a
       // session with no turn, the `.catch()` swallowed the refusal, and the
-      // click did nothing at all — there was no way to cancel an upload. Worse,
-      // a hung upload never cleared the latch, because the watchdog that
-      // releases it is only armed after the POST, so the composer stayed wedged
-      // in queue mode indefinitely. While this runs the composer shows the
-      // upload in place of Stop and both submit paths are closed (`isUploading`).
+      // click did nothing at all. Worse, a hung upload never cleared the latch,
+      // because the watchdog that releases it is only armed after the POST, so
+      // the composer stayed wedged in queue mode indefinitely. While this runs
+      // the composer shows the upload in place of Stop and both submit paths
+      // are closed (`isUploading`) — and the upload itself can be cancelled,
+      // which is what keeps that window from becoming a wedge of its own
+      // (`useFileUpload.cancelUpload`).
       let finalContent: string;
       try {
         // The kickoff content is already the exact message to deliver — never

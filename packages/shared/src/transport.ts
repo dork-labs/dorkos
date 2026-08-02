@@ -1290,14 +1290,21 @@ export interface Transport extends RoomTransport {
    * The returned `savedPath` values can be injected into message text so the
    * resolved runtime reads them with its existing filesystem tools.
    *
+   * Implementations MUST fail rather than hang: an upload that goes silent is
+   * rejected, and an aborted `signal` cancels the request itself, not merely the
+   * caller's view of it. A composer whose upload can neither finish nor be
+   * stopped is a composer nobody can type in (DOR-494).
+   *
    * @param files - Files to upload (browser File objects or UploadFile-compatible objects)
    * @param cwd - Working directory where files will be stored
    * @param onProgress - Optional callback for upload progress (useful for remote/tunnel uploads)
+   * @param signal - Optional AbortSignal to cancel the upload in flight
    */
   uploadFiles(
     files: UploadFile[],
     cwd: string,
-    onProgress?: (progress: UploadProgress) => void
+    onProgress?: (progress: UploadProgress) => void,
+    signal?: AbortSignal
   ): Promise<UploadResult[]>;
 
   // --- Directory Operations ---

@@ -10,6 +10,12 @@ export interface FileUploadProps {
   onFileRemove: (id: string) => void;
   /** Put a failed attachment back in line for the next send. */
   onFileRetry: (id: string) => void;
+  /**
+   * Stop the upload that is running right now — the real request, not just the
+   * spinner. Required, so a host cannot show an in-flight upload with no way to
+   * end it (DOR-494).
+   */
+  onUploadCancel: () => void;
   isUploading: boolean;
   /**
    * True while any attachment failed to upload. Blocks the send: the message

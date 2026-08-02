@@ -2,12 +2,18 @@ import { AnimatePresence, motion } from 'motion/react';
 import { ArrowUp, CornerDownLeft, Square, Clock, Check, X, Loader2 } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 
-type ButtonState = 'send' | 'stop' | 'queue' | 'update' | 'cancel' | 'uploading' | 'dispatching';
+type ButtonState =
+  | 'send'
+  | 'stop'
+  | 'queue'
+  | 'update'
+  | 'cancel'
+  | 'cancel-upload'
+  | 'dispatching';
 
 interface InputActionButtonProps {
   hasText: boolean;
   isStreaming: boolean;
-  isUploading: boolean;
   /** A dispatched native command has not settled — its text is still in the box. */
   commandPending?: boolean;
   sessionBusy: boolean;
@@ -28,6 +34,16 @@ interface InputActionButtonProps {
   onSaveEdit?: () => void;
   /** Leave the queue-item edit without saving — the way out of an emptied edit. */
   onCancelEdit?: () => void;
+  /**
+   * Stop the attachment upload that is in flight — and, by being present at
+   * all, the signal that one IS in flight.
+   *
+   * One prop rather than an `isUploading` flag beside it, because the pair
+   * could express a state this composer must never reach: an upload on screen
+   * with nothing to press. A host with no cancel to offer simply does not show
+   * the upload here (see `ChatInput`).
+   */
+  onCancelUpload?: () => void;
 }
 
 const BUTTON_CONFIG = {
@@ -51,9 +67,13 @@ const BUTTON_CONFIG = {
     className: 'bg-muted text-muted-foreground hover:bg-muted/80',
     label: 'Cancel edit',
   },
-  uploading: {
-    className: 'bg-muted text-muted-foreground',
-    label: 'Uploading attachment',
+  'cancel-upload': {
+    // Turns red under the pointer for the same reason Stop is red: this ends
+    // the send that is happening — so it borrows Stop's exact pairing rather
+    // than a literal colour, which would have been white on both themes.
+    className:
+      'bg-muted text-muted-foreground hover:bg-destructive/90 hover:text-destructive-foreground',
+    label: 'Cancel upload',
   },
   dispatching: {
     className: 'bg-muted text-muted-foreground',
@@ -65,7 +85,7 @@ const BUTTON_CONFIG = {
  * The glyph per state. Send is the one that depends on the pointer — an
  * up-arrow reads as "send" where Enter inserts a newline — so it is swapped at
  * the use site rather than stored twice. Total over the union, so resolving an
- * icon needs no non-null assertion; the two progress states draw their own
+ * icon needs no non-null assertion; the inert progress states draw their own
  * spinner and never read this.
  */
 const BUTTON_ICON: Record<ButtonState, React.ElementType> = {
@@ -74,14 +94,16 @@ const BUTTON_ICON: Record<ButtonState, React.ElementType> = {
   queue: Clock,
   update: Check,
   cancel: X,
-  uploading: Loader2,
+  // Keeps spinning while it waits — the upload's progress and its off switch are
+  // the same control, so neither costs the other its place.
+  'cancel-upload': Loader2,
   dispatching: Loader2,
 };
 
 function resolveButtonState(
   hasText: boolean,
   isStreaming: boolean,
-  isUploading: boolean,
+  uploadInFlight: boolean,
   editingQueueItem: boolean,
   commandPending: boolean
 ): ButtonState | null {
@@ -97,9 +119,11 @@ function resolveButtonState(
   if (isStreaming && hasText) return 'queue';
   // Only show stop for actual streaming — uploading alone should not show stop
   if (isStreaming) return 'stop';
-  // An attachment upload IS this send, already in flight. Show its progress
-  // rather than a Send the click cannot start or a Stop with no turn to stop.
-  if (isUploading) return 'uploading';
+  // An attachment upload IS this send, already in flight. Its progress and its
+  // off switch are the same control: a Send the click cannot start would be a
+  // lie, a Stop has no turn to stop, and a spinner with nothing behind it is
+  // exactly how a hung upload used to trap the whole composer (DOR-494).
+  if (uploadInFlight) return 'cancel-upload';
   if (hasText) return 'send';
   return null;
 }
@@ -113,6 +137,7 @@ function resolveOnClick(
     onQueue?: () => void;
     onSaveEdit?: () => void;
     onCancelEdit?: () => void;
+    onCancelUpload?: () => void;
   }
 ): (() => void) | undefined {
   switch (state) {
@@ -126,7 +151,9 @@ function resolveOnClick(
       return handlers.onSaveEdit;
     case 'cancel':
       return handlers.onCancelEdit;
-    // 'uploading' is a progress indicator, not a control.
+    case 'cancel-upload':
+      return handlers.onCancelUpload;
+    // 'dispatching' is a progress indicator, not a control.
     default:
       return undefined;
   }
@@ -136,7 +163,6 @@ function resolveOnClick(
 export function InputActionButton({
   hasText,
   isStreaming,
-  isUploading,
   commandPending = false,
   sessionBusy,
   submitDisabled = false,
@@ -148,11 +174,12 @@ export function InputActionButton({
   onQueue,
   onSaveEdit,
   onCancelEdit,
+  onCancelUpload,
 }: InputActionButtonProps) {
   const buttonState = resolveButtonState(
     hasText,
     isStreaming,
-    isUploading,
+    onCancelUpload !== undefined,
     editingQueueItem,
     commandPending
   );
@@ -162,7 +189,14 @@ export function InputActionButton({
   const onClick =
     sendBlocked || buttonState === null
       ? undefined
-      : resolveOnClick(buttonState, { onSubmit, onStop, onQueue, onSaveEdit, onCancelEdit });
+      : resolveOnClick(buttonState, {
+          onSubmit,
+          onStop,
+          onQueue,
+          onSaveEdit,
+          onCancelEdit,
+          onCancelUpload,
+        });
   // The send icon has to name the same gesture the Enter rule uses, or it
   // advertises a contract the keyboard does not honour (see `useIsTouchOnly`).
   const ActionIcon =
@@ -171,10 +205,12 @@ export function InputActionButton({
       : buttonState === 'send' && isTouchOnly
         ? ArrowUp
         : BUTTON_ICON[buttonState];
-  // Progress, not a control: rendered as a live region rather than a disabled
-  // button, since several screen readers skip disabled controls entirely and
-  // these are the only things on screen saying the send is already happening.
-  const isProgress = buttonState === 'uploading' || buttonState === 'dispatching';
+  // Progress with nothing to press: rendered as a live region rather than a
+  // disabled button, since several screen readers skip disabled controls
+  // entirely and this is the only thing on screen saying the send is already
+  // happening. An upload is not here — it is a real button that does something,
+  // and it carries its own live region below.
+  const isProgress = buttonState === 'dispatching';
 
   return (
     <>
@@ -207,6 +243,15 @@ export function InputActionButton({
           spacer mirrors the button's own box model rather than hard-coding a
           width, so it stays true under the icon-scale token. */}
       <div className="relative shrink-0">
+        {/* The button's name says what it DOES ("Cancel upload"); this says what
+            is HAPPENING. Both are needed: a reader who never tabs onto the
+            control would otherwise get no announcement that the send is already
+            under way, which is what the inert spinner used to provide. */}
+        {buttonState === 'cancel-upload' && (
+          <span role="status" className="sr-only">
+            Uploading attachment
+          </span>
+        )}
         {isProgress && buttonState ? (
           <div
             role="status"
@@ -231,7 +276,12 @@ export function InputActionButton({
             )}
             aria-label={BUTTON_CONFIG[buttonState].label}
           >
-            <ActionIcon className="size-(--size-icon-sm)" />
+            <ActionIcon
+              className={cn(
+                'size-(--size-icon-sm)',
+                buttonState === 'cancel-upload' && 'animate-spin'
+              )}
+            />
           </motion.button>
         ) : (
           <div aria-hidden="true" data-testid="action-slot-spacer" className="p-1.5 max-md:p-2">

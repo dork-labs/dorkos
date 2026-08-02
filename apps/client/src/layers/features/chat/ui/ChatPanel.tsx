@@ -432,6 +432,7 @@ export function ChatPanel({
           onFilesSelected: fileUpload.addFiles,
           onFileRemove: fileUpload.removeFile,
           onFileRetry: fileUpload.retryFile,
+          onUploadCancel: fileUpload.cancelUpload,
           isUploading: fileUpload.isUploading,
           hasFailedUpload: fileUpload.hasFailedUpload,
         }}
