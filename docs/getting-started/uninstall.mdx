@@ -71,14 +71,14 @@ Read the list, then delete only the folders that are actually DorkOS's. `.dork` 
 
 Curious exactly what gets removed? Here's the full inventory.
 
-| Location               | Contents                                                     | Owned by    |
-| ----------------------- | -------------------------------------------------------------- | ----------- |
-| `~/.dork/config.json`  | User configuration                                             | DorkOS      |
-| `~/.dork/dork.db`      | SQLite database (agents, schedules, relay state)                | DorkOS      |
-| `~/.dork/logs/`        | Server log files                                               | DorkOS      |
-| `~/.dork/relay/`       | Saved connections to relay and other tools (adapter state and credentials) | DorkOS      |
-| `<project>/.dork/`     | Agent manifest, uploads                                        | DorkOS      |
-| `~/.claude/`           | Claude Code sessions and config                                | Claude Code |
+| Location              | Contents                                                                   | Owned by    |
+| --------------------- | -------------------------------------------------------------------------- | ----------- |
+| `~/.dork/config.json` | User configuration                                                         | DorkOS      |
+| `~/.dork/dork.db`     | SQLite database (agents, schedules, relay state)                           | DorkOS      |
+| `~/.dork/logs/`       | Server log files                                                           | DorkOS      |
+| `~/.dork/relay/`      | Saved connections to relay and other tools (adapter state and credentials) | DorkOS      |
+| `<project>/.dork/`    | Agent manifest, uploads                                                    | DorkOS      |
+| `~/.claude/`          | Claude Code sessions and config                                            | Claude Code |
 
 <Callout type="info">
   DorkOS never modifies `~/.claude/`. That directory is managed by Claude Code and is unaffected by

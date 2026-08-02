@@ -1,7 +1,7 @@
 ---
 covers:
-  - "feat(approvals): tell the person an agent is waiting on them (DOR-428)"
-  - "fix(approvals): stop the expiry timer spinning on an overflowing delay (DOR-428)"
+  - 'feat(approvals): tell the person an agent is waiting on them (DOR-428)'
+  - 'fix(approvals): stop the expiry timer spinning on an overflowing delay (DOR-428)'
 ---
 
 ### Added

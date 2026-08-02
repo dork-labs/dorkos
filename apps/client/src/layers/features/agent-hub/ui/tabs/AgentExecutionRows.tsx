@@ -254,18 +254,15 @@ export function AgentExecutionRows({
               are sentences. So the chip lives with the label, and stays even
               where there is no control at all, which is exactly the case where
               it is the only way left to clear a value that does nothing. */}
-          {(!isMobile || !effortIsChoosable) &&
-            (effortIsSetHere || effortIsChoosable) && (
-              <ProvenanceChip
-                isSetHere={effortIsSetHere}
-                serverDefault={
-                  serverForRuntime?.effort ? effortLabel(serverForRuntime.effort) : null
-                }
-                warning={breakageFor(['effort-unsupported-runtime', 'effort-unsupported-model'])}
-                onUseServerDefault={() => onUpdate({ effort: null })}
-                data-testid="agent-effort-row-chip"
-              />
-            )}
+          {(!isMobile || !effortIsChoosable) && (effortIsSetHere || effortIsChoosable) && (
+            <ProvenanceChip
+              isSetHere={effortIsSetHere}
+              serverDefault={serverForRuntime?.effort ? effortLabel(serverForRuntime.effort) : null}
+              warning={breakageFor(['effort-unsupported-runtime', 'effort-unsupported-model'])}
+              onUseServerDefault={() => onUpdate({ effort: null })}
+              data-testid="agent-effort-row-chip"
+            />
+          )}
         </div>
 
         {!runtimeHasEffort ? (

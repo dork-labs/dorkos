@@ -137,7 +137,11 @@ describe('compactComposerGate (DOR-109 review Important 2)', () => {
   it('agrees with the palette gate in every caps state', () => {
     // The two gates must never disagree: for each caps state, the palette row is
     // disabled exactly when the composer refuses.
-    const capsStates = [undefined, { compact: { supported: true } }, { compact: { supported: false } }];
+    const capsStates = [
+      undefined,
+      { compact: { supported: true } },
+      { compact: { supported: false } },
+    ];
     for (const commandIntents of capsStates) {
       const paletteDisabled =
         buildPaletteCommands([], { commandIntents, runtimeLabel: 'X' }).find(

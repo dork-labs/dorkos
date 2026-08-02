@@ -349,18 +349,16 @@ describe('Binding MCP Tools', () => {
         getById: vi.fn().mockReturnValue({ adapterId: 'slack-eng' }),
       });
       const router = makeMockBindingRouter({
-        getAllSessions: vi
-          .fn()
-          .mockReturnValue([
-            {
-              key: 'b-2:u1:general',
-              bindingId: 'b-2',
-              scope: 'chat' as const,
-              chatId: 'general',
-              sessionId: 'sess-10',
-              lastActivityAt: 1,
-            },
-          ]),
+        getAllSessions: vi.fn().mockReturnValue([
+          {
+            key: 'b-2:u1:general',
+            bindingId: 'b-2',
+            scope: 'chat' as const,
+            chatId: 'general',
+            sessionId: 'sess-10',
+            lastActivityAt: 1,
+          },
+        ]),
       });
       const adapterMgr = makeMockAdapterManager({
         listAdapters: vi

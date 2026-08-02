@@ -69,12 +69,21 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 import request from 'supertest';
 import express from 'express';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createAgentsRouter } from '../agents.js';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 
 const app = express();
 app.use(express.json());
 app.use('/api/agents', createAgentsRouter());
+
+/**
+ * ONE listener for the whole file (DOR-483). Requests target `server`, never
+ * `app`: handed a non-listening app supertest binds and frees an ephemeral port
+ * per request, and a pooled keep-alive socket for a reclaimed port lands on the
+ * wrong server. See {@link listeningServer}.
+ */
+const server = listeningServer(app);
 
 const mockManifest: AgentManifest = {
   id: 'test-agent-id',
@@ -106,7 +115,7 @@ describe('Agent Convention File Operations', () => {
 
   describe('POST /api/agents (convention file scaffolding)', () => {
     it('scaffolds SOUL.md with default template on agent creation', async () => {
-      const res = await request(app).post('/api/agents').send({ path: '/home/user/project' });
+      const res = await request(server).post('/api/agents').send({ path: '/home/user/project' });
 
       expect(res.status).toBe(201);
       expect(mockDefaultSoulTemplate).toHaveBeenCalledWith('project', 'rendered-traits');
@@ -118,7 +127,7 @@ describe('Agent Convention File Operations', () => {
     });
 
     it('scaffolds NOPE.md with default template on agent creation', async () => {
-      const res = await request(app).post('/api/agents').send({ path: '/home/user/project' });
+      const res = await request(server).post('/api/agents').send({ path: '/home/user/project' });
 
       expect(res.status).toBe(201);
       expect(mockDefaultNopeTemplate).toHaveBeenCalled();
@@ -130,7 +139,7 @@ describe('Agent Convention File Operations', () => {
     });
 
     it('renders traits with DEFAULT_TRAITS for scaffolding', async () => {
-      await request(app).post('/api/agents').send({ path: '/home/user/project' });
+      await request(server).post('/api/agents').send({ path: '/home/user/project' });
 
       expect(mockRenderTraits).toHaveBeenCalledWith({
         verbosity: 3,
@@ -143,7 +152,7 @@ describe('Agent Convention File Operations', () => {
     });
 
     it('uses provided agent name in soul template', async () => {
-      await request(app)
+      await request(server)
         .post('/api/agents')
         .send({ path: '/home/user/project', name: 'My Custom Agent' });
 
@@ -160,7 +169,7 @@ describe('Agent Convention File Operations', () => {
         return null;
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/api/agents/current')
         .query({ path: '/home/user/project' });
 
@@ -174,7 +183,7 @@ describe('Agent Convention File Operations', () => {
       mockReadManifest.mockResolvedValue(mockManifest);
       mockReadConventionFile.mockResolvedValue(null);
 
-      const res = await request(app)
+      const res = await request(server)
         .get('/api/agents/current')
         .query({ path: '/home/user/project' });
 
@@ -188,7 +197,7 @@ describe('Agent Convention File Operations', () => {
     it('writes SOUL.md when soulContent is provided', async () => {
       mockReadManifest.mockResolvedValue(mockManifest);
 
-      const res = await request(app)
+      const res = await request(server)
         .patch('/api/agents/current')
         .query({ path: '/home/user/project' })
         .send({ soulContent: '## My custom soul' });
@@ -204,7 +213,7 @@ describe('Agent Convention File Operations', () => {
     it('writes NOPE.md when nopeContent is provided', async () => {
       mockReadManifest.mockResolvedValue(mockManifest);
 
-      const res = await request(app)
+      const res = await request(server)
         .patch('/api/agents/current')
         .query({ path: '/home/user/project' })
         .send({ nopeContent: '# Custom safety rules' });
@@ -221,7 +230,7 @@ describe('Agent Convention File Operations', () => {
       mockReadManifest.mockResolvedValue(mockManifest);
 
       const traits = { ...DEFAULT_TRAITS, verbosity: 1, autonomy: 5 };
-      const res = await request(app)
+      const res = await request(server)
         .patch('/api/agents/current')
         .query({ path: '/home/user/project' })
         .send({ traits });
@@ -238,7 +247,7 @@ describe('Agent Convention File Operations', () => {
       mockReadManifest.mockResolvedValue(mockManifest);
 
       const conventions = { soul: true, nope: false };
-      const res = await request(app)
+      const res = await request(server)
         .patch('/api/agents/current')
         .query({ path: '/home/user/project' })
         .send({ conventions });
@@ -256,7 +265,7 @@ describe('Agent Convention File Operations', () => {
     it('does not write convention files when content is not provided', async () => {
       mockReadManifest.mockResolvedValue(mockManifest);
 
-      await request(app)
+      await request(server)
         .patch('/api/agents/current')
         .query({ path: '/home/user/project' })
         .send({ name: 'updated-name' });
@@ -267,7 +276,7 @@ describe('Agent Convention File Operations', () => {
     it('handles both manifest and convention file updates in a single request', async () => {
       mockReadManifest.mockResolvedValue(mockManifest);
 
-      const res = await request(app)
+      const res = await request(server)
         .patch('/api/agents/current')
         .query({ path: '/home/user/project' })
         .send({
@@ -294,7 +303,7 @@ describe('Agent Convention File Operations', () => {
 
   describe('POST /api/agents/current/migrate-persona', () => {
     it('returns 400 when path query is missing', async () => {
-      const res = await request(app).post('/api/agents/current/migrate-persona');
+      const res = await request(server).post('/api/agents/current/migrate-persona');
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('path query parameter required');
@@ -303,7 +312,7 @@ describe('Agent Convention File Operations', () => {
     it('returns 404 when no manifest found', async () => {
       mockReadManifest.mockResolvedValue(null);
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/agents/current/migrate-persona')
         .query({ path: '/home/user/project' });
 
@@ -318,7 +327,7 @@ describe('Agent Convention File Operations', () => {
       });
       mockReadConventionFile.mockResolvedValue(null);
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/agents/current/migrate-persona')
         .query({ path: '/home/user/project' });
 
@@ -342,7 +351,7 @@ describe('Agent Convention File Operations', () => {
       });
       mockReadConventionFile.mockResolvedValue(null);
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/agents/current/migrate-persona')
         .query({ path: '/home/user/project' });
 
@@ -365,7 +374,7 @@ describe('Agent Convention File Operations', () => {
         return null;
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/agents/current/migrate-persona')
         .query({ path: '/home/user/project' });
 
@@ -379,7 +388,7 @@ describe('Agent Convention File Operations', () => {
       mockReadManifest.mockResolvedValue(mockManifest);
       mockReadConventionFile.mockResolvedValue(null);
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/agents/current/migrate-persona')
         .query({ path: '/home/user/project' });
 
@@ -400,7 +409,7 @@ describe('Agent Convention File Operations', () => {
         return null;
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/agents/current/migrate-persona')
         .query({ path: '/home/user/project' });
 
@@ -435,7 +444,7 @@ describe('Agent Convention File Operations', () => {
       });
       mockReadConventionFile.mockResolvedValue(null);
 
-      await request(app)
+      await request(server)
         .post('/api/agents/current/migrate-persona')
         .query({ path: '/home/user/project' });
 

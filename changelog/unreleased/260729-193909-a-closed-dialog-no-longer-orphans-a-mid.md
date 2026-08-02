@@ -1,6 +1,6 @@
 ---
 covers:
-  - "fix(connections): a closed dialog no longer orphans a mid-grant sign-in (review fixes, DOR-708)"
+  - 'fix(connections): a closed dialog no longer orphans a mid-grant sign-in (review fixes, DOR-708)'
 ---
 
 ### Fixed

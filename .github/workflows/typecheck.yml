@@ -1,8 +1,8 @@
 name: typecheck
 
-# Type-checks every package that declares a `typecheck` script, on every PR
-# and on push to main. See the KNOWN GAPS note below for what this does not
-# cover.
+# Type-checks every package that declares a `typecheck` script, and checks
+# Prettier formatting across the repo, on every PR and on push to main. See the
+# KNOWN GAPS note below for what this does not cover.
 #
 # Before this workflow existed, NOTHING in CI ran `pnpm typecheck`. Enforcement
 # was the lefthook pre-commit hook plus a developer choosing to run
@@ -64,6 +64,24 @@ name: typecheck
 # `main` + every PR ahead in the queue + this one and runs the checks against
 # that combined tree, so the interaction is checked before anything lands rather
 # than discovered on `main` afterwards.
+#
+# ALSO RUNS THE FORMATTING GATE (DOR-485). AGENTS.md Hard Rule 5 says "Prettier
+# + Tailwind class sorting are automatic — never hand-sort", which reads as a
+# guarantee. It was not one: formatting was enforced only by the lefthook
+# pre-commit hook, so `git commit --no-verify`, a hook failure, a fresh clone
+# that never ran `pnpm install`, or an agent that bypasses the hook landed
+# unformatted code silently. Nothing in `.github/workflows/` mentioned prettier.
+# PR #463 merged a test file that was prettier-unformatted, seven lines over 100
+# columns, and #515 merged a stray double blank line; nothing objected to either.
+#
+# It lives in THIS job rather than a workflow of its own because `typecheck` is
+# already a REQUIRED status check on `main`. A new `format` workflow would go red
+# without blocking the merge until someone added it to branch protection — and a
+# gate on a non-required check is not a gate, which is the same "looks enforced,
+# isn't" failure this exists to fix. This job also already installs the
+# dependencies prettier needs. ESLint is still ungated the same way and is a
+# bigger job than this one (severities, --max-warnings, an existing backlog):
+# tracked as DOR-627, and if that lands a real `lint` job, move this step there.
 on:
   push:
     branches: [main]
@@ -90,7 +108,8 @@ permissions:
 jobs:
   typecheck:
     runs-on: ubuntu-latest
-    # A full cold run (no turbo cache) is ~35-40s on a warm developer machine;
+    # A full cold typecheck (no turbo cache) is ~35-40s on a warm developer
+    # machine, and `prettier --check .` over ~7,300 files measured 2m17s there;
     # generous headroom for a colder/slower CI runner.
     timeout-minutes: 10
     steps:
@@ -105,5 +124,18 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # `pnpm format:check` (`prettier --check .`), never `npx prettier`: npx
+      # resolves a different binary than pnpm does in this workspace, and only
+      # `pnpm exec` matches what the lefthook pre-commit hook runs. A backstop
+      # that resolves differently from the hook it backs up can pass where the
+      # hook would reformat, which is the same class of gap as having no gate.
+      # Runs first so the cheap-to-fix failure is the first thing in the log:
+      # `pnpm format` fixes every one of them.
+      - name: Formatting gate — prettier --check (DOR-485)
+        run: pnpm format:check
+
+      # `!cancelled()` so a formatting failure still reports every type error in
+      # the same run, for the same reason the step below passes `--continue`.
       - name: Typecheck every package that declares a typecheck script
+        if: ${{ !cancelled() }}
         run: pnpm exec turbo typecheck --continue

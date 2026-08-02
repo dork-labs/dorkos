@@ -45,9 +45,19 @@ vi.mock('../../services/core/auth/mcp-local-token.js', () => ({
   getMcpLocalTokenPath: vi.fn(() => TOKEN_PATH),
 }));
 
+import type { Server } from 'node:http';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createExternalMcpServer } from '../../services/core/mcp-server.js';
 import { createMcpAuth } from '../../middleware/mcp-auth.js';
 import type { McpToolDeps } from '../../services/runtimes/claude-code/mcp-tools/types.js';
+
+/**
+ * ONE listener for the whole file, with the app behind it swapped per test
+ * (DOR-483) — both factories below mount into it rather than handing supertest
+ * a bare app to bind and free a port for on every request. See
+ * {@link swappableServer}.
+ */
+const target = swappableServer();
 
 /** A valid local token (dork_mcp_local_ + 64 hex) the acceptor should accept. */
 const LOCAL_TOKEN = `dork_mcp_local_${'a'.repeat(64)}`;
@@ -75,8 +85,10 @@ function createMinimalDeps(): McpToolDeps {
  * Each POST creates a fresh McpServer via `createExternalMcpServer` and a fresh
  * `StreamableHTTPServerTransport`, connects them, handles the request, then
  * cleans up on response close.
+ *
+ * @returns The shared listening server, now serving this app.
  */
-function createStatelessTestApp() {
+function createStatelessTestApp(): Server {
   const app = express();
   app.use(express.json());
 
@@ -103,7 +115,7 @@ function createStatelessTestApp() {
     }
   });
 
-  return app;
+  return target.mount(app);
 }
 
 /** Standard JSON-RPC initialize request body. */
@@ -120,9 +132,9 @@ const INITIALIZE_REQUEST = {
 
 describe('MCP Integration', () => {
   it('initialize handshake returns 200 with server info', async () => {
-    const app = createStatelessTestApp();
+    const server = createStatelessTestApp();
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/mcp')
       .set('Content-Type', 'application/json')
       .set('Accept', 'application/json, text/event-stream')
@@ -146,13 +158,13 @@ describe('MCP Integration', () => {
   });
 
   it('tools/list returns all registered tools after initialization', async () => {
-    const app = createStatelessTestApp();
+    const server = createStatelessTestApp();
 
     // In stateless mode, each POST creates a fresh server+transport.
     // The SDK requires `initialize` to be sent alone (not batched).
     // After initialize, subsequent requests (tools/list) work on their own
     // fresh transport — stateless mode skips session validation.
-    const initRes = await request(app)
+    const initRes = await request(server)
       .post('/mcp')
       .set('Content-Type', 'application/json')
       .set('Accept', 'application/json, text/event-stream')
@@ -162,7 +174,7 @@ describe('MCP Integration', () => {
 
     // tools/list on a fresh stateless transport (no initialize needed per-request
     // in stateless mode — session validation is disabled)
-    const toolsRes = await request(app)
+    const toolsRes = await request(server)
       .post('/mcp')
       .set('Content-Type', 'application/json')
       .set('Accept', 'application/json, text/event-stream')
@@ -200,9 +212,9 @@ describe('MCP Integration', () => {
   });
 
   it('ping tool call returns pong response', async () => {
-    const app = createStatelessTestApp();
+    const server = createStatelessTestApp();
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/mcp')
       .set('Content-Type', 'application/json')
       .set('Accept', 'application/json, text/event-stream')
@@ -239,9 +251,9 @@ describe('MCP Integration', () => {
   });
 
   it('no Mcp-Session-Id header in stateless mode', async () => {
-    const app = createStatelessTestApp();
+    const server = createStatelessTestApp();
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/mcp')
       .set('Content-Type', 'application/json')
       .set('Accept', 'application/json, text/event-stream')
@@ -258,8 +270,10 @@ describe('MCP Integration', () => {
  * (login-off surface 'mcp') so the read-only carve-out, the local-token
  * acceptor, and the helpful 401 body are exercised end-to-end against the live
  * MCP server — not just the middleware in isolation.
+ *
+ * @returns The shared listening server, now serving this app.
  */
-function createAuthedApp() {
+function createAuthedApp(): Server {
   const app = express();
   app.use(express.json());
 
@@ -284,12 +298,12 @@ function createAuthedApp() {
     }
   });
 
-  return app;
+  return target.mount(app);
 }
 
 /** Start a POST /mcp request against the authed app, optionally with a token. */
-function mcpPost(app: express.Express, auth?: string): request.Test {
-  const r = request(app)
+function mcpPost(server: Server, auth?: string): request.Test {
+  const r = request(server)
     .post('/mcp')
     .set('Content-Type', 'application/json')
     .set('Accept', 'application/json, text/event-stream');
@@ -303,30 +317,30 @@ function toolCall(name: string): Record<string, unknown> {
 
 describe('MCP auth posture (end-to-end through the live /mcp mount)', () => {
   it('allows a tokenless read-only tools/call (ping) via the carve-out', async () => {
-    const app = createAuthedApp();
-    const res = await mcpPost(app).send(toolCall('ping'));
+    const server = createAuthedApp();
+    const res = await mcpPost(server).send(toolCall('ping'));
     expect(res.status).toBe(200);
     const body = parseResponse(res);
     expect(body.result?.content).toBeDefined();
   });
 
   it('allows a tokenless read-only tools/call (get_server_info)', async () => {
-    const app = createAuthedApp();
-    const res = await mcpPost(app).send(toolCall('get_server_info'));
+    const server = createAuthedApp();
+    const res = await mcpPost(server).send(toolCall('get_server_info'));
     expect(res.status).toBe(200);
   });
 
   it('allows a tokenless discovery tools/list', async () => {
-    const app = createAuthedApp();
-    const res = await mcpPost(app).send({ jsonrpc: '2.0', method: 'tools/list', id: 1 });
+    const server = createAuthedApp();
+    const res = await mcpPost(server).send({ jsonrpc: '2.0', method: 'tools/list', id: 1 });
     expect(res.status).toBe(200);
     const body = parseResponse(res);
     expect(body.result?.tools).toBeDefined();
   });
 
   it('401s a tokenless mutating tools/call with a helpful, non-leaking body', async () => {
-    const app = createAuthedApp();
-    const res = await mcpPost(app).send(toolCall('create_extension'));
+    const server = createAuthedApp();
+    const res = await mcpPost(server).send(toolCall('create_extension'));
     expect(res.status).toBe(401);
     const body = res.body as { jsonrpc: string; error: { code: number; message: string } };
     expect(body.error.code).toBe(-32001);
@@ -338,8 +352,8 @@ describe('MCP auth posture (end-to-end through the live /mcp mount)', () => {
   });
 
   it('allows the same mutating tools/call WITH the local token (reaches the server)', async () => {
-    const app = createAuthedApp();
-    const res = await mcpPost(app, `Bearer ${LOCAL_TOKEN}`).send(toolCall('create_extension'));
+    const server = createAuthedApp();
+    const res = await mcpPost(server, `Bearer ${LOCAL_TOKEN}`).send(toolCall('create_extension'));
     // Auth passed → the request reaches the MCP server (a JSON-RPC result, not
     // the middleware's auth 401 envelope).
     expect(res.status).toBe(200);
@@ -348,8 +362,8 @@ describe('MCP auth posture (end-to-end through the live /mcp mount)', () => {
   });
 
   it('401s a tokenless resources/read (fail-closed on data reads)', async () => {
-    const app = createAuthedApp();
-    const res = await mcpPost(app).send({
+    const server = createAuthedApp();
+    const res = await mcpPost(server).send({
       jsonrpc: '2.0',
       method: 'resources/read',
       params: { uri: 'dorkos://sessions' },

@@ -86,6 +86,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null) }));
 
 import request from 'supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp, finalizeApp } from '../../app.js';
 import { SESSIONS } from '../../config/constants.js';
 import {
@@ -99,6 +100,15 @@ import { attachEventStream } from './helpers/trigger-turn-helpers.js';
 
 const app = createApp();
 finalizeApp(app);
+
+/**
+ * ONE listener for the whole file (DOR-483). Requests and `/events` attachments
+ * both target `server`, never `app`: handed a non-listening app, supertest binds
+ * and frees an ephemeral port per request and the stream helpers used to do the
+ * same, so a pooled keep-alive socket for a reclaimed port could land on the
+ * wrong server. See {@link listeningServer}.
+ */
+const server = listeningServer(app);
 
 const SESSION_ID = '00000000-0000-4000-8000-0000000000aa';
 
@@ -156,9 +166,9 @@ describe('cross-client: two consumers on one session', () => {
     ]);
 
     // Client A: subscribe-first, then trigger.
-    const a = attachEventStream(app, SESSION_ID);
+    const a = attachEventStream(server, SESSION_ID);
     await a.ready;
-    const post = await request(app)
+    const post = await request(server)
       .post(`/api/sessions/${SESSION_ID}/messages`)
       .set('X-Client-Id', 'client-a')
       .send({ content: 'Hello' });
@@ -174,7 +184,7 @@ describe('cross-client: two consumers on one session', () => {
     });
 
     // Client B: cold connect mid-turn.
-    const b = attachEventStream(app, SESSION_ID);
+    const b = attachEventStream(server, SESSION_ID);
     await b.ready;
     releaseTurn();
 
@@ -241,9 +251,9 @@ describe('cross-client: two consumers on one session', () => {
       },
     ]);
 
-    const a = attachEventStream(app, SESSION_ID);
+    const a = attachEventStream(server, SESSION_ID);
     await a.ready;
-    const post = await request(app)
+    const post = await request(server)
       .post(`/api/sessions/${SESSION_ID}/messages`)
       .set('X-Client-Id', 'client-a')
       .send({ content: 'run something' });
@@ -256,11 +266,11 @@ describe('cross-client: two consumers on one session', () => {
       )) as SessionSnapshot;
       expect(snap.pendingInteractions).toHaveLength(1);
     });
-    const b = attachEventStream(app, SESSION_ID);
+    const b = attachEventStream(server, SESSION_ID);
     await b.ready;
 
     // The OTHER client approves — no lock applies to interaction resolution.
-    const approve = await request(app)
+    const approve = await request(server)
       .post(`/api/sessions/${SESSION_ID}/approve`)
       .set('X-Client-Id', 'client-b')
       .send({ toolCallId: 'tool-1' });
@@ -321,14 +331,14 @@ describe('cross-client: second-client POST during an open turn', () => {
       },
     ]);
 
-    const first = await request(app)
+    const first = await request(server)
       .post(`/api/sessions/${SESSION_ID}/messages`)
       .set('X-Client-Id', 'client-a')
       .send({ content: 'long turn' });
     expect(first.status).toBe(202);
 
     // Fresh lock → the second client conflicts, told WHO holds it.
-    const conflict = await request(app)
+    const conflict = await request(server)
       .post(`/api/sessions/${SESSION_ID}/messages`)
       .set('X-Client-Id', 'client-b')
       .send({ content: 'second client message' });
@@ -343,7 +353,7 @@ describe('cross-client: second-client POST during an open turn', () => {
     const locks = (lockManager as unknown as { locks: Map<string, { acquiredAt: number }> }).locks;
     locks.get(SESSION_ID)!.acquiredAt -= SESSIONS.LOCK_TTL_MS + 1;
 
-    const stillHeld = await request(app)
+    const stillHeld = await request(server)
       .post(`/api/sessions/${SESSION_ID}/messages`)
       .set('X-Client-Id', 'client-b')
       .send({ content: 'steer while alive' });
@@ -372,7 +382,7 @@ describe('cross-client: second-client POST during an open turn', () => {
     // Abandoned lock → the second client's POST is ACCEPTED and its message is
     // dispatched to the runtime. (The Claude CLI delivers such a
     // resume-during-active-turn as a steer; that half lives outside the server.)
-    const takeover = await request(app)
+    const takeover = await request(server)
       .post(`/api/sessions/${SESSION_ID}/messages`)
       .set('X-Client-Id', 'client-b')
       .send({ content: 'steer content' });

@@ -53,10 +53,7 @@ import type { MarketplaceMcpDeps } from '../marketplace-mcp-tools.js';
 import { TokenConfirmationProvider } from '../confirmation-provider.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { ApprovalService } from '../../core/approvals/index.js';
-import {
-  initCapabilityTierGate,
-  resetCapabilityTierGate,
-} from '../../core/capabilities/index.js';
+import { initCapabilityTierGate, resetCapabilityTierGate } from '../../core/capabilities/index.js';
 
 /**
  * A token provider over a fresh approval store, plus the two things the cockpit

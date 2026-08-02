@@ -30,6 +30,7 @@ guarded by its own tests. Pure stdlib: no install step.
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -833,6 +834,18 @@ class TestPopulatorHook(GateTestCase):
 
     HOOK = REPO_ROOT / ".claude" / "git-hooks" / "changelog-populator.py"
 
+    def assert_declares(self, text: str, subject: str) -> None:
+        """Assert the fragment declares `subject`, whichever way it is quoted.
+
+        The hook renders double quotes and then hands the file to Prettier, whose
+        config prefers single ones (DOR-485). Pinning one style here would pin the
+        wrong one the moment Prettier is reachable: these cases build a throwaway
+        repo in a temp dir, where `pnpm exec prettier` cannot resolve, so the hook's
+        best-effort format step silently no-ops. Both quotings mean the same YAML
+        scalar, and `read_yaml_scalar` reads both.
+        """
+        self.assertRegex(text, r"  - ([\"'])" + re.escape(subject) + r"\1")
+
     def install_hook(self) -> None:
         hooks_dir = self.repo.path / ".git" / "hooks"
         hooks_dir.mkdir(parents=True, exist_ok=True)
@@ -849,7 +862,7 @@ class TestPopulatorHook(GateTestCase):
         fragments = list(self.repo.unreleased.glob("*.md"))
         self.assertEqual(len(fragments), 1, "the hook should mint exactly one fragment")
         text = fragments[0].read_text()
-        self.assertIn(f'  - "{subject}"', text)
+        self.assert_declares(text, subject)
         # The fragment landed inside the commit, so the gate sees it.
         self.assertIn("changelog/unreleased/", self.repo.git("show", "--name-only", "HEAD"))
 
@@ -885,7 +898,7 @@ class TestPopulatorHook(GateTestCase):
 
         fragments = list(self.repo.unreleased.glob("*.md"))
         self.assertEqual(len(fragments), 1)
-        self.assertIn(f'  - "{folded}"', fragments[0].read_text())
+        self.assert_declares(fragments[0].read_text(), folded)
         result = self.repo.check()
         self.assertEqual(result.returncode, 0, result.stderr)
 

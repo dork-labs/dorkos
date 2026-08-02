@@ -72,6 +72,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null) }));
 
 import request from 'supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp, finalizeApp } from '../../app.js';
 import {
   getOrCreateProjector,
@@ -82,6 +83,14 @@ import { attachEventStream } from './helpers/trigger-turn-helpers.js';
 
 const app = createApp();
 finalizeApp(app);
+
+/**
+ * ONE listener for the whole file (DOR-483). Requests and `/events` attachments
+ * both target `server`, never `app`: handed a non-listening app, supertest binds
+ * and frees an ephemeral port per request, and a pooled keep-alive socket for a
+ * reclaimed port can land on the wrong server. See {@link listeningServer}.
+ */
+const server = listeningServer(app);
 
 const SESSION_ID = '00000000-0000-4000-8000-0000000000ac';
 const TOOL_CALL_ID = 'tool-approval-live-1';
@@ -154,10 +163,10 @@ afterEach(() => {
 describe('live approval stream: the countdown reaches the client (DOR-810)', () => {
   it('carries the timeout the auto-deny will enforce on the live approval_required frame', async () => {
     const { release } = blockOnApproval();
-    const stream = attachEventStream(app, SESSION_ID);
+    const stream = attachEventStream(server, SESSION_ID);
     await stream.ready;
 
-    const post = await request(app)
+    const post = await request(server)
       .post(`/api/sessions/${SESSION_ID}/messages`)
       .set('X-Client-Id', 'client-a')
       .send({ content: 'clean up' });
@@ -176,17 +185,17 @@ describe('live approval stream: the countdown reaches the client (DOR-810)', () 
 
   it('recovers the timeout with the pending card for a client that connects mid-block', async () => {
     const { release } = blockOnApproval();
-    const first = attachEventStream(app, SESSION_ID);
+    const first = attachEventStream(server, SESSION_ID);
     await first.ready;
 
-    const post = await request(app)
+    const post = await request(server)
       .post(`/api/sessions/${SESSION_ID}/messages`)
       .set('X-Client-Id', 'client-a')
       .send({ content: 'clean up' });
     expect(post.status).toBe(202);
     await vi.waitFor(() => expect(peekProjector(SESSION_ID)?.hasPendingInteractions()).toBe(true));
 
-    const second = attachEventStream(app, SESSION_ID);
+    const second = attachEventStream(server, SESSION_ID);
     await second.ready;
     release();
     const [, secondRes] = await Promise.all([first.done, second.done]);
@@ -217,15 +226,15 @@ describe('live approval stream: the agent hears why you said no (DOR-809)', () =
       return true;
     });
     const { release } = blockOnApproval();
-    const stream = attachEventStream(app, SESSION_ID);
+    const stream = attachEventStream(server, SESSION_ID);
     await stream.ready;
-    await request(app)
+    await request(server)
       .post(`/api/sessions/${SESSION_ID}/messages`)
       .set('X-Client-Id', 'client-a')
       .send({ content: 'clean up' });
     await vi.waitFor(() => expect(peekProjector(SESSION_ID)?.hasPendingInteractions()).toBe(true));
 
-    const deny = await request(app)
+    const deny = await request(server)
       .post(`/api/sessions/${SESSION_ID}/deny`)
       .set('X-Client-Id', 'client-a')
       .send({ toolCallId: TOOL_CALL_ID, reason: 'Use pnpm prune instead' });
@@ -253,15 +262,15 @@ describe('live approval stream: the agent hears why you said no (DOR-809)', () =
       }
     );
     const { release } = blockOnApproval();
-    const stream = attachEventStream(app, SESSION_ID);
+    const stream = attachEventStream(server, SESSION_ID);
     await stream.ready;
-    await request(app)
+    await request(server)
       .post(`/api/sessions/${SESSION_ID}/messages`)
       .set('X-Client-Id', 'client-a')
       .send({ content: 'clean up' });
     await vi.waitFor(() => expect(peekProjector(SESSION_ID)?.hasPendingInteractions()).toBe(true));
 
-    await request(app)
+    await request(server)
       .post(`/api/sessions/${SESSION_ID}/deny`)
       .set('X-Client-Id', 'client-a')
       .send({ toolCallId: TOOL_CALL_ID, reason: 'Use pnpm prune instead' });
@@ -278,7 +287,7 @@ describe('live approval stream: the agent hears why you said no (DOR-809)', () =
   });
 
   it('rejects a deny whose reason is longer than the cap', async () => {
-    const res = await request(app)
+    const res = await request(server)
       .post(`/api/sessions/${SESSION_ID}/deny`)
       .set('X-Client-Id', 'client-a')
       .send({ toolCallId: TOOL_CALL_ID, reason: 'x'.repeat(5_000) });
@@ -314,9 +323,9 @@ describe('live approval stream: the agent hears why you said no (DOR-809)', () =
       },
     ]);
 
-    const stream = attachEventStream(app, SESSION_ID);
+    const stream = attachEventStream(server, SESSION_ID);
     await stream.ready;
-    await request(app)
+    await request(server)
       .post(`/api/sessions/${SESSION_ID}/messages`)
       .set('X-Client-Id', 'client-a')
       .send({ content: 'clean up' });

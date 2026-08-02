@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createRelayRouter, buildConversations } from '../relay.js';
 import type { RelayCore, AdapterRegistry, WebhookAdapter, DeadLetterEntry } from '@dorkos/relay';
 import { AdapterError, type AdapterManager } from '../../services/relay/adapter-manager.js';
@@ -29,13 +30,22 @@ function createMockRelayCore(): RelayCore {
   } as unknown as RelayCore;
 }
 
+/**
+ * ONE listener for the whole file, with the app behind it swapped per test
+ * (DOR-483). Every describe below still builds a FRESH app over a fresh mock
+ * relay core, but no port is ever bound and freed mid-file, so a pooled
+ * keep-alive socket can never be handed to a request meant for a different
+ * test's server. See {@link swappableServer}.
+ */
+const target = swappableServer();
+const server = target.server;
+
 describe('Relay routes', () => {
-  let app: express.Application;
   let relayCore: ReturnType<typeof createMockRelayCore>;
 
   beforeEach(() => {
     relayCore = createMockRelayCore();
-    app = express();
+    const app = express();
     app.use(express.json());
     app.use('/api/relay', createRelayRouter(relayCore as unknown as RelayCore));
     app.use(
@@ -43,11 +53,12 @@ describe('Relay routes', () => {
         res.status(500).json({ error: err.message });
       }
     );
+    target.mount(app);
   });
 
   describe('POST /api/relay/messages', () => {
     it('publishes a message and returns result', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/relay/messages')
         .send({
           subject: 'relay.test.topic',
@@ -66,7 +77,7 @@ describe('Relay routes', () => {
     });
 
     it('returns 400 for missing required fields', async () => {
-      const res = await request(app).post('/api/relay/messages').send({ payload: {} });
+      const res = await request(server).post('/api/relay/messages').send({ payload: {} });
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
@@ -77,7 +88,7 @@ describe('Relay routes', () => {
       (error as Error & { code: string }).code = 'ACCESS_DENIED';
       vi.mocked(relayCore.publish).mockRejectedValue(error);
 
-      const res = await request(app).post('/api/relay/messages').send({
+      const res = await request(server).post('/api/relay/messages').send({
         subject: 'relay.test.topic',
         payload: {},
         from: 'relay.agent.sender',
@@ -97,7 +108,7 @@ describe('Relay routes', () => {
       ['agent:session-abc', 'reply-forwarding'],
       ['relay.human.telegram.tg1.bot', 'inbound adapter echo'],
     ])('rejects a client-asserted reserved sender %s (%s) and never publishes', async (from) => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/relay/messages')
         .send({
           subject: 'relay.human.telegram.tg1.chat-42',
@@ -112,7 +123,7 @@ describe('Relay routes', () => {
     });
 
     it('still allows the in-app console operator principal (relay.human.console)', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/relay/messages')
         .send({
           subject: 'relay.agent.some-agent',
@@ -146,18 +157,18 @@ describe('Relay routes', () => {
       activityApp.use(express.json());
       activityApp.locals.activityService = activityService;
       activityApp.use('/api/relay', createRelayRouter(core, adapterManager));
-      return { activityApp, activityService };
+      return { activityServer: target.mount(activityApp), activityService };
     }
 
     it('emits no activity event for maildir-only publishes (no adapterResult)', async () => {
       // Regression: coercing the no-match null to {success:false} made every
       // custom-endpoint publish emit a spurious relay.message_failed event.
-      const { activityApp, activityService } = createAppWithAdapterManager({
+      const { activityServer, activityService } = createAppWithAdapterManager({
         messageId: 'msg-1',
         deliveredTo: 1,
       });
 
-      const res = await request(activityApp)
+      const res = await request(activityServer)
         .post('/api/relay/messages')
         .send({ subject: 'relay.inbox.custom', payload: { hi: 1 }, from: 'relay.agent.sender' });
 
@@ -166,13 +177,13 @@ describe('Relay routes', () => {
     });
 
     it('reports agent-subject adapter success as accepted (accept-time, not turn completion)', async () => {
-      const { activityApp, activityService } = createAppWithAdapterManager({
+      const { activityServer, activityService } = createAppWithAdapterManager({
         messageId: 'msg-1',
         deliveredTo: 1,
         adapterResult: { success: true },
       });
 
-      await request(activityApp)
+      await request(activityServer)
         .post('/api/relay/messages')
         .send({ subject: 'relay.agent.backend', payload: { hi: 1 }, from: 'relay.agent.sender' });
 
@@ -185,13 +196,13 @@ describe('Relay routes', () => {
     });
 
     it('keeps delivered wording for non-agent adapter subjects', async () => {
-      const { activityApp, activityService } = createAppWithAdapterManager({
+      const { activityServer, activityService } = createAppWithAdapterManager({
         messageId: 'msg-1',
         deliveredTo: 1,
         adapterResult: { success: true },
       });
 
-      await request(activityApp)
+      await request(activityServer)
         .post('/api/relay/messages')
         .send({
           subject: 'relay.human.telegram.bot.chat',
@@ -226,7 +237,7 @@ describe('Relay routes', () => {
         nextCursor: undefined,
       });
 
-      const res = await request(app).get('/api/relay/messages');
+      const res = await request(server).get('/api/relay/messages');
 
       expect(res.status).toBe(200);
       expect(res.body.messages).toHaveLength(1);
@@ -234,7 +245,7 @@ describe('Relay routes', () => {
     });
 
     it('passes query filters to listMessages', async () => {
-      await request(app).get('/api/relay/messages?subject=relay.test&status=new&limit=10');
+      await request(server).get('/api/relay/messages?subject=relay.test&status=new&limit=10');
 
       expect(vi.mocked(relayCore.listMessages)).toHaveBeenCalledWith(
         expect.objectContaining({ subject: 'relay.test', status: 'new', limit: 10 })
@@ -242,7 +253,7 @@ describe('Relay routes', () => {
     });
 
     it('returns 400 for invalid status filter', async () => {
-      const res = await request(app).get('/api/relay/messages?status=invalid');
+      const res = await request(server).get('/api/relay/messages?status=invalid');
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
@@ -262,7 +273,7 @@ describe('Relay routes', () => {
       };
       vi.mocked(relayCore.getMessageDetail).mockReturnValue({ ...row, deliveries: [row] });
 
-      const res = await request(app).get('/api/relay/messages/msg-1');
+      const res = await request(server).get('/api/relay/messages/msg-1');
 
       expect(res.status).toBe(200);
       expect(res.body.id).toBe('msg-1');
@@ -271,7 +282,7 @@ describe('Relay routes', () => {
     });
 
     it('returns 404 when message not found', async () => {
-      const res = await request(app).get('/api/relay/messages/nonexistent');
+      const res = await request(server).get('/api/relay/messages/nonexistent');
 
       expect(res.status).toBe(404);
       expect(res.body.error).toBe('Message not found');
@@ -289,7 +300,7 @@ describe('Relay routes', () => {
         },
       ]);
 
-      const res = await request(app).get('/api/relay/endpoints');
+      const res = await request(server).get('/api/relay/endpoints');
 
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(1);
@@ -299,7 +310,7 @@ describe('Relay routes', () => {
 
   describe('POST /api/relay/endpoints', () => {
     it('registers an endpoint', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/relay/endpoints')
         .send({ subject: 'relay.test.mine' });
 
@@ -309,7 +320,7 @@ describe('Relay routes', () => {
     });
 
     it('returns 400 for missing subject', async () => {
-      const res = await request(app).post('/api/relay/endpoints').send({});
+      const res = await request(server).post('/api/relay/endpoints').send({});
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
@@ -318,7 +329,7 @@ describe('Relay routes', () => {
     it('returns 422 when registration fails', async () => {
       vi.mocked(relayCore.registerEndpoint).mockRejectedValue(new Error('Duplicate endpoint'));
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/relay/endpoints')
         .send({ subject: 'relay.test.dup' });
 
@@ -331,7 +342,7 @@ describe('Relay routes', () => {
     // somebody else's mail; on a control subject it also manufactures a false
     // confirmation for every signal published there (DOR-808).
     it.each(SERVER_MANAGED_PREFIXES)('refuses a mailbox under %s', async (prefix) => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/relay/endpoints')
         .send({ subject: `${prefix}squatted` });
 
@@ -340,7 +351,7 @@ describe('Relay routes', () => {
     });
 
     it('refuses a mailbox on the run stop subject specifically', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/relay/endpoints')
         .send({ subject: `${TASK_CANCEL_SUBJECT_PREFIX}01JRUNID` });
 
@@ -351,7 +362,7 @@ describe('Relay routes', () => {
 
   describe('DELETE /api/relay/endpoints/:subject', () => {
     it('removes an endpoint', async () => {
-      const res = await request(app).delete('/api/relay/endpoints/relay.agent.old');
+      const res = await request(server).delete('/api/relay/endpoints/relay.agent.old');
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -360,7 +371,7 @@ describe('Relay routes', () => {
     it('returns 404 when endpoint not found', async () => {
       vi.mocked(relayCore.unregisterEndpoint).mockResolvedValue(false);
 
-      const res = await request(app).delete('/api/relay/endpoints/relay.agent.nope');
+      const res = await request(server).delete('/api/relay/endpoints/relay.agent.nope');
 
       expect(res.status).toBe(404);
       expect(res.body.error).toBe('Endpoint not found');
@@ -383,7 +394,7 @@ describe('Relay routes', () => {
         ],
       });
 
-      const res = await request(app).get('/api/relay/endpoints/relay.test/inbox');
+      const res = await request(server).get('/api/relay/endpoints/relay.test/inbox');
 
       expect(res.status).toBe(200);
       expect(res.body.messages).toHaveLength(1);
@@ -396,7 +407,7 @@ describe('Relay routes', () => {
         throw error;
       });
 
-      const res = await request(app).get('/api/relay/endpoints/relay.nope/inbox');
+      const res = await request(server).get('/api/relay/endpoints/relay.nope/inbox');
 
       expect(res.status).toBe(404);
       expect(res.body.error).toBe('Endpoint not found');
@@ -408,7 +419,7 @@ describe('Relay routes', () => {
     it('defaults to pending-only, excluding budget-rejected failures', async () => {
       vi.mocked(relayCore.readInbox).mockReturnValue({ messages: [] });
 
-      const res = await request(app).get('/api/relay/endpoints/relay.test/inbox');
+      const res = await request(server).get('/api/relay/endpoints/relay.test/inbox');
 
       expect(res.status).toBe(200);
       expect(vi.mocked(relayCore.readInbox)).toHaveBeenCalledWith(
@@ -431,7 +442,7 @@ describe('Relay routes', () => {
         ],
       });
 
-      const res = await request(app).get('/api/relay/endpoints/relay.test/inbox?status=failed');
+      const res = await request(server).get('/api/relay/endpoints/relay.test/inbox?status=failed');
 
       expect(res.status).toBe(200);
       expect(res.body.messages).toHaveLength(1);
@@ -444,7 +455,7 @@ describe('Relay routes', () => {
     it('supports ?status=all to opt into every status in one view', async () => {
       vi.mocked(relayCore.readInbox).mockReturnValue({ messages: [] });
 
-      const res = await request(app).get('/api/relay/endpoints/relay.test/inbox?status=all');
+      const res = await request(server).get('/api/relay/endpoints/relay.test/inbox?status=all');
 
       expect(res.status).toBe(200);
       expect(vi.mocked(relayCore.readInbox)).toHaveBeenCalledWith(
@@ -454,7 +465,7 @@ describe('Relay routes', () => {
     });
 
     it('rejects an unrecognized status value with 400', async () => {
-      const res = await request(app).get('/api/relay/endpoints/relay.test/inbox?status=bogus');
+      const res = await request(server).get('/api/relay/endpoints/relay.test/inbox?status=bogus');
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
@@ -464,7 +475,7 @@ describe('Relay routes', () => {
 
   describe('DELETE /api/relay/endpoints/:subject (dotted subjects)', () => {
     it('handles subjects containing dots', async () => {
-      const res = await request(app).delete('/api/relay/endpoints/relay.agent.myns.chat');
+      const res = await request(server).delete('/api/relay/endpoints/relay.agent.myns.chat');
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -474,7 +485,9 @@ describe('Relay routes', () => {
     it('returns 404 for dotted subject not found', async () => {
       vi.mocked(relayCore.unregisterEndpoint).mockResolvedValue(false);
 
-      const res = await request(app).delete('/api/relay/endpoints/relay.agent.deep.nested.subject');
+      const res = await request(server).delete(
+        '/api/relay/endpoints/relay.agent.deep.nested.subject'
+      );
 
       expect(res.status).toBe(404);
       expect(res.body.error).toBe('Endpoint not found');
@@ -497,7 +510,7 @@ describe('Relay routes', () => {
         ],
       });
 
-      const res = await request(app).get('/api/relay/endpoints/relay.agent.myns.chat/inbox');
+      const res = await request(server).get('/api/relay/endpoints/relay.agent.myns.chat/inbox');
 
       expect(res.status).toBe(200);
       expect(res.body.messages).toHaveLength(1);
@@ -520,14 +533,14 @@ describe('Relay routes', () => {
         },
       ]);
 
-      const res = await request(app).get('/api/relay/dead-letters');
+      const res = await request(server).get('/api/relay/dead-letters');
 
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(1);
     });
 
     it('passes endpointHash filter', async () => {
-      await request(app).get('/api/relay/dead-letters?endpointHash=abc123');
+      await request(server).get('/api/relay/dead-letters?endpointHash=abc123');
 
       expect(vi.mocked(relayCore.getDeadLetters)).toHaveBeenCalledWith({ endpointHash: 'abc123' });
     });
@@ -541,7 +554,7 @@ describe('Relay routes', () => {
         bySubject: [{ subject: 'relay.test', count: 42 }],
       });
 
-      const res = await request(app).get('/api/relay/metrics');
+      const res = await request(server).get('/api/relay/metrics');
 
       expect(res.status).toBe(200);
       expect(res.body.totalMessages).toBe(42);
@@ -551,7 +564,7 @@ describe('Relay routes', () => {
 
   describe('GET /api/relay/stream', () => {
     it('rejects global wildcard pattern', async () => {
-      const res = await request(app).get('/api/relay/stream?subject=>');
+      const res = await request(server).get('/api/relay/stream?subject=>');
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Invalid subscription pattern');
@@ -559,14 +572,14 @@ describe('Relay routes', () => {
     });
 
     it('rejects patterns without allowed prefix', async () => {
-      const res = await request(app).get('/api/relay/stream?subject=relay.agent.foo');
+      const res = await request(server).get('/api/relay/stream?subject=relay.agent.foo');
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Invalid subscription pattern');
     });
 
     it('rejects arbitrary prefix pattern', async () => {
-      const res = await request(app).get('/api/relay/stream?subject=custom.prefix.test');
+      const res = await request(server).get('/api/relay/stream?subject=custom.prefix.test');
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Invalid subscription pattern');
@@ -579,7 +592,7 @@ describe('Relay routes', () => {
       // while nothing was stopped (DOR-808). The stop namespace is therefore
       // not streamable at all, and no prefix this route allows may grow to
       // cover it.
-      const res = await request(app).get(
+      const res = await request(server).get(
         `/api/relay/stream?subject=${TASK_CANCEL_SUBJECT_PREFIX}>`
       );
 
@@ -710,14 +723,13 @@ function createMockAdapterManager(): AdapterManager & { _mockWebhookAdapter: Web
 }
 
 describe('Adapter routes', () => {
-  let app: express.Application;
   let relayCore: ReturnType<typeof createMockRelayCore>;
   let adapterManager: ReturnType<typeof createMockAdapterManager>;
 
   beforeEach(() => {
     relayCore = createMockRelayCore();
     adapterManager = createMockAdapterManager();
-    app = express();
+    const app = express();
     app.use(express.json());
     app.use(
       '/api/relay',
@@ -731,11 +743,12 @@ describe('Adapter routes', () => {
         res.status(500).json({ error: err.message });
       }
     );
+    target.mount(app);
   });
 
   describe('GET /api/relay/adapters/catalog', () => {
     it('returns 200 with catalog entries array', async () => {
-      const res = await request(app).get('/api/relay/adapters/catalog');
+      const res = await request(server).get('/api/relay/adapters/catalog');
 
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body)).toBe(true);
@@ -746,7 +759,7 @@ describe('Adapter routes', () => {
     });
 
     it('includes masked password fields for instances', async () => {
-      const res = await request(app).get('/api/relay/adapters/catalog');
+      const res = await request(server).get('/api/relay/adapters/catalog');
 
       expect(res.status).toBe(200);
       // Token should be masked by getCatalog
@@ -758,7 +771,7 @@ describe('Adapter routes', () => {
         throw new Error('Catalog build failed');
       });
 
-      const res = await request(app).get('/api/relay/adapters/catalog');
+      const res = await request(server).get('/api/relay/adapters/catalog');
 
       expect(res.status).toBe(500);
       expect(res.body.error).toBe('Catalog build failed');
@@ -767,7 +780,7 @@ describe('Adapter routes', () => {
 
   describe('GET /api/relay/adapters', () => {
     it('returns list of adapter statuses', async () => {
-      const res = await request(app).get('/api/relay/adapters');
+      const res = await request(server).get('/api/relay/adapters');
 
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(2);
@@ -779,7 +792,7 @@ describe('Adapter routes', () => {
 
   describe('GET /api/relay/adapters/:id', () => {
     it('returns single adapter status', async () => {
-      const res = await request(app).get('/api/relay/adapters/tg-main');
+      const res = await request(server).get('/api/relay/adapters/tg-main');
 
       expect(res.status).toBe(200);
       expect(res.body.config.id).toBe('tg-main');
@@ -787,7 +800,7 @@ describe('Adapter routes', () => {
     });
 
     it('returns 404 for unknown adapter', async () => {
-      const res = await request(app).get('/api/relay/adapters/nonexistent');
+      const res = await request(server).get('/api/relay/adapters/nonexistent');
 
       expect(res.status).toBe(404);
       expect(res.body.error).toBe('Adapter not found');
@@ -796,7 +809,7 @@ describe('Adapter routes', () => {
 
   describe('POST /api/relay/adapters/:id/enable', () => {
     it('enables adapter and returns ok', async () => {
-      const res = await request(app).post('/api/relay/adapters/tg-main/enable');
+      const res = await request(server).post('/api/relay/adapters/tg-main/enable');
 
       expect(res.status).toBe(200);
       expect(res.body.ok).toBe(true);
@@ -806,7 +819,7 @@ describe('Adapter routes', () => {
     it('returns 400 when enable fails', async () => {
       vi.mocked(adapterManager.enable).mockRejectedValue(new Error('Adapter not found: missing'));
 
-      const res = await request(app).post('/api/relay/adapters/missing/enable');
+      const res = await request(server).post('/api/relay/adapters/missing/enable');
 
       expect(res.status).toBe(400);
       expect(res.body.error).toContain('Adapter not found');
@@ -815,7 +828,7 @@ describe('Adapter routes', () => {
 
   describe('POST /api/relay/adapters/:id/disable', () => {
     it('disables adapter and returns ok', async () => {
-      const res = await request(app).post('/api/relay/adapters/tg-main/disable');
+      const res = await request(server).post('/api/relay/adapters/tg-main/disable');
 
       expect(res.status).toBe(200);
       expect(res.body.ok).toBe(true);
@@ -825,7 +838,7 @@ describe('Adapter routes', () => {
     it('returns 400 when disable fails', async () => {
       vi.mocked(adapterManager.disable).mockRejectedValue(new Error('Adapter not found: missing'));
 
-      const res = await request(app).post('/api/relay/adapters/missing/disable');
+      const res = await request(server).post('/api/relay/adapters/missing/disable');
 
       expect(res.status).toBe(400);
       expect(res.body.error).toContain('Adapter not found');
@@ -834,7 +847,7 @@ describe('Adapter routes', () => {
 
   describe('POST /api/relay/adapters/reload', () => {
     it('triggers config reload and returns ok', async () => {
-      const res = await request(app).post('/api/relay/adapters/reload');
+      const res = await request(server).post('/api/relay/adapters/reload');
 
       expect(res.status).toBe(200);
       expect(res.body.ok).toBe(true);
@@ -844,7 +857,7 @@ describe('Adapter routes', () => {
     it('returns 500 when reload fails', async () => {
       vi.mocked(adapterManager.reload).mockRejectedValue(new Error('Config parse error'));
 
-      const res = await request(app).post('/api/relay/adapters/reload');
+      const res = await request(server).post('/api/relay/adapters/reload');
 
       expect(res.status).toBe(500);
       expect(res.body.error).toContain('Config parse error');
@@ -855,7 +868,7 @@ describe('Adapter routes', () => {
     it('routes valid webhook to adapter handleInbound and returns 200', async () => {
       const body = JSON.stringify({ event: 'push', repo: 'test' });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/relay/webhooks/wh-github')
         .set('Content-Type', 'application/json')
         .set('X-Signature', 'test-sig')
@@ -875,7 +888,7 @@ describe('Adapter routes', () => {
     });
 
     it('returns 404 for unknown webhook adapter', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/relay/webhooks/unknown')
         .set('Content-Type', 'application/json')
         .send('{}');
@@ -886,7 +899,7 @@ describe('Adapter routes', () => {
 
     it('returns 404 for non-webhook adapter type', async () => {
       // tg-main is a telegram adapter, not webhook
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/relay/webhooks/tg-main')
         .set('Content-Type', 'application/json')
         .send('{}');
@@ -902,7 +915,7 @@ describe('Adapter routes', () => {
         mockAdapter as unknown as { handleInbound: ReturnType<typeof vi.fn> }
       ).handleInbound.mockResolvedValue({ ok: false, error: 'Invalid signature' });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/relay/webhooks/wh-github')
         .set('Content-Type', 'application/json')
         .send('{}');
@@ -914,7 +927,7 @@ describe('Adapter routes', () => {
 
   describe('POST /api/relay/adapters', () => {
     it('returns 201 on success', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/relay/adapters')
         .send({
           type: 'webhook',
@@ -934,7 +947,7 @@ describe('Adapter routes', () => {
     });
 
     it('returns 400 when body missing required fields', async () => {
-      const res = await request(app).post('/api/relay/adapters').send({ type: 'webhook' });
+      const res = await request(server).post('/api/relay/adapters').send({ type: 'webhook' });
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
@@ -946,7 +959,7 @@ describe('Adapter routes', () => {
         new AdapterError("Adapter with ID 'tg-main' already exists", 'DUPLICATE_ID')
       );
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/relay/adapters')
         .send({ type: 'telegram', id: 'tg-main', config: { token: 'x', mode: 'polling' } });
 
@@ -959,7 +972,7 @@ describe('Adapter routes', () => {
         new AdapterError('Unknown adapter type: foobar', 'UNKNOWN_TYPE')
       );
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/relay/adapters')
         .send({ type: 'foobar', id: 'fb-1', config: {} });
 
@@ -975,7 +988,7 @@ describe('Adapter routes', () => {
         )
       );
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/relay/adapters')
         .send({ type: 'claude-code', id: 'cc-2', config: {} });
 
@@ -986,7 +999,7 @@ describe('Adapter routes', () => {
 
   describe('DELETE /api/relay/adapters/:id', () => {
     it('returns 200 on success', async () => {
-      const res = await request(app).delete('/api/relay/adapters/wh-github');
+      const res = await request(server).delete('/api/relay/adapters/wh-github');
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true });
@@ -998,7 +1011,7 @@ describe('Adapter routes', () => {
         new AdapterError("Adapter 'nonexistent' not found", 'NOT_FOUND')
       );
 
-      const res = await request(app).delete('/api/relay/adapters/nonexistent');
+      const res = await request(server).delete('/api/relay/adapters/nonexistent');
 
       expect(res.status).toBe(404);
       expect(res.body.code).toBe('NOT_FOUND');
@@ -1009,7 +1022,7 @@ describe('Adapter routes', () => {
         new AdapterError('Cannot remove the built-in claude-code adapter', 'REMOVE_BUILTIN_DENIED')
       );
 
-      const res = await request(app).delete('/api/relay/adapters/claude-code');
+      const res = await request(server).delete('/api/relay/adapters/claude-code');
 
       expect(res.status).toBe(400);
       expect(res.body.code).toBe('REMOVE_BUILTIN_DENIED');
@@ -1018,7 +1031,7 @@ describe('Adapter routes', () => {
 
   describe('PATCH /api/relay/adapters/:id/config', () => {
     it('returns 200 on success', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .patch('/api/relay/adapters/tg-main/config')
         .send({ config: { token: 'new-token', mode: 'webhook' } });
 
@@ -1035,7 +1048,7 @@ describe('Adapter routes', () => {
         new AdapterError("Adapter 'nonexistent' not found", 'NOT_FOUND')
       );
 
-      const res = await request(app)
+      const res = await request(server)
         .patch('/api/relay/adapters/nonexistent/config')
         .send({ config: { token: 'x' } });
 
@@ -1044,7 +1057,7 @@ describe('Adapter routes', () => {
     });
 
     it('returns 400 when config missing', async () => {
-      const res = await request(app).patch('/api/relay/adapters/tg-main/config').send({});
+      const res = await request(server).patch('/api/relay/adapters/tg-main/config').send({});
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
@@ -1054,7 +1067,7 @@ describe('Adapter routes', () => {
 
   describe('POST /api/relay/adapters/test', () => {
     it('returns 200 with { ok: true } on success', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/relay/adapters/test')
         .send({ type: 'telegram', config: { token: 'test-token', mode: 'polling' } });
 
@@ -1072,7 +1085,7 @@ describe('Adapter routes', () => {
         error: 'Connection refused',
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/relay/adapters/test')
         .send({ type: 'telegram', config: { token: 'bad-token', mode: 'polling' } });
 
@@ -1081,7 +1094,7 @@ describe('Adapter routes', () => {
     });
 
     it('returns 400 when body missing required fields', async () => {
-      const res = await request(app).post('/api/relay/adapters/test').send({ type: 'telegram' });
+      const res = await request(server).post('/api/relay/adapters/test').send({ type: 'telegram' });
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
@@ -1091,7 +1104,7 @@ describe('Adapter routes', () => {
     it('returns 500 when testConnection throws', async () => {
       vi.mocked(adapterManager.testConnection).mockRejectedValue(new Error('Unexpected failure'));
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/relay/adapters/test')
         .send({ type: 'telegram', config: { token: 'x' } });
 
@@ -1106,7 +1119,7 @@ describe('Adapter routes', () => {
       appNoAdapters.use(express.json());
       appNoAdapters.use('/api/relay', createRelayRouter(relayCore as unknown as RelayCore));
 
-      const res = await request(appNoAdapters).get('/api/relay/adapters');
+      const res = await request(target.mount(appNoAdapters)).get('/api/relay/adapters');
 
       expect(res.status).toBe(404);
     });
@@ -1144,7 +1157,7 @@ describe('Adapter routes', () => {
 
     describe('GET /api/relay/bindings', () => {
       it('returns 503 when binding store not available', async () => {
-        const res = await request(app).get('/api/relay/bindings');
+        const res = await request(server).get('/api/relay/bindings');
         expect(res.status).toBe(503);
         expect(res.body.error).toBe('Binding subsystem not available');
       });
@@ -1153,7 +1166,7 @@ describe('Adapter routes', () => {
         const mockStore = createMockBindingStore();
         vi.mocked(adapterManager.getBindingStore).mockReturnValue(mockStore as never);
 
-        const res = await request(app).get('/api/relay/bindings');
+        const res = await request(server).get('/api/relay/bindings');
         expect(res.status).toBe(200);
         expect(res.body.bindings).toHaveLength(1);
         expect(res.body.bindings[0].id).toBe('b-1');
@@ -1165,7 +1178,7 @@ describe('Adapter routes', () => {
         const mockStore = createMockBindingStore();
         vi.mocked(adapterManager.getBindingStore).mockReturnValue(mockStore as never);
 
-        const res = await request(app).get('/api/relay/bindings/nonexistent');
+        const res = await request(server).get('/api/relay/bindings/nonexistent');
         expect(res.status).toBe(404);
       });
 
@@ -1173,7 +1186,7 @@ describe('Adapter routes', () => {
         const mockStore = createMockBindingStore();
         vi.mocked(adapterManager.getBindingStore).mockReturnValue(mockStore as never);
 
-        const res = await request(app).get('/api/relay/bindings/b-1');
+        const res = await request(server).get('/api/relay/bindings/b-1');
         expect(res.status).toBe(200);
         expect(res.body.binding.id).toBe('b-1');
       });
@@ -1184,7 +1197,7 @@ describe('Adapter routes', () => {
         const mockStore = createMockBindingStore();
         vi.mocked(adapterManager.getBindingStore).mockReturnValue(mockStore as never);
 
-        const res = await request(app).post('/api/relay/bindings').send({});
+        const res = await request(server).post('/api/relay/bindings').send({});
         expect(res.status).toBe(400);
       });
 
@@ -1192,7 +1205,7 @@ describe('Adapter routes', () => {
         const mockStore = createMockBindingStore();
         vi.mocked(adapterManager.getBindingStore).mockReturnValue(mockStore as never);
 
-        const res = await request(app).post('/api/relay/bindings').send({
+        const res = await request(server).post('/api/relay/bindings').send({
           adapterId: 'tg-main',
           agentId: 'agent-1',
           projectPath: '/agents/a',
@@ -1207,7 +1220,7 @@ describe('Adapter routes', () => {
         const mockStore = createMockBindingStore();
         vi.mocked(adapterManager.getBindingStore).mockReturnValue(mockStore as never);
 
-        const res = await request(app).patch('/api/relay/bindings/b-1').send({
+        const res = await request(server).patch('/api/relay/bindings/b-1').send({
           sessionStrategy: 'stateless',
         });
         expect(res.status).toBe(200);
@@ -1219,7 +1232,7 @@ describe('Adapter routes', () => {
         const mockStore = createMockBindingStore();
         vi.mocked(adapterManager.getBindingStore).mockReturnValue(mockStore as never);
 
-        const res = await request(app).patch('/api/relay/bindings/b-1').send({
+        const res = await request(server).patch('/api/relay/bindings/b-1').send({
           label: 'New label',
         });
         expect(res.status).toBe(200);
@@ -1230,7 +1243,7 @@ describe('Adapter routes', () => {
         const mockStore = createMockBindingStore();
         vi.mocked(adapterManager.getBindingStore).mockReturnValue(mockStore as never);
 
-        const res = await request(app).patch('/api/relay/bindings/b-1').send({
+        const res = await request(server).patch('/api/relay/bindings/b-1').send({
           sessionStrategy: 'invalid',
         });
         expect(res.status).toBe(400);
@@ -1241,7 +1254,7 @@ describe('Adapter routes', () => {
         const mockStore = createMockBindingStore();
         vi.mocked(adapterManager.getBindingStore).mockReturnValue(mockStore as never);
 
-        const res = await request(app).patch('/api/relay/bindings/nonexistent').send({
+        const res = await request(server).patch('/api/relay/bindings/nonexistent').send({
           label: 'Updated',
         });
         expect(res.status).toBe(404);
@@ -1249,7 +1262,7 @@ describe('Adapter routes', () => {
       });
 
       it('returns 503 when binding store unavailable', async () => {
-        const res = await request(app).patch('/api/relay/bindings/b-1').send({
+        const res = await request(server).patch('/api/relay/bindings/b-1').send({
           label: 'Updated',
         });
         expect(res.status).toBe(503);
@@ -1260,7 +1273,7 @@ describe('Adapter routes', () => {
         const mockStore = createMockBindingStore();
         vi.mocked(adapterManager.getBindingStore).mockReturnValue(mockStore as never);
 
-        const res = await request(app).patch('/api/relay/bindings/b-1').send({
+        const res = await request(server).patch('/api/relay/bindings/b-1').send({
           chatId: null,
         });
         expect(res.status).toBe(200);
@@ -1275,7 +1288,7 @@ describe('Adapter routes', () => {
         mockStore.delete.mockResolvedValue(false);
         vi.mocked(adapterManager.getBindingStore).mockReturnValue(mockStore as never);
 
-        const res = await request(app).delete('/api/relay/bindings/nonexistent');
+        const res = await request(server).delete('/api/relay/bindings/nonexistent');
         expect(res.status).toBe(404);
       });
 
@@ -1283,7 +1296,7 @@ describe('Adapter routes', () => {
         const mockStore = createMockBindingStore();
         vi.mocked(adapterManager.getBindingStore).mockReturnValue(mockStore as never);
 
-        const res = await request(app).delete('/api/relay/bindings/b-1');
+        const res = await request(server).delete('/api/relay/bindings/b-1');
         expect(res.status).toBe(200);
         expect(res.body.ok).toBe(true);
       });
@@ -1301,6 +1314,9 @@ describe('Observed chats route', () => {
     adapterManager = createMockAdapterManager();
     app = express();
     app.use(express.json());
+    // Mounted here even though each test finishes wiring `app` afterwards:
+    // `mount` stores the reference, so a later `app.use(...)` still applies.
+    target.mount(app);
   });
 
   it('returns aggregated chats from trace data', () => {
@@ -1335,7 +1351,7 @@ describe('Observed chats route', () => {
       )
     );
 
-    return request(app)
+    return request(server)
       .get('/api/relay/adapters/telegram-1/chats')
       .expect(200)
       .then((res) => {
@@ -1364,7 +1380,7 @@ describe('Observed chats route', () => {
       )
     );
 
-    return request(app)
+    return request(server)
       .get('/api/relay/adapters/nonexistent/chats')
       .expect(200)
       .then((res) => {
@@ -1389,7 +1405,7 @@ describe('Observed chats route', () => {
       )
     );
 
-    return request(app)
+    return request(server)
       .get('/api/relay/adapters/telegram-1/chats?limit=10')
       .expect(200)
       .then(() => {
@@ -1414,7 +1430,7 @@ describe('Observed chats route', () => {
       )
     );
 
-    return request(app)
+    return request(server)
       .get('/api/relay/adapters/telegram-1/chats?limit=9999')
       .expect(200)
       .then(() => {
@@ -1432,7 +1448,7 @@ describe('Observed chats route', () => {
       )
     );
 
-    return request(app)
+    return request(server)
       .get('/api/relay/adapters/telegram-1/chats')
       .expect(404)
       .then((res) => {
