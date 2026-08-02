@@ -69,8 +69,10 @@ const BUTTON_CONFIG = {
   },
   'cancel-upload': {
     // Turns red under the pointer for the same reason Stop is red: this ends
-    // the send that is happening.
-    className: 'bg-muted text-muted-foreground hover:bg-destructive/90 hover:text-white',
+    // the send that is happening — so it borrows Stop's exact pairing rather
+    // than a literal colour, which would have been white on both themes.
+    className:
+      'bg-muted text-muted-foreground hover:bg-destructive/90 hover:text-destructive-foreground',
     label: 'Cancel upload',
   },
   dispatching: {
