@@ -29,3 +29,13 @@ export const UPLOAD_STALLED_MESSAGE = 'The upload stopped responding';
 
 /** Shown on the attachment chip when someone cancels an upload that was still running. */
 export const UPLOAD_CANCELED_MESSAGE = 'Upload canceled';
+
+/**
+ * Shown when the upload got a 2xx that did not come from DorkOS.
+ *
+ * A proxy interstitial, a captive portal or an expired-session redirect all
+ * answer 200 with HTML. Naming it as a reply problem points at the thing a
+ * person can actually do something about — the network they are on, or a
+ * sign-in that has lapsed — rather than blaming their file.
+ */
+export const UPLOAD_UNREADABLE_MESSAGE = 'The upload got an unexpected reply';

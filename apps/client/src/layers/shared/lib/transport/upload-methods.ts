@@ -13,6 +13,7 @@ import {
   UPLOAD_CANCELED_MESSAGE,
   UPLOAD_STALLED_MESSAGE,
   UPLOAD_STALL_TIMEOUT_MS,
+  UPLOAD_UNREADABLE_MESSAGE,
 } from './upload-contract';
 
 /**
@@ -23,6 +24,11 @@ import {
  * abort a large file that is uploading perfectly well. The watchdog below
  * measures SILENCE instead, restarted by every byte in either direction, so
  * slow-but-alive is left alone and dead-but-open is not.
+ *
+ * The two phases are ended by different means, and the difference is real: the
+ * files are read into a body first, which no watchdog covers because no request
+ * exists yet (the signal is checked per file instead), and only then is there a
+ * request for the clock and `abort()` to act on.
  *
  * @param baseUrl - API base URL
  * @param files - Files to upload
@@ -37,11 +43,19 @@ export async function uploadFilesOverHttp(
   onProgress?: (progress: UploadProgress) => void,
   signal?: AbortSignal
 ): Promise<UploadResult[]> {
+  // Reading the files happens BEFORE any request exists, so neither the
+  // watchdog nor `xhr.abort()` covers this window — it is local I/O with no
+  // network to stall, but on a big attachment it is long enough for someone to
+  // press Cancel. The signal is therefore checked here directly, once per file:
+  // a single `arrayBuffer()` cannot be interrupted part-way, so one file is the
+  // finest grain a cancel can land on.
   const formData = new FormData();
   for (const file of files) {
+    if (signal?.aborted) throw new Error(UPLOAD_CANCELED_MESSAGE);
     const buffer = await file.arrayBuffer();
     formData.append('files', new Blob([buffer], { type: file.type }), file.name);
   }
+  if (signal?.aborted) throw new Error(UPLOAD_CANCELED_MESSAGE);
 
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -88,7 +102,23 @@ export async function uploadFilesOverHttp(
     xhr.addEventListener('load', () => {
       clearTimeout(stallTimer);
       if (xhr.status >= 200 && xhr.status < 300) {
-        resolve((JSON.parse(xhr.responseText) as { uploads: UploadResult[] }).uploads);
+        // A 2xx is not a promise that DorkOS answered. A proxy interstitial, a
+        // captive portal or an expired-session redirect all reply 200 with HTML,
+        // and an unguarded parse threw straight out of this listener — leaving
+        // the promise unsettled with the watchdog already cleared, which is the
+        // one wedge neither the timeout nor Cancel can reach (`abort()` on a
+        // request already in DONE fires no `abort` event). So: settle, always.
+        let uploads: UploadResult[] | undefined;
+        try {
+          uploads = (JSON.parse(xhr.responseText) as { uploads?: UploadResult[] }).uploads;
+        } catch {
+          uploads = undefined;
+        }
+        // Valid JSON of the wrong shape is the same failure wearing a better
+        // disguise: `undefined` here would resolve the upload and crash later,
+        // in the caller that indexes the results.
+        if (Array.isArray(uploads)) resolve(uploads);
+        else reject(new Error(UPLOAD_UNREADABLE_MESSAGE));
       } else {
         try {
           const error =

@@ -385,8 +385,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function Ch
         <InputActionButton
           hasText={hasText}
           isStreaming={isStreaming}
-          isUploading={isUploading}
-          onCancelUpload={onCancelUpload}
+          // Only ever an upload this composer can stop. A host that reports an
+          // upload without a way to end it gets no progress control rather than
+          // an inert one — the spinner nobody could press is the wedge itself.
+          onCancelUpload={isUploading ? onCancelUpload : undefined}
           commandPending={commandPending}
           sessionBusy={sessionBusy}
           submitDisabled={!canSubmit}

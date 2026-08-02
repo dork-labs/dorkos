@@ -73,10 +73,7 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
 
 import { TransportProvider } from '@/layers/shared/model';
 import { createMockTransport } from '@dorkos/test-utils';
-import {
-  UPLOAD_CANCELED_MESSAGE,
-  UPLOAD_STALLED_MESSAGE,
-} from '@/layers/shared/lib/transport/upload-contract';
+import { UPLOAD_CANCELED_MESSAGE, UPLOAD_STALLED_MESSAGE } from '@/layers/shared/lib';
 import { ChatInputContainer } from '../ui/input/ChatInputContainer';
 import { useFileUpload } from '../model/use-file-upload';
 

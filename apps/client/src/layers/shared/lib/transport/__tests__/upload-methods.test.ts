@@ -12,6 +12,7 @@ import {
   UPLOAD_CANCELED_MESSAGE,
   UPLOAD_STALLED_MESSAGE,
   UPLOAD_STALL_TIMEOUT_MS,
+  UPLOAD_UNREADABLE_MESSAGE,
 } from '../upload-contract';
 import type { UploadFile } from '@dorkos/shared/transport';
 
@@ -79,6 +80,11 @@ class FakeXhr {
   succeedWith(uploads: unknown[]) {
     this.status = 200;
     this.responseText = JSON.stringify({ uploads });
+    this.emitLoad();
+  }
+
+  /** The response has fully arrived — whatever it turned out to contain. */
+  emitLoad() {
     this.emit(this.listeners, 'load', {});
   }
 
@@ -195,6 +201,35 @@ describe('uploadFiles never hangs', () => {
     expect(state.done).toBe(false);
   });
 
+  /**
+   * The one wedge neither escape hatch can reach.
+   *
+   * A 2xx is not proof DorkOS answered — a proxy interstitial, a captive portal
+   * or an expired-session redirect all reply 200 with HTML. An unguarded
+   * `JSON.parse` threw straight out of the `load` listener, leaving the promise
+   * unsettled with the watchdog already cleared; and `xhr.abort()` on a request
+   * already in DONE fires no `abort` event, so Cancel could not rescue it
+   * either. The composer would spin forever.
+   */
+  it.each([
+    ['HTML from a proxy or captive portal', '<html>Sign in to continue</html>'],
+    ['an empty body', ''],
+    ['valid JSON of the wrong shape', '{"ok":true}'],
+  ])('settles on a 2xx carrying %s', async (_label, body) => {
+    const { result } = await startUpload();
+    const xhr = FakeXhr.latest;
+
+    xhr.status = 200;
+    xhr.responseText = body;
+    xhr.emitLoad();
+
+    await expect(result).rejects.toThrow(UPLOAD_UNREADABLE_MESSAGE);
+
+    // And nothing is left running that could settle it a second time.
+    await vi.advanceTimersByTimeAsync(UPLOAD_STALL_TIMEOUT_MS * 3);
+    expect(xhr.aborted).toBe(false);
+  });
+
   it('stops watching once the upload succeeds', async () => {
     const { result } = await startUpload();
     const xhr = FakeXhr.latest;
@@ -229,7 +264,33 @@ describe('uploadFiles can always be cancelled', () => {
       methods.uploadFiles([file], '/test/project', undefined, controller.signal)
     ).rejects.toThrow(UPLOAD_CANCELED_MESSAGE);
 
-    expect(FakeXhr.latest.sent).toBe(false);
+    // Not merely unsent: the signal is checked before the files are even read,
+    // so no request is built and nothing is copied into memory.
+    expect(FakeXhr.instances).toHaveLength(0);
+  });
+
+  it('lands a cancel raised while the files are still being read', async () => {
+    // The window before `send()`: no request exists yet, so neither the
+    // watchdog nor `xhr.abort()` covers it — only the signal check does.
+    const controller = new AbortController();
+    const slowFile = {
+      name: 'huge.bin',
+      type: 'application/octet-stream',
+      size: 999,
+      arrayBuffer: () =>
+        new Promise<ArrayBuffer>((resolve) => {
+          controller.abort();
+          resolve(new ArrayBuffer(8));
+        }),
+    } as UploadFile;
+
+    const methods = createSystemMethods('http://localhost:4242/api');
+    await expect(
+      methods.uploadFiles([slowFile, file], '/test/project', undefined, controller.signal)
+    ).rejects.toThrow(UPLOAD_CANCELED_MESSAGE);
+
+    // The request was never made at all — the bytes never left.
+    expect(FakeXhr.instances).toHaveLength(0);
   });
 
   it('reports a cancel as a cancel, not as a stall', async () => {

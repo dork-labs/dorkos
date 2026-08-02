@@ -1643,7 +1643,14 @@ describe('ChatInput', () => {
 
   describe('attachment upload in flight', () => {
     it('shows the upload rather than a Stop with no turn to stop', () => {
-      render(<ChatInput {...defaultProps} value="here you go" isUploading={true} />);
+      render(
+        <ChatInput
+          {...defaultProps}
+          value="here you go"
+          isUploading={true}
+          onCancelUpload={vi.fn()}
+        />
+      );
       expect(screen.queryByLabelText('Stop generating')).toBeNull();
       expect(screen.queryByLabelText('Send message')).toBeNull();
     });
@@ -1705,18 +1712,32 @@ describe('ChatInput', () => {
         expect(onCancelUpload).toHaveBeenCalledTimes(2);
         expect(onClear).not.toHaveBeenCalled();
       });
+
+      // The control says what pressing it DOES; the live region says what is
+      // HAPPENING. Losing the second one is invisible to anyone watching the
+      // screen and total for anyone who is not.
+      it('still announces the upload through a live region', () => {
+        render(
+          <ChatInput
+            {...defaultProps}
+            value="here you go"
+            isUploading={true}
+            onCancelUpload={vi.fn()}
+          />
+        );
+        expect(screen.getByRole('status')).toHaveTextContent('Uploading attachment');
+        expect(screen.getByRole('button', { name: 'Cancel upload' })).toBeVisible();
+      });
     });
 
-    describe('when the host cannot stop it', () => {
-      // Not a disabled button: several screen readers skip disabled controls,
-      // and this is the only thing on screen saying the send is under way.
-      it('announces the upload through a live region, not a disabled button', () => {
-        render(<ChatInput {...defaultProps} value="here you go" isUploading={true} />);
-        const status = screen.getByRole('status');
-        expect(status.tagName).not.toBe('BUTTON');
-        expect(status).toHaveTextContent('Uploading attachment');
-        expect(screen.queryByRole('button', { name: /upload/i })).toBeNull();
-      });
+    // A host that reports an upload it cannot stop gets no progress control at
+    // all. The inert spinner it used to get was the wedge in miniature: a
+    // control-shaped thing with nothing behind it.
+    it('shows no upload control when the host offers no cancel', () => {
+      render(<ChatInput {...defaultProps} value="here you go" isUploading={true} />);
+      expect(screen.queryByRole('button', { name: /upload/i })).toBeNull();
+      expect(screen.queryByRole('status')).toBeNull();
+      expect(screen.getByLabelText('Send message')).toBeVisible();
     });
   });
 
