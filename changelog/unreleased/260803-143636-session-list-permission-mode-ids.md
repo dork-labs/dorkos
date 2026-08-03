@@ -1,6 +1,7 @@
 ---
 covers:
   - "fix(session): widen the session-list wire's permission-mode id to match what a runtime actually reports (DOR-851)"
+  - 'fix(sessions): address adversarial review on the permission-mode read-side fix (DOR-851)'
 ---
 
 ### Fixed
