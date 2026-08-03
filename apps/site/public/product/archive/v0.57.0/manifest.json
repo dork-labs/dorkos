@@ -1,0 +1,94 @@
+{
+  "label": "v0.57.0",
+  "archivedAt": "2026-08-03T09:40:02.460Z",
+  "source": {
+    "schemaVersion": 2,
+    "generatedAt": "2026-08-03T09:30:24.572Z",
+    "runId": "20260803-042330"
+  },
+  "shots": [
+    {
+      "id": "cockpit",
+      "kind": "still",
+      "frame": "desktop",
+      "consumers": ["marketing", "docs"]
+    },
+    {
+      "id": "tool-approval",
+      "kind": "still",
+      "frame": "desktop",
+      "consumers": ["marketing", "docs"]
+    },
+    {
+      "id": "multi-session",
+      "kind": "loop",
+      "frame": "desktop",
+      "consumers": ["marketing"]
+    }
+  ],
+  "count": 5,
+  "totalBytes": 1782271,
+  "assets": [
+    {
+      "source": "auto",
+      "file": "cockpit-light.png",
+      "surface": "cockpit",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 117261,
+      "runId": "20260803-042330",
+      "capturedAt": "2026-08-03T09:27:56.241Z"
+    },
+    {
+      "source": "auto",
+      "file": "multi-session-dark.png",
+      "surface": "multi-session",
+      "theme": "dark",
+      "kind": "still",
+      "width": 1280,
+      "height": 800,
+      "bytes": 90852,
+      "runId": "20260803-042330",
+      "capturedAt": "2026-08-03T09:27:56.241Z"
+    },
+    {
+      "source": "auto",
+      "file": "multi-session-dark.webm",
+      "surface": "multi-session",
+      "theme": "dark",
+      "kind": "loop",
+      "width": 1280,
+      "height": 800,
+      "bytes": 1352999,
+      "durationMs": 11382,
+      "runId": "20260803-042330",
+      "capturedAt": "2026-08-03T09:27:56.241Z"
+    },
+    {
+      "source": "auto",
+      "file": "multi-session-light.png",
+      "surface": "multi-session",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 113484,
+      "runId": "20260803-042330",
+      "capturedAt": "2026-08-03T09:27:56.241Z"
+    },
+    {
+      "source": "auto",
+      "file": "tool-approval-light.png",
+      "surface": "tool-approval",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 107675,
+      "runId": "20260803-042330",
+      "capturedAt": "2026-08-03T09:27:56.241Z"
+    }
+  ]
+}

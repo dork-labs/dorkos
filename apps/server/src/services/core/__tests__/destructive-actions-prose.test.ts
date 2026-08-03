@@ -153,14 +153,55 @@ const DEV_ROOTS = [path.join(REPO_ROOT, 'contributing'), path.join(REPO_ROOT, 'd
  * Generated from the registry, a released record, or a superseded one.
  *
  * `docs/api/` is projected from `capabilities-domain.ts` and guarded at its source
- * in `capabilities-domain.test.ts`. `changelog-archive.mdx` and `decisions/archive/`
- * record what was true when written and must not be rewritten.
+ * in `capabilities-domain.test.ts`. `changelog-archive.mdx`, `changelog.mdx`, and
+ * `decisions/archive/` record what was true when written and must not be rewritten.
+ *
+ * `changelog.mdx` joined its own archive here in v0.57.0. It is a mirror: every byte
+ * is copied from `CHANGELOG.md`, which this file has never scanned and deliberately
+ * cannot fix — see {@link RETIRED_PHRASES} on why `changelog/` is out of scope. The
+ * entry that forced the question is the one announcing this very guard's subject:
+ * `**"Secure by default" is gone.**` A changelog cannot report that a false claim was
+ * retired without naming the claim, and editing the mirror to satisfy a scan would
+ * make it stop matching the record it mirrors. Excluding the mirror and not the
+ * source was an accident of which trees got walked, not a decision.
  */
 const EXCLUDED = [
   path.join(DOCS_ROOT, 'api'),
   path.join(DOCS_ROOT, 'changelog-archive.mdx'),
+  path.join(DOCS_ROOT, 'changelog.mdx'),
   path.join(REPO_ROOT, 'decisions', 'archive'),
 ];
+
+/**
+ * Where a release post stops being written and starts being a copy.
+ *
+ * Every post in `blog/` ends with an `## All Changes` section that is the release's
+ * `CHANGELOG.md` section verbatim — the same unscanned source `docs/changelog.mdx` is
+ * excluded for above. Scanning it reddens a release for quoting a retired claim in
+ * order to announce its retirement, and the only ways to clear that are to edit the
+ * mirror away from its source or to opt the whole post out.
+ *
+ * Neither is acceptable, because opting out the whole post is exactly the DOR-555 gap:
+ * `blog/dorkos-0-8-0.mdx` carried the tool-access claim in its strongest form in the
+ * post's OWN prose, above this line. So the cut is here rather than at the file: the
+ * theme, the highlights, and any contributor note are read as strictly as before, and
+ * only the verbatim tail is skipped. {@link MARKER_FILES}' marker sits above this
+ * heading in every file that carries one, so the marker inventory is unaffected.
+ */
+const RELEASE_NOTE_MIRROR_HEADING = '\n## All Changes';
+
+/**
+ * A file's text, minus any mirrored changelog tail.
+ *
+ * @param rel - Repo-relative path, used to recognise a release post.
+ * @param text - The file's full contents.
+ * @returns The part of the file whose words were written for that file.
+ */
+function scannableText(rel: string, text: string): string {
+  if (!rel.startsWith(`blog${path.sep}`)) return text;
+  const cut = text.indexOf(RELEASE_NOTE_MIRROR_HEADING);
+  return cut === -1 ? text : text.slice(0, cut);
+}
 
 /** An author's deliberate, greppable opt-out for an honestly-disclaimed subset. */
 const PARTIAL_MARKER = 'destructive-actions: partial';
@@ -433,10 +474,11 @@ async function load(roots: string[]): Promise<ProseFile[]> {
   const files = (await Promise.all(roots.map(proseFiles))).flat();
   return Promise.all(
     files.map(async (file) => {
-      const lower = (await readFile(file, 'utf-8')).toLowerCase();
+      const rel = path.relative(REPO_ROOT, file);
+      const lower = scannableText(rel, await readFile(file, 'utf-8')).toLowerCase();
       const blocks = lower.split(/\n\s*\n/);
       return {
-        rel: path.relative(REPO_ROOT, file),
+        rel,
         lower,
         blocks,
         units: blocks.flatMap(toUnits),
@@ -456,10 +498,10 @@ beforeAll(async () => {
     await Promise.all(PUBLISHED_ROOTS.map((root) => filesUnder(root, /\.(mdx?|tsx?)$/)))
   ).flat();
   publishedCopy = await Promise.all(
-    files.map(async (file) => ({
-      rel: path.relative(REPO_ROOT, file),
-      lower: (await readFile(file, 'utf-8')).toLowerCase(),
-    }))
+    files.map(async (file) => {
+      const rel = path.relative(REPO_ROOT, file);
+      return { rel, lower: scannableText(rel, await readFile(file, 'utf-8')).toLowerCase() };
+    })
   );
 });
 
