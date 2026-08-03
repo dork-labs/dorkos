@@ -614,17 +614,41 @@ fs.mkdirSync(DORK_HOME, { recursive: true });
 fs.mkdirSync(path.join(DORK_HOME, 'logs'), { recursive: true });
 process.env.DORK_HOME = DORK_HOME;
 
+/**
+ * Open the config store, or stop with a message a person can act on.
+ *
+ * When the operating system will not let DorkOS read the config file, the
+ * manager raises `ConfigUnreadableError` rather than replacing it, and that
+ * error's message is written for exactly this moment. Printing it on its own
+ * beats letting it escape as an uncaught exception, where the same text arrives
+ * wrapped in a stack trace.
+ *
+ * @returns The initialized config manager.
+ */
+async function openConfigStore() {
+  const { initConfigManager, ConfigUnreadableError } =
+    await import('../server/services/core/config-manager.js');
+  try {
+    return initConfigManager(DORK_HOME);
+  } catch (err) {
+    if (!(err instanceof ConfigUnreadableError)) throw err;
+    // The server is bundled in at build time, so its module has no types here
+    // and `instanceof` against it narrows nothing. The check above is still the
+    // real one; this cast only tells the compiler what it proved.
+    console.error(`\n${(err as Error).message}\n`);
+    process.exit(1);
+  }
+}
+
 if (subcommand === 'config') {
-  const { initConfigManager } = await import('../server/services/core/config-manager.js');
-  const cfgMgr = initConfigManager(DORK_HOME);
+  const cfgMgr = await openConfigStore();
   const { handleConfigCommand } = await import('./config-commands.js');
   handleConfigCommand(cfgMgr, positionals.slice(1));
   process.exit(0);
 }
 
 if (subcommand === 'init') {
-  const { initConfigManager } = await import('../server/services/core/config-manager.js');
-  const cfgMgr = initConfigManager(DORK_HOME);
+  const cfgMgr = await openConfigStore();
   const { runInitWizard } = await import('./init-wizard.js');
   // No `!` needed: `yes` declares `default: false`, so it is always a boolean.
   await runInitWizard({ yes: values.yes, dorkHome: DORK_HOME, store: cfgMgr });
@@ -635,8 +659,7 @@ if (subcommand === 'init') {
 checkClaude();
 
 // Initialize config manager for precedence merge
-const { initConfigManager } = await import('../server/services/core/config-manager.js');
-const cfgMgr = initConfigManager(DORK_HOME);
+const cfgMgr = await openConfigStore();
 
 if (cfgMgr.isFirstRun) {
   console.log(`Created config at ${cfgMgr.path}`);

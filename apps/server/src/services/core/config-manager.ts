@@ -6,6 +6,21 @@
  * Ajv validation so we never hand-maintain JSON Schema. Handles first-run
  * detection, corrupt-config backup + recreate, and sensitive-field warnings.
  *
+ * ## Nothing is replaced that could not be read
+ *
+ * Recovery replaces the config file, so what counts as "corrupt" is a data-loss
+ * decision, not a logging one. Two rules, and the second is the one that holds
+ * absolutely:
+ *
+ * 1. A failure the OS raised — any errno error, including one `conf` stripped
+ *    the code off — never replaces anything, however long it lasts
+ *    ({@link classifyConfigLoadFailure}).
+ * 2. Whatever rule 1 misses, nothing is replaced unless
+ *    {@link readStoredConfigForSalvage} first read the file. A successful read
+ *    is both the evidence that the file really is the problem and the only way
+ *    a protection can be carried across, and it is a stronger guarantee than
+ *    any judgement about an error's shape.
+ *
  * ## Migration semantics (conf's `projectVersion` model)
  *
  * `conf` tracks migration state **inside the config file itself**, in an
@@ -69,29 +84,516 @@ import {
   normalizeSidebarPrefs,
 } from '@dorkos/shared/config-schema';
 import type { UserConfig, SidebarItemRef } from '@dorkos/shared/config-schema';
-import { logger } from '../../lib/logger.js';
+import { logger, logError } from '../../lib/logger.js';
 import { SERVER_VERSION } from '../../lib/version.js';
 import { latestInstant, restoreProtectedState } from './safe-defaults/protected-state.js';
+
+/**
+ * The result of reading a config file that `conf` refused, before replacing it.
+ *
+ * The two cases are kept apart because only one of them permits a replacement.
+ * `read: true` means the bytes are in hand, which is both what salvage needs
+ * and the only proof that the file, rather than the machine, is the problem.
+ * `read: false` means the file was never read at all, and nothing may be
+ * concluded from that except that DorkOS must keep its hands off it.
+ */
+type SalvageRead = { read: true; value: unknown } | { read: false; error: unknown };
 
 /**
  * Read a config file that `conf` just refused, so its protections can be
  * salvaged before the file is replaced.
  *
- * Best-effort by design and never throws. A file that fails schema validation
- * usually still parses as JSON — that is the whole reason salvage is possible —
- * but a genuinely truncated file does not, and the caller is already handling a
- * failure. An unreadable file simply yields `undefined` and the recovery
- * proceeds on defaults, exactly as it did before.
+ * Retried on the same staircase as the load itself, and for the same reason.
+ * This read happens during whatever is going wrong on the machine, so a single
+ * unretried attempt is at its least likely to succeed exactly when it matters
+ * most: a storm that condemns the file is still blowing when salvage runs, and
+ * a salvage that comes back empty silently costs the person a protection
+ * (DOR-584) rather than a preference.
+ *
+ * Never throws. A read that worked but whose contents will not parse is still
+ * `read: true` with an `undefined` value — a truncated file is genuinely
+ * unsalvageable, and that is a different fact from never having seen it.
  *
  * @param configPath - Absolute path to the config file being replaced.
- * @returns The parsed contents, or `undefined` when they cannot be read.
+ * @param retryDelaysMs - Backoff between attempts; its length is the retry count.
+ * @returns The parsed contents, or the failure that stopped the read.
  */
-function readStoredConfigForSalvage(configPath: string): unknown {
-  try {
-    return JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-  } catch {
-    return undefined;
+function readStoredConfigForSalvage(
+  configPath: string,
+  retryDelaysMs: readonly number[]
+): SalvageRead {
+  for (let attempt = 0; ; attempt++) {
+    let raw: string;
+    try {
+      raw = fs.readFileSync(configPath, 'utf-8');
+    } catch (error) {
+      const delay = retryDelaysMs[attempt];
+      if (delay === undefined) return { read: false, error };
+      sleepSync(delay);
+      continue;
+    }
+    try {
+      return { read: true, value: JSON.parse(raw) };
+    } catch {
+      // Read fine, will not parse. Nothing to salvage, but the file is
+      // genuinely damaged and may be replaced.
+      return { read: true, value: undefined };
+    }
   }
+}
+
+/**
+ * What a failed `conf` load says about the file on disk.
+ *
+ * The three kinds differ in exactly one way that matters: whether the file may
+ * be replaced, and after how long.
+ *
+ * - `corrupt` — the stored bytes are unusable and only replacing the file gets
+ *   past it: the JSON does not parse, the contents fail the schema, or they
+ *   cannot be decrypted. Condemned immediately, because re-reading the same
+ *   bytes cannot change the answer.
+ * - `io` — the READ failed and the contents were never in question. An `EMFILE`
+ *   while the machine is out of file descriptors, an `EACCES` after an
+ *   ownership change, an `EBUSY` while another program holds the file, an `EIO`
+ *   off a flaky disk. **Never condemns the file, however long it lasts.**
+ * - `unknown` — neither. Retried, and condemned only if it survives the whole
+ *   backoff staircase, at which point it is deterministic and the file is the
+ *   only thing it can be about.
+ */
+export type ConfigLoadFailureKind = 'corrupt' | 'io' | 'unknown';
+
+/**
+ * Decide what a `conf` load failure says about the stored file.
+ *
+ * ## The defect this exists for
+ *
+ * `conf` reports every failure the same way — it rethrows — and the recovery
+ * below used to treat *any* throw as proof of corruption, back the file up and
+ * delete it. So a config that was perfectly valid, read during a burst of
+ * file-descriptor pressure, was destroyed by the code meant to protect it.
+ * (Observed: a valid `config.json` replaced with defaults while the machine was
+ * in an `EMFILE` storm. The `.bak` it left behind parsed and validated
+ * cleanly.)
+ *
+ * ## Why `io` is a class of its own, and not just "did not clear yet"
+ *
+ * An errno failure is never evidence about what a file contains, and that stays
+ * true no matter how many times it repeats. The storm that motivated this ran
+ * for far longer than any sensible boot-time backoff, so "it failed four times,
+ * therefore the file is bad" would hand the original defect straight back on a
+ * timer. An errno error is therefore fatal-but-harmless: DorkOS stops, says so,
+ * and the file is exactly where the person left it.
+ *
+ * ## Why `unknown` is condemned rather than retried forever
+ *
+ * `conf` runs the migration chain inside its constructor, and `_migrate` feeds
+ * the file's own `__internal__.migrations.version` into `semver` (`conf@15`,
+ * `_shouldPerformMigration`). One flipped byte in that string — still valid
+ * JSON, still schema-valid, and outside the Ajv schema entirely — throws
+ * `TypeError: Invalid Version` from inside the constructor. That is as
+ * file-caused as a syntax error, and treating it as unreadable would brick boot
+ * permanently while telling the person to try again. So the residual class is
+ * condemned once the staircase has proved it deterministic. A migration body
+ * that throws (wrapped by `conf` as `Something went wrong during the
+ * migration!`) lands in the same class, for the same reason.
+ *
+ * That is the general rule rather than a list of conf's internals: the caller
+ * retries, and time does the classifying. It costs a broken file one 750ms
+ * staircase before it is recovered.
+ *
+ * ## The three `corrupt` shapes
+ *
+ * Taken from where `conf` itself decides what `clearInvalidConfig` would have
+ * cleared (`conf@15`, `get store()`). DorkOS sets `clearInvalidConfig: false`,
+ * so `conf` rethrows all three rather than handling them, which is what puts
+ * the decision here. They are named only to skip a pointless staircase — the
+ * `unknown` path would reach the same verdict 750ms later.
+ *
+ * A partly-written file is not a case this has to cover: `conf` writes through
+ * `atomically`, so a reader sees either the old file or the new one.
+ *
+ * @param error - Whatever the `Conf` constructor threw.
+ * @returns What the failure says about the file.
+ */
+export function classifyConfigLoadFailure(error: unknown): ConfigLoadFailureKind {
+  if (!(error instanceof Error)) return 'unknown';
+  // `JSON.parse` inside conf's `_deserialize`.
+  if (error.name === 'SyntaxError') return 'corrupt';
+  // conf's Ajv wrapper: `Config schema violation: server.port must be integer`.
+  if (error.message.startsWith('Config schema violation:')) return 'corrupt';
+  // conf's decrypt failure, raised with exactly this message. Unreachable while
+  // DorkOS passes no `encryptionKey`, and kept so it stays right if one is ever
+  // added.
+  if (error.message === 'Failed to decrypt config data.') return 'corrupt';
+  return isIoFailure(error) ? 'io' : 'unknown';
+}
+
+/**
+ * The first sentence `conf` puts on anything thrown from inside a migration.
+ *
+ * `conf@15`'s `_migrate` catches every failure in its per-migration `try` and
+ * rethrows it as a plain `Error`, appending the original message and keeping
+ * neither `code` nor `cause`.
+ */
+const CONF_MIGRATION_WRAPPER = 'Something went wrong during the migration!';
+
+/** A bare errno code as Node writes it: `EMFILE`, `EACCES`, `EIO`. */
+const ERRNO_CODE = /^E[A-Z0-9]+$/;
+
+/**
+ * The same code as it appears at the head of an `fs` error's message, e.g.
+ * `EMFILE: too many open files, open '/…'`.
+ */
+const ERRNO_IN_MESSAGE = /(?:^|\s)E[A-Z0-9]{2,}: /;
+
+/**
+ * Whether an error is the operating system refusing a file operation.
+ *
+ * Node stamps every failed syscall with a bare errno code (`EMFILE`, `EACCES`,
+ * `EBUSY`, `EIO`, …). Node's own `ERR_*` codes carry underscores and are
+ * excluded deliberately: those report a bad call, not a disk or descriptor
+ * problem, so they belong in the deterministic class.
+ *
+ * ## The laundered case
+ *
+ * A bare code is not always there to read. `conf` runs the migration chain
+ * inside its constructor, and the per-migration `try` in `_migrate` wraps
+ * anything thrown into a plain `Error` — no `code`, no `cause`. That block
+ * contains READS (every migration body calls `store.get`/`store.has`, and each
+ * one reads the file), so an `EMFILE` on any read after the first arrives here
+ * with nothing left to identify it. Left unrecognised it looked deterministic,
+ * failed identically four times, and cost a valid config its life on the one
+ * boot after an upgrade — which is exactly when a migration body runs.
+ *
+ * So a wrapped error is unwrapped by looking for the errno at the head of the
+ * message `conf` appended. The match is gated on `conf`'s own wrapper sentence
+ * rather than applied to every message, because a false `io` verdict is not
+ * free: it makes a deterministic failure un-condemnable, and the boot it blocks
+ * would never clear. Anything this misses is still caught by the rule that
+ * nothing gets replaced unless {@link readStoredConfigForSalvage} could read
+ * it — a message format is a weaker guarantee than a successful read.
+ *
+ * @param error - The error to inspect.
+ */
+function isIoFailure(error: Error): boolean {
+  const code = (error as NodeJS.ErrnoException).code;
+  if (typeof code === 'string' && ERRNO_CODE.test(code)) return true;
+  return error.message.startsWith(CONF_MIGRATION_WRAPPER) && ERRNO_IN_MESSAGE.test(error.message);
+}
+
+/**
+ * Raised when the operating system would not let DorkOS read the config file,
+ * after retrying.
+ *
+ * Carries the underlying failure as `cause` and the path as
+ * {@link ConfigUnreadableError.configPath} so a caller can report both. The
+ * message is written for the person reading a terminal, because that is where
+ * it lands: the server prints it and stops.
+ *
+ * @see {@link unreadableMessage} for why there are two of them.
+ */
+export class ConfigUnreadableError extends Error {
+  /** Absolute path of the config file that could not be read. */
+  readonly configPath: string;
+
+  /**
+   * What the person can actually do about it, as a paragraph of its own.
+   *
+   * Split out so `dorkos doctor` can show the same next step on its checklist
+   * without restating it. Two copies of this advice drifted apart once already.
+   */
+  readonly advice: string;
+
+  /**
+   * Build the message a person sees when their settings could not be read.
+   *
+   * @param configPath - Absolute path of the config file.
+   * @param cause - The last failure from the `Conf` constructor.
+   * @param backupPath - Where the old settings were copied, when this happened
+   *   on the second leg of corrupt-recovery and the original is already gone.
+   */
+  constructor(configPath: string, cause: unknown, backupPath?: string) {
+    const advice = adviceFor(cause, configPath, backupPath);
+    super(unreadableMessage(configPath, cause, advice, backupPath), { cause });
+    this.name = 'ConfigUnreadableError';
+    this.configPath = configPath;
+    this.advice = advice;
+  }
+}
+
+/**
+ * Errno codes that pass on their own, given a moment.
+ *
+ * The distinction is the whole point of {@link adviceFor}: "try again" is good
+ * advice for a machine that ran out of descriptors and terrible advice for a
+ * file the person is not allowed to open, where it means "loop forever".
+ */
+const SELF_CLEARING_ERRNOS = new Set([
+  'EMFILE',
+  'ENFILE',
+  'EBUSY',
+  'EAGAIN',
+  'EINTR',
+  'EIO',
+  'ETIMEDOUT',
+  'ENOMEM',
+]);
+
+/** Errno codes that mean the person, not the machine, has to do something. */
+const PERMISSION_ERRNOS = new Set(['EACCES', 'EPERM', 'EROFS']);
+
+/**
+ * Errno codes that mean there is nowhere to put the bytes.
+ *
+ * Separate from the permission set because the fix is different and the rename
+ * hatch is useless: renaming the file does not let DorkOS write a new one when
+ * the disk is full. Reachable through the backup copy on the recovery path.
+ */
+const NO_SPACE_ERRNOS = new Set(['ENOSPC', 'EDQUOT', 'EFBIG']);
+
+/**
+ * The errno behind a failure, whether it is on the error or only in its text.
+ *
+ * @param cause - The failure to read a code out of.
+ * @returns The code, or `undefined` when there is none to find.
+ */
+function errnoOf(cause: unknown): string | undefined {
+  if (!(cause instanceof Error)) return undefined;
+  const code = (cause as NodeJS.ErrnoException).code;
+  if (typeof code === 'string' && ERRNO_CODE.test(code)) return code;
+  return ERRNO_IN_MESSAGE.exec(cause.message)?.[0].trim().replace(':', '');
+}
+
+/**
+ * The next step to offer, chosen by what the operating system actually said.
+ *
+ * Every branch names something a person can do. "Check that you can open that
+ * file" was the old text, and it names no action at all.
+ *
+ * Two things this must not do. It must not point at a line by position: the
+ * same string is shown under three different layouts (with a backup, without
+ * one, and as a `dorkos doctor` row), and "the line above" is a different line
+ * in each. And when `backupPath` is set it must not offer the rename hatch,
+ * because on that path the person's settings are in the BACKUP and the file
+ * they would be renaming is the failed replacement, which keeps nothing.
+ *
+ * @param cause - The failure being reported.
+ * @param configPath - Absolute path of the config file.
+ * @param backupPath - Where the old settings already went, if they did.
+ */
+function adviceFor(cause: unknown, configPath: string, backupPath?: string): string {
+  const code = errnoOf(cause);
+  if (code !== undefined && SELF_CLEARING_ERRNOS.has(code)) {
+    return (
+      `This usually means the file was busy, or your computer had too many\n` +
+      `files open at once. Both pass on their own, so start DorkOS again.`
+    );
+  }
+  if (code !== undefined && NO_SPACE_ERRNOS.has(code)) {
+    return (
+      `There is no room left to write the file. Free up some disk space, then\n` +
+      `start DorkOS again.`
+    );
+  }
+  if (code !== undefined && PERMISSION_ERRNOS.has(code)) {
+    const fix =
+      `DorkOS is not allowed to open that file, and waiting will not change\n` +
+      `that. Give yourself permission to read and write it (on a Mac or Linux:\n` +
+      `chmod u+rw "${configPath}"; on Windows, right-click the file, then\n` +
+      `Properties and Security).`;
+    if (backupPath !== undefined) return `${fix} Then start DorkOS again.`;
+    return (
+      `${fix} If you would rather start fresh, rename the file. DorkOS will\n` +
+      `make a new one, and your old settings stay in the file you renamed.`
+    );
+  }
+  if (backupPath !== undefined) {
+    // Named and actionable, like the permission branch above it: the failure
+    // here is a file that could not be CREATED, so the folder is the subject.
+    return (
+      `DorkOS could not create a file in this folder:\n\n` +
+      `  ${path.dirname(configPath)}\n\n` +
+      `Give yourself permission to write there (on a Mac or Linux:\n` +
+      `chmod u+w "${path.dirname(configPath)}"; on Windows, right-click the\n` +
+      `folder, then Properties and Security). Then start DorkOS again.`
+    );
+  }
+  return (
+    `That is unlikely to fix itself. If you cannot clear the problem named\n` +
+    `above, rename the file and DorkOS will make a new one, keeping your old\n` +
+    `settings in the file you renamed.`
+  );
+}
+
+/**
+ * The text of a {@link ConfigUnreadableError}, in the two situations it covers.
+ *
+ * They have to be different, because the reassuring one would otherwise be a
+ * lie. Corrupt-recovery copies the old file to `.bak` and deletes the original
+ * before creating a replacement; if THAT creation is what the OS refuses, the
+ * settings are neither untouched nor where the person left them. Sending them
+ * to `config.json` at that point would point at the wrong file, when theirs is
+ * sitting next to it under another name.
+ *
+ * ## What the plain branch may and may not claim
+ *
+ * It says DorkOS did not REPLACE OR DELETE anything, which is the guarantee
+ * this module actually delivers, and it holds absolutely. It does not say the
+ * bytes are untouched, because `conf` writes before DorkOS gets a verdict:
+ * `#runMigrations` calls `_write(storeWithDefaults)` BEFORE `_migrate` runs, so
+ * on any boot where the stored file is not already default-shaped — every
+ * upgrade boot — the file has been rewritten with the defaults merged in
+ * before this error is even constructed. Nothing is lost by that (the merge is
+ * shallow and the stored value wins per top-level key), but a 131-byte config
+ * can be 2429 bytes by the time a person reads this, so "nothing was changed"
+ * was false wherever it mattered most.
+ *
+ * @param configPath - Absolute path of the config file.
+ * @param cause - The failure being reported.
+ * @param advice - The next step, from {@link adviceFor}.
+ * @param backupPath - Where the old settings were copied, if they were.
+ */
+function unreadableMessage(
+  configPath: string,
+  cause: unknown,
+  advice: string,
+  backupPath?: string
+): string {
+  const what = `  file: ${configPath}\n  why:  ${describeLoadError(cause)}`;
+  if (backupPath !== undefined) {
+    return [
+      `DorkOS could not finish repairing your settings.`,
+      ``,
+      what,
+      ``,
+      `Your old settings could not be used, so DorkOS copied them to the file`,
+      `below and tried to start a new one. That did not work either.`,
+      ``,
+      `  ${backupPath}`,
+      ``,
+      `Your old settings are still in that file.`,
+      advice,
+    ].join('\n');
+  }
+  return [
+    `DorkOS could not read your settings, so it stopped rather than replacing them.`,
+    ``,
+    what,
+    ``,
+    `DorkOS did not replace or delete your settings.`,
+    advice,
+  ].join('\n');
+}
+
+/**
+ * One line describing a load failure, for a log or an error message.
+ *
+ * Node's `fs` errors already begin with their errno code
+ * (`EMFILE: too many open files, open '…'`), so the message alone is the whole
+ * story for the case this exists to report.
+ *
+ * @param error - Whatever was thrown.
+ */
+function describeLoadError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Backoff before each retry of a config read that failed for a reason other
+ * than corruption, in milliseconds. Its length is the retry count: four
+ * attempts in total, 750ms of waiting in the worst case.
+ *
+ * Sized for the failure it exists for. File-descriptor exhaustion is a burst:
+ * the fds come back within milliseconds once whatever grabbed them settles, so
+ * a short staircase converts most of those boots into a normal one. Waiting
+ * longer buys little at boot, and any failure that outlives the staircase is
+ * reported rather than guessed at.
+ */
+export const CONFIG_LOAD_RETRY_DELAYS_MS = [50, 200, 500] as const;
+
+/**
+ * Block this thread for `ms`.
+ *
+ * Deliberately blocking: {@link ConfigManager} is constructed synchronously
+ * during boot and everything after it needs the config, so there is nothing
+ * useful to yield to. Only ever reached on the retry path, and bounded by
+ * {@link CONFIG_LOAD_RETRY_DELAYS_MS}.
+ *
+ * @param ms - How long to block for.
+ */
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/** The exact options object both `Conf` constructions below are built from. */
+type ConfConstructorOptions = ConstructorParameters<typeof Conf<UserConfig>>[0];
+
+/**
+ * Open the `conf` store, riding out a failure that is not the file's fault.
+ *
+ * Three outcomes, and they are deliberately not the same shape:
+ *
+ * 1. It opened — the store comes back.
+ * 2. The file is condemned — the error comes back so the caller can back it up,
+ *    salvage what protects the person, and start a fresh one. Either the
+ *    failure was `corrupt` outright, or it was `unknown` and survived the whole
+ *    staircase, which makes it deterministic and therefore about the file.
+ * 3. The OS refused the file (`io`) — retried on a short backoff, then thrown.
+ *    **The file is never touched on this path, however long the failure
+ *    lasts.** Losing the ability to read a file is not evidence that the file
+ *    is bad, and the person's settings are sitting in it, intact.
+ *
+ * @param options - Constructor options, shared with the recovery construction.
+ * @param configPath - Absolute path of the config file, for logs.
+ * @param retryDelaysMs - Backoff between attempts; its length is the retry count.
+ * @param backupPath - Where the old settings already went, when this call is
+ *   the second leg of corrupt-recovery. Only changes what an error says.
+ * @returns The opened store, or the error that condemned the file.
+ * @throws {ConfigUnreadableError} When every attempt was refused by the OS.
+ */
+function loadConfigStore(
+  options: ConfConstructorOptions,
+  configPath: string,
+  retryDelaysMs: readonly number[],
+  backupPath?: string
+): { store: Conf<UserConfig> } | { corruptedBy: Error } {
+  let lastError: unknown;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return { store: new Conf<UserConfig>(options) };
+    } catch (error) {
+      lastError = error;
+      const kind = classifyConfigLoadFailure(error);
+      const condemn = (): { corruptedBy: Error } => ({
+        corruptedBy: error instanceof Error ? error : new Error(String(error)),
+      });
+      if (kind === 'corrupt') return condemn();
+      const delay = retryDelaysMs[attempt];
+      if (delay === undefined) {
+        // The staircase is spent. An `io` failure still says nothing about the
+        // contents, so it is reported and the file survives. An `unknown` one
+        // has now failed identically across ~750ms, which is what a
+        // file-caused failure looks like and a transient one does not: condemn
+        // it, so a config `conf` can never open again gets recovered instead of
+        // blocking every boot from here on.
+        if (kind === 'unknown') {
+          logger.warn(
+            `[Config] ${configPath} failed to open the same way on every attempt: ` +
+              `${describeLoadError(error)}. Treating it as damaged.`
+          );
+          return condemn();
+        }
+        break;
+      }
+      logger.warn(
+        `[Config] Could not read ${configPath}: ${describeLoadError(error)}. ` +
+          `Leaving the file alone and retrying in ${delay}ms.`
+      );
+      sleepSync(delay);
+    }
+  }
+  logger.error(`[Config] Gave up reading ${configPath} without modifying it`, logError(lastError));
+  throw new ConfigUnreadableError(configPath, lastError, backupPath);
 }
 
 /**
@@ -1749,12 +2251,37 @@ const jsonSchemaProperties = jsonSchemaFull.properties ?? {};
 // is structurally compatible at runtime but TypeScript cannot verify it statically.
 const confSchema = jsonSchemaProperties as unknown as Schema<UserConfig>;
 
+/** Construction-time overrides for {@link ConfigManager}. */
+export interface ConfigManagerOptions {
+  /**
+   * Backoff between attempts when a load or a salvage read fails for a reason
+   * that is not the file's fault. Defaults to
+   * {@link CONFIG_LOAD_RETRY_DELAYS_MS}; its LENGTH is the retry count.
+   *
+   * Exists for the tests, and earns its place there. Proving that a config
+   * survives a storm takes dozens of constructions that each exhaust the
+   * staircase, and `sleepSync` parks the worker thread for real: at the shipped
+   * delays that suite held a vitest worker for around thirty seconds and made
+   * timing-sensitive tests in other files flake. Shortening the delays keeps
+   * every attempt, and the attempt count is what those tests are about. One
+   * test deliberately uses the default schedule so the shipped path is still
+   * exercised end to end.
+   */
+  retryDelaysMs?: readonly number[];
+}
+
 /**
  * Manages persistent user configuration at ~/.dork/config.json.
  *
  * Uses `conf` for atomic JSON I/O with Ajv validation via the JSON Schema
  * generated from UserConfigSchema. Handles first-run detection, corrupt
  * config recovery (backup + recreate), and sensitive field warnings.
+ *
+ * Construction throws {@link ConfigUnreadableError} when the operating system
+ * would not let DorkOS read the file. That is the loud half of the guarantee in
+ * {@link classifyConfigLoadFailure}: the file is neither replaced nor deleted,
+ * and a restart picks it up. Every other failure recovers rather than
+ * throwing.
  *
  * The class is exported alongside the {@link configManager} singleton for one
  * reason: a SECOND manager over the same directory is the faithful stand-in for
@@ -1785,7 +2312,14 @@ export class ConfigManager {
   private _isFirstRun = false;
   private listeners = new Set<ConfigChangeListener>();
 
-  constructor(dorkHome: string) {
+  /**
+   * Open the config store, recovering or refusing per the rules above.
+   *
+   * @param dorkHome - The DorkOS data directory holding `config.json`.
+   * @param options - Overrides for the retry policy. Production passes none.
+   */
+  constructor(dorkHome: string, options: ConfigManagerOptions = {}) {
+    const retryDelaysMs = options.retryDelaysMs ?? CONFIG_LOAD_RETRY_DELAYS_MS;
     const configDir = dorkHome;
     const configPath = path.join(configDir, 'config.json');
     this._isFirstRun = !fs.existsSync(configPath);
@@ -1811,27 +2345,76 @@ export class ConfigManager {
       migrations: CONFIG_MIGRATIONS,
     } satisfies ConstructorParameters<typeof Conf<UserConfig>>[0];
 
-    try {
-      this.store = new Conf<UserConfig>(confOptions);
+    // Only a failure the file itself caused reaches the recovery branch. An
+    // errno failure — a busy file, a machine out of file descriptors, a
+    // permission that changed — is retried and then reported by
+    // `loadConfigStore`, with the file untouched, however long it lasts. See
+    // {@link classifyConfigLoadFailure}.
+    const opened = loadConfigStore(confOptions, configPath, retryDelaysMs);
+    if ('store' in opened) {
+      this.store = opened.store;
       logger.info(`[Config] Loaded from ${configPath} (first run: ${this._isFirstRun})`);
-    } catch (_error) {
+    } else {
+      // The actual reason, logged before anything is moved. Without it, the
+      // only record of WHY a config was replaced was the fact that it had been.
+      logger.warn(
+        `[Config] ${configPath} could not be used: ${describeLoadError(opened.corruptedBy)}`
+      );
       // Read the doomed file BEFORE deleting it. The common failure is a file
       // that parses as JSON but no longer satisfies the schema (a skipped
       // rename, a narrowed enum, a hand edit), so the person's privacy and
       // permission choices are sitting right there, perfectly readable, in the
       // file we are about to replace. Losing state must not lose a protection.
       let stored: unknown;
+      let backupPath: string | undefined;
       if (fs.existsSync(configPath)) {
-        stored = readStoredConfigForSalvage(configPath);
-        const backupPath = configPath + '.bak';
-        fs.copyFileSync(configPath, backupPath);
-        fs.unlinkSync(configPath);
+        const salvage = readStoredConfigForSalvage(configPath, retryDelaysMs);
+        if (!salvage.read) {
+          // NOTHING GETS REPLACED THAT COULD NOT BE READ. This is the general
+          // guarantee behind the errno classification, and it holds even when
+          // the classifier was fooled: a failure that looked deterministic but
+          // is really a machine in trouble shows up again here, because the
+          // machine is still in trouble. Replacing now would destroy a file we
+          // have no evidence against and cannot salvage a single protection
+          // from.
+          logger.error(
+            `[Config] Refusing to replace ${configPath}: it could not be read`,
+            logError(salvage.error)
+          );
+          throw new ConfigUnreadableError(configPath, salvage.error);
+        }
+        stored = salvage.value;
+        backupPath = configPath + '.bak';
+        try {
+          fs.copyFileSync(configPath, backupPath);
+          fs.unlinkSync(configPath);
+        } catch (error) {
+          // Same rule, one step later: if the backup or the removal is
+          // refused, stop rather than half-replace. The original is still
+          // where the person left it, so the plain message is the true one.
+          logger.error(`[Config] Could not replace ${configPath}`, logError(error));
+          throw new ConfigUnreadableError(configPath, error);
+        }
         logger.warn(`Corrupt config backed up to ${backupPath}`);
         logger.warn('Creating fresh config with defaults.');
       }
       // Reuse the exact same options so the recovered store still has the
-      // migration chain wired up.
-      this.store = new Conf<UserConfig>(confOptions);
+      // migration chain wired up. `backupPath` only changes what a failure
+      // here SAYS: the original is gone by now, so the message has to send the
+      // person to the backup rather than to a path that no longer holds their
+      // settings.
+      const recovered = loadConfigStore(confOptions, configPath, retryDelaysMs, backupPath);
+      if (!('store' in recovered)) {
+        // Defaults that `conf` itself condemns are a defect in the defaults,
+        // not in anything the person did, and there is nothing further to
+        // recover to. Wrapped rather than rethrown bare: both callers of the
+        // constructor print a `ConfigUnreadableError` and swallow its stack,
+        // and rethrow anything else. A bare error here would reach the person
+        // as the uncaught stack trace that wrapping exists to prevent.
+        logger.error(`[Config] Could not create a fresh config`, logError(recovered.corruptedBy));
+        throw new ConfigUnreadableError(configPath, recovered.corruptedBy, backupPath);
+      }
+      this.store = recovered.store;
       restoreProtectedState(this.store, stored, 'Recovered a damaged config');
     }
   }

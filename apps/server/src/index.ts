@@ -24,7 +24,11 @@ import {
 } from './services/core/auth/exposure-guard.js';
 import { tunnelManager } from './services/core/tunnel-manager.js';
 import { initCloudLinkManager, getCloudLinkManager } from './services/core/auth/cloud-link.js';
-import { initConfigManager, configManager } from './services/core/config-manager.js';
+import {
+  initConfigManager,
+  configManager,
+  ConfigUnreadableError,
+} from './services/core/config-manager.js';
 import {
   credentialProvider,
   credentialStore,
@@ -307,7 +311,18 @@ async function start() {
   }
   releaseInstanceLock = lock.release;
 
-  initConfigManager(dorkHome);
+  try {
+    initConfigManager(dorkHome);
+  } catch (error) {
+    if (!(error instanceof ConfigUnreadableError)) throw error;
+    // The settings file is intact and unreadable, so stopping is the honest
+    // outcome: booting on defaults would quietly run with someone else's
+    // security posture. Same stderr reasoning as the instance lock above — an
+    // operator starting from a terminal has to see this.
+    logger.error(error.message);
+    console.error(`\n${error.message}\n`);
+    process.exit(1);
+  }
   // Credential substrate (ADR-0315): resolves stored credential references to
   // secrets at each runtime's env-injection seam. Must precede any runtime spawn.
   initCredentialProvider(dorkHome);

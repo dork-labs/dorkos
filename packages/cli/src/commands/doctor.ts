@@ -124,11 +124,14 @@ export async function runDoctor(dorkHome: string, args: string[]): Promise<numbe
   }
 
   const gather = async (): Promise<CheckResult[]> => {
-    const store = await loadConfig(dorkHome);
+    const { store, failure } = await loadConfig(dorkHome);
     const results = await gatherResults(dorkHome, store);
     if (options.deep) {
       results.push(...(await gatherDeepResults()));
     }
+    // First, because every check below it read defaults rather than the
+    // person's real settings, and because it is the headline diagnosis.
+    if (failure) results.unshift(failure);
     return results;
   };
 
@@ -143,14 +146,86 @@ export async function runDoctor(dorkHome: string, args: string[]): Promise<numbe
   return exitCodeFor(results);
 }
 
-/** Load the config store, or `null` if it cannot be read (checks then degrade gracefully). */
-async function loadConfig(dorkHome: string): Promise<ConfigStore | null> {
+/**
+ * Load the config store, or report why it could not be opened.
+ *
+ * The failure is returned as a check rather than swallowed. Doctor is the
+ * command a person runs BECAUSE something is wrong, and a config file the
+ * operating system will not let DorkOS read is now the one condition that stops
+ * the server from starting at all. Reporting it as `null` and carrying on would
+ * make doctor print a clean bill of health for the one machine that is broken.
+ *
+ * The remaining checks still run, on defaults, so the report is not cut short.
+ *
+ * @param dorkHome - The resolved DorkOS data directory.
+ * @returns The store when it opened, plus a failing check when it did not.
+ */
+async function loadConfig(
+  dorkHome: string
+): Promise<{ store: ConfigStore | null; failure: CheckResult | null }> {
   try {
     const { initConfigManager } = await import('../../server/services/core/config-manager.js');
-    return initConfigManager(dorkHome) as unknown as ConfigStore;
-  } catch {
-    return null;
+    return { store: initConfigManager(dorkHome) as unknown as ConfigStore, failure: null };
+  } catch (err) {
+    return { store: null, failure: configFailureCheck(err, dorkHome) };
   }
+}
+
+/**
+ * The checklist row for a config that would not open.
+ *
+ * @param err - Whatever `initConfigManager` threw.
+ * @param dorkHome - The resolved DorkOS data directory.
+ * @returns A failing check naming the file, the reason, and the way out.
+ * @internal Exported for testing.
+ */
+export function configFailureCheck(err: unknown, dorkHome: string): CheckResult {
+  return {
+    label: 'Your settings could not be read',
+    status: 'fail',
+    detail: describeConfigFailure(err),
+    fix:
+      `DorkOS did not replace or delete the file: ${path.join(dorkHome, 'config.json')}\n` +
+      `Everything below was checked against the built-in defaults instead.\n` +
+      adviceFrom(err),
+  };
+}
+
+/**
+ * One line naming why the config would not open.
+ *
+ * Prefers the underlying failure over the wrapper: `ConfigUnreadableError`
+ * carries a multi-line message meant for a terminal of its own, while its
+ * `cause` is the single line that says what the operating system refused
+ * (`EMFILE: too many open files, open '…'`), which is what belongs on a
+ * checklist row.
+ *
+ * @param err - Whatever `initConfigManager` threw.
+ * @internal Exported for testing.
+ */
+export function describeConfigFailure(err: unknown): string {
+  if (err instanceof Error && err.cause instanceof Error) return err.cause.message;
+  if (err instanceof Error) return err.message.split('\n')[0] ?? err.name;
+  return String(err);
+}
+
+/**
+ * The next step to show, taken from the error rather than restated here.
+ *
+ * `ConfigUnreadableError` already picks its advice by the errno it saw:
+ * "try again" for a descriptor shortage, a permission fix for `EACCES`. Doctor
+ * showing its own copy is how the two drifted into disagreeing once, and a
+ * person running doctor is the one who most needs the right instruction.
+ *
+ * @param err - Whatever `initConfigManager` threw.
+ */
+function adviceFrom(err: unknown): string {
+  // Guarded rather than cast: `describeConfigFailure` already handles a thrown
+  // non-object, and the two should not disagree about what they can be given.
+  const advice =
+    typeof err === 'object' && err !== null ? (err as { advice?: unknown }).advice : undefined;
+  if (typeof advice === 'string' && advice.length > 0) return advice;
+  return 'Start DorkOS again. If that does not help, the reason above says what your computer refused.';
 }
 
 /**
