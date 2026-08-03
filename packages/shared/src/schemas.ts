@@ -233,10 +233,12 @@ export const SessionSchema = z
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
     lastMessagePreview: z.string().optional(),
-    // The id the session's OWN runtime reports, not necessarily a member of
-    // `PermissionModeSchema` (DOR-851) — `test-mode` reports its three
-    // deliberately-non-enum ids, and this field carries whatever a runtime's
-    // own descriptor names. See `PermissionModeIdSchema`.
+    /**
+     * The id the session's OWN runtime reports, not necessarily a member of
+     * {@link PermissionModeSchema} (DOR-851) — `test-mode` reports its three
+     * deliberately-non-enum ids, and this field carries whatever a runtime's
+     * own descriptor names. See {@link PermissionModeIdSchema}.
+     */
     permissionMode: PermissionModeIdSchema,
     runtime: z.string(),
     model: z.string().optional(),

@@ -425,9 +425,23 @@ export class OpenCodeRuntime implements AgentRuntime {
       // StreamEvent's `type`/`data` are not a discriminated pair; the mapper
       // guarantees an ApprovalEvent body under this type.
       const approval = event.data as ApprovalEvent;
-      // See the narrowing note on `resolveTurnSettings` above: opencode only
-      // ever writes its own enum-shaped ids into the registry, so this is the
-      // same safe narrowing of the shared `Session` shape's wider field.
+      // Cast, not proven by this file: `resolveApprovalDecision` below
+      // compares `mode` against LITERAL enum names (`'bypassPermissions'`,
+      // `'acceptEdits'`) to decide auto-approval, and does derive meaning from
+      // the name — unlike the display-only narrowings elsewhere in this file.
+      // The actual invariant that keeps this registry holding only opencode's
+      // own enum-shaped ids is enforced remotely, in
+      // `routes/sessions.ts`'s `rejectUndeclaredPermissionMode` gate on
+      // `PATCH /api/sessions/:id` — NOT by anything in this registry or this
+      // adapter. `resolveApprovalDecision`'s own literal-name fallback (any
+      // unmatched mode asks) is what keeps an id that gate never checked from
+      // silently escalating here, so this stays safe even if the invariant
+      // above is ever violated. It CAN be: the `DirectTransport` seam
+      // (`apps/client/src/layers/shared/lib/direct/session-methods.ts`, used
+      // by embedded hosts) calls `runtime.updateSession` straight through with
+      // no equivalent server-side check — it trusts the CLIENT's own picker to
+      // offer only declared ids, a materially weaker guarantee than the HTTP
+      // route's.
       const mode = this.registry.get(sessionId)?.permissionMode as PermissionMode | undefined;
       if (resolveApprovalDecision(mode, approval.toolName) === 'auto-approve') {
         try {

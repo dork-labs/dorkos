@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { PermissionMode } from '@dorkos/shared/types';
 import { useElapsedTime } from '@/layers/shared/model';
-import { TIMING } from '@/layers/shared/lib';
+import { isBypassPermissionMode, TIMING } from '@/layers/shared/lib';
 import { DEFAULT_THEME, type IndicatorTheme } from './inference-themes';
 import { BYPASS_INFERENCE_VERBS } from './inference-verbs';
 import { StripContent } from './StripContent';
@@ -25,7 +25,12 @@ interface UseStripStateInput {
 /** Manage status strip lifecycle and derive the active strip state. */
 function useStripState(input: UseStripStateInput): StripState {
   const verbs = useMemo(() => {
-    if (input.permissionMode === 'bypassPermissions') {
+    // `isBypassPermissionMode` (not a literal `'bypassPermissions'` compare):
+    // `input.permissionMode` carries whatever id the session's own runtime
+    // reports (DOR-851), and `always-allow` — test-mode's bypass mode — is a
+    // different literal with the same meaning. A literal compare here missed
+    // it and never added the bypass verb pool for that runtime.
+    if (isBypassPermissionMode(input.permissionMode)) {
       return [...input.theme.verbs, ...BYPASS_INFERENCE_VERBS];
     }
     return input.theme.verbs;

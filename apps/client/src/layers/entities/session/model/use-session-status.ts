@@ -116,7 +116,10 @@ export function useSessionStatus(
     // `session.permissionMode` carries any id the session's own runtime
     // reports (DOR-851; `test-mode`'s ids sit outside the enum on purpose).
     // Safe to narrow back to `PermissionMode` here — this is a DISPLAY value
-    // read off descriptors downstream, never re-derived from the literal name.
+    // read off descriptors downstream, or through `isBypassPermissionMode`
+    // (bypass-alias-aware, e.g. `always-allow`). A literal `=== 'bypassPermissions'`
+    // compare against it IS a bug (ChatStatusStrip.tsx used to have one) — use
+    // `isBypassPermissionMode` for any bypass check, never a raw literal.
     permissionMode: resolvePermissionMode(
       overrides.permissionMode,
       session?.permissionMode

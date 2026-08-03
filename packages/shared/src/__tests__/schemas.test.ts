@@ -35,6 +35,25 @@ describe('SessionSchema', () => {
     const { runtime: _runtime, ...withoutRuntime } = baseSession;
     expect(() => SessionSchema.parse(withoutRuntime)).toThrow();
   });
+
+  it('accepts a permission-mode id outside the shared enum (DOR-851)', () => {
+    // Purpose: `permissionMode` here is the id the session's OWN runtime
+    // reports, not a member of the narrower `PermissionModeSchema` — the
+    // request side already accepted this (DOR-811), and the read side must
+    // too or a runtime's own reported state is unparseable. `always-allow` is
+    // the real default `test-mode` declares (`TEST_MODE_CAPABILITIES` in
+    // `apps/server/src/services/runtimes/test-mode/runtime-constants.ts`),
+    // named here rather than an arbitrary string so this test fails the moment
+    // that runtime's actual shipped id stops parsing — the exact defect that
+    // silently emptied the session list before this fix (DOR-851).
+    const testModeSession = {
+      ...baseSession,
+      runtime: 'test-mode',
+      permissionMode: 'always-allow',
+    };
+    const result = SessionSchema.parse(testModeSession);
+    expect(result.permissionMode).toBe('always-allow');
+  });
 });
 
 describe('MemoryRecallPartSchema', () => {
