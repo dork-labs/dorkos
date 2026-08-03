@@ -2,6 +2,7 @@
 covers:
   - 'fix(client): rename runtime-sense "agent" copy to name runtimes, not agents (DOR-853)'
   - 'fix(client): rename subagent-sense "agent" copy to "subagent" (DOR-853)'
+  - 'fix(client): catch two missed runtime-sense "agent" strings, tighten Subagents copy (DOR-853)'
 ---
 
 ### Changed
