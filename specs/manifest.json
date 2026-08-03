@@ -6,7 +6,7 @@
       "slug": "connection-scoping",
       "title": "Connection Scoping Backend — agent-level attachment, one-chat-one-agent, claim feed",
       "created": "2026-08-03",
-      "status": "specified",
+      "status": "implemented",
       "project": "Language & IA"
     },
     {
