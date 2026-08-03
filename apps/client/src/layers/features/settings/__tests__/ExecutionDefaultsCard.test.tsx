@@ -84,46 +84,16 @@ const MODELS = [
   },
 ];
 
-/**
- * The capability map this card reasons about: three registered runtimes, each
- * declaring where its settings live.
- *
- * The shared mock registers Claude Code alone, and this card writes into the
- * section a runtime DECLARES — so a fixture with one runtime in it could not
- * express "the model row wrote into Codex's section", which is the whole point
- * of scoping model and effort per runtime.
- *
- * The two siblings declare no permission modes, matching the shared mock's
- * silence about them: a runtime whose profile has not arrived is a state this
- * card has a sentence for, and these tests still exercise it.
- */
-async function capabilitiesForThreeRuntimes() {
-  const base = await createMockTransport().getCapabilities();
-  const claude = base.capabilities['claude-code']!;
-  const sibling = (type: string, configSection: string) => ({
-    ...claude,
-    type,
-    permissionModes: { supported: false, values: [] },
-    settings: { configSection, supportsEffort: true, sections: [] },
-  });
-  return {
-    ...base,
-    capabilities: {
-      ...base.capabilities,
-      codex: sibling('codex', 'codex'),
-      opencode: sibling('opencode', 'opencode'),
-    },
-  };
-}
-
 function renderCard(
   executionDefaults: ExecutionDefaults = DEFAULTS,
   models = MODELS,
   ui?: { autonomyAcknowledgedAt: string | null }
 ) {
   const updateConfig = vi.fn().mockResolvedValue(undefined);
+  // The shared mock registers all three product runtimes with their real
+  // settings declarations, which is what lets "the model row wrote into Codex's
+  // section" be asserted at all.
   const transport = createMockTransport({
-    getCapabilities: vi.fn(capabilitiesForThreeRuntimes),
     getModels: vi.fn().mockResolvedValue(models),
     getConfig: vi.fn().mockResolvedValue({
       version: '1.0.0',
@@ -401,11 +371,19 @@ describe('ExecutionDefaultsCard — where new sessions start (trust-dial, decisi
 
   it('offers a runtime whose profile has not arrived a sentence, not a label over nothing', async () => {
     // The same one-liner the binding and task dials give an agent that has not
-    // said what it can do (#681).
+    // said what it can do (#681). A runtime the capability map has no answer for
+    // — not one of the three the shared mock declares in full, because a runtime
+    // that HAS declared its modes is a different state with a different answer.
     renderCard({
       ...DEFAULTS,
       perRuntime: [
-        { runtime: 'codex', model: null, effort: null, supportsEffort: true, trustStop: null },
+        {
+          runtime: 'future-runtime',
+          model: null,
+          effort: null,
+          supportsEffort: true,
+          trustStop: null,
+        },
       ],
     });
     await userEvent.click(await screen.findByTestId('default-trust-stop-disclosure'));
