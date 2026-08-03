@@ -50,6 +50,13 @@ function handlerFor(
   return call[1] as (path: string) => void;
 }
 
+/** Resolve the watcher's registered 'error' handler. */
+function errorHandler(): (err: unknown) => void {
+  const call = mockWatcher.on.mock.calls.find(([e]) => e === 'error');
+  if (!call) throw new Error('no error handler registered');
+  return call[1] as (err: unknown) => void;
+}
+
 describe('watchSessionList', () => {
   // A REAL temp projects root (the initial inventory enumerates it with
   // fs.readdir); only chokidar and the per-dir listing are faked.
@@ -312,6 +319,94 @@ describe('watchSessionList', () => {
     expect(logger.debug).toHaveBeenCalledWith(
       '[session-list-watcher] no sessions yet; projects directory not created',
       { projectsRoot: missingRoot }
+    );
+    await it.return?.();
+  });
+
+  // A dead watcher (e.g. EMFILE when the process runs out of file descriptors)
+  // must be logged with enough context to identify the watcher, never left to
+  // surface as unhandled-error spam. See
+  // session-list-watcher.real-emfile.test.ts for proof chokidar really does
+  // emit 'error' for a genuine EMFILE, on real hardware.
+  it('logs a watcher error at error level, naming the projects root and the code', async () => {
+    const it = start();
+    await awaitInitialScan();
+
+    const err = Object.assign(new Error('EMFILE: too many open files'), { code: 'EMFILE' });
+    errorHandler()(err);
+
+    expect(logger.error).toHaveBeenCalledWith(
+      '[watcher-error] session-list-watcher — further EMFILE errors from this watcher are suppressed',
+      {
+        projectsRoot,
+        code: 'EMFILE',
+        message: 'EMFILE: too many open files',
+        stack: err.stack,
+        suppressingFurtherErrors: true,
+      }
+    );
+    await it.return?.();
+  });
+
+  it('stringifies a non-Error thrown as the watcher error, with no stack and code "unknown"', async () => {
+    const it = start();
+    await awaitInitialScan();
+
+    errorHandler()('EMFILE');
+
+    expect(logger.error).toHaveBeenCalledWith(
+      '[watcher-error] session-list-watcher — further unknown errors from this watcher are suppressed',
+      {
+        projectsRoot,
+        code: 'unknown',
+        message: 'EMFILE',
+        stack: undefined,
+        suppressingFurtherErrors: true,
+      }
+    );
+    await it.return?.();
+  });
+
+  // A dead root watcher spans every project dir, so a single fd-exhaustion
+  // episode can make chokidar fire 'error' once per directory it fails to
+  // (re-)watch — hundreds of times for a real tree. The handler must latch: log
+  // the first, drop repeats of the same code.
+  it('logs only the first of many errors carrying the same code', async () => {
+    const it = start();
+    await awaitInitialScan();
+    const onError = errorHandler();
+
+    onError(Object.assign(new Error('EMFILE 1'), { code: 'EMFILE' }));
+    onError(Object.assign(new Error('EMFILE 2'), { code: 'EMFILE' }));
+    onError(Object.assign(new Error('EMFILE 3'), { code: 'EMFILE' }));
+
+    expect(logger.error).toHaveBeenCalledTimes(1);
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('[watcher-error] session-list-watcher'),
+      expect.objectContaining({ code: 'EMFILE', message: 'EMFILE 1' })
+    );
+    await it.return?.();
+  });
+
+  // The masking bug: a latch keyed on "any error at all" would let one benign
+  // EACCES on a stale project dir hide a real EMFILE storm that follows it.
+  // Keying on `code` means a NEW code always gets its own line.
+  it('logs a separate line for each distinct error code', async () => {
+    const it = start();
+    await awaitInitialScan();
+    const onError = errorHandler();
+
+    onError(Object.assign(new Error('permission denied'), { code: 'EACCES' }));
+    onError(Object.assign(new Error('too many open files'), { code: 'EMFILE' }));
+
+    expect(logger.error).toHaveBeenCalledTimes(2);
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('[watcher-error] session-list-watcher'),
+      expect.objectContaining({ code: 'EACCES' })
+    );
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('[watcher-error] session-list-watcher'),
+      expect.objectContaining({ code: 'EMFILE' })
     );
     await it.return?.();
   });

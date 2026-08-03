@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFile, writeFile, chmod, stat } from 'node:fs/promises';
-import { loadAdapterConfig, saveAdapterConfig } from '../adapter-config.js';
+import { loadAdapterConfig, saveAdapterConfig, watchAdapterConfig } from '../adapter-config.js';
 import { logger } from '../../../lib/logger.js';
 
 // Mock fs/promises
@@ -20,6 +20,20 @@ vi.mock('../../../lib/logger.js', () => ({
     info: vi.fn(),
     error: vi.fn(),
     debug: vi.fn(),
+  },
+}));
+
+/** Captured chokidar handlers so tests can fire them manually. */
+let chokidarHandlers: Record<string, (arg?: unknown) => unknown>;
+
+vi.mock('chokidar', () => ({
+  default: {
+    watch: vi.fn(() => ({
+      on: vi.fn((event: string, handler: (arg?: unknown) => unknown) => {
+        chokidarHandlers[event] = handler;
+      }),
+      close: vi.fn(),
+    })),
   },
 }));
 
@@ -300,5 +314,104 @@ describe('an unreadable entry does not become a permanent ghost', () => {
     expect(credentialWarnings).toHaveLength(1);
     expect(String(credentialWarnings[0]![0])).toContain("'telegram-1'");
     expect(String(credentialWarnings[0]![0])).toContain(CONFIG_PATH);
+  });
+});
+
+describe('watchAdapterConfig — watcher error handling', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    chokidarHandlers = {};
+  });
+
+  it('logs a watcher error naming adapters.json instead of throwing', () => {
+    watchAdapterConfig(CONFIG_PATH, vi.fn());
+    const err = Object.assign(new Error('EMFILE: too many open files'), { code: 'EMFILE' });
+
+    expect(() => chokidarHandlers.error!(err)).not.toThrow();
+
+    const [message, context] = vi.mocked(logger.warn).mock.calls[0]!;
+    expect(String(message).startsWith(`[watcher-error] AdapterConfig: ${CONFIG_PATH}`)).toBe(true);
+    expect(context).toEqual(
+      expect.objectContaining({
+        configPath: CONFIG_PATH,
+        code: 'EMFILE',
+        message: 'EMFILE: too many open files',
+        stack: err.stack,
+        suppressingFurtherErrors: true,
+      })
+    );
+  });
+
+  it('says further errors of that code are suppressed, so an operator knows the silence is by design', () => {
+    watchAdapterConfig(CONFIG_PATH, vi.fn());
+
+    chokidarHandlers.error!(Object.assign(new Error('EMFILE'), { code: 'EMFILE' }));
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('further EMFILE errors from this watcher are suppressed'),
+      expect.objectContaining({ suppressingFurtherErrors: true })
+    );
+  });
+
+  it('does not invoke onChange when the watcher errors', () => {
+    const onChange = vi.fn();
+    watchAdapterConfig(CONFIG_PATH, onChange);
+
+    chokidarHandlers.error!(new Error('EMFILE'));
+
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  // A single fd-exhaustion episode can make chokidar fire 'error' many times
+  // for one dead watcher. The handler must latch: log the first, drop repeats
+  // of the same code.
+  it('logs only the first of many errors carrying the same code', () => {
+    watchAdapterConfig(CONFIG_PATH, vi.fn());
+
+    chokidarHandlers.error!(Object.assign(new Error('EMFILE 1'), { code: 'EMFILE' }));
+    chokidarHandlers.error!(Object.assign(new Error('EMFILE 2'), { code: 'EMFILE' }));
+    chokidarHandlers.error!(Object.assign(new Error('EMFILE 3'), { code: 'EMFILE' }));
+
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ code: 'EMFILE', message: 'EMFILE 1' })
+    );
+  });
+
+  // The masking bug: a latch keyed on "any error at all" would let one benign
+  // EACCES hide a real EMFILE storm that follows it. Keying on `code` means a
+  // NEW code always gets its own line.
+  it('logs a separate line for each distinct error code', () => {
+    watchAdapterConfig(CONFIG_PATH, vi.fn());
+
+    chokidarHandlers.error!(Object.assign(new Error('permission denied'), { code: 'EACCES' }));
+    chokidarHandlers.error!(Object.assign(new Error('too many open files'), { code: 'EMFILE' }));
+
+    expect(logger.warn).toHaveBeenCalledTimes(2);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ code: 'EACCES' })
+    );
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ code: 'EMFILE' })
+    );
+  });
+
+  // Regression guard: if the latch were ever hoisted out of the per-call
+  // closure to module scope, one config watcher's first error would wrongly
+  // suppress a second watcher's first error too.
+  it('scopes the latch per watcher — a second watcher logs its own first error', () => {
+    watchAdapterConfig(CONFIG_PATH, vi.fn());
+    const firstOnError = chokidarHandlers.error!;
+    watchAdapterConfig('/mock/other-adapters.json', vi.fn());
+    const secondOnError = chokidarHandlers.error!;
+    expect(secondOnError).not.toBe(firstOnError);
+
+    firstOnError(Object.assign(new Error('EMFILE A'), { code: 'EMFILE' }));
+    secondOnError(Object.assign(new Error('EMFILE B'), { code: 'EMFILE' }));
+
+    expect(logger.warn).toHaveBeenCalledTimes(2);
   });
 });

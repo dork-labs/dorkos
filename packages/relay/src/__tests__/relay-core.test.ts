@@ -6,7 +6,18 @@ import * as os from 'node:os';
 import { RelayCore } from '../relay-core.js';
 import { MaildirStore } from '../maildir-store.js';
 import type { RelayEnvelope, Signal } from '@dorkos/shared/relay-schemas';
-import type { AdapterRegistryLike, AdapterContext, TraceStoreLike } from '../types.js';
+import type { EventEmitter } from 'node:events';
+import type { AdapterRegistryLike, AdapterContext, TraceStoreLike, RelayLogger } from '../types.js';
+
+/** Reach into the private chokidar config watcher to simulate an EMFILE-style failure. */
+function getConfigWatcher(core: RelayCore): EventEmitter {
+  return (core as unknown as { configWatcher: EventEmitter }).configWatcher;
+}
+
+/** A spy logger satisfying the full {@link RelayLogger} surface. */
+function createSpyLogger(): RelayLogger {
+  return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1883,5 +1894,127 @@ describe('trace store integration', () => {
 
     // The mockTraceStore should not have been called since it belongs to traceRelay, not relay
     expect(mockTraceStore.insertSpan).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Config watcher error handling — an EMFILE-style watcher failure must be
+// logged, never swallowed nor left to the process-wide unhandled-error path.
+// ---------------------------------------------------------------------------
+
+describe('config watcher error handling', () => {
+  let cTmpDir: string;
+
+  beforeEach(async () => {
+    cTmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'relay-core-cfgwatch-test-'));
+  });
+
+  afterEach(async () => {
+    await fs.rm(cTmpDir, { recursive: true, force: true });
+  });
+
+  it('logs a watcher error through the injected logger, naming the config path, and keeps working', async () => {
+    const logger = createSpyLogger();
+    const cRelay = new RelayCore({ dataDir: cTmpDir, logger });
+    try {
+      const err = Object.assign(new Error('EMFILE: too many open files'), { code: 'EMFILE' });
+      getConfigWatcher(cRelay).emit('error', err);
+
+      // Two separate assertions rather than one interpolated RegExp: the config
+      // path is a real filesystem path and could legally contain regex
+      // metacharacters that would silently change what the pattern matches.
+      const [message, context] = vi.mocked(logger.warn).mock.calls[0]!;
+      expect(typeof message).toBe('string');
+      expect((message as string).startsWith('[watcher-error] RelayCore: ')).toBe(true);
+      expect(message).toContain(path.join(cTmpDir, 'config.json'));
+      expect(context).toEqual(
+        expect.objectContaining({
+          code: 'EMFILE',
+          message: 'EMFILE: too many open files',
+          stack: err.stack,
+          suppressingFurtherErrors: true,
+        })
+      );
+
+      // The relay itself is unaffected — it keeps operating on its last-loaded
+      // reliability config; only hot-reload of external edits is degraded.
+      await expect(cRelay.registerEndpoint('relay.agent.still-works')).resolves.toBeDefined();
+    } finally {
+      await cRelay.close();
+    }
+  });
+
+  it('says further errors of that code are suppressed, so an operator knows the silence is by design', async () => {
+    const logger = createSpyLogger();
+    const cRelay = new RelayCore({ dataDir: cTmpDir, logger });
+    try {
+      getConfigWatcher(cRelay).emit(
+        'error',
+        Object.assign(new Error('EMFILE'), { code: 'EMFILE' })
+      );
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('further EMFILE errors from this watcher are suppressed'),
+        expect.objectContaining({ suppressingFurtherErrors: true })
+      );
+    } finally {
+      await cRelay.close();
+    }
+  });
+
+  it('does not throw when no logger was injected (defaults to a silent logger)', async () => {
+    const cRelay = new RelayCore({ dataDir: cTmpDir });
+    try {
+      expect(() => getConfigWatcher(cRelay).emit('error', new Error('EMFILE'))).not.toThrow();
+    } finally {
+      await cRelay.close();
+    }
+  });
+
+  // A single fd-exhaustion episode can make chokidar fire 'error' many times
+  // for one dead watcher. The handler must latch: log the first, drop repeats
+  // of the same code.
+  it('logs only the first of many errors carrying the same code', async () => {
+    const logger = createSpyLogger();
+    const cRelay = new RelayCore({ dataDir: cTmpDir, logger });
+    try {
+      const watcher = getConfigWatcher(cRelay);
+      watcher.emit('error', Object.assign(new Error('EMFILE 1'), { code: 'EMFILE' }));
+      watcher.emit('error', Object.assign(new Error('EMFILE 2'), { code: 'EMFILE' }));
+      watcher.emit('error', Object.assign(new Error('EMFILE 3'), { code: 'EMFILE' }));
+
+      expect(logger.warn).toHaveBeenCalledTimes(1);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ code: 'EMFILE', message: 'EMFILE 1' })
+      );
+    } finally {
+      await cRelay.close();
+    }
+  });
+
+  // The masking bug: a latch keyed on "any error at all" would let one benign
+  // EACCES hide a real EMFILE storm that follows it. Keying on `code` means a
+  // NEW code always gets its own line.
+  it('logs a separate line for each distinct error code', async () => {
+    const logger = createSpyLogger();
+    const cRelay = new RelayCore({ dataDir: cTmpDir, logger });
+    try {
+      const watcher = getConfigWatcher(cRelay);
+      watcher.emit('error', Object.assign(new Error('permission denied'), { code: 'EACCES' }));
+      watcher.emit('error', Object.assign(new Error('too many open files'), { code: 'EMFILE' }));
+
+      expect(logger.warn).toHaveBeenCalledTimes(2);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ code: 'EACCES' })
+      );
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ code: 'EMFILE' })
+      );
+    } finally {
+      await cRelay.close();
+    }
   });
 });

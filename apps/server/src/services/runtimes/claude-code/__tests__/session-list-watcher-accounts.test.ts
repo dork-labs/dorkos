@@ -60,6 +60,7 @@ const { watchers, mockChokidar } = vi.hoisted(() => {
 vi.mock('chokidar', () => ({ default: mockChokidar }));
 
 import { watchSessionList } from '../sessions/session-list-watcher.js';
+import { logger } from '../../../../lib/logger.js';
 
 function makeSession(id: string, overrides: Partial<Session> = {}): Session {
   return {
@@ -222,6 +223,33 @@ describe('watchSessionList across Claude accounts', () => {
 
     expect(watchers).toHaveLength(2);
     for (const watcher of watchers) expect(watcher.close).toHaveBeenCalled();
+  });
+
+  // Regression guard for the per-watcher error latch. If the `seenCodes` Set
+  // were ever hoisted out of `watchRoot`'s closure to module or function scope,
+  // one account's first EMFILE would wrongly suppress the other account's — and
+  // the second account's session list would freeze with nothing in the log.
+  it('scopes the watcher-error latch per account — each root logs its own first error', async () => {
+    const iterator = start();
+    await flushIoUntil(() => listSessionsInDir.mock.calls.length >= 2);
+
+    const onErrorA = handlerFor(rootA, 'error') as unknown as (err: unknown) => void;
+    const onErrorB = handlerFor(rootB, 'error') as unknown as (err: unknown) => void;
+    expect(onErrorA).not.toBe(onErrorB);
+
+    onErrorA(Object.assign(new Error('EMFILE A'), { code: 'EMFILE' }));
+    onErrorB(Object.assign(new Error('EMFILE B'), { code: 'EMFILE' }));
+
+    expect(logger.error).toHaveBeenCalledTimes(2);
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('[watcher-error] session-list-watcher'),
+      expect.objectContaining({ projectsRoot: rootA, code: 'EMFILE' })
+    );
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('[watcher-error] session-list-watcher'),
+      expect.objectContaining({ projectsRoot: rootB, code: 'EMFILE' })
+    );
+    await iterator.return?.();
   });
 
   it('watches nothing and yields nothing when no account qualifies', async () => {

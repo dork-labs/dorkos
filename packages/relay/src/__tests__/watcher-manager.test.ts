@@ -3,12 +3,26 @@ import * as fs from 'node:fs/promises';
 import * as fsSync from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import type { EventEmitter } from 'node:events';
 import { WatcherManager } from '../watcher-manager.js';
 import type { SubscriptionRegistry } from '../subscription-registry.js';
 import type { MaildirStore } from '../maildir-store.js';
 import type { SqliteIndex } from '../sqlite-index.js';
 import type { CircuitBreakerManager } from '../circuit-breaker.js';
-import type { EndpointInfo } from '../types.js';
+import type { EndpointInfo, RelayLogger } from '../types.js';
+
+/** Reach into the private watcher map to simulate an EMFILE-style failure. */
+function getWatcher(manager: WatcherManager, hash: string): EventEmitter {
+  const watchers = (manager as unknown as { watchers: Map<string, EventEmitter> }).watchers;
+  const watcher = watchers.get(hash);
+  if (!watcher) throw new Error(`no watcher registered for hash ${hash}`);
+  return watcher;
+}
+
+/** A spy logger satisfying the full {@link RelayLogger} surface. */
+function createSpyLogger(): RelayLogger {
+  return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -319,6 +333,215 @@ describe('WatcherManager', () => {
       expect(maildirStore.fail).toHaveBeenCalledWith('hash-fail', 'msg-002', 'handler error');
       expect(sqliteIndex.updateStatus).toHaveBeenCalledWith('msg-002', 'hash-fail', 'failed');
       expect(circuitBreaker.recordFailure).toHaveBeenCalledWith('hash-fail');
+    });
+  });
+
+  describe('watcher error handling', () => {
+    /** Build a manager with a spy logger plus a ready-to-watch endpoint. */
+    function setup(hash: string, subject: string) {
+      const logger = createSpyLogger();
+      const loggedManager = new WatcherManager(
+        maildirStore,
+        subscriptionRegistry,
+        sqliteIndex,
+        circuitBreaker,
+        logger
+      );
+      const maildirPath = path.join(tmpDir, hash);
+      fsSync.mkdirSync(path.join(maildirPath, 'new'), { recursive: true });
+      const endpoint: EndpointInfo = {
+        subject,
+        hash,
+        maildirPath,
+        registeredAt: '2026-02-24T00:00:00.000Z',
+      };
+      return { logger, loggedManager, endpoint };
+    }
+
+    it('logs a watcher error through the injected logger, naming the endpoint', async () => {
+      const { logger, loggedManager, endpoint } = setup('hash-error', 'relay.agent.error-test');
+      // try/finally: closeAll() must run even if an assertion below throws, or a
+      // failing test leaks this watcher into the rest of the run.
+      try {
+        await loggedManager.startWatcher(endpoint);
+
+        const err = Object.assign(new Error('EMFILE: too many open files'), { code: 'EMFILE' });
+        getWatcher(loggedManager, 'hash-error').emit('error', err);
+
+        expect(logger.warn).toHaveBeenCalledWith(
+          expect.stringMatching(/^\[watcher-error\] WatcherManager: /),
+          expect.objectContaining({
+            endpointSubject: 'relay.agent.error-test',
+            code: 'EMFILE',
+            message: 'EMFILE: too many open files',
+            stack: err.stack,
+            suppressingFurtherErrors: true,
+          })
+        );
+        expect(logger.warn).toHaveBeenCalledWith(
+          expect.stringContaining('relay.agent.error-test'),
+          expect.anything()
+        );
+      } finally {
+        await loggedManager.closeAll();
+      }
+    });
+
+    it('does not throw when no logger was injected (defaults to a silent logger)', async () => {
+      const maildirPath = path.join(tmpDir, 'hash-error-silent');
+      fsSync.mkdirSync(path.join(maildirPath, 'new'), { recursive: true });
+      const endpoint: EndpointInfo = {
+        ...createEndpoint(maildirPath),
+        hash: 'hash-error-silent',
+      };
+      await manager.startWatcher(endpoint);
+
+      expect(() =>
+        getWatcher(manager, 'hash-error-silent').emit('error', new Error('EMFILE'))
+      ).not.toThrow();
+    });
+
+    // A single fd-exhaustion episode can make chokidar fire 'error' many times
+    // for one dead watcher. The handler must latch: log the first, drop repeats
+    // of the same code.
+    it('logs only the first of many errors carrying the same code', async () => {
+      const { logger, loggedManager, endpoint } = setup(
+        'hash-error-latch',
+        'relay.agent.latch-test'
+      );
+      try {
+        await loggedManager.startWatcher(endpoint);
+        const watcher = getWatcher(loggedManager, 'hash-error-latch');
+
+        watcher.emit('error', Object.assign(new Error('EMFILE 1'), { code: 'EMFILE' }));
+        watcher.emit('error', Object.assign(new Error('EMFILE 2'), { code: 'EMFILE' }));
+        watcher.emit('error', Object.assign(new Error('EMFILE 3'), { code: 'EMFILE' }));
+
+        expect(logger.warn).toHaveBeenCalledTimes(1);
+        expect(logger.warn).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.objectContaining({ code: 'EMFILE', message: 'EMFILE 1' })
+        );
+      } finally {
+        await loggedManager.closeAll();
+      }
+    });
+
+    // The masking bug: a latch keyed on "any error at all" would let one benign
+    // EACCES hide a real EMFILE storm that follows it. Keying on `code` means a
+    // NEW code always gets its own line.
+    it('logs a separate line for each distinct error code', async () => {
+      const { logger, loggedManager, endpoint } = setup(
+        'hash-error-codes',
+        'relay.agent.codes-test'
+      );
+      try {
+        await loggedManager.startWatcher(endpoint);
+        const watcher = getWatcher(loggedManager, 'hash-error-codes');
+
+        watcher.emit('error', Object.assign(new Error('permission denied'), { code: 'EACCES' }));
+        watcher.emit('error', Object.assign(new Error('too many open files'), { code: 'EMFILE' }));
+
+        expect(logger.warn).toHaveBeenCalledTimes(2);
+        expect(logger.warn).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.objectContaining({ code: 'EACCES' })
+        );
+        expect(logger.warn).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.objectContaining({ code: 'EMFILE' })
+        );
+      } finally {
+        await loggedManager.closeAll();
+      }
+    });
+
+    it('says further errors of that code are suppressed, so an operator knows the silence is by design', async () => {
+      const { logger, loggedManager, endpoint } = setup(
+        'hash-error-notice',
+        'relay.agent.notice-test'
+      );
+      try {
+        await loggedManager.startWatcher(endpoint);
+        getWatcher(loggedManager, 'hash-error-notice').emit(
+          'error',
+          Object.assign(new Error('EMFILE'), { code: 'EMFILE' })
+        );
+
+        expect(logger.warn).toHaveBeenCalledWith(
+          expect.stringContaining('further EMFILE errors from this watcher are suppressed'),
+          expect.objectContaining({ suppressingFurtherErrors: true })
+        );
+      } finally {
+        await loggedManager.closeAll();
+      }
+    });
+
+    // Regression guard: if the latch were ever hoisted from a per-startWatcher()
+    // closure onto a shared instance field, one endpoint's first error would
+    // wrongly suppress another endpoint's first error too.
+    it('scopes the latch per watcher — two endpoints each log their own first error', async () => {
+      const logger = createSpyLogger();
+      const loggedManager = new WatcherManager(
+        maildirStore,
+        subscriptionRegistry,
+        sqliteIndex,
+        circuitBreaker,
+        logger
+      );
+      const makeEndpoint = (hash: string, subject: string): EndpointInfo => {
+        const maildirPath = path.join(tmpDir, hash);
+        fsSync.mkdirSync(path.join(maildirPath, 'new'), { recursive: true });
+        return { subject, hash, maildirPath, registeredAt: '2026-02-24T00:00:00.000Z' };
+      };
+      try {
+        await loggedManager.startWatcher(makeEndpoint('hash-scope-a', 'relay.agent.scope-a'));
+        await loggedManager.startWatcher(makeEndpoint('hash-scope-b', 'relay.agent.scope-b'));
+
+        getWatcher(loggedManager, 'hash-scope-a').emit('error', new Error('EMFILE A'));
+        getWatcher(loggedManager, 'hash-scope-b').emit('error', new Error('EMFILE B'));
+
+        expect(logger.warn).toHaveBeenCalledTimes(2);
+      } finally {
+        await loggedManager.closeAll();
+      }
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Critical regression: startWatcher() must resolve even when the watcher
+  // errors before ever going ready. Under real fd exhaustion chokidar emits
+  // 'error' and never emits 'ready' — without settling from the error handler
+  // too, this promise hangs forever, and so does every caller on the boot path
+  // with it (server startup, an agent's relay tool call).
+  // -------------------------------------------------------------------------
+
+  describe('startWatcher settles on error', () => {
+    it('resolves (does not hang) when the watcher errors before ever going ready', async () => {
+      const maildirPath = path.join(tmpDir, 'hash-error-before-ready');
+      fsSync.mkdirSync(path.join(maildirPath, 'new'), { recursive: true });
+      const endpoint: EndpointInfo = {
+        subject: 'relay.agent.hang-test',
+        hash: 'hash-error-before-ready',
+        maildirPath,
+        registeredAt: '2026-02-24T00:00:00.000Z',
+      };
+
+      const startPromise = manager.startWatcher(endpoint);
+      // This watches a real, healthy directory, so a real 'ready' would
+      // otherwise arrive a few ms later and resolve the promise on its own —
+      // making the test pass even without settle() in the error handler. Record
+      // whether 'ready' fired and assert it did NOT: that names the mechanism
+      // (the ERROR path settled it) rather than the outcome.
+      const watcher = getWatcher(manager, 'hash-error-before-ready');
+      let readyFired = false;
+      watcher.on('ready', () => {
+        readyFired = true;
+      });
+      watcher.emit('error', new Error('EMFILE'));
+
+      await expect(startPromise).resolves.toBeUndefined();
+      expect(readyFired).toBe(false);
     });
   });
 });

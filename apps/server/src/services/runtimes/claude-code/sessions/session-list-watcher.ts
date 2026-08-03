@@ -230,6 +230,43 @@ export function watchSessionList(
     watcher.on('addDir', onDirEvent);
     watcher.on('unlinkDir', onDirEvent);
 
+    // A dead root watcher means this account's session list silently stops
+    // tracking new, changed and removed sessions — everything downstream (the
+    // sidebar, the global view) freezes on stale data with no other signal.
+    // Without this handler the failure (e.g. EMFILE) has nowhere to go but the
+    // process-wide unhandled-error path, which never names the watcher that
+    // died. Logged at error rather than the warn this module uses for a failed
+    // scan: a failed scan retries on the next event, a dead watcher never fires
+    // again.
+    //
+    // This root watch spans every project dir, so a single fd-exhaustion
+    // episode can make chokidar fire 'error' once per directory it fails to
+    // (re-)watch — hundreds of times for a real projects tree. Latched per
+    // distinct error code rather than a single boolean: a benign EACCES on one
+    // stale project dir must never suppress the EMFILE storm that follows it.
+    // `code` is the actionable field — EMFILE, ENOSPC and EPERM mean different
+    // fixes. The Set lives in this per-root closure, so one account's latch
+    // cannot silence another account's.
+    const seenCodes = new Set<string>();
+    watcher.on('error', (err) => {
+      const code = (err as NodeJS.ErrnoException)?.code ?? 'unknown';
+      if (seenCodes.has(code)) return;
+      seenCodes.add(code);
+      // Logged as an explicit object, never the bare Error: the NDJSON reporter
+      // spreads what it is given, and `message`/`stack` are non-enumerable on
+      // an Error, so they would vanish (DOR-832).
+      logger.error(
+        `[watcher-error] session-list-watcher — further ${code} errors from this watcher are suppressed`,
+        {
+          projectsRoot,
+          code,
+          message: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined,
+          suppressingFurtherErrors: true,
+        }
+      );
+    });
+
     // Initial fleet-wide inventory for this account — emit every on-disk session
     // once, project by project (off the event loop so the caller can begin
     // iterating immediately).

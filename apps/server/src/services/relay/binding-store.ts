@@ -270,6 +270,33 @@ export class BindingStore {
       logger.info('bindings.json changed on disk, reloading');
       await this.load();
     });
+
+    // Without this handler a watcher failure (e.g. EMFILE) has nowhere to go
+    // but the process-wide unhandled-error path. Bindings already in memory
+    // keep routing inbound messages; only hot-reload of external edits stops
+    // working until the process restarts. Latched per distinct error code
+    // rather than a single boolean: a benign EACCES must never suppress the
+    // EMFILE storm that follows it. The Set lives in this per-instance closure,
+    // so one store's latch cannot silence another's.
+    const seenCodes = new Set<string>();
+    this.watcher.on('error', (err) => {
+      const code = (err as NodeJS.ErrnoException)?.code ?? 'unknown';
+      if (seenCodes.has(code)) return;
+      seenCodes.add(code);
+      // Logged as an explicit object, never the bare Error: the NDJSON reporter
+      // spreads what it is given, and `message`/`stack` are non-enumerable on
+      // an Error, so they would vanish (DOR-832).
+      logger.error(
+        `[watcher-error] BindingStore: ${this.filePath} — further ${code} errors from this watcher are suppressed`,
+        {
+          filePath: this.filePath,
+          code,
+          message: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined,
+          suppressingFurtherErrors: true,
+        }
+      );
+    });
   }
 
   /** Close the file watcher and clear in-memory state. */

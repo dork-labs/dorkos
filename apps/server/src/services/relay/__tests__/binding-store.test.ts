@@ -1,20 +1,37 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { BindingStore } from '../binding-store.js';
 import { readFile, writeFile, mkdir, rename, stat } from 'node:fs/promises';
+import { logger } from '../../../lib/logger.js';
 
 vi.mock('node:fs/promises');
 /** Captured chokidar 'change' handler so tests can fire it manually. */
 let chokidarChangeHandler: (() => Promise<void>) | undefined;
+/** Captured chokidar 'error' handler so tests can fire it manually. */
+let chokidarErrorHandler: ((err: unknown) => void) | undefined;
 
 vi.mock('chokidar', () => ({
   default: {
     watch: () => ({
-      on: vi.fn((event: string, handler: () => Promise<void>) => {
-        if (event === 'change') chokidarChangeHandler = handler;
+      on: vi.fn((event: string, handler: (arg?: unknown) => unknown) => {
+        if (event === 'change') chokidarChangeHandler = handler as () => Promise<void>;
+        if (event === 'error') chokidarErrorHandler = handler as (err: unknown) => void;
       }),
       close: vi.fn(),
     }),
   },
+}));
+
+vi.mock('../../../lib/logger.js', () => ({
+  logger: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  },
+  // `load()` passes its caught error through this helper, so the mock must
+  // carry it too — a mock missing it fails the module's own error path.
+  logError: (err: unknown) =>
+    err instanceof Error ? { error: err.message, stack: err.stack } : { error: String(err) },
 }));
 
 describe('BindingStore', () => {
@@ -24,6 +41,8 @@ describe('BindingStore', () => {
 
   beforeEach(async () => {
     chokidarChangeHandler = undefined;
+    chokidarErrorHandler = undefined;
+    vi.mocked(logger.error).mockClear();
     nextMtime = 1000;
     vi.mocked(readFile).mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
     vi.mocked(mkdir).mockResolvedValue(undefined);
@@ -590,6 +609,91 @@ describe('BindingStore', () => {
       expect(readFileSpy).toHaveBeenCalledTimes(1);
       expect(store.getAll()).toHaveLength(1);
       expect(store.getAll()[0].adapterId).toBe('external');
+    });
+  });
+
+  describe('watcher error handling', () => {
+    it('logs a watcher error naming bindings.json, and existing bindings stay usable', async () => {
+      await store.create({ adapterId: 'tg', agentId: 'a' });
+
+      const err = Object.assign(new Error('EMFILE: too many open files'), { code: 'EMFILE' });
+      // No `?.` here on purpose: if the production `.on('error', ...)` wiring is
+      // ever removed, this must fail via the resulting TypeError (calling
+      // undefined), not silently no-op and fail later at the assertion.
+      chokidarErrorHandler!(err);
+
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringMatching(/^\[watcher-error\] BindingStore: .*bindings\.json/),
+        expect.objectContaining({
+          code: 'EMFILE',
+          message: 'EMFILE: too many open files',
+          stack: err.stack,
+          suppressingFurtherErrors: true,
+        })
+      );
+      // Already-loaded bindings keep resolving — only hot-reload is degraded.
+      expect(store.resolve('tg')).toBeDefined();
+    });
+
+    it('says further errors of that code are suppressed, so an operator knows the silence is by design', () => {
+      chokidarErrorHandler!(Object.assign(new Error('EMFILE'), { code: 'EMFILE' }));
+
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining('further EMFILE errors from this watcher are suppressed'),
+        expect.objectContaining({ suppressingFurtherErrors: true })
+      );
+    });
+
+    // A single fd-exhaustion episode can make chokidar fire 'error' many times
+    // for one dead watcher. The handler must latch: log the first, drop repeats
+    // of the same code.
+    it('logs only the first of many errors carrying the same code', () => {
+      chokidarErrorHandler!(Object.assign(new Error('EMFILE 1'), { code: 'EMFILE' }));
+      chokidarErrorHandler!(Object.assign(new Error('EMFILE 2'), { code: 'EMFILE' }));
+      chokidarErrorHandler!(Object.assign(new Error('EMFILE 3'), { code: 'EMFILE' }));
+
+      expect(logger.error).toHaveBeenCalledTimes(1);
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ code: 'EMFILE', message: 'EMFILE 1' })
+      );
+    });
+
+    // The masking bug: a latch keyed on "any error at all" would let one benign
+    // EACCES hide a real EMFILE storm that follows it. Keying on `code` means a
+    // NEW code always gets its own line.
+    it('logs a separate line for each distinct error code', () => {
+      chokidarErrorHandler!(Object.assign(new Error('permission denied'), { code: 'EACCES' }));
+      chokidarErrorHandler!(Object.assign(new Error('too many open files'), { code: 'EMFILE' }));
+
+      expect(logger.error).toHaveBeenCalledTimes(2);
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ code: 'EACCES' })
+      );
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ code: 'EMFILE' })
+      );
+    });
+
+    // Regression guard: if the latch were ever hoisted out of the per-instance
+    // closure to module scope, one store's first error would wrongly suppress a
+    // second store's first error too.
+    it('scopes the latch per store — a second store logs its own first error', async () => {
+      const firstOnError = chokidarErrorHandler!;
+      const otherStore = new BindingStore('/tmp/relay-other');
+      await otherStore.init();
+      const secondOnError = chokidarErrorHandler!;
+      expect(secondOnError).not.toBe(firstOnError);
+      try {
+        firstOnError(Object.assign(new Error('EMFILE A'), { code: 'EMFILE' }));
+        secondOnError(Object.assign(new Error('EMFILE B'), { code: 'EMFILE' }));
+
+        expect(logger.error).toHaveBeenCalledTimes(2);
+      } finally {
+        await otherStore.shutdown();
+      }
     });
   });
 });

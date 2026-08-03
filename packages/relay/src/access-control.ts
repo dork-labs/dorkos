@@ -370,5 +370,33 @@ export class AccessControl {
     this.watcher.on('unlink', () => {
       this.loadRules();
     });
+
+    // Without this handler a watcher failure (e.g. EMFILE) has nowhere to go
+    // but the process-wide unhandled-error path. Rules already loaded keep
+    // being enforced and a quarantine already in force stays in force; what
+    // stops is hot-reload, so a repair to the file goes unnoticed until the
+    // process restarts. Latched per distinct error code rather than a single
+    // boolean: a benign EACCES must never suppress the EMFILE storm that
+    // follows it. The Set lives in this per-instance closure, so one relay's
+    // latch cannot silence another's.
+    const seenCodes = new Set<string>();
+    this.watcher.on('error', (err) => {
+      const code = (err as NodeJS.ErrnoException)?.code ?? 'unknown';
+      if (seenCodes.has(code)) return;
+      seenCodes.add(code);
+      // Logged as an explicit object, never the bare Error: the server's NDJSON
+      // reporter spreads what it is given, and `message`/`stack` are
+      // non-enumerable on an Error, so they would vanish (DOR-832).
+      this.logger?.warn?.(
+        `[watcher-error] AccessControl: ${this.rulesPath} — further ${code} errors from this watcher are suppressed`,
+        {
+          rulesPath: this.rulesPath,
+          code,
+          message: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined,
+          suppressingFurtherErrors: true,
+        }
+      );
+    });
   }
 }
