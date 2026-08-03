@@ -5646,13 +5646,42 @@
             "properties": {
               "author": {
                 "$ref": "#/components/schemas/AuthorRef"
+              },
+              "origin": {
+                "$ref": "#/components/schemas/AuthorOrigin"
               }
             },
             "required": [
-              "author"
+              "author",
+              "origin"
             ]
           }
         ]
+      },
+      "AuthorOrigin": {
+        "anyOf": [
+          {
+            "type": "string",
+            "enum": [
+              "local"
+            ],
+            "description": "This machine: the operator, an agent, or the room itself."
+          },
+          {
+            "type": "object",
+            "properties": {
+              "platform": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "platform"
+            ],
+            "description": "Outside this machine, on the named platform."
+          }
+        ],
+        "description": "Where this member is: on this machine, or on the platform a bridged chat projects from. Derived from the stored author key, so it is a property of who they are and not of how this response was produced."
       },
       "RoomMember": {
         "type": "object",
