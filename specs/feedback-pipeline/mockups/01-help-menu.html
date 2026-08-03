@@ -1,0 +1,71 @@
+<h2>Help menu: GitHub demoted, in-app feedback primary</h2>
+<p class="subtitle">Today "Send feedback" and the two GitHub options sit at equal weight. GitHub becomes secondary. Which demotion feels right?</p>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">Today (baseline)</div>
+    <div class="mockup-body" style="display:flex;justify-content:center;padding:34px 20px;">
+      <div style="width:230px;background:#1c1c1e;border:1px solid #2e2e30;border-radius:10px;padding:6px;font-family:-apple-system,sans-serif;font-size:13px;color:#e5e5e7;box-shadow:0 8px 24px rgba(0,0,0,.35);">
+        <div style="padding:6px 10px;color:#8e8e93;font-size:11px;text-transform:uppercase;letter-spacing:.04em;">Help and feedback</div>
+        <div style="padding:7px 10px;border-radius:6px;display:flex;gap:8px;align-items:center;">💬 Send feedback</div>
+        <div style="height:1px;background:#2e2e30;margin:4px 0;"></div>
+        <div style="padding:7px 10px;border-radius:6px;display:flex;gap:8px;align-items:center;">🐛 Report a bug on GitHub</div>
+        <div style="padding:7px 10px;border-radius:6px;display:flex;gap:8px;align-items:center;">💡 Request a feature on GitHub</div>
+        <div style="height:1px;background:#2e2e30;margin:4px 0;"></div>
+        <div style="padding:7px 10px;border-radius:6px;display:flex;gap:8px;align-items:center;">📖 Documentation</div>
+      </div>
+    </div>
+  </div>
+  <div class="mockup">
+    <div class="mockup-header">Option A — flat, one demoted GitHub line</div>
+    <div class="mockup-body" style="display:flex;justify-content:center;padding:34px 20px;">
+      <div style="width:230px;background:#1c1c1e;border:1px solid #2e2e30;border-radius:10px;padding:6px;font-family:-apple-system,sans-serif;font-size:13px;color:#e5e5e7;box-shadow:0 8px 24px rgba(0,0,0,.35);">
+        <div style="padding:6px 10px;color:#8e8e93;font-size:11px;text-transform:uppercase;letter-spacing:.04em;">Help and feedback</div>
+        <div style="padding:7px 10px;border-radius:6px;background:#2a2a2d;display:flex;gap:8px;align-items:center;">💬 Send feedback</div>
+        <div style="padding:7px 10px;border-radius:6px;display:flex;gap:8px;align-items:center;">🐛 Report a bug</div>
+        <div style="height:1px;background:#2e2e30;margin:4px 0;"></div>
+        <div style="padding:7px 10px;border-radius:6px;display:flex;gap:8px;align-items:center;color:#8e8e93;font-size:12px;">🔗 Report on GitHub…</div>
+        <div style="padding:7px 10px;border-radius:6px;display:flex;gap:8px;align-items:center;color:#8e8e93;font-size:12px;">📖 Documentation</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:8px;">
+  <div class="mockup" style="max-width:320px;margin:0 auto;">
+    <div class="mockup-header">Option B — GitHub behind a "More" submenu</div>
+    <div class="mockup-body" style="display:flex;justify-content:center;padding:34px 14px;">
+      <div style="width:220px;background:#1c1c1e;border:1px solid #2e2e30;border-radius:10px;padding:6px;font-family:-apple-system,sans-serif;font-size:13px;color:#e5e5e7;box-shadow:0 8px 24px rgba(0,0,0,.35);position:relative;">
+        <div style="padding:6px 10px;color:#8e8e93;font-size:11px;text-transform:uppercase;letter-spacing:.04em;">Help and feedback</div>
+        <div style="padding:7px 10px;border-radius:6px;background:#2a2a2d;display:flex;gap:8px;align-items:center;">💬 Send feedback</div>
+        <div style="padding:7px 10px;border-radius:6px;display:flex;gap:8px;align-items:center;">🐛 Report a bug</div>
+        <div style="height:1px;background:#2e2e30;margin:4px 0;"></div>
+        <div style="padding:7px 10px;border-radius:6px;display:flex;gap:8px;align-items:center;justify-content:space-between;color:#8e8e93;font-size:12px;">
+          <span style="display:flex;gap:8px;align-items:center;">⋯ More</span><span>▸</span>
+        </div>
+        <div style="padding:7px 10px;border-radius:6px;display:flex;gap:8px;align-items:center;color:#8e8e93;font-size:12px;">📖 Documentation</div>
+        <div style="position:absolute;left:100%;top:96px;margin-left:6px;width:190px;background:#232326;border:1px solid #2e2e30;border-radius:10px;padding:6px;box-shadow:0 8px 24px rgba(0,0,0,.45);">
+          <div style="padding:7px 10px;border-radius:6px;font-size:12px;">Report a bug on GitHub</div>
+          <div style="padding:7px 10px;border-radius:6px;font-size:12px;">Request a feature on GitHub</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Flat, one demoted GitHub line</h3>
+      <p>"Send feedback" + "Report a bug" stay primary (both open the in-app dialog). One muted "Report on GitHub…" line below a separator opens a tiny bug/feature chooser. Fewer clicks, GitHub still one hop away.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>GitHub behind a "More ▸" submenu</h3>
+      <p>Both GitHub entries move fully out of the primary list into a submenu. Strongest demotion; GitHub is two hops away and visually out of sight.</p>
+    </div>
+  </div>
+</div>
