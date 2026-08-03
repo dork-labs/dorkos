@@ -1,0 +1,11 @@
+{
+  "$comment": "Retired vocabulary the DOR-855+ Language & IA program has moved off of, banned wave by wave (plans/language-ia-simplification.md). Adding a wave here is the ONLY change extending the gate needs — check-vocab-gate.ts and its allowlist mechanism stay put. A term is matched as a whole word, case-insensitive, so 'connection' does not fire on 'Connections', 'ConnectionState' or 'reconnecting'.",
+  "waves": [
+    {
+      "id": "wave-1",
+      "issue": "DOR-855",
+      "note": "\"Connection\" stops meaning network health in user copy — the word belongs to the Connections domain only (plan D2). Legitimate Connections-domain usage is allowlisted per file in allowlist.json, not exempted here.",
+      "terms": ["connection"]
+    }
+  ]
+}

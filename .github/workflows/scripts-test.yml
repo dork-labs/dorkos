@@ -244,5 +244,12 @@ jobs:
       - name: os.homedir() ban fixtures
         run: bash scripts/test-homedir-guard.sh
 
+      # check-vocab-gate.ts (DOR-855) rides this step rather than getting a
+      # dedicated one: its own pin suite (__tests__/check-vocab-gate.test.ts)
+      # includes a "regression canary" test that runs the real gate against
+      # this checkout, not just synthetic fixtures. A retired word landing
+      # back in apps/client or apps/site copy fails that one test right here —
+      # there is no second job to wire up, and the CLI entry point
+      # (`pnpm check:vocab-gate`) stays available for a human to run by hand.
       - name: Unit tests
         run: pnpm exec vitest run --config scripts/vitest.config.ts

@@ -48,7 +48,7 @@ const errorPart: MessagePart = {
 } as MessagePart;
 
 const transportError: TransportErrorInfo = {
-  heading: 'Connection failed',
+  heading: "Can't reach DorkOS",
   message: 'offline',
   retryable: true,
 };

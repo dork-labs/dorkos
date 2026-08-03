@@ -69,7 +69,7 @@ function honestInstallError(detail: string): string {
     .find((l) => l.trim())
     ?.trim();
   const suffix = firstLine ? ` (${firstLine})` : '';
-  return `Could not install Codex${suffix}. Check your connection and try again.`;
+  return `Could not install Codex${suffix}. Check your network and try again.`;
 }
 
 /** Best-effort removal of the (possibly partial) provisioning tree; never throws. */

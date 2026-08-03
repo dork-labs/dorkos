@@ -306,7 +306,7 @@ describe('AdapterSetupWizard — fields no setup step names', () => {
     fireEvent.change(screen.getByLabelText('Approvers'), { target: { value: 'U01ABC123' } });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
     await waitFor(() => {
-      expect(screen.getByText(/connection successful/i)).toBeInTheDocument();
+      expect(screen.getByText(/reachable/i)).toBeInTheDocument();
     });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
     fireEvent.click(await screen.findByRole('button', { name: /save changes/i }));

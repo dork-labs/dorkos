@@ -12,9 +12,9 @@ describe('TunnelError', () => {
     expect(screen.getByTestId('tunnel-error')).toBeInTheDocument();
   });
 
-  it('always shows the "Connection failed" heading', () => {
+  it('always shows the "Tunnel failed" heading', () => {
     render(<TunnelError error="some error" onRetry={vi.fn()} />);
-    expect(screen.getByText('Connection failed')).toBeInTheDocument();
+    expect(screen.getByText('Tunnel failed')).toBeInTheDocument();
   });
 
   it('renders the "Try again" button', () => {
@@ -42,7 +42,7 @@ describe('TunnelError', () => {
 
   it('displays a friendly message for timeout errors', () => {
     render(<TunnelError error="connection ETIMEDOUT" onRetry={vi.fn()} />);
-    expect(screen.getByText('Connection timed out. Check your network.')).toBeInTheDocument();
+    expect(screen.getByText('Tunnel timed out. Check your network.')).toBeInTheDocument();
   });
 
   it('displays a friendly message for tunnel limit errors', () => {

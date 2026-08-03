@@ -88,7 +88,7 @@ export function TunnelDialog({ open, onOpenChange }: TunnelDialogProps) {
           )}
           {machine.viewState === 'connecting' && (
             <ResponsiveDialogDescription className="text-muted-foreground text-xs">
-              Establishing connection...
+              Connecting...
             </ResponsiveDialogDescription>
           )}
         </ResponsiveDialogHeader>

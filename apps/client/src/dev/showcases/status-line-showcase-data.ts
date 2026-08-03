@@ -287,7 +287,7 @@ export const HEALTHY: StatusScenario = {
  * near its ceiling, and two subagents are still running.
  */
 export const DEGRADED: StatusScenario = {
-  label: 'Degraded — connection lost, context critical, bypass permissions, non-default runtime',
+  label: 'Degraded — live updates lost, context critical, bypass permissions, non-default runtime',
   ctx: {
     cwd: CWD,
     git: gitPromotionState(DIRTY_GIT.branch, DIRTY_GIT.clean, DIRTY_GIT.detached),
@@ -371,7 +371,7 @@ export const DEGRADED_ON_DEFAULT: StatusScenario = {
  * review), and this is the row that puts it on screen beside its neighbours.
  */
 export const RATE_LIMITED: StatusScenario = {
-  label: 'Rate limited — connection lost, context critical, subscription exhausted',
+  label: 'Rate limited — live updates lost, context critical, subscription exhausted',
   ctx: {
     ...DEGRADED.ctx,
     permissionMode: 'default',
