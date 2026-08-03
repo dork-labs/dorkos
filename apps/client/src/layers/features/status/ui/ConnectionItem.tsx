@@ -47,11 +47,17 @@ export const CONNECTION_STATE_CONFIG: Record<ConnectionState, ConnectionStateCon
     icon: Wifi,
     tasks: true,
   },
-  // "Offline" rather than a clipped "Connection los…": a narrow line gets a
+  // "Offline" rather than a clipped "Live updates lo…": a narrow line gets a
   // shorter true sentence, never a truncated one.
+  //
+  // Deliberate seam: the other three states are present participles
+  // ("Connecting", "Reconnecting") naming the action in progress, but
+  // `disconnected` names the noun that's missing ("Live updates lost")
+  // instead of an ungrammatical "Disconnecting" — there is no verb for the
+  // terminal failure state, only for the states either side of it.
   disconnected: {
     color: 'bg-red-500',
-    label: 'Live stream lost',
+    label: 'Live updates lost',
     shortLabel: 'Offline',
     icon: WifiOff,
     tasks: false,
@@ -129,8 +135,7 @@ function HoverDescription({ connectionState }: { connectionState: ConnectionStat
   if (connectionState === 'connecting') {
     return (
       <p className={base}>
-        Opening the live stream for this session. New messages and updates appear once it&apos;s
-        open.
+        Opening live updates for this session. New messages and updates appear once it&apos;s open.
       </p>
     );
   }
@@ -139,8 +144,8 @@ function HoverDescription({ connectionState }: { connectionState: ConnectionStat
     return (
       <div className="space-y-1.5">
         <p className={base}>
-          The live stream dropped and is reconnecting automatically. Incoming messages and updates
-          are paused — nothing is lost; anything missed replays when it reconnects.
+          Live updates dropped and are reconnecting automatically. Incoming messages and updates are
+          paused — nothing is lost; anything missed replays when it reconnects.
         </p>
         <p className={cn(base, 'text-muted-foreground/70')}>No action needed.</p>
       </div>
@@ -151,7 +156,7 @@ function HoverDescription({ connectionState }: { connectionState: ConnectionStat
   return (
     <div className="space-y-1.5">
       <p className={base}>
-        Could not re-establish the live stream after several attempts. New messages and updates will
+        Could not re-establish live updates after several attempts. New messages and updates will
         not appear until it&apos;s restored.
       </p>
       <p className={cn(base, 'text-muted-foreground/70')}>

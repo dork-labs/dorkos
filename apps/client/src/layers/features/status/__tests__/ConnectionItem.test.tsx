@@ -9,22 +9,22 @@ afterEach(cleanup);
 
 /** The item's own box. It carries no role of its own — see the naming test below. */
 function readout(): HTMLElement {
-  return screen.getByText(/Live stream lost|Offline|Connecting|Reconnecting|Connected/);
+  return screen.getByText(/Live updates lost|Offline|Connecting|Reconnecting|Connected/);
 }
 
 describe('ConnectionItem', () => {
   it('names the state in full at the widest tier', () => {
     render(<ConnectionItem connectionState="disconnected" />);
-    expect(readout()).toHaveTextContent('Live stream lost');
+    expect(readout()).toHaveTextContent('Live updates lost');
   });
 
   it('swaps in a shorter true sentence when the line narrows, never a truncated one', () => {
     // The slot budget counts slots, so every slot has to be about one size
-    // (DOR-452). "Live stream lo…" would fit the bound and say nothing; "Offline"
+    // (DOR-452). "Live updates lo…" would fit the bound and say nothing; "Offline"
     // fits and still answers the question.
     render(<ConnectionItem connectionState="disconnected" compact />);
     expect(readout()).toHaveTextContent('Offline');
-    expect(readout()).not.toHaveTextContent('Live stream lost');
+    expect(readout()).not.toHaveTextContent('Live updates lost');
   });
 
   it('adds no live region of its own, and no name that would double up', () => {

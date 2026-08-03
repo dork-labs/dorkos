@@ -110,9 +110,9 @@ See [Agent Discovery](/docs/guides/agent-discovery) for the full list of what Me
 ## "My chat seems stuck" or "the agent isn't responding"
 
 1. Give it a moment. Long tool calls (installing packages, running tests, a big refactor) can look idle even though the agent is still working.
-2. Check the live stream indicator in the status bar. It only appears when the live stream isn't healthy, so no indicator is good news. If it says **Reconnecting**, DorkOS is recovering the stream automatically and nothing is lost, just wait. If it says **Live stream lost**, refresh the page; if that doesn't help, confirm the DorkOS server itself is still running (see the health check above). On a narrow window that same warning reads **Offline**.
+2. Check the Live updates indicator in the status bar. It only appears when live updates aren't healthy, so no indicator is good news. If it says **Reconnecting**, DorkOS is recovering automatically and nothing is lost, just wait. If it says **Live updates lost**, refresh the page; if that doesn't help, confirm the DorkOS server itself is still running (see the health check above). On a narrow window that same warning reads **Offline**.
 3. If the agent has genuinely gone silent (no output at all, not even a tool call) for 10 minutes, DorkOS interrupts the turn on its own and shows an error message in the chat saying so. You don't need to do anything, just send a new message to try again.
-4. Open the session in a fresh browser tab. If it opens fine there, the problem was the original tab or its live stream, not the session itself.
+4. Open the session in a fresh browser tab. If it opens fine there, the problem was the original tab, not the session itself.
 5. Still stuck? Check the server logs for anything unusual: they print to your terminal while DorkOS is running, and also get written to `~/.dork/logs/dorkos.log`.
 
 ## "I can't reach DorkOS from my phone or another computer"

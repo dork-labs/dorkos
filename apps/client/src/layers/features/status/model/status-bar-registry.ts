@@ -416,7 +416,7 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
   },
   {
     key: 'connection',
-    label: 'Live stream',
+    label: 'Live updates',
     description: 'The live link that delivers messages',
     cluster: 'right',
     group: 'diagnostics',

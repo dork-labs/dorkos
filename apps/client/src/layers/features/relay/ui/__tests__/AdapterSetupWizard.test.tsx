@@ -301,7 +301,7 @@ describe('AdapterSetupWizard', () => {
 
     // Should show test step
     await waitFor(() => {
-      expect(screen.getByText('Checking reachability...')).toBeInTheDocument();
+      expect(screen.getByText('Trying to reach it...')).toBeInTheDocument();
     });
 
     // After resolving, should show success

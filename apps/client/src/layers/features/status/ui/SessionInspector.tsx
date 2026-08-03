@@ -115,7 +115,7 @@ function LiveGroup({ diagnostics: d, live }: { diagnostics: SessionDiagnostics; 
 
   return (
     <Group label="Live">
-      <Row label="Live stream">
+      <Row label="Live updates">
         <span className="inline-flex items-center gap-1.5">
           <span
             aria-hidden
@@ -125,7 +125,11 @@ function LiveGroup({ diagnostics: d, live }: { diagnostics: SessionDiagnostics; 
               connection.tasks && 'animate-tasks'
             )}
           />
-          {connection.label}
+          {/* shortLabel, not label: the row label already says "Live updates",
+              so the disconnected state's full label ("Live updates lost")
+              would stutter it right back — "Offline" says the same thing
+              without repeating the row's own word. */}
+          {connection.shortLabel}
         </span>
       </Row>
       <Row label="Turn">{turnLabel(d)}</Row>

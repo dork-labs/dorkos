@@ -24,7 +24,7 @@ export function TestStep({
       {isPending && (
         <>
           <Loader2 className="text-muted-foreground size-8 animate-spin" />
-          <p className="text-muted-foreground text-sm">Checking reachability...</p>
+          <p className="text-muted-foreground text-sm">Trying to reach it...</p>
         </>
       )}
       {isSuccess && (

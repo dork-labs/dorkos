@@ -69,7 +69,7 @@ describe('SessionInspector — without a session', () => {
 describe('SessionInspector — the live group', () => {
   it('reports the stream state, cursors, and queue depth', () => {
     render(<SessionInspector />);
-    expect(valueFor('Live stream')).toBe('Connected');
+    expect(valueFor('Live updates')).toBe('Connected');
     expect(valueFor('Turn')).toBe('idle');
     expect(valueFor('Last event')).toBe('seq 412');
     expect(valueFor('Resumed from')).toBe('cursor 400');
@@ -135,7 +135,7 @@ describe('SessionInspector — the live group', () => {
     // warning on the one surface built to diagnose it, while `connected` rendered
     // in a different green from the status line's.
     const dotFor = () =>
-      screen.getByText('Live stream').parentElement!.querySelector('span[aria-hidden]')!;
+      screen.getByText('Live updates').parentElement!.querySelector('span[aria-hidden]')!;
 
     render(<SessionInspector />);
     expect(dotFor().className).toContain('bg-emerald-500');
@@ -143,7 +143,10 @@ describe('SessionInspector — the live group', () => {
     cleanup();
     mockDiagnostics.mockReturnValue(makeDiagnostics({ connectionState: 'disconnected' }));
     render(<SessionInspector />);
-    expect(valueFor('Live stream')).toBe('Live stream lost');
+    // shortLabel ("Offline"), not the full label ("Live updates lost") — the
+    // row label already says "Live updates", so the value would otherwise
+    // stutter it right back.
+    expect(valueFor('Live updates')).toBe('Offline');
     expect(dotFor().className).toContain('bg-red-500');
 
     cleanup();

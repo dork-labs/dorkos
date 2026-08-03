@@ -29,7 +29,7 @@ export function classifyTransportError(err: unknown): TransportErrorInfo {
   // Network/fetch errors
   if (error instanceof TypeError || /fetch|network/i.test(error.message)) {
     return {
-      heading: 'Server link failed',
+      heading: "Can't reach DorkOS",
       message: 'Could not reach the server. Check your network and try again.',
       retryable: true,
     };
