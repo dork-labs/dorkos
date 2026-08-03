@@ -305,20 +305,20 @@ describe('BindingStore', () => {
       expect(store.resolve('tg', '123', 'group')?.id).toBe(wildcard.id);
     });
 
-    it('prefers chatId+channelType over chatId alone', async () => {
+    it('rejects a second binding on the same (adapterId, chatId), even differing only by channelType', async () => {
+      // This used to be legal and was exactly the audited "one chat, one
+      // agent" bug (connection-scoping spec §Part 2): two bindings tied at
+      // the same chatId, one shadowing the other by creation order. Now it's
+      // a conflict at creation time, regardless of channelType.
       const chatOnly = await store.create({
         adapterId: 'tg',
         agentId: 'a',
         chatId: '123',
       });
-      const chatAndChannel = await store.create({
-        adapterId: 'tg',
-        agentId: 'b',
-        chatId: '123',
-        channelType: 'dm',
-      });
-      expect(store.resolve('tg', '123', 'dm')?.id).toBe(chatAndChannel.id);
-      expect(store.resolve('tg', '123', 'group')?.id).toBe(chatOnly.id);
+      await expect(
+        store.create({ adapterId: 'tg', agentId: 'b', chatId: '123', channelType: 'dm' })
+      ).rejects.toMatchObject({ conflict: { id: chatOnly.id, agentId: 'a' } });
+      expect(store.resolve('tg', '123', 'dm')?.id).toBe(chatOnly.id);
     });
 
     it('returns 0 score (no match) on explicit chatId mismatch', async () => {
@@ -356,16 +356,10 @@ describe('BindingStore', () => {
         agentId: 'agent-chat',
         chatId: '123',
       });
-      const exact = await store.create({
-        adapterId: 'tg',
-        agentId: 'agent-exact',
-        chatId: '123',
-        channelType: 'dm',
-      });
 
-      // Exact match: score 7
-      expect(store.resolve('tg', '123', 'dm')?.id).toBe(exact.id);
-      // Chat only match: score 5
+      // Chat match beats channel-only and wildcard regardless of channelType
+      // agreement — chatId '123' has exactly one binding (§Part 2 uniqueness).
+      expect(store.resolve('tg', '123', 'dm')?.id).toBe(chatOnly.id);
       expect(store.resolve('tg', '123', 'group')?.id).toBe(chatOnly.id);
       // Channel only match: score 3
       expect(store.resolve('tg', '999', 'dm')?.id).toBe(channelOnly.id);
@@ -595,6 +589,217 @@ describe('BindingStore', () => {
       expect(loaded?.canReply).toBe(true);
 
       await freshStore.shutdown();
+    });
+
+    it('AC2.6 (revised — see design-decisions.md D3-addendum): a legacy chatId collision is reconciled by DISABLING the loser, never deleting it, and backing it up to a sidecar', async () => {
+      // This is the deliberately-preserved successor to a prior version of
+      // this test ('prefers chatId+channelType over chatId alone', deleted
+      // when the FIRST cut of dedup shipped) — that older test proved main
+      // deliberately supports two bindings on one chatId differentiated only
+      // by channelType. The first dedup implementation silently deleted one
+      // of them on load, which was reversible-in-theory but destroyed real
+      // configuration data with no recovery path. This pins the fix: nothing
+      // is ever deleted here.
+      const OLDER_ID = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
+      const NEWER_ID = 'b1eebc99-9c0b-4ef8-bb6d-6bb9bd380a22';
+      const collidingData = {
+        bindings: [
+          {
+            id: OLDER_ID,
+            adapterId: 'telegram-main',
+            agentId: 'agent-older',
+            chatId: '123',
+            sessionStrategy: 'per-chat',
+            label: 'Older',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+          },
+          {
+            id: NEWER_ID,
+            adapterId: 'telegram-main',
+            agentId: 'agent-newer',
+            chatId: '123',
+            sessionStrategy: 'per-chat',
+            label: 'Newer',
+            createdAt: '2026-01-02T00:00:00.000Z',
+            updatedAt: '2026-01-02T00:00:00.000Z',
+          },
+        ],
+      };
+      vi.mocked(readFile).mockResolvedValue(JSON.stringify(collidingData));
+      vi.mocked(writeFile).mockClear();
+
+      const freshStore = new BindingStore('/tmp/relay');
+      await freshStore.init();
+
+      // Both rows survive — nothing was deleted.
+      expect(freshStore.getAll()).toHaveLength(2);
+      const older = freshStore.getById(OLDER_ID);
+      const newer = freshStore.getById(NEWER_ID);
+      expect(older).toBeDefined();
+      expect(newer).toBeDefined();
+      // Every other field on the loser is untouched — only `enabled` moved.
+      expect(newer).toMatchObject({
+        id: NEWER_ID,
+        agentId: 'agent-newer',
+        chatId: '123',
+        label: 'Newer',
+        enabled: false,
+      });
+      expect(older?.enabled).not.toBe(false);
+
+      // resolve() only ever returns the one enabled binding for this chat.
+      expect(freshStore.resolve('telegram-main', '123')?.id).toBe(OLDER_ID);
+
+      // Backed up to a recoverable sidecar file, full row, before the
+      // reconciled bindings.json was re-saved.
+      const sidecarCall = vi
+        .mocked(writeFile)
+        .mock.calls.find(
+          ([path]) => typeof path === 'string' && path.includes('bindings.discarded-')
+        );
+      expect(sidecarCall).toBeDefined();
+      const sidecarBody = JSON.parse(sidecarCall![1] as string) as {
+        bindings: Array<{ id: string }>;
+      };
+      expect(sidecarBody.bindings.map((b) => b.id)).toEqual([NEWER_ID]);
+
+      // The bindings.json write from THIS load (not the sidecar) — what a
+      // real restart would read back next time.
+      const reconciledWrite = vi
+        .mocked(writeFile)
+        .mock.calls.find(
+          ([path]) => typeof path === 'string' && !path.includes('bindings.discarded-')
+        );
+      expect(reconciledWrite).toBeDefined();
+      const reconciledBody = reconciledWrite![1] as string;
+
+      await freshStore.shutdown();
+
+      // Verification-round fix: a SECOND load of the already-reconciled file
+      // must be a no-op — `losers` recomputes on every load (the same
+      // already-disabled row still collides on chatId), so without filtering
+      // out rows that are ALREADY disabled, every server restart would
+      // re-write a fresh sidecar, re-save bindings.json, and re-log
+      // "auto-disabled" forever. Pin: no new sidecar, no re-save, same two
+      // rows in the same state.
+      vi.mocked(readFile).mockResolvedValue(reconciledBody);
+      vi.mocked(writeFile).mockClear();
+
+      const secondLoadStore = new BindingStore('/tmp/relay');
+      await secondLoadStore.init();
+
+      expect(writeFile).not.toHaveBeenCalled();
+      expect(secondLoadStore.getAll()).toHaveLength(2);
+      expect(secondLoadStore.getById(OLDER_ID)?.enabled).not.toBe(false);
+      expect(secondLoadStore.getById(NEWER_ID)?.enabled).toBe(false);
+
+      await secondLoadStore.shutdown();
+    });
+  });
+
+  describe('one chat, one agent (connection-scoping spec §Part 2)', () => {
+    it('AC2.1: create() throws BindingConflictError on a (adapterId, chatId) collision, carrying the conflicting binding', async () => {
+      const first = await store.create({ adapterId: 'tg', agentId: 'agent-a', chatId: '123' });
+      await expect(
+        store.create({ adapterId: 'tg', agentId: 'agent-b', chatId: '123' })
+      ).rejects.toMatchObject({
+        name: 'BindingConflictError',
+        conflict: { id: first.id, agentId: 'agent-a', chatId: '123' },
+      });
+      expect(store.getAll()).toHaveLength(1);
+    });
+
+    it('a conflict check ignores channelType — colliding on chatId alone is enough (design-decisions.md D3)', async () => {
+      await store.create({ adapterId: 'tg', agentId: 'agent-a', chatId: '123' });
+      await expect(
+        store.create({
+          adapterId: 'tg',
+          agentId: 'agent-b',
+          chatId: '123',
+          channelType: 'group',
+        })
+      ).rejects.toThrow('already bound');
+    });
+
+    it('wildcard bindings (no chatId) are exempt from the uniqueness check', async () => {
+      await store.create({ adapterId: 'tg', agentId: 'agent-a' });
+      const second = await store.create({ adapterId: 'tg', agentId: 'agent-b' });
+      expect(second).toBeDefined();
+      expect(store.getAll()).toHaveLength(2);
+    });
+
+    it('a collision on a DIFFERENT adapterId is not a conflict', async () => {
+      await store.create({ adapterId: 'tg', agentId: 'agent-a', chatId: '123' });
+      const other = await store.create({ adapterId: 'slack', agentId: 'agent-b', chatId: '123' });
+      expect(other).toBeDefined();
+    });
+
+    it('AC2.2: update() throws the same conflict when chatId changes onto a taken value', async () => {
+      const owner = await store.create({ adapterId: 'tg', agentId: 'agent-a', chatId: '123' });
+      const other = await store.create({ adapterId: 'tg', agentId: 'agent-b', chatId: '456' });
+      await expect(store.update(other.id, { chatId: '123' })).rejects.toMatchObject({
+        name: 'BindingConflictError',
+        conflict: { id: owner.id },
+      });
+      // The other binding kept its original chatId.
+      expect(store.getById(other.id)?.chatId).toBe('456');
+    });
+
+    it('update() does not conflict with itself when chatId is unchanged', async () => {
+      const binding = await store.create({ adapterId: 'tg', agentId: 'agent-a', chatId: '123' });
+      const updated = await store.update(binding.id, { label: 'renamed' });
+      expect(updated?.label).toBe('renamed');
+    });
+
+    describe('moveToAgent()', () => {
+      it('AC2.3: re-points agentId on the SAME binding id, in place', async () => {
+        const binding = await store.create({ adapterId: 'tg', agentId: 'agent-a', chatId: '123' });
+        const moved = await store.moveToAgent(binding.id, 'agent-b');
+        expect(moved).toMatchObject({ id: binding.id, agentId: 'agent-b', chatId: '123' });
+        expect(store.getAll()).toHaveLength(1);
+        expect(store.getById(binding.id)?.agentId).toBe('agent-b');
+      });
+
+      it('returns undefined for an unknown binding id', async () => {
+        expect(await store.moveToAgent('does-not-exist', 'agent-b')).toBeUndefined();
+      });
+    });
+
+    describe('resolve() vs resolveIncludingDisabled()', () => {
+      it('AC2.4: a disabled specific binding never wins resolve() over an enabled wildcard — the fallback wins', async () => {
+        const wildcard = await store.create({ adapterId: 'tg', agentId: 'agent-wild' });
+        const specific = await store.create({
+          adapterId: 'tg',
+          agentId: 'agent-specific',
+          chatId: '123',
+        });
+        await store.update(specific.id, { enabled: false });
+
+        // Negative control: without the enabled filter, the disabled specific
+        // binding would score higher (5 > 1) and win — proving this isn't
+        // vacuously true because nothing else could match.
+        expect(store.resolveIncludingDisabled('tg', '123')?.id).toBe(specific.id);
+
+        expect(store.resolve('tg', '123')?.id).toBe(wildcard.id);
+      });
+
+      it('AC2.5: when the only candidate for a chat is disabled, resolve() misses but resolveIncludingDisabled() finds it', async () => {
+        const specific = await store.create({
+          adapterId: 'tg',
+          agentId: 'agent-specific',
+          chatId: '123',
+        });
+        await store.update(specific.id, { enabled: false });
+
+        expect(store.resolve('tg', '123')).toBeUndefined();
+        expect(store.resolveIncludingDisabled('tg', '123')?.id).toBe(specific.id);
+      });
+
+      it('resolve() returns an enabled binding normally (no fallback needed)', async () => {
+        const binding = await store.create({ adapterId: 'tg', agentId: 'agent-a', chatId: '123' });
+        expect(store.resolve('tg', '123')?.id).toBe(binding.id);
+      });
     });
   });
 

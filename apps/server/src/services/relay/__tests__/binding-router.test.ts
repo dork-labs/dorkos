@@ -51,6 +51,7 @@ describe('BindingRouter', () => {
 
     mockBindingStore = {
       resolve: vi.fn(),
+      resolveIncludingDisabled: vi.fn(),
       getById: vi.fn(),
     };
 
@@ -1156,7 +1157,14 @@ describe('BindingRouter', () => {
     });
 
     it('drops inbound messages when binding is paused (enabled=false)', async () => {
-      vi.mocked(mockBindingStore.resolve!).mockReturnValue(makeBinding({ enabled: false }));
+      // `resolve()` now filters `enabled` itself (connection-scoping spec
+      // §Part 2), so a paused binding is a `resolve()` MISS in production —
+      // the router falls back to `resolveIncludingDisabled()` to still tell
+      // the person "paused" rather than going silent (DOR-789).
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue(undefined);
+      vi.mocked(mockBindingStore.resolveIncludingDisabled!).mockReturnValue(
+        makeBinding({ enabled: false })
+      );
       await capturedHandler!(makeEnvelope());
 
       expect(mockRelayCore.publish).not.toHaveBeenCalled();
@@ -1164,7 +1172,8 @@ describe('BindingRouter', () => {
     });
 
     it('skips paused binding before canReceive check', async () => {
-      vi.mocked(mockBindingStore.resolve!).mockReturnValue(
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue(undefined);
+      vi.mocked(mockBindingStore.resolveIncludingDisabled!).mockReturnValue(
         makeBinding({ enabled: false, canReceive: true })
       );
       await capturedHandler!(makeEnvelope());
@@ -1314,7 +1323,13 @@ describe('BindingRouter', () => {
 
     it('does not fire onFlow for a paused (enabled=false) or canReceive=false binding', async () => {
       // Purpose: no phantom pulse when routing itself is suppressed.
-      vi.mocked(mockBindingStore.resolve!).mockReturnValue(makeBinding({ enabled: false }));
+      // `resolve()` filters `enabled` (§Part 2), so a paused binding is a
+      // MISS there — the router's `resolveIncludingDisabled` fallback is
+      // what still surfaces it, with no pulse either way.
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue(undefined);
+      vi.mocked(mockBindingStore.resolveIncludingDisabled!).mockReturnValue(
+        makeBinding({ enabled: false })
+      );
       await flowHandler!(makeEnvelope());
       expect(onFlow).not.toHaveBeenCalled();
 
@@ -1524,6 +1539,223 @@ describe('BindingRouter', () => {
       const src = readFileSync(fileURLToPath(moduleUrl), 'utf8');
       expect(src).not.toMatch(/instanceof\s+ClaudeCodeAdapter/);
       expect(src).not.toMatch(/runtimeType\s*===\s*['"]claude-code['"]/);
+    });
+  });
+
+  describe('claim feed (connection-scoping spec §Part 3)', () => {
+    // A dedicated router instance wired with a REAL UnclaimedChatStore (an
+    // in-memory db) — the invariants under test (damping, block, no body
+    // leak) live in how the router calls the store, so a real store is what
+    // makes the assertions honest.
+    let claimRouter: BindingRouter;
+    let claimRelayCore: RelayCoreLike;
+    let claimStore: import('../unclaimed-chat-store.js').UnclaimedChatStore;
+    let onUnclaimedChat: ReturnType<typeof vi.fn>;
+    let onUnclaimedChatBurst: ReturnType<typeof vi.fn>;
+    let claimHandler: ((envelope: Record<string, unknown>) => Promise<void>) | undefined;
+    let claimBindingStore: Partial<BindingStore>;
+    let claimMeshCore: AdapterMeshCoreLike;
+
+    const BODY_SENTINEL = 'THE-MESSAGE-BODY-MUST-NEVER-APPEAR-IN-THE-CLAIM-FEED';
+
+    /** A distinct unbound envelope per chatId, so each is its own "first sighting." */
+    function unboundEnvelope(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+      return {
+        id: 'msg-1',
+        subject: 'relay.human.telegram.tg-bot.999',
+        payload: { content: BODY_SENTINEL, senderName: 'Miguel', platformData: { fromId: 42 } },
+        from: 'tg',
+        budget: {
+          hopCount: 0,
+          maxHops: 5,
+          ttl: Date.now() + 60000,
+          callBudgetRemaining: 10,
+          ancestorChain: [],
+        },
+        createdAt: '2026-01-01T00:00:00.000Z',
+        ...overrides,
+      };
+    }
+
+    beforeEach(async () => {
+      const { createDb, runMigrations } = await import('@dorkos/db');
+      const { UnclaimedChatStore } = await import('../unclaimed-chat-store.js');
+      const db = createDb(':memory:');
+      runMigrations(db);
+      claimStore = new UnclaimedChatStore(db);
+      onUnclaimedChat = vi.fn();
+      onUnclaimedChatBurst = vi.fn();
+
+      claimBindingStore = {
+        resolve: vi.fn().mockReturnValue(undefined),
+        resolveIncludingDisabled: vi.fn().mockReturnValue(undefined),
+        getById: vi.fn(),
+      };
+      claimRelayCore = {
+        publish: vi.fn().mockResolvedValue({ messageId: 'msg-1', deliveredTo: 1 }),
+        subscribe: vi.fn((_pattern: string, handler: unknown) => {
+          claimHandler = handler as typeof claimHandler;
+          return mockUnsubscribe;
+        }),
+      };
+      const claimAgentManager: AgentSessionCreator = {
+        createSession: vi.fn().mockResolvedValue({ id: 'session-x' }),
+      };
+      claimMeshCore = { getProjectPath: vi.fn() };
+
+      claimRouter = new BindingRouter({
+        bindingStore: claimBindingStore as BindingStore,
+        relayCore: claimRelayCore,
+        agentManager: claimAgentManager,
+        meshCore: claimMeshCore,
+        relayDir: '/tmp/relay-claim',
+        unclaimedChats: claimStore,
+        onUnclaimedChat,
+        onUnclaimedChatBurst,
+      });
+      await claimRouter.init();
+    });
+
+    afterEach(async () => {
+      await claimRouter.shutdown();
+    });
+
+    it('AC3.1/AC7.7 no-turn: an unbound inbound message records a claim card, fires the event once, and never starts a turn', async () => {
+      await claimHandler!(unboundEnvelope());
+
+      expect(claimStore.list('pending')).toHaveLength(1);
+      expect(onUnclaimedChat).toHaveBeenCalledTimes(1);
+      expect(onUnclaimedChat).toHaveBeenCalledWith(
+        expect.objectContaining({ adapterId: 'tg-bot', chatId: '999', senderName: 'Miguel' })
+      );
+
+      // The no-turn invariant: nothing that would run an agent was called.
+      expect(claimBindingStore.resolve).toHaveBeenCalled();
+      const agentManager = (
+        claimRouter as unknown as { deps: { agentManager: AgentSessionCreator } }
+      ).deps.agentManager;
+      expect(agentManager.createSession).not.toHaveBeenCalled();
+      expect(claimRelayCore.publish).not.toHaveBeenCalled();
+    });
+
+    it('AC3.2: damping — a second unbound message on the same chat bumps the counter and does not fire the event again', async () => {
+      await claimHandler!(unboundEnvelope());
+      await claimHandler!(unboundEnvelope());
+
+      expect(claimStore.list('pending')).toHaveLength(1);
+      expect(claimStore.list('pending')[0]!.messageCount).toBe(2);
+      expect(onUnclaimedChat).toHaveBeenCalledTimes(1);
+    });
+
+    it('AC3.3: the persisted row and the broadcast payload never contain the message body', async () => {
+      await claimHandler!(unboundEnvelope());
+
+      const row = claimStore.list('pending')[0]!;
+      expect(JSON.stringify(row)).not.toContain(BODY_SENTINEL);
+
+      const broadcast = onUnclaimedChat.mock.calls[0]![0];
+      expect(JSON.stringify(broadcast)).not.toContain(BODY_SENTINEL);
+    });
+
+    it('block short-circuits before any store write — recordless from that point on', async () => {
+      await claimHandler!(unboundEnvelope());
+      const chat = claimStore.list('pending')[0]!;
+      claimStore.block(chat.id);
+
+      const before = claimStore.getById(chat.id)!;
+      await claimHandler!(unboundEnvelope());
+      const after = claimStore.getById(chat.id)!;
+
+      // No second event, and the row's counters are byte-identical — proving
+      // the router never touched the store on the blocked path.
+      expect(onUnclaimedChat).toHaveBeenCalledTimes(1); // only the original sighting
+      expect(after).toEqual(before);
+    });
+
+    it('a message from an unknown chatId subject (adapter-root) does not throw and does not write a row', async () => {
+      await claimHandler!(unboundEnvelope({ subject: 'relay.human.telegram.tg-bot' }));
+      expect(claimStore.list('pending')).toHaveLength(0);
+    });
+
+    it('MAJOR 5: a blocked chat that later got a manual, enabled binding routes normally — the binding wins, isBlocked is never even consulted', async () => {
+      await claimHandler!(unboundEnvelope());
+      const chat = claimStore.list('pending')[0]!;
+      claimStore.block(chat.id);
+      expect(claimStore.isBlocked('tg-bot', '999')).toBe(true);
+
+      // A person manually creates a binding for this exact chat afterward.
+      vi.mocked(claimMeshCore.getProjectPath).mockReturnValue('/agents/a');
+      vi.mocked(claimBindingStore.resolve!).mockReturnValue({
+        id: 'bind-manual',
+        adapterId: 'tg-bot',
+        agentId: 'agent-a',
+        chatId: '999',
+        sessionStrategy: 'per-chat',
+        label: '',
+        permissionMode: 'acceptEdits',
+        enabled: true,
+        canInitiate: false,
+        canReply: true,
+        canReceive: true,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      });
+      const isBlockedSpy = vi.spyOn(claimStore, 'isBlocked');
+
+      await claimHandler!(unboundEnvelope());
+
+      // Routed: publish was called (a session was resolved/created for it).
+      const agentManager = (
+        claimRouter as unknown as { deps: { agentManager: AgentSessionCreator } }
+      ).deps.agentManager;
+      expect(agentManager.createSession).toHaveBeenCalled();
+      expect(claimRelayCore.publish).toHaveBeenCalled();
+      // The block state was never even checked — resolve() finding a binding
+      // short-circuits before the blocked branch is reached at all.
+      expect(isBlockedSpy).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op (never throws) when unclaimedChats is not wired', async () => {
+      const bareRouter = new BindingRouter({
+        bindingStore: claimBindingStore as BindingStore,
+        relayCore: claimRelayCore,
+        agentManager: { createSession: vi.fn() },
+        meshCore: { getProjectPath: vi.fn() },
+        relayDir: '/tmp/relay-claim-bare',
+      });
+      let bareHandler: ((envelope: Record<string, unknown>) => Promise<void>) | undefined;
+      claimRelayCore.subscribe = vi.fn((_pattern: string, handler: unknown) => {
+        bareHandler = handler as typeof bareHandler;
+        return mockUnsubscribe;
+      });
+      await bareRouter.init();
+      let threw: unknown;
+      try {
+        await bareHandler!(unboundEnvelope());
+      } catch (err) {
+        threw = err;
+      }
+      expect(threw).toBeUndefined();
+      await bareRouter.shutdown();
+    });
+
+    it('MAJOR 4: rate-limits broadcasts across DIFFERENT chats — caps individual events per window and fires one summary', async () => {
+      // 25 distinct first-sighting chats in one burst; the cap is 20/window.
+      for (let i = 0; i < 25; i++) {
+        await claimHandler!(unboundEnvelope({ subject: `relay.human.telegram.tg-bot.chat-${i}` }));
+      }
+
+      expect(onUnclaimedChat).toHaveBeenCalledTimes(20);
+      expect(onUnclaimedChatBurst).toHaveBeenCalledTimes(1);
+      expect(onUnclaimedChatBurst).toHaveBeenCalledWith(expect.objectContaining({ limit: 20 }));
+      // Every chat is still recorded durably — only the BROADCAST is capped,
+      // never the recording (the claim feed itself has its own cap, MAJOR 4's
+      // other half, tested in unclaimed-chat-store.test.ts).
+      expect(claimStore.list('pending')).toHaveLength(25);
+
+      // A second burst past the summary does not re-fire it within the SAME window.
+      await claimHandler!(unboundEnvelope({ subject: 'relay.human.telegram.tg-bot.chat-extra' }));
+      expect(onUnclaimedChatBurst).toHaveBeenCalledTimes(1);
     });
   });
 });

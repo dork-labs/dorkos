@@ -56,6 +56,13 @@ export {
   type AttachResult,
 } from './session-exposure.js';
 export {
+  AgentConnectorAttachmentStore,
+  SessionConnectorAttachmentStore,
+  type AgentConnectorAttachment,
+  type SessionConnectorOverride,
+  type SessionConnectorOverrideState,
+} from './attachment-store.js';
+export {
   ComposioConnectorProvider,
   maybeCreateComposioProvider,
   toConnectedAccountId,

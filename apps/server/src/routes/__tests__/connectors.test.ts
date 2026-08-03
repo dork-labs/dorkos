@@ -14,6 +14,11 @@ import type {
 import { custodyDisclosure } from '../../services/connectors/custody-disclosure.js';
 import { ConnectorRegistry } from '../../services/connectors/registry.js';
 import { ConnectorFlowBindings } from '../../services/connectors/flow-bindings.js';
+import { SessionConnectorService } from '../../services/connectors/session-exposure.js';
+import {
+  AgentConnectorAttachmentStore,
+  SessionConnectorAttachmentStore,
+} from '../../services/connectors/attachment-store.js';
 import type { RelayAdapterCatalog } from '../../services/connectors/routing.js';
 import { createConnectorsRouter } from '../connectors.js';
 
@@ -66,7 +71,16 @@ describe('connectors router', () => {
     app.use(express.json());
     app.use(
       '/api/connectors',
-      createConnectorsRouter({ registry, flowBindings: new ConnectorFlowBindings(), relay })
+      createConnectorsRouter({
+        registry,
+        flowBindings: new ConnectorFlowBindings(),
+        sessionConnectors: new SessionConnectorService({
+          registry,
+          agentAttachments: new AgentConnectorAttachmentStore(db),
+          sessionAttachments: new SessionConnectorAttachmentStore(db),
+        }),
+        relay,
+      })
     );
     return app;
   }
@@ -112,7 +126,15 @@ describe('connectors router', () => {
     app.use(express.json());
     app.use(
       '/api/connectors',
-      createConnectorsRouter({ registry: bounded, flowBindings: new ConnectorFlowBindings() })
+      createConnectorsRouter({
+        registry: bounded,
+        flowBindings: new ConnectorFlowBindings(),
+        sessionConnectors: new SessionConnectorService({
+          registry: bounded,
+          agentAttachments: new AgentConnectorAttachmentStore(db),
+          sessionAttachments: new SessionConnectorAttachmentStore(db),
+        }),
+      })
     );
 
     const res = await request(app).get('/api/connectors/toolkits');
@@ -139,7 +161,15 @@ describe('connectors router', () => {
     app.use(express.json());
     app.use(
       '/api/connectors',
-      createConnectorsRouter({ registry: bounded, flowBindings: new ConnectorFlowBindings() })
+      createConnectorsRouter({
+        registry: bounded,
+        flowBindings: new ConnectorFlowBindings(),
+        sessionConnectors: new SessionConnectorService({
+          registry: bounded,
+          agentAttachments: new AgentConnectorAttachmentStore(db),
+          sessionAttachments: new SessionConnectorAttachmentStore(db),
+        }),
+      })
     );
 
     const start = Date.now();

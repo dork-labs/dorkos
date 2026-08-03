@@ -14,6 +14,7 @@ import type { WebhookAdapter } from '@dorkos/relay';
 import {
   CreateBindingRequestSchema,
   UpdateBindingRequestSchema,
+  MoveBindingRequestSchema,
   AdapterTestRequestSchema,
   AdapterCreateRequestSchema,
   AdapterConfigUpdateSchema,
@@ -22,7 +23,7 @@ import {
 } from '@dorkos/shared/relay-schemas';
 import { AdapterError, type AdapterManager } from '../services/relay/adapter-manager.js';
 import { broadcastBindingsChanged } from '../services/relay/relay-sse-events.js';
-import type { BindingUpdate } from '../services/relay/binding-store.js';
+import { BindingConflictError, type BindingUpdate } from '../services/relay/binding-store.js';
 import type { TraceStore } from '../services/relay/trace-store.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 
@@ -301,9 +302,74 @@ export function createAdapterRouter(
 
       return res.status(201).json({ binding });
     } catch (err) {
+      // "One chat, one agent" (connection-scoping spec §Part 2): a
+      // `(adapterId, chatId)` collision is a 409, carrying the conflicting
+      // binding so the client can offer a move rather than a bare rejection.
+      if (err instanceof BindingConflictError) {
+        return res.status(409).json({
+          error: err.message,
+          code: 'CHAT_ALREADY_BOUND',
+          conflict: {
+            bindingId: err.conflict.id,
+            agentId: err.conflict.agentId,
+            label: err.conflict.label,
+          },
+        });
+      }
       const message = err instanceof Error ? err.message : 'Create failed';
       return res.status(500).json({ error: message });
     }
+  });
+
+  /**
+   * Re-point an existing binding to a different agent (connection-scoping
+   * spec §Part 2 Move semantics) — the client's answer to "This chat reaches
+   * X. Move it to Y?" after a 409 above. Clears the binding's stale session
+   * mappings (created under the OLD agent's project) so the next inbound
+   * message starts fresh under the new one.
+   */
+  router.post('/bindings/:id/move', async (req, res) => {
+    const bindingStore = adapterManager.getBindingStore();
+    if (!bindingStore) return res.status(503).json({ error: 'Binding subsystem not available' });
+    const result = MoveBindingRequestSchema.safeParse(req.body);
+    if (!result.success) {
+      return res
+        .status(400)
+        .json({ error: 'Validation failed', details: z.flattenError(result.error) });
+    }
+
+    const meshCore = adapterManager.getMeshCore();
+    if (meshCore && !meshCore.getProjectPath(result.data.agentId)) {
+      return res.status(400).json({
+        error: `Agent '${result.data.agentId}' not found in mesh registry`,
+      });
+    }
+
+    const moved = await bindingStore.moveToAgent(req.params.id, result.data.agentId);
+    if (!moved) return res.status(404).json({ error: 'Binding not found' });
+
+    const bindingRouter = adapterManager.getBindingRouter();
+    if (bindingRouter) await bindingRouter.clearSessionsForBinding(moved.id);
+
+    broadcastBindingsChanged();
+
+    const activityService = req.app.locals.activityService as ActivityService | undefined;
+    if (activityService) {
+      const adapterName = resolveAdapterName(adapterManager, moved.adapterId);
+      await activityService.emit({
+        actorType: 'user',
+        actorLabel: 'You',
+        category: 'config',
+        eventType: 'config.binding_updated',
+        resourceType: 'binding',
+        resourceId: moved.id,
+        resourceLabel: `${moved.agentId} → ${moved.adapterId}`,
+        summary: `Moved binding: ${moved.chatId ?? moved.adapterId} → ${adapterName} (${moved.agentId})`,
+        linkPath: '/',
+      });
+    }
+
+    return res.json({ binding: moved });
   });
 
   router.patch('/bindings/:id', async (req, res) => {
@@ -352,6 +418,19 @@ export function createAdapterRouter(
     try {
       updated = await bindingStore.update(req.params.id, updates as BindingUpdate);
     } catch (err) {
+      // "One chat, one agent": changing `chatId` onto a value another binding
+      // already owns is the same 409 the create path gives (see above).
+      if (err instanceof BindingConflictError) {
+        return res.status(409).json({
+          error: err.message,
+          code: 'CHAT_ALREADY_BOUND',
+          conflict: {
+            bindingId: err.conflict.id,
+            agentId: err.conflict.agentId,
+            label: err.conflict.label,
+          },
+        });
+      }
       // The store re-validates the MERGED result independently of the
       // pre-check above (any in-process caller can reach `update`, not just
       // this route) — so a drift between the two checks lands here rather

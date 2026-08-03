@@ -6,6 +6,10 @@ import { FakeConnectorProvider } from '@dorkos/test-utils';
 import type { ConnectedAccount } from '@dorkos/shared/connector-provider';
 import { ConnectorRegistry } from '../../services/connectors/registry.js';
 import { SessionConnectorService } from '../../services/connectors/session-exposure.js';
+import {
+  AgentConnectorAttachmentStore,
+  SessionConnectorAttachmentStore,
+} from '../../services/connectors/attachment-store.js';
 import { createSessionConnectorsRouter } from '../session-connectors.js';
 
 /** Connect one account on a fake provider and persist its routing binding. */
@@ -40,7 +44,11 @@ describe('session-connectors router', () => {
     registry = new ConnectorRegistry({ db });
     provider = new FakeConnectorProvider({ type: 'composio', custody: 'managed' });
     registry.register(provider);
-    service = new SessionConnectorService({ registry });
+    service = new SessionConnectorService({
+      registry,
+      agentAttachments: new AgentConnectorAttachmentStore(db),
+      sessionAttachments: new SessionConnectorAttachmentStore(db),
+    });
   });
 
   it('POST attaches an account and re-shows the custody disclosure', async () => {

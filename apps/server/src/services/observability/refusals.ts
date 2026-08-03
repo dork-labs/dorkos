@@ -71,6 +71,14 @@ export const REFUSAL_REASONS = {
   interaction_expired: 'nobody answered the prompt in time',
   /** An inbound chat message resolved to no binding at all. */
   no_binding: 'nothing connects this chat to an agent',
+  /**
+   * An inbound message came from a chat a person explicitly blocked via the
+   * unclaimed-chat claim feed (connection-scoping spec §Part 3). Recordless
+   * by design — the block itself already lives in `unclaimed_chats`; this
+   * reason exists only so the drop is not indistinguishable from an
+   * ordinary `no_binding` in the log.
+   */
+  chat_blocked: 'the chat is blocked',
   /** An inbound chat subject could not be parsed. */
   unreadable_subject: 'the chat subject could not be read',
   /** The binding exists but is paused. */

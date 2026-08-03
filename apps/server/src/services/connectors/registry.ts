@@ -16,7 +16,13 @@
  *
  * @module services/connectors/registry
  */
-import { connectedAccounts, eq, type Db } from '@dorkos/db';
+import {
+  connectedAccounts,
+  agentConnectorAttachments,
+  sessionConnectorAttachments,
+  eq,
+  type Db,
+} from '@dorkos/db';
 import type {
   ConnectedAccount,
   ConnectedAccountId,
@@ -228,10 +234,31 @@ export class ConnectorRegistry {
    * Clear an account id's routing binding. Called on `disconnect`. Idempotent —
    * clearing an unknown id is a no-op.
    *
+   * **Cascades to every persisted connector attachment of this account**
+   * (connection-scoping spec `specs/connection-scoping/` §Part 1 Revocation):
+   * both the agent-level standing table and the session-level override table
+   * are cleared for `accountId`, across every agent/session that ever
+   * attached it. A disconnected account's credential is gone — leaving a
+   * consent row pointing at it would let a future re-connect of the SAME
+   * account id (a real possibility: providers are free to reuse an id) silently
+   * inherit stale consent nobody re-confirmed. This method does not, by
+   * itself, drop an already-resolved connection out of a LIVE session's
+   * in-memory cache — the caller (the connectors route) also calls
+   * `SessionConnectorService.invalidateAccount` for that, mirroring the
+   * existing provider-unregister cascade in `index.ts`.
+   *
    * @param accountId - The opaque account handle to unbind.
    */
   recordDisconnect(accountId: ConnectedAccountId): void {
     this._db.delete(connectedAccounts).where(eq(connectedAccounts.accountId, accountId)).run();
+    this._db
+      .delete(agentConnectorAttachments)
+      .where(eq(agentConnectorAttachments.accountId, accountId))
+      .run();
+    this._db
+      .delete(sessionConnectorAttachments)
+      .where(eq(sessionConnectorAttachments.accountId, accountId))
+      .run();
   }
 
   /**

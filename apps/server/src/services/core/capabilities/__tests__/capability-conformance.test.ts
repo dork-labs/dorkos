@@ -162,6 +162,8 @@ const marketplaceDeps = {
 const { ConnectorRegistry } = await import('../../../connectors/registry.js');
 const { ConnectorFlowBindings } = await import('../../../connectors/flow-bindings.js');
 const { SessionConnectorService } = await import('../../../connectors/session-exposure.js');
+const { AgentConnectorAttachmentStore, SessionConnectorAttachmentStore } =
+  await import('../../../connectors/attachment-store.js');
 const { FakeConnectorProvider } = await import('@dorkos/test-utils');
 const { runMigrations } = await import('@dorkos/db');
 
@@ -173,7 +175,11 @@ conformanceConnectorRegistry.register(
 );
 const connectorDeps = {
   registry: conformanceConnectorRegistry,
-  sessionConnectors: new SessionConnectorService({ registry: conformanceConnectorRegistry }),
+  sessionConnectors: new SessionConnectorService({
+    registry: conformanceConnectorRegistry,
+    agentAttachments: new AgentConnectorAttachmentStore(connectorDb),
+    sessionAttachments: new SessionConnectorAttachmentStore(connectorDb),
+  }),
   flowBindings: new ConnectorFlowBindings(),
 };
 

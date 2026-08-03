@@ -43,6 +43,7 @@ import { logRefusal, type Refusal } from '../observability/refusals.js';
 import type { BindingStore } from './binding-store.js';
 import type { AdapterMeshCoreLike } from './adapter-manager.js';
 import { parseHumanSubject } from './human-subject.js';
+import type { UnclaimedChat, UnclaimedChatStore } from './unclaimed-chat-store.js';
 
 /**
  * The identity fields an inbound chat payload carries for the person who wrote
@@ -86,6 +87,46 @@ function extractPlatformUserId(payload: unknown): string | undefined {
   if (raw === undefined) return undefined;
   const asString = String(raw);
   return asString.length > 0 ? asString : undefined;
+}
+
+/**
+ * The two payload fields the unclaimed-chat claim feed is allowed to read:
+ * the sender's display name and the chat/channel's display title, both
+ * TOP-LEVEL `StandardPayload` fields every adapter sets
+ * (`packages/relay/src/adapters/{telegram,slack}/inbound.ts` —
+ * `senderName` always, `channelName` for a group/channel chat, sourced from
+ * Telegram's `chat.title` / Slack's resolved channel name, already computed
+ * for the message's own routing metadata, no extra platform lookup) — never
+ * the message body/content field, and never read from anywhere else in the
+ * payload (connection-scoping spec `specs/connection-scoping/` §Part 3 D6).
+ */
+const ClaimFeedDisplayFieldsSchema = z
+  .object({
+    senderName: z.string().min(1).optional(),
+    channelName: z.string().min(1).optional(),
+  })
+  .partial();
+
+/** The claim-feed-safe display fields read off one inbound payload. */
+interface ClaimFeedDisplayFields {
+  senderName: string | undefined;
+  chatTitle: string | undefined;
+}
+
+/**
+ * Read the sender's display name and the chat's display title off an
+ * inbound payload, for the unclaimed-chat claim feed's cockpit card — never
+ * the message text.
+ *
+ * @param payload - The relay envelope payload as it arrived.
+ */
+function extractClaimFeedDisplayFields(payload: unknown): ClaimFeedDisplayFields {
+  if (payload === null || typeof payload !== 'object') {
+    return { senderName: undefined, chatTitle: undefined };
+  }
+  const parsed = ClaimFeedDisplayFieldsSchema.safeParse(payload);
+  if (!parsed.success) return { senderName: undefined, chatTitle: undefined };
+  return { senderName: parsed.data.senderName, chatTitle: parsed.data.channelName };
 }
 
 /** Minimal interface for AgentManager session creation. */
@@ -153,6 +194,36 @@ export interface BindingRouterDeps {
    * singleton — mirrors {@link eventRecorder}.
    */
   onFlow?: (flow: RelayFlowEvent) => void;
+  /**
+   * The durable claim feed for chats with no binding (connection-scoping
+   * spec `specs/connection-scoping/` §Part 3). Optional so unit tests that
+   * don't exercise the unbound-inbound path can omit it; in the server it is
+   * always wired.
+   */
+  unclaimedChats?: UnclaimedChatStore;
+  /**
+   * Fired once per NEW unclaimed chat (first sighting only — damped, see
+   * {@link UnclaimedChatStore.recordSighting}), for the client's
+   * attention surfaces to subscribe to on the global event stream. Injected
+   * rather than imported, mirroring {@link onFlow}. Further rate-limited
+   * across chats — see {@link onUnclaimedChatBurst}.
+   */
+  onUnclaimedChat?: (chat: UnclaimedChat) => void;
+  /**
+   * Fired at most once per rate-limit window when individual
+   * {@link onUnclaimedChat} broadcasts were suppressed for exceeding the
+   * per-window cap (adversarial review MAJOR 4) — so a burst is visible as
+   * "a burst happened, N more than shown," never silently dropped.
+   */
+  onUnclaimedChatBurst?: (burst: UnclaimedChatBurst) => void;
+}
+
+/** One rate-limit window's worth of suppressed unclaimed-chat broadcasts. */
+export interface UnclaimedChatBurst {
+  /** The rolling window this cap was counted over, in ms. */
+  windowMs: number;
+  /** The per-window broadcast cap that was exceeded. */
+  limit: number;
 }
 
 /**
@@ -221,6 +292,15 @@ export class BindingRouter {
   /** Shortest gap between two activity-driven writes of the session file. */
   private static readonly ACTIVITY_SAVE_THROTTLE_MS = 60_000;
 
+  /**
+   * Max individual `relay_chat_unclaimed` broadcasts admitted per window
+   * (connection-scoping spec §Part 3, adversarial review MAJOR 4) — bounds a
+   * burst across MANY DIFFERENT chats, which per-chat damping alone cannot.
+   */
+  private static readonly UNCLAIMED_BROADCAST_LIMIT = 20;
+  /** Rolling window the broadcast cap above is counted over. */
+  private static readonly UNCLAIMED_BROADCAST_WINDOW_MS = 60_000;
+
   /** Maps `bindingId:(chat|user):id` to the session that serves it. */
   private sessionMap: Map<string, SessionRecord> = new Map();
   /** When session activity was last flushed to disk. */
@@ -231,6 +311,12 @@ export class BindingRouter {
   private unsubscribe?: Unsubscribe;
   /** Guards against concurrent shutdown calls corrupting session data. */
   private isShutdown = false;
+  /** Start of the current unclaimed-broadcast rate-limit window (epoch ms). */
+  private unclaimedBroadcastWindowStart = 0;
+  /** Individual broadcasts admitted so far in the current window. */
+  private unclaimedBroadcastCount = 0;
+  /** Whether the once-per-window burst summary has already fired. */
+  private unclaimedBroadcastSummarySent = false;
 
   constructor(private readonly deps: BindingRouterDeps) {
     this.sessionMapPath = pathJoin(deps.relayDir, 'sessions.json');
@@ -276,6 +362,40 @@ export class BindingRouter {
         );
       }
       logger.info(`Cleaned up ${removed} orphaned session mapping(s)`);
+    }
+    return removed;
+  }
+
+  /**
+   * Remove every session mapping for ONE binding — called after
+   * `BindingStore.moveToAgent` (connection-scoping spec §Part 2 Move
+   * semantics). Unlike {@link cleanupOrphanedSessions}, the binding still
+   * exists; its sessions are stale because they were created in the OLD
+   * agent's project directory, and the binding now points elsewhere. The
+   * next inbound message on this binding creates a fresh session under the
+   * new agent's project.
+   *
+   * @param bindingId - The binding whose sessions to clear.
+   * @returns Number of session entries removed.
+   */
+  async clearSessionsForBinding(bindingId: string): Promise<number> {
+    let removed = 0;
+    for (const [key] of this.sessionMap) {
+      if (key.startsWith(`${bindingId}:`)) {
+        this.sessionMap.delete(key);
+        removed++;
+      }
+    }
+    if (removed > 0) {
+      try {
+        await this.saveSessionMap();
+      } catch (err) {
+        logger.warn(
+          'BindingRouter: failed to persist session map after a binding move, will retry on next write',
+          err
+        );
+      }
+      logger.info(`Cleared ${removed} session mapping(s) for moved binding ${bindingId}`);
     }
     return removed;
   }
@@ -423,27 +543,64 @@ export class BindingRouter {
             );
           }
 
+          // `resolve()` only considers ENABLED bindings (connection-scoping
+          // spec §Part 2): a disabled specific binding can no longer shadow an
+          // enabled fallback the way the audited bug allowed. Checked BEFORE
+          // the blocked-chat lookup below (adversarial review MAJOR 5): a
+          // chat's block state must never override a real, explicitly-created
+          // binding — someone blocked a stranger, then later a person
+          // manually bound that same chat to an agent, and that manual
+          // binding has to win. Bound chats also never pay the extra SQLite
+          // hit `isBlocked` would otherwise cost on every single message.
           const binding = this.deps.bindingStore.resolve(adapterId, chatId, channelType);
           if (!binding) {
-            // Deliberately silent in-chat: nobody connected this conversation to
-            // anything here, so there is no agent whose silence needs explaining,
-            // and speaking would be this machine starting a conversation it has no
-            // consent for. The trace and the log carry it instead.
+            // A resolve() miss might still mean "the chat's binding exists but
+            // is paused" — that case gets the told `binding_paused` refusal
+            // (DOR-789), never silence, even though `resolve()` itself can no
+            // longer return it.
+            const pausedMatch = this.deps.bindingStore.resolveIncludingDisabled(
+              adapterId,
+              chatId,
+              channelType
+            );
+            if (pausedMatch) {
+              return this.refuse(
+                envelope,
+                pausedMatch,
+                'binding_paused',
+                `binding ${pausedMatch.id} is paused`
+              );
+            }
+
+            // Truly unbound — NOW the blocked-chat check applies (spec §Part
+            // 3 step 1: block only means anything once nothing legitimate
+            // claims this chat). Short-circuits before ANY claim-feed write:
+            // "block drops future traffic recordless." A chat only reaches
+            // `blocked` through the claim feed, which is why this needs
+            // `chatId` — an adapter-root subject (no chat) was never a
+            // candidate for the feed in the first place.
+            if (chatId && this.deps.unclaimedChats?.isBlocked(adapterId, chatId)) {
+              return this.drop(
+                dispatchId,
+                '[relay] this chat is blocked',
+                { reason: 'chat_blocked', visibility: 'silent', detail: { adapterId } },
+                'chat is blocked'
+              );
+            }
+
+            // Truly unbound and not blocked: record it in the claim feed
+            // (damped, metadata-only — see `unclaimed-chat-store.ts`) and drop
+            // silently in-chat, exactly as before. Deliberately silent
+            // in-chat: nobody connected this conversation to anything here, so
+            // there is no agent whose silence needs explaining, and speaking
+            // would be this machine starting a conversation it has no consent
+            // for. The trace and the log carry it instead.
+            this.recordUnclaimedChat(adapterId, chatId, channelType, envelope);
             return this.drop(
               dispatchId,
               '[relay] nothing connects this chat to an agent',
               { reason: 'no_binding', visibility: 'silent', detail: { adapterId } },
               'no binding connects this chat to an agent'
-            );
-          }
-
-          // Skip paused bindings — they do not participate in routing
-          if (binding.enabled === false) {
-            return this.refuse(
-              envelope,
-              binding,
-              'binding_paused',
-              `binding ${binding.id} is paused`
             );
           }
 
@@ -600,6 +757,81 @@ export class BindingRouter {
     logRefusal(message, { ...refusal, dispatchId });
     recordDispatchEnd(dispatchId, 'refused');
     return { handled: false, reason: verdict };
+  }
+
+  /**
+   * Record one sighting of a truly-unbound chat in the claim feed
+   * (connection-scoping spec §Part 3), and broadcast the claim-feed event on
+   * a first sighting only (damping — see
+   * {@link UnclaimedChatStore.recordSighting}), itself further rate-limited
+   * across DIFFERENT chats (see {@link admitUnclaimedBroadcast} — the
+   * per-chat damping alone does not bound a burst of MANY distinct new
+   * chats, e.g. a publicly-discoverable bot getting spammed by many
+   * strangers at once). A no-op when either `unclaimedChats` was not wired
+   * (some unit tests) or the subject carried no `chatId` (an adapter-root
+   * subject is not a chat to claim).
+   *
+   * Reads ONLY subject-derived routing fields and the payload's top-level
+   * `senderName`/`channelName`/platform-identity fields — never the message
+   * body. See `specs/connection-scoping/design-decisions.md` D6.
+   *
+   * @param adapterId - The adapter the message arrived on.
+   * @param chatId - The chat id, when the subject carried one.
+   * @param channelType - `'group'` or undefined (dm), from the subject.
+   * @param envelope - The inbound envelope, read only for sender/title identity.
+   */
+  private recordUnclaimedChat(
+    adapterId: string,
+    chatId: string | undefined,
+    channelType: string | undefined,
+    envelope: RelayEnvelope
+  ): void {
+    if (!chatId || !this.deps.unclaimedChats) return;
+    const { senderName, chatTitle } = extractClaimFeedDisplayFields(envelope.payload);
+    const { chat, isFirstSighting } = this.deps.unclaimedChats.recordSighting({
+      adapterId,
+      chatId,
+      channelType,
+      chatKind: channelType === 'group' ? 'group' : 'dm',
+      senderName,
+      chatTitle,
+      senderId: extractPlatformUserId(envelope.payload),
+    });
+    if (!isFirstSighting) return;
+
+    if (this.admitUnclaimedBroadcast()) {
+      this.deps.onUnclaimedChat?.(chat);
+    } else if (!this.unclaimedBroadcastSummarySent) {
+      // Beyond the per-window cap: tell the client ONE summary event instead
+      // of going fully silent, so a burst is still visible as "a burst
+      // happened," not as N cards that just never arrived.
+      this.unclaimedBroadcastSummarySent = true;
+      this.deps.onUnclaimedChatBurst?.({
+        windowMs: BindingRouter.UNCLAIMED_BROADCAST_WINDOW_MS,
+        limit: BindingRouter.UNCLAIMED_BROADCAST_LIMIT,
+      });
+    }
+  }
+
+  /**
+   * Token-bucket-lite rate limit for {@link onUnclaimedChat} broadcasts,
+   * across every chat (not per-chat — {@link UnclaimedChatStore.recordSighting}
+   * already damps repeats of the SAME chat to zero broadcasts). Resets the
+   * window and the once-per-window summary flag when the current window has
+   * elapsed.
+   *
+   * @returns `true` when this sighting is still under the per-window cap and
+   *   should broadcast individually.
+   */
+  private admitUnclaimedBroadcast(): boolean {
+    const now = Date.now();
+    if (now - this.unclaimedBroadcastWindowStart >= BindingRouter.UNCLAIMED_BROADCAST_WINDOW_MS) {
+      this.unclaimedBroadcastWindowStart = now;
+      this.unclaimedBroadcastCount = 0;
+      this.unclaimedBroadcastSummarySent = false;
+    }
+    this.unclaimedBroadcastCount += 1;
+    return this.unclaimedBroadcastCount <= BindingRouter.UNCLAIMED_BROADCAST_LIMIT;
   }
 
   /**
