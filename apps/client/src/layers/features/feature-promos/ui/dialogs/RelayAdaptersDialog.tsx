@@ -50,7 +50,7 @@ export function RelayAdaptersDialog({ onClose }: PromoDialogProps) {
           Not now
         </Button>
         <Button size="sm" onClick={handleSetUp}>
-          Set up adapters
+          Connect Telegram &amp; Slack
         </Button>
       </div>
     </div>
