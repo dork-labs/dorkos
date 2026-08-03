@@ -1,6 +1,6 @@
 ---
 covers:
-  - 'fix(client): stop network status copy from saying "Connection" (DOR-855)'
+  - 'fix(client): retire network-sense "Connection" copy (DOR-855)'
 ---
 
 ### Changed
