@@ -187,6 +187,35 @@ describe('IntegrationsTab', () => {
     expect(screen.getByText('Bot Alpha')).toBeInTheDocument();
   });
 
+  it('shows the active-integrations list, not the empty state, when an instance exists', () => {
+    // This tab still ships this wave (its deletion is DOR-858's). The tour
+    // anchor that used to be asserted here moved onto the Connections page with
+    // DOR-857, but the branch it hung on — active list vs. empty state — is the
+    // tab's own behavior and keeps its coverage here.
+    mockCatalogData = [
+      makeCatalogEntry('telegram', 'Telegram', [
+        {
+          id: 'tg-1',
+          enabled: true,
+          label: 'Bot Alpha',
+          status: {
+            id: 'tg-1',
+            type: 'telegram',
+            displayName: 'Telegram',
+            state: 'connected',
+            messageCount: { inbound: 0, outbound: 0 },
+            errorCount: 0,
+          },
+        },
+      ]),
+    ];
+
+    render(<IntegrationsTab />);
+
+    expect(screen.getByText('Bot Alpha')).toBeInTheDocument();
+    expect(screen.queryByText('No integrations configured')).not.toBeInTheDocument();
+  });
+
   it('renders multiple instances from different adapter types', () => {
     mockCatalogData = [
       makeCatalogEntry('telegram', 'Telegram', [
