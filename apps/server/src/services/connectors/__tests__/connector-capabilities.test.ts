@@ -22,6 +22,10 @@ import { connectorDomain, type ConnectorCapabilityDeps } from '../connector-capa
 import { ConnectorRegistry } from '../registry.js';
 import { ConnectorFlowBindings } from '../flow-bindings.js';
 import { SessionConnectorService } from '../session-exposure.js';
+import {
+  AgentConnectorAttachmentStore,
+  SessionConnectorAttachmentStore,
+} from '../attachment-store.js';
 import { custodyDisclosure } from '../custody-disclosure.js';
 import type { CapabilityDeps } from '../../core/capabilities/index.js';
 import { composeDorkOsCapabilityRegistry } from '../../core/self-description/dorkos-registry.js';
@@ -48,7 +52,11 @@ describe('connector capabilities', () => {
     connectorRegistry = new ConnectorRegistry({ db });
     connectorRegistry.register(new FakeConnectorProvider({ type: 'composio', custody: 'managed' }));
     flowBindings = new ConnectorFlowBindings();
-    sessionConnectors = new SessionConnectorService({ registry: connectorRegistry });
+    sessionConnectors = new SessionConnectorService({
+      registry: connectorRegistry,
+      agentAttachments: new AgentConnectorAttachmentStore(db),
+      sessionAttachments: new SessionConnectorAttachmentStore(db),
+    });
     const connectorDeps: ConnectorCapabilityDeps = {
       registry: connectorRegistry,
       sessionConnectors,

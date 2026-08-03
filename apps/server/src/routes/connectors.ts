@@ -31,6 +31,7 @@ import { custodyDisclosure } from '../services/connectors/custody-disclosure.js'
 import { recommendConnector, type RelayAdapterCatalog } from '../services/connectors/routing.js';
 import type { ConnectorRegistry } from '../services/connectors/registry.js';
 import type { ConnectorFlowBindings } from '../services/connectors/flow-bindings.js';
+import type { SessionConnectorService } from '../services/connectors/session-exposure.js';
 import { toPublicAccount } from '../services/connectors/public-account.js';
 
 /** Constructor dependencies for {@link createConnectorsRouter}. */
@@ -41,6 +42,13 @@ export interface ConnectorsRouterDeps {
   flowBindings: ConnectorFlowBindings;
   /** Optional relay adapter catalog for relay-adapter-first routing; absent when relay is off. */
   relay?: RelayAdapterCatalog;
+  /**
+   * The per-account → session tool-server binder, so a disconnect can purge
+   * every live in-memory cache entry for the account immediately
+   * (connection-scoping spec §Part 1 Revocation), not just the persisted
+   * rows `registry.recordDisconnect` already clears.
+   */
+  sessionConnectors: SessionConnectorService;
 }
 
 /** Body for `POST /:provider/connect`. */
@@ -57,7 +65,7 @@ const ConnectRequestSchema = z.object({
  */
 export function createConnectorsRouter(deps: ConnectorsRouterDeps): Router {
   const router = Router();
-  const { registry, flowBindings } = deps;
+  const { registry, flowBindings, sessionConnectors } = deps;
 
   router.get('/toolkits', async (_req, res) => {
     const { toolkits, warnings } = await registry.listToolkits();
@@ -152,7 +160,11 @@ export function createConnectorsRouter(deps: ConnectorsRouterDeps): Router {
     if (provider) {
       await provider.disconnect(accountId);
     }
+    // Clears BOTH persisted connector-attachment tables (agent + session) and
+    // the routing cache row; the in-memory half of the cascade below only
+    // needs the account id, not the freshly-cleared rows.
     registry.recordDisconnect(accountId);
+    sessionConnectors.invalidateAccount(accountId);
     res.status(204).end();
   });
 

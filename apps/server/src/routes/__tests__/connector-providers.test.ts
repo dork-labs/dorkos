@@ -16,6 +16,10 @@ import { NangoProxyMcp } from '../../services/connectors/providers/nango-proxy-m
 import type { ComposioHttpClient } from '../../services/connectors/providers/composio-client.js';
 import type { NangoHttpClient } from '../../services/connectors/providers/nango-client.js';
 import { SessionConnectorService } from '../../services/connectors/session-exposure.js';
+import {
+  AgentConnectorAttachmentStore,
+  SessionConnectorAttachmentStore,
+} from '../../services/connectors/attachment-store.js';
 import { createConnectorProvidersRouter } from '../connector-providers.js';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
 
@@ -211,7 +215,11 @@ describe('connector-providers router', () => {
   it('deleting a credential revokes LIVE sessions: attached accounts stop being exposed', async () => {
     // Full wiring, exactly as boot: bootstrapper + session binder + the
     // unregister hook between them.
-    const sessionConnectors = new SessionConnectorService({ registry });
+    const sessionConnectors = new SessionConnectorService({
+      registry,
+      agentAttachments: new AgentConnectorAttachmentStore(db),
+      sessionAttachments: new SessionConnectorAttachmentStore(db),
+    });
     const bootstrapper = new ConnectorProviderBootstrapper({
       registry,
       credentials,

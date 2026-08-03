@@ -470,3 +470,37 @@ export const SessionConnectorAttachResultSchema = z.object({
 });
 /** The attach receipt. See {@link SessionConnectorAttachResultSchema}. */
 export type SessionConnectorAttachResult = z.infer<typeof SessionConnectorAttachResultSchema>;
+
+/**
+ * One agent's standing connector attachment (connection-scoping spec
+ * `specs/connection-scoping/` §Part 1) — the persisted row
+ * `GET /api/agents/:agentId/connectors` lists.
+ */
+export const AgentConnectorAttachmentSchema = z.object({
+  agentId: z.string(),
+  accountId: ConnectedAccountIdSchema,
+  /** ISO 8601 timestamp the standing attachment was created. */
+  attachedAt: z.string().datetime(),
+});
+/** One agent-level attachment row. See {@link AgentConnectorAttachmentSchema}. */
+export type AgentConnectorAttachment = z.infer<typeof AgentConnectorAttachmentSchema>;
+
+/** Response of `GET /api/agents/:agentId/connectors`. */
+export const AgentConnectorListResponseSchema = z.object({
+  accounts: z.array(AgentConnectorAttachmentSchema),
+});
+
+/**
+ * Response of `POST /api/agents/:agentId/connectors/:accountId` — the
+ * standing-attach receipt: the account's neutral metadata plus the custody
+ * disclosure re-shown at attach.
+ */
+export const AgentConnectorAttachResultSchema = z.object({
+  account: z.object({
+    accountId: ConnectedAccountIdSchema,
+    toolkit: z.string(),
+    label: z.string(),
+    status: ConnectedAccountStatusSchema,
+  }),
+  disclosure: z.string(),
+});

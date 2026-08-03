@@ -33,14 +33,19 @@
  * connector tool servers — the session status still lists what is attached, so
  * the absence is honest, not an error.
  *
- * **Durability (deferred).** Attachments are held IN MEMORY, process-scoped:
- * they are the consent state for a session's tool exposure, not durable data.
- * Sessions themselves are durable, so after a server restart a session's
- * attachments are gone and the user re-attaches (a one-click step in the
- * picker-UI phase). Persisting attachments to the `connected_accounts` layer is
- * deliberately deferred to that phase — this is NOT relay's persisted
- * `BindingSubsystem`; it is a lighter, in-memory consent map with the same
- * "this account is exposed to this session" shape.
+ * **Durability (connection-scoping spec, `specs/connection-scoping/`).** The
+ * RESOLVED connection (`McpAppServerConnection`) is still held IN MEMORY,
+ * process-scoped — it is a live provider handle, not serializable data. What
+ * IS now durable is the INTENT: a session-level attach/detach persists an
+ * override row via {@link SessionConnectorAttachmentStore}, and an
+ * agent-level attach persists standing consent via
+ * {@link AgentConnectorAttachmentStore}. After a restart, a session's first
+ * turn calls {@link SessionConnectorService.hydrateSession}, which reads both
+ * tables, re-resolves each effective account's connection through its
+ * provider, and populates the in-memory cache exactly as a live `attach`
+ * would — so the person never re-attaches by hand. See
+ * `specs/connection-scoping/design-decisions.md` D1/D2 for why this is two
+ * SQLite tables rather than a JSON file or a `config.json` field.
  *
  * @module services/connectors/session-exposure
  */
@@ -49,6 +54,10 @@ import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
 import { logger } from '../../lib/logger.js';
 import { disclosureForAccount } from './custody-disclosure.js';
 import type { ConnectedAccountBinding, ConnectorRegistry } from './registry.js';
+import type {
+  AgentConnectorAttachmentStore,
+  SessionConnectorAttachmentStore,
+} from './attachment-store.js';
 
 /**
  * Server names DorkOS reserves for its own built-in MCP servers. A connector
@@ -126,6 +135,10 @@ export interface SessionMcpServers {
 export interface SessionConnectorServiceOpts {
   /** The registry that routes an account id to its provider and its binding row. */
   registry: ConnectorRegistry;
+  /** Standing, agent-level attachment store (connection-scoping spec §Part 1). */
+  agentAttachments: AgentConnectorAttachmentStore;
+  /** Persisted per-session attach/detach override store. */
+  sessionAttachments: SessionConnectorAttachmentStore;
 }
 
 /** The cached resolution of one attached account. */
@@ -171,22 +184,37 @@ function baseServerName(toolkit: string, label: string): string {
  */
 export class SessionConnectorService {
   private readonly _registry: ConnectorRegistry;
+  private readonly _agentAttachments: AgentConnectorAttachmentStore;
+  private readonly _sessionAttachments: SessionConnectorAttachmentStore;
   /** sessionId → (accountId → cached resolution). */
   private readonly _sessions = new Map<string, Map<string, AttachedAccount>>();
+  /**
+   * Sessions that have already run {@link hydrateSession} in this process.
+   * Hydration is idempotent by construction (re-deriving the same effective
+   * set is harmless), but skipping the repeat work — and the repeat provider
+   * calls — is why every turn can call it unconditionally.
+   */
+  private readonly _hydrated = new Set<string>();
 
   /**
-   * Construct the binder over the connector registry.
+   * Construct the binder over the connector registry and the two persisted
+   * attachment stores.
    *
-   * @param opts - The registry dependency; see {@link SessionConnectorServiceOpts}.
+   * @param opts - See {@link SessionConnectorServiceOpts}.
    */
   constructor(opts: SessionConnectorServiceOpts) {
     this._registry = opts.registry;
+    this._agentAttachments = opts.agentAttachments;
+    this._sessionAttachments = opts.sessionAttachments;
   }
 
   /**
    * Attach a connected account to a session (the consent point). Resolves and
-   * caches the account's tool-server connection, and returns the custody
-   * disclosure to re-show plus the account's exposure state.
+   * caches the account's tool-server connection, persists a `'attached'`
+   * session-level override (connection-scoping spec §Part 1 — this is what
+   * lets the attachment survive a restart and what lets it suppress an
+   * agent-level detach later), and returns the custody disclosure to re-show
+   * plus the account's exposure state.
    *
    * Returns `undefined` when the account id is unknown — the caller maps that to
    * a 404. A known account whose `toolServerForAccount` resolves `null` still
@@ -196,6 +224,88 @@ export class SessionConnectorService {
    * @param accountId - The opaque account handle to attach.
    */
   async attach(
+    sessionId: string,
+    accountId: ConnectedAccountId
+  ): Promise<AttachResult | undefined> {
+    const result = await this._resolveAndCache(sessionId, accountId);
+    if (!result) return undefined;
+    this._sessionAttachments.setState(sessionId, accountId, 'attached');
+    return result;
+  }
+
+  /**
+   * Detach an account from a session. Idempotent — detaching an unattached
+   * account (or a session with nothing attached) is a no-op in memory, but
+   * ALWAYS persists a `'detached'` override (connection-scoping spec §Part
+   * 1): the override is a tombstone, not a delete, because "no record" and
+   * "explicitly turned off" are different states in the ladder — the former
+   * inherits the agent's standing attachment on the next hydration, the
+   * latter suppresses it. See `specs/connection-scoping/design-decisions.md`
+   * D2.
+   *
+   * @param sessionId - The session to detach from.
+   * @param accountId - The opaque account handle to detach.
+   */
+  detach(sessionId: string, accountId: ConnectedAccountId): void {
+    const accounts = this._sessions.get(sessionId);
+    if (accounts) {
+      accounts.delete(accountId);
+      if (accounts.size === 0) this._sessions.delete(sessionId);
+    }
+    this._sessionAttachments.setState(sessionId, accountId, 'detached');
+  }
+
+  /**
+   * Bring a session's in-memory tool-server cache up to date with its
+   * persisted connector state, exactly once per session per process
+   * (connection-scoping spec §Part 1 Restart semantics). Called before a
+   * session's first turn after process start.
+   *
+   * Computes the effective account set as
+   * `(agent's standing attachments ∪ session overrides where state='attached')
+   * \ (session overrides where state='detached')` — session overrides are
+   * authoritative per-account, never merged with the agent's fields (the
+   * Claude Code MCP ladder pattern; see design-decisions.md D2) — then
+   * resolves and caches each one exactly as a live `attach` would, WITHOUT
+   * writing a new session-level override row (these accounts are inherited,
+   * not session-chosen; persisting one here would wrongly freeze the
+   * inheritance the moment it was first read).
+   *
+   * A no-op for a session with no agent (agentId unresolvable) or no
+   * standing/override state at all.
+   *
+   * @param sessionId - The session to hydrate.
+   * @param agentId - The agent this session belongs to.
+   */
+  async hydrateSession(sessionId: string, agentId: string): Promise<void> {
+    if (this._hydrated.has(sessionId)) return;
+    this._hydrated.add(sessionId);
+
+    const effective = new Set<ConnectedAccountId>(
+      this._agentAttachments.listForAgent(agentId).map((a) => a.accountId)
+    );
+    for (const override of this._sessionAttachments.listForSession(sessionId)) {
+      if (override.state === 'attached') effective.add(override.accountId);
+      else effective.delete(override.accountId);
+    }
+
+    for (const accountId of effective) {
+      await this._resolveAndCache(sessionId, accountId);
+    }
+  }
+
+  /**
+   * Resolve one account's tool-server connection and write it into the
+   * in-memory cache — the shared core of {@link attach} and
+   * {@link hydrateSession}. Deliberately does NOT touch either persisted
+   * attachment store; callers decide whether the caller's own intent (an
+   * explicit session attach) or inherited state (hydration) is being
+   * recorded, if anything.
+   *
+   * @param sessionId - The session the account resolves into.
+   * @param accountId - The opaque account handle to resolve.
+   */
+  private async _resolveAndCache(
     sessionId: string,
     accountId: ConnectedAccountId
   ): Promise<AttachResult | undefined> {
@@ -219,20 +329,6 @@ export class SessionConnectorService {
     const disclosure = disclosureForAccount(binding);
     const warning = connection ? undefined : this._warningFor(accountId, binding);
     return { account, disclosure, ...(warning && { warning }) };
-  }
-
-  /**
-   * Detach an account from a session. Idempotent — detaching an unattached
-   * account (or a session with nothing attached) is a no-op.
-   *
-   * @param sessionId - The session to detach from.
-   * @param accountId - The opaque account handle to detach.
-   */
-  detach(sessionId: string, accountId: ConnectedAccountId): void {
-    const accounts = this._sessions.get(sessionId);
-    if (!accounts) return;
-    accounts.delete(accountId);
-    if (accounts.size === 0) this._sessions.delete(sessionId);
   }
 
   /**
@@ -298,6 +394,25 @@ export class SessionConnectorService {
         if (attached.binding.provider === providerType && attached.connection !== null) {
           accounts.set(accountId, { ...attached, connection: null });
         }
+      }
+    }
+  }
+
+  /**
+   * Remove one disconnected account from every session's live cache
+   * (connection-scoping spec §Part 1 Revocation). Unlike
+   * {@link invalidateProvider} — which nulls the connection but keeps the
+   * account attached because the PROVIDER may come back — a disconnect means
+   * the account itself is gone; the caller (the connectors route) also clears
+   * both persisted attachment tables via `ConnectorRegistry.recordDisconnect`,
+   * so there is no standing consent left for this account to fall back to.
+   *
+   * @param accountId - The disconnected account to purge from every session.
+   */
+  invalidateAccount(accountId: ConnectedAccountId): void {
+    for (const [sessionId, accounts] of this._sessions) {
+      if (accounts.delete(accountId) && accounts.size === 0) {
+        this._sessions.delete(sessionId);
       }
     }
   }
