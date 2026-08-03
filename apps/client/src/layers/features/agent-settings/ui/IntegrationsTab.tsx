@@ -13,7 +13,7 @@ import {
 } from '@/layers/entities/binding';
 import { useExternalAdapterCatalog, useRelayEnabled } from '@/layers/entities/relay';
 import { AdapterSetupWizard } from '@/layers/features/relay';
-import { useSettingsDeepLink } from '@/layers/shared/model';
+import { useOpenConnections } from '@/layers/shared/model';
 import { getAgentDisplayName } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
@@ -64,7 +64,7 @@ export function IntegrationsTab({ agent }: IntegrationsTabProps) {
   const deleteBinding = useDeleteBinding();
   const testBinding = useTestBinding();
   const updateBinding = useUpdateBinding();
-  const { open: openSettings } = useSettingsDeepLink();
+  const openConnections = useOpenConnections();
 
   const [editDialog, setEditDialog] = useState<EditDialogState>(CLOSED_EDIT_DIALOG);
   const [wizardState, setWizardState] = useState<WizardState>(CLOSED_WIZARD);
@@ -274,8 +274,8 @@ export function IntegrationsTab({ agent }: IntegrationsTabProps) {
               to get started.
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => openSettings('advanced')}>
-            Open Relay settings
+          <Button variant="outline" size="sm" onClick={() => openConnections('messaging')}>
+            Open Messaging settings
           </Button>
         </div>
         {dialogs}
@@ -296,7 +296,7 @@ export function IntegrationsTab({ agent }: IntegrationsTabProps) {
               Settings. It will appear here as soon as it&apos;s ready.
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => openSettings('integrations')}>
+          <Button variant="outline" size="sm" onClick={() => openConnections('messaging')}>
             Add an integration
           </Button>
         </div>
