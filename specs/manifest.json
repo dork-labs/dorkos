@@ -20,7 +20,7 @@
       "slug": "mesh-identity-integrity",
       "title": "Mesh identity integrity — a duplicated checkout cannot steal an agent, ghosts release their handles, a reused directory starts fresh",
       "created": "2026-08-01",
-      "status": "specified"
+      "status": "implemented"
     },
     {
       "id": "260730-213143",
@@ -35,6 +35,13 @@
       "title": "Room messaging design — capsule, reactions, and the thread panel",
       "created": "2026-07-30",
       "status": "specified"
+    },
+    {
+      "id": "260730-112334",
+      "slug": "room-details-sheet",
+      "title": "The members dialog becomes the room sheet, and the response mode becomes readable",
+      "created": "2026-07-30",
+      "status": "implemented"
     },
     {
       "id": "260729-224559",
