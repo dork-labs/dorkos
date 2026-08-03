@@ -8,7 +8,7 @@ export class SettingsPage {
 
   constructor(page: Page) {
     this.page = page;
-    // The dialog is titled "App Settings", which `/settings/i` still matches.
+    // The dialog is titled "Settings".
     this.dialog = page.getByRole('dialog', { name: /settings/i });
   }
 
