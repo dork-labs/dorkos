@@ -169,6 +169,18 @@ async function expand(type = 'codex') {
   await userEvent.click(await screen.findByTestId(`runtime-card-toggle-${type}`));
 }
 
+/**
+ * Pick an effort rung, whichever control the row chose to draw.
+ *
+ * A model that narrows nothing leaves every rung standing, and the row asks a
+ * ladder that long as a menu rather than eight crushed segments — so the test
+ * goes through the same test id either way.
+ */
+async function pickEffort(label: string, type = 'codex') {
+  await userEvent.click(await screen.findByTestId(`runtime-effort-${type}`));
+  await userEvent.click(await screen.findByRole('option', { name: label }));
+}
+
 describe('RuntimeCard — write paths', () => {
   it('writes a model into the section the runtime itself declares', async () => {
     // The capability hole this redesign closes: before it, setting Codex's model
@@ -215,7 +227,7 @@ describe('RuntimeCard — write paths', () => {
     const { updateConfig } = renderCard();
     await expand();
 
-    await userEvent.click(await screen.findByRole('radio', { name: 'High' }));
+    await pickEffort('High');
 
     await waitFor(() =>
       expect(updateConfig).toHaveBeenCalledWith({ runtimes: { codex: { defaultEffort: 'high' } } })
@@ -297,7 +309,7 @@ describe('RuntimeCard — write paths', () => {
     await expand();
     expect(screen.queryByTestId('runtime-card-timing-codex')).not.toBeInTheDocument();
 
-    await userEvent.click(await screen.findByRole('radio', { name: 'High' }));
+    await pickEffort('High');
 
     expect(await screen.findByTestId('runtime-card-timing-codex')).toHaveTextContent(
       'Applies to new conversations'
@@ -314,7 +326,7 @@ describe('RuntimeCard — write paths', () => {
       }
     );
     await expand();
-    await userEvent.click(await screen.findByRole('radio', { name: 'High' }));
+    await pickEffort('High');
 
     await waitFor(() => expect(updateConfig).toHaveBeenCalled());
     expect(await screen.findByTestId('runtime-card-error-codex')).toHaveTextContent(

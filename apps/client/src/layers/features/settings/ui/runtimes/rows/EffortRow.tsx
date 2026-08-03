@@ -9,13 +9,34 @@
 import type { EffortLevel, ModelOption } from '@dorkos/shared/types';
 import { EFFORT_LEVELS } from '@dorkos/shared/constants';
 import { effortLabel } from '@/layers/shared/lib';
-import { SegmentedControl, SegmentedControlItem, SettingRow } from '@/layers/shared/ui';
+import {
+  SegmentedControl,
+  SegmentedControlItem,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  SettingRow,
+} from '@/layers/shared/ui';
 
 /**
  * Stands in for "no preference", which reports `null` — the ladder's way back to
  * the runtime's own choice, spelled the same way the Model row spells it.
  */
 const INHERIT = '__inherit__';
+
+/**
+ * How many positions a segmented control can hold before it stops being one.
+ *
+ * The design drew a four-rung ladder (Low/Medium/High/Max) plus Runtime's
+ * choice, and at that size all five words are readable side by side. Claude
+ * Code's model catalog answers with seven rungs, which is eight positions in a
+ * settings dialog barely 400px wide — "N…", "Min…", "Me…". Past this count the
+ * row shows the same choices as a menu, which stays readable at any width and is
+ * how the Model row directly above already asks a long question.
+ */
+const MAX_SEGMENTS = 5;
 
 /** What the Effort row needs to be told, and the one thing it says back. */
 export interface EffortRowProps {
@@ -52,7 +73,9 @@ export interface EffortRowProps {
  *   get the setting back. An effort already saved against such a model keeps a
  *   one-tap way out, or clearing a setting that does nothing would mean
  *   switching the model back first.
- * - **Both take it.** The ladder, filtered to the rungs this model accepts.
+ * - **Both take it.** The ladder, filtered to the rungs this model accepts —
+ *   as a segmented control while the rungs stay readable side by side, and as a
+ *   menu once there are too many of them ({@link MAX_SEGMENTS}).
  *
  * A model whose catalog entry has not arrived leaves the whole ladder up:
  * evidence nobody has is never evidence against, and narrowing on a guess would
@@ -108,6 +131,28 @@ export function EffortRow({
             </button>
           )}
         </div>
+      ) : rungs.length + 1 > MAX_SEGMENTS ? (
+        // Same choices, same sentinel, same test id — only the control changes.
+        <Select
+          value={value ?? INHERIT}
+          onValueChange={(next) => onChange(next === INHERIT ? null : (next as EffortLevel))}
+        >
+          <SelectTrigger
+            className="w-52"
+            aria-label={`Default ${runtimeLabel} effort`}
+            data-testid={`runtime-effort-${runtimeType}`}
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={INHERIT}>Runtime&apos;s choice</SelectItem>
+            {rungs.map((level) => (
+              <SelectItem key={level} value={level}>
+                {effortLabel(level)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       ) : (
         <SegmentedControl
           aria-label={`Default ${runtimeLabel} effort`}

@@ -30,8 +30,17 @@ export interface RuntimeCardReconnect {
   onOpen: () => void;
 }
 
-/** The trigger word and test-id namespace for each reconnect flow. */
-const RECONNECT_LABELS: Record<RuntimeCardReconnect['kind'], { id: string; label: string }> = {
+/**
+ * The trigger word and test-id namespace for each reconnect flow.
+ *
+ * Exported because the trigger renders twice — here from `sm` up, and inside the
+ * opened body below it, where a phone header has no room for a fourth control
+ * (design §6). One map, so both copies say the same word.
+ */
+export const RECONNECT_TRIGGERS: Record<
+  RuntimeCardReconnect['kind'],
+  { id: string; label: string }
+> = {
   login: { id: 'reconnect', label: 'Fix sign-in' },
   'provider-picker': { id: 'change', label: 'Change' },
 };
@@ -58,12 +67,19 @@ export interface RuntimeCardHeaderProps {
   onToggleExpanded: () => void;
   /** Id of the body this header controls, for `aria-controls`. */
   bodyId: string;
-  /** The summary line (or the not-ready sentence) — part of the click target. */
+  /**
+   * The summary line (or the not-ready sentence). Rendered as its own full-width
+   * row beneath the identity, and part of the click target that opens the card.
+   */
   children?: ReactNode;
 }
 
 /**
  * Logo, name, subtitle, readiness, default marker — and the card's click target.
+ *
+ * Two rows: identity and actions across the top, then the card's own line — the
+ * summary, or the sentence a not-ready runtime says instead — spanning the full
+ * width beneath them, indented past the logo tile.
  *
  * The identity block IS the button (design §4: the header and summary open the
  * card), which keeps the whole region reachable from the keyboard as one control
@@ -99,8 +115,13 @@ export function RuntimeCardHeader({
         <Icon size={24} />
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="flex items-center gap-2">
-          <span className="truncate text-sm font-medium">{descriptor.label}</span>
+        <span className="flex min-w-0 items-center gap-2">
+          {/* The name never truncates: it is the one word on the card a person
+              navigates by, and "Clau…" beside a Default pill is a card nobody
+              can identify. Everything else in the header yields to it — the
+              subtitle truncates, and the reconnect trigger leaves the row
+              entirely below `sm` (design §6). */}
+          <span className="text-sm font-medium whitespace-nowrap">{descriptor.label}</span>
           {isDefault && (
             <Badge
               variant="outline"
@@ -112,77 +133,114 @@ export function RuntimeCardHeader({
           )}
         </span>
         {subtitle && <span className="text-muted-foreground truncate text-xs">{subtitle}</span>}
-        {children}
       </span>
     </>
   );
 
-  const trigger = reconnect ? RECONNECT_LABELS[reconnect.kind] : null;
+  const trigger = reconnect ? RECONNECT_TRIGGERS[reconnect.kind] : null;
 
   return (
-    <div className="flex items-start gap-3 p-4">
-      {toggleable ? (
-        <button
-          type="button"
-          onClick={onToggleExpanded}
-          aria-expanded={expanded}
-          aria-controls={expanded ? bodyId : undefined}
-          className="focus-ring -m-1 flex min-w-0 flex-1 items-start gap-3 rounded-md p-1 text-left"
-          data-testid={`runtime-card-toggle-${type}`}
-        >
-          {identity}
-        </button>
-      ) : (
-        <div className="flex min-w-0 flex-1 items-start gap-3">{identity}</div>
-      )}
+    <div className="flex flex-col gap-1.5 p-4">
+      <div className="flex items-start gap-3">
+        {toggleable ? (
+          <button
+            type="button"
+            onClick={onToggleExpanded}
+            aria-expanded={expanded}
+            aria-controls={expanded ? bodyId : undefined}
+            className="focus-ring -m-1 flex min-w-0 flex-1 items-start gap-3 rounded-md p-1 text-left"
+            data-testid={`runtime-card-toggle-${type}`}
+          >
+            {identity}
+          </button>
+        ) : (
+          <div className="flex min-w-0 flex-1 items-start gap-3">{identity}</div>
+        )}
 
-      <div className="flex shrink-0 items-center gap-2 pt-0.5">
-        {ready && (
-          <span
-            className="inline-flex items-center gap-1 text-xs whitespace-nowrap text-emerald-500"
-            data-testid={`runtime-ready-${type}`}
-          >
-            <Check className="size-3.5" />
-            {/* The word is redundant next to the mark on a narrow screen, where
+        <div className="flex shrink-0 items-center gap-2 pt-0.5">
+          {ready && (
+            <span
+              className="inline-flex items-center gap-1 text-xs whitespace-nowrap text-emerald-500"
+              data-testid={`runtime-ready-${type}`}
+            >
+              <Check className="size-3.5" />
+              {/* The word is redundant next to the mark on a narrow screen, where
                 the pill and Connect already say what state the card is in. */}
-            <span className="hidden sm:inline">Ready</span>
-          </span>
-        )}
-        {ready && trigger && (
-          <button
-            type="button"
-            onClick={reconnect?.onOpen}
-            className="focus-ring text-muted-foreground hover:text-foreground rounded-sm text-xs whitespace-nowrap underline-offset-2 transition-colors hover:underline"
-            data-testid={`runtime-${trigger.id}-${type}`}
-          >
-            {trigger.label}
-          </button>
-        )}
-        {!isDefault && onMakeDefault && (
-          <button
-            type="button"
-            onClick={onMakeDefault}
-            className="focus-ring text-muted-foreground hover:text-foreground hidden rounded-sm text-xs whitespace-nowrap underline-offset-2 transition-colors hover:underline sm:inline-flex"
-            data-testid={`runtime-make-default-${type}`}
-          >
-            Make default
-          </button>
-        )}
-        {toggleable && (
-          /* A mouse affordance only: people click chevrons, but the identity
+              <span className="hidden sm:inline">Ready</span>
+            </span>
+          )}
+          {ready && trigger && (
+            /* From `sm` up only. On a phone this trigger competed with the name
+             for the same row and the name lost ("Clau…"), so below `sm` the card
+             carries it in the opened body instead — the same move Make default
+             already makes (design §6). */
+            <button
+              type="button"
+              onClick={reconnect?.onOpen}
+              className="focus-ring text-muted-foreground hover:text-foreground hidden rounded-sm text-xs whitespace-nowrap underline-offset-2 transition-colors hover:underline sm:inline-flex"
+              data-testid={`runtime-${trigger.id}-${type}`}
+            >
+              {trigger.label}
+            </button>
+          )}
+          {/* Only a connected runtime: a card that cannot start a conversation
+            offers Connect and nothing else, and its settings unlock after
+            (design §1). */}
+          {ready && !isDefault && onMakeDefault && (
+            <button
+              type="button"
+              onClick={onMakeDefault}
+              className="focus-ring text-muted-foreground hover:text-foreground hidden rounded-sm text-xs whitespace-nowrap underline-offset-2 transition-colors hover:underline sm:inline-flex"
+              data-testid={`runtime-make-default-${type}`}
+            >
+              Make default
+            </button>
+          )}
+          {toggleable && (
+            /* A mouse affordance only: people click chevrons, but the identity
              button above already carries this control for the keyboard and the
              a11y tree, and two controls for one body would just say it twice. */
+            <button
+              type="button"
+              aria-hidden
+              tabIndex={-1}
+              onClick={onToggleExpanded}
+              className="text-muted-foreground hover:text-foreground rounded-sm transition-colors"
+            >
+              <ChevronDown
+                className={cn('size-4 transition-transform', expanded && 'rotate-180')}
+              />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* The card's own line, on its own row — the width of the card rather than
+          the width of the name column beside it, indented past the logo tile so
+          it still reads as the runtime's sentence (design §4 composite). Cramped
+          into the identity column it wrapped to three lines on a desktop while
+          the right half of the card sat empty.
+
+          Clicking it opens the card, exactly as clicking the header does — a
+          second click target for the one body, kept out of the tab order the way
+          the chevron is, because the identity button above already carries this
+          control for the keyboard and the a11y tree. Unlike the chevron it is
+          not `aria-hidden`: this line is the card's whole answer at rest, and
+          hiding it would hide that answer from anyone not looking at it. */}
+      {children &&
+        (toggleable ? (
           <button
             type="button"
-            aria-hidden
             tabIndex={-1}
             onClick={onToggleExpanded}
-            className="text-muted-foreground hover:text-foreground rounded-sm transition-colors"
+            className="focus-ring w-full rounded-md pl-12 text-left"
+            data-testid={`runtime-card-summary-toggle-${type}`}
           >
-            <ChevronDown className={cn('size-4 transition-transform', expanded && 'rotate-180')} />
+            {children}
           </button>
-        )}
-      </div>
+        ) : (
+          <div className="w-full pl-12">{children}</div>
+        ))}
     </div>
   );
 }

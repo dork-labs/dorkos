@@ -26,6 +26,7 @@ import type {
 } from '@dorkos/shared/agent-runtime';
 import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import type { ExecutionException } from '@/layers/entities/agent';
+import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 import { buildRuntimeCardSummary, type RuntimeCardViewProps } from '@/layers/features/settings';
 import { PLAYGROUND_CAPABILITIES } from '../playground-transport';
 
@@ -250,6 +251,12 @@ export interface RuntimeCardShowcaseOptions {
   onToggleExpanded?: () => void;
   /** Offer Make default. Pass `null` for a surface that does not offer it. */
   onMakeDefault?: (() => void) | null;
+  /**
+   * The flow a connected runtime can reopen — "Fix sign-in" or "Change". Worth
+   * passing on a phone showcase: it is the second affordance the header hands to
+   * the opened body at that width.
+   */
+  reconnect?: RuntimeCardViewProps['reconnect'];
 }
 
 /** A handler a showcase does not care about. */
@@ -284,18 +291,25 @@ export function createRuntimeCardProps(
     sectionValues,
     onToggleExpanded = noop,
     onMakeDefault = noop,
+    reconnect,
   } = options;
 
   const settings = playgroundRuntimeSettings(type);
   const selectedModel = model === null ? undefined : models?.find((m) => m.value === model);
 
+  const { subtitle } = getRuntimeDescriptor(type);
+
   return {
     type,
+    // From the registry, like the container reads it: the showcase shows the
+    // identity line the app shows, and a runtime without one shows none.
+    ...(subtitle ? { subtitle } : {}),
     ready,
     isDefault,
     expanded,
     onToggleExpanded,
     onMakeDefault: onMakeDefault ?? undefined,
+    ...(reconnect ? { reconnect } : {}),
     summary: buildRuntimeCardSummary({
       ready,
       settings,

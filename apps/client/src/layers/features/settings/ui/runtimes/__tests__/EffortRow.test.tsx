@@ -1,10 +1,24 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { ModelOption } from '@dorkos/shared/types';
 import { EffortRow } from '../rows/EffortRow';
+
+beforeAll(() => {
+  // Radix Select needs DOM APIs jsdom lacks to open its listbox under userEvent
+  // — the same shims the Model row's tests install, for the same control.
+  const proto = Element.prototype as unknown as Record<string, unknown>;
+  if (!proto.hasPointerCapture) proto.hasPointerCapture = vi.fn();
+  if (!proto.releasePointerCapture) proto.releasePointerCapture = vi.fn();
+  if (!proto.scrollIntoView) proto.scrollIntoView = vi.fn();
+  global.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+});
 
 afterEach(() => {
   cleanup();
@@ -42,21 +56,27 @@ function renderRow(props: Partial<Parameters<typeof EffortRow>[0]> = {}) {
   return { onChange };
 }
 
+/** A four-rung ladder — the design's case, and the one that stays segmented. */
+const SHORT_LADDER: ModelOption = {
+  ...OPUS,
+  supportedEffortLevels: ['low', 'medium', 'high', 'max'],
+};
+
 describe('EffortRow', () => {
-  it('offers the ladder as one segmented control, scoped to its runtime', () => {
-    renderRow({ runtimeType: 'codex', runtimeLabel: 'Codex' });
+  it('offers a short ladder as one segmented control, scoped to its runtime', () => {
+    renderRow({ runtimeType: 'codex', runtimeLabel: 'Codex', selectedModel: SHORT_LADDER });
     expect(screen.getByTestId('runtime-effort-codex')).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'High' })).toBeInTheDocument();
   });
 
   it('reports a rung by its level', async () => {
-    const { onChange } = renderRow();
+    const { onChange } = renderRow({ selectedModel: SHORT_LADDER });
     await userEvent.click(screen.getByRole('radio', { name: 'High' }));
     expect(onChange).toHaveBeenCalledWith('high');
   });
 
   it("reports the runtime's-choice segment as null, never as its sentinel", async () => {
-    const { onChange } = renderRow({ value: 'high' });
+    const { onChange } = renderRow({ selectedModel: SHORT_LADDER, value: 'high' });
     await userEvent.click(screen.getByRole('radio', { name: "Runtime's choice" }));
     expect(onChange).toHaveBeenCalledWith(null);
   });
@@ -71,12 +91,56 @@ describe('EffortRow', () => {
     expect(screen.queryByRole('radio', { name: 'Extra high' })).not.toBeInTheDocument();
   });
 
+  it('asks a long ladder as a menu, because eight segments are eight ellipses', () => {
+    // Claude Code's catalog answers with every rung, which is eight positions in
+    // a settings dialog barely 400px wide: "N…", "Min…", "Me…". Same choices,
+    // same test id, a control that survives the width.
+    renderRow({ selectedModel: undefined, configuredModelId: 'claude-opus-4-6' });
+
+    const trigger = screen.getByTestId('runtime-effort-claude-code');
+    expect(trigger).toHaveRole('combobox');
+    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
+    expect(trigger).toHaveTextContent("Runtime's choice");
+  });
+
+  it('keeps every rung of a long ladder reachable in the menu', async () => {
+    renderRow({ selectedModel: undefined, configuredModelId: 'claude-opus-4-6' });
+
+    await userEvent.click(screen.getByTestId('runtime-effort-claude-code'));
+    const options = screen.getAllByRole('option').map((el) => el.textContent);
+    expect(options).toEqual([
+      "Runtime's choice",
+      'None',
+      'Minimal',
+      'Low',
+      'Medium',
+      'High',
+      'Max',
+      'Extra high',
+    ]);
+  });
+
+  it('writes through from the menu exactly as it does from the ladder', async () => {
+    const { onChange } = renderRow({
+      selectedModel: undefined,
+      configuredModelId: 'claude-opus-4-6',
+      value: 'high',
+    });
+
+    await userEvent.click(screen.getByTestId('runtime-effort-claude-code'));
+    await userEvent.click(screen.getByRole('option', { name: 'Max' }));
+    expect(onChange).toHaveBeenCalledWith('max');
+
+    await userEvent.click(screen.getByTestId('runtime-effort-claude-code'));
+    await userEvent.click(screen.getByRole('option', { name: "Runtime's choice" }));
+    expect(onChange).toHaveBeenLastCalledWith(null);
+  });
+
   it('leaves the whole ladder up while the catalog entry has not arrived', () => {
     // Evidence nobody has is never evidence against: an unknown model narrows
     // nothing, so the rung somebody already chose is never quietly dropped.
     renderRow({ selectedModel: undefined, configuredModelId: 'claude-opus-4-6', value: 'max' });
-    expect(screen.getByRole('radio', { name: 'Max' })).toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: 'Max' })).toBeChecked();
+    expect(screen.getByTestId('runtime-effort-claude-code')).toHaveTextContent('Max');
   });
 
   it('says the runtime has no such setting rather than hiding the row', () => {

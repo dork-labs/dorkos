@@ -4,6 +4,8 @@ covers:
   - 'chore(client): RuntimeCardView, section registry, power source, global trust row (DOR-888 P2 wave 2)'
   - 'chore(client): RuntimeCard container with lazy catalog, sectioned writes, shared mock-factory fix (DOR-888 P2 wave 3)'
   - 'chore(client): recomposed RuntimesTab, settings trust vocabulary, strip injection (DOR-888 P2 wave 4)'
+  - 'chore(client): retire superseded settings components, playground showcases, e2e flow, changelog fragment (DOR-888 P2 wave 5)'
+  - 'chore(client): visual-gate fixes from driving the real cockpit (DOR-888 P2 wave 6)'
 ---
 
 ### Changed

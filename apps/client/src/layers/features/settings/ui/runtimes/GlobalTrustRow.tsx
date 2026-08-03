@@ -102,19 +102,27 @@ export function GlobalTrustRow({
   const sharedAtAutonomy = selected === 'autonomy';
 
   return (
-    <section className="flex flex-col gap-2" data-testid="global-trust-row">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
-        <div className="flex min-w-0 flex-col gap-0.5">
+    <section className="@container/trust-row flex flex-col gap-2" data-testid="global-trust-row">
+      {/* A CONTAINER query, not a viewport one. The three stop words are ~400px
+          of control, and Settings is a 672px dialog with a 180px sidebar — so on
+          a desktop where `sm:` says "side by side", the label column was left
+          ~40px and broke to one word per line. What decides this layout is the
+          space this row is in, which is what the query asks: stacked until both
+          halves genuinely fit (the same shape a phone gets), side by side in a
+          fullscreened dialog or any wider host. */}
+      <div className="flex flex-col gap-3 @2xl/trust-row:flex-row @2xl/trust-row:items-center @2xl/trust-row:justify-between @2xl/trust-row:gap-6">
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <p className="text-sm font-medium">Where agents stop for you</p>
           <p className="text-muted-foreground text-xs">
             Every runtime follows this unless its card says otherwise.
           </p>
         </div>
 
-        {/* Full width on a phone, beside the label from `sm` up (design §6). */}
+        {/* Full width while stacked; its own width, and no squeezing, beside the
+            label (design §6). */}
         <SegmentedControl
           aria-label="Where agents stop for you"
-          className="w-full sm:w-auto sm:shrink-0"
+          className="w-full @2xl/trust-row:w-auto @2xl/trust-row:shrink-0"
           value={selected}
           onValueChange={(next) => onChange(next as PermissionStop)}
         >

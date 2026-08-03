@@ -28,7 +28,7 @@ function renderCard(overrides: Partial<RuntimeCardViewProps> = {}) {
   };
   const props: RuntimeCardViewProps = {
     type: 'claude-code',
-    subtitle: 'Anthropic’s coding agent',
+    subtitle: 'Anthropic · frontier models in the cloud',
     ready: true,
     isDefault: false,
     expanded: false,
@@ -69,6 +69,92 @@ describe('RuntimeCardView', () => {
     expect(screen.getByTestId('runtime-trust-claude-code')).toBeInTheDocument();
   });
 
+  it('gives the summary the width of the card, not the width of the name column', async () => {
+    // Inside the identity column it had the card's left third and wrapped to
+    // three lines on a desktop while the right half sat empty. Its own row
+    // beneath the identity, indented past the logo tile (design §4 composite).
+    const user = userEvent.setup();
+    const { onToggleExpanded } = renderCard();
+
+    const summary = screen.getByTestId('runtime-card-summary-claude-code');
+    expect(summary.closest('[data-testid="runtime-card-toggle-claude-code"]')).toBeNull();
+
+    const row = screen.getByTestId('runtime-card-summary-toggle-claude-code');
+    expect(row).toContainElement(summary);
+    expect(row).toHaveClass('w-full', 'pl-12');
+
+    // Still a way into the card: clicking the line opens it, as the design says
+    // the header and the summary both do.
+    await user.click(summary);
+    expect(onToggleExpanded).toHaveBeenCalledTimes(1);
+
+    // One control for the keyboard, not two — the same rule the chevron follows.
+    expect(row).toHaveAttribute('tabindex', '-1');
+    expect(screen.getByTestId('runtime-card-toggle-claude-code')).toHaveAttribute('aria-expanded');
+  });
+
+  it('gives the not-ready sentence that same full row, with nothing to click', () => {
+    renderCard({ ready: false, summary: [] });
+
+    const locked = screen.getByTestId('runtime-card-locked-claude-code');
+    expect(locked.parentElement).toHaveClass('w-full', 'pl-12');
+    expect(screen.queryByTestId('runtime-card-summary-toggle-claude-code')).not.toBeInTheDocument();
+  });
+
+  it('reads the summary as one sentence: the lead-in, then the facts', () => {
+    renderCard();
+
+    const summary = screen.getByTestId('runtime-card-summary-claude-code');
+    expect(summary).toHaveTextContent(/^Starts with\s*Opus 4\.6\s*·\s*Asks first$/);
+  });
+
+  it('says nothing about what a card with no facts starts with', () => {
+    // An empty summary renders no line at all, so there is no orphaned lead-in.
+    renderCard({ summary: [] });
+
+    expect(screen.queryByTestId('runtime-card-summary-claude-code')).not.toBeInTheDocument();
+    expect(screen.queryByText('Starts with')).not.toBeInTheDocument();
+  });
+
+  it('offers no lead-in on a card that cannot start a conversation', () => {
+    renderCard({ ready: false, summary: [] });
+
+    expect(screen.queryByText('Starts with')).not.toBeInTheDocument();
+    expect(screen.getByTestId('runtime-card-locked-claude-code')).toBeInTheDocument();
+  });
+
+  it('keeps each separator with the fact it introduces, so a wrap cannot strand it', () => {
+    // Two flex items would let "Runtime's choice ·" end one line and "Asks
+    // first" start the next. One item per pair makes that impossible.
+    renderCard();
+
+    const segments = screen.getAllByTestId(/^runtime-card-summary-segment-/);
+    const second = segments[1]?.parentElement;
+    expect(second).toHaveClass('inline-flex', 'whitespace-nowrap');
+    expect(second?.textContent).toBe('·Asks first');
+
+    // The first fact has no dot before it, so its pair is just the fact.
+    expect(segments[0]?.parentElement?.textContent).toBe('Opus 4.6');
+  });
+
+  it('names the runtime it is, in one line beneath the name', () => {
+    renderCard();
+    expect(screen.getByText('Anthropic · frontier models in the cloud')).toBeInTheDocument();
+
+    cleanup();
+    renderCard({ subtitle: undefined });
+    expect(screen.queryByText('Anthropic · frontier models in the cloud')).not.toBeInTheDocument();
+  });
+
+  it('never truncates the runtime’s name, whatever else is in the header', () => {
+    // "Clau…" beside a Default pill is a card nobody can identify (design §6).
+    renderCard({ isDefault: true, reconnect: { kind: 'login', onOpen: vi.fn() } });
+
+    const name = screen.getByText('Claude Code');
+    expect(name).toHaveClass('whitespace-nowrap');
+    expect(name).not.toHaveClass('truncate');
+  });
+
   it('marks an inherited summary value as inherited so the view can quiet it', () => {
     renderCard();
 
@@ -100,8 +186,63 @@ describe('RuntimeCardView', () => {
   it('moves Make default into the body as well, for the widths with no room in the header', () => {
     renderCard({ expanded: true });
 
-    expect(screen.getByTestId('runtime-make-default-claude-code')).toBeInTheDocument();
-    expect(screen.getByTestId('runtime-make-default-compact-claude-code')).toBeInTheDocument();
+    expect(screen.getByTestId('runtime-make-default-claude-code')).toHaveClass(
+      'hidden',
+      'sm:inline-flex'
+    );
+    expect(
+      screen.getByTestId('runtime-make-default-compact-claude-code').parentElement
+    ).toHaveClass('sm:hidden');
+  });
+
+  it('offers a runtime that is not connected Connect and nothing else', () => {
+    // Settings unlock after connecting (design §1) — and the default runtime is
+    // a setting. A card that cannot start a conversation cannot be where they
+    // start.
+    renderCard({
+      ready: false,
+      summary: [],
+      expanded: true,
+      setupDetails: <p>claude not found</p>,
+    });
+
+    expect(screen.queryByTestId('runtime-make-default-claude-code')).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId('runtime-make-default-compact-claude-code')
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Make default' })).not.toBeInTheDocument();
+  });
+
+  it('moves the reconnect trigger into the body on a phone, exactly as Make default moves', async () => {
+    const user = userEvent.setup();
+    const onOpen = vi.fn();
+    const { onToggleExpanded } = renderCard({
+      expanded: true,
+      reconnect: { kind: 'login', onOpen },
+    });
+
+    // The header keeps it from `sm` up; below that it competed with the name.
+    expect(screen.getByTestId('runtime-reconnect-claude-code')).toHaveClass(
+      'hidden',
+      'sm:inline-flex'
+    );
+    const compact = screen.getByTestId('runtime-reconnect-compact-claude-code');
+    expect(compact).toHaveTextContent('Fix sign-in');
+    expect(compact.parentElement).toHaveClass('sm:hidden');
+
+    await user.click(compact);
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    expect(onToggleExpanded).not.toHaveBeenCalled();
+  });
+
+  it('names OpenCode’s compact trigger the way its header names it', () => {
+    renderCard({
+      type: 'opencode',
+      expanded: true,
+      reconnect: { kind: 'provider-picker', onOpen: vi.fn() },
+    });
+
+    expect(screen.getByTestId('runtime-change-compact-opencode')).toHaveTextContent('Change');
   });
 
   it('says a broken default out loud: the pill, the warning, and Connect together', () => {

@@ -143,12 +143,32 @@ describe('GlobalTrustRow', () => {
     );
   });
 
-  it('stacks the control full width on a phone and sets it beside the label from sm up', () => {
+  it('stacks the control full width until the row itself is wide enough for both halves', () => {
+    // A container query, not a viewport one: the three stop words are ~400px of
+    // control and Settings is a 672px dialog minus a 180px sidebar, so a
+    // viewport-keyed `sm:flex-row` set them side by side on a desktop where the
+    // label column was left ~40px and broke to one word per line.
     renderRow();
-    expect(screen.getByRole('radiogroup')).toHaveClass('w-full', 'sm:w-auto');
-    expect(screen.getByTestId('global-trust-row').firstElementChild).toHaveClass(
-      'flex-col',
-      'sm:flex-row'
+    const row = screen.getByTestId('global-trust-row');
+    expect(row).toHaveClass('@container/trust-row');
+
+    const layout = row.firstElementChild;
+    expect(layout).toHaveClass('flex-col', '@2xl/trust-row:flex-row');
+    expect(layout).not.toHaveClass('sm:flex-row');
+
+    expect(screen.getByRole('radiogroup')).toHaveClass(
+      'w-full',
+      '@2xl/trust-row:w-auto',
+      '@2xl/trust-row:shrink-0'
     );
+  });
+
+  it('gives the label and hint the room the control does not need', () => {
+    // The control keeps its natural width beside the label (`shrink-0`), so the
+    // text column has to be the flexible one — without `flex-1` it is the half
+    // that absorbs every pixel of shrink and crushes to one word per line.
+    renderRow();
+    const [text] = screen.getByTestId('global-trust-row').firstElementChild!.children;
+    expect(text).toHaveClass('min-w-0', 'flex-1');
   });
 });

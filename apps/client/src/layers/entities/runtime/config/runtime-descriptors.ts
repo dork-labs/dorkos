@@ -44,6 +44,13 @@ export interface RuntimeDescriptor {
   /** Accent color as a CSS color value (theme `--color-*` variable). */
   accent: string;
   /**
+   * One line of identity beneath the name — who makes this runtime and what it
+   * runs on ("Anthropic · frontier models in the cloud"). Present only for the
+   * runtimes a person chooses between; a dev-only or third-party runtime has
+   * nothing honest to say here, and a card without one simply shows its name.
+   */
+  subtitle?: string;
+  /**
    * Present only for runtimes a user can ADD to a DorkOS install (OpenCode,
    * Codex). Drives the picker's "Add a runtime" entry point; absent for the
    * built-in default and dev-only runtimes.
@@ -63,12 +70,14 @@ export const RUNTIME_DESCRIPTORS: Record<string, RuntimeDescriptor> = {
     label: 'Claude Code',
     icon: AnthropicLogo,
     accent: 'var(--color-orange-500)',
+    subtitle: 'Anthropic · frontier models in the cloud',
   },
   opencode: {
     type: 'opencode',
     label: 'OpenCode',
     icon: OpenCodeLogo,
     accent: 'var(--color-violet-500)',
+    subtitle: 'Your own models, local or any provider',
     setup: {
       installCommand: 'npm i -g opencode-ai',
       infoUrl: 'https://opencode.ai/docs/server',
@@ -79,6 +88,7 @@ export const RUNTIME_DESCRIPTORS: Record<string, RuntimeDescriptor> = {
     label: 'Codex',
     icon: CodexLogo,
     accent: 'var(--color-teal-500)',
+    subtitle: 'OpenAI · GPT models',
     setup: {
       installCommand: 'npm i -g @openai/codex',
       infoUrl: 'https://developers.openai.com/codex',

@@ -331,6 +331,7 @@ export function RuntimeCard({
     <div className="flex flex-col gap-1.5">
       <RuntimeCardView
         type={type}
+        {...(descriptor.subtitle ? { subtitle: descriptor.subtitle } : {})}
         ready={ready}
         isDefault={isDefault}
         onMakeDefault={onMakeDefault}

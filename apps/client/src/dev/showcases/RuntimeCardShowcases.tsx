@@ -200,7 +200,7 @@ function PhoneSection() {
   return (
     <PlaygroundSection
       title="Runtime cards: on a phone"
-      description="Switch the viewport to Mobile. The cards stay a single column and expand in place rather than opening a second screen, the summary drops to whatever fits without ever breaking a value across two lines, and Make default moves into the opened body, where there is room for it."
+      description="Switch the viewport to Mobile. The cards stay a single column and expand in place rather than opening a second screen; the summary drops to whatever fits without ever breaking a value — or its separator — across two lines; and the two quiet header affordances, Make default and Fix sign-in, move into the opened body, where there is room for them. The runtime's name never yields to any of it."
     >
       <ShowcaseLabel>The board, then one card opened</ShowcaseLabel>
       <ShowcaseDemo responsive>
@@ -212,7 +212,14 @@ function PhoneSection() {
           />
           <LiveRuntimeCard type="codex" model="gpt-5-codex" effort="medium" models={[]} />
           <LiveRuntimeCard type="opencode" ready={false} connectSlot={openCodeConnect()} />
-          <LiveRuntimeCard type="codex" expanded model="gpt-5-codex" effort="medium" models={[]} />
+          <LiveRuntimeCard
+            type="codex"
+            expanded
+            model="gpt-5-codex"
+            effort="medium"
+            models={[]}
+            reconnect={{ kind: 'login', onOpen: () => {} }}
+          />
         </div>
       </ShowcaseDemo>
     </PlaygroundSection>

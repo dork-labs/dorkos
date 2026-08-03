@@ -25,6 +25,20 @@ describe('RUNTIME_DESCRIPTORS', () => {
       expect(descriptor.accent.length).toBeGreaterThan(0);
     }
   });
+
+  it('gives every runtime a person chooses between a one-line identity', () => {
+    expect(RUNTIME_DESCRIPTORS['claude-code']?.subtitle).toBe(
+      'Anthropic · frontier models in the cloud'
+    );
+    expect(RUNTIME_DESCRIPTORS.codex?.subtitle).toBe('OpenAI · GPT models');
+    expect(RUNTIME_DESCRIPTORS.opencode?.subtitle).toBe('Your own models, local or any provider');
+  });
+
+  it('leaves the subtitle off a runtime that is not one of those choices', () => {
+    // test-mode is an e2e artifact, not a product runtime: there is nothing
+    // honest to say about who makes it or what it runs on.
+    expect(RUNTIME_DESCRIPTORS['test-mode']?.subtitle).toBeUndefined();
+  });
 });
 
 describe('getRuntimeDescriptor', () => {
@@ -57,5 +71,7 @@ describe('getRuntimeDescriptor', () => {
     expect(descriptor.label).toBe('made-up');
     expect(descriptor.icon).toBe(DefaultAdapterIcon);
     expect(descriptor.accent.length).toBeGreaterThan(0);
+    // No invented identity line for a runtime nobody here knows anything about.
+    expect(descriptor.subtitle).toBeUndefined();
   });
 });

@@ -27,7 +27,11 @@ import type { RuntimeSettingsSection } from '@dorkos/shared/agent-runtime';
 import { cn } from '@/layers/shared/lib';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/layers/shared/ui';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
-import { RuntimeCardHeader, type RuntimeCardReconnect } from './RuntimeCardHeader';
+import {
+  RECONNECT_TRIGGERS,
+  RuntimeCardHeader,
+  type RuntimeCardReconnect,
+} from './RuntimeCardHeader';
 import type { RuntimeSummarySegment } from './RuntimeCardSummary';
 import { ModelRow, type ModelRowProps } from './rows/ModelRow';
 import { EffortRow, type EffortRowProps } from './rows/EffortRow';
@@ -41,6 +45,14 @@ const LOCKED_LINE = 'One sign-in away. Settings unlock once it’s connected.';
 /** What a card says when the runtime new conversations start on cannot start one. */
 const BROKEN_DEFAULT_LINE =
   'Your default runtime isn’t connected. New conversations can’t start here.';
+
+/**
+ * The words that turn the summary's chips into a sentence (design §4).
+ *
+ * View chrome, not a segment: `buildRuntimeCardSummary` stays a pure list of
+ * facts, and the lead-in is how this view reads them out.
+ */
+const SUMMARY_LEAD_IN = 'Starts with';
 
 /**
  * The card's own identity is `type`; the rows are told theirs, so each row's
@@ -178,7 +190,7 @@ export function RuntimeCardView({
       >
         {!ready ? (
           <span
-            className="text-muted-foreground mt-1 text-xs"
+            className="text-muted-foreground text-xs"
             data-testid={`runtime-card-locked-${type}`}
           >
             {LOCKED_LINE}
@@ -187,21 +199,31 @@ export function RuntimeCardView({
           !expanded &&
           summary.length > 0 && (
             <span
-              className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs"
+              className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs"
               data-testid={`runtime-card-summary-${type}`}
             >
+              <span className="text-muted-foreground whitespace-nowrap">{SUMMARY_LEAD_IN}</span>
               {summary.map((segment, index) => (
-                <span key={`${segment.kind}-${segment.label}`} className="contents">
+                // Separator and value are ONE flex item, never two: as two, a
+                // wrap could leave the middot stranded at the end of a line with
+                // the fact it introduces on the next one. Each dot travels with
+                // the segment that follows it.
+                <span
+                  key={`${segment.kind}-${segment.label}`}
+                  className="inline-flex max-w-full items-center gap-x-1.5 whitespace-nowrap"
+                >
                   {index > 0 && (
-                    <span aria-hidden className="text-muted-foreground/60">
+                    <span aria-hidden className="text-muted-foreground/60 shrink-0">
                       ·
                     </span>
                   )}
                   <span
                     // Never wraps mid-value: a status chip broken across two
-                    // lines reads as two facts (design §6).
+                    // lines reads as two facts (design §6). A value too long for
+                    // the card at any width ends in an ellipsis rather than
+                    // pushing the card wider than the page.
                     className={cn(
-                      'whitespace-nowrap',
+                      'min-w-0 truncate',
                       segment.inherited ? 'text-muted-foreground' : 'text-foreground font-medium'
                     )}
                     data-inherited={segment.inherited === true}
@@ -235,15 +257,33 @@ export function RuntimeCardView({
           className="border-border/60 space-y-5 border-t px-4 py-4"
           data-testid={`runtime-card-body-${type}`}
         >
-          {!isDefault && onMakeDefault && (
-            <button
-              type="button"
-              onClick={onMakeDefault}
-              className="focus-ring text-muted-foreground hover:text-foreground rounded-sm text-xs underline-offset-2 transition-colors hover:underline sm:hidden"
-              data-testid={`runtime-make-default-compact-${type}`}
-            >
-              Make default
-            </button>
+          {/* The two header affordances a phone has no room for, in the one
+              place a phone does: the opened body (design §6). Both are
+              `sm:hidden` twins of the header's own, never a second control at
+              the same width. */}
+          {ready && (reconnect || (!isDefault && onMakeDefault)) && (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 sm:hidden">
+              {reconnect && (
+                <button
+                  type="button"
+                  onClick={reconnect.onOpen}
+                  className="focus-ring text-muted-foreground hover:text-foreground rounded-sm text-xs underline-offset-2 transition-colors hover:underline"
+                  data-testid={`runtime-${RECONNECT_TRIGGERS[reconnect.kind].id}-compact-${type}`}
+                >
+                  {RECONNECT_TRIGGERS[reconnect.kind].label}
+                </button>
+              )}
+              {!isDefault && onMakeDefault && (
+                <button
+                  type="button"
+                  onClick={onMakeDefault}
+                  className="focus-ring text-muted-foreground hover:text-foreground rounded-sm text-xs underline-offset-2 transition-colors hover:underline"
+                  data-testid={`runtime-make-default-compact-${type}`}
+                >
+                  Make default
+                </button>
+              )}
+            </div>
           )}
 
           {ready && (
