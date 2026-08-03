@@ -337,6 +337,35 @@ describe('TabbedDialog', () => {
     expect(screen.getByRole('tab', { selected: true })).toHaveTextContent(/beta/i);
   });
 
+  // The fallback above is silent to the user by design (no toast) — but it
+  // should not be silent to a developer chasing a stale-link report. DOR-854.
+  it('warns in dev when initialTab is unknown, without surfacing anything to the user', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    renderDialog({ initialTab: 'nope' as TabId, defaultTab: 'beta' });
+
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('"nope"'));
+    warnSpy.mockRestore();
+  });
+
+  it('does not warn when initialTab is a real tab', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    renderDialog({ initialTab: 'gamma', defaultTab: 'alpha' });
+
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it('does not warn when initialTab is null (no deep link)', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    renderDialog({ initialTab: null, defaultTab: 'beta' });
+
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
   it('treats an extension-contributed tab as a valid initialTab', () => {
     const ExtensionTab = () => <div data-testid="panel-ext">Extension content</div>;
     mockUseSlotContributions.mockReturnValue([
