@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260803-133357",
+      "slug": "chats-as-channels",
+      "title": "Chats as Channels — a bound external chat becomes a DorkOS channel",
+      "created": "2026-08-03",
+      "status": "specified"
+    },
+    {
       "id": "260801-135340",
       "slug": "chat-touch-chips",
       "title": "Chat touch chips — files & URLs the agent handled, with a verb motion language",
