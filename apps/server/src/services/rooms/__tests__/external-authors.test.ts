@@ -293,13 +293,63 @@ describe('external authors in a bridged room', () => {
       expect(store.getMember(room.id, author.id)?.responseMode).toBe('always');
     });
 
-    it('joins in the SAME transaction as the first entry, so neither can exist without the other', () => {
+    it('rolls the whole transaction back when a write INSIDE it throws — entry and join both (§4.2)', () => {
+      // The guarantee is "the join lands in the same transaction as the entry",
+      // and the only way to catch a regression in it is to make a write that
+      // ALREADY EXECUTED inside that transaction disappear. So this drives the
+      // store seam directly with a `within` that really adds the membership and
+      // THEN throws: if the two writes shared no transaction, the membership
+      // would survive the throw. Seed the failure, watch it roll back.
+      const room = service.createBridgedRoom(bridgeRequest());
+      const seededMembers = store.listMembers(room.id).length;
+      const stranger = authors.resolveExternal(miguel());
+      const join = {
+        roomId: room.id,
+        authorId: stranger.id,
+        responseMode: 'always' as const,
+        joinedAt: new Date().toISOString(),
+      };
+
+      expect(() =>
+        store.appendEntry(
+          {
+            roomId: room.id,
+            id: 'entry-that-must-not-survive',
+            authorId: stranger.id,
+            kind: 'post',
+            body: { text: 'hi' },
+            mentions: [],
+            sessionId: null,
+            cascadeRoot: 'entry-that-must-not-survive',
+            cascadeDepth: 0,
+            parentEntryId: null,
+            threadRootEntryId: null,
+            createdAt: new Date().toISOString(),
+          },
+          (tx) => {
+            // The membership write happens for real, and the very next line
+            // aborts the transaction it happened in.
+            store.addMember(join, tx);
+            throw new Error('boom, after the membership write');
+          }
+        )
+      ).toThrow('boom');
+
+      // Neither the entry nor the membership the callback wrote survives the
+      // abort. The membership is the load-bearing half: it is the write that
+      // actually ran, and it is gone.
+      expect(store.listEntries(room.id, { limit: 10 })).toHaveLength(0);
+      expect(store.getMember(room.id, stranger.id)).toBeNull();
+      expect(store.listMembers(room.id)).toHaveLength(seededMembers);
+    });
+
+    it('never commits a bare entry when the join it needs cannot be built (§4.2)', () => {
+      // The other end of the same guarantee, through the real `postExternal`:
+      // `threadPointers` refuses a reply to an entry this room does not hold and
+      // throws from inside the write path, so the entry never lands either.
       const room = service.createBridgedRoom(bridgeRequest());
       const seededMembers = store.listMembers(room.id).length;
 
-      // `threadPointers` refuses a reply to an entry this room does not hold,
-      // and it throws from inside the write path — after the author is minted
-      // and the join callback is built, before the entry commits.
       expect(() =>
         service.postExternal(room.id, {
           identity: miguel(),

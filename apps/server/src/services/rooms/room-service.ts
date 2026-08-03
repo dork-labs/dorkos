@@ -1120,7 +1120,11 @@ export class RoomService {
    *
    * @param room - The room, already resolved and known un-archived.
    * @param input - The post itself.
-   * @param within - Extra writes for the entry's own transaction.
+   * @param within - Extra writes to run inside the entry's own transaction,
+   *   strictly BEFORE the entry is inserted, so the membership exists for the
+   *   whole life of the entry and a crash can never leave a log holding a post
+   *   from somebody its roster says was never in the room (chats-as-channels
+   *   §4.2). Passed straight through to {@link RoomStore.appendEntry}.
    */
   private writePost(
     room: Room,
