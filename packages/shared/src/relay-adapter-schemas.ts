@@ -165,6 +165,81 @@ export type TelegramAdapterConfig = z.infer<typeof TelegramAdapterConfigSchema>;
 /** @deprecated Use {@link TelegramAdapterConfig} */
 export type TelegramAdapterConfigZ = TelegramAdapterConfig;
 
+/**
+ * A non-text Telegram message's minimal, byte-free description.
+ *
+ * Every field but `type` is optional because most kinds carry none of the
+ * others — a sticker or a shared location has no duration or filename to
+ * report. No media bytes are downloaded, stored, or given to a model in phase
+ * 1 (`specs/chats-as-channels/02-specification.md` §5.5); this is exactly what
+ * the server-side placeholder builder (`[photo]`, `[voice message, 0:14]`,
+ * `[document: report.pdf]`) needs and nothing more.
+ *
+ * `photo`, `sticker`, `voice`, `document`, `video`, and `location` are the six
+ * kinds §5.5 names. `audio` (a music file, distinct from `voice`) and
+ * `video_note` (a round video message) are added beyond that list so the same
+ * §5.5 property — a non-text message publishes with a descriptor instead of
+ * vanishing — holds for every common Telegram media kind, not only the ones
+ * the spec happened to enumerate.
+ */
+export const TelegramMediaDescriptorSchema = z
+  .object({
+    type: z.enum([
+      'photo',
+      'sticker',
+      'voice',
+      'document',
+      'video',
+      'location',
+      'audio',
+      'video_note',
+    ]),
+    /** Playback length in seconds — `voice`, `video`, `audio`, and `video_note` only. */
+    durationSec: z.number().optional(),
+    /** Original filename, as Telegram reports it — `document`, `video`, and `audio` only. */
+    fileName: z.string().optional(),
+    /** MIME type, when Telegram supplies one. */
+    mimeType: z.string().optional(),
+  })
+  .openapi('TelegramMediaDescriptor');
+
+export type TelegramMediaDescriptor = z.infer<typeof TelegramMediaDescriptorSchema>;
+
+/**
+ * The Telegram adapter's own shape for `StandardPayload.platformData`.
+ *
+ * `platformData` itself stays `z.unknown()` on `StandardPayloadSchema` —
+ * every adapter shapes it differently, and every consumer that reads out of
+ * it already parses rather than casts (`binding-router.ts`'s
+ * `PlatformIdentitySchema` is the existing example). This schema documents
+ * and validates the Telegram adapter's own shape for its own tests and for
+ * any downstream reader that wants a typed, optional parse instead of a cast.
+ *
+ * `replyToMessageId`, `messageThreadId` + `threadName`, and `media` are the
+ * four additive fields named in spec §11.2 — all optional, so a fixture or a
+ * reader that predates them keeps parsing unchanged
+ * (`specs/chats-as-channels/02-specification.md` §11.2).
+ */
+export const TelegramPlatformDataSchema = z
+  .object({
+    chatId: z.number(),
+    messageId: z.number(),
+    chatType: z.string(),
+    fromId: z.number().optional(),
+    username: z.string().optional(),
+    /** The id of the message being replied to (spec §5.4's reply-as-addressing, §6.5's reply targeting). */
+    replyToMessageId: z.number().optional(),
+    /** The forum topic id a message belongs to, so outbound delivery can target it (spec §5.6). */
+    messageThreadId: z.number().optional(),
+    /** The forum topic's name, when Telegram supplied it cheaply, sanitized before render (spec §5.6, §9.2). */
+    threadName: z.string().optional(),
+    /** A non-text message's descriptor (spec §5.5). */
+    media: TelegramMediaDescriptorSchema.optional(),
+  })
+  .openapi('TelegramPlatformData');
+
+export type TelegramPlatformData = z.infer<typeof TelegramPlatformDataSchema>;
+
 export const WebhookInboundConfigSchema = z
   .object({
     subject: z.string().min(1),

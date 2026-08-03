@@ -328,6 +328,42 @@ export class TelegramAdapter extends BaseRelayAdapter {
     }
   }
 
+  /**
+   * Telegram's own `getMe`, exposing `can_read_all_group_messages` (renamed
+   * here to `canReadAllGroupMessages`) and the bot's `username`.
+   *
+   * §8's group-visibility badge must be sourced from the platform and never
+   * from config: a person can flip Telegram's own privacy-mode switch
+   * without touching this integration's settings at all, so a config-derived
+   * badge would drift from reality the moment they did. `username` is a
+   * second addressing candidate for a bridged room — Telegram addresses a
+   * bot as `@botusername`, which is not the agent's DorkOS handle (spec
+   * §5.4, §11.2).
+   *
+   * Returns `null` before the adapter has connected: there is no live bot to
+   * ask, and this deliberately does not spin one up the way
+   * {@link testConnection} does, because a caller polling this before start
+   * should see "not yet known" rather than pay for a throwaway connection.
+   *
+   * UNCACHED: every call is a live `getMe` round trip to the Bot API, not a
+   * read of `this.bot.botInfo` (which grammy fills in once, at `bot.init()`,
+   * and never refreshes) — a person can flip Telegram's privacy-mode switch
+   * at any time, and the point of this accessor is to answer with what is
+   * true right now. It THROWS if that call fails (a network error, a revoked
+   * token); it does not swallow the error into a `null` the way the
+   * before-start case does, because "the platform refused to answer" and
+   * "nobody has asked the platform yet" are different failures and a caller
+   * needs to tell them apart. Caching the answer and deciding how to handle a
+   * failed refresh — the "stale value on error" fallback that visibility
+   * §8's `visibilityCheckedAt` calls for — is the bridge's job (task 1.6/1.13),
+   * not this accessor's.
+   */
+  async getMe(): Promise<{ username: string; canReadAllGroupMessages: boolean } | null> {
+    if (!this.bot) return null;
+    const me = await this.bot.api.getMe();
+    return { username: me.username, canReadAllGroupMessages: me.can_read_all_group_messages };
+  }
+
   /** Connect to Telegram and start receiving messages. */
   protected async _start(relay: RelayPublisher): Promise<void> {
     const bot = new Bot(this.config.token);
@@ -338,7 +374,11 @@ export class TelegramAdapter extends BaseRelayAdapter {
     this.signalUnsub = relay.onSignal(
       `${this.codec.prefix}.>`,
       (subject: string, signal: Signal) => {
-        if (signal.type === 'typing')
+        // 'progress' is the bridge's presence forwarder (spec §6.8):
+        // `publishPresence` (`room-trigger.ts`) deliberately emits `progress`,
+        // not `typing` — agents work, they do not type. Same indicator,
+        // same handler; no new signal type, no second indicator.
+        if (signal.type === 'typing' || signal.type === 'progress')
           handleTypingSignal(this.bot, subject, this.outboundState, signal.state, this.codec);
       }
     );

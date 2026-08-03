@@ -11,6 +11,8 @@ import {
   UpdateBindingRequestSchema,
   bridgeAllowsChatId,
   BRIDGE_REQUIRES_CHAT_ID_MESSAGE,
+  TelegramMediaDescriptorSchema,
+  TelegramPlatformDataSchema,
 } from '../relay-adapter-schemas.js';
 
 describe('AdapterSecretSchema — credential references (DOR-280)', () => {
@@ -576,6 +578,91 @@ describe('AdapterManifestSchema', () => {
     const result = AdapterManifestSchema.safeParse({
       ...baseManifest,
       setupGuide: 123,
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('TelegramMediaDescriptorSchema (spec chats-as-channels §5.5, §11.2)', () => {
+  it('round-trips a bare descriptor with only the required type', () => {
+    const parsed = TelegramMediaDescriptorSchema.parse({ type: 'sticker' });
+    expect(parsed).toEqual({ type: 'sticker' });
+  });
+
+  it('round-trips a descriptor carrying every optional field', () => {
+    const input = {
+      type: 'voice' as const,
+      durationSec: 14,
+      fileName: 'note.ogg',
+      mimeType: 'audio/ogg',
+    };
+    expect(TelegramMediaDescriptorSchema.parse(input)).toEqual(input);
+  });
+
+  it('accepts every media kind §5.5 names', () => {
+    for (const type of ['photo', 'sticker', 'voice', 'document', 'video', 'location']) {
+      expect(TelegramMediaDescriptorSchema.safeParse({ type }).success).toBe(true);
+    }
+  });
+
+  it('accepts audio and video_note, added beyond §5.5 for the same property', () => {
+    expect(TelegramMediaDescriptorSchema.safeParse({ type: 'audio' }).success).toBe(true);
+    expect(TelegramMediaDescriptorSchema.safeParse({ type: 'video_note' }).success).toBe(true);
+  });
+
+  it('rejects a media kind outside the named six — proves the enum is closed, not permissive', () => {
+    // The negative control: without this, an enum that accidentally became
+    // `z.string()` would pass every positive case above too.
+    expect(TelegramMediaDescriptorSchema.safeParse({ type: 'poll' }).success).toBe(false);
+  });
+
+  it('rejects a descriptor missing its required type', () => {
+    expect(TelegramMediaDescriptorSchema.safeParse({ durationSec: 5 }).success).toBe(false);
+  });
+});
+
+describe('TelegramPlatformDataSchema (spec chats-as-channels §11.2)', () => {
+  const baseline = {
+    chatId: -100111222,
+    messageId: 42,
+    chatType: 'group',
+    fromId: 12345,
+    username: 'alice',
+  };
+
+  it('parses a payload predating the four additive fields, defaulting them to absent', () => {
+    // A5.7/A5.10/A11.2's shape: a fixture that predates this change must
+    // still parse, with the new fields simply undefined rather than required.
+    const result = TelegramPlatformDataSchema.safeParse(baseline);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.replyToMessageId).toBeUndefined();
+      expect(result.data.messageThreadId).toBeUndefined();
+      expect(result.data.threadName).toBeUndefined();
+      expect(result.data.media).toBeUndefined();
+    }
+  });
+
+  it('round-trips every additive field together', () => {
+    const withAdditions = {
+      ...baseline,
+      replyToMessageId: 41,
+      messageThreadId: 99,
+      threadName: 'Bug Reports',
+      media: { type: 'document' as const, fileName: 'report.pdf', mimeType: 'application/pdf' },
+    };
+    expect(TelegramPlatformDataSchema.parse(withAdditions)).toEqual(withAdditions);
+  });
+
+  it('rejects a payload missing a required base field (chatId) — the additions do not loosen the base', () => {
+    const { chatId: _chatId, ...withoutChatId } = baseline;
+    expect(TelegramPlatformDataSchema.safeParse(withoutChatId).success).toBe(false);
+  });
+
+  it('rejects a malformed nested media descriptor rather than silently dropping it', () => {
+    const result = TelegramPlatformDataSchema.safeParse({
+      ...baseline,
+      media: { type: 'not-a-real-kind' },
     });
     expect(result.success).toBe(false);
   });
