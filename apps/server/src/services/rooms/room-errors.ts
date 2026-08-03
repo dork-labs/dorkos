@@ -62,7 +62,35 @@ export type RoomErrorCode =
    * rather than silently falling through the kind-mapping ternary, which
    * would otherwise treat any unrecognized `chatType` as `channel`.
    */
-  | 'UNKNOWN_CHAT_TYPE';
+  | 'UNKNOWN_CHAT_TYPE'
+  /**
+   * An external author was offered an identity a natural key cannot be built
+   * from — an empty platform type, instance id or platform user id, or a
+   * segment carrying the key separator (chats-as-channels spec §4.1). Refused
+   * rather than coerced: a key that can be spelled two ways is a person who
+   * can be two authors, and a key with an empty segment is a person who could
+   * collide with another.
+   */
+  | 'EXTERNAL_IDENTITY_INVALID'
+  /**
+   * A local mint path was offered a natural key beginning `platform:`, the
+   * prefix reserved for people outside this machine (spec §4.1). The three
+   * local shapes — `local`, `user:{id}`, an agent's absolute directory —
+   * cannot spell it, so reaching this is a bug rather than a user action; it
+   * is a refusal rather than an assertion because the alternative is an
+   * operator or an agent silently rendering as a stranger, or shadowing an
+   * external author's row and inheriting their messages.
+   */
+  | 'RESERVED_NATURAL_KEY'
+  /**
+   * `RoomService.postExternal` was aimed at a room with no live bridge row
+   * (chats-as-channels spec §4.2). An external author is only ever a member of
+   * a room that projects an external chat; landing one anywhere else would put
+   * a stranger in the operator's own private conversation. Checked against the
+   * bridge store here rather than trusted from the caller, the same shape the
+   * create path takes.
+   */
+  | 'NOT_A_BRIDGED_ROOM';
 
 /** A refusal from the room domain, carrying a code the routes can switch on. */
 export class RoomError extends Error {

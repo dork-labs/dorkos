@@ -16,7 +16,7 @@
  * @module services/relay/platform-identity
  */
 import { z } from 'zod';
-import type { ExternalAuthorIdentity } from '../rooms/external-authors.js';
+import type { ExternalAuthorIdentity } from '../rooms/author-registry.js';
 
 /**
  * The identity fields an inbound chat payload carries for the person who wrote
