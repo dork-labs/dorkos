@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createDb, runMigrations, type Db } from '@dorkos/db';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
 import type {
@@ -452,16 +452,123 @@ describe('SessionConnectorService', () => {
       expect(Object.keys(restarted.mcpServersForSession('session-2').servers)).toEqual([]);
     });
 
-    it('hydrateSession is idempotent per process: a second call does not re-add a session-detached account', async () => {
+    it('hydrateSession is idempotent per process: a second call does not re-resolve any account (MINOR 8 — a call-count assertion, not just the resulting empty set)', async () => {
+      const gmail = await connectAndRecord(registry, provider, 'gmail', 'personal');
+      agentAttachments.attach('agent-a', gmail.id);
+      const resolveSpy = vi.spyOn(provider, 'toolServerForAccount');
+
+      await service.hydrateSession('session-1', 'agent-a');
+      expect(resolveSpy).toHaveBeenCalledTimes(1);
+
+      // A second hydration of the SAME session must be a pure no-op — the
+      // `_hydrated` guard, not the (unrelated) fact that re-deriving the
+      // effective set would happen to land on the same answer. The previous
+      // version of this test only asserted the resulting exposed-account set,
+      // which cannot tell a working guard apart from a guard that silently
+      // never engaged (the override table alone would have produced the same
+      // empty result either way) — this call-count assertion can.
+      await service.hydrateSession('session-1', 'agent-a');
+      expect(resolveSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('a session-detached account inherited from the agent is still suppressed after a second hydration call (the property the removed assertion was trying to protect)', async () => {
       const gmail = await connectAndRecord(registry, provider, 'gmail', 'personal');
       agentAttachments.attach('agent-a', gmail.id);
       await service.hydrateSession('session-1', 'agent-a');
       service.detach('session-1', gmail.id);
 
-      // Calling hydrateSession again (e.g. a second turn) must not re-derive
-      // the agent's standing attachment and clobber the explicit detach.
       await service.hydrateSession('session-1', 'agent-a');
       expect(Object.keys(service.mcpServersForSession('session-1').servers)).toEqual([]);
+    });
+  });
+
+  describe('hydrateSession resilience to a third-party provider failure (MAJOR 2)', () => {
+    it('a rejected provider call during hydration does not throw, and the account resolves on a LATER hydrate', async () => {
+      const flaky = new FakeConnectorProvider({ type: 'flaky', custody: 'managed' });
+      registry.register(flaky);
+      const gmail = await connectAndRecord(registry, flaky, 'gmail', 'personal');
+      // Reject exactly the first call — a stand-in for one transient
+      // network failure — then let every subsequent call behave normally.
+      vi.spyOn(flaky, 'toolServerForAccount').mockImplementationOnce(
+        () => Promise.reject(new Error('simulated network failure')) as Promise<null>
+      );
+      const agentAttachments = new AgentConnectorAttachmentStore(db);
+      const sessionAttachments = new SessionConnectorAttachmentStore(db);
+      agentAttachments.attach('agent-a', gmail.id);
+      const flakyService = new SessionConnectorService({
+        registry,
+        agentAttachments,
+        sessionAttachments,
+      });
+
+      // First turn: the provider rejects. hydrateSession must not throw —
+      // this IS "the turn still streams," since ClaudeCodeRuntime awaits
+      // hydrateSession before starting the SDK query.
+      await expect(flakyService.hydrateSession('session-1', 'agent-a')).resolves.toBeUndefined();
+      expect(Object.keys(flakyService.mcpServersForSession('session-1').servers)).toEqual([]);
+
+      // Second turn: same session, same call — the failed pass did NOT latch
+      // `_hydrated`, so this retries and now succeeds (FlakyProvider only
+      // rejects once).
+      await flakyService.hydrateSession('session-1', 'agent-a');
+      expect(Object.keys(flakyService.mcpServersForSession('session-1').servers)).toEqual([
+        'gmail-personal',
+      ]);
+    });
+  });
+
+  describe('migrateSession carries persisted overrides across a rekey (MAJOR 3)', () => {
+    let agentAttachments: AgentConnectorAttachmentStore;
+    let sessionAttachments: SessionConnectorAttachmentStore;
+
+    beforeEach(() => {
+      agentAttachments = new AgentConnectorAttachmentStore(db);
+      sessionAttachments = new SessionConnectorAttachmentStore(db);
+      service = new SessionConnectorService({ registry, agentAttachments, sessionAttachments });
+    });
+
+    it('a detach tombstone written pre-remap still suppresses the account after the rekey and a fresh hydration', async () => {
+      const gmail = await connectAndRecord(registry, provider, 'gmail', 'personal');
+      agentAttachments.attach('agent-a', gmail.id);
+
+      // Pre-remap: hydrate under the request-id session, then explicitly
+      // detach — the tombstone this whole fix is about.
+      await service.hydrateSession('old-id', 'agent-a');
+      service.detach('old-id', gmail.id);
+      expect(sessionAttachments.listForSession('old-id')).toMatchObject([
+        { accountId: gmail.id, state: 'detached' },
+      ]);
+
+      service.migrateSession('old-id', 'new-id');
+
+      // The persisted override moved with the rekey, not just the (now
+      // empty, since detach cleared it) in-memory cache.
+      expect(sessionAttachments.listForSession('old-id')).toEqual([]);
+      expect(sessionAttachments.listForSession('new-id')).toMatchObject([
+        { accountId: gmail.id, state: 'detached' },
+      ]);
+
+      // The property that actually matters: a SECOND turn re-hydrating under
+      // the canonical id must not re-inherit the agent's standing attachment.
+      await service.hydrateSession('new-id', 'agent-a');
+      expect(Object.keys(service.mcpServersForSession('new-id').servers)).toEqual([]);
+    });
+
+    it("when the new id already has its own override for an account, the new id's override wins and the old row is dropped", async () => {
+      const gmail = await connectAndRecord(registry, provider, 'gmail', 'personal');
+      // Old id explicitly attaches (would expose it)...
+      await service.attach('old-id', gmail.id);
+      // ...but the new id independently already recorded an explicit detach
+      // for the same account (e.g. a client raced the rekey).
+      sessionAttachments.setState('new-id', gmail.id, 'detached');
+
+      service.migrateSession('old-id', 'new-id');
+
+      expect(sessionAttachments.listForSession('new-id')).toMatchObject([
+        { accountId: gmail.id, state: 'detached' },
+      ]);
+      // Only one row for (new-id, gmail.id) — no primary-key collision.
+      expect(sessionAttachments.listForSession('new-id')).toHaveLength(1);
     });
   });
 });

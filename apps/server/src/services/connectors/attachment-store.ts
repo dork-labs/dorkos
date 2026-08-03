@@ -81,6 +81,26 @@ export class AgentConnectorAttachmentStore {
       .all()
       .map((row) => ({ ...row, accountId: row.accountId as ConnectedAccountId }));
   }
+
+  /**
+   * Delete every standing attachment of `agentId` — the agent-deletion
+   * cascade (adversarial review MAJOR 6). Without this, unregistering an
+   * agent and later registering a NEW agent under the same id (a real
+   * possibility — mesh ids are stable strings a person can reuse by pointing
+   * a fresh directory at the same registration path) would silently inherit
+   * the deleted agent's standing account consent. Mirrors the reasoning
+   * `ConnectorRegistry.recordDisconnect`'s doc already makes for account ids:
+   * a deleted identity's consent rows must not outlive it. Idempotent —
+   * deleting an agent with nothing attached is a no-op.
+   *
+   * @param agentId - The unregistered agent's id.
+   */
+  deleteAgent(agentId: string): void {
+    this._db
+      .delete(agentConnectorAttachments)
+      .where(eq(agentConnectorAttachments.agentId, agentId))
+      .run();
+  }
 }
 
 /** One session's override state for one account. */
@@ -131,5 +151,55 @@ export class SessionConnectorAttachmentStore {
         accountId: row.accountId as ConnectedAccountId,
         state: row.state as SessionConnectorOverrideState,
       }));
+  }
+
+  /**
+   * Move every override row from `oldSessionId` to `newSessionId` — the
+   * runtime's canonical-id remap (connection-scoping spec, adversarial
+   * review MAJOR 3: a `'detached'` tombstone must survive a rekey or the
+   * suppression it recorded silently un-suppresses on the session's next
+   * hydration). Per-account, not a bulk `UPDATE`, because `newSessionId` may
+   * already carry its own override for the same account — in that
+   * conflict the NEW id's row wins (mirrors the projector rekey's "active
+   * wins") and the old row is dropped rather than violating the
+   * `(sessionId, accountId)` primary key. A no-op when the ids match.
+   *
+   * @param oldSessionId - The session id overrides were recorded under (request UUID).
+   * @param newSessionId - The canonical session id to move them to.
+   */
+  rekey(oldSessionId: string, newSessionId: string): void {
+    if (oldSessionId === newSessionId) return;
+    const oldRows = this._db
+      .select()
+      .from(sessionConnectorAttachments)
+      .where(eq(sessionConnectorAttachments.sessionId, oldSessionId))
+      .all();
+    for (const row of oldRows) {
+      const existing = this._db
+        .select()
+        .from(sessionConnectorAttachments)
+        .where(
+          and(
+            eq(sessionConnectorAttachments.sessionId, newSessionId),
+            eq(sessionConnectorAttachments.accountId, row.accountId)
+          )
+        )
+        .get();
+      const where = and(
+        eq(sessionConnectorAttachments.sessionId, oldSessionId),
+        eq(sessionConnectorAttachments.accountId, row.accountId)
+      );
+      if (existing) {
+        // The new id already has its own explicit override for this account
+        // — it wins; the old row would otherwise collide on the primary key.
+        this._db.delete(sessionConnectorAttachments).where(where).run();
+      } else {
+        this._db
+          .update(sessionConnectorAttachments)
+          .set({ sessionId: newSessionId })
+          .where(where)
+          .run();
+      }
+    }
   }
 }

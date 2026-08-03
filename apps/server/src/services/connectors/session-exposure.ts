@@ -274,12 +274,23 @@ export class SessionConnectorService {
    * A no-op for a session with no agent (agentId unresolvable) or no
    * standing/override state at all.
    *
+   * **Called from the turn path** (`ClaudeCodeRuntime.sendMessage`, before
+   * the SDK query starts), so a single account's `toolServerForAccount` call
+   * throwing — a real risk, it is third-party HTTP — must never fail the
+   * turn itself, and must never wrongly mark the session "done hydrating."
+   * Each account is resolved in its own try/catch: a failure is logged and
+   * skipped, that one account is simply not exposed this turn, and
+   * `_hydrated` is only set once every account in the effective set resolved
+   * (successfully OR with the account's own null-branch warning — the
+   * ordinary "expired/revoked" path, not an exception) — so a transient
+   * provider failure retries on the session's NEXT turn rather than being
+   * permanently stuck unexposed for the rest of the process.
+   *
    * @param sessionId - The session to hydrate.
    * @param agentId - The agent this session belongs to.
    */
   async hydrateSession(sessionId: string, agentId: string): Promise<void> {
     if (this._hydrated.has(sessionId)) return;
-    this._hydrated.add(sessionId);
 
     const effective = new Set<ConnectedAccountId>(
       this._agentAttachments.listForAgent(agentId).map((a) => a.accountId)
@@ -289,9 +300,22 @@ export class SessionConnectorService {
       else effective.delete(override.accountId);
     }
 
+    let allResolved = true;
     for (const accountId of effective) {
-      await this._resolveAndCache(sessionId, accountId);
+      try {
+        await this._resolveAndCache(sessionId, accountId);
+      } catch (err) {
+        allResolved = false;
+        logger.warn(
+          `[Connectors] hydrateSession: failed to resolve account '${accountId}' for session ` +
+            `'${sessionId}'; skipping for this turn, will retry on the next one`,
+          err instanceof Error ? err.message : String(err)
+        );
+      }
     }
+    // Only latch "done" after a fully clean pass — a partial hydration must
+    // stay eligible to retry, not be mistaken for "nothing more to expose."
+    if (allResolved) this._hydrated.add(sessionId);
   }
 
   /**
@@ -418,27 +442,46 @@ export class SessionConnectorService {
   }
 
   /**
-   * Move a session's whole attach set from an old id to a new (canonical) id.
-   * Called when the runtime rekeys a brand-new session mid-first-turn (the
-   * claude-code canonical-id remap): without this, an account attached under the
-   * pre-remap id would be stranded — `mcpServersForSession(canonicalId)` would
-   * come back empty and the tools would silently vanish. If the new id already
-   * has attachments, the two sets are MERGED (an existing new-id entry wins a
-   * per-account conflict, mirroring the projector rekey's "active wins"). A
-   * no-op when the ids match or nothing is attached under `oldId`.
+   * Move a session's whole attach set — and its persisted consent state —
+   * from an old id to a new (canonical) id. Called when the runtime rekeys a
+   * brand-new session mid-first-turn (the claude-code canonical-id remap).
+   *
+   * **Three things move, not just the in-memory cache** (adversarial review
+   * MAJOR 3): the live `_sessions` cache (as before — without this an
+   * account attached under the pre-remap id would be stranded), the
+   * PERSISTED `session_connector_attachments` overrides (without this a
+   * `'detached'` tombstone written under the pre-remap id would be
+   * invisible to `hydrateSession(newId, …)` on the session's next turn —
+   * silently un-suppressing an account someone explicitly turned off, a
+   * consent regression), and `_hydrated` set membership (so a session
+   * already hydrated under the old id is not needlessly re-hydrated under
+   * the new one, and — more importantly — a session that has NOT yet
+   * finished hydrating does not get falsely marked done under the new id).
+   *
+   * If the new id already has attachments/overrides, the NEW id's entry wins
+   * a per-account conflict (mirrors the projector rekey's "active wins").
+   * A no-op when the ids match.
    *
    * @param oldId - The session id the accounts were attached under (request UUID).
    * @param newId - The canonical session id to move them to.
    */
   migrateSession(oldId: string, newId: string): void {
     if (oldId === newId) return;
+
     const from = this._sessions.get(oldId);
-    if (!from) return;
-    const to = this._ensureSession(newId);
-    for (const [accountId, attached] of from) {
-      if (!to.has(accountId)) to.set(accountId, attached);
+    if (from) {
+      const to = this._ensureSession(newId);
+      for (const [accountId, attached] of from) {
+        if (!to.has(accountId)) to.set(accountId, attached);
+      }
+      this._sessions.delete(oldId);
     }
-    this._sessions.delete(oldId);
+
+    // Persisted overrides — including detach tombstones — must survive the
+    // rekey independently of whether anything was cached in memory yet.
+    this._sessionAttachments.rekey(oldId, newId);
+
+    if (this._hydrated.delete(oldId)) this._hydrated.add(newId);
   }
 
   /** Lazily create and return the per-account map for a session. */

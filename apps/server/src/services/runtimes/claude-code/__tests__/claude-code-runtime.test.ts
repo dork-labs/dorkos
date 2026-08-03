@@ -249,6 +249,29 @@ describe('ClaudeCodeRuntime', () => {
       expect(hydrateSession).not.toHaveBeenCalled();
     });
 
+    it('MAJOR 2: a rejected hydrateSession does not fail the turn — it still streams to done', async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(wrapSdkQuery(sdkSimpleText('hi')));
+
+      const hydrateSession = vi.fn().mockRejectedValue(new Error('simulated hydration failure'));
+      agentManager.setSessionConnectors({ hydrateSession } as unknown as Parameters<
+        typeof agentManager.setSessionConnectors
+      >[0]);
+      agentManager.setMeshCore({
+        getByPath: (cwd: string) => (cwd === DEFAULT_CWD ? { id: 'agent-a' } : undefined),
+        updateLastSeen: vi.fn(),
+        listWithPaths: vi.fn().mockReturnValue([]),
+      });
+
+      const events: StreamEvent[] = [];
+      for await (const event of agentManager.sendMessage('hydrate-3', 'hello')) {
+        events.push(event);
+      }
+
+      expect(hydrateSession).toHaveBeenCalledWith('hydrate-3', 'agent-a');
+      expect(events.find((e) => e.type === 'done')).toBeDefined();
+    });
+
     it('carries supportedModels() capability fields into the next turn as summarized thinking', async () => {
       // Regression pin for the omitted-thinking incident: the supportedModels()
       // call site re-picked five fields and dropped supportsAdaptiveThinking,

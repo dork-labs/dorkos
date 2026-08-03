@@ -299,9 +299,25 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // safe to await unconditionally on every turn. Silently skipped when
     // there is no agent owning this cwd (e.g. an unregistered scratch
     // directory) — there is no standing consent to inherit.
+    //
+    // `hydrateSession`'s own per-account resolution already catches a
+    // rejected provider call (a real risk — it is third-party HTTP) so it
+    // does not throw in the ordinary case. This try/catch is the second,
+    // defense-in-depth layer for the turn path specifically: a turn must
+    // NEVER fail because a connector could not be resolved — connector tools
+    // are additive to a turn, never load-bearing for it — so even an
+    // unexpected throw out of hydration (a future implementation swap, a bug)
+    // is logged and skipped here rather than aborting the message the user
+    // actually asked for.
     const agentId = this.meshCore?.getByPath(cwdKey)?.id;
     if (this.sessionConnectors && agentId) {
-      await this.sessionConnectors.hydrateSession(sessionId, agentId);
+      try {
+        await this.sessionConnectors.hydrateSession(sessionId, agentId);
+      } catch (err) {
+        logger.warn(`[hydrateSession] failed for session '${sessionId}'; continuing without it`, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
 
     // Resolve the selected model's capabilities once: thinking config + whether it
