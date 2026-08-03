@@ -17,6 +17,8 @@ import {
   AdapterTestRequestSchema,
   AdapterCreateRequestSchema,
   AdapterConfigUpdateSchema,
+  bridgeAllowsChatId,
+  BRIDGE_REQUIRES_CHAT_ID_MESSAGE,
 } from '@dorkos/shared/relay-schemas';
 import { AdapterError, type AdapterManager } from '../services/relay/adapter-manager.js';
 import { broadcastBindingsChanged } from '../services/relay/relay-sse-events.js';
@@ -317,16 +319,46 @@ export function createAdapterRouter(
         .json({ error: 'Validation failed', details: z.flattenError(result.error) });
     }
 
-    // Convert null to undefined for clearing optional fields; absent fields
-    // are dropped so they don't clobber existing values in the store's spread.
-    const updates: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(result.data)) {
-      if (value !== undefined) {
-        updates[key] = value === null ? undefined : value;
+    // `bridge: 'room'` requires a `chatId` (spec §3.1), but a PATCH body is
+    // partial — the update may set `bridge` without resending `chatId`, or
+    // clear `chatId` without touching `bridge`. Checked against the MERGED
+    // state, which `AdapterBindingSchema`'s own refinement cannot see because
+    // it only ever validates a full object.
+    const existing = bindingStore.getById(req.params.id);
+    if (existing) {
+      const mergedBridge = result.data.bridge ?? existing.bridge;
+      const mergedChatId = result.data.chatId !== undefined ? result.data.chatId : existing.chatId;
+      if (!bridgeAllowsChatId({ bridge: mergedBridge, chatId: mergedChatId })) {
+        return res.status(400).json({
+          error: 'Validation failed',
+          details: { message: BRIDGE_REQUIRES_CHAT_ID_MESSAGE },
+        });
       }
     }
 
-    const updated = await bindingStore.update(req.params.id, updates as BindingUpdate);
+    // Convert null to undefined for clearing optional fields; absent fields
+    // are dropped so they don't clobber existing values in the store's spread.
+    // `roomId` is exempt: it is nullable, not optional, and `null` is its
+    // valid persisted "not bridged" value (`BindingUpdate`'s doc explains why
+    // converting it would be wrong, not merely redundant).
+    const updates: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(result.data)) {
+      if (value !== undefined) {
+        updates[key] = key === 'roomId' ? value : value === null ? undefined : value;
+      }
+    }
+
+    let updated;
+    try {
+      updated = await bindingStore.update(req.params.id, updates as BindingUpdate);
+    } catch (err) {
+      // The store re-validates the MERGED result independently of the
+      // pre-check above (any in-process caller can reach `update`, not just
+      // this route) — so a drift between the two checks lands here rather
+      // than as an unhandled 500.
+      const message = err instanceof Error ? err.message : 'Update failed';
+      return res.status(400).json({ error: 'Validation failed', details: { message } });
+    }
     if (!updated) {
       return res.status(404).json({ error: 'Binding not found' });
     }

@@ -7,8 +7,11 @@ import {
   Hourglass,
   Info,
   Megaphone,
+  Timer,
   TriangleAlert,
+  Unplug,
   UserX,
+  WifiOff,
   type LucideIcon,
 } from 'lucide-react';
 import type { RoomNoticeCode } from '@dorkos/shared/room-schemas';
@@ -109,13 +112,16 @@ interface RoomEntryRowProps {
  * reader skimming had no way to tell a problem from an aside without reading
  * every line in full.
  *
- * A mark each, and a tone for the two that need one. **Warm is reserved for a
- * line that wants the reader to DO something** — `turn_failed`, where the
- * answer is not coming, and `awaiting_approval`, where the agent has stopped
- * and cannot go on until somebody answers it. Everything else is the room
- * working as designed and saying so, and a column of amber over a busy
- * afternoon would teach a reader to stop looking. The mark is what tells them
- * apart at a glance; the colour is what says one of them is waiting on you.
+ * A mark each, and a tone for the ones that need one. **Warm is reserved for a
+ * line that wants the reader to DO something** — `turn_failed` and
+ * `bridge_undelivered`, where an answer or a message is not coming;
+ * `awaiting_approval`, where the agent has stopped and cannot go on until
+ * somebody answers it; `agent_gone` and `bridge_blocked`, where nothing
+ * happens again until the reader re-registers an agent or flips a switch.
+ * Everything else is the room working as designed and saying so, and a column
+ * of amber over a busy afternoon would teach a reader to stop looking. The
+ * mark is what tells them apart at a glance; the colour is what says one of
+ * them is waiting on you.
  *
  * The WORDS are never touched here. The server owns them (`room-notices.ts`)
  * and writes them for a person who did not configure this room; a second
@@ -143,6 +149,17 @@ const NOTICE_STYLES: Record<RoomNoticeCode, { Icon: LucideIcon; tone?: string }>
   cascade_stopped: { Icon: CircleSlash },
   // DorkOS changed when the agents here answer, and has to admit it.
   addressing_changed: { Icon: Megaphone },
+  // A bridge delivery was refused by a consent switch, or by a provenance
+  // misclassification after a restart. Warm: the switch is something a person
+  // can go flip.
+  bridge_blocked: { Icon: Unplug, tone: 'text-status-warning' },
+  // A bridge delivery exhausted its retry budget. Warm for the same reason
+  // `turn_failed` is: the message did not reach the chat and nothing here will
+  // retry it further.
+  bridge_undelivered: { Icon: WifiOff, tone: 'text-status-warning' },
+  // An inbound rate ceiling refused a message. The room is protecting itself
+  // as designed, not broken.
+  bridge_rate_limited: { Icon: Timer },
 };
 
 /** The mark on a notice whose code this client does not recognise. */

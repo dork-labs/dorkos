@@ -7,6 +7,10 @@ import {
   SlackAdapterConfigSchema,
   TelegramAdapterConfigSchema,
   DEFAULT_RESPOND_MODE,
+  CreateBindingRequestSchema,
+  UpdateBindingRequestSchema,
+  bridgeAllowsChatId,
+  BRIDGE_REQUIRES_CHAT_ID_MESSAGE,
 } from '../relay-adapter-schemas.js';
 
 describe('AdapterSecretSchema — credential references (DOR-280)', () => {
@@ -167,6 +171,146 @@ describe('AdapterBindingSchema — enabled field', () => {
       enabled: 'yes',
     });
     expect(result.success).toBe(false);
+  });
+});
+
+describe('AdapterBindingSchema — bridge field (chats-as-channels spec §3.1)', () => {
+  const baseBinding = {
+    id: '00000000-0000-0000-0000-000000000000',
+    adapterId: 'telegram-bot-1',
+    agentId: '01ABC123',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  it('defaults bridge to off and roomId to null when absent (A11.2)', () => {
+    const result = AdapterBindingSchema.safeParse(baseBinding);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.bridge).toBe('off');
+      expect(result.data.roomId).toBeNull();
+    }
+  });
+
+  it('parses a fixture written before this field existed, defaulting to off and routing as before (A11.2)', () => {
+    // A binding persisted by a build that predates `bridge`/`roomId` entirely —
+    // no such keys on disk at all, not merely `undefined`.
+    const legacyFixture = {
+      id: '11111111-1111-4111-8111-111111111111',
+      adapterId: 'telegram-bot-1',
+      agentId: '01ABC123',
+      chatId: '555',
+      sessionStrategy: 'per-chat',
+      label: 'Support',
+      permissionMode: 'acceptEdits',
+      enabled: true,
+      canInitiate: false,
+      canReply: true,
+      canReceive: true,
+      notifyOnTaskComplete: true,
+      createdAt: '2025-01-01T00:00:00.000Z',
+      updatedAt: '2025-01-01T00:00:00.000Z',
+    };
+    const result = AdapterBindingSchema.safeParse(legacyFixture);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.bridge).toBe('off');
+      expect(result.data.roomId).toBeNull();
+      // Every field the legacy fixture actually set survives untouched —
+      // "routes exactly as before" means nothing else moved.
+      expect(result.data.chatId).toBe('555');
+      expect(result.data.canReply).toBe(true);
+    }
+  });
+
+  it('accepts bridge: room when chatId is present', () => {
+    const result = AdapterBindingSchema.safeParse({
+      ...baseBinding,
+      chatId: '12345',
+      bridge: 'room',
+      roomId: 'room-1',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects bridge: room with no chatId, naming the wildcard reason (A3.5)', () => {
+    const result = AdapterBindingSchema.safeParse({
+      ...baseBinding,
+      bridge: 'room',
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const messages = result.error.issues.map((issue) => issue.message);
+      expect(messages).toContain(BRIDGE_REQUIRES_CHAT_ID_MESSAGE);
+      expect(result.error.issues.some((issue) => issue.path.includes('chatId'))).toBe(true);
+    }
+  });
+
+  it('rejects an unknown bridge value', () => {
+    const result = AdapterBindingSchema.safeParse({
+      ...baseBinding,
+      chatId: '12345',
+      bridge: 'always',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('CreateBindingRequestSchema rejects bridge: room with no chatId the same way (A3.5)', () => {
+    const result = CreateBindingRequestSchema.safeParse({
+      adapterId: 'telegram-bot-1',
+      agentId: '01ABC123',
+      bridge: 'room',
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.map((issue) => issue.message)).toContain(
+        BRIDGE_REQUIRES_CHAT_ID_MESSAGE
+      );
+    }
+  });
+
+  it('CreateBindingRequestSchema accepts bridge: room with a chatId', () => {
+    const result = CreateBindingRequestSchema.safeParse({
+      adapterId: 'telegram-bot-1',
+      agentId: '01ABC123',
+      chatId: '12345',
+      bridge: 'room',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('UpdateBindingRequestSchema accepts bridge and roomId as partial fields, unrefined', () => {
+    // A PATCH body is partial by design (spec §3.1's note on
+    // `UpdateBindingRequestSchema`): setting `bridge` alone, with no `chatId`
+    // resent, must parse — the merged-state check is the route's job, not the
+    // schema's, because the schema never sees the binding's existing chatId.
+    const result = UpdateBindingRequestSchema.safeParse({ bridge: 'room' });
+    expect(result.success).toBe(true);
+  });
+
+  it('UpdateBindingRequestSchema accepts roomId: null to clear a bridge', () => {
+    const result = UpdateBindingRequestSchema.safeParse({ bridge: 'off', roomId: null });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.roomId).toBeNull();
+    }
+  });
+});
+
+describe('bridgeAllowsChatId — the merged-state predicate the PATCH route uses', () => {
+  it('allows bridge: off regardless of chatId', () => {
+    expect(bridgeAllowsChatId({ bridge: 'off' })).toBe(true);
+    expect(bridgeAllowsChatId({ bridge: 'off', chatId: '' })).toBe(true);
+  });
+
+  it('allows bridge: room with a non-empty chatId', () => {
+    expect(bridgeAllowsChatId({ bridge: 'room', chatId: '12345' })).toBe(true);
+  });
+
+  it('rejects bridge: room with no chatId, an empty chatId, or a null chatId', () => {
+    expect(bridgeAllowsChatId({ bridge: 'room' })).toBe(false);
+    expect(bridgeAllowsChatId({ bridge: 'room', chatId: '' })).toBe(false);
+    expect(bridgeAllowsChatId({ bridge: 'room', chatId: null })).toBe(false);
   });
 });
 

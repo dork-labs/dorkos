@@ -211,6 +211,61 @@ describe('BindingStore', () => {
       await store.update(binding.id, { label: 'new' });
       expect(store.getById(binding.id)?.label).toBe('new');
     });
+
+    // MAJOR-2 (adversarial review, DOR-865): `update()` used to spread the
+    // merge with no schema check at all, while `load()` silently DISCARDS an
+    // entry that fails `AdapterBindingSchema` on the next restart. So an
+    // in-process caller that reached `update` directly — never through the
+    // route, which has its own merged-state check — could write
+    // `bridge: 'room'` onto a chatId-less binding, have it persist and work
+    // fine for the rest of this process's life, and then have `load()` throw
+    // it away on the next restart: a binding that looked alive vanishing with
+    // no error anywhere. `update()` now validates the MERGED result itself, so
+    // this is unreachable from ANY boundary, not just the route's.
+    it('rejects an in-process update that would merge into an invalid binding, bypassing the route entirely', async () => {
+      const binding = await store.create({
+        adapterId: 'telegram-1',
+        agentId: 'agent-1',
+        // No chatId — bridge: 'room' is invalid on this binding.
+      });
+
+      await expect(store.update(binding.id, { bridge: 'room' })).rejects.toThrow(
+        'one room cannot honestly be the channel'
+      );
+
+      // Rejected before ever touching memory or disk: getById still reports
+      // the pre-update binding, and no save was attempted for this call.
+      expect(store.getById(binding.id)?.bridge).toBe('off');
+    });
+
+    it('never lets the invalid merge reach disk — a fresh load after the rejected update sees the pre-update binding, not a discarded one', async () => {
+      const binding = await store.create({
+        adapterId: 'telegram-1',
+        agentId: 'agent-1',
+      });
+      // Capture exactly what `create()` wrote — this is "disk" for this test.
+      const lastWrite = vi.mocked(writeFile).mock.calls.at(-1)?.[1] as string;
+      expect(lastWrite).toBeDefined();
+
+      await expect(store.update(binding.id, { bridge: 'room' })).rejects.toThrow();
+
+      // Simulate a restart: a fresh store loads whatever was actually
+      // written to disk before the rejected update — never anything the
+      // rejected update might have produced, because it never wrote.
+      vi.mocked(readFile).mockResolvedValueOnce(lastWrite);
+      const restarted = new BindingStore('/tmp/relay');
+      await restarted.init();
+
+      // The binding survived the restart intact — `load()` never had an
+      // invalid entry to discard, because `update()` never let one reach
+      // disk in the first place.
+      const reloaded = restarted.getById(binding.id);
+      expect(reloaded).toBeDefined();
+      expect(reloaded?.bridge).toBe('off');
+      expect(reloaded?.adapterId).toBe('telegram-1');
+
+      await restarted.shutdown();
+    });
   });
 
   describe('resolve()', () => {
@@ -503,6 +558,41 @@ describe('BindingStore', () => {
       expect(loaded).not.toHaveProperty('projectPath');
       expect(loaded).not.toHaveProperty('agentDir');
       expect(loaded?.agentId).toBe('agent-2');
+
+      await freshStore.shutdown();
+    });
+
+    it('loads a fixture written before bridge/roomId existed, defaulting to off/null and routing as before (A11.2)', async () => {
+      const preBridgeData = {
+        bindings: [
+          {
+            id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+            adapterId: 'telegram-main',
+            agentId: 'agent-1',
+            chatId: '555',
+            sessionStrategy: 'per-chat',
+            label: 'Pre-bridge binding',
+            canInitiate: true,
+            canReply: true,
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+          },
+        ],
+      };
+      vi.mocked(readFile).mockResolvedValue(JSON.stringify(preBridgeData));
+
+      const freshStore = new BindingStore('/tmp/relay');
+      await freshStore.init();
+
+      const loaded = freshStore.getById('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11');
+      expect(loaded).toBeDefined();
+      expect(loaded?.bridge).toBe('off');
+      expect(loaded?.roomId).toBeNull();
+      // Nothing else about the binding moved — it routes exactly as it did
+      // before this field existed.
+      expect(loaded?.chatId).toBe('555');
+      expect(loaded?.canInitiate).toBe(true);
+      expect(loaded?.canReply).toBe(true);
 
       await freshStore.shutdown();
     });

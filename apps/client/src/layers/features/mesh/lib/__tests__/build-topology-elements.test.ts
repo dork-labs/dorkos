@@ -440,6 +440,8 @@ describe('buildTopologyElements', () => {
         canReply: true,
         canReceive: true,
         notifyOnTaskComplete: true,
+        bridge: 'off' as const,
+        roomId: null,
         createdAt: '2026-01-01T00:00:00Z',
         updatedAt: '2026-01-01T00:00:00Z',
       };
@@ -504,6 +506,8 @@ describe('buildTopologyElements', () => {
       canReply: true,
       canReceive: true,
       notifyOnTaskComplete: true,
+      bridge: 'off' as const,
+      roomId: null,
       createdAt: '2026-01-01T00:00:00Z',
       updatedAt: '2026-01-01T00:00:00Z',
     };
@@ -655,6 +659,8 @@ describe('buildTopologyElements', () => {
         canReply: true,
         canReceive: true,
         notifyOnTaskComplete: true,
+        bridge: 'off' as const,
+        roomId: null,
         createdAt: '2026-01-01T00:00:00Z',
         updatedAt: '2026-01-01T00:00:00Z',
       };
@@ -687,6 +693,8 @@ describe('buildTopologyElements', () => {
         canReply: true,
         canReceive: true,
         notifyOnTaskComplete: true,
+        bridge: 'off' as const,
+        roomId: null,
         createdAt: '2026-01-01T00:00:00Z',
         updatedAt: '2026-01-01T00:00:00Z',
       };

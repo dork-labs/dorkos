@@ -11,6 +11,7 @@ import {
   RoomEntrySchema,
   RoomEventSchema,
   RoomMemberSchema,
+  RoomNoticeCodeSchema,
   ToggleReactionRequestSchema,
   type SignableRoomEntry,
 } from '../room-schemas.js';
@@ -368,5 +369,32 @@ describe('a reaction on the room stream', () => {
         reactions: [{ emoji: 'lol', authorIds: ['01JZA'], firstAt: '2026-07-30T09:00:00.000Z' }],
       }).success
     ).toBe(false);
+  });
+});
+
+describe('RoomNoticeCodeSchema — the three bridge codes (chats-as-channels spec §11.2, A11.1)', () => {
+  it('accepts bridge_blocked, bridge_undelivered, and bridge_rate_limited', () => {
+    for (const code of ['bridge_blocked', 'bridge_undelivered', 'bridge_rate_limited']) {
+      expect(RoomNoticeCodeSchema.safeParse(code).success).toBe(true);
+    }
+  });
+
+  it('still accepts every pre-existing code — the widening is additive, not a replacement', () => {
+    for (const code of [
+      'cascade_stopped',
+      'budget_reached',
+      'agent_busy',
+      'turn_failed',
+      'agent_gone',
+      'awaiting_approval',
+      'halted',
+      'addressing_changed',
+    ]) {
+      expect(RoomNoticeCodeSchema.safeParse(code).success).toBe(true);
+    }
+  });
+
+  it('still rejects an unrecognised code', () => {
+    expect(RoomNoticeCodeSchema.safeParse('bridge_unplugged').success).toBe(false);
   });
 });

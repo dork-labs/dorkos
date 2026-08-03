@@ -37,11 +37,13 @@ describe('AdapterBindingSchema', () => {
   };
 
   it('validates a complete binding', () => {
-    // Parse fills the schema defaults: enabled + notifyOnTaskComplete.
+    // Parse fills the schema defaults: enabled, notifyOnTaskComplete, bridge, roomId.
     expect(AdapterBindingSchema.parse(validBinding)).toEqual({
       ...validBinding,
       enabled: true,
       notifyOnTaskComplete: true,
+      bridge: 'off',
+      roomId: null,
     });
   });
 
@@ -93,6 +95,8 @@ describe('AdapterBindingSchema', () => {
       ...binding,
       enabled: true,
       notifyOnTaskComplete: true,
+      bridge: 'off',
+      roomId: null,
     });
   });
 
@@ -170,6 +174,8 @@ describe('BindingListResponseSchema', () => {
           canReply: true,
           canReceive: true,
           notifyOnTaskComplete: true,
+          bridge: 'off',
+          roomId: null,
           createdAt: '2026-01-01T00:00:00.000Z',
           updatedAt: '2026-01-01T00:00:00.000Z',
         },
@@ -198,6 +204,8 @@ describe('BindingResponseSchema', () => {
         canReply: true,
         canReceive: true,
         notifyOnTaskComplete: true,
+        bridge: 'off',
+        roomId: null,
         createdAt: '2026-01-01T00:00:00.000Z',
         updatedAt: '2026-01-01T00:00:00.000Z',
       },

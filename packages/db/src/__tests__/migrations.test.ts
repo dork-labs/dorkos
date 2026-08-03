@@ -130,6 +130,11 @@ describe('Database Migrations', () => {
       'pulse_schedules',
       'relay_index',
       'relay_traces',
+      // A room's durable bridge identity and its platform-message external-ref
+      // table — the chats-as-channels foundation (spec §3.1, §6.3, migration
+      // 0047, DOR-865).
+      'room_bridge_messages',
+      'room_bridges',
       // The room primitive: a membership-scoped durable stream, its roster, its
       // never-trimmed log, and the per-(room, agent) session bindings
       // (ADR 260726-170125, migration 0034).
