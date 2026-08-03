@@ -32,6 +32,7 @@ function member(author: Partial<AuthorRef> & Pick<AuthorRef, 'kind'>): RoomRoste
     joinedAt: '2026-07-26T10:00:00.000Z',
     lastReadSeq: 0,
     author: { id: 'author-Ana', displayName: 'Ana', ...author },
+    origin: 'local',
   };
 }
 

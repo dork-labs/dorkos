@@ -74,6 +74,7 @@ function agentMember(
       displayName,
       agentRef: agentAuthorRef(agentPath),
     },
+    origin: 'local',
   };
 }
 
@@ -84,6 +85,7 @@ const HUMAN: RoomRosterEntry = {
   joinedAt: '2026-07-26T10:00:00.000Z',
   lastReadSeq: 0,
   author: { id: 'me', kind: 'human', displayName: 'You' },
+  origin: 'local',
 };
 
 /**

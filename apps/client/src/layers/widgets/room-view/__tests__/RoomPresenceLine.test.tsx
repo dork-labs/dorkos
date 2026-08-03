@@ -17,6 +17,7 @@ function member(id: string, displayName: string): RoomRosterEntry {
     joinedAt: STARTED,
     lastReadSeq: 0,
     author: { id, kind: 'agent', displayName },
+    origin: 'local',
   };
 }
 

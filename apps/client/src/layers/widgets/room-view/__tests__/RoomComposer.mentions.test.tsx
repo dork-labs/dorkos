@@ -57,6 +57,7 @@ function member(author: AuthorRef): RoomRosterEntry {
     joinedAt: '2026-07-26T09:00:00.000Z',
     lastReadSeq: 0,
     author,
+    origin: 'local',
   };
 }
 
