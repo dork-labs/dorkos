@@ -5,6 +5,7 @@ covers:
   - 'feat(client): the setup wizard asks who answers first, and saves both together (DOR-857)'
   - 'feat(client): Connections page v2 — two regions, claim cards, the relay dialog retired (DOR-857)'
   - "feat(client): retire the messaging dialog's deep links onto the page (DOR-857)"
+  - 'feat(client): a designed intent step for services that are two things at once (DOR-857)'
 ---
 
 ### Added
@@ -41,6 +42,9 @@ covers:
   instead of quietly creating a second route that never fires.
 - **Old links still work.** Anything that used to open the messaging pop-up,
   including the Settings link, now lands on the messaging half of the page.
+- **Slack asks what you want it for.** It can be a place you talk to your
+  agents, or an account they act on as you. Those are different things, so it
+  asks which, and tells you where an account sign-in is kept before you pick.
 - **Session strategy is in plain words.** "One conversation per chat", "One
   conversation per person", or "A fresh start every message", each saying what
   it means.
