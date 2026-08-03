@@ -7,6 +7,12 @@ covers:
   - 'feat(server): a durable claim feed for unbound inbound chats (DOR-856)'
   - 'docs(server): register the new connector/binding/claim-feed endpoints in OpenAPI (DOR-856)'
   - 'docs(spec): mark connection-scoping implemented (DOR-856)'
+  - 'fix(server): stop deleting bindings on a legacy chatId collision — disable in place, back up to a sidecar (DOR-856 review)'
+  - 'fix(server): hydrateSession survives a provider failure and a session rekey (DOR-856 review)'
+  - 'fix(server): cap the claim feed, rate-limit its broadcasts, and fix block-check ordering (DOR-856 review)'
+  - 'fix(server): agent deletion clears standing connector consent; agent-attach validates the agent exists (DOR-856 review)'
+  - 'docs(server): design-decisions D3-addendum..D14, regenerated OpenAPI, changelog fixes (DOR-856 review)'
+  - 'fix(server): dedupeChatCollisions ignores already-disabled losers, so a restart is not a repeat reconciliation (DOR-856 verification)'
 ---
 
 ### Added
