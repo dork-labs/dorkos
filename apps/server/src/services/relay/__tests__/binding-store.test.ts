@@ -591,11 +591,21 @@ describe('BindingStore', () => {
       await freshStore.shutdown();
     });
 
-    it('AC2.6: dedups a legacy bindings.json with a chatId collision, keeping the older entry, and re-saves', async () => {
+    it('AC2.6 (revised — see design-decisions.md D3-addendum): a legacy chatId collision is reconciled by DISABLING the loser, never deleting it, and backing it up to a sidecar', async () => {
+      // This is the deliberately-preserved successor to a prior version of
+      // this test ('prefers chatId+channelType over chatId alone', deleted
+      // when the FIRST cut of dedup shipped) — that older test proved main
+      // deliberately supports two bindings on one chatId differentiated only
+      // by channelType. The first dedup implementation silently deleted one
+      // of them on load, which was reversible-in-theory but destroyed real
+      // configuration data with no recovery path. This pins the fix: nothing
+      // is ever deleted here.
+      const OLDER_ID = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
+      const NEWER_ID = 'b1eebc99-9c0b-4ef8-bb6d-6bb9bd380a22';
       const collidingData = {
         bindings: [
           {
-            id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+            id: OLDER_ID,
             adapterId: 'telegram-main',
             agentId: 'agent-older',
             chatId: '123',
@@ -605,7 +615,7 @@ describe('BindingStore', () => {
             updatedAt: '2026-01-01T00:00:00.000Z',
           },
           {
-            id: 'b1eebc99-9c0b-4ef8-bb6d-6bb9bd380a22',
+            id: NEWER_ID,
             adapterId: 'telegram-main',
             agentId: 'agent-newer',
             chatId: '123',
@@ -622,10 +632,37 @@ describe('BindingStore', () => {
       const freshStore = new BindingStore('/tmp/relay');
       await freshStore.init();
 
-      expect(freshStore.getAll()).toHaveLength(1);
-      expect(freshStore.getById('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11')).toBeDefined();
-      expect(freshStore.getById('b1eebc99-9c0b-4ef8-bb6d-6bb9bd380a22')).toBeUndefined();
-      expect(writeFile).toHaveBeenCalled();
+      // Both rows survive — nothing was deleted.
+      expect(freshStore.getAll()).toHaveLength(2);
+      const older = freshStore.getById(OLDER_ID);
+      const newer = freshStore.getById(NEWER_ID);
+      expect(older).toBeDefined();
+      expect(newer).toBeDefined();
+      // Every other field on the loser is untouched — only `enabled` moved.
+      expect(newer).toMatchObject({
+        id: NEWER_ID,
+        agentId: 'agent-newer',
+        chatId: '123',
+        label: 'Newer',
+        enabled: false,
+      });
+      expect(older?.enabled).not.toBe(false);
+
+      // resolve() only ever returns the one enabled binding for this chat.
+      expect(freshStore.resolve('telegram-main', '123')?.id).toBe(OLDER_ID);
+
+      // Backed up to a recoverable sidecar file, full row, before the
+      // reconciled bindings.json was re-saved.
+      const sidecarCall = vi
+        .mocked(writeFile)
+        .mock.calls.find(
+          ([path]) => typeof path === 'string' && path.includes('bindings.discarded-')
+        );
+      expect(sidecarCall).toBeDefined();
+      const sidecarBody = JSON.parse(sidecarCall![1] as string) as {
+        bindings: Array<{ id: string }>;
+      };
+      expect(sidecarBody.bindings.map((b) => b.id)).toEqual([NEWER_ID]);
 
       await freshStore.shutdown();
     });

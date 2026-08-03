@@ -16,8 +16,8 @@
  *
  * @module services/relay/binding-store
  */
-import { readFile, stat } from 'node:fs/promises';
-import { join as pathJoin } from 'node:path';
+import { readFile, stat, writeFile } from 'node:fs/promises';
+import { join as pathJoin, dirname } from 'node:path';
 import { withFileLock } from '@dorkos/shared/atomic-write';
 import { randomUUID } from 'node:crypto';
 import chokidar, { type FSWatcher } from 'chokidar';
@@ -364,15 +364,36 @@ export class BindingStore {
   }
 
   /**
-   * Remove every binding that loses a `(adapterId, non-empty chatId)`
-   * collision to an older one. Mutates `this.bindings` directly (called only
-   * from `load()`, before any save). Returns the count removed, folded into
-   * `load()`'s existing discard counter/re-save trigger.
+   * Reconcile every `(adapterId, non-empty chatId)` collision found on load
+   * — a `bindings.json` written before the uniqueness invariant existed may
+   * legitimately hold two bindings differentiated only by `channelType`
+   * (tiered chatId+channelType vs chatId-alone), which `resolve()`'s scoring
+   * used to treat as two live, competing candidates. **This method never
+   * deletes a binding.** An earlier version did (keep-oldest, discard the
+   * rest), which destroyed configuration data a person may have set up on
+   * purpose and was irreversible on top of that — see
+   * `specs/connection-scoping/design-decisions.md` D3-addendum for why that
+   * was wrong and what replaced it: the OLDEST binding for a chat keeps
+   * `enabled` untouched; every other colliding binding is disabled in place
+   * (never removed) — routing-wise this is equivalent to "one enabled
+   * binding per chat," which is what §Part 2 actually requires, while the
+   * losing row, its `agentId`, its `label`, everything, stays on disk and
+   * recoverable (a `move`/re-enable is a config edit, not a data-recovery
+   * exercise).
+   *
+   * Every disabled row is ALSO written verbatim to a
+   * `bindings.discarded-<ISO-timestamp>.json` sidecar next to `bindings.json`
+   * before the cleaned file is saved — belt-and-suspenders recoverability
+   * even though nothing was actually removed from the live file.
+   *
+   * Mutates `this.bindings` directly (called only from `load()`, before any
+   * save). Returns the count of newly-disabled rows, folded into `load()`'s
+   * existing discard counter/re-save trigger.
    */
-  private dedupeChatCollisions(): number {
+  private async dedupeChatCollisions(): Promise<number> {
     // adapterId -> chatId -> the oldest binding seen so far for that pair.
     const winners = new Map<string, Map<string, AdapterBinding>>();
-    const losers: string[] = [];
+    const losers: AdapterBinding[] = [];
     for (const binding of this.getAll()) {
       if (!binding.chatId) continue;
       let byChat = winners.get(binding.adapterId);
@@ -388,18 +409,55 @@ export class BindingStore {
       const older = incumbent.createdAt <= binding.createdAt ? incumbent : binding;
       const newer = older === incumbent ? binding : incumbent;
       byChat.set(binding.chatId, older);
-      losers.push(newer.id);
+      losers.push(newer);
     }
-    for (const id of losers) {
-      const dropped = this.bindings.get(id);
-      this.bindings.delete(id);
-      logger.warn('Discarding a duplicate binding for an already-bound chat during load', {
-        id,
-        adapterId: dropped?.adapterId,
-        chatId: dropped?.chatId,
-      });
+    if (losers.length === 0) return 0;
+
+    await this.writeDiscardedSidecar(losers);
+
+    for (const loser of losers) {
+      const current = this.bindings.get(loser.id);
+      if (!current || current.enabled === false) continue; // already disabled/gone — nothing to do
+      this.bindings.set(loser.id, { ...current, enabled: false });
+      logger.warn(
+        'Auto-disabled a colliding binding for an already-bound chat during load (backed up, not deleted)',
+        {
+          id: loser.id,
+          adapterId: loser.adapterId,
+          chatId: loser.chatId,
+          channelType: loser.channelType,
+          agentId: loser.agentId,
+          label: loser.label,
+        }
+      );
     }
     return losers.length;
+  }
+
+  /**
+   * Write the full, unmodified rows of every auto-disabled binding to a
+   * timestamped sidecar file next to `bindings.json` — the recoverability
+   * half of {@link dedupeChatCollisions}. Best-effort: a write failure here
+   * is logged and swallowed rather than blocking `load()`, since the rows
+   * themselves are already safe (disabled in place, not deleted).
+   *
+   * @param losers - The full binding rows being auto-disabled this load.
+   */
+  private async writeDiscardedSidecar(losers: AdapterBinding[]): Promise<void> {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const sidecarPath = pathJoin(dirname(this.filePath), `bindings.discarded-${stamp}.json`);
+    try {
+      await writeFile(sidecarPath, JSON.stringify({ bindings: losers }, null, 2), 'utf-8');
+      logger.info(
+        `Backed up ${losers.length} auto-disabled binding(s) to ${sidecarPath} before re-saving bindings.json`
+      );
+    } catch (err) {
+      logger.error(
+        `Failed to write the discarded-bindings sidecar at ${sidecarPath} — the rows are still safe ` +
+          '(disabled in place in bindings.json, not deleted), only this extra backup copy is missing',
+        logError(err)
+      );
+    }
   }
 
   private async load(): Promise<void> {
@@ -416,13 +474,13 @@ export class BindingStore {
       }
 
       this.bindings.clear();
-      let discarded = 0;
+      let invalidDiscarded = 0;
       for (const entry of shell.data.bindings) {
         const result = AdapterBindingSchema.safeParse(entry);
         if (result.success) {
           this.bindings.set(result.data.id, result.data);
         } else {
-          discarded++;
+          invalidDiscarded++;
           logger.warn('Discarding invalid binding entry during load', {
             entry,
             errors: result.error.issues,
@@ -430,18 +488,18 @@ export class BindingStore {
         }
       }
 
-      // "One chat, one agent" dedup pass (connection-scoping spec §Part 2): a
-      // `bindings.json` written before this invariant existed may already
-      // hold two bindings on the same `(adapterId, chatId)` — exactly the
-      // audited tie `resolve()` used to silently shadow. Keep the OLDEST
-      // (`createdAt`) and discard the rest, so a file this store already
-      // wrote once self-heals into a state the new `create`/`update` checks
-      // can enforce going forward.
-      discarded += this.dedupeChatCollisions();
+      // "One chat, one agent" reconciliation pass (connection-scoping spec
+      // §Part 2): a `bindings.json` written before this invariant existed may
+      // already hold two bindings on the same `(adapterId, chatId)` —
+      // exactly the audited tie `resolve()` used to silently shadow. Every
+      // colliding row is disabled in place (never deleted) and backed up to
+      // a sidecar file — see {@link dedupeChatCollisions}.
+      const autoDisabled = await this.dedupeChatCollisions();
 
-      if (discarded > 0) {
+      if (invalidDiscarded > 0 || autoDisabled > 0) {
         logger.info(
-          `Loaded ${this.bindings.size} binding(s), discarded ${discarded} invalid — auto-saving cleaned file`
+          `Loaded ${this.bindings.size} binding(s): discarded ${invalidDiscarded} invalid, ` +
+            `auto-disabled ${autoDisabled} chat-collision — auto-saving reconciled file`
         );
         await this.save();
       } else {
