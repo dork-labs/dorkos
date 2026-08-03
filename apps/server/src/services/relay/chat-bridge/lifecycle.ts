@@ -218,12 +218,25 @@ export class BridgeLifecycle {
    *   for the chat notice.
    */
   async onRoomArchivedDuringIngest(binding: LifecycleBinding, subject: string): Promise<void> {
-    if (binding.roomId) {
-      this.deps.rooms.archiveBridgedRoom(binding.roomId, this.deps.operatorAuthorId());
-    }
+    const roomId = binding.roomId;
+    // The user-facing recovery runs FIRST, so nothing below can starve it: this
+    // IS the recovery path, and stopping future ingest (the binding flip) and
+    // telling the person once (the chat notice) are the two things it exists to
+    // do. The bridge-row stamp that follows is internal bookkeeping — the person
+    // is not waiting on it — so a throw there must not cost them the notice.
     if (binding.bridge === 'room' || binding.roomId !== null) {
       await this.deps.bindings.update(binding.id, { bridge: 'off', roomId: null });
     }
     await this.deps.chatNotice(subject, 'channel_archived', { binding: { id: binding.id } });
+    // Then the bookkeeping: stamp the bridge row archived to match the room an
+    // out-of-band archive left un-stamped. `archiveBridgedRoom` on an
+    // already-archived room only stamps the row (it skips the notice and the
+    // archive), and the stamp is guarded on `archivedAt`, so a racing second
+    // call is a no-op. Left un-stamped by a throw here, the row self-heals on
+    // the next `rebridge`/`archiveBridgedRoom`, and the room is already archived
+    // regardless.
+    if (roomId) {
+      this.deps.rooms.archiveBridgedRoom(roomId, this.deps.operatorAuthorId());
+    }
   }
 }
