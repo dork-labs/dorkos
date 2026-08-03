@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '@/layers/shared/model';
 import { useTransport } from '@/layers/shared/model';
@@ -241,6 +241,18 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   // auto-triggered greeting. No-op for every session without a pending birth.
   // `cwd` lets a fresh session claim a birth recorded by a create that never
   // navigated (onboarding) — the hello lands on the agent's real first session.
+  // Adapt the kickoff's `(content, cwd)` shape to submitContent's opts, so a
+  // `first-message` birth also runs its first turn in the agent's directory.
+  // Memoized so it keeps a stable identity — it sits in useAutoKickoff's effect
+  // deps, and a fresh function each render would re-run that effect on every
+  // mid-stream token update (harmless given the fire-once guards, but it makes
+  // the dependency list meaningless).
+  const submitFirstMessage = useCallback(
+    (content: string, cwd?: string) =>
+      submitContent(content, undefined, cwd ? { queued: false, cwd } : undefined),
+    [submitContent]
+  );
+
   useAutoKickoff({
     sessionId,
     cwd: selectedCwd,
@@ -248,10 +260,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     messages,
     hydrated,
     submitKickoff,
-    // Adapt the kickoff's `(content, cwd)` shape to submitContent's opts, so a
-    // `first-message` birth also runs its first turn in the agent's directory.
-    submitContent: (content, cwd) =>
-      submitContent(content, undefined, cwd ? { queued: false, cwd } : undefined),
+    submitContent: submitFirstMessage,
   });
 
   // Turn-end reconciliation: when the active session settles, reload canonical
