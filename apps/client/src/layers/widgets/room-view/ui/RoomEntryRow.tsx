@@ -7,8 +7,11 @@ import {
   Hourglass,
   Info,
   Megaphone,
+  Timer,
   TriangleAlert,
+  Unplug,
   UserX,
+  WifiOff,
   type LucideIcon,
 } from 'lucide-react';
 import type { RoomNoticeCode } from '@dorkos/shared/room-schemas';
@@ -143,6 +146,17 @@ const NOTICE_STYLES: Record<RoomNoticeCode, { Icon: LucideIcon; tone?: string }>
   cascade_stopped: { Icon: CircleSlash },
   // DorkOS changed when the agents here answer, and has to admit it.
   addressing_changed: { Icon: Megaphone },
+  // A bridge delivery was refused by a consent switch, or by a provenance
+  // misclassification after a restart. Warm: the switch is something a person
+  // can go flip.
+  bridge_blocked: { Icon: Unplug, tone: 'text-status-warning' },
+  // A bridge delivery exhausted its retry budget. Warm for the same reason
+  // `turn_failed` is: the message did not reach the chat and nothing here will
+  // retry it further.
+  bridge_undelivered: { Icon: WifiOff, tone: 'text-status-warning' },
+  // An inbound rate ceiling refused a message. The room is protecting itself
+  // as designed, not broken.
+  bridge_rate_limited: { Icon: Timer },
 };
 
 /** The mark on a notice whose code this client does not recognise. */

@@ -506,6 +506,41 @@ describe('BindingStore', () => {
 
       await freshStore.shutdown();
     });
+
+    it('loads a fixture written before bridge/roomId existed, defaulting to off/null and routing as before (A11.2)', async () => {
+      const preBridgeData = {
+        bindings: [
+          {
+            id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+            adapterId: 'telegram-main',
+            agentId: 'agent-1',
+            chatId: '555',
+            sessionStrategy: 'per-chat',
+            label: 'Pre-bridge binding',
+            canInitiate: true,
+            canReply: true,
+            createdAt: '2026-01-01T00:00:00.000Z',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+          },
+        ],
+      };
+      vi.mocked(readFile).mockResolvedValue(JSON.stringify(preBridgeData));
+
+      const freshStore = new BindingStore('/tmp/relay');
+      await freshStore.init();
+
+      const loaded = freshStore.getById('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11');
+      expect(loaded).toBeDefined();
+      expect(loaded?.bridge).toBe('off');
+      expect(loaded?.roomId).toBeNull();
+      // Nothing else about the binding moved — it routes exactly as it did
+      // before this field existed.
+      expect(loaded?.chatId).toBe('555');
+      expect(loaded?.canInitiate).toBe(true);
+      expect(loaded?.canReply).toBe(true);
+
+      await freshStore.shutdown();
+    });
   });
 
   describe('shutdown()', () => {

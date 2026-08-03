@@ -444,58 +444,113 @@ export const SessionStrategySchema = z
 
 export type SessionStrategy = z.infer<typeof SessionStrategySchema>;
 
-export const AdapterBindingSchema = z
-  .object({
-    id: z.string().uuid(),
-    adapterId: z.string().min(1),
-    agentId: z.string().min(1),
-    chatId: z.string().optional(),
-    channelType: ChannelTypeSchema.optional(),
-    sessionStrategy: SessionStrategySchema.default('per-chat'),
-    label: z.string().default(''),
-    /**
-     * The permission mode turns from this binding run in. Defaults to
-     * `'default'` — the prompting mode — because a binding carries messages from
-     * off this machine and nobody picked a mode for it (DOR-604,
-     * ADR 260727-181825). Non-optional in the parsed shape, so there is exactly
-     * one place this value is decided; bindings that predate the field are
-     * carried forward at `'acceptEdits'` in `services/relay/safe-defaults.ts`.
-     */
-    permissionMode: PermissionModeSchema.default('default'),
-    /**
-     * When false, the binding is paused — the router skips it for both
-     * inbound delivery and agent-initiated publishes. The binding remains
-     * persisted so the user can resume it without reconfiguration.
-     *
-     * Race-condition note: pausing takes effect at the next routing decision.
-     * In-flight messages already past the router filter are not retroactively cancelled.
-     */
-    enabled: z.boolean().default(true),
-    canInitiate: z.boolean().default(false),
-    canReply: z.boolean().default(true),
-    canReceive: z.boolean().default(true),
-    /**
-     * When true, a scheduled/manual Task run that finishes on this agent sends
-     * an automatic completion message to this channel (DOR-240) — no agent
-     * cooperation, no tool call. Failures always notify; successes notify only
-     * when this is true. Defaults **true**, but `canInitiate` (default false) is
-     * the real gate: nothing reaches the user until they turn a channel's
-     * "Agent can start conversations" on, so a fresh binding never sends an
-     * unsolicited message despite this default.
-     */
-    notifyOnTaskComplete: z.boolean().default(true),
-    createdAt: z.string().datetime(),
-    updatedAt: z.string().datetime(),
-  })
-  .openapi('AdapterBinding');
+/**
+ * The reason a wildcard binding cannot carry `bridge: 'room'` (chats-as-channels
+ * spec §3.1). A binding with no `chatId` matches every chat on its adapter
+ * (`BindingStore.resolve`, `initiate-consent.ts:196-203`), so bridging one would
+ * mean one room silently receiving — and answering into — an unbounded set of
+ * platform chats. Exported so the PATCH route can raise the identical message
+ * for the merged-state case {@link AdapterBindingObjectSchema}'s refinement
+ * cannot see (a wildcard-clearing update and a bridge-flip update can land in
+ * separate PATCH calls).
+ */
+export const BRIDGE_REQUIRES_CHAT_ID_MESSAGE =
+  'A bridge cannot be attached to a wildcard binding — one room cannot honestly be the channel for an unbounded set of chats.';
+
+/**
+ * Whether a `(bridge, chatId)` pair is valid: `bridge: 'room'` requires a
+ * non-empty `chatId` (spec §3.1). Shared between
+ * {@link AdapterBindingObjectSchema}'s refinement (the create path, which
+ * always has the full object) and the PATCH route (which must check the
+ * MERGED state, since an update may set `bridge` without resending `chatId`).
+ *
+ * @param binding - The `bridge` and `chatId` fields to check together.
+ */
+export function bridgeAllowsChatId(binding: { bridge: string; chatId?: string | null }): boolean {
+  return binding.bridge !== 'room' || Boolean(binding.chatId);
+}
+
+/**
+ * The bare object shape, split out from {@link AdapterBindingSchema} so
+ * `CreateBindingRequestSchema` can still `.omit()` fields — `.omit` is a
+ * `ZodObject` method and is not carried by the `ZodEffects` wrapper `.refine()`
+ * returns, so the refinement has to be applied AFTER the omit on each derived
+ * schema rather than once here.
+ */
+const AdapterBindingObjectSchema = z.object({
+  id: z.string().uuid(),
+  adapterId: z.string().min(1),
+  agentId: z.string().min(1),
+  chatId: z.string().optional(),
+  channelType: ChannelTypeSchema.optional(),
+  sessionStrategy: SessionStrategySchema.default('per-chat'),
+  label: z.string().default(''),
+  /**
+   * The permission mode turns from this binding run in. Defaults to
+   * `'default'` — the prompting mode — because a binding carries messages from
+   * off this machine and nobody picked a mode for it (DOR-604,
+   * ADR 260727-181825). Non-optional in the parsed shape, so there is exactly
+   * one place this value is decided; bindings that predate the field are
+   * carried forward at `'acceptEdits'` in `services/relay/safe-defaults.ts`.
+   */
+  permissionMode: PermissionModeSchema.default('default'),
+  /**
+   * When false, the binding is paused — the router skips it for both
+   * inbound delivery and agent-initiated publishes. The binding remains
+   * persisted so the user can resume it without reconfiguration.
+   *
+   * Race-condition note: pausing takes effect at the next routing decision.
+   * In-flight messages already past the router filter are not retroactively cancelled.
+   */
+  enabled: z.boolean().default(true),
+  canInitiate: z.boolean().default(false),
+  canReply: z.boolean().default(true),
+  canReceive: z.boolean().default(true),
+  /**
+   * When true, a scheduled/manual Task run that finishes on this agent sends
+   * an automatic completion message to this channel (DOR-240) — no agent
+   * cooperation, no tool call. Failures always notify; successes notify only
+   * when this is true. Defaults **true**, but `canInitiate` (default false) is
+   * the real gate: nothing reaches the user until they turn a channel's
+   * "Agent can start conversations" on, so a fresh binding never sends an
+   * unsolicited message despite this default.
+   */
+  notifyOnTaskComplete: z.boolean().default(true),
+  /**
+   * The chats-as-channels feature flag, per chat (spec §3.1). Defaults `'off'`,
+   * which IS what makes the feature shippable without a global flag or a
+   * `~/.dork/config.json` migration: every binding that predates this field
+   * parses as `'off'` and routes exactly as it did before (A11.2).
+   */
+  bridge: z.enum(['off', 'room']).default('off'),
+  /**
+   * The room this binding is bridged to, set iff `bridge === 'room'`. Null
+   * rather than optional so a client clearing a bridge can say so explicitly
+   * (JSON drops `undefined`, so `null` is the only wire-safe clear — the same
+   * reasoning `UpdateBindingRequestSchema`'s doc comment gives for `chatId`).
+   */
+  roomId: z.string().nullable().default(null),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const AdapterBindingSchema = AdapterBindingObjectSchema.refine(bridgeAllowsChatId, {
+  message: BRIDGE_REQUIRES_CHAT_ID_MESSAGE,
+  path: ['chatId'],
+}).openapi('AdapterBinding');
 
 export type AdapterBinding = z.infer<typeof AdapterBindingSchema>;
 
-export const CreateBindingRequestSchema = AdapterBindingSchema.omit({
+export const CreateBindingRequestSchema = AdapterBindingObjectSchema.omit({
   id: true,
   createdAt: true,
   updatedAt: true,
-}).openapi('CreateBindingRequest');
+})
+  .refine(bridgeAllowsChatId, {
+    message: BRIDGE_REQUIRES_CHAT_ID_MESSAGE,
+    path: ['chatId'],
+  })
+  .openapi('CreateBindingRequest');
 
 export type CreateBindingRequest = z.input<typeof CreateBindingRequestSchema>;
 
@@ -518,6 +573,14 @@ export const UpdateBindingRequestSchema = z
     notifyOnTaskComplete: z.boolean().optional(),
     permissionMode: PermissionModeSchema.optional(),
     enabled: z.boolean().optional(),
+    /**
+     * See {@link AdapterBindingObjectSchema}. Not refined against `chatId`
+     * here — a PATCH body is partial, so `bridge: 'room'` may arrive without
+     * `chatId` when the binding already has one. The route checks the MERGED
+     * state with {@link bridgeAllowsChatId} instead.
+     */
+    bridge: z.enum(['off', 'room']).optional(),
+    roomId: z.string().optional().nullable(),
   })
   .openapi('UpdateBindingRequest');
 

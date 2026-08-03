@@ -5642,7 +5642,10 @@
           "agent_gone",
           "awaiting_approval",
           "halted",
-          "addressing_changed"
+          "addressing_changed",
+          "bridge_blocked",
+          "bridge_undelivered",
+          "bridge_rate_limited"
         ]
       },
       "RoomEntryReaction": {

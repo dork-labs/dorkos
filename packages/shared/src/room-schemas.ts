@@ -86,6 +86,24 @@ export type RoomEntryKind = z.infer<typeof RoomEntryKindSchema>;
  *   it once, into every channel whose members it moved from `mention-only` to
  *   `engaged` (room-participation spec §9.4). A widening nobody asked for has to
  *   say so, because absence is never consent.
+ * - `bridge_blocked` — a bridge delivery was refused by the reply/initiate
+ *   consent switch, or by a provenance misclassification after a restart
+ *   (chats-as-channels spec §6.6). Names the switch and where it lives.
+ * - `bridge_undelivered` — a bridge delivery exhausted its retry budget; the
+ *   entry is intact in the room log and eligible for the catch-up scan when
+ *   the adapter reconnects (spec §6.1, §10.1).
+ * - `bridge_rate_limited` — `ingest` refused an inbound message past the
+ *   per-chat rate ceiling; nothing was written for it (spec §5.2 step 2).
+ *
+ * **This three-code addition is the one non-additive change in the whole
+ * chats-as-channels feature (spec §11.2, A11.1).** Widening an enum is not
+ * additive for a client that already parses this schema: a build pinned to the
+ * eight codes above fails to parse ANY room that contains one of the three new
+ * ones, the moment a bridge writes its first notice — not just a room it
+ * bridges itself. That is acceptable only because the client and server ship
+ * from this same repo in lockstep; it must be called out explicitly in the
+ * OpenAPI diff review and in the feature's changelog fragment rather than
+ * passed over as "just three more enum values."
  */
 export const RoomNoticeCodeSchema = z
   .enum([
@@ -97,6 +115,9 @@ export const RoomNoticeCodeSchema = z
     'awaiting_approval',
     'halted',
     'addressing_changed',
+    'bridge_blocked',
+    'bridge_undelivered',
+    'bridge_rate_limited',
   ])
   .openapi('RoomNoticeCode');
 

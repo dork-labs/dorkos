@@ -83,6 +83,18 @@ export function runMigrations(db: ReturnType<typeof createDb>): void {
 /** The Drizzle DB instance type. Use as the parameter type for all stores. */
 export type Db = ReturnType<typeof createDb>;
 
+/**
+ * The transaction handle `Db.transaction()` hands its callback.
+ *
+ * A store method that must sometimes be atomic with a write another store
+ * makes — the bridge store's external-ref write landing in the same
+ * transaction as `RoomStore.appendEntry`, for instance — takes one of these as
+ * an optional parameter and runs its statements against it instead of `this.db`
+ * when the caller supplies one, so the caller's `db.transaction(...)` wraps
+ * both writes in one SQLite transaction rather than two.
+ */
+export type DbTransaction = Parameters<Parameters<Db['transaction']>[0]>[0];
+
 // Re-export all schema tables and inferred types
 export * from './schema/index.js';
 

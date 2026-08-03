@@ -17,6 +17,8 @@ import {
   AdapterTestRequestSchema,
   AdapterCreateRequestSchema,
   AdapterConfigUpdateSchema,
+  bridgeAllowsChatId,
+  BRIDGE_REQUIRES_CHAT_ID_MESSAGE,
 } from '@dorkos/shared/relay-schemas';
 import { AdapterError, type AdapterManager } from '../services/relay/adapter-manager.js';
 import { broadcastBindingsChanged } from '../services/relay/relay-sse-events.js';
@@ -315,6 +317,23 @@ export function createAdapterRouter(
       return res
         .status(400)
         .json({ error: 'Validation failed', details: z.flattenError(result.error) });
+    }
+
+    // `bridge: 'room'` requires a `chatId` (spec §3.1), but a PATCH body is
+    // partial — the update may set `bridge` without resending `chatId`, or
+    // clear `chatId` without touching `bridge`. Checked against the MERGED
+    // state, which `AdapterBindingSchema`'s own refinement cannot see because
+    // it only ever validates a full object.
+    const existing = bindingStore.getById(req.params.id);
+    if (existing) {
+      const mergedBridge = result.data.bridge ?? existing.bridge;
+      const mergedChatId = result.data.chatId !== undefined ? result.data.chatId : existing.chatId;
+      if (!bridgeAllowsChatId({ bridge: mergedBridge, chatId: mergedChatId })) {
+        return res.status(400).json({
+          error: 'Validation failed',
+          details: { message: BRIDGE_REQUIRES_CHAT_ID_MESSAGE },
+        });
+      }
     }
 
     // Convert null to undefined for clearing optional fields; absent fields

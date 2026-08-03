@@ -23,4 +23,5 @@ export * from './workspace.js';
 export * from './auth.js';
 export * from './connected-accounts.js';
 export * from './rooms.js';
+export * from './bridges.js';
 export * from './search.js';

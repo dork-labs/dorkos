@@ -301,6 +301,98 @@ describe('Binding CRUD roundtrip', () => {
 });
 
 // ---------------------------------------------------------------------------
+// A3.5 — bridge: 'room' requires a chatId, checked at the schema/route
+// boundary (chats-as-channels spec §3.1, DOR-865 task 1.1)
+// ---------------------------------------------------------------------------
+
+describe('Binding bridge field — wildcard bindings cannot be bridged (A3.5)', () => {
+  let app: express.Application;
+  let bindingStore: ReturnType<typeof createStatefulBindingStore>;
+
+  beforeEach(() => {
+    bindingStore = createStatefulBindingStore();
+    const adapterManager = createMockAdapterManager({
+      getBindingStore: vi.fn().mockReturnValue(bindingStore) as never,
+    });
+    app = createTestApp(adapterManager);
+  });
+
+  it('rejects POST /bindings with bridge: room and no chatId, naming the wildcard reason', async () => {
+    const res = await request(app)
+      .post('/api/relay/bindings')
+      .send({ adapterId: 'telegram-1', agentId: 'agent-1', bridge: 'room' })
+      .expect(400);
+    const messages = JSON.stringify(res.body);
+    expect(messages).toContain('one room cannot honestly be the channel');
+  });
+
+  it('accepts POST /bindings with bridge: room when chatId is present', async () => {
+    await request(app)
+      .post('/api/relay/bindings')
+      .send({ adapterId: 'telegram-1', agentId: 'agent-1', chatId: '12345', bridge: 'room' })
+      .expect(201);
+  });
+
+  it('rejects PATCH setting bridge: room on a binding with no chatId at all', async () => {
+    const createRes = await request(app)
+      .post('/api/relay/bindings')
+      .send({ adapterId: 'telegram-1', agentId: 'agent-1' })
+      .expect(201);
+    const bindingId = createRes.body.binding.id;
+
+    const res = await request(app)
+      .patch(`/api/relay/bindings/${bindingId}`)
+      .send({ bridge: 'room' })
+      .expect(400);
+    expect(JSON.stringify(res.body)).toContain('one room cannot honestly be the channel');
+
+    // The binding is untouched — a rejected PATCH must not half-apply.
+    const readRes = await request(app).get(`/api/relay/bindings/${bindingId}`).expect(200);
+    expect(readRes.body.binding.bridge).toBeUndefined();
+  });
+
+  it('rejects PATCH setting bridge: room while clearing chatId in the same request', async () => {
+    const createRes = await request(app)
+      .post('/api/relay/bindings')
+      .send({ adapterId: 'telegram-1', agentId: 'agent-1', chatId: '12345' })
+      .expect(201);
+    const bindingId = createRes.body.binding.id;
+
+    await request(app)
+      .patch(`/api/relay/bindings/${bindingId}`)
+      .send({ bridge: 'room', chatId: null })
+      .expect(400);
+  });
+
+  it('accepts PATCH bridge: room alone when the binding already has a chatId — the MERGED state, not the patch body alone', async () => {
+    const createRes = await request(app)
+      .post('/api/relay/bindings')
+      .send({ adapterId: 'telegram-1', agentId: 'agent-1', chatId: '12345' })
+      .expect(201);
+    const bindingId = createRes.body.binding.id;
+
+    const res = await request(app)
+      .patch(`/api/relay/bindings/${bindingId}`)
+      .send({ bridge: 'room' })
+      .expect(200);
+    expect(res.body.binding.bridge).toBe('room');
+  });
+
+  it('accepts PATCH bridge: off with no chatId (turning a bridge off never needs one)', async () => {
+    const createRes = await request(app)
+      .post('/api/relay/bindings')
+      .send({ adapterId: 'telegram-1', agentId: 'agent-1' })
+      .expect(201);
+    const bindingId = createRes.body.binding.id;
+
+    await request(app)
+      .patch(`/api/relay/bindings/${bindingId}`)
+      .send({ bridge: 'off' })
+      .expect(200);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Binding-change SSE freshness signal
 // ---------------------------------------------------------------------------
 
