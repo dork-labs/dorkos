@@ -12,11 +12,15 @@ export const PALETTE_FEATURES: CommandPaletteContribution[] = [
   },
   {
     id: 'relay',
-    label: 'Integrations',
+    label: 'Connections',
     icon: 'Radio',
     action: 'openRelay',
     category: 'feature',
     priority: 2,
+    // The words this surface answered to before it had one name, plus the
+    // services people actually go looking for. Searching "telegram" or "gmail"
+    // should land here whether or not anyone learned the new noun.
+    keywords: ['integrations', 'connectors', 'adapters', 'telegram', 'slack', 'webhook', 'gmail'],
   },
   {
     id: 'mesh',

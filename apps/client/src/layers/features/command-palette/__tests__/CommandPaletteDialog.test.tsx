@@ -82,7 +82,7 @@ vi.mock('@tanstack/react-router', () => ({
 const mockSetGlobalPaletteOpen = vi.fn();
 const mockSetSettingsOpen = vi.fn();
 const mockSetTasksOpen = vi.fn();
-const mockSetRelayOpen = vi.fn();
+const mockOpenConnections = vi.fn();
 const mockImportOpen = vi.fn();
 const mockSetPickerOpen = vi.fn();
 const mockSetRightPanelOpen = vi.fn();
@@ -98,7 +98,6 @@ vi.mock('@/layers/shared/model', () => ({
     const state = {
       setSettingsOpen: mockSetSettingsOpen,
       setTasksOpen: mockSetTasksOpen,
-      setRelayOpen: mockSetRelayOpen,
       setPickerOpen: mockSetPickerOpen,
       setRightPanelOpen: mockSetRightPanelOpen,
       setActiveRightPanelTab: mockSetActiveRightPanelTab,
@@ -133,15 +132,7 @@ vi.mock('@/layers/shared/model', () => ({
     setTab: () => {},
     setSection: () => {},
   }),
-  useRelayDeepLink: () => ({
-    isOpen: false,
-    activeTab: null,
-    section: null,
-    open: () => mockSetRelayOpen(true),
-    close: () => mockSetRelayOpen(false),
-    setTab: () => {},
-    setSection: () => {},
-  }),
+  useOpenConnections: () => mockOpenConnections,
   useAgentCreationStore: Object.assign(() => ({ open: vi.fn() }), {
     getState: () => ({ open: vi.fn() }),
   }),
@@ -227,7 +218,7 @@ vi.mock('../model/use-palette-items', () => ({
     allAgents: mockAgents,
     features: [
       { id: 'tasks', label: 'Tasks Scheduler', icon: 'Clock', action: 'openTasks' },
-      { id: 'relay', label: 'Integrations', icon: 'Radio', action: 'openRelay' },
+      { id: 'relay', label: 'Connections', icon: 'Radio', action: 'openRelay' },
       { id: 'mesh', label: 'Mesh Network', icon: 'Globe', action: 'openMesh' },
       { id: 'settings', label: 'Settings', icon: 'Settings', action: 'openSettings' },
     ],
@@ -255,7 +246,7 @@ vi.mock('../model/use-palette-items', () => ({
         data: a,
       })),
       { id: 'tasks', name: 'Tasks Scheduler', type: 'feature', data: {} },
-      { id: 'relay', name: 'Integrations', type: 'feature', data: {} },
+      { id: 'relay', name: 'Connections', type: 'feature', data: {} },
       { id: 'mesh', name: 'Mesh Network', type: 'feature', data: {} },
       { id: 'settings', name: 'Settings', type: 'feature', data: {} },
       { id: 'cmd-/hello', name: '/hello', type: 'command', data: {} },
@@ -331,7 +322,7 @@ describe('CommandPaletteDialog', () => {
     render(<CommandPaletteDialog />);
     expect(screen.getByText('Features')).toBeInTheDocument();
     expect(screen.getByText('Tasks Scheduler')).toBeInTheDocument();
-    expect(screen.getByText('Integrations')).toBeInTheDocument();
+    expect(screen.getByText('Connections')).toBeInTheDocument();
     expect(screen.getByText('Mesh Network')).toBeInTheDocument();
     expect(screen.getByText('Settings')).toBeInTheDocument();
   });
@@ -541,11 +532,11 @@ describe('CommandPaletteDialog', () => {
     expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);
   });
 
-  it('opens Relay dialog when Integrations is selected', () => {
+  it('goes to the Connections page when Connections is selected', () => {
     render(<CommandPaletteDialog />);
-    const item = screen.getByText('Integrations').closest('[data-slot="command-item"]');
+    const item = screen.getByText('Connections').closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
-    expect(mockSetRelayOpen).toHaveBeenCalledWith(true);
+    expect(mockOpenConnections).toHaveBeenCalledWith('messaging');
   });
 
   it('navigates to /agents when Mesh Network is selected', () => {

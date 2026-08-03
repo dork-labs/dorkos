@@ -17,6 +17,7 @@ export { useConnectorToolkits } from './model/use-connector-toolkits';
 export { useConnectorAccounts } from './model/use-connector-accounts';
 export { useConnectorRecommendation } from './model/use-connector-recommendation';
 export { useSessionConnectors } from './model/use-session-connectors';
+export { useAgentConnectors } from './model/use-agent-connectors';
 
 // --- The connect flow state machine ---
 export { useConnectFlow } from './model/use-connect-flow';
@@ -37,6 +38,7 @@ export {
   useAttachSessionConnector,
   useDetachSessionConnector,
 } from './model/use-session-connectors';
+export { useAttachAgentConnector, useDetachAgentConnector } from './model/use-agent-connectors';
 
 // --- Shared DTO types, re-exported for feature layers ---
 export type {
@@ -52,4 +54,6 @@ export type {
   SessionConnectorAccountStatus,
   SessionConnectorAttachResult,
   SessionConnectorWarning,
+  AgentConnectorAttachment,
+  AgentConnectorAttachResult,
 } from '@dorkos/shared/connector-provider';

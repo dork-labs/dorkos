@@ -56,6 +56,9 @@ import type {
   UpdateBindingRequest,
   ObservedChat,
   BindingTestResult,
+  UnclaimedChat,
+  UnclaimedChatStatus,
+  ClaimUnclaimedChatRequest,
 } from './relay-schemas.js';
 import type {
   AgentManifest,
@@ -133,6 +136,8 @@ import type {
   ConnectorToolkitsResponse,
   SessionConnectorAttachResult,
   SessionConnectorStatus,
+  AgentConnectorAttachment,
+  AgentConnectorAttachResult,
 } from './connector-provider.js';
 
 /** A single entry in the adapter list — config plus live status. */
@@ -1186,6 +1191,16 @@ export interface Transport extends RoomTransport {
   /** Update an existing binding's mutable fields. */
   updateBinding(id: string, updates: UpdateBindingRequest): Promise<AdapterBinding>;
   /**
+   * Re-point an existing binding at a different agent, keeping its id. The
+   * answer to a `CHAT_ALREADY_BOUND` rejection: one chat reaches one agent, so
+   * moving the binding that already owns the chat is the only way to change
+   * who answers it (connection-scoping spec §Part 2).
+   *
+   * @param id - The binding to re-point.
+   * @param agentId - The agent that should answer from now on.
+   */
+  moveBinding(id: string, agentId: string): Promise<AdapterBinding>;
+  /**
    * Send a synthetic test probe through a binding. The server short-circuits
    * before invoking the agent; no real messages are delivered to any platform.
    *
@@ -1702,4 +1717,69 @@ export interface Transport extends RoomTransport {
    * @param accountId - The opaque account id to detach.
    */
   detachSessionConnector(sessionId: string, accountId: string): Promise<void>;
+
+  // --- Agent-level connector attachment (connection-scoping spec §Part 1) ---
+
+  /**
+   * List the accounts an agent has standingly attached. Every session that
+   * agent starts inherits these unless the session overrides the account.
+   *
+   * @param agentId - The agent whose standing attachments to read.
+   */
+  getAgentConnectors(agentId: string): Promise<AgentConnectorAttachment[]>;
+
+  /**
+   * Attach an account to an agent for good — the standing consent point. The
+   * result re-shows the custody disclosure, exactly as the session-level
+   * attach does. Rejects for an unknown agent (400) or account (404).
+   *
+   * @param agentId - The agent gaining the standing attachment.
+   * @param accountId - The opaque account id to attach.
+   */
+  attachAgentConnector(agentId: string, accountId: string): Promise<AgentConnectorAttachResult>;
+
+  /**
+   * Remove an agent's standing attachment. Idempotent. Sessions that already
+   * resolved the account keep it until they restart.
+   *
+   * @param agentId - The agent losing the standing attachment.
+   * @param accountId - The opaque account id to detach.
+   */
+  detachAgentConnector(agentId: string, accountId: string): Promise<void>;
+
+  // --- The claim feed (connection-scoping spec §Part 3) ---
+
+  /**
+   * List chats an adapter heard from that no binding routes. Metadata only —
+   * who wrote and when, never what they wrote.
+   *
+   * @param status - Which slice to read; defaults to `pending` server-side.
+   */
+  listUnclaimedChats(status?: UnclaimedChatStatus): Promise<UnclaimedChat[]>;
+
+  /**
+   * Point an unclaimed chat at an agent, creating the binding that routes it.
+   * Goes through the same uniqueness check as any other binding create, so a
+   * chat another binding took in the meantime rejects with `CHAT_ALREADY_BOUND`.
+   *
+   * @param id - The unclaimed-chat row id.
+   * @param input - The agent to answer, plus optional binding settings.
+   */
+  claimUnclaimedChat(id: string, input: ClaimUnclaimedChatRequest): Promise<AdapterBinding>;
+
+  /**
+   * Mute an unclaimed chat: it stops surfacing, but its traffic is still
+   * counted. Idempotent.
+   *
+   * @param id - The unclaimed-chat row id.
+   */
+  ignoreUnclaimedChat(id: string): Promise<void>;
+
+  /**
+   * Block an unclaimed chat: nothing further from it is recorded at all.
+   * Idempotent.
+   *
+   * @param id - The unclaimed-chat row id.
+   */
+  blockUnclaimedChat(id: string): Promise<void>;
 }

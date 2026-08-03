@@ -2,25 +2,32 @@ import { Fragment } from 'react';
 import { Check } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 
-type WizardStep = 'configure' | 'test' | 'confirm' | 'bind';
+type WizardStep = 'agent' | 'configure' | 'test' | 'confirm';
 
-const STEPS: WizardStep[] = ['configure', 'test', 'confirm', 'bind'];
+const STEPS: WizardStep[] = ['agent', 'configure', 'test', 'confirm'];
 const STEP_LABELS: Record<WizardStep, string> = {
-  configure: 'Configure',
-  test: 'Test',
+  agent: 'Agent',
+  configure: 'Set up',
+  test: 'Check',
   confirm: 'Confirm',
-  bind: 'Bind',
 };
 
-/** Visual stepper showing completed, active, and pending wizard steps. */
+/**
+ * Visual stepper showing completed, active, and pending wizard steps.
+ *
+ * @param props - Which step is active and whether the agent step is in play.
+ * @param props.current - The step being shown.
+ * @param props.showAgentStep - False when editing: the connection already has
+ *   an agent, so the question is not re-asked.
+ */
 export function StepIndicator({
   current,
-  showBindStep,
+  showAgentStep,
 }: {
   current: WizardStep;
-  showBindStep: boolean;
+  showAgentStep: boolean;
 }) {
-  const visibleSteps = showBindStep ? STEPS : STEPS.filter((s) => s !== 'bind');
+  const visibleSteps = showAgentStep ? STEPS : STEPS.filter((s) => s !== 'agent');
   const currentIndex = visibleSteps.indexOf(current);
 
   return (

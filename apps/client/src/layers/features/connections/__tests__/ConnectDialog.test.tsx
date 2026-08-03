@@ -138,7 +138,7 @@ describe('ConnectDialog', () => {
     expect(screen.getByText(/a label tells them apart/i)).toBeInTheDocument();
   });
 
-  it('leads with the relay adapter when one exists, generic connector one step behind', async () => {
+  it('asks which of the two things a dual-nature service is being connected for', async () => {
     const transport = createMockTransport();
     vi.mocked(transport.getConnectorRecommendation).mockResolvedValue({
       recommendations: [
@@ -156,20 +156,24 @@ describe('ConnectDialog', () => {
 
     renderDialog(transport);
 
+    // Two different powers, named by what each one does — not one option and
+    // an afterthought labelled "use the other one".
     expect(
-      await screen.findByRole('button', { name: /open the gmail adapter/i })
+      await screen.findByRole('button', { name: /chat with your agents in gmail/i })
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: /use the generic connector instead/i })
+      screen.getByRole('button', { name: /let agents act on your gmail account/i })
     ).toBeInTheDocument();
-    // The gateway flow has not been started by merely opening the dialog.
+    // The account path says whose vault the sign-in lands in, at the fork.
+    expect(screen.getByText(/goes through composio/i)).toBeInTheDocument();
+    // Neither has been chosen by merely opening the dialog.
     expect(transport.startConnectorFlow).not.toHaveBeenCalled();
   });
 
   it('says honestly when nothing can connect the service yet', async () => {
     const transport = createMockTransport();
     renderDialog(transport);
-    expect(await screen.findByText(/nothing can connect gmail yet/i)).toBeInTheDocument();
+    expect(await screen.findByText(/gmail cannot be connected yet/i)).toBeInTheDocument();
   });
 
   it('keeps a mid-grant flow polling after the dialog closes, and records the account', async () => {

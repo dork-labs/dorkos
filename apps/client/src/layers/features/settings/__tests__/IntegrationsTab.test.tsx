@@ -6,7 +6,6 @@ import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { CatalogEntry, AdapterBinding } from '@dorkos/shared/relay-schemas';
-import { TOUR_ANCHORS } from '@/layers/shared/config';
 
 let mockRelayEnabled = true;
 let mockCatalogData: CatalogEntry[] = [];
@@ -188,7 +187,11 @@ describe('IntegrationsTab', () => {
     expect(screen.getByText('Bot Alpha')).toBeInTheDocument();
   });
 
-  it('stamps the relay-integrations tour anchor on the active-integrations list', () => {
+  it('shows the active-integrations list, not the empty state, when an instance exists', () => {
+    // This tab still ships this wave (its deletion is DOR-858's). The tour
+    // anchor that used to be asserted here moved onto the Connections page with
+    // DOR-857, but the branch it hung on — active list vs. empty state — is the
+    // tab's own behavior and keeps its coverage here.
     mockCatalogData = [
       makeCatalogEntry('telegram', 'Telegram', [
         {
@@ -209,7 +212,8 @@ describe('IntegrationsTab', () => {
 
     render(<IntegrationsTab />);
 
-    expect(screen.getByTestId(TOUR_ANCHORS.relayIntegrations)).toBeInTheDocument();
+    expect(screen.getByText('Bot Alpha')).toBeInTheDocument();
+    expect(screen.queryByText('No integrations configured')).not.toBeInTheDocument();
   });
 
   it('renders multiple instances from different adapter types', () => {

@@ -7,7 +7,7 @@ import { ConfigFieldGroup, ConfigFieldInput, AdapterBindingRow } from '@/layers/
 import { StepIndicator } from '@/layers/features/relay/ui/wizard/StepIndicator';
 import { TestStep } from '@/layers/features/relay/ui/wizard/TestStep';
 import { ConfirmStep } from '@/layers/features/relay/ui/wizard/ConfirmStep';
-import { BindStep } from '@/layers/features/relay/ui/wizard/BindStep';
+import { AgentStep } from '@/layers/features/relay/ui/wizard/AgentStep';
 import { SetupGuideSheet } from '@/layers/features/relay/ui/SetupGuideSheet';
 import {
   SLACK_MANIFEST,
@@ -24,7 +24,7 @@ import {
 // ---------------------------------------------------------------------------
 
 function StepIndicatorShowcase() {
-  const steps = ['configure', 'test', 'confirm', 'bind'] as const;
+  const steps = ['agent', 'configure', 'test', 'confirm'] as const;
 
   return (
     <PlaygroundSection
@@ -36,15 +36,15 @@ function StepIndicatorShowcase() {
           <ShowcaseLabel>{`current="${step}"`}</ShowcaseLabel>
           <ShowcaseDemo>
             <div className="mx-auto max-w-xs">
-              <StepIndicator current={step} showBindStep={true} />
+              <StepIndicator current={step} showAgentStep={true} />
             </div>
           </ShowcaseDemo>
         </div>
       ))}
-      <ShowcaseLabel>Without bind step (edit mode)</ShowcaseLabel>
+      <ShowcaseLabel>Without the agent step (edit mode)</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="mx-auto max-w-xs">
-          <StepIndicator current="test" showBindStep={false} />
+          <StepIndicator current="test" showAgentStep={false} />
         </div>
       </ShowcaseDemo>
     </PlaygroundSection>
@@ -208,19 +208,19 @@ function ConfirmStepShowcase() {
   );
 }
 
-function BindStepShowcase() {
+function AgentStepShowcase() {
   const [agentId, setAgentId] = React.useState('');
   const [strategy, setStrategy] = React.useState<'per-chat' | 'per-user' | 'stateless'>('per-chat');
 
   return (
     <PlaygroundSection
-      title="BindStep"
-      description="Agent binding step with three UI variants: no agents, single agent (auto-selected), and multiple agents with dropdown."
+      title="AgentStep"
+      description="Step one of the setup wizard — who answers. Three variants: no agents, one agent (chosen for you), and several agents with a picker."
     >
       <ShowcaseLabel>No agents registered</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="mx-auto max-w-sm">
-          <BindStep
+          <AgentStep
             agentOptions={[]}
             agentId=""
             onAgentIdChange={() => {}}
@@ -233,14 +233,12 @@ function BindStepShowcase() {
       <ShowcaseLabel>Single agent (auto-selected)</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="mx-auto max-w-sm">
-          <BindStep
+          <AgentStep
             agentOptions={[MOCK_AGENTS[0]!]}
             agentId={MOCK_AGENTS[0]!.id}
             onAgentIdChange={() => {}}
             strategy="per-chat"
             onStrategyChange={() => {}}
-            botUsername="dorkos-bot"
-            adapterType="slack"
           />
         </div>
       </ShowcaseDemo>
@@ -248,7 +246,7 @@ function BindStepShowcase() {
       <ShowcaseLabel>Multiple agents (interactive)</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="mx-auto max-w-sm">
-          <BindStep
+          <AgentStep
             agentOptions={MOCK_AGENTS}
             agentId={agentId}
             onAgentIdChange={setAgentId}
@@ -341,7 +339,7 @@ export function AdapterWizardShowcases() {
       <ConfigFieldInputErrorShowcase />
       <TestStepShowcase />
       <ConfirmStepShowcase />
-      <BindStepShowcase />
+      <AgentStepShowcase />
       <SetupGuideSheetShowcase />
       <AdapterBindingRowShowcase />
     </>

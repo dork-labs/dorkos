@@ -56,7 +56,7 @@ vi.mock('@/layers/features/mesh/ui/TopologyGraph', () => ({
 
 vi.mock('@/layers/shared/model', () => ({
   useIsMobile: () => false,
-  useRelayDeepLink: () => ({ open: mockOpenRelay }),
+  useOpenConnections: () => mockOpenRelay,
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
     selector({
       setRightPanelOpen: vi.fn(),

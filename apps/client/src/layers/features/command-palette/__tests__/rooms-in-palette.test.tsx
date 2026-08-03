@@ -228,7 +228,7 @@ vi.mock('@/layers/shared/model', () => ({
   ],
   useSettingsDeepLink: () => ({ open: vi.fn(), close: vi.fn() }),
   useTasksDeepLink: () => ({ open: vi.fn(), close: vi.fn() }),
-  useRelayDeepLink: () => ({ open: vi.fn(), close: vi.fn() }),
+  useOpenConnections: () => vi.fn(),
   useAgentCreationStore: Object.assign(() => ({ open: vi.fn() }), {
     getState: () => ({ open: vi.fn() }),
   }),

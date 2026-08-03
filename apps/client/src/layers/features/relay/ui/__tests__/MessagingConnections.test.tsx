@@ -124,7 +124,7 @@ vi.mock('../AdapterEventLog', () => ({ AdapterEventLog: () => null }));
 vi.mock('../CatalogCard', () => ({ CatalogCard: () => null }));
 vi.mock('../AdapterSetupWizard', () => ({ AdapterSetupWizard: () => null }));
 
-import { IntegrationsTab } from '../IntegrationsTab';
+import { MessagingConnections } from '../MessagingConnections';
 
 // --- Fixtures ---
 
@@ -165,7 +165,7 @@ function renderTab() {
   function Wrapper({ children }: { children: ReactNode }) {
     return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
   }
-  return render(<IntegrationsTab enabled />, { wrapper: Wrapper });
+  return render(<MessagingConnections enabled />, { wrapper: Wrapper });
 }
 
 beforeEach(() => {
@@ -178,7 +178,7 @@ afterEach(cleanup);
 
 // --- Tests ---
 
-describe('IntegrationsTab binding dialog', () => {
+describe('MessagingConnections binding dialog', () => {
   describe('create flow (UX1 regression)', () => {
     it('opens the dialog in create mode pre-filled with the source adapter', () => {
       renderTab();
@@ -208,7 +208,7 @@ describe('IntegrationsTab binding dialog', () => {
           canReceive: true,
         });
       });
-      expect(mockToastSuccess).toHaveBeenCalledWith('Integration connected');
+      expect(mockToastSuccess).toHaveBeenCalledWith('Connected');
       expect(mockToastError).not.toHaveBeenCalled();
       // Dialog closes after a successful create.
       await waitFor(() => {
@@ -246,7 +246,7 @@ describe('IntegrationsTab binding dialog', () => {
           },
         });
       });
-      expect(mockToastSuccess).toHaveBeenCalledWith('Integration updated');
+      expect(mockToastSuccess).toHaveBeenCalledWith('Saved');
     });
   });
 });

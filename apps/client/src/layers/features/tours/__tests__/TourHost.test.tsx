@@ -76,9 +76,15 @@ function buildHarness(initialUrl: string) {
     validateSearch: zodValidator(searchSchema),
     component: () => <TourHost />,
   });
+  const connectionsRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/connections',
+    validateSearch: zodValidator(searchSchema),
+    component: () => <TourHost />,
+  });
   const history = createMemoryHistory({ initialEntries: [initialUrl] });
   const router = createRouter({
-    routeTree: rootRoute.addChildren([indexRoute, tasksRoute]),
+    routeTree: rootRoute.addChildren([indexRoute, tasksRoute, connectionsRoute]),
     history,
   });
 
@@ -169,12 +175,12 @@ describe('TourHost', () => {
     expect(harness.actions).toEqual([]);
   });
 
-  it('deep-links a settings-tab tour to the right tab', async () => {
-    mockRunningDefinition = TOUR_DEFINITIONS.relay; // settings-tab: integrations
+  it('takes the messaging tour to the page that surface now lives on', async () => {
+    mockRunningDefinition = TOUR_DEFINITIONS.relay; // route: /connections
     const harness = await renderHost();
-    // `?settings=integrations` is what the Settings dialog reads to pick its
-    // tab — a tour that opened Appearance would be no tour at all.
-    await waitFor(() => expect(harness.readSettingsTab()).toBe('integrations'));
+    // The tour's only step is anchored inside the Messaging region, so landing
+    // anywhere else would spotlight nothing.
+    await waitFor(() => expect(harness.router.state.location.pathname).toBe('/connections'));
   });
 
   it('does not navigate for a no-deep-link tour (mesh)', async () => {

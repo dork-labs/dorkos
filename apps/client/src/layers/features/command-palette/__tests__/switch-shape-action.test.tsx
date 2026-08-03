@@ -31,7 +31,7 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
     ...actual,
     useSettingsDeepLink: () => inertDeepLink,
     useTasksDeepLink: () => inertDeepLink,
-    useRelayDeepLink: () => inertDeepLink,
+    useOpenConnections: () => vi.fn(),
     useReportIssue: () => vi.fn(),
   };
 });

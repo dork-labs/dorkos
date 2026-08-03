@@ -5,6 +5,10 @@ interface ConfirmStepProps {
   adapterId: string;
   isEditMode: boolean;
   values: Record<string, unknown>;
+  /** The bot handle the reachability check reported, when it reported one. */
+  botUsername?: string;
+  /** The agent that will answer, named — empty when editing. */
+  agentName?: string;
 }
 
 /** Masks a secret value, revealing the last 4 characters to aid verification. */
@@ -13,10 +17,26 @@ function maskSecret(value: string): string {
   return '\u2022\u2022\u2022';
 }
 
-/** Review step showing a summary of the adapter configuration before saving. */
-export function ConfirmStep({ manifest, adapterId, isEditMode, values }: ConfirmStepProps) {
+/**
+ * Review step: the settings about to be saved, and — when adding — who will
+ * answer. The agent line leads, because that is the promise being made; the
+ * settings below it are how it is kept.
+ */
+export function ConfirmStep({
+  manifest,
+  adapterId,
+  isEditMode,
+  values,
+  botUsername,
+  agentName,
+}: ConfirmStepProps) {
   return (
     <div className="space-y-3">
+      {!isEditMode && agentName && (
+        <p className="bg-accent/30 rounded-md border px-3 py-2 text-sm">
+          Messages that arrive here go to <span className="font-medium">{agentName}</span>.
+        </p>
+      )}
       {!isEditMode && (
         <div className="flex justify-between text-sm">
           <span className="text-muted-foreground">Adapter ID</span>
@@ -38,6 +58,16 @@ export function ConfirmStep({ manifest, adapterId, isEditMode, values }: Confirm
           </div>
         );
       })}
+      {botUsername && manifest.type === 'telegram' && (
+        <a
+          href={`https://t.me/${botUsername}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-primary inline-flex items-center gap-1.5 text-sm underline-offset-4 hover:underline"
+        >
+          Message @{botUsername} in Telegram
+        </a>
+      )}
     </div>
   );
 }

@@ -489,6 +489,8 @@ export type AgentConnectorAttachment = z.infer<typeof AgentConnectorAttachmentSc
 export const AgentConnectorListResponseSchema = z.object({
   accounts: z.array(AgentConnectorAttachmentSchema),
 });
+/** The agent-attachment list envelope. See {@link AgentConnectorListResponseSchema}. */
+export type AgentConnectorListResponse = z.infer<typeof AgentConnectorListResponseSchema>;
 
 /**
  * Response of `POST /api/agents/:agentId/connectors/:accountId` — the
@@ -504,3 +506,5 @@ export const AgentConnectorAttachResultSchema = z.object({
   }),
   disclosure: z.string(),
 });
+/** The standing-attach receipt. See {@link AgentConnectorAttachResultSchema}. */
+export type AgentConnectorAttachResult = z.infer<typeof AgentConnectorAttachResultSchema>;

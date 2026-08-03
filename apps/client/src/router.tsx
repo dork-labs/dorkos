@@ -49,6 +49,24 @@ const appShellRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: '_shell',
   component: AppShell,
+  /**
+   * Retire `?relay=open`.
+   *
+   * That param opened a dialog, on any route, that the Connections page has
+   * replaced. Links to it are in bookmarks, tours and old release notes, so
+   * rather than breaking them it lands on the half of the page that took the
+   * dialog's job. Handled on the shell route because the param was never
+   * route-specific.
+   */
+  beforeLoad: ({ search }) => {
+    const { relay, ...rest } = search as { relay?: string } & Record<string, unknown>;
+    if (!relay) return;
+    throw redirect({
+      to: '/connections',
+      search: { ...rest, region: 'messaging' },
+      replace: true,
+    });
+  },
 });
 
 // ── Search param schemas ────────────────────────────────────
@@ -279,12 +297,18 @@ const workspacesRoute = createRoute({
 });
 
 // ── Connections at /connections ──────────────────────────────
-// Dialog params merged so the connect flow's relay-adapter recommendation can
-// deep-link the relay dialog (`?relay=open`) without leaving the page.
+/**
+ * Which half of the page to scroll to. Not a tab: both regions are always
+ * rendered, and this only says where to start.
+ */
+const connectionsSearchSchema = mergeDialogSearch(
+  z.object({ region: z.enum(['messaging', 'accounts']).optional() })
+);
+
 const connectionsRoute = createRoute({
   getParentRoute: () => appShellRoute,
   path: '/connections',
-  validateSearch: zodValidator(mergeDialogSearch(z.object({}))),
+  validateSearch: zodValidator(connectionsSearchSchema),
   component: ConnectionsPage,
 });
 

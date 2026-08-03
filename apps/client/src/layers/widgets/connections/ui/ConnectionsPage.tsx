@@ -1,48 +1,47 @@
-import { AccountsList, ProviderSetup, ServiceGrid } from '@/layers/features/connections';
+import { useEffect, useRef } from 'react';
+import { useSearch } from '@tanstack/react-router';
+import { MessagingRegion } from './MessagingRegion';
+import { AccountsRegion } from './AccountsRegion';
 
 /**
- * The /connections page — connect Gmail, Slack, and other services once, then
- * attach them to sessions so agents can act for you.
+ * The /connections page: everything outside DorkOS, in one place.
  *
- * Service-first by design: the grid of services leads, the connected accounts
- * follow, and the vendor-named provider setup sits last — the only place a
- * provider name leads (connector-completion spec §UX).
+ * Two regions, one scroll. Deliberately not tabs — the two halves ask for two
+ * different kinds of trust (who may reach your agents, versus what your agents
+ * may do as you), and a tab would hide one of those answers behind a click.
+ * Scrolling past both is how a person learns the page has two halves at all.
+ *
+ * `?region=messaging` or `?region=accounts` scrolls to one of them, which is
+ * where every retired deep link into the old messaging dialog now lands.
  */
 export function ConnectionsPage() {
+  const { region } = useSearch({ from: '/_shell/connections' });
+  const messagingRef = useRef<HTMLDivElement>(null);
+  const accountsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!region) return;
+    const target = region === 'accounts' ? accountsRef.current : messagingRef.current;
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [region]);
+
   return (
     <div className="container-default mx-auto px-4 py-6">
-      <header className="mb-6">
+      <header className="mb-8">
         <h1 className="text-xl font-semibold">Connections</h1>
-        <p className="text-muted-foreground mt-1 text-sm">
-          Link your accounts once, then attach them to sessions so your agents can act for you.
+        <p className="text-muted-foreground mt-1 max-w-prose text-sm">
+          Everything outside DorkOS: the ways people reach your agents, and the accounts your agents
+          can act on for you.
         </p>
       </header>
 
-      <div className="flex flex-col gap-8">
-        <section aria-labelledby="connections-services">
-          <h2 id="connections-services" className="mb-3 text-sm font-semibold">
-            Services
-          </h2>
-          <ServiceGrid />
-        </section>
-
-        <section aria-labelledby="connections-accounts">
-          <h2 id="connections-accounts" className="mb-3 text-sm font-semibold">
-            Connected accounts
-          </h2>
-          <AccountsList />
-        </section>
-
-        <section aria-labelledby="connections-providers">
-          <h2 id="connections-providers" className="mb-1 text-sm font-semibold">
-            Providers
-          </h2>
-          <p className="text-muted-foreground mb-3 text-sm">
-            A provider is the backend that carries your connections. Add its key here; every service
-            above runs through it.
-          </p>
-          <ProviderSetup />
-        </section>
+      <div className="flex flex-col gap-12">
+        <div ref={messagingRef} className="scroll-mt-6">
+          <MessagingRegion />
+        </div>
+        <div ref={accountsRef} className="scroll-mt-6">
+          <AccountsRegion />
+        </div>
       </div>
     </div>
   );

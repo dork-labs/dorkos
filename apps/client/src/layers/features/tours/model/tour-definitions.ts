@@ -12,10 +12,7 @@ export type TourOccasion = 'tasks' | 'relay' | 'mesh';
  * engine ({@link TourHost}) executes it with the router / app store, so the
  * definitions stay side-effect free.
  */
-export type TourDeepLink =
-  | { kind: 'route'; to: string }
-  | { kind: 'settings-tab'; tab: string }
-  | { kind: 'none' };
+export type TourDeepLink = { kind: 'route'; to: string } | { kind: 'none' };
 
 /** A tour as data: its steps, where it opens, and (for occasions) its offer. */
 export interface TourDefinition {
@@ -75,7 +72,7 @@ export const TOUR_DEFINITIONS: Record<TourId, TourDefinition> = {
     id: 'relay',
     occasion: 'relay',
     offerLine: DORKBOT_TOUR_LINES.offers.relay,
-    deepLink: { kind: 'settings-tab', tab: 'integrations' },
+    deepLink: { kind: 'route', to: '/connections' },
     steps: [
       {
         anchor: TOUR_ANCHORS.relayIntegrations,

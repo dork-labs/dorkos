@@ -12,6 +12,11 @@
       "reason": "Connectors entity layer backing the Connections page (OAuth connect flow, ConnectDialog copy)."
     },
     {
+      "path": "apps/client/src/layers/features/relay/ui/MessagingConnections.tsx",
+      "terms": ["connection"],
+      "reason": "The Messaging region of the /connections page (DOR-857). \"Remove this connection?\" names the entity a person is deleting — one Telegram bot or Slack app they set up — which is exactly what Connections means. Not the network-health sense DOR-855 retires: whether that connection is currently reachable is reported separately (\"Reachable\" / \"Not reachable\", per TestStep)."
+    },
+    {
       "path": "apps/client/src/layers/features/relay/ui/RelayHealthBar.tsx",
       "terms": ["connection"],
       "reason": "computeHealthState()'s \"N connection(s) active/disconnected\" and \"No connections configured\" count configured relay adapters (Telegram, Slack, webhook instances) — each adapter IS a Connection entity on the /connections page. This is the entity noun, not a network-health reading of whether a link is up; the adapter's own reachability is reported separately (\"Reachable\"/\"Not reachable\", per TestStep)."

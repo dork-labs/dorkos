@@ -7,7 +7,7 @@ import {
   useImportProjectsStore,
   useSettingsDeepLink,
   useTasksDeepLink,
-  useRelayDeepLink,
+  useOpenConnections,
   useReportIssue,
 } from '@/layers/shared/model';
 import { openLink } from '@/layers/shared/lib';
@@ -55,7 +55,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
   // signal, so either path opens the dialog.
   const { open: openSettings } = useSettingsDeepLink();
   const { open: openTasks } = useTasksDeepLink();
-  const { open: openRelay } = useRelayDeepLink();
+  const openConnections = useOpenConnections();
 
   // Store setters for commands without a URL deep-link equivalent. Picker
   // and canvas are plain store flags; we call them directly rather than
@@ -104,7 +104,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
           openTasks();
           return;
         case 'openRelay':
-          openRelay();
+          openConnections('messaging');
           return;
         case 'openMesh':
           navigate({ to: '/agents' });
@@ -129,7 +129,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
       closePalette,
       navigate,
       openTasks,
-      openRelay,
+      openConnections,
       openSettings,
       setPickerOpen,
       setActiveRightPanelTab,
@@ -176,7 +176,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
           openTasks();
           return;
         case 'openRelay':
-          openRelay();
+          openConnections('messaging');
           return;
         case 'openMesh':
           navigate({ to: '/agents' });
@@ -200,7 +200,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
       setCanvasOpen,
       setPickerOpen,
       openTasks,
-      openRelay,
+      openConnections,
       openSettings,
       reportIssue,
     ]
