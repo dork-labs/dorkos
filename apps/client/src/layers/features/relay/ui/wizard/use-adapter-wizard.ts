@@ -203,11 +203,21 @@ export function useAdapterWizard({
    * success, which narrates a deletion the person never asked for on top of the
    * failure they need to read. The coarse `['relay']` invalidation covers the
    * catalog and adapter lists without reaching into the entity's key internals.
+   *
+   * Returns whether the undo actually happened. The whole atomicity promise is
+   * that a save either lands both halves or leaves nothing behind — but the
+   * undo is itself a network call that can fail, and when it does the adapter
+   * survives with no binding, which is the exact silent-shadow state this
+   * feature exists to prevent. The caller must know, so it can stop claiming
+   * "nothing was set up" and tell the person what is actually still there.
    */
   const rollbackAdapter = useCallback(
-    async (id: string) => {
+    async (id: string): Promise<boolean> => {
       try {
         await transport.removeRelayAdapter(id);
+        return true;
+      } catch {
+        return false;
       } finally {
         void queryClient.invalidateQueries({ queryKey: ['relay'] });
       }
@@ -259,10 +269,22 @@ export function useAdapterWizard({
                 onOpenChange(false);
               },
               onError: (error) => {
-                void rollbackAdapter(adapterId);
                 setStep('agent');
-                toast.error('Nothing was set up', {
-                  description: `${manifest.displayName} could not be pointed at an agent, so it was not saved. ${error.message}`,
+                // The undo is a network call of its own. Wait for it before
+                // choosing what to tell the person: "nothing was set up" is
+                // only true if the undo succeeded, and a rejected undo leaves
+                // an agent-less connection live on the server that they now
+                // have to remove by hand.
+                void rollbackAdapter(adapterId).then((undone) => {
+                  if (undone) {
+                    toast.error('Nothing was set up', {
+                      description: `${manifest.displayName} could not be pointed at an agent, so it was not saved. ${error.message}`,
+                    });
+                  } else {
+                    toast.error("Couldn't finish undoing", {
+                      description: `${manifest.displayName} was added but has no agent to answer it, and it could not be removed automatically. Remove it from Messaging by hand. ${error.message}`,
+                    });
+                  }
                 });
               },
             }

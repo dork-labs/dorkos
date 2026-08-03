@@ -18,6 +18,17 @@ vi.mock('motion/react', () => ({
   AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
+// Toasts are the wizard's only channel for a save's outcome, so the rollback
+// tests below read what it said rather than what happened to the DOM.
+const toastError = vi.fn();
+const toastSuccess = vi.fn();
+vi.mock('sonner', () => ({
+  toast: {
+    error: (...args: unknown[]) => toastError(...args),
+    success: (...args: unknown[]) => toastSuccess(...args),
+  },
+}));
+
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
@@ -812,6 +823,69 @@ describe('AdapterSetupWizard', () => {
     await waitFor(() => {
       expect(mockTransport.removeRelayAdapter).toHaveBeenCalledWith('slack');
     });
+    await waitFor(() => {
+      expect(toastError).toHaveBeenCalledWith('Nothing was set up', expect.anything());
+    });
+  });
+
+  it('tells the truth when the undo itself fails, leaving an agent-less connection', async () => {
+    // The double failure the atomicity promise cannot keep on its own: the
+    // binding POST fails AND the rollback DELETE fails too. The adapter is now
+    // live on the server with no agent to answer it — the exact silent-shadow
+    // state this feature exists to prevent — so the toast must stop claiming
+    // "nothing was set up" and say what is actually still there.
+    const rejection = vi.fn();
+    const onUnhandled = (e: PromiseRejectionEvent) => {
+      e.preventDefault();
+      rejection(e.reason);
+    };
+    window.addEventListener('unhandledrejection', onUnhandled);
+    try {
+      const { Wrapper, mockTransport } = createWrapper({
+        agents: [{ id: 'agent-1', name: 'My Agent' }],
+      });
+      mockTransport.testRelayAdapterConnection = vi.fn().mockResolvedValue({ ok: true });
+      mockTransport.addRelayAdapter = vi.fn().mockResolvedValue({ ok: true });
+      mockTransport.createBinding = vi.fn().mockRejectedValue(new Error('binding refused'));
+      mockTransport.removeRelayAdapter = vi.fn().mockRejectedValue(new Error('delete refused'));
+
+      render(<AdapterSetupWizard open={true} onOpenChange={vi.fn()} manifest={baseManifest} />, {
+        wrapper: Wrapper,
+      });
+      await advanceToConfigure();
+
+      fireEvent.change(screen.getByLabelText(/api token/i), { target: { value: 'my-token' } });
+      fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+      await waitFor(() => {
+        expect(screen.getByText(/reachable/i)).toBeInTheDocument();
+      });
+      fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /^connect$/i })).toBeInTheDocument();
+      });
+      fireEvent.click(screen.getByRole('button', { name: /^connect$/i }));
+
+      await waitFor(() => {
+        expect(mockTransport.removeRelayAdapter).toHaveBeenCalledWith('slack');
+      });
+      // The honest toast: not "nothing was set up", but "remove it by hand".
+      await waitFor(() => {
+        expect(toastError).toHaveBeenCalledWith(
+          "Couldn't finish undoing",
+          expect.objectContaining({
+            description: expect.stringMatching(/has no agent to answer it.*by hand/i),
+          })
+        );
+      });
+      expect(toastError).not.toHaveBeenCalledWith('Nothing was set up', expect.anything());
+
+      // The failing rollback must not surface as an unhandled promise rejection.
+      await new Promise((r) => setTimeout(r, 0));
+      expect(rejection).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('unhandledrejection', onUnhandled);
+    }
   });
 
   it('offers the bot link on the confirm step, once the check reports a handle', async () => {
