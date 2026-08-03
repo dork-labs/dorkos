@@ -135,6 +135,25 @@ describe('resolveDeepLinkTarget', () => {
     });
   });
 
+  // A plain `legacyMap[raw]` index also returns inherited Object.prototype
+  // members for ids like `constructor`, `toString`, `hasOwnProperty` — those
+  // would resolve to a function typed as SettingsDeepLinkTarget instead of
+  // falling through to the plain-tab case. Object.hasOwn is the guard.
+  it('does not resolve prototype-inherited keys as legacy map entries', () => {
+    expect(resolveDeepLinkTarget('constructor', tabOnlyMap)).toEqual({
+      kind: 'tab',
+      tab: 'constructor',
+    });
+    expect(resolveDeepLinkTarget('toString', tabOnlyMap)).toEqual({
+      kind: 'tab',
+      tab: 'toString',
+    });
+    expect(resolveDeepLinkTarget('hasOwnProperty', tabOnlyMap)).toEqual({
+      kind: 'tab',
+      tab: 'hasOwnProperty',
+    });
+  });
+
   it('resolves a legacy id mapped to a route target unchanged', () => {
     const routeTarget: SettingsRouteTarget = {
       kind: 'route',

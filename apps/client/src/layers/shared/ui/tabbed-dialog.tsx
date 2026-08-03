@@ -73,7 +73,7 @@ export interface TabbedDialogProps<T extends string> {
  * with mobile drill-in, animated active-tab pill, extension-slot support, and
  * deep-link sync via `useDialogTabState`.
  *
- * Used by SettingsDialog and AgentDialog. Built on top of `NavigationLayout`.
+ * Used by `SettingsDialog`. Built on top of `NavigationLayout`.
  *
  * Keyboard navigation is provided by `NavigationLayout`'s built-in `role="tablist"`
  * with arrow keys (Up/Down/Home/End) when a sidebar item is focused.
@@ -113,7 +113,8 @@ export function TabbedDialog<T extends string>({
     if (import.meta.env.DEV && initialTab && !targetTab) {
       console.warn(
         `[TabbedDialog] Unknown deep-link tab id "${initialTab}" — falling back to "${defaultTab}". ` +
-          'Likely a stale bookmark, a typo in a shared link, or a tab that was renamed or removed.'
+          'Likely a stale bookmark, a typo in a shared link, a tab that was renamed or removed, ' +
+          'or an extension tab that has not finished loading.'
       );
     }
   }, [initialTab, targetTab, defaultTab]);

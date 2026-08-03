@@ -2,6 +2,7 @@ import Fuse, { type IFuseOptions, type FuseResultMatch } from 'fuse.js';
 import { useMemo } from 'react';
 import type { RoomSummary } from '@/layers/entities/room';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
+import type { FeatureItem, CommandItemData, QuickActionItem } from './use-palette-items';
 
 export interface SearchableItem {
   id: string;
@@ -20,26 +21,6 @@ export interface SearchableItem {
 export interface SearchResult {
   item: SearchableItem;
   matches: readonly FuseResultMatch[] | undefined;
-}
-
-interface FeatureItem {
-  id: string;
-  label: string;
-  icon: string;
-  shortcut?: string;
-  action: string;
-}
-
-interface CommandItemData {
-  name: string;
-  description?: string;
-}
-
-interface QuickActionItem {
-  id: string;
-  label: string;
-  icon: string;
-  action: string;
 }
 
 const FUSE_OPTIONS: IFuseOptions<SearchableItem> = {

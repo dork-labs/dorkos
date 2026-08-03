@@ -7,6 +7,6 @@ covers:
 
 ### Changed
 
-- Laid the groundwork so old `?settings=` links keep working the next time Settings gets
-  reorganized — a link can now point at a page instead of only a settings tab. Nothing
-  changes yet: this just makes future moves safe (DOR-854)
+- Old settings links will keep working while Settings gets reorganized in an upcoming
+  release — this change is groundwork only, so nothing looks or behaves differently yet
+  (DOR-854)

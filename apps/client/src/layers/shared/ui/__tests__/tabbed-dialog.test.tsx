@@ -345,6 +345,10 @@ describe('TabbedDialog', () => {
     renderDialog({ initialTab: 'nope' as TabId, defaultTab: 'beta' });
 
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('"nope"'));
+    // The warning is a console-only signal — nothing renders for the user
+    // (no toast, no alert region, no visible error banner).
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
     warnSpy.mockRestore();
   });
 
@@ -364,6 +368,23 @@ describe('TabbedDialog', () => {
 
     expect(warnSpy).not.toHaveBeenCalled();
     warnSpy.mockRestore();
+  });
+
+  // The warning is gated on import.meta.env.DEV so it never fires in a
+  // production build — pinned directly since nothing else in this suite
+  // exercises the prod branch (repo pattern: route-error-fallback.test.tsx).
+  it('does not warn in a production build even when initialTab is unknown', () => {
+    const originalDev = import.meta.env.DEV;
+    import.meta.env.DEV = false;
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      renderDialog({ initialTab: 'nope' as TabId, defaultTab: 'beta' });
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      import.meta.env.DEV = originalDev;
+      warnSpy.mockRestore();
+    }
   });
 
   it('treats an extension-contributed tab as a valid initialTab', () => {

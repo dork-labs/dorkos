@@ -64,11 +64,16 @@ export function resolveDeepLinkTarget(
   legacyMap: Record<string, SettingsTab | SettingsRouteTarget>
 ): SettingsDeepLinkTarget | null {
   if (!raw || raw === 'open') return null;
-  const legacy = legacyMap[raw];
-  if (legacy !== undefined) {
+  // `legacyMap[raw]` alone would also return inherited prototype members —
+  // `resolveDeepLinkTarget('constructor', map)` resolves `Object.prototype.constructor`,
+  // typed as SettingsDeepLinkTarget but actually a function. Object.hasOwn keeps
+  // this to the map's own entries; an id that merely shadows a prototype key
+  // (`toString`, `hasOwnProperty`, …) still falls through to the plain-tab case.
+  if (Object.hasOwn(legacyMap, raw)) {
+    const legacy = legacyMap[raw];
     return typeof legacy === 'string' ? { kind: 'tab', tab: legacy } : legacy;
   }
-  return { kind: 'tab', tab: raw as SettingsTab };
+  return { kind: 'tab', tab: raw };
 }
 
 /** Resolve a raw `?settings=` value against the production legacy map. */
@@ -119,7 +124,8 @@ export function useSettingsDeepLink(): DialogDeepLink<SettingsTab> {
   const isOpen = navigate ? !!search.settings : storeOpen;
   // Route targets are not wired up anywhere yet (no legacy entry maps to one),
   // so this hook only ever surfaces the tab case — `activeTab` stays exactly
-  // what `resolveSettingsTab` returned pre-DOR-854 for every id in use today.
+  // what the former `resolveSettingsTab` (pre-DOR-854) returned for every id
+  // in use today.
   const resolved = navigate ? resolveSettingsDeepLink(search.settings) : null;
   const activeTab = resolved?.kind === 'tab' ? resolved.tab : null;
   const section = navigate ? (search.settingsSection ?? null) : null;
