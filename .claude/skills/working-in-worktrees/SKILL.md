@@ -113,10 +113,16 @@ The `/flow` intent stages — `/flow:ideate`, `/flow:specify`, `/flow:decompose`
 
 7. **Exit** with **ExitWorktree** (`keep` to leave it on disk, `remove` to delete) before cleanup, or `cd` back to the main checkout.
 
-8. **Clean up after merge** — the `/flow:done` stage (`closing-work`) offers this; `/flow:execute` records the worktree in `04-implementation.md`:
+8. **Clean up after merge** — for the one worktree you know about, `/worktree:remove <branch> --delete-branch`. But the merge usually lands after your session is over (auto-merge and the merge queue both run on their own clock), so the more reliable habit is to sweep at the **start** of a session rather than the end of one:
+
    ```
-   /worktree:remove <branch> --delete-branch
+   /worktree:prune          # what would go, and why
+   /worktree:prune --fix    # remove it
    ```
+
+   That collects everything that merged while you were away, not just the branch you happen to be thinking about. It refuses anything it cannot prove is safe — uncommitted, unpushed, still open, or unaskable — and names the reason for each. `/flow:done` (`closing-work`) also offers cleanup for a worktree recorded in `04-implementation.md`, but only when a session is alive to accept the offer, which is exactly the case that keeps not happening.
+
+   **Do not skip this because the worktree is "just" a review checkout.** Review checkouts were 47 of the 107 worktrees the 2026-08-01 sweep removed — the largest single category — at ~3.5 GB each (`research/20260801_worktree-and-branch-sweep.md`).
 
 ## Landing Work from a Shared or Diverged Checkout
 

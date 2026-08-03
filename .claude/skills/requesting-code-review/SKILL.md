@@ -65,6 +65,35 @@ Use the Agent tool with `subagent_type: "code-reviewer"`. Supply the following c
 - **Minor** — Note for later. Code style, optimization opportunities.
 - **Push back** if the reviewer is wrong — provide technical reasoning, show code or tests that prove correctness.
 
+### 4. Clean up the review workspace
+
+If you checked the branch out somewhere to review it — a worktree, a scratch
+branch like `rv712` or `review-549`, a detached checkout of the PR head — delete
+it once you have reported. Review checkouts are disposable by construction: they
+duplicate a branch that already lives on origin, so nothing is lost.
+
+```bash
+/worktree:prune          # what would go, and why
+/worktree:prune --fix    # remove it
+```
+
+Do it in the same turn you report the review. This is the step whose absence
+produced the mess: on 2026-08-01 the repo held 116 worktrees at ~3.5 GB each, and
+**47 of the 107 removed were review checkouts** — the largest single category,
+from the one workflow that never said to clean up after itself
+(`research/20260801_worktree-and-branch-sweep.md`). Nothing else in the repo
+will collect them for you, because a review leaves no PR and no ticket behind for
+`/flow:done` to notice.
+
+**Run it from the main checkout, not from inside the review worktree.** A
+worktree you are standing in reports `current-worktree` and is deliberately never
+removed, so running the sweep from inside the thing you are trying to delete
+silently does nothing.
+
+The janitor refuses anything it cannot prove is safe, so run it rather than
+deleting by hand — in particular it will not touch a checkout you left
+uncommitted work in, including files that only `git status --ignored` can see.
+
 ## Example
 
 ```
