@@ -1,8 +1,12 @@
 ---
 covers:
-  - 'feat(server): agents keep their connected accounts across a restart (DOR-856)'
-  - 'fix(server): a chat can no longer reach two different agents at once (DOR-856)'
-  - "feat(server): a stranger's first message to your bot is now a card you can act on (DOR-856)"
+  - 'docs(spec): connection-scoping backend spec — attachment ladder, one-chat-one-agent, claim feed (DOR-856)'
+  - 'feat(db): add connector-attachment and unclaimed-chat tables (migration 0048, DOR-856)'
+  - 'feat(server): persisted agent-level connector attachment with a session-override ladder (DOR-856)'
+  - 'feat(server): enforce one chat, one agent — binding uniqueness, move, and an enabled-filter fix (DOR-856)'
+  - 'feat(server): a durable claim feed for unbound inbound chats (DOR-856)'
+  - 'docs(server): register the new connector/binding/claim-feed endpoints in OpenAPI (DOR-856)'
+  - 'docs(spec): mark connection-scoping implemented (DOR-856)'
 ---
 
 ### Added
@@ -20,7 +24,8 @@ covers:
 ### Fixed
 
 - Two people could end up messaging the same Telegram or Slack chat and
-  quietly land on two different agents, with no warning either had happened.
-  Connecting a chat to an agent is now exclusive — trying to connect an
-  already-connected chat tells you which agent has it, instead of silently
-  losing the older connection.
+  quietly land on two different agents, with no warning either had happened —
+  whoever connected the chat SECOND had no idea their connection was silently
+  going nowhere. Connecting a chat to an agent is now exclusive — trying to
+  connect an already-connected chat tells you which agent already has it,
+  instead of quietly losing the newer connection with no error.

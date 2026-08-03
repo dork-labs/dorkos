@@ -284,9 +284,10 @@ id            TEXT PRIMARY KEY (uuid)
 adapter_id    TEXT NOT NULL
 chat_id       TEXT NOT NULL
 channel_type  TEXT             -- nullable, as observed
-chat_kind     TEXT NOT NULL    -- 'dm' | 'group' — from platformData.chatType when present, else 'dm'
-sender_name   TEXT             -- display name only, nullable
+chat_kind     TEXT NOT NULL    -- 'dm' | 'group' — from the relay SUBJECT's channel segment, not the payload
+sender_name   TEXT             -- display name only, nullable, truncated to 200 chars
 sender_id     TEXT             -- platform user id, nullable
+chat_title    TEXT             -- group/channel display title (payload.channelName), nullable, truncated to 200 chars
 status        TEXT NOT NULL    -- 'pending' | 'claimed' | 'ignored' | 'blocked'
 message_count INTEGER NOT NULL DEFAULT 1   -- damping counter
 first_seen_at TEXT NOT NULL
@@ -295,6 +296,13 @@ decided_at    TEXT             -- claim/ignore/block timestamp
 decided_agent_id TEXT          -- set on claim
 UNIQUE (adapter_id, chat_id)
 ```
+
+Pending rows are capped at 200, oldest-`first_seen_at`-evicted, since a
+publicly-discoverable bot means this table is reachable by a stranger
+(adversarial review MAJOR 4). `relay_chat_unclaimed` broadcasts are
+separately rate-limited (20/minute) across DIFFERENT chats — per-chat damping
+above only bounds repeats of the SAME chat — with a `relay_chat_unclaimed_burst`
+summary event firing once per window when the cap is hit.
 
 **No message body field exists in this table, and no code path reads
 `envelope.payload`'s text/body into it — only `platformData`'s identity

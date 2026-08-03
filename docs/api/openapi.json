@@ -5072,13 +5072,21 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "maxLength": 200
           },
           "senderId": {
             "type": [
               "string",
               "null"
             ]
+          },
+          "chatTitle": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200
           },
           "status": {
             "$ref": "#/components/schemas/UnclaimedChatStatus"
@@ -5117,6 +5125,7 @@
           "chatKind",
           "senderName",
           "senderId",
+          "chatTitle",
           "status",
           "messageCount",
           "firstSeenAt",
