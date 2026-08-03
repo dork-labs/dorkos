@@ -76,6 +76,14 @@ export interface CommandPaletteContribution extends BaseContribution {
   action: string;
   shortcut?: string;
   category: 'feature' | 'quick-action';
+  /**
+   * Extra search terms this entry should match beyond its `label` — aliases,
+   * synonyms, or the names of things it subsumes (e.g. an "Integrations"
+   * entry matching "connectors", "telegram", "slack"). Fed straight into the
+   * palette's fuzzy search alongside the label; omit for entries the label
+   * already covers.
+   */
+  keywords?: string[];
 }
 
 export interface DialogContribution extends BaseContribution {

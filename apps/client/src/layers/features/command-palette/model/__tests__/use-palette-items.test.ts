@@ -6,6 +6,7 @@ import { renderHook } from '@testing-library/react';
 import { usePaletteItems } from '../use-palette-items';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
+import type { CommandPaletteContribution } from '@/layers/shared/model';
 
 // --- Mock entity hooks ---
 
@@ -16,6 +17,91 @@ const mockUseSessions = vi.fn();
 const mockUseActiveRunCount = vi.fn();
 const mockUseRooms = vi.fn();
 const mockUseAppStore = vi.fn();
+
+const DEFAULT_PALETTE_CONTRIBUTIONS: CommandPaletteContribution[] = [
+  {
+    id: 'tasks',
+    label: 'Tasks Scheduler',
+    icon: 'Clock',
+    action: 'openTasks',
+    category: 'feature',
+    priority: 1,
+  },
+  {
+    id: 'relay',
+    label: 'Integrations',
+    icon: 'Radio',
+    action: 'openRelay',
+    category: 'feature',
+    priority: 2,
+  },
+  {
+    id: 'mesh',
+    label: 'Mesh Network',
+    icon: 'Globe',
+    action: 'openMesh',
+    category: 'feature',
+    priority: 3,
+  },
+  {
+    id: 'settings',
+    label: 'Settings',
+    icon: 'Settings',
+    action: 'openSettings',
+    category: 'feature',
+    priority: 4,
+  },
+  {
+    id: 'dashboard',
+    label: 'Go to Dashboard',
+    icon: 'Home',
+    action: 'navigateDashboard',
+    category: 'quick-action',
+    priority: 1,
+  },
+  {
+    id: 'new-session',
+    label: 'New Session',
+    icon: 'Plus',
+    action: 'newSession',
+    category: 'quick-action',
+    priority: 2,
+  },
+  {
+    id: 'create-agent',
+    label: 'Create Agent',
+    icon: 'Plus',
+    action: 'createAgent',
+    category: 'quick-action',
+    priority: 3,
+  },
+  {
+    id: 'discover',
+    label: 'Bring in existing projects',
+    icon: 'Search',
+    action: 'discoverAgents',
+    category: 'quick-action',
+    priority: 4,
+  },
+  {
+    id: 'browse',
+    label: 'Browse Filesystem',
+    icon: 'FolderOpen',
+    action: 'browseFilesystem',
+    category: 'quick-action',
+    priority: 5,
+  },
+  {
+    id: 'theme',
+    label: 'Toggle Theme',
+    icon: 'Moon',
+    action: 'toggleTheme',
+    category: 'quick-action',
+    priority: 6,
+  },
+];
+
+const mockUseSlotContributions = vi.fn(() => DEFAULT_PALETTE_CONTRIBUTIONS);
 
 vi.mock('@/layers/entities/mesh', () => ({
   useMeshAgentPaths: () => mockUseMeshAgentPaths(),
@@ -49,88 +135,7 @@ vi.mock('@/layers/shared/model', () => ({
     return selector ? selector(state) : state;
   },
   useNow: () => Date.now(),
-  useSlotContributions: () => [
-    {
-      id: 'tasks',
-      label: 'Tasks Scheduler',
-      icon: 'Clock',
-      action: 'openTasks',
-      category: 'feature',
-      priority: 1,
-    },
-    {
-      id: 'relay',
-      label: 'Integrations',
-      icon: 'Radio',
-      action: 'openRelay',
-      category: 'feature',
-      priority: 2,
-    },
-    {
-      id: 'mesh',
-      label: 'Mesh Network',
-      icon: 'Globe',
-      action: 'openMesh',
-      category: 'feature',
-      priority: 3,
-    },
-    {
-      id: 'settings',
-      label: 'Settings',
-      icon: 'Settings',
-      action: 'openSettings',
-      category: 'feature',
-      priority: 4,
-    },
-    {
-      id: 'dashboard',
-      label: 'Go to Dashboard',
-      icon: 'Home',
-      action: 'navigateDashboard',
-      category: 'quick-action',
-      priority: 1,
-    },
-    {
-      id: 'new-session',
-      label: 'New Session',
-      icon: 'Plus',
-      action: 'newSession',
-      category: 'quick-action',
-      priority: 2,
-    },
-    {
-      id: 'create-agent',
-      label: 'Create Agent',
-      icon: 'Plus',
-      action: 'createAgent',
-      category: 'quick-action',
-      priority: 3,
-    },
-    {
-      id: 'discover',
-      label: 'Bring in existing projects',
-      icon: 'Search',
-      action: 'discoverAgents',
-      category: 'quick-action',
-      priority: 4,
-    },
-    {
-      id: 'browse',
-      label: 'Browse Filesystem',
-      icon: 'FolderOpen',
-      action: 'browseFilesystem',
-      category: 'quick-action',
-      priority: 5,
-    },
-    {
-      id: 'theme',
-      label: 'Toggle Theme',
-      icon: 'Moon',
-      action: 'toggleTheme',
-      category: 'quick-action',
-      priority: 6,
-    },
-  ],
+  useSlotContributions: () => mockUseSlotContributions(),
 }));
 
 vi.mock('../use-agent-frecency', () => ({
@@ -224,6 +229,7 @@ describe('usePaletteItems', () => {
     mockUseActiveRunCount.mockReturnValue({ data: undefined });
     mockUseAppStore.mockReturnValue({ previousCwd: null });
     mockUseRooms.mockReturnValue({ data: [], isLoading: false, isError: false });
+    mockUseSlotContributions.mockReturnValue(DEFAULT_PALETTE_CONTRIBUTIONS);
   });
 
   // --- Static content groups ---
@@ -597,6 +603,56 @@ describe('usePaletteItems', () => {
     // Everyone in the conversation is searchable, so `@ana` finds a group DM
     // Ana is in and not only the one named after her.
     expect(item?.keywords).toContain('Ana');
+  });
+
+  // Feature/quick-action entries carry the `CommandPaletteContribution.keywords`
+  // capability through to the flat search list, same as agents and rooms
+  // already do — this is what lets Wave 2 register aliases (e.g. "connectors",
+  // "telegram") on a renamed palette entry without a search-layer change.
+  it('has no keywords on a feature entry that declares none', () => {
+    const { result } = renderHook(() => usePaletteItems(null));
+    const item = result.current.searchableItems.find((i) => i.id === 'relay');
+    expect(item?.type).toBe('feature');
+    expect(item?.keywords).toBeUndefined();
+  });
+
+  it("carries a feature contribution's keywords into the flat search list", () => {
+    mockUseSlotContributions.mockReturnValue([
+      ...DEFAULT_PALETTE_CONTRIBUTIONS.filter((c) => c.id !== 'relay'),
+      {
+        id: 'relay',
+        label: 'Integrations',
+        icon: 'Radio',
+        action: 'openRelay',
+        category: 'feature',
+        priority: 2,
+        keywords: ['connectors', 'telegram', 'slack'],
+      },
+    ]);
+
+    const { result } = renderHook(() => usePaletteItems(null));
+    const item = result.current.searchableItems.find((i) => i.id === 'relay');
+    expect(item?.keywords).toEqual(['connectors', 'telegram', 'slack']);
+  });
+
+  it("carries a quick-action contribution's keywords into the flat search list", () => {
+    mockUseSlotContributions.mockReturnValue([
+      ...DEFAULT_PALETTE_CONTRIBUTIONS.filter((c) => c.id !== 'browse'),
+      {
+        id: 'browse',
+        label: 'Browse Filesystem',
+        icon: 'FolderOpen',
+        action: 'browseFilesystem',
+        category: 'quick-action',
+        priority: 5,
+        keywords: ['files', 'folder'],
+      },
+    ]);
+
+    const { result } = renderHook(() => usePaletteItems(null));
+    const item = result.current.searchableItems.find((i) => i.id === 'browse');
+    expect(item?.type).toBe('quick-action');
+    expect(item?.keywords).toEqual(['files', 'folder']);
   });
 
   it('hands the room lists back unread first', () => {
