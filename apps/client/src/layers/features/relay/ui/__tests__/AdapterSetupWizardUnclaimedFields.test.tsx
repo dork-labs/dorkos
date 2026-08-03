@@ -170,7 +170,9 @@ function createWrapper() {
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   const mockTransport = createMockTransport();
-  mockTransport.listMeshAgents = vi.fn().mockResolvedValue({ agents: [] });
+  mockTransport.listMeshAgents = vi
+    .fn()
+    .mockResolvedValue({ agents: [{ id: 'dorkbot', name: 'DorkBot' }] });
   mockTransport.testRelayAdapterConnection = vi.fn().mockResolvedValue({ ok: true });
   mockTransport.updateRelayAdapterConfig = vi.fn().mockResolvedValue({ ok: true });
 
@@ -183,6 +185,19 @@ function createWrapper() {
   }
 
   return { Wrapper, mockTransport };
+}
+
+/**
+ * Walk past step one.
+ *
+ * Adding a connection now asks who answers before it asks for any setting, so
+ * every assertion about the configure step has to get there first. The single
+ * agent the wrapper supplies is chosen automatically; this just presses on.
+ */
+async function advanceToConfigure() {
+  const next = await screen.findByRole('button', { name: /continue/i });
+  await waitFor(() => expect(next).toBeEnabled());
+  fireEvent.click(next);
 }
 
 /** The section a heading introduces, as a scoped query root. */
@@ -206,11 +221,12 @@ describe('AdapterSetupWizard — fields no setup step names', () => {
     cleanup();
   });
 
-  it('renders a Slack access control the setup step never names', () => {
+  it('renders a Slack access control the setup step never names', async () => {
     const { Wrapper } = createWrapper();
     render(<AdapterSetupWizard open onOpenChange={vi.fn()} manifest={slackShapedManifest} />, {
       wrapper: Wrapper,
     });
+    await advanceToConfigure();
 
     const accessControl = section('Access Control');
     expect(within(accessControl).getByText('DM Access')).toBeInTheDocument();
@@ -218,11 +234,12 @@ describe('AdapterSetupWizard — fields no setup step names', () => {
     expect(within(accessControl).getByLabelText('Channel Overrides')).toBeInTheDocument();
   });
 
-  it('leaves the fields the step does name exactly where they were', () => {
+  it('leaves the fields the step does name exactly where they were', async () => {
     const { Wrapper } = createWrapper();
     render(<AdapterSetupWizard open onOpenChange={vi.fn()} manifest={slackShapedManifest} />, {
       wrapper: Wrapper,
     });
+    await advanceToConfigure();
 
     expect(screen.getByLabelText(/bot token/i)).toBeInTheDocument();
     expect(screen.getByLabelText('Stream Responses')).toBeInTheDocument();
@@ -237,6 +254,7 @@ describe('AdapterSetupWizard — fields no setup step names', () => {
     render(<AdapterSetupWizard open onOpenChange={vi.fn()} manifest={telegramShapedManifest} />, {
       wrapper: Wrapper,
     });
+    await advanceToConfigure();
 
     // First step: the strays are not here — they belong to the last step.
     expect(screen.queryByRole('heading', { name: 'Advanced' })).not.toBeInTheDocument();
@@ -255,11 +273,12 @@ describe('AdapterSetupWizard — fields no setup step names', () => {
     expect(screen.getByText('Replies in Groups')).toBeInTheDocument();
   });
 
-  it('adds no Advanced section to a manifest that has no setup steps', () => {
+  it('adds no Advanced section to a manifest that has no setup steps', async () => {
     const { Wrapper } = createWrapper();
     render(<AdapterSetupWizard open onOpenChange={vi.fn()} manifest={steplessManifest} />, {
       wrapper: Wrapper,
     });
+    await advanceToConfigure();
 
     expect(screen.queryByRole('heading', { name: 'Advanced' })).not.toBeInTheDocument();
     expect(screen.getByLabelText('Inbound Subject')).toBeInTheDocument();
@@ -324,6 +343,7 @@ describe('AdapterSetupWizard — fields no setup step names', () => {
     render(<AdapterSetupWizard open onOpenChange={vi.fn()} manifest={slackShapedManifest} />, {
       wrapper: Wrapper,
     });
+    await advanceToConfigure();
 
     // dmPolicy defaults to allowlist, so the list it gates is on screen.
     expect(screen.getByLabelText('DM Allowlist')).toBeInTheDocument();

@@ -149,8 +149,11 @@ function createWrapper(agentsData?: { agents: { id: string; name: string }[] }) 
   });
   const mockTransport = createMockTransport();
 
-  // Default: no agents registered.
-  mockTransport.listMeshAgents = vi.fn().mockResolvedValue(agentsData ?? { agents: [] });
+  // Default: one agent, so the wizard's first question answers itself and the
+  // configure-step assertions below can get to the configure step.
+  mockTransport.listMeshAgents = vi
+    .fn()
+    .mockResolvedValue(agentsData ?? { agents: [{ id: 'dorkbot', name: 'DorkBot' }] });
 
   function Wrapper({ children }: { children: React.ReactNode }) {
     return (
@@ -161,6 +164,19 @@ function createWrapper(agentsData?: { agents: { id: string; name: string }[] }) 
   }
 
   return { Wrapper, mockTransport, queryClient };
+}
+
+/**
+ * Walk past step one.
+ *
+ * Adding a connection asks who answers before it asks for any setting, so every
+ * assertion about a later step has to get there first. The wrapper's single
+ * agent is chosen automatically; this just presses on.
+ */
+async function advanceToConfigure() {
+  const next = await screen.findByRole('button', { name: /continue/i });
+  await waitFor(() => expect(next).toBeEnabled());
+  fireEvent.click(next);
 }
 
 // ---------------------------------------------------------------------------
@@ -176,11 +192,12 @@ describe('AdapterSetupWizard', () => {
     cleanup();
   });
 
-  it('opens in add mode with empty form and no adapter ID field (auto-generated)', () => {
+  it('opens in add mode with empty form and no adapter ID field (auto-generated)', async () => {
     const { Wrapper } = createWrapper();
     render(<AdapterSetupWizard open={true} onOpenChange={vi.fn()} manifest={baseManifest} />, {
       wrapper: Wrapper,
     });
+    await advanceToConfigure();
 
     expect(screen.getByText('Add Slack')).toBeInTheDocument();
     // Adapter ID is auto-generated — no input field shown
@@ -231,21 +248,23 @@ describe('AdapterSetupWizard', () => {
     });
   });
 
-  it('displays setup instructions when provided', () => {
+  it('displays setup instructions when provided', async () => {
     const { Wrapper } = createWrapper();
     render(
       <AdapterSetupWizard open={true} onOpenChange={vi.fn()} manifest={manifestWithInstructions} />,
       { wrapper: Wrapper }
     );
+    await advanceToConfigure();
 
     expect(screen.getByText('Go to slack.com/api to get your token.')).toBeInTheDocument();
   });
 
-  it('blocks Continue when required fields are empty', () => {
+  it('blocks Continue when required fields are empty', async () => {
     const { Wrapper } = createWrapper();
     render(<AdapterSetupWizard open={true} onOpenChange={vi.fn()} manifest={baseManifest} />, {
       wrapper: Wrapper,
     });
+    await advanceToConfigure();
 
     // Token is required and empty — clicking Continue should show error
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
@@ -264,8 +283,9 @@ describe('AdapterSetupWizard', () => {
       <AdapterSetupWizard open={true} onOpenChange={vi.fn()} manifest={telegramSteppedManifest} />,
       { wrapper: Wrapper }
     );
+    await advanceToConfigure();
 
-    // Step 1 — the group setting is not here.
+    // Setup step 1 — the group setting is not here.
     expect(screen.queryByText('Replies in Groups')).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText(/bot token/i), { target: { value: '123:ABC' } });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
@@ -386,7 +406,7 @@ describe('AdapterSetupWizard', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
     await waitFor(() => {
-      expect(screen.getByText('Save Changes')).toBeInTheDocument();
+      expect(screen.getByText('Save changes')).toBeInTheDocument();
     });
   });
 
@@ -418,7 +438,7 @@ describe('AdapterSetupWizard', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /skip/i }));
     await waitFor(() => {
-      expect(screen.getByText('Save Changes')).toBeInTheDocument();
+      expect(screen.getByText('Save changes')).toBeInTheDocument();
     });
   });
 
@@ -462,6 +482,7 @@ describe('AdapterSetupWizard', () => {
     render(<AdapterSetupWizard open={true} onOpenChange={vi.fn()} manifest={baseManifest} />, {
       wrapper: Wrapper,
     });
+    await advanceToConfigure();
 
     // Fill required fields
     const tokenInput = screen.getByLabelText(/api token/i);
@@ -476,9 +497,9 @@ describe('AdapterSetupWizard', () => {
 
     // Save
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /add adapter/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^connect$/i })).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole('button', { name: /add adapter/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^connect$/i }));
 
     await waitFor(() => {
       expect(mockTransport.addRelayAdapter).toHaveBeenCalledWith(
@@ -489,11 +510,12 @@ describe('AdapterSetupWizard', () => {
     });
   });
 
-  it('label input renders on configure step', () => {
+  it('label input renders on configure step', async () => {
     const { Wrapper } = createWrapper();
     render(<AdapterSetupWizard open={true} onOpenChange={vi.fn()} manifest={baseManifest} />, {
       wrapper: Wrapper,
     });
+    await advanceToConfigure();
 
     expect(screen.getByLabelText(/name \(optional\)/i)).toBeInTheDocument();
     // Placeholder should be the manifest displayName
@@ -508,6 +530,7 @@ describe('AdapterSetupWizard', () => {
     render(<AdapterSetupWizard open={true} onOpenChange={vi.fn()} manifest={baseManifest} />, {
       wrapper: Wrapper,
     });
+    await advanceToConfigure();
 
     // Fill required fields and set label
     fireEvent.change(screen.getByLabelText(/api token/i), { target: { value: 'my-token' } });
@@ -522,9 +545,9 @@ describe('AdapterSetupWizard', () => {
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /add adapter/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^connect$/i })).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole('button', { name: /add adapter/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^connect$/i }));
 
     await waitFor(() => {
       expect(mockTransport.addRelayAdapter).toHaveBeenCalledWith(
@@ -543,6 +566,7 @@ describe('AdapterSetupWizard', () => {
     render(<AdapterSetupWizard open={true} onOpenChange={vi.fn()} manifest={baseManifest} />, {
       wrapper: Wrapper,
     });
+    await advanceToConfigure();
 
     fireEvent.change(screen.getByLabelText(/api token/i), { target: { value: 'my-token' } });
     // Leave label empty
@@ -554,9 +578,9 @@ describe('AdapterSetupWizard', () => {
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /add adapter/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^connect$/i })).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole('button', { name: /add adapter/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^connect$/i }));
 
     await waitFor(() => {
       expect(mockTransport.addRelayAdapter).toHaveBeenCalledWith(
@@ -674,117 +698,146 @@ describe('AdapterSetupWizard', () => {
     });
   });
 
-  it('BindStep shows empty state when no agents are registered', async () => {
-    const { Wrapper, mockTransport } = createWrapper({ agents: [] });
-    mockTransport.testRelayAdapterConnection = vi.fn().mockResolvedValue({ ok: true });
-    mockTransport.addRelayAdapter = vi.fn().mockResolvedValue({ ok: true });
+  it('says so, and blocks, when there is no agent to answer', async () => {
+    const { Wrapper } = createWrapper({ agents: [] });
 
     render(<AdapterSetupWizard open={true} onOpenChange={vi.fn()} manifest={baseManifest} />, {
       wrapper: Wrapper,
     });
 
-    fireEvent.change(screen.getByLabelText(/api token/i), { target: { value: 'my-token' } });
-    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
-
+    // Step one is the agent question, and with no agents it has no answer —
+    // so the wizard refuses to go on rather than creating a connection that
+    // reaches nobody.
     await waitFor(() => {
-      expect(screen.getByText(/reachable/i)).toBeInTheDocument();
+      expect(screen.getByText(/you have no agents yet/i)).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /add adapter/i })).toBeInTheDocument();
-    });
-    fireEvent.click(screen.getByRole('button', { name: /add adapter/i }));
-
-    await waitFor(() => {
-      expect(screen.getByText(/no agents registered yet/i)).toBeInTheDocument();
-    });
+    expect(screen.getByRole('button', { name: /continue/i })).toBeDisabled();
+    expect(screen.queryByLabelText(/api token/i)).not.toBeInTheDocument();
   });
 
-  it('BindStep auto-selects single agent and shows confirmation', async () => {
+  it('chooses the only agent for you and names it on the way through', async () => {
     const { Wrapper, mockTransport } = createWrapper({
       agents: [{ id: 'agent-1', name: 'My Agent' }],
     });
     mockTransport.testRelayAdapterConnection = vi.fn().mockResolvedValue({ ok: true });
     mockTransport.addRelayAdapter = vi.fn().mockResolvedValue({ ok: true });
+    mockTransport.createBinding = vi.fn().mockResolvedValue({ id: 'b-1' });
 
     render(<AdapterSetupWizard open={true} onOpenChange={vi.fn()} manifest={baseManifest} />, {
       wrapper: Wrapper,
     });
 
+    await waitFor(() => {
+      expect(screen.getByText('My Agent')).toBeInTheDocument();
+    });
+    await advanceToConfigure();
+
     fireEvent.change(screen.getByLabelText(/api token/i), { target: { value: 'my-token' } });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+    await waitFor(() => {
+      expect(screen.getByText(/reachable/i)).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
+    // The confirm step repeats the promise before it is kept.
+    await waitFor(() => {
+      expect(screen.getByText(/messages that arrive here go to/i)).toBeInTheDocument();
+    });
+    expect(screen.getByText('My Agent')).toBeInTheDocument();
+  });
+
+  it('saves the connection and the agent that answers it together', async () => {
+    const { Wrapper, mockTransport } = createWrapper({
+      agents: [{ id: 'agent-1', name: 'My Agent' }],
+    });
+    mockTransport.testRelayAdapterConnection = vi.fn().mockResolvedValue({ ok: true });
+    mockTransport.addRelayAdapter = vi.fn().mockResolvedValue({ ok: true });
+    mockTransport.createBinding = vi.fn().mockResolvedValue({ id: 'b-1' });
+
+    render(<AdapterSetupWizard open={true} onOpenChange={vi.fn()} manifest={baseManifest} />, {
+      wrapper: Wrapper,
+    });
+    await advanceToConfigure();
+
+    fireEvent.change(screen.getByLabelText(/api token/i), { target: { value: 'my-token' } });
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
     await waitFor(() => {
       expect(screen.getByText(/reachable/i)).toBeInTheDocument();
     });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /add adapter/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^connect$/i })).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole('button', { name: /add adapter/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^connect$/i }));
 
+    // Both calls, not one: a connection nobody answers is never what a save
+    // leaves behind.
     await waitFor(() => {
-      expect(screen.getByText(/will bind to/i)).toBeInTheDocument();
-      expect(screen.getByText('My Agent')).toBeInTheDocument();
+      expect(mockTransport.addRelayAdapter).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      expect(mockTransport.createBinding).toHaveBeenCalledWith(
+        expect.objectContaining({ adapterId: 'slack', agentId: 'agent-1' })
+      );
     });
   });
 
-  it('"Message bot" link appears in BindStep for Telegram adapter with botUsername', async () => {
-    const { Wrapper, mockTransport } = createWrapper({ agents: [] });
+  it('takes the connection back out when the agent could not be set', async () => {
+    const { Wrapper, mockTransport } = createWrapper({
+      agents: [{ id: 'agent-1', name: 'My Agent' }],
+    });
+    mockTransport.testRelayAdapterConnection = vi.fn().mockResolvedValue({ ok: true });
+    mockTransport.addRelayAdapter = vi.fn().mockResolvedValue({ ok: true });
+    mockTransport.createBinding = vi.fn().mockRejectedValue(new Error('nope'));
+    mockTransport.removeRelayAdapter = vi.fn().mockResolvedValue(undefined);
+
+    render(<AdapterSetupWizard open={true} onOpenChange={vi.fn()} manifest={baseManifest} />, {
+      wrapper: Wrapper,
+    });
+    await advanceToConfigure();
+
+    fireEvent.change(screen.getByLabelText(/api token/i), { target: { value: 'my-token' } });
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+    await waitFor(() => {
+      expect(screen.getByText(/reachable/i)).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^connect$/i })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^connect$/i }));
+
+    await waitFor(() => {
+      expect(mockTransport.removeRelayAdapter).toHaveBeenCalledWith('slack');
+    });
+  });
+
+  it('offers the bot link on the confirm step, once the check reports a handle', async () => {
+    const { Wrapper, mockTransport } = createWrapper({
+      agents: [{ id: 'agent-1', name: 'My Agent' }],
+    });
     mockTransport.testRelayAdapterConnection = vi
       .fn()
       .mockResolvedValue({ ok: true, botUsername: 'mybot' });
-    mockTransport.addRelayAdapter = vi.fn().mockResolvedValue({ ok: true });
 
     render(<AdapterSetupWizard open={true} onOpenChange={vi.fn()} manifest={telegramManifest} />, {
       wrapper: Wrapper,
     });
+    await advanceToConfigure();
 
     fireEvent.change(screen.getByLabelText(/bot token/i), { target: { value: 'my-token' } });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
-
     await waitFor(() => {
       expect(screen.getByText(/reachable/i)).toBeInTheDocument();
     });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /add adapter/i })).toBeInTheDocument();
-    });
-    fireEvent.click(screen.getByRole('button', { name: /add adapter/i }));
 
     await waitFor(() => {
       const link = screen.getByRole('link', { name: /message @mybot/i });
       expect(link).toBeInTheDocument();
       expect(link).toHaveAttribute('href', 'https://t.me/mybot');
     });
-  });
-});
-
-describe('unflattenConfig', () => {
-  it('converts flat dot-notation keys to nested objects', () => {
-    const flat = {
-      'inbound.subject': 'x',
-      'inbound.queue': 'q1',
-      'outbound.topic': 'y',
-      simple: 'value',
-    };
-    const result = unflattenConfig(flat);
-    expect(result).toEqual({
-      inbound: { subject: 'x', queue: 'q1' },
-      outbound: { topic: 'y' },
-      simple: 'value',
-    });
-  });
-
-  it('handles deeply nested keys', () => {
-    const flat = { 'a.b.c': 42 };
-    expect(unflattenConfig(flat)).toEqual({ a: { b: { c: 42 } } });
-  });
-
-  it('returns empty object for empty input', () => {
-    expect(unflattenConfig({})).toEqual({});
   });
 });

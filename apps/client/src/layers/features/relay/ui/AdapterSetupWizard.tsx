@@ -15,7 +15,7 @@ import { StepIndicator } from './wizard/StepIndicator';
 import { ConfigureStep } from './wizard/ConfigureStep';
 import { TestStep } from './wizard/TestStep';
 import { ConfirmStep } from './wizard/ConfirmStep';
-import { BindStep } from './wizard/BindStep';
+import { AgentStep } from './wizard/AgentStep';
 import { SetupGuideSheet } from './SetupGuideSheet';
 import { useAdapterWizard } from './wizard/use-adapter-wizard';
 
@@ -63,7 +63,6 @@ export function AdapterSetupWizard({
     setBindStrategy,
     agentOptions,
     isSaving,
-    isBinding,
     hasSetupSteps,
     setupStepIndex,
     currentSetupStep,
@@ -71,8 +70,6 @@ export function AdapterSetupWizard({
     handleContinue,
     handleBack,
     handleSave,
-    handleBind,
-    handleSkipBind,
     handleOpenChange,
     handleRetryTest,
   } = wizard;
@@ -86,16 +83,16 @@ export function AdapterSetupWizard({
               {isEditMode ? `Edit ${manifest.displayName}` : `Add ${manifest.displayName}`}
             </DialogTitle>
             <DialogDescription>
+              {step === 'agent' && 'Pick the agent that answers messages arriving here.'}
               {step === 'configure' &&
-                (currentSetupStep?.description ?? 'Configure the adapter settings.')}
-              {step === 'test' && 'Checking whether the adapter is reachable.'}
-              {step === 'confirm' && 'Review your configuration before saving.'}
-              {step === 'bind' && 'Optionally bind this adapter to an agent.'}
+                (currentSetupStep?.description ?? 'Fill in the settings this needs.')}
+              {step === 'test' && 'Checking whether this is reachable.'}
+              {step === 'confirm' && 'Check it over, then save.'}
             </DialogDescription>
           </DialogHeader>
 
           <div className="min-h-0 space-y-4 overflow-y-auto py-2">
-            <StepIndicator current={step} showBindStep={!isEditMode} />
+            <StepIndicator current={step} showAgentStep={!isEditMode} />
 
             <AnimatePresence mode="wait">
               <motion.div
@@ -105,6 +102,16 @@ export function AdapterSetupWizard({
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.2 }}
               >
+                {step === 'agent' && (
+                  <AgentStep
+                    agentOptions={agentOptions}
+                    agentId={bindAgentId}
+                    onAgentIdChange={setBindAgentId}
+                    strategy={bindStrategy}
+                    onStrategyChange={setBindStrategy}
+                  />
+                )}
+
                 {step === 'configure' && (
                   <ConfigureStep
                     manifest={manifest}
@@ -137,21 +144,13 @@ export function AdapterSetupWizard({
                         adapterId={adapterId}
                         isEditMode={isEditMode}
                         values={values}
+                        botUsername={botUsername}
+                        agentName={
+                          agentOptions.find((a) => a.id === bindAgentId)?.name || bindAgentId
+                        }
                       />
                     )}
                   </form.Subscribe>
-                )}
-
-                {step === 'bind' && (
-                  <BindStep
-                    agentOptions={agentOptions}
-                    agentId={bindAgentId}
-                    onAgentIdChange={setBindAgentId}
-                    strategy={bindStrategy}
-                    onStrategyChange={setBindStrategy}
-                    botUsername={botUsername}
-                    adapterType={manifest.type}
-                  />
                 )}
               </motion.div>
             </AnimatePresence>
@@ -165,7 +164,7 @@ export function AdapterSetupWizard({
                   Back
                 </Button>
               )}
-              {step === 'configure' && hasSetupSteps && setupStepIndex > 0 && (
+              {step === 'configure' && (hasSetupSteps ? setupStepIndex > 0 : !isEditMode) && (
                 <Button variant="ghost" onClick={handleBack}>
                   <ArrowLeft className="mr-1 size-4" />
                   Back
@@ -174,9 +173,13 @@ export function AdapterSetupWizard({
             </div>
 
             <div className="flex gap-2">
-              {step !== 'bind' && (
-                <Button variant="outline" onClick={() => handleOpenChange(false)}>
-                  Cancel
+              <Button variant="outline" onClick={() => handleOpenChange(false)}>
+                Cancel
+              </Button>
+              {step === 'agent' && (
+                <Button onClick={handleContinue} disabled={!bindAgentId}>
+                  Continue
+                  <ArrowRight className="ml-1 size-4" />
                 </Button>
               )}
               {step === 'configure' && (
@@ -202,19 +205,8 @@ export function AdapterSetupWizard({
               {step === 'confirm' && (
                 <Button onClick={handleSave} disabled={isSaving}>
                   {isSaving && <Loader2 className="mr-2 size-4 animate-spin" />}
-                  {isEditMode ? 'Save Changes' : 'Add Adapter'}
+                  {isEditMode ? 'Save changes' : 'Connect'}
                 </Button>
-              )}
-              {step === 'bind' && (
-                <>
-                  <Button variant="ghost" onClick={handleSkipBind} disabled={isBinding}>
-                    Skip
-                  </Button>
-                  <Button onClick={handleBind} disabled={!bindAgentId || isBinding}>
-                    {isBinding && <Loader2 className="mr-2 size-4 animate-spin" />}
-                    Bind to Agent
-                  </Button>
-                </>
               )}
             </div>
           </DialogFooter>

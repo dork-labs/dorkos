@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   useAddAdapter,
@@ -7,6 +8,7 @@ import {
 } from '@/layers/entities/relay';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
 import { useCreateBinding } from '@/layers/entities/binding';
+import { useTransport } from '@/layers/shared/model';
 import type {
   AdapterManifest,
   CatalogInstance,
@@ -21,7 +23,15 @@ import {
   ADVANCED_SECTION,
 } from './adapter-config-utils';
 
-export type WizardStep = 'configure' | 'test' | 'confirm' | 'bind';
+/**
+ * The wizard's steps, in order. `agent` comes first and only when adding: a
+ * new way for people to reach your agents cannot exist without an agent to
+ * reach, so the question is asked before any setting rather than offered as a
+ * skippable afterthought at the end (connection-scoping plan, Move 2).
+ * Editing an existing connection skips it — its bindings already exist and are
+ * managed on the page.
+ */
+export type WizardStep = 'agent' | 'configure' | 'test' | 'confirm';
 
 interface UseAdapterWizardOptions {
   manifest: AdapterManifest;
@@ -38,7 +48,7 @@ export function useAdapterWizard({
   onOpenChange,
 }: UseAdapterWizardOptions) {
   const isEditMode = Boolean(existingInstance);
-  const [step, setStep] = useState<WizardStep>('configure');
+  const [step, setStep] = useState<WizardStep>(existingInstance ? 'configure' : 'agent');
   const [guideOpen, setGuideOpen] = useState(false);
   const [adapterId] = useState(
     () => existingInstance?.id ?? generateDefaultId(manifest, existingAdapterIds)
@@ -49,8 +59,7 @@ export function useAdapterWizard({
   const [setupStepIndex, setSetupStepIndex] = useState(0);
   const [botUsername, setBotUsername] = useState('');
 
-  // Bind step state
-  const [createdAdapterId, setCreatedAdapterId] = useState('');
+  // Agent step state
   const [bindAgentId, setBindAgentId] = useState('');
   const [bindStrategy, setBindStrategy] = useState<SessionStrategy>('per-chat');
 
@@ -59,6 +68,8 @@ export function useAdapterWizard({
   const testConnection = useTestAdapterConnection();
   const createBinding = useCreateBinding();
   const { data: agentsData } = useRegisteredAgents();
+  const transport = useTransport();
+  const queryClient = useQueryClient();
 
   const agentOptions = agentsData?.agents ?? [];
   const hasSetupSteps = manifest.setupSteps && manifest.setupSteps.length > 0;
@@ -129,6 +140,11 @@ export function useAdapterWizard({
   }, [form, visibleFields]);
 
   const handleContinue = useCallback(() => {
+    if (step === 'agent') {
+      if (!bindAgentId) return;
+      setStep('configure');
+      return;
+    }
     if (step === 'configure') {
       const isValid = validateVisibleFields();
       if (!isValid) return;
@@ -158,6 +174,7 @@ export function useAdapterWizard({
     }
   }, [
     step,
+    bindAgentId,
     hasSetupSteps,
     manifest,
     setupStepIndex,
@@ -173,13 +190,39 @@ export function useAdapterWizard({
       testConnection.reset();
     } else if (step === 'confirm') {
       setStep('test');
-    } else if (step === 'bind') {
-      onOpenChange(false);
-    } else if (step === 'configure' && hasSetupSteps && setupStepIndex > 0) {
-      setSetupStepIndex((i) => i - 1);
+    } else if (step === 'configure') {
+      if (hasSetupSteps && setupStepIndex > 0) setSetupStepIndex((i) => i - 1);
+      else if (!isEditMode) setStep('agent');
     }
-  }, [step, hasSetupSteps, setupStepIndex, testConnection, onOpenChange]);
+  }, [step, hasSetupSteps, setupStepIndex, testConnection, isEditMode]);
 
+  /**
+   * Undo a just-created connection whose binding could not be saved.
+   *
+   * Deliberately not `useRemoveAdapter`: that hook toasts "Adapter removed" on
+   * success, which narrates a deletion the person never asked for on top of the
+   * failure they need to read. The coarse `['relay']` invalidation covers the
+   * catalog and adapter lists without reaching into the entity's key internals.
+   */
+  const rollbackAdapter = useCallback(
+    async (id: string) => {
+      try {
+        await transport.removeRelayAdapter(id);
+      } finally {
+        void queryClient.invalidateQueries({ queryKey: ['relay'] });
+      }
+    },
+    [transport, queryClient]
+  );
+
+  /**
+   * Save the connection and the agent that answers it as one act.
+   *
+   * The server has no single endpoint for both, so this is two calls; what
+   * makes it atomic for the person is that a failed binding takes the adapter
+   * back out. A connection nobody answers is the silent shadow state this
+   * whole change exists to remove, so it is never what a failure leaves behind.
+   */
   const handleSave = useCallback(() => {
     const values = form.state.values as Record<string, unknown>;
     const adapterConfig = unflattenConfig(values);
@@ -189,68 +232,78 @@ export function useAdapterWizard({
         { id: existingInstance.id, config: configWithLabel },
         { onSuccess: () => onOpenChange(false) }
       );
-    } else {
-      addAdapter.mutate(
-        { type: manifest.type, id: adapterId, config: configWithLabel },
-        {
-          onSuccess: () => {
-            const displayLabel = label || adapterId;
-            toast.success(`${manifest.displayName} adapter added`, {
-              description: displayLabel ? `"${displayLabel}" is ready to use.` : undefined,
-            });
-            setCreatedAdapterId(adapterId);
-            setStep('bind');
-          },
-          onError: (error) => {
-            if (error.message?.includes('timed out')) {
-              toast.error('Request timed out', {
-                description: 'Check your token and network connectivity, then try again.',
-              });
-            } else if (error.message?.includes('duplicate') || error.message?.includes('exists')) {
-              setStep('configure');
-              setSetupStepIndex(0);
-            }
-          },
-        }
-      );
+      return;
     }
+    if (!bindAgentId) {
+      setStep('agent');
+      return;
+    }
+    addAdapter.mutate(
+      { type: manifest.type, id: adapterId, config: configWithLabel },
+      {
+        onSuccess: () => {
+          createBinding.mutate(
+            {
+              adapterId,
+              agentId: bindAgentId,
+              sessionStrategy: bindStrategy,
+              label: '',
+            },
+            {
+              onSuccess: () => {
+                const agentName =
+                  agentOptions.find((a) => a.id === bindAgentId)?.name ?? bindAgentId;
+                toast.success(`${manifest.displayName} is connected`, {
+                  description: `Messages that arrive here go to ${agentName}.`,
+                });
+                onOpenChange(false);
+              },
+              onError: (error) => {
+                void rollbackAdapter(adapterId);
+                setStep('agent');
+                toast.error('Nothing was set up', {
+                  description: `${manifest.displayName} could not be pointed at an agent, so it was not saved. ${error.message}`,
+                });
+              },
+            }
+          );
+        },
+        onError: (error) => {
+          if (error.message?.includes('timed out')) {
+            toast.error('Request timed out', {
+              description: 'Check your token and network connectivity, then try again.',
+            });
+          } else if (error.message?.includes('duplicate') || error.message?.includes('exists')) {
+            setStep('configure');
+            setSetupStepIndex(0);
+          }
+        },
+      }
+    );
   }, [
     form,
     isEditMode,
     existingInstance,
     updateConfig,
     addAdapter,
+    createBinding,
     manifest,
     adapterId,
     label,
+    bindAgentId,
+    bindStrategy,
+    agentOptions,
+    rollbackAdapter,
     onOpenChange,
   ]);
-
-  const handleBind = useCallback(() => {
-    if (!bindAgentId) return;
-    createBinding.mutate(
-      {
-        adapterId: createdAdapterId,
-        agentId: bindAgentId,
-        sessionStrategy: bindStrategy,
-        label: '',
-      },
-      { onSuccess: () => onOpenChange(false) }
-    );
-  }, [bindAgentId, createdAdapterId, bindStrategy, createBinding, onOpenChange]);
-
-  const handleSkipBind = useCallback(() => {
-    onOpenChange(false);
-  }, [onOpenChange]);
 
   const handleOpenChange = useCallback(
     (nextOpen: boolean) => {
       if (!nextOpen) {
-        setStep('configure');
+        setStep(isEditMode ? 'configure' : 'agent');
         setSetupStepIndex(0);
         setLabel('');
         setBotUsername('');
-        setCreatedAdapterId('');
         setBindAgentId('');
         setBindStrategy('per-chat');
         setGuideOpen(false);
@@ -259,7 +312,7 @@ export function useAdapterWizard({
       }
       onOpenChange(nextOpen);
     },
-    [onOpenChange, form, testConnection]
+    [onOpenChange, form, testConnection, isEditMode]
   );
 
   const handleRetryTest = useCallback(() => {
@@ -269,8 +322,7 @@ export function useAdapterWizard({
     });
   }, [testConnection, manifest.type, form]);
 
-  const isSaving = addAdapter.isPending || updateConfig.isPending;
-  const isBinding = createBinding.isPending;
+  const isSaving = addAdapter.isPending || updateConfig.isPending || createBinding.isPending;
   const currentSetupStep =
     hasSetupSteps && manifest.setupSteps ? manifest.setupSteps[setupStepIndex] : undefined;
 
@@ -287,7 +339,7 @@ export function useAdapterWizard({
     form,
     visibleFields,
 
-    // Bind step state
+    // Agent step state
     bindAgentId,
     setBindAgentId,
     bindStrategy,
@@ -296,7 +348,6 @@ export function useAdapterWizard({
 
     // Derived
     isSaving,
-    isBinding,
     hasSetupSteps,
     setupStepIndex,
     currentSetupStep,
@@ -306,8 +357,6 @@ export function useAdapterWizard({
     handleContinue,
     handleBack,
     handleSave,
-    handleBind,
-    handleSkipBind,
     handleOpenChange,
     handleRetryTest,
   };
