@@ -27,10 +27,16 @@
  * session (DOR-463). `getInternalSessionId` is idempotent on a canonical id, so
  * resolving through it on every path converges all of them on one key.
  *
- * ONE key, not a list of candidates. A row can never be stranded under a
- * retired id, because the runtime moves it the moment it rebinds the session
- * (`rekeySessionSettings`, DOR-493) — so no reader has to guess which id an
- * operator's choice was written under, and no two readers can pick differently.
+ * ONE key, not a list of candidates. The runtime moves the row the moment it
+ * rebinds the session (`rekeySessionSettings`, DOR-493), so an operator's choice
+ * follows the session onto the id every later read asks by — no reader has to
+ * guess which id it was written under, and no two readers can pick differently.
+ *
+ * That is a rule about where THIS overlay looks, not a uniqueness guarantee the
+ * schema enforces: a client still holding a retired id and POSTing under it
+ * makes `persistSessionRuntime` mint a fresh row for that id (DOR-837). The
+ * overlay is unaffected — it resolves through `getInternalSessionId` and reads
+ * the canonical key — but do not read this paragraph as "one row per session".
  *
  * @module services/session/session-settings-overlay
  */

@@ -45,17 +45,15 @@ function makeMockBindingStore(overrides?: Record<string, unknown>) {
 /** Create a mock BindingRouter with default stubs. */
 function makeMockBindingRouter(overrides?: Record<string, unknown>) {
   return {
-    getSessionsByBinding: vi
-      .fn()
-      .mockReturnValue([
-        {
-          key: 'b-1:chat-42',
-          scope: 'chat' as const,
-          chatId: 'chat-42',
-          sessionId: 'sess-1',
-          lastActivityAt: 1,
-        },
-      ]),
+    getSessionsByBinding: vi.fn().mockReturnValue([
+      {
+        key: 'b-1:chat-42',
+        scope: 'chat' as const,
+        chatId: 'chat-42',
+        sessionId: 'sess-1',
+        lastActivityAt: 1,
+      },
+    ]),
     ...overrides,
   };
 }

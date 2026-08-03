@@ -119,8 +119,15 @@ export function ChatInputContainer({
     onToolRef,
     onToolDecided,
   } = interaction;
-  const { pendingFiles, onFilesSelected, onFileRemove, onFileRetry, isUploading, hasFailedUpload } =
-    fileUpload;
+  const {
+    pendingFiles,
+    onFilesSelected,
+    onFileRemove,
+    onFileRetry,
+    onUploadCancel,
+    isUploading,
+    hasFailedUpload,
+  } = fileUpload;
   const isStreaming = status === 'streaming';
   const isTextStreaming = useAppStore((s) => s.isTextStreaming);
   const [selectedCwd] = useDirectoryState();
@@ -281,7 +288,12 @@ export function ChatInputContainer({
             </div>
 
             {pendingFiles.length > 0 && (
-              <FileChipBar files={pendingFiles} onRemove={onFileRemove} onRetry={onFileRetry} />
+              <FileChipBar
+                files={pendingFiles}
+                onRemove={onFileRemove}
+                onRetry={onFileRetry}
+                onCancel={onUploadCancel}
+              />
             )}
             {/* The presence guard lives here, not inside the panel: a component
                 that returns null is still mounted, so AnimatePresence never saw
@@ -320,6 +332,7 @@ export function ChatInputContainer({
               onSubmit={submitAndDismiss}
               isStreaming={isStreaming}
               isUploading={isUploading}
+              onCancelUpload={onUploadCancel}
               commandPending={commandPending}
               sessionBusy={sessionBusy}
               onStop={stop}

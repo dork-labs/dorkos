@@ -72,6 +72,12 @@ export { isSessionRequestReady } from './session-request-scope';
 export { rankMatch, type MatchTier, type RankMatchResult } from './rank-match';
 export { buildClientReport } from './build-issue-report';
 export { HttpTransport, streamManager, RoomStreamHttpError, isFatalStreamError } from './transport';
+export {
+  UPLOAD_STALL_TIMEOUT_MS,
+  UPLOAD_STALLED_MESSAGE,
+  UPLOAD_CANCELED_MESSAGE,
+  UPLOAD_UNREADABLE_MESSAGE,
+} from './transport';
 export { DirectTransport, type DirectTransportServices } from './direct-transport';
 export { reportClientError, installClientErrorHandlers } from './client-error-reporter';
 export { getToolLabel, getMcpServerBadge, parseMcpToolName } from './tool-labels';

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { useTransport, useAppStore } from '@/layers/shared/model';
 import type { UploadResult, UploadProgress } from '@dorkos/shared/types';
@@ -71,7 +71,17 @@ export function useFileUpload() {
     );
   }, []);
 
+  // The live request's abort handle. A ref rather than state because nothing
+  // renders from it: `isUploading` already says whether a cancel is on offer,
+  // and the handle only has to be reachable from the click.
+  const abortRef = useRef<AbortController | null>(null);
+
   const uploadMutation = useMutation({
+    // The chip already names the file and says what happened to it, and the send
+    // banner says the message did not go out. The app-wide toast would be a
+    // third, vaguer voice — and after someone presses Cancel it is simply wrong:
+    // "Action failed. Please try again." about the thing they just chose to stop.
+    meta: { suppressErrorToast: true },
     mutationFn: async (files: PendingFile[]) => {
       if (!selectedCwd) throw new Error('No working directory selected');
 
@@ -88,8 +98,14 @@ export function useFileUpload() {
         );
       };
 
+      const controller = new AbortController();
+      abortRef.current = controller;
+
       const rawFiles = files.map((f) => f.file);
-      return transport.uploadFiles(rawFiles, selectedCwd, onProgress);
+      return transport.uploadFiles(rawFiles, selectedCwd, onProgress, controller.signal);
+    },
+    onSettled: () => {
+      abortRef.current = null;
     },
     onSuccess: (results, files) => {
       setPendingFiles((prev) =>
@@ -113,6 +129,22 @@ export function useFileUpload() {
       );
     },
   });
+
+  /**
+   * Stop the upload that is running right now.
+   *
+   * Aborts the REQUEST, not just this hook's view of it. Without that the bytes
+   * kept flowing while the composer pretended to be free, and a stalled request
+   * held `isUploading` true forever — a disabled spinner where the send button
+   * belongs, and an Enter key that did nothing (DOR-494).
+   *
+   * The upload is one batch in one request, so this ends all of it. The
+   * rejection travels the same path every other upload failure does: each chip
+   * says it was canceled and offers a retry or a remove.
+   */
+  const cancelUpload = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
 
   /**
    * Upload every not-yet-uploaded file and return the saved paths of ALL
@@ -152,6 +184,7 @@ export function useFileUpload() {
     removeFile,
     retryFile,
     clearFiles,
+    cancelUpload,
     uploadAndGetPaths,
     hasPendingFiles: pendingFiles.length > 0,
     /** True while any attachment failed to upload — the send must not go out. */

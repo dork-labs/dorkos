@@ -1122,8 +1122,9 @@ describe('RuntimeRegistry', () => {
         sessionId: 'new',
         // Ownership is immutable (ADR-0255) — the destination keeps its runtime.
         runtime: 'claude-code',
+        // The destination has no permissionMode, so the source fills the gap.
         permissionMode: 'bypassPermissions',
-        // A NULL source column leaves the destination's value alone.
+        // …and the destination's own value is kept where it has one.
         model: 'sonnet',
       });
     });
@@ -1141,14 +1142,36 @@ describe('RuntimeRegistry', () => {
       expect(allRows()[0]).toMatchObject({ sessionId: 'new', runtime: 'test-mode' });
     });
 
-    it('does not resurrect a destination value the source overwrote', async () => {
-      await registry.saveSessionSettings('new', { permissionMode: 'plan' });
+    it('never replaces a newer destination choice with the older source one', async () => {
+      // The source row is always the older of the two: nothing can be written
+      // under the canonical id before the runtime announces it, and everything
+      // resolves there afterwards. Source-wins therefore reinstated the mode the
+      // operator had just left — here, an agent that acts without asking.
       await registry.saveSessionSettings('old', { permissionMode: 'bypassPermissions' });
+      await registry.saveSessionSettings('new', { permissionMode: 'plan' });
+
+      await registry.rekeySessionSettings('old', 'new');
+
+      expect(await registry.getSessionSettings('new')).toEqual({ permissionMode: 'plan' });
+    });
+
+    it('merges field by field — the destination keeps only what it has set', async () => {
+      // Not an all-or-nothing pick between two rows: each column is resolved on
+      // its own, so an operator's newer mode survives alongside a model that was
+      // only ever chosen under the old id.
+      await registry.saveSessionSettings('old', {
+        permissionMode: 'bypassPermissions',
+        model: 'opus',
+        effort: 'low',
+      });
+      await registry.saveSessionSettings('new', { permissionMode: 'plan', effort: 'high' });
 
       await registry.rekeySessionSettings('old', 'new');
 
       expect(await registry.getSessionSettings('new')).toEqual({
-        permissionMode: 'bypassPermissions',
+        permissionMode: 'plan', // newer, from the destination
+        effort: 'high', // newer, from the destination
+        model: 'opus', // destination had none — the source fills it
       });
     });
 

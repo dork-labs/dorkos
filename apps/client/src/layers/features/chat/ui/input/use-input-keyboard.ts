@@ -95,6 +95,12 @@ interface UseInputKeyboardOptions {
   sessionBusy: boolean;
   /** An attachment upload is in flight — this send is already happening. */
   isUploading?: boolean;
+  /**
+   * Stop the in-flight upload. Escape reaches for this exactly as it reaches for
+   * `onStop` during a turn: the upload IS the send, so the key that stops a send
+   * has to stop this one too.
+   */
+  onCancelUpload?: () => void;
   /** A dispatched native command has not settled — its text is still in the box. */
   commandPending?: boolean;
   /** When false, the Enter key does not submit (the send target is not ready). Defaults to true. */
@@ -152,6 +158,7 @@ export function useInputKeyboard({
   isTouchOnly,
   sessionBusy,
   isUploading = false,
+  onCancelUpload,
   commandPending = false,
   canSubmit = true,
   editingQueueItem,
@@ -211,7 +218,8 @@ export function useInputKeyboard({
       if (e.nativeEvent.isComposing || e.keyCode === IME_PROCESS_KEY_CODE) return;
 
       // --- Escape priority ladder ---
-      // palette dismiss → cancel queue edit → stop streaming → double-tap clear.
+      // palette dismiss → cancel queue edit → stop streaming → cancel upload →
+      // double-tap clear.
       //
       // **A rung that acts CONSUMES the key, and says so with `preventDefault`.**
       // Escape has no default browser action in a textarea, so this is not about
@@ -240,6 +248,13 @@ export function useInputKeyboard({
         }
         if (isStreaming) {
           onStop?.();
+          e.preventDefault();
+          return;
+        }
+        // An upload in flight is this send, already happening — so the key that
+        // stops a send stops it, on the same rung Stop sits on.
+        if (isUploading && onCancelUpload) {
+          onCancelUpload();
           e.preventDefault();
           return;
         }
@@ -359,6 +374,7 @@ export function useInputKeyboard({
       isStreaming,
       isTouchOnly,
       isUploading,
+      onCancelUpload,
       commandPending,
       value,
       onSubmit,

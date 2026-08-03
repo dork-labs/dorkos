@@ -1,6 +1,6 @@
 ---
 covers:
-  - "fix(evals): correct overclaims and a wrong tool signature (DOR-529)"
+  - 'fix(evals): correct overclaims and a wrong tool signature (DOR-529)'
 ---
 
 ### Fixed

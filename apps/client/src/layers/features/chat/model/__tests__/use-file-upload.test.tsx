@@ -5,10 +5,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { TransportProvider } from '@/layers/shared/model';
+import { createQueryClientConfig } from '@/layers/shared/lib';
 import { createMockTransport } from '@dorkos/test-utils';
 import { useFileUpload } from '../use-file-upload';
 import type { UploadResult } from '@dorkos/shared/types';
+
+vi.mock('sonner', () => ({
+  toast: { error: vi.fn(), warning: vi.fn(), success: vi.fn(), message: vi.fn() },
+}));
 
 // Mock useAppStore to control selectedCwd
 vi.mock('@/layers/shared/model', async (importOriginal) => {
@@ -417,5 +423,92 @@ describe('useFileUpload — a failed attachment never rides a silent send (DOR-4
       '/test/project/.dork/.temp/uploads/first.txt',
       '/test/project/.dork/.temp/uploads/second.txt',
     ]);
+  });
+
+  describe('cancelUpload', () => {
+    /**
+     * Start an upload that never finishes on its own, and hand back the signal
+     * the transport was given.
+     */
+    async function startHangingUpload() {
+      let sawSignal: AbortSignal | undefined;
+      vi.mocked(mockTransport.uploadFiles).mockImplementation(
+        (_files, _cwd, _onProgress, signal) =>
+          new Promise((_resolve, reject) => {
+            sawSignal = signal;
+            signal?.addEventListener('abort', () => reject(new Error('Upload canceled')));
+          })
+      );
+
+      const { result } = renderHook(() => useFileUpload(), { wrapper: createWrapper() });
+      act(() => {
+        result.current.addFiles([new File(['x'], 'big.bin', { type: 'application/octet-stream' })]);
+      });
+      act(() => {
+        void result.current.uploadAndGetPaths().catch(() => {});
+      });
+      await waitFor(() => expect(result.current.isUploading).toBe(true));
+      return { result, signal: () => sawSignal };
+    }
+
+    it('aborts the request the transport is running, not just the mutation', async () => {
+      const { result, signal } = await startHangingUpload();
+
+      act(() => {
+        result.current.cancelUpload();
+      });
+
+      expect(signal()?.aborted).toBe(true);
+      await waitFor(() => expect(result.current.isUploading).toBe(false));
+      expect(result.current.pendingFiles[0].status).toBe('error');
+      expect(result.current.pendingFiles[0].error).toBe('Upload canceled');
+    });
+
+    // Run against the app's REAL error policy — a hand-rolled QueryClient has no
+    // MutationCache handler, so it would report suppression that was never on.
+    it('says nothing in a toast — the chip and the banner already said it', async () => {
+      queryClient = new QueryClient(createQueryClientConfig());
+      const { result, signal } = await startHangingUpload();
+
+      act(() => {
+        result.current.cancelUpload();
+      });
+      await waitFor(() => expect(result.current.pendingFiles[0].status).toBe('error'));
+      expect(signal()?.aborted).toBe(true);
+
+      const toasts =
+        vi.mocked(toast.error).mock.calls.length +
+        vi.mocked(toast.warning).mock.calls.length +
+        vi.mocked(toast.success).mock.calls.length +
+        vi.mocked(toast.message).mock.calls.length;
+      expect(toasts).toBe(0);
+    });
+
+    it('does nothing when no upload is running', () => {
+      const { result } = renderHook(() => useFileUpload(), { wrapper: createWrapper() });
+      expect(() => result.current.cancelUpload()).not.toThrow();
+      expect(mockTransport.uploadFiles).not.toHaveBeenCalled();
+    });
+
+    it('leaves the next upload cancellable too', async () => {
+      const first = await startHangingUpload();
+      act(() => {
+        first.result.current.cancelUpload();
+      });
+      await waitFor(() => expect(first.result.current.isUploading).toBe(false));
+
+      // A retry of the same chip gets its own live handle — a controller left
+      // over from the cancelled attempt would abort the new upload instantly.
+      act(() => {
+        first.result.current.retryFile(first.result.current.pendingFiles[0].id);
+      });
+      await waitFor(() => expect(first.result.current.pendingFiles[0].status).toBe('pending'));
+
+      act(() => {
+        void first.result.current.uploadAndGetPaths().catch(() => {});
+      });
+      await waitFor(() => expect(first.result.current.isUploading).toBe(true));
+      expect(first.signal()?.aborted).toBe(false);
+    });
   });
 });

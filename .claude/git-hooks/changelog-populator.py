@@ -306,6 +306,42 @@ def read_yaml_scalar(value: str) -> str:
     return text
 
 
+def format_with_prettier(path: Path) -> None:
+    """Run Prettier over a freshly minted fragment, in place.
+
+    This hook fires AFTER the pre-commit formatter and amends its file straight
+    into the commit, so nothing else ever formats a fragment — and the styles
+    disagree: `quote_yaml_scalar` writes double-quoted `covers:` items while the
+    repo's Prettier config (`singleQuote: true`) wants single. Every hook-minted
+    fragment was therefore born unformatted, which was invisible until CI began
+    checking formatting (DOR-485) and would otherwise red-light the next PR that
+    used the hook.
+
+    Deferring to Prettier rather than teaching this function Prettier's quoting
+    heuristic is deliberate: the heuristic has cases (a subject containing an
+    apostrophe keeps double quotes), and a near-miss reintroduces the same red.
+
+    Best-effort by design. A missing `pnpm`/Prettier, or a Prettier failure, must
+    never break someone's commit over whitespace: the fragment is still written
+    and staged, and CI will say so.
+
+    @param path: The fragment file to format in place.
+    """
+    try:
+        # `pnpm exec`, never `npx`: npx resolves a different binary than pnpm
+        # does in this workspace, and only `pnpm exec` matches the pre-commit
+        # hook and the CI gate. Named by basename from its own directory so the
+        # hook's cwd cannot matter.
+        subprocess.run(
+            ["pnpm", "exec", "prettier", "--write", path.name],
+            capture_output=True,
+            cwd=path.parent,
+            timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
 def render_fragment(section: str, entry: str, subject: str) -> str:
     """Render fragment contents: a `covers:` declaration, then the entry."""
     return (
@@ -418,6 +454,7 @@ def main() -> int:
 
         unreleased_dir.mkdir(parents=True, exist_ok=True)
         fragment_path.write_text(content, encoding="utf-8")
+        format_with_prettier(fragment_path)
 
         # Stage the fragment
         subprocess.run(["git", "add", str(fragment_path)], capture_output=True)

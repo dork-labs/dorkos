@@ -23,6 +23,32 @@ apps/server/src/core-extensions/
 docs/api/openapi.json
 docs/api/api/
 
+# Drizzle's migration bookkeeping — written by `drizzle-kit generate`, read by
+# drizzle, never by a person. The lefthook pre-commit hook regenerates and
+# `git add`s these AFTER its format step, so every new migration would land an
+# unformatted snapshot and red-light the formatting gate (DOR-485) on a file
+# nobody wrote. Same reasoning as the generated API reference above.
+packages/db/drizzle/meta/
+
+# Visual-companion design mockups. Browser artifacts, not source: the skill that
+# writes them says the design decisions get captured in the spec's markdown "so
+# implementing agents can consume it without reading raw HTML mockups", and its
+# guidance produces deliberately compact inline CSS that Prettier expands ~6x.
+# Nobody reads these as code, and every future spec that uses the skill would
+# otherwise land unformatted and red-light this gate. Reformatting the five that
+# exist would have added ~2,600 lines of whitespace to the PR that added the gate.
+specs/*/mockups/
+
+# Task lists emitted by the /flow DECOMPOSE stage, which lives in the external
+# marketplace plugin (ADR-0297) — so unlike the changelog populator there is no
+# in-repo generator to teach. Its writer emits fully-expanded JSON that Prettier
+# collapses hard (marketplace-taxonomy: 211 lines to 153), so the next
+# `/flow:decompose` would land red exactly the way a new drizzle snapshot would.
+# Narrow on purpose: the neighbouring specs/manifest.json is written IN-repo by
+# .claude/scripts/spec-manifest-ops.ts with `JSON.stringify(m, null, 2)`, whose
+# output already matches Prettier byte-for-byte, so it stays checked.
+specs/*/03-tasks.json
+
 # Deliberately malformed fixture: it stands for a truncated
 # claude-execution-output.json, so scripts/test-review-classifier.sh can prove the
 # review-failure classifier reports "unknown" instead of crashing or guessing.

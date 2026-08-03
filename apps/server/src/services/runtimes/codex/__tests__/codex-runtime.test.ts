@@ -294,6 +294,8 @@ describe('CodexRuntime', () => {
       const port: SessionSettingsPort = {
         getSessionSettings: vi.fn().mockResolvedValue(null),
         saveSessionSettings: vi.fn().mockResolvedValue(undefined),
+        // Codex never aliases a session id, so it never re-keys (DOR-493).
+        rekeySessionSettings: vi.fn().mockResolvedValue(undefined),
       };
       runtime.setSessionSettings(port);
       const sessionId = crypto.randomUUID();
@@ -411,6 +413,8 @@ describe('CodexRuntime', () => {
           fastMode: true,
         }),
         saveSessionSettings: vi.fn().mockResolvedValue(undefined),
+        // Codex never aliases a session id, so it never re-keys (DOR-493).
+        rekeySessionSettings: vi.fn().mockResolvedValue(undefined),
       };
       restarted.setSessionSettings(port);
       await restarted.hydrateSessions();
@@ -525,6 +529,8 @@ describe('CodexRuntime', () => {
         const port: SessionSettingsPort = {
           getSessionSettings: vi.fn().mockResolvedValue(null),
           saveSessionSettings: vi.fn().mockResolvedValue(undefined),
+          // Codex never aliases a session id, so it never re-keys (DOR-493).
+          rekeySessionSettings: vi.fn().mockResolvedValue(undefined),
         };
         restarted.setSessionSettings(port);
         await restarted.updateSession(sessionId, { permissionMode: 'acceptEdits' });
@@ -697,6 +703,8 @@ describe('CodexRuntime', () => {
           .fn()
           .mockResolvedValue({ permissionMode: 'acceptEdits', model: 'gpt-5.4-mini' }),
         saveSessionSettings: vi.fn().mockResolvedValue(undefined),
+        // Codex never aliases a session id, so it never re-keys (DOR-493).
+        rekeySessionSettings: vi.fn().mockResolvedValue(undefined),
       };
       runtime.setSessionSettings(port);
       const sessionId = crypto.randomUUID();
@@ -718,6 +726,8 @@ describe('CodexRuntime', () => {
       const port: SessionSettingsPort = {
         getSessionSettings: vi.fn().mockResolvedValue({ model: 'gpt-5.3-codex', effort: 'low' }),
         saveSessionSettings: vi.fn().mockResolvedValue(undefined),
+        // Codex never aliases a session id, so it never re-keys (DOR-493).
+        rekeySessionSettings: vi.fn().mockResolvedValue(undefined),
       };
       runtime.setSessionSettings(port);
       const sessionId = crypto.randomUUID();

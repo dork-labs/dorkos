@@ -1,6 +1,6 @@
 ---
 covers:
-  - "fix(build): print the build failure before cleaning up after it"
+  - 'fix(build): print the build failure before cleaning up after it'
 ---
 
 ### Fixed

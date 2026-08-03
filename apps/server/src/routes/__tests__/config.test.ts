@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -40,6 +41,16 @@ let signedInUser: { userId: string; credential: 'cookie' | 'api-key' } | undefin
 /** Stands in for the `X-DorkOS-Agent` header an agent's CLI attaches. */
 let agentHeader: string | undefined;
 
+/**
+ * ONE listener for the whole file, with the app behind it swapped per test
+ * (DOR-483). Each test still gets a FRESH app — its own config directory, its
+ * own freshly imported router — but no port is ever bound and freed mid-file,
+ * so a pooled keep-alive socket can never be handed to a request meant for a
+ * different test's server. See {@link swappableServer}.
+ */
+const target = swappableServer();
+const server = target.server;
+
 /** Mount the request-shaping middleware every config-route app needs. */
 function mountCallerFixture(app: express.Express): void {
   signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
@@ -52,7 +63,6 @@ function mountCallerFixture(app: express.Express): void {
 }
 
 describe('PATCH /api/config', () => {
-  let app: express.Express;
   let tmpDir: string;
 
   beforeEach(async () => {
@@ -64,10 +74,11 @@ describe('PATCH /api/config', () => {
     initConfigManager(tmpDir);
 
     const configRouter = (await import('../config.js')).default;
-    app = express();
+    const app = express();
     app.use(express.json());
     mountCallerFixture(app);
     app.use('/api/config', configRouter);
+    target.mount(app);
   });
 
   afterEach(() => {
@@ -76,7 +87,7 @@ describe('PATCH /api/config', () => {
   });
 
   it('returns 200 with merged config for valid partial update', async () => {
-    const response = await request(app)
+    const response = await request(server)
       .patch('/api/config')
       .send({ ui: { theme: 'dark' } })
       .expect(200);
@@ -88,7 +99,7 @@ describe('PATCH /api/config', () => {
   });
 
   it('returns 400 with Zod errors for invalid port value', async () => {
-    const response = await request(app)
+    const response = await request(server)
       .patch('/api/config')
       .send({ server: { port: 80 } })
       .expect(400);
@@ -100,7 +111,7 @@ describe('PATCH /api/config', () => {
   });
 
   it('includes warning for sensitive key', async () => {
-    const response = await request(app)
+    const response = await request(server)
       .patch('/api/config')
       .send({ tunnel: { authtoken: 'my-secret-token' } })
       .expect(200);
@@ -111,7 +122,7 @@ describe('PATCH /api/config', () => {
   });
 
   it('includes warning for the sensitive cloud.instanceToken key', async () => {
-    const response = await request(app)
+    const response = await request(server)
       .patch('/api/config')
       .send({ cloud: { instanceToken: 'dork_inst_secret' } })
       .expect(200);
@@ -124,14 +135,14 @@ describe('PATCH /api/config', () => {
   });
 
   it('returns 200 for empty object body (no-op)', async () => {
-    const response = await request(app).patch('/api/config').send({}).expect(200);
+    const response = await request(server).patch('/api/config').send({}).expect(200);
 
     expect(response.body.success).toBe(true);
     expect(response.body.config.server.port).toBe(4242);
   });
 
   it('returns 400 for array body', async () => {
-    const response = await request(app)
+    const response = await request(server)
       .patch('/api/config')
       .send([{ server: { port: 5000 } }])
       .expect(400);
@@ -140,7 +151,7 @@ describe('PATCH /api/config', () => {
   });
 
   it('persists changes across reads', async () => {
-    await request(app)
+    await request(server)
       .patch('/api/config')
       .send({ ui: { theme: 'dark' } })
       .expect(200);
@@ -158,7 +169,7 @@ describe('PATCH /api/config', () => {
     // if it ever starts refusing, a person can no longer turn login on at all.
     const { configManager } = await import('../../services/core/config-manager.js');
 
-    const enabled = await request(app)
+    const enabled = await request(server)
       .patch('/api/config')
       .send({ auth: { enabled: true } })
       .expect(200);
@@ -166,7 +177,7 @@ describe('PATCH /api/config', () => {
     expect(enabled.body.config.auth.enabled).toBe(true);
     expect(configManager.getDot('auth.enabled')).toBe(true);
 
-    const disabled = await request(app)
+    const disabled = await request(server)
       .patch('/api/config')
       .send({ auth: { enabled: false } })
       .expect(200);
@@ -184,7 +195,7 @@ describe('PATCH /api/config', () => {
     agentHeader = 'agent-token';
     signedInUser = undefined;
 
-    const refused = await request(app)
+    const refused = await request(server)
       .patch('/api/config')
       .send({ server: { boundary: '/' } })
       .expect(403);
@@ -199,7 +210,7 @@ describe('PATCH /api/config', () => {
     agentHeader = 'agent-token';
     signedInUser = undefined;
 
-    await request(app)
+    await request(server)
       .patch('/api/config')
       .send({ auth: { enabled: false } })
       .expect(403);
@@ -226,7 +237,7 @@ describe('PATCH /api/config', () => {
       agentHeader = undefined;
       signedInUser = undefined;
 
-      const refused = await request(app)
+      const refused = await request(server)
         .patch('/api/config')
         .send({ approvals: { standingGrants: true } })
         .expect(403);
@@ -243,7 +254,7 @@ describe('PATCH /api/config', () => {
       await enableLogin();
       signedInUser = { userId: 'user_program', credential: 'api-key' };
 
-      const refused = await request(app)
+      const refused = await request(server)
         .patch('/api/config')
         .send({ approvals: { standingGrants: true } })
         .expect(403);
@@ -255,7 +266,7 @@ describe('PATCH /api/config', () => {
       configManager.set('auth', { enabled: false });
       signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
 
-      const refused = await request(app)
+      const refused = await request(server)
         .patch('/api/config')
         .send({ approvals: { standingGrants: true } })
         .expect(403);
@@ -267,7 +278,10 @@ describe('PATCH /api/config', () => {
       await enableLogin();
       signedInUser = undefined;
 
-      const refused = await request(app).patch('/api/config').send({ approvals: {} }).expect(403);
+      const refused = await request(server)
+        .patch('/api/config')
+        .send({ approvals: {} })
+        .expect(403);
       expect(refused.body.code).toBe('operator_cookie_required');
     });
 
@@ -275,7 +289,7 @@ describe('PATCH /api/config', () => {
       await enableLogin();
       signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
 
-      const ok = await request(app)
+      const ok = await request(server)
         .patch('/api/config')
         .send({ approvals: { standingGrants: true, trustWindowMinutes: 120 } })
         .expect(200);
@@ -297,7 +311,7 @@ describe('PATCH /api/config', () => {
       await enableLogin();
       signedInUser = undefined;
 
-      await request(app)
+      await request(server)
         .patch('/api/config')
         .send([{ approvals: { standingGrants: true } }])
         .expect(400);
@@ -310,7 +324,7 @@ describe('PATCH /api/config', () => {
       await enableLogin();
       signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
 
-      await request(app)
+      await request(server)
         .patch('/api/config')
         .send({ approvals: { trustWindowMinutes: 10080 } })
         .expect(400);
@@ -335,7 +349,7 @@ describe('PATCH /api/config', () => {
       agentHeader = undefined;
       signedInUser = { userId: 'user_program', credential: 'api-key' };
 
-      const refused = await request(app)
+      const refused = await request(server)
         .patch('/api/config')
         .send({ auth: { enabled: false } })
         .expect(403);
@@ -356,7 +370,7 @@ describe('PATCH /api/config', () => {
         { server: { boundary: '/' } },
         { runtimes: { codex: { binaryPath: '/tmp/evil' } } },
       ]) {
-        const refused = await request(app).patch('/api/config').send(patch).expect(403);
+        const refused = await request(server).patch('/api/config').send(patch).expect(403);
         expect(refused.body.code).toBe('operator_cookie_required');
       }
 
@@ -371,7 +385,7 @@ describe('PATCH /api/config', () => {
       await enableLogin();
       signedInUser = { userId: 'user_program', credential: 'api-key' };
 
-      const ok = await request(app)
+      const ok = await request(server)
         .patch('/api/config')
         .send({ ui: { theme: 'dark' } })
         .expect(200);
@@ -382,7 +396,7 @@ describe('PATCH /api/config', () => {
       await enableLogin();
       signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
 
-      const ok = await request(app)
+      const ok = await request(server)
         .patch('/api/config')
         .send({ tunnel: { authtoken: 'chosen-by-a-person' } })
         .expect(200);
@@ -398,7 +412,7 @@ describe('PATCH /api/config', () => {
       agentHeader = 'agent-token';
       signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
 
-      const refused = await request(app)
+      const refused = await request(server)
         .patch('/api/config')
         .send({ auth: { enabled: false } })
         .expect(403);
@@ -414,7 +428,7 @@ describe('PATCH /api/config', () => {
       signedInUser = undefined;
       agentHeader = undefined;
 
-      const ok = await request(app)
+      const ok = await request(server)
         .patch('/api/config')
         .send({ auth: { enabled: true } })
         .expect(200);
@@ -436,7 +450,7 @@ describe('PATCH /api/config', () => {
     signedInUser = undefined;
     agentHeader = undefined;
 
-    const ok = await request(app)
+    const ok = await request(server)
       .patch('/api/config')
       .send({ tunnel: { authtoken: 'planted' }, mcp: { apiKey: 'planted' } })
       .expect(200);
@@ -452,7 +466,7 @@ describe('PATCH /api/config', () => {
     agentHeader = 'agent-token';
     signedInUser = undefined;
 
-    const ok = await request(app)
+    const ok = await request(server)
       .patch('/api/config')
       .send({ ui: { theme: 'dark' } })
       .expect(200);
@@ -462,7 +476,7 @@ describe('PATCH /api/config', () => {
   it('lets a person change the other operator-only settings too', async () => {
     // The rest of the write allowlist, proven not to have leaked onto the human
     // path: exposure, the MCP endpoint's key, telemetry consent, and the boundary.
-    const response = await request(app)
+    const response = await request(server)
       .patch('/api/config')
       .send({
         tunnel: { enabled: true },
@@ -479,7 +493,7 @@ describe('PATCH /api/config', () => {
   });
 
   it('returns 400 for invalid theme value', async () => {
-    const response = await request(app)
+    const response = await request(server)
       .patch('/api/config')
       .send({ ui: { theme: 'invalid-theme' } })
       .expect(400);
@@ -489,13 +503,13 @@ describe('PATCH /api/config', () => {
 
   it('deep merges nested config objects', async () => {
     // First set port to 5000
-    await request(app)
+    await request(server)
       .patch('/api/config')
       .send({ server: { port: 5000 } })
       .expect(200);
 
     // Then set cwd, port should remain 5000
-    const response = await request(app)
+    const response = await request(server)
       .patch('/api/config')
       .send({ server: { cwd: '/test' } })
       .expect(200);
@@ -505,7 +519,7 @@ describe('PATCH /api/config', () => {
   });
 
   it('warns for multiple sensitive keys', async () => {
-    const response = await request(app)
+    const response = await request(server)
       .patch('/api/config')
       .send({
         tunnel: {
@@ -520,7 +534,7 @@ describe('PATCH /api/config', () => {
   });
 
   it('validates port range correctly', async () => {
-    const response = await request(app)
+    const response = await request(server)
       .patch('/api/config')
       .send({ server: { port: 70000 } })
       .expect(400);
@@ -530,7 +544,6 @@ describe('PATCH /api/config', () => {
 });
 
 describe('GET /api/config', () => {
-  let app: express.Express;
   let tmpDir: string;
 
   beforeEach(async () => {
@@ -541,10 +554,11 @@ describe('GET /api/config', () => {
     initConfigManager(tmpDir);
 
     const configRouter = (await import('../config.js')).default;
-    app = express();
+    const app = express();
     app.use(express.json());
     mountCallerFixture(app);
     app.use('/api/config', configRouter);
+    target.mount(app);
   });
 
   afterEach(() => {
@@ -553,7 +567,7 @@ describe('GET /api/config', () => {
   });
 
   it('includes boundary field in response', async () => {
-    const res = await request(app).get('/api/config');
+    const res = await request(server).get('/api/config');
 
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('boundary');
@@ -562,7 +576,7 @@ describe('GET /api/config', () => {
   });
 
   it('includes existing config fields alongside boundary', async () => {
-    const res = await request(app).get('/api/config').expect(200);
+    const res = await request(server).get('/api/config').expect(200);
 
     expect(res.body).toHaveProperty('version');
     expect(res.body).toHaveProperty('workingDirectory');
@@ -578,7 +592,7 @@ describe('GET /api/config', () => {
   // that is long past onboarding have its setting rewritten.
   describe('onboarding.runtimeDefaultSetAt — the once-only marker', () => {
     it('reports null on a fresh install', async () => {
-      const res = await request(app).get('/api/config').expect(200);
+      const res = await request(server).get('/api/config').expect(200);
       expect(res.body.onboarding).toHaveProperty('runtimeDefaultSetAt', null);
     });
 
@@ -629,7 +643,7 @@ describe('GET /api/config', () => {
         runtimeDefaultSetAt: '2026-07-31T09:00:00.000Z',
       });
 
-      const res = await request(app).get('/api/config').expect(200);
+      const res = await request(server).get('/api/config').expect(200);
       expect(res.body.onboarding.runtimeDefaultSetAt).toBe('2026-07-31T09:00:00.000Z');
     });
   });
@@ -640,7 +654,7 @@ describe('GET /api/config', () => {
   // reads the numbers actually in force rather than the shipped defaults.
   describe('rooms — the engaged-window numbers the cockpit says out loud', () => {
     it('reports the shipped ceilings when nobody has changed them', async () => {
-      const res = await request(app).get('/api/config').expect(200);
+      const res = await request(server).get('/api/config').expect(200);
 
       expect(res.body.rooms).toEqual({ engagedWindowMinutes: 10, engagedWindowPosts: 5 });
     });
@@ -653,7 +667,7 @@ describe('GET /api/config', () => {
         engagedWindowPosts: 2,
       });
 
-      const res = await request(app).get('/api/config').expect(200);
+      const res = await request(server).get('/api/config').expect(200);
 
       expect(res.body.rooms).toEqual({ engagedWindowMinutes: 3, engagedWindowPosts: 2 });
     });
@@ -662,7 +676,7 @@ describe('GET /api/config', () => {
       // The rest of `rooms` is turn budgets and reply waits — real settings the
       // cockpit never states out loud. Widening this to the whole block would
       // put an operator's spend limits on a wire that did not need them.
-      const res = await request(app).get('/api/config').expect(200);
+      const res = await request(server).get('/api/config').expect(200);
 
       expect(Object.keys(res.body.rooms).sort()).toEqual([
         'engagedWindowMinutes',
@@ -676,7 +690,7 @@ describe('GET /api/config', () => {
   // actually create in — the stored `~/.dork/agents` is not it once `DORK_HOME`
   // points somewhere else, which is the whole of DOR-662.
   it('reports agents.defaultDirectory resolved against DORK_HOME, not the home dir', async () => {
-    const res = await request(app).get('/api/config').expect(200);
+    const res = await request(server).get('/api/config').expect(200);
 
     expect(res.body.agents.defaultDirectory).toBe(path.join(tmpDir, 'agents'));
     expect(res.body.agents.defaultDirectory).not.toContain('~');
@@ -698,7 +712,7 @@ describe('GET /api/config', () => {
     it('reports the inherited environment as the resolved account', async () => {
       process.env.CLAUDE_CONFIG_DIR = '/tmp/inherited-claude';
 
-      const res = await request(app).get('/api/config').expect(200);
+      const res = await request(server).get('/api/config').expect(200);
 
       expect(res.body.claudeCode).toEqual({
         resolvedAccount: '/tmp/inherited-claude',
@@ -727,7 +741,7 @@ describe('GET /api/config', () => {
         },
       });
 
-      const res = await request(app).get('/api/config').expect(200);
+      const res = await request(server).get('/api/config').expect(200);
 
       // The chosen account wins over the inherited env var, and the roster says
       // honestly which entries no longer resolve.
@@ -742,7 +756,7 @@ describe('GET /api/config', () => {
     });
 
     it('does not widen the runtimes id list, which other readers treat as flat ids', async () => {
-      const res = await request(app).get('/api/config').expect(200);
+      const res = await request(server).get('/api/config').expect(200);
 
       expect(res.body.runtimes).toEqual(['claude-code', 'codex', 'opencode']);
     });
@@ -752,7 +766,7 @@ describe('GET /api/config', () => {
     const { configManager } = await import('../../services/core/config-manager.js');
     configManager.set('agents', { defaultDirectory: '~/work/agents', defaultAgent: 'dorkbot' });
 
-    const res = await request(app).get('/api/config').expect(200);
+    const res = await request(server).get('/api/config').expect(200);
 
     expect(res.body.agents.defaultDirectory).toBe('/Users/test-user/work/agents');
   });
@@ -768,10 +782,10 @@ describe('GET /api/config', () => {
   // so it stays that way rather than holding by absence.
   it('does not persist the resolved directory when a patch touches other config', async () => {
     const { configManager } = await import('../../services/core/config-manager.js');
-    const get = await request(app).get('/api/config').expect(200);
+    const get = await request(server).get('/api/config').expect(200);
     expect(get.body.agents.defaultDirectory).toBe(path.join(tmpDir, 'agents'));
 
-    await request(app)
+    await request(server)
       .patch('/api/config')
       .send({ ui: { theme: 'dark' } })
       .expect(200);
@@ -781,9 +795,12 @@ describe('GET /api/config', () => {
 
   it('does not persist the resolved directory when the default agent changes', async () => {
     const { configManager } = await import('../../services/core/config-manager.js');
-    await request(app).get('/api/config').expect(200);
+    await request(server).get('/api/config').expect(200);
 
-    await request(app).put('/api/config/agents/defaultAgent').send({ value: 'scout' }).expect(200);
+    await request(server)
+      .put('/api/config/agents/defaultAgent')
+      .send({ value: 'scout' })
+      .expect(200);
 
     expect(configManager.get('agents')).toEqual({
       defaultDirectory: '~/.dork/agents',
@@ -792,7 +809,7 @@ describe('GET /api/config', () => {
   });
 
   it('includes ui.sidebar organization prefs (DOR-329)', async () => {
-    const res = await request(app).get('/api/config').expect(200);
+    const res = await request(server).get('/api/config').expect(200);
 
     expect(res.body.ui.sidebar).toBeDefined();
     expect(Array.isArray(res.body.ui.sidebar.pinned)).toBe(true);
@@ -801,7 +818,7 @@ describe('GET /api/config', () => {
   });
 
   it('includes ui.shapes state (DOR-355)', async () => {
-    const res = await request(app).get('/api/config').expect(200);
+    const res = await request(server).get('/api/config').expect(200);
 
     expect(res.body.ui.shapes).toBeDefined();
     expect(res.body.ui.shapes.active).toBeNull();
@@ -810,14 +827,14 @@ describe('GET /api/config', () => {
   });
 
   it('includes ui.statusBar pins, nothing pinned by default (DOR-431, DOR-452)', async () => {
-    const res = await request(app).get('/api/config').expect(200);
+    const res = await request(server).get('/api/config').expect(200);
 
     expect(res.body.ui.statusBar).toBeDefined();
     expect(res.body.ui.statusBar).toEqual({ pins: [] });
   });
 
   it('includes the standing Full-autonomy acknowledgement, unset by default', async () => {
-    const res = await request(app).get('/api/config').expect(200);
+    const res = await request(server).get('/api/config').expect(200);
 
     expect(res.body.ui.autonomyAcknowledgedAt).toBeNull();
   });
@@ -826,12 +843,12 @@ describe('GET /api/config', () => {
     // The round trip the cockpit relies on: the dialog's "don't show this again"
     // writes here, and every later autonomy PATCH is answered from this read.
     const acknowledgedAt = '2026-08-01T09:30:00.000Z';
-    await request(app)
+    await request(server)
       .patch('/api/config')
       .send({ ui: { autonomyAcknowledgedAt: acknowledgedAt } })
       .expect(200);
 
-    const res = await request(app).get('/api/config').expect(200);
+    const res = await request(server).get('/api/config').expect(200);
     expect(res.body.ui.autonomyAcknowledgedAt).toBe(acknowledgedAt);
   });
 
@@ -840,7 +857,7 @@ describe('GET /api/config', () => {
     // stop new sessions START at is a wider claim than putting one session
     // there — durable, and a session born from it opens already bypassed with
     // no dialog to show — so the asking happens at the moment of choosing.
-    const res = await request(app)
+    const res = await request(server)
       .patch('/api/config')
       .send({ runtimes: { defaultTrustStop: 'autonomy' } })
       .expect(428);
@@ -849,12 +866,12 @@ describe('GET /api/config', () => {
     expect(res.body.paths).toEqual(['runtimes.defaultTrustStop']);
 
     // A refusal changes nothing.
-    const after = await request(app).get('/api/config').expect(200);
+    const after = await request(server).get('/api/config').expect(200);
     expect(after.body.executionDefaults.trustStop).toBeNull();
   });
 
   it('refuses a per-runtime autonomy default the same way, naming the leaf', async () => {
-    const res = await request(app)
+    const res = await request(server)
       .patch('/api/config')
       .send({ runtimes: { codex: { defaultTrustStop: 'autonomy' } } })
       .expect(428);
@@ -865,12 +882,12 @@ describe('GET /api/config', () => {
   it('lets the gentler stops through with no ritual at all', async () => {
     // Only the stop a person cannot walk back asks twice. A dialog in front of
     // "ask me first" is how people learn to click through the one that matters.
-    await request(app)
+    await request(server)
       .patch('/api/config')
       .send({ runtimes: { defaultTrustStop: 'act', claudeCode: { defaultTrustStop: 'ask' } } })
       .expect(200);
 
-    const res = await request(app).get('/api/config').expect(200);
+    const res = await request(server).get('/api/config').expect(200);
     expect(res.body.executionDefaults.trustStop).toBe('act');
     expect(
       res.body.executionDefaults.perRuntime.find(
@@ -883,7 +900,7 @@ describe('GET /api/config', () => {
     // What the Settings dialog sends: the consent record and the new default in
     // one write, so there is no window where the stop landed without the consent
     // and no two-request ordering for a client to get wrong.
-    await request(app)
+    await request(server)
       .patch('/api/config')
       .send({
         ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' },
@@ -891,32 +908,32 @@ describe('GET /api/config', () => {
       })
       .expect(200);
 
-    const res = await request(app).get('/api/config').expect(200);
+    const res = await request(server).get('/api/config').expect(200);
     expect(res.body.executionDefaults.trustStop).toBe('autonomy');
   });
 
   it('accepts autonomy on a standing acknowledgement given earlier', async () => {
-    await request(app)
+    await request(server)
       .patch('/api/config')
       .send({ ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' } })
       .expect(200);
 
-    await request(app)
+    await request(server)
       .patch('/api/config')
       .send({ runtimes: { defaultTrustStop: 'autonomy' } })
       .expect(200);
   });
 
   it('starts refusing again the moment the acknowledgement is cleared', async () => {
-    await request(app)
+    await request(server)
       .patch('/api/config')
       .send({ ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' } })
       .expect(200);
-    await request(app)
+    await request(server)
       .patch('/api/config')
       .send({ ui: { autonomyAcknowledgedAt: null } });
 
-    await request(app)
+    await request(server)
       .patch('/api/config')
       .send({ runtimes: { defaultTrustStop: 'autonomy' } })
       .expect(428);
@@ -927,7 +944,7 @@ describe('GET /api/config', () => {
     // Reset that left the default standing would keep birthing bypassed sessions
     // with no consent on file — and the cockpit's first mode change for one of
     // them would 428 against a door the person believed they had re-armed.
-    await request(app)
+    await request(server)
       .patch('/api/config')
       .send({
         ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' },
@@ -935,12 +952,12 @@ describe('GET /api/config', () => {
       })
       .expect(200);
 
-    await request(app)
+    await request(server)
       .patch('/api/config')
       .send({ ui: { autonomyAcknowledgedAt: null } })
       .expect(200);
 
-    const res = await request(app).get('/api/config').expect(200);
+    const res = await request(server).get('/api/config').expect(200);
     expect(res.body.ui.autonomyAcknowledgedAt).toBeNull();
     expect(res.body.executionDefaults.trustStop).toBeNull();
     expect(
@@ -952,7 +969,7 @@ describe('GET /api/config', () => {
   it('leaves the gentler standing defaults alone when the acknowledgement is cleared', async () => {
     // Only the stop whose justification was the record goes. "Act" needed no
     // acknowledgement, so a Reset has nothing to say about it.
-    await request(app)
+    await request(server)
       .patch('/api/config')
       .send({
         ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' },
@@ -960,11 +977,11 @@ describe('GET /api/config', () => {
       })
       .expect(200);
 
-    await request(app)
+    await request(server)
       .patch('/api/config')
       .send({ ui: { autonomyAcknowledgedAt: null } });
 
-    const res = await request(app).get('/api/config').expect(200);
+    const res = await request(server).get('/api/config').expect(200);
     expect(res.body.executionDefaults.trustStop).toBe('act');
     expect(
       res.body.executionDefaults.perRuntime.find((e: { runtime: string }) => e.runtime === 'codex')
@@ -973,13 +990,13 @@ describe('GET /api/config', () => {
   });
 
   it('answers a patch that clears the record AND asks for autonomy with the clear', async () => {
-    await request(app)
+    await request(server)
       .patch('/api/config')
       .send({ ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' } })
       .expect(200);
 
     // Contradictory, and not argued with: the clear wins and the stop lands null.
-    await request(app)
+    await request(server)
       .patch('/api/config')
       .send({
         ui: { autonomyAcknowledgedAt: null },
@@ -987,13 +1004,13 @@ describe('GET /api/config', () => {
       })
       .expect(200);
 
-    const res = await request(app).get('/api/config').expect(200);
+    const res = await request(server).get('/api/config').expect(200);
     expect(res.body.ui.autonomyAcknowledgedAt).toBeNull();
     expect(res.body.executionDefaults.trustStop).toBeNull();
   });
 
   it('touches nothing when a patch says nothing about the acknowledgement', async () => {
-    await request(app)
+    await request(server)
       .patch('/api/config')
       .send({
         ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' },
@@ -1001,32 +1018,31 @@ describe('GET /api/config', () => {
       })
       .expect(200);
 
-    await request(app)
+    await request(server)
       .patch('/api/config')
       .send({ logging: { level: 'debug' } })
       .expect(200);
 
-    const res = await request(app).get('/api/config').expect(200);
+    const res = await request(server).get('/api/config').expect(200);
     expect(res.body.executionDefaults.trustStop).toBe('autonomy');
   });
 
   it('lets Settings clear the acknowledgement, which brings the dialog back', async () => {
-    await request(app)
+    await request(server)
       .patch('/api/config')
       .send({ ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' } })
       .expect(200);
 
-    await request(app)
+    await request(server)
       .patch('/api/config')
       .send({ ui: { autonomyAcknowledgedAt: null } });
 
-    const res = await request(app).get('/api/config').expect(200);
+    const res = await request(server).get('/api/config').expect(200);
     expect(res.body.ui.autonomyAcknowledgedAt).toBeNull();
   });
 });
 
 describe('PUT /api/config/agents/defaultAgent', () => {
-  let app: express.Express;
   let tmpDir: string;
 
   beforeEach(async () => {
@@ -1037,10 +1053,11 @@ describe('PUT /api/config/agents/defaultAgent', () => {
     initConfigManager(tmpDir);
 
     const configRouter = (await import('../config.js')).default;
-    app = express();
+    const app = express();
     app.use(express.json());
     mountCallerFixture(app);
     app.use('/api/config', configRouter);
+    target.mount(app);
   });
 
   afterEach(() => {
@@ -1049,7 +1066,7 @@ describe('PUT /api/config/agents/defaultAgent', () => {
   });
 
   it('sets the default agent and returns success', async () => {
-    const res = await request(app)
+    const res = await request(server)
       .put('/api/config/agents/defaultAgent')
       .send({ value: 'my-agent' })
       .expect(200);
@@ -1059,7 +1076,7 @@ describe('PUT /api/config/agents/defaultAgent', () => {
   });
 
   it('persists the default agent in config', async () => {
-    await request(app)
+    await request(server)
       .put('/api/config/agents/defaultAgent')
       .send({ value: 'my-agent' })
       .expect(200);
@@ -1069,13 +1086,13 @@ describe('PUT /api/config/agents/defaultAgent', () => {
   });
 
   it('returns 400 when value is missing', async () => {
-    const res = await request(app).put('/api/config/agents/defaultAgent').send({}).expect(400);
+    const res = await request(server).put('/api/config/agents/defaultAgent').send({}).expect(400);
 
     expect(res.body.error).toContain('non-empty');
   });
 
   it('returns 400 when value is empty string', async () => {
-    const res = await request(app)
+    const res = await request(server)
       .put('/api/config/agents/defaultAgent')
       .send({ value: '  ' })
       .expect(400);
@@ -1084,7 +1101,7 @@ describe('PUT /api/config/agents/defaultAgent', () => {
   });
 
   it('returns 400 when value is not a string', async () => {
-    const res = await request(app)
+    const res = await request(server)
       .put('/api/config/agents/defaultAgent')
       .send({ value: 123 })
       .expect(400);
@@ -1093,7 +1110,7 @@ describe('PUT /api/config/agents/defaultAgent', () => {
   });
 
   it('trims whitespace from agent name', async () => {
-    const res = await request(app)
+    const res = await request(server)
       .put('/api/config/agents/defaultAgent')
       .send({ value: '  my-agent  ' })
       .expect(200);

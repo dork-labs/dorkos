@@ -13,9 +13,9 @@ If you run one agent per project, DorkOS lets those agents talk to each other di
 Three pieces make this work: **Mesh** finds your agents and gives each one an address, **Relay** carries messages between them, and **Tasks** can trigger a message on a schedule instead of waiting for you to ask.
 
 <Callout type="info">
-  This is a shipped capability we are still hardening end to end. Multi-agent messaging works in
-  the setups we've tested, but treat it as early: watch what an agent actually does with a
-  handoff before you trust it with something you can't easily undo.
+  This is a shipped capability we are still hardening end to end. Multi-agent messaging works in the
+  setups we've tested, but treat it as early: watch what an agent actually does with a handoff
+  before you trust it with something you can't easily undo.
 </Callout>
 
 ## Quick win: send one message between two agents
@@ -80,12 +80,12 @@ For example, scanning `/home/user/projects` might produce:
 
 Mesh checks every cross-agent message against a priority-ordered list of rules:
 
-| Priority | Rule                    | Effect                                                              |
-| -------- | ----------------------- | -------------------------------------------------------------------- |
-| 200      | System-agent allow      | The system agent (DorkBot) can always reach any namespace            |
-| 100      | Same-namespace allow    | Agents in the same namespace talk freely by default                  |
-| 50       | Cross-namespace allow   | Explicit rules you add                                               |
-| 10       | Cross-namespace deny    | The catch-all: blocks anything not explicitly allowed                |
+| Priority | Rule                  | Effect                                                    |
+| -------- | --------------------- | --------------------------------------------------------- |
+| 200      | System-agent allow    | The system agent (DorkBot) can always reach any namespace |
+| 100      | Same-namespace allow  | Agents in the same namespace talk freely by default       |
+| 50       | Cross-namespace allow | Explicit rules you add                                    |
+| 10       | Cross-namespace deny  | The catch-all: blocks anything not explicitly allowed     |
 
 Agents in the same namespace (say, `backend`) need no configuration. Cross-namespace traffic (`backend` to `frontend`) needs an explicit allow rule:
 
@@ -129,9 +129,9 @@ Agent "api" asks "web" a question:
 The web agent's reply routes back to `relay.agent.backend.api` on its own; you don't have to wire that up.
 
 <Callout type="info">
-  Every message carries a budget: a default limit of 5 hops and a 1-hour TTL (time to live, how
-  long a message stays valid before it expires). That budget keeps a chain of agents from looping
-  forever or running up API costs.
+  Every message carries a budget: a default limit of 5 hops and a 1-hour TTL (time to live, how long
+  a message stays valid before it expires). That budget keeps a chain of agents from looping forever
+  or running up API costs.
 </Callout>
 
 ### Scheduling messages with Tasks

@@ -12,7 +12,8 @@
     "./sse-helpers": "./src/sse-helpers.ts",
     "./sse-test-helpers": "./src/sse-test-helpers.ts",
     "./fake-connector-provider": "./src/fake-connector-provider.ts",
-    "./fake-community-adapter": "./src/fake-community-adapter.ts"
+    "./fake-community-adapter": "./src/fake-community-adapter.ts",
+    "./listening-server": "./src/listening-server.ts"
   },
   "scripts": {
     "lint": "eslint .",

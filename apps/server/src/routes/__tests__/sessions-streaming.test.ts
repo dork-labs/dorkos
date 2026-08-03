@@ -65,6 +65,7 @@ vi.mock('@dorkos/shared/manifest', () => ({
 }));
 
 import request from 'supertest';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp, finalizeApp } from '../../app.js';
 import {
   getOrCreateProjector,
@@ -74,6 +75,15 @@ import { collectTriggeredTurn } from './helpers/trigger-turn-helpers.js';
 
 const app = createApp();
 finalizeApp(app);
+
+/**
+ * ONE listener for the whole file (DOR-483). Requests and `/events` attachments
+ * both target `server`, never `app`: handed a non-listening app, supertest binds
+ * and frees an ephemeral port per request and the stream helpers used to do the
+ * same, so a pooled keep-alive socket for a reclaimed port could land on the
+ * wrong server. See {@link listeningServer}.
+ */
+const server = listeningServer(app);
 
 /** Valid UUID for session ID params (routes validate UUID format). */
 const SESSION_ID = '00000000-0000-4000-8000-000000000001';
@@ -123,7 +133,7 @@ describe('POST /api/sessions/:id/messages (trigger-only)', () => {
       },
     ]);
 
-    const frames = await collectTriggeredTurn(app, SESSION_ID, 'Hello');
+    const frames = await collectTriggeredTurn(server, SESSION_ID, 'Hello');
 
     const types = frames.map((f) => (f.data as SessionEvent).type);
     expect(types).toContain('turn_start');
@@ -150,7 +160,7 @@ describe('POST /api/sessions/:id/messages (trigger-only)', () => {
       },
     ]);
 
-    const frames = await collectTriggeredTurn(app, SESSION_ID, 'Run a tool');
+    const frames = await collectTriggeredTurn(server, SESSION_ID, 'Run a tool');
 
     const types = frames.map((f) => (f.data as SessionEvent).type);
     expect(types).toContain('tool_call');
@@ -164,7 +174,7 @@ describe('POST /api/sessions/:id/messages (trigger-only)', () => {
     fakeRuntime.isLocked.mockReturnValue(true);
     fakeRuntime.getLockInfo.mockReturnValue({ clientId: 'other-client', acquiredAt: Date.now() });
 
-    const res = await request(app)
+    const res = await request(server)
       .post(`/api/sessions/${SESSION_ID}/messages`)
       .send({ content: 'Hello' });
 
@@ -180,7 +190,7 @@ describe('POST /api/sessions/:id/messages (trigger-only)', () => {
       },
     ]);
 
-    const res = await request(app)
+    const res = await request(server)
       .post(`/api/sessions/${SESSION_ID}/messages`)
       .send({ content: 'test message' });
 

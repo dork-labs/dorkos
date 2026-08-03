@@ -28,13 +28,24 @@ vi.mock('../../lib/logger.js', () => ({
   },
 }));
 
+import type { Server } from 'node:http';
+import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createMcpRouter } from '../mcp.js';
 
-function createTestApp(mockServerFactory: () => unknown) {
+/**
+ * ONE listener for the whole file, with the app behind it swapped per test
+ * (DOR-483). Requests go to `server`, never to a bare app: handed a
+ * non-listening app supertest binds and frees an ephemeral port per request,
+ * and a pooled keep-alive socket for a reclaimed port lands on the wrong
+ * server. See {@link swappableServer}.
+ */
+const target = swappableServer();
+
+function createTestApp(mockServerFactory: () => unknown): Server {
   const app = express();
   app.use(express.json());
   app.use('/mcp', createMcpRouter(mockServerFactory as Parameters<typeof createMcpRouter>[0]));
-  return app;
+  return target.mount(app);
 }
 
 describe('MCP Route Handler', () => {
@@ -46,12 +57,18 @@ describe('MCP Route Handler', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // `mockReset()`, not `clearAllMocks()`: clearing wipes call history but does
+    // NOT drain a queued one-shot (`mockRejectedValueOnce`) implementation. Both
+    // of these carry one in the last two tests, and an unconsumed one survives
+    // into a later test to fire against whatever request reaches it first.
+    mockConnect.mockReset();
+    mockHandleRequest.mockReset();
     mockConnect.mockResolvedValue(undefined);
   });
 
   it('GET /mcp returns 405 with JSON-RPC error', async () => {
-    const app = createTestApp(createMockServer);
-    const res = await request(app).get('/mcp');
+    const server = createTestApp(createMockServer);
+    const res = await request(server).get('/mcp');
 
     expect(res.status).toBe(405);
     expect(res.body).toEqual({
@@ -65,8 +82,8 @@ describe('MCP Route Handler', () => {
   });
 
   it('DELETE /mcp returns 405 with JSON-RPC error', async () => {
-    const app = createTestApp(createMockServer);
-    const res = await request(app).delete('/mcp');
+    const server = createTestApp(createMockServer);
+    const res = await request(server).delete('/mcp');
 
     expect(res.status).toBe(405);
     expect(res.body).toEqual({
@@ -83,9 +100,9 @@ describe('MCP Route Handler', () => {
     mockHandleRequest.mockImplementation((_req: unknown, res: express.Response) => {
       res.json({ jsonrpc: '2.0', result: {}, id: 1 });
     });
-    const app = createTestApp(createMockServer);
+    const server = createTestApp(createMockServer);
 
-    await request(app).post('/mcp').send({ jsonrpc: '2.0', method: 'initialize', id: 1 });
+    await request(server).post('/mcp').send({ jsonrpc: '2.0', method: 'initialize', id: 1 });
 
     expect(mockTransportConstructor).toHaveBeenCalledWith({
       sessionIdGenerator: undefined,
@@ -96,9 +113,9 @@ describe('MCP Route Handler', () => {
     mockHandleRequest.mockImplementation((_req: unknown, res: express.Response) => {
       res.json({ jsonrpc: '2.0', result: {}, id: 1 });
     });
-    const app = createTestApp(createMockServer);
+    const server = createTestApp(createMockServer);
 
-    await request(app).post('/mcp').send({ jsonrpc: '2.0', method: 'initialize', id: 1 });
+    await request(server).post('/mcp').send({ jsonrpc: '2.0', method: 'initialize', id: 1 });
 
     expect(mockConnect).toHaveBeenCalled();
   });
@@ -108,9 +125,9 @@ describe('MCP Route Handler', () => {
     mockHandleRequest.mockImplementation((_req: unknown, res: express.Response) => {
       res.json({ jsonrpc: '2.0', result: { tools: [] }, id: 2 });
     });
-    const app = createTestApp(createMockServer);
+    const server = createTestApp(createMockServer);
 
-    await request(app).post('/mcp').send(body);
+    await request(server).post('/mcp').send(body);
 
     expect(mockHandleRequest).toHaveBeenCalledWith(
       expect.anything(), // req
@@ -121,9 +138,9 @@ describe('MCP Route Handler', () => {
 
   it('POST /mcp returns 500 JSON-RPC error when server.connect throws', async () => {
     mockConnect.mockRejectedValueOnce(new Error('Connect failed'));
-    const app = createTestApp(createMockServer);
+    const server = createTestApp(createMockServer);
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/mcp')
       .send({ jsonrpc: '2.0', method: 'initialize', id: 1 });
 
@@ -137,9 +154,9 @@ describe('MCP Route Handler', () => {
 
   it('POST /mcp returns 500 JSON-RPC error when transport.handleRequest throws', async () => {
     mockHandleRequest.mockRejectedValueOnce(new Error('Transport error'));
-    const app = createTestApp(createMockServer);
+    const server = createTestApp(createMockServer);
 
-    const res = await request(app)
+    const res = await request(server)
       .post('/mcp')
       .send({ jsonrpc: '2.0', method: 'initialize', id: 1 });
 

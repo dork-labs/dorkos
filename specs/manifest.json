@@ -41,7 +41,7 @@
       "slug": "claude-code-accounts",
       "title": "Claude Code accounts — choose which account runs your work",
       "created": "2026-07-29",
-      "status": "specified"
+      "status": "implemented"
     },
     {
       "id": "260730-001217",

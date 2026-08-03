@@ -66,9 +66,11 @@ name: db-check
 # merge groups a hard prerequisite for any required check, and getting that wrong
 # on a required check blocks the queue.
 #
-# IT IS NOT REQUIRED YET, and this file does not make it so. The trigger lands
-# first, somebody watches it report on a real merge group, and promoting it to a
-# required context is a separate deliberate act after that.
+# REQUIRED SINCE 2026-08-01, promoted after it reported green on real merge
+# groups (PRs #696-#698). This file does not make it required — branch
+# protection does — so removing `merge_group:` from the trigger list, renaming
+# the job, or adding a `paths:` filter now BLOCKS THE QUEUE (see above) until
+# someone also updates the required-check contexts on main.
 #
 # WHAT IT DOES AND DOES NOT COVER, so nobody treats it as more cover than it is.
 # It catches an ADDITIVE schema change whose migration was not committed (the

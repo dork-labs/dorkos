@@ -44,6 +44,8 @@ vi.mock('../../services/runtimes/opencode/ollama.js', () => ({
 
 import express from 'express';
 import request from 'supertest';
+import type { Server } from 'node:http';
+import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp } from '../../app.js';
 import runtimesRouter from '../runtimes.js';
 import { logger } from '../../lib/logger.js';
@@ -62,7 +64,29 @@ import { detectOllama, pullOllamaModel } from '../../services/runtimes/opencode/
 import type { OllamaPullResult } from '@dorkos/shared/runtime-connect';
 
 const app = createApp();
+
+/**
+ * ONE listener for the whole file (DOR-483). Requests target `server`, never
+ * `app`: handed a non-listening app supertest binds and frees an ephemeral port
+ * per request, and a pooled keep-alive socket for a reclaimed port lands on the
+ * wrong server. See {@link listeningServer}.
+ */
+const server = listeningServer(app);
+
 const SECRET = 'sk-ant-secret-never-echo';
+
+/** The TCP peer `peerApp` reports for the current test; set by `appWithPeer`. */
+let currentPeer = '127.0.0.1';
+
+/** The real runtimes router behind a middleware that rewrites the TCP peer. */
+const peerApp = express();
+peerApp.use((req, _res, next) => {
+  Object.defineProperty(req.socket, 'remoteAddress', { value: currentPeer, configurable: true });
+  next();
+});
+peerApp.use(express.json());
+peerApp.use('/api/runtimes', runtimesRouter);
+const peerServer = listeningServer(peerApp);
 
 describe('runtime connect endpoints', () => {
   beforeEach(() => vi.clearAllMocks());
@@ -78,7 +102,7 @@ describe('runtime connect endpoints', () => {
       ];
       vi.mocked(storeRuntimeCredential).mockResolvedValue({ ref: 'file:anthropic' });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/runtimes/claude-code/credential')
         .send({ secret: SECRET });
 
@@ -99,7 +123,7 @@ describe('runtime connect endpoints', () => {
       vi.mocked(storeRuntimeCredential).mockRejectedValue(
         new ConnectError('"opencode" does not support a native API key.', 400)
       );
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/runtimes/opencode/credential')
         .send({ secret: SECRET });
       expect(res.status).toBe(400);
@@ -108,13 +132,13 @@ describe('runtime connect endpoints', () => {
     });
 
     it('rejects a request with no secret', async () => {
-      const res = await request(app).post('/api/runtimes/codex/credential').send({});
+      const res = await request(server).post('/api/runtimes/codex/credential').send({});
       expect(res.status).toBe(400);
       expect(storeRuntimeCredential).not.toHaveBeenCalled();
     });
 
     it('rejects a non-loopback origin with 403 and never stores', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/runtimes/claude-code/credential')
         .set('Host', 'evil.example.com')
         .send({ secret: SECRET });
@@ -126,7 +150,7 @@ describe('runtime connect endpoints', () => {
   describe('POST /api/runtimes/opencode/provider/credential', () => {
     it('stores a provider key and returns ONLY the reference — never the secret', async () => {
       vi.mocked(storeProviderCredential).mockResolvedValue({ ref: 'file:openai' });
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/runtimes/opencode/provider/credential')
         .send({ providerId: 'openai', secret: SECRET, baseURL: 'https://api.example.com/v1' });
 
@@ -142,7 +166,7 @@ describe('runtime connect endpoints', () => {
 
     it('defaults a missing baseURL to null', async () => {
       vi.mocked(storeProviderCredential).mockResolvedValue({ ref: 'file:openai' });
-      await request(app)
+      await request(server)
         .post('/api/runtimes/opencode/provider/credential')
         .send({ providerId: 'openai', secret: SECRET });
 
@@ -157,7 +181,7 @@ describe('runtime connect endpoints', () => {
       vi.mocked(storeProviderCredential).mockRejectedValue(
         new ConnectError('A provider id is required.', 400)
       );
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/runtimes/opencode/provider/credential')
         .send({ providerId: 'x', secret: SECRET });
 
@@ -167,7 +191,7 @@ describe('runtime connect endpoints', () => {
     });
 
     it('rejects a request with no secret', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/runtimes/opencode/provider/credential')
         .send({ providerId: 'openai' });
       expect(res.status).toBe(400);
@@ -175,7 +199,7 @@ describe('runtime connect endpoints', () => {
     });
 
     it('rejects a non-loopback origin with 403 and never stores', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/runtimes/opencode/provider/credential')
         .set('Host', 'evil.example.com')
         .send({ providerId: 'openai', secret: SECRET });
@@ -187,7 +211,7 @@ describe('runtime connect endpoints', () => {
   describe('POST /api/runtimes/:type/login', () => {
     it('delegates the vendor login and returns its completion result', async () => {
       vi.mocked(delegateRuntimeLogin).mockResolvedValue({ ok: true });
-      const res = await request(app).post('/api/runtimes/codex/login');
+      const res = await request(server).post('/api/runtimes/codex/login');
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true });
       expect(delegateRuntimeLogin).toHaveBeenCalledWith('codex');
@@ -198,20 +222,20 @@ describe('runtime connect endpoints', () => {
         ok: false,
         error: 'Sign-in timed out. Please try again.',
       });
-      const res = await request(app).post('/api/runtimes/claude-code/login');
+      const res = await request(server).post('/api/runtimes/claude-code/login');
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: false, error: 'Sign-in timed out. Please try again.' });
     });
 
     it('rejects a runtime that does not support sign-in without spawning', async () => {
-      const res = await request(app).post('/api/runtimes/opencode/login');
+      const res = await request(server).post('/api/runtimes/opencode/login');
       expect(res.status).toBe(400);
       expect(res.body.ok).toBe(false);
       expect(delegateRuntimeLogin).not.toHaveBeenCalled();
     });
 
     it('rejects a non-loopback origin with 403', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/runtimes/codex/login')
         .set('Host', 'evil.example.com');
       expect(res.status).toBe(403);
@@ -222,7 +246,7 @@ describe('runtime connect endpoints', () => {
   describe('POST /api/runtimes/opencode/openrouter/key', () => {
     it('stores a valid key and returns { ok: true } without echoing it', async () => {
       vi.mocked(storeOpenRouterKeyReference).mockResolvedValue({ ref: 'file:openrouter' });
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/runtimes/opencode/openrouter/key')
         .send({ key: 'sk-or-valid' });
       expect(res.status).toBe(200);
@@ -234,7 +258,7 @@ describe('runtime connect endpoints', () => {
       vi.mocked(storeOpenRouterKeyReference).mockRejectedValue(
         new OpenRouterError('That OpenRouter key was not accepted. Check it and try again.', 400)
       );
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/runtimes/opencode/openrouter/key')
         .send({ key: 'bad' });
       expect(res.status).toBe(200);
@@ -244,7 +268,7 @@ describe('runtime connect endpoints', () => {
 
   describe('OpenRouter OAuth-PKCE', () => {
     it('starts a flow and returns the authorize URL + a pollable state', async () => {
-      const res = await request(app).post('/api/runtimes/opencode/openrouter/oauth/start');
+      const res = await request(server).post('/api/runtimes/opencode/openrouter/oauth/start');
       expect(res.status).toBe(200);
       expect(res.body.state).toBeTruthy();
       const url = new URL(res.body.authorizeUrl);
@@ -255,8 +279,8 @@ describe('runtime connect endpoints', () => {
     });
 
     it('polls a started flow as pending', async () => {
-      const start = await request(app).post('/api/runtimes/opencode/openrouter/oauth/start');
-      const res = await request(app)
+      const start = await request(server).post('/api/runtimes/opencode/openrouter/oauth/start');
+      const res = await request(server)
         .get('/api/runtimes/opencode/openrouter/oauth/status')
         .query({ state: start.body.state });
       expect(res.status).toBe(200);
@@ -265,7 +289,7 @@ describe('runtime connect endpoints', () => {
 
     it('renders a success page when the callback connected', async () => {
       vi.mocked(handleOpenRouterCallback).mockResolvedValue({ status: 'connected' });
-      const res = await request(app)
+      const res = await request(server)
         .get('/api/runtimes/opencode/openrouter/oauth/callback')
         .query({ state: 'abc', code: 'auth_code' });
       expect(res.status).toBe(200);
@@ -282,7 +306,7 @@ describe('runtime connect endpoints', () => {
         status: 'error',
         error: 'This sign-in link expired. Please try again.',
       });
-      const res = await request(app)
+      const res = await request(server)
         .get('/api/runtimes/opencode/openrouter/oauth/callback')
         .query({ state: 'bogus' });
       expect(res.status).toBe(400);
@@ -294,7 +318,7 @@ describe('runtime connect endpoints', () => {
         status: 'error',
         error: '<script>alert(1)</script>',
       });
-      const res = await request(app)
+      const res = await request(server)
         .get('/api/runtimes/opencode/openrouter/oauth/callback')
         .query({ state: 'bogus' });
       expect(res.status).toBe(400);
@@ -310,7 +334,7 @@ describe('runtime connect endpoints', () => {
         running: true,
         models: [{ name: 'qwen2.5-coder:7b', size: 4_700_000_000 }, { name: 'no-size-model' }],
       });
-      const res = await request(app).get('/api/runtimes/opencode/ollama');
+      const res = await request(server).get('/api/runtimes/opencode/ollama');
       expect(res.status).toBe(200);
       expect(res.body.running).toBe(true);
       expect(res.body.models).toEqual([
@@ -327,7 +351,7 @@ describe('runtime connect endpoints', () => {
     });
 
     it('rejects a non-loopback origin with 403', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .get('/api/runtimes/opencode/ollama')
         .set('Host', 'evil.example.com');
       expect(res.status).toBe(403);
@@ -337,7 +361,7 @@ describe('runtime connect endpoints', () => {
 
   describe('GET /api/runtimes/opencode/ollama/models', () => {
     it('returns the curated catalog assessed against this machine', async () => {
-      const res = await request(app).get('/api/runtimes/opencode/ollama/models');
+      const res = await request(server).get('/api/runtimes/opencode/ollama/models');
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body.models)).toBe(true);
       expect(res.body.models.length).toBeGreaterThanOrEqual(1);
@@ -350,7 +374,7 @@ describe('runtime connect endpoints', () => {
     });
 
     it('rejects a non-loopback origin with 403', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .get('/api/runtimes/opencode/ollama/models')
         .set('Host', 'evil.example.com');
       expect(res.status).toBe(403);
@@ -367,7 +391,7 @@ describe('runtime connect endpoints', () => {
         return result;
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/runtimes/opencode/ollama/pull')
         .send({ model: 'qwen2.5-coder:7b' });
 
@@ -382,7 +406,7 @@ describe('runtime connect endpoints', () => {
 
     it('defaults to the curated default model when none is named', async () => {
       vi.mocked(pullOllamaModel).mockResolvedValue({ ok: true, model: 'qwen2.5-coder:7b' });
-      const res = await request(app).post('/api/runtimes/opencode/ollama/pull').send({});
+      const res = await request(server).post('/api/runtimes/opencode/ollama/pull').send({});
       expect(res.status).toBe(200);
       expect(pullOllamaModel).toHaveBeenCalledWith('qwen2.5-coder:7b', expect.any(Function));
     });
@@ -394,7 +418,7 @@ describe('runtime connect endpoints', () => {
         error: 'Could not pull qwen2.5-coder:7b. Check that Ollama is running and try again.',
       });
 
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/runtimes/opencode/ollama/pull')
         .send({ model: 'qwen2.5-coder:7b' });
 
@@ -406,7 +430,7 @@ describe('runtime connect endpoints', () => {
 
     it('accepts any syntactically valid tag, curated or not (pull-by-name)', async () => {
       vi.mocked(pullOllamaModel).mockResolvedValue({ ok: true, model: 'totally/uncurated:latest' });
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/runtimes/opencode/ollama/pull')
         .send({ model: 'totally/uncurated:latest' });
 
@@ -419,7 +443,7 @@ describe('runtime connect endpoints', () => {
     });
 
     it('rejects a malformed tag with 400 and never triggers a pull', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/runtimes/opencode/ollama/pull')
         .send({ model: 'not a valid tag!' });
 
@@ -429,7 +453,7 @@ describe('runtime connect endpoints', () => {
     });
 
     it('rejects a non-loopback origin with 403 and never pulls', async () => {
-      const res = await request(app)
+      const res = await request(server)
         .post('/api/runtimes/opencode/ollama/pull')
         .set('Host', 'evil.example.com')
         .send({ model: 'qwen2.5-coder:7b' });
@@ -453,16 +477,23 @@ describe('runtime connect endpoints', () => {
    * the one worth catching.
    */
   describe('locality gate on the credential + connect routes', () => {
-    /** Mount the real router behind a middleware that rewrites the TCP peer. */
-    function appWithPeer(peer: string): express.Express {
-      const peerApp = express();
-      peerApp.use((req, _res, next) => {
-        Object.defineProperty(req.socket, 'remoteAddress', { value: peer, configurable: true });
-        next();
-      });
-      peerApp.use(express.json());
-      peerApp.use('/api/runtimes', runtimesRouter);
-      return peerApp;
+    /**
+     * Point the peer server's rewrite at `peer` and return that server.
+     *
+     * A SECOND listener, bound once alongside the main one and never rebound
+     * (DOR-483). It gets its own rather than sharing, because the middleware
+     * below redefines `remoteAddress` on the live socket: under keep-alive the
+     * socket outlives the request, so a poisoned peer would follow it onto the
+     * NEXT request. Keeping the rewrite on a dedicated listener means every
+     * request that reaches a poisoned socket passes through the middleware that
+     * overwrites it first.
+     *
+     * @param peer - The TCP peer address every request should appear to come from.
+     * @returns The peer server, listening and rewriting to `peer`.
+     */
+    function appWithPeer(peer: string): Server {
+      currentPeer = peer;
+      return peerServer;
     }
 
     /** The LAN peer that defeated the header-only check, per the DOR-532 probes. */

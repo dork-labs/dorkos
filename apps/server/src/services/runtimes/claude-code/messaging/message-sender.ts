@@ -189,8 +189,15 @@ export interface MessageSenderOpts {
   /**
    * Report that the SDK bound this session to a NEW canonical id mid-turn. The
    * session store owns every lookup keyed by that id (its reverse index and the
-   * durable settings row), so the sender only announces the change. Awaited, so
-   * the move is complete before the turn produces more events.
+   * durable settings row), so the sender only announces the change.
+   *
+   * Awaited BEFORE the event that carries the new id out of the server, which is
+   * the ordering the whole thing rests on: `trigger-turn` re-keys the projector
+   * on any event it sees, and that announcement is how the cockpit learns the id
+   * it will POST its next message under. Handing that id out before the row has
+   * moved is what made the session's own next message look like a brand-new one
+   * (DOR-493, DOR-838). A failure inside is warned and swallowed by the store,
+   * so this await cannot fail the turn.
    */
   onSdkSessionRebind: (previousSdkSessionId: string, nextSdkSessionId: string) => Promise<void>;
   /**
@@ -858,8 +865,24 @@ export async function* executeSdkQuery(
         );
       }
 
-      const prevSdkId = session.sdkSessionId;
+      let prevSdkId = session.sdkSessionId;
       for await (const event of mapSdkMessage(result.value, session, sessionId, toolState)) {
+        // BEFORE this event leaves the server. The mapper may have just adopted
+        // a new canonical id, and yielding first is what opened the window this
+        // closes: `trigger-turn` re-keys the projector on every event it sees,
+        // which announces the new id to the cockpit as `retiredSessionId`, and
+        // the cockpit's very next message is POSTed under it. That POST reaches
+        // `persistSessionRuntime`, which mints a row for an id it has never
+        // seen — pre-seeded with the server's default trust stop — and reports
+        // a brand-new session. Moving the row first means the POST lands on a
+        // row that is already bound: nothing is seeded, nothing is counted
+        // twice, and the merge below never has to choose between the operator's
+        // mode and a default nobody picked (DOR-493, DOR-838).
+        if (session.sdkSessionId !== prevSdkId) {
+          const retired = prevSdkId;
+          prevSdkId = session.sdkSessionId;
+          await opts.onSdkSessionRebind(retired, session.sdkSessionId);
+        }
         if (event.type === 'done') {
           emittedDone = true;
           if (opts.meshCore && meshAgentId) {
@@ -896,10 +919,12 @@ export async function* executeSdkQuery(
         eventCount++;
         yield event;
       }
-      // sdk-event-mapper assigned a new SDK session ID — hand the rebind to the
-      // session store, which owns everything keyed by it (reverse index +
-      // durable settings row). Awaited so the settings row has moved before the
-      // turn continues, and any later read by the canonical id finds it.
+      // Catch-all for an id adopted after the last event of this message was
+      // yielded (nothing does that today, and this costs one comparison if
+      // nothing ever does). The in-loop rebind above is the one that carries the
+      // ordering guarantee; this one only makes sure a rename can never be
+      // missed outright. `rebindSdkSession` is a no-op when the ids match, so
+      // the two can never double-apply.
       if (session.sdkSessionId !== prevSdkId) {
         await opts.onSdkSessionRebind(prevSdkId, session.sdkSessionId);
       }

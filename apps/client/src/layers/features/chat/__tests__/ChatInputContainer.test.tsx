@@ -131,6 +131,7 @@ const baseProps = {
     onFilesSelected: vi.fn(),
     onFileRemove: vi.fn(),
     onFileRetry: vi.fn(),
+    onUploadCancel: vi.fn(),
     isUploading: false,
     hasFailedUpload: false,
   },

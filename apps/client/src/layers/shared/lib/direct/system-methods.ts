@@ -34,6 +34,7 @@ import type {
   SubagentInfo,
 } from '@dorkos/shared/types';
 import type { DirectTransportServices } from './services';
+import { UPLOAD_CANCELED_MESSAGE } from '../transport/upload-contract';
 
 /**
  * Directories the in-process file explorer hides by default (no `git
@@ -682,11 +683,26 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
 
     // ── File Uploads ───────────────────────────────────────────────────────
 
-    /** Upload files to `{cwd}/.dork/.temp/uploads/` using direct filesystem access. */
+    /**
+     * Upload files to `{cwd}/.dork/.temp/uploads/` using direct filesystem access.
+     *
+     * A cancel is honoured either side of each write — an individual
+     * `writeFile` is the one thing here that cannot be interrupted. Checking
+     * only BEFORE each write meant a single-file upload could never be
+     * cancelled at all: the loop had already passed its only checkpoint, so the
+     * upload reported success moments after the person pressed Cancel, and
+     * their message went out carrying the attachment they had just stopped.
+     *
+     * Anything already written is deleted on the way out, so a cancelled upload
+     * leaves nothing in the agent's temp directory — the same end state the
+     * HTTP path reaches, where the server discards partial files when the
+     * request closes.
+     */
     async uploadFiles(
       files: UploadFile[],
       cwd: string,
-      _onProgress?: (progress: UploadProgress) => void
+      _onProgress?: (progress: UploadProgress) => void,
+      signal?: AbortSignal
     ): Promise<UploadResult[]> {
       const fs = await import('fs/promises');
       const pathMod = await import('path');
@@ -696,7 +712,17 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
       await fs.default.mkdir(uploadDir, { recursive: true });
 
       const results: UploadResult[] = [];
+
+      /** Undo the writes this call made, then report the cancel. */
+      const abandon = async (): Promise<never> => {
+        await Promise.all(
+          results.map((r) => fs.default.rm(r.savedPath, { force: true }).catch(() => {}))
+        );
+        throw new Error(UPLOAD_CANCELED_MESSAGE);
+      };
+
       for (const file of files) {
+        if (signal?.aborted) await abandon();
         const base = pathMod.default.basename(file.name);
         const safe = base.replace(/[^a-zA-Z0-9._-]/g, '_');
         const filename = `${randomUUID().slice(0, 8)}-${safe}`;
@@ -712,6 +738,9 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
           size: file.size,
           mimeType: file.type,
         });
+
+        // The checkpoint that makes a one-file cancel possible.
+        if (signal?.aborted) await abandon();
       }
 
       return results;
