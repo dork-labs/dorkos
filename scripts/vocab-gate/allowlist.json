@@ -14,7 +14,7 @@
     {
       "path": "apps/client/src/layers/features/relay/ui/RelayHealthBar.tsx",
       "terms": ["connection"],
-      "reason": "Counts configured relay adapters (\"3 connections active\") — adapters are Connections-domain entries, not a network-health reading."
+      "reason": "computeHealthState()'s \"N connection(s) active/disconnected\" and \"No connections configured\" count configured relay adapters (Telegram, Slack, webhook instances) — each adapter IS a Connection entity on the /connections page. This is the entity noun, not a network-health reading of whether a link is up; the adapter's own reachability is reported separately (\"Reachable\"/\"Not reachable\", per TestStep)."
     },
     {
       "path": "apps/site/src/layers/features/marketing/lib/features.ts",
@@ -25,6 +25,21 @@
       "path": "apps/site/src/app/(marketing)/test/",
       "terms": ["connection"],
       "reason": "Marketing visual-design sandbox routes (hero/diagram prototypes) — \"connection lines\" describes SVG graph edges in a prototype, not shipped product copy."
+    },
+    {
+      "path": "apps/server/src/services/core/mcp-tool-tiers.ts",
+      "terms": ["connection"],
+      "reason": "MCP tool titles \"List/Turn a chat connection on/off/Reload chat connections\" describe relay adapters (Telegram/Slack) — the same Connections-domain entity as RelayHealthBar, surfaced to the agent rather than the human."
+    },
+    {
+      "path": "apps/server/src/services/runtimes/opencode/check-dependencies.ts",
+      "terms": ["connection"],
+      "reason": "\"Your saved {provider} connection didn't work\" reports a stale/invalid stored credential for a model provider — Connections-domain (an attached provider account), not a network-reachability reading."
+    },
+    {
+      "path": "apps/server/src/services/core/openapi-registry.ts",
+      "terms": ["connection"],
+      "reason": "OpenAPI `description` fields for the /api/docs developer reference, describing the MCP client's connection config and an attached account's connection details (spec security language) — Connections-domain API documentation, not cockpit network-status copy."
     }
   ]
 }

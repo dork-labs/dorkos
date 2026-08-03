@@ -9,36 +9,62 @@
  * script is that guard: it re-derives the same sweep DOR-855 did by hand and
  * runs it on every change instead of once.
  *
- * WHAT IT SCANS. `apps/client/src` and `apps/site/src` — the two workspaces
- * that render product copy a user reads — for TypeScript/TSX source, using the
- * real TypeScript parser rather than line-based grep. Grep cannot tell a quoted
+ * WHAT IT SCANS. `apps/client/src`, `apps/site/src`, and `apps/server/src` —
+ * every workspace whose strings can reach a screen a DorkOS user reads,
+ * including server-authored copy the client renders verbatim (a provisioning
+ * error, an MCP tool title) — for TypeScript/TSX source, using the real
+ * TypeScript parser rather than line-based grep. Grep cannot tell a quoted
  * user-facing string from the identifier `ConnectionState` or the import path
  * `./sse-connection`; both contain the word but neither is copy. The parser
  * lets this script check only positions that actually reach a screen:
  *
  *   - JSX text (`<p>Connection lost</p>`)
  *   - string/template literals in a JSX attribute the render path treats as
- *     copy (`label=`, `title=`, `description=`, `placeholder=`, `aria-label=`,
- *     `alt=`, `heading=`, `tooltip=`)
+ *     copy (`label=`, `shortLabel=`, `title=`, `description=`, `message=`,
+ *     `errorMessage=`, `text=`, `placeholder=`, `aria-label=`, `alt=`,
+ *     `heading=`, `tagline=`, `tooltip=`)
  *   - string/template literals assigned to an object property with one of the
- *     same names (`{ label: 'Connection lost' }`, `{ message: '...' }`)
+ *     same names (`{ label: 'Connection lost' }`, `{ message: '...' }`) — the
+ *     attribute and property lists are kept identical on purpose, see
+ *     {@link COPY_ATTR_NAMES}
  *   - the first argument to a `toast.*(...)` call or a call ending in
  *     `.setError(...)`
- *   - any of the above reached through a ternary, `??`/`||` fallback, or
- *     parenthesization, so `{isDown ? 'Connection lost' : ok}` is still caught
+ *   - any of the above reached through a ternary, `??`/`||`/`&&` short-circuit,
+ *     string concatenation (`+`), or parenthesization, so both
+ *     `{isDown ? 'Connection lost' : ok}` and `{isDown && 'Connection lost'}`
+ *     — the two idioms every conditional JSX-text render in this codebase
+ *     actually uses — are caught
  *
  * Bare code — variable names, `case 'connection':` discriminants, object keys,
  * CSS classes, import specifiers — is invisible to this walk on purpose: those
  * are not copy, and flagging them would train everyone to ignore the gate.
  *
  * WHAT IT WON'T CATCH. `apps/client/src/dev/` (the component playground) is
- * excluded — it is a development tool, not a surface a DorkOS user reaches —
- * and so are `__tests__/` directories and `*.test.*` files, whose fixtures
- * echo arbitrary strings (a mocked HTTP error, a test's own scenario label)
- * that are not this repo's authored copy. `docs/` (Fumadocs MDX) is out of
- * scope for the same reason the DOR-855 payment left it out of the known-sites
- * list: it is prose, not a render path, and gets swept by hand alongside the
- * UI strings it describes.
+ * excluded — it is a development tool, not a surface a DorkOS user reaches;
+ * keeping its showcases in step with the copy they demonstrate is a manual
+ * habit (the DOR-855 payment did it out of politeness, not because the gate
+ * requires it), not something this script enforces. `__tests__/` directories
+ * and `*.test.*` files are excluded too, since their fixtures echo arbitrary
+ * strings (a mocked HTTP error, a test's own scenario label) that are not
+ * this repo's authored copy. `docs/` (Fumadocs MDX) is out of scope for the
+ * same reason the DOR-855 payment left it out of the known-sites list: it is
+ * prose, not a render path, and gets swept by hand alongside the UI strings
+ * it describes.
+ *
+ * A real, currently-unclosed gap: `return 'Connection lost'` and
+ * `throw new Error('Connection lost')` are not copy-bearing positions this
+ * script recognizes — a bare return or throw carries no property name or JSX
+ * position to classify against, unlike `{ message: '...' }` or
+ * `<p>{...}</p>`. Every server string DOR-855 actually renamed
+ * (`honestInstallError`'s "Check your network", `OpenRouterError`'s "Could
+ * not reach OpenRouter...") is exactly this shape, and none of them would be
+ * re-caught by this script if the word crept back in. Solving that requires
+ * either return-type-aware analysis (does this function's signature return
+ * user-facing text?) or a call-site convention this repo doesn't have yet;
+ * both are bigger than a wave-1 gate. Filed as a known limitation rather than
+ * solved here — a future wave can add a narrower heuristic (e.g. functions
+ * named `*ErrorMessage`/`honestInstallError`, or a `// vocab-gate: copy`
+ * marker comment) without touching the mechanism this file already has.
  *
  * DATA, NOT CODE, IS WHAT WAVE 2 EXTENDS. `vocab-gate/banned-terms.json` holds
  * one wave per retired word (Wave 1: "connection"); `vocab-gate/allowlist.json`
@@ -99,7 +125,7 @@ export interface Violation {
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 
 /** Workspaces that render product copy a DorkOS user reads. */
-const DEFAULT_SCAN_ROOTS = ['apps/client/src', 'apps/site/src'];
+const DEFAULT_SCAN_ROOTS = ['apps/client/src', 'apps/site/src', 'apps/server/src'];
 
 /** Path segments excluded outright — not scoped exceptions, just not copy. */
 const EXCLUDED_SEGMENTS = [
@@ -114,25 +140,38 @@ const EXCLUDED_SEGMENTS = [
 
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx']);
 
-/** JSX attribute names whose value the render path treats as user copy. */
+/**
+ * JSX attribute names whose value the render path treats as user copy. Kept in
+ * sync with {@link COPY_PROP_NAMES} on purpose — a name that is copy as a
+ * `<Foo label="..." />` attribute is copy as a `{ label: '...' }` object
+ * property too, and the two lists drifting apart is exactly how
+ * `errorMessage={...}` on `TestStep` went unscanned until review caught it.
+ */
 const COPY_ATTR_NAMES = new Set([
   'label',
+  'shortLabel',
   'title',
   'description',
+  'message',
+  'errorMessage',
+  'text',
   'placeholder',
   'aria-label',
   'alt',
   'heading',
+  'tagline',
   'tooltip',
 ]);
 
-/** Object-property names whose value the render path treats as user copy. */
+/** Object-property names whose value the render path treats as user copy. See {@link COPY_ATTR_NAMES}. */
 const COPY_PROP_NAMES = new Set([
   'label',
   'shortLabel',
   'title',
   'description',
   'message',
+  'errorMessage',
+  'text',
   'heading',
   'tagline',
   'placeholder',
@@ -230,7 +269,12 @@ export function isCopySink(node: ts.Node): boolean {
     if (!parent) return false;
 
     if (ts.isJsxAttribute(parent)) {
-      return COPY_ATTR_NAMES.has(parent.name.getText().toLowerCase());
+      // Exact case, not lower-cased: JSX preserves an attribute's authored
+      // casing verbatim (`errorMessage`, `shortLabel`), so lower-casing here
+      // would silently stop matching every camelCase entry in the set below —
+      // 'aria-label' is the one native-DOM name we carry, and it is already
+      // lowercase-hyphenated as written by convention.
+      return COPY_ATTR_NAMES.has(parent.name.getText());
     }
     if (ts.isJsxExpression(parent)) {
       // A JsxExpression is either an attribute's `{...}` initializer (handled
@@ -253,7 +297,8 @@ export function isCopySink(node: ts.Node): boolean {
     if (
       ts.isParenthesizedExpression(parent) ||
       ts.isConditionalExpression(parent) ||
-      (ts.isBinaryExpression(parent) && ['??', '||', '+'].includes(parent.operatorToken.getText()))
+      (ts.isBinaryExpression(parent) &&
+        ['??', '||', '&&', '+'].includes(parent.operatorToken.getText()))
     ) {
       current = parent;
       continue;

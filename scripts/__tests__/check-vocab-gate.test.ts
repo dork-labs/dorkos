@@ -17,7 +17,7 @@
  * suite can never red-light an unrelated PR just because the real repo grew
  * a new file.
  */
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -110,6 +110,20 @@ describe('scanSource — copy positions the gate must catch', () => {
     const violations = scanSource(
       'foo.ts',
       `return { message: err.message ?? 'Connection failed' };`,
+      TERMS
+    );
+    expect(violations).toHaveLength(1);
+  });
+
+  it('catches copy behind a && short-circuit in JSX children', () => {
+    // The idiom every conditional JSX-text render in this codebase actually
+    // uses (`{cond && 'copy'}`), not just the ternary form above. Missing
+    // this was a real gap found in review — AdapterSetupWizard.tsx's
+    // `{step === 'test' && 'Testing connection to the adapter.'}` shipped
+    // unscanned until `&&` joined the transparent-operator list.
+    const violations = scanSource(
+      'Wizard.tsx',
+      `<p>{step === 'test' && 'Testing connection to the adapter.'}</p>`,
       TERMS
     );
     expect(violations).toHaveLength(1);
@@ -290,6 +304,65 @@ describe('runVocabGate', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Counterfactual: would the gate have caught the DOR-855 payment strings?
+//
+// Adversarial review asked this exact question against the pre-fix source at
+// origin/main. The honest answer is a split verdict, and both halves are
+// pinned here rather than reported once and forgotten:
+//
+//   - AdapterSetupWizard.tsx's step description used the JSX `cond && 'copy'`
+//     idiom — the gate would have MISSED it before the && fix above, and
+//     catches it now. This is a real regression-catching improvement.
+//   - tunnel-utils.ts and http-client.ts wrote their strings as a bare
+//     `return '...'` / `throw new Error('...')`. Neither is a copy-bearing
+//     position this script recognizes (no property name, no JSX position to
+//     classify against) — see the module doc's "WHAT IT WON'T CATCH" gap.
+//     The gate would NOT have caught either one, before or after this
+//     review's fixes, and still doesn't. Pinning that here is the honest
+//     alternative to letting the gap go unverified.
+// ---------------------------------------------------------------------------
+
+describe('counterfactual — would the gate have caught the pre-fix DOR-855 strings?', () => {
+  it("YES: AdapterSetupWizard.tsx — the `step === 'test' && '...'` step description", () => {
+    const preFix = `
+      export function AdapterSetupWizard() {
+        return (
+          <DialogDescription>
+            {step === 'configure' && (currentSetupStep?.description ?? 'Configure the adapter settings.')}
+            {step === 'test' && 'Testing connection to the adapter.'}
+          </DialogDescription>
+        );
+      }
+    `;
+    expect(scanSource('AdapterSetupWizard.tsx', preFix, TERMS)).toHaveLength(1);
+  });
+
+  it("NO (known gap): tunnel-utils.ts — friendlyErrorMessage's bare `return` literals", () => {
+    const preFix = `
+      export function friendlyErrorMessage(raw: string): string {
+        if (/timeout|ETIMEDOUT/i.test(raw)) {
+          return 'Connection timed out. Check your network.';
+        }
+        if (/ECONNREFUSED/i.test(raw)) {
+          return 'Connection refused. Ensure the server is running.';
+        }
+        return raw;
+      }
+    `;
+    expect(scanSource('tunnel-utils.ts', preFix, TERMS)).toEqual([]);
+  });
+
+  it('NO (known gap): http-client.ts — the `throw new Error(\\`...\\`)` timeout message', () => {
+    const preFix = `
+      export async function fetchJson(url: string, timeout: number) {
+        throw new Error(\`Request timed out after \${timeout / 1000}s — check your network connection\`);
+      }
+    `;
+    expect(scanSource('http-client.ts', preFix, TERMS)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // The shipped data files
 // ---------------------------------------------------------------------------
 
@@ -314,5 +387,18 @@ describe('the shipped banned-terms.json and allowlist.json', () => {
     // only when someone remembers to run the script by hand.
     const repoRoot = join(import.meta.dirname, '../..');
     expect(runVocabGate(repoRoot)).toEqual([]);
+  });
+
+  it('every allowlist entry path resolves to a real file or directory', () => {
+    // A rename or deletion that leaves a stale allowlist entry behind is not
+    // dangerous (it just suppresses nothing, silently), but it IS the kind of
+    // drift that makes the audit trail this file exists to be untrustworthy —
+    // a path nobody can find on disk anymore. Catch it here rather than
+    // during the next unrelated sweep.
+    const repoRoot = join(import.meta.dirname, '../..');
+    const entries = loadAllowlist();
+    for (const entry of entries) {
+      expect(existsSync(join(repoRoot, entry.path)), `${entry.path} does not exist`).toBe(true);
+    }
   });
 });
