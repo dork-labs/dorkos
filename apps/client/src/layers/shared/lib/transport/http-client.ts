@@ -49,9 +49,15 @@ async function request(
     const err = new Error(error.error || `HTTP ${res.status}`) as Error & {
       code?: string;
       status?: number;
+      body?: unknown;
     };
     err.code = error.code;
     err.status = res.status;
+    // Some refusals carry data the caller must act on, not just describe: a
+    // `CHAT_ALREADY_BOUND` 409 names the binding that already owns the chat,
+    // which is the id the "move it instead?" dialog calls `moveBinding` with.
+    // `message`/`code`/`status` cannot carry it, so the parsed body rides along.
+    err.body = error;
     // A gated request without a valid credential (server task 1.2) flips the
     // app-wide auth-required state so the AuthGuard renders the login screen.
     if (res.status === 401 && error.code === 'AUTH_REQUIRED') {

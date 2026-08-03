@@ -71,6 +71,8 @@ import type {
   ConnectorToolkitsResponse,
   SessionConnectorAttachResult,
   SessionConnectorStatus,
+  AgentConnectorAttachment,
+  AgentConnectorAttachResult,
 } from '@dorkos/shared/connector-provider';
 import type {
   TraceSpan,
@@ -80,6 +82,9 @@ import type {
   CreateBindingRequest,
   UpdateBindingRequest,
   BindingTestResult,
+  UnclaimedChat,
+  UnclaimedChatStatus,
+  ClaimUnclaimedChatRequest,
 } from '@dorkos/shared/relay-schemas';
 import type {
   AgentManifest,
@@ -321,6 +326,29 @@ export const bindingStubs = {
   },
 
   async testBinding(_bindingId: string): Promise<BindingTestResult> {
+    throw new Error('Relay bindings are not supported in embedded mode');
+  },
+
+  async moveBinding(_id: string, _agentId: string): Promise<AdapterBinding> {
+    throw new Error('Relay bindings are not supported in embedded mode');
+  },
+
+  async listUnclaimedChats(_status?: UnclaimedChatStatus): Promise<UnclaimedChat[]> {
+    return [];
+  },
+
+  async claimUnclaimedChat(
+    _id: string,
+    _input: ClaimUnclaimedChatRequest
+  ): Promise<AdapterBinding> {
+    throw new Error('Relay bindings are not supported in embedded mode');
+  },
+
+  async ignoreUnclaimedChat(_id: string): Promise<void> {
+    throw new Error('Relay bindings are not supported in embedded mode');
+  },
+
+  async blockUnclaimedChat(_id: string): Promise<void> {
     throw new Error('Relay bindings are not supported in embedded mode');
   },
 };
@@ -909,6 +937,21 @@ export const connectorStubs = {
   },
 
   async detachSessionConnector(_sessionId: string, _accountId: string): Promise<void> {
+    throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+
+  async getAgentConnectors(_agentId: string): Promise<AgentConnectorAttachment[]> {
+    return [];
+  },
+
+  async attachAgentConnector(
+    _agentId: string,
+    _accountId: string
+  ): Promise<AgentConnectorAttachResult> {
+    throw new Error(EMBEDDED_CONNECTORS_NOTICE);
+  },
+
+  async detachAgentConnector(_agentId: string, _accountId: string): Promise<void> {
     throw new Error(EMBEDDED_CONNECTORS_NOTICE);
   },
 };

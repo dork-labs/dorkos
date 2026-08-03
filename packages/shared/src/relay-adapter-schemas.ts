@@ -611,6 +611,9 @@ export const UnclaimedChatStatusSchema = z
   .enum(['pending', 'claimed', 'ignored', 'blocked'])
   .openapi('UnclaimedChatStatus');
 
+/** One claim-feed row's lifecycle state. See {@link UnclaimedChatStatusSchema}. */
+export type UnclaimedChatStatus = z.infer<typeof UnclaimedChatStatusSchema>;
+
 /**
  * A chat an adapter heard from with no binding to route it to
  * (connection-scoping spec `specs/connection-scoping/` §Part 3). Carries only
@@ -666,6 +669,9 @@ export const ClaimUnclaimedChatRequestSchema = z
     label: z.string().optional(),
   })
   .openapi('ClaimUnclaimedChatRequest');
+
+/** Body of a claim call. See {@link ClaimUnclaimedChatRequestSchema}. */
+export type ClaimUnclaimedChatRequest = z.infer<typeof ClaimUnclaimedChatRequestSchema>;
 
 export const BindingListResponseSchema = z
   .object({

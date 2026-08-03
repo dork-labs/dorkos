@@ -632,6 +632,16 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     getSessionConnectors: vi.fn().mockResolvedValue({ accounts: [], warnings: [] }),
     attachSessionConnector: vi.fn(),
     detachSessionConnector: vi.fn().mockResolvedValue(undefined),
+    getAgentConnectors: vi.fn().mockResolvedValue([]),
+    attachAgentConnector: vi.fn(),
+    detachAgentConnector: vi.fn().mockResolvedValue(undefined),
+    // The claim feed (connection-scoping spec §Part 3) — same rule: the list
+    // reads honest-empty, the three decisions must be stated by the test.
+    listUnclaimedChats: vi.fn().mockResolvedValue([]),
+    claimUnclaimedChat: vi.fn(),
+    ignoreUnclaimedChat: vi.fn().mockResolvedValue(undefined),
+    blockUnclaimedChat: vi.fn().mockResolvedValue(undefined),
+    moveBinding: vi.fn(),
     ...overrides,
   };
 }

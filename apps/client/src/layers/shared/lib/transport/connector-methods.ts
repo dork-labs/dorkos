@@ -20,6 +20,9 @@ import type {
   ConnectorToolkitsResponse,
   SessionConnectorAttachResult,
   SessionConnectorStatus,
+  AgentConnectorAttachment,
+  AgentConnectorAttachResult,
+  AgentConnectorListResponse,
 } from '@dorkos/shared/connector-provider';
 import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
 
@@ -109,6 +112,31 @@ export function createConnectorMethods(baseUrl: string) {
       return fetchNoContent(
         baseUrl,
         `/sessions/${encodeURIComponent(sessionId)}/connectors/${encodeURIComponent(accountId)}`,
+        { method: 'DELETE' }
+      );
+    },
+
+    // --- Agent-level attachment (connection-scoping spec §Part 1) ---
+
+    getAgentConnectors(agentId: string): Promise<AgentConnectorAttachment[]> {
+      return fetchJSON<AgentConnectorListResponse>(
+        baseUrl,
+        `/agents/${encodeURIComponent(agentId)}/connectors`
+      ).then((r) => r.accounts);
+    },
+
+    attachAgentConnector(agentId: string, accountId: string): Promise<AgentConnectorAttachResult> {
+      return fetchJSON<AgentConnectorAttachResult>(
+        baseUrl,
+        `/agents/${encodeURIComponent(agentId)}/connectors/${encodeURIComponent(accountId)}`,
+        { method: 'POST' }
+      );
+    },
+
+    detachAgentConnector(agentId: string, accountId: string): Promise<void> {
+      return fetchNoContent(
+        baseUrl,
+        `/agents/${encodeURIComponent(agentId)}/connectors/${encodeURIComponent(accountId)}`,
         { method: 'DELETE' }
       );
     },
