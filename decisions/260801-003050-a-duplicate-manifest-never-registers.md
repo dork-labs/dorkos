@@ -1,7 +1,7 @@
 ---
 id: 260801-003050
 title: A duplicate manifest never registers — relocation requires the incumbent path to give the manifest up
-status: proposed
+status: accepted
 created: 2026-08-01
 spec: mesh-identity-integrity
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted (implemented 2026-08-01, main `818a95364`, PR #684)
 
 ## Context
 

@@ -20,7 +20,7 @@
       "id": "260801-003051",
       "slug": "an-author-row-belongs-to-the-occupant-it-was-minted-for",
       "title": "An author row belongs to the occupant it was minted for \u2014 a reused directory starts a fresh author",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-08-01",
       "specSlug": "mesh-identity-integrity"
     },
@@ -28,7 +28,7 @@
       "id": "260801-003050",
       "slug": "a-duplicate-manifest-never-registers",
       "title": "A duplicate manifest never registers \u2014 relocation requires the incumbent path to give the manifest up",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-08-01",
       "specSlug": "mesh-identity-integrity"
     },
@@ -3068,7 +3068,7 @@
       "id": "260730-182745",
       "slug": "response-mode-is-projected-onto-loudness-rungs",
       "title": "The stored response mode is projected onto ordered loudness rungs, and the UI writes one canonical value per rung",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-07-30",
       "specSlug": "room-details-sheet",
       "extractedFrom": "room-details-sheet"
