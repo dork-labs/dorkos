@@ -13,6 +13,7 @@ import { AgentBehaviorSchema } from '@dorkos/shared/mesh-schemas';
 import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 import { configManager } from '../core/config-manager.js';
 import { readOwnerAccount } from '../core/auth/index.js';
+import { BridgeStore } from '../relay/chat-bridge/bridge-store.js';
 import { AuthorRegistry } from './author-registry.js';
 import type { EngagedWindow } from './engagement.js';
 import { ReactionStore } from './reaction-store.js';
@@ -30,6 +31,8 @@ export interface RoomSubsystem {
   store: RoomStore;
   authors: AuthorRegistry;
   broadcaster: RoomBroadcaster;
+  /** The bridge identity/ref store `createBridgedRoom` writes through. */
+  bridges: BridgeStore;
 }
 
 /**
@@ -173,11 +176,13 @@ export function createRoomSubsystem(opts: {
   const reactions = new ReactionStore(opts.db);
   const authors = new AuthorRegistry(opts.db);
   const broadcaster = new RoomBroadcaster();
+  const bridges = new BridgeStore(opts.db);
   const service = new RoomService({
     store,
     reactions,
     authors,
     broadcaster,
+    bridges,
     agents: opts.agents ?? createAgentLookup(opts.db),
     turns:
       opts.turns ??
@@ -198,7 +203,7 @@ export function createRoomSubsystem(opts: {
     // unbound `'local'` author is still the operator.
     isOwnerAuthor: (authorId) => authors.isOwner(authorId, readOwnerAccount()?.id ?? null),
   });
-  return { service, store, authors, broadcaster };
+  return { service, store, authors, broadcaster, bridges };
 }
 
 let active: RoomService | null = null;

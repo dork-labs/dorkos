@@ -12,6 +12,7 @@
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { Db } from '@dorkos/db';
+import { BridgeStore } from '../../relay/chat-bridge/bridge-store.js';
 import { AuthorRegistry } from '../author-registry.js';
 import type { EngagedWindow } from '../engagement.js';
 import { ReactionStore } from '../reaction-store.js';
@@ -181,6 +182,8 @@ export interface RoomHarness {
   store: RoomStore;
   reactions: ReactionStore;
   authors: AuthorRegistry;
+  /** The bridge identity/ref store — what a bridged-room test reads back against. */
+  bridges: BridgeStore;
   runner: ScriptedTurnRunner;
   /** The owner's human author id — the `'local'` sentinel, or the bound account. */
   human: string;
@@ -243,11 +246,13 @@ export function createRoomHarness(opts: {
   let ownerUserId = opts.ownerUserId ?? null;
   const store = new RoomStore(db);
   const reactions = new ReactionStore(db);
+  const bridges = new BridgeStore(db);
   const service = new RoomService({
     store,
     reactions,
     authors,
     broadcaster: new RoomBroadcaster(),
+    bridges,
     agents: typeof opts.agents === 'function' ? opts.agents(db) : opts.agents,
     turns: runner,
     budget: new RoomTurnBudget({ limits: { perRoom: () => perRoom, global: () => global } }),
@@ -262,6 +267,7 @@ export function createRoomHarness(opts: {
     store,
     reactions,
     authors,
+    bridges,
     runner,
     human: human.id,
     setOwner(userId) {

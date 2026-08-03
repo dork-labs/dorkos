@@ -10,6 +10,7 @@ import {
   Timer,
   TriangleAlert,
   Unplug,
+  UserMinus,
   UserX,
   WifiOff,
   type LucideIcon,
@@ -160,6 +161,9 @@ const NOTICE_STYLES: Record<RoomNoticeCode, { Icon: LucideIcon; tone?: string }>
   // An inbound rate ceiling refused a message. The room is protecting itself
   // as designed, not broken.
   bridge_rate_limited: { Icon: Timer },
+  // A second agent was refused on a bridged room — the room protecting its
+  // one-agent-per-binding consent model (D-6 Q3), not a malfunction.
+  bridge_second_agent_refused: { Icon: UserMinus },
 };
 
 /** The mark on a notice whose code this client does not recognise. */

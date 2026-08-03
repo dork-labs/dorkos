@@ -281,6 +281,29 @@ export function buildAgentGoneNotice(agentName: string, subjectAuthorId: string)
 }
 
 /**
+ * The durable `notice` for a second agent refused on a bridged room
+ * (chats-as-channels spec §3.4, D-6 Q3).
+ *
+ * The one writer NOT `room-trigger.ts`: `RoomService.addMember` posts this
+ * itself, before refusing the add — the same shape `addressing_changed` takes
+ * for a writer outside this module. The reason is named because it is not
+ * obvious: outbound consent (`canReply` / `canInitiate`) is set per BINDING,
+ * and a binding names one agent. A second agent's replies would have no
+ * consent switch that names them — `checkSender` would correctly deny every
+ * one of them — which produces the worst shape of all: a room where one agent
+ * answers into the platform chat and the other answers only into the cockpit,
+ * with nothing telling either person why.
+ *
+ * @param agentName - Display name of the agent that was refused.
+ */
+export function buildBridgeSecondAgentRefusedNotice(agentName: string): RoomEntryBody {
+  return {
+    text: `${agentName} was not added — a bridged room can hold only one agent. The platform connection's permission to reply is set for one agent at a time, so a second agent here would have no way to answer the chat safely.`,
+    notice: 'bridge_second_agent_refused',
+  };
+}
+
+/**
  * An answer that arrived after the room stopped waiting for it, saying which
  * message it belongs to.
  *

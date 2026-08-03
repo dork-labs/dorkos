@@ -22,7 +22,47 @@ export type RoomErrorCode =
   | 'ROOM_ARCHIVED'
   | 'OPERATOR_ONLY'
   /** A non-person tried to react. Agents do not send reactions (etiquette E16b). */
-  | 'PEOPLE_ONLY';
+  | 'PEOPLE_ONLY'
+  /**
+   * A Telegram broadcast channel (`chat.type === 'channel'`) was offered to
+   * `RoomService.createBridgedRoom` (chats-as-channels spec §3.3). A broadcast
+   * channel is not a conversation — there is no room kind for it, and the claim
+   * card offers only "Ignore"/"Leave".
+   */
+  | 'BROADCAST_NOT_BRIDGEABLE'
+  /**
+   * `RoomService.createBridgedRoom` was asked to bridge a `(adapterId, chatId)`
+   * that already has a bridge row whose `bindingId` differs, or whose room is
+   * archived (chats-as-channels spec §3.5). Both are re-bridge shapes —
+   * adopting the surviving row for a different binding (which usually, but
+   * not always, means a different agent — a binding can also be re-created
+   * for the SAME agent), or un-archiving and reusing it for the same binding
+   * — and both are task 1.5's lifecycle, not this create path's.
+   * `createBridgedRoom` only ever self-heals the plain replay: the same
+   * `(adapterId, chatId)` bridged again for the SAME live binding.
+   */
+  | 'CHAT_ALREADY_BRIDGED'
+  /**
+   * `RoomService.addMember` refused a second agent on a bridged room (spec
+   * §3.4, D-6 Q3): outbound consent is per binding, so a second agent's
+   * replies would have no gate that names them — a half-silent room where one
+   * agent answers into the chat and the other answers only into the cockpit.
+   * `buildBridgeSecondAgentRefusedNotice` is posted into the room BEFORE this
+   * throws, so the refusal is visible there too, not just in the API error.
+   */
+  | 'BRIDGE_SECOND_AGENT_REFUSED'
+  /**
+   * `RoomService.createBridgedRoom` received a `chatType` outside the closed
+   * set it declares (`'private' | 'group' | 'supergroup' | 'channel'`), or a
+   * `channelType` that fails `ChannelTypeSchema`. Both fields' TypeScript
+   * types are a claim about the caller's discipline, not a runtime
+   * guarantee — the values cross a trust boundary from Telegram's own string
+   * (`chat.type`, `packages/relay/src/adapters/telegram/inbound.ts:470`)
+   * through several untyped hops before they reach this method. Refused
+   * rather than silently falling through the kind-mapping ternary, which
+   * would otherwise treat any unrecognized `chatType` as `channel`.
+   */
+  | 'UNKNOWN_CHAT_TYPE';
 
 /** A refusal from the room domain, carrying a code the routes can switch on. */
 export class RoomError extends Error {
