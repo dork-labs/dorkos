@@ -40,7 +40,7 @@ const CHECKING_MIN_MS = 2200;
 
 const HEADING_CHECKING = ['Checking', 'your', 'setup'];
 const HEADING_READY = ["You're", 'ready'];
-const HEADING_CONNECT = ['Connect', 'your', 'first', 'agent'];
+const HEADING_CONNECT = ['Connect', 'your', 'first', 'runtime'];
 const HEADING_ERROR = ['One', 'moment'];
 
 interface SystemRequirementsStepProps {
@@ -167,12 +167,12 @@ export function SystemRequirementsStep({
 
   const subtitle =
     phase === 'checking'
-      ? 'Looking for coding agents on your machine.'
+      ? 'Looking for Claude Code, Codex, and OpenCode on your machine.'
       : errored
         ? "We couldn't check your setup just now."
         : hasReady
           ? connectedSentence(readyTypes, defaultRuntime.runtime)
-          : 'DorkOS drives coding agents. Set one up to get started. It takes about a minute.';
+          : 'DorkOS drives Claude Code, Codex, and OpenCode. Set one up to get started. It takes about a minute.';
 
   const isActive = phase === 'checking';
 
@@ -322,7 +322,7 @@ function ReadyView({
             <ChevronDown
               className={cn('size-3.5 transition-transform', showMore && 'rotate-180')}
             />
-            {moreCount === 1 ? '1 more agent available' : `${moreCount} more agents available`}
+            {moreCount === 1 ? '1 more runtime available' : `${moreCount} more runtimes available`}
           </CollapsibleTrigger>
           <CollapsibleContent className="mt-4 space-y-3 text-left">
             <RuntimeSetupPanel
@@ -515,7 +515,7 @@ function connectedSentence(types: string[], defaultRuntime: string | null): stri
   const names = types.map((t) => getRuntimeDescriptor(t).label);
   const connected =
     names.length === 0
-      ? 'An agent is connected.'
+      ? 'A runtime is connected.'
       : names.length === 1
         ? `${names[0]} is connected.`
         : names.length === 2

@@ -310,7 +310,7 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
   {
     key: 'runtime',
     label: 'Runtime',
-    description: 'Which agent runtime runs this session',
+    description: 'Which runtime runs this session',
     cluster: 'right',
     group: 'session',
     icon: Cpu,

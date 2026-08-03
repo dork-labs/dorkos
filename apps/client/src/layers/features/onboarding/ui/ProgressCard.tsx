@@ -108,7 +108,7 @@ export function ProgressCard({ onDismiss }: ProgressCardProps) {
     },
     {
       icon: Server,
-      label: 'Add more agents',
+      label: 'Connect more runtimes',
       onClick: () => openSettings('runtimes'),
     },
   ];
