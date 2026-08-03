@@ -1,7 +1,7 @@
 ---
 id: 260730-182745
 title: The stored response mode is projected onto ordered loudness rungs, and the UI writes one canonical value per rung
-status: proposed
+status: accepted
 created: 2026-07-30
 spec: room-details-sheet
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed.
+Accepted (implemented 2026-07-30, main `bc9af5d09`, PR #636)
 
 ## Context
 

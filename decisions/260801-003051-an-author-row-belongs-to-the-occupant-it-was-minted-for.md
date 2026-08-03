@@ -1,7 +1,7 @@
 ---
 id: 260801-003051
 title: An author row belongs to the occupant it was minted for — a reused directory starts a fresh author
-status: proposed
+status: accepted
 created: 2026-08-01
 spec: mesh-identity-integrity
 superseded-by: null
@@ -11,7 +11,9 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted (implemented 2026-08-01, main `818a95364`, PR #684). **Partially supersedes**
+[260726-170126](260726-170126-author-identity-is-keyed-on-the-agents-directory.md) — one clause, as
+recorded in the Status of that ADR.
 
 ## Context
 
