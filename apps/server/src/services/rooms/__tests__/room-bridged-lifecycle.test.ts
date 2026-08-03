@@ -225,6 +225,49 @@ describe('bridge lifecycle: unbridge, archive, re-bridge, agent swap', () => {
       expect(swap).toBeUndefined();
     });
 
+    it('auto-suffixes a channel slug on re-bridge instead of throwing SLUG_TAKEN when the released slug was taken (A3.4)', () => {
+      // Bridge a Telegram group "Ops Team" → slug `ops-team`.
+      const room = service.createBridgedRoom(bridgeChannel({ title: 'Ops Team' }));
+      expect(room.slug).toBe('ops-team');
+      const first = service.postExternal(room.id, {
+        identity: {
+          platformType: 'telegram',
+          instanceId: 'tg-main',
+          platformUserId: '145223',
+          displayName: 'Miguel',
+        },
+        text: 'first message',
+      });
+
+      // Unbridge — the slug is released.
+      service.archiveBridgedRoom(room.id, human);
+
+      // Another live channel takes `ops-team` while the bridge is away.
+      const usurper = service.createRoom(
+        { kind: 'channel', title: 'Ops Team', members: [], agentPaths: [] },
+        human
+      );
+      expect(usurper.slug).toBe('ops-team');
+
+      // Re-bridging the original chat must SUCCEED, auto-suffixing its slug the
+      // way the create path does — never throwing SLUG_TAKEN, which would wedge
+      // the rebind on a platform-sourced title nobody typed (and, because the
+      // room half runs first, wedge the binding flip with it).
+      const again = service.rebridge({
+        adapterId: 'tg-main',
+        chatId: '555',
+        bindingId: 'binding-ana',
+        agentPath: '/agents/ana',
+        operatorAuthorId: human,
+      });
+
+      // Same room and same log, just a suffixed slug.
+      expect(again.id).toBe(room.id);
+      expect(again.slug).toBe('ops-team-2');
+      expect(store.getRoom(room.id)?.archived).toBe(false);
+      expect(store.listEntries(room.id, { limit: 50 }).map((e) => e.id)).toContain(first.entry.id);
+    });
+
     it('refuses a re-bridge for a chat with no surviving bridge row', () => {
       expect(() =>
         service.rebridge({

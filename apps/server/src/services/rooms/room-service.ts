@@ -826,7 +826,29 @@ export class RoomService {
     // Un-archive first — both shapes bring the room back to life, and the swap's
     // notice below cannot be posted into an archived room. The bridge row's
     // `archivedAt` is cleared to match, so `postExternal` accepts inbound again.
-    if (room.archived) this.updateRoom(room.id, operator.id, { archived: false });
+    // A CHANNEL un-archives onto a freshly-resolved unique slug so re-bridging
+    // never throws `SLUG_TAKEN` on a platform-sourced title (§3.4, A3.4) — see
+    // {@link RoomService.unarchiveBridgedRoom}.
+    //
+    // **The room-half writes from here down are NOT one transaction, on
+    // purpose.** Each is a separate synchronous commit on this single-connection
+    // `better-sqlite3` database — un-archive room, un-archive row, remove old
+    // member, add new, re-point row, post notice — and they deliberately do not
+    // share a `tx` handle: `RoomStore.removeMember`/`addMember` and the
+    // bridge-store writers take none, and widening those seams for this one
+    // caller is exactly the coupling `addMember`'s own doc argues against. The
+    // recovery contract stands in for atomicity: this whole method is idempotent
+    // under retry, because it re-reads the surviving row and the CURRENT roster
+    // every time. A throw after the old agent is removed but before the new one
+    // is added leaves an agent-less, un-archived room; re-running `rebridge`
+    // finds no agent member, takes the different-agent branch, and adds the new
+    // one. A throw after the add but before the re-point leaves the new agent
+    // seeded correctly (A3.6b) and the row still on the old binding; re-running
+    // sees the new agent already present, takes the same-agent branch, and
+    // finishes the re-point. The only write a retry does not replay is the swap
+    // notice — best-effort by design (`room-notice-log.ts`'s degrade contract),
+    // never the durable state.
+    if (room.archived) this.unarchiveBridgedRoom(room);
     this.bridges.unarchiveBridge(bridge.roomId);
 
     if (!sameAgent) {
@@ -862,6 +884,48 @@ export class RoomService {
 
     const fresh = this.requireRoom(room.id);
     return { ...this.withRoster(fresh, operator.id), created: false };
+  }
+
+  /**
+   * Un-archive a bridged room, giving a CHANNEL a freshly-resolved unique slug
+   * so re-bridging never throws `SLUG_TAKEN` (spec §3.4, A3.4).
+   *
+   * A channel's slug is released when it archives, and a live channel may have
+   * taken it while this one was away. {@link RoomService.updateRoom}'s un-archive
+   * path refuses that collision with `SLUG_TAKEN` — correct for a room a person
+   * named and can rename, wrong for a bridged channel whose title is
+   * platform-sourced and whose re-bridge would then wedge on a name nobody typed
+   * (and, because `rebridge` runs the room half first, wedge the binding flip
+   * with it). So this mirrors the create path: {@link RoomService.uniqueChannelSlug}
+   * appends `-2`, `-3`, … until free — the same auto-suffix `createBridgedRoom`
+   * uses — rather than throwing. The slug is resolved while the room is still
+   * archived, so `findLiveChannelBySlug` cannot match the room against itself. A
+   * `dm` has no slug and keeps `null`.
+   *
+   * Bypasses {@link RoomService.updateRoom} rather than reusing it: that method
+   * derives its slug from a `title` patch (there is none here) and re-runs the
+   * very `SLUG_TAKEN` guard this path exists to sidestep. The operator check it
+   * would apply is already satisfied — `rebridge` validated the owner before
+   * reaching here.
+   *
+   * @param room - The archived bridged room, snapshotted before this write.
+   * @returns The un-archived room.
+   */
+  private unarchiveBridgedRoom(room: Room): Room {
+    // A `dm` keeps its `null` slug untouched — `slug` is omitted rather than
+    // passed as `null`, which `RoomStore.updateRoom` does not accept.
+    const patch: { archived: false; slug?: string } =
+      room.kind === 'channel'
+        ? { archived: false, slug: this.uniqueChannelSlug(slugify(room.title) ?? 'chat') }
+        : { archived: false };
+    const updated = this.store.updateRoom(room.id, patch);
+    if (!updated) throw new RoomError('ROOM_NOT_FOUND', 'No such room');
+    eventFanOut.broadcast('room_updated', {
+      roomId: updated.id,
+      title: updated.title,
+      archived: updated.archived,
+    });
+    return updated;
   }
 
   /**
