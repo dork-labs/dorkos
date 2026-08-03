@@ -16,7 +16,14 @@ import { zodValidator } from '@tanstack/zod-adapter';
 import { z } from 'zod';
 
 import { mergeDialogSearch } from '../dialog-search-schema';
-import { useSettingsDeepLink, useTasksDeepLink, useRelayDeepLink } from '../use-dialog-deep-link';
+import {
+  useSettingsDeepLink,
+  useTasksDeepLink,
+  useRelayDeepLink,
+  resolveDeepLinkTarget,
+  type SettingsRouteTarget,
+} from '../use-dialog-deep-link';
+import type { SettingsTab } from '../app-store/app-store-panels';
 
 // ── Tiny test router builder ─────────────────────────────────
 //
@@ -87,6 +94,69 @@ function buildHarness(initialUrl = '/') {
 }
 
 type RouterTestHarness = ReturnType<typeof buildHarness>;
+
+// ─────────────────────────────────────────────────────────────
+// resolveDeepLinkTarget — the route-capable resolution model (DOR-854)
+// ─────────────────────────────────────────────────────────────
+//
+// `useSettingsDeepLink` always calls this against the real, tab-only
+// production map, so these tests pass their own fixture maps to exercise
+// every branch — including the route branch, which is dead code against
+// today's production map (it has no route entries yet; Wave 2 adds the
+// first one, e.g. `integrations` → `/connections`).
+describe('resolveDeepLinkTarget', () => {
+  const tabOnlyMap: Record<string, SettingsTab | SettingsRouteTarget> = {
+    channels: 'integrations',
+  };
+
+  it('returns null for an unset value', () => {
+    expect(resolveDeepLinkTarget(undefined, tabOnlyMap)).toBeNull();
+  });
+
+  it('returns null for the tabless "open" sentinel', () => {
+    expect(resolveDeepLinkTarget('open', tabOnlyMap)).toBeNull();
+  });
+
+  it('resolves an ordinary tab id (no map entry) to a tab target', () => {
+    expect(resolveDeepLinkTarget('tools', tabOnlyMap)).toEqual({ kind: 'tab', tab: 'tools' });
+  });
+
+  it('migrates a legacy id mapped to another tab id (channels → integrations)', () => {
+    expect(resolveDeepLinkTarget('channels', tabOnlyMap)).toEqual({
+      kind: 'tab',
+      tab: 'integrations',
+    });
+  });
+
+  it('resolves an unknown id as a tab target (best-effort — the caller validates it)', () => {
+    expect(resolveDeepLinkTarget('not-a-real-tab', tabOnlyMap)).toEqual({
+      kind: 'tab',
+      tab: 'not-a-real-tab',
+    });
+  });
+
+  it('resolves a legacy id mapped to a route target unchanged', () => {
+    const routeTarget: SettingsRouteTarget = {
+      kind: 'route',
+      path: '/connections',
+      search: { region: 'messaging' },
+    };
+    const mapWithRoute: Record<string, SettingsTab | SettingsRouteTarget> = {
+      integrations: routeTarget,
+    };
+    expect(resolveDeepLinkTarget('integrations', mapWithRoute)).toEqual(routeTarget);
+  });
+
+  it('resolves a route-mapped id with no search params', () => {
+    const routeTarget: SettingsRouteTarget = { kind: 'route', path: '/connections' };
+    const mapWithRoute: Record<string, SettingsTab | SettingsRouteTarget> = {
+      integrations: routeTarget,
+    };
+    const result = resolveDeepLinkTarget('integrations', mapWithRoute);
+    expect(result).toEqual({ kind: 'route', path: '/connections' });
+    expect((result as SettingsRouteTarget).search).toBeUndefined();
+  });
+});
 
 // ─────────────────────────────────────────────────────────────
 // useSettingsDeepLink
