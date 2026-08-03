@@ -87,6 +87,14 @@ interface CtxOptions {
   video?: { duration: number; fileName?: string; mimeType?: string };
   document?: { fileName?: string; mimeType?: string };
   location?: boolean;
+  audio?: { duration: number; fileName?: string; mimeType?: string };
+  videoNote?: { duration: number };
+  /**
+   * A GIF. Telegram (and grammy) sets `document` alongside `animation` for
+   * back-compat, so this also sets `message.document` — the mislabel the
+   * extractor documents rather than special-cases.
+   */
+  animation?: boolean;
 }
 
 /** Build a grammy context shaped like a real inbound Telegram update. */
@@ -111,9 +119,14 @@ function createCtx(options: CtxOptions = {}): GrammyContext {
     video,
     document,
     location,
+    audio,
+    videoNote,
+    animation,
   } = options;
 
-  const hasMedia = Boolean(photo || sticker || voice || video || document || location);
+  const hasMedia = Boolean(
+    photo || sticker || voice || video || document || location || audio || videoNote || animation
+  );
   const hasReply =
     replyToFrom !== undefined ||
     replyToMessageId !== undefined ||
@@ -175,15 +188,31 @@ function createCtx(options: CtxOptions = {}): GrammyContext {
             mime_type: video.mimeType,
           }
         : undefined,
-      document: document
+      document:
+        document || animation
+          ? {
+              file_id: 'd1',
+              file_unique_id: 'du1',
+              file_name: document?.fileName,
+              mime_type: document?.mimeType,
+            }
+          : undefined,
+      location: location ? { latitude: 51.5, longitude: -0.1 } : undefined,
+      audio: audio
         ? {
-            file_id: 'd1',
-            file_unique_id: 'du1',
-            file_name: document.fileName,
-            mime_type: document.mimeType,
+            file_id: 'a1',
+            file_unique_id: 'au1',
+            duration: audio.duration,
+            file_name: audio.fileName,
+            mime_type: audio.mimeType,
           }
         : undefined,
-      location: location ? { latitude: 51.5, longitude: -0.1 } : undefined,
+      video_note: videoNote
+        ? { file_id: 'vn1', file_unique_id: 'vnu1', length: 240, duration: videoNote.duration }
+        : undefined,
+      animation: animation
+        ? { file_id: 'g1', file_unique_id: 'gu1', width: 200, height: 200, duration: 5 }
+        : undefined,
     },
   } as unknown as GrammyContext;
 }
@@ -697,6 +726,41 @@ describe('Telegram inbound — non-text content (spec §5.5, §11.2)', () => {
     expect(platformData(payload!).media).toEqual({ type: 'location' });
   });
 
+  it('publishes a captionless music file (audio, distinct from voice) with duration and mime type', async () => {
+    await deliver(
+      createCtx({
+        chatType: 'private',
+        audio: { duration: 180, fileName: 'track.mp3', mimeType: 'audio/mpeg' },
+      }),
+      ALLOW_HUMAN
+    );
+
+    const [payload] = publishedPayloads();
+    expect(platformData(payload!).media).toEqual({
+      type: 'audio',
+      durationSec: 180,
+      fileName: 'track.mp3',
+      mimeType: 'audio/mpeg',
+    });
+  });
+
+  it('publishes a captionless round video message (video_note) with duration', async () => {
+    await deliver(createCtx({ chatType: 'private', videoNote: { duration: 8 } }), ALLOW_HUMAN);
+
+    const [payload] = publishedPayloads();
+    expect(platformData(payload!).media).toEqual({ type: 'video_note', durationSec: 8 });
+  });
+
+  it('publishes a captionless animation (GIF) as a document descriptor — the documented mislabel', async () => {
+    // Telegram sets `document` alongside `animation` for back-compat, and
+    // there is no dedicated 'animation' kind among §5.5's six names. This
+    // pins the actual, documented behavior rather than letting it drift.
+    await deliver(createCtx({ chatType: 'private', animation: true }), ALLOW_HUMAN);
+
+    const [payload] = publishedPayloads();
+    expect(platformData(payload!).media).toEqual({ type: 'document' });
+  });
+
   it('still drops a message with no text, caption, or recognized media', async () => {
     // The negative control for the lift: proves it publishes non-text
     // content because it recognizes a media kind, not because the drop was
@@ -708,12 +772,25 @@ describe('Telegram inbound — non-text content (spec §5.5, §11.2)', () => {
     expect(callbacks.trackInbound).not.toHaveBeenCalled();
   });
 
-  it('a captionless photo in a group still obeys the respond gate', async () => {
+  it('a captionless photo in a group still obeys the respond gate when unaddressed', async () => {
     // The lift lives beneath the gate, not instead of it: an unaddressed
     // group photo under the default respond mode is still filtered.
     await deliver(createCtx({ chatType: 'group', photo: true }));
 
     expect(publishedSubjects()).toEqual([]);
+  });
+
+  it('a captionless photo that replies to the bot in a group passes the gate and publishes', async () => {
+    // The case an earlier review round found untested: a media message that
+    // satisfies the respond gate via reply-to-bot (not a mention) must still
+    // publish with its descriptor — the lift and the reply-addressing path
+    // are independent and must compose.
+    await deliver(createCtx({ chatType: 'supergroup', photo: true, replyToFrom: ME }));
+
+    expect(publishedSubjects()).toEqual([GROUP_SUBJECT]);
+    const [payload] = publishedPayloads();
+    expect(payload!.content).toBe('');
+    expect(platformData(payload!).media).toEqual({ type: 'photo' });
   });
 });
 
@@ -745,16 +822,23 @@ describe('Telegram inbound — reply targeting (spec §5.4, §6.5, §11.2)', () 
 
 describe('Telegram inbound — forum topics (spec §5.6, §9.2, §11.2)', () => {
   // §11.2 additive fields 2: `platformData.messageThreadId` and `threadName`.
+  //
+  // Forum topics are a supergroup feature — a private-chat forum event is a
+  // shape production never produces — so every case here uses `supergroup`,
+  // not `private`, and (where the message can realistically address the bot)
+  // reply-to-bot rather than `ALLOW_HUMAN`'s DM-allowlist bypass, so these
+  // tests also exercise the respond gate honestly instead of routing around
+  // it.
 
   it('carries the topic id and name when the message itself is the creation event', async () => {
     await deliver(
       createCtx({
-        chatType: 'private',
+        chatType: 'supergroup',
         text: 'first message',
         messageThreadId: 99,
         forumTopicName: 'Bug Reports',
-      }),
-      ALLOW_HUMAN
+        replyToFrom: ME,
+      })
     );
 
     const [payload] = publishedPayloads();
@@ -763,15 +847,21 @@ describe('Telegram inbound — forum topics (spec §5.6, §9.2, §11.2)', () => 
   });
 
   it('carries the topic name from a reply to the creation event', async () => {
+    // The reply here targets the topic's root message (id 98), not the bot —
+    // that is what makes this specifically the "topic reply" shape, distinct
+    // from the reply-to-bot shape the other cases use. `'always'` stands in
+    // for whatever addressed this message (a mention, a command); the
+    // property under test is that the topic name propagates through a reply,
+    // independent of how the message satisfied the respond gate.
     await deliver(
       createCtx({
-        chatType: 'private',
+        chatType: 'supergroup',
         text: 'second message',
         messageThreadId: 99,
         replyToMessageId: 98,
         replyForumTopicName: 'Bug Reports',
       }),
-      ALLOW_HUMAN
+      'always'
     );
 
     const [payload] = publishedPayloads();
@@ -783,8 +873,12 @@ describe('Telegram inbound — forum topics (spec §5.6, §9.2, §11.2)', () => 
     // The honest dotted/absent case: no cheap way to learn the name, so the
     // field is simply absent rather than guessed.
     await deliver(
-      createCtx({ chatType: 'private', text: 'third message', messageThreadId: 99 }),
-      ALLOW_HUMAN
+      createCtx({
+        chatType: 'supergroup',
+        text: 'third message',
+        messageThreadId: 99,
+        replyToFrom: ME,
+      })
     );
 
     const [payload] = publishedPayloads();
@@ -793,7 +887,7 @@ describe('Telegram inbound — forum topics (spec §5.6, §9.2, §11.2)', () => 
   });
 
   it('omits both fields entirely for a message outside any forum topic', async () => {
-    await deliver(createCtx({ chatType: 'private', text: 'hello' }), ALLOW_HUMAN);
+    await deliver(createCtx({ chatType: 'supergroup', text: 'hello', replyToFrom: ME }));
 
     const [payload] = publishedPayloads();
     expect(platformData(payload!).messageThreadId).toBeUndefined();

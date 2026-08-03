@@ -344,6 +344,19 @@ export class TelegramAdapter extends BaseRelayAdapter {
    * ask, and this deliberately does not spin one up the way
    * {@link testConnection} does, because a caller polling this before start
    * should see "not yet known" rather than pay for a throwaway connection.
+   *
+   * UNCACHED: every call is a live `getMe` round trip to the Bot API, not a
+   * read of `this.bot.botInfo` (which grammy fills in once, at `bot.init()`,
+   * and never refreshes) — a person can flip Telegram's privacy-mode switch
+   * at any time, and the point of this accessor is to answer with what is
+   * true right now. It THROWS if that call fails (a network error, a revoked
+   * token); it does not swallow the error into a `null` the way the
+   * before-start case does, because "the platform refused to answer" and
+   * "nobody has asked the platform yet" are different failures and a caller
+   * needs to tell them apart. Caching the answer and deciding how to handle a
+   * failed refresh — the "stale value on error" fallback that visibility
+   * §8's `visibilityCheckedAt` calls for — is the bridge's job (task 1.6/1.13),
+   * not this accessor's.
    */
   async getMe(): Promise<{ username: string; canReadAllGroupMessages: boolean } | null> {
     if (!this.bot) return null;

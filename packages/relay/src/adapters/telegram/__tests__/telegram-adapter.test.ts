@@ -983,6 +983,23 @@ describe('TelegramAdapter', () => {
     expect(result).toEqual({ username: 'dorkbot', canReadAllGroupMessages: false });
   });
 
+  it('getMe() makes a live API call every time — not a cached read of botInfo', async () => {
+    await adapter.start(mockRelay);
+    mockGetMe.mockClear();
+
+    await adapter.getMe();
+    await adapter.getMe();
+
+    expect(mockGetMe).toHaveBeenCalledTimes(2);
+  });
+
+  it('getMe() throws rather than swallowing a failed API call into null', async () => {
+    await adapter.start(mockRelay);
+    mockGetMe.mockRejectedValueOnce(new Error('Unauthorized: revoked token'));
+
+    await expect(adapter.getMe()).rejects.toThrow('Unauthorized: revoked token');
+  });
+
   // --- Webhook mode ---
 
   it('webhook mode: calls setWebhook and starts webhook server', async () => {

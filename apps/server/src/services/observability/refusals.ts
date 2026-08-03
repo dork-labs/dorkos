@@ -87,6 +87,15 @@ export const REFUSAL_REASONS = {
   budget_exceeded: 'the message ran out of budget',
   /** Nothing accepted the turn — no subscriber, or a gate that named itself. */
   delivery_failed: 'the runtime did not accept the turn',
+  /**
+   * An inbound message carried no text and the binding is not bridged. A
+   * captionless media message (spec `chats-as-channels` §5.5) publishes with
+   * `content: ''` so a future bridge can build a placeholder from
+   * `platformData.media`, but nothing on the classic (unbridged) path reads
+   * that descriptor yet — dispatching empty content anyway would run a real
+   * agent turn over nothing (DOR-866).
+   */
+  empty_content: 'no text content to answer',
 } as const;
 
 /** One reason from {@link REFUSAL_REASONS}. */

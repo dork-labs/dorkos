@@ -3,9 +3,10 @@
  *
  * Parses Telegram Bot API updates into Relay-compatible payloads.
  * Handles text messages, captioned and captionless media (photos, stickers,
- * voice notes, documents, videos, locations), replies, and forum topics.
- * Normalises all inbound messages into {@link StandardPayload} so agents
- * are decoupled from the Telegram API surface.
+ * voice notes, documents, videos, video notes, audio, locations), replies,
+ * and forum topics. Normalises all inbound messages into
+ * {@link StandardPayload} so agents are decoupled from the Telegram API
+ * surface.
  *
  * @module relay/adapters/telegram-inbound
  */
@@ -375,11 +376,21 @@ function extractChannelName(chat: GrammyContext['chat']): string | undefined {
 /**
  * Describe a message's non-text content, if any.
  *
- * Covers the six kinds §5.5 names: photo, sticker, voice, document, video,
- * location. A Telegram message carries at most one of these, so the first
- * match wins. No media bytes are fetched to fill in more than what the
- * update itself already carries — a sticker or a shared location has nothing
- * cheap to add beyond its kind.
+ * Covers the six kinds §5.5 names — photo, sticker, voice, document, video,
+ * location — plus `audio` (a music file, distinct from `voice`) and
+ * `video_note` (a round video message), so the same "publish a descriptor
+ * instead of vanishing" property holds for every common kind, not only the
+ * ones the spec happened to enumerate. A Telegram message carries at most one
+ * of these, so the first match wins. No media bytes are fetched to fill in
+ * more than what the update itself already carries — a sticker or a shared
+ * location has nothing cheap to add beyond its kind.
+ *
+ * KNOWN MISLABEL, left as-is rather than growing the kind list: Telegram (and
+ * grammy) sets `document` alongside `animation` on a GIF, "for backward
+ * compatibility" (see `Animation`'s doc comment in `@grammyjs/types`). There
+ * is no `'animation'` kind among the six §5.5 names, so a captionless GIF
+ * publishes here as `{ type: 'document' }` — an honest description of the
+ * data actually present, not of what a person would call it.
  *
  * @param message - The inbound Telegram message.
  */
@@ -393,6 +404,17 @@ function extractMediaDescriptor(message: TelegramMessage): TelegramMediaDescript
       mimeType: message.voice.mime_type,
     };
   }
+  if (message.audio) {
+    return {
+      type: 'audio',
+      durationSec: message.audio.duration,
+      fileName: message.audio.file_name,
+      mimeType: message.audio.mime_type,
+    };
+  }
+  if (message.video_note) {
+    return { type: 'video_note', durationSec: message.video_note.duration };
+  }
   if (message.video) {
     return {
       type: 'video',
@@ -402,6 +424,7 @@ function extractMediaDescriptor(message: TelegramMessage): TelegramMediaDescript
     };
   }
   if (message.document) {
+    // See the mislabel note above: an animation (GIF) lands here too.
     return {
       type: 'document',
       fileName: message.document.file_name,

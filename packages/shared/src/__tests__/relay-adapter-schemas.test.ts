@@ -605,6 +605,11 @@ describe('TelegramMediaDescriptorSchema (spec chats-as-channels §5.5, §11.2)',
     }
   });
 
+  it('accepts audio and video_note, added beyond §5.5 for the same property', () => {
+    expect(TelegramMediaDescriptorSchema.safeParse({ type: 'audio' }).success).toBe(true);
+    expect(TelegramMediaDescriptorSchema.safeParse({ type: 'video_note' }).success).toBe(true);
+  });
+
   it('rejects a media kind outside the named six — proves the enum is closed, not permissive', () => {
     // The negative control: without this, an enum that accidentally became
     // `z.string()` would pass every positive case above too.

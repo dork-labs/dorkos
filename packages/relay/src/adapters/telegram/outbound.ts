@@ -517,19 +517,26 @@ function startTypingLoop(bot: Bot | null, chatId: number, state: TelegramOutboun
 }
 
 /**
- * Handle a `typing` signal from the Relay and forward it to Telegram.
+ * Handle a `typing` or `progress` signal from the Relay and forward it to
+ * Telegram as the same chat action.
  *
  * This is the seam for lifecycles the adapter cannot observe in its own
- * outbound stream. Today nothing on the relay bus emits `typing` signals, so
- * the live driver is the turn itself (see {@link deliverMessage}); a Telegram
- * chat bridged to a **room** would arrive here instead, mapping the room's
- * `working`/`done` presence onto the same single loop rather than a second
- * one. No such bridge exists yet: room presence is published to the room's
- * own event stream (`RoomService.publishSignal`) and reaches the cockpit, not
- * a relay adapter.
+ * outbound stream. Today nothing on the relay bus emits either signal for
+ * this adapter, so the live driver is the turn itself (see
+ * {@link deliverMessage}). Both are wired to the same handler on purpose:
+ * `typing` is a placeholder for a future direct signal, and `progress` is
+ * what `publishPresence` (`room-trigger.ts`) actually emits for a room —
+ * agents work, they do not type — so a Telegram chat bridged to a **room**
+ * maps the room's `working`/`done` presence onto this one loop rather than a
+ * second one (spec `chats-as-channels` §6.8). The adapter side of that wiring
+ * (`telegram-adapter.ts`'s signal subscription routing `progress` here) has
+ * landed; the room-side forwarder that turns a room's presence into a relay
+ * signal on this chat's subject has not (task 1.10) — until it does, no
+ * `progress` signal actually reaches a bridged chat, only `typing` does, from
+ * wherever a future direct producer emits it.
  *
  * @param bot - The grammy Bot instance, or null if not started
- * @param subject - The Relay subject the typing signal was emitted on
+ * @param subject - The Relay subject the signal was emitted on
  * @param outboundState - The adapter's instance-scoped outbound state
  * @param signalState - The signal state ('active' | 'stopped' or other values)
  * @param codec - The adapter's instance-scoped subject codec

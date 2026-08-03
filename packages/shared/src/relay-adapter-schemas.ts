@@ -174,13 +174,29 @@ export type TelegramAdapterConfigZ = TelegramAdapterConfig;
  * 1 (`specs/chats-as-channels/02-specification.md` §5.5); this is exactly what
  * the server-side placeholder builder (`[photo]`, `[voice message, 0:14]`,
  * `[document: report.pdf]`) needs and nothing more.
+ *
+ * `photo`, `sticker`, `voice`, `document`, `video`, and `location` are the six
+ * kinds §5.5 names. `audio` (a music file, distinct from `voice`) and
+ * `video_note` (a round video message) are added beyond that list so the same
+ * §5.5 property — a non-text message publishes with a descriptor instead of
+ * vanishing — holds for every common Telegram media kind, not only the ones
+ * the spec happened to enumerate.
  */
 export const TelegramMediaDescriptorSchema = z
   .object({
-    type: z.enum(['photo', 'sticker', 'voice', 'document', 'video', 'location']),
-    /** Playback length in seconds — `voice` and `video` only. */
+    type: z.enum([
+      'photo',
+      'sticker',
+      'voice',
+      'document',
+      'video',
+      'location',
+      'audio',
+      'video_note',
+    ]),
+    /** Playback length in seconds — `voice`, `video`, `audio`, and `video_note` only. */
     durationSec: z.number().optional(),
-    /** Original filename, as Telegram reports it — `document` and `video` only. */
+    /** Original filename, as Telegram reports it — `document`, `video`, and `audio` only. */
     fileName: z.string().optional(),
     /** MIME type, when Telegram supplies one. */
     mimeType: z.string().optional(),

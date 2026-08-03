@@ -266,3 +266,64 @@ describe('a routed chat message', () => {
     expect(spanFor(PLATFORM_SUBJECT)!.status).toBe('delivered');
   });
 });
+
+describe('the interim empty-content gate (DOR-866)', () => {
+  // The Telegram adapter publishes a captionless photo/sticker/voice/
+  // document/video/location with `content: ''` and a `platformData.media`
+  // descriptor (spec `chats-as-channels` §5.5) so a future bridge (task 1.6)
+  // can build a placeholder from it. Nothing on the classic, unbridged path
+  // reads that descriptor yet — without this gate, an empty-content envelope
+  // reaches a real agent turn and the agent replies about a message that
+  // said nothing. These tests drive the real RelayCore end to end, the same
+  // way `sendInbound` does for the text cases above.
+
+  /** Publish a captionless-media-shaped inbound message. */
+  async function sendCaptionlessMedia(): Promise<void> {
+    await relay.publish(
+      PLATFORM_SUBJECT,
+      { content: '', platformData: { media: { type: 'photo' } } },
+      { from: 'relay.human.telegram.tg-bot.bot', replyTo: PLATFORM_SUBJECT }
+    );
+  }
+
+  it('drops a captionless-media message on an unbridged binding — no session, no dispatch, no notice', async () => {
+    await sendCaptionlessMedia();
+
+    // Give the router a chance to route it — there is no dispatch to wait
+    // for, so this waits on the trace instead, which is written either way.
+    await vi.waitFor(() => expect(spanFor(PLATFORM_SUBJECT)).toBeDefined());
+
+    expect(createSession).not.toHaveBeenCalled();
+    expect(registry.dispatches).toHaveLength(0);
+    // Silent by design (no regression to explain — nothing was said about an
+    // empty message before this task either).
+    expect(registry.noticeTexts()).toHaveLength(0);
+    expect(spanFor(PLATFORM_SUBJECT)!.status).not.toBe('delivered');
+  });
+
+  it('does NOT drop the same message once the binding is bridged — 1.6 inherits the unfiltered envelope', async () => {
+    await bindingStore.update(bindingId, { bridge: 'room', chatId: '12345' });
+
+    await sendCaptionlessMedia();
+
+    // Bridged bindings still route through the classic dispatch path today —
+    // ChatBridge.ingest (task 1.6) has not landed — so "not gated" is
+    // observed as the message reaching the agent, same as any routed
+    // message.
+    await vi.waitFor(() => expect(registry.dispatches).toHaveLength(1));
+    expect(createSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('still runs a real turn for non-empty content on the same unbridged binding', async () => {
+    // The negative control: proves the gate keys on content emptiness, not
+    // on the mere presence of `platformData.media`.
+    await relay.publish(
+      PLATFORM_SUBJECT,
+      { content: 'a real caption', platformData: { media: { type: 'photo' } } },
+      { from: 'relay.human.telegram.tg-bot.bot', replyTo: PLATFORM_SUBJECT }
+    );
+
+    await vi.waitFor(() => expect(registry.dispatches).toHaveLength(1));
+    expect(createSession).toHaveBeenCalledTimes(1);
+  });
+});
