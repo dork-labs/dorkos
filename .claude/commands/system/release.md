@@ -242,15 +242,20 @@ Include the current version (from VERSION) and last tag in the prompt. Parse the
 
 ## Phase 4: Curate, Present, and Confirm Only on a Major
 
-### Curation: drop fixes to unreleased changes
+### Curation: audience and intra-release fixes
 
-A `### Fixed` bullet belongs in the notes only if a user could have hit the bug. Before presenting the plan, classify every Fixed (and fix-flavored Changed) bullet across the fragments:
+Two classes of bullet slip past the PR gate and must be caught here, before the plan is presented. Classify every bullet across the fragments in two passes:
+
+**Pass 1 — audience.** The changelog's reader operates DorkOS. A bullet describing work only a DorkOS _builder_ notices — test coverage, CI/build tooling, harness or contributor-doc changes, internal code moves — is **dropped** whatever its category, even when curation has dressed it in user language (the `writing-changelogs` skill's "audience test"). The tell: nothing an operator sees or does changed. These exist because the `fragment-present` gate keys on commit type, so builder-only `feat:`/`fix:` work that skipped the `skip-changelog` label minted a fragment anyway.
+
+**Pass 2 — fixes to unreleased changes.** A `### Fixed` bullet belongs in the notes only if a user could have hit the bug:
 
 - **Fixes pre-existing behavior** — the buggy behavior existed at the last tag → **keep**.
 - **Fixes behavior introduced this cycle** — the change that introduced the bug is itself in this release; typically its `### Added`/`### Changed` entry sits in the same fragment set, and `git log [last_tag] -- <path>` settles ambiguous cases → **drop**. If the fix changed what a user should _know_ about the feature (a limitation lifted, behavior that settled differently than the feature's entry says), **fold** that substance into the feature's entry instead of keeping a separate Fixed line.
-- **Unsure** → **keep**. Over-including a fix is harmless; wrongly dropping a real one is not.
 
-With a large fragment set (~30+ fragments), delegate classification to a `context-isolator` agent: give it the last tag and `changelog/unreleased/`, and have it return a keep/drop/fold verdict per bullet with a one-line reason each. Judgment stays here — spot-check any drop that names a surface you know predates the last tag.
+**Unsure in either pass → keep.** Over-including is harmless; wrongly dropping a real entry is not.
+
+With a large fragment set (~30+ fragments), delegate classification to a `context-isolator` agent: give it the last tag and `changelog/unreleased/`, and have it return a keep/drop/fold verdict per bullet with a one-line reason each, labeling audience drops and intra-release-fix drops distinctly. Judgment stays here — spot-check any drop that names a surface you know predates the last tag, and any audience drop naming a surface operators do touch.
 
 The verdicts apply during Phase 6.4 compilation. No `covers:` bookkeeping is needed: the PR check already ran, and the fragments are deleted at compile either way.
 
@@ -441,6 +446,8 @@ tags: [release, plus 2-3 relevant tags from the changes]
 ## All Changes
 
 [Copy from CHANGELOG.md version section — same content as GitHub Release]
+
+[Optional: ## For contributors — include ONLY when this release cycle landed a major internal shift (a new CI gate, workflow engine, or architecture seam). One short paragraph naming the shift and linking its ADR(s). The changelog itself never carries builder-facing entries (Phase 4 curation drops them); this coda is the one sanctioned place a release may speak to people building DorkOS. Omit the section entirely otherwise — most releases have none.]
 
 ## Install / Update
 

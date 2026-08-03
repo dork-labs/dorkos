@@ -88,16 +88,23 @@ Changelog entries are user-facing prose, so the **`writing-for-humans`** skill s
 
 ## What to Skip
 
-Not everything belongs in the changelog. Skip:
+Not everything belongs in the changelog, and the test is **audience, not commit type**: the changelog's reader _operates_ DorkOS. A change only someone _building_ DorkOS notices ships no fragment, even when it lands as `feat:` or `fix:`. Skip:
 
 - Internal refactoring with no user impact
 - Documentation typo fixes
 - Development-only changes (CI, tests, linting)
+- Harness, ADR, and contributor-documentation changes — the builders' record lives in git history, `decisions/`, and `contributing/`, not here
 - Dependency updates (unless security-related)
 - Code style changes
 - Fixes to changes that haven't been released yet (see below)
 
 **Exception**: Include if it affects how users interact with the system.
+
+### The audience test
+
+The "You can now" test has a companion: **if the "you" is a DorkOS contributor rather than someone running DorkOS, the entry doesn't ship.** Watch for builder-facing work dressed in user language — test coverage, build tooling, code moves between packages — rewritten so smoothly it reads like a feature. The tell: nothing an operator sees or does changed.
+
+How to satisfy the PR gate for builder-only work: the `fragment-present` check requires coverage for every `feat:`/`fix:`/`refactor:`/`perf:` commit, and `no-fragment-under-skip-label` makes fragment and label mutually exclusive — so a builder-only PR takes the **`skip-changelog` label**, never a fragment. In a **mixed PR** (user-facing and builder-only commits together), write the fragment for the user-facing part and add the builder-only commit subjects to its `covers:` list: coverage is independent of prose, so the gate stays green without shipping builder bullets.
 
 ### Fixes to unreleased changes
 
@@ -192,6 +199,7 @@ Before publishing release notes, verify each entry:
 - [ ] Reads at a ~9th-grade level (no unexplained jargon; every acronym glossed or cut)
 - [ ] No ticket ID carries the meaning: the sentence stands alone without `(DOR-123)` or `(#42)`
 - [ ] No internal batch/task/tracking entries: those are cut at curation, never shipped
+- [ ] The reader is someone operating DorkOS, not someone building it (see "The audience test")
 - [ ] Appropriate for someone who doesn't know the codebase
 
 For the overall release:
