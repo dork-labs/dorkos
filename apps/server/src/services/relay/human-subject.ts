@@ -12,6 +12,15 @@
 
 /** Adapter routing components parsed from a `relay.human.*` subject. */
 export interface ParsedHumanSubject {
+  /**
+   * The platform the message came from: `telegram`, `slack`.
+   *
+   * Already required to parse the rest of the subject, and carried out because
+   * a bridged room's external author is keyed on it (chats-as-channels §4.1).
+   * It comes from the SUBJECT — how the message was routed — and never from the
+   * payload, which the sender writes.
+   */
+  platformType?: string;
   /** The adapter's unique instance id (the segment after the platform type). */
   adapterId?: string;
   /** The chat identifier, when present. */
@@ -59,5 +68,5 @@ export function parseHumanSubject(subject: string): ParsedHumanSubject {
     chatId = afterInstance.join('.');
   }
 
-  return { adapterId, chatId, channelType };
+  return { platformType, adapterId, chatId, channelType };
 }

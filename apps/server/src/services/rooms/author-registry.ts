@@ -31,8 +31,15 @@
  */
 import { ulid } from 'ulidx';
 import { agents, authors, roomMembers, eq, and, inArray, isNull, type Db } from '@dorkos/db';
-import { agentAuthorRef, type AuthorKind, type AuthorRef } from '@dorkos/shared/room-schemas';
+import {
+  agentAuthorRef,
+  type AuthorKind,
+  type AuthorOrigin,
+  type AuthorRef,
+} from '@dorkos/shared/room-schemas';
+import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../lib/logger.js';
+import { RoomError } from './room-errors.js';
 
 /**
  * The natural key of the unbound human author — the one an install mints while
@@ -81,7 +88,14 @@ const UNNAMED_HUMAN_DISPLAY_NAME = 'Someone';
 export interface AuthorRecord {
   id: string;
   kind: AuthorKind;
-  /** An agent's `agentPath`, a human's account key, or `'system'`. */
+  /**
+   * An agent's `agentPath`, a human's account key, `'system'`, or — for
+   * somebody on a platform outside this machine — `platform:{platformType}:
+   * {instanceId}:{platformUserId}` (see the external-author section below). The
+   * prefix is what
+   * `authorOrigin` reads to tell a stranger from the operator, which is why
+   * {@link AuthorRegistry.resolve} refuses to mint a local author wearing it.
+   */
   naturalKey: string;
   displayName: string;
   /** Render cache: emoji avatar, or `null` when the author has none. */
@@ -154,8 +168,74 @@ export class AuthorRegistry {
   constructor(private readonly db: Db) {}
 
   /**
+   * Resolve a LOCAL `(kind, naturalKey)` to an author, inserting the row the
+   * first time it is seen and refreshing the cached `displayName` after that.
+   * See {@link AuthorRegistry.upsert} for what "resolve" does; this adds the one
+   * thing it refuses.
+   *
+   * **Every author on this machine mints through here, and none of them may
+   * wear the `platform:` prefix** (chats-as-channels spec §4.1). Somebody
+   * outside this machine goes through {@link AuthorRegistry.resolveExternal},
+   * which is the only path that writes such a key.
+   *
+   * @param input - The author's kind, stable key, and current display name.
+   * @returns The resolved author, whose `id` is stable for this occupancy of
+   *   this natural key.
+   */
+  resolve(input: ResolveAuthorInput): AuthorRecord {
+    // The invariant `external-authors.ts` states, enforced where every local
+    // mint path already funnels rather than repeated at each of them. It is
+    // structural, not a comment: `resolveExternal` is the ONLY way a
+    // `platform:`-prefixed row is ever written, so reading the prefix back off a
+    // stored key is a sound trust decision (spec §4.1, §4.3).
+    if (input.naturalKey.startsWith(EXTERNAL_KEY_PREFIX)) {
+      throw new RoomError(
+        'RESERVED_NATURAL_KEY',
+        `'${EXTERNAL_KEY_PREFIX}' is reserved for people outside this machine and cannot be minted locally`
+      );
+    }
+    return this.upsert(input);
+  }
+
+  /**
+   * Resolve the author of somebody on a platform outside this machine, minting
+   * their row the first time they say anything (chats-as-channels spec §4.1).
+   *
+   * **Kind `human`, and that is the point.** A Telegram sender is a person;
+   * `RoomContextMember.isPerson` reads the stored kind, and an agent told a
+   * person is a machine cannot follow a single one of the etiquette rules about
+   * who to answer (`meta/agent-etiquette.md` E2, E3, E18).
+   *
+   * **The display name is sanitized HERE, at mint, as well as at render**
+   * (spec §9.2). It is a label that renders outside the untrusted fence, and
+   * the paths that read a roster predate this feature — a name reaching the
+   * store with `</room_context>` in it would be one more place that has to
+   * remember. Sanitizing twice is harmless; sanitizing only at the far end is
+   * a promise every future reader has to keep.
+   *
+   * Only this method may write a `platform:`-prefixed key;
+   * {@link AuthorRegistry.resolve} refuses one.
+   *
+   * @param identity - Who this is, on which platform, through which bot, and
+   *   what they call themselves there — the display name RAW, never
+   *   pre-sanitized.
+   * @returns The resolved author, whose `id` is stable for this person on this
+   *   adapter instance, across every rename they ever do.
+   */
+  resolveExternal(identity: ExternalAuthorIdentity): AuthorRecord {
+    return this.upsert({
+      kind: 'human',
+      naturalKey: externalNaturalKey(identity),
+      displayName: externalDisplayName(identity),
+    });
+  }
+
+  /**
    * Resolve `(kind, naturalKey)` to an author, inserting the row the first time
-   * it is seen and refreshing the cached `displayName` after that.
+   * it is seen and refreshing the cached `displayName` after that — the shared
+   * body of {@link AuthorRegistry.resolve} and
+   * {@link AuthorRegistry.resolveExternal}, with no opinion about which keys are
+   * allowed. Its two callers hold that opinion between them.
    *
    * **For an agent, "the row for this directory" is also "the row for the
    * occupant that directory currently holds"** (ADR 260801-003051). Four states,
@@ -178,7 +258,7 @@ export class AuthorRegistry {
    * @returns The resolved author, whose `id` is stable for this occupancy of
    *   this natural key.
    */
-  resolve(input: ResolveAuthorInput): AuthorRecord {
+  private upsert(input: ResolveAuthorInput): AuthorRecord {
     const existing = this.activeRow(input.kind, input.naturalKey);
     // Derived here, never accepted: `resolveAgent` has no parameter for a ULID
     // precisely so no caller can key identity on one.
@@ -558,6 +638,150 @@ export class AuthorRegistry {
   /** The stored display name of a human author, or `null` when it has no row yet. */
   private storedHumanName(naturalKey: string): string | null {
     return this.activeRow('human', naturalKey)?.displayName ?? null;
+  }
+}
+
+/**
+ * The label an external person is stored under: their platform name, sanitized
+ * at mint (spec §9.2).
+ *
+ * **The fallback is the platform user id, and it is not laziness.** A name made
+ * entirely of angle brackets and control characters sanitizes to nothing, and
+ * every such person would otherwise be stored under one shared word — two
+ * strangers rendering identically in a roster whose entire job is telling
+ * members apart, which is the same merge §4.1 refuses at the identity level.
+ * The id is opaque, address-free and distinct per person, which is exactly what
+ * a label has to be here. Nobody reaches this by accident: a name has to be
+ * built only of the characters `sanitizeIdentity` removes.
+ *
+ * @param identity - The external person, with their display name still raw.
+ */
+function externalDisplayName(identity: ExternalAuthorIdentity): string {
+  return sanitizeIdentity(identity.displayName) ?? identity.platformUserId;
+}
+
+// === External authors: people on a platform outside this machine ===
+//
+// The fourth natural-key shape, beside `local`, `user:{id}` and an agent's
+// directory (chats-as-channels spec §4.1–§4.3). It lives here rather than in a
+// module of its own because it IS the same family: `LOCAL_HUMAN_NATURAL_KEY`,
+// `accountNaturalKey` and `SYSTEM_NATURAL_KEY` are three ways of spelling an
+// author's stable identity, `externalNaturalKey` is the fourth, and
+// `authorOrigin` reads one back. Splitting the family across two files would
+// put the invariant that binds them — no local key may wear the external
+// prefix — somewhere other than the code that enforces it.
+
+/**
+ * What every external author's natural key begins with, and what nothing minted
+ * on this machine may begin with.
+ *
+ * Exported because the invariant above is enforced in `author-registry.ts` and
+ * pinned by a test, and all three have to be talking about the same string.
+ */
+export const EXTERNAL_KEY_PREFIX = 'platform:';
+
+/** What separates the segments of an external natural key. */
+const KEY_SEPARATOR = ':';
+
+/**
+ * A person on a platform outside this machine, as much as DorkOS knows about
+ * them: which platform, which bot they reached, who they are there, and what
+ * they call themselves.
+ *
+ * `platformUserId` is required and non-empty by construction. A message that
+ * carries no resolvable one gets **no author at all** and is dropped with a
+ * refusal — never folded into a shared "someone", which would merge two
+ * strangers into one identity in a log that is meant to be evidence (spec §4.1).
+ * That is why this type cannot express the absent case: the drop happens at the
+ * boundary that reads the payload (`relay/platform-identity.ts`), before
+ * anything here is reachable.
+ */
+export interface ExternalAuthorIdentity {
+  /** The platform, as the relay subject spells it: `telegram`, `slack`. */
+  platformType: string;
+  /** The adapter instance the message arrived on — which bot, not which chat. */
+  instanceId: string;
+  /** The platform's own id for this person, read from `platformData`. */
+  platformUserId: string;
+  /**
+   * What they call themselves there, RAW. Sanitized when the author row is
+   * minted (spec §9.2) — never pass an already-sanitized value, and never
+   * sanitize it twice.
+   */
+  displayName: string;
+}
+
+/**
+ * The natural key an external person's author row is minted on.
+ *
+ * `platformUserId` is last, so a platform whose ids contain the separator still
+ * round-trips: {@link authorOrigin} only ever reads the platform segment, which
+ * is bounded by the two before it. The two segments that are NOT last are
+ * checked, because a separator in either would shift what every later segment
+ * means and could let one identity be spelled two ways.
+ *
+ * @param identity - Who this is, on which platform, through which bot.
+ * @returns The key, e.g. `platform:telegram:tg-main:145223`.
+ */
+export function externalNaturalKey(identity: ExternalAuthorIdentity): string {
+  requireKeySegment(identity.platformType, 'platform type');
+  requireKeySegment(identity.instanceId, 'adapter instance');
+  if (identity.platformUserId.length === 0) {
+    throw new RoomError(
+      'EXTERNAL_IDENTITY_INVALID',
+      'An external author needs a platform user id — a message without one gets no author at all'
+    );
+  }
+  return [
+    EXTERNAL_KEY_PREFIX + identity.platformType,
+    identity.instanceId,
+    identity.platformUserId,
+  ].join(KEY_SEPARATOR);
+}
+
+/**
+ * Whether a stored natural key belongs to somebody outside this machine.
+ *
+ * @param naturalKey - The stored key.
+ */
+export function isExternalNaturalKey(naturalKey: string): boolean {
+  return naturalKey.startsWith(EXTERNAL_KEY_PREFIX);
+}
+
+/**
+ * Where an author is, read back off the key they were minted on.
+ *
+ * **This is the only derivation of origin there is**, and it deliberately takes
+ * a stored key rather than a live message: origin is a property of the author,
+ * established at write time and carried (spec §9.1). A version that read the
+ * relay subject would answer differently for the same entry depending on what
+ * else was happening on the machine.
+ *
+ * A malformed external key — the prefix with no platform behind it, which
+ * {@link externalNaturalKey} cannot produce — is reported as external with an
+ * empty-but-present platform rather than as local. Losing the platform name
+ * costs a label; reporting a stranger as local would lose the trust boundary.
+ *
+ * @param naturalKey - The author's stored natural key.
+ */
+export function authorOrigin(naturalKey: string): AuthorOrigin {
+  if (!isExternalNaturalKey(naturalKey)) return 'local';
+  const platform = naturalKey.slice(EXTERNAL_KEY_PREFIX.length).split(KEY_SEPARATOR)[0];
+  return { platform: platform.length > 0 ? platform : 'unknown' };
+}
+
+/**
+ * Refuse a key segment that is empty or carries the separator.
+ *
+ * @param value - The segment.
+ * @param what - What it is, for the message.
+ */
+function requireKeySegment(value: string, what: string): void {
+  if (value.length === 0 || value.includes(KEY_SEPARATOR)) {
+    throw new RoomError(
+      'EXTERNAL_IDENTITY_INVALID',
+      `An external author's ${what} must be non-empty and must not contain '${KEY_SEPARATOR}'`
+    );
   }
 }
 

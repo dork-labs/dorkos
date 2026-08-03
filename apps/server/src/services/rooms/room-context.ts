@@ -43,7 +43,12 @@ import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
 import { advertisedHandles, rosterMentionCandidates } from './author-handles.js';
 import type { EngagementWindow } from './engagement.js';
-import type { AuthorRecord, AuthorRegistry } from './author-registry.js';
+import {
+  authorOrigin,
+  isExternalNaturalKey,
+  type AuthorRecord,
+  type AuthorRegistry,
+} from './author-registry.js';
 import type { ReactionStore } from './reaction-store.js';
 import type { RoomAgentLookup } from './room-errors.js';
 import type { RoomStore } from './room-store.js';
@@ -95,6 +100,20 @@ export interface RoomContextDeps {
   authors: AuthorRegistry;
   /** Resolves an agent's handle from its directory — one name an `@` may match. */
   agents: RoomAgentLookup;
+  /**
+   * Whether this room projects an external chat (chats-as-channels §9.2).
+   *
+   * Injected as a predicate, in the same style as `RoomServiceDeps.isOwnerAuthor`
+   * and `maxAgentDepth`, so this module still reads no store it does not already
+   * own. It decides one thing: whether the untrusted fence carries the standing
+   * line about strangers.
+   *
+   * A property of the ROOM, deliberately not of the members who happen to have
+   * spoken. A bridged group that no stranger has posted in yet is still a
+   * channel that receives messages from strangers, and the sentence is about
+   * what may arrive rather than about what already has.
+   */
+  isBridgedRoom(roomId: string): boolean;
 }
 
 /** The one turn being described. */
@@ -195,7 +214,16 @@ export function buildRoomContext(deps: RoomContextDeps, input: RoomContextInput)
     ...[...reacted.values()].flatMap((pills) => pills.flatMap((pill) => pill.authorIds)),
   ]);
   const people = new Set<string>();
-  for (const [id, record] of records) if (record.kind === 'human') people.add(id);
+  // Both sets are read off the SAME stored rows, once: `kind` says person or
+  // machine, the natural key says this machine or somewhere else. Neither is a
+  // property of the message being processed, which is exactly why an entry
+  // written two years ago still answers both questions the same way today
+  // (spec §9.1).
+  const externals = new Set<string>();
+  for (const [id, record] of records) {
+    if (record.kind === 'human') people.add(id);
+    if (isExternalNaturalKey(record.naturalKey)) externals.add(id);
+  }
   // The SAME ownership computation the mention picker runs, over the SAME
   // candidate sequence `resolveMentions` is handed at write time (`RoomService`
   // → `RoomRoster.mentionCandidates`). Not a second rule that happens to agree:
@@ -209,6 +237,12 @@ export function buildRoomContext(deps: RoomContextDeps, input: RoomContextInput)
       authorHandle: author.handle,
       authorDisplayName: author.displayName,
       authorIsPerson: people.has(entry.authorId),
+      // Off the STORED key of whoever wrote it, which is what makes this a fact
+      // about the entry rather than about the moment it renders (spec §9.1). An
+      // author row that has vanished reads as local: the row is retired, never
+      // deleted, so this is a corrupt-database placeholder and not a case a
+      // stranger can steer into.
+      authorOrigin: externals.has(entry.authorId) ? 'external' : 'local',
       kind: entry.kind,
       at: entry.createdAt,
       text: entry.body.text,
@@ -274,6 +308,10 @@ export function buildRoomContext(deps: RoomContextDeps, input: RoomContextInput)
         ...nameOf(member.authorId),
         isPerson: record?.kind === 'human',
         isSelf: member.authorId === input.agentAuthorId,
+        // Same source as `authorOrigin` on an entry, at the finer grain a roster
+        // can afford: the roster names the platform, an entry line only carries
+        // the trust bit (§4.3).
+        origin: record ? authorOrigin(record.naturalKey) : 'local',
         ...(record?.kind === 'agent' ? { responseMode: member.responseMode } : {}),
       };
     }),
@@ -318,7 +356,7 @@ interface ContextFrame {
  * @param entry - The entry that triggered it; its thread pointer is the position.
  */
 function resolveFrame(deps: RoomContextDeps, room: Room, entry: RoomEntry): ContextFrame {
-  return { room: frameOf(room), thread: threadOf(deps, room, entry) };
+  return { room: frameOf(room, deps.isBridgedRoom(room.id)), thread: threadOf(deps, room, entry) };
 }
 
 /**
@@ -344,13 +382,19 @@ function threadOf(deps: RoomContextDeps, room: Room, entry: RoomEntry): RoomCont
   };
 }
 
-/** Project a room onto the frame shape. */
-function frameOf(room: Room): RoomContextData['room'] {
+/**
+ * Project a room onto the frame shape.
+ *
+ * @param room - The room the turn is happening in.
+ * @param bridged - Whether it projects an external chat.
+ */
+function frameOf(room: Room, bridged: boolean): RoomContextData['room'] {
   return {
     id: room.id,
     kind: room.kind,
     name: roomName(room),
     ...(room.topic ? { topic: room.topic } : {}),
+    bridged,
   };
 }
 

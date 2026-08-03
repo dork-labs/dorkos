@@ -53,6 +53,12 @@ const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   CHAT_ALREADY_BRIDGED: 409,
   BRIDGE_SECOND_AGENT_REFUSED: 409,
   UNKNOWN_CHAT_TYPE: 400,
+  EXTERNAL_IDENTITY_INVALID: 400,
+  // A 500, and deliberately not a 4xx: no HTTP caller can name a natural key,
+  // so this code reaching a route means DorkOS built one wrong, not that a
+  // request was bad.
+  RESERVED_NATURAL_KEY: 500,
+  NOT_A_BRIDGED_ROOM: 409,
 };
 
 /**

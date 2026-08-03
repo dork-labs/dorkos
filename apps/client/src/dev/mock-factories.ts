@@ -175,6 +175,7 @@ export function createRoomMember(overrides: Partial<RoomRosterEntry> = {}): Room
     responseMode: 'engaged',
     joinedAt: minutesBeforeNow(60 * 24 * 3),
     lastReadSeq: 0,
+    origin: 'local',
     ...overrides,
     author,
   };

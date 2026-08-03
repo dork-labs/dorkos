@@ -227,6 +227,7 @@ describe('ChannelsPage members-panel entry points', () => {
           joinedAt: '2026-07-26T09:00:00.000Z',
           lastReadSeq: 0,
           author: { id: 'author-you', kind: 'human', displayName: 'You' },
+          origin: 'local',
         },
         ...(withAgent
           ? [
@@ -242,6 +243,7 @@ describe('ChannelsPage members-panel entry points', () => {
                   displayName: 'Ana',
                   agentRef: agentAuthorRef('/w/Ana'),
                 },
+                origin: 'local' as const,
               },
             ]
           : []),
@@ -309,6 +311,7 @@ describe('ChannelsPage members-panel entry points', () => {
               joinedAt: '2026-07-26T09:00:00.000Z',
               lastReadSeq: 0,
               author: { id: 'author-ana', kind: 'agent' as const, displayName: 'Ana' },
+              origin: 'local' as const,
             },
           ],
         });
@@ -531,6 +534,7 @@ describe('ChannelsPage — whose unread rule is this', () => {
       joinedAt: '2026-07-26T09:00:00.000Z',
       lastReadSeq,
       author: { id, kind: 'human', displayName },
+      origin: 'local',
     };
   }
 
@@ -643,6 +647,7 @@ describe('ChannelsPage — a thread reply still clears the badge', () => {
           joinedAt: '2026-07-26T09:00:00.000Z',
           lastReadSeq: 0,
           author: { id: 'you', kind: 'human', displayName: 'You' },
+          origin: 'local',
         },
       ],
       viewerAuthorId: 'you',

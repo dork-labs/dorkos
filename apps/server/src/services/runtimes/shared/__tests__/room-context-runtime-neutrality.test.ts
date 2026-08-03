@@ -37,11 +37,18 @@ const ENTRY: AdditionalContextEntry = {
   kind: 'room_context',
   scope: 'per-turn',
   data: {
-    room: { id: 'room-1', kind: 'channel', name: '#build' },
+    room: { id: 'room-1', kind: 'channel', name: '#build', bridged: false },
     thread: null,
     members: [
-      { handle: 'dorian', displayName: 'You', isPerson: true, isSelf: false },
-      { handle: 'ana', displayName: 'Ana', isPerson: false, isSelf: true, responseMode: 'always' },
+      { handle: 'dorian', displayName: 'You', isPerson: true, isSelf: false, origin: 'local' },
+      {
+        handle: 'ana',
+        displayName: 'Ana',
+        isPerson: false,
+        isSelf: true,
+        origin: 'local',
+        responseMode: 'always',
+      },
     ],
     working: [],
     pending: [
@@ -49,6 +56,7 @@ const ENTRY: AdditionalContextEntry = {
         authorHandle: 'dorian',
         authorDisplayName: 'You',
         authorIsPerson: true,
+        authorOrigin: 'local',
         kind: 'post',
         at: '2026-07-28T14:01:00.000Z',
         text: 'can someone check the deploy',
