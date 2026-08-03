@@ -406,7 +406,7 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
   {
     key: 'subagents',
     label: 'Subagents',
-    description: 'Helper subagents working on this turn',
+    description: 'Subagents working on this turn',
     cluster: 'right',
     group: 'diagnostics',
     icon: Users,

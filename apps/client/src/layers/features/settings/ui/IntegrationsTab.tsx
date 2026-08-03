@@ -221,7 +221,7 @@ export function IntegrationsTab() {
             <FieldCardContent>
               <SwitchSettingRow
                 label="Deliver to Claude Code"
-                description="Start a Claude Code agent session automatically when a relay message arrives"
+                description="Start a Claude Code session automatically when a relay message arrives"
                 checked={claudeCodeInstance.enabled}
                 onCheckedChange={(enabled) => toggleAdapter({ id: claudeCodeInstance.id, enabled })}
               />
