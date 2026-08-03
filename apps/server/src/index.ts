@@ -1250,6 +1250,18 @@ async function start() {
   // per-session overrides. Created before the service that reads them.
   const agentConnectorAttachmentStore = new AgentConnectorAttachmentStore(db);
   const sessionConnectorAttachmentStore = new SessionConnectorAttachmentStore(db);
+  // Cascade: an unregistered agent's standing connector consent must not
+  // outlive it (connection-scoping spec §Part 1, adversarial review MAJOR 6)
+  // — a future agent registered under the same id must re-earn attachment,
+  // never silently inherit a deleted agent's. Deliberately independent of
+  // whether Tasks is enabled (unlike the schedule-disable cascade below,
+  // which lives inside that feature's own gate) — connector consent has
+  // nothing to do with Tasks. Session-level overrides are keyed by session
+  // id, not agent id, so they are untouched here and simply age out with
+  // their sessions.
+  meshCore?.onUnregister((agentId) => {
+    agentConnectorAttachmentStore.deleteAgent(agentId);
+  });
   // Created before the bootstrapper so its unregister hook can revoke cached
   // session attachments the moment a credential is deleted.
   const sessionConnectorService = new SessionConnectorService({
@@ -1508,12 +1520,13 @@ async function start() {
   // Standing agent-level attach/detach (connection-scoping spec §Part 1) — a
   // sibling of `/api/agents` the same way the session route is a sibling of
   // `/api/sessions`, mounted here (rather than inside `createAgentsRouter`)
-  // because it needs the connector registry/store, not the mesh core.
+  // because it needs the connector registry/store first and foremost.
   app.use(
     '/api/agents',
     createAgentConnectorsRouter({
       store: agentConnectorAttachmentStore,
       registry: connectorRegistry,
+      ...(meshCore && { meshCore }),
     })
   );
   mountedRouters.push('connectors');

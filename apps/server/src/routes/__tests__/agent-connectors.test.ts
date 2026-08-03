@@ -6,7 +6,7 @@ import { FakeConnectorProvider } from '@dorkos/test-utils';
 import type { ConnectedAccount } from '@dorkos/shared/connector-provider';
 import { ConnectorRegistry } from '../../services/connectors/registry.js';
 import { AgentConnectorAttachmentStore } from '../../services/connectors/attachment-store.js';
-import { createAgentConnectorsRouter } from '../agent-connectors.js';
+import { createAgentConnectorsRouter, type AgentConnectorsMeshLike } from '../agent-connectors.js';
 
 /** Connect one account on a fake provider and persist its routing binding. */
 async function connectAndRecord(
@@ -27,10 +27,10 @@ describe('agent-connectors router', () => {
   let provider: FakeConnectorProvider;
   let store: AgentConnectorAttachmentStore;
 
-  function buildApp() {
+  function buildApp(meshCore?: AgentConnectorsMeshLike) {
     const app = express();
     app.use(express.json());
-    app.use('/api/agents', createAgentConnectorsRouter({ store, registry }));
+    app.use('/api/agents', createAgentConnectorsRouter({ store, registry, meshCore }));
     return app;
   }
 
@@ -91,5 +91,43 @@ describe('agent-connectors router', () => {
     const account = await connectAndRecord(registry, provider, 'gmail', 'personal');
     await request(buildApp()).post(`/api/agents/agent-a/connectors/${account.id}`);
     expect(store.listForAgent('agent-b')).toEqual([]);
+  });
+
+  describe('MAJOR 7: agent existence validation', () => {
+    it('POST 400s for an unknown agent and does not persist a row', async () => {
+      const account = await connectAndRecord(registry, provider, 'gmail', 'personal');
+      const meshCore: AgentConnectorsMeshLike = { getProjectPath: () => undefined };
+
+      const res = await request(buildApp(meshCore)).post(
+        `/api/agents/ghost-agent/connectors/${account.id}`
+      );
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('ghost-agent');
+      expect(store.listForAgent('ghost-agent')).toEqual([]);
+    });
+
+    it('POST succeeds when the mesh knows the agent', async () => {
+      const account = await connectAndRecord(registry, provider, 'gmail', 'personal');
+      const meshCore: AgentConnectorsMeshLike = {
+        getProjectPath: (agentId) => (agentId === 'agent-a' ? '/agents/a' : undefined),
+      };
+
+      const res = await request(buildApp(meshCore)).post(
+        `/api/agents/agent-a/connectors/${account.id}`
+      );
+
+      expect(res.status).toBe(200);
+      expect(store.listForAgent('agent-a').map((a) => a.accountId)).toEqual([account.id]);
+    });
+
+    it('the agent-existence check runs BEFORE the account-existence check (agent validation wins on both being wrong)', async () => {
+      const meshCore: AgentConnectorsMeshLike = { getProjectPath: () => undefined };
+      const res = await request(buildApp(meshCore)).post(
+        '/api/agents/ghost-agent/connectors/does-not-exist'
+      );
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('ghost-agent');
+    });
   });
 });

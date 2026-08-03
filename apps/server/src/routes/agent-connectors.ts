@@ -26,30 +26,48 @@ import type { AgentConnectorAttachmentStore } from '../services/connectors/attac
 import type { ConnectorRegistry } from '../services/connectors/registry.js';
 import { disclosureForAccount } from '../services/connectors/custody-disclosure.js';
 
+/** Minimal mesh lookup the attach route needs to validate an agent exists. */
+export interface AgentConnectorsMeshLike {
+  getProjectPath(agentId: string): string | undefined;
+}
+
 /** Constructor dependencies for {@link createAgentConnectorsRouter}. */
 export interface AgentConnectorsRouterDeps {
   /** The standing agent-level attachment store. */
   store: AgentConnectorAttachmentStore;
   /** The registry, used to validate the account id and build the disclosure. */
   registry: ConnectorRegistry;
+  /**
+   * Mesh lookup to validate `agentId` before attaching (adversarial review
+   * MAJOR 7 — mirrors `routes/unclaimed-chats.ts`'s claim route, which needs
+   * the identical check for the identical reason: without it, a typo'd
+   * agent id silently accumulates standing consent for an agent that will
+   * never exist). Optional only so a caller that genuinely has no mesh
+   * (some tests) can omit it; the server always wires it.
+   */
+  meshCore?: AgentConnectorsMeshLike;
 }
 
 /**
  * Create the agent-connectors router.
  *
- * @param deps - Injected store + registry; see {@link AgentConnectorsRouterDeps}.
+ * @param deps - Injected store + registry + mesh lookup; see {@link AgentConnectorsRouterDeps}.
  * @returns An Express router to mount at `/api/agents`.
  */
 export function createAgentConnectorsRouter(deps: AgentConnectorsRouterDeps): Router {
   // mergeParams so the mounted `:agentId` segment is visible to these handlers.
   const router = Router({ mergeParams: true });
-  const { store, registry } = deps;
+  const { store, registry, meshCore } = deps;
 
   router.get('/:agentId/connectors', (req, res) => {
     res.json({ accounts: store.listForAgent(req.params.agentId) });
   });
 
   router.post('/:agentId/connectors/:accountId', (req, res) => {
+    if (meshCore && !meshCore.getProjectPath(req.params.agentId)) {
+      res.status(400).json({ error: `Agent '${req.params.agentId}' not found in mesh registry` });
+      return;
+    }
     const accountId = req.params.accountId as ConnectedAccountId;
     const binding = registry.accountBinding(accountId);
     if (!binding) {
