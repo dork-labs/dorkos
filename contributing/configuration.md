@@ -1248,16 +1248,48 @@ Two consequences worth knowing when you touch this code:
 
 ## Error Recovery
 
-If the config file becomes corrupt (invalid JSON, schema violations), the ConfigManager handles it automatically on startup:
+Recovery **replaces the config file**, so what counts as "corrupt" is a data-loss decision. `classifyConfigLoadFailure` (`config-manager.ts`) owns it, and sorts a `conf` constructor throw into three kinds:
 
-1. The corrupt file is backed up to `~/.dork/config.json.bak`
-2. A fresh config is created with all default values
-3. A warning is printed to the console
+| Failure                                     | Raised by             | Kind      | Effect                                     |
+| ------------------------------------------- | --------------------- | --------- | ------------------------------------------ |
+| `SyntaxError` (JSON does not parse)         | conf's `_deserialize` | `corrupt` | replaced immediately                       |
+| message starts `Config schema violation:`   | conf's Ajv wrapper    | `corrupt` | replaced immediately                       |
+| message is `Failed to decrypt config data.` | conf's decrypt        | `corrupt` | replaced immediately                       |
+| any errno error (`EMFILE`, `EACCES`, `EIO`) | the OS                | `io`      | **never replaced**, retried, then reported |
+| anything else                               | code `conf` ran       | `unknown` | retried, replaced only if it never clears  |
+
+`conf` rethrows all of these identically — DorkOS sets `clearInvalidConfig: false`, so conf clears nothing itself — which is why the decision lives here.
+
+**Why `io` is its own kind, rather than "has not cleared yet".** An errno failure is never evidence about what a file contains, and that stays true however many times it repeats. The fd-exhaustion storm that destroyed a real config ran far longer than any sensible boot-time backoff, so a rule of "it failed four times, therefore the file is bad" would hand the same defect back on a timer.
+
+**The errno is not always still attached.** `conf`'s `_migrate` catches everything thrown inside its per-migration `try` and rethrows it as a plain `Error` (`Something went wrong during the migration! …`) with no `code` and no `cause`. That block is full of reads — every migration body calls `store.get`, and each one reads the file — so an `EMFILE` during an **upgrade boot**, the one launch where a migration body runs, used to arrive stripped of everything identifying it and destroy the config. `isIoFailure` therefore also reads the errno back out of the head of `conf`'s appended message, gated on that wrapper sentence so the match cannot fire on an unrelated error.
+
+**And behind all of it, one absolute rule: nothing is replaced that was not read first.** `readStoredConfigForSalvage` runs before the backup, on the same retry staircase, and a read that never succeeded aborts the replacement with `ConfigUnreadableError` instead. A successful read is both the evidence that the file is the problem and the only way `restoreProtectedState` can carry a protection across, so a verdict that cannot be checked is never acted on. This is what makes the guarantee hold even where the classification above is wrong: a message format is a weaker thing to trust than a read that worked.
+
+**Why `unknown` is eventually replaced.** `conf` runs the migration chain inside its constructor, and `_migrate` feeds the file's own `__internal__.migrations.version` into `semver` (`_shouldPerformMigration`). That value sits outside the Ajv schema and conf skips validation while migrating, so one flipped byte in it throws a bare `TypeError: Invalid Version` from a place the allowlist never sees. That is as file-caused as a syntax error. Leaving it in `io` would block every future boot while telling the person their file was fine. A migration body that throws (wrapped by conf as `Something went wrong during the migration!`) lands here for the same reason. The retry staircase does the classifying, so this needs no knowledge of which conf internals can throw.
+
+**A `corrupt` verdict** (or an `unknown` one that outlived the staircase) runs the recovery path on startup:
+
+1. The file is read for salvage (`readStoredConfigForSalvage`), then backed up to `~/.dork/config.json.bak`
+2. The original is deleted and a fresh config created with defaults
+3. `restoreProtectedState` re-applies the protections in `PROTECTIVE_CARRYOVERS` (DOR-584)
+4. The underlying error and the backup path are logged
 
 ```
-Warning: Corrupt config backed up to /Users/you/.dork/config.json.bak
-   Creating fresh config with defaults.
+[Config] /Users/you/.dork/config.json could not be used: Config schema violation: `server/port` must be integer
+Corrupt config backed up to /Users/you/.dork/config.json.bak
+Creating fresh config with defaults.
 ```
+
+**An `io` verdict never replaces or deletes the file.** The load is retried on a short backoff (`CONFIG_LOAD_RETRY_DELAYS_MS`, four attempts over ~750ms), and if it still fails the constructor throws `ConfigUnreadableError`. The server prints that message and exits 1 rather than booting on defaults, because defaults are a different security posture (`auth.enabled` off, `mcp.enabled` on) than the file it could not read.
+
+Say "did not replace or delete", never "nothing was changed". `conf`'s `#runMigrations` calls `_write(storeWithDefaults)` **before** `_migrate` runs, so on any upgrade boot the file has already been rewritten with the defaults merged in before DorkOS reaches a verdict. Nothing is lost (the merge is shallow and the stored value wins per top-level key), but a 131-byte pre-upgrade config can be 2429 bytes by the time the error is printed. Note that the byte-for-byte test in `config-load-failure.test.ts` cannot catch this: its fixture was written by `ConfigManager`, so it is already default-shaped and conf's `assert.deepEqual` short-circuits the write.
+
+`ConfigUnreadableError` picks its wording from the situation rather than assuming one. The reassuring branch is only used when it is still true, since the same error can be raised on the second leg of recovery after the original has moved to `.bak`, where the message has to send the person to the backup instead. Its `advice` branches on the errno: "start DorkOS again" is right for a descriptor shortage and wrong for `EACCES`, where waiting is an instruction to loop forever, so a permission failure gets a permission fix and the option of renaming the file. `dorkos doctor` reads that same `advice` rather than keeping a second copy.
+
+Guessing wrong toward `io` costs a restart. Guessing wrong toward `corrupt` costs a person their settings. So `io` membership is decided by a bare errno code (`/^E[A-Z0-9]+$/`, excluding Node's underscore-bearing `ERR_*` codes, which report a bad call rather than a refused syscall), and widening it needs the same scrutiny as a destructive migration.
+
+Coverage sits in two files, and the split is load-bearing. `__tests__/config-load-failure.test.ts` holds the steady-state cases: the `__internal__.migrations.version` repros, a persistent `EMFILE` that must leave the file byte-for-byte intact, the salvage gate, and the message wording. `__tests__/config-load-failure-migration.test.ts` holds the upgrade boot, and needs its own module registry because `conf` runs a migration only when its key is `<= projectVersion`: `SERVER_VERSION` is `0.0.0` in a dev tree, so **no migration body runs in the default test environment** and every laundered-errno case is unreachable. That file sets `DORKOS_VERSION_OVERRIDE` in a `vi.hoisted` block before its imports, and asserts the override took effect, because a suite that silently stopped exercising migrations is how the defect survived a review.
 
 You can manually validate your config at any time:
 

@@ -874,7 +874,7 @@ Singleton service wrapping the `conf` library for atomic JSON I/O. Key behaviors
 
 - **Initialization**: `initConfigManager(dorkHome)` creates the singleton. `dorkHome` is required — no fallback chain. Called at server startup and in CLI subcommands.
 - **Validation**: Uses Ajv (via `conf`) for write-time validation and Zod for explicit `validate()` calls.
-- **Corrupt config recovery**: If `conf` constructor throws, backs up the corrupt file to `config.json.bak` and recreates with defaults.
+- **Corrupt config recovery**: A `conf` constructor throw is classified before anything is replaced (`classifyConfigLoadFailure`). A failure the file caused (bad JSON, schema violation, or a deterministic throw that survives the retry staircase) backs the file up to `config.json.bak`, recreates with defaults, and re-applies the DOR-584 protections. A failure the OS caused (any errno error: `EMFILE`, `EACCES`, `EBUSY`, …) never replaces the file, however long it lasts: it is retried, then raised as `ConfigUnreadableError` and the server exits. Behind both, an absolute rule: nothing is replaced unless the file was read first, so a misclassified failure still cannot destroy anything. See [configuration.md → Error Recovery](configuration.md#error-recovery).
 - **First-run detection**: `isFirstRun` flag based on whether config file existed before construction.
 - **Sensitive field warnings**: `setDot()` returns `{ warning }` for keys in `SENSITIVE_CONFIG_KEYS`.
 
