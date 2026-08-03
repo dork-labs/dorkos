@@ -44,51 +44,8 @@ import { logRefusal, type Refusal } from '../observability/refusals.js';
 import type { BindingStore } from './binding-store.js';
 import type { AdapterMeshCoreLike } from './adapter-manager.js';
 import { parseHumanSubject } from './human-subject.js';
+import { extractPlatformUserId, extractSenderName } from './platform-identity.js';
 import type { UnclaimedChat, UnclaimedChatStore } from './unclaimed-chat-store.js';
-
-/**
- * The identity fields an inbound chat payload carries for the person who wrote
- * the message. Slack writes `userId`; Telegram writes `fromId`.
- *
- * Read out of `payload.platformData`, which is `z.unknown()` in the envelope
- * schema, so it is parsed rather than cast. Numeric ids (Telegram's are
- * numbers) are coerced to their string form; anything else is treated as
- * absent.
- */
-const PlatformIdentitySchema = z
-  .object({
-    /** Slack's author id (`U…`). */
-    userId: z.union([z.string().min(1), z.number()]).optional(),
-    /** Telegram's author id (`from.id`). */
-    fromId: z.union([z.string().min(1), z.number()]).optional(),
-  })
-  .partial();
-
-/**
- * The stable per-person key inside one chat, or `undefined` when the message
- * carries none.
- *
- * The `per-user` session strategy used to read `envelope.metadata?.userId` — a
- * field {@link RelayEnvelope} does not have — so it always resolved to the chat
- * id and was byte-identical to `per-chat`. In a group chat that put everyone's
- * conversation in one session: whatever one person said, the next person's turn
- * could read. The real id has always been in the payload the adapters build
- * (`platformData.userId` on Slack, `platformData.fromId` on Telegram); this
- * reads it from there.
- *
- * @param payload - The relay envelope payload as it arrived.
- * @returns The platform user id as a string, or `undefined`.
- */
-function extractPlatformUserId(payload: unknown): string | undefined {
-  if (payload === null || typeof payload !== 'object') return undefined;
-  const platformData = (payload as { platformData?: unknown }).platformData;
-  const parsed = PlatformIdentitySchema.safeParse(platformData);
-  if (!parsed.success) return undefined;
-  const raw = parsed.data.userId ?? parsed.data.fromId;
-  if (raw === undefined) return undefined;
-  const asString = String(raw);
-  return asString.length > 0 ? asString : undefined;
-}
 
 /**
  * Whether an inbound envelope's `content` is the empty string.
@@ -107,22 +64,17 @@ function hasEmptyContent(payload: unknown): boolean {
 }
 
 /**
- * The two payload fields the unclaimed-chat claim feed is allowed to read:
- * the sender's display name and the chat/channel's display title, both
- * TOP-LEVEL `StandardPayload` fields every adapter sets
- * (`packages/relay/src/adapters/{telegram,slack}/inbound.ts` —
+ * The chat/channel's display title — the second of the two payload fields the
+ * unclaimed-chat claim feed is allowed to read, beside the sender name
+ * `extractSenderName` reads. Both are TOP-LEVEL `StandardPayload` fields every
+ * adapter sets (`packages/relay/src/adapters/{telegram,slack}/inbound.ts` —
  * `senderName` always, `channelName` for a group/channel chat, sourced from
  * Telegram's `chat.title` / Slack's resolved channel name, already computed
  * for the message's own routing metadata, no extra platform lookup) — never
  * the message body/content field, and never read from anywhere else in the
  * payload (connection-scoping spec `specs/connection-scoping/` §Part 3 D6).
  */
-const ClaimFeedDisplayFieldsSchema = z
-  .object({
-    senderName: z.string().min(1).optional(),
-    channelName: z.string().min(1).optional(),
-  })
-  .partial();
+const ChatTitleSchema = z.object({ channelName: z.string().min(1).optional() }).partial();
 
 /** The claim-feed-safe display fields read off one inbound payload. */
 interface ClaimFeedDisplayFields {
@@ -135,15 +87,18 @@ interface ClaimFeedDisplayFields {
  * inbound payload, for the unclaimed-chat claim feed's cockpit card — never
  * the message text.
  *
+ * The sender half goes through `platform-identity.ts` rather than a reader of
+ * its own: that module owns every "who wrote this" question asked of a payload,
+ * so the name a claim card shows and the name a bridged room mints an author
+ * under cannot drift apart.
+ *
  * @param payload - The relay envelope payload as it arrived.
  */
 function extractClaimFeedDisplayFields(payload: unknown): ClaimFeedDisplayFields {
-  if (payload === null || typeof payload !== 'object') {
-    return { senderName: undefined, chatTitle: undefined };
-  }
-  const parsed = ClaimFeedDisplayFieldsSchema.safeParse(payload);
-  if (!parsed.success) return { senderName: undefined, chatTitle: undefined };
-  return { senderName: parsed.data.senderName, chatTitle: parsed.data.channelName };
+  const senderName = extractSenderName(payload);
+  if (payload === null || typeof payload !== 'object') return { senderName, chatTitle: undefined };
+  const parsed = ChatTitleSchema.safeParse(payload);
+  return { senderName, chatTitle: parsed.success ? parsed.data.channelName : undefined };
 }
 
 /** Minimal interface for AgentManager session creation. */
