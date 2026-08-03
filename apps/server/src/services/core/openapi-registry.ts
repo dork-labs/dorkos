@@ -67,6 +67,10 @@ import {
   EndpointRegistrationSchema,
   RelayFlowEventSchema,
   RelayFlowDirectionSchema,
+  MoveBindingRequestSchema,
+  BindingResponseSchema,
+  UnclaimedChatListResponseSchema,
+  ClaimUnclaimedChatRequestSchema,
 } from '@dorkos/shared/relay-schemas';
 import {
   AgentManifestSchema,
@@ -125,6 +129,8 @@ import {
   PublicConnectedAccountSchema,
   SessionConnectorStatusSchema,
   SessionConnectorAttachResultSchema,
+  AgentConnectorListResponseSchema,
+  AgentConnectorAttachResultSchema,
 } from '@dorkos/shared/connector-provider';
 import { z } from 'zod';
 
@@ -2679,6 +2685,188 @@ registry.registerPath({
   },
   responses: {
     204: { description: 'Account detached (or already absent)' },
+  },
+});
+
+// --- Agent ↔ connector attach/detach (standing consent) — connection-scoping spec §Part 1 ---
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/agents/{agentId}/connectors',
+  tags: ['Connectors'],
+  summary: "An agent's standing connector attachments",
+  description:
+    'Lists the accounts standingly attached to an agent. Every session of this agent inherits ' +
+    'these accounts on its next hydration unless a session-level override says otherwise ' +
+    '(precedence: session > agent, no merge).',
+  request: {
+    params: z.object({ agentId: z.string() }),
+  },
+  responses: {
+    200: {
+      description: "The agent's standing attachments",
+      content: { 'application/json': { schema: AgentConnectorListResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/agents/{agentId}/connectors/{accountId}',
+  tags: ['Connectors'],
+  summary: 'Attach an account to an agent, standingly (the consent point)',
+  description:
+    'Records standing consent for the agent to use this account; re-shows the custody ' +
+    'disclosure. Resolution of the connection itself happens per session, at hydration time.',
+  request: {
+    params: z.object({ agentId: z.string(), accountId: z.string() }),
+  },
+  responses: {
+    200: {
+      description: 'The attachment recorded, plus the custody disclosure',
+      content: { 'application/json': { schema: AgentConnectorAttachResultSchema } },
+    },
+    404: {
+      description: 'Unknown connected account',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/agents/{agentId}/connectors/{accountId}',
+  tags: ['Connectors'],
+  summary: 'Detach an account from an agent (idempotent)',
+  description:
+    'Revokes standing consent. Idempotent — detaching an unattached account still resolves 204.',
+  request: {
+    params: z.object({ agentId: z.string(), accountId: z.string() }),
+  },
+  responses: {
+    204: { description: 'Account detached (or already absent)' },
+  },
+});
+
+// --- Binding move (connection-scoping spec §Part 2) ---
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/relay/bindings/{id}/move',
+  tags: ['Relay'],
+  summary: 'Re-point an existing binding to a different agent',
+  description:
+    'Moves the binding in place — same id, same chatId, new agentId — the one narrow ' +
+    'exception to "bindings are re-created, not re-pointed." Clears the binding\'s stale ' +
+    'session mappings so the next inbound message starts fresh under the new agent.',
+  request: {
+    params: z.object({ id: z.string() }),
+    body: { content: { 'application/json': { schema: MoveBindingRequestSchema } } },
+  },
+  responses: {
+    200: {
+      description: 'The re-pointed binding',
+      content: { 'application/json': { schema: BindingResponseSchema } },
+    },
+    400: {
+      description: 'Unknown agent',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'Unknown binding',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+// --- Unclaimed chats — the claim feed (connection-scoping spec §Part 3) ---
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/relay/unclaimed-chats',
+  tags: ['Relay'],
+  summary: 'List chats with no binding to route them (default: pending)',
+  description:
+    'Chats an adapter heard from with no binding — the durable, damped record of what used ' +
+    'to be a silent drop. Carries only sender identity metadata, never a message body.',
+  request: {
+    query: z.object({
+      status: z.enum(['pending', 'claimed', 'ignored', 'blocked']).optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description: 'Matching unclaimed chats',
+      content: { 'application/json': { schema: UnclaimedChatListResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/relay/unclaimed-chats/{id}/claim',
+  tags: ['Relay'],
+  summary: 'Claim an unclaimed chat onto an agent',
+  description:
+    'Creates a binding through the same uniqueness-checked path a manual binding create ' +
+    'uses — a race against a manually created binding for the same chat 409s identically.',
+  request: {
+    params: z.object({ id: z.string() }),
+    body: { content: { 'application/json': { schema: ClaimUnclaimedChatRequestSchema } } },
+  },
+  responses: {
+    201: {
+      description: 'The binding created from this claim',
+      content: { 'application/json': { schema: BindingResponseSchema } },
+    },
+    400: {
+      description: 'Unknown agent',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'Unknown unclaimed chat',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description: 'The chat was bound by something else in the meantime',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/relay/unclaimed-chats/{id}/ignore',
+  tags: ['Relay'],
+  summary: 'Mute an unclaimed chat (idempotent)',
+  description: 'Future sightings still bump counters, silently — the chat never resurfaces.',
+  request: {
+    params: z.object({ id: z.string() }),
+  },
+  responses: {
+    204: { description: 'Muted' },
+    404: {
+      description: 'Unknown unclaimed chat',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/relay/unclaimed-chats/{id}/block',
+  tags: ['Relay'],
+  summary: 'Block an unclaimed chat (idempotent)',
+  description: 'Drops all future traffic from this chat recordless — no further row writes.',
+  request: {
+    params: z.object({ id: z.string() }),
+  },
+  responses: {
+    204: { description: 'Blocked' },
+    404: {
+      description: 'Unknown unclaimed chat',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
   },
 });
 
