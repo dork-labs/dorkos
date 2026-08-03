@@ -56,6 +56,16 @@
       "name": "test-driven-development",
       "path": ".claude/skills/test-driven-development",
       "reason": "Likely portable but still references Claude harness paths."
+    },
+    {
+      "name": "upgrading-runtime-dependencies",
+      "path": ".claude/skills/upgrading-runtime-dependencies",
+      "reason": "Was a real directory under .claude/skills with no manifest entry — undeclared drift found 2026-08-03, not a new decision. Declared here so the classification is stated rather than inferred from whether a symlink happens to exist."
+    },
+    {
+      "name": "working-in-worktrees",
+      "path": ".claude/skills/working-in-worktrees",
+      "reason": "Same undeclared drift as above. Genuinely Claude-coupled: it drives the EnterWorktree/ExitWorktree tools and the /worktree:* commands. The portable half is the janitor it points at (scripts/worktree-janitor.sh), which any harness can run."
     }
   ],
   "skillWrappers": [

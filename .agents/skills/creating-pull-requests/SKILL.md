@@ -287,6 +287,31 @@ is the whole safeguard: review, then arm.
 **Arming is not the same as walking away.** Read the next section before you treat
 an armed PR as finished.
 
+### The merge lands after your session ends, so clean up on your next visit
+
+Auto-merge and the merge queue both land the PR minutes to hours after you arm it.
+Whatever cleanup you were planning to do "once it merges" will therefore be
+proposed to nobody: the session that opened the PR is usually gone. Do not leave
+the worktree removal as a promise to your future self.
+
+GitHub deletes the branch on origin by itself (the repo has "automatically delete
+head branches" on). Your local worktree and local branch it cannot see, so those
+are yours to collect:
+
+```bash
+bash scripts/worktree-janitor.sh          # what would go, and why
+bash scripts/worktree-janitor.sh --fix    # remove it
+```
+
+Run it at the start of a working session rather than the end of one — that way it
+collects the PRs that merged while you were away, which is most of them. It only
+removes what it can prove is safe: a branch whose PR merged and whose tip has not
+moved since, or a checkout every commit of which is already on origin. Anything
+uncommitted, unpushed, still open, or unaskable is left alone with a reason.
+
+On 2026-08-01 the accumulated cost of not doing this was 116 worktrees at ~3.5 GB
+each, 193 local branches, and 414 branches on origin, against 5 open PRs.
+
 ### An armed PR that is BEHIND stalls forever, silently
 
 This is the third silent stall in this file, and the one that actually backs up the
