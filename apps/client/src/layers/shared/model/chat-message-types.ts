@@ -111,7 +111,7 @@ export interface ToolCallState {
 
 /** Structured error information for transport-level failures. */
 export interface TransportErrorInfo {
-  /** Short heading shown in the error banner (e.g., "Connection failed"). */
+  /** Short heading shown in the error banner (e.g., "Can't reach DorkOS"). */
   heading: string;
   /** Human-readable detail message. */
   message: string;

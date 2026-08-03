@@ -9,7 +9,15 @@ interface ConnectionStatusBannerProps {
   className?: string;
 }
 
-/** Displays an inline status banner when an SSE connection is degraded or lost. */
+/**
+ * Displays an inline status banner when an SSE connection is degraded or lost.
+ *
+ * Says "Server link", not "Live updates": this banner rides the relay panel's
+ * unified `/events` SSE stream (browser ↔ DorkOS server), a different surface
+ * from the per-session stream `ConnectionItem`/`SessionInspector` report on.
+ * Two banners, two honest names for two different links — not a duplicate of
+ * the other family.
+ */
 export function ConnectionStatusBanner({
   connectionState,
   failedAttempts,
@@ -38,7 +46,7 @@ export function ConnectionStatusBanner({
         <Wifi className="animate-tasks size-3.5" />
       )}
       <span>
-        {isDisconnected ? 'Connection lost. Check your network.' : `Reconnecting...${attemptText}`}
+        {isDisconnected ? 'Server link lost. Check your network.' : `Reconnecting...${attemptText}`}
       </span>
     </div>
   );

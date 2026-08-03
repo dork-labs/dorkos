@@ -192,7 +192,7 @@ function PackageGridShowcase() {
       <ShowcaseLabel>Error state</ShowcaseLabel>
       <ShowcaseDemo>
         <PackageErrorState
-          error={new Error('Failed to fetch packages — connection refused')}
+          error={new Error('Failed to fetch packages — server unreachable')}
           onRetry={() => {}}
         />
       </ShowcaseDemo>

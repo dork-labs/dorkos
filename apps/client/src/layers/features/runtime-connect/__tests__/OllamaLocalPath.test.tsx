@@ -234,7 +234,7 @@ describe('OllamaLocalPath — Ollama not installed', () => {
       provisionOllama: vi.fn().mockResolvedValue({
         ok: false,
         installMethod: 'brew',
-        error: 'Could not install Ollama. Check your connection and try again.',
+        error: 'Could not install Ollama. Check your network and try again.',
       }),
     });
 

@@ -92,7 +92,7 @@ async function boundedFetch(
   try {
     return await fetchImpl(url, { ...init, signal: controller.signal });
   } catch {
-    throw new OpenRouterError('Could not reach OpenRouter. Check your connection and try again.');
+    throw new OpenRouterError('Could not reach OpenRouter. Check your network and try again.');
   } finally {
     clearTimeout(timer);
   }

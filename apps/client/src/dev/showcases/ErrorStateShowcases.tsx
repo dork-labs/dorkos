@@ -107,7 +107,7 @@ export function ErrorStateShowcases() {
             <button
               className="border-border hover:bg-muted rounded-md border px-3 py-1.5 text-sm"
               onClick={() =>
-                toast.error('Connection lost', {
+                toast.error('Live updates lost', {
                   description: 'Attempting to reconnect...',
                 })
               }

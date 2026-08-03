@@ -122,7 +122,7 @@ export function AgentIdentityShowcases() {
               {...AGENTS[3]}
               size="sm"
               healthStatus="unreachable"
-              detail="connection lost"
+              detail="lost contact"
             />
           </div>
         </ShowcaseDemo>

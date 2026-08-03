@@ -88,7 +88,7 @@ export function AdapterSetupWizard({
             <DialogDescription>
               {step === 'configure' &&
                 (currentSetupStep?.description ?? 'Configure the adapter settings.')}
-              {step === 'test' && 'Testing connection to the adapter.'}
+              {step === 'test' && 'Checking whether the adapter is reachable.'}
               {step === 'confirm' && 'Review your configuration before saving.'}
               {step === 'bind' && 'Optionally bind this adapter to an agent.'}
             </DialogDescription>

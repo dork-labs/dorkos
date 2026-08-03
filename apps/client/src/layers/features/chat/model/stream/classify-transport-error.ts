@@ -29,8 +29,8 @@ export function classifyTransportError(err: unknown): TransportErrorInfo {
   // Network/fetch errors
   if (error instanceof TypeError || /fetch|network/i.test(error.message)) {
     return {
-      heading: 'Connection failed',
-      message: 'Could not reach the server. Check your connection and try again.',
+      heading: "Can't reach DorkOS",
+      message: 'Could not reach the server. Check your network and try again.',
       retryable: true,
     };
   }

@@ -21,7 +21,7 @@ describe('ConnectionStatusBanner', () => {
 
   it('shows disconnected banner with WifiOff icon', () => {
     render(<ConnectionStatusBanner connectionState="disconnected" />);
-    expect(screen.getByText('Connection lost. Check your network.')).toBeInTheDocument();
+    expect(screen.getByText('Server link lost. Check your network.')).toBeInTheDocument();
   });
 
   it('uses amber styling for reconnecting', () => {

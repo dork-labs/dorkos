@@ -243,12 +243,12 @@ export function StatusShowcases() {
         title="TransportErrorBanner"
         description="Structured error banner for transport-level failures (network, server, timeout, session lock). Shown outside the message stream."
       >
-        <ShowcaseLabel>Connection failed (retryable)</ShowcaseLabel>
+        <ShowcaseLabel>Can't reach DorkOS (retryable)</ShowcaseLabel>
         <ShowcaseDemo responsive>
           <TransportErrorBanner
             error={{
-              heading: 'Connection failed',
-              message: 'Could not reach the server. Check your connection and try again.',
+              heading: "Can't reach DorkOS",
+              message: 'Could not reach the server. Check your network and try again.',
               retryable: true,
             }}
             onRetry={() => console.log('[Showcase] Retry clicked')}

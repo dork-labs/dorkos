@@ -143,7 +143,7 @@ function TestStepShowcase() {
   return (
     <PlaygroundSection
       title="TestStep"
-      description="Connection test step with pending, success, and error states."
+      description="Reachability test step with pending, success, and error states."
     >
       <ShowcaseLabel>Pending</ShowcaseLabel>
       <ShowcaseDemo>
