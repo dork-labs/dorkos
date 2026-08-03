@@ -26,22 +26,9 @@ import {
   SegmentedControlItem,
   TrustModeIcon,
 } from '@/layers/shared/ui';
-
-/**
- * The three stops as this row words them (design §3).
- *
- * Deliberately not the Trust Dial's own `stopLabel()`: that names the position
- * on a dial a person reads against one runtime's promise ("Ask first", "Act"),
- * while this control is runtime-neutral and reads as a sentence about every
- * agent at once. Same three stops, one reading voice each — the same re-cut the
- * card summary line makes (`RuntimeCardSummary`), and design §3 fixes this
- * wording.
- */
-const STOP_LABELS: Record<PermissionStop, string> = {
-  ask: 'Asks before acting',
-  act: 'Pauses at big steps',
-  autonomy: 'Full autonomy',
-};
+// The tab's own wording of the three stops, shared with each card's dial so the
+// whole page asks the question in one voice (design §3).
+import { SETTINGS_STOP_LABELS } from './stop-labels';
 
 /** One runtime, as the standing-autonomy note needs to talk about it. */
 export interface GlobalTrustRowRuntime {
@@ -145,10 +132,10 @@ export function GlobalTrustRow({
             <SegmentedControlItem
               key={position}
               value={position}
-              aria-label={STOP_LABELS[position]}
+              aria-label={SETTINGS_STOP_LABELS[position]}
             >
               <TrustModeIcon descriptor={mode} className="size-(--size-icon-xs) shrink-0" />
-              <span className="truncate">{STOP_LABELS[position]}</span>
+              <span className="truncate">{SETTINGS_STOP_LABELS[position]}</span>
             </SegmentedControlItem>
           ))}
         </SegmentedControl>

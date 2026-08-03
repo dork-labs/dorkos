@@ -40,6 +40,10 @@ import { Switch } from './switch';
  * this agent ask me?* — and a vocabulary that changed per runtime would make the
  * answer unlearnable. Where a runtime cannot keep a stop's promise, the caption
  * says so; the word does not bend.
+ *
+ * A SURFACE may still read in its own voice ({@link TrustDialProps.stopLabels}),
+ * which is a different thing from bending per runtime: Settings words all three
+ * stops as behaviour rather than commands, on every dial it draws.
  */
 const STOP_LABELS: Record<PermissionStop, string> = {
   ask: 'Ask first',
@@ -192,6 +196,20 @@ export interface TrustDialProps {
    * Defaults to false, which is the session behaviour.
    */
   strandsWorkingMode?: boolean;
+  /**
+   * Re-word one or more stops for a surface that reads in a different voice.
+   *
+   * The vocabulary is still fixed per surface, which is what decision 2A is
+   * actually about: a stop must not be renamed per RUNTIME, or the answer stops
+   * being learnable. Settings is the one place that reads cold — months later,
+   * by somebody who did not set it — so its dials say "Pauses at big steps"
+   * where a live session says "Act", and the global row above them has always
+   * said exactly that. Two spellings on one screen was the drift; this closes
+   * it.
+   *
+   * Anything not supplied keeps the default word.
+   */
+  stopLabels?: Partial<Record<PermissionStop, string>>;
 }
 
 /**
@@ -225,8 +243,11 @@ export function TrustDial({
   planActive,
   strandedNote,
   strandsWorkingMode,
+  stopLabels,
 }: TrustDialProps) {
   const captionId = useId();
+  /** This dial's word for each stop: the caller's where it has one, ours otherwise. */
+  const labelFor = (stop: PermissionStop) => stopLabels?.[stop] ?? STOP_LABELS[stop];
   const stops = resolveTrustStops(descriptors);
   const current = descriptors.find((d) => d.id === mode);
   const selected = stops.find(
@@ -263,9 +284,9 @@ export function TrustDial({
           {stops.map(({ stop }) => {
             const Icon = STOP_ICONS[stop];
             return (
-              <SegmentedControlItem key={stop} value={stop} aria-label={STOP_LABELS[stop]}>
+              <SegmentedControlItem key={stop} value={stop} aria-label={labelFor(stop)}>
                 <Icon className="size-(--size-icon-xs) shrink-0" aria-hidden />
-                <span className="truncate">{STOP_LABELS[stop]}</span>
+                <span className="truncate">{labelFor(stop)}</span>
               </SegmentedControlItem>
             );
           })}

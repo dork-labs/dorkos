@@ -287,7 +287,7 @@ describe('RuntimeCard — write paths', () => {
   it('hands a trust change up too, and never writes the stop itself', async () => {
     const { updateConfig, onChangeTrustStop } = renderCard();
     await expand();
-    await userEvent.click(await screen.findByRole('radio', { name: 'Act' }));
+    await userEvent.click(await screen.findByRole('radio', { name: 'Pauses at big steps' }));
     expect(onChangeTrustStop).toHaveBeenCalledWith('act');
     expect(updateConfig).not.toHaveBeenCalled();
   });

@@ -56,6 +56,18 @@ function renderRow(props: Partial<Parameters<typeof TrustRow>[0]> = {}) {
 }
 
 describe('TrustRow', () => {
+  it('words the stops the way the rest of the tab does, not the way a session does', () => {
+    // One vocabulary per surface (`SETTINGS_STOP_LABELS`): the row beneath the
+    // cards has always said "Pauses at big steps", and a card dial saying "Act"
+    // for the same stop is two spellings of one setting on one screen.
+    renderRow();
+    expect(
+      screen.getAllByRole('radio').map((position) => position.getAttribute('aria-label'))
+    ).toEqual(['Asks before acting', 'Pauses at big steps', 'Full autonomy']);
+    expect(screen.getByText('Pauses at big steps')).toBeInTheDocument();
+    expect(screen.queryByText('Act')).not.toBeInTheDocument();
+  });
+
   it('reads Global setting until somebody overrides it, and offers no way back from nothing', () => {
     renderRow();
     expect(screen.getByTestId('runtime-trust-global-claude-code')).toHaveTextContent(
@@ -68,7 +80,7 @@ describe('TrustRow', () => {
     // Inherited, not silent: the dial sits on the mode this runtime resolves the
     // shared stop to, in that runtime's own words.
     renderRow({ stop: null, globalStop: 'act' });
-    expect(screen.getByRole('radio', { name: 'Act' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Pauses at big steps' })).toBeChecked();
     expect(screen.getByTestId('trust-dial-caption')).toHaveTextContent(
       'Edits files on its own. Asks before it runs a command.'
     );
@@ -76,7 +88,7 @@ describe('TrustRow', () => {
 
   it('writes the runtime-neutral stop of the mode picked, never a mode id', async () => {
     const { onChange } = renderRow();
-    await userEvent.click(screen.getByRole('radio', { name: 'Act' }));
+    await userEvent.click(screen.getByRole('radio', { name: 'Pauses at big steps' }));
     expect(onChange).toHaveBeenCalledWith('act');
   });
 
@@ -118,7 +130,7 @@ describe('TrustRow', () => {
     });
     // The stop resolves to Claude's own `default`, not to the way of working —
     // and the dial stays live.
-    expect(screen.getByRole('radio', { name: 'Ask first' })).toBeChecked();
-    expect(screen.getByRole('radio', { name: 'Act' })).toBeEnabled();
+    expect(screen.getByRole('radio', { name: 'Asks before acting' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Pauses at big steps' })).toBeEnabled();
   });
 });

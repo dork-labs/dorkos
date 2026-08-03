@@ -12,6 +12,7 @@
 import type { PermissionModeDescriptor, PermissionStop } from '@dorkos/shared/agent-runtime';
 import { resolveTrustStops } from '@/layers/shared/lib';
 import { Button, TrustDial } from '@/layers/shared/ui';
+import { SETTINGS_STOP_LABELS } from '../stop-labels';
 
 /** What the trust row needs to be told, and the one thing it says back. */
 export interface TrustRowProps {
@@ -98,6 +99,9 @@ export function TrustRow({
         <TrustDial
           mode={mode}
           descriptors={descriptors}
+          // The tab's one vocabulary, so this dial and the global row beneath the
+          // cards word the same three stops the same way (design §3).
+          stopLabels={SETTINGS_STOP_LABELS}
           strandsWorkingMode
           strandedNote={`${runtimeLabel} has no setting at this stop, so new sessions start where it starts them.`}
           onChangeMode={(next) => {
