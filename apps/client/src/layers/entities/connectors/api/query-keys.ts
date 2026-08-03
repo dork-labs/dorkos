@@ -26,4 +26,9 @@ export const connectorKeys = {
   // change (an account disconnected) can sweep every session's cache at once.
   sessions: () => [...connectorKeys.all, 'session'] as const,
   session: (sessionId: string) => [...connectorKeys.sessions(), sessionId] as const,
+
+  // Standing per-agent attachments. Same prefix rule as sessions: disconnecting
+  // an account sweeps every agent's cache with one `agents()` invalidation.
+  agents: () => [...connectorKeys.all, 'agent'] as const,
+  agent: (agentId: string) => [...connectorKeys.agents(), agentId] as const,
 };
