@@ -45,6 +45,11 @@
       "path": "apps/server/src/services/core/openapi-registry.ts",
       "terms": ["connection"],
       "reason": "OpenAPI `description` fields for the /api/docs developer reference, describing the MCP client's connection config and an attached account's connection details (spec security language) — Connections-domain API documentation, not cockpit network-status copy."
+    },
+    {
+      "path": "apps/client/src/layers/features/settings/config/tool-inventory.ts",
+      "terms": ["connection"],
+      "reason": "The Settings Tools tab group label \"Connection management\" (plan D4) names the tools that set up and route the Telegram/Slack/webhook Connections — the same Connections-domain entity as RelayHealthBar and mcp-tool-tiers, not the network-health sense DOR-855 retires."
     }
   ]
 }
