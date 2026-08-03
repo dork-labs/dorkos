@@ -75,9 +75,18 @@ export class RoomStore {
    * @param within - Extra writes to run inside the SAME transaction, after the
    *   room and its roster are inserted — what
    *   {@link RoomService.createBridgedRoom} uses to write the `room_bridges` row
-   *   atomically with the room it identifies (chats-as-channels spec §3.2):
-   *   either both commit or neither does, so a bridged room can never exist for
-   *   a moment without the row that makes it bridged.
+   *   alongside the room it identifies (chats-as-channels spec §3.2): either
+   *   both commit or neither does, so a bridged room can never exist for a
+   *   moment without the row that makes it bridged. On this single-connection
+   *   `better-sqlite3` database that outcome is already structural — a plain
+   *   write from inside `db.transaction(...)` lands in the same open
+   *   transaction whether or not it is handed the `tx` argument, because there
+   *   is only one connection for it to run against (see `DbTransaction`'s doc
+   *   in `@dorkos/db` for why). What `within` actually buys is ORDERING and
+   *   explicitness: the bridge row is guaranteed to land AFTER the room and
+   *   roster it points at, reviewably, at the call site — not a room and
+   *   roster with no bridge row sitting exposed between two separate
+   *   `db.transaction` calls, however briefly.
    * @returns The inserted room.
    */
   createRoom(

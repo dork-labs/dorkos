@@ -22,6 +22,8 @@
  * mocked store could not prove either way.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { logger } from '../../../lib/logger.js';
+import { eventFanOut } from '../../core/event-fan-out.js';
 import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomService, CreateBridgedRoomRequest } from '../room-service.js';
 import type { RoomStore } from '../room-store.js';
@@ -90,6 +92,31 @@ describe('RoomService.createBridgedRoom', () => {
       expect(bridges.findBridgeByChat('tg-main', '555')).toBeNull();
       expect(store.listRooms()).toHaveLength(0);
     });
+
+    it('refuses a chatType outside the closed set at RUNTIME, not just via the TS type', () => {
+      // The TS type on CreateBridgedRoomRequest is a claim about the caller's
+      // discipline, not a guarantee about what actually arrives — the value
+      // crosses a trust boundary from Telegram's raw string. `as never` forces
+      // past the compile-time check to prove the runtime switch's `default`
+      // branch, not just its typed cases.
+      const bogus = bridgeDm({ chatType: 'sticker-pack' as never });
+      expect(() => service.createBridgedRoom(bogus)).toThrow(
+        expect.objectContaining({ code: 'UNKNOWN_CHAT_TYPE' })
+      );
+      expect(store.listRooms()).toHaveLength(0);
+    });
+
+    it('refuses a channelType that fails ChannelTypeSchema at runtime', () => {
+      const bogus = bridgeDm({
+        chatType: 'group',
+        channelType: 'not-a-real-channel-type' as never,
+        title: 'Ops',
+      });
+      expect(() => service.createBridgedRoom(bogus)).toThrow(
+        expect.objectContaining({ code: 'UNKNOWN_CHAT_TYPE' })
+      );
+      expect(store.listRooms()).toHaveLength(0);
+    });
   });
 
   describe('room identity is the bridge row, never the member set (§3.2)', () => {
@@ -112,6 +139,28 @@ describe('RoomService.createBridgedRoom', () => {
       expect(first.created).toBe(true);
       // One room, one bridge row — not two of either.
       expect(store.listRooms()).toHaveLength(1);
+    });
+
+    it('warns — but still returns the room — when a replay names a different agentPath than the room actually holds (n7)', () => {
+      service.createBridgedRoom(bridgeDm({ agentPath: '/agents/ana' }));
+
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+      const replay = service.createBridgedRoom(bridgeDm({ agentPath: '/agents/bo' }));
+
+      expect(replay.created).toBe(false);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('different agent'),
+        expect.objectContaining({
+          requestedAgentPath: '/agents/bo',
+          actualAgentPath: '/agents/ana',
+        })
+      );
+      warn.mockRestore();
+
+      // The roster is untouched — the binding identity is ground truth, not
+      // the caller's mismatched belief.
+      const agentMember = replay.members.find((m) => m.author.kind === 'agent');
+      expect(authors.getById(agentMember!.authorId)?.naturalKey).toBe('/agents/ana');
     });
 
     it('refuses to silently adopt a bridge row belonging to a different binding — that is task 1.5, not this create path', () => {
@@ -204,11 +253,19 @@ describe('RoomService.createBridgedRoom', () => {
 
     it('never leaves a partially-configured room behind when the bridge write fails (A3.3, "simulated failure of the second step")', () => {
       // The chosen implementation (spec §3.4 option 1) puts the mode INTO the
-      // roster add, inside the SAME transaction that writes the room and the
-      // bridge row — so there is no separate "second step" left to fail after
-      // the agent is already engaged. This proves that invariant the hard way:
-      // force the bridge-row write to throw, and show the whole thing rolls
-      // back rather than leaving a room whose agent briefly held `engaged`.
+      // roster add, inside the SAME `db.transaction` that writes the room and
+      // the bridge row — so there is no separate "second step" left to fail
+      // after the agent is already engaged. This proves that invariant the
+      // hard way: force the bridge-row write to throw, and show the whole
+      // thing rolls back rather than leaving a room whose agent briefly held
+      // `engaged`. The rollback itself is not something the `within` callback
+      // buys — on this single-connection `better-sqlite3` database a throw
+      // inside `db.transaction(...)` rolls everything back regardless of how
+      // the write was threaded in (see `RoomStore.createRoom`'s `within` doc).
+      // What IS under test is that the bridge write actually runs inside that
+      // transaction rather than after it: if it ran in a separate
+      // `db.transaction` following a committed room+roster, this same failure
+      // would leave the room and its `engaged` agent behind.
       const failure = new Error('simulated bridge-row write failure');
       vi.spyOn(bridges, 'createBridge').mockImplementation(() => {
         throw failure;
@@ -218,9 +275,8 @@ describe('RoomService.createBridgedRoom', () => {
         service.createBridgedRoom(bridgeDm({ chatType: 'group', channelType: 'group' }))
       ).toThrow(failure);
 
-      // No room, no membership, no bridge — the transaction never committed,
-      // so there is no instant, observable or not, where an under-configured
-      // agent existed.
+      // No room, no membership, no bridge — so there is no instant, observable
+      // or not, where an under-configured agent existed.
       expect(store.listRooms()).toHaveLength(0);
       expect(bridges.findBridgeByChat('tg-main', '555')).toBeNull();
     });
@@ -341,8 +397,90 @@ describe('RoomService.createBridgedRoom', () => {
     });
   });
 
+  describe('exactly one agent (D-6 Q3)', () => {
+    it('refuses a second agent added to a bridged room, and writes the notice naming the per-binding-consent reason', () => {
+      const room = service.createBridgedRoom(bridgeDm());
+
+      expect(() => service.addMember(room.id, human, { agentPath: '/agents/bo' })).toThrow(
+        expect.objectContaining({ code: 'BRIDGE_SECOND_AGENT_REFUSED' })
+      );
+
+      // The second agent never joined.
+      const reread = service.getRoom(room.id, human);
+      expect(reread?.members.filter((m) => m.author.kind === 'agent')).toHaveLength(1);
+
+      // The notice was posted INTO the room, naming why: outbound consent is
+      // per binding, not the agent's own fault.
+      const entries = service.listEntries(room.id, human, { limit: 10 });
+      const notice = entries.find((e) => e.kind === 'notice');
+      expect(notice?.body.notice).toBe('bridge_second_agent_refused');
+      expect(notice?.body.text).toMatch(/Bo/);
+      expect(notice?.body.text.toLowerCase()).toMatch(/permission|consent/);
+    });
+
+    it('does not refuse re-adding the SAME bound agent — the gate is about a second, DIFFERENT agent', () => {
+      const room = service.createBridgedRoom(bridgeDm());
+      // Re-adding the room's own bound agent is a harmless idempotent replay
+      // one call down (`RoomStore.addMember`'s `onConflictDoNothing`); this
+      // gate must not turn that into a refusal.
+      expect(() => service.addMember(room.id, human, { agentPath: '/agents/ana' })).not.toThrow();
+      expect(
+        service.getRoom(room.id, human)?.members.filter((m) => m.author.kind === 'agent')
+      ).toHaveLength(1);
+    });
+
+    it('does not refuse a second HUMAN on a bridged room — only a second agent', () => {
+      const room = service.createBridgedRoom(bridgeDm());
+      const priya = authors.human('user-priya');
+      // A human addition is unrelated to per-binding agent consent; the gate
+      // only ever looks at whether the CANDIDATE resolves to an agent.
+      expect(() => service.addMember(room.id, human, { authorId: priya.id })).not.toThrow();
+    });
+
+    it('does not refuse the first agent on an UNBRIDGED room — the gate is bridge-scoped', () => {
+      const plain = service.createRoom(
+        { kind: 'channel', title: 'Ops', members: [], agentPaths: [] },
+        human
+      );
+      service.addMember(plain.id, human, { agentPath: '/agents/ana' });
+      expect(() => service.addMember(plain.id, human, { agentPath: '/agents/bo' })).not.toThrow();
+    });
+  });
+
   it('announces the new room on the global stream, the same event a normal create fires', () => {
+    const broadcast = vi.spyOn(eventFanOut, 'broadcast');
     const room = service.createBridgedRoom(bridgeDm());
-    expect(room.id).toBeTruthy();
+
+    expect(broadcast).toHaveBeenCalledWith(
+      'room_created',
+      expect.objectContaining({ roomId: room.id, kind: 'dm', title: room.title })
+    );
+    broadcast.mockRestore();
+  });
+
+  it('announces nothing on the idempotent-replay path — no room was created', () => {
+    service.createBridgedRoom(bridgeDm());
+    const broadcast = vi.spyOn(eventFanOut, 'broadcast');
+    service.createBridgedRoom(bridgeDm());
+
+    expect(broadcast.mock.calls.map(([type]) => type)).not.toContain('room_created');
+    broadcast.mockRestore();
+  });
+
+  it('opening a normal DM with the already-bridged agent AFTER the bridge exists gets a fresh room, never the bridged one (A3.2b, inverse order)', () => {
+    const bridged = service.createBridgedRoom(bridgeDm());
+
+    const normalDm = service.createRoom(
+      { kind: 'dm', title: 'Ana', members: [], agentPaths: ['/agents/ana'] },
+      human
+    );
+
+    expect(normalDm.id).not.toBe(bridged.id);
+    expect(normalDm.created).toBe(true);
+    // And the normal DM is the one member-set lookups resolve — the bridged
+    // room stays permanently excluded (§3.2), whichever order the two were
+    // opened in.
+    const anaAuthorId = normalDm.members.find((m) => m.author.kind === 'agent')?.authorId;
+    expect(store.findDmByMemberSet([human, anaAuthorId as string])?.id).toBe(normalDm.id);
   });
 });

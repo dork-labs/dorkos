@@ -94,16 +94,19 @@ export type RoomEntryKind = z.infer<typeof RoomEntryKindSchema>;
  *   the adapter reconnects (spec §6.1, §10.1).
  * - `bridge_rate_limited` — `ingest` refused an inbound message past the
  *   per-chat rate ceiling; nothing was written for it (spec §5.2 step 2).
+ * - `bridge_second_agent_refused` — `RoomService.addMember` refused a second
+ *   agent on a bridged room (spec §3.4, D-6 Q3): outbound consent is per
+ *   binding, so a second agent's replies would have no gate that names them.
  *
- * **This three-code addition is the one non-additive change in the whole
+ * **This four-code addition is the one non-additive change in the whole
  * chats-as-channels feature (spec §11.2, A11.1).** Widening an enum is not
  * additive for a client that already parses this schema: a build pinned to the
- * eight codes above fails to parse ANY room that contains one of the three new
+ * eight codes above fails to parse ANY room that contains one of the four new
  * ones, the moment a bridge writes its first notice — not just a room it
  * bridges itself. That is acceptable only because the client and server ship
  * from this same repo in lockstep; it must be called out explicitly in the
  * OpenAPI diff review and in the feature's changelog fragment rather than
- * passed over as "just three more enum values."
+ * passed over as "just four more enum values."
  */
 export const RoomNoticeCodeSchema = z
   .enum([
@@ -118,6 +121,7 @@ export const RoomNoticeCodeSchema = z
     'bridge_blocked',
     'bridge_undelivered',
     'bridge_rate_limited',
+    'bridge_second_agent_refused',
   ])
   .openapi('RoomNoticeCode');
 
