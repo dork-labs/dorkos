@@ -84,6 +84,9 @@ describe('Database Migrations', () => {
       // Better Auth identity tables (accounts-and-auth P1, migration 0019).
       'account',
       'activity_events',
+      // Standing, agent-level connector consent — row existence IS the
+      // attachment (connection-scoping spec §Part 1, migration 0048).
+      'agent_connector_attachments',
       'agent_denials',
       // Hashed per-agent identity tokens, keyed on the stable agentPath so the
       // mesh reconciler's rebuild-from-files cannot orphan them
@@ -147,10 +150,18 @@ describe('Database Migrations', () => {
       // already been read (migration 0037).
       'search_sources',
       'session',
+      // Per-session connector-attachment overrides — a tombstone table (state
+      // 'attached'|'detached'), never a plain delete (connection-scoping spec
+      // §Part 1, migration 0048).
+      'session_connector_attachments',
       // Durable completed-turn event stream for log-backed runtimes
       // (DOR-189, migration 0026).
       'session_events',
       'session_metadata',
+      // The durable claim feed for inbound chats with no binding — metadata
+      // only, never a message body (connection-scoping spec §Part 3,
+      // migration 0048).
+      'unclaimed_chats',
       'user',
       'verification',
       'workspaces',

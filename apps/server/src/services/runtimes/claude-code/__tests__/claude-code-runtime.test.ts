@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { wrapSdkQuery, sdkSimpleText, sdkToolCall } from './sdk-scenarios.js';
+import { DEFAULT_CWD } from '../../../../lib/resolve-root.js';
 
 // Hoist shared mock functions so the test and ClaudeCodeRuntime share the same
 // vi.fn() instances for context-builder and tool-filter.
@@ -204,6 +205,71 @@ describe('ClaudeCodeRuntime', () => {
       expect(agentManager.hasSession('nonexistent')).toBe(true);
       const doneEvent = events.find((e) => e.type === 'done');
       expect(doneEvent).toBeDefined();
+    });
+
+    it("connection-scoping §Part 1: hydrates connector attachments for the session's agent before the turn runs", async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(wrapSdkQuery(sdkSimpleText('hi')));
+
+      const hydrateSession = vi.fn().mockResolvedValue(undefined);
+      agentManager.setSessionConnectors({ hydrateSession } as unknown as Parameters<
+        typeof agentManager.setSessionConnectors
+      >[0]);
+      agentManager.setMeshCore({
+        getByPath: (cwd: string) => (cwd === DEFAULT_CWD ? { id: 'agent-a' } : undefined),
+        updateLastSeen: vi.fn(),
+        listWithPaths: vi.fn().mockReturnValue([]),
+      });
+
+      for await (const event of agentManager.sendMessage('hydrate-1', 'hello')) {
+        void event;
+      }
+
+      expect(hydrateSession).toHaveBeenCalledWith('hydrate-1', 'agent-a');
+    });
+
+    it('connection-scoping §Part 1: skips hydration when the cwd has no registered agent, without throwing', async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(wrapSdkQuery(sdkSimpleText('hi')));
+
+      const hydrateSession = vi.fn().mockResolvedValue(undefined);
+      agentManager.setSessionConnectors({ hydrateSession } as unknown as Parameters<
+        typeof agentManager.setSessionConnectors
+      >[0]);
+      agentManager.setMeshCore({
+        getByPath: () => undefined,
+        updateLastSeen: vi.fn(),
+        listWithPaths: vi.fn().mockReturnValue([]),
+      });
+
+      for await (const event of agentManager.sendMessage('hydrate-2', 'hello')) {
+        void event;
+      }
+
+      expect(hydrateSession).not.toHaveBeenCalled();
+    });
+
+    it('MAJOR 2: a rejected hydrateSession does not fail the turn — it still streams to done', async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(wrapSdkQuery(sdkSimpleText('hi')));
+
+      const hydrateSession = vi.fn().mockRejectedValue(new Error('simulated hydration failure'));
+      agentManager.setSessionConnectors({ hydrateSession } as unknown as Parameters<
+        typeof agentManager.setSessionConnectors
+      >[0]);
+      agentManager.setMeshCore({
+        getByPath: (cwd: string) => (cwd === DEFAULT_CWD ? { id: 'agent-a' } : undefined),
+        updateLastSeen: vi.fn(),
+        listWithPaths: vi.fn().mockReturnValue([]),
+      });
+
+      const events: StreamEvent[] = [];
+      for await (const event of agentManager.sendMessage('hydrate-3', 'hello')) {
+        events.push(event);
+      }
+
+      expect(hydrateSession).toHaveBeenCalledWith('hydrate-3', 'agent-a');
+      expect(events.find((e) => e.type === 'done')).toBeDefined();
     });
 
     it('carries supportedModels() capability fields into the next turn as summarized thinking', async () => {

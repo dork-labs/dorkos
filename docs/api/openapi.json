@@ -4898,6 +4898,272 @@
         },
         "description": "The client’s live chrome, merged field-wise over the source Shape’s layout. Only honored alongside `captureCurrent` on the active Shape."
       },
+      "BindingResponse": {
+        "type": "object",
+        "properties": {
+          "binding": {
+            "$ref": "#/components/schemas/AdapterBinding"
+          }
+        },
+        "required": [
+          "binding"
+        ]
+      },
+      "AdapterBinding": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "adapterId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "agentId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "chatId": {
+            "type": "string"
+          },
+          "channelType": {
+            "$ref": "#/components/schemas/ChannelType"
+          },
+          "sessionStrategy": {
+            "$ref": "#/components/schemas/SessionStrategy"
+          },
+          "label": {
+            "type": "string",
+            "default": ""
+          },
+          "permissionMode": {
+            "$ref": "#/components/schemas/PermissionMode"
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "canInitiate": {
+            "type": "boolean",
+            "default": false
+          },
+          "canReply": {
+            "type": "boolean",
+            "default": true
+          },
+          "canReceive": {
+            "type": "boolean",
+            "default": true
+          },
+          "notifyOnTaskComplete": {
+            "type": "boolean",
+            "default": true
+          },
+          "bridge": {
+            "type": "string",
+            "enum": [
+              "off",
+              "room"
+            ],
+            "default": "off"
+          },
+          "roomId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "adapterId",
+          "agentId",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "ChannelType": {
+        "type": "string",
+        "enum": [
+          "dm",
+          "group",
+          "channel",
+          "thread"
+        ]
+      },
+      "SessionStrategy": {
+        "type": "string",
+        "enum": [
+          "per-chat",
+          "per-user",
+          "stateless"
+        ],
+        "default": "per-chat"
+      },
+      "MoveBindingRequest": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "agentId"
+        ]
+      },
+      "UnclaimedChatListResponse": {
+        "type": "object",
+        "properties": {
+          "chats": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UnclaimedChat"
+            }
+          }
+        },
+        "required": [
+          "chats"
+        ]
+      },
+      "UnclaimedChat": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "adapterId": {
+            "type": "string"
+          },
+          "chatId": {
+            "type": "string"
+          },
+          "channelType": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ChannelType"
+              },
+              {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            ]
+          },
+          "chatKind": {
+            "type": "string",
+            "enum": [
+              "dm",
+              "group"
+            ]
+          },
+          "senderName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200
+          },
+          "senderId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "chatTitle": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 200
+          },
+          "status": {
+            "$ref": "#/components/schemas/UnclaimedChatStatus"
+          },
+          "messageCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "firstSeenAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastSeenAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "decidedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "decidedAgentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "adapterId",
+          "chatId",
+          "channelType",
+          "chatKind",
+          "senderName",
+          "senderId",
+          "chatTitle",
+          "status",
+          "messageCount",
+          "firstSeenAt",
+          "lastSeenAt",
+          "decidedAt",
+          "decidedAgentId"
+        ]
+      },
+      "UnclaimedChatStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "claimed",
+          "ignored",
+          "blocked"
+        ]
+      },
+      "ClaimUnclaimedChatRequest": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sessionStrategy": {
+            "$ref": "#/components/schemas/SessionStrategy"
+          },
+          "permissionMode": {
+            "$ref": "#/components/schemas/PermissionMode"
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agentId"
+        ]
+      },
       "PendingApprovalsResponse": {
         "type": "object",
         "properties": {
@@ -12885,6 +13151,419 @@
         "responses": {
           "204": {
             "description": "Account detached (or already absent)"
+          }
+        }
+      }
+    },
+    "/api/agents/{agentId}/connectors": {
+      "get": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "An agent's standing connector attachments",
+        "description": "Lists the accounts standingly attached to an agent. Every session of this agent inherits these accounts on its next hydration unless a session-level override says otherwise (precedence: session > agent, no merge).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The agent's standing attachments",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accounts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "agentId": {
+                            "type": "string"
+                          },
+                          "accountId": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "attachedAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        },
+                        "required": [
+                          "agentId",
+                          "accountId",
+                          "attachedAt"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "accounts"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{agentId}/connectors/{accountId}": {
+      "post": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Attach an account to an agent, standingly (the consent point)",
+        "description": "Records standing consent for the agent to use this account; re-shows the custody disclosure. Resolution of the connection itself happens per session, at hydration time.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "accountId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The attachment recorded, plus the custody disclosure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "account": {
+                      "type": "object",
+                      "properties": {
+                        "accountId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "toolkit": {
+                          "type": "string"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "active",
+                            "expired",
+                            "revoked",
+                            "pending"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "accountId",
+                        "toolkit",
+                        "label",
+                        "status"
+                      ]
+                    },
+                    "disclosure": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "account",
+                    "disclosure"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown connected account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Detach an account from an agent (idempotent)",
+        "description": "Revokes standing consent. Idempotent — detaching an unattached account still resolves 204.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "accountId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Account detached (or already absent)"
+          }
+        }
+      }
+    },
+    "/api/relay/bindings/{id}/move": {
+      "post": {
+        "tags": [
+          "Relay"
+        ],
+        "summary": "Re-point an existing binding to a different agent",
+        "description": "Moves the binding in place — same id, same chatId, new agentId — the one narrow exception to \"bindings are re-created, not re-pointed.\" Clears the binding's stale session mappings so the next inbound message starts fresh under the new agent.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveBindingRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The re-pointed binding",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BindingResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown binding",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/relay/unclaimed-chats": {
+      "get": {
+        "tags": [
+          "Relay"
+        ],
+        "summary": "List chats with no binding to route them (default: pending)",
+        "description": "Chats an adapter heard from with no binding — the durable, damped record of what used to be a silent drop. Carries only sender identity metadata, never a message body.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "claimed",
+                "ignored",
+                "blocked"
+              ]
+            },
+            "required": false,
+            "name": "status",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching unclaimed chats",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnclaimedChatListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/relay/unclaimed-chats/{id}/claim": {
+      "post": {
+        "tags": [
+          "Relay"
+        ],
+        "summary": "Claim an unclaimed chat onto an agent",
+        "description": "Creates a binding through the same uniqueness-checked path a manual binding create uses — a race against a manually created binding for the same chat 409s identically.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimUnclaimedChatRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The binding created from this claim",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BindingResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown unclaimed chat",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The chat was bound by something else in the meantime",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/relay/unclaimed-chats/{id}/ignore": {
+      "post": {
+        "tags": [
+          "Relay"
+        ],
+        "summary": "Mute an unclaimed chat (idempotent)",
+        "description": "Future sightings still bump counters, silently — the chat never resurfaces.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Muted"
+          },
+          "404": {
+            "description": "Unknown unclaimed chat",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/relay/unclaimed-chats/{id}/block": {
+      "post": {
+        "tags": [
+          "Relay"
+        ],
+        "summary": "Block an unclaimed chat (idempotent)",
+        "description": "Drops all future traffic from this chat recordless — no further row writes.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Blocked"
+          },
+          "404": {
+            "description": "Unknown unclaimed chat",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }

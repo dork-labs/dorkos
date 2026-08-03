@@ -36,6 +36,8 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import {
   ConnectorRegistry,
   SessionConnectorService,
+  AgentConnectorAttachmentStore,
+  SessionConnectorAttachmentStore,
   recommendConnector,
   maybeCreateComposioProvider,
   COMPOSIO_API_KEY_REF,
@@ -146,7 +148,12 @@ const gmailNoProviderLeakage: Oracle = async (): Promise<OracleResult> => {
   // a real vendor name into the assertion — G2 is about the vendor's identity
   // (composio/nango/rube) never appearing, and the server name being toolkit+label.
   const { registry, personal, work } = await twoGmailAccounts('gateway-under-test');
-  const service = new SessionConnectorService({ registry });
+  const attachmentsDb = createTestDb();
+  const service = new SessionConnectorService({
+    registry,
+    agentAttachments: new AgentConnectorAttachmentStore(attachmentsDb),
+    sessionAttachments: new SessionConnectorAttachmentStore(attachmentsDb),
+  });
   const sessionId = 'connector-gmail-eval';
   await service.attach(sessionId, personal.id);
   await service.attach(sessionId, work.id);

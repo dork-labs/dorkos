@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createDb, runMigrations, type Db } from '@dorkos/db';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
 import type {
@@ -13,6 +13,10 @@ import type {
 import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
 import { ConnectorRegistry } from '../registry.js';
 import { SessionConnectorService } from '../session-exposure.js';
+import {
+  AgentConnectorAttachmentStore,
+  SessionConnectorAttachmentStore,
+} from '../attachment-store.js';
 
 /**
  * A gateway provider named `'composio'` whose account ids and connection URLs
@@ -85,7 +89,11 @@ describe('SessionConnectorService', () => {
     registry = new ConnectorRegistry({ db });
     provider = new FakeConnectorProvider({ type: 'fake-connector', custody: 'managed' });
     registry.register(provider);
-    service = new SessionConnectorService({ registry });
+    service = new SessionConnectorService({
+      registry,
+      agentAttachments: new AgentConnectorAttachmentStore(db),
+      sessionAttachments: new SessionConnectorAttachmentStore(db),
+    });
   });
 
   it('attaches two Gmail accounts as two distinct named tool servers', async () => {
@@ -340,5 +348,227 @@ describe('SessionConnectorService', () => {
     const surface = JSON.stringify({ names: Object.keys(servers), config: servers });
     expect(surface).not.toContain('composio');
     expect(surface).not.toContain('nango');
+  });
+
+  describe('agent-level attachment (connection-scoping spec §Part 1)', () => {
+    let agentAttachments: AgentConnectorAttachmentStore;
+    let sessionAttachments: SessionConnectorAttachmentStore;
+
+    beforeEach(() => {
+      agentAttachments = new AgentConnectorAttachmentStore(db);
+      sessionAttachments = new SessionConnectorAttachmentStore(db);
+      service = new SessionConnectorService({ registry, agentAttachments, sessionAttachments });
+    });
+
+    it('AC1.1: a fresh SessionConnectorService instance (simulated restart) still exposes an agent-standingly-attached account on a new session', async () => {
+      const gmail = await connectAndRecord(registry, provider, 'gmail', 'personal');
+      agentAttachments.attach('agent-a', gmail.id);
+
+      // A brand-new instance over the SAME persisted stores/db — the
+      // in-memory `_sessions` cache starts empty, exactly as a process
+      // restart would leave it.
+      const restarted = new SessionConnectorService({
+        registry,
+        agentAttachments,
+        sessionAttachments,
+      });
+      await restarted.hydrateSession('session-1', 'agent-a');
+
+      const { servers } = restarted.mcpServersForSession('session-1');
+      expect(Object.keys(servers)).toEqual(['gmail-personal']);
+    });
+
+    it('AC1.2: a session-level detach suppresses an agent-standing account for that session only', async () => {
+      const gmail = await connectAndRecord(registry, provider, 'gmail', 'personal');
+      agentAttachments.attach('agent-a', gmail.id);
+
+      await service.hydrateSession('session-1', 'agent-a');
+      service.detach('session-1', gmail.id);
+      expect(Object.keys(service.mcpServersForSession('session-1').servers)).toEqual([]);
+
+      // A sibling session of the SAME agent still inherits it.
+      await service.hydrateSession('session-2', 'agent-a');
+      expect(Object.keys(service.mcpServersForSession('session-2').servers)).toEqual([
+        'gmail-personal',
+      ]);
+    });
+
+    it('AC1.2 (restart): the detach override persists — re-hydrating the same session after a simulated restart still suppresses it', async () => {
+      const gmail = await connectAndRecord(registry, provider, 'gmail', 'personal');
+      agentAttachments.attach('agent-a', gmail.id);
+      await service.hydrateSession('session-1', 'agent-a');
+      service.detach('session-1', gmail.id);
+
+      const restarted = new SessionConnectorService({
+        registry,
+        agentAttachments,
+        sessionAttachments,
+      });
+      await restarted.hydrateSession('session-1', 'agent-a');
+      expect(Object.keys(restarted.mcpServersForSession('session-1').servers)).toEqual([]);
+    });
+
+    it('AC1.3: a session-level attach exposes an account the agent has NOT standingly attached, for that session only', async () => {
+      const slack = await connectAndRecord(registry, provider, 'slack', 'team');
+      // No agentAttachments.attach() call — the agent has no standing consent.
+      await service.attach('session-1', slack.id);
+      expect(Object.keys(service.mcpServersForSession('session-1').servers)).toEqual([
+        'slack-team',
+      ]);
+
+      await service.hydrateSession('session-2', 'agent-a');
+      expect(Object.keys(service.mcpServersForSession('session-2').servers)).toEqual([]);
+    });
+
+    it('negative control: hydrating a session for an agent with NO standing attachments and NO overrides exposes nothing', async () => {
+      await connectAndRecord(registry, provider, 'gmail', 'personal'); // connected, never attached
+      await service.hydrateSession('session-1', 'agent-with-nothing');
+      expect(Object.keys(service.mcpServersForSession('session-1').servers)).toEqual([]);
+    });
+
+    it('AC1.5: disconnecting an account cascades — removed from every agent/session attachment and every live in-memory cache', async () => {
+      const gmail = await connectAndRecord(registry, provider, 'gmail', 'personal');
+      agentAttachments.attach('agent-a', gmail.id);
+      await service.hydrateSession('session-1', 'agent-a');
+      expect(Object.keys(service.mcpServersForSession('session-1').servers)).toEqual([
+        'gmail-personal',
+      ]);
+
+      // The cascade the connectors route performs on disconnect.
+      registry.recordDisconnect(gmail.id);
+      service.invalidateAccount(gmail.id);
+
+      expect(Object.keys(service.mcpServersForSession('session-1').servers)).toEqual([]);
+      expect(agentAttachments.listForAgent('agent-a')).toEqual([]);
+      expect(sessionAttachments.listForSession('session-1')).toEqual([]);
+
+      // And a fresh hydration (simulated restart) has nothing left to inherit.
+      const restarted = new SessionConnectorService({
+        registry,
+        agentAttachments,
+        sessionAttachments,
+      });
+      await restarted.hydrateSession('session-2', 'agent-a');
+      expect(Object.keys(restarted.mcpServersForSession('session-2').servers)).toEqual([]);
+    });
+
+    it('hydrateSession is idempotent per process: a second call does not re-resolve any account (MINOR 8 — a call-count assertion, not just the resulting empty set)', async () => {
+      const gmail = await connectAndRecord(registry, provider, 'gmail', 'personal');
+      agentAttachments.attach('agent-a', gmail.id);
+      const resolveSpy = vi.spyOn(provider, 'toolServerForAccount');
+
+      await service.hydrateSession('session-1', 'agent-a');
+      expect(resolveSpy).toHaveBeenCalledTimes(1);
+
+      // A second hydration of the SAME session must be a pure no-op — the
+      // `_hydrated` guard, not the (unrelated) fact that re-deriving the
+      // effective set would happen to land on the same answer. The previous
+      // version of this test only asserted the resulting exposed-account set,
+      // which cannot tell a working guard apart from a guard that silently
+      // never engaged (the override table alone would have produced the same
+      // empty result either way) — this call-count assertion can.
+      await service.hydrateSession('session-1', 'agent-a');
+      expect(resolveSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('a session-detached account inherited from the agent is still suppressed after a second hydration call (the property the removed assertion was trying to protect)', async () => {
+      const gmail = await connectAndRecord(registry, provider, 'gmail', 'personal');
+      agentAttachments.attach('agent-a', gmail.id);
+      await service.hydrateSession('session-1', 'agent-a');
+      service.detach('session-1', gmail.id);
+
+      await service.hydrateSession('session-1', 'agent-a');
+      expect(Object.keys(service.mcpServersForSession('session-1').servers)).toEqual([]);
+    });
+  });
+
+  describe('hydrateSession resilience to a third-party provider failure (MAJOR 2)', () => {
+    it('a rejected provider call during hydration does not throw, and the account resolves on a LATER hydrate', async () => {
+      const flaky = new FakeConnectorProvider({ type: 'flaky', custody: 'managed' });
+      registry.register(flaky);
+      const gmail = await connectAndRecord(registry, flaky, 'gmail', 'personal');
+      // Reject exactly the first call — a stand-in for one transient
+      // network failure — then let every subsequent call behave normally.
+      vi.spyOn(flaky, 'toolServerForAccount').mockImplementationOnce(
+        () => Promise.reject(new Error('simulated network failure')) as Promise<null>
+      );
+      const agentAttachments = new AgentConnectorAttachmentStore(db);
+      const sessionAttachments = new SessionConnectorAttachmentStore(db);
+      agentAttachments.attach('agent-a', gmail.id);
+      const flakyService = new SessionConnectorService({
+        registry,
+        agentAttachments,
+        sessionAttachments,
+      });
+
+      // First turn: the provider rejects. hydrateSession must not throw —
+      // this IS "the turn still streams," since ClaudeCodeRuntime awaits
+      // hydrateSession before starting the SDK query.
+      await expect(flakyService.hydrateSession('session-1', 'agent-a')).resolves.toBeUndefined();
+      expect(Object.keys(flakyService.mcpServersForSession('session-1').servers)).toEqual([]);
+
+      // Second turn: same session, same call — the failed pass did NOT latch
+      // `_hydrated`, so this retries and now succeeds (FlakyProvider only
+      // rejects once).
+      await flakyService.hydrateSession('session-1', 'agent-a');
+      expect(Object.keys(flakyService.mcpServersForSession('session-1').servers)).toEqual([
+        'gmail-personal',
+      ]);
+    });
+  });
+
+  describe('migrateSession carries persisted overrides across a rekey (MAJOR 3)', () => {
+    let agentAttachments: AgentConnectorAttachmentStore;
+    let sessionAttachments: SessionConnectorAttachmentStore;
+
+    beforeEach(() => {
+      agentAttachments = new AgentConnectorAttachmentStore(db);
+      sessionAttachments = new SessionConnectorAttachmentStore(db);
+      service = new SessionConnectorService({ registry, agentAttachments, sessionAttachments });
+    });
+
+    it('a detach tombstone written pre-remap still suppresses the account after the rekey and a fresh hydration', async () => {
+      const gmail = await connectAndRecord(registry, provider, 'gmail', 'personal');
+      agentAttachments.attach('agent-a', gmail.id);
+
+      // Pre-remap: hydrate under the request-id session, then explicitly
+      // detach — the tombstone this whole fix is about.
+      await service.hydrateSession('old-id', 'agent-a');
+      service.detach('old-id', gmail.id);
+      expect(sessionAttachments.listForSession('old-id')).toMatchObject([
+        { accountId: gmail.id, state: 'detached' },
+      ]);
+
+      service.migrateSession('old-id', 'new-id');
+
+      // The persisted override moved with the rekey, not just the (now
+      // empty, since detach cleared it) in-memory cache.
+      expect(sessionAttachments.listForSession('old-id')).toEqual([]);
+      expect(sessionAttachments.listForSession('new-id')).toMatchObject([
+        { accountId: gmail.id, state: 'detached' },
+      ]);
+
+      // The property that actually matters: a SECOND turn re-hydrating under
+      // the canonical id must not re-inherit the agent's standing attachment.
+      await service.hydrateSession('new-id', 'agent-a');
+      expect(Object.keys(service.mcpServersForSession('new-id').servers)).toEqual([]);
+    });
+
+    it("when the new id already has its own override for an account, the new id's override wins and the old row is dropped", async () => {
+      const gmail = await connectAndRecord(registry, provider, 'gmail', 'personal');
+      // Old id explicitly attaches (would expose it)...
+      await service.attach('old-id', gmail.id);
+      // ...but the new id independently already recorded an explicit detach
+      // for the same account (e.g. a client raced the rekey).
+      sessionAttachments.setState('new-id', gmail.id, 'detached');
+
+      service.migrateSession('old-id', 'new-id');
+
+      expect(sessionAttachments.listForSession('new-id')).toMatchObject([
+        { accountId: gmail.id, state: 'detached' },
+      ]);
+      // Only one row for (new-id, gmail.id) — no primary-key collision.
+      expect(sessionAttachments.listForSession('new-id')).toHaveLength(1);
+    });
   });
 });

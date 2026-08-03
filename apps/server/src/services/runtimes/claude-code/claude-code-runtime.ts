@@ -94,6 +94,9 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     | ((session: AgentSession, sessionId: string) => Record<string, McpServerConfig>)
     | null = null;
   private meshCore: AgentRegistryPort | null = null;
+  private sessionConnectors:
+    | import('../../connectors/session-exposure.js').SessionConnectorService
+    | null = null;
   private bindingRouter: import('../../relay/binding-router.js').BindingRouter | undefined;
   private bindingStore: import('../../relay/binding-store.js').BindingStore | undefined;
   private adapterManager: import('../../relay/adapter-manager.js').AdapterManager | undefined;
@@ -169,6 +172,18 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   /** Set the agent registry for agent manifest resolution and peer agent context. */
   setMeshCore(meshCore: AgentRegistryPort): void {
     this.meshCore = meshCore;
+  }
+
+  /**
+   * Inject the per-account → session tool-server binder so a session's first
+   * turn after process start can hydrate its connector attachments from
+   * persisted state (connection-scoping spec `specs/connection-scoping/`
+   * §Part 1 Restart semantics) before the MCP factory reads its cache.
+   */
+  setSessionConnectors(
+    sessionConnectors: import('../../connectors/session-exposure.js').SessionConnectorService
+  ): void {
+    this.sessionConnectors = sessionConnectors;
   }
 
   /**
@@ -276,6 +291,34 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     if (uiStateEntry?.kind === 'ui_state') session.uiState = uiStateEntry.data;
 
     const cwdKey = opts?.cwd || session.cwd || this.cwd;
+
+    // Bring this session's connector tool exposure up to date with persisted
+    // agent/session attachments before the MCP factory reads its cache
+    // (connection-scoping spec §Part 1 Restart semantics). Hydration is
+    // idempotent and a no-op after the first call in this process, so it is
+    // safe to await unconditionally on every turn. Silently skipped when
+    // there is no agent owning this cwd (e.g. an unregistered scratch
+    // directory) — there is no standing consent to inherit.
+    //
+    // `hydrateSession`'s own per-account resolution already catches a
+    // rejected provider call (a real risk — it is third-party HTTP) so it
+    // does not throw in the ordinary case. This try/catch is the second,
+    // defense-in-depth layer for the turn path specifically: a turn must
+    // NEVER fail because a connector could not be resolved — connector tools
+    // are additive to a turn, never load-bearing for it — so even an
+    // unexpected throw out of hydration (a future implementation swap, a bug)
+    // is logged and skipped here rather than aborting the message the user
+    // actually asked for.
+    const agentId = this.meshCore?.getByPath(cwdKey)?.id;
+    if (this.sessionConnectors && agentId) {
+      try {
+        await this.sessionConnectors.hydrateSession(sessionId, agentId);
+      } catch (err) {
+        logger.warn(`[hydrateSession] failed for session '${sessionId}'; continuing without it`, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
 
     // Resolve the selected model's capabilities once: thinking config + whether it
     // supports auto permission mode (undefined when the model isn't cached yet).
