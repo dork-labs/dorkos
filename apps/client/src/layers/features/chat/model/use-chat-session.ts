@@ -248,7 +248,10 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     messages,
     hydrated,
     submitKickoff,
-    submitContent,
+    // Adapt the kickoff's `(content, cwd)` shape to submitContent's opts, so a
+    // `first-message` birth also runs its first turn in the agent's directory.
+    submitContent: (content, cwd) =>
+      submitContent(content, undefined, cwd ? { queued: false, cwd } : undefined),
   });
 
   // Turn-end reconciliation: when the active session settles, reload canonical

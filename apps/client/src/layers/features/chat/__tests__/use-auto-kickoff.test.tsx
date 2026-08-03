@@ -74,7 +74,11 @@ describe('useAutoKickoff', () => {
       })
     );
     expect(submitKickoff).toHaveBeenCalledTimes(1);
-    expect(submitKickoff).toHaveBeenCalledWith(RECORD.kickoffMessage);
+    // The kickoff MUST carry the agent's own directory as the cwd, so the first
+    // turn's transcript lands under the agent's project slug — the same slug the
+    // session view resumes from. Passing the wrong (or no) cwd here is what wrote
+    // the transcript under the default slug and produced "No conversation found".
+    expect(submitKickoff).toHaveBeenCalledWith(RECORD.kickoffMessage, RECORD.path);
     expect(useAgentBirthStore.getState().records['sess-1'].fired).toBe(true);
   });
 
@@ -284,7 +288,7 @@ describe('useAutoKickoff', () => {
 
     // The claim re-keys the record; the effect re-run fires the kickoff.
     await waitFor(() => expect(submitKickoff).toHaveBeenCalledTimes(1));
-    expect(submitKickoff).toHaveBeenCalledWith(RECORD.kickoffMessage);
+    expect(submitKickoff).toHaveBeenCalledWith(RECORD.kickoffMessage, RECORD.path);
     expect(useAgentBirthStore.getState().records['first-real-session'].fired).toBe(true);
     expect(useAgentBirthStore.getState().records['never-visited-id']).toBeUndefined();
 
@@ -513,7 +517,8 @@ describe('useAutoKickoff', () => {
         })
       );
       expect(submitContent).toHaveBeenCalledTimes(1);
-      expect(submitContent).toHaveBeenCalledWith('help me set up a project');
+      // Even the onboarding first-message runs in the agent's own directory.
+      expect(submitContent).toHaveBeenCalledWith('help me set up a project', RECORD.path);
       expect(submitKickoff).not.toHaveBeenCalled();
       expect(useAgentBirthStore.getState().records['sess-1'].fired).toBe(true);
     });

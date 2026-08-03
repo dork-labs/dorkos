@@ -111,15 +111,20 @@ export interface UseAutoKickoffParams {
    * emptiness is confirmed real.
    */
   hydrated: boolean;
-  /** Trigger the agent's first turn (from `useSessionSubmit`). Rejects when the trigger POST fails. */
-  submitKickoff: (content: string) => Promise<void>;
+  /**
+   * Trigger the agent's first turn (from `useSessionSubmit`). Rejects when the
+   * trigger POST fails. The second argument pins the turn to the agent's own
+   * directory (the birth record's `path`).
+   */
+  submitKickoff: (content: string, cwd?: string) => Promise<void>;
   /**
    * Send a message through the NORMAL submission path (from `useSessionSubmit`),
    * which renders the user's own bubble. Used for `kind: 'first-message'` birth
    * records — the onboarding dissolve, where the opening turn is the user's typed
-   * words, not the agent saying hello first (ADR 260722-111316).
+   * words, not the agent saying hello first (ADR 260722-111316). The second
+   * argument pins the turn to the agent's own directory.
    */
-  submitContent: (content: string) => Promise<void>;
+  submitContent: (content: string, cwd?: string) => Promise<void>;
 }
 
 /**
@@ -165,7 +170,14 @@ export function useAutoKickoff({
     // theirs. Every other record is the agent-says-hello-first kickoff.
     const isFirstMessage = record.kind === 'first-message';
     const submit = isFirstMessage ? submitContent : submitKickoff;
-    submit(record.kickoffMessage).catch((err: unknown) => {
+    // Pin the first turn to the agent's OWN directory, carried on the birth
+    // record, rather than the ambient selected directory — which can still hold
+    // the previous default when this effect fires on navigation, before the
+    // URL's `?dir=` has settled onto the new agent. Getting this wrong wrote the
+    // transcript under the default project slug while the session view resumed
+    // from the agent's slug, so every later turn failed with "No conversation
+    // found" and the greeting looked like it had vanished.
+    submit(record.kickoffMessage, record.path || undefined).catch((err: unknown) => {
       console.warn('[chat] first-turn trigger failed for newborn session', sessionId, err);
       // A rejected trigger started no turn — safe to un-latch. Bounded to ONE
       // retry: the first failure re-arms the guards (the store update re-runs
