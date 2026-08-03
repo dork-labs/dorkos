@@ -338,14 +338,27 @@ export function createAdapterRouter(
 
     // Convert null to undefined for clearing optional fields; absent fields
     // are dropped so they don't clobber existing values in the store's spread.
+    // `roomId` is exempt: it is nullable, not optional, and `null` is its
+    // valid persisted "not bridged" value (`BindingUpdate`'s doc explains why
+    // converting it would be wrong, not merely redundant).
     const updates: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(result.data)) {
       if (value !== undefined) {
-        updates[key] = value === null ? undefined : value;
+        updates[key] = key === 'roomId' ? value : value === null ? undefined : value;
       }
     }
 
-    const updated = await bindingStore.update(req.params.id, updates as BindingUpdate);
+    let updated;
+    try {
+      updated = await bindingStore.update(req.params.id, updates as BindingUpdate);
+    } catch (err) {
+      // The store re-validates the MERGED result independently of the
+      // pre-check above (any in-process caller can reach `update`, not just
+      // this route) — so a drift between the two checks lands here rather
+      // than as an unhandled 500.
+      const message = err instanceof Error ? err.message : 'Update failed';
+      return res.status(400).json({ error: 'Validation failed', details: { message } });
+    }
     if (!updated) {
       return res.status(404).json({ error: 'Binding not found' });
     }

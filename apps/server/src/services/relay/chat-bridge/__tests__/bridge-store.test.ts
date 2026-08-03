@@ -384,7 +384,7 @@ describe('BridgeStore', () => {
     });
   });
 
-  describe('optional transaction handle — atomic with a room write (spec §5.2 steps 4–6)', () => {
+  describe('optional transaction handle — participation, not atomicity (spec §5.2 steps 4–6)', () => {
     it('a ref written inside the caller-supplied transaction rolls back with it', () => {
       store.createBridge(bridge());
       const posted = entry(rooms, ROOM_ID, 'entry-atomic');
@@ -428,6 +428,43 @@ describe('BridgeStore', () => {
       });
 
       expect(store.findRefByEntry(posted.id)).not.toBeNull();
+    });
+
+    // NEGATIVE CONTROL — omitting `tx` produces the IDENTICAL result to
+    // supplying it. `@dorkos/db` is one `better-sqlite3` connection, so a
+    // plain `this.db.insert(...).run()` called synchronously from inside
+    // `db.transaction(...)` already lands in that same open transaction —
+    // there is only one connection for it to run against. This is what the
+    // two tests above cannot prove on their own: they show the write rolls
+    // back / commits WITH the surrounding transaction, but not that `tx`
+    // caused that. This test omits `tx` entirely and gets the same rollback,
+    // which is the proof. What `tx` actually buys, on this single-connection
+    // database, is explicitness — the call site declares its participation
+    // instead of relying on an accident of call order — and it is the seam
+    // that starts mattering for real atomicity the day `@dorkos/db` stops
+    // being one connection. See `DbTransaction`'s doc in `@dorkos/db`.
+    it('negative control: the SAME rollback happens with tx omitted, because this is one connection', () => {
+      store.createBridge(bridge());
+      const posted = entry(rooms, ROOM_ID, 'entry-no-tx');
+
+      expect(() => {
+        db.transaction(() => {
+          // No `tx` argument — writes against `this.db` directly.
+          store.recordInboundRef({
+            roomId: ROOM_ID,
+            entryId: posted.id,
+            chatId: CHAT_ID,
+            adapterId: ADAPTER_ID,
+            platformMessageId: 'pm-no-tx',
+            createdAt: posted.createdAt,
+          });
+          throw new Error('simulated failure after the ref write');
+        });
+      }).toThrow('simulated failure after the ref write');
+
+      // Identical outcome to the `tx`-supplied rollback test above: the ref
+      // is gone. `tx` was not what made this roll back.
+      expect(store.findRefByEntry(posted.id)).toBeNull();
     });
   });
 });

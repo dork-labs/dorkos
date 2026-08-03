@@ -5,9 +5,13 @@
  *
  * Synchronous throughout (`better-sqlite3`), like every other store in this
  * domain (`apps/server/src/services/rooms/room-store.ts`). Every write that
- * task 1.6 needs atomic with a room write — recording an inbound ref beside
+ * task 1.6 needs alongside a room write — recording an inbound ref beside
  * `RoomStore.appendEntry`, for instance — takes an optional {@link DbTransaction}
- * so the caller's own `db.transaction(...)` can wrap both.
+ * so the caller can run both inside its own `db.transaction(...)` callback.
+ * On this single-connection `better-sqlite3` database that participation is
+ * already structural (see `DbTransaction`'s doc in `@dorkos/db` for why); the
+ * parameter's job is to make it explicit and reviewable at the call site,
+ * not to be the thing that makes the write atomic.
  *
  * This store owns exactly two tables and no conduct: it does not decide who
  * may bridge a chat, what counts as delivery-eligible, or when a notice gets
@@ -122,9 +126,43 @@ function toRef(row: typeof roomBridgeMessages.$inferSelect): ExternalRef {
   return { ...row, direction: row.direction as RefDirection };
 }
 
+/**
+ * Either the store's own connection or a transaction handle a caller passed
+ * in — what a read-back after a write must run against. Reading via
+ * `this.db` unconditionally after a `tx`-scoped write would read the PRE-write
+ * row when the write is still uncommitted inside the caller's transaction (or,
+ * on a future non-single-connection `@dorkos/db`, could read a different
+ * connection entirely); reading via the same `exec` the write used has no such
+ * gap, on this connection or a later one.
+ */
+type Executor = Db | DbTransaction;
+
 /** Persistence for `room_bridges` and `room_bridge_messages`. */
 export class BridgeStore {
   constructor(private readonly db: Db) {}
+
+  /**
+   * The bridge for a room, read through whichever executor the caller is
+   * scoped to — `this.db` for a public read, or a write's own `exec` for the
+   * read-back right after that write (see {@link Executor}).
+   */
+  private readBridge(exec: Executor, roomId: string): Bridge | null {
+    const row = exec.select().from(roomBridges).where(eq(roomBridges.roomId, roomId)).get();
+    return row ? toBridge(row) : null;
+  }
+
+  /**
+   * The ref for one entry, read through whichever executor the caller is
+   * scoped to — see {@link BridgeStore.readBridge}.
+   */
+  private readRef(exec: Executor, entryId: string): ExternalRef | null {
+    const row = exec
+      .select()
+      .from(roomBridgeMessages)
+      .where(eq(roomBridgeMessages.entryId, entryId))
+      .get();
+    return row ? toRef(row) : null;
+  }
 
   // === Bridge rows ===
 
@@ -153,6 +191,12 @@ export class BridgeStore {
     };
     const exec = tx ?? this.db;
     exec.insert(roomBridges).values(row).run();
+    // Built from `row`, not re-read after the insert — `row` is already every
+    // column the table has, so this is exactly what a read-back would return
+    // and a round trip would buy nothing. Stays true only as long as `row`
+    // above is kept COLUMN-COMPLETE: a schema change that adds a column with
+    // a server-computed default (not one this literal sets) would silently
+    // return a stale value here until this comment is remembered.
     return toBridge(row);
   }
 
@@ -178,8 +222,7 @@ export class BridgeStore {
    * @param roomId - The room.
    */
   findBridgeByRoom(roomId: string): Bridge | null {
-    const row = this.db.select().from(roomBridges).where(eq(roomBridges.roomId, roomId)).get();
-    return row ? toBridge(row) : null;
+    return this.readBridge(this.db, roomId);
   }
 
   /**
@@ -193,7 +236,7 @@ export class BridgeStore {
   archiveBridge(roomId: string, archivedAt: string, tx?: DbTransaction): Bridge | null {
     const exec = tx ?? this.db;
     exec.update(roomBridges).set({ archivedAt }).where(eq(roomBridges.roomId, roomId)).run();
-    return this.findBridgeByRoom(roomId);
+    return this.readBridge(exec, roomId);
   }
 
   /**
@@ -206,7 +249,7 @@ export class BridgeStore {
   unarchiveBridge(roomId: string, tx?: DbTransaction): Bridge | null {
     const exec = tx ?? this.db;
     exec.update(roomBridges).set({ archivedAt: null }).where(eq(roomBridges.roomId, roomId)).run();
-    return this.findBridgeByRoom(roomId);
+    return this.readBridge(exec, roomId);
   }
 
   /**
@@ -223,7 +266,7 @@ export class BridgeStore {
   rebindBridge(bridgeId: string, bindingId: string, tx?: DbTransaction): Bridge | null {
     const exec = tx ?? this.db;
     exec.update(roomBridges).set({ bindingId }).where(eq(roomBridges.roomId, bridgeId)).run();
-    return this.findBridgeByRoom(bridgeId);
+    return this.readBridge(exec, bridgeId);
   }
 
   /**
@@ -240,7 +283,7 @@ export class BridgeStore {
       .set({ lastActivityAt: at })
       .where(eq(roomBridges.roomId, bridgeId))
       .run();
-    return this.findBridgeByRoom(bridgeId);
+    return this.readBridge(exec, bridgeId);
   }
 
   /**
@@ -262,7 +305,7 @@ export class BridgeStore {
       .set({ lastDeliveredSeq: seq })
       .where(and(eq(roomBridges.roomId, bridgeId), lt(roomBridges.lastDeliveredSeq, seq)))
       .run();
-    return this.findBridgeByRoom(bridgeId);
+    return this.readBridge(exec, bridgeId);
   }
 
   /**
@@ -285,7 +328,7 @@ export class BridgeStore {
       .set({ visibility, visibilityCheckedAt: checkedAt })
       .where(eq(roomBridges.roomId, bridgeId))
       .run();
-    return this.findBridgeByRoom(bridgeId);
+    return this.readBridge(exec, bridgeId);
   }
 
   // === External refs ===
@@ -364,7 +407,7 @@ export class BridgeStore {
         and(eq(roomBridgeMessages.entryId, entryId), eq(roomBridgeMessages.direction, 'outbound'))
       )
       .run();
-    return this.findRefByEntry(entryId);
+    return this.readRef(exec, entryId);
   }
 
   /**
@@ -376,12 +419,7 @@ export class BridgeStore {
    * @param entryId - The entry.
    */
   findRefByEntry(entryId: string): ExternalRef | null {
-    const row = this.db
-      .select()
-      .from(roomBridgeMessages)
-      .where(eq(roomBridgeMessages.entryId, entryId))
-      .get();
-    return row ? toRef(row) : null;
+    return this.readRef(this.db, entryId);
   }
 
   /**

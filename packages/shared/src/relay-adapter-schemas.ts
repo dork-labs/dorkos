@@ -476,8 +476,12 @@ export function bridgeAllowsChatId(binding: { bridge: string; chatId?: string | 
  * `ZodObject` method and is not carried by the `ZodEffects` wrapper `.refine()`
  * returns, so the refinement has to be applied AFTER the omit on each derived
  * schema rather than once here.
+ *
+ * Exported (rather than kept module-private) so a future derived schema can
+ * `.omit()`/`.extend()` it the same way `CreateBindingRequestSchema` does,
+ * without having to duplicate the whole shape to get back a `ZodObject`.
  */
-const AdapterBindingObjectSchema = z.object({
+export const AdapterBindingObjectSchema = z.object({
   id: z.string().uuid(),
   adapterId: z.string().min(1),
   agentId: z.string().min(1),

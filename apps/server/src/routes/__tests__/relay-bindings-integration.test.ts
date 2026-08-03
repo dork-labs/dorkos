@@ -55,6 +55,11 @@ function createStatefulBindingStore() {
       label: string;
       chatId?: string;
       channelType?: string;
+      // `bridge`/`roomId` default the same way `AdapterBindingSchema` does
+      // (bridge: 'off', roomId: null), so a test can assert the schema
+      // default rather than a mock artifact.
+      bridge: 'off' | 'room';
+      roomId: string | null;
       createdAt: string;
       updatedAt: string;
     }
@@ -74,6 +79,8 @@ function createStatefulBindingStore() {
         label: (input.label as string) ?? '',
         ...(input.chatId !== undefined ? { chatId: input.chatId as string } : {}),
         ...(input.channelType !== undefined ? { channelType: input.channelType as string } : {}),
+        bridge: (input.bridge as 'off' | 'room' | undefined) ?? 'off',
+        roomId: (input.roomId as string | null | undefined) ?? null,
         createdAt: now,
         updatedAt: now,
       };
@@ -346,9 +353,10 @@ describe('Binding bridge field — wildcard bindings cannot be bridged (A3.5)', 
       .expect(400);
     expect(JSON.stringify(res.body)).toContain('one room cannot honestly be the channel');
 
-    // The binding is untouched — a rejected PATCH must not half-apply.
+    // The binding is untouched — a rejected PATCH must not half-apply. The
+    // schema default is 'off', not undefined: nothing wrote 'room' onto it.
     const readRes = await request(app).get(`/api/relay/bindings/${bindingId}`).expect(200);
-    expect(readRes.body.binding.bridge).toBeUndefined();
+    expect(readRes.body.binding.bridge).toBe('off');
   });
 
   it('rejects PATCH setting bridge: room while clearing chatId in the same request', async () => {
@@ -389,6 +397,28 @@ describe('Binding bridge field — wildcard bindings cannot be bridged (A3.5)', 
       .patch(`/api/relay/bindings/${bindingId}`)
       .send({ bridge: 'off' })
       .expect(200);
+  });
+
+  it('rejects PATCH {chatId: null} alone on an already-bridged binding — the merge, not just the patch body, decides', async () => {
+    const createRes = await request(app)
+      .post('/api/relay/bindings')
+      .send({ adapterId: 'telegram-1', agentId: 'agent-1', chatId: '12345', bridge: 'room' })
+      .expect(201);
+    const bindingId = createRes.body.binding.id;
+
+    // The patch body carries no `bridge` key at all — the merged state has
+    // to fall back to the EXISTING binding's `bridge: 'room'`, and that
+    // merged state is what makes clearing chatId here invalid.
+    const res = await request(app)
+      .patch(`/api/relay/bindings/${bindingId}`)
+      .send({ chatId: null })
+      .expect(400);
+    expect(JSON.stringify(res.body)).toContain('one room cannot honestly be the channel');
+
+    // Unchanged: still bridged, still pointed at the original chat.
+    const readRes = await request(app).get(`/api/relay/bindings/${bindingId}`).expect(200);
+    expect(readRes.body.binding.bridge).toBe('room');
+    expect(readRes.body.binding.chatId).toBe('12345');
   });
 });
 

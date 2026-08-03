@@ -89,9 +89,22 @@ export type Db = ReturnType<typeof createDb>;
  * A store method that must sometimes be atomic with a write another store
  * makes — the bridge store's external-ref write landing in the same
  * transaction as `RoomStore.appendEntry`, for instance — takes one of these as
- * an optional parameter and runs its statements against it instead of `this.db`
- * when the caller supplies one, so the caller's `db.transaction(...)` wraps
- * both writes in one SQLite transaction rather than two.
+ * an optional parameter and runs its statements against it when the caller
+ * supplies one.
+ *
+ * **What this buys is explicitness, not atomicity — `@dorkos/db` is a single
+ * `better-sqlite3` connection, so atomicity already holds without it.**
+ * `better-sqlite3`'s `transaction()` wraps a synchronous callback between
+ * `BEGIN`/`COMMIT` on that one connection; because everything here runs
+ * synchronously and single-threaded, a plain `this.db.insert(...).run()`
+ * called from inside another method's `db.transaction(...)` callback lands in
+ * the SAME open transaction whether or not it was handed the `tx` argument —
+ * there is only one connection for it to run against. Passing `tx` explicitly
+ * is what makes a method's participation in a caller's transaction reviewable
+ * at the call site rather than an accident of call order, and it is the seam
+ * that would start MATTERING for atomicity the day `@dorkos/db` stops being
+ * one connection (a pool, a second writer, an async driver) — a change this
+ * type does not have to be revisited for.
  */
 export type DbTransaction = Parameters<Parameters<Db['transaction']>[0]>[0];
 

@@ -16,6 +16,7 @@ import chokidar, { type FSWatcher } from 'chokidar';
 import {
   AdapterBindingSchema,
   CreateBindingRequestSchema,
+  BRIDGE_REQUIRES_CHAT_ID_MESSAGE,
   type AdapterBinding,
   type UpdateBindingRequest,
 } from '@dorkos/shared/relay-schemas';
@@ -37,9 +38,22 @@ const POLL_INTERVAL_MS = 50;
  * Mutable binding fields as the store receives them — {@link UpdateBindingRequest}
  * after the route's null-to-undefined conversion. A key explicitly present with
  * `undefined` clears the field via the update spread; an absent key is a no-op.
+ *
+ * **`roomId` is the one field the conversion does NOT touch.** Every other
+ * nullable/optional field (`chatId`, `channelType`) uses `null` on the wire to
+ * mean "clear it," which the route turns into `undefined` before it reaches
+ * here. `roomId` is different: `AdapterBindingSchema` declares it
+ * `.nullable()`, not `.optional()` — `null` IS its valid "not bridged" value,
+ * the schema's own default, not a clear-to-undefined signal. Converting it
+ * would let it drift to `undefined` in memory (a value the schema's inferred
+ * type does not admit) for the rest of this process's life; a restart's
+ * `AdapterBindingSchema` default only repairs it after the fact, once JSON
+ * has already silently dropped the key on save.
  */
 export type BindingUpdate = {
-  [K in keyof UpdateBindingRequest]?: Exclude<UpdateBindingRequest[K], null>;
+  [K in keyof UpdateBindingRequest]?: K extends 'roomId'
+    ? UpdateBindingRequest[K]
+    : Exclude<UpdateBindingRequest[K], null>;
 };
 
 /**
@@ -135,21 +149,47 @@ export class BindingStore {
   /**
    * Update an existing binding's mutable fields.
    *
+   * **Validates the MERGED result against `AdapterBindingSchema` before it is
+   * ever set in memory or saved.** The HTTP route already checks
+   * `bridge`/`chatId` against the merged state before calling this, but that
+   * check is the route's problem, not this method's guarantee — any other
+   * in-process caller (a future task's `ingest`/`deliver`, a script, a test)
+   * can reach `update` directly. Without this, an invalid merge — `bridge:
+   * 'room'` landing on a binding with no `chatId` — would sit fine in memory,
+   * get written to `bindings.json`, and then be silently DISCARDED by `load()`
+   * on the next restart (`AdapterBindingSchema.safeParse` fails, the entry is
+   * dropped): the binding would look created, work until restart, then vanish.
+   * Rejecting here means the invalid state can never reach disk from any
+   * boundary.
+   *
    * @param id - The binding UUID to update
    * @param updates - Fields to update; every {@link UpdateBindingRequest} field is accepted
    * @returns The updated binding, or undefined if not found
+   * @throws When the merged result fails `AdapterBindingSchema` — in practice
+   *   {@link BRIDGE_REQUIRES_CHAT_ID_MESSAGE}, the only refinement the schema carries.
    */
   async update(id: string, updates: BindingUpdate): Promise<AdapterBinding | undefined> {
     const existing = this.bindings.get(id);
     if (!existing) return undefined;
-    const updated: AdapterBinding = {
+    const merged: AdapterBinding = {
       ...existing,
       ...updates,
       updatedAt: new Date().toISOString(),
     };
-    this.bindings.set(id, updated);
+    const result = AdapterBindingSchema.safeParse(merged);
+    if (!result.success) {
+      const bridgeIssue = result.error.issues.find(
+        (issue) => issue.message === BRIDGE_REQUIRES_CHAT_ID_MESSAGE
+      );
+      throw new Error(
+        bridgeIssue
+          ? BRIDGE_REQUIRES_CHAT_ID_MESSAGE
+          : `Invalid binding update: ${result.error.issues.map((issue) => issue.message).join('; ')}`
+      );
+    }
+    this.bindings.set(id, result.data);
     await this.save();
-    return updated;
+    return result.data;
   }
 
   /**
