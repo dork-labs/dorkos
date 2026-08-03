@@ -122,7 +122,7 @@ The `/flow` intent stages — `/flow:ideate`, `/flow:specify`, `/flow:decompose`
 
    That collects everything that merged while you were away, not just the branch you happen to be thinking about. It refuses anything it cannot prove is safe — uncommitted, unpushed, still open, or unaskable — and names the reason for each. `/flow:done` (`closing-work`) also offers cleanup for a worktree recorded in `04-implementation.md`, but only when a session is alive to accept the offer, which is exactly the case that keeps not happening.
 
-   **Do not skip this because the worktree is "just" a review checkout.** Review checkouts were 87 of the 116 worktrees the 2026-08-01 sweep found, at ~3.5 GB each.
+   **Do not skip this because the worktree is "just" a review checkout.** Review checkouts were 47 of the 107 worktrees the 2026-08-01 sweep removed — the largest single category — at ~3.5 GB each (`research/20260801_worktree-and-branch-sweep.md`).
 
 ## Landing Work from a Shared or Diverged Checkout
 

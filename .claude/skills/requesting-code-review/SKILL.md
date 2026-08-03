@@ -79,14 +79,20 @@ duplicate a branch that already lives on origin, so nothing is lost.
 
 Do it in the same turn you report the review. This is the step whose absence
 produced the mess: on 2026-08-01 the repo held 116 worktrees at ~3.5 GB each, and
-**87 of them were review checkouts** — the single largest population, from the
-one workflow that never said to clean up after itself. Nothing else in the repo
+**47 of the 107 removed were review checkouts** — the largest single category,
+from the one workflow that never said to clean up after itself
+(`research/20260801_worktree-and-branch-sweep.md`). Nothing else in the repo
 will collect them for you, because a review leaves no PR and no ticket behind for
 `/flow:done` to notice.
 
+**Run it from the main checkout, not from inside the review worktree.** A
+worktree you are standing in reports `current-worktree` and is deliberately never
+removed, so running the sweep from inside the thing you are trying to delete
+silently does nothing.
+
 The janitor refuses anything it cannot prove is safe, so run it rather than
 deleting by hand — in particular it will not touch a checkout you left
-uncommitted work in.
+uncommitted work in, including files that only `git status --ignored` can see.
 
 ## Example
 

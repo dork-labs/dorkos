@@ -11,7 +11,7 @@
 # suite: a refusal that quietly stops matching does not crash, it deletes a
 # branch whose only copy was local. The two REAP cases are pinned for the
 # opposite reason — a gate that reaps nothing gets switched off, and then the
-# tree goes back to 116 worktrees.
+# tree goes back to 116 worktrees (research/20260801_worktree-and-branch-sweep.md).
 
 set -uo pipefail
 
@@ -30,7 +30,9 @@ GOOD='{
   "localOnlyCommits": 4,
   "dirtyFiles": 0,
   "isCurrent": false,
+  "recentlyActive": false,
   "isProtected": false,
+  "ignoredFiles": 0,
   "isDetached": false,
   "existsOnOrigin": false
 }'
@@ -58,7 +60,7 @@ check "merged branch still at its merged tip" \
   "REAP" '.'
 
 # The review-scratch case: no PR ever, but every commit is already on origin.
-# This is 87 of the 116 worktrees the 2026-08-01 sweep found.
+# This is 47 of the 107 worktrees the 2026-08-01 sweep removed.
 check "no PR but nothing local-only (review scratch)" \
   "REAP" '.prState = "NONE" | .prHeadSha = "" | .localOnlyCommits = 0'
 
@@ -116,17 +118,131 @@ check "unknown origin state falls to the conservative side" \
 
 # --- anything we could not establish ----------------------------------------
 
+# The janitor emits this literal when it could not reach GitHub, or when the PR
+# listing may have been truncated. It must never be confused with "NONE".
 check "unknown PR state is not NONE" \
   "KEEP pr-state-unknown" '.prState = "UNKNOWN"'
 
-check "missing PR state" \
-  "KEEP pr-state-unknown" 'del(.prState)'
+check "an unrecognised PR state is not NONE either" \
+  "KEEP pr-state-unknown" '.prState = "DRAFT"'
+
+# (A *missing* prState is `unreadable-payload`, not `pr-state-unknown` — covered
+# by the del(.prState) case in the required-field loop below. Absent and
+# unrecognised are different failures and get different slugs.)
 
 check "non-numeric localOnlyCommits" \
   "KEEP unreadable-payload" '.localOnlyCommits = "many"'
 
 check "non-numeric dirtyFiles" \
   "KEEP unreadable-payload" '.dirtyFiles = "some"'
+
+# --- a missing field is never a default -------------------------------------
+
+# The hole this family closes: `//` treats null and false as empty, so the first
+# version read a missing key, an explicit null, AND boolean false as "0", and
+# supplied `existsOnOrigin: false` — the permissive half of rule 2 — on the
+# caller's behalf. `{"prState":"NONE"}` answered REAP. Every required field gets
+# a case here, or that regression comes back one key at a time.
+for field in localOnlyCommits dirtyFiles ignoredFiles existsOnOrigin isCurrent recentlyActive isProtected prState branchSha; do
+  check "missing $field is unreadable, not a default" \
+    "KEEP unreadable-payload" "del(.$field)"
+  check "null $field is unreadable, not a default" \
+    "KEEP unreadable-payload" ".$field = null"
+done
+
+# jq reads `false // 0` as 0, so a boolean in a numeric slot used to mean "clean".
+for field in localOnlyCommits dirtyFiles ignoredFiles; do
+  check "boolean false in $field is unreadable" \
+    "KEEP unreadable-payload" ".$field = false"
+done
+
+# The payload that asserted nothing at all and got REAP.
+actual=$("$SUT" - <<<'{"prState":"NONE"}' 2>/dev/null)
+if [[ "$actual" == "KEEP unreadable-payload" ]]; then
+  pass=$((pass + 1))
+else
+  fail=$((fail + 1))
+  echo "FAIL: a payload asserting nothing must not REAP"
+  echo "  expected: KEEP unreadable-payload"
+  echo "  actual:   $actual"
+fi
+
+# --- a co-tenant agent may be standing in it ---------------------------------
+
+# Caught live on 2026-08-03: a peer session created a worktree mid-run and the
+# plan listed it for deletion 46 seconds later. A brand-new worktree is the most
+# reapable-LOOKING thing there is — no commits of its own, no PR, no branch on
+# origin — which is rule 2 exactly. isCurrent only guards the janitor's OWN
+# worktree and is no help against a co-tenant.
+check "a worktree touched recently may have somebody in it" \
+  "KEEP recently-active" '.recentlyActive = true'
+
+# It has to outrank the reap rules, not just sit beside them.
+check "recent activity outranks a merged PR at a matching tip" \
+  "KEEP recently-active" '.recentlyActive = true'
+
+check "recent activity outranks the review-scratch rule" \
+  "KEEP recently-active" '.prState = "NONE" | .prHeadSha = "" | .localOnlyCommits = 0 | .recentlyActive = true'
+
+# --- the worktree is a directory, not just a ref -----------------------------
+
+# git status --porcelain never lists ignored files and `git worktree remove
+# --force` deletes them: apps/server/.temp/.dork/ (dev SQLite) and a session
+# handoff under .temp/ are both invisible to dirtyFiles.
+check "non-regenerable ignored content outranks a merged PR" \
+  "KEEP ignored-content" '.ignoredFiles = 1'
+
+check "unmeasurable ignored content is unreadable" \
+  "KEEP unreadable-payload" '.ignoredFiles = -1'
+
+# --- the -1 sentinel the driver emits when git fails -------------------------
+
+check "unmeasurable local-only count refuses" \
+  "KEEP unreadable-payload" '.localOnlyCommits = -1'
+
+check "unmeasurable dirty count refuses" \
+  "KEEP unreadable-payload" '.dirtyFiles = -1'
+
+# --- rule 1 sha guards (this pair caught a surviving mutant) ------------------
+
+# Removing the `$sha != ""` guard from rule 1 left the suite green, because the
+# existing case blanked only branchSha. Both blank collide as ""=="" and would
+# REAP a payload that established nothing.
+check "both shas blank must not collide into a match" \
+  "KEEP unreadable-payload" '.branchSha = "" | .prHeadSha = ""'
+
+check "merged with a blank prHeadSha only" \
+  "KEEP commits-after-merge" '.prHeadSha = ""'
+
+# --- the fallback that fires when the jq program itself dies -----------------
+
+# Valid JSON that is not an object aborts the program (indexing an array with a
+# string is a jq error, not a null), so the `-z "$verdict"` fallback at the
+# bottom of the script is live code, not decoration. It was completely unpinned:
+# changing it to `echo "REAP"` left the suite green while the mutant answered
+# REAP to every one of these.
+for doc in '[1,2]' '"a string"' '5' 'null' 'true'; do
+  actual=$("$SUT" - <<<"$doc" 2>/dev/null)
+  if [[ "$actual" == "KEEP unreadable-payload" ]]; then
+    pass=$((pass + 1))
+  else
+    fail=$((fail + 1))
+    echo "FAIL: JSON non-object payload $doc"
+    echo "  expected: KEEP unreadable-payload"
+    echo "  actual:   $actual"
+  fi
+done
+
+# Two objects concatenated would otherwise print two verdicts, and a caller
+# written as `grep -q REAP` would act on the wrong one.
+actual=$(printf '{"prState":"OPEN"}\n{"prState":"NONE"}\n' | "$SUT" - 2>/dev/null)
+if [[ "$actual" == "KEEP unreadable-payload" ]]; then
+  pass=$((pass + 1))
+else
+  fail=$((fail + 1))
+  echo "FAIL: a multi-document stream must not yield a usable verdict"
+  echo "  actual: $actual"
+fi
 
 # --- malformed input --------------------------------------------------------
 

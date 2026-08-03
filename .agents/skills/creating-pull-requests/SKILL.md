@@ -305,12 +305,21 @@ bash scripts/worktree-janitor.sh --fix    # remove it
 
 Run it at the start of a working session rather than the end of one — that way it
 collects the PRs that merged while you were away, which is most of them. It only
-removes what it can prove is safe: a branch whose PR merged and whose tip has not
-moved since, or a checkout every commit of which is already on origin. Anything
-uncommitted, unpushed, still open, or unaskable is left alone with a reason.
+removes what it can prove is safe, which is exactly two shapes:
+
+- a branch whose pull request merged **and** whose tip has not moved since (a
+  later push means work `main` has never seen); or
+- a checkout whose every commit is already on origin **and** whose name origin no
+  longer carries — both halves, because "every commit is on origin" on its own
+  also describes a branch you pushed and have not opened a PR for yet.
+
+Anything uncommitted, unpushed, still open, or unaskable is left alone with a
+reason. If it cannot reach GitHub it reports `pr-state-unknown` for every branch
+and removes nothing.
 
 On 2026-08-01 the accumulated cost of not doing this was 116 worktrees at ~3.5 GB
-each, 193 local branches, and 414 branches on origin, against 5 open PRs.
+each, 193 local branches, and 414 branches on origin, against 5 open PRs. Method
+and per-item record: `research/20260801_worktree-and-branch-sweep.md`.
 
 ### An armed PR that is BEHIND stalls forever, silently
 
