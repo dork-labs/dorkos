@@ -3,7 +3,8 @@
   "slug": "mesh-identity-integrity",
   "title": "Mesh identity integrity — a duplicated checkout cannot steal an agent, ghosts release their handles, a reused directory starts fresh",
   "created": "2026-08-01",
-  "status": "specified",
+  "status": "implemented",
   "linearIssue": "DOR-790",
+  "shippedIn": "#684",
   "notes": "Design resolves the open question recorded on DOR-790: manifest-id conflict handling stays with git-committed ids (option a); machine-local minting (option b) is rejected for blast radius. Amends ADR 260726-170126 at implementation time."
 }
