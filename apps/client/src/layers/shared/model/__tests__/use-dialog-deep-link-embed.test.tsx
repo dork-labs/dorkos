@@ -15,14 +15,14 @@ import { renderHook, act } from '@testing-library/react';
 
 import { setPlatformAdapter } from '@/layers/shared/lib';
 import { useAppStore } from '../app-store';
-import { useSettingsDeepLink, useTasksDeepLink, useRelayDeepLink } from '../use-dialog-deep-link';
+import { useSettingsDeepLink, useTasksDeepLink, useOpenConnections } from '../use-dialog-deep-link';
 
 const EMBED = { isEmbedded: true, openFile: async () => {} };
 const WEB = { isEmbedded: false, openFile: async () => {} };
 
 beforeEach(() => {
   setPlatformAdapter(EMBED);
-  useAppStore.setState({ settingsOpen: false, tasksOpen: false, relayOpen: false });
+  useAppStore.setState({ settingsOpen: false, tasksOpen: false });
 });
 
 afterEach(() => {
@@ -57,18 +57,21 @@ describe('dialog deep links in a router-less mount', () => {
     }).not.toThrow();
   });
 
-  it('the Tasks and Relay dialogs degrade the same way', () => {
+  it('the Tasks dialog falls back to the store flag', () => {
     const tasks = renderHook(() => useTasksDeepLink());
-    const relay = renderHook(() => useRelayDeepLink());
 
     act(() => tasks.result.current.open());
-    act(() => relay.result.current.open());
     expect(useAppStore.getState().tasksOpen).toBe(true);
-    expect(useAppStore.getState().relayOpen).toBe(true);
 
     act(() => tasks.result.current.close());
-    act(() => relay.result.current.close());
     expect(useAppStore.getState().tasksOpen).toBe(false);
-    expect(useAppStore.getState().relayOpen).toBe(false);
+  });
+
+  it('opening Connections does nothing rather than pretending', () => {
+    // There is no URL to navigate and no dialog left to fall back to, so the
+    // honest embed behaviour is a no-op — not a thrown error, and not a flag
+    // that opens something which no longer exists.
+    const { result } = renderHook(() => useOpenConnections());
+    expect(() => act(() => result.current('messaging'))).not.toThrow();
   });
 });

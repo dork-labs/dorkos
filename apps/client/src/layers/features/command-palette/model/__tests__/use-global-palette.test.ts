@@ -17,7 +17,6 @@ const mockState = {
 // dialog URL signals before opening the palette.
 const mockCloseSettings = vi.fn();
 const mockCloseTasks = vi.fn();
-const mockCloseRelay = vi.fn();
 
 vi.mock('@/layers/shared/model', () => ({
   useAppStore: (selector?: (s: typeof mockState) => unknown) =>
@@ -37,15 +36,6 @@ vi.mock('@/layers/shared/model', () => ({
     section: null,
     open: vi.fn(),
     close: mockCloseTasks,
-    setTab: vi.fn(),
-    setSection: vi.fn(),
-  }),
-  useRelayDeepLink: () => ({
-    isOpen: false,
-    activeTab: null,
-    section: null,
-    open: vi.fn(),
-    close: mockCloseRelay,
     setTab: vi.fn(),
     setSection: vi.fn(),
   }),
@@ -106,7 +96,6 @@ describe('useGlobalPalette', () => {
 
     expect(mockCloseSettings).toHaveBeenCalled();
     expect(mockCloseTasks).toHaveBeenCalled();
-    expect(mockCloseRelay).toHaveBeenCalled();
   });
 
   it('does not close other dialogs when palette is already open (closing it)', () => {
@@ -116,7 +105,6 @@ describe('useGlobalPalette', () => {
 
     expect(mockCloseSettings).not.toHaveBeenCalled();
     expect(mockCloseTasks).not.toHaveBeenCalled();
-    expect(mockCloseRelay).not.toHaveBeenCalled();
     // Still toggles
     expect(mockState.toggleGlobalPalette).toHaveBeenCalledTimes(1);
   });

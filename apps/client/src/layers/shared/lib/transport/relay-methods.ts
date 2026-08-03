@@ -14,8 +14,11 @@ import type {
   UpdateBindingRequest,
   ObservedChat,
   BindingTestResult,
+  UnclaimedChat,
+  UnclaimedChatStatus,
+  ClaimUnclaimedChatRequest,
 } from '@dorkos/shared/relay-schemas';
-import { fetchJSON, buildQueryString } from './http-client';
+import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
 
 /** Create all Relay methods bound to a base URL. */
 export function createRelayMethods(baseUrl: string, getClientId: () => string) {
@@ -248,6 +251,43 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
         `/relay/bindings/${encodeURIComponent(bindingId)}/test`,
         { method: 'POST' }
       );
+    },
+
+    moveBinding(id: string, agentId: string): Promise<AdapterBinding> {
+      return fetchJSON<{ binding: AdapterBinding }>(
+        baseUrl,
+        `/relay/bindings/${encodeURIComponent(id)}/move`,
+        { method: 'POST', body: JSON.stringify({ agentId }) }
+      ).then((r) => r.binding);
+    },
+
+    // --- The claim feed (connection-scoping spec §Part 3) ---
+
+    listUnclaimedChats(status?: UnclaimedChatStatus): Promise<UnclaimedChat[]> {
+      const qs = buildQueryString({ status });
+      return fetchJSON<{ chats: UnclaimedChat[] }>(baseUrl, `/relay/unclaimed-chats${qs}`).then(
+        (r) => r.chats
+      );
+    },
+
+    claimUnclaimedChat(id: string, input: ClaimUnclaimedChatRequest): Promise<AdapterBinding> {
+      return fetchJSON<{ binding: AdapterBinding }>(
+        baseUrl,
+        `/relay/unclaimed-chats/${encodeURIComponent(id)}/claim`,
+        { method: 'POST', body: JSON.stringify(input) }
+      ).then((r) => r.binding);
+    },
+
+    ignoreUnclaimedChat(id: string): Promise<void> {
+      return fetchNoContent(baseUrl, `/relay/unclaimed-chats/${encodeURIComponent(id)}/ignore`, {
+        method: 'POST',
+      });
+    },
+
+    blockUnclaimedChat(id: string): Promise<void> {
+      return fetchNoContent(baseUrl, `/relay/unclaimed-chats/${encodeURIComponent(id)}/block`, {
+        method: 'POST',
+      });
     },
   };
 }

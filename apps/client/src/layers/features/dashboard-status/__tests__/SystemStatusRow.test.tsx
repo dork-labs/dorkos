@@ -34,7 +34,7 @@ const mockTasksOpen = vi.fn();
 const mockRelayOpen = vi.fn();
 vi.mock('@/layers/shared/model', () => ({
   useTasksDeepLink: () => ({ open: mockTasksOpen }),
-  useRelayDeepLink: () => ({ open: mockRelayOpen }),
+  useOpenConnections: () => mockRelayOpen,
 }));
 
 const mockNavigate = vi.fn();

@@ -123,11 +123,11 @@ export const FEATURES_SECTIONS: PlaygroundSection[] = [
     keywords: ['confirm', 'step', 'wizard', 'summary', 'review', 'mask', 'relay'],
   },
   {
-    id: 'bindstep',
-    title: 'BindStep',
+    id: 'agentstep',
+    title: 'AgentStep',
     page: 'features',
     category: 'Relay',
-    keywords: ['bind', 'step', 'wizard', 'agent', 'routing', 'session', 'strategy', 'relay'],
+    keywords: ['agent', 'step', 'wizard', 'answer', 'routing', 'session', 'memory', 'relay'],
   },
   {
     id: 'setupguidesheet',

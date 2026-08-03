@@ -108,7 +108,7 @@ export { dialogSearchSchema, mergeDialogSearch, type DialogSearch } from './dial
 export {
   useSettingsDeepLink,
   useTasksDeepLink,
-  useRelayDeepLink,
+  useOpenConnections,
   type DialogDeepLink,
 } from './use-dialog-deep-link';
 export { useDeepLinkScroll } from './use-deep-link-scroll';

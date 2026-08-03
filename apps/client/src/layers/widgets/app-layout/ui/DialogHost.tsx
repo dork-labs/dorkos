@@ -4,7 +4,6 @@ import {
   useSlotContributions,
   useSettingsDeepLink,
   useTasksDeepLink,
-  useRelayDeepLink,
   type DialogContribution,
 } from '@/layers/shared/model';
 
@@ -30,15 +29,12 @@ function useDialogUrlSignal(urlParam: DialogContribution['urlParam']): {
 } {
   const settings = useSettingsDeepLink();
   const tasks = useTasksDeepLink();
-  const relay = useRelayDeepLink();
 
   switch (urlParam) {
     case 'settings':
       return { isOpen: settings.isOpen, close: settings.close };
     case 'tasks':
       return { isOpen: tasks.isOpen, close: tasks.close };
-    case 'relay':
-      return { isOpen: relay.isOpen, close: relay.close };
     default:
       return { isOpen: false, close: () => {} };
   }

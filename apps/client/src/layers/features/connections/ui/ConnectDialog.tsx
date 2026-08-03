@@ -20,7 +20,7 @@ import {
   useConnectorAccounts,
   useConnectorRecommendation,
 } from '@/layers/entities/connectors';
-import { accountDisplayName } from '../lib/presentation';
+import { accountDisplayName, providerName } from '../lib/presentation';
 
 /**
  * The label suggested when a service already has one account — makes the
@@ -36,11 +36,12 @@ interface ConnectDialogProps {
 }
 
 /**
- * The connect flow dialog: recommendation routing (a purpose-built relay
- * adapter deep-links to the relay surface; a gateway starts the flow), an
- * optional account label, then the consent sequence — the server's custody
- * disclosure is rendered BEFORE the sign-in link opens anything, polling runs
- * only after the person opens it, and the new account is confirmed in place.
+ * The connect flow dialog: an intent step for services that are two things at
+ * once (Slack is both a place to talk to your agents and an account they can
+ * act on), an optional account label, then the consent sequence — the server's
+ * custody disclosure is rendered BEFORE the sign-in link opens anything,
+ * polling runs only after the person opens it, and the new account is
+ * confirmed in place.
  *
  * @param props - The service to connect and the close handler.
  */
@@ -113,8 +114,9 @@ function ConnectDialogBody({
 }
 
 /**
- * The pre-flight step: route the service (relay adapter first), then take the
- * optional account label and start the flow.
+ * The pre-flight step: ask which of the two things this service is being
+ * connected for, when it can be both, then take the optional account label and
+ * start the flow.
  */
 function ConnectSetupStep({
   service,
@@ -161,28 +163,44 @@ function ConnectSetupStep({
     (r) => (r.kind === 'gateway' || r.kind === 'raw-mcp') && r.provider !== undefined
   );
 
-  // A purpose-built relay adapter is the richer path — lead with it and let
-  // the person choose the generic connector deliberately.
+  // Some services are two different things wearing one name. Slack can be a
+  // place people talk TO your agents, or an account your agents act on FOR
+  // you. Those are different powers with different consent stories, so the
+  // choice is asked plainly instead of hidden behind a "use the other one"
+  // afterthought.
   if (relayRec && !useGatewayAnyway) {
     return (
       <div className="space-y-3">
-        <p className="text-sm leading-relaxed">{relayRec.reason}</p>
+        <p className="text-sm leading-relaxed">What do you want {service.displayName} for?</p>
         <div className="flex flex-col gap-2">
           <Button
             onClick={() => {
               onClose();
-              // The relay dialog is deep-linked via its `?relay=open` search
-              // param, available on every route (dialog-search-schema).
-              void navigate({ to: '.', search: (prev) => ({ ...prev, relay: 'open' }) });
+              void navigate({ to: '/connections', search: { region: 'messaging' } as never });
             }}
-            className="gap-1.5"
+            className="h-auto flex-col items-start gap-1 py-3 text-left"
           >
-            Open the {service.displayName} adapter
-            <ArrowUpRight className="size-4" aria-hidden />
+            <span className="flex w-full items-center justify-between gap-2 font-medium">
+              Chat with your agents in {service.displayName}
+              <ArrowUpRight className="size-4 shrink-0" aria-hidden />
+            </span>
+            <span className="text-xs font-normal opacity-80">
+              Message them from {service.displayName} and get replies there.
+            </span>
           </Button>
           {providerRec && (
-            <Button variant="ghost" size="sm" onClick={() => setUseGatewayAnyway(true)}>
-              Use the generic connector instead
+            <Button
+              variant="secondary"
+              onClick={() => setUseGatewayAnyway(true)}
+              className="h-auto flex-col items-start gap-1 py-3 text-left"
+            >
+              <span className="w-full font-medium">
+                Let agents act on your {service.displayName} account
+              </span>
+              <span className="text-muted-foreground text-xs font-normal">
+                They post and read as you. This one goes through{' '}
+                {providerName(providerRec.provider as string)}.
+              </span>
             </Button>
           )}
         </div>
@@ -193,7 +211,8 @@ function ConnectSetupStep({
   if (!providerRec) {
     return (
       <p className="text-muted-foreground text-sm">
-        Nothing can connect {service.displayName} yet. Add a provider key under Providers first.
+        {service.displayName} cannot be connected yet. Add a Composio or Nango key further down this
+        page first.
       </p>
     );
   }

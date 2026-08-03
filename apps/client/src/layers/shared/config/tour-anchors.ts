@@ -30,7 +30,7 @@ export const TOUR_ANCHORS = {
   /** The sidebar navigation button that opens the Agents page. */
   navAgents: 'nav-agents',
   /** The Relay integrations list inside settings. */
-  relayIntegrations: 'settings-relay-integrations',
+  relayIntegrations: 'connections-messaging',
   /** The Tasks page scheduled-work list. */
   tasksList: 'tasks-list',
 } as const;

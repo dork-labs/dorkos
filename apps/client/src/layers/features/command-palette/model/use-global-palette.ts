@@ -1,16 +1,11 @@
 import { useEffect } from 'react';
-import {
-  useAppStore,
-  useSettingsDeepLink,
-  useTasksDeepLink,
-  useRelayDeepLink,
-} from '@/layers/shared/model';
+import { useAppStore, useSettingsDeepLink, useTasksDeepLink } from '@/layers/shared/model';
 
 /**
  * Register the global Cmd+K / Ctrl+K keyboard shortcut to toggle the command palette.
  *
  * Before opening the palette, clears the URL signals for the feature dialogs
- * (settings, tasks, relay, mesh) so a deep-linked dialog does not stay
+ * (settings, tasks, mesh) so a deep-linked dialog does not stay
  * visible behind the palette. Follows the same pattern as the Cmd+B sidebar
  * toggle in App.tsx.
  */
@@ -21,7 +16,6 @@ export function useGlobalPalette() {
 
   const { close: closeSettings } = useSettingsDeepLink();
   const { close: closeTasks } = useTasksDeepLink();
-  const { close: closeRelay } = useRelayDeepLink();
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -31,14 +25,13 @@ export function useGlobalPalette() {
         if (!globalPaletteOpen) {
           closeSettings();
           closeTasks();
-          closeRelay();
         }
         toggleGlobalPalette();
       }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [toggleGlobalPalette, closeSettings, closeTasks, closeRelay, globalPaletteOpen]);
+  }, [toggleGlobalPalette, closeSettings, closeTasks, globalPaletteOpen]);
 
   return {
     globalPaletteOpen,

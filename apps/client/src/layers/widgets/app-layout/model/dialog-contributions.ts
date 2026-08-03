@@ -3,7 +3,6 @@ import { ShapeSwitcherDialog } from '@/layers/features/shapes';
 import { SettingsDialogWrapper } from './wrappers/SettingsDialogWrapper';
 import { DirectoryPickerWrapper } from './wrappers/DirectoryPickerWrapper';
 import { TasksDialogWrapper } from './wrappers/TaskDialogWrapper';
-import { RelayDialogWrapper } from './wrappers/RelayDialogWrapper';
 import { ServerRestartOverlayWrapper } from './wrappers/ServerRestartOverlayWrapper';
 
 /** Built-in dialog contributions for the root dialog host. */
@@ -27,13 +26,6 @@ export const DIALOG_CONTRIBUTIONS: DialogContribution[] = [
     openStateKey: 'tasksOpen',
     priority: 3,
     urlParam: 'tasks',
-  },
-  {
-    id: 'relay',
-    component: RelayDialogWrapper,
-    openStateKey: 'relayOpen',
-    priority: 4,
-    urlParam: 'relay',
   },
   {
     id: 'server-restart-overlay',

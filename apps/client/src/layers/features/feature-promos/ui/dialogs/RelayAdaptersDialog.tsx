@@ -1,15 +1,15 @@
 import { MessageSquare, Bell, Zap } from 'lucide-react';
 import { Button } from '@/layers/shared/ui';
-import { useRelayDeepLink } from '@/layers/shared/model';
+import { useOpenConnections } from '@/layers/shared/model';
 import type { PromoDialogProps } from '../../model/promo-types';
 
 /** Dialog content for the Relay Adapters promo. */
 export function RelayAdaptersDialog({ onClose }: PromoDialogProps) {
-  const { open: openRelay } = useRelayDeepLink();
+  const openConnections = useOpenConnections();
 
   const handleSetUp = () => {
     onClose();
-    openRelay();
+    openConnections('messaging');
   };
 
   return (
@@ -50,7 +50,7 @@ export function RelayAdaptersDialog({ onClose }: PromoDialogProps) {
           Not now
         </Button>
         <Button size="sm" onClick={handleSetUp}>
-          Set up adapters
+          Connect Telegram &amp; Slack
         </Button>
       </div>
     </div>
