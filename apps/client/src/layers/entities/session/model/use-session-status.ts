@@ -113,7 +113,14 @@ export function useSessionStatus(
   const fastMode = overrides.fastMode ?? session?.fastMode ?? false;
 
   const statusData: SessionStatusData = {
-    permissionMode: resolvePermissionMode(overrides.permissionMode, session?.permissionMode),
+    // `session.permissionMode` carries any id the session's own runtime
+    // reports (DOR-851; `test-mode`'s ids sit outside the enum on purpose).
+    // Safe to narrow back to `PermissionMode` here — this is a DISPLAY value
+    // read off descriptors downstream, never re-derived from the literal name.
+    permissionMode: resolvePermissionMode(
+      overrides.permissionMode,
+      session?.permissionMode
+    ) as PermissionMode,
     model,
     effort,
     fastMode,

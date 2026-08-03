@@ -91,5 +91,13 @@ export function useSessionPermissionMode(
   const overrides = useSessionSettingsOverride(sessionId ?? '');
 
   if (!sessionId) return null;
-  return resolvePermissionMode(overrides.permissionMode, confirmed ?? options?.fallback);
+  // `confirmed` reads off `Session.permissionMode`, which carries any id the
+  // session's own runtime reports (DOR-851; `test-mode`'s ids sit outside the
+  // enum on purpose). Safe to narrow back to `PermissionMode` here — this
+  // hook feeds display surfaces that read meaning off descriptors, never off
+  // the literal name.
+  return resolvePermissionMode(
+    overrides.permissionMode,
+    confirmed ?? options?.fallback
+  ) as PermissionMode;
 }

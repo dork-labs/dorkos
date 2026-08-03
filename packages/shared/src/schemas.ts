@@ -50,6 +50,71 @@ export const PermissionModeSchema = z
 export type PermissionMode = z.infer<typeof PermissionModeSchema>;
 
 /**
+ * A permission-mode id as a REQUEST carries it — any well-formed id, not a
+ * member of {@link PermissionModeSchema}.
+ *
+ * ## Why this is a string and not the enum
+ *
+ * A runtime names its own permission modes: `PermissionModeDescriptor.id` is a
+ * `string`, and what a mode MEANS is read off the descriptor's semantics
+ * (`stop`/`asks`/`reach`), never off its name. `PermissionModeSchema` is the
+ * union of the ids DorkOS's own runtimes happened to pick, so validating a
+ * request against it is a hardcoded id list wearing a schema — and it was
+ * wrong in practice: `test-mode` deliberately names its three modes outside
+ * that union, so its mode picker could never be applied. The request was
+ * refused at the schema boundary before anything that knows about runtimes got
+ * to look at it.
+ *
+ * ## What still validates the id
+ *
+ * This shape check is a bound, not the authority. The authority is the owning
+ * runtime's own capability declaration, enforced server-side in
+ * `PATCH /api/sessions/:id`: an id that runtime does not declare is refused
+ * with `UNSUPPORTED_PERMISSION_MODE`, whether or not the shared enum contains
+ * it. The refusal moved from a list of names to the runtime that owns the
+ * session, which is the only thing that can answer the question correctly.
+ *
+ * The pattern and length bound keep an id that no runtime could ever declare
+ * out of a persisted settings row or a log line.
+ *
+ * ## This shape is a CONTRACT on declared ids, not just a filter on requests
+ *
+ * A bound only stays honest if every id a runtime can declare fits through it —
+ * otherwise a runtime naming a mode `_internal` or `read only` gets the DOR-811
+ * defect back, refused for its shape before its own runtime is consulted, with
+ * the enum swapped for a regex. So every mode every shipped runtime declares is
+ * checked against this schema by
+ * `apps/server/src/services/runtimes/__tests__/permission-semantics.test.ts`,
+ * alongside the rest of the descriptor contract. A profile that names a mode
+ * outside this shape fails that suite; widen the pattern here rather than
+ * working around it there.
+ *
+ * ## Also the shape of the OUTGOING id (DOR-851)
+ *
+ * `Session.permissionMode` and `SessionStatus.permissionMode` carry the SAME
+ * kind of value on the way out that this schema validates on the way in: the
+ * id the session's own runtime actually reports, which for `test-mode` is one
+ * of its three deliberately-non-enum ids. Before DOR-851 those two fields still
+ * validated against {@link PermissionModeSchema} — harmless while every runtime
+ * happened to report an enum id, but the moment `test-mode`'s birth mode
+ * started reporting its OWN declared default (DOR-811's fix, `always-allow`)
+ * every `session_upserted`/`session_status` broadcast for that runtime failed
+ * `SessionListEventSchema` and was silently dropped by
+ * `SessionListBroadcaster`, emptying the session list for that runtime's
+ * sessions entirely. The two directions are the same contract — a runtime
+ * names its own modes — so they share this one schema.
+ */
+export const PermissionModeIdSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/, 'Not a valid permission mode id')
+  .openapi('PermissionModeId');
+
+/** A permission-mode id as a request carries it. See {@link PermissionModeIdSchema}. */
+export type PermissionModeId = z.infer<typeof PermissionModeIdSchema>;
+
+/**
  * A Trust Dial position on the wire — the runtime-neutral half of a permission
  * mode (spec `trust-dial`, decision 2).
  *
@@ -168,7 +233,11 @@ export const SessionSchema = z
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
     lastMessagePreview: z.string().optional(),
-    permissionMode: PermissionModeSchema,
+    // The id the session's OWN runtime reports, not necessarily a member of
+    // `PermissionModeSchema` (DOR-851) — `test-mode` reports its three
+    // deliberately-non-enum ids, and this field carries whatever a runtime's
+    // own descriptor names. See `PermissionModeIdSchema`.
+    permissionMode: PermissionModeIdSchema,
     runtime: z.string(),
     model: z.string().optional(),
     effort: EffortLevelSchema.optional(),
@@ -240,56 +309,6 @@ export const SessionSettingsSchema = z.object({
 });
 
 export type SessionSettings = z.infer<typeof SessionSettingsSchema>;
-
-/**
- * A permission-mode id as a REQUEST carries it — any well-formed id, not a
- * member of {@link PermissionModeSchema}.
- *
- * ## Why this is a string and not the enum
- *
- * A runtime names its own permission modes: `PermissionModeDescriptor.id` is a
- * `string`, and what a mode MEANS is read off the descriptor's semantics
- * (`stop`/`asks`/`reach`), never off its name. `PermissionModeSchema` is the
- * union of the ids DorkOS's own runtimes happened to pick, so validating a
- * request against it is a hardcoded id list wearing a schema — and it was
- * wrong in practice: `test-mode` deliberately names its three modes outside
- * that union, so its mode picker could never be applied. The request was
- * refused at the schema boundary before anything that knows about runtimes got
- * to look at it.
- *
- * ## What still validates the id
- *
- * This shape check is a bound, not the authority. The authority is the owning
- * runtime's own capability declaration, enforced server-side in
- * `PATCH /api/sessions/:id`: an id that runtime does not declare is refused
- * with `UNSUPPORTED_PERMISSION_MODE`, whether or not the shared enum contains
- * it. The refusal moved from a list of names to the runtime that owns the
- * session, which is the only thing that can answer the question correctly.
- *
- * The pattern and length bound keep an id that no runtime could ever declare
- * out of a persisted settings row or a log line.
- *
- * ## This shape is a CONTRACT on declared ids, not just a filter on requests
- *
- * A bound only stays honest if every id a runtime can declare fits through it —
- * otherwise a runtime naming a mode `_internal` or `read only` gets the DOR-811
- * defect back, refused for its shape before its own runtime is consulted, with
- * the enum swapped for a regex. So every mode every shipped runtime declares is
- * checked against this schema by
- * `apps/server/src/services/runtimes/__tests__/permission-semantics.test.ts`,
- * alongside the rest of the descriptor contract. A profile that names a mode
- * outside this shape fails that suite; widen the pattern here rather than
- * working around it there.
- */
-export const PermissionModeIdSchema = z
-  .string()
-  .min(1)
-  .max(64)
-  .regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/, 'Not a valid permission mode id')
-  .openapi('PermissionModeId');
-
-/** A permission-mode id as a request carries it. See {@link PermissionModeIdSchema}. */
-export type PermissionModeId = z.infer<typeof PermissionModeIdSchema>;
 
 export const UpdateSessionRequestSchema = SessionSettingsSchema.extend({
   /**

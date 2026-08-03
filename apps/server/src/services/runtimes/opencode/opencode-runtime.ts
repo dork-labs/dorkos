@@ -395,7 +395,12 @@ export class OpenCodeRuntime implements AgentRuntime {
     const model = opts?.model ?? tracked.model;
     const fastMode = opts?.fastMode ?? tracked.fastMode;
     return {
-      permissionMode: opts?.permissionMode ?? tracked.permissionMode,
+      // `tracked.permissionMode` reads off the shared `Session` shape, whose
+      // field carries any id a runtime declares (DOR-851). Safe to narrow back
+      // to `PermissionMode` HERE: opencode only ever writes one of its own
+      // enum-shaped ids into this registry, so the wider type never actually
+      // holds anything else for this runtime.
+      permissionMode: (opts?.permissionMode ?? tracked.permissionMode) as PermissionMode,
       ...(model !== undefined ? { model } : {}),
       ...(fastMode !== undefined ? { fastMode } : {}),
     };
@@ -420,7 +425,10 @@ export class OpenCodeRuntime implements AgentRuntime {
       // StreamEvent's `type`/`data` are not a discriminated pair; the mapper
       // guarantees an ApprovalEvent body under this type.
       const approval = event.data as ApprovalEvent;
-      const mode = this.registry.get(sessionId)?.permissionMode;
+      // See the narrowing note on `resolveTurnSettings` above: opencode only
+      // ever writes its own enum-shaped ids into the registry, so this is the
+      // same safe narrowing of the shared `Session` shape's wider field.
+      const mode = this.registry.get(sessionId)?.permissionMode as PermissionMode | undefined;
       if (resolveApprovalDecision(mode, approval.toolName) === 'auto-approve') {
         try {
           await this.respondPermission(ocSessionId, cwd, approval.toolCallId, 'once');
