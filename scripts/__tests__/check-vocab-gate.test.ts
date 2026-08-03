@@ -387,9 +387,7 @@ describe('the shipped banned-terms.json and allowlist.json', () => {
     // only when someone remembers to run the script by hand.
     const repoRoot = join(import.meta.dirname, '../..');
     expect(runVocabGate(repoRoot)).toEqual([]);
-  }, // TypeScript parser is genuinely slower than vitest's 5s default, // Walking three full workspaces (client, site, server) through the real
-  // especially on a machine busy with other agents — this failed on CI
-  // timing out, not on finding a violation. 20s leaves headroom without
+  }, // timing out, not on finding a violation. 20s leaves headroom without // especially on a machine busy with other agents — this failed on CI // TypeScript parser is genuinely slower than vitest's 5s default, // Walking three full workspaces (client, site, server) through the real
   // masking an actual hang.
   20_000);
 
