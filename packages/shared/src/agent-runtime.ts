@@ -416,10 +416,11 @@ export interface RuntimeSettingsCapability {
   /**
    * Key of this runtime's section under `runtimes.*` in user config
    * ('claudeCode' | 'codex' | 'opencode' today), or null when the runtime has
-   * no config section (test-mode). Replaces the duplicated
-   * CONFIG_SECTION_BY_RUNTIME maps. Typed `string | null` in shared (the
-   * config schema is host-side); the server validates it against the real
-   * config shape with a type guard and skips unknown sections.
+   * no config section (test-mode). The runtime's own declaration is the single
+   * source of this mapping, which used to be hand-kept on both the server and
+   * the client. Typed `string | null` in shared (the config schema is
+   * host-side); the server validates it against the real config shape with a
+   * type guard and skips unknown sections.
    */
   configSection: string | null;
   /**
