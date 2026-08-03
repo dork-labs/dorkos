@@ -1,0 +1,61 @@
+<h2>The tracking view — and what to call it</h2>
+<p class="subtitle">Opens from the help menu. Lists what this install has sent, with honest status mirrored from Linear. Pick a name below (header shows a placeholder).</p>
+
+<div style="display:flex;justify-content:center;padding:8px;">
+  <div style="width:460px;background:#1c1c1e;border:1px solid #2e2e30;border-radius:12px;overflow:hidden;font-family:-apple-system,sans-serif;color:#e5e5e7;box-shadow:0 12px 32px rgba(0,0,0,.4);">
+    <div style="padding:14px 16px 10px;border-bottom:1px solid #2e2e30;">
+      <div style="font-size:13px;font-weight:600;">〈 your view name 〉</div>
+      <div style="font-size:11px;color:#8e8e93;margin-top:2px;">What you've sent the DorkOS team, and where it stands.</div>
+    </div>
+    <div style="padding:6px;">
+      <!-- row: shipped -->
+      <div style="display:flex;align-items:center;gap:10px;padding:10px;border-radius:8px;">
+        <span style="font-size:15px;">💡</span>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:12px;color:#e5e5e7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Let me pin a session to the top of the list</div>
+          <div style="font-size:10px;color:#7a7a80;margin-top:2px;">Idea · 6 days ago</div>
+        </div>
+        <span style="font-size:10px;color:#4ac97e;background:rgba(74,201,126,.12);padding:3px 8px;border-radius:20px;white-space:nowrap;">✓ Shipped v0.56.3</span>
+      </div>
+      <!-- row: in progress -->
+      <div style="display:flex;align-items:center;gap:10px;padding:10px;border-radius:8px;background:#202022;">
+        <span style="font-size:15px;">🐛</span>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:12px;color:#e5e5e7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Chat stopped updating after the stream dropped</div>
+          <div style="font-size:10px;color:#7a7a80;margin-top:2px;">Bug · 2 days ago · 📎 screenshot, diagnostics</div>
+        </div>
+        <span style="font-size:10px;color:#e0a94a;background:rgba(224,169,74,.12);padding:3px 8px;border-radius:20px;white-space:nowrap;">● In progress</span>
+      </div>
+      <!-- row: received -->
+      <div style="display:flex;align-items:center;gap:10px;padding:10px;border-radius:8px;">
+        <span style="font-size:15px;">💬</span>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:12px;color:#e5e5e7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Love the new trust dial — much clearer</div>
+          <div style="font-size:10px;color:#7a7a80;margin-top:2px;">Feedback · 6 days ago</div>
+        </div>
+        <span style="font-size:10px;color:#8e8e93;background:rgba(142,142,147,.12);padding:3px 8px;border-radius:20px;white-space:nowrap;">Received</span>
+      </div>
+    </div>
+    <div style="padding:10px 16px;border-top:1px solid #2e2e30;font-size:10px;color:#7a7a80;">Add your email to a report to get a note when it ships.</div>
+  </div>
+</div>
+
+<p class="subtitle" style="text-align:center;margin-top:18px;">Which name? (click one — "Other" lets you type your own)</p>
+<div class="options">
+  <div class="option" data-choice="sent-to-team" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content"><h3>Sent to the team</h3><p>Warm, accurate for all three kinds (bug, idea, feedback). Reads as "things I passed to the humans behind DorkOS."</p></div>
+  </div>
+  <div class="option" data-choice="your-requests" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content"><h3>Your requests</h3><p>Short, product-y. Slight tension: a bug isn't quite a "request," but it covers ideas + feedback well.</p></div>
+  </div>
+  <div class="option" data-choice="feedback-inbox" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content"><h3>Feedback &amp; requests</h3><p>Literal and unambiguous. A touch longer, but nobody wonders what's inside.</p></div>
+  </div>
+  <div class="option" data-choice="outbox" onclick="toggleSelect(this)">
+    <div class="letter">D</div>
+    <div class="content"><h3>Outbox</h3><p>One word, a familiar metaphor — the things you've sent out. Distinctive, though it leans email.</p></div>
+  </div>
+</div>
