@@ -795,7 +795,8 @@ dorkos/                               # Turborepo monorepo root
 │   │   ├── layers/
 │   │   │   ├── shared/
 │   │   │   │   ├── lib/
-│   │   │   │   │   ├── http-transport.ts      # HTTP/SSE transport (standalone web)
+│   │   │   │   │   ├── transport/
+│   │   │   │   │   │   └── http-transport.ts  # HTTP/SSE transport (standalone web)
 │   │   │   │   │   ├── direct-transport.ts    # In-process transport (Obsidian plugin)
 │   │   │   │   │   └── platform.ts            # Platform adapter (embedded detection)
 │   │   │   │   └── model/
@@ -948,12 +949,15 @@ The plugin uses a **hexagonal architecture** with a `Transport` interface that d
 
 ### Plugin Data Flow
 
+Send is **trigger-only** (ADR-0264): posting a message starts a detached turn and returns immediately; all delivery rides the durable stream the `Transport` seam sources, not the return value of the post itself.
+
 ```
 User input → ObsidianApp → useChatSession.handleSubmit()
-  → transport.sendMessage(sessionId, content, onEvent, signal)
-    → DirectTransport → ClaudeCodeRuntime.sendMessage() → Claude SDK query()
-      → AsyncGenerator<StreamEvent>
-        → onEvent(event) → React state updates
+  → transport.postMessage(sessionId, content)   // trigger-only, resolves immediately
+    → DirectTransport.turnTrigger → createEmbeddedTurnTrigger(runtime) → ClaudeCodeRuntime → Claude SDK query()
+      → feeds the session projector, in-process
+        → streamManager.useTransportSource(transport) iterates the durable stream
+          → onEvent(event) → React state updates
 ```
 
 ### Key Files
@@ -982,14 +986,25 @@ const repoRoot = path.resolve(vaultPath, '..'); // workspace/ -> repo root
 Services are created in `CopilotView.onOpen()` with the repo root path:
 
 ```typescript
-const runtime = new ClaudeCodeRuntime(repoRoot); // cwd for SDK, resolves Claude CLI
-const transcriptReader = runtime.getTranscriptReader(); // reads ~/.claude/projects/{slug}/
+// ClaudeCodeRuntime takes the dork-home dir first, then cwd for the SDK / CLI resolution.
+const runtime = new ClaudeCodeRuntime(resolvePluginDorkHome(), repoRoot);
+const transcriptReader = new TranscriptReader();
+const commandRegistry = new CommandRegistryService(repoRoot); // scans repoRoot/.claude/commands/
+
 const transport = new DirectTransport({
   runtime,
   transcriptReader,
-  commandRegistry: new CommandRegistryService(repoRoot), // scans repoRoot/.claude/commands/
+  commandRegistry,
   vaultRoot: repoRoot,
+  // Trigger-only send contract (ADR-0264): postMessage starts a detached turn
+  // feeding the session projector; delivery flows over subscribeSession.
+  turnTrigger: createEmbeddedTurnTrigger(runtime),
+  commandIntentTrigger: createEmbeddedCommandIntentTrigger(runtime),
 });
+
+// Embedded mode has no HTTP server: source the StreamManager's durable
+// streams from the Transport seam (in-process iteration) instead of SSE.
+streamManager.useTransportSource(transport);
 ```
 
 These are injected via `<TransportProvider transport={transport}>`.

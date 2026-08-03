@@ -142,28 +142,34 @@ Question prompts support three response types:
 
 Your answers are injected into the tool's input. Claude continues with your selections incorporated into its reasoning.
 
-## Permission Modes
+## The Trust Dial
 
-Each session has a permission mode that sets how Claude handles tool approvals. You can change it at any time from the session's permission picker:
+Each session has a trust setting — one dial with three stops — that decides how much Claude may do before it checks with you. You can change it at any time from the session's permission picker:
 
-- **Default**: Claude prompts on tool use and respects your project's permission settings. Read-only and agent tools are still auto-approved.
-- **Accept edits**: file edits are auto-accepted; Claude still prompts for other tools.
-- **Plan**: read-only planning mode. Claude can investigate and propose a plan but cannot execute tools.
-- **Bypass permissions**: every tool prompt inside the session is skipped. A persistent red warning banner appears at the top of the UI while this mode is active.
-- **Auto**: a safety classifier decides each tool call for you, approving routine work and pausing only for risky actions.
+- **Ask first**: Claude prompts before it edits a file or runs a command. Read-only and agent tools are still auto-approved. This is where every session starts.
+- **Act**: Claude edits files and runs routine commands on its own, and only stops to ask about the risky ones.
+- **Full autonomy**: every tool prompt inside the session is skipped. The first time you turn this on, DorkOS asks you to confirm what it means and writes down that you did; after that, the session runs without asking again.
 
 <Callout type="warn">
-  Bypass permissions mode turns off every prompt inside the session, so the agent edits files and
-  runs commands without stopping. Only use it in isolated environments where you trust the agent
+  Full autonomy turns off every prompt inside the session, so the agent edits files and runs
+  commands without stopping. Only use it in isolated environments where you trust the agent
   completely.
 </Callout>
 
+Plan mode is a separate toggle next to the composer, not a stop on the dial: it puts the session in read-only planning — Claude can investigate and propose a plan but cannot execute tools — and you switch it on for a stretch of work rather than leaving a session parked at it.
+
 <Callout type="info">
   **This covers tools inside the session, and nothing else.** Actions on DorkOS itself, like
-  removing an installed package, still ask you first even in bypass permissions mode. Those are a
-  separate question with its own setting: see [Action approvals](/docs/guides/action-approvals). You
-  will see the same reminder next to the permission picker whenever you choose a mode that skips
-  prompts.
+  removing an installed package, still ask you first even at Full autonomy. Those are a separate
+  question with its own setting: see [Action approvals](/docs/guides/action-approvals). You will see
+  the same reminder next to the permission picker whenever you choose a stop that skips prompts.
+</Callout>
+
+<Callout type="info">
+  A session running at Full autonomy shows no standing warning banner of its own — the signal lives
+  where the setting does, in the picker's word and tint. The one app-wide autonomy banner is for
+  **unattended** drivers: a relay binding or scheduled task set to run without asking anyone, which
+  you can't see just by looking at an open chat.
 </Callout>
 
 ### Auto mode
@@ -173,9 +179,9 @@ Each session has a permission mode that sets how Claude handles tool approvals. 
   experience may change as it evolves.
 </Callout>
 
-Auto mode trades constant approvals for autonomy on long-running work. Instead of pausing on every tool call, a safety classifier evaluates each one, auto-approving routine actions and stopping only for risky ones, like deleting files or running unfamiliar commands. It's designed for autonomous runs where approving each step yourself would slow Claude down.
+Auto mode trades constant approvals for autonomy on long-running work. Instead of pausing on every tool call, a safety classifier evaluates each one, auto-approving routine actions and stopping only for risky ones, like deleting files or running unfamiliar commands. It's designed for autonomous runs where approving each step yourself would slow Claude down. It's a toggle that lives inside the **Act** stop, not a fourth stop of its own — turning it off returns the session to plain Act.
 
-**Availability is model-gated.** Auto mode only appears in the permission picker when the model you've selected supports it. If you switch to a model that doesn't, the session falls back to Default automatically. Claude never enters auto mode on a model that can't run it.
+**Availability is model-gated.** The Auto toggle only appears when the model you've selected supports it. If you switch to a model that doesn't, the session falls back to Ask first automatically. Claude never enters auto mode on a model that can't run it.
 
 **A one-time confirmation.** The first time you turn on auto mode in a session, DorkOS asks you to confirm:
 

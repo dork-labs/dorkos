@@ -276,7 +276,7 @@ Built on **Shadcn Sidebar** (`layers/shared/ui/sidebar.tsx`) with `collapsible="
 - **"New chat" button**: In `SidebarHeader`, below `AgentHeader`
 - **Footer**: `SidebarFooter` contains `ProgressCard` (onboarding), `SidebarFooterBar` (branding, settings, theme toggle)
 - **Empty state**: Centered "No conversations yet" message
-- **Dialogs**: All 7 dialogs (Settings, DirectoryPicker, Pulse, Relay, Mesh, AgentDialog, OnboardingFlow) rendered in `DialogHost` at the app root level, outside `SidebarProvider`
+- **Dialogs**: All 6 dialogs (Settings, DirectoryPicker, Tasks, Relay, ServerRestartOverlay, ShapeSwitcher) registered in `DialogHost` at the app root level, outside `SidebarProvider` (`layers/widgets/app-layout/model/dialog-contributions.ts`). `OnboardingFlow` renders directly from `AppShell.tsx`, not via `DialogHost`.
 
 ### Sidebar Tabs
 
