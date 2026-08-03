@@ -152,6 +152,8 @@ export const RoomNoticeCodeSchema = z
     'bridge_undelivered',
     'bridge_rate_limited',
     'bridge_second_agent_refused',
+    'bridge_disconnected',
+    'bridge_agent_swapped',
   ])
   .openapi('RoomNoticeCode');
 

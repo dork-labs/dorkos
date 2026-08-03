@@ -59,6 +59,7 @@ const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   // request was bad.
   RESERVED_NATURAL_KEY: 500,
   NOT_A_BRIDGED_ROOM: 409,
+  NO_SURVIVING_BRIDGE: 409,
 };
 
 /**

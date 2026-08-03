@@ -90,7 +90,16 @@ export type RoomErrorCode =
    * bridge store here rather than trusted from the caller, the same shape the
    * create path takes.
    */
-  | 'NOT_A_BRIDGED_ROOM';
+  | 'NOT_A_BRIDGED_ROOM'
+  /**
+   * `RoomService.rebridge` was asked to re-bridge a `(adapterId, chatId)` that
+   * has no surviving bridge row (chats-as-channels spec §3.5). Re-bridging is
+   * the lifecycle path that reuses or adopts a row a previous bridge left
+   * behind; with nothing to reuse, the caller wanted `createBridgedRoom`
+   * instead. Refused rather than silently falling back to a create, because the
+   * two differ in whether an existing room and its history are adopted.
+   */
+  | 'NO_SURVIVING_BRIDGE';
 
 /** A refusal from the room domain, carrying a code the routes can switch on. */
 export class RoomError extends Error {

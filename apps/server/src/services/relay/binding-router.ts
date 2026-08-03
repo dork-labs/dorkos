@@ -834,17 +834,19 @@ export class BindingRouter {
    * @param envelope - The message being dropped.
    * @param binding - The binding it resolved to.
    * @param notice - Which one-line notice the person should read. Narrowed to
-   *   exclude `empty_response`, which is the one {@link ChatNoticeReason} that
-   *   is NOT a refusal — a turn that ran and said nothing is the agent's own
-   *   choice, rendered by the adapter, and nothing here can produce it. The
-   *   narrowing is what lets the notice double as the structured `reason` on
-   *   the refusal line without a cast.
+   *   exclude the two {@link ChatNoticeReason} values that are NOT inbound
+   *   refusals: `empty_response` (a turn that ran and said nothing — the agent's
+   *   own choice, rendered by the adapter) and `channel_archived` (a bridge
+   *   lifecycle notice `BridgeLifecycle` sends, not a per-message drop this
+   *   router decides). Neither can be produced here, and the narrowing is what
+   *   lets the notice double as the structured `reason` on the refusal line
+   *   without a cast.
    * @param reason - The operator-facing reason, recorded on the trace.
    */
   private async refuse(
     envelope: RelayEnvelope,
     binding: AdapterBinding,
-    notice: Exclude<ChatNoticeReason, 'empty_response'>,
+    notice: Exclude<ChatNoticeReason, 'empty_response' | 'channel_archived'>,
     reason: string
   ): Promise<SubscriberVerdict> {
     // The binding is named rather than re-resolved: this router just resolved

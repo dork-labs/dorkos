@@ -6,7 +6,9 @@ import {
   Hand,
   Hourglass,
   Info,
+  Link2Off,
   Megaphone,
+  Repeat,
   Timer,
   TriangleAlert,
   Unplug,
@@ -164,6 +166,13 @@ const NOTICE_STYLES: Record<RoomNoticeCode, { Icon: LucideIcon; tone?: string }>
   // A second agent was refused on a bridged room — the room protecting its
   // one-agent-per-binding consent model (D-6 Q3), not a malfunction.
   bridge_second_agent_refused: { Icon: UserMinus },
+  // The bridge was switched off and the room archived — the chat is no longer
+  // connected. Not warm: this is the room reporting a state a person chose (or
+  // the platform forced), the last line before it goes quiet on purpose.
+  bridge_disconnected: { Icon: Link2Off },
+  // A re-bridge handed the chat to a different agent. The room working as
+  // designed — nobody has to act — so it stays quiet in tone.
+  bridge_agent_swapped: { Icon: Repeat },
 };
 
 /** The mark on a notice whose code this client does not recognise. */
