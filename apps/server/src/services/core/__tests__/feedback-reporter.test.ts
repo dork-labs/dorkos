@@ -12,12 +12,20 @@ import path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { sendFeedback } from '../feedback-reporter.js';
+vi.mock('../auth/index.js', () => ({
+  getUserById: vi.fn(),
+}));
+
+import { sendFeedback, resolveFeedbackIdentity } from '../feedback-reporter.js';
+import { getUserById } from '../auth/index.js';
+
+const mockGetUserById = vi.mocked(getUserById);
 
 let dorkHome: string;
 
 beforeEach(async () => {
   dorkHome = await mkdtemp(path.join(tmpdir(), 'dork-feedback-'));
+  mockGetUserById.mockReset();
 });
 
 afterEach(async () => {
@@ -126,5 +134,81 @@ describe('sendFeedback', () => {
     });
     expect(result).toEqual({ ok: true });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('attaches reporterEmail/reporterName when the caller passes a resolved identity', async () => {
+    const fetchImpl = makeFetch('ok');
+    await sendFeedback({
+      submission: { kind: 'bug', message: 'crash on save' },
+      dorkHome,
+      dorkosVersion: '0.47.0',
+      endpoint: 'https://example.test/ingest',
+      fetchImpl,
+      identity: { userId: 'user_1', email: 'dorian@example.com', name: 'Dorian' },
+    });
+    const [, init] = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    const body = JSON.parse((init as RequestInit).body as string) as {
+      events: Array<{ properties: Record<string, unknown> }>;
+    };
+    expect(body.events[0].properties.reporterEmail).toBe('dorian@example.com');
+    expect(body.events[0].properties.reporterName).toBe('Dorian');
+    // The Better Auth user id itself never rides the wire event.
+    expect(JSON.stringify(body.events[0].properties)).not.toContain('user_1');
+  });
+
+  it('sends no reporterEmail/reporterName when no identity was resolved (auth off / no session)', async () => {
+    const fetchImpl = makeFetch('ok');
+    await sendFeedback({
+      submission: { kind: 'bug', message: 'crash on save' },
+      dorkHome,
+      dorkosVersion: '0.47.0',
+      endpoint: 'https://example.test/ingest',
+      fetchImpl,
+    });
+    const [, init] = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    const body = JSON.parse((init as RequestInit).body as string) as {
+      events: Array<{ properties: Record<string, unknown> }>;
+    };
+    expect(body.events[0].properties).not.toHaveProperty('reporterEmail');
+    expect(body.events[0].properties).not.toHaveProperty('reporterName');
+  });
+});
+
+describe('resolveFeedbackIdentity', () => {
+  it('resolves { userId, email, name } from a verified session userId', async () => {
+    mockGetUserById.mockReturnValue({
+      id: 'user_1',
+      email: 'dorian@example.com',
+      name: 'Dorian',
+    });
+
+    const identity = await resolveFeedbackIdentity('user_1');
+
+    expect(identity).toEqual({ userId: 'user_1', email: 'dorian@example.com', name: 'Dorian' });
+    expect(mockGetUserById).toHaveBeenCalledWith('user_1');
+  });
+
+  it('resolves undefined when the id does not resolve to a user', async () => {
+    mockGetUserById.mockReturnValue(null);
+
+    const identity = await resolveFeedbackIdentity('unknown_id');
+
+    expect(identity).toBeUndefined();
+  });
+
+  it('never reads identity from anything other than the passed userId', async () => {
+    // The function's only input is the verified session's userId — there is no
+    // parameter through which a caller could pass a client-supplied email/name
+    // and have it override the database lookup.
+    mockGetUserById.mockReturnValue({
+      id: 'user_1',
+      email: 'real@example.com',
+      name: 'Real Name',
+    });
+
+    const identity = await resolveFeedbackIdentity('user_1');
+
+    expect(identity?.email).toBe('real@example.com');
+    expect(identity?.name).toBe('Real Name');
   });
 });

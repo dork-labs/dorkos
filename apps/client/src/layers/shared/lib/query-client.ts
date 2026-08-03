@@ -36,6 +36,7 @@ import {
 import { toast } from 'sonner';
 
 import { QUERY_TIMING } from './constants';
+import { addBreadcrumb } from './breadcrumbs';
 
 /**
  * Is this cache entry kept current by a durable subscription of its own?
@@ -79,6 +80,7 @@ export function createQueryClientConfig(): QueryClientConfig {
           queryKey: query.queryKey,
           error: error.message,
         });
+        addBreadcrumb('query_error', `${String(query.queryKey[0] ?? 'query')}: ${error.message}`);
         if (query.meta?.showToastOnError) {
           toast.error((query.meta.errorLabel as string) ?? 'Failed to load data');
         }
@@ -87,6 +89,10 @@ export function createQueryClientConfig(): QueryClientConfig {
     mutationCache: new MutationCache({
       onError: (error, _variables, _onMutateResult, mutation) => {
         console.error('[dorkos:mutation-error]', { error: error.message });
+        addBreadcrumb(
+          'query_error',
+          `${String(mutation.options?.mutationKey?.[0] ?? 'mutation')}: ${error.message}`
+        );
         if (mutation.meta?.suppressErrorToast) return;
         // `errorLabel` names the action in the user's terms; the server's own
         // sentence says why. Together they read like a person explaining what

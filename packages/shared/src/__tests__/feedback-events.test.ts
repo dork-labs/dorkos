@@ -12,11 +12,16 @@ import { describe, expect, it } from 'vitest';
 import {
   FeedbackEventSchema,
   FeedbackSubmissionSchema,
+  FeedbackDiagnosticsSchema,
+  BreadcrumbSchema,
   FeedbackSubmittedProperties,
   FeatureRequestedProperties,
   buildFeedbackEvent,
   FEEDBACK_EVENT_NAMES,
   MAX_FEEDBACK_MESSAGE_LEN,
+  MAX_BREADCRUMBS,
+  MAX_TRANSCRIPT_LEN,
+  MAX_LOG_EXCERPT_LEN,
   TelemetryEventInputSchema,
 } from '../telemetry-events.js';
 
@@ -162,6 +167,114 @@ describe('feedback event registry', () => {
       });
       expect(res.success).toBe(false);
     });
+
+    it('rejects a client-supplied reporterEmail (identity is server-resolved only)', () => {
+      // reporterEmail/reporterName are never accepted on the client->server
+      // submission at all — only on the built PostHog event, which the server
+      // assembles from the verified session, never from the request body. A
+      // client that tries to spoof one gets 400'd by the strict allowlist.
+      const res = FeedbackSubmissionSchema.safeParse({
+        kind: 'bug',
+        message: 'hi',
+        reporterEmail: 'attacker@evil.test',
+      });
+      expect(res.success).toBe(false);
+    });
+
+    it('accepts the new diagnostics/attachment plumbing fields', () => {
+      const res = FeedbackSubmissionSchema.safeParse({
+        kind: 'bug',
+        message: 'crash on save',
+        sessionId: 'sess_123',
+        diagnostics: {
+          clientReport: {
+            version: '0.47.0',
+            platform: 'darwin-arm64',
+            runtimes: ['claude-code'],
+            flags: { 'tunnel.enabled': true, 'ui.theme': 'dark' },
+          },
+          breadcrumbs: [{ at: VALID_TIMESTAMP, kind: 'console_error', message: 'TypeError: boom' }],
+        },
+        transcriptExcerpt: 'last few turns...',
+        screenshotUploadId: 'upload_abc',
+        includeServerLogs: true,
+      });
+      expect(res.success).toBe(true);
+    });
+
+    it('rejects diagnostics missing the required clientReport', () => {
+      const res = FeedbackSubmissionSchema.safeParse({
+        kind: 'bug',
+        message: 'hi',
+        diagnostics: { serverLogExcerpt: 'warn: something' },
+      });
+      expect(res.success).toBe(false);
+    });
+
+    it('rejects an oversized transcriptExcerpt', () => {
+      const res = FeedbackSubmissionSchema.safeParse({
+        kind: 'bug',
+        message: 'hi',
+        transcriptExcerpt: 'x'.repeat(MAX_TRANSCRIPT_LEN + 1),
+      });
+      expect(res.success).toBe(false);
+    });
+  });
+
+  describe('FeedbackDiagnosticsSchema + BreadcrumbSchema', () => {
+    it('accepts a minimal diagnostics bundle (clientReport only)', () => {
+      const res = FeedbackDiagnosticsSchema.safeParse({
+        clientReport: { version: '0.47.0', platform: 'darwin-arm64', runtimes: [], flags: {} },
+      });
+      expect(res.success).toBe(true);
+    });
+
+    it('rejects a diagnostics bundle with no clientReport', () => {
+      const res = FeedbackDiagnosticsSchema.safeParse({ breadcrumbs: [] });
+      expect(res.success).toBe(false);
+    });
+
+    it('rejects an unknown clientReport key (strict, no path/token can ride along)', () => {
+      const res = FeedbackDiagnosticsSchema.safeParse({
+        clientReport: {
+          version: '0.47.0',
+          platform: 'darwin-arm64',
+          runtimes: [],
+          flags: {},
+          cwd: '/Users/dorian/secret',
+        },
+      });
+      expect(res.success).toBe(false);
+    });
+
+    it('rejects more breadcrumbs than MAX_BREADCRUMBS', () => {
+      const res = FeedbackDiagnosticsSchema.safeParse({
+        clientReport: { version: '0.47.0', platform: 'darwin-arm64', runtimes: [], flags: {} },
+        breadcrumbs: Array.from({ length: MAX_BREADCRUMBS + 1 }, () => ({
+          at: VALID_TIMESTAMP,
+          kind: 'console_error',
+          message: 'x',
+        })),
+      });
+      expect(res.success).toBe(false);
+    });
+
+    it('rejects an oversized serverLogExcerpt', () => {
+      const res = FeedbackDiagnosticsSchema.safeParse({
+        clientReport: { version: '0.47.0', platform: 'darwin-arm64', runtimes: [], flags: {} },
+        serverLogExcerpt: 'x'.repeat(MAX_LOG_EXCERPT_LEN + 1),
+      });
+      expect(res.success).toBe(false);
+    });
+
+    it('rejects an unknown breadcrumb kind', () => {
+      const res = BreadcrumbSchema.safeParse({
+        at: VALID_TIMESTAMP,
+        kind: 'page_view',
+        message: 'x',
+      });
+      expect(res.success).toBe(false);
+    });
   });
 
   describe('buildFeedbackEvent', () => {
@@ -206,6 +319,34 @@ describe('feedback event registry', () => {
       expect(event.properties).not.toHaveProperty('route');
       expect(event.properties).not.toHaveProperty('dorkosVersion');
       expect(FeedbackEventSchema.safeParse(event).success).toBe(true);
+    });
+
+    it('attaches reporterEmail/reporterName from context.identity, never from the submission', () => {
+      const event = buildFeedbackEvent(
+        { kind: 'bug', message: 'broken' },
+        {
+          surface: 'cockpit',
+          distinctId: VALID_DISTINCT_ID,
+          timestamp: VALID_TIMESTAMP,
+          identity: { userId: 'user_1', email: 'dorian@example.com', name: 'Dorian' },
+        }
+      );
+      expect(event.properties).toMatchObject({
+        reporterEmail: 'dorian@example.com',
+        reporterName: 'Dorian',
+      });
+      // The identity's userId is never sent — only email/name.
+      expect(JSON.stringify(event.properties)).not.toContain('user_1');
+      expect(FeedbackEventSchema.safeParse(event).success).toBe(true);
+    });
+
+    it('omits reporterEmail/reporterName when there is no identity (auth off / no session)', () => {
+      const event = buildFeedbackEvent(
+        { kind: 'bug', message: 'broken' },
+        { surface: 'cockpit', distinctId: VALID_DISTINCT_ID, timestamp: VALID_TIMESTAMP }
+      );
+      expect(event.properties).not.toHaveProperty('reporterEmail');
+      expect(event.properties).not.toHaveProperty('reporterName');
     });
   });
 });

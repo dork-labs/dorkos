@@ -1,10 +1,22 @@
 /**
- * Direct feedback method factory (DOR-317, ADR 260713-143958 Phase 5).
+ * Direct feedback method factory (DOR-317, ADR 260713-143958 Phase 5;
+ * degradation notes per feedback-pipeline spec Part 1).
  *
  * The in-process (Obsidian) twin of `transport/feedback-methods.ts`. There is no
  * local server to POST `/api/feedback` to, so this forwards the built feedback
  * event straight to the owned ingest, reusing the shared `buildFeedbackEvent`
  * mapping so the wire shape is identical to the cockpit path.
+ *
+ * **Degrades on purpose.** Only `kind`/`message`/`contact`/`route` are ever
+ * read from the submission — explicitly destructured below, not spread — so
+ * this never forwards `diagnostics`/`sessionId`/`transcriptExcerpt`/
+ * `screenshotUploadId`/`includeServerLogs` even if a caller sets them:
+ * Obsidian has no local server to gather a scrubbed log excerpt from and no
+ * session gate to resolve an account identity against (no DorkOS account
+ * concept in the embedded surface), and the owned ingest's wire event has no
+ * property slot for diagnostics either. Callers may still pass the full
+ * submission shape for interface parity with `HttpTransport` — the extra
+ * fields are simply inert here.
  *
  * Like every feedback path, this bypasses telemetry consent entirely (pressing
  * Send is the consent) and returns an honest `{ ok }` — a network failure is
@@ -29,13 +41,20 @@ export function createDirectFeedbackMethods() {
   return {
     async sendFeedback(submission: FeedbackSubmission): Promise<{ ok: boolean }> {
       try {
-        const event = buildFeedbackEvent(submission, {
-          surface: 'cockpit',
-          // Embedded has no server-side instanceId file; a fresh pseudonymous id
-          // per submission is unlinkable and sufficient for a volunteered message.
-          distinctId: crypto.randomUUID(),
-          timestamp: new Date().toISOString(),
-        });
+        // Only the fields Obsidian can actually honor — see the module doc for
+        // why diagnostics/sessionId/transcriptExcerpt/screenshotUploadId/
+        // includeServerLogs are deliberately left behind.
+        const { kind, message, contact, route } = submission;
+        const event = buildFeedbackEvent(
+          { kind, message, contact, route },
+          {
+            surface: 'cockpit',
+            // Embedded has no server-side instanceId file; a fresh pseudonymous id
+            // per submission is unlinkable and sufficient for a volunteered message.
+            distinctId: crypto.randomUUID(),
+            timestamp: new Date().toISOString(),
+          }
+        );
         const parsed = FeedbackEventSchema.safeParse(event);
         if (!parsed.success) return { ok: false };
 

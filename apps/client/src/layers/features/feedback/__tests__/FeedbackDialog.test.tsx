@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor, act } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { FeedbackDialog } from '../ui/FeedbackDialog';
+import { __resetBreadcrumbsForTests, addBreadcrumb } from '@/layers/shared/lib/breadcrumbs';
 
 // The submit hook reads the current route via useRouterState.
 vi.mock('@tanstack/react-router', () => ({
@@ -39,10 +41,13 @@ afterEach(() => {
 
 function renderDialog(transport = createMockTransport()) {
   const onOpenChange = vi.fn();
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
-    <TransportProvider transport={transport}>
-      <FeedbackDialog open onOpenChange={onOpenChange} />
-    </TransportProvider>
+    <QueryClientProvider client={queryClient}>
+      <TransportProvider transport={transport}>
+        <FeedbackDialog open onOpenChange={onOpenChange} />
+      </TransportProvider>
+    </QueryClientProvider>
   );
   return { onOpenChange };
 }
@@ -50,6 +55,7 @@ function renderDialog(transport = createMockTransport()) {
 describe('FeedbackDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    __resetBreadcrumbsForTests();
   });
 
   it('sends the submission through the transport, tagged with kind and route', async () => {
@@ -108,5 +114,52 @@ describe('FeedbackDialog', () => {
   it('disables Send until a message is typed', () => {
     renderDialog();
     expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
+  });
+
+  it('attaches diagnostics (clientReport + breadcrumbs) for a Bug submission', async () => {
+    addBreadcrumb('console_error', 'TypeError: boom');
+    const transport = createMockTransport();
+    const sendFeedback = vi.mocked(transport.sendFeedback).mockResolvedValue({ ok: true });
+    renderDialog(transport);
+
+    // Diagnostics reads the config query synchronously at submit time, so let
+    // it resolve before interacting.
+    await waitFor(() => expect(transport.getConfig).toHaveBeenCalled());
+    await act(async () => {});
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Bug' }));
+    fireEvent.change(screen.getByPlaceholderText(/what happened/i), {
+      target: { value: 'It crashed' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+
+    await waitFor(() => expect(sendFeedback).toHaveBeenCalledTimes(1));
+    const submitted = sendFeedback.mock.calls[0][0];
+    expect(submitted.diagnostics?.clientReport).toMatchObject({
+      version: '1.0.0',
+      platform: 'linux-x64',
+      runtimes: ['claude-code'],
+    });
+    expect(submitted.diagnostics?.breadcrumbs).toEqual([
+      expect.objectContaining({ kind: 'console_error', message: 'TypeError: boom' }),
+    ]);
+    // Never opted-in automatically — those ride only through the (later) dialog UI.
+    expect(submitted.includeServerLogs).toBeUndefined();
+    expect(submitted.transcriptExcerpt).toBeUndefined();
+    expect(submitted.screenshotUploadId).toBeUndefined();
+  });
+
+  it('does NOT attach diagnostics for a non-bug submission', async () => {
+    const transport = createMockTransport();
+    const sendFeedback = vi.mocked(transport.sendFeedback).mockResolvedValue({ ok: true });
+    renderDialog(transport);
+
+    fireEvent.change(screen.getByPlaceholderText(/what works, what does not/i), {
+      target: { value: 'Love the new sidebar' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+
+    await waitFor(() => expect(sendFeedback).toHaveBeenCalledTimes(1));
+    expect(sendFeedback.mock.calls[0][0].diagnostics).toBeUndefined();
   });
 });
