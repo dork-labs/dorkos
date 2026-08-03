@@ -5,7 +5,7 @@ import { tasksOutcome, relayOutcome, meshOutcome, activityOutcome } from '../lib
 import { SubsystemCard } from './SubsystemCard';
 import { ActivitySparkline } from './ActivitySparkline';
 import { useNavigate } from '@tanstack/react-router';
-import { useTasksDeepLink, useRelayDeepLink } from '@/layers/shared/model';
+import { useTasksDeepLink, useOpenConnections } from '@/layers/shared/model';
 
 const sectionEntrance = {
   initial: { opacity: 0, y: 12 },
@@ -30,7 +30,7 @@ export function SystemStatusRow() {
   const status = useSubsystemStatus();
   const activityData = useSessionActivity();
   const tasksDeepLink = useTasksDeepLink();
-  const relayDeepLink = useRelayDeepLink();
+  const openConnections = useOpenConnections();
   const navigate = useNavigate();
 
   const total = activityData.reduce((sum, d) => sum + d, 0);
@@ -76,7 +76,7 @@ export function SystemStatusRow() {
                 : undefined
             }
             disabled={!status.relay.enabled}
-            onClick={() => relayDeepLink.open()}
+            onClick={() => openConnections('messaging')}
           />
         </motion.div>
         <motion.div variants={staggerItem}>

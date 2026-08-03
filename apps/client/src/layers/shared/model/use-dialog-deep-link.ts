@@ -186,19 +186,34 @@ export function useTasksDeepLink(): DialogDeepLink<never> {
   return useSimpleDialogDeepLink('tasks');
 }
 
-/** Relay dialog deep-link state and actions. No tabs. */
-export function useRelayDeepLink(): DialogDeepLink<never> {
-  return useSimpleDialogDeepLink('relay');
+/**
+ * Go to the Connections page, at one of its two halves.
+ *
+ * Replaces the `?relay=open` dialog hook. The messaging surface is a page now,
+ * so "open it" is a navigation, not an open flag — and the region is a scroll
+ * target rather than a tab, because both halves are always rendered.
+ *
+ * With no router (the Obsidian embed) this is a no-op rather than a lie: there
+ * is nowhere to navigate to, and the old fallback opened a dialog that no
+ * longer exists.
+ */
+export function useOpenConnections(): (region?: 'messaging' | 'accounts') => void {
+  const navigate = useSafeNavigate();
+  return useCallback(
+    (region?: 'messaging' | 'accounts') => {
+      if (!navigate) return;
+      navigate({ to: '/connections', search: { region } as never });
+    },
+    [navigate]
+  );
 }
 
 /** Internal helper for parameterless (no-tab) dialogs. */
-function useSimpleDialogDeepLink(paramName: 'tasks' | 'relay'): DialogDeepLink<never> {
+function useSimpleDialogDeepLink(paramName: 'tasks'): DialogDeepLink<never> {
   const search = useSafeSearch() as Record<string, string | undefined>;
   const navigate = useSafeNavigate();
-  const setStoreOpen = useAppStore((s) =>
-    paramName === 'tasks' ? s.setTasksOpen : s.setRelayOpen
-  );
-  const storeOpen = useAppStore((s) => (paramName === 'tasks' ? s.tasksOpen : s.relayOpen));
+  const setStoreOpen = useAppStore((s) => s.setTasksOpen);
+  const storeOpen = useAppStore((s) => s.tasksOpen);
 
   const isOpen = navigate ? !!search[paramName] : storeOpen;
 

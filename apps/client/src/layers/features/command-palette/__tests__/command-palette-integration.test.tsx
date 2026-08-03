@@ -62,7 +62,7 @@ vi.mock('@tanstack/react-router', () => ({
 const mockSetGlobalPaletteOpen = vi.fn();
 const mockSetSettingsOpen = vi.fn();
 const mockSetTasksOpen = vi.fn();
-const mockSetRelayOpen = vi.fn();
+const mockOpenConnections = vi.fn();
 const mockSetPickerOpen = vi.fn();
 const mockImportOpen = vi.fn();
 const mockSetTheme = vi.fn();
@@ -80,7 +80,6 @@ vi.mock('@/layers/shared/model', () => ({
       toggleGlobalPalette: vi.fn(),
       setSettingsOpen: mockSetSettingsOpen,
       setTasksOpen: mockSetTasksOpen,
-      setRelayOpen: mockSetRelayOpen,
       setPickerOpen: mockSetPickerOpen,
       setPreviousCwd: mockSetPreviousCwd,
       globalPaletteInitialSearch: null,
@@ -113,15 +112,7 @@ vi.mock('@/layers/shared/model', () => ({
     setTab: () => {},
     setSection: () => {},
   }),
-  useRelayDeepLink: () => ({
-    isOpen: false,
-    activeTab: null,
-    section: null,
-    open: () => mockSetRelayOpen(true),
-    close: () => mockSetRelayOpen(false),
-    setTab: () => {},
-    setSection: () => {},
-  }),
+  useOpenConnections: () => mockOpenConnections,
   useAgentCreationStore: Object.assign(() => ({ open: vi.fn() }), {
     getState: () => ({ open: vi.fn() }),
   }),
@@ -157,7 +148,7 @@ vi.mock('../model/use-palette-items', () => ({
   usePaletteItems: () => {
     const features = [
       { id: 'tasks', label: 'Tasks Scheduler', icon: 'Clock', action: 'openTasks' },
-      { id: 'relay', label: 'Integrations', icon: 'Radio', action: 'openRelay' },
+      { id: 'relay', label: 'Connections', icon: 'Radio', action: 'openRelay' },
       { id: 'mesh', label: 'Mesh Network', icon: 'Globe', action: 'openMesh' },
       { id: 'settings', label: 'Settings', icon: 'Settings', action: 'openSettings' },
     ];
@@ -415,12 +406,12 @@ describe('Command Palette Integration', () => {
     expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);
   });
 
-  it('selecting Integrations opens relay dialog and closes palette', () => {
+  it('selecting Connections goes to the page and closes the palette', () => {
     render(<CommandPaletteDialog />);
-    const item = screen.getByText('Integrations').closest('[data-slot="command-item"]');
+    const item = screen.getByText('Connections').closest('[data-slot="command-item"]');
     fireEvent.click(item as Element);
 
-    expect(mockSetRelayOpen).toHaveBeenCalledWith(true);
+    expect(mockOpenConnections).toHaveBeenCalledWith('messaging');
     expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);
   });
 

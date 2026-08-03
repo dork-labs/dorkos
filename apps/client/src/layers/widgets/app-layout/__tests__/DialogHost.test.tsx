@@ -18,17 +18,13 @@ function MockTasksWrapper({ open }: { open: boolean }) {
   return open ? <div data-testid="tasks-panel">TasksPanel</div> : null;
 }
 
-function MockRelayWrapper({ open }: { open: boolean }) {
-  return open ? <div data-testid="relay-panel">RelayPanel</div> : null;
-}
-
 let mockSelectedCwd: string | null = '/test/path';
 
 // --- Dialog contributions matching the real DIALOG_CONTRIBUTIONS shape ---
 
 // Matches the real `DialogContribution['urlParam']` union — keeps `vi.mocked()`
 // happy without importing the type across the mock boundary.
-type DialogUrlParam = 'settings' | 'tasks' | 'relay';
+type DialogUrlParam = 'settings' | 'tasks';
 
 const mockDialogContributions: Array<{
   id: string;
@@ -58,13 +54,6 @@ const mockDialogContributions: Array<{
     priority: 3,
     urlParam: 'tasks',
   },
-  {
-    id: 'relay',
-    component: MockRelayWrapper,
-    openStateKey: 'relayOpen',
-    priority: 4,
-    urlParam: 'relay',
-  },
 ];
 
 // --- Mock store state ---
@@ -74,8 +63,6 @@ const mockStoreState: Record<string, unknown> = {
   setSettingsOpen: vi.fn(),
   tasksOpen: false,
   setTasksOpen: vi.fn(),
-  relayOpen: false,
-  setRelayOpen: vi.fn(),
   pickerOpen: false,
   setPickerOpen: vi.fn(),
 };
@@ -94,12 +81,11 @@ vi.mock('@/layers/shared/model', () => {
     useSlotContributions: vi.fn(() => mockDialogContributions),
     useSettingsDeepLink: vi.fn(inertDeepLink),
     useTasksDeepLink: vi.fn(inertDeepLink),
-    useRelayDeepLink: vi.fn(inertDeepLink),
   };
 });
 
 import { DialogHost } from '../ui/DialogHost';
-import { useSettingsDeepLink, useTasksDeepLink, useRelayDeepLink } from '@/layers/shared/model';
+import { useSettingsDeepLink, useTasksDeepLink } from '@/layers/shared/model';
 
 // Build an inert deep-link return value for per-test reset. Factored here (not
 // hoisted into the vi.mock factory) so tests can also use it as a default.
@@ -115,7 +101,6 @@ beforeEach(() => {
   // Reset all store values to closed/defaults
   mockStoreState.settingsOpen = false;
   mockStoreState.tasksOpen = false;
-  mockStoreState.relayOpen = false;
   mockStoreState.pickerOpen = false;
   mockSelectedCwd = '/test/path';
 
@@ -127,9 +112,6 @@ beforeEach(() => {
   vi.mocked(useTasksDeepLink).mockReturnValue(
     inertDeepLinkReturn() as unknown as ReturnType<typeof useTasksDeepLink>
   );
-  vi.mocked(useRelayDeepLink).mockReturnValue(
-    inertDeepLinkReturn() as unknown as ReturnType<typeof useRelayDeepLink>
-  );
 });
 
 describe('DialogHost', () => {
@@ -139,7 +121,6 @@ describe('DialogHost', () => {
     expect(screen.queryByTestId('settings-dialog')).not.toBeInTheDocument();
     expect(screen.queryByTestId('directory-picker')).not.toBeInTheDocument();
     expect(screen.queryByTestId('tasks-panel')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('relay-panel')).not.toBeInTheDocument();
   });
 
   it('renders SettingsDialog when settingsOpen is true', () => {
@@ -164,14 +145,6 @@ describe('DialogHost', () => {
     render(<DialogHost />);
 
     expect(screen.getByTestId('tasks-panel')).toBeInTheDocument();
-  });
-
-  it('renders RelayPanel when relayOpen is true', () => {
-    mockStoreState.relayOpen = true;
-
-    render(<DialogHost />);
-
-    expect(screen.getByTestId('relay-panel')).toBeInTheDocument();
   });
 
   it('renders multiple dialogs simultaneously', () => {
@@ -284,9 +257,6 @@ describe('RegistryDialog with urlParam', () => {
     );
     vi.mocked(useTasksDeepLink).mockReturnValue(
       openHook as unknown as ReturnType<typeof useTasksDeepLink>
-    );
-    vi.mocked(useRelayDeepLink).mockReturnValue(
-      openHook as unknown as ReturnType<typeof useRelayDeepLink>
     );
     // Store flag stays false (default from beforeEach).
 

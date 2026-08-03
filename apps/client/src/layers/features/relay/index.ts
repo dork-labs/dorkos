@@ -1,9 +1,12 @@
 /**
- * Relay feature — inter-agent messaging UI with activity feed and endpoint management.
+ * Relay feature — the messaging half of the Connections page: the ways people
+ * and platforms reach your agents, what has come through them, and the
+ * agent-first flow for adding another.
  *
  * @module features/relay
  */
-export { RelayPanel } from './ui/RelayPanel';
+export { MessagingConnections } from './ui/MessagingConnections';
+export { ActivityFeed } from './ui/ActivityFeed';
 export { RelayEmptyState } from './ui/RelayEmptyState';
 export { ConnectionStatusBanner } from './ui/ConnectionStatusBanner';
 export { AdapterCard } from './ui/adapter/AdapterCard';

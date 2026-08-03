@@ -29,6 +29,7 @@ export {
 } from './model/use-unclaimed-chats';
 
 export { BindingDialog, type BindingDialogProps } from './ui/BindingDialog';
+export { MoveChatDialog, readChatConflict, type ChatConflict } from './ui/MoveChatDialog';
 export {
   type BindingFormValues,
   toCreateBindingRequest,

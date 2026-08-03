@@ -19,7 +19,7 @@ import { mergeDialogSearch } from '../dialog-search-schema';
 import {
   useSettingsDeepLink,
   useTasksDeepLink,
-  useRelayDeepLink,
+  useOpenConnections,
   resolveDeepLinkTarget,
   type SettingsRouteTarget,
 } from '../use-dialog-deep-link';
@@ -313,13 +313,10 @@ describe('useSettingsDeepLink', () => {
 });
 
 // ─────────────────────────────────────────────────────────────
-// useTasksDeepLink / useRelayDeepLink
+// useTasksDeepLink
 // ─────────────────────────────────────────────────────────────
-describe('useTasksDeepLink / useRelayDeepLink', () => {
-  const cases = [
-    { name: 'tasks' as const, hook: useTasksDeepLink },
-    { name: 'relay' as const, hook: useRelayDeepLink },
-  ];
+describe('useTasksDeepLink', () => {
+  const cases = [{ name: 'tasks' as const, hook: useTasksDeepLink }];
 
   for (const { name, hook } of cases) {
     describe(`use${name[0]!.toUpperCase()}${name.slice(1)}DeepLink`, () => {
@@ -359,4 +356,37 @@ describe('useTasksDeepLink / useRelayDeepLink', () => {
       });
     });
   }
+});
+
+// ─────────────────────────────────────────────────────────────
+// useOpenConnections — the navigation that replaced ?relay=open
+// ─────────────────────────────────────────────────────────────
+describe('useOpenConnections', () => {
+  it('navigates to the page, at the half it was asked for', async () => {
+    const harness = buildHarness('/');
+    const { result } = renderHook(() => useOpenConnections(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+
+    await act(async () => {
+      result.current('messaging');
+    });
+
+    await waitFor(() => {
+      expect(harness.readSearch().region).toBe('messaging');
+    });
+  });
+
+  it('leaves the region unset when none is asked for', async () => {
+    const harness = buildHarness('/');
+    const { result } = renderHook(() => useOpenConnections(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+
+    await act(async () => {
+      result.current();
+    });
+
+    await waitFor(() => {
+      expect(harness.readSearch().region).toBeUndefined();
+    });
+  });
 });

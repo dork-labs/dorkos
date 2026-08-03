@@ -17,9 +17,12 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/layers/shared/ui
 import { useAdapterCatalog, useToggleAdapter, useRemoveAdapter } from '@/layers/entities/relay';
 import {
   BindingDialog,
+  MoveChatDialog,
+  readChatConflict,
   toCreateBindingRequest,
   toUpdateBindingRequest,
   type BindingFormValues,
+  type ChatConflict,
   useCreateBinding,
   useUpdateBinding,
   useDeleteBinding,
@@ -39,12 +42,19 @@ interface WizardState {
   instanceId?: string;
 }
 
-interface IntegrationsTabProps {
+interface MessagingConnectionsProps {
   enabled: boolean;
 }
 
-/** Renders active integration instances and available integration types from the catalog. */
-export function IntegrationsTab({ enabled }: IntegrationsTabProps) {
+/**
+ * The messaging half of the Connections page: the ways people and platforms
+ * reach your agents, plus the ones you could add.
+ *
+ * Each live connection lists the agents it reaches and opens its own history;
+ * adding one runs the agent-first wizard. A chat goes to exactly one agent, so
+ * pointing a chat at someone new is offered as a move rather than refused.
+ */
+export function MessagingConnections({ enabled }: MessagingConnectionsProps) {
   const { data: catalog = [], isLoading } = useAdapterCatalog(enabled);
   const { data: agentsData } = useRegisteredAgents();
   const { mutate: toggleAdapter } = useToggleAdapter();
@@ -53,6 +63,7 @@ export function IntegrationsTab({ enabled }: IntegrationsTabProps) {
   const updateBinding = useUpdateBinding();
   const deleteBinding = useDeleteBinding();
   const [wizardState, setWizardState] = useState<WizardState>({ open: false });
+  const [conflict, setConflict] = useState<ChatConflict | null>(null);
   const queryClient = useQueryClient();
   const dialogs = useAdapterCardDialogs();
 
@@ -78,24 +89,34 @@ export function IntegrationsTab({ enabled }: IntegrationsTabProps) {
           id: target.binding.id,
           updates: toUpdateBindingRequest(values),
         });
-        toast.success('Integration updated');
+        toast.success('Saved');
       } else {
         await createBinding.mutateAsync(toCreateBindingRequest(values));
-        toast.success('Integration connected');
+        toast.success('Connected');
       }
       dialogs.closeBinding();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save integration');
+      // A chat that already reaches someone is not an error to apologise for —
+      // it is a question. Ask it, naming who has the chat today.
+      const found = readChatConflict(err, {
+        id: values.agentId,
+        name: lookupAgentName(values.agentId),
+      });
+      if (found) {
+        setConflict(found);
+        return;
+      }
+      toast.error(err instanceof Error ? err.message : "Couldn't save that");
     }
   }
 
   async function handleBindingDelete(bindingId: string) {
     try {
       await deleteBinding.mutateAsync(bindingId);
-      toast.success('Integration removed');
+      toast.success('Removed');
       dialogs.closeBinding();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to remove integration');
+      toast.error(err instanceof Error ? err.message : "Couldn't remove that");
     }
   }
 
@@ -174,18 +195,18 @@ export function IntegrationsTab({ enabled }: IntegrationsTabProps) {
 
   return (
     <div className="space-y-6 p-4">
-      {/* Active Integrations */}
-      <section>
+      {/* The ways people already reach your agents. */}
+      <section aria-labelledby="messaging-live">
         <div className="mb-2 flex items-center justify-between">
-          <h3 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
-            Active Integrations
+          <h3 id="messaging-live" className="text-sm font-semibold">
+            Live now
           </h3>
           <Button
             variant="ghost"
             size="sm"
             onClick={handleRefresh}
             className="size-7 p-0"
-            aria-label="Refresh integration catalog"
+            aria-label="Check for new ways to connect"
           >
             <RefreshCw className="size-3.5" />
           </Button>
@@ -194,9 +215,9 @@ export function IntegrationsTab({ enabled }: IntegrationsTabProps) {
           <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed py-8">
             <Plug2 className="text-muted-foreground/40 size-8" />
             <div className="text-center">
-              <p className="text-muted-foreground text-sm">No integrations active</p>
+              <p className="text-muted-foreground text-sm">Nothing reaches your agents yet</p>
               <p className="text-muted-foreground/60 text-xs">
-                Add an integration below to connect agents to external services
+                Pick one below to start messaging them from somewhere else
               </p>
             </div>
           </div>
@@ -219,15 +240,15 @@ export function IntegrationsTab({ enabled }: IntegrationsTabProps) {
         )}
       </section>
 
-      {/* Add Integration */}
-      <section>
-        <h3 className="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">
-          Add Integration
+      {/* The ways you could add. */}
+      <section aria-labelledby="messaging-add">
+        <h3 id="messaging-add" className="mb-2 text-sm font-semibold">
+          Add a way to reach them
         </h3>
         {availableEntries.length === 0 ? (
           <p className="text-muted-foreground text-sm">
-            All integration types are active. Multi-instance integrations like Webhook can be added
-            again from the active list.
+            You are using every kind there is. Some, like Webhook, can be added more than once from
+            the list above.
           </p>
         ) : (
           <div
@@ -268,11 +289,10 @@ export function IntegrationsTab({ enabled }: IntegrationsTabProps) {
         >
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Remove adapter</AlertDialogTitle>
+              <AlertDialogTitle>Remove this connection?</AlertDialogTitle>
               <AlertDialogDescription>
-                Are you sure you want to remove &quot;{dialogs.removeTarget.name}&quot;? This will
-                stop the adapter and remove its configuration. Messages to its subjects will no
-                longer be delivered.
+                &quot;{dialogs.removeTarget.name}&quot; will stop working and its settings are
+                deleted. Messages sent to it after that reach nobody.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -301,7 +321,7 @@ export function IntegrationsTab({ enabled }: IntegrationsTabProps) {
         >
           <SheetContent className="flex flex-col sm:max-w-md">
             <SheetHeader>
-              <SheetTitle>Events</SheetTitle>
+              <SheetTitle>What happened here</SheetTitle>
             </SheetHeader>
             <div className="flex-1 overflow-hidden">
               <AdapterEventLog adapterId={dialogs.eventsTarget.instanceId} />
@@ -335,6 +355,12 @@ export function IntegrationsTab({ enabled }: IntegrationsTabProps) {
           isPending={createBinding.isPending || updateBinding.isPending || deleteBinding.isPending}
         />
       )}
+
+      <MoveChatDialog
+        conflict={conflict}
+        onClose={() => setConflict(null)}
+        onMoved={() => dialogs.closeBinding()}
+      />
     </div>
   );
 }
