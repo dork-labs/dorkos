@@ -1207,6 +1207,122 @@ describe('BindingRouter', () => {
     });
   });
 
+  describe('the interim empty-content gate (DOR-866)', () => {
+    // The Telegram adapter now publishes a captionless photo/sticker/voice/
+    // document/video/location with `content: ''` and a `platformData.media`
+    // descriptor, so a future bridge (task 1.6) can build a placeholder from
+    // it. Nothing on the classic/unbridged path reads that descriptor yet —
+    // this gate stops that envelope from ever reaching `createSession` /
+    // `relayCore.publish`, restoring today's behavior byte-for-byte, while
+    // leaving a `bridge: 'room'` binding's envelope untouched for 1.6.
+
+    const makeEnvelope = (content: string, chatId = '123') => ({
+      id: 'msg-1',
+      subject: `relay.human.telegram.tg-bot.${chatId}`,
+      payload: { content, platformData: { media: { type: 'photo' } } },
+      from: 'tg',
+      budget: {
+        hopCount: 0,
+        maxHops: 5,
+        ttl: Date.now() + 60000,
+        callBudgetRemaining: 10,
+        ancestorChain: [],
+      },
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    const makeBinding = (overrides: Record<string, unknown> = {}) => ({
+      id: 'bind-1',
+      adapterId: 'tg-bot',
+      agentId: 'agent-a',
+      sessionStrategy: 'per-chat',
+      label: '',
+      permissionMode: 'acceptEdits' as const,
+      enabled: true,
+      canInitiate: false,
+      canReply: true,
+      canReceive: true,
+      bridge: 'off',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      ...overrides,
+    });
+
+    it('drops a captionless-media envelope on an unbridged binding — no session, no publish to the agent subject', async () => {
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue(makeBinding());
+      const verdict = await capturedHandler!(makeEnvelope(''));
+
+      expect(mockAgentManager.createSession).not.toHaveBeenCalled();
+      expect(mockRelayCore.publish).not.toHaveBeenCalled();
+      expect(verdict).toEqual({ handled: false, reason: 'no text content' });
+    });
+
+    it('drops on a binding that predates the bridge field entirely (bridge undefined, same as off)', async () => {
+      const binding = makeBinding();
+      delete (binding as Record<string, unknown>).bridge;
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue(binding);
+
+      await capturedHandler!(makeEnvelope(''));
+
+      expect(mockRelayCore.publish).not.toHaveBeenCalled();
+    });
+
+    it('still routes a normal, non-empty message through the same unbridged binding', async () => {
+      // The negative control: proves the gate keys on content emptiness, not
+      // on some broader property of the envelope (e.g. the presence of
+      // `platformData.media`, which this fixture also carries).
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue(makeBinding());
+      await capturedHandler!(makeEnvelope('a real caption'));
+
+      expect(mockAgentManager.createSession).toHaveBeenCalledTimes(1);
+      expect(mockRelayCore.publish).toHaveBeenCalledWith(
+        expect.stringContaining('relay.agent.'),
+        expect.any(Object),
+        expect.any(Object)
+      );
+    });
+
+    it('does NOT drop a captionless-media envelope on a bridged binding — 1.6 inherits the unfiltered envelope', async () => {
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue(makeBinding({ bridge: 'room' }));
+      await capturedHandler!(makeEnvelope(''));
+
+      // Bridged bindings still route through the classic dispatch path today
+      // (task 1.6 has not landed the terminal ChatBridge.ingest branch yet),
+      // so "not gated" is observed the same way "routes normally" is above.
+      expect(mockAgentManager.createSession).toHaveBeenCalledTimes(1);
+      expect(mockRelayCore.publish).toHaveBeenCalledWith(
+        expect.stringContaining('relay.agent.'),
+        expect.any(Object),
+        expect.any(Object)
+      );
+    });
+
+    it('does not gate a payload with no content field at all (not a StandardPayload shape)', async () => {
+      // hasEmptyContent only recognizes the exact `content: ''` shape the
+      // adapter produces — a payload missing the field entirely must not be
+      // swept in by a broader "falsy content" check.
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue(makeBinding());
+      const envelope = {
+        id: 'msg-1',
+        subject: 'relay.human.telegram.tg-bot.123',
+        payload: { notContent: 'whatever' },
+        from: 'tg',
+        budget: {
+          hopCount: 0,
+          maxHops: 5,
+          ttl: Date.now() + 60000,
+          callBudgetRemaining: 10,
+          ancestorChain: [],
+        },
+        createdAt: '2026-01-01T00:00:00.000Z',
+      };
+
+      await capturedHandler!(envelope);
+
+      expect(mockAgentManager.createSession).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('relay_flow emit (onFlow)', () => {
     // A dedicated router instance with `onFlow` injected — the outer
     // `beforeEach` router omits it, matching production's optional dep.

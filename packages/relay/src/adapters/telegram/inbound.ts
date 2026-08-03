@@ -2,14 +2,20 @@
  * Telegram inbound message handling.
  *
  * Parses Telegram Bot API updates into Relay-compatible payloads.
- * Handles text messages, photos with captions, and other message types.
- * Normalises all inbound messages into {@link StandardPayload} so agents
- * are decoupled from the Telegram API surface.
+ * Handles text messages, captioned and captionless media (photos, stickers,
+ * voice notes, documents, videos, video notes, audio, locations), replies,
+ * and forum topics. Normalises all inbound messages into
+ * {@link StandardPayload} so agents are decoupled from the Telegram API
+ * surface.
  *
  * @module relay/adapters/telegram-inbound
  */
 import type { Context as GrammyContext } from 'grammy';
-import type { StandardPayload, RespondMode } from '@dorkos/shared/relay-schemas';
+import type {
+  StandardPayload,
+  RespondMode,
+  TelegramMediaDescriptor,
+} from '@dorkos/shared/relay-schemas';
 import { DEFAULT_RESPOND_MODE } from '@dorkos/shared/relay-schemas';
 import type { RelayPublisher, AdapterInboundCallbacks, RelayLogger } from '../../types.js';
 import { noopLogger } from '../../types.js';
@@ -365,6 +371,90 @@ function extractChannelName(chat: GrammyContext['chat']): string | undefined {
   return undefined;
 }
 
+// === Non-text content (spec §5.5) ===
+
+/**
+ * Describe a message's non-text content, if any.
+ *
+ * Covers the six kinds §5.5 names — photo, sticker, voice, document, video,
+ * location — plus `audio` (a music file, distinct from `voice`) and
+ * `video_note` (a round video message), so the same "publish a descriptor
+ * instead of vanishing" property holds for every common kind, not only the
+ * ones the spec happened to enumerate. A Telegram message carries at most one
+ * of these, so the first match wins. No media bytes are fetched to fill in
+ * more than what the update itself already carries — a sticker or a shared
+ * location has nothing cheap to add beyond its kind.
+ *
+ * KNOWN MISLABEL, left as-is rather than growing the kind list: Telegram (and
+ * grammy) sets `document` alongside `animation` on a GIF, "for backward
+ * compatibility" (see `Animation`'s doc comment in `@grammyjs/types`). There
+ * is no `'animation'` kind among the six §5.5 names, so a captionless GIF
+ * publishes here as `{ type: 'document' }` — an honest description of the
+ * data actually present, not of what a person would call it.
+ *
+ * @param message - The inbound Telegram message.
+ */
+function extractMediaDescriptor(message: TelegramMessage): TelegramMediaDescriptor | undefined {
+  if (message.photo) return { type: 'photo' };
+  if (message.sticker) return { type: 'sticker' };
+  if (message.voice) {
+    return {
+      type: 'voice',
+      durationSec: message.voice.duration,
+      mimeType: message.voice.mime_type,
+    };
+  }
+  if (message.audio) {
+    return {
+      type: 'audio',
+      durationSec: message.audio.duration,
+      fileName: message.audio.file_name,
+      mimeType: message.audio.mime_type,
+    };
+  }
+  if (message.video_note) {
+    return { type: 'video_note', durationSec: message.video_note.duration };
+  }
+  if (message.video) {
+    return {
+      type: 'video',
+      durationSec: message.video.duration,
+      fileName: message.video.file_name,
+      mimeType: message.video.mime_type,
+    };
+  }
+  if (message.document) {
+    // See the mislabel note above: an animation (GIF) lands here too.
+    return {
+      type: 'document',
+      fileName: message.document.file_name,
+      mimeType: message.document.mime_type,
+    };
+  }
+  if (message.location) return { type: 'location' };
+  return undefined;
+}
+
+// === Forum topics (spec §5.6) ===
+
+/**
+ * The forum topic name a message can cheaply carry, if any.
+ *
+ * Telegram states a topic's name only on the service message that created it
+ * (`forum_topic_created`) — there is no per-message field and no cheap
+ * lookup for an arbitrary later message. This reads the name off the message
+ * itself when it IS that creation event, and off `reply_to_message` when the
+ * message replies directly to it, which is the common shape for a topic's
+ * first reply. A later message with neither shape still publishes
+ * `messageThreadId` — just with no `threadName` — rather than this function
+ * guessing a name from anywhere else.
+ *
+ * @param message - The inbound Telegram message.
+ */
+function extractThreadName(message: TelegramMessage): string | undefined {
+  return message.forum_topic_created?.name ?? message.reply_to_message?.forum_topic_created?.name;
+}
+
 /**
  * Handle an inbound Telegram message and publish it to the Relay.
  *
@@ -379,6 +469,13 @@ function extractChannelName(chat: GrammyContext['chat']): string | undefined {
  * Past both gates, builds the subject from the chat ID, constructs a
  * {@link StandardPayload}, and publishes it. Errors during publish are caught
  * and recorded to avoid crashing the grammy update loop.
+ *
+ * A message with no text and no caption but WITH a photo, sticker, voice
+ * note, document, video, or location still publishes — with a media
+ * descriptor on `platformData.media` and no text — rather than being
+ * dropped. `ingest` (a bridge-side concern, not this adapter's) builds a
+ * placeholder like `[photo]` from the descriptor server-side; this adapter
+ * never authors placeholder prose (spec §5.5, §11.2).
  *
  * @param ctx - The grammy context for the inbound message
  * @param relay - The relay publisher
@@ -423,8 +520,15 @@ export async function handleInboundMessage(
   const subject = buildSubject(resolvedCodec, chat.id, isGroup);
 
   const rawText = message.text ?? message.caption ?? '';
-  if (!rawText) {
-    logger.debug(`inbound skipped: no text content in chat ${chat.id}`);
+  const media = extractMediaDescriptor(message);
+  // A captionless photo/sticker/voice/document/video/location used to be
+  // dropped here (rawText was empty and nothing else was checked). Lifted
+  // per spec §5.5: the message publishes with a media descriptor and no
+  // text, so the room log agrees with what the chat actually shows rather
+  // than silently disagreeing with it. Only a message with neither text nor
+  // a recognized media kind (e.g. a poll, a contact card) is still dropped.
+  if (!rawText && !media) {
+    logger.debug(`inbound skipped: no text or media content in chat ${chat.id}`);
     return;
   }
 
@@ -470,6 +574,12 @@ export async function handleInboundMessage(
       chatType: chat.type,
       fromId: from?.id,
       username: from?.username,
+      // Additive fields (spec §11.2) — all optional, so a consumer reading
+      // only the five fields above is unaffected.
+      replyToMessageId: message.reply_to_message?.message_id,
+      messageThreadId: message.message_thread_id,
+      threadName: extractThreadName(message),
+      media,
     },
   };
 
@@ -489,7 +599,9 @@ export async function handleInboundMessage(
 
     callbacks.trackInbound();
     logger.debug(
-      `inbound from ${senderName} in chat ${chat.id}: "${text.slice(0, 80)}${text.length > 80 ? '…' : ''}" (${text.length} chars) → ${subject}`
+      `inbound from ${senderName} in chat ${chat.id}: "${text.slice(0, 80)}${text.length > 80 ? '…' : ''}"` +
+        (media ? ` [${media.type}]` : '') +
+        ` (${text.length} chars) → ${subject}`
     );
   } catch (err) {
     callbacks.recordError(err);

@@ -67,6 +67,12 @@ const mockSendMessage = vi.fn().mockResolvedValue({ message_id: 1 });
 const mockSendChatAction = vi.fn().mockResolvedValue(true);
 const mockSetWebhook = vi.fn().mockResolvedValue(true);
 const mockDeleteWebhook = vi.fn().mockResolvedValue(true);
+const mockGetMe = vi.fn().mockResolvedValue({
+  id: 777,
+  is_bot: true,
+  username: 'test_bot',
+  can_read_all_group_messages: true,
+});
 const mockBotInit = vi.fn().mockResolvedValue(undefined);
 const mockBotStart = vi.fn().mockResolvedValue(undefined);
 const mockBotStop = vi.fn().mockResolvedValue(undefined);
@@ -91,6 +97,7 @@ vi.mock('grammy', () => {
       sendChatAction: mockSendChatAction,
       setWebhook: mockSetWebhook,
       deleteWebhook: mockDeleteWebhook,
+      getMe: mockGetMe,
     };
 
     botInfo = { username: 'test_bot' };
@@ -796,6 +803,50 @@ describe('TelegramAdapter', () => {
     expect(mockSendChatAction).not.toHaveBeenCalled();
   });
 
+  // --- 'progress' signal (spec §6.8: the bridge's presence forwarder) ---
+
+  it('forwards an active progress signal to Telegram as chat action, same as typing', async () => {
+    // publishPresence deliberately emits 'progress', not 'typing' — agents
+    // work, they do not type. This must land on the same indicator through
+    // the same handler, not a second one.
+    await adapter.start(mockRelay);
+
+    const relay = mockRelay as ReturnType<typeof createMockRelay> & {
+      _emitSignal: (subject: string, signal: { type: string; state: string }) => void;
+    };
+    relay._emitSignal('relay.human.telegram.tg1.12345', { type: 'progress', state: 'active' });
+
+    await Promise.resolve();
+
+    expect(mockSendChatAction).toHaveBeenCalledWith(12345, 'typing');
+  });
+
+  it('clears the indicator when a progress signal reports non-active', async () => {
+    // A released claim must clear the indicator — same honesty property the
+    // 'typing' branch already has (the indicator lives exactly as long as
+    // the turn claim).
+    await adapter.start(mockRelay);
+
+    const relay = mockRelay as ReturnType<typeof createMockRelay> & {
+      _emitSignal: (subject: string, signal: { type: string; state: string }) => void;
+    };
+    relay._emitSignal('relay.human.telegram.tg1.12345', { type: 'progress', state: 'active' });
+    await Promise.resolve();
+    expect(mockSendChatAction).toHaveBeenCalledWith(12345, 'typing');
+
+    mockSendChatAction.mockClear();
+    relay._emitSignal('relay.human.telegram.tg1.12345', { type: 'progress', state: 'stopped' });
+    await Promise.resolve();
+
+    // 'stopped' does not itself send a chat action (matches the 'typing'
+    // branch's own behavior); the negative control is that a second 'active'
+    // still works, proving the branch is live rather than a no-op that
+    // happens to pass because nothing asserts a call.
+    relay._emitSignal('relay.human.telegram.tg1.12345', { type: 'progress', state: 'active' });
+    await Promise.resolve();
+    expect(mockSendChatAction).toHaveBeenCalledWith(12345, 'typing');
+  });
+
   it('swallows errors from typing signal forwarding', async () => {
     mockSendChatAction.mockRejectedValueOnce(new Error('Rate limited'));
 
@@ -889,6 +940,64 @@ describe('TelegramAdapter', () => {
   it('testConnection() does not alter adapter state', async () => {
     await adapter.testConnection();
     expect(adapter.getStatus().state).toBe('disconnected');
+  });
+
+  // --- getMe() (spec §8, §11.2: the platform is the source of truth for
+  // group visibility, never config) ---
+
+  it('getMe() returns null before the adapter has connected', async () => {
+    // No live bot to ask yet — this must not spin one up the way
+    // testConnection() does.
+    const result = await adapter.getMe();
+    expect(result).toBeNull();
+    expect(mockGetMe).not.toHaveBeenCalled();
+  });
+
+  it('getMe() exposes canReadAllGroupMessages and username sourced from the platform', async () => {
+    mockGetMe.mockResolvedValueOnce({
+      id: 777,
+      is_bot: true,
+      username: 'dorkbot',
+      can_read_all_group_messages: true,
+    });
+    await adapter.start(mockRelay);
+
+    const result = await adapter.getMe();
+
+    expect(result).toEqual({ username: 'dorkbot', canReadAllGroupMessages: true });
+  });
+
+  it('getMe() reports privacy mode ON (the Telegram default) honestly', async () => {
+    // The negative control: a bot that has NOT had privacy mode turned off
+    // must report false, not default to the permissive value.
+    mockGetMe.mockResolvedValueOnce({
+      id: 777,
+      is_bot: true,
+      username: 'dorkbot',
+      can_read_all_group_messages: false,
+    });
+    await adapter.start(mockRelay);
+
+    const result = await adapter.getMe();
+
+    expect(result).toEqual({ username: 'dorkbot', canReadAllGroupMessages: false });
+  });
+
+  it('getMe() makes a live API call every time — not a cached read of botInfo', async () => {
+    await adapter.start(mockRelay);
+    mockGetMe.mockClear();
+
+    await adapter.getMe();
+    await adapter.getMe();
+
+    expect(mockGetMe).toHaveBeenCalledTimes(2);
+  });
+
+  it('getMe() throws rather than swallowing a failed API call into null', async () => {
+    await adapter.start(mockRelay);
+    mockGetMe.mockRejectedValueOnce(new Error('Unauthorized: revoked token'));
+
+    await expect(adapter.getMe()).rejects.toThrow('Unauthorized: revoked token');
   });
 
   // --- Webhook mode ---

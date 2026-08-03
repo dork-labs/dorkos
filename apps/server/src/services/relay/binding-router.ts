@@ -24,6 +24,7 @@ import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
 import type { BindingTestResult } from '@dorkos/shared/relay-schemas';
 import type { RelayFlowEvent } from '@dorkos/shared/relay-schemas';
+import type { StandardPayload } from '@dorkos/shared/relay-schemas';
 import type { PermissionMode } from '@dorkos/shared/schemas';
 import type {
   ChatNoticeReason,
@@ -87,6 +88,22 @@ function extractPlatformUserId(payload: unknown): string | undefined {
   if (raw === undefined) return undefined;
   const asString = String(raw);
   return asString.length > 0 ? asString : undefined;
+}
+
+/**
+ * Whether an inbound envelope's `content` is the empty string.
+ *
+ * Only recognizes the exact empty-string shape {@link StandardPayload}
+ * produces for a captionless media message — a payload with no `content`
+ * field at all (any non-`StandardPayload` shape a test or a future producer
+ * might publish) is left alone, so this cannot widen to "any payload missing
+ * a field."
+ *
+ * @param payload - The relay envelope payload as it arrived.
+ */
+function hasEmptyContent(payload: unknown): boolean {
+  if (payload === null || typeof payload !== 'object') return false;
+  return (payload as { content?: unknown }).content === '';
 }
 
 /**
@@ -611,6 +628,28 @@ export class BindingRouter {
               binding,
               'receive_denied',
               `binding ${binding.id} is set not to send messages to its agent`
+            );
+          }
+
+          // Interim gate (DOR-866). The Telegram adapter now publishes a
+          // captionless photo/sticker/voice/document/video/location with
+          // `content: ''` and a `platformData.media` descriptor, so a future
+          // bridge (task 1.6) can build a placeholder from it — that is the
+          // consumer this envelope was published for. Nothing on THIS,
+          // classic/unbridged path reads that descriptor yet: dispatching
+          // empty content anyway would run a real agent turn over nothing and
+          // have the agent reply about a message that said nothing. This
+          // restores today's behavior byte-for-byte for every binding that is
+          // not bridged. A `bridge: 'room'` binding is deliberately let
+          // through — that is exactly the envelope task 1.6 is built to
+          // consume. Silent: nothing was said for an empty message before
+          // this task either, so there is no new silence to explain in-chat.
+          if (binding.bridge !== 'room' && hasEmptyContent(envelope.payload)) {
+            return this.drop(
+              dispatchId,
+              '[relay] dropped an inbound message with no text content',
+              { reason: 'empty_content', visibility: 'silent', detail: { bindingId: binding.id } },
+              'no text content'
             );
           }
 
