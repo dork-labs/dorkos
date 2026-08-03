@@ -69,7 +69,9 @@ export function useProvisionRuntime(runtimeType: string): UseProvisionRuntime {
   // A bare HTTP status line (e.g. "Not Found" when the server has no one-click
   // install for this runtime) is jargon to the person reading it.
   const errorMessage =
-    rawMessage === 'Not Found' ? 'One-click install is not available for this agent.' : rawMessage;
+    rawMessage === 'Not Found'
+      ? 'One-click install is not available for this runtime.'
+      : rawMessage;
 
   return {
     provision: () => mutation.mutate(),

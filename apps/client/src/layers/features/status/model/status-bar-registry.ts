@@ -310,7 +310,7 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
   {
     key: 'runtime',
     label: 'Runtime',
-    description: 'Which agent runtime runs this session',
+    description: 'Which runtime runs this session',
     cluster: 'right',
     group: 'session',
     icon: Cpu,
@@ -406,7 +406,7 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
   {
     key: 'subagents',
     label: 'Subagents',
-    description: 'Helper agents working on this turn',
+    description: 'Subagents working on this turn',
     cluster: 'right',
     group: 'diagnostics',
     icon: Users,

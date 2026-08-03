@@ -133,7 +133,7 @@ describe('ProgressCard', () => {
     expect(screen.getByText('Talk to DorkBot')).toBeTruthy();
     expect(screen.getByText('Create an agent')).toBeTruthy();
     expect(screen.getByText('Schedule a task')).toBeTruthy();
-    expect(screen.getByText('Add more agents')).toBeTruthy();
+    expect(screen.getByText('Connect more runtimes')).toBeTruthy();
   });
 
   it('"Talk to DorkBot" is the first row and starts a session with the default agent', async () => {
@@ -172,10 +172,10 @@ describe('ProgressCard', () => {
     expect(mockRequestTour).toHaveBeenCalledWith('general');
   });
 
-  it('"Add more agents" opens Settings on the Runtimes tab', async () => {
+  it('"Connect more runtimes" opens Settings on the Runtimes tab', async () => {
     const harness = await renderCard();
 
-    fireEvent.click(screen.getByText('Add more agents'));
+    fireEvent.click(screen.getByText('Connect more runtimes'));
 
     // `?settings=runtimes` is what the Settings dialog reads to pick its tab.
     // Asserting the row merely fired an action is what let it silently land on
