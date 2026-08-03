@@ -1,0 +1,30 @@
+{
+  "$comment": "Scoped exceptions for banned-terms.json. Each entry suppresses hits on files whose repo-relative path CONTAINS `path` (a plain substring, not a glob). Omit `terms` to allowlist every banned term at that path; scope it to specific terms when the file is legitimate for one wave's word but would be a real hit for a later wave's. Keep entries file- or directory-scoped and explain the domain reason — this file is the audit trail for every 'connection' the gate lets through.",
+  "entries": [
+    {
+      "path": "apps/client/src/layers/features/connections/",
+      "terms": ["connection"],
+      "reason": "The /connections page itself — Connections is the word's one legitimate domain (plan D2)."
+    },
+    {
+      "path": "apps/client/src/layers/entities/connectors/",
+      "terms": ["connection"],
+      "reason": "Connectors entity layer backing the Connections page (OAuth connect flow, ConnectDialog copy)."
+    },
+    {
+      "path": "apps/client/src/layers/features/relay/ui/RelayHealthBar.tsx",
+      "terms": ["connection"],
+      "reason": "Counts configured relay adapters (\"3 connections active\") — adapters are Connections-domain entries, not a network-health reading."
+    },
+    {
+      "path": "apps/site/src/layers/features/marketing/lib/features.ts",
+      "terms": ["connection"],
+      "reason": "Two senses coexist here pending copy review: the Mesh Topology feature's \"every connection\" describes graph edges between agents, not link health; the Accounts feature's \"Attach a connection to one session\" is Connections-domain (an attached account). Neither is the network-health sense DOR-855 retires. Revisit if this file grows a true network-status blurb."
+    },
+    {
+      "path": "apps/site/src/app/(marketing)/test/",
+      "terms": ["connection"],
+      "reason": "Marketing visual-design sandbox routes (hero/diagram prototypes) — \"connection lines\" describes SVG graph edges in a prototype, not shipped product copy."
+    }
+  ]
+}

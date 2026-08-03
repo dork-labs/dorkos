@@ -28,6 +28,7 @@
     "q3:contention": "tsx scripts/q3-contention/run.ts",
     "typecheck:scripts": "tsc -p scripts/tsconfig.json --noEmit",
     "docs:export-api": "tsx scripts/export-openapi.ts",
+    "check:vocab-gate": "tsx scripts/check-vocab-gate.ts",
     "test:browser": "dotenv -- turbo run e2e --filter=@dorkos/e2e --only",
     "test:browser:ui": "dotenv -- turbo run e2e:ui --filter=@dorkos/e2e --only",
     "prepare": "lefthook install",
