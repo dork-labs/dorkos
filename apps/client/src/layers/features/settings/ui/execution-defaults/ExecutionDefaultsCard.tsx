@@ -16,13 +16,12 @@ import {
   Separator,
   SettingRow,
 } from '@/layers/shared/ui';
+import { useAutonomyAcknowledgement, useConfig, useUpdateConfig } from '@/layers/entities/config';
 import {
-  configSectionForRuntime,
-  useAutonomyAcknowledgement,
-  useConfig,
-  useUpdateConfig,
-} from '@/layers/entities/config';
-import { getRuntimeDescriptor, useRuntimeCapabilities } from '@/layers/entities/runtime';
+  getRuntimeDescriptor,
+  settingsForRuntime,
+  useRuntimeCapabilities,
+} from '@/layers/entities/runtime';
 import { useModels } from '@/layers/entities/session';
 // UI composition across features, which the layer rule allows: the door into
 // Full autonomy is one dialog and one contract, and Settings asks the same
@@ -122,7 +121,7 @@ export function ExecutionDefaultsCard() {
   }
 
   function writeForRuntime(patch: Record<string, unknown>) {
-    const section = configSectionForRuntime(runtime);
+    const section = settingsForRuntime(capabilityMap, runtime)?.configSection;
     if (!section) return;
     write({ [section]: patch });
   }
@@ -133,7 +132,7 @@ export function ExecutionDefaultsCard() {
     stop: PermissionStop | null
   ): Record<string, unknown> | null {
     if (forRuntime === null) return { defaultTrustStop: stop };
-    const section = configSectionForRuntime(forRuntime);
+    const section = settingsForRuntime(capabilityMap, forRuntime)?.configSection;
     return section ? { [section]: { defaultTrustStop: stop } } : null;
   }
 

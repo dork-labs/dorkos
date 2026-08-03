@@ -925,6 +925,25 @@ const RuntimeCapabilitiesSchema = z.object({
       description:
         'Structured permission-mode capability. `supported: false, values: []` means no picker is shown.',
     }),
+  settings: z
+    .object({
+      configSection: z.string().nullable().openapi({
+        description:
+          'Key of this runtime’s section under `runtimes.*` in user config (`claudeCode`, `codex`, `opencode`). `null` when the runtime has no config section, in which case it never appears in `executionDefaults.perRuntime`.',
+      }),
+      supportsEffort: z.boolean().openapi({
+        description:
+          'Whether this runtime takes a reasoning-effort setting at all. Per-model support is a separate, catalog-level fact on `ModelOption.supportsEffort`.',
+      }),
+      sections: z.array(z.object({ kind: z.string() })).openapi({
+        description:
+          'Ordered bespoke settings sections the runtime declares, by renderer kind (`claude-accounts`, `opencode-power-source`). Unknown kinds render nothing.',
+      }),
+    })
+    .openapi({
+      description:
+        'Static settings declaration: which config section holds this runtime’s defaults, whether it takes effort, and which bespoke sections its settings card renders.',
+    }),
   features: z.record(z.string(), z.unknown()).openapi({
     description: 'Runtime-specific extension point; see ADR 0256.',
   }),

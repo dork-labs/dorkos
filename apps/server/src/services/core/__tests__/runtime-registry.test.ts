@@ -55,6 +55,11 @@ function createMockRuntime(type: string, overrides?: Partial<RuntimeCapabilities
         ],
       },
       features: {},
+      // A mock runtime declares nothing configurable unless a test says
+      // otherwise. The registry reads `configSection` off this declaration and
+      // hands it to the resolver, so a test about the server's per-runtime
+      // defaults says which section by overriding it here.
+      settings: { configSection: null, supportsEffort: true, sections: [] },
       ...overrides,
     }),
     getCommands: async () => ({ commands: [], lastScanned: new Date().toISOString() }),
@@ -575,6 +580,33 @@ describe('RuntimeRegistry', () => {
         expect(lastResolveOpts?.permissionModes).toEqual(
           registry.get('claude-code').getCapabilities().permissionModes.values
         );
+      });
+
+      it("hands the resolver the runtime's OWN declared config section", async () => {
+        // Which `runtimes.*` block holds a runtime's defaults is that runtime's
+        // declaration, and this is the seam that carries it: the resolver cannot
+        // ask the registry itself (the registry imports the resolver), so an
+        // answer that stops flowing here is a per-runtime default that silently
+        // stops applying.
+        registry.register(
+          createMockRuntime('declares-a-section', {
+            settings: { configSection: 'codex', supportsEffort: true, sections: [] },
+          })
+        );
+
+        await registry.persistSessionRuntime('session-declared-section', 'declares-a-section');
+
+        expect(lastResolveOpts?.configSection).toBe('codex');
+      });
+
+      it('hands over no section for a runtime that is not registered here', async () => {
+        // The degraded build `registerOptionalRuntime` allows: nothing declared
+        // means no per-runtime default, which is the honest answer — seeding a
+        // row for a runtime that is not here would hand the fallback runtime a
+        // model id from a namespace it cannot read.
+        await registry.persistSessionRuntime('session-absent-runtime', 'never-registered');
+
+        expect(lastResolveOpts?.configSection).toBeUndefined();
       });
 
       it('returns true on the first insert and false on the duplicate (the once-per-session signal)', async () => {

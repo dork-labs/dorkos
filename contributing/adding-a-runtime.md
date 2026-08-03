@@ -86,7 +86,7 @@ capability flag.
 
 ### RuntimeCapabilities
 
-`getCapabilities()` returns a static `RuntimeCapabilities` object. Keep it in a `runtime-constants.ts` (`CODEX_CAPABILITIES`, `OPENCODE_CAPABILITIES` are the models). Two parts deserve care:
+`getCapabilities()` returns a static `RuntimeCapabilities` object. Keep it in a `runtime-constants.ts` (`CODEX_CAPABILITIES`, `OPENCODE_CAPABILITIES` are the models). Three parts deserve care:
 
 - **`permissionModes` is structured, and every mode declares what it does.** Enumerate the modes your backend genuinely supports as `PermissionModeDescriptor[]` plus a `default` id, or declare `{ supported: false, values: [] }` for no picker at all. Draw ids from the shared `PermissionModeSchema` enum (`packages/shared/src/schemas.ts`) when a mode must persist in `session_metadata`.
 
@@ -136,6 +136,30 @@ capability flag.
   Two conformance assertions to know about: `default` must reference a declared descriptor, **and** that descriptor's `stop` must not be `'autonomy'` — a runtime whose fresh sessions start with the keys handed over fails. If yours genuinely must (test doubles), declare `autonomyDefaultReason` in your `runtimeConformance` call; it takes a sentence, not a boolean.
 
   `reach: 'read'` is load-bearing and narrow: it means no writes, no commands, **and no network**. The derivation rules treat a read-only mode as having nothing to warn about, so a mode that can still fetch a URL must declare `'edit'` or wider.
+
+- **`settings` is required, and it is what puts your runtime on the Settings > Runtimes page.** Declare it next to `permissionModes`.
+
+  | Field            | Type                       | What it answers                                                                                                                                                                                                                                                                            |
+  | ---------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+  | `configSection`  | `string \| null`           | Which key under `runtimes.*` in user config holds this runtime's default model, effort and trust stop (`claudeCode`, `codex`, `opencode`). `null` when the runtime has no config section, and then it never appears in `executionDefaults.perRuntime` (`test-mode` is the worked example). |
+  | `supportsEffort` | `boolean`                  | Whether your backend can be asked for more or less thinking at all. Per-model rungs are a separate, catalog-level fact (`ModelOption.supportsEffort` / `supportedEffortLevels`); both gates apply. OpenCode declares `false` because its prompt body carries no effort field.              |
+  | `sections`       | `RuntimeSettingsSection[]` | Ordered bespoke panels your settings card renders, by `kind`. Empty for most runtimes.                                                                                                                                                                                                     |
+
+  A declared section only appears if the client has a renderer registered for that kind (`apps/client/src/layers/features/settings/ui/runtimes/section-registry.tsx`). An unknown kind renders nothing, deliberately, so an older cockpit against a newer server degrades instead of crashing. Declaring a new kind is therefore a two-sided change.
+
+  The declaration carries no dynamic state. Account lists, the current provider, and readiness ride `GET /api/config` and `GET /api/system/requirements`, which refetch; capabilities are cached with `staleTime: Infinity` and would go stale if any of that lived here.
+
+  Claude Code's real declaration:
+
+  ```typescript
+  settings: {
+    configSection: 'claudeCode',
+    supportsEffort: true,
+    sections: [{ kind: 'claude-accounts' }],
+  },
+  ```
+
+  Two conformance assertions to know about: `configSection` must be `null` or a non-empty string, and every declared `sections` kind must be unique.
 
 - **`features` is a typed extension point** (`Record<string, unknown>`, ADR-0256) for runtime-specific metadata that does not merit a first-class field. Consumers must validate what they read.
 

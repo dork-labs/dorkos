@@ -22,6 +22,8 @@ import { describe, expect, it } from 'vitest';
 import type {
   AgentRuntime,
   RuntimeCapabilities,
+  RuntimeSettingsCapability,
+  RuntimeSettingsSection,
   SessionSettingsPort,
 } from '@dorkos/shared/agent-runtime';
 import { needsConsentRitual } from '@dorkos/shared/permission-semantics';
@@ -195,6 +197,84 @@ function recordingSettingsPort(): SessionSettingsPort & { rekeyCalls: Array<[str
       rekeyCalls.push([fromId, toId]);
     },
   };
+}
+
+/**
+ * Structural check of a runtime's {@link RuntimeSettingsCapability}
+ * declaration: returns one message per violation, empty when it is sound.
+ *
+ * Extracted from the conformance suite's `capabilities` test so the rules can
+ * be exercised directly against deliberately-malformed declarations
+ * (`__tests__/runtime-conformance-settings.test.ts`) — proof the check can
+ * actually fail. Wrapping a whole conformance run in `it.fails()` would not be
+ * proof: it passes on ANY throw, including one from an unrelated assertion.
+ *
+ * Accepts `unknown` deliberately. The compile-time type says the field is
+ * present and well-formed; runtime values drift from it through casts, and
+ * this is the layer that catches the drift.
+ *
+ * @internal
+ * @param settings - Whatever a runtime reported as `getCapabilities().settings`.
+ * @returns Failure messages, one per violation; empty when the declaration is valid.
+ */
+export function validateSettingsCapability(settings: unknown): string[] {
+  if (settings === null || typeof settings !== 'object') {
+    return ['capabilities.settings is required'];
+  }
+  const failures: string[] = [];
+  const declaration = settings as Partial<RuntimeSettingsCapability>;
+
+  // `null` is the honest declaration for a runtime with no config section.
+  // An empty or whitespace-only key is not: it reads a config leaf nobody
+  // writes, and does it silently.
+  const { configSection } = declaration;
+  if (configSection !== null) {
+    if (typeof configSection !== 'string') {
+      failures.push('settings.configSection must be a string or null');
+    } else if (configSection.trim().length === 0) {
+      failures.push(
+        'settings.configSection must be null or a non-empty key — an empty ' +
+          'section name reads a config leaf nobody writes'
+      );
+    }
+  }
+
+  if (typeof declaration.supportsEffort !== 'boolean') {
+    failures.push('settings.supportsEffort must be a boolean');
+  }
+
+  const { sections } = declaration;
+  if (!Array.isArray(sections)) {
+    failures.push('settings.sections must be an array');
+    return failures;
+  }
+
+  const kinds: string[] = [];
+  sections.forEach((section: unknown, index: number) => {
+    if (section === null || typeof section !== 'object') {
+      failures.push(`settings.sections[${index}] must be an object`);
+      return;
+    }
+    const { kind } = section as Partial<RuntimeSettingsSection>;
+    if (typeof kind !== 'string' || kind.trim().length === 0) {
+      failures.push(`settings.sections[${index}].kind must be a non-empty string`);
+      return;
+    }
+    kinds.push(kind);
+  });
+
+  // Two sections of one kind render the same bespoke panel twice.
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+  for (const kind of kinds) {
+    if (seen.has(kind)) duplicates.add(kind);
+    seen.add(kind);
+  }
+  for (const kind of duplicates) {
+    failures.push(`settings.sections declares the kind '${kind}' more than once`);
+  }
+
+  return failures;
 }
 
 /**
@@ -773,6 +853,15 @@ export function runtimeConformance(
           // `supported: false, values: []` is the declared no-picker shape.
           expect(modes!.values).toEqual([]);
         }
+
+        // Settings are re-read from the runtime VALUE for the same reason the
+        // permission modes above are: a cast can put anything here, and every
+        // settings surface renders straight off this declaration.
+        const settingsFailures = validateSettingsCapability(capabilities.settings);
+        expect(
+          settingsFailures,
+          `capabilities.settings is malformed:\n  ${settingsFailures.join('\n  ')}`
+        ).toEqual([]);
       });
     });
 

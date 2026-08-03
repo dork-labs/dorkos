@@ -84,6 +84,38 @@ const MODELS = [
   },
 ];
 
+/**
+ * The capability map this card reasons about: three registered runtimes, each
+ * declaring where its settings live.
+ *
+ * The shared mock registers Claude Code alone, and this card writes into the
+ * section a runtime DECLARES — so a fixture with one runtime in it could not
+ * express "the model row wrote into Codex's section", which is the whole point
+ * of scoping model and effort per runtime.
+ *
+ * The two siblings declare no permission modes, matching the shared mock's
+ * silence about them: a runtime whose profile has not arrived is a state this
+ * card has a sentence for, and these tests still exercise it.
+ */
+async function capabilitiesForThreeRuntimes() {
+  const base = await createMockTransport().getCapabilities();
+  const claude = base.capabilities['claude-code']!;
+  const sibling = (type: string, configSection: string) => ({
+    ...claude,
+    type,
+    permissionModes: { supported: false, values: [] },
+    settings: { configSection, supportsEffort: true, sections: [] },
+  });
+  return {
+    ...base,
+    capabilities: {
+      ...base.capabilities,
+      codex: sibling('codex', 'codex'),
+      opencode: sibling('opencode', 'opencode'),
+    },
+  };
+}
+
 function renderCard(
   executionDefaults: ExecutionDefaults = DEFAULTS,
   models = MODELS,
@@ -91,6 +123,7 @@ function renderCard(
 ) {
   const updateConfig = vi.fn().mockResolvedValue(undefined);
   const transport = createMockTransport({
+    getCapabilities: vi.fn(capabilitiesForThreeRuntimes),
     getModels: vi.fn().mockResolvedValue(models),
     getConfig: vi.fn().mockResolvedValue({
       version: '1.0.0',

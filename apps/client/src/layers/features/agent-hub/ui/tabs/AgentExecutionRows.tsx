@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import type { AgentManifest, AgentManifestUpdate } from '@dorkos/shared/mesh-schemas';
 import type { EffortLevel } from '@dorkos/shared/types';
-import { EFFORT_LEVELS, runtimeSupportsEffort } from '@dorkos/shared/constants';
+import { EFFORT_LEVELS } from '@dorkos/shared/constants';
 import { cn, describeAgentExecution, effortLabel, knownModelsFrom } from '@/layers/shared/lib';
 import { useIsMobile } from '@/layers/shared/model';
 import {
@@ -13,7 +13,11 @@ import {
   ResponsivePopoverTrigger,
 } from '@/layers/shared/ui';
 import { useConfig } from '@/layers/entities/config';
-import { getRuntimeDescriptor } from '@/layers/entities/runtime';
+import {
+  getRuntimeDescriptor,
+  settingsForRuntime,
+  useRuntimeCapabilities,
+} from '@/layers/entities/runtime';
 import { useModels } from '@/layers/entities/session';
 
 /** The field-label style every cell in the Config tab's metadata grid uses. */
@@ -185,6 +189,7 @@ export function AgentExecutionRows({
 }) {
   const isMobile = useIsMobile();
   const { data: config } = useConfig();
+  const { data: capabilityMap } = useRuntimeCapabilities();
   const defaultRuntime = config?.executionDefaults?.runtime ?? 'claude-code';
   const runtime = agent.runtime ?? defaultRuntime;
   const serverForRuntime = config?.executionDefaults?.perRuntime.find((e) => e.runtime === runtime);
@@ -203,7 +208,14 @@ export function AgentExecutionRows({
     ? (models ?? []).find((m) => m.value === effectiveModel)
     : undefined;
 
-  const runtimeHasEffort = serverForRuntime?.supportsEffort ?? runtimeSupportsEffort(runtime);
+  // Both readings come from the runtime's own declaration: the server default
+  // row carries it forward, and the capability map is the source it was derived
+  // from — so an agent on a runtime the defaults have no row for still gets the
+  // real answer. Neither having answered means "not asked yet", which the
+  // report reads permissively and the rows below render as a choosable effort.
+  const declaredEffortSupport =
+    serverForRuntime?.supportsEffort ?? settingsForRuntime(capabilityMap, runtime)?.supportsEffort;
+  const runtimeHasEffort = declaredEffortSupport !== false;
   const modelTakesEffort = selectedModel ? (selectedModel.supportsEffort ?? false) : undefined;
 
   // One report, the same rules the exceptions strip and the sidebar read, so a
@@ -214,6 +226,7 @@ export function AgentExecutionRows({
     serverDefaultModel,
     knownModels: knownModelsFrom(models),
     modelSupportsEffort: modelTakesEffort,
+    runtimeSupportsEffort: declaredEffortSupport,
     runtimeLabel: (type) => getRuntimeDescriptor(type).label,
   });
   const breakageFor = (kinds: string[]) =>

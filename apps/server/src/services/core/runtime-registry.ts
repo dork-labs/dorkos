@@ -489,18 +489,27 @@ export class RuntimeRegistry {
     runtime: string,
     opts: { agent?: AgentExecutionDefaults; interactive: boolean }
   ): Partial<typeof sessionMetadata.$inferInsert> {
+    // Read off the REGISTERED runtime, not a table here: a runtime that is not
+    // registered on this server has nothing declared to read, so it gets no
+    // stop and no per-runtime section — the same answer as no preference. That
+    // is the honest one for the degraded build this happens on: seeding a row
+    // for a runtime that is not here would hand the fallback runtime a model id
+    // from a namespace it cannot read (see {@link resolveSessionDefaults}).
+    const declared = this.runtimes.get(runtime)?.getCapabilities();
     return pickSettings(
       resolveSessionDefaults({
         runtimeType: runtime,
         agent: opts.agent,
-        // Read off the REGISTERED runtime, not a table here: a runtime that is
-        // not registered on this server has no profile to read and therefore no
-        // stop to resolve, which is the same answer as no preference.
-        ...(opts.interactive
-          ? {
-              permissionModes: this.runtimes.get(runtime)?.getCapabilities().permissionModes.values,
-            }
-          : {}),
+        // Which `runtimes.*` section holds this runtime's defaults is the
+        // runtime's own declaration, and it has to arrive as an argument: this
+        // module imports the resolver, so the resolver cannot import back.
+        configSection: declared?.settings.configSection,
+        // Same seam, same reason: whether this runtime takes an effort at all is
+        // its own declaration. An unregistered runtime says nothing and the
+        // resolver reads that as yes, which is where an agent's effort keeps
+        // applying rather than vanishing on a build that is missing a runtime.
+        supportsEffort: declared?.settings.supportsEffort,
+        ...(opts.interactive ? { permissionModes: declared?.permissionModes.values } : {}),
       })
     );
   }

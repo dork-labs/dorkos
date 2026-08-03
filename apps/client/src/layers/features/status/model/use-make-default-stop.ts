@@ -25,12 +25,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { PermissionModeDescriptor, PermissionStop } from '@dorkos/shared/agent-runtime';
-import {
-  configSectionForRuntime,
-  useAutonomyAcknowledgement,
-  useConfig,
-  useUpdateConfig,
-} from '@/layers/entities/config';
+import { useAutonomyAcknowledgement, useConfig, useUpdateConfig } from '@/layers/entities/config';
+import { settingsForRuntime, useRuntimeCapabilities } from '@/layers/entities/runtime';
 import { useHasDismissedDefaultStopOffer, useSessionChatStore } from '@/layers/entities/session';
 import { isWorkingMode, resolveTrustStops } from '@/layers/shared/lib';
 import type { MakeDefaultStopLineProps } from '../ui/MakeDefaultStopLine';
@@ -116,6 +112,7 @@ export function useMakeDefaultStop(opts: {
 }): MakeDefaultStop {
   const { sessionId, runtime, declaredModes, runtimeDefaultMode } = opts;
   const { data: config } = useConfig();
+  const { data: capabilityMap } = useRuntimeCapabilities();
   const updateConfig = useUpdateConfig();
   const queryClient = useQueryClient();
   const autonomyAck = useAutonomyAcknowledgement();
@@ -139,9 +136,12 @@ export function useMakeDefaultStop(opts: {
   const runtimeDefaultStop = declaredModes.find((d) => d.id === runtimeDefaultMode)?.stop;
   const effectiveDefault = configured ?? runtimeDefaultStop;
   // Which leaf the comparison above was made against, and therefore the one
-  // accepting the offer must write. `undefined` = the global leaf.
+  // accepting the offer must write. `undefined` = the global leaf — which is
+  // also where a runtime that declares no config section, or one the capability
+  // map has not answered for yet, lands: the global setting is the honest
+  // fallback, and inventing a key would write a leaf nothing reads.
   const targetSection =
-    override != null && override !== undefined ? configSectionForRuntime(forRuntime) : undefined;
+    override != null ? settingsForRuntime(capabilityMap, forRuntime)?.configSection : undefined;
   // `canRemember` answers exactly the question that matters here: does config
   // round-trip on this install at all. False in Obsidian.
   const canWrite = autonomyAck.canRemember;

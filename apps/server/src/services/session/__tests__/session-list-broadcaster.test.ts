@@ -183,7 +183,12 @@ describe('SessionListBroadcaster — multi-runtime fan-in (ADR-0310)', () => {
         () => new Map([[SESSION_A, { permissionMode: 'bypassPermissions' as const }]])
       ),
       has: () => true,
-      get: () => ({ getInternalSessionId: () => undefined }),
+      get: () => ({
+        getInternalSessionId: () => undefined,
+        // Every registered runtime declares whether it takes an effort; these
+        // sessions carry none, so the declaration only has to be present.
+        getCapabilities: () => ({ settings: { supportsEffort: true } }),
+      }),
     };
 
     broadcaster.start([runtimeA], settings);
@@ -218,7 +223,12 @@ describe('SessionListBroadcaster — multi-runtime fan-in (ADR-0310)', () => {
         () => new Map([[SESSION_A, { permissionMode: 'bypassPermissions' as const }]])
       ),
       has: () => true,
-      get: () => ({ getInternalSessionId: () => undefined }),
+      get: () => ({
+        getInternalSessionId: () => undefined,
+        // Every registered runtime declares whether it takes an effort; these
+        // sessions carry none, so the declaration only has to be present.
+        getCapabilities: () => ({ settings: { supportsEffort: true } }),
+      }),
     };
     const adapterOwned = createMockSession({ id: SESSION_A, permissionMode: 'default' });
 
@@ -237,7 +247,12 @@ describe('SessionListBroadcaster — multi-runtime fan-in (ADR-0310)', () => {
         throw new Error('settings store unavailable');
       }),
       has: () => true,
-      get: () => ({ getInternalSessionId: () => undefined }),
+      get: () => ({
+        getInternalSessionId: () => undefined,
+        // Every registered runtime declares whether it takes an effort; these
+        // sessions carry none, so the declaration only has to be present.
+        getCapabilities: () => ({ settings: { supportsEffort: true } }),
+      }),
     };
 
     broadcaster.start([runtimeA], settings);
