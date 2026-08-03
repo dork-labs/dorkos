@@ -173,8 +173,11 @@ committed state, so a fragment you have written but not yet committed reads as u
   merge two fragments into one, move the losing fragment's `covers:` items across so the
   commits stay accounted for.
 
-**A PR with user-facing changes should include a fragment.** Never edit `CHANGELOG.md`'s
-`[Unreleased]` section — it no longer holds entries.
+**A PR with user-facing changes should include a fragment.** "User-facing" means someone
+_operating_ DorkOS notices — a change only a DorkOS _builder_ notices (harness, CI, tests,
+contributor docs, internal refactors) takes the `skip-changelog` label instead, even when it
+lands as `feat:` or `fix:` (the `writing-changelogs` skill's audience test). Never edit
+`CHANGELOG.md`'s `[Unreleased]` section — it no longer holds entries.
 
 ## Embedding product media
 
