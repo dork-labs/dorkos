@@ -12,8 +12,8 @@
 
 ## Progress
 
-**Status:** In Progress
-**Tasks Completed:** 9 / 25
+**Status:** Complete
+**Tasks Completed:** 25 / 25
 
 ## Tasks Completed
 
@@ -28,6 +28,27 @@
 - Task 1.7: server free of `runtimeSupportsEffort` — `resolveSessionDefaults` takes `supportsEffort?: boolean` (omitted → true, permissive), overlay routes the answer through a widened `SessionSettingsOverlayPort.get` returning narrow `getCapabilities`; prove-it-can-fail: hardcoding the gate red 7 tests
 - Task 1.9: `settingsForRuntime` selector in entities/runtime; `configSectionForRuntime`/runtime-config-section.ts deleted; both consumers re-pointed; capability-map-not-loaded case falls back to the global trust leaf (tested + commented). NOTE for P2: shared `createMockTransport().getCapabilities()` registers only claude-code — add codex/opencode there, then delete the local override in ExecutionDefaultsCard.test.tsx
 - Task 1.10: adding-a-runtime.md documents `settings` (three-part RuntimeCapabilities section, field table, renderer + static/dynamic paragraphs, real claude-code example)
+- Task 1.11: P1 gate (full suite 29/29 uncached, live-server wire proof) + adversarial REVIEW.md review (1 Important + 5 nits, all fixed, delta-verified) + PR #730 (merged via queue)
+- Task 2.1: `buildRuntimeCardSummary` pure segment builder (17 table tests, mutation-verified)
+- Task 2.2: ModelRow / EffortRow / TrustRow props-only rows (per-runtime test ids; `knownModelsFrom` guards the gone-model accusation during catalog load)
+- Task 2.3: `useTrustStopWrites` (consent contract verbatim; single-request ack+stop mutation-proven; one call per tree)
+- Task 2.4: RuntimeCardView + RuntimeCardHeader (structural no-propagation: toggle is the button, controls are siblings; accent via `--runtime-accent`)
+- Task 2.5: ClaudeAccountsSection (all `claude-account-*` ids byte-identical; add-account behind the quiet affordance per mockup)
+- Task 2.6: PowerSourceSection (view/container split for showcasing) + kind-keyed section registry (unknown kinds render nothing)
+- Task 2.7: GlobalTrustRow (presentational; standing-autonomy note; design vocabulary)
+- Task 2.8: RuntimeCard container (lazy models query, sectioned writes, shared mock-factory now registers all three runtimes)
+- Task 2.9: RuntimesTab recomposition (single trust-write owner + one AutonomyConfirmDialog; make-default write; refresh icon; `listRuntimeTypes` extracted to one place; TrustDial `stopLabels` surface re-word; strip `exceptions` prop)
+- Task 2.10: retirements (ExecutionDefaultsCard, ClaudeAccountsCard, DefaultTrustStopSection, tabs bridge; full old-test→new-home parity table in the task report; sweep greps zero)
+- Task 2.11: playground showcases for every card state + registry entries (props-first components showcased; strip + accounts coverage gaps closed per design §7)
+- Task 2.12: test-id sweep (zero stale) + browser flow `apps/e2e/tests/settings/runtimes-tab.spec.ts` (5 tests incl. the capability-hole round-trip; readiness-gated test documented for CI)
+- Task 2.13: changelog fragment `260803-222358-runtimes-settings-cards.md` + configuration.md trust-wording fix
+- Task 2.14: visual gate — drove the real cockpit (desktop/expanded/mobile screenshots), found and fixed 8 defects tests could not see (trust-row layout, orphaned middot, ready-gated Make default, missing subtitles, crushed effort control → menu fallback, mobile name truncation, Starts-with lead-in, full-width summary row)
+
+### Deliberate deviations from task text (all recorded in task reports)
+
+- GlobalTrustRow + RuntimeCard receive trust wiring via props; the tab owns the single `useTrustStopWrites` call and dialog (one-call-per-tree constraint).
+- Settings-tab trust vocabulary unified via optional `TrustDial.stopLabels`; session surfaces unchanged.
+- EffortRow falls back to a Select above 5 positions (Claude's real ladder is 8).
 
 ## Files Modified/Created
 
