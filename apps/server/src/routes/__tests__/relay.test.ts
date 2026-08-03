@@ -107,6 +107,11 @@ describe('Relay routes', () => {
       ['relay.system.tasks.notifier', 'system notifier'],
       ['agent:session-abc', 'reply-forwarding'],
       ['relay.human.telegram.tg1.bot', 'inbound adapter echo'],
+      // DOR-871 (A6.10): relay.bridge.* is non-exempt (the consent gate DOES
+      // evaluate it) but must still be unassertable by a client — the three
+      // principals above stay rejected by the same route guard alongside it.
+      ['relay.bridge.reply.tg1.chat-42', 'bridge reply principal'],
+      ['relay.bridge.initiate.tg1.chat-42', 'bridge initiate principal'],
     ])('rejects a client-asserted reserved sender %s (%s) and never publishes', async (from) => {
       const res = await request(server)
         .post('/api/relay/messages')

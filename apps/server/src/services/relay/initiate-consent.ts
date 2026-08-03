@@ -55,12 +55,33 @@
  * targets are additionally exempt because the in-app console is the operator's own
  * UI (no external binding, no "start a conversation" semantics).
  *
+ * ## The bridge delivery principal (DOR-871, chats-as-channels §6.4/§6.6)
+ *
+ * `relay.bridge.{reply|initiate}.{adapterId}.{chatId}` is a SECOND kind of
+ * trusted-origin principal, and it is deliberately **not** added to the exempt
+ * set above. Where the three exempt principals skip the gate entirely, a
+ * `relay.bridge.*` principal is evaluated by a dedicated non-exempt branch
+ * (see {@link createInitiateConsentGate}) that enforces `canReply` for an
+ * asserted reply and `canInitiate` for an asserted initiate — the two
+ * switches this whole module exists to guard, now covering the chat-bridge
+ * delivery path too.
+ *
+ * Trusting the classification asserted IN the principal (rather than deriving
+ * it from the entry, which the gate's `(from, subject)` signature cannot see)
+ * is safe for exactly one reason: {@link isServerOnlyPrincipal} makes
+ * `relay.bridge.*` unassertable by any client of `POST /api/relay/messages`,
+ * so the chat-bridge delivery path is the only code that can ever produce
+ * one. That route guard and this gate branch are one decision — see
+ * `specs/chats-as-channels/design-decisions.md` D-7 amendments 3 and 4 — and
+ * must not ship separately.
+ *
  * @module services/relay/initiate-consent
  */
 import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
-import type { InitiateConsentGate } from '@dorkos/relay';
+import type { InitiateConsentGate, InitiateConsentDecision } from '@dorkos/relay';
 import { requiresInitiateConsent, isConsoleSubject, AGENT_SUBJECT_PREFIX } from '@dorkos/relay';
 import { parseHumanSubject } from './human-subject.js';
+import { BRIDGE_PRINCIPAL_PREFIX, parseBridgePrincipal } from './bridge-principal.js';
 
 /** Minimal binding-store surface the gate reads. */
 export interface ConsentBindingStore {
@@ -136,6 +157,23 @@ export function bindingAllowsInitiate(binding: AdapterBinding): boolean {
 }
 
 /**
+ * A binding permits a bridge to REPLY to an inbound platform message only
+ * when it is enabled AND its per-binding `canReply` consent is on.
+ *
+ * Unlike {@link bindingAllowsInitiate}, there was no gate enforcing this
+ * before DOR-871: replies rode the blanket `agent:*` exemption, and
+ * `canReply` was read only into `__bindingPermissions` alongside
+ * `permissionMode`. The `relay.bridge.reply.*` branch in
+ * {@link createInitiateConsentGate} is the first thing that actually checks
+ * it.
+ *
+ * @param binding - The resolved adapter binding.
+ */
+export function bindingAllowsReply(binding: AdapterBinding): boolean {
+  return binding.enabled !== false && binding.canReply === true;
+}
+
+/**
  * Return true when `from` is a principal only trusted server code emits, and
  * which the consent gate therefore exempts: reply-forwarding (`agent:*`), system
  * senders (`relay.system.*`), and inbound adapter echoes
@@ -159,6 +197,34 @@ export function isConsentExemptPrincipal(from: string): boolean {
   // Inbound adapter echo: `relay.human.{type}.{adapterId}.bot`. NOT the console.
   if (from.startsWith('relay.human.') && from.endsWith('.bot')) return true;
   return false;
+}
+
+/**
+ * Return true when `from` is a principal only trusted server code may emit —
+ * the exempt set above, **plus** `relay.bridge.*` (DOR-871, spec §6.4).
+ *
+ * This answers a DIFFERENT question from {@link isConsentExemptPrincipal}:
+ * "may a client assert this `from` on `POST /api/relay/messages`?" rather
+ * than "does the consent gate skip this `from`?". `relay.bridge.*` is
+ * deliberately **non-exempt** — the gate evaluates it through the branch in
+ * {@link createInitiateConsentGate} that enforces `canReply`/`canInitiate` on
+ * the classification the principal carries — but it must still be
+ * UNASSERTABLE by a client, or a local caller could construct
+ * `relay.bridge.reply.{adapterId}.{chatId}` directly and publish as the bot
+ * with no room entry and no external ref, given `canReply` defaults to
+ * `true` (`relay-adapter-schemas.ts:475`). That would defeat §9.4's
+ * audit-trail guarantee.
+ *
+ * **`isServerOnlyPrincipal` is used by the HTTP route only** (`routes/relay.ts`).
+ * `isConsentExemptPrincipal` keeps its exact three branches and its one
+ * meaning — this function does not replace it, and the two must never be
+ * collapsed into one (A11.3; `specs/chats-as-channels/design-decisions.md`
+ * D-7 amendment 3).
+ *
+ * @param from - The publish `from` principal.
+ */
+export function isServerOnlyPrincipal(from: string): boolean {
+  return isConsentExemptPrincipal(from) || from.startsWith(BRIDGE_PRINCIPAL_PREFIX);
 }
 
 /**
@@ -214,6 +280,17 @@ export function createInitiateConsentGate(deps: {
     // The in-app console is the operator's own UI — no binding, no initiate
     // semantics — and `requiresInitiateConsent` carves it out.
     if (!requiresInitiateConsent(subject)) return { allowed: true };
+
+    // DOR-871: the chat-bridge delivery principal — one new NON-EXEMPT branch
+    // (A11.3: the exempt set above is untouched). Checked ahead of
+    // `isConsentExemptPrincipal` for clarity, though that predicate already
+    // answers `false` for this prefix: `relay.bridge.*` is evaluated, never
+    // skipped. Safe only because `isServerOnlyPrincipal` makes it unassertable
+    // by a client (see that function's doc, and D-7 amendments 3+4).
+    if (from.startsWith(BRIDGE_PRINCIPAL_PREFIX)) {
+      return checkBridgePrincipal(from, subject, deps.bindingStore);
+    }
+
     // Trusted server-injected principals (replies, system, inbound bot echoes)
     // are not agent-initiated.
     if (isConsentExemptPrincipal(from)) return { allowed: true };
@@ -300,4 +377,85 @@ function checkSender(
   }
 
   return { allowed: true };
+}
+
+/**
+ * The gate's one new non-exempt branch: `relay.bridge.*` (DOR-871, spec
+ * §6.6). Enforces exactly `enabled && (canReply | canInitiate)` on the
+ * classification the principal asserts — nothing else. Provenance
+ * classification (was this really a reply?) and the delivering-author check
+ * are `deliver`'s job (task 1.8), not this gate's: `InitiateConsentGate` is
+ * `(from, subject) => decision`, so this branch cannot see the entry, its
+ * `cascadeRoot`, or who is delivering.
+ *
+ * Decision table:
+ *
+ * | Step                                             | Failure                                                  |
+ * | ------------------------------------------------- | --------------------------------------------------------- |
+ * | Parse `from` as a bridge principal                 | unrecognized/malformed classification → `INITIATE_NOT_ALLOWED` (denied, never defaulted) |
+ * | Parse `{adapterId, chatId}` from the target subject | unparseable `relay.human.*` subject → `NO_BINDING`        |
+ * | Resolve the binding                                | none for `(adapterId, chatId)` → `NO_BINDING`             |
+ * | classification `'reply'`                           | `bindingAllowsReply` false → `INITIATE_NOT_ALLOWED`        |
+ * | classification `'initiate'`                        | `bindingAllowsInitiate` false → `INITIATE_NOT_ALLOWED`     |
+ * | otherwise                                          | `{ allowed: true }`                                        |
+ *
+ * @param from - The publish principal; already known to start with
+ *   {@link BRIDGE_PRINCIPAL_PREFIX}.
+ * @param subject - The target `relay.human.*` subject.
+ * @param bindingStore - Resolves the binding for the target channel.
+ */
+function checkBridgePrincipal(
+  from: string,
+  subject: string,
+  bindingStore: ConsentBindingStore
+): InitiateConsentDecision {
+  const parsed = parseBridgePrincipal(from);
+  if (!parsed) {
+    // Unrecognized/malformed classification segment: deny rather than default
+    // to either reply or initiate (spec §6.6 point 1).
+    return {
+      allowed: false,
+      code: 'INITIATE_NOT_ALLOWED',
+      reason: `bridge delivery denied: unrecognized bridge principal "${from}"`,
+    };
+  }
+
+  const { adapterId, chatId, channelType } = parseHumanSubject(subject);
+  if (!adapterId) {
+    return {
+      allowed: false,
+      code: 'NO_BINDING',
+      reason: `bridge delivery denied: unparseable human subject "${subject}"`,
+    };
+  }
+
+  const binding = bindingStore.resolve(adapterId, chatId, channelType);
+  if (!binding) {
+    return {
+      allowed: false,
+      code: 'NO_BINDING',
+      reason: `bridge delivery denied: no binding for adapter "${adapterId}" chat "${chatId ?? ''}"`,
+    };
+  }
+
+  if (parsed.classification === 'reply') {
+    if (bindingAllowsReply(binding)) return { allowed: true };
+    return {
+      allowed: false,
+      code: 'INITIATE_NOT_ALLOWED',
+      reason:
+        `bridge reply denied: binding ${binding.id} does not allow replies ` +
+        `(canReply off or binding paused)`,
+    };
+  }
+
+  // classification === 'initiate'
+  if (bindingAllowsInitiate(binding)) return { allowed: true };
+  return {
+    allowed: false,
+    code: 'INITIATE_NOT_ALLOWED',
+    reason:
+      `bridge initiate denied: binding ${binding.id} does not allow the agent to ` +
+      `start conversations (canInitiate off or binding paused)`,
+  };
 }
