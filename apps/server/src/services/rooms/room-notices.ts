@@ -304,6 +304,59 @@ export function buildBridgeSecondAgentRefusedNotice(agentName: string): RoomEntr
 }
 
 /**
+ * The durable `notice` a room writes when its bridge is switched off — the chat
+ * is no longer connected (chats-as-channels spec §3.5). The room is archived
+ * right after this line lands, so it is the last thing the log says: a person
+ * scrolling back later reads why the conversation stopped rather than finding a
+ * room that simply went quiet.
+ *
+ * The bridge row and every external ref survive the archive (§3.5), so a
+ * re-bridge picks up exactly here; this notice does not claim the history is
+ * gone, only that the live connection is.
+ *
+ * @param reason - The platform's own words for why, when the disconnect was not
+ *   the operator's choice — the bot was blocked or removed from the chat (§10.3).
+ *   Omitted for a plain operator unbridge, which needs no explanation.
+ */
+export function buildBridgeDisconnectedNotice(reason?: string): RoomEntryBody {
+  const base =
+    'This chat is no longer connected to DorkOS. Its history is kept here, and bridging it again picks up where this left off.';
+  return {
+    text: reason ? `${base} The chat reported: ${reason}` : base,
+    notice: 'bridge_disconnected',
+  };
+}
+
+/**
+ * The durable `notice` a room writes when a re-bridge hands its chat to a
+ * different agent (chats-as-channels spec §3.5, A3.6b). One line, three facts,
+ * because all three change what the reader should expect next:
+ *
+ * - the new agent reads the whole log from here, including the old agent's part
+ *   of it, so nothing has to be repeated for it;
+ * - the old agent has left, and its own private working memory of this chat did
+ *   not come with it — it was left where it was, not copied;
+ * - the conversation itself is unbroken: same channel, same history, and the
+ *   chat on the platform keeps talking to the same place.
+ *
+ * @param oldAgentName - The agent that just left the roster.
+ * @param newAgentName - The agent that now answers here.
+ */
+export function buildBridgeAgentSwappedNotice(
+  oldAgentName: string,
+  newAgentName: string
+): RoomEntryBody {
+  return {
+    text:
+      `${newAgentName} now answers this chat in place of ${oldAgentName}. ` +
+      `${newAgentName} can read everything said here so far, including ${oldAgentName}'s replies. ` +
+      `${oldAgentName}'s own separate memory of this chat stays where it was and was not carried over. ` +
+      `The channel, its history, and the chat keep going without a break.`,
+    notice: 'bridge_agent_swapped',
+  };
+}
+
+/**
  * An answer that arrived after the room stopped waiting for it, saying which
  * message it belongs to.
  *

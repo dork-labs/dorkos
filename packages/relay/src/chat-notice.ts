@@ -66,6 +66,13 @@ export type ChatNoticeReason =
   | 'rate_limited'
   | 'budget_exceeded'
   /**
+   * The chat's DorkOS channel was archived out from under a live bridge, so an
+   * inbound message had nowhere to land (chats-as-channels spec §10.9). The
+   * bridge is switched off in the same breath; this line is what tells the
+   * person in the chat, once, that their messages stopped being picked up.
+   */
+  | 'channel_archived'
+  /**
    * The turn ran and ended without sending anything. Not a refusal — the one
    * outcome here the machine did not decide — but the same experience from the
    * chat: a question, and then nothing. Adapters render this one directly at
@@ -104,6 +111,9 @@ const NOTICE_TEXT: Record<ChatNoticeReason, string> = {
   budget_exceeded:
     'This message hit a safety limit in DorkOS, so it was not passed on. ' +
     'The DorkOS server log says which one.',
+  channel_archived:
+    'This chat is no longer connected in DorkOS, so your message was not passed on. ' +
+    'Bridge it again under Integrations to reconnect.',
   empty_response: 'The agent finished without sending anything back.',
 };
 

@@ -151,6 +151,7 @@ describe('chat notices', () => {
       'agent_busy',
       'rate_limited',
       'budget_exceeded',
+      'channel_archived',
     ] as const) {
       const text = chatNoticeText(reason);
       expect(text.length).toBeGreaterThan(20);
@@ -158,5 +159,19 @@ describe('chat notices', () => {
       // No stack traces, no subject grammar, no codes.
       expect(text).not.toMatch(/relay\.|_[a-z]+_|Error:/);
     }
+  });
+
+  it('tells a chat, once, that its channel was archived out from under the bridge (spec §10.9)', async () => {
+    const { publish, notify } = harness();
+    expect(await notify(CHAT, 'channel_archived')).toBe(true);
+    // Damped like every other reason: two inbound messages racing the same
+    // archive tell the person once, not twice.
+    expect(await notify(CHAT, 'channel_archived')).toBe(false);
+    expect(publish).toHaveBeenCalledTimes(1);
+    expect(publish).toHaveBeenCalledWith(
+      CHAT,
+      { content: chatNoticeText('channel_archived') },
+      { from: CHAT_NOTICE_SENDER }
+    );
   });
 });
