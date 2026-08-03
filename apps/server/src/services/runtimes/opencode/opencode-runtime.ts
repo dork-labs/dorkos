@@ -395,7 +395,12 @@ export class OpenCodeRuntime implements AgentRuntime {
     const model = opts?.model ?? tracked.model;
     const fastMode = opts?.fastMode ?? tracked.fastMode;
     return {
-      permissionMode: opts?.permissionMode ?? tracked.permissionMode,
+      // `tracked.permissionMode` reads off the shared `Session` shape, whose
+      // field carries any id a runtime declares (DOR-851). Safe to narrow back
+      // to `PermissionMode` HERE: opencode only ever writes one of its own
+      // enum-shaped ids into this registry, so the wider type never actually
+      // holds anything else for this runtime.
+      permissionMode: (opts?.permissionMode ?? tracked.permissionMode) as PermissionMode,
       ...(model !== undefined ? { model } : {}),
       ...(fastMode !== undefined ? { fastMode } : {}),
     };
@@ -420,7 +425,24 @@ export class OpenCodeRuntime implements AgentRuntime {
       // StreamEvent's `type`/`data` are not a discriminated pair; the mapper
       // guarantees an ApprovalEvent body under this type.
       const approval = event.data as ApprovalEvent;
-      const mode = this.registry.get(sessionId)?.permissionMode;
+      // Cast, not proven by this file: `resolveApprovalDecision` below
+      // compares `mode` against LITERAL enum names (`'bypassPermissions'`,
+      // `'acceptEdits'`) to decide auto-approval, and does derive meaning from
+      // the name — unlike the display-only narrowings elsewhere in this file.
+      // The actual invariant that keeps this registry holding only opencode's
+      // own enum-shaped ids is enforced remotely, in
+      // `routes/sessions.ts`'s `rejectUndeclaredPermissionMode` gate on
+      // `PATCH /api/sessions/:id` — NOT by anything in this registry or this
+      // adapter. `resolveApprovalDecision`'s own literal-name fallback (any
+      // unmatched mode asks) is what keeps an id that gate never checked from
+      // silently escalating here, so this stays safe even if the invariant
+      // above is ever violated. It CAN be: the `DirectTransport` seam
+      // (`apps/client/src/layers/shared/lib/direct/session-methods.ts`, used
+      // by embedded hosts) calls `runtime.updateSession` straight through with
+      // no equivalent server-side check — it trusts the CLIENT's own picker to
+      // offer only declared ids, a materially weaker guarantee than the HTTP
+      // route's.
+      const mode = this.registry.get(sessionId)?.permissionMode as PermissionMode | undefined;
       if (resolveApprovalDecision(mode, approval.toolName) === 'auto-approve') {
         try {
           await this.respondPermission(ocSessionId, cwd, approval.toolCallId, 'once');

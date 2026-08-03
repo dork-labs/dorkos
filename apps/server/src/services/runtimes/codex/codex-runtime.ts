@@ -568,7 +568,13 @@ export class CodexRuntime implements AgentRuntime {
     const effort = opts?.effort ?? tracked.effort;
     const fastMode = opts?.fastMode ?? tracked.fastMode;
     return {
-      permissionMode: opts?.permissionMode ?? tracked.permissionMode,
+      // `tracked.permissionMode` reads off the shared `Session` shape, whose
+      // field carries any id a runtime declares (DOR-851). Safe to narrow back
+      // to `PermissionMode` HERE: codex only ever writes one of its own
+      // enum-shaped ids into this registry (`projectThreadOptions` below reads
+      // only those), so the wider type never actually holds anything else for
+      // this runtime.
+      permissionMode: (opts?.permissionMode ?? tracked.permissionMode) as PermissionMode,
       ...(model !== undefined ? { model } : {}),
       ...(effort !== undefined ? { effort } : {}),
       ...(fastMode !== undefined ? { fastMode } : {}),

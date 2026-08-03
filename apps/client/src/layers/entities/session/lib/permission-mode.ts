@@ -1,4 +1,4 @@
-import type { PermissionMode } from '@dorkos/shared/types';
+import type { PermissionModeId } from '@dorkos/shared/types';
 
 /**
  * A session's effective permission mode: a change the person just made and the
@@ -13,12 +13,18 @@ import type { PermissionMode } from '@dorkos/shared/types';
  * import a sibling entity, so a definition parked here was out of reach of one of the
  * three surfaces that have to agree about what a bypass mode covers.
  *
+ * Typed as {@link PermissionModeId} (a wire-shaped string), not the narrower
+ * `PermissionMode` enum — `confirmed` comes from `Session.permissionMode`,
+ * which carries whatever id the session's own runtime reports (DOR-851;
+ * `test-mode`'s ids sit outside the enum on purpose). Nothing here reads
+ * meaning off the name, so the wider type costs nothing.
+ *
  * @param pending - Optimistic mode from an in-flight settings change.
  * @param confirmed - Mode from the session row the server last returned.
  */
 export function resolvePermissionMode(
-  pending: PermissionMode | undefined,
-  confirmed: PermissionMode | undefined
-): PermissionMode {
+  pending: PermissionModeId | undefined,
+  confirmed: PermissionModeId | undefined
+): PermissionModeId {
   return pending ?? confirmed ?? 'default';
 }

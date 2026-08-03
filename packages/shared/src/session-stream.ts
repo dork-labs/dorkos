@@ -20,7 +20,7 @@ import { z } from 'zod';
 import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
 
 import {
-  PermissionModeSchema,
+  PermissionModeIdSchema,
   HistoryMessageSchema,
   PendingInteractionDTOSchema,
   SessionSchema,
@@ -141,8 +141,13 @@ export const SessionStatusSchema = z
     cacheStats: SessionCacheStatsSchema.nullable(),
     /** Active model identifier, or `null` before the first turn. */
     model: z.string().nullable(),
-    /** Active permission mode for the session. */
-    permissionMode: PermissionModeSchema,
+    /**
+     * Active permission mode for the session — the id the session's OWN
+     * runtime reports, not necessarily a member of the narrower
+     * `PermissionModeSchema` enum (DOR-851). See `PermissionModeIdSchema`
+     * and the matching note on `SessionSchema.permissionMode`.
+     */
+    permissionMode: PermissionModeIdSchema,
     /** Todo tallies, or `null` before the agent emits its first todo list. */
     todoCounts: SessionTodoCountsSchema.nullable(),
     /** Count of subagents currently running under this session. */

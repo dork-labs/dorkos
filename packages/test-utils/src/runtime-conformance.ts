@@ -17,6 +17,7 @@
  *
  * @module test-utils/runtime-conformance
  */
+import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import type {
   AgentRuntime,
@@ -27,9 +28,11 @@ import { needsConsentRitual } from '@dorkos/shared/permission-semantics';
 import {
   ErrorEventSchema,
   OperationProgressEventSchema,
+  SessionSchema,
   StreamEventSchema,
   UsageStatusSchema,
 } from '@dorkos/shared/schemas';
+import { SessionListEventSchema } from '@dorkos/shared/session-stream';
 import type { HistoryMessage, PermissionMode, StreamEvent } from '@dorkos/shared/types';
 
 /**
@@ -42,7 +45,15 @@ export interface RuntimeConformanceOpts {
   name?: string;
   /** Working/project directory for cwd-scoped calls. Defaults to `'/projects/conformance'`. */
   projectDir?: string;
-  /** Permission mode used when creating sessions. Defaults to `'default'`. */
+  /**
+   * Permission mode used when creating sessions. Defaults to the runtime
+   * UNDER TEST's own declared default (`getCapabilities().permissionModes.default`),
+   * falling back to `'default'` only when a runtime declares none — never
+   * hardcoded to `'default'` regardless of the runtime, which would silently
+   * skip exercising a runtime whose declared default sits outside the shared
+   * `PermissionMode` enum (test-mode's is `always-allow` — DOR-851). Set this
+   * only to force a SPECIFIC mode across every session the suite creates.
+   */
   permissionMode?: PermissionMode;
   /**
    * When true, `getMessageHistory` must return at least one message after a
@@ -154,12 +165,18 @@ function assertOperationProgress(event: StreamEvent): void {
   }
 }
 
-let sessionCounter = 0;
-
-/** Unique per-test session id so tests never observe each other's state. */
+/**
+ * Unique per-test session id so tests never observe each other's state.
+ *
+ * A real UUID, not a readable counter string — `SessionSchema.id` requires
+ * one (`z.string().uuid()`, matching every real session id, which is always
+ * client-minted via `crypto.randomUUID()`). A non-UUID id here used to make
+ * every `SessionSchema.parse()`/`SessionListEventSchema.parse()` assertion
+ * added for DOR-851 fail for every runtime, on a mismatch this suite's own
+ * ids caused — not a signal about runtime behavior.
+ */
 function nextSessionId(): string {
-  sessionCounter += 1;
-  return `conformance-session-${sessionCounter}`;
+  return randomUUID();
 }
 
 /**
@@ -198,7 +215,7 @@ export function runtimeConformance(
   const {
     name = 'AgentRuntime conformance',
     projectDir = '/projects/conformance',
-    permissionMode = 'default',
+    permissionMode: permissionModeOverride,
     expectHistory = false,
     messageContent = 'conformance ping',
     makeFailingRuntime,
@@ -207,8 +224,41 @@ export function runtimeConformance(
     autonomyDefaultReason,
   } = opts;
 
-  /** SessionOpts shared by every ensureSession call in the suite. */
-  const sessionOpts = () => ({ permissionMode, cwd: projectDir });
+  /**
+   * The mode a fresh session should carry: the suite override when given,
+   * else the SPECIFIC runtime instance's own declared default.
+   *
+   * Resolved per-instance (never memoized, never hardcoded to `'default'`) —
+   * a runtime's declared default may sit outside the shared `PermissionMode`
+   * enum entirely (test-mode's is `always-allow`). Before DOR-851 this suite
+   * hardcoded `'default'` for every runtime, so it never exercised any
+   * runtime through the mode it actually starts sessions in; a runtime whose
+   * ENTIRE declared set sits outside the enum (test-mode) would have sailed
+   * through unnoticed. The cast bridges `RuntimeCapabilities.permissionModes.default`
+   * (a runtime-declared id, DOR-851's wide id) to `SessionOpts.permissionMode`
+   * (still typed to the narrower enum — a known, separately-tracked gap): the
+   * same bridge every other seam in the codebase uses at this exact boundary
+   * (`routes/sessions.ts`, `codex-runtime.ts`), safe here because the id is
+   * read back from the SAME runtime that declared it and `ensureSession`
+   * never branches on the literal name.
+   *
+   * @param runtime - The runtime instance under test in THIS test.
+   */
+  function resolvePermissionMode(runtime: AgentRuntime): PermissionMode {
+    if (permissionModeOverride !== undefined) return permissionModeOverride;
+    return (runtime.getCapabilities().permissionModes.default ?? 'default') as PermissionMode;
+  }
+
+  /**
+   * SessionOpts shared by every ensureSession call in the suite, resolved
+   * against the specific runtime instance under test.
+   *
+   * @param runtime - The runtime instance under test in THIS test.
+   */
+  const sessionOpts = (runtime: AgentRuntime) => ({
+    permissionMode: resolvePermissionMode(runtime),
+    cwd: projectDir,
+  });
 
   /** Run one full turn and collect every yielded StreamEvent. */
   async function drainTurn(runtime: AgentRuntime, sessionId: string): Promise<StreamEvent[]> {
@@ -228,7 +278,7 @@ export function runtimeConformance(
         const sessionId = nextSessionId();
 
         expect(runtime.hasSession(sessionId)).toBe(false);
-        runtime.ensureSession(sessionId, sessionOpts());
+        runtime.ensureSession(sessionId, sessionOpts(runtime));
         expect(runtime.hasSession(sessionId)).toBe(true);
         expect(runtime.hasSession(nextSessionId())).toBe(false);
       });
@@ -239,7 +289,7 @@ export function runtimeConformance(
         // Deliberately no cwd: an unattributable session must not fan into
         // every project's list — that rendered ghost sessions under every
         // agent (DOR-202). It may still resolve by id via getSession.
-        runtime.ensureSession(sessionId, { permissionMode });
+        runtime.ensureSession(sessionId, { permissionMode: resolvePermissionMode(runtime) });
 
         const sessions = await runtime.listSessions(projectDir);
         expect(sessions.map((s) => s.id)).not.toContain(sessionId);
@@ -248,13 +298,27 @@ export function runtimeConformance(
       it('getSession resolves session metadata or null — and null for an unknown id', async () => {
         const runtime = makeRuntime();
         const sessionId = nextSessionId();
-        runtime.ensureSession(sessionId, sessionOpts());
+        runtime.ensureSession(sessionId, sessionOpts(runtime));
 
         // Backends that hydrate metadata from a native store may legitimately
         // return null before the first turn — the contract is "Session or
         // null", never a throw.
         const session = await runtime.getSession(projectDir, sessionId);
         if (session !== null) {
+          // The wire shape a runtime's own returned Session must satisfy —
+          // in particular `permissionMode`, which is the id THIS runtime
+          // reports and may sit outside the shared `PermissionMode` enum
+          // (test-mode's is `always-allow`). A runtime that reports a mode
+          // `SessionSchema` cannot parse gets silently dropped everywhere the
+          // session list is broadcast (`SessionListBroadcaster`), which is
+          // exactly the defect this parse pins shut (DOR-851).
+          const parsed = SessionSchema.safeParse(session);
+          expect(
+            parsed.success,
+            `runtime.getSession() returned a Session that fails SessionSchema: ${
+              parsed.success ? '' : parsed.error.message
+            }`
+          ).toBe(true);
           expect(session.id).toBe(sessionId);
           // The runtime tag is the aggregation key (ADR-0310) — an adapter
           // must stamp its own type, never another runtime's.
@@ -273,10 +337,55 @@ export function runtimeConformance(
         await expect(runtime.getSession(projectDir, nextSessionId())).resolves.toBeNull();
       });
 
+      it('subscribeSessionList emits only events that satisfy SessionListEventSchema (DOR-851)', async () => {
+        // Purpose: `SessionListBroadcaster` feeds every `subscribeSessionList`
+        // event straight through `SessionListEventSchema` and silently DROPS
+        // whatever fails it (apps/server/src/services/session/session-list-broadcaster.ts) —
+        // so a runtime whose own upsert/status events do not parse simply
+        // never appears in the live session list, with nothing louder than a
+        // log line. That is exactly how DOR-851 happened: test-mode reports
+        // `permissionMode: 'always-allow'`, the schema used to reject it, and
+        // the sidebar went empty for every test-mode session. This asserts the
+        // contract at the SOURCE — a runtime's own emitted events — rather
+        // than only downstream at the broadcaster.
+        const runtime = makeRuntime();
+        const sessionId = nextSessionId();
+        runtime.ensureSession(sessionId, sessionOpts(runtime));
+        await drainTurn(runtime, sessionId);
+
+        const iterator = runtime.subscribeSessionList(sessionOpts(runtime))[Symbol.asyncIterator]();
+        try {
+          // Not every adapter observes a session SYNCHRONOUSLY in a fully
+          // mocked test environment — claude-code's list stream watches a
+          // REAL JSONL directory the mocked SDK here never writes to, so it
+          // legitimately has nothing to emit. Bounded so that absence times
+          // out quickly instead of hanging the suite; absence is not a
+          // failure here, a MALFORMED event is.
+          const race = await Promise.race([
+            iterator.next().then((result) => ({ kind: 'event' as const, result })),
+            new Promise<{ kind: 'timeout' }>((resolve) =>
+              setTimeout(() => resolve({ kind: 'timeout' }), 500)
+            ),
+          ]);
+          if (race.kind === 'timeout' || race.result.done) return;
+
+          const parsed = SessionListEventSchema.safeParse(race.result.value);
+          expect(
+            parsed.success,
+            `subscribeSessionList produced an event that fails SessionListEventSchema ` +
+              `(SessionListBroadcaster would silently drop it): ${
+                parsed.success ? '' : parsed.error.message
+              }`
+          ).toBe(true);
+        } finally {
+          await iterator.return?.();
+        }
+      });
+
       it('getInternalSessionId returns a string or undefined — never throws', () => {
         const runtime = makeRuntime();
         const sessionId = nextSessionId();
-        runtime.ensureSession(sessionId, sessionOpts());
+        runtime.ensureSession(sessionId, sessionOpts(runtime));
 
         for (const id of [sessionId, nextSessionId()]) {
           const internal = runtime.getInternalSessionId(id);
@@ -295,7 +404,7 @@ export function runtimeConformance(
         // surfaces report different permission modes for one session (DOR-463).
         const runtime = makeRuntime();
         const sessionId = nextSessionId();
-        runtime.ensureSession(sessionId, sessionOpts());
+        runtime.ensureSession(sessionId, sessionOpts(runtime));
 
         for (const id of [sessionId, nextSessionId()]) {
           const canonical = runtime.getInternalSessionId(id) ?? id;
@@ -312,7 +421,7 @@ export function runtimeConformance(
         // agent silently stops asking, or starts.
         const runtime = makeRuntime();
         const sessionId = nextSessionId();
-        runtime.ensureSession(sessionId, sessionOpts());
+        runtime.ensureSession(sessionId, sessionOpts(runtime));
 
         // The port is OPTIONAL on the interface, so a stateless adapter may have
         // none. That is not a second case with its own assertion — it is the
@@ -348,7 +457,7 @@ export function runtimeConformance(
       it(`sendMessage yields well-formed StreamEvents and terminates with '${TERMINAL_EVENT_TYPE}'`, async () => {
         const runtime = makeRuntime();
         const sessionId = nextSessionId();
-        runtime.ensureSession(sessionId, sessionOpts());
+        runtime.ensureSession(sessionId, sessionOpts(runtime));
 
         const events = await drainTurn(runtime, sessionId);
 
@@ -375,7 +484,7 @@ export function runtimeConformance(
         // shared schema, with subscription-only fields never on pay-as-you-go.
         const runtime = makeRuntime();
         const sessionId = nextSessionId();
-        runtime.ensureSession(sessionId, sessionOpts());
+        runtime.ensureSession(sessionId, sessionOpts(runtime));
 
         const events = await drainTurn(runtime, sessionId);
 
@@ -404,7 +513,7 @@ export function runtimeConformance(
         // dedicated `makeCompactingRuntime` block below.
         const runtime = makeRuntime();
         const sessionId = nextSessionId();
-        runtime.ensureSession(sessionId, sessionOpts());
+        runtime.ensureSession(sessionId, sessionOpts(runtime));
 
         const events = await drainTurn(runtime, sessionId);
 
@@ -420,7 +529,7 @@ export function runtimeConformance(
         it('reports compaction via the standardized operation_progress contract', async () => {
           const runtime = makeCompactingRuntime();
           const sessionId = nextSessionId();
-          runtime.ensureSession(sessionId, sessionOpts());
+          runtime.ensureSession(sessionId, sessionOpts(runtime));
 
           const events = await drainTurn(runtime, sessionId);
 
@@ -459,7 +568,7 @@ export function runtimeConformance(
         it(`yields a typed 'error' event before the terminal '${TERMINAL_EVENT_TYPE}'`, async () => {
           const runtime = makeFailingRuntime();
           const sessionId = nextSessionId();
-          runtime.ensureSession(sessionId, sessionOpts());
+          runtime.ensureSession(sessionId, sessionOpts(runtime));
 
           const events = await drainTurn(runtime, sessionId);
 
@@ -495,7 +604,7 @@ export function runtimeConformance(
       it('interruptQuery resolves to a boolean — false when no query is active', async () => {
         const runtime = makeRuntime();
         const sessionId = nextSessionId();
-        runtime.ensureSession(sessionId, sessionOpts());
+        runtime.ensureSession(sessionId, sessionOpts(runtime));
 
         const result = await runtime.interruptQuery(sessionId);
         expect(typeof result).toBe('boolean');
@@ -508,7 +617,7 @@ export function runtimeConformance(
       it('getMessageHistory returns an array after a completed turn — never throws', async () => {
         const runtime = makeRuntime();
         const sessionId = nextSessionId();
-        runtime.ensureSession(sessionId, sessionOpts());
+        runtime.ensureSession(sessionId, sessionOpts(runtime));
         await drainTurn(runtime, sessionId);
 
         const history = await runtime.getMessageHistory(projectDir, sessionId);
@@ -528,7 +637,7 @@ export function runtimeConformance(
         it('a completed turn survives a server restart — reconstructable from the durable store', async () => {
           const runtime = makeRuntime();
           const sessionId = nextSessionId();
-          runtime.ensureSession(sessionId, sessionOpts());
+          runtime.ensureSession(sessionId, sessionOpts(runtime));
 
           // Drives one real turn through the projector → store, drops the live
           // projector, and reads history back FROM THE STORE (the restart analog).
@@ -700,7 +809,7 @@ export function runtimeConformance(
         // supported===false and never calls it, but the throw is the contract).
         const runtime = makeRuntime();
         const sessionId = nextSessionId();
-        runtime.ensureSession(sessionId, sessionOpts());
+        runtime.ensureSession(sessionId, sessionOpts(runtime));
         const supported = runtime.getCapabilities().commandIntents.compact.supported;
 
         if (supported) {

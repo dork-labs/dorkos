@@ -74,6 +74,20 @@ describe('SessionStatusSchema', () => {
     };
     expect(SessionStatusSchema.parse(failed).lastError).toEqual(failed.lastError);
   });
+
+  it('accepts a permission-mode id outside the shared enum (DOR-851)', () => {
+    // Purpose: `permissionMode` here is the id the session's OWN runtime
+    // reports. `always-allow` is the real default `test-mode` declares
+    // (`TEST_MODE_CAPABILITIES` in
+    // `apps/server/src/services/runtimes/test-mode/runtime-constants.ts`),
+    // named here — not an arbitrary string — so this test fails the moment
+    // that runtime's actual shipped id stops parsing. Before this fix, a
+    // `status_change`/`session_status` carrying it failed
+    // `SessionListEventSchema` and was silently dropped by
+    // `SessionListBroadcaster`, emptying the live session list.
+    const testModeStatus = { ...coldStatus, permissionMode: 'always-allow' as const };
+    expect(SessionStatusSchema.parse(testModeStatus).permissionMode).toBe('always-allow');
+  });
 });
 
 describe('SessionEventSchema', () => {
@@ -244,6 +258,43 @@ describe('SessionListEventSchema', () => {
   it('parses a session_status event carrying a full SessionStatus', () => {
     // Purpose: the status member feeds the fleet-wide status view with a projection.
     const event = { type: 'session_status', sessionId: 'abc', status: coldStatus };
+    expect(SessionListEventSchema.parse(event)).toEqual(event);
+  });
+
+  it('parses a session_status event for a runtime-declared mode outside the shared enum (DOR-851)', () => {
+    // Purpose: pins the exact failure mode DOR-851 fixed. Before the fix,
+    // `SessionListBroadcaster.broadcast()` fed every `test-mode` session's
+    // `session_status`/`session_upserted` event through this schema, its
+    // `status.permissionMode`/`session.permissionMode` failed against the
+    // narrower `PermissionModeSchema`, and the event was silently dropped —
+    // so the sidebar's live session list never showed that session.
+    // `always-allow` is `test-mode`'s real declared default
+    // (`TEST_MODE_CAPABILITIES` in
+    // `apps/server/src/services/runtimes/test-mode/runtime-constants.ts`),
+    // not an arbitrary string, so this regresses the moment that id changes.
+    const event = {
+      type: 'session_status',
+      sessionId: 'abc',
+      status: { ...coldStatus, permissionMode: 'always-allow' },
+    };
+    expect(SessionListEventSchema.parse(event)).toEqual(event);
+  });
+
+  it('parses a session_upserted event for a runtime-declared mode outside the shared enum (DOR-851)', () => {
+    // Purpose: same regression as above, on the `session_upserted` member —
+    // this is the one that carries the full `Session` (`SessionSchema`), so
+    // it is the one the sidebar's initial row and every later refresh rely on.
+    const event = {
+      type: 'session_upserted',
+      session: {
+        id: '123e4567-e89b-12d3-a456-426614174000',
+        title: 'Test session',
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+        permissionMode: 'always-allow',
+        runtime: 'test-mode',
+      },
+    };
     expect(SessionListEventSchema.parse(event)).toEqual(event);
   });
 

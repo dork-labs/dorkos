@@ -162,7 +162,7 @@
             "type": "string"
           },
           "permissionMode": {
-            "$ref": "#/components/schemas/PermissionMode"
+            "$ref": "#/components/schemas/PermissionModeId"
           },
           "runtime": {
             "type": "string"
@@ -205,16 +205,11 @@
           "runtime"
         ]
       },
-      "PermissionMode": {
+      "PermissionModeId": {
         "type": "string",
-        "enum": [
-          "default",
-          "plan",
-          "acceptEdits",
-          "dontAsk",
-          "bypassPermissions",
-          "auto"
-        ]
+        "minLength": 1,
+        "maxLength": 64,
+        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]*$"
       },
       "EffortLevel": {
         "type": "string",
@@ -1453,7 +1448,7 @@
                     ]
                   },
                   "permissionMode": {
-                    "$ref": "#/components/schemas/PermissionMode"
+                    "$ref": "#/components/schemas/PermissionModeId"
                   },
                   "todoCounts": {
                     "$ref": "#/components/schemas/SessionTodoCounts"
@@ -2934,7 +2929,7 @@
             ]
           },
           "permissionMode": {
-            "$ref": "#/components/schemas/PermissionMode"
+            "$ref": "#/components/schemas/PermissionModeId"
           },
           "todoCounts": {
             "$ref": "#/components/schemas/SessionTodoCounts"
@@ -3154,12 +3149,6 @@
             "type": "boolean"
           }
         }
-      },
-      "PermissionModeId": {
-        "type": "string",
-        "minLength": 1,
-        "maxLength": 64,
-        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]*$"
       },
       "SendMessageResponse": {
         "type": "object",
@@ -3740,6 +3729,17 @@
           "filePath",
           "createdAt",
           "updatedAt"
+        ]
+      },
+      "PermissionMode": {
+        "type": "string",
+        "enum": [
+          "default",
+          "plan",
+          "acceptEdits",
+          "dontAsk",
+          "bypassPermissions",
+          "auto"
         ]
       },
       "TaskStatus": {
@@ -6824,7 +6824,7 @@
                               ]
                             },
                             "permissionMode": {
-                              "$ref": "#/components/schemas/PermissionMode"
+                              "$ref": "#/components/schemas/PermissionModeId"
                             },
                             "todoCounts": {
                               "$ref": "#/components/schemas/SessionTodoCounts"

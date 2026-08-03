@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence, type TargetAndTransition, type Transition } from 'motion/react';
 import { ChevronDown, Pencil, ShieldOff, GitFork, Hand } from 'lucide-react';
-import type { Session } from '@dorkos/shared/types';
+import type { PermissionMode, Session } from '@dorkos/shared/types';
 import {
   cn,
   formatRelativeTime,
@@ -71,7 +71,13 @@ export function SessionRowFull({
   const permissionMode =
     useSessionPermissionMode(session.id, {
       enabled: false,
-      fallback: session.permissionMode,
+      // `session.permissionMode` carries any id the session's own runtime
+      // reports (DOR-851; `test-mode`'s ids sit outside the enum on purpose).
+      // Safe to narrow back to `PermissionMode` here — everything below reads
+      // it as an opaque display string (`permissionModeLabel`,
+      // `isBypassPermissionMode`) or against the runtime's own descriptor map,
+      // never against the literal enum.
+      fallback: session.permissionMode as PermissionMode,
     }) ?? 'default';
   // What the mode DOES, not what it is called. The row already carries its
   // session's runtime (`Session.runtime` is required), and the capability map is
