@@ -6,7 +6,7 @@ created: 2026-07-30
 
 # Design decisions
 
-Visual companion session: `.dork/visual-companion/27428-1785409067/`
+Design screens: [`./design/`](./design/) — the four rendered in this session, committed here because `.dork/visual-companion/` is gitignored and local to the machine that made them.
 Reviewed with Dorian, 2026-07-30.
 
 ## 1. What is actually wrong with the panel

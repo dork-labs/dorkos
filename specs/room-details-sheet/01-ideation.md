@@ -3,7 +3,7 @@ slug: room-details-sheet
 id: 260730-112334
 created: 2026-07-30
 status: specified
-design-session: .dork/visual-companion/27428-1785409067
+design-screens: ./design/ # committed here; the .dork/ session that made them is gitignored and local-only
 ---
 
 # Ideation: the members panel, audited against the real thing

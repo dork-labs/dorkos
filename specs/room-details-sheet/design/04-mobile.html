@@ -1,0 +1,586 @@
+<style>
+  .phone {
+    width: 390px;
+    max-width: 100%;
+    border-radius: 26px;
+    border: 8px solid #2a2a2c;
+    background: #0a0a0a;
+    overflow: hidden;
+    box-shadow: 0 20px 40px -12px rgb(0 0 0 / 0.45);
+  }
+  .phone .status {
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 18px;
+    font-size: 10px;
+    color: #888;
+  }
+  .scrim {
+    height: 78px;
+    background: rgba(0, 0, 0, 0.55);
+  }
+  .sheet {
+    background: hsl(0 0% 7%);
+    color: hsl(0 0% 87%);
+    border-radius: 12px 12px 0 0;
+    border-top: 1px solid hsl(0 0% 25%);
+    padding-bottom: 6px;
+    font-family:
+      system-ui,
+      -apple-system,
+      sans-serif;
+  }
+  .grab {
+    width: 100px;
+    height: 5px;
+    border-radius: 99px;
+    background: hsl(0 0% 20%);
+    margin: 10px auto 0;
+  }
+  .pad {
+    padding: 12px 16px 0;
+  }
+  .h1 {
+    font-size: 17px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .topic {
+    font-size: 13px;
+    color: hsl(0 0% 55%);
+    margin-top: 3px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .pencil {
+    font-size: 11px;
+    opacity: 0.6;
+  }
+
+  .meter {
+    display: inline-flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 13px;
+  }
+  .meter i {
+    width: 3px;
+    border-radius: 1px;
+    background: hsl(0 0% 34%);
+    display: block;
+  }
+  .meter i:nth-child(1) {
+    height: 3px;
+  }
+  .meter i:nth-child(2) {
+    height: 6px;
+  }
+  .meter i:nth-child(3) {
+    height: 10px;
+  }
+  .meter i:nth-child(4) {
+    height: 13px;
+  }
+  .meter.l2 i:nth-child(-n + 2) {
+    background: hsl(24 88% 55%);
+  }
+  .meter.l3 i:nth-child(-n + 3) {
+    background: hsl(24 88% 55%);
+  }
+  .meter.l4 i {
+    background: hsl(24 88% 55%);
+  }
+
+  .roomline {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin: 12px 16px 0;
+    padding: 11px 12px;
+    background: hsl(0 0% 12%);
+    border-radius: 8px;
+  }
+  .roomline div {
+    font-size: 13px;
+  }
+  .roomline em {
+    display: block;
+    font-style: normal;
+    font-size: 11.5px;
+    color: hsl(0 0% 55%);
+    margin-top: 1px;
+  }
+
+  .grp {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: hsl(0 0% 55%);
+    padding: 14px 16px 4px;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 9px 16px;
+    min-height: 56px;
+  }
+  .row.on {
+    background: hsl(0 0% 11%);
+  }
+  .d {
+    width: 32px;
+    height: 32px;
+    border-radius: 99px;
+    flex: 0 0 auto;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+  }
+  .d .bot {
+    position: absolute;
+    right: -2px;
+    bottom: -2px;
+    width: 14px;
+    height: 14px;
+    border-radius: 99px;
+    background: hsl(0 0% 7%);
+    border: 1.5px solid hsl(0 0% 28%);
+    color: hsl(0 0% 60%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 8px;
+  }
+  .w {
+    flex: 1;
+    min-width: 0;
+  }
+  .w b {
+    font-size: 14.5px;
+    font-weight: 500;
+    display: block;
+  }
+  .w s {
+    font-size: 12px;
+    color: hsl(0 0% 55%);
+    text-decoration: none;
+    display: block;
+  }
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 32px;
+    padding: 0 11px;
+    border-radius: 99px;
+    border: 1px solid hsl(0 0% 28%);
+    font-size: 12px;
+    color: hsl(0 0% 62%);
+    flex: 0 0 auto;
+  }
+
+  /* A: horizontal segmented */
+  .segwrap {
+    margin: 0 16px 12px 59px;
+  }
+  .seg {
+    display: flex;
+    border: 1px solid hsl(0 0% 28%);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .seg div {
+    flex: 1;
+    text-align: center;
+    padding: 11px 1px;
+    font-size: 11px;
+    color: hsl(0 0% 58%);
+    border-right: 1px solid hsl(0 0% 28%);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .seg div:last-child {
+    border-right: none;
+  }
+  .seg div.on {
+    background: hsl(24 88% 55% / 0.17);
+    color: hsl(24 88% 55%);
+    font-weight: 500;
+  }
+  .why {
+    font-size: 12px;
+    margin-top: 9px;
+    line-height: 1.45;
+  }
+  .why b {
+    color: hsl(24 88% 55%);
+    font-weight: 500;
+  }
+
+  /* B: vertical rungs */
+  .rungs {
+    margin: 0 16px 12px 59px;
+    border: 1px solid hsl(0 0% 28%);
+    border-radius: 9px;
+    overflow: hidden;
+  }
+  .rung {
+    display: flex;
+    gap: 11px;
+    align-items: flex-start;
+    padding: 11px 12px;
+    min-height: 48px;
+    border-bottom: 1px solid hsl(0 0% 18%);
+  }
+  .rung:last-child {
+    border-bottom: none;
+  }
+  .rung.on {
+    background: hsl(24 88% 55% / 0.12);
+  }
+  .radio {
+    width: 17px;
+    height: 17px;
+    border-radius: 99px;
+    border: 1.5px solid hsl(0 0% 38%);
+    flex: 0 0 auto;
+    margin-top: 1px;
+  }
+  .rung.on .radio {
+    border-color: hsl(24 88% 55%);
+    border-width: 5px;
+  }
+  .rung b {
+    font-size: 13.5px;
+    font-weight: 500;
+    display: block;
+  }
+  .rung.on b {
+    color: hsl(24 88% 55%);
+  }
+  .rung s {
+    font-size: 11.5px;
+    color: hsl(0 0% 58%);
+    text-decoration: none;
+    display: block;
+    margin-top: 1px;
+    line-height: 1.4;
+  }
+  .rmv {
+    padding: 12px 12px;
+    font-size: 13px;
+    color: hsl(0 72% 58%);
+    border-top: 1px solid hsl(0 0% 18%);
+  }
+
+  .addrow {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 11px 16px;
+    min-height: 52px;
+    color: hsl(24 88% 55%);
+    font-size: 14.5px;
+  }
+  .adddisc {
+    width: 32px;
+    height: 32px;
+    border-radius: 99px;
+    border: 1px dashed hsl(0 0% 30%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: hsl(0 0% 55%);
+  }
+  .foot {
+    border-top: 1px solid hsl(0 0% 18%);
+    margin-top: 8px;
+    padding: 12px 16px 10px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 12.5px;
+    color: hsl(0 0% 55%);
+  }
+  .homebar {
+    height: 5px;
+    width: 120px;
+    border-radius: 99px;
+    background: hsl(0 0% 30%);
+    margin: 6px auto 8px;
+  }
+
+  .cols {
+    display: flex;
+    gap: 44px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+  .colcap {
+    max-width: 390px;
+  }
+  .colcap h4 {
+    font-size: 14px;
+    margin: 16px 0 5px;
+  }
+  .colcap p {
+    font-size: 12.5px;
+    color: var(--text-secondary);
+  }
+  .warn {
+    color: var(--error);
+    font-weight: 600;
+  }
+  .good {
+    color: var(--success);
+    font-weight: 600;
+  }
+  .quote {
+    border-left: 3px solid var(--accent);
+    padding: 4px 0 4px 14px;
+    margin: 14px 0 24px;
+    font-size: 15px;
+    font-style: italic;
+    color: var(--text-secondary);
+    max-width: 820px;
+  }
+  .facts {
+    font-size: 12.5px;
+    color: var(--text-secondary);
+  }
+  .facts li {
+    margin: 5px 0;
+  }
+  .facts b {
+    color: var(--text-primary);
+  }
+</style>
+
+<h2>The sheet on a phone</h2>
+<p class="subtitle">
+  Below 768px the responsive dialog is a vaul drawer. That is the container, not the answer — one
+  interaction genuinely does not survive the trip, and pretending otherwise would ship a phone
+  experience that is a shrunken desktop one.
+</p>
+
+<div class="quote">
+  There is no hover on a touch screen. The preview that teaches the whole model on desktop simply
+  does not exist here, so the phone needs its own way to show consequence — not a smaller version of
+  a thing that cannot happen.
+</div>
+
+<div class="section cols">
+  <div>
+    <div class="label" style="margin-bottom: 10px">A · the desktop control, shrunk</div>
+    <div class="phone">
+      <div class="status"><span>9:41</span><span>▮▮▮</span></div>
+      <div class="scrim"></div>
+      <div class="sheet">
+        <div class="grab"></div>
+        <div class="pad">
+          <div class="h1"><span style="color: hsl(0 0% 45%)">#</span> testcwd</div>
+          <div class="topic">Clicker planning <span class="pencil">✎</span></div>
+        </div>
+        <div class="roomline">
+          <span class="meter l3"><i></i><i></i><i></i><i></i></span>
+          <div>Two agents will answer you here<em>Kai only when @mentioned</em></div>
+        </div>
+        <div class="grp">In this room · 4</div>
+        <div class="row on">
+          <div class="d" style="background: rgba(180, 140, 60, 0.22)">
+            💼<span class="bot">⌁</span>
+          </div>
+          <div class="w"><b>Mio Clicker PM</b><s>working now</s></div>
+          <span class="pill"
+            ><span class="meter l3"><i></i><i></i><i></i><i></i></span
+          ></span>
+          <span style="color: hsl(0 0% 55%); font-size: 17px">⋯</span>
+        </div>
+        <div class="segwrap">
+          <div class="seg">
+            <div>Silent</div>
+            <div>@only</div>
+            <div class="on">Engag…</div>
+            <div>Everyt…</div>
+          </div>
+          <div class="why">
+            Answers when you <b>@mention</b> it — then keeps answering for <b>10 more minutes</b> or
+            <b>5 more messages</b>.
+          </div>
+        </div>
+        <div class="row">
+          <div class="d" style="background: rgba(200, 90, 110, 0.22)">
+            🛰<span class="bot">⌁</span>
+          </div>
+          <div class="w"><b>Kai</b><s>joined 4 days ago</s></div>
+          <span class="pill"
+            ><span class="meter l2"><i></i><i></i><i></i><i></i></span
+          ></span>
+          <span style="color: hsl(0 0% 55%); font-size: 17px">⋯</span>
+        </div>
+        <div class="homebar"></div>
+      </div>
+    </div>
+    <div class="colcap">
+      <h4>Four segments, 79px each</h4>
+      <p>
+        <span class="warn">“Engaged” and “Everything” already ellipsise at 390px</span>, which is
+        the common iPhone width — and the labels are the only thing distinguishing the rungs, so
+        truncating them removes the meaning. At 320px each segment gets 62px and it collapses
+        outright. There is also a
+        <span class="warn">dropdown portalled inside a drawer</span> behind that ⋯, which is a
+        known-hazard nesting.
+      </p>
+    </div>
+  </div>
+
+  <div>
+    <div class="label" style="margin-bottom: 10px">
+      B · rungs as a list, with every consequence visible
+    </div>
+    <div class="phone">
+      <div class="status"><span>9:41</span><span>▮▮▮</span></div>
+      <div class="scrim"></div>
+      <div class="sheet">
+        <div class="grab"></div>
+        <div class="pad">
+          <div class="h1"><span style="color: hsl(0 0% 45%)">#</span> testcwd</div>
+          <div class="topic">Clicker planning <span class="pencil">✎</span></div>
+        </div>
+        <div class="roomline">
+          <span class="meter l3"><i></i><i></i><i></i><i></i></span>
+          <div>Two agents will answer you here<em>Kai only when @mentioned</em></div>
+        </div>
+        <div class="grp">In this room · 4</div>
+        <div class="row on">
+          <div class="d" style="background: rgba(180, 140, 60, 0.22)">
+            💼<span class="bot">⌁</span>
+          </div>
+          <div class="w"><b>Mio Clicker PM</b><s>working now</s></div>
+          <span class="pill"
+            ><span class="meter l3"><i></i><i></i><i></i><i></i></span> Engaged</span
+          >
+        </div>
+        <div class="rungs">
+          <div class="rung">
+            <span class="radio"></span>
+            <div><b>Everything</b><s>Answers every message.</s></div>
+          </div>
+          <div class="rung on">
+            <span class="radio"></span>
+            <div>
+              <b>Engaged</b
+              ><s
+                >Answers when you @mention it, then keeps answering for 10 more minutes or 5 more
+                messages.</s
+              >
+            </div>
+          </div>
+          <div class="rung">
+            <span class="radio"></span>
+            <div><b>@only</b><s>Answers only when you @mention it.</s></div>
+          </div>
+          <div class="rung">
+            <span class="radio"></span>
+            <div>
+              <b>Silent</b><s>Never speaks here. You can still talk to it in its own session.</s>
+            </div>
+          </div>
+          <div class="rmv">Remove from this room</div>
+        </div>
+        <div class="row">
+          <div class="d" style="background: rgba(200, 90, 110, 0.22)">
+            🛰<span class="bot">⌁</span>
+          </div>
+          <div class="w"><b>Kai</b><s>joined 4 days ago</s></div>
+          <span class="pill"
+            ><span class="meter l2"><i></i><i></i><i></i><i></i></span> @only</span
+          >
+        </div>
+        <div class="addrow">
+          <div class="adddisc">+</div>
+          <span>Add people or agents</span>
+        </div>
+        <div class="foot"><span>Created 4 days ago</span><span>Archive room</span></div>
+        <div class="homebar"></div>
+      </div>
+    </div>
+    <div class="colcap">
+      <h4>Four rows, 48px each, nothing truncated</h4>
+      <p>
+        <span class="good">Every consequence is on screen at once</span> — which is precisely what
+        the desktop hover preview buys you one rung at a time. On touch you read all four instead of
+        hovering each; the model lands in one glance rather than four. No truncation at any width,
+        the native grouped-list idiom, and <span class="good">the ⋯ disappears</span>: Remove lives
+        at the foot of the expanded row, so there is no menu portalled inside a drawer at all.
+      </p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>What I checked, so this isn't guesswork</h3>
+  <ul class="facts">
+    <li><b>Breakpoint is 768px</b> (<code>use-is-mobile.ts</code>), drawer below it.</li>
+    <li>
+      <b>One thing I expected to be broken isn't.</b> <code>SelectTrigger</code> defaults
+      <code>responsive = true</code> → <code>h-11 md:h-9</code>, so today's mode dropdown is already
+      44px on touch. Whatever replaces it has to hold that line.
+    </li>
+    <li>
+      <b><code>DrawerHeader</code> is <code>text-center sm:text-left</code></b> — the sheet's header
+      is centred on a phone today. An inline-editable name centred on screen is wrong; this sheet
+      overrides it.
+    </li>
+    <li>
+      <b>No safe-area inset on <code>DrawerContent</code>.</b> <code>DrawerFooter</code> is 16px
+      against a 34px home indicator. Needs verifying on a real device — and if it's wrong, it's
+      wrong for <em>every</em> drawer in the app, so it gets fixed in the primitive.
+    </li>
+    <li>
+      <b><code>AgentChipPicker</code> already did the hard touch work</b> and none of it may be
+      lost: 44px option rows, a chip-remove hit area deliberately sized to 6px/4px so it doesn't eat
+      the input (measured: 1.9% of the field stolen at two chips, 10.6% at six), and a list floor so
+      a landscape keyboard doesn't leave you typing into nothing.
+    </li>
+  </ul>
+</div>
+
+<div class="section">
+  <h3>One decision</h3>
+  <div class="options">
+    <div class="option" data-choice="adaptive" onclick="toggleSelect(this)">
+      <div class="letter">B</div>
+      <div class="content">
+        <h3>
+          Adaptive — segmented on desktop, rung list on touch
+          <span style="color: var(--success)">(recommended)</span>
+        </h3>
+        <p>
+          Two renderings of one control, sharing one model and one set of tests. The phone gets the
+          idiom it deserves and loses nothing — it trades a hover it cannot perform for four
+          explanations it can read at once. Costs a second layout in one component.
+        </p>
+      </div>
+    </div>
+    <div class="option" data-choice="uniform" onclick="toggleSelect(this)">
+      <div class="letter">A</div>
+      <div class="content">
+        <h3>Uniform — the segmented control everywhere</h3>
+        <p>
+          One layout, less code, easier to keep honest. But it truncates the labels at 390px and
+          breaks at 320px, and the labels are the only thing telling the rungs apart. Would need
+          shorter words, which is where the current five-sentence mess started.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
