@@ -91,7 +91,20 @@ jobs:
     # -mode suite fails rather than burning an hour.
     timeout-minutes: 30
     steps:
+      # fetch-depth: 0 for the tags, not the history. actions/checkout@v4
+      # defaults to depth 1 and does NOT fetch tags at that depth, so
+      # `git tag -l` in config-manager.test.ts's DOR-339 regression guard
+      # ("the newest migration key is strictly newer than every released
+      # version") saw zero tags on every push/PR since the v0.57.0 release —
+      # its own package.json fallback then collided with the newly-tagged
+      # release version and its `git show v<tag>:...` shipped-in-release
+      # check failed to resolve the tag, so the guard false-failed (DOR-884).
+      # A full clone is the honest fix: it makes CI see the same tags a local
+      # checkout already has, rather than teaching the guard to tolerate not
+      # knowing.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
 
