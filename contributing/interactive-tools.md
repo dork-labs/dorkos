@@ -7,7 +7,7 @@ Interactive tools are tools that pause the Claude Agent SDK mid-execution to col
 Two interactive tools exist today:
 
 1. **AskUserQuestion** -- Claude asks the user structured questions with selectable options. The user picks answers, which are injected back into the tool's input before the SDK continues.
-2. **Tool Approval** -- When `permissionMode` is `'default'`, every tool call pauses for the user to approve, always-allow, or deny execution.
+2. **Tool Approval** -- For every permission mode except `bypassPermissions` (which IS consent), a tool call not covered by a safe list pauses for the user to approve, always-allow, or deny execution. `resolveModeDecision` (`interactive-handlers.ts`) is the exhaustive mode → decision table.
 
 The pattern is designed to be extensible. Any new tool that requires user interaction mid-stream can follow the same architecture.
 
@@ -243,11 +243,11 @@ backend expects — nothing in `shared/`, the transport, or the client changes.
 
 ### Tool Approval
 
-Full walkthrough for `permissionMode: 'default'`.
+Full walkthrough for a mode that asks (every mode but `bypassPermissions`).
 
 **1. SDK triggers `canUseTool`**
 
-For any tool that is not `AskUserQuestion`, and is not in the auto-approved sets (read-only Claude Code tools and DorkOS agent tools), when the session's `permissionMode` is `'default'`, the `createCanUseTool` callback calls `handleToolApproval`. The auto-approved tool sets are defined as module-level `Set` constants (`READ_ONLY_TOOLS` and `DORKOS_AGENT_TOOLS`) to avoid per-call reconstruction. Read-only tools (`Read`, `Grep`, `Glob`, `LS`, `NotebookRead`, `WebSearch`, `WebFetch`) are always auto-approved regardless of permission mode.
+For any tool that is not `AskUserQuestion`, and is not in the auto-approved sets (read-only Claude Code tools and DorkOS agent tools), the `createCanUseTool` callback consults `resolveModeDecision(session.permissionMode)`; when it returns `'ask'`, the callback calls `handleToolApproval`. Only `bypassPermissions` returns `'allow'` — every other mode (`default`, `acceptEdits`, `auto`, `plan`, `dontAsk`) asks, each for its own reason (see the TSDoc on `resolveModeDecision`). The auto-approved tool sets are defined as module-level `Set` constants (`READ_ONLY_TOOLS` and `DORKOS_AGENT_TOOLS`) to avoid per-call reconstruction. Read-only tools (`Read`, `Grep`, `Glob`, `LS`, `NotebookRead`, `WebSearch`, `WebFetch`) are always auto-approved regardless of permission mode.
 
 `DORKOS_AGENT_TOOLS` is **not** `mcp__dorkos__*`. It is a hand-written set of exactly **13** prefixed names (four Relay tools, six Mesh tools, `get_agent`, and the two UI-control tools), listed in `interactive-handlers.ts`. Every other DorkOS tool prompts like any other MCP tool. The exclusions are deliberate: all three destructive actions are absent (`tasks_delete`, `mesh_unregister`, and `marketplace.uninstall` via its `marketplace_uninstall` tool), and so are `config_patch` and the other seven `marketplace_*` tools. `core/__tests__/mcp-tool-gate.test.ts` asserts every name in the set is a real tool and that none is `destructive`, so promoting a tool in `mcp-tool-tiers.ts` without removing it here fails. Do not widen the set to a prefix, and do not derive it from `act` + `observe`: either change would auto-approve tools nobody chose, which is fail-open on the one axis that costs something. The `interactive-handlers.ts` TSDoc has the full argument.
 
@@ -613,7 +613,7 @@ if (toolName === 'MyNewTool') {
   return handleMyNewInteractive(session, context.toolUseID, input);
 }
 // ... READ_ONLY_TOOLS / DORKOS_AGENT_TOOLS auto-allow (module-level Sets) ...
-if (session.permissionMode === 'default') {
+if (resolveModeDecision(session.permissionMode) === 'ask') {
   return handleToolApproval(session, context.toolUseID, toolName, input, context);
 }
 return { behavior: 'allow', updatedInput: input };
@@ -715,29 +715,32 @@ Unlike interactive tools (which pause the SDK to wait for user input), agent UI 
 
 ### `control_ui` MCP Tool
 
-The `control_ui` tool is exposed on the external MCP server (`/mcp`) and available to any connected agent. It accepts a `UiCommand` -- a discriminated union on `action` with 19 variants:
+The `control_ui` tool is exposed on the external MCP server (`/mcp`) and available to any connected agent. It accepts a `UiCommand` -- a discriminated union on `action` with 22 variants:
 
-| Action                 | Parameters                                                       | Effect                                                                            |
-| ---------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `open_panel`           | `panel`: `settings` / `tasks` / `relay` / `picker`               | Open a named panel                                                                |
-| `close_panel`          | `panel`: (same as above)                                         | Close a named panel                                                               |
-| `toggle_panel`         | `panel`: (same as above)                                         | Toggle a named panel                                                              |
-| `open_sidebar`         | (none)                                                           | Open the sidebar                                                                  |
-| `close_sidebar`        | (none)                                                           | Close the sidebar                                                                 |
-| `switch_sidebar_tab`   | `tab`: `overview` / `sessions` / `schedules` / `connections`     | Switch the sidebar tab — embedded (Obsidian) app only; a no-op on the web cockpit |
-| `open_canvas`          | `content?`: `UiCanvasContent`, `preferredWidth?`: 20--80         | Open canvas panel with content                                                    |
-| `update_canvas`        | `content`: `UiCanvasContent`                                     | Update canvas content without reopening                                           |
-| `close_canvas`         | (none)                                                           | Close the canvas panel                                                            |
-| `open_file`            | `sourcePath`: cwd-confined file path                             | Open a file as a new canvas document (viewer picked by mime type)                 |
-| `open_diff`            | `sourcePath`: cwd-confined file path                             | Open a `diff` canvas doc of the agent's edits, with per-hunk accept/reject        |
-| `open_terminal`        | `cwd?`: advisory working-directory hint                          | Open or focus the session's Terminal tab                                          |
-| `browser_navigate`     | `url`: external, `localhost`, or cwd-confined file path          | Open the page as a new embedded-browser canvas document                           |
-| `show_toast`           | `message`, `level?`: success/error/info/warning, `description?`  | Show a toast notification                                                         |
-| `set_theme`            | `theme`: `light` / `dark`                                        | Switch the UI theme                                                               |
-| `scroll_to_message`    | `messageId?` (omit for bottom)                                   | Scroll to a specific message                                                      |
-| `switch_agent`         | `cwd`: working directory path                                    | Switch to a different agent                                                       |
-| `open_command_palette` | (none)                                                           | Open the command palette                                                          |
-| `celebrate`            | `kind?`: celebration style, `emoji?`: glyph for the `emoji` kind | Throw a confetti/celebration effect                                               |
+| Action                 | Parameters                                                       | Effect                                                                                                                                                                                                                                 |
+| ---------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `open_panel`           | `panel`: `settings` / `tasks` / `relay` / `picker`               | Open a named panel                                                                                                                                                                                                                     |
+| `close_panel`          | `panel`: (same as above)                                         | Close a named panel                                                                                                                                                                                                                    |
+| `toggle_panel`         | `panel`: (same as above)                                         | Toggle a named panel                                                                                                                                                                                                                   |
+| `open_sidebar`         | (none)                                                           | Open the sidebar                                                                                                                                                                                                                       |
+| `close_sidebar`        | (none)                                                           | Close the sidebar                                                                                                                                                                                                                      |
+| `switch_sidebar_tab`   | `tab`: `overview` / `sessions` / `schedules` / `connections`     | Switch the sidebar tab — embedded (Obsidian) app only; a no-op on the web cockpit                                                                                                                                                      |
+| `open_canvas`          | `content?`: `UiCanvasContent`, `preferredWidth?`: 20--80         | Open canvas panel with content                                                                                                                                                                                                         |
+| `update_canvas`        | `content`: `UiCanvasContent`                                     | Update canvas content without reopening                                                                                                                                                                                                |
+| `close_canvas`         | (none)                                                           | Close the canvas panel                                                                                                                                                                                                                 |
+| `open_pip`             | `title?`: label for the panel                                    | Pop the session's newest inline `dorkos-ui` widget into the floating picture-in-picture panel (bottom sheet on phones); the panel follows the live fence                                                                               |
+| `close_pip`            | (none)                                                           | Close the picture-in-picture panel                                                                                                                                                                                                     |
+| `open_file`            | `sourcePath`: cwd-confined file path                             | Open a file as a new canvas document (viewer picked by mime type)                                                                                                                                                                      |
+| `open_diff`            | `sourcePath`: cwd-confined file path                             | Open a `diff` canvas doc of the agent's edits, with per-hunk accept/reject                                                                                                                                                             |
+| `open_terminal`        | `cwd?`: advisory working-directory hint                          | Open or focus the session's Terminal tab                                                                                                                                                                                               |
+| `browser_navigate`     | `url`: external, `localhost`, or cwd-confined file path          | Open the page as a new embedded-browser canvas document                                                                                                                                                                                |
+| `show_toast`           | `message`, `level?`: success/error/info/warning, `description?`  | Show a toast notification                                                                                                                                                                                                              |
+| `set_theme`            | `theme`: `light` / `dark`                                        | Switch the UI theme                                                                                                                                                                                                                    |
+| `scroll_to_message`    | `messageId?` (omit for bottom)                                   | Scroll to a specific message                                                                                                                                                                                                           |
+| `switch_agent`         | `cwd`: working directory path                                    | Switch to a different agent                                                                                                                                                                                                            |
+| `apply_layout`         | `shape`: installed Shape name                                    | Apply a Shape's layout via the server-side apply-shape flow (manifest resolution, connection prompts, per-piece degradation) — **reaches the machine**: can enable that Shape's schedules under the permission mode its manifest chose |
+| `open_command_palette` | (none)                                                           | Open the command palette                                                                                                                                                                                                               |
+| `celebrate`            | `kind?`: celebration style, `emoji?`: glyph for the `emoji` kind | Throw a confetti/celebration effect                                                                                                                                                                                                    |
 
 Canvas content (`UiCanvasContent`) is discriminated on `type`:
 

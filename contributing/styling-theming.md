@@ -231,66 +231,60 @@ export function ResponsiveText() {
 
 ### Custom Utilities (index.css)
 
-Define custom utilities for project-specific patterns:
+Custom utilities are defined with Tailwind v4's `@utility` at-rule (not the v3-style `@layer utilities` block), reading shadow depth off the `--elevation-*` scale so light/dark stay in sync automatically:
 
 ```css
 /* apps/client/src/index.css */
-@layer utilities {
-  /* Shadow utilities */
-  .shadow-soft {
-    box-shadow: 0 2px 8px oklch(0% 0 0 / 0.08);
-  }
+@utility shadow-soft {
+  box-shadow: var(--elevation-soft);
+}
 
-  .shadow-elevated {
-    box-shadow: 0 4px 16px oklch(0% 0 0 / 0.12);
-  }
+@utility shadow-elevated {
+  box-shadow: var(--elevation-elevated);
+}
 
-  .shadow-floating {
-    box-shadow: 0 8px 24px oklch(0% 0 0 / 0.16);
-  }
+@utility shadow-floating {
+  box-shadow: var(--elevation-floating);
+}
 
-  /* Glass effect */
-  .glass {
-    background: oklch(100% 0 0 / 0.8);
-    backdrop-filter: blur(8px);
-  }
+@utility shadow-modal {
+  box-shadow: var(--elevation-modal);
+}
 
-  .dark .glass {
-    background: oklch(10% 0 0 / 0.8);
+/* Hoverable card: lifts to the elevated shadow and firms up its border. */
+@utility card-interactive {
+  transition: all 150ms ease-out;
+  &:hover {
+    box-shadow: var(--elevation-elevated);
+    border-color: hsl(var(--border) / 0.8);
   }
+}
 
-  /* Container widths */
-  .container-narrow {
-    max-width: 42rem;
-    margin-inline: auto;
-    padding-inline: 1rem;
+/* Centered content column (56rem) with responsive gutters. */
+@utility container-default {
+  max-width: 56rem;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 1rem;
+  padding-right: 1rem;
+  @media (min-width: 640px) {
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
   }
-
-  .container-default {
-    max-width: 56rem;
-    margin-inline: auto;
-    padding-inline: 1rem;
-  }
-
-  .container-wide {
-    max-width: 72rem;
-    margin-inline: auto;
-    padding-inline: 1rem;
-  }
-
-  /* Interactive card */
-  .card-interactive {
-    @apply hover:shadow-elevated transition-all duration-200 hover:-translate-y-1;
+  @media (min-width: 1024px) {
+    padding-left: 2rem;
+    padding-right: 2rem;
   }
 }
 ```
+
+There is no `.glass`, `.container-narrow`, or `.container-wide` utility in the client — those exist only in the marketing site's separate stylesheet (`apps/site`), which is out of scope for this guide.
 
 Usage:
 
 ```tsx
 <div className="shadow-soft rounded-xl p-6">Soft shadow</div>
-<div className="glass rounded-xl p-4">Glass morphism</div>
-<div className="container-narrow">Narrow content</div>
+<div className="container-default">Default-width content</div>
 <div className="card-interactive">Hover lifts card</div>
 ```
 

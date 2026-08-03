@@ -316,19 +316,19 @@ Browser tests that don't need real Claude API calls use `TestModeRuntime` — a 
 
 ### How It Works
 
-1. Playwright starts a second Express server with `DORKOS_TEST_RUNTIME=true` on `MOCK_PORT` (default 4243)
-2. A second Vite client on `MOCK_VITE_PORT` (default 6244) proxies `/api` to the mock server
+1. Playwright starts a second Express server with `DORKOS_TEST_RUNTIME=true` on `MOCK_PORT` (default 4243, env `DORKOS_MOCK_PORT`)
+2. A second Vite client on `MOCK_VITE_PORT` (default 4248, env `DORKOS_MOCK_VITE_PORT`) proxies `/api` to the mock server
 3. Tests configure scenarios via `POST /api/test/scenario` before each interaction
 4. The `chromium-mock` Playwright project targets the mock Vite client
 
 ### Port Layout
 
-| Port                    | Service                             |
-| ----------------------- | ----------------------------------- |
-| `DORKOS_PORT` (6242)    | Real Express server                 |
-| `VITE_PORT` (6241)      | Vite client proxying to real server |
-| `MOCK_PORT` (4243)      | Test-mode Express server            |
-| `MOCK_VITE_PORT` (6244) | Vite client proxying to mock server |
+| Port                    | Service                                                                   |
+| ----------------------- | ------------------------------------------------------------------------- |
+| `DORKOS_PORT` (4242)    | Real Express server                                                       |
+| `VITE_PORT` (4241)      | Vite client proxying to real server                                       |
+| `MOCK_PORT` (4243)      | Test-mode Express server                                                  |
+| `MOCK_VITE_PORT` (4248) | Vite client proxying to mock server — 6244 is reserved for `@dorkos/site` |
 
 ### Test Control API
 

@@ -73,7 +73,7 @@ Migrations are forward-only. There is no down migration story — Postgres state
 The complete `marketplace_install_events` table definition. This is the contract — every column listed here is allowed to exist, and every column **not** listed here is forbidden by the schema test in section 7.
 
 ```typescript
-import { pgTable, text, integer, timestamp, index } from 'drizzle-orm/pg-core';
+import { bigserial, pgTable, text, integer, timestamp, uuid, index } from 'drizzle-orm/pg-core';
 
 /**
  * Append-only marketplace install telemetry events.
@@ -90,8 +90,8 @@ import { pgTable, text, integer, timestamp, index } from 'drizzle-orm/pg-core';
 export const marketplaceInstallEvents = pgTable(
   'marketplace_install_events',
   {
-    /** ULID — lexicographically sortable, unique row identifier. */
-    id: text('id').primaryKey(),
+    /** Surrogate primary key. Bigserial so we can grow past 2B rows. */
+    id: bigserial('id', { mode: 'bigint' }).primaryKey(),
 
     /** Package name from marketplace.json (e.g. "code-reviewer"). */
     packageName: text('package_name').notNull(),
@@ -99,15 +99,13 @@ export const marketplaceInstallEvents = pgTable(
     /** Marketplace source (e.g. "dorkos-community"). */
     marketplace: text('marketplace').notNull(),
 
-    /** Package type from marketplace.json. */
-    type: text('type', {
-      enum: ['agent', 'plugin', 'skill-pack', 'adapter'],
-    }).notNull(),
+    /** Package type from marketplace.json — plain text; the Zod schema on the
+     *  Edge Function enforces the enum, not the column. */
+    type: text('type').notNull(),
 
-    /** Terminal install outcome — failures are debugging signal. */
-    outcome: text('outcome', {
-      enum: ['success', 'failure', 'cancelled'],
-    }).notNull(),
+    /** Terminal install outcome — failures are debugging signal. Plain text;
+     *  the Zod schema on the Edge Function enforces the enum, not the column. */
+    outcome: text('outcome').notNull(),
 
     /** How long the install took, in milliseconds (0–600000). */
     durationMs: integer('duration_ms').notNull(),
@@ -116,10 +114,15 @@ export const marketplaceInstallEvents = pgTable(
     errorCode: text('error_code'),
 
     /** Random per-install UUID generated locally. NOT a user identifier. */
-    installId: text('install_id').notNull(),
+    installId: uuid('install_id').notNull(),
 
     /** DorkOS version that produced the event (max 32 chars). */
     dorkosVersion: text('dorkos_version').notNull(),
+
+    /** Discriminated source form the package was installed from — one of
+     *  `relative-path` / `github` / `url` / `git-subdir` / `npm`. Added by
+     *  marketplace-05; see the `source_type` column section below. */
+    sourceType: text('source_type').notNull(),
 
     /** Server-side receipt timestamp (set by the Edge Function). */
     receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),

@@ -284,32 +284,33 @@ const toolStatus = useMemo(
 When one feature needs to trigger a dialog or action in a sibling feature, FSD's model cross-import rules forbid `features/A` from importing `features/B`'s model. The solution: put a small Zustand store in the `entities/` layer. Both features can read from it without creating a circular dependency.
 
 ```typescript
-// apps/client/src/layers/entities/pulse/model/use-pulse-preset-dialog.ts
-// Lives in entities/ so both features/pulse and features/session-list can use it.
+// apps/client/src/layers/entities/tasks/model/use-task-template-dialog.ts
+// Lives in entities/ so both features/top-nav and widgets/tasks can use it.
 
-export const usePulsePresetDialog = create<PulsePresetDialogState>((set) => ({
-  pendingPreset: null,
+export const useTaskTemplateDialog = create<TaskTemplateDialogState>((set) => ({
+  pendingTemplate: null,
   externalTrigger: false,
-  openWithPreset: (preset) => set({ pendingPreset: preset, externalTrigger: true }),
-  clear: () => set({ pendingPreset: null, externalTrigger: false }),
+  openWithTemplate: (template) => set({ pendingTemplate: template, externalTrigger: true }),
+  openBlank: () => set({ pendingTemplate: null, externalTrigger: true }),
+  clear: () => set({ pendingTemplate: null, externalTrigger: false }),
 }));
 ```
 
 Usage pattern:
 
 ```typescript
-// In features/session-list/ui/SchedulesView.tsx — triggers the dialog
-const openWithPreset = useTaskPresetDialog((s) => s.openWithPreset);
-openWithPreset(preset); // Signals TasksPanel to open CreateScheduleDialog
+// In features/top-nav/ui/TasksHeader.tsx — triggers the dialog
+const openBlank = useTaskTemplateDialog((s) => s.openBlank);
+openBlank(); // Signals TasksPage to open CreateTaskDialog
 
-// In features/tasks/ui/TasksPanel.tsx — consumes the signal
-const { pendingPreset, externalTrigger, clear } = useTaskPresetDialog();
-useEffect(() => {
-  if (externalTrigger && pendingPreset) {
-    openDialog({ preset: pendingPreset });
-    clear();
-  }
-}, [externalTrigger, pendingPreset]);
+// In widgets/tasks/ui/TasksPage.tsx — consumes the signal at render time
+// (adjusting state during render, not useEffect — see the anti-pattern above)
+const { externalTrigger, clear: clearTrigger } = useTaskTemplateDialog();
+const [prevTrigger, setPrevTrigger] = useState(false);
+if (externalTrigger && !prevTrigger && !dialogOpen) {
+  setPrevTrigger(true);
+  setDialogOpen(true);
+}
 ```
 
 **When to use**: A sibling feature needs to trigger a UI action (open a dialog, navigate to a view) in another feature, and lifting the state higher would add unnecessary coupling. Keep these stores small — just the signal payload and a `clear()` method.

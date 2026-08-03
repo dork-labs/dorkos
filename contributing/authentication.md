@@ -166,11 +166,11 @@ The client auth slice (`features/auth`) exposes Better Auth only through hooks (
 | `cloud.instanceName`       | string \| null | `null`  | This instance's name registered with the cloud, P2            |
 | `cloud.linkedAccountLabel` | string \| null | `null`  | Human-readable linked-account label, P2                       |
 
-Three semver-keyed, idempotent migrations in `config-manager.ts` (append-only; see `contributing/configuration.md` → Schema Migrations):
+Three idempotent migrations, all composed into the `'0.45.0'` key in `config-manager.ts` (append-only; see `contributing/configuration.md` → Schema Migrations):
 
-- **`0.49.0` `backfillAuthDefaults`** — writes `auth: { enabled: false }` when absent.
-- **`0.50.0` `dropTunnelPasscodeAndSessionSecret`** — deletes the retired `tunnel.passcodeEnabled` / `tunnel.passcodeHash` / `tunnel.passcodeSalt` and root `sessionSecret`. Better Auth manages its own session signing; old passcode hashes are discarded, not migrated.
-- **`0.51.0` `backfillCloudDefaults`** — writes the all-`null` `cloud` section when absent (P2).
+- **`backfillAuthDefaults`** — writes `auth: { enabled: false }` when absent.
+- **`dropTunnelPasscodeAndSessionSecret`** — deletes the retired `tunnel.passcodeEnabled` / `tunnel.passcodeHash` / `tunnel.passcodeSalt` and root `sessionSecret`. Better Auth manages its own session signing; old passcode hashes are discarded, not migrated.
+- **`backfillCloudDefaults`** — writes the all-`null` `cloud` section when absent (P2).
 
 `mcp.apiKey` remains in the schema (and in `SENSITIVE_CONFIG_KEYS`) for the seeding compat window; removing it is deferred to a later config-schema cleanup once seeding has shipped in a release.
 
@@ -291,7 +291,7 @@ Revoke from `/account/instances` (or `POST /api/instances/revoke`, ownership-enf
 
 ### Local wiring
 
-- **Config:** the `cloud` section (`packages/shared/src/config-schema.ts`) — `instanceToken` (sensitive), `instanceName`, `linkedAccountLabel`; migration `0.51.0` `backfillCloudDefaults`.
+- **Config:** the `cloud` section (`packages/shared/src/config-schema.ts`) — `instanceToken` (sensitive), `instanceName`, `linkedAccountLabel`; migration `0.45.0` `backfillCloudDefaults`.
 - **Local routes:** `apps/server/src/routes/cloud.ts` — `POST /api/cloud/link/start`, `GET /api/cloud/link/status` (`idle | pending | linked | expired | denied | unlinked`), `POST /api/cloud/unlink`, `GET /api/cloud/status`.
 - **CLI:** `dorkos cloud login | logout | status` (`packages/cli/src/commands/cloud-dispatcher.ts`) — the device flow talks directly to the cloud, so it works headless.
 - **Client:** the Settings → "DorkOS account" panel (`apps/client/src/layers/features/cloud-link/`) drives the four `Transport` cloud methods (`cloud-methods.ts`); it is visible regardless of local login. Obsidian `DirectTransport` stubs them.
