@@ -17,7 +17,12 @@ import {
   rosterMentionCandidates,
   type RosterCandidates,
 } from './author-handles.js';
-import { toAuthorRef, type AuthorRecord, type AuthorRegistry } from './author-registry.js';
+import {
+  authorOrigin,
+  toAuthorRef,
+  type AuthorRecord,
+  type AuthorRegistry,
+} from './author-registry.js';
 import { RoomError, type RoomAgentLookup } from './room-errors.js';
 import type { RoomStore } from './room-store.js';
 
@@ -80,7 +85,38 @@ export class RoomRoster {
       responseMode: input.responseMode ?? this.seedResponseMode(room, author),
       joinedAt: new Date().toISOString(),
     });
-    return { ...member, author: toAuthorRef(author) };
+    return { ...member, author: toAuthorRef(author), origin: authorOrigin(author.naturalKey) };
+  }
+
+  /**
+   * The membership row an external person's first message writes, ready to be
+   * inserted inside that message's own transaction (chats-as-channels §4.2).
+   *
+   * **Returned rather than written**, and that shape is the requirement. An
+   * external human joins on their FIRST MESSAGE — not at bridge time, so a
+   * group of two hundred does not project two hundred rows for people who never
+   * spoke — and the join has to land in the same transaction as the entry, or a
+   * crash between them leaves a room log holding a message from somebody its
+   * roster says was never there. `RoomService.postExternal` is what composes
+   * the two.
+   *
+   * `responseMode` is {@link RoomRoster.seedResponseMode}'s own answer, which
+   * for a non-agent is the inert enum default: the field decides when an AGENT
+   * answers unprompted, and nothing ever auto-triggers a person.
+   *
+   * @param room - The bridged room they are writing into.
+   * @param author - Their author row, already resolved.
+   */
+  externalJoin(
+    room: Room,
+    author: AuthorRecord
+  ): { roomId: string; authorId: string; responseMode: ResponseMode; joinedAt: string } {
+    return {
+      roomId: room.id,
+      authorId: author.id,
+      responseMode: this.seedResponseMode(room, author),
+      joinedAt: new Date().toISOString(),
+    };
   }
 
   /**
@@ -143,8 +179,12 @@ export class RoomRoster {
     const handles = advertisedHandles(rosterMentionCandidates(members, authors, this.agents).live);
     return members.map((member) => {
       const author = authors.get(member.authorId);
-      if (!author) return { ...member, author: unknownAuthor(member.authorId) };
-      return { ...member, author: toAuthorRef(author, handles.get(member.authorId)) };
+      if (!author) return { ...member, ...unknownMember(member.authorId) };
+      return {
+        ...member,
+        author: toAuthorRef(author, handles.get(member.authorId)),
+        origin: authorOrigin(author.naturalKey),
+      };
     });
   }
 
@@ -167,7 +207,7 @@ export class RoomRoster {
       const author = authors.get(member.authorId);
       byRoom
         .get(member.roomId)
-        ?.push(author ? toAuthorRef(author) : unknownAuthor(member.authorId));
+        ?.push(author ? toAuthorRef(author) : unknownMember(member.authorId).author);
     }
     return byRoom;
   }
@@ -249,14 +289,22 @@ export class RoomRoster {
   /** Attach one resolved author to one membership. */
   private withAuthor(member: RoomMember): RoomRosterEntry {
     const author = this.authors.getById(member.authorId);
-    return { ...member, author: author ? toAuthorRef(author) : unknownAuthor(member.authorId) };
+    return author
+      ? { ...member, author: toAuthorRef(author), origin: authorOrigin(author.naturalKey) }
+      : { ...member, ...unknownMember(member.authorId) };
   }
 }
 
 /**
  * Placeholder for a membership whose author row has vanished. Rendering
  * "Unknown" is honest; dropping the row would silently shrink a roster.
+ *
+ * `origin: 'local'` because there is no key left to read one off, and the row it
+ * pairs with already renders as the room's own voice rather than as a person.
+ * Nothing reaches this state today — an author row is retired, never deleted —
+ * so it is a placeholder for a corrupt database rather than a case with
+ * behaviour riding on it.
  */
-function unknownAuthor(id: string): AuthorRef {
-  return { id, kind: 'system', displayName: 'Unknown' };
+function unknownMember(id: string): Pick<RoomRosterEntry, 'author' | 'origin'> {
+  return { author: { id, kind: 'system', displayName: 'Unknown' }, origin: 'local' };
 }

@@ -44,6 +44,36 @@ export const AuthorKindSchema = z.enum(['human', 'agent', 'system']).openapi('Au
 export type AuthorKind = z.infer<typeof AuthorKindSchema>;
 
 /**
+ * Where an author is: on this machine, or on a platform outside it
+ * (chats-as-channels spec §4.3).
+ *
+ * **Derived from the stored author's natural key, never from whatever relay
+ * subject happens to be in scope when a roster is rendered.** A key is written
+ * once, at mint, and is the only honest source: render-time derivation would
+ * make the origin of a two-year-old entry depend on which message is being
+ * processed right now, and an entry whose provenance can change is not evidence.
+ *
+ * `'local'` for the operator, for agents and for the room's own system voice.
+ * `{ platform }` — `'telegram'`, `'slack'` — for anybody whose key starts
+ * `platform:`. The platform name is a LABEL: it renders outside the untrusted
+ * fence, so every reader passes it through `sanitizeIdentity` like any other.
+ *
+ * The distinction is a security boundary, not decoration: it is the difference
+ * between "a person on this machine wrote this" and "a stranger on the internet
+ * wrote this" (spec §9).
+ */
+export const AuthorOriginSchema = z
+  .union([
+    z.literal('local').describe('This machine: the operator, an agent, or the room itself.'),
+    z
+      .object({ platform: z.string().min(1) })
+      .describe('Outside this machine, on the named platform.'),
+  ])
+  .openapi('AuthorOrigin');
+
+export type AuthorOrigin = z.infer<typeof AuthorOriginSchema>;
+
+/**
  * A durable log entry is either something someone said (`post`) or something
  * the room reports about itself (`notice`).
  */
@@ -287,6 +317,9 @@ export type RoomMember = z.infer<typeof RoomMemberSchema>;
 /** A membership with its author resolved, which is what a roster renders. */
 export const RoomRosterEntrySchema = RoomMemberSchema.extend({
   author: AuthorRefSchema,
+  origin: AuthorOriginSchema.describe(
+    'Where this member is: on this machine, or on the platform a bridged chat projects from. Derived from the stored author key, so it is a property of who they are and not of how this response was produced.'
+  ),
 }).openapi('RoomRosterEntry');
 
 export type RoomRosterEntry = z.infer<typeof RoomRosterEntrySchema>;

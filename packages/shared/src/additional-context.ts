@@ -18,6 +18,7 @@
  */
 import { z } from 'zod';
 import { ResponseModeSchema, type ResponseMode } from './mesh-schemas.js';
+import type { AuthorOrigin } from './room-schemas.js';
 import { UiStateSchema, type UiState } from './schemas.js';
 
 /** Kinds of additional context DorkOS can attach to a turn. */
@@ -168,6 +169,17 @@ export interface RoomContextMember extends RoomContextAuthor {
   /** True for the one member whose turn this is. */
   isSelf: boolean;
   /**
+   * On this machine, or on a platform outside it (chats-as-channels spec §4.3).
+   *
+   * The sibling of {@link RoomContextMember.isPerson} and read for the same kind
+   * of decision: `isPerson` says whether to treat a member as a colleague,
+   * `origin` says whether that colleague is somebody the operator knows or a
+   * stranger who found a public bot. Derived from the stored author key, so it
+   * describes who they ARE — it does not change with whatever message is being
+   * processed when the roster is rendered.
+   */
+  origin: AuthorOrigin;
+  /**
    * Agents only — absent for people and for the room's own system voice. Lets an
    * agent see that another member is set not to reply here, so it does not wait
    * on an answer that is never coming.
@@ -191,6 +203,21 @@ export interface RoomContextEntry {
   authorDisplayName: string;
   /** Whether a person wrote this, or a machine did. */
   authorIsPerson: boolean;
+  /**
+   * Whether the author was on this machine or outside it, at the grain that
+   * matters per line (chats-as-channels spec §9.2).
+   *
+   * Coarser than {@link RoomContextMember.origin} on purpose. A roster line is
+   * read once a turn and can afford to name the platform; an entry line rides
+   * every message, and the only thing a model has to decide from it is whether
+   * these are the operator's own words or a stranger's. So this is the trust
+   * bit, spelled as one word by the renderer.
+   *
+   * **Established at write time and carried, never inferred from the text and
+   * never re-derived at render time** — it comes off the stored author's natural
+   * key, which was written when the author was minted (spec §9.1).
+   */
+  authorOrigin: 'local' | 'external';
   /** Someone talking (`post`) or the room reporting on itself (`notice`). */
   kind: 'post' | 'notice';
   /** ISO timestamp the entry was written. */
@@ -256,7 +283,24 @@ export interface RoomContextData {
    * a position inside a room rather than a room of its own
    * (ADR 260728-022013), so a thread turn reports the channel it happened in.
    */
-  room: { id: string; kind: 'channel' | 'dm'; name: string; topic?: string };
+  room: {
+    id: string;
+    kind: 'channel' | 'dm';
+    name: string;
+    topic?: string;
+    /**
+     * True when this room projects an external chat (chats-as-channels §3.1),
+     * which is what earns the standing line in the untrusted fence: messages
+     * here can come from people who are not on this machine and were never
+     * invited by anyone.
+     *
+     * A property of the ROOM, not of who happens to have spoken. A bridged group
+     * whose strangers have not posted yet still says so, because the sentence is
+     * about what the channel receives rather than about what is in this page of
+     * it.
+     */
+    bridged: boolean;
+  };
   /**
    * Non-null when this turn was triggered inside a thread: which entry the
    * thread hangs off, its opening words, and how many replies it already has.

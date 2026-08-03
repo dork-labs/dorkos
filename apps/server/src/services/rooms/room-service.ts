@@ -57,6 +57,7 @@
  * @module server/services/rooms/room-service
  */
 import { ulid } from 'ulidx';
+import type { DbTransaction } from '@dorkos/db';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import { ChannelTypeSchema, type ChannelType, type SignalType } from '@dorkos/shared/relay-schemas';
 import type {
@@ -80,7 +81,7 @@ import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../lib/logger.js';
 import { eventFanOut } from '../core/event-fan-out.js';
 import type { BridgeStore, PlatformChatType } from '../relay/chat-bridge/bridge-store.js';
-import type { AuthorRecord, AuthorRegistry } from './author-registry.js';
+import type { AuthorRecord, AuthorRegistry, ExternalAuthorIdentity } from './author-registry.js';
 import { deriveCascade } from './cascade-guard.js';
 import type { EngagedWindow } from './engagement.js';
 import { resolveAddressing } from './mentions.js';
@@ -239,6 +240,15 @@ export class RoomService {
       reactions: deps.reactions,
       authors: deps.authors,
       agents: deps.agents,
+      // Read per turn, never captured: a room becomes bridged partway through
+      // its life, and the standing line in the fence has to follow that rather
+      // than whatever was true when the service was built.
+      //
+      // An ARCHIVED bridge still counts, and that is the deliberate direction.
+      // Unbinding stops new messages arriving; it does not remove the ones
+      // already in the log, and a room whose history holds a stranger's words
+      // should not quietly lose the sentence that says so.
+      isBridgedRoom: (roomId) => this.bridges.findBridgeByRoom(roomId) !== null,
       runner: deps.turns,
       budget: deps.budget,
       maxAgentDepth: deps.maxAgentDepth,
@@ -1030,6 +1040,100 @@ export class RoomService {
     if (!this.store.getMember(roomId, input.authorId)) {
       throw new RoomError('MEMBER_NOT_FOUND', 'Not a member of this room');
     }
+    return this.writePost(room, input);
+  }
+
+  /**
+   * Write a message that arrived from somebody outside this machine, minting
+   * their author on their first message and joining them to the roster in the
+   * SAME transaction as that message (chats-as-channels spec §4.1–§4.2).
+   *
+   * The seam the inbound bridge calls. It exists rather than the bridge calling
+   * {@link RoomService.post} because three of this path's properties have no
+   * expression in that one:
+   *
+   * - **The author is minted from a platform identity, not supplied.** Nothing
+   *   outside this machine may name an author id, and the identity it IS keyed
+   *   on is address-free (`external-authors.ts`).
+   * - **Membership is lazy.** A bridged group of two hundred projects a roster
+   *   row per person who has SPOKEN, never one per person who exists (§4.2).
+   *   `post` would refuse the first message of every one of them.
+   * - **The join is atomic with the message.** A log holding a post from
+   *   somebody its roster says was never in the room is a record that
+   *   contradicts itself, and the room log is the audit trail this whole
+   *   feature offers in exchange for letting strangers reach a model (§9.4).
+   *
+   * **Bridged rooms only.** An external author in an ordinary room would be a
+   * stranger in the operator's private conversation, so the bridge row is
+   * checked here rather than trusted from the caller — the same
+   * refuse-before-doing shape the create path takes.
+   *
+   * They join by the room's own seed, which for a person is
+   * `seedResponseMode`'s inert default: nothing ever auto-triggers a human, so
+   * the column is a stored enum value rather than a claim about behaviour.
+   *
+   * @param roomId - The bridged room the chat projects into.
+   * @param input.identity - Who wrote it, on which platform, through which bot.
+   *   Never `null`: a message with no resolvable platform user id gets no author
+   *   at all and is dropped by the caller before it reaches here (§4.1).
+   * @param input.text - What they wrote, exactly as they wrote it.
+   * @param input.replyTo - The entry this answers, when the platform said so.
+   * @returns The committed entry, the author it was written as, and whether
+   *   this message is what put them on the roster.
+   */
+  postExternal(
+    roomId: string,
+    input: { identity: ExternalAuthorIdentity; text: string; replyTo?: string }
+  ): { entry: RoomEntry; author: AuthorRecord; joined: boolean } {
+    const room = this.store.getRoom(roomId);
+    if (!room) throw new RoomError('ROOM_NOT_FOUND', 'No such room');
+    if (room.archived) throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
+    const bridge = this.bridges.findBridgeByRoom(roomId);
+    if (!bridge || bridge.archivedAt !== null) {
+      throw new RoomError(
+        'NOT_A_BRIDGED_ROOM',
+        'Only a room bridged to an external chat can hold a message from outside this machine'
+      );
+    }
+
+    const author = this.authors.resolveExternal(input.identity);
+    const joining = this.store.getMember(roomId, author.id) === null;
+    const entry = this.writePost(
+      room,
+      { authorId: author.id, text: input.text, replyTo: input.replyTo },
+      joining
+        ? (tx) => void this.store.addMember(this.roster.externalJoin(room, author), tx)
+        : undefined
+    );
+    // After the commit, never inside it: a broadcast is not rolled back, and a
+    // roster event for a join that failed would leave every open cockpit
+    // showing a member the database does not have.
+    if (joining) eventFanOut.broadcast('room_member_added', { roomId, authorId: author.id });
+    return { entry, author, joined: joining };
+  }
+
+  /**
+   * Everything a post does once the room and the writer's standing in it have
+   * been settled — shared by {@link RoomService.post} and
+   * {@link RoomService.postExternal}, which settle those two things very
+   * differently and agree on nothing else.
+   *
+   * @param room - The room, already resolved and known un-archived.
+   * @param input - The post itself.
+   * @param within - Extra writes for the entry's own transaction.
+   */
+  private writePost(
+    room: Room,
+    input: {
+      authorId: string;
+      text: string;
+      sessionId?: string;
+      trigger?: PostTrigger;
+      replyTo?: string;
+    },
+    within?: (tx: DbTransaction) => void
+  ): RoomEntry {
+    const roomId = room.id;
 
     // Provenance follows the TURN, not the call — and where there is no turn,
     // who is writing decides, never the shape of the call. An agent can post
@@ -1047,25 +1151,28 @@ export class RoomService {
     // room's answer to it below.
     const addressed = resolveAddressing(input.text, this.roster.addressingCandidates(roomId));
     const id = ulid();
-    const entry = this.store.appendEntry({
-      roomId,
-      id,
-      authorId: input.authorId,
-      kind: 'post',
-      body: { text: input.text },
-      mentions: addressed.mentions,
-      sessionId: input.sessionId ?? null,
-      ...this.threadPointers(roomId, input.replyTo),
-      ...deriveCascade(id, {
-        trigger,
-        // An author row that has vanished is treated as an agent — the
-        // conservative read, since the only thing this decides is whether the
-        // writer may reset a spend limit.
-        authorKind: author?.kind ?? 'agent',
-        maxAgentDepth: this.maxAgentDepth(),
-      }),
-      createdAt: new Date().toISOString(),
-    });
+    const entry = this.store.appendEntry(
+      {
+        roomId,
+        id,
+        authorId: input.authorId,
+        kind: 'post',
+        body: { text: input.text },
+        mentions: addressed.mentions,
+        sessionId: input.sessionId ?? null,
+        ...this.threadPointers(roomId, input.replyTo),
+        ...deriveCascade(id, {
+          trigger,
+          // An author row that has vanished is treated as an agent — the
+          // conservative read, since the only thing this decides is whether the
+          // writer may reset a spend limit.
+          authorKind: author?.kind ?? 'agent',
+          maxAgentDepth: this.maxAgentDepth(),
+        }),
+        createdAt: new Date().toISOString(),
+      },
+      within
+    );
 
     this.publishEntry(entry);
     // Trigger-only, both ways: the post reaches its readers now, and whoever it
