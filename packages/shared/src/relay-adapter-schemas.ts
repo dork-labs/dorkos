@@ -590,6 +590,71 @@ export const UpdateBindingRequestSchema = z
 
 export type UpdateBindingRequest = z.infer<typeof UpdateBindingRequestSchema>;
 
+/**
+ * Body for `POST /api/relay/bindings/:id/move` (connection-scoping spec
+ * `specs/connection-scoping/` §Part 2 Move semantics) — re-point an existing
+ * binding to a different agent, the one narrow exception to
+ * `UpdateBindingRequestSchema`'s "bindings are re-created, not re-pointed."
+ */
+export const MoveBindingRequestSchema = z
+  .object({
+    agentId: z.string().min(1),
+  })
+  .openapi('MoveBindingRequest');
+
+export type MoveBindingRequest = z.infer<typeof MoveBindingRequestSchema>;
+
+// === Unclaimed chats (the claim feed) ===
+
+/** Lifecycle status of one unclaimed-chat row (connection-scoping spec §Part 3). */
+export const UnclaimedChatStatusSchema = z
+  .enum(['pending', 'claimed', 'ignored', 'blocked'])
+  .openapi('UnclaimedChatStatus');
+
+/**
+ * A chat an adapter heard from with no binding to route it to
+ * (connection-scoping spec `specs/connection-scoping/` §Part 3). Carries only
+ * subject-derived routing fields and sender-identity metadata — NEVER the
+ * message body.
+ */
+export const UnclaimedChatSchema = z
+  .object({
+    id: z.string(),
+    adapterId: z.string(),
+    chatId: z.string(),
+    channelType: ChannelTypeSchema.nullable(),
+    chatKind: z.enum(['dm', 'group']),
+    senderName: z.string().nullable(),
+    senderId: z.string().nullable(),
+    status: UnclaimedChatStatusSchema,
+    /** Damping counter — bumped, not re-inserted, on repeat sightings. */
+    messageCount: z.number().int().nonnegative(),
+    firstSeenAt: z.string().datetime(),
+    lastSeenAt: z.string().datetime(),
+    decidedAt: z.string().datetime().nullable(),
+    decidedAgentId: z.string().nullable(),
+  })
+  .openapi('UnclaimedChat');
+
+export type UnclaimedChat = z.infer<typeof UnclaimedChatSchema>;
+
+/** Response of `GET /api/relay/unclaimed-chats`. */
+export const UnclaimedChatListResponseSchema = z
+  .object({
+    chats: z.array(UnclaimedChatSchema),
+  })
+  .openapi('UnclaimedChatListResponse');
+
+/** Body for `POST /api/relay/unclaimed-chats/:id/claim`. */
+export const ClaimUnclaimedChatRequestSchema = z
+  .object({
+    agentId: z.string().min(1),
+    sessionStrategy: SessionStrategySchema.optional(),
+    permissionMode: PermissionModeSchema.optional(),
+    label: z.string().optional(),
+  })
+  .openapi('ClaimUnclaimedChatRequest');
+
 export const BindingListResponseSchema = z
   .object({
     bindings: z.array(AdapterBindingSchema),

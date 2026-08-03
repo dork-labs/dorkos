@@ -6,6 +6,14 @@
  * most-specific-first resolution for routing inbound adapter messages
  * to the correct agent.
  *
+ * **One chat, one agent** (connection-scoping spec `specs/connection-scoping/`
+ * §Part 2): `create`/`update` enforce uniqueness on `(adapterId, chatId)` for
+ * every non-empty `chatId` — the audited bug was two bindings tied at the same
+ * scoring tier silently shadowing each other by creation order
+ * (`Array.sort`'s stability + `Map` insertion order). Re-pointing an existing
+ * binding to a different agent is the one narrow exception to "bindings are
+ * re-created, not re-pointed" — see {@link BindingStore.moveToAgent}.
+ *
  * @module services/relay/binding-store
  */
 import { readFile, stat } from 'node:fs/promises';
@@ -28,6 +36,26 @@ import { carryForwardBindingDefaults } from './safe-defaults.js';
 const BindingsFileShellSchema = z.object({
   bindings: z.array(z.unknown()),
 });
+
+/**
+ * Thrown by {@link BindingStore.create}/{@link BindingStore.update} when the
+ * requested `(adapterId, chatId)` already belongs to another binding — "one
+ * chat, one agent" (connection-scoping spec §Part 2). Carries the conflicting
+ * binding so a caller can offer a move rather than a bare rejection.
+ */
+export class BindingConflictError extends Error {
+  /** The existing binding that already owns this `(adapterId, chatId)`. */
+  readonly conflict: AdapterBinding;
+
+  constructor(conflict: AdapterBinding) {
+    super(
+      `Chat '${conflict.chatId}' on adapter '${conflict.adapterId}' is already bound to agent ` +
+        `'${conflict.agentId}' (binding ${conflict.id}).`
+    );
+    this.name = 'BindingConflictError';
+    this.conflict = conflict;
+  }
+}
 
 /** Chokidar stability threshold before triggering hot-reload (ms). */
 const STABILITY_THRESHOLD_MS = 150;
@@ -114,12 +142,21 @@ export class BindingStore {
   /**
    * Create a new binding with generated id and timestamps.
    *
+   * **One chat, one agent** (connection-scoping spec §Part 2): throws
+   * {@link BindingConflictError} when `chatId` is non-empty and another
+   * binding on the same `adapterId` already claims it — regardless of that
+   * binding's `enabled` state, since a paused binding still owns its chat.
+   * Wildcard bindings (`chatId` absent) are exempt — see
+   * `specs/connection-scoping/design-decisions.md` D3.
+   *
    * @param input - Binding configuration (without id/timestamps)
    * @returns The created binding with generated id and timestamps
+   * @throws {@link BindingConflictError} on a `(adapterId, chatId)` collision.
    */
   async create(input: z.input<typeof CreateBindingRequestSchema>): Promise<AdapterBinding> {
     // Parse through schema to apply defaults (sessionStrategy, label)
     const parsed = CreateBindingRequestSchema.parse(input);
+    this.assertChatAvailable(parsed.adapterId, parsed.chatId);
     const now = new Date().toISOString();
     const binding: AdapterBinding = {
       ...parsed,
@@ -130,6 +167,27 @@ export class BindingStore {
     this.bindings.set(binding.id, binding);
     await this.save();
     return binding;
+  }
+
+  /**
+   * Throw {@link BindingConflictError} if `chatId` (when non-empty) is
+   * already claimed by a DIFFERENT binding on `adapterId`. Shared by
+   * {@link create} and {@link update}.
+   *
+   * @param adapterId - The adapter the new/updated binding is on.
+   * @param chatId - The chat id being claimed, or `undefined` for a wildcard.
+   * @param excludeId - A binding id to ignore (the one being updated).
+   */
+  private assertChatAvailable(
+    adapterId: string,
+    chatId: string | undefined,
+    excludeId?: string
+  ): void {
+    if (!chatId) return;
+    const existing = this.getByAdapterId(adapterId).find(
+      (b) => b.chatId === chatId && b.id !== excludeId
+    );
+    if (existing) throw new BindingConflictError(existing);
   }
 
   /**
@@ -162,15 +220,23 @@ export class BindingStore {
    * Rejecting here means the invalid state can never reach disk from any
    * boundary.
    *
+   * Also re-checks "one chat, one agent" (§Part 2) when `updates.chatId`
+   * changes to a new non-empty value — `adapterId` itself is never mutable
+   * here, so a `chatId` change is the only way an update could newly collide.
+   *
    * @param id - The binding UUID to update
    * @param updates - Fields to update; every {@link UpdateBindingRequest} field is accepted
    * @returns The updated binding, or undefined if not found
    * @throws When the merged result fails `AdapterBindingSchema` — in practice
    *   {@link BRIDGE_REQUIRES_CHAT_ID_MESSAGE}, the only refinement the schema carries.
+   * @throws {@link BindingConflictError} on a `(adapterId, chatId)` collision.
    */
   async update(id: string, updates: BindingUpdate): Promise<AdapterBinding | undefined> {
     const existing = this.bindings.get(id);
     if (!existing) return undefined;
+    if (updates.chatId !== undefined && updates.chatId !== existing.chatId) {
+      this.assertChatAvailable(existing.adapterId, updates.chatId, id);
+    }
     const merged: AdapterBinding = {
       ...existing,
       ...updates,
@@ -193,7 +259,34 @@ export class BindingStore {
   }
 
   /**
-   * Resolve the best matching binding for an inbound message.
+   * Re-point an EXISTING binding's `agentId` in place (connection-scoping
+   * spec §Part 2 Move semantics) — the one narrow exception to
+   * {@link update}'s "bindings are re-created, not re-pointed" rule.
+   * `id`/`chatId`/`adapterId` are unchanged; only `agentId` and `updatedAt`
+   * move. This is what makes "This chat reaches X. Move it to Y?" possible
+   * without losing the binding's identity (and therefore its session-map
+   * entries' key) the way a delete-and-recreate would.
+   *
+   * Callers are responsible for clearing any session-map entries the OLD
+   * agent's project directory produced — see
+   * `BindingRouter.clearSessionsForBinding` — since a binding row alone
+   * cannot know about the router's separate session map.
+   *
+   * @param id - The binding UUID to re-point.
+   * @param agentId - The new owning agent.
+   * @returns The updated binding, or undefined if `id` is not found.
+   */
+  async moveToAgent(id: string, agentId: string): Promise<AdapterBinding | undefined> {
+    const existing = this.bindings.get(id);
+    if (!existing) return undefined;
+    const moved: AdapterBinding = { ...existing, agentId, updatedAt: new Date().toISOString() };
+    this.bindings.set(id, moved);
+    await this.save();
+    return moved;
+  }
+
+  /**
+   * Resolve the best matching ENABLED binding for an inbound message.
    *
    * Uses most-specific-first scoring:
    * 1. adapterId + chatId + channelType (score 7)
@@ -202,12 +295,53 @@ export class BindingStore {
    * 4. adapterId only / wildcard (score 1)
    * 5. no match -> undefined (dead-letter)
    *
+   * **Disabled candidates are excluded from scoring** (connection-scoping
+   * spec §Part 2 — the audited fact that `resolve()` used to let a
+   * higher-scoring DISABLED binding win over a lower-scoring enabled
+   * fallback, e.g. a paused specific binding permanently blocking an enabled
+   * wildcard). When the caller needs to know whether a MISS is a true
+   * `no_binding` or "the only candidate is paused," see
+   * {@link resolveIncludingDisabled}.
+   *
    * @param adapterId - The adapter that received the message
    * @param chatId - Optional chat identifier from the message subject
    * @param channelType - Optional channel type from envelope metadata
    */
   resolve(adapterId: string, chatId?: string, channelType?: string): AdapterBinding | undefined {
-    const candidates = this.getByAdapterId(adapterId);
+    return this._resolve(adapterId, chatId, channelType, { includeDisabled: false });
+  }
+
+  /**
+   * Identical scoring to {@link resolve}, but disabled candidates are
+   * eligible too. Used ONLY by the router's fallback path — a hit here after
+   * a `resolve()` miss means "nothing matched because it's paused," which is
+   * what turns a silent `no_binding` drop into the told `binding_paused`
+   * refusal (DOR-789's "every refusal is told" invariant, preserved
+   * alongside the `resolve()` fix — see
+   * `specs/connection-scoping/design-decisions.md` D5). Not a general-purpose
+   * alternative to `resolve()` — nothing else should call this.
+   *
+   * @param adapterId - The adapter that received the message
+   * @param chatId - Optional chat identifier from the message subject
+   * @param channelType - Optional channel type from envelope metadata
+   */
+  resolveIncludingDisabled(
+    adapterId: string,
+    chatId?: string,
+    channelType?: string
+  ): AdapterBinding | undefined {
+    return this._resolve(adapterId, chatId, channelType, { includeDisabled: true });
+  }
+
+  private _resolve(
+    adapterId: string,
+    chatId: string | undefined,
+    channelType: string | undefined,
+    opts: { includeDisabled: boolean }
+  ): AdapterBinding | undefined {
+    const candidates = this.getByAdapterId(adapterId).filter(
+      (b) => opts.includeDisabled || b.enabled !== false
+    );
     if (candidates.length === 0) return undefined;
 
     return candidates
@@ -227,6 +361,45 @@ export class BindingStore {
       else return 0; // explicit channelType mismatch
     }
     return score;
+  }
+
+  /**
+   * Remove every binding that loses a `(adapterId, non-empty chatId)`
+   * collision to an older one. Mutates `this.bindings` directly (called only
+   * from `load()`, before any save). Returns the count removed, folded into
+   * `load()`'s existing discard counter/re-save trigger.
+   */
+  private dedupeChatCollisions(): number {
+    // adapterId -> chatId -> the oldest binding seen so far for that pair.
+    const winners = new Map<string, Map<string, AdapterBinding>>();
+    const losers: string[] = [];
+    for (const binding of this.getAll()) {
+      if (!binding.chatId) continue;
+      let byChat = winners.get(binding.adapterId);
+      if (!byChat) {
+        byChat = new Map();
+        winners.set(binding.adapterId, byChat);
+      }
+      const incumbent = byChat.get(binding.chatId);
+      if (!incumbent) {
+        byChat.set(binding.chatId, binding);
+        continue;
+      }
+      const older = incumbent.createdAt <= binding.createdAt ? incumbent : binding;
+      const newer = older === incumbent ? binding : incumbent;
+      byChat.set(binding.chatId, older);
+      losers.push(newer.id);
+    }
+    for (const id of losers) {
+      const dropped = this.bindings.get(id);
+      this.bindings.delete(id);
+      logger.warn('Discarding a duplicate binding for an already-bound chat during load', {
+        id,
+        adapterId: dropped?.adapterId,
+        chatId: dropped?.chatId,
+      });
+    }
+    return losers.length;
   }
 
   private async load(): Promise<void> {
@@ -256,6 +429,15 @@ export class BindingStore {
           });
         }
       }
+
+      // "One chat, one agent" dedup pass (connection-scoping spec §Part 2): a
+      // `bindings.json` written before this invariant existed may already
+      // hold two bindings on the same `(adapterId, chatId)` — exactly the
+      // audited tie `resolve()` used to silently shadow. Keep the OLDEST
+      // (`createdAt`) and discard the rest, so a file this store already
+      // wrote once self-heals into a state the new `create`/`update` checks
+      // can enforce going forward.
+      discarded += this.dedupeChatCollisions();
 
       if (discarded > 0) {
         logger.info(
