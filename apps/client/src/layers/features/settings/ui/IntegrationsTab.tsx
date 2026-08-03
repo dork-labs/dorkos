@@ -17,7 +17,6 @@ import {
   useUpdateAdapterConfig,
 } from '@/layers/entities/relay';
 import { useBindings } from '@/layers/entities/binding';
-import { TOUR_ANCHORS } from '@/layers/shared/config';
 import { AdapterSetupWizard, CatalogCard } from '@/layers/features/relay';
 import type { AdapterManifest } from '@dorkos/shared/relay-schemas';
 import { IntegrationSettingRow } from './IntegrationSettingRow';
@@ -165,7 +164,7 @@ export function IntegrationsTab() {
     <>
       {/* Active Integrations */}
       {configuredIntegrations.length > 0 ? (
-        <FieldCard data-testid={TOUR_ANCHORS.relayIntegrations}>
+        <FieldCard>
           <FieldCardContent>
             {configuredIntegrations.map(({ instance, manifest }) => (
               <IntegrationSettingRow

@@ -58,7 +58,14 @@ function buildHarness(initialUrl = '/') {
     component: HookSlot,
   });
 
-  const routeTree = rootRoute.addChildren([indexRoute]);
+  const connectionsRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/connections',
+    validateSearch: zodValidator(testSearchSchema),
+    component: HookSlot,
+  });
+
+  const routeTree = rootRoute.addChildren([indexRoute, connectionsRoute]);
   const history = createMemoryHistory({ initialEntries: [initialUrl] });
   const router = createRouter({ routeTree, history });
 
@@ -73,6 +80,10 @@ function buildHarness(initialUrl = '/') {
         <RouterProvider router={router} />
       </HookSlotContext.Provider>
     );
+  }
+
+  function readPathname(): string {
+    return router.state.location.pathname;
   }
 
   function readSearch(): SearchRecord {
@@ -90,7 +101,7 @@ function buildHarness(initialUrl = '/') {
     });
   }
 
-  return { router, actions, Wrapper, readSearch, waitForRouterReady };
+  return { router, actions, Wrapper, readSearch, readPathname, waitForRouterReady };
 }
 
 type RouterTestHarness = ReturnType<typeof buildHarness>;
@@ -99,11 +110,9 @@ type RouterTestHarness = ReturnType<typeof buildHarness>;
 // resolveDeepLinkTarget — the route-capable resolution model (DOR-854)
 // ─────────────────────────────────────────────────────────────
 //
-// `useSettingsDeepLink` always calls this against the real, tab-only
-// production map, so these tests pass their own fixture maps to exercise
-// every branch — including the route branch, which is dead code against
-// today's production map (it has no route entries yet; Wave 2 adds the
-// first one, e.g. `integrations` → `/connections`).
+// `useSettingsDeepLink` calls this against the real production map. These
+// tests pass their own fixture maps so every branch is exercised in isolation,
+// independent of which ids the production map happens to carry today.
 describe('resolveDeepLinkTarget', () => {
   const tabOnlyMap: Record<string, SettingsTab | SettingsRouteTarget> = {
     channels: 'integrations',
@@ -211,12 +220,41 @@ describe('useSettingsDeepLink', () => {
     expect(result.current.activeTab).toBe('tools');
   });
 
-  it('migrates the retired settings=channels bookmark to activeTab="integrations"', async () => {
-    harness = buildHarness('/?settings=channels');
+  it.each(['channels', 'integrations'])(
+    'sends the retired settings=%s bookmark to the Connections page',
+    async (retiredId) => {
+      harness = buildHarness(`/?settings=${retiredId}`);
+      renderHook(() => useSettingsDeepLink(), { wrapper: harness.Wrapper });
+      await harness.waitForRouterReady();
+
+      await waitFor(() => {
+        expect(harness.readPathname()).toBe('/connections');
+      });
+      expect(harness.readSearch().region).toBe('messaging');
+    }
+  );
+
+  it('does not flash the Settings dialog open on the way to the page', async () => {
+    harness = buildHarness('/?settings=integrations');
     const { result } = renderHook(() => useSettingsDeepLink(), { wrapper: harness.Wrapper });
     await harness.waitForRouterReady();
-    expect(result.current.isOpen).toBe(true);
-    expect(result.current.activeTab).toBe('integrations');
+
+    // A link whose destination left the dialog should never read as "the
+    // dialog is open" — that is a visible flicker on every retired bookmark.
+    expect(result.current.isOpen).toBe(false);
+    expect(result.current.activeTab).toBeNull();
+  });
+
+  it('replaces the retired link rather than pushing it into history', async () => {
+    harness = buildHarness('/?settings=integrations');
+    renderHook(() => useSettingsDeepLink(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+
+    await waitFor(() => {
+      expect(harness.readPathname()).toBe('/connections');
+    });
+    // Back must not land on the dead link and bounce forward again.
+    expect(harness.actions).not.toContain('PUSH');
   });
 
   it('returns section when settingsSection is set', async () => {

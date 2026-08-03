@@ -7,7 +7,7 @@
  *
  * @module shared/model/use-dialog-deep-link
  */
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useAppStore } from './app-store';
 import type { SettingsTab } from './app-store/app-store-panels';
 import { useSafeSearch, useSafeNavigate } from './use-safe-router';
@@ -40,13 +40,19 @@ export type SettingsDeepLinkTarget = { kind: 'tab'; tab: SettingsTab } | Setting
 /**
  * Maps a retired `?settings=` id to its current equivalent, so a bookmark or
  * shared link minted before a rename still opens the right place instead of
- * silently landing on nothing. A mapped value can be another tab id (the
- * `channels` → `integrations` migration, DOR-523) or a {@link SettingsRouteTarget}
- * for an id whose destination left the dialog entirely — the capability a
- * future tab deletion needs (DOR-854); no entry uses the route form yet.
+ * silently landing on nothing. A mapped value can be another tab id, or a
+ * {@link SettingsRouteTarget} for an id whose destination left the dialog
+ * entirely (the escape hatch DOR-854 built).
+ *
+ * Both messaging ids now point at the Connections page: `channels` was folded
+ * into `integrations` (DOR-523), and `integrations` itself moved out of
+ * Settings and onto the page (DOR-857). The Settings tab still exists and is
+ * still reachable from inside the dialog until it is deleted; what changes
+ * here is where an old *link* lands.
  */
 const LEGACY_SETTINGS_TAB_MAP: Record<string, SettingsTab | SettingsRouteTarget> = {
-  channels: 'integrations',
+  channels: { kind: 'route', path: '/connections', search: { region: 'messaging' } },
+  integrations: { kind: 'route', path: '/connections', search: { region: 'messaging' } },
 };
 
 /**
@@ -120,15 +126,26 @@ export function useSettingsDeepLink(): DialogDeepLink<SettingsTab> {
   const setSettingsOpen = useAppStore((s) => s.setSettingsOpen);
   const storeOpen = useAppStore((s) => s.settingsOpen);
 
-  // Without a router the URL says nothing, so the store flag is the open signal.
-  const isOpen = navigate ? !!search.settings : storeOpen;
-  // Route targets are not wired up anywhere yet (no legacy entry maps to one),
-  // so this hook only ever surfaces the tab case — `activeTab` stays exactly
-  // what the former `resolveSettingsTab` (pre-DOR-854) returned for every id
-  // in use today.
   const resolved = navigate ? resolveSettingsDeepLink(search.settings) : null;
+  const routeTarget = resolved?.kind === 'route' ? resolved : null;
+  // A link whose destination left the dialog should not also flash the dialog
+  // open on its way out, so the route case reads as closed here and the effect
+  // below sends it on.
+  const isOpen = navigate ? !!search.settings && !routeTarget : storeOpen;
   const activeTab = resolved?.kind === 'tab' ? resolved.tab : null;
   const section = navigate ? (search.settingsSection ?? null) : null;
+
+  // Send a retired id to the page that took its job. In an effect rather than
+  // at render because navigating is exactly the kind of outside-React work an
+  // effect is for, and `replace` keeps the dead link out of history.
+  useEffect(() => {
+    if (!navigate || !routeTarget) return;
+    navigate({
+      to: routeTarget.path,
+      search: (routeTarget.search ?? {}) as never,
+      replace: true,
+    });
+  }, [navigate, routeTarget]);
 
   const open = useCallback(
     (tab?: SettingsTab, sectionId?: string) => {

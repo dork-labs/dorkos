@@ -4,7 +4,7 @@ import { DashboardSidebarPage } from '../pages/DashboardSidebarPage';
 import { SettingsPage } from '../pages/SettingsPage';
 import { BasePage } from '../pages/BasePage';
 import { TasksPage } from '../pages/TasksPage';
-import { RelayPage } from '../pages/RelayPage';
+import { ConnectionsPage } from '../pages/ConnectionsPage';
 import { AuthPage } from '../pages/AuthPage';
 import { RightPanelPage } from '../pages/RightPanelPage';
 import { RoomsPage } from '../pages/RoomsPage';
@@ -17,7 +17,7 @@ type DorkOSFixtures = {
   dashboardSidebar: DashboardSidebarPage;
   settingsPage: SettingsPage;
   tasksPage: TasksPage;
-  relayPage: RelayPage;
+  connectionsPage: ConnectionsPage;
   authPage: AuthPage;
   rightPanel: RightPanelPage;
   roomsPage: RoomsPage;
@@ -43,8 +43,8 @@ export const test = base.extend<DorkOSFixtures>({
   tasksPage: async ({ page }, use) => {
     await use(new TasksPage(page));
   },
-  relayPage: async ({ page }, use) => {
-    await use(new RelayPage(page));
+  connectionsPage: async ({ page }, use) => {
+    await use(new ConnectionsPage(page));
   },
   authPage: async ({ page }, use) => {
     await use(new AuthPage(page));

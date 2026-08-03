@@ -5,6 +5,7 @@ import {
   CollapsibleTrigger,
   FeatureDisabledState,
 } from '@/layers/shared/ui';
+import { TOUR_ANCHORS } from '@/layers/shared/config';
 import { useRelayEnabled, useRelayEventStream } from '@/layers/entities/relay';
 import { MessagingConnections, ActivityFeed, RelayHealthBar } from '@/layers/features/relay';
 import { ClaimFeed, MessagePolicyCard } from '@/layers/features/connections';
@@ -22,7 +23,11 @@ export function MessagingRegion() {
   useRelayEventStream(enabled);
 
   return (
-    <section aria-labelledby="region-messaging" className="space-y-6">
+    <section
+      aria-labelledby="region-messaging"
+      data-testid={TOUR_ANCHORS.relayIntegrations}
+      className="space-y-6"
+    >
       <header>
         <h2 id="region-messaging" className="text-base font-semibold">
           Messaging

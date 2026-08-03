@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 
-import { useAppStore, useSettingsDeepLink } from '@/layers/shared/model';
+import { useAppStore } from '@/layers/shared/model';
 import { TourSpotlight } from '@/layers/shared/ui';
 
 import { TOUR_DEFINITIONS, type TourId } from '../model/tour-definitions';
@@ -20,7 +20,6 @@ export function TourHost() {
   const { runningDefinition, activeIndex, advanceStep, endTour, runTour } = useTours();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const { open: openSettings } = useSettingsDeepLink();
   const requestedTour = useAppStore((s) => s.requestedTour);
   const clearRequestedTour = useAppStore((s) => s.clearRequestedTour);
 
@@ -59,10 +58,8 @@ export function TourHost() {
       // navigate to the current path can remount the dashboard mid-launch and
       // yank the anchor out from under the spotlight while it is resolving.
       if (pathname !== link.to) navigate({ to: link.to });
-    } else if (link.kind === 'settings-tab') {
-      openSettings(link.tab);
     }
-  }, [runningDefinition, pathname, navigate, openSettings]);
+  }, [runningDefinition, pathname, navigate]);
 
   if (!runningDefinition) return null;
 

@@ -67,6 +67,28 @@ function wizard(page: Page) {
 }
 
 /**
+ * Get past the wizard's first question.
+ *
+ * Adding a connection asks who answers before it asks for any setting
+ * (DOR-857), so every assertion about the configure step has to walk through
+ * it. Editing skips the step, and this is a no-op there.
+ */
+async function pastAgentStep(page: Page) {
+  const dialog = wizard(page);
+  const agentQuestion = dialog.getByLabel('Who should answer?');
+  const namedAgent = dialog.getByText(/will answer\.$/);
+  if ((await agentQuestion.count()) === 0 && (await namedAgent.count()) === 0) return;
+
+  if ((await agentQuestion.count()) > 0) {
+    await agentQuestion.click();
+    await page.getByRole('option').first().click();
+  }
+  const next = dialog.getByRole('button', { name: 'Continue' });
+  await expect(next).toBeEnabled();
+  await next.click();
+}
+
+/**
  * Walks every configure step of the open wizard and returns the field labels it
  * rendered along the way. Stops before the last Continue so the wizard never
  * leaves the configure step to test a connection with a made-up token.
@@ -101,6 +123,7 @@ test.describe('Adapter setup wizard — every declared field reaches a screen', 
     await page.getByRole('button', { name: 'Add Slack' }).click();
     const dialog = wizard(page);
     await expect(dialog).toBeVisible();
+    await pastAgentStep(page);
 
     // The section that collects the fields no setup step names.
     await expect(dialog.getByRole('heading', { name: 'Access Control' })).toBeVisible();
@@ -120,6 +143,7 @@ test.describe('Adapter setup wizard — every declared field reaches a screen', 
     await page.setViewportSize(DESKTOP);
     await openIntegrations(page);
     await page.getByRole('button', { name: 'Add Slack' }).click();
+    await pastAgentStep(page);
 
     const dialog = wizard(page);
     await expect(dialog.getByRole('radio', { name: /Allowlist only/ })).toHaveAttribute(
@@ -286,6 +310,7 @@ test.describe('Adapter setup wizard — every declared field reaches a screen', 
     await page.setViewportSize(DESKTOP);
     await openIntegrations(page);
     await page.getByRole('button', { name: 'Add Slack' }).click();
+    await pastAgentStep(page);
 
     const dialog = wizard(page);
     const approvers = dialog.getByLabel('Approvers');
@@ -305,6 +330,7 @@ test.describe('Adapter setup wizard — every declared field reaches a screen', 
     await page.setViewportSize(MOBILE);
     await openIntegrations(page);
     await page.getByRole('button', { name: 'Add Slack' }).click();
+    await pastAgentStep(page);
 
     const dialog = wizard(page);
     await expect(dialog.getByRole('heading', { name: 'Access Control' })).toBeVisible();
@@ -331,6 +357,7 @@ test.describe('Adapter setup wizard — every declared field reaches a screen', 
       if (!(await add.isVisible().catch(() => false))) continue;
       await add.click();
       await expect(wizard(page)).toBeVisible();
+      await pastAgentStep(page);
 
       const labels = await labelsAcrossSteps(page, entry.manifest.setupSteps?.length ?? 1);
       const missing = entry.manifest.configFields
