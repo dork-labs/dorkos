@@ -6,6 +6,8 @@ covers:
   - 'feat(client): Connections page v2 — two regions, claim cards, the relay dialog retired (DOR-857)'
   - "feat(client): retire the messaging dialog's deep links onto the page (DOR-857)"
   - 'feat(client): a designed intent step for services that are two things at once (DOR-857)'
+  - 'fix(client): tell the truth when a failed save cannot be undone (DOR-857 review)'
+  - 'fix(client): a failed services fetch is an error state, not an empty one (DOR-857 review)'
 ---
 
 ### Added
