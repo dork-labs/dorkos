@@ -494,6 +494,40 @@ describe('describeExecutionDefaults', () => {
     expect(view.perRuntime.map((entry) => entry.runtime)).not.toContain('test-mode');
   });
 
+  it('leaves out a runtime that is not registered at all, and reports the rest unchanged', () => {
+    // A runtime turned off (`runtimes.codex.enabled: false`) never registers,
+    // so it is not in the capability map and not in this report. Its stored
+    // defaults are untouched by that: they stay in config and apply again the
+    // moment it comes back. The report covers each REGISTERED runtime, and the
+    // other rows must not notice the gap.
+    const view = describeExecutionDefaults(
+      declaring({
+        'claude-code': CLAUDE_CODE_CAPABILITIES.settings,
+        opencode: OPENCODE_CAPABILITIES.settings,
+      }),
+      runtimes({
+        claudeCode: { ...USER_CONFIG_DEFAULTS.runtimes.claudeCode, defaultModel: 'opus' },
+        codex: { ...USER_CONFIG_DEFAULTS.runtimes.codex, defaultTrustStop: 'ask' },
+      })
+    );
+
+    expect(view.perRuntime.map((entry) => entry.runtime)).toEqual(['claude-code', 'opencode']);
+    expect(view.perRuntime.find((e) => e.runtime === 'claude-code')).toEqual({
+      runtime: 'claude-code',
+      model: 'opus',
+      effort: null,
+      trustStop: null,
+      supportsEffort: true,
+    });
+    expect(view.perRuntime.find((e) => e.runtime === 'opencode')).toEqual({
+      runtime: 'opencode',
+      model: null,
+      effort: null,
+      trustStop: null,
+      supportsEffort: false,
+    });
+  });
+
   it('reads exactly the section the runtime declares, and no other', () => {
     // The runtime type and the config key are not the same string and never
     // were. What ties them now is the runtime's own declaration, so a runtime

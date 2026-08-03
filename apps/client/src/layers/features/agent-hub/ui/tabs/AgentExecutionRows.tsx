@@ -189,7 +189,7 @@ export function AgentExecutionRows({
 }) {
   const isMobile = useIsMobile();
   const { data: config } = useConfig();
-  const { data: capabilityMap } = useRuntimeCapabilities();
+  const { data: capabilityMap, isPending: capabilitiesPending } = useRuntimeCapabilities();
   const defaultRuntime = config?.executionDefaults?.runtime ?? 'claude-code';
   const runtime = agent.runtime ?? defaultRuntime;
   const serverForRuntime = config?.executionDefaults?.perRuntime.find((e) => e.runtime === runtime);
@@ -211,10 +211,19 @@ export function AgentExecutionRows({
   // Both readings come from the runtime's own declaration: the server default
   // row carries it forward, and the capability map is the source it was derived
   // from — so an agent on a runtime the defaults have no row for still gets the
-  // real answer. Neither having answered means "not asked yet", which the
-  // report reads permissively and the rows below render as a choosable effort.
+  // real answer.
   const declaredEffortSupport =
     serverForRuntime?.supportsEffort ?? settingsForRuntime(capabilityMap, runtime)?.supportsEffort;
+  // Neither having answered while the capability query is still in flight is
+  // "not asked yet", and the two halves treat that differently on purpose. The
+  // report below stays permissive: a stored effort is never called broken on a
+  // guess. The CONTROL cannot be. Offering an editable effort row for the
+  // length of one round-trip and then swapping it for "Not supported by
+  // OpenCode" is offering a setting that was never there, so while the answer
+  // is unknown the row says only that. Once the query settles without an answer
+  // — a runtime this cockpit has no declaration for at all — the permissive
+  // reading stands, because that absence is not going to resolve.
+  const effortSupportUnknown = declaredEffortSupport === undefined && capabilitiesPending;
   const runtimeHasEffort = declaredEffortSupport !== false;
   const modelTakesEffort = selectedModel ? (selectedModel.supportsEffort ?? false) : undefined;
 
@@ -233,8 +242,9 @@ export function AgentExecutionRows({
     report.breakages.find((b) => kinds.includes(b.kind))?.message ?? null;
 
   // Whether the effort row below is a CHOICE or a sentence. The header above it
-  // has to know, because a sentence carries no chip of its own.
-  const effortIsChoosable = runtimeHasEffort && modelTakesEffort !== false;
+  // has to know, because a sentence carries no chip of its own — and a row
+  // waiting on the declaration is one of the sentences.
+  const effortIsChoosable = !effortSupportUnknown && runtimeHasEffort && modelTakesEffort !== false;
   const effectiveEffort = agent.effort ?? serverForRuntime?.effort ?? null;
   const runtimeLabel = getRuntimeDescriptor(runtime).label;
 
@@ -263,8 +273,8 @@ export function AgentExecutionRows({
         <div className="flex items-center gap-1.5">
           <span className={LABEL_CLASS}>Effort</span>
           {/* The effort header is drawn HERE, not by the row below, because the
-              row is only one of three things that can follow it — the other two
-              are sentences. So the chip lives with the label, and stays even
+              row is only one of the things that can follow it — the rest are
+              sentences. So the chip lives with the label, and stays even
               where there is no control at all, which is exactly the case where
               it is the only way left to clear a value that does nothing. */}
           {(!isMobile || !effortIsChoosable) && (effortIsSetHere || effortIsChoosable) && (
@@ -278,14 +288,20 @@ export function AgentExecutionRows({
           )}
         </div>
 
-        {!runtimeHasEffort ? (
-          <UnsupportedEffort
+        {effortSupportUnknown ? (
+          <EffortNote
+            testId="agent-effort-pending"
+            text={`Checking what ${runtimeLabel} supports`}
+            warning={null}
+          />
+        ) : !runtimeHasEffort ? (
+          <EffortNote
             testId="agent-effort-unsupported-runtime"
             text={`Not supported by ${runtimeLabel}`}
             warning={breakageFor(['effort-unsupported-runtime'])}
           />
         ) : !effortIsChoosable ? (
-          <UnsupportedEffort
+          <EffortNote
             testId="agent-effort-unsupported-model"
             text="This model doesn't take an effort setting"
             warning={breakageFor(['effort-unsupported-model'])}
@@ -315,15 +331,16 @@ export function AgentExecutionRows({
 }
 
 /**
- * Effort where it cannot be chosen: the truth, in muted text, with the row
- * still there.
+ * Effort where it cannot be chosen — because the runtime or the model takes
+ * none, or because the runtime has not said yet: the truth, in muted text, with
+ * the row still there.
  *
  * Kept as a row rather than removed because an absent row answers nothing — a
  * person looking for the effort setting would go on looking. When an effort IS
  * stored despite this, the soft warning shows beneath it, because a stored value
  * that does nothing is worth saying out loud (§3.4).
  */
-function UnsupportedEffort({
+function EffortNote({
   text,
   warning,
   testId,

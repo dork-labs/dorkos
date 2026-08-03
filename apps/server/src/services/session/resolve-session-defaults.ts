@@ -344,6 +344,14 @@ function resolveTrustMode(opts: {
  * declaring a section this build has no config key for: skipped, never thrown
  * on, so a newer adapter cannot take the settings screen down with it.
  *
+ * And so is a runtime that is not in the capabilities map at all, which is what
+ * a disabled runtime looks like from here (`runtimes.codex.enabled: false`
+ * keeps codex out of the registry, so it is out of this report too). Its stored
+ * per-runtime defaults are untouched by that: they stay in config, and they
+ * start applying again the moment the runtime comes back. This report covers
+ * each REGISTERED runtime (spec `runtimes-settings-redesign` §C), so while a
+ * runtime is off, its defaults are simply not reported.
+ *
  * @param capabilities - Every registered runtime's capability profile, keyed by
  *   runtime type — `runtimeRegistry.getAllCapabilities()`. Required, and passed
  *   in rather than read here, because the registry already imports this module

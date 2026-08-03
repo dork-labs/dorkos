@@ -114,6 +114,16 @@ describe('validateSettingsCapability', () => {
         sections: [{ kind: 'a' }, { kind: 'a' }, null],
       })
     );
-    expect(failures).toHaveLength(4);
+    // Named rather than counted: a count passes just as happily on four copies
+    // of one message, and the point of collecting is that each violation says
+    // its own thing. The order is the collector's own — declaration fields
+    // first, then sections by index, then the duplicates it could only know
+    // about once every kind was read.
+    expect(failures).toEqual([
+      'settings.configSection must be null or a non-empty key — an empty section name reads a config leaf nobody writes',
+      'settings.supportsEffort must be a boolean',
+      'settings.sections[2] must be an object',
+      "settings.sections declares the kind 'a' more than once",
+    ]);
   });
 });

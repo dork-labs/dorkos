@@ -35,7 +35,6 @@ export { RuntimeIdentity } from './ui/RuntimeIdentity';
 export { formatRuntimeIdentity, formatModelLabel } from './lib/runtime-identity';
 export type { RuntimeIdentityText } from './lib/runtime-identity';
 export { settingsForRuntime } from './lib/settings-for-runtime';
-export type { RuntimeSettingsCapability } from './lib/settings-for-runtime';
 export { DependencyInstallHint } from './ui/DependencyInstallHint';
 export { CommandTransparencyNote } from './ui/CommandTransparencyNote';
 export { RuntimeSetupDialog, RuntimeSetupPanel } from './ui/RuntimeSetupDialog';

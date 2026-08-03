@@ -9,8 +9,6 @@
  */
 import type { RuntimeCapabilities, RuntimeSettingsCapability } from '@dorkos/shared/agent-runtime';
 
-export type { RuntimeSettingsCapability };
-
 /**
  * One runtime's declared settings surface, from the capability map.
  *

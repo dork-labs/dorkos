@@ -136,10 +136,18 @@ export function useMakeDefaultStop(opts: {
   const runtimeDefaultStop = declaredModes.find((d) => d.id === runtimeDefaultMode)?.stop;
   const effectiveDefault = configured ?? runtimeDefaultStop;
   // Which leaf the comparison above was made against, and therefore the one
-  // accepting the offer must write. `undefined` = the global leaf — which is
-  // also where a runtime that declares no config section, or one the capability
-  // map has not answered for yet, lands: the global setting is the honest
-  // fallback, and inventing a key would write a leaf nothing reads.
+  // accepting the offer must write. `undefined` = the global leaf, which is
+  // where a runtime that declares no config section lands: there is no
+  // per-runtime key to write, and inventing one would write a leaf nothing
+  // reads.
+  //
+  // A runtime the capability map has not answered for yet lands there too, but
+  // only as a total function's last branch, never in practice: the offer is
+  // gated on `declaredModes`, which comes from the same capability query, so
+  // there is no state where the offer can fire while this lookup is still
+  // empty. That matters because the fallback would be wrong if it were
+  // reachable — writing the global leaf for a runtime carrying an override is
+  // exactly the bug this hook exists to prevent (see above).
   const targetSection =
     override != null ? settingsForRuntime(capabilityMap, forRuntime)?.configSection : undefined;
   // `canRemember` answers exactly the question that matters here: does config
