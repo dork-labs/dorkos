@@ -1,4 +1,4 @@
-import { Suspense, type ComponentType, type ReactNode } from 'react';
+import { Suspense, useEffect, type ComponentType, type ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
   ResponsiveDialog,
@@ -73,7 +73,7 @@ export interface TabbedDialogProps<T extends string> {
  * with mobile drill-in, animated active-tab pill, extension-slot support, and
  * deep-link sync via `useDialogTabState`.
  *
- * Used by SettingsDialog and AgentDialog. Built on top of `NavigationLayout`.
+ * Used by `SettingsDialog`. Built on top of `NavigationLayout`.
  *
  * Keyboard navigation is provided by `NavigationLayout`'s built-in `role="tablist"`
  * with arrow keys (Up/Down/Home/End) when a sidebar item is focused.
@@ -104,6 +104,20 @@ export function TabbedDialog<T extends string>({
   // honest failure — the user lands somewhere real. Resolved against `allTabs`
   // so extension-contributed tabs count as valid.
   const targetTab = initialTab && allTabs.some((t) => t.id === initialTab) ? initialTab : null;
+
+  // The fallback above is silent by design (no toast, no error UI — see the
+  // comment there), but silent should not mean invisible everywhere. A
+  // genuinely unknown id is still worth a signal a developer can see while
+  // reproducing a stale-link report, so it goes to the console in dev only.
+  useEffect(() => {
+    if (import.meta.env.DEV && initialTab && !targetTab) {
+      console.warn(
+        `[TabbedDialog] Unknown deep-link tab id "${initialTab}" — falling back to "${defaultTab}". ` +
+          'Likely a stale bookmark, a typo in a shared link, a tab that was renamed or removed, ' +
+          'or an extension tab that has not finished loading.'
+      );
+    }
+  }, [initialTab, targetTab, defaultTab]);
 
   const [activeTab, setActiveTab] = useDialogTabState<T>({
     open,

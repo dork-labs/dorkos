@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { usePaletteSearch, parsePrefix } from '../use-palette-search';
 import type { SearchableItem } from '../use-palette-search';
+import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 
 const mockItems: SearchableItem[] = [
   {
@@ -9,27 +10,35 @@ const mockItems: SearchableItem[] = [
     name: 'Auth Service',
     type: 'agent',
     keywords: ['/projects/auth'],
-    data: { id: 'agent-1', name: 'Auth Service', projectPath: '/projects/auth' } as any,
+    data: {
+      id: 'agent-1',
+      name: 'Auth Service',
+      projectPath: '/projects/auth',
+    } satisfies AgentPathEntry,
   },
   {
     id: 'agent-2',
     name: 'API Gateway',
     type: 'agent',
     keywords: ['/projects/api'],
-    data: { id: 'agent-2', name: 'API Gateway', projectPath: '/projects/api' } as any,
+    data: {
+      id: 'agent-2',
+      name: 'API Gateway',
+      projectPath: '/projects/api',
+    } satisfies AgentPathEntry,
   },
   {
     id: 'feature-1',
     name: 'Tasks Scheduler',
     type: 'feature',
-    data: { id: 'tasks', label: 'Tasks Scheduler', icon: 'Clock', action: 'openTasks' } as any,
+    data: { id: 'tasks', label: 'Tasks Scheduler', icon: 'Clock', action: 'openTasks' },
   },
   {
     id: 'cmd-1',
     name: '/hello',
     type: 'command',
     keywords: ['greeting'],
-    data: { name: '/hello', description: 'Say hello' } as any,
+    data: { name: '/hello', description: 'Say hello' },
   },
 ];
 
@@ -93,5 +102,33 @@ describe('usePaletteSearch', () => {
     if (result.current.results.length > 0) {
       expect(result.current.results[0].item.id).toBe('agent-1');
     }
+  });
+
+  // A palette entry's keywords are only useful if Fuse actually surfaces the
+  // entry when someone types the alias, not the label — this is what a Wave 2
+  // rename (e.g. "Integrations" gaining a "connectors" alias) depends on. The
+  // fixture's label ("Relay & Adapters") shares no substring with "connectors",
+  // so a pass here can only be explained by the keyword match, not the label
+  // — and it pins Fuse's 0.3 threshold as the knob that could silently break
+  // this (DOR-854 review).
+  it('surfaces an entry by its keyword alias, not just its label', () => {
+    const itemsWithAlias: SearchableItem[] = [
+      ...mockItems,
+      {
+        id: 'feature-relay',
+        name: 'Relay & Adapters',
+        type: 'feature',
+        keywords: ['connectors', 'telegram', 'slack'],
+        data: {
+          id: 'relay',
+          label: 'Relay & Adapters',
+          icon: 'Radio',
+          action: 'openRelay',
+        },
+      },
+    ];
+
+    const { result } = renderHook(() => usePaletteSearch(itemsWithAlias, 'connectors'));
+    expect(result.current.results.map((r) => r.item.id)).toContain('feature-relay');
   });
 });

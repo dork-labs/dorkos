@@ -20,6 +20,8 @@ export interface FeatureItem {
   shortcut?: string;
   /** Action identifier for the parent to dispatch */
   action: string;
+  /** Extra search terms beyond `label` — see `CommandPaletteContribution.keywords`. */
+  keywords?: string[];
 }
 
 export interface QuickActionItem {
@@ -27,6 +29,8 @@ export interface QuickActionItem {
   label: string;
   icon: string;
   action: string;
+  /** Extra search terms beyond `label` — see `CommandPaletteContribution.keywords`. */
+  keywords?: string[];
 }
 
 export interface CommandItemData {
@@ -138,7 +142,7 @@ export function usePaletteItems(activeCwd: string | null): PaletteItems {
     }
 
     for (const f of features) {
-      items.push({ id: f.id, name: f.label, type: 'feature', data: f });
+      items.push({ id: f.id, name: f.label, type: 'feature', keywords: f.keywords, data: f });
     }
 
     for (const cmd of commands) {
@@ -152,7 +156,13 @@ export function usePaletteItems(activeCwd: string | null): PaletteItems {
     }
 
     for (const qa of quickActions) {
-      items.push({ id: qa.id, name: qa.label, type: 'quick-action', data: qa });
+      items.push({
+        id: qa.id,
+        name: qa.label,
+        type: 'quick-action',
+        keywords: qa.keywords,
+        data: qa,
+      });
     }
 
     // Rooms enter the flat list as two types, because the two prefixes address

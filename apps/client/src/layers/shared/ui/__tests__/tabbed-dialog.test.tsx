@@ -337,6 +337,56 @@ describe('TabbedDialog', () => {
     expect(screen.getByRole('tab', { selected: true })).toHaveTextContent(/beta/i);
   });
 
+  // The fallback above is silent to the user by design (no toast) — but it
+  // should not be silent to a developer chasing a stale-link report. DOR-854.
+  it('warns in dev when initialTab is unknown, without surfacing anything to the user', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    renderDialog({ initialTab: 'nope' as TabId, defaultTab: 'beta' });
+
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('"nope"'));
+    // The warning is a console-only signal — nothing renders for the user
+    // (no toast, no alert region, no visible error banner).
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    warnSpy.mockRestore();
+  });
+
+  it('does not warn when initialTab is a real tab', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    renderDialog({ initialTab: 'gamma', defaultTab: 'alpha' });
+
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it('does not warn when initialTab is null (no deep link)', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    renderDialog({ initialTab: null, defaultTab: 'beta' });
+
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  // The warning is gated on import.meta.env.DEV so it never fires in a
+  // production build — pinned directly since nothing else in this suite
+  // exercises the prod branch (repo pattern: route-error-fallback.test.tsx).
+  it('does not warn in a production build even when initialTab is unknown', () => {
+    const originalDev = import.meta.env.DEV;
+    import.meta.env.DEV = false;
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      renderDialog({ initialTab: 'nope' as TabId, defaultTab: 'beta' });
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      import.meta.env.DEV = originalDev;
+      warnSpy.mockRestore();
+    }
+  });
+
   it('treats an extension-contributed tab as a valid initialTab', () => {
     const ExtensionTab = () => <div data-testid="panel-ext">Extension content</div>;
     mockUseSlotContributions.mockReturnValue([
