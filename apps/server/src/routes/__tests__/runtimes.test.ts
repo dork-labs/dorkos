@@ -80,7 +80,7 @@ describe('POST /api/runtimes/opencode/provision', () => {
   it('streams the honest error result when provisioning fails', async () => {
     vi.mocked(provisionOpenCode).mockResolvedValue({
       ok: false,
-      error: 'Could not install OpenCode. Check your connection and try again.',
+      error: 'Could not install OpenCode. Check your network and try again.',
     });
 
     const res = await request(app).post('/api/runtimes/opencode/provision');
@@ -300,7 +300,7 @@ describe('POST /api/runtimes/codex/provision', () => {
   it('streams the honest error result when provisioning fails', async () => {
     vi.mocked(provisionCodex).mockResolvedValue({
       ok: false,
-      error: 'Could not install Codex. Check your connection and try again.',
+      error: 'Could not install Codex. Check your network and try again.',
     });
 
     const res = await request(app).post('/api/runtimes/codex/provision');

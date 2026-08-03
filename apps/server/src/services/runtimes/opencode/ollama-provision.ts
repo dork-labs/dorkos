@@ -98,7 +98,7 @@ function honestInstallError(detail: string | undefined): string {
     .find((l) => l.trim())
     ?.trim();
   const suffix = firstLine ? ` (${firstLine})` : '';
-  return `Could not install Ollama${suffix}. Check your connection and try again.`;
+  return `Could not install Ollama${suffix}. Check your network and try again.`;
 }
 
 /**
