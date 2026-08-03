@@ -1,3 +1,13 @@
+/**
+ * The fleet's answer to the cards above it: every agent that does NOT run on
+ * the defaults the Runtimes tab just showed.
+ *
+ * It sits with the tab it belongs to. The `execution-defaults/` folder it used
+ * to live in held the settings card the runtime cards replaced, and the strip
+ * outlived it — the only piece of that stack the redesign kept.
+ *
+ * @module features/settings/ui/runtimes/ExecutionExceptionsStrip
+ */
 import { TriangleAlert } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import {

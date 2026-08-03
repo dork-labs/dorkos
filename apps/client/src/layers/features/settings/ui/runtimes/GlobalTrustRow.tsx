@@ -26,6 +26,7 @@ import {
   SegmentedControlItem,
   TrustModeIcon,
 } from '@/layers/shared/ui';
+import { listRuntimes } from '../../lib/list-runtimes';
 // The tab's own wording of the three stops, shared with each card's dial so the
 // whole page asks the question in one voice (design §3).
 import { SETTINGS_STOP_LABELS } from './stop-labels';
@@ -65,17 +66,6 @@ export interface GlobalTrustRowProps {
   onChange: (stop: PermissionStop) => void;
   /** Set or clear one runtime's override. `null` returns it to this row's choice. */
   onChangeRuntime: (runtime: string, stop: PermissionStop | null) => void;
-}
-
-/**
- * Name runtimes in a sentence: "Codex", "Codex and OpenCode", "A, B and C".
- *
- * @internal
- */
-function listRuntimes(entries: readonly GlobalTrustRowRuntime[]): string {
-  const names = entries.map((entry) => entry.label);
-  if (names.length <= 1) return names[0] ?? '';
-  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 
 /**

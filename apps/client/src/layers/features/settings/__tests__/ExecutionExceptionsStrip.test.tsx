@@ -9,7 +9,7 @@ import type { ExecutionException } from '@/layers/entities/agent';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { useAgentHubStore } from '@/layers/features/agent-hub';
-import { ExecutionExceptionsStrip } from '../ui/execution-defaults/ExecutionExceptionsStrip';
+import { ExecutionExceptionsStrip } from '../ui/runtimes/ExecutionExceptionsStrip';
 
 // No RouterProvider here — the strip only asks the deep-link hook to CLOSE the
 // dialog, which the openHub assertion below stands in for. URL behavior is

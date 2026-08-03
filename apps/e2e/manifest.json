@@ -49,10 +49,10 @@
       "specFile": "tests/settings/settings-dialog.spec.ts",
       "feature": "settings",
       "description": "Settings dialog open/close and tab switching",
-      "lastRun": "2026-04-06T21:46:01.013Z",
-      "lastStatus": "failed",
-      "runCount": 6,
-      "passCount": 5,
+      "lastRun": "2026-08-03T22:43:28.496Z",
+      "lastStatus": "passed",
+      "runCount": 7,
+      "passCount": 6,
       "failCount": 1,
       "relatedCode": ["apps/client/src/layers/features/settings/ui/SettingsDialog.tsx"],
       "lastModified": ""
@@ -97,10 +97,10 @@
       "specFile": "tests/chat-mock.spec.ts",
       "feature": "chat-mock.spec.ts",
       "description": "scenario endpoint rejects unknown scenario names, renders tool call card for tool-call scenario, renders streamed text response from simple-text scenario",
-      "lastRun": "2026-07-29T21:33:47.473Z",
+      "lastRun": "2026-08-03T22:43:28.496Z",
       "lastStatus": "passed",
-      "runCount": 11,
-      "passCount": 2,
+      "runCount": 12,
+      "passCount": 3,
       "failCount": 8,
       "relatedCode": [],
       "lastModified": ""
@@ -282,6 +282,30 @@
       "feature": "rooms",
       "description": "the dot appears on the working room alone, and goes out when the work ends",
       "lastRun": "2026-07-31T08:36:18.938Z",
+      "lastStatus": "passed",
+      "runCount": 1,
+      "passCount": 1,
+      "failCount": 0,
+      "relatedCode": [],
+      "lastModified": ""
+    },
+    "runtimes-tab": {
+      "specFile": "tests/settings/runtimes-tab.spec.ts",
+      "feature": "settings",
+      "description": "renders one card per runtime, with exactly one marked default, opens and closes one card without touching the others, Check again re-probes the server, Make default moves the default, and it survives a reload, sets the model of a runtime that new conversations do not start on",
+      "lastRun": "2026-08-03T22:43:28.496Z",
+      "lastStatus": "passed",
+      "runCount": 6,
+      "passCount": 4,
+      "failCount": 0,
+      "relatedCode": [],
+      "lastModified": ""
+    },
+    "zz-probe": {
+      "specFile": "tests/settings/zz-probe.spec.ts",
+      "feature": "settings",
+      "description": "probe recheck",
+      "lastRun": "2026-08-03T22:35:06.726Z",
       "lastStatus": "passed",
       "runCount": 1,
       "passCount": 1,
@@ -1091,6 +1115,69 @@
       "failed": 0,
       "skipped": 0,
       "duration": 67274
+    },
+    {
+      "id": "2026-08-03T22-33-07",
+      "timestamp": "2026-08-03T22:33:07.175Z",
+      "total": 5,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 2,
+      "duration": 117589
+    },
+    {
+      "id": "2026-08-03T22-35-06",
+      "timestamp": "2026-08-03T22:35:06.726Z",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 25960
+    },
+    {
+      "id": "2026-08-03T22-36-16",
+      "timestamp": "2026-08-03T22:36:16.822Z",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 39663
+    },
+    {
+      "id": "2026-08-03T22-38-07",
+      "timestamp": "2026-08-03T22:38:07.533Z",
+      "total": 15,
+      "passed": 15,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 85421
+    },
+    {
+      "id": "2026-08-03T22-39-20",
+      "timestamp": "2026-08-03T22:39:20.339Z",
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 52977
+    },
+    {
+      "id": "2026-08-03T22-40-24",
+      "timestamp": "2026-08-03T22:40:24.316Z",
+      "total": 5,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 1,
+      "duration": 36277
+    },
+    {
+      "id": "2026-08-03T22-43-28",
+      "timestamp": "2026-08-03T22:43:28.496Z",
+      "total": 28,
+      "passed": 28,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 102831
     }
   ]
 }

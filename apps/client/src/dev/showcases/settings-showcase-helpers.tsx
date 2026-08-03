@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ServerConfig } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
@@ -9,8 +9,14 @@ import {
   NavigationLayoutPanel,
 } from '@/layers/shared/ui';
 import { TransportProvider } from '@/layers/shared/model';
+import { RuntimeCardView } from '@/layers/features/settings';
 import { createPlaygroundTransport } from '../playground-transport';
-import { MOCK_MESH_AGENTS, MOCK_SERVER_CONFIG } from './settings-mock-data';
+import {
+  createRuntimeCardProps,
+  MOCK_MESH_AGENTS,
+  MOCK_SERVER_CONFIG,
+  type RuntimeCardShowcaseOptions,
+} from './settings-mock-data';
 
 /**
  * Wraps children in a fresh `QueryClient` prepopulated with mock query data so
@@ -76,6 +82,39 @@ export function RefusedConfigWriteProvider({ children }: { children: React.React
     });
   });
   return <TransportProvider transport={transport}>{children}</TransportProvider>;
+}
+
+/**
+ * One runtime card, with a body a person can actually open.
+ *
+ * Expansion is controlled from outside in the real tab too — cards expand
+ * independently and opening one never closes another — so the showcase owns the
+ * same single piece of state the container owns and hands everything else over
+ * as props. Shared between the runtime-card showcases and the accounts showcase,
+ * which needs the same card as the context its section renders inside.
+ *
+ * @param props - The card's state (see `RuntimeCardShowcaseOptions`), plus the
+ *   two slots a container fills: a section renderer and a connect flow.
+ */
+export function LiveRuntimeCard({
+  renderSection,
+  connectSlot,
+  ...options
+}: RuntimeCardShowcaseOptions & {
+  /** Draw one declared section kind, exactly as the tab's registry does. */
+  renderSection?: (kind: string) => ReactNode;
+  /** The connect flow a not-ready card offers. */
+  connectSlot?: ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(options.expanded ?? false);
+  return (
+    <RuntimeCardView
+      {...createRuntimeCardProps({ ...options, expanded })}
+      onToggleExpanded={() => setExpanded((open) => !open)}
+      {...(renderSection ? { renderSection } : {})}
+      {...(connectSlot ? { connectSlot } : {})}
+    />
+  );
 }
 
 /** Bare `NavigationLayout` shell with a single panel for showcasing one tab in isolation. */

@@ -4,10 +4,74 @@ import type { PlaygroundSection } from '../playground-registry';
  * Settings sections from SettingsPage.
  *
  * Sources: SettingsShowcases — Full Settings Dialog, Individual Tabs,
- * Claude Code Accounts, Mobile Drill-In, Loading & Empty States,
- * Settings Primitives.
+ * Claude Code Accounts, Execution Exceptions Strip, Mobile Drill-In,
+ * Loading & Empty States, Settings Primitives — and RuntimeCardShowcases,
+ * which owns the Runtimes category.
  */
 export const SETTINGS_SECTIONS: PlaygroundSection[] = [
+  // Runtimes — the tab's cards, and the two things true of the whole fleet.
+  {
+    id: 'runtime-cards-the-status-board-at-rest',
+    title: 'Runtime cards: the status board at rest',
+    page: 'settings',
+    category: 'Runtimes',
+    keywords: [
+      'runtime',
+      'runtimes',
+      'card',
+      'collapsed',
+      'summary',
+      'default',
+      'ready',
+      'connect',
+      'claude code',
+      'codex',
+      'opencode',
+    ],
+  },
+  {
+    id: 'runtime-cards-opened',
+    title: 'Runtime cards: opened',
+    page: 'settings',
+    category: 'Runtimes',
+    keywords: [
+      'runtime',
+      'card',
+      'expanded',
+      'model',
+      'effort',
+      'trust',
+      'section',
+      'accounts',
+      'power source',
+      'opencode',
+    ],
+  },
+  {
+    id: 'runtime-cards-when-something-is-wrong',
+    title: 'Runtime cards: when something is wrong',
+    page: 'settings',
+    category: 'Runtimes',
+    keywords: [
+      'runtime',
+      'card',
+      'broken',
+      'default',
+      'not connected',
+      'no longer offered',
+      'stranded',
+      'effort',
+      'unsupported',
+      'warning',
+    ],
+  },
+  {
+    id: 'runtime-cards-on-a-phone',
+    title: 'Runtime cards: on a phone',
+    page: 'settings',
+    category: 'Runtimes',
+    keywords: ['runtime', 'card', 'mobile', 'responsive', 'phone', 'narrow', 'make default'],
+  },
   // Dialogs
   {
     id: 'full-settings-dialog',
@@ -37,7 +101,7 @@ export const SETTINGS_SECTIONS: PlaygroundSection[] = [
     id: 'claude-code-accounts',
     title: 'Claude Code Accounts',
     page: 'settings',
-    category: 'Tabs',
+    category: 'Runtimes',
     keywords: [
       'claude',
       'account',
@@ -46,6 +110,25 @@ export const SETTINGS_SECTIONS: PlaygroundSection[] = [
       'config dir',
       'CLAUDE_CONFIG_DIR',
       'switch',
+      'section',
+      'runtime card',
+    ],
+  },
+  {
+    id: 'execution-exceptions-strip',
+    title: 'Execution Exceptions Strip',
+    page: 'settings',
+    category: 'Runtimes',
+    keywords: [
+      'exception',
+      'exceptions',
+      'strip',
+      'agent',
+      'deviation',
+      'broken',
+      'defaults',
+      'fleet',
+      'runtime',
     ],
   },
   // Responsive

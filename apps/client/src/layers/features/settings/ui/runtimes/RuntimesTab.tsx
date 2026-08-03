@@ -39,7 +39,7 @@ import {
 // question the session dial asks rather than a second version of it.
 import { AutonomyConfirmDialog } from '@/layers/features/status';
 import { useTrustStopWrites } from '../../model/use-trust-stop-writes';
-import { ExecutionExceptionsStrip } from '../execution-defaults/ExecutionExceptionsStrip';
+import { ExecutionExceptionsStrip } from './ExecutionExceptionsStrip';
 import { RuntimeCard } from './RuntimeCard';
 import { GlobalTrustRow, type GlobalTrustRowRuntime } from './GlobalTrustRow';
 

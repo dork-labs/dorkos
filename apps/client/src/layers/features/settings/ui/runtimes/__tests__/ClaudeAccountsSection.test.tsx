@@ -6,7 +6,7 @@
  * which account new work bills to, the accounts DorkOS knows about, and what
  * happens when the write is refused.
  *
- * Every case here was carried over from the retired `ClaudeAccountsCard` test
+ * Every case here was carried over from the retired accounts card's test
  * unchanged except for the extra click that opens the add-account form, which
  * is now a quiet affordance in the section heading rather than a permanent row.
  */
