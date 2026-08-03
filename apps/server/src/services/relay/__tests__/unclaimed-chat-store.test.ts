@@ -116,6 +116,7 @@ describe('UnclaimedChatStore', () => {
         'chatKind',
         'senderName',
         'senderId',
+        'chatTitle',
         'status',
         'messageCount',
         'firstSeenAt',
@@ -124,5 +125,61 @@ describe('UnclaimedChatStore', () => {
         'decidedAgentId',
       ].sort()
     );
+  });
+
+  it('MINOR 12: chatTitle is recorded when the sighting carries one, and null otherwise', () => {
+    const withTitle = store.recordSighting({
+      adapterId: 'tg-bot',
+      chatId: 'group-1',
+      chatKind: 'group',
+      chatTitle: 'Weekend Trip Planning',
+    }).chat;
+    expect(withTitle.chatTitle).toBe('Weekend Trip Planning');
+
+    const withoutTitle = store.recordSighting({
+      adapterId: 'tg-bot',
+      chatId: 'dm-1',
+      chatKind: 'dm',
+    }).chat;
+    expect(withoutTitle.chatTitle).toBeNull();
+  });
+
+  it('MINOR 11: senderName and chatTitle are truncated to 200 chars — stranger-controlled input', () => {
+    const long = 'x'.repeat(500);
+    const chat = store.recordSighting({
+      adapterId: 'tg-bot',
+      chatId: '123',
+      chatKind: 'group',
+      senderName: long,
+      chatTitle: long,
+    }).chat;
+    expect(chat.senderName).toHaveLength(200);
+    expect(chat.chatTitle).toHaveLength(200);
+  });
+
+  it('MAJOR 4: caps pending rows at 200, evicting the oldest to make room for new sightings', () => {
+    for (let i = 0; i < 205; i++) {
+      store.recordSighting({ adapterId: 'tg-bot', chatId: `chat-${i}`, chatKind: 'dm' });
+    }
+    expect(store.list('pending')).toHaveLength(200);
+    // The five oldest by insertion should be the ones gone.
+    for (let i = 0; i < 5; i++) {
+      expect(store.isBlocked('tg-bot', `chat-${i}`)).toBe(false); // never existed / evicted
+    }
+  });
+
+  it('the cap only evicts PENDING rows — claimed/ignored/blocked chats are never counted against it', () => {
+    // Fill to exactly the cap with pending chats.
+    for (let i = 0; i < 200; i++) {
+      store.recordSighting({ adapterId: 'tg-bot', chatId: `chat-${i}`, chatKind: 'dm' });
+    }
+    // Decide a few — they leave the pending pool.
+    const first = store.getById(store.list('pending')[0]!.id)!;
+    store.ignore(first.id);
+    expect(store.list('pending')).toHaveLength(199);
+
+    // One more sighting is under the cap now — no eviction needed.
+    store.recordSighting({ adapterId: 'tg-bot', chatId: 'chat-new', chatKind: 'dm' });
+    expect(store.list('pending')).toHaveLength(200);
   });
 });

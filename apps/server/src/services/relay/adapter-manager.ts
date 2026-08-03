@@ -42,6 +42,7 @@ import {
   broadcastBindingsChanged,
   broadcastRelayFlow,
   broadcastUnclaimedChat,
+  broadcastUnclaimedChatBurst,
 } from './relay-sse-events.js';
 import { BindingSubsystem } from './binding-subsystem.js';
 import type { UnclaimedChatStore } from './unclaimed-chat-store.js';
@@ -338,6 +339,7 @@ export class AdapterManager {
       onFlow: broadcastRelayFlow,
       unclaimedChats: this.deps.unclaimedChats,
       onUnclaimedChat: broadcastUnclaimedChat,
+      onUnclaimedChatBurst: broadcastUnclaimedChatBurst,
     });
   }
 

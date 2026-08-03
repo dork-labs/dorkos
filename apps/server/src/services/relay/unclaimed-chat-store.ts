@@ -18,12 +18,20 @@
  * @module services/relay/unclaimed-chat-store
  */
 import { randomUUID } from 'node:crypto';
-import { unclaimedChats, eq, and, type Db } from '@dorkos/db';
+import { unclaimedChats, eq, and, asc, count, type Db } from '@dorkos/db';
+import { logger } from '../../lib/logger.js';
 
 /** Lifecycle status of one unclaimed-chat row. */
 export type UnclaimedChatStatus = 'pending' | 'claimed' | 'ignored' | 'blocked';
 
-/** `'dm' | 'group'` — read from `platformData.chatType` when present, else `'dm'`. */
+/**
+ * `'dm' | 'group'` — derived from the relay SUBJECT's channel segment
+ * (`BindingRouter.recordUnclaimedChat`: `channelType === 'group' ? 'group' :
+ * 'dm'`, the same `parseHumanSubject` output binding resolution scores
+ * against), never read from the payload's `platformData.chatType`. Kept
+ * consistent with how the rest of routing already treats "what kind of chat
+ * is this" — the subject is the one place that classification is decided.
+ */
 export type UnclaimedChatKind = 'dm' | 'group';
 
 /** One unclaimed-chat row, as persisted. */
@@ -35,12 +43,32 @@ export interface UnclaimedChat {
   chatKind: UnclaimedChatKind;
   senderName: string | null;
   senderId: string | null;
+  /** Group/channel display title, when the adapter's payload already carried one. Null for a DM. */
+  chatTitle: string | null;
   status: UnclaimedChatStatus;
   messageCount: number;
   firstSeenAt: string;
   lastSeenAt: string;
   decidedAt: string | null;
   decidedAgentId: string | null;
+}
+
+/**
+ * Longest `senderName`/`chatTitle` this store will persist. Both are
+ * stranger-controlled (a Telegram/Slack display name or group title, set by
+ * whoever is on the other end) — the repo already treats stranger-controlled
+ * display strings as worth bounding elsewhere, and an unbounded string
+ * flowing untouched from an inbound payload into a durable row is exactly
+ * the kind of thing that invariant exists for. Truncated, not rejected: a
+ * claim card showing a clipped name is still useful; refusing to record the
+ * sighting at all is not the safer choice here.
+ */
+const MAX_DISPLAY_NAME_LENGTH = 200;
+
+/** Truncate a stranger-controlled display string to {@link MAX_DISPLAY_NAME_LENGTH}. */
+function truncateDisplayName(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  return value.length > MAX_DISPLAY_NAME_LENGTH ? value.slice(0, MAX_DISPLAY_NAME_LENGTH) : value;
 }
 
 /** Metadata one inbound sighting carries — deliberately NOT the message body. */
@@ -51,6 +79,8 @@ export interface UnclaimedChatSighting {
   chatKind: UnclaimedChatKind;
   senderName?: string | undefined;
   senderId?: string | undefined;
+  /** Group/channel display title, when the adapter's own payload carried one. */
+  chatTitle?: string | undefined;
 }
 
 /** The result of {@link UnclaimedChatStore.recordSighting}. */
@@ -60,6 +90,16 @@ export interface RecordSightingResult {
   /** `true` when this sighting created the row (fire the claim-feed event). */
   isFirstSighting: boolean;
 }
+
+/**
+ * Ceiling on `pending` rows this store keeps at once. A publicly-discoverable
+ * bot (spec §8) means the claim feed is reachable by anyone who can message
+ * it — without a cap, a burst of throwaway chats grows this table without
+ * bound. When a NEW pending chat would push the count over the cap, the
+ * OLDEST pending chat (by `firstSeenAt`) is evicted first — a card nobody
+ * looked at in a flood is the one to lose, not the newest arrival.
+ */
+const MAX_PENDING_CHATS = 200;
 
 /** Durable store for chats an adapter heard from with no binding to route to. */
 export class UnclaimedChatStore {
@@ -75,6 +115,9 @@ export class UnclaimedChatStore {
    * `isFirstSighting: false` — no new row, no repeat notification. A
    * `blocked` chat must never reach this method; see
    * {@link UnclaimedChatStore.isBlocked}, checked by the caller first.
+   *
+   * A brand-new row is capped at {@link MAX_PENDING_CHATS} pending chats —
+   * see {@link evictOldestPendingIfOverCap}.
    *
    * @param sighting - Subject-derived routing fields + sender identity — never a message body.
    */
@@ -111,8 +154,9 @@ export class UnclaimedChatStore {
       chatId: sighting.chatId,
       channelType: sighting.channelType ?? null,
       chatKind: sighting.chatKind,
-      senderName: sighting.senderName ?? null,
+      senderName: truncateDisplayName(sighting.senderName) ?? null,
       senderId: sighting.senderId ?? null,
+      chatTitle: truncateDisplayName(sighting.chatTitle) ?? null,
       status: 'pending' as const,
       messageCount: 1,
       firstSeenAt: now,
@@ -121,7 +165,45 @@ export class UnclaimedChatStore {
       decidedAgentId: null,
     };
     this._db.insert(unclaimedChats).values(row).run();
+    this.evictOldestPendingIfOverCap();
     return { chat: row, isFirstSighting: true };
+  }
+
+  /**
+   * When the `pending` count exceeds {@link MAX_PENDING_CHATS}, delete the
+   * oldest pending row(s) (by `firstSeenAt`) until back at the cap. A single
+   * `recordSighting` call inserts at most one new row, so this evicts at
+   * most one row per call — the log line is naturally damped by that, not by
+   * a separate rate limiter.
+   */
+  private evictOldestPendingIfOverCap(): void {
+    const [row] = this._db
+      .select({ n: count() })
+      .from(unclaimedChats)
+      .where(eq(unclaimedChats.status, 'pending'))
+      .all();
+    const total = row?.n ?? 0;
+    const overflow = total - MAX_PENDING_CHATS;
+    if (overflow <= 0) return;
+
+    const toEvict = this._db
+      .select({
+        id: unclaimedChats.id,
+        adapterId: unclaimedChats.adapterId,
+        chatId: unclaimedChats.chatId,
+      })
+      .from(unclaimedChats)
+      .where(eq(unclaimedChats.status, 'pending'))
+      .orderBy(asc(unclaimedChats.firstSeenAt))
+      .limit(overflow)
+      .all();
+    for (const evicted of toEvict) {
+      this._db.delete(unclaimedChats).where(eq(unclaimedChats.id, evicted.id)).run();
+    }
+    logger.warn(
+      `[UnclaimedChats] pending cap (${MAX_PENDING_CHATS}) exceeded; evicted ${toEvict.length} oldest pending chat(s)`,
+      { evicted: toEvict.map((e) => ({ adapterId: e.adapterId, chatId: e.chatId })) }
+    );
   }
 
   /**
@@ -192,6 +274,7 @@ function toDomain(row: {
   chatKind: string;
   senderName: string | null;
   senderId: string | null;
+  chatTitle: string | null;
   status: string;
   messageCount: number;
   firstSeenAt: string;

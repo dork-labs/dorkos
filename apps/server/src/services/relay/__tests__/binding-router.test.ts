@@ -1551,11 +1551,14 @@ describe('BindingRouter', () => {
     let claimRelayCore: RelayCoreLike;
     let claimStore: import('../unclaimed-chat-store.js').UnclaimedChatStore;
     let onUnclaimedChat: ReturnType<typeof vi.fn>;
+    let onUnclaimedChatBurst: ReturnType<typeof vi.fn>;
     let claimHandler: ((envelope: Record<string, unknown>) => Promise<void>) | undefined;
     let claimBindingStore: Partial<BindingStore>;
+    let claimMeshCore: AdapterMeshCoreLike;
 
     const BODY_SENTINEL = 'THE-MESSAGE-BODY-MUST-NEVER-APPEAR-IN-THE-CLAIM-FEED';
 
+    /** A distinct unbound envelope per chatId, so each is its own "first sighting." */
     function unboundEnvelope(overrides: Record<string, unknown> = {}): Record<string, unknown> {
       return {
         id: 'msg-1',
@@ -1581,6 +1584,7 @@ describe('BindingRouter', () => {
       runMigrations(db);
       claimStore = new UnclaimedChatStore(db);
       onUnclaimedChat = vi.fn();
+      onUnclaimedChatBurst = vi.fn();
 
       claimBindingStore = {
         resolve: vi.fn().mockReturnValue(undefined),
@@ -1597,7 +1601,7 @@ describe('BindingRouter', () => {
       const claimAgentManager: AgentSessionCreator = {
         createSession: vi.fn().mockResolvedValue({ id: 'session-x' }),
       };
-      const claimMeshCore: AdapterMeshCoreLike = { getProjectPath: vi.fn() };
+      claimMeshCore = { getProjectPath: vi.fn() };
 
       claimRouter = new BindingRouter({
         bindingStore: claimBindingStore as BindingStore,
@@ -1607,6 +1611,7 @@ describe('BindingRouter', () => {
         relayDir: '/tmp/relay-claim',
         unclaimedChats: claimStore,
         onUnclaimedChat,
+        onUnclaimedChatBurst,
       });
       await claimRouter.init();
     });
@@ -1672,6 +1677,44 @@ describe('BindingRouter', () => {
       expect(claimStore.list('pending')).toHaveLength(0);
     });
 
+    it('MAJOR 5: a blocked chat that later got a manual, enabled binding routes normally — the binding wins, isBlocked is never even consulted', async () => {
+      await claimHandler!(unboundEnvelope());
+      const chat = claimStore.list('pending')[0]!;
+      claimStore.block(chat.id);
+      expect(claimStore.isBlocked('tg-bot', '999')).toBe(true);
+
+      // A person manually creates a binding for this exact chat afterward.
+      vi.mocked(claimMeshCore.getProjectPath).mockReturnValue('/agents/a');
+      vi.mocked(claimBindingStore.resolve!).mockReturnValue({
+        id: 'bind-manual',
+        adapterId: 'tg-bot',
+        agentId: 'agent-a',
+        chatId: '999',
+        sessionStrategy: 'per-chat',
+        label: '',
+        permissionMode: 'acceptEdits',
+        enabled: true,
+        canInitiate: false,
+        canReply: true,
+        canReceive: true,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      });
+      const isBlockedSpy = vi.spyOn(claimStore, 'isBlocked');
+
+      await claimHandler!(unboundEnvelope());
+
+      // Routed: publish was called (a session was resolved/created for it).
+      const agentManager = (
+        claimRouter as unknown as { deps: { agentManager: AgentSessionCreator } }
+      ).deps.agentManager;
+      expect(agentManager.createSession).toHaveBeenCalled();
+      expect(claimRelayCore.publish).toHaveBeenCalled();
+      // The block state was never even checked — resolve() finding a binding
+      // short-circuits before the blocked branch is reached at all.
+      expect(isBlockedSpy).not.toHaveBeenCalled();
+    });
+
     it('is a no-op (never throws) when unclaimedChats is not wired', async () => {
       const bareRouter = new BindingRouter({
         bindingStore: claimBindingStore as BindingStore,
@@ -1694,6 +1737,25 @@ describe('BindingRouter', () => {
       }
       expect(threw).toBeUndefined();
       await bareRouter.shutdown();
+    });
+
+    it('MAJOR 4: rate-limits broadcasts across DIFFERENT chats — caps individual events per window and fires one summary', async () => {
+      // 25 distinct first-sighting chats in one burst; the cap is 20/window.
+      for (let i = 0; i < 25; i++) {
+        await claimHandler!(unboundEnvelope({ subject: `relay.human.telegram.tg-bot.chat-${i}` }));
+      }
+
+      expect(onUnclaimedChat).toHaveBeenCalledTimes(20);
+      expect(onUnclaimedChatBurst).toHaveBeenCalledTimes(1);
+      expect(onUnclaimedChatBurst).toHaveBeenCalledWith(expect.objectContaining({ limit: 20 }));
+      // Every chat is still recorded durably — only the BROADCAST is capped,
+      // never the recording (the claim feed itself has its own cap, MAJOR 4's
+      // other half, tested in unclaimed-chat-store.test.ts).
+      expect(claimStore.list('pending')).toHaveLength(25);
+
+      // A second burst past the summary does not re-fire it within the SAME window.
+      await claimHandler!(unboundEnvelope({ subject: 'relay.human.telegram.tg-bot.chat-extra' }));
+      expect(onUnclaimedChatBurst).toHaveBeenCalledTimes(1);
     });
   });
 });

@@ -19,7 +19,12 @@ import { runtimeRegistry } from '../core/runtime-registry.js';
 import { logger } from '../../lib/logger.js';
 import { BindingStore } from './binding-store.js';
 import { AgentSessionStore } from './agent-session-store.js';
-import { BindingRouter, type RelayCoreLike, type AgentSessionCreator } from './binding-router.js';
+import {
+  BindingRouter,
+  type RelayCoreLike,
+  type AgentSessionCreator,
+  type UnclaimedChatBurst,
+} from './binding-router.js';
 import type { AdapterMeshCoreLike } from './adapter-manager.js';
 import type { UnclaimedChat, UnclaimedChatStore } from './unclaimed-chat-store.js';
 
@@ -49,6 +54,8 @@ export interface BindingSubsystemDeps {
   unclaimedChats?: UnclaimedChatStore;
   /** Fired once per NEW unclaimed chat (first sighting only). */
   onUnclaimedChat?: (chat: UnclaimedChat) => void;
+  /** Fired at most once per rate-limit window when broadcasts were capped. */
+  onUnclaimedChatBurst?: (burst: UnclaimedChatBurst) => void;
 }
 
 /**
@@ -210,6 +217,7 @@ export class BindingSubsystem {
         onFlow: deps.onFlow,
         unclaimedChats: deps.unclaimedChats,
         onUnclaimedChat: deps.onUnclaimedChat,
+        onUnclaimedChatBurst: deps.onUnclaimedChatBurst,
         // Wired here, and never optional in the server: a refusal the person
         // never hears about is indistinguishable from an agent thinking.
         chatNotice: createChatNoticeSender({

@@ -13,6 +13,7 @@
 import type { RelayFlowEvent } from '@dorkos/shared/relay-schemas';
 import { eventFanOut } from '../core/event-fan-out.js';
 import type { UnclaimedChat } from './unclaimed-chat-store.js';
+import type { UnclaimedChatBurst } from './binding-router.js';
 
 /**
  * Broadcast that the set of adapter↔agent bindings changed (create, update,
@@ -49,4 +50,14 @@ export function broadcastRelayFlow(flow: RelayFlowEvent): void {
  */
 export function broadcastUnclaimedChat(chat: UnclaimedChat): void {
   eventFanOut.broadcast('relay_chat_unclaimed', chat);
+}
+
+/**
+ * Broadcast a summary when individual `relay_chat_unclaimed` events were
+ * suppressed for exceeding the per-window rate limit (adversarial review
+ * MAJOR 4 — `BindingRouter.admitUnclaimedBroadcast`). Fired at most once per
+ * window, so a burst reads as "a burst happened," not silence.
+ */
+export function broadcastUnclaimedChatBurst(burst: UnclaimedChatBurst): void {
+  eventFanOut.broadcast('relay_chat_unclaimed_burst', burst);
 }

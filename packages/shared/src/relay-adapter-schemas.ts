@@ -617,6 +617,16 @@ export const UnclaimedChatStatusSchema = z
  * subject-derived routing fields and sender-identity metadata — NEVER the
  * message body.
  */
+/**
+ * Longest stranger-controlled display string this schema admits —
+ * `senderName`/`chatTitle` are set by whoever is on the other end of an
+ * unbound chat, never the operator (adversarial review MINOR 11). Truncated
+ * at the store, not rejected here — this bound documents the wire contract;
+ * `UnclaimedChatStore.recordSighting`'s own truncation is what actually
+ * enforces it before a row is ever written.
+ */
+const MAX_UNCLAIMED_DISPLAY_NAME_LENGTH = 200;
+
 export const UnclaimedChatSchema = z
   .object({
     id: z.string(),
@@ -624,8 +634,10 @@ export const UnclaimedChatSchema = z
     chatId: z.string(),
     channelType: ChannelTypeSchema.nullable(),
     chatKind: z.enum(['dm', 'group']),
-    senderName: z.string().nullable(),
+    senderName: z.string().max(MAX_UNCLAIMED_DISPLAY_NAME_LENGTH).nullable(),
     senderId: z.string().nullable(),
+    /** Group/channel display title (`payload.channelName`), when the adapter carried one. */
+    chatTitle: z.string().max(MAX_UNCLAIMED_DISPLAY_NAME_LENGTH).nullable(),
     status: UnclaimedChatStatusSchema,
     /** Damping counter — bumped, not re-inserted, on repeat sightings. */
     messageCount: z.number().int().nonnegative(),

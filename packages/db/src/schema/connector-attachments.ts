@@ -90,12 +90,22 @@ export const unclaimedChats = sqliteTable(
     chatId: text('chat_id').notNull(),
     /** `ChannelTypeSchema` value read off the relay subject, or null. */
     channelType: text('channel_type'),
-    /** `'dm' | 'group'` — from `platformData.chatType` when present, else `'dm'`. */
+    /** `'dm' | 'group'` — derived from the relay subject's channel segment, not the payload. */
     chatKind: text('chat_kind', { enum: ['dm', 'group'] }).notNull(),
     /** Display name only — never a raw platform identity blob. */
     senderName: text('sender_name'),
     /** Platform user id of the first sender seen, when the payload carries one. */
     senderId: text('sender_id'),
+    /**
+     * Group/channel display title (Telegram `chat.title`, Slack channel
+     * name), when the adapter's own payload already carries one — the same
+     * top-level `payload.channelName` field `senderName` is read from, never
+     * an extra platform lookup. Null for a DM (no title exists) or when the
+     * adapter didn't resolve one for this sighting. The claim card needs a
+     * human-readable label for "added to a group" (plan §8); this is that
+     * label.
+     */
+    chatTitle: text('chat_title'),
     status: text('status', {
       enum: ['pending', 'claimed', 'ignored', 'blocked'],
     })
