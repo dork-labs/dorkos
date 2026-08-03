@@ -58,6 +58,16 @@ describe('buildBridgePrincipal / parseBridgePrincipal (DOR-871, spec §6.4)', ()
     expect(parseBridgePrincipal('relay.bridge.reply.')).toBeNull();
   });
 
+  it('rejects an empty segment anywhere in adapterId/chatId (m3)', () => {
+    // A `..` collapse or a trailing `.` produces an empty segment. Letting
+    // one through would make the returned chatId a lie about what was
+    // actually in the string (e.g. joining ['', ''] silently yields ".").
+    expect(parseBridgePrincipal('relay.bridge.reply.tg1..')).toBeNull();
+    expect(parseBridgePrincipal('relay.bridge.reply.tg1.chat-42.')).toBeNull();
+    expect(parseBridgePrincipal('relay.bridge.reply.tg1..chat-42')).toBeNull();
+    expect(parseBridgePrincipal('relay.bridge.reply..chat-42')).toBeNull();
+  });
+
   it('rejects anything not under the bridge prefix', () => {
     expect(parseBridgePrincipal('relay.agent.ns.agent-1')).toBeNull();
     expect(parseBridgePrincipal('relay.human.telegram.tg1.chat-42')).toBeNull();
@@ -66,5 +76,26 @@ describe('buildBridgePrincipal / parseBridgePrincipal (DOR-871, spec §6.4)', ()
 
   it('BRIDGE_PRINCIPAL_PREFIX matches what the builder emits', () => {
     expect(buildBridgePrincipal('reply', 'a', 'b').startsWith(BRIDGE_PRINCIPAL_PREFIX)).toBe(true);
+  });
+
+  it('build -> parse is the identity for adapterId/chatId/classification (m2 round-trip)', () => {
+    const cases: Array<['reply' | 'initiate', string, string]> = [
+      ['reply', 'tg1', 'chat-42'],
+      ['initiate', 'tg1', 'chat-42'],
+      ['reply', 'slack-instance-1', '42'],
+      ['initiate', 'tg1', 'chat.42.with.many.dots'],
+      ['reply', 'a', '0'],
+    ];
+    for (const [classification, adapterId, chatId] of cases) {
+      const from = buildBridgePrincipal(classification, adapterId, chatId);
+      expect(parseBridgePrincipal(from)).toEqual({ classification, adapterId, chatId });
+    }
+  });
+
+  it('buildBridgePrincipal rejects a dotted adapterId (m2)', () => {
+    // A dot in adapterId would shift where the parser thinks the chat id
+    // starts — this must be caught at construction, not silently misread.
+    expect(() => buildBridgePrincipal('reply', 'tg.1', 'chat-42')).toThrow();
+    expect(() => buildBridgePrincipal('initiate', 'a.b.c', 'chat-42')).toThrow();
   });
 });

@@ -56,7 +56,11 @@ const RECOGNIZED_CLASSIFICATIONS: ReadonlySet<string> = new Set<BridgePrincipalC
  *
  * @param classification - Whether this delivery answers an inbound message
  *   (`'reply'`) or starts one (`'initiate'`) — spec §6.6's provenance rule.
- * @param adapterId - The adapter instance the delivery targets.
+ * @param adapterId - The adapter instance the delivery targets. Must NOT
+ *   contain a `.` — `adapterId` sits at a fixed position ahead of the
+ *   variable-length `chatId` tail, and a dot in it would make
+ *   {@link parseBridgePrincipal} misread where the tail starts. (Real adapter
+ *   instance ids are never dotted; only chat ids are.) Throws if it is.
  * @param chatId - The platform chat id. May contain dots; the parser reads it
  *   positionally, never by counting separators, so no escaping is needed here.
  */
@@ -65,6 +69,12 @@ export function buildBridgePrincipal(
   adapterId: string,
   chatId: string
 ): string {
+  if (adapterId.includes('.')) {
+    throw new Error(
+      `buildBridgePrincipal: adapterId "${adapterId}" must not contain '.' — it would shift ` +
+        `where parseBridgePrincipal reads the chat id`
+    );
+  }
   return `${BRIDGE_PRINCIPAL_PREFIX}${classification}.${adapterId}.${chatId}`;
 }
 
@@ -72,10 +82,14 @@ export function buildBridgePrincipal(
  * Parse a `relay.bridge.*` principal back into its parts.
  *
  * Returns `null` for anything that is not this grammar: a different prefix, a
- * classification segment that is not exactly `reply` or `initiate`, or a
- * missing `adapterId`/`chatId`. The caller (the consent gate) must treat
- * `null` as a denial, never as a default classification — see spec §6.6 point
- * 1 ("denying an unrecognised value rather than defaulting to either").
+ * classification segment that is not exactly `reply` or `initiate`, a missing
+ * `adapterId`/`chatId`, or an EMPTY segment anywhere in `adapterId`/`chatId`
+ * (`relay.bridge.reply.tg1..` and a trailing-dot chat id both fail this way —
+ * an empty segment is never a real adapter or chat id, and letting one
+ * through would make `chatId` a lie about what was actually sent). The caller
+ * (the consent gate) must treat `null` as a denial, never as a default
+ * classification — see spec §6.6 point 1 ("denying an unrecognised value
+ * rather than defaulting to either").
  *
  * @param from - The publish `from` principal.
  */
@@ -90,11 +104,14 @@ export function parseBridgePrincipal(from: string): ParsedBridgePrincipal | null
   const classification = parts[0];
   if (!classification || !RECOGNIZED_CLASSIFICATIONS.has(classification)) return null;
 
-  const adapterId = parts[1];
-  if (!adapterId) return null;
+  // Every segment from adapterId onward must be non-empty — a `..` collapse
+  // or a trailing `.` produces an empty segment, and an empty segment is
+  // never a real id.
+  const tail = parts.slice(1);
+  if (tail.length < 2 || tail.some((segment) => segment.length === 0)) return null;
 
-  const chatId = parts.slice(2).join('.');
-  if (!chatId) return null;
+  const adapterId = tail[0];
+  const chatId = tail.slice(1).join('.');
 
   return { classification: classification as BridgePrincipalClassification, adapterId, chatId };
 }

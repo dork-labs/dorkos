@@ -392,12 +392,23 @@ function checkSender(
  *
  * | Step                                             | Failure                                                  |
  * | ------------------------------------------------- | --------------------------------------------------------- |
- * | Parse `from` as a bridge principal                 | unrecognized/malformed classification → `INITIATE_NOT_ALLOWED` (denied, never defaulted) |
+ * | Parse `from` as a bridge principal                 | unrecognized/malformed classification → `MALFORMED_BRIDGE_PRINCIPAL` (denied, never defaulted) |
  * | Parse `{adapterId, chatId}` from the target subject | unparseable `relay.human.*` subject → `NO_BINDING`        |
  * | Resolve the binding                                | none for `(adapterId, chatId)` → `NO_BINDING`             |
  * | classification `'reply'`                           | `bindingAllowsReply` false → `INITIATE_NOT_ALLOWED`        |
  * | classification `'initiate'`                        | `bindingAllowsInitiate` false → `INITIATE_NOT_ALLOWED`     |
  * | otherwise                                          | `{ allowed: true }`                                        |
+ *
+ * **The binding is resolved from the SUBJECT, never from the principal's own
+ * `adapterId`/`chatId`.** `deliver` always builds `from` and `subject` from
+ * the same `(adapterId, chatId)`, so in the honest case this makes no
+ * difference — but resolving from the principal instead would let anyone who
+ * can construct a `relay.bridge.*` string (which, absent
+ * {@link isServerOnlyPrincipal}'s route guard, would be any client) name a
+ * consenting binding for a DIFFERENT channel than the one actually being
+ * published to. That is the confused-deputy shape spec §6.6 point 2 exists to
+ * close, and it is why {@link ConsentBindingStore.resolve} here is always
+ * called with `subject`'s parse, not `parsed`'s.
  *
  * @param from - The publish principal; already known to start with
  *   {@link BRIDGE_PRINCIPAL_PREFIX}.
@@ -412,14 +423,22 @@ function checkBridgePrincipal(
   const parsed = parseBridgePrincipal(from);
   if (!parsed) {
     // Unrecognized/malformed classification segment: deny rather than default
-    // to either reply or initiate (spec §6.6 point 1).
+    // to either reply or initiate (spec §6.6 point 1). A distinct code from
+    // INITIATE_NOT_ALLOWED — this is a parse failure, not a resolved
+    // binding's consent decision, and a caller building user-facing copy
+    // (e.g. task 1.8's bridge_blocked notice) must not conflate the two.
     return {
       allowed: false,
-      code: 'INITIATE_NOT_ALLOWED',
+      code: 'MALFORMED_BRIDGE_PRINCIPAL',
       reason: `bridge delivery denied: unrecognized bridge principal "${from}"`,
     };
   }
 
+  // Resolve from the SUBJECT, not `parsed` — see the confused-deputy note
+  // above. `parsed.adapterId`/`parsed.chatId` are still returned by
+  // {@link parseBridgePrincipal} (task 1.8 uses them to build its own log
+  // lines), but this gate must never use them to pick which binding's
+  // consent applies.
   const { adapterId, chatId, channelType } = parseHumanSubject(subject);
   if (!adapterId) {
     return {

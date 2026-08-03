@@ -338,14 +338,37 @@ describe('isServerOnlyPrincipal vs isConsentExemptPrincipal — pinned apart (A1
 });
 
 describe('createInitiateConsentGate — the relay.bridge.* branch (DOR-871, spec §6.6)', () => {
-  /** A store that resolves the given binding for ANY channel it is asked about. */
-  function storeForAny(binding: AdapterBinding | undefined): ConsentBindingStore {
-    return { resolve: () => binding };
+  /**
+   * An asserting double, mirroring {@link storeFor} above (:41-48): resolves
+   * the given binding ONLY for the exact `(adapterId, chatId)` expected, and
+   * fails the test otherwise.
+   *
+   * A double that ignores its arguments (`resolve: () => binding`) cannot
+   * fail when the gate resolves consent from the wrong channel — a security
+   * review mutation (resolve from the PRINCIPAL's `(adapterId, chatId)`
+   * instead of the SUBJECT's, the exact confused-deputy shape spec §6.6
+   * point 2 forbids) stayed green against exactly that shape of double. This
+   * one would catch it: a resolve call for any other pair throws inside the
+   * `expect`, failing the test loudly rather than quietly returning the
+   * wrong binding.
+   */
+  function storeExpecting(
+    binding: AdapterBinding | undefined,
+    expectedAdapterId: string,
+    expectedChatId: string
+  ): ConsentBindingStore {
+    return {
+      resolve: (adapterId, chatId) => {
+        expect(adapterId).toBe(expectedAdapterId);
+        expect(chatId).toBe(expectedChatId);
+        return binding;
+      },
+    };
   }
 
   it('table case 1: reply, canReply true -> delivered', () => {
     const gate = createInitiateConsentGate({
-      bindingStore: storeForAny(makeBinding({ canReply: true })),
+      bindingStore: storeExpecting(makeBinding({ canReply: true }), 'tg1', 'chat-42'),
       resolveAgentSubject,
     });
     const from = buildBridgePrincipal('reply', 'tg1', 'chat-42');
@@ -354,7 +377,7 @@ describe('createInitiateConsentGate — the relay.bridge.* branch (DOR-871, spec
 
   it('table case 2: reply, canReply false -> blocked (the test that would have passed vacuously before this spec)', () => {
     const gate = createInitiateConsentGate({
-      bindingStore: storeForAny(makeBinding({ canReply: false })),
+      bindingStore: storeExpecting(makeBinding({ canReply: false }), 'tg1', 'chat-42'),
       resolveAgentSubject,
     });
     const from = buildBridgePrincipal('reply', 'tg1', 'chat-42');
@@ -365,7 +388,7 @@ describe('createInitiateConsentGate — the relay.bridge.* branch (DOR-871, spec
 
   it('table cases 3 & 5: initiate (cockpit post or scheduled task), canInitiate true -> delivered', () => {
     const gate = createInitiateConsentGate({
-      bindingStore: storeForAny(makeBinding({ canInitiate: true })),
+      bindingStore: storeExpecting(makeBinding({ canInitiate: true }), 'tg1', 'chat-42'),
       resolveAgentSubject,
     });
     const from = buildBridgePrincipal('initiate', 'tg1', 'chat-42');
@@ -374,7 +397,7 @@ describe('createInitiateConsentGate — the relay.bridge.* branch (DOR-871, spec
 
   it('table cases 4 & 6: initiate (cockpit post or scheduled task), canInitiate false -> blocked', () => {
     const gate = createInitiateConsentGate({
-      bindingStore: storeForAny(makeBinding({ canInitiate: false })),
+      bindingStore: storeExpecting(makeBinding({ canInitiate: false }), 'tg1', 'chat-42'),
       resolveAgentSubject,
     });
     const from = buildBridgePrincipal('initiate', 'tg1', 'chat-42');
@@ -385,7 +408,11 @@ describe('createInitiateConsentGate — the relay.bridge.* branch (DOR-871, spec
 
   it('table case 7: inbound root (reply), binding paused (enabled: false) -> blocked regardless of canReply', () => {
     const gate = createInitiateConsentGate({
-      bindingStore: storeForAny(makeBinding({ enabled: false, canReply: true })),
+      bindingStore: storeExpecting(
+        makeBinding({ enabled: false, canReply: true }),
+        'tg1',
+        'chat-42'
+      ),
       resolveAgentSubject,
     });
     const from = buildBridgePrincipal('reply', 'tg1', 'chat-42');
@@ -403,26 +430,66 @@ describe('createInitiateConsentGate — the relay.bridge.* branch (DOR-871, spec
     // gate holds its side of that contract by enforcing initiate uniformly,
     // with no special case that could accidentally wave one of them through.
     const gate = createInitiateConsentGate({
-      bindingStore: storeForAny(makeBinding({ canInitiate: false, canReply: true })),
+      bindingStore: storeExpecting(
+        makeBinding({ canInitiate: false, canReply: true }),
+        'tg1',
+        'chat-42'
+      ),
       resolveAgentSubject,
     });
     const from = buildBridgePrincipal('initiate', 'tg1', 'chat-42');
     expect(gate(from, HUMAN).allowed).toBe(false);
   });
 
-  it('denies an unrecognized classification segment rather than defaulting to either', () => {
-    const gate = createInitiateConsentGate({
-      bindingStore: storeForAny(makeBinding({ canReply: true, canInitiate: true })),
-      resolveAgentSubject,
-    });
+  it("resolves consent from the SUBJECT, never the principal's own claimed channel (confused-deputy guard, spec §6.6 point 2)", () => {
+    // The principal claims chat "decoy-chat" (canReply: true); the subject
+    // actually being published to is HUMAN = tg1/chat-42 (canReply: false).
+    // If the gate ever resolved consent from the principal's own channel
+    // instead of the subject it is actually delivering to, this would wrongly
+    // allow. This is the exact mutation the security review applied
+    // (resolving from `parsed.*` instead of the subject's parse) and the
+    // prior storeForAny double failed to catch.
+    const store: ConsentBindingStore = {
+      resolve: (adapterId, chatId) => {
+        if (adapterId === 'tg1' && chatId === 'chat-42') {
+          return makeBinding({ canReply: false });
+        }
+        if (adapterId === 'tg1' && chatId === 'decoy-chat') {
+          return makeBinding({ canReply: true });
+        }
+        throw new Error(`unexpected resolve(${adapterId}, ${chatId})`);
+      },
+    };
+    const gate = createInitiateConsentGate({ bindingStore: store, resolveAgentSubject });
+    const from = buildBridgePrincipal('reply', 'tg1', 'decoy-chat');
+    // Subject's binding (chat-42, canReply:false) must decide — not the
+    // decoy channel the principal itself claims.
+    expect(gate(from, HUMAN).allowed).toBe(false);
+  });
+
+  it('denies MALFORMED_BRIDGE_PRINCIPAL for an unrecognized classification segment, distinct from a consent refusal (n5)', () => {
+    // A malformed principal must be denied WITHOUT ever resolving the
+    // binding — a `resolve` call here throws, since the gate should reject
+    // the parse before reaching the store at all.
+    const bindingStore: ConsentBindingStore = {
+      resolve: (adapterId, chatId) => {
+        throw new Error(`bindingStore.resolve(${adapterId}, ${chatId}) must not be called`);
+      },
+    };
+    const gate = createInitiateConsentGate({ bindingStore, resolveAgentSubject });
     const decision = gate('relay.bridge.delete.tg1.chat-42', HUMAN);
     expect(decision.allowed).toBe(false);
-    expect(decision.code).toBe('INITIATE_NOT_ALLOWED');
+    // Distinct from INITIATE_NOT_ALLOWED: this is a parse failure, not a
+    // resolved binding's consent decision. A caller building bridge_blocked
+    // copy (task 1.8/1.9) must not describe a malformed principal as "this
+    // chat's consent settings say no."
+    expect(decision.code).toBe('MALFORMED_BRIDGE_PRINCIPAL');
+    expect(decision.code).not.toBe('INITIATE_NOT_ALLOWED');
   });
 
   it('denies NO_BINDING when nothing resolves for the target channel', () => {
     const gate = createInitiateConsentGate({
-      bindingStore: storeForAny(undefined),
+      bindingStore: storeExpecting(undefined, 'tg1', 'chat-42'),
       resolveAgentSubject,
     });
     const from = buildBridgePrincipal('reply', 'tg1', 'chat-42');
@@ -435,7 +502,11 @@ describe('createInitiateConsentGate — the relay.bridge.* branch (DOR-871, spec
     const dottyHuman = 'relay.human.telegram.tg1.chat.42.with.dots';
 
     const replyGate = createInitiateConsentGate({
-      bindingStore: storeForAny(makeBinding({ canReply: false, canInitiate: true })),
+      bindingStore: storeExpecting(
+        makeBinding({ canReply: false, canInitiate: true }),
+        'tg1',
+        'chat.42.with.dots'
+      ),
       resolveAgentSubject,
     });
     const replyFrom = buildBridgePrincipal('reply', 'tg1', 'chat.42.with.dots');
@@ -446,7 +517,11 @@ describe('createInitiateConsentGate — the relay.bridge.* branch (DOR-871, spec
     expect(replyGate(replyFrom, dottyHuman).allowed).toBe(false);
 
     const initiateGate = createInitiateConsentGate({
-      bindingStore: storeForAny(makeBinding({ canReply: true, canInitiate: false })),
+      bindingStore: storeExpecting(
+        makeBinding({ canReply: true, canInitiate: false }),
+        'tg1',
+        'chat.42.with.dots'
+      ),
       resolveAgentSubject,
     });
     const initiateFrom = buildBridgePrincipal('initiate', 'tg1', 'chat.42.with.dots');
@@ -458,7 +533,7 @@ describe('createInitiateConsentGate — the relay.bridge.* branch (DOR-871, spec
     // deliver's author check (A6.5) is a separate, later mechanism. The gate
     // only ever sees `from` and `subject`.
     const gate = createInitiateConsentGate({
-      bindingStore: storeForAny(makeBinding({ canReply: true })),
+      bindingStore: storeExpecting(makeBinding({ canReply: true }), 'tg1', 'chat-42'),
       resolveAgentSubject: () => undefined,
     });
     const from = buildBridgePrincipal('reply', 'tg1', 'chat-42');
