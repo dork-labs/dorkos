@@ -1,5 +1,11 @@
 import { useRef } from 'react';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger, Skeleton } from '@/layers/shared/ui';
+import {
+  Button,
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+  Skeleton,
+} from '@/layers/shared/ui';
 import { useConnectorToolkits } from '@/layers/entities/connectors';
 import {
   AccountsFirstRun,
@@ -18,7 +24,7 @@ import {
  * than rendering an empty box.
  */
 export function AccountsRegion() {
-  const { data, isLoading } = useConnectorToolkits();
+  const { data, isLoading, isError, refetch } = useConnectorToolkits();
   const carrierRef = useRef<HTMLDivElement>(null);
 
   const hasConnectableServices = (data?.toolkits.length ?? 0) > 0;
@@ -36,6 +42,20 @@ export function AccountsRegion() {
 
       {isLoading ? (
         <Skeleton className="h-40 w-full rounded-lg" />
+      ) : isError ? (
+        // A failed fetch is not a settled empty state. Saying "nothing can be
+        // connected yet" here would present a transient network problem as the
+        // truth about the account, and hide the carriers below that a person
+        // could still set up. Say what actually happened, and offer a retry.
+        <div className="bg-card shadow-soft space-y-3 rounded-lg border p-5">
+          <p className="text-sm font-medium">Couldn&rsquo;t load your services</p>
+          <p className="text-muted-foreground max-w-prose text-sm leading-relaxed">
+            Something went wrong reaching them just now. This is usually temporary.
+          </p>
+          <Button size="sm" variant="secondary" onClick={() => void refetch()}>
+            Try again
+          </Button>
+        </div>
       ) : hasConnectableServices ? (
         <>
           <ServiceGrid />
@@ -58,7 +78,7 @@ export function AccountsRegion() {
       {/* Named for what they are. Every word tried above this one — "engine",
           "provider" — failed to mean anything to the people using it. */}
       <div ref={carrierRef}>
-        <Collapsible defaultOpen={!isLoading && !hasConnectableServices}>
+        <Collapsible defaultOpen={!isLoading && !isError && !hasConnectableServices}>
           <CollapsibleTrigger className="text-muted-foreground hover:text-foreground focus-ring rounded-md text-sm font-medium">
             Composio &amp; Nango
           </CollapsibleTrigger>
