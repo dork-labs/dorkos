@@ -4,8 +4,6 @@ import {
   Settings2,
   Server,
   Wrench,
-  Radio,
-  Bot,
   Cpu,
   Cog,
   ShieldCheck,
@@ -19,8 +17,6 @@ import { PreferencesTab } from './tabs/PreferencesTab';
 import { RuntimesTab } from './tabs/RuntimesTab';
 import { ServerTab } from './ServerTab';
 import { ToolsTab } from './ToolsTab';
-import { IntegrationsTab } from './IntegrationsTab';
-import { AgentsTab } from './AgentsTab';
 import { SecurityTab } from './SecurityTab';
 import { CloudAccountTab } from './CloudAccountTab';
 import { PrivacyTab } from './PrivacyTab';
@@ -31,15 +27,37 @@ import { TunnelDialog } from './TunnelDialog';
 const SETTINGS_TABS: TabbedDialogTab<SettingsTab>[] = [
   { id: 'appearance', label: 'Appearance', icon: Palette, component: AppearanceTab },
   { id: 'preferences', label: 'Preferences', icon: Settings2, component: PreferencesTab },
-  { id: 'server', label: 'Server', icon: Server, component: ServerTab },
-  { id: 'tools', label: 'Tools', icon: Wrench, component: ToolsTab },
-  { id: 'integrations', label: 'Integrations', icon: Radio, component: IntegrationsTab },
-  { id: 'agents', label: 'Agents', icon: Bot, component: AgentsTab },
-  { id: 'runtimes', label: 'Runtimes', icon: Cpu, component: RuntimesTab },
-  { id: 'security', label: 'Security', icon: ShieldCheck, component: SecurityTab },
-  { id: 'account', label: 'DorkOS account', icon: Link2, component: CloudAccountTab },
-  { id: 'privacy', label: 'Privacy & Data', icon: Lock, component: PrivacyTab },
-  { id: 'advanced', label: 'Advanced', icon: Cog, component: AdvancedTab },
+  { id: 'tools', label: 'Tools', icon: Wrench, component: ToolsTab, group: 'Agents & sessions' },
+  {
+    id: 'runtimes',
+    label: 'Runtimes',
+    icon: Cpu,
+    component: RuntimesTab,
+    group: 'Agents & sessions',
+  },
+  {
+    id: 'security',
+    label: 'Security',
+    icon: ShieldCheck,
+    component: SecurityTab,
+    group: 'Access & privacy',
+  },
+  {
+    id: 'privacy',
+    label: 'Privacy & Data',
+    icon: Lock,
+    component: PrivacyTab,
+    group: 'Access & privacy',
+  },
+  {
+    id: 'account',
+    label: 'DorkOS account',
+    icon: Link2,
+    component: CloudAccountTab,
+    group: 'Access & privacy',
+  },
+  { id: 'server', label: 'Server', icon: Server, component: ServerTab, group: 'System' },
+  { id: 'advanced', label: 'Advanced', icon: Cog, component: AdvancedTab, group: 'System' },
 ];
 
 interface SettingsDialogProps {
@@ -57,7 +75,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       <TabbedDialog
         open={open}
         onOpenChange={onOpenChange}
-        title="App Settings"
+        title="Settings"
         description="Application settings"
         defaultTab="appearance"
         initialTab={urlTab}

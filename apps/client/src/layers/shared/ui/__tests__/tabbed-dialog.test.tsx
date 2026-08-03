@@ -504,4 +504,75 @@ describe('TabbedDialog', () => {
     renderDialog({ testId: 'my-tabbed-dialog' });
     expect(screen.getByTestId('my-tabbed-dialog')).toBeInTheDocument();
   });
+
+  // ── Grouped sidebar (DOR-858) ──────────────────────────────────
+  describe('grouped sidebar', () => {
+    it('renders no section headers when no tab declares a group', () => {
+      const { container } = renderDialog();
+      expect(
+        container.querySelectorAll('[data-slot="navigation-layout-section-header"]')
+      ).toHaveLength(0);
+    });
+
+    it('renders a header per group, ungrouped tabs leading, in first-seen order', () => {
+      const groupedTabs: TabbedDialogTab<TabId>[] = [
+        { id: 'alpha', label: 'Alpha', icon: Settings, component: TabAlpha },
+        { id: 'beta', label: 'Beta', icon: User, component: TabBeta, group: 'Group One' },
+        { id: 'gamma', label: 'Gamma', icon: Bell, component: TabGamma, group: 'Group Two' },
+      ];
+      const { container } = renderDialog({ tabs: groupedTabs });
+
+      const headers = Array.from(
+        container.querySelectorAll('[data-slot="navigation-layout-section-header"]')
+      ).map((el) => el.textContent);
+      expect(headers).toEqual(['Group One', 'Group Two']);
+
+      // A section header is not a tab, so arrow-key navigation walks past it.
+      expect(
+        container.querySelector('[data-slot="navigation-layout-section-header"]')
+      ).toHaveAttribute('role', 'presentation');
+    });
+
+    it('files an extension tab with no group under "Add-ons"', () => {
+      const ExtensionTab = () => <div data-testid="panel-ext">Extension content</div>;
+      mockUseSlotContributions.mockReturnValue([
+        { id: 'ext1', label: 'Extension Tab', icon: Settings, component: ExtensionTab },
+      ]);
+      const groupedTabs: TabbedDialogTab<TabId>[] = [
+        { id: 'alpha', label: 'Alpha', icon: Settings, component: TabAlpha },
+        { id: 'beta', label: 'Beta', icon: User, component: TabBeta, group: 'Group One' },
+      ];
+      const { container } = renderDialog({ tabs: groupedTabs, extensionSlot: 'settings.tabs' });
+
+      const headers = Array.from(
+        container.querySelectorAll('[data-slot="navigation-layout-section-header"]')
+      ).map((el) => el.textContent);
+      expect(headers).toEqual(['Group One', 'Add-ons']);
+      expect(screen.getByRole('tab', { name: /extension tab/i })).toBeInTheDocument();
+    });
+
+    it('respects an explicit group on an extension contribution', () => {
+      const ExtensionTab = () => <div data-testid="panel-ext">Extension content</div>;
+      mockUseSlotContributions.mockReturnValue([
+        {
+          id: 'ext1',
+          label: 'Extension Tab',
+          icon: Settings,
+          component: ExtensionTab,
+          group: 'Group One',
+        },
+      ]);
+      const groupedTabs: TabbedDialogTab<TabId>[] = [
+        { id: 'alpha', label: 'Alpha', icon: Settings, component: TabAlpha },
+        { id: 'beta', label: 'Beta', icon: User, component: TabBeta, group: 'Group One' },
+      ];
+      const { container } = renderDialog({ tabs: groupedTabs, extensionSlot: 'settings.tabs' });
+
+      const headers = Array.from(
+        container.querySelectorAll('[data-slot="navigation-layout-section-header"]')
+      ).map((el) => el.textContent);
+      // Only one "Group One" header — the extension tab joined the existing group.
+      expect(headers).toEqual(['Group One']);
+    });
+  });
 });

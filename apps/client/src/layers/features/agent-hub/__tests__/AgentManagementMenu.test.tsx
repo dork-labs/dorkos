@@ -6,6 +6,8 @@ import { render, screen, fireEvent, waitFor, cleanup, act } from '@testing-libra
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
+import { createMockTransport } from '@dorkos/test-utils';
+import { TransportProvider } from '@/layers/shared/model';
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -26,6 +28,10 @@ vi.mock('@/layers/entities/mesh', () => ({
   useDeniedAgents: () => ({ data: mockDeniedData }),
   useDeleteAgentData: () => ({ mutate: mockDeleteMutate }),
 }));
+
+// The default agent lives in server config; the menu reads it and writes it.
+const mockSetDefaultAgent = vi.fn().mockResolvedValue(undefined);
+let mockDefaultAgentName = 'someone-else';
 
 const mockAgent = {
   id: 'agent-1',
@@ -81,8 +87,14 @@ function createWrapper() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
+  const transport = createMockTransport({
+    getConfig: vi.fn().mockResolvedValue({ agents: { defaultAgent: mockDefaultAgentName } }),
+    setDefaultAgent: mockSetDefaultAgent,
+  });
   return ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    <QueryClientProvider client={queryClient}>
+      <TransportProvider transport={transport}>{children}</TransportProvider>
+    </QueryClientProvider>
   );
 }
 
@@ -114,6 +126,7 @@ afterEach(() => {
   mockAgent.isSystem = false;
   mockAgent.displayName = 'Test Agent';
   mockDeniedData = { denied: [] };
+  mockDefaultAgentName = 'someone-else';
 });
 
 describe('AgentManagementMenu', () => {
@@ -283,6 +296,45 @@ describe('AgentManagementMenu', () => {
       fireEvent.click(deleteBtn);
     });
     expect(mockDeleteMutate).toHaveBeenCalledWith('agent-1', expect.any(Object));
+  });
+
+  it('offers "Set as default" and writes the default agent on click', async () => {
+    render(<AgentManagementMenu />, { wrapper: createWrapper() });
+    await openDialog();
+
+    const card = await screen.findByText('Set as default');
+    expect(card).toBeInTheDocument();
+
+    await clickAction('Set as default');
+
+    await waitFor(() => {
+      expect(mockSetDefaultAgent).toHaveBeenCalledWith('Test Agent');
+    });
+    await waitFor(() => {
+      expect(toast.success).toHaveBeenCalledWith('Test Agent is now the default agent');
+    });
+  });
+
+  it('shows a disabled "Default agent" card when the agent already is the default', async () => {
+    mockDefaultAgentName = 'Test Agent';
+    render(<AgentManagementMenu />, { wrapper: createWrapper() });
+    await openDialog();
+
+    const card = await screen.findByText('Default agent');
+    expect(card).toBeInTheDocument();
+    expect(card.closest('button')).toBeDisabled();
+    expect(screen.queryByText('Set as default')).not.toBeInTheDocument();
+  });
+
+  it('offers "Set as default" even for system agents', async () => {
+    mockAgent.isSystem = true as unknown as boolean;
+    render(<AgentManagementMenu />, { wrapper: createWrapper() });
+    await openDialog();
+
+    expect(await screen.findByText('Set as default')).toBeInTheDocument();
+    // The destructive actions stay hidden for system agents.
+    expect(screen.queryByText('Block')).not.toBeInTheDocument();
+    expect(screen.getByText(/cannot be blocked/i)).toBeInTheDocument();
   });
 
   it('back button returns to actions step from confirmation', async () => {

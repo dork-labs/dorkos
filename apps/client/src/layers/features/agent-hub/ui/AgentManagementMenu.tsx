@@ -1,6 +1,15 @@
 import { useState } from 'react';
 import type { ComponentType } from 'react';
-import { MoreVertical, ShieldBan, ShieldCheck, Unplug, Trash2, ArrowLeft } from 'lucide-react';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
+import {
+  MoreVertical,
+  ShieldBan,
+  ShieldCheck,
+  Unplug,
+  Trash2,
+  ArrowLeft,
+  Star,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import {
   ResponsiveDialog,
@@ -16,6 +25,7 @@ import {
   Input,
 } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
+import { useTransport } from '@/layers/shared/model';
 import {
   useUnregisterAgent,
   useRegisterAgent,
@@ -46,6 +56,8 @@ interface ActionCardProps {
   description: string;
   variant?: 'default' | 'destructive';
   onClick: () => void;
+  /** Render as a static, non-interactive card (e.g. the state a run is already in). */
+  disabled?: boolean;
 }
 
 function ActionCard({
@@ -54,15 +66,21 @@ function ActionCard({
   description,
   variant = 'default',
   onClick,
+  disabled = false,
 }: ActionCardProps) {
   const isDestructive = variant === 'destructive';
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       className={cn(
         'flex w-full items-start gap-3 rounded-lg p-3 text-left transition-colors',
-        isDestructive ? 'hover:bg-destructive/10' : 'hover:bg-accent'
+        disabled
+          ? 'cursor-default opacity-70'
+          : isDestructive
+            ? 'hover:bg-destructive/10'
+            : 'hover:bg-accent'
       )}
     >
       <div
@@ -131,6 +149,8 @@ function ConfirmHeader({
  */
 export function AgentManagementMenu({ className }: AgentManagementMenuProps) {
   const { agent, projectPath } = useAgentHubContext();
+  const transport = useTransport();
+  const queryClient = useQueryClient();
   const unregisterAgent = useUnregisterAgent();
   const registerAgent = useRegisterAgent();
   const denyAgent = useDenyAgent();
@@ -138,7 +158,26 @@ export function AgentManagementMenu({ className }: AgentManagementMenuProps) {
   const deleteAgentData = useDeleteAgentData();
   const { data: deniedData } = useDeniedAgents();
 
+  // Which agent is the default for new sessions. This used to be a whole
+  // Settings tab (DOR-858); it lives here now, next to the agent it acts on.
+  const { data: config } = useQuery({
+    queryKey: ['config'],
+    queryFn: () => transport.getConfig(),
+    staleTime: 30_000,
+  });
+
+  const setDefault = useMutation({
+    mutationFn: (agentName: string) => transport.setDefaultAgent(agentName),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['config'] });
+      toast.success(`${displayName} is now the default agent`);
+      close();
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
   const isSystem = agent.isSystem === true;
+  const isDefaultAgent = config?.agents?.defaultAgent === agent.name;
   const isDenied = deniedData?.denied?.some((d) => d.path === projectPath) ?? false;
   const displayName = agent.displayName ?? agent.name;
 
@@ -231,6 +270,22 @@ export function AgentManagementMenu({ className }: AgentManagementMenuProps) {
               </ResponsiveDialogDescription>
             </ResponsiveDialogHeader>
             <ResponsiveDialogBody className="pb-6">
+              <div className="space-y-1">
+                {/* Set-as-default sits above the system-agent gate: any agent can
+                    be the default for new sessions, including a system one like
+                    DorkBot, so this action is never hidden. */}
+                <ActionCard
+                  icon={Star}
+                  title={isDefaultAgent ? 'Default agent' : 'Set as default'}
+                  description={
+                    isDefaultAgent
+                      ? 'New sessions and post-onboarding start with this agent.'
+                      : 'Make this the agent new sessions and post-onboarding start with.'
+                  }
+                  onClick={() => setDefault.mutate(agent.name)}
+                  disabled={isDefaultAgent || setDefault.isPending}
+                />
+              </div>
               {isSystem ? (
                 <p className="text-muted-foreground py-6 text-center text-sm">
                   System agents cannot be blocked, unregistered, or deleted.

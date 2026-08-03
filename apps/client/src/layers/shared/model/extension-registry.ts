@@ -103,6 +103,11 @@ export interface SettingsTabContribution extends BaseContribution {
   label: string;
   icon: LucideIcon;
   component: ComponentType;
+  /**
+   * Sidebar group this tab sits under in the Settings dialog. Omit to let the
+   * dialog file it under "Add-ons", the section reserved for contributed tabs.
+   */
+  group?: string;
 }
 
 /**

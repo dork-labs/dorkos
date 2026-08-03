@@ -452,6 +452,7 @@ export class ExtensionLoader {
         });
       },
       priority: 90,
+      group: 'Add-ons',
     });
 
     cleanups.push(unsub);

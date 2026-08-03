@@ -257,6 +257,41 @@ function NavigationLayoutSidebarKeyboardHandler({
 }
 
 // ---------------------------------------------------------------------------
+// Section header
+// ---------------------------------------------------------------------------
+
+interface NavigationLayoutSectionHeaderProps {
+  children: React.ReactNode;
+  className?: string;
+}
+
+/**
+ * A group label inside the sidebar/list — the quiet heading that names a run of
+ * related items ("Access & privacy"). It is `role="presentation"`, not a tab or
+ * list item, so the tablist's arrow-key navigation walks straight past it and it
+ * never becomes a selectable destination. Renders the same on desktop and in the
+ * mobile drill-in list, where it reads as a plain list section header.
+ */
+function NavigationLayoutSectionHeader({
+  children,
+  className,
+}: NavigationLayoutSectionHeaderProps) {
+  return (
+    <div
+      role="presentation"
+      data-slot="navigation-layout-section-header"
+      className={cn(
+        'text-muted-foreground/70 px-4 pt-3 pb-1 text-[11px] font-medium tracking-wide uppercase select-none md:px-3',
+        className
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+NavigationLayoutSectionHeader.displayName = 'NavigationLayoutSectionHeader';
+
+// ---------------------------------------------------------------------------
 // Item
 // ---------------------------------------------------------------------------
 
@@ -587,6 +622,7 @@ export {
   NavigationLayout,
   NavigationLayoutBody,
   NavigationLayoutSidebar,
+  NavigationLayoutSectionHeader,
   NavigationLayoutItem,
   NavigationLayoutContent,
   NavigationLayoutPanel,

@@ -18,8 +18,6 @@ export type SettingsTab =
   | 'preferences'
   | 'server'
   | 'tools'
-  | 'integrations'
-  | 'agents'
   | 'security'
   | 'account'
   | 'runtimes'

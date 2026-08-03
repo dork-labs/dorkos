@@ -39,12 +39,21 @@ export interface ExtensionAPI {
    *   slots that render one (currently `right-panel`); it is any component the
    *   host renders with a `className` for sizing — a `lucide-react` icon
    *   satisfies this. Omit it and the host falls back to a default puzzle-piece.
+   *   `group` applies only to the `settings.tabs` slot: it names the sidebar
+   *   section the tab sits under in the Settings dialog. Omit it and the tab
+   *   lands under "Add-ons", the section reserved for contributed tabs — so a
+   *   tab written before this field existed still files itself somewhere honest.
    */
   registerComponent(
     slot: ExtensionPointId,
     id: string,
     component: ComponentType,
-    options?: { priority?: number; label?: string; icon?: ComponentType<{ className?: string }> }
+    options?: {
+      priority?: number;
+      label?: string;
+      icon?: ComponentType<{ className?: string }>;
+      group?: string;
+    }
   ): () => void;
 
   /**
@@ -67,8 +76,17 @@ export interface ExtensionAPI {
   /**
    * Register a tab in the settings dialog.
    * Returns an unsubscribe function.
+   *
+   * @param options - `group` names the sidebar section the tab sits under. Omit
+   *   it and the tab lands under "Add-ons", the section reserved for contributed
+   *   tabs.
    */
-  registerSettingsTab(id: string, label: string, component: ComponentType): () => void;
+  registerSettingsTab(
+    id: string,
+    label: string,
+    component: ComponentType,
+    options?: { group?: string }
+  ): () => void;
 
   // --- UI Control (wraps Phase 1 dispatcher) ---
 

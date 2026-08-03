@@ -127,6 +127,7 @@ export {
   NavigationLayout,
   NavigationLayoutBody,
   NavigationLayoutSidebar,
+  NavigationLayoutSectionHeader,
   NavigationLayoutItem,
   NavigationLayoutContent,
   NavigationLayoutPanel,

@@ -28,8 +28,6 @@ export const SETTINGS_SECTIONS: PlaygroundSection[] = [
       'status bar',
       'server',
       'tools',
-      'integrations',
-      'agents',
       'advanced',
       'tab',
       'isolated',
