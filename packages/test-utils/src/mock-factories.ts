@@ -379,6 +379,14 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
               },
             ],
           },
+          // The real claude-code declaration, mirroring
+          // `claude-code/runtime-constants.ts` — a settings surface rendered
+          // against this mock should see what a person sees.
+          settings: {
+            configSection: 'claudeCode',
+            supportsEffort: true,
+            sections: [{ kind: 'claude-accounts' }],
+          },
           features: {},
         },
       },

@@ -91,6 +91,7 @@ const CLAUDE_CAPS: RuntimeCapabilities = {
     ],
   },
   commandIntents: { compact: { supported: false } },
+  settings: { configSection: null, supportsEffort: false, sections: [] },
   features: {},
 };
 

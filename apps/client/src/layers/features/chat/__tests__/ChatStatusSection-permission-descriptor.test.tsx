@@ -44,6 +44,7 @@ const EXOTIC_CAPABILITIES: RuntimeCapabilities = {
     ],
   },
   commandIntents: { compact: { supported: false } },
+  settings: { configSection: null, supportsEffort: false, sections: [] },
   features: {},
 };
 

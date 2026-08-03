@@ -91,6 +91,10 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
       },
     ],
   },
+  // Effort is real — every catalog model takes a reasoning level (see
+  // `CODEX_EFFORT_LEVELS` below). No bespoke section: Codex's settings card is
+  // the common execution defaults and nothing else.
+  settings: { configSection: 'codex', supportsEffort: true, sections: [] },
   // Codex has no compaction/summarize API (`Thread.run` only, verified at the
   // 0.142.5 pin), so this stays honestly `false` permanently (DOR-109 task 2.3).
   commandIntents: { compact: { supported: false } },

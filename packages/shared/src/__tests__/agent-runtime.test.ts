@@ -74,6 +74,11 @@ describe('RuntimeCapabilities shape', () => {
           },
         ],
       },
+      settings: {
+        configSection: 'claudeCode',
+        supportsEffort: true,
+        sections: [{ kind: 'claude-accounts' }],
+      },
       features: {
         claudeSkills: { enabled: true },
       },
@@ -96,6 +101,7 @@ describe('RuntimeCapabilities shape', () => {
       supportsPlugins: false,
       nativeContext: [],
       permissionModes: { supported: false, values: [] },
+      settings: { configSection: null, supportsEffort: false, sections: [] },
       features: {},
     };
 
@@ -115,6 +121,7 @@ describe('RuntimeCapabilities shape', () => {
       supportsQuestionPrompt: false,
       supportsPlugins: false,
       permissionModes: { supported: false, values: [] },
+      settings: { configSection: null, supportsEffort: false, sections: [] },
       features: {
         aString: 'hello',
         aNumber: 42,
@@ -127,6 +134,29 @@ describe('RuntimeCapabilities shape', () => {
     expect(caps.features.aString).toBe('hello');
     expect(caps.features.aNumber).toBe(42);
     expect(caps.features.anObject).toEqual({ nested: [1, 2, 3] });
+  });
+
+  it('requires every runtime to declare its settings surface', () => {
+    // Compile-time forcing, the `commandIntents` precedent: a new adapter must
+    // not be able to silently omit its settings declaration. If `settings` ever
+    // becomes optional this `@ts-expect-error` turns into an unused-directive
+    // error — that red is the whole point of the test.
+    // @ts-expect-error settings is required
+    const withoutSettings: RuntimeCapabilities = {
+      type: 'forgetful-runtime',
+      commandIntents: { compact: { supported: false } },
+      nativeContext: [],
+      supportsResume: false,
+      supportsMcp: false,
+      supportsCostTracking: false,
+      supportsToolApproval: false,
+      supportsQuestionPrompt: false,
+      supportsPlugins: false,
+      permissionModes: { supported: false, values: [] },
+      features: {},
+    };
+
+    expect(withoutSettings.type).toBe('forgetful-runtime');
   });
 
   it('requires a PermissionModeDescriptor to say what its mode does', () => {

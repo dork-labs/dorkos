@@ -93,6 +93,15 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
       },
     ],
   },
+  // Effort is real at the API here, and the per-model rungs come from the model
+  // catalog (`ModelOption.supportedEffortLevels`) — both gates apply. The
+  // `claude-accounts` section is the relocated billing-account feature, which
+  // reads its live account list from `GET /api/config`, not from here.
+  settings: {
+    configSection: 'claudeCode',
+    supportsEffort: true,
+    sections: [{ kind: 'claude-accounts' }],
+  },
   // Claude fulfills `compact` by sending the bare `/compact` prompt through its
   // existing send path (DOR-109 task 2.1, ADR-0273); `executeCommandIntent`
   // carries that body.

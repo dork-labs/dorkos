@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
-import type { SseResponse } from '@dorkos/shared/agent-runtime';
+import type { RuntimeSettingsCapability, SseResponse } from '@dorkos/shared/agent-runtime';
 import { FakeAgentRuntime } from '../fake-agent-runtime.js';
 
 describe('FakeAgentRuntime', () => {
@@ -100,6 +100,45 @@ describe('FakeAgentRuntime', () => {
     expect(events).toHaveLength(1);
     expect(events[0].type).toBe('compact_boundary');
     expect(runtime.executeCommandIntent).toHaveBeenCalledWith('s1', 'compact');
+  });
+
+  it('declares a no-config-section settings surface by default', () => {
+    // The honest default for a double: nothing configurable, so a consumer that
+    // reads `settings` off an un-configured fake sees a runtime with no section.
+    const runtime = new FakeAgentRuntime();
+    expect(runtime.getCapabilities().settings).toEqual({
+      configSection: null,
+      supportsEffort: false,
+      sections: [],
+    });
+  });
+
+  it('takes a settings declaration at construction, including a malformed one', () => {
+    // The override lever consumers need: model a real runtime's declaration, or
+    // hand a deliberately-malformed value to a consumer that must validate what
+    // it reads instead of trusting the declaration.
+    const real = new FakeAgentRuntime('fake', {
+      settings: {
+        configSection: 'claudeCode',
+        supportsEffort: true,
+        sections: [{ kind: 'claude-accounts' }],
+      },
+    });
+    expect(real.getCapabilities().settings.configSection).toBe('claudeCode');
+    expect(real.getCapabilities().settings.sections).toEqual([{ kind: 'claude-accounts' }]);
+
+    const malformed = new FakeAgentRuntime('fake-malformed', {
+      settings: {
+        configSection: 42,
+        supportsEffort: 'yes',
+        sections: null,
+      } as unknown as RuntimeSettingsCapability,
+    });
+    expect(malformed.getCapabilities().settings).toEqual({
+      configSection: 42,
+      supportsEffort: 'yes',
+      sections: null,
+    });
   });
 
   it('hasSession defaults to false', () => {

@@ -401,6 +401,39 @@ export interface CommandIntentSupport {
   supported: boolean;
 }
 
+/** One bespoke settings section a runtime's settings card renders. */
+export interface RuntimeSettingsSection {
+  /**
+   * Renderer key, e.g. 'claude-accounts', 'opencode-power-source'. The client
+   * maps known kinds to feature-supplied renderers (same slot pattern as the
+   * connect flows); unknown kinds render nothing (forward-compatible).
+   */
+  kind: string;
+}
+
+/** Static settings declaration for a runtime. */
+export interface RuntimeSettingsCapability {
+  /**
+   * Key of this runtime's section under `runtimes.*` in user config
+   * ('claudeCode' | 'codex' | 'opencode' today), or null when the runtime has
+   * no config section (test-mode). Replaces the duplicated
+   * CONFIG_SECTION_BY_RUNTIME maps. Typed `string | null` in shared (the
+   * config schema is host-side); the server validates it against the real
+   * config shape with a type guard and skips unknown sections.
+   */
+  configSection: string | null;
+  /**
+   * Whether this runtime takes an effort setting at all - the runtime-level
+   * static fact (replaces shared `runtimeSupportsEffort()` /
+   * RUNTIMES_WITHOUT_EFFORT). Per-model effort support remains
+   * `ModelOption.supportsEffort` / `supportedEffortLevels`; both gates apply,
+   * exactly as ExecutionDefaultsCard implements today.
+   */
+  supportsEffort: boolean;
+  /** Ordered bespoke sections for the settings card. Empty for most runtimes. */
+  sections: RuntimeSettingsSection[];
+}
+
 /**
  * Runtime capability flags — describes what a given backend supports.
  *
@@ -461,6 +494,16 @@ export interface RuntimeCapabilities {
    * no adapter silently omits it.
    */
   commandIntents: Record<RuntimeCommandIntentId, CommandIntentSupport>;
+
+  /**
+   * Required - every adapter declares its settings surface. Compile-time
+   * forcing per the `commandIntents` precedent (ADR-0256): a new runtime
+   * cannot silently omit it. Static only: account lists, current provider and
+   * readiness stay on the refetched surfaces (`GET /api/config`,
+   * `GET /api/system/requirements`) so capabilities remain safe to cache with
+   * `staleTime: Infinity`.
+   */
+  settings: RuntimeSettingsCapability;
 
   /**
    * Context kinds this runtime injects natively (the server omits these from

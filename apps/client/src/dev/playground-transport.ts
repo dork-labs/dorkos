@@ -74,6 +74,13 @@ const PLAYGROUND_CAPABILITIES: Record<string, RuntimeCapabilities> = {
       ],
     },
     commandIntents: { compact: { supported: true } },
+    // The real claude-code declaration — phase-2 settings showcases render off
+    // this transport, so a filler here would show a screen the app never draws.
+    settings: {
+      configSection: 'claudeCode',
+      supportsEffort: true,
+      sections: [{ kind: 'claude-accounts' }],
+    },
     features: {},
   },
   codex: {
@@ -120,6 +127,7 @@ const PLAYGROUND_CAPABILITIES: Record<string, RuntimeCapabilities> = {
       ],
     },
     commandIntents: { compact: { supported: false } },
+    settings: { configSection: 'codex', supportsEffort: true, sections: [] },
     features: {},
   },
   opencode: {
@@ -163,6 +171,11 @@ const PLAYGROUND_CAPABILITIES: Record<string, RuntimeCapabilities> = {
       ],
     },
     commandIntents: { compact: { supported: true } },
+    settings: {
+      configSection: 'opencode',
+      supportsEffort: false,
+      sections: [{ kind: 'opencode-power-source' }],
+    },
     features: {},
   },
 };

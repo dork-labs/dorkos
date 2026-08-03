@@ -77,6 +77,10 @@ export const TEST_MODE_CAPABILITIES: RuntimeCapabilities = {
       },
     ],
   },
+  // `configSection: null` because test-mode is a real runtime with NO section
+  // under `runtimes.*` in user config — which is why it must stay absent from
+  // `executionDefaults.perRuntime[]`. No effort, no bespoke sections.
+  settings: { configSection: null, supportsEffort: false, sections: [] },
   // Test-mode fulfills `compact` by yielding a synthetic `compact_boundary`
   // (DOR-109 task 2.3) — the deterministic e2e/conformance vehicle for
   // per-runtime intent gating.
