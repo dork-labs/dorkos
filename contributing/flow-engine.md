@@ -110,7 +110,7 @@ inside the plugin:
 cd <marketplace-checkout>/plugins/flow
 npm install                 # dev deps only (zod, tsx, vitest, ajv); the shipped runtime needs none
 npm run generate:schema     # regenerates config.schema.json
-npm test                    # the engine oracle suite (414 tests)
+npm test                    # the engine oracle suite (726 tests)
 ```
 
 The schema mirrors the spec's load-bearing decisions (`planApproval: false`,
@@ -173,10 +173,36 @@ for up to nine hours on 2026-07-28. What closes it in the non-autonomous path is
 independently of the plugin (ADR 260728-112203). The two do not conflict: the
 plugin's ladder still owns the merge tail whenever the autonomous loop is on.
 
+## The backlog groom (`/flow:groom`)
+
+`/flow:groom` is the whole-tracker corrective sweep: it audits every open issue
+against the fourteen groom invariants, closes shipped/duplicate/junk work with
+cited evidence (behind a human gate), reconciles projects with the repo's real
+programme structure, applies the `agent/ready` gate honestly, and proves the
+result with a before/after run of the dispatch oracle. `/flow:groom check` is
+the read-only audit half. Run it when the dispatch queue starves (the hygiene
+loop's starvation message now names it), after a large programme lands, or
+before enabling autonomous mode.
+
+The invariants are code, not prose: `plugins/flow/scripts/audit-backlog.ts` in
+the plugin (GRM-1..14, same dependency-free harness contract as
+`validate-adapter.ts`), with engine tests that seed one violation per invariant
+and assert the verdict goes red. The Linear-specific mechanics (the
+`getBacklogSnapshot()` verb, the Duplicate-state trap, the bulk-write traps)
+live in the `linear-adapter` skill, where all tracker I/O belongs. A monthly
+scheduled check-mode seat (`skills/flow-groom/`, `enabled: false`) ships beside
+`flow-drain` for whenever autonomy is switched on.
+
+The process was extracted from the 2026-08-03 tracker reorganization, which
+took the eligible dispatch pool from 21 of 276 open issues to 160 — and found
+that the pre-groom queue's top-ranked pick was work the spec itself says cannot
+be automated. The lesson the groom encodes: a ready label nobody audits decays
+into noise.
+
 ## Testing
 
 The engine oracles are unit-tested in `plugins/flow/engine-tests/` (Vitest,
-table-driven; 414 tests). Run the suite from inside the plugin:
+table-driven; 726 tests). Run the suite from inside the plugin:
 
 ```bash
 cd <marketplace-checkout>/plugins/flow
