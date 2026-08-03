@@ -69,7 +69,9 @@ import type {
   AdapterRegistryLike,
   AdapterContext,
   InitiateConsentGate,
+  RelayLogger,
 } from './types.js';
+import { noopLogger } from './types.js';
 import type { DeadLetterEntry, ListDeadOptions } from './dead-letter-queue.js';
 import type { IndexedMessage } from './sqlite-index.js';
 import type { PublishResult } from './relay-publish.js';
@@ -144,6 +146,7 @@ export class RelayCore {
   private readonly accessControl: AccessControl;
   private readonly configPath: string;
   private configWatcher: FSWatcher | null = null;
+  private readonly logger: RelayLogger;
   private circuitBreaker: CircuitBreakerManager;
   private backpressureConfig: BackpressureConfig;
   private readonly dispatchInboxTtlMs: number;
@@ -163,6 +166,7 @@ export class RelayCore {
   private readonly adapterRegistry?: AdapterRegistryLike;
 
   constructor(options?: RelayOptions) {
+    this.logger = options?.logger ?? noopLogger;
     const dataDir = options?.dataDir ?? DEFAULT_DATA_DIR;
     fs.mkdirSync(dataDir, { recursive: true });
 
@@ -215,7 +219,8 @@ export class RelayCore {
       maildirStore,
       this.subscriptionRegistry,
       this.sqliteIndex,
-      this.circuitBreaker
+      this.circuitBreaker,
+      this.logger
     );
     watcherManager.setWasDispatched((id) => this.deliveryPipeline.wasDispatched(id));
 
@@ -711,6 +716,33 @@ export class RelayCore {
     });
     this.configWatcher.on('change', () => this.loadReliabilityConfig());
     this.configWatcher.on('add', () => this.loadReliabilityConfig());
+
+    // Without this handler a watcher failure (e.g. EMFILE) has nowhere to go
+    // but the process-wide unhandled-error path. The relay keeps running on its
+    // last-loaded reliability config; only hot-reload of external edits stops
+    // working until the process restarts. Latched per distinct error code
+    // rather than a single boolean: a benign EACCES must never suppress the
+    // EMFILE storm that follows it. The Set lives in this per-instance closure,
+    // so one relay's latch cannot silence another's.
+    const seenCodes = new Set<string>();
+    this.configWatcher.on('error', (err) => {
+      const code = (err as NodeJS.ErrnoException)?.code ?? 'unknown';
+      if (seenCodes.has(code)) return;
+      seenCodes.add(code);
+      // Logged as an explicit object, never the bare Error: the server's NDJSON
+      // reporter spreads what it is given, and `message`/`stack` are
+      // non-enumerable on an Error, so they would vanish (DOR-832).
+      this.logger.warn(
+        `[watcher-error] RelayCore: ${this.configPath} — further ${code} errors from this watcher are suppressed`,
+        {
+          configPath: this.configPath,
+          code,
+          message: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined,
+          suppressingFurtherErrors: true,
+        }
+      );
+    });
   }
 
   /** Assert that the relay has not been closed. */

@@ -93,6 +93,39 @@ export class TaskFileWatcher {
       if (isSkillFile(filePath)) this.handleFileRemove(filePath);
     });
 
+    // Without this handler a watcher failure (e.g. EMFILE when the process runs
+    // out of file descriptors) has nowhere to go but the process-wide
+    // unhandled-error path, which spams the log without ever naming the watcher
+    // that died. This directory stops syncing to the DB cache until the process
+    // restarts or the caller re-watches it — chokidar offers no reconnect
+    // signal, so saying so once, clearly, is the whole remedy.
+    //
+    // A single fd-exhaustion episode can make chokidar fire 'error' once per
+    // directory it fails to (re-)watch, so this latches per distinct error code
+    // rather than a single boolean: a benign EACCES on one path must never
+    // suppress the EMFILE storm that follows it. The Set lives in this per-call
+    // closure, so one tasks dir's latch cannot silence a sibling's.
+    const seenCodes = new Set<string>();
+    watcher.on('error', (err) => {
+      const code = (err as NodeJS.ErrnoException)?.code ?? 'unknown';
+      if (seenCodes.has(code)) return;
+      seenCodes.add(code);
+      // Logged as an explicit object, never the bare Error: the NDJSON reporter
+      // spreads what it is given, and `message`/`stack` are non-enumerable on
+      // an Error, so they would vanish (DOR-832).
+      logger.error(
+        `[watcher-error] TaskFileWatcher: ${tasksDir} (${scope}) — further ${code} errors from this watcher are suppressed`,
+        {
+          tasksDir,
+          scope,
+          code,
+          message: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined,
+          suppressingFurtherErrors: true,
+        }
+      );
+    });
+
     this.watchers.set(tasksDir, watcher);
     logger.info(`[TaskFileWatcher] Watching ${tasksDir} (${scope})`);
   }

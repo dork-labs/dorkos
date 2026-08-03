@@ -13,7 +13,8 @@ import type { SubscriptionRegistry } from './subscription-registry.js';
 import type { MaildirStore } from './maildir-store.js';
 import type { SqliteIndex } from './sqlite-index.js';
 import type { CircuitBreakerManager } from './circuit-breaker.js';
-import type { EndpointInfo } from './types.js';
+import type { EndpointInfo, RelayLogger } from './types.js';
+import { noopLogger } from './types.js';
 
 /**
  * Manages chokidar watchers on Maildir `new/` directories.
@@ -36,11 +37,22 @@ export class WatcherManager {
    */
   private wasDispatched?: (messageId: string) => boolean;
 
+  /**
+   * Create a watcher manager over an endpoint's Maildir delivery machinery.
+   *
+   * @param maildirStore - Store used to claim/complete/fail messages.
+   * @param subscriptionRegistry - Registry resolving subject to handlers.
+   * @param sqliteIndex - Index whose delivery status is updated per message.
+   * @param circuitBreaker - Breaker that records per-endpoint handler failures.
+   * @param logger - Optional logger for watcher diagnostics. Defaults to a
+   *   silent logger so standalone/test usage stays quiet.
+   */
   constructor(
     private readonly maildirStore: MaildirStore,
     private readonly subscriptionRegistry: SubscriptionRegistry,
     private readonly sqliteIndex: SqliteIndex,
-    private readonly circuitBreaker: CircuitBreakerManager
+    private readonly circuitBreaker: CircuitBreakerManager,
+    private readonly logger: RelayLogger = noopLogger
   ) {}
 
   /**
@@ -76,9 +88,53 @@ export class WatcherManager {
 
     this.watchers.set(endpoint.hash, watcher);
 
-    // Wait for the watcher to be fully ready before returning
+    // Wait for the watcher to be fully ready before returning — but a watcher
+    // that errors before going ready (e.g. EMFILE) never emits 'ready' at all,
+    // so `settle()` below must also run from the error handler. Without it this
+    // promise hangs forever, and so does every caller on the boot path with it:
+    // server startup registers `relay.system.console` roughly a thousand lines
+    // before `app.listen`, so an fd-starved machine would hang before binding
+    // its port, with no error and no log. Resolving rather than rejecting is
+    // deliberate: the server's catch around relay init tears the whole
+    // subsystem down (`relayCore = undefined`) on a throw, so rejecting would
+    // trade one degraded endpoint for no relay at all.
     return new Promise<void>((resolve) => {
-      watcher.on('ready', () => resolve());
+      let settled = false;
+      const settle = (): void => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      watcher.on('ready', settle);
+
+      // Without this handler a watcher failure has nowhere to go but the
+      // process-wide unhandled-error path. Messages already claimed keep
+      // flowing; only push delivery for this endpoint is affected. Latched per
+      // distinct error code rather than a single boolean: a benign EACCES must
+      // never suppress the EMFILE storm that follows it. The Set lives in this
+      // per-call closure, so one endpoint's latch cannot silence another's.
+      const seenCodes = new Set<string>();
+      watcher.on('error', (err) => {
+        const code = (err as NodeJS.ErrnoException)?.code ?? 'unknown';
+        if (!seenCodes.has(code)) {
+          seenCodes.add(code);
+          // Logged as an explicit object, never the bare Error: the server's
+          // NDJSON reporter spreads what it is given, and `message`/`stack` are
+          // non-enumerable on an Error, so they would vanish (DOR-832).
+          this.logger.warn(
+            `[watcher-error] WatcherManager: endpoint ${endpoint.subject} (${newDir}) — further ${code} errors from this watcher are suppressed`,
+            {
+              endpointSubject: endpoint.subject,
+              newDir,
+              code,
+              message: err instanceof Error ? err.message : String(err),
+              stack: err instanceof Error ? err.stack : undefined,
+              suppressingFurtherErrors: true,
+            }
+          );
+        }
+        settle();
+      });
     });
   }
 

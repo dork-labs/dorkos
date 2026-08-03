@@ -1,9 +1,21 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import type { EventEmitter } from 'node:events';
 import { AccessControl } from '../access-control.js';
 import type { RelayAccessRule } from '@dorkos/shared/relay-schemas';
+import type { AccessControlLogger } from '../access-control.js';
+
+/** Reach into the private chokidar watcher to simulate an EMFILE-style failure. */
+function getWatcher(acl: AccessControl): EventEmitter {
+  return (acl as unknown as { watcher: EventEmitter }).watcher;
+}
+
+/** A spy logger satisfying the {@link AccessControlLogger} surface. */
+function createSpyLogger(): AccessControlLogger {
+  return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -570,6 +582,127 @@ describe('AccessControl', () => {
       expect(acl.isQuarantined()).toBe(false);
       expect(acl.checkAccess('relay.a', 'relay.b').allowed).toBe(true);
     }, 10_000);
+  });
+
+  // -------------------------------------------------------------------------
+  // Watcher error handling — an EMFILE-style watcher failure must be logged,
+  // never swallowed nor left to the process-wide unhandled-error path.
+  // -------------------------------------------------------------------------
+
+  describe('watcher error handling', () => {
+    it('logs a watcher error through the injected logger, naming the rules path', () => {
+      const logger = createSpyLogger();
+      acl = new AccessControl(tmpDir, logger);
+      const err = Object.assign(new Error('EMFILE: too many open files'), { code: 'EMFILE' });
+
+      getWatcher(acl).emit('error', err);
+
+      // Two separate assertions rather than one interpolated RegExp: tmpDir is
+      // a real filesystem path and could legally contain regex metacharacters
+      // that would silently change what the pattern matches.
+      const [message, context] = vi.mocked(logger.warn!).mock.calls[0]!;
+      expect(typeof message).toBe('string');
+      expect((message as string).startsWith('[watcher-error] AccessControl: ')).toBe(true);
+      expect(message).toContain(tmpDir);
+      expect(context).toEqual(
+        expect.objectContaining({
+          code: 'EMFILE',
+          message: 'EMFILE: too many open files',
+          stack: err.stack,
+          suppressingFurtherErrors: true,
+        })
+      );
+    });
+
+    it('says further errors of that code are suppressed, so an operator knows the silence is by design', () => {
+      const logger = createSpyLogger();
+      acl = new AccessControl(tmpDir, logger);
+
+      getWatcher(acl).emit('error', Object.assign(new Error('EMFILE'), { code: 'EMFILE' }));
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('further EMFILE errors from this watcher are suppressed'),
+        expect.objectContaining({ suppressingFurtherErrors: true })
+      );
+    });
+
+    it('keeps enforcing already-loaded rules after a watcher error', () => {
+      const rule = makeRule('relay.a', 'relay.b', 'deny', 10);
+      writeRulesFile(tmpDir, [rule]);
+      acl = new AccessControl(tmpDir);
+
+      getWatcher(acl).emit('error', new Error('EMFILE'));
+
+      expect(acl.checkAccess('relay.a', 'relay.b').allowed).toBe(false);
+    });
+
+    it('does not throw when no logger was injected', () => {
+      acl = new AccessControl(tmpDir);
+
+      expect(() => getWatcher(acl).emit('error', new Error('EMFILE'))).not.toThrow();
+    });
+
+    // A single fd-exhaustion episode can make chokidar fire 'error' many times
+    // for one dead watcher. The handler must latch: log the first, drop repeats
+    // of the same code.
+    it('logs only the first of many errors carrying the same code', () => {
+      const logger = createSpyLogger();
+      acl = new AccessControl(tmpDir, logger);
+      const watcher = getWatcher(acl);
+
+      watcher.emit('error', Object.assign(new Error('EMFILE 1'), { code: 'EMFILE' }));
+      watcher.emit('error', Object.assign(new Error('EMFILE 2'), { code: 'EMFILE' }));
+      watcher.emit('error', Object.assign(new Error('EMFILE 3'), { code: 'EMFILE' }));
+
+      expect(logger.warn).toHaveBeenCalledTimes(1);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ code: 'EMFILE', message: 'EMFILE 1' })
+      );
+    });
+
+    // The masking bug: a latch keyed on "any error at all" would let one benign
+    // EACCES hide a real EMFILE storm that follows it. Keying on `code` means a
+    // NEW code always gets its own line.
+    it('logs a separate line for each distinct error code', () => {
+      const logger = createSpyLogger();
+      acl = new AccessControl(tmpDir, logger);
+      const watcher = getWatcher(acl);
+
+      watcher.emit('error', Object.assign(new Error('permission denied'), { code: 'EACCES' }));
+      watcher.emit('error', Object.assign(new Error('too many open files'), { code: 'EMFILE' }));
+
+      expect(logger.warn).toHaveBeenCalledTimes(2);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ code: 'EACCES' })
+      );
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ code: 'EMFILE' })
+      );
+    });
+
+    // Regression guard: if the latch were ever hoisted from the per-instance
+    // closure onto a module-level field, one relay's first error would wrongly
+    // suppress a second relay's first error too.
+    it('scopes the latch per instance — two evaluators each log their own first error', () => {
+      const loggerA = createSpyLogger();
+      const loggerB = createSpyLogger();
+      const otherDir = makeTmpDir();
+      acl = new AccessControl(tmpDir, loggerA);
+      const aclB = new AccessControl(otherDir, loggerB);
+      try {
+        getWatcher(acl).emit('error', Object.assign(new Error('EMFILE A'), { code: 'EMFILE' }));
+        getWatcher(aclB).emit('error', Object.assign(new Error('EMFILE B'), { code: 'EMFILE' }));
+
+        expect(loggerA.warn).toHaveBeenCalledTimes(1);
+        expect(loggerB.warn).toHaveBeenCalledTimes(1);
+      } finally {
+        aclB.close();
+        fs.rmSync(otherDir, { recursive: true, force: true });
+      }
+    });
   });
 
   // -------------------------------------------------------------------------
