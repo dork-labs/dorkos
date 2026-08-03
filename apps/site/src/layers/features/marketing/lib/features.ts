@@ -628,7 +628,7 @@ export const features: Feature[] = [
     tagline: 'Talk with several agents at once, in channels and direct messages',
     description:
       'One chat with one agent only goes so far. Rooms give you channels and direct messages where you and several agents talk in one place.',
-    status: 'beta',
+    status: 'alpha',
     benefits: [
       'Make a channel and invite the agents you want',
       'Ask one agent, or the whole room, in one message',
@@ -637,7 +637,7 @@ export const features: Feature[] = [
       'Direct-message a single agent when it is just the two of you',
     ],
     moment:
-      'You ask a question in your #deploys channel. Two agents pick it up, one answers in a thread, and the whole exchange stays where the rest of your team can read it.',
+      'You ask a question in your #deploys channel. Two agents pick it up, one answers in a thread, and the whole exchange stays in one place you can read end to end.',
     docsUrl: '/docs/concepts/rooms',
     relatedFeatures: ['relay-message-bus', 'mesh-agent-discovery', 'agent-attribution'],
     sortOrder: 2,

@@ -183,15 +183,27 @@ const EXCLUDED = [
  *
  * Neither is acceptable, because opting out the whole post is exactly the DOR-555 gap:
  * `blog/dorkos-0-8-0.mdx` carried the tool-access claim in its strongest form in the
- * post's OWN prose, above this line. So the cut is here rather than at the file: the
- * theme, the highlights, and any contributor note are read as strictly as before, and
- * only the verbatim tail is skipped. {@link MARKER_FILES}' marker sits above this
- * heading in every file that carries one, so the marker inventory is unaffected.
+ * post's OWN prose, above this line. So one SECTION is cut, not the file: everything
+ * above `## All Changes` and everything from the next `## ` heading onward is read as
+ * strictly as before, and only the mirrored body between them is skipped.
+ *
+ * The span matters. A first attempt cut to end-of-file, which silently exempted the
+ * `## For contributors` coda a release note may carry after the mirror — proven by
+ * seeding a violation there and watching it pass. Skipping a section is a decision;
+ * skipping everything that happens to follow it is an accident waiting for the first
+ * author who adds a section. {@link MARKER_FILES}' marker sits above `## All Changes`
+ * in every file that carries one, so the marker inventory is unaffected.
  */
 const RELEASE_NOTE_MIRROR_HEADING = '\n## All Changes';
 
+/** Any level-2 heading, used to find where the mirrored section stops. */
+const NEXT_SECTION_HEADING = '\n## ';
+
 /**
- * A file's text, minus any mirrored changelog tail.
+ * A file's text, minus the mirrored `## All Changes` section of a release post.
+ *
+ * Everything before that heading and everything from the next `## ` heading onward is
+ * kept, so only the section copied from `CHANGELOG.md` is skipped.
  *
  * @param rel - Repo-relative path, used to recognise a release post.
  * @param text - The file's full contents.
@@ -199,8 +211,10 @@ const RELEASE_NOTE_MIRROR_HEADING = '\n## All Changes';
  */
 function scannableText(rel: string, text: string): string {
   if (!rel.startsWith(`blog${path.sep}`)) return text;
-  const cut = text.indexOf(RELEASE_NOTE_MIRROR_HEADING);
-  return cut === -1 ? text : text.slice(0, cut);
+  const start = text.indexOf(RELEASE_NOTE_MIRROR_HEADING);
+  if (start === -1) return text;
+  const resumes = text.indexOf(NEXT_SECTION_HEADING, start + RELEASE_NOTE_MIRROR_HEADING.length);
+  return resumes === -1 ? text.slice(0, start) : text.slice(0, start) + text.slice(resumes);
 }
 
 /** An author's deliberate, greppable opt-out for an honestly-disclaimed subset. */
