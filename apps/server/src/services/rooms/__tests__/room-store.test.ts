@@ -15,6 +15,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createDb, runMigrations, type Db } from '@dorkos/db';
 import { createTestDb } from '@dorkos/test-utils/db';
+import { BridgeStore } from '../../relay/chat-bridge/bridge-store.js';
 import { RoomStore, type NewRoomEntry } from '../room-store.js';
 import { EVENT_LOG_MAX_EVENTS } from '../../session/event-log.js';
 
@@ -141,6 +142,7 @@ describe('RoomStore seq allocation', () => {
 });
 
 describe('RoomStore.findDmByMemberSet', () => {
+  let db: Db;
   let store: RoomStore;
 
   /**
@@ -178,7 +180,8 @@ describe('RoomStore.findDmByMemberSet', () => {
   }
 
   beforeEach(() => {
-    store = new RoomStore(createTestDb());
+    db = createTestDb();
+    store = new RoomStore(db);
   });
 
   it('finds the DM whose roster is exactly the set asked for', () => {
@@ -265,6 +268,48 @@ describe('RoomStore.findDmByMemberSet', () => {
 
   it('answers null when there is no DM at all', () => {
     expect(store.findDmByMemberSet(['me', 'ana'])).toBeNull();
+  });
+
+  // chats-as-channels spec §3.2, A3.2c: the exclusion is enforced IN THE QUERY,
+  // not by any caller's convention — proved here by seeding a bridged room
+  // whose roster is the EXACT set asked for and confirming the query itself
+  // never returns it, with no `RoomService` in between that could be hiding a
+  // convention-only guard.
+  it('never returns a bridged room, even one whose roster matches exactly (A3.2c)', () => {
+    seedDm('dm-ana', ['me', 'ana']);
+    new BridgeStore(db).createBridge({
+      roomId: 'dm-ana',
+      adapterId: 'tg-main',
+      chatId: '555',
+      channelType: null,
+      platformChatType: 'private',
+      bindingId: 'binding-1',
+      deliverNotices: true,
+      createdAt: '2026-07-26T11:00:00.000Z',
+    });
+
+    expect(store.findDmByMemberSet(['me', 'ana'])).toBeNull();
+  });
+
+  it('still finds an UNBRIDGED DM once a different room the query would otherwise have preferred is bridged', () => {
+    // Two rooms hold the same exact member set. The bridged one sorts first by
+    // every tie-break this store uses (see the tie-break tests above); if the
+    // exclusion were applied anywhere other than the query itself, this is the
+    // shape of test that would expose it.
+    seedDm('aaa-bridged', ['me', 'ana'], { createdAt: '2026-07-20T10:00:00.000Z' });
+    seedDm('zzz-plain', ['me', 'ana'], { createdAt: '2026-07-26T10:00:00.000Z' });
+    new BridgeStore(db).createBridge({
+      roomId: 'aaa-bridged',
+      adapterId: 'tg-main',
+      chatId: '555',
+      channelType: null,
+      platformChatType: 'private',
+      bindingId: 'binding-1',
+      deliverNotices: true,
+      createdAt: '2026-07-20T10:00:00.000Z',
+    });
+
+    expect(store.findDmByMemberSet(['me', 'ana'])?.id).toBe('zzz-plain');
   });
 });
 

@@ -15,6 +15,7 @@ import {
   roomMembers,
   roomEntries,
   roomSessions,
+  roomBridges,
   eq,
   and,
   inArray,
@@ -28,6 +29,7 @@ import {
   count,
   desc,
   type Db,
+  type DbTransaction,
 } from '@dorkos/db';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { Room, RoomEntry, RoomKind, RoomMember } from '@dorkos/shared/room-schemas';
@@ -70,11 +72,18 @@ export class RoomStore {
    *
    * @param room - Every column of the new room.
    * @param members - The roster to seed, already resolved and validated.
+   * @param within - Extra writes to run inside the SAME transaction, after the
+   *   room and its roster are inserted — what
+   *   {@link RoomService.createBridgedRoom} uses to write the `room_bridges` row
+   *   atomically with the room it identifies (chats-as-channels spec §3.2):
+   *   either both commit or neither does, so a bridged room can never exist for
+   *   a moment without the row that makes it bridged.
    * @returns The inserted room.
    */
   createRoom(
     room: NewRoom,
-    members: ReadonlyArray<{ authorId: string; responseMode: ResponseMode; joinedAt: string }>
+    members: ReadonlyArray<{ authorId: string; responseMode: ResponseMode; joinedAt: string }>,
+    within?: (tx: DbTransaction) => void
   ): Room {
     const row = { ...room, archived: false, lastActivityAt: room.createdAt };
     this.db.transaction(
@@ -86,6 +95,7 @@ export class RoomStore {
             .onConflictDoNothing()
             .run();
         }
+        within?.(tx);
       },
       { behavior: 'immediate' }
     );
@@ -186,6 +196,17 @@ export class RoomStore {
    * them would leave the only way to reach that conversation being to mint a
    * second room with the same people in it.
    *
+   * **A bridged room is never a match, enforced in the query** (chats-as-channels
+   * spec §3.2, A3.2c). A bridged private chat's roster — the bound agent plus
+   * the operator — is byte-identical to the operator's own private DM with that
+   * agent, so without this exclusion this method would hand a stranger's chat
+   * log back as the operator's private conversation, and would un-archive and
+   * reuse it for a re-bridge. The `NOT IN (SELECT room_id FROM room_bridges)`
+   * clause is what makes that impossible regardless of which call site reaches
+   * this method — `RoomService.createBridgedRoom` also never calls it at all
+   * (§3.2's create-path bypass), so the exclusion here is belt-and-braces for
+   * every OTHER caller, present and future, that does.
+   *
    * Ordering settles a tie that only pre-existing data can produce — nothing
    * creates a duplicate once `createRoom` consults this — so a live room is
    * preferred over an archived one and the oldest wins after that, rather than
@@ -201,7 +222,12 @@ export class RoomStore {
       .select({ room: rooms })
       .from(rooms)
       .innerJoin(roomMembers, eq(roomMembers.roomId, rooms.id))
-      .where(eq(rooms.kind, 'dm'))
+      .where(
+        and(
+          eq(rooms.kind, 'dm'),
+          sql`${rooms.id} NOT IN (SELECT ${roomBridges.roomId} FROM ${roomBridges})`
+        )
+      )
       .groupBy(rooms.id)
       .having(
         and(

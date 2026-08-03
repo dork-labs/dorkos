@@ -22,7 +22,24 @@ export type RoomErrorCode =
   | 'ROOM_ARCHIVED'
   | 'OPERATOR_ONLY'
   /** A non-person tried to react. Agents do not send reactions (etiquette E16b). */
-  | 'PEOPLE_ONLY';
+  | 'PEOPLE_ONLY'
+  /**
+   * A Telegram broadcast channel (`chat.type === 'channel'`) was offered to
+   * `RoomService.createBridgedRoom` (chats-as-channels spec §3.3). A broadcast
+   * channel is not a conversation — there is no room kind for it, and the claim
+   * card offers only "Ignore"/"Leave".
+   */
+  | 'BROADCAST_NOT_BRIDGEABLE'
+  /**
+   * `RoomService.createBridgedRoom` was asked to bridge a `(adapterId, chatId)`
+   * that already has a bridge row whose `bindingId` differs, or whose room is
+   * archived (chats-as-channels spec §3.5). Both are re-bridge shapes —
+   * adopting the surviving row for a different agent, or un-archiving and
+   * reusing it for the same one — and both are task 1.5's lifecycle, not this
+   * create path's. `createBridgedRoom` only ever self-heals the plain replay:
+   * the same `(adapterId, chatId)` bridged again for the SAME live binding.
+   */
+  | 'CHAT_ALREADY_BRIDGED';
 
 /** A refusal from the room domain, carrying a code the routes can switch on. */
 export class RoomError extends Error {
