@@ -57,6 +57,26 @@ const RETIRED_ENV_VAR = ['MARKETPLACE', 'AUTO', 'APPROVE'].join('_');
 /** The trees the guard covers, relative to the repository root. */
 const SCOPES = ['apps/server/src', 'packages', '.github', 'contributing', 'docs'];
 
+/**
+ * Released records that sit inside a covered tree.
+ *
+ * `docs/changelog.mdx` and `docs/changelog-archive.mdx` are not written; they are
+ * copied, byte for byte, from `CHANGELOG.md` and `changelog/archive/` at release.
+ * `changelog/` is already outside this guard's scope, and for the stated reason:
+ * a changelog cannot report that a switch was removed without naming the switch.
+ * v0.57.0 is the release that compiled such an entry, so the mirror inherited a
+ * mention the source is allowed to have. Covering the mirror but not the source
+ * was an accident of which trees got listed, and the only ways to clear it are to
+ * edit a released record or to make the mirror stop matching what it mirrors.
+ *
+ * This is narrow on purpose: two files, both generated, both with an unscanned
+ * source. Every hand-written page under `docs/` is still covered.
+ */
+const RELEASED_RECORD_PATHSPECS = [
+  ':(exclude)docs/changelog.mdx',
+  ':(exclude)docs/changelog-archive.mdx',
+];
+
 /** Repository root, resolved from this file rather than from the cwd. */
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 
@@ -78,6 +98,9 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
  * and exit code 1 (the honest "no matches") is the only non-zero status treated
  * as a result.
  *
+ * {@link RELEASED_RECORD_PATHSPECS} is appended to every search, so the two
+ * generated changelog mirrors are subtracted from whatever scope is passed in.
+ *
  * @param needle - The fixed string to search for.
  * @param scopes - Pathspecs to search within, relative to the repository root.
  * @returns Repository-relative paths of every file that mentions it.
@@ -86,7 +109,16 @@ function filesMentioning(needle: string, scopes: string[]): string[] {
   try {
     const stdout = execFileSync(
       'git',
-      ['grep', '--untracked', '--files-with-matches', '-F', needle, '--', ...scopes],
+      [
+        'grep',
+        '--untracked',
+        '--files-with-matches',
+        '-F',
+        needle,
+        '--',
+        ...scopes,
+        ...RELEASED_RECORD_PATHSPECS,
+      ],
       {
         cwd: REPO_ROOT,
         encoding: 'utf-8',

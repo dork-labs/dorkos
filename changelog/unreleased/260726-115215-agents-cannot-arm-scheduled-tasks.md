@@ -1,3 +1,0 @@
-### Fixed
-
-- Agents can no longer turn off the safety prompts on a scheduled task, or approve one. A task runs later on its own with nobody watching, so how much it may do without asking, and whether it is allowed to run at all, are now yours to decide in DorkOS. A task an agent creates waits for your approval however it was made, including from the command line, where it used to go live right away. If an agent tries to change either setting, the whole change is refused and nothing at all is saved, so it never ends up half applied. Setting these yourself in the cockpit works exactly as before.

@@ -98,8 +98,11 @@ async function shootMarketplaceDetail(page: Page, theme: Theme, rec: RunRecorder
     .getByText('Permissions & Effects', { exact: true })
     .first()
     .waitFor({ timeout: WAIT_MS });
+  // The scheduled-job row shows the bare job name (`schedule.name`), not a
+  // "Schedule task: " prefix — DOR-635 (#552) dropped the prefix in favor of a
+  // "Jobs it will schedule" section heading.
   await page
-    .getByText('Schedule task: nightly-code-review', { exact: false })
+    .getByText('nightly-code-review', { exact: false })
     .first()
     .waitFor({ timeout: WAIT_MS });
   await shoot(page, 'marketplace-detail', theme, rec);
@@ -527,7 +530,7 @@ async function shootPersonality(page: Page, theme: Theme, rec: RunRecorder): Pro
  * unified scanner sweep the seeded projects tree until the mixed-harness
  * candidates are on screen. Requires onboarding to be un-dismissed first.
  *
- * Two things shape this drive, both from the conversational redesign
+ * Three things shape this drive, all from the conversational redesign
  * (ADR 260722-111314/111315) that left it broken between DOR-460 and DOR-472:
  *
  * - **It routes past the personality beat by skipping it, never by confirming
@@ -537,6 +540,11 @@ async function shootPersonality(page: Page, theme: Theme, rec: RunRecorder): Pro
  *   DorkBot's on-disk manifest, the write whose confinement to the sandboxed
  *   `DORK_HOME` was never confirmed and which is why the previous pass refused
  *   to drive through here.
+ * - **It routes past the profile beat the same way.** DOR-705 inserted
+ *   `'profile'` into `BEAT_ORDER` between `'personality'` and `'discovery'`,
+ *   so a drive that stops skipping at `skip-personality` now stalls waiting
+ *   for a discovery consent chip the conversation never reaches; `skip-profile`
+ *   advances past it without writing a role.
  * - **Discovery is consent-first**, so the scan starts on "Sure, look around",
  *   not on arrival at the beat.
  *
@@ -560,6 +568,7 @@ async function driveOnboardingDiscovery(page: Page): Promise<void> {
   // The ready-state CTA reads "Meet DorkBot"; its testid predates that copy.
   await page.getByTestId('onboarding-get-started').click({ timeout: WAIT_MS });
   await page.getByTestId('skip-personality').click({ timeout: WAIT_MS });
+  await page.getByTestId('skip-profile').click({ timeout: WAIT_MS });
   await page.getByText('Sure, look around', { exact: true }).click({ timeout: WAIT_MS });
   await page.locator('[data-slot="candidate-card"]').nth(3).waitFor({ timeout: WAIT_MS });
   await sleep(800); // let the remaining candidate cards animate in

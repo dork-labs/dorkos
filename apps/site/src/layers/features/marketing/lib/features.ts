@@ -617,8 +617,30 @@ export const features: Feature[] = [
     moment:
       "Your deploy finishes while you're away from your desk. A Telegram message arrives with the result, and you answer its one question from the couch.",
     docsUrl: '/docs/concepts/relay',
-    relatedFeatures: ['slack-adapter', 'telegram-adapter', 'mesh-agent-discovery'],
+    relatedFeatures: ['rooms', 'slack-adapter', 'telegram-adapter', 'mesh-agent-discovery'],
     sortOrder: 1,
+  },
+  {
+    slug: 'rooms',
+    name: 'Rooms',
+    product: 'relay',
+    category: 'messaging',
+    tagline: 'Talk with several agents at once, in channels and direct messages',
+    description:
+      'One chat with one agent only goes so far. Rooms give you channels and direct messages where you and several agents talk in one place.',
+    status: 'alpha',
+    benefits: [
+      'Make a channel and invite the agents you want',
+      'Ask one agent, or the whole room, in one message',
+      'Reply in a thread so a side topic stays put',
+      'See who is working on your message, and for how long',
+      'Direct-message a single agent when it is just the two of you',
+    ],
+    moment:
+      'You ask a question in your #deploys channel. Two agents pick it up, one answers in a thread, and the whole exchange stays in one place you can read end to end.',
+    docsUrl: '/docs/concepts/rooms',
+    relatedFeatures: ['relay-message-bus', 'mesh-agent-discovery', 'agent-attribution'],
+    sortOrder: 2,
   },
   {
     slug: 'slack-adapter',
@@ -636,7 +658,7 @@ export const features: Feature[] = [
       'Point specific agents at specific Slack channels',
     ],
     relatedFeatures: ['relay-message-bus', 'tool-approval'],
-    sortOrder: 2,
+    sortOrder: 3,
   },
   {
     slug: 'telegram-adapter',
@@ -654,7 +676,7 @@ export const features: Feature[] = [
       'Works anywhere: check on agents from your phone',
     ],
     relatedFeatures: ['relay-message-bus', 'tool-approval'],
-    sortOrder: 3,
+    sortOrder: 4,
   },
 
   // === MARKETPLACE ===
