@@ -58,6 +58,7 @@ function human(
     joinedAt: '2026-07-26T09:00:00.000Z',
     lastReadSeq,
     author: { id, kind: 'human', displayName },
+    origin: 'local',
   };
 }
 
@@ -69,6 +70,7 @@ function agent(): RoomWithRoster['members'][number] {
     joinedAt: '2026-07-26T09:00:00.000Z',
     lastReadSeq: 0,
     author: { id: 'ana', kind: 'agent', displayName: 'Ana' },
+    origin: 'local',
   };
 }
 

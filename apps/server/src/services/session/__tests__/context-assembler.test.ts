@@ -37,9 +37,9 @@ const SAMPLE_UI_STATE: UiState = {
 };
 
 const SAMPLE_ROOM_CONTEXT: RoomContextData = {
-  room: { id: 'room-1', kind: 'channel', name: '#build' },
+  room: { id: 'room-1', kind: 'channel', name: '#build', bridged: false },
   thread: null,
-  members: [{ handle: 'ana', displayName: 'Ana', isPerson: false, isSelf: true }],
+  members: [{ handle: 'ana', displayName: 'Ana', isPerson: false, isSelf: true, origin: 'local' }],
   working: [],
   pending: [],
   pendingTruncated: false,

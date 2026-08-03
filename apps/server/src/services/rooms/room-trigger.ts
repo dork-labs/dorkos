@@ -183,6 +183,13 @@ export interface RoomTriggerDeps {
   reactions: ReactionStore;
   authors: AuthorRegistry;
   agents: RoomAgentLookup;
+  /**
+   * Whether a room projects an external chat. Read only by
+   * `buildRoomContext` — the dispatcher itself never branches on it, because a
+   * bridged room's turns are decided by exactly the machinery every other
+   * room's are (chats-as-channels §11.1).
+   */
+  isBridgedRoom(roomId: string): boolean;
   runner: RoomTurnRunner;
   writer: RoomTriggerWriter;
   /**

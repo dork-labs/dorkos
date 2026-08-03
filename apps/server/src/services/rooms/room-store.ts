@@ -290,16 +290,28 @@ export class RoomStore {
    * Add a member, or leave an existing membership untouched.
    *
    * @param member - The membership to write.
+   * @param tx - An open transaction to write inside, when the join has to be
+   *   atomic with something else. A bridged room's external human joins in the
+   *   very transaction that writes their first entry (chats-as-channels §4.2),
+   *   so that a crash can never leave a log holding a message from somebody the
+   *   roster says was never in the room.
    * @returns The stored membership.
    */
-  addMember(member: {
-    roomId: string;
-    authorId: string;
-    responseMode: ResponseMode;
-    joinedAt: string;
-  }): RoomMember {
+  addMember(
+    member: {
+      roomId: string;
+      authorId: string;
+      responseMode: ResponseMode;
+      joinedAt: string;
+    },
+    tx?: DbTransaction
+  ): RoomMember {
+    const exec = tx ?? this.db;
     const row = { ...member, lastReadSeq: 0 };
-    this.db.insert(roomMembers).values(row).onConflictDoNothing().run();
+    exec.insert(roomMembers).values(row).onConflictDoNothing().run();
+    // Read back through `this.db` even inside a transaction, for the reason
+    // `createRoom` records: one connection, so a read here sees the open
+    // transaction's own uncommitted write.
     return this.getMember(member.roomId, member.authorId) ?? toMember(row);
   }
 
@@ -455,11 +467,19 @@ export class RoomStore {
    * can never be listed as quiet while holding an entry nobody has seen.
    *
    * @param entry - The entry to write, minus `seq`.
+   * @param within - Extra writes to run inside the SAME transaction, before the
+   *   entry row is inserted. This is what makes a bridged room's lazy roster
+   *   join atomic with the message that causes it (chats-as-channels §4.2):
+   *   the join must be visible to anything that reads the log, and a log
+   *   holding a message from a non-member is not a state any reader should
+   *   have to handle. Ordered first so the membership exists for the whole
+   *   life of the entry, never the other way round.
    * @returns The stored entry, with its allocated `seq`.
    */
-  appendEntry(entry: NewRoomEntry): RoomEntry {
+  appendEntry(entry: NewRoomEntry, within?: (tx: DbTransaction) => void): RoomEntry {
     return this.db.transaction(
       (tx) => {
+        within?.(tx);
         const allocated = tx
           .select({ next: sql<number>`COALESCE(MAX(${roomEntries.seq}), 0) + 1` })
           .from(roomEntries)

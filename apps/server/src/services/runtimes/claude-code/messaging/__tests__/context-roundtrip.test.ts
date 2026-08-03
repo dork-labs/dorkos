@@ -94,15 +94,16 @@ const SAMPLES: Record<ContextKind, AdditionalContextEntry> = {
     kind: 'room_context',
     scope: 'per-turn',
     data: {
-      room: { id: 'room-1', kind: 'channel', name: '#build', topic: 'shipping v1' },
+      room: { id: 'room-1', kind: 'channel', name: '#build', topic: 'shipping v1', bridged: false },
       thread: null,
       members: [
-        { handle: 'dorian', displayName: 'You', isPerson: true, isSelf: false },
+        { handle: 'dorian', displayName: 'You', isPerson: true, isSelf: false, origin: 'local' },
         {
           handle: 'ana',
           displayName: 'Ana',
           isPerson: false,
           isSelf: true,
+          origin: 'local',
           responseMode: 'mention-only',
         },
       ],
@@ -112,6 +113,7 @@ const SAMPLES: Record<ContextKind, AdditionalContextEntry> = {
           authorHandle: 'dorian',
           authorDisplayName: 'You',
           authorIsPerson: true,
+          authorOrigin: 'local',
           kind: 'post',
           at: '2026-07-28T14:01:00.000Z',
           text: 'can someone check the deploy',

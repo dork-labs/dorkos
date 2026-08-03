@@ -175,11 +175,11 @@ function request(
     sessionId: null,
     entry,
     roomContext: {
-      room: { id: room.id, kind: 'channel', name: '#backend' },
+      room: { id: room.id, kind: 'channel', name: '#backend', bridged: false },
       thread: null,
       members: [
-        { handle: 'ana', displayName: 'Ana', isPerson: false, isSelf: true },
-        { handle: 'dorian', displayName: 'You', isPerson: true, isSelf: false },
+        { handle: 'ana', displayName: 'Ana', isPerson: false, isSelf: true, origin: 'local' },
+        { handle: 'dorian', displayName: 'You', isPerson: true, isSelf: false, origin: 'local' },
       ],
       working: [],
       pending: [],
