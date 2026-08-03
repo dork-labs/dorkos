@@ -43,6 +43,7 @@ import { logRefusal, type Refusal } from '../observability/refusals.js';
 import type { BindingStore } from './binding-store.js';
 import type { AdapterMeshCoreLike } from './adapter-manager.js';
 import { parseHumanSubject } from './human-subject.js';
+import type { UnclaimedChat, UnclaimedChatStore } from './unclaimed-chat-store.js';
 
 /**
  * The identity fields an inbound chat payload carries for the person who wrote
@@ -86,6 +87,28 @@ function extractPlatformUserId(payload: unknown): string | undefined {
   if (raw === undefined) return undefined;
   const asString = String(raw);
   return asString.length > 0 ? asString : undefined;
+}
+
+/**
+ * The one payload field the unclaimed-chat claim feed is allowed to read:
+ * the sender's display name, a TOP-LEVEL `StandardPayload` field every
+ * adapter sets (`packages/relay/src/adapters/{telegram,slack}/inbound.ts`) —
+ * never the message body/content field, and never read from anywhere else in
+ * the payload (connection-scoping spec `specs/connection-scoping/`
+ * §Part 3 D6).
+ */
+const SenderNameSchema = z.object({ senderName: z.string().min(1).optional() }).partial();
+
+/**
+ * Read a display name off an inbound payload, for the unclaimed-chat claim
+ * feed's cockpit card — never the message text.
+ *
+ * @param payload - The relay envelope payload as it arrived.
+ */
+function extractSenderName(payload: unknown): string | undefined {
+  if (payload === null || typeof payload !== 'object') return undefined;
+  const parsed = SenderNameSchema.safeParse(payload);
+  return parsed.success ? parsed.data.senderName : undefined;
 }
 
 /** Minimal interface for AgentManager session creation. */
@@ -153,6 +176,20 @@ export interface BindingRouterDeps {
    * singleton — mirrors {@link eventRecorder}.
    */
   onFlow?: (flow: RelayFlowEvent) => void;
+  /**
+   * The durable claim feed for chats with no binding (connection-scoping
+   * spec `specs/connection-scoping/` §Part 3). Optional so unit tests that
+   * don't exercise the unbound-inbound path can omit it; in the server it is
+   * always wired.
+   */
+  unclaimedChats?: UnclaimedChatStore;
+  /**
+   * Fired once per NEW unclaimed chat (first sighting only — damped, see
+   * {@link UnclaimedChatStore.recordSighting}), for the client's
+   * attention surfaces to subscribe to on the global event stream. Injected
+   * rather than imported, mirroring {@link onFlow}.
+   */
+  onUnclaimedChat?: (chat: UnclaimedChat) => void;
 }
 
 /**
@@ -276,6 +313,40 @@ export class BindingRouter {
         );
       }
       logger.info(`Cleaned up ${removed} orphaned session mapping(s)`);
+    }
+    return removed;
+  }
+
+  /**
+   * Remove every session mapping for ONE binding — called after
+   * `BindingStore.moveToAgent` (connection-scoping spec §Part 2 Move
+   * semantics). Unlike {@link cleanupOrphanedSessions}, the binding still
+   * exists; its sessions are stale because they were created in the OLD
+   * agent's project directory, and the binding now points elsewhere. The
+   * next inbound message on this binding creates a fresh session under the
+   * new agent's project.
+   *
+   * @param bindingId - The binding whose sessions to clear.
+   * @returns Number of session entries removed.
+   */
+  async clearSessionsForBinding(bindingId: string): Promise<number> {
+    let removed = 0;
+    for (const [key] of this.sessionMap) {
+      if (key.startsWith(`${bindingId}:`)) {
+        this.sessionMap.delete(key);
+        removed++;
+      }
+    }
+    if (removed > 0) {
+      try {
+        await this.saveSessionMap();
+      } catch (err) {
+        logger.warn(
+          'BindingRouter: failed to persist session map after a binding move, will retry on next write',
+          err
+        );
+      }
+      logger.info(`Cleared ${removed} session mapping(s) for moved binding ${bindingId}`);
     }
     return removed;
   }
@@ -423,27 +494,55 @@ export class BindingRouter {
             );
           }
 
+          // Blocked chats short-circuit before ANY binding lookup or claim-feed
+          // write (connection-scoping spec §Part 3: "block drops future traffic
+          // recordless"). A chat only reaches `blocked` through the claim feed,
+          // which is why this check needs `chatId` — an adapter-root subject
+          // (no chat) was never a candidate for the feed in the first place.
+          if (chatId && this.deps.unclaimedChats?.isBlocked(adapterId, chatId)) {
+            return this.drop(
+              dispatchId,
+              '[relay] this chat is blocked',
+              { reason: 'chat_blocked', visibility: 'silent', detail: { adapterId } },
+              'chat is blocked'
+            );
+          }
+
+          // `resolve()` only considers ENABLED bindings (connection-scoping
+          // spec §Part 2): a disabled specific binding can no longer shadow an
+          // enabled fallback the way the audited bug allowed.
           const binding = this.deps.bindingStore.resolve(adapterId, chatId, channelType);
           if (!binding) {
-            // Deliberately silent in-chat: nobody connected this conversation to
-            // anything here, so there is no agent whose silence needs explaining,
-            // and speaking would be this machine starting a conversation it has no
-            // consent for. The trace and the log carry it instead.
+            // A resolve() miss might still mean "the chat's binding exists but
+            // is paused" — that case gets the told `binding_paused` refusal
+            // (DOR-789), never silence, even though `resolve()` itself can no
+            // longer return it.
+            const pausedMatch = this.deps.bindingStore.resolveIncludingDisabled(
+              adapterId,
+              chatId,
+              channelType
+            );
+            if (pausedMatch) {
+              return this.refuse(
+                envelope,
+                pausedMatch,
+                'binding_paused',
+                `binding ${pausedMatch.id} is paused`
+              );
+            }
+            // Truly unbound: record it in the claim feed (damped, metadata-only
+            // — see `unclaimed-chat-store.ts`) and drop silently in-chat, exactly
+            // as before. Deliberately silent in-chat: nobody connected this
+            // conversation to anything here, so there is no agent whose silence
+            // needs explaining, and speaking would be this machine starting a
+            // conversation it has no consent for. The trace and the log carry
+            // it instead.
+            this.recordUnclaimedChat(adapterId, chatId, channelType, envelope);
             return this.drop(
               dispatchId,
               '[relay] nothing connects this chat to an agent',
               { reason: 'no_binding', visibility: 'silent', detail: { adapterId } },
               'no binding connects this chat to an agent'
-            );
-          }
-
-          // Skip paused bindings — they do not participate in routing
-          if (binding.enabled === false) {
-            return this.refuse(
-              envelope,
-              binding,
-              'binding_paused',
-              `binding ${binding.id} is paused`
             );
           }
 
@@ -600,6 +699,41 @@ export class BindingRouter {
     logRefusal(message, { ...refusal, dispatchId });
     recordDispatchEnd(dispatchId, 'refused');
     return { handled: false, reason: verdict };
+  }
+
+  /**
+   * Record one sighting of a truly-unbound chat in the claim feed
+   * (connection-scoping spec §Part 3), and broadcast the claim-feed event on
+   * a first sighting only (damping — see
+   * {@link UnclaimedChatStore.recordSighting}). A no-op when either
+   * `unclaimedChats` was not wired (some unit tests) or the subject carried
+   * no `chatId` (an adapter-root subject is not a chat to claim).
+   *
+   * Reads ONLY subject-derived routing fields and the payload's top-level
+   * `senderName`/platform-identity fields — never the message body. See
+   * `specs/connection-scoping/design-decisions.md` D6.
+   *
+   * @param adapterId - The adapter the message arrived on.
+   * @param chatId - The chat id, when the subject carried one.
+   * @param channelType - `'group'` or undefined (dm), from the subject.
+   * @param envelope - The inbound envelope, read only for sender identity.
+   */
+  private recordUnclaimedChat(
+    adapterId: string,
+    chatId: string | undefined,
+    channelType: string | undefined,
+    envelope: RelayEnvelope
+  ): void {
+    if (!chatId || !this.deps.unclaimedChats) return;
+    const { chat, isFirstSighting } = this.deps.unclaimedChats.recordSighting({
+      adapterId,
+      chatId,
+      channelType,
+      chatKind: channelType === 'group' ? 'group' : 'dm',
+      senderName: extractSenderName(envelope.payload),
+      senderId: extractPlatformUserId(envelope.payload),
+    });
+    if (isFirstSighting) this.deps.onUnclaimedChat?.(chat);
   }
 
   /**

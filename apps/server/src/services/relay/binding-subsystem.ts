@@ -21,6 +21,7 @@ import { BindingStore } from './binding-store.js';
 import { AgentSessionStore } from './agent-session-store.js';
 import { BindingRouter, type RelayCoreLike, type AgentSessionCreator } from './binding-router.js';
 import type { AdapterMeshCoreLike } from './adapter-manager.js';
+import type { UnclaimedChat, UnclaimedChatStore } from './unclaimed-chat-store.js';
 
 /** Dependencies required to initialize the binding subsystem. */
 export interface BindingSubsystemDeps {
@@ -44,6 +45,10 @@ export interface BindingSubsystemDeps {
   };
   /** Optional callback fired once per delivered inbound message (topology pulse). */
   onFlow?: (flow: RelayFlowEvent) => void;
+  /** The durable claim feed store (connection-scoping spec §Part 3). */
+  unclaimedChats?: UnclaimedChatStore;
+  /** Fired once per NEW unclaimed chat (first sighting only). */
+  onUnclaimedChat?: (chat: UnclaimedChat) => void;
 }
 
 /**
@@ -203,6 +208,8 @@ export class BindingSubsystem {
         },
         eventRecorder: deps.eventRecorder,
         onFlow: deps.onFlow,
+        unclaimedChats: deps.unclaimedChats,
+        onUnclaimedChat: deps.onUnclaimedChat,
         // Wired here, and never optional in the server: a refusal the person
         // never hears about is indistinguishable from an agent thinking.
         chatNotice: createChatNoticeSender({

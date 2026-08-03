@@ -163,6 +163,12 @@ export const GENERIC_EVENTS = [
   'relay_adapters_changed',
   'relay_flow',
   'relay_dead_letter',
+  // A NEW unclaimed chat was recorded (connection-scoping spec
+  // `specs/connection-scoping/` §Part 3) — fired once per chat, damped, so a
+  // spammy stranger never re-fires it. No UI subscribes yet (DOR-857 wires
+  // the claim-feed cards); listed here so the event reaches dispatch instead
+  // of being silently dropped once that surface exists.
+  'relay_chat_unclaimed',
   'task_run_failed',
   // A task definition changed (created, edited, deleted). The standing
   // unattended-autonomy banner reads it: a task dialled up to Full autonomy has

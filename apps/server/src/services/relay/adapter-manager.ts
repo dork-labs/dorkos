@@ -41,8 +41,10 @@ import {
   broadcastAdaptersChanged,
   broadcastBindingsChanged,
   broadcastRelayFlow,
+  broadcastUnclaimedChat,
 } from './relay-sse-events.js';
 import { BindingSubsystem } from './binding-subsystem.js';
+import type { UnclaimedChatStore } from './unclaimed-chat-store.js';
 import type { RelayCoreLike } from './binding-router.js';
 import {
   materializeAdapterSecrets,
@@ -155,6 +157,12 @@ export interface AdapterManagerDeps {
    * {@link credentialProvider} singleton; injectable for tests.
    */
   credentialProvider?: CredentialProvider;
+  /**
+   * The durable claim feed for unbound inbound chats (connection-scoping
+   * spec `specs/connection-scoping/` §Part 3). Optional so callers that don't
+   * exercise the unbound-inbound path (most tests) can omit it.
+   */
+  unclaimedChats?: UnclaimedChatStore;
 }
 
 /** Server-side adapter lifecycle manager. */
@@ -328,7 +336,14 @@ export class AdapterManager {
       configPath: this.configPath,
       eventRecorder: this.deps.eventRecorder,
       onFlow: broadcastRelayFlow,
+      unclaimedChats: this.deps.unclaimedChats,
+      onUnclaimedChat: broadcastUnclaimedChat,
     });
+  }
+
+  /** The durable claim feed store, when wired (connection-scoping spec §Part 3). */
+  getUnclaimedChats(): UnclaimedChatStore | undefined {
+    return this.deps.unclaimedChats;
   }
 
   /**

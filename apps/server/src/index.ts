@@ -60,12 +60,19 @@ import { createRelayRouter } from './routes/relay.js';
 import { createConnectorsRouter } from './routes/connectors.js';
 import { createConnectorProvidersRouter } from './routes/connector-providers.js';
 import { createSessionConnectorsRouter } from './routes/session-connectors.js';
+import { createAgentConnectorsRouter } from './routes/agent-connectors.js';
+import { UnclaimedChatStore } from './services/relay/unclaimed-chat-store.js';
+import { createUnclaimedChatsRouter } from './routes/unclaimed-chats.js';
 import { ConnectorRegistry } from './services/connectors/registry.js';
 import { ConnectorFlowBindings } from './services/connectors/flow-bindings.js';
 import { ConnectorProviderBootstrapper } from './services/connectors/bootstrap.js';
 import { NangoProxyMcp } from './services/connectors/providers/nango-proxy-mcp.js';
 import { NANGO_PROVIDER_TYPE } from './services/connectors/providers/nango.js';
 import { SessionConnectorService } from './services/connectors/session-exposure.js';
+import {
+  AgentConnectorAttachmentStore,
+  SessionConnectorAttachmentStore,
+} from './services/connectors/attachment-store.js';
 import { toSdkMcpServers } from './services/runtimes/claude-code/mcp-server-config.js';
 import { setRelayEnabled, setRelayInitError } from './services/relay/relay-state.js';
 import { AdapterManager } from './services/relay/adapter-manager.js';
@@ -1022,6 +1029,11 @@ async function start() {
         meshCore, // meshCore is now available
         eventRecorder: traceStore,
         activityService,
+        // The claim feed for unbound inbound chats (connection-scoping spec
+        // §Part 3). Constructed here (rather than up front with the connector
+        // stores) because it belongs to the relay/binding domain, not
+        // connectors — it just happens to share the same `db`.
+        unclaimedChats: new UnclaimedChatStore(db),
       });
       await adapterManager.initialize();
       relayCore.setAdapterContextBuilder(adapterManager.buildContext.bind(adapterManager));
@@ -1233,9 +1245,18 @@ async function start() {
   // not dialable: Docker's 0.0.0.0 wildcard, and bare IPv6 literals.
   const localOrigin = `http://${localDialHost(env.DORKOS_HOST)}:${PORT}`;
   const nangoProxyMcp = new NangoProxyMcp({ localOrigin });
+  // The two persisted connector-attachment stores (connection-scoping spec
+  // `specs/connection-scoping/` §Part 1) — standing agent-level consent and
+  // per-session overrides. Created before the service that reads them.
+  const agentConnectorAttachmentStore = new AgentConnectorAttachmentStore(db);
+  const sessionConnectorAttachmentStore = new SessionConnectorAttachmentStore(db);
   // Created before the bootstrapper so its unregister hook can revoke cached
   // session attachments the moment a credential is deleted.
-  const sessionConnectorService = new SessionConnectorService({ registry: connectorRegistry });
+  const sessionConnectorService = new SessionConnectorService({
+    registry: connectorRegistry,
+    agentAttachments: agentConnectorAttachmentStore,
+    sessionAttachments: sessionConnectorAttachmentStore,
+  });
   // Provider lifecycle is owned by ONE place (connector-completion spec §1):
   // boot registers raw-MCP always (from `connectors.rawMcpServers` config; the
   // empty list is valid) plus Composio/Nango when configured — silent-null when
@@ -1288,6 +1309,10 @@ async function start() {
   // DevTools-store rekeys).
   onProjectorRekey((oldId, newId) => sessionConnectorService.migrateSession(oldId, newId));
   if (claudeRuntime) {
+    // Connector attachment hydration is claude-code-only today, mirroring
+    // `setMcpServerFactory` below — codex/opencode don't implement the MCP
+    // seam this feeds (connection-scoping spec §Non-goals).
+    claudeRuntime.setSessionConnectors(sessionConnectorService);
     mcpToolDeps = {
       transcriptReader: claudeRuntime.getTranscriptReader(),
       defaultCwd: env.DORKOS_DEFAULT_CWD ?? process.cwd(),
@@ -1471,6 +1496,7 @@ async function start() {
     createConnectorsRouter({
       registry: connectorRegistry,
       flowBindings: connectorFlowBindings,
+      sessionConnectors: sessionConnectorService,
       ...(adapterManager && { relay: adapterManager }),
     })
   );
@@ -1479,11 +1505,36 @@ async function start() {
   // with its single-segment `/:id` routes). The binder itself was created up
   // front so the MCP factory closure could reference it.
   app.use('/api/sessions', createSessionConnectorsRouter({ service: sessionConnectorService }));
+  // Standing agent-level attach/detach (connection-scoping spec §Part 1) — a
+  // sibling of `/api/agents` the same way the session route is a sibling of
+  // `/api/sessions`, mounted here (rather than inside `createAgentsRouter`)
+  // because it needs the connector registry/store, not the mesh core.
+  app.use(
+    '/api/agents',
+    createAgentConnectorsRouter({
+      store: agentConnectorAttachmentStore,
+      registry: connectorRegistry,
+    })
+  );
   mountedRouters.push('connectors');
 
   // Mount Relay routes if enabled
   if (relayEnabled && relayCore) {
     app.use('/api/relay', createRelayRouter(relayCore, adapterManager, traceStore));
+    // The claim feed (connection-scoping spec §Part 3) — mounted only when
+    // the store was actually wired (relay enabled + binding subsystem up).
+    const unclaimedChatsStore = adapterManager?.getUnclaimedChats();
+    const bindingStoreForClaims = adapterManager?.getBindingStore();
+    if (unclaimedChatsStore && bindingStoreForClaims) {
+      app.use(
+        '/api/relay/unclaimed-chats',
+        createUnclaimedChatsRouter({
+          store: unclaimedChatsStore,
+          bindingStore: bindingStoreForClaims,
+          ...(meshCore && { meshCore }),
+        })
+      );
+    }
     setRelayEnabled(true);
 
     // Store relayCore on app.locals so the sessions router can access it
