@@ -54,35 +54,3 @@ export const STATUS_VALUE_MAX_CHARS = 13;
  * to fork the ladder.
  */
 export const EFFORT_LEVELS = ['none', 'minimal', 'low', 'medium', 'high', 'max', 'xhigh'] as const;
-
-/**
- * Runtimes whose API has no way to ask for more or less thinking.
- *
- * One entry today: OpenCode's prompt body carries no effort field in either the
- * pinned or the current SDK — effort exists there only as config-file variants
- * with no API selection.
- */
-const RUNTIMES_WITHOUT_EFFORT: readonly string[] = ['opencode'];
-
-/**
- * Whether a runtime can honor a reasoning effort at all.
- *
- * The single answer to a question three layers ask independently: what a new
- * session inherits, what a stored row is allowed to display, and what an adapter
- * persists. Answering it in one place is what keeps "Not supported by OpenCode"
- * literally true — a `false` here means no effort reaches the session, the
- * screen, or the store, rather than one layer suppressing a value the next one
- * still carries.
- *
- * Per RUNTIME, not per model. Whether a model within a supporting runtime honors
- * a given rung is a catalog question (`ModelOption.supportsEffort`) answered
- * against live data; this is the coarser, structural fact that holds even with
- * every catalog offline.
- *
- * @param runtimeType - A runtime type id (`'claude-code'`, `'codex'`, `'opencode'`, …).
- * @returns `false` only for a runtime known to have no effort at its API;
- *   unknown runtimes answer `true`, so a new adapter is never silently muted.
- */
-export function runtimeSupportsEffort(runtimeType: string | undefined): boolean {
-  return runtimeType === undefined || !RUNTIMES_WITHOUT_EFFORT.includes(runtimeType);
-}

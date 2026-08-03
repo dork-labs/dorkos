@@ -158,6 +158,7 @@ const CLAUDE_CAPABILITIES: RuntimeCapabilities = {
     ],
   },
   commandIntents: { compact: { supported: false } },
+  settings: { configSection: null, supportsEffort: false, sections: [] },
   features: {
     claudeSkills: true,
     claudeHooks: true,
@@ -204,6 +205,7 @@ const TEST_MODE_CAPABILITIES: RuntimeCapabilities = {
     ],
   },
   commandIntents: { compact: { supported: false } },
+  settings: { configSection: null, supportsEffort: false, sections: [] },
   features: {
     testModeScenarios: ['simple-text'],
     deterministicLatencyMs: 0,
@@ -256,6 +258,7 @@ const CODEX_CAPABILITIES: RuntimeCapabilities = {
     ],
   },
   commandIntents: { compact: { supported: false } },
+  settings: { configSection: null, supportsEffort: false, sections: [] },
   features: {},
 };
 
@@ -302,6 +305,7 @@ const OPENCODE_CAPABILITIES: RuntimeCapabilities = {
     ],
   },
   commandIntents: { compact: { supported: false } },
+  settings: { configSection: null, supportsEffort: false, sections: [] },
   features: {},
 };
 
@@ -316,6 +320,7 @@ const UNSUPPORTED_CAPABILITIES: RuntimeCapabilities = {
   nativeContext: [],
   permissionModes: { supported: false, values: [] },
   commandIntents: { compact: { supported: false } },
+  settings: { configSection: null, supportsEffort: false, sections: [] },
   features: {},
 };
 

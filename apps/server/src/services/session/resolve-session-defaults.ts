@@ -66,9 +66,12 @@
  */
 import type { UserConfig } from '@dorkos/shared/config-schema';
 import type { ExecutionDefaults, PermissionMode, SessionSettings } from '@dorkos/shared/types';
-import type { PermissionModeDescriptor, PermissionStop } from '@dorkos/shared/agent-runtime';
+import type {
+  PermissionModeDescriptor,
+  PermissionStop,
+  RuntimeCapabilities,
+} from '@dorkos/shared/agent-runtime';
 import { readManifest } from '@dorkos/shared/manifest';
-import { runtimeSupportsEffort } from '@dorkos/shared/constants';
 import { resolveTrustStops } from '@dorkos/shared/permission-semantics';
 import { configManager } from '../core/config-manager.js';
 
@@ -112,8 +115,8 @@ export interface AgentExecutionDefaults {
  *
  * Whether a RUNTIME can honor an effort at all is a different question, and it
  * is not answered here: this function does not know which runtime the session is
- * bound to. {@link resolveSessionDefaults} drops an effort for a runtime whose
- * API has none (`runtimeSupportsEffort`), which is the difference between "we
+ * bound to. {@link resolveSessionDefaults} drops an effort for a runtime that
+ * declares `settings.supportsEffort: false`, which is the difference between "we
  * are not sure your model likes this" and "this runtime has no such setting".
  *
  * @param manifestDir - The agent's project directory (the one holding `.dork/`).
@@ -138,19 +141,22 @@ export async function readAgentExecutionDefaults(
   }
 }
 
+/** The `runtimes.*` config keys that actually exist in {@link UserConfig}. */
+const RUNTIMES_CONFIG_SECTIONS = ['claudeCode', 'codex', 'opencode'] as const;
+
+/** One of the config keys a runtime's execution defaults can live under. */
+type RuntimesConfigSection = (typeof RUNTIMES_CONFIG_SECTIONS)[number];
+
 /**
- * Which config section holds a runtime's execution defaults.
+ * Whether a runtime-declared config section is one this config file has.
  *
- * Runtime type ids are kebab-case on the wire and camelCase in config, and the
- * two lists are allowed to differ: `test-mode` is a real runtime with no config
- * section, and a runtime absent here simply has no server default — never an
- * error.
+ * The declaration is typed `string | null` in shared because the config schema
+ * is host-side; this is where the two meet. A section this build does not know
+ * is skipped rather than thrown on, so a newer adapter never breaks the screen.
  */
-const CONFIG_SECTION_BY_RUNTIME: Readonly<Record<string, 'claudeCode' | 'codex' | 'opencode'>> = {
-  'claude-code': 'claudeCode',
-  codex: 'codex',
-  opencode: 'opencode',
-};
+function isRuntimesConfigSection(section: string | null): section is RuntimesConfigSection {
+  return section !== null && (RUNTIMES_CONFIG_SECTIONS as readonly string[]).includes(section);
+}
 
 /**
  * Resolve the execution settings a new session on this runtime should start with.
@@ -164,6 +170,23 @@ const CONFIG_SECTION_BY_RUNTIME: Readonly<Record<string, 'claudeCode' | 'codex' 
  *   {@link readAgentExecutionDefaults}. Omitted → the session has no agent, or
  *   the caller does not know which one, and the ladder starts at tier 2.
  * @param opts.runtimes - The `runtimes` config section; defaults to the stored one.
+ * @param opts.configSection - Which `runtimes.*` key holds this runtime's own
+ *   defaults, from the runtime's declared `settings.configSection`. The runtime
+ *   is the authority on that (it is the same declaration
+ *   {@link describeExecutionDefaults} reports the settings card from), and it
+ *   arrives as an argument because reaching the registry from here would be an
+ *   import cycle — the registry already imports this module. **Omitted or `null`
+ *   means the runtime has no section of its own**, which is a real answer rather
+ *   than an oversight: `test-mode` is exactly that, and it gets what it got
+ *   before any of this existed — no per-runtime default, and the global trust
+ *   stop below still applies.
+ * @param opts.supportsEffort - Whether the bound runtime takes an effort setting
+ *   at all, from its declared `settings.supportsEffort`. **Omitted means the
+ *   caller does not know**, and the safe direction there is `true`: an effort is
+ *   dropped only where a runtime has said out loud that it has none, so a new
+ *   adapter nobody has wired this through yet is never silently muted. The
+ *   opposite default would make an agent's `effort: 'high'` quietly stop
+ *   applying the day a runtime is added, with nothing on screen to say why.
  * @param opts.permissionModes - Every mode the bound runtime declares, in its
  *   declared order, from its capability profile. **Omitted means no permission
  *   tier at all**, and that is the safe direction rather than an oversight: the
@@ -176,6 +199,8 @@ export function resolveSessionDefaults(opts: {
   runtimeType: string;
   agent?: AgentExecutionDefaults;
   runtimes?: UserConfig['runtimes'];
+  configSection?: string | null;
+  supportsEffort?: boolean;
   permissionModes?: readonly PermissionModeDescriptor[];
 }): SessionSettings {
   // Tier 1 — the agent's own model/effort, which outranks the server's default
@@ -202,20 +227,26 @@ export function resolveSessionDefaults(opts: {
   // runtime that can hear it. What it does not survive is a runtime with no
   // effort at its API — OpenCode — because a value stored there comes back out
   // at the person as a setting that does nothing, and "Not supported by
-  // OpenCode" is only true if nothing here quietly supplies one anyway.
+  // OpenCode" is only true if nothing here quietly supplies one anyway. Which
+  // runtimes those are is each runtime's own declaration now, arriving as
+  // `opts.supportsEffort`; unanswered reads as yes, so the drop only ever
+  // happens where a runtime said it has none.
   const modelIsForThisRuntime =
     opts.agent?.runtime === undefined || opts.agent.runtime === opts.runtimeType;
   const fromAgent: SessionSettings = {
     ...(opts.agent?.model !== undefined && modelIsForThisRuntime
       ? { model: opts.agent.model }
       : {}),
-    ...(opts.agent?.effort !== undefined && runtimeSupportsEffort(opts.runtimeType)
+    ...(opts.agent?.effort !== undefined && (opts.supportsEffort ?? true)
       ? { effort: opts.agent.effort }
       : {}),
   };
 
-  // Tier 2 — the server's per-runtime default.
-  const section = CONFIG_SECTION_BY_RUNTIME[opts.runtimeType];
+  // Tier 2 — the server's per-runtime default, under the section the runtime
+  // itself declares. The type guard is what keeps a declaration this build has
+  // no config key for from reading an undefined leaf: skipped, never thrown on.
+  const declared = opts.configSection ?? null;
+  const section = isRuntimesConfigSection(declared) ? declared : undefined;
   // Both `?.`s are load-bearing, and neither is decoration. `configManager` is a
   // `let` that is undefined until `initConfigManager` runs, and this is now
   // consulted by `RuntimeRegistry` on every row it creates — so a registry used
@@ -302,47 +333,78 @@ function resolveTrustMode(opts: {
  * These leaves are writable through `PATCH /api/config` already, but
  * `GET /api/config` is a curated view rather than the raw user config, so
  * nothing reported them back and a card over them could not show what was set.
- * This is that report, and nothing more: it reads exactly the same config
- * sections {@link resolveSessionDefaults} reads, through the same
- * {@link CONFIG_SECTION_BY_RUNTIME} map, so the screen and the resolver can
- * never disagree about which section a runtime's default lives in.
+ * This is that report, and nothing more: it reads a runtime's defaults from the
+ * section that runtime DECLARES (`settings.configSection`), which is the same
+ * declaration {@link resolveSessionDefaults} is handed, so the screen and the
+ * resolver can never disagree about where a runtime's default lives. There is no
+ * second list here to keep in step with the adapters.
  *
- * A runtime with no config section is simply absent — `test-mode` has no
- * default and never will, and absence is how that is said.
+ * A runtime that declares no config section is simply absent — `test-mode` has
+ * no default and never will, and absence is how that is said. So is a runtime
+ * declaring a section this build has no config key for: skipped, never thrown
+ * on, so a newer adapter cannot take the settings screen down with it.
  *
+ * And so is a runtime that is not in the capabilities map at all, which is what
+ * a disabled runtime looks like from here (`runtimes.codex.enabled: false`
+ * keeps codex out of the registry, so it is out of this report too). Its stored
+ * per-runtime defaults are untouched by that: they stay in config, and they
+ * start applying again the moment the runtime comes back. This report covers
+ * each REGISTERED runtime (spec `runtimes-settings-redesign` §C), so while a
+ * runtime is off, its defaults are simply not reported.
+ *
+ * @param capabilities - Every registered runtime's capability profile, keyed by
+ *   runtime type — `runtimeRegistry.getAllCapabilities()`. Required, and passed
+ *   in rather than read here, because the registry already imports this module
+ *   and importing it back would be a cycle. Required so that every call site is
+ *   compile-forced to supply the one map this report is derived from.
  * @param runtimes - The `runtimes` config section; defaults to the stored one.
  *   Both `?.`s below are for the same pre-boot window {@link resolveSessionDefaults}
  *   documents: a missing section reports "no preference", never an error.
  */
-export function describeExecutionDefaults(runtimes?: UserConfig['runtimes']): ExecutionDefaults {
-  const section = runtimes ?? configManager?.get('runtimes');
+export function describeExecutionDefaults(
+  capabilities: Record<string, RuntimeCapabilities>,
+  runtimes?: UserConfig['runtimes']
+): ExecutionDefaults {
+  const stored = runtimes ?? configManager?.get('runtimes');
   return {
-    runtime: section?.default ?? 'claude-code',
+    runtime: stored?.default ?? 'claude-code',
     // The global stop, reported beside the per-runtime ones so the card can show
     // both halves of the override it offers. `null` is "the runtime decides",
     // which is the shipped state and a real answer, not a missing one.
-    trustStop: section?.defaultTrustStop ?? null,
-    perRuntime: Object.entries(CONFIG_SECTION_BY_RUNTIME).map(([runtime, key]) => {
-      const configured = section?.[key];
-      const supportsEffort = runtimeSupportsEffort(runtime);
-      return {
-        runtime,
-        model: configured?.defaultModel ?? null,
-        // What THIS runtime overrides the global stop with; `null` = it doesn't.
-        // Reported unresolved: which mode id the stop lands on is the runtime's
-        // capability profile's answer, and the cockpit already holds those
-        // profiles, so resolving it here would put a second copy of that
-        // translation on the wire for the screen to disagree with.
-        trustStop: configured?.defaultTrustStop ?? null,
-        // OpenCode's section has no `defaultEffort` key at all — the `in` check
-        // is what keeps that structural absence and a configured `null` the same
-        // answer here, rather than a type assertion that would outlive the fact.
-        effort:
-          supportsEffort && configured && 'defaultEffort' in configured
-            ? (configured.defaultEffort ?? null)
-            : null,
-        supportsEffort,
-      };
-    }),
+    trustStop: stored?.defaultTrustStop ?? null,
+    perRuntime: Object.entries(capabilities)
+      // By runtime type id, and by code unit rather than locale: registration
+      // order is a startup detail nobody chose, and a list that reshuffles under
+      // the person's cursor between two reads is the thing to avoid.
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      // `flatMap` over `filter` + `map` so the type guard narrows the section key
+      // for the read below — one pass, no re-checking what was already decided.
+      .flatMap(([runtime, capability]) => {
+        const key = capability.settings.configSection;
+        if (!isRuntimesConfigSection(key)) return [];
+        const configured = stored?.[key];
+        const supportsEffort = capability.settings.supportsEffort;
+        return [
+          {
+            runtime,
+            model: configured?.defaultModel ?? null,
+            // What THIS runtime overrides the global stop with; `null` = it
+            // doesn't. Reported unresolved: which mode id the stop lands on is
+            // the runtime's capability profile's answer, and the cockpit already
+            // holds those profiles, so resolving it here would put a second copy
+            // of that translation on the wire for the screen to disagree with.
+            trustStop: configured?.defaultTrustStop ?? null,
+            // OpenCode's section has no `defaultEffort` key at all — the `in`
+            // check is what keeps that structural absence and a configured
+            // `null` the same answer here, rather than a type assertion that
+            // would outlive the fact.
+            effort:
+              supportsEffort && configured && 'defaultEffort' in configured
+                ? (configured.defaultEffort ?? null)
+                : null,
+            supportsEffort,
+          },
+        ];
+      }),
   };
 }

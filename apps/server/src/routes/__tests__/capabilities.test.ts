@@ -39,6 +39,11 @@ const mockCapabilities = {
       },
     ],
   },
+  settings: {
+    configSection: 'claudeCode',
+    supportsEffort: true,
+    sections: [{ kind: 'claude-accounts' }],
+  },
   features: {},
 };
 
@@ -99,6 +104,8 @@ vi.mock('../../services/core/config-manager.js', () => ({
 import request from 'supertest';
 import { createApp } from '../../app.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
+import { CLAUDE_CODE_CAPABILITIES } from '../../services/runtimes/claude-code/runtime-constants.js';
+import { TEST_MODE_CAPABILITIES } from '../../services/runtimes/test-mode/runtime-constants.js';
 
 const app = createApp();
 
@@ -146,6 +153,11 @@ describe('Capabilities Route', () => {
       supportsQuestionPrompt: false,
       supportsPlugins: false,
       permissionModes: { supported: false, values: [] },
+      settings: {
+        configSection: 'opencode',
+        supportsEffort: false,
+        sections: [{ kind: 'opencode-power-source' }],
+      },
       features: {},
     };
 
@@ -160,5 +172,27 @@ describe('Capabilities Route', () => {
     expect(Object.keys(res.body.capabilities)).toHaveLength(2);
     expect(res.body.capabilities['claude-code'].supportsToolApproval).toBe(true);
     expect(res.body.capabilities['opencode'].supportsToolApproval).toBe(false);
+  });
+
+  it('projects each runtime own settings declaration onto the wire', async () => {
+    // Pins the REAL adapter constants, not a fixture: a runtime that forgets its
+    // config section, or points at the wrong one, fails here rather than at the
+    // settings screen. test-mode is the null case — a real runtime with no
+    // section under `runtimes.*`.
+    vi.mocked(runtimeRegistry.getAllCapabilities).mockReturnValueOnce({
+      'claude-code': CLAUDE_CODE_CAPABILITIES,
+      'test-mode': TEST_MODE_CAPABILITIES,
+    });
+
+    const res = await request(app).get('/api/capabilities');
+
+    expect(res.status).toBe(200);
+    expect(res.body.capabilities['claude-code'].settings).toEqual({
+      configSection: 'claudeCode',
+      supportsEffort: true,
+      sections: [{ kind: 'claude-accounts' }],
+    });
+    expect(res.body.capabilities['test-mode'].settings.configSection).toBeNull();
+    expect(res.body.capabilities['test-mode'].settings.sections).toEqual([]);
   });
 });

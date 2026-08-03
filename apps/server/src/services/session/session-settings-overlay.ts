@@ -40,12 +40,24 @@
  *
  * @module services/session/session-settings-overlay
  */
-import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
+import type { AgentRuntime, RuntimeSettingsCapability } from '@dorkos/shared/agent-runtime';
 import type { Session, SessionSettings } from '@dorkos/shared/types';
-import { runtimeSupportsEffort } from '@dorkos/shared/constants';
 
-/** The one runtime capability this module needs: a session's id alias. */
+/** The one runtime capability the key resolver needs: a session's id alias. */
 type SessionIdAliasing = Pick<AgentRuntime, 'getInternalSessionId'>;
+
+/**
+ * What the overlay asks a registered runtime: the id it calls a session by, and
+ * the one declaration that changes what is displayed — whether it takes an
+ * effort setting at all.
+ *
+ * Narrow on purpose, in the same spirit as {@link SessionIdAliasing}: a real
+ * `AgentRuntime` satisfies it structurally, and a double here does not have to
+ * build a whole capability profile to answer one question.
+ */
+type OverlayRuntime = SessionIdAliasing & {
+  getCapabilities(): { settings: Pick<RuntimeSettingsCapability, 'supportsEffort'> };
+};
 
 /**
  * The registry capabilities the overlay needs. `RuntimeRegistry` satisfies this
@@ -58,7 +70,7 @@ export interface SessionSettingsOverlayPort {
   /** Whether a runtime type is registered on this server. */
   has(type: string): boolean;
   /** Get a registered runtime by type. */
-  get(type: string): SessionIdAliasing;
+  get(type: string): OverlayRuntime;
 }
 
 /**
@@ -86,22 +98,45 @@ export function resolveSettingsKey(
  * runtime-derived values remain the fallback for sessions with no stored row.
  *
  * One exception, and it is a display rule rather than a storage one: a session
- * on a runtime with no effort at its API (OpenCode) never shows an effort, even
- * if a row holds one. Rows outlive the rule — a value could have been written
- * before this existed, or by a shared write path that does not ask which runtime
- * it is serving — and the screen is where "Not supported by OpenCode" is either
- * true or a lie. The stored value is left alone; it is simply not displayed.
+ * on a runtime that declares no effort at its API (OpenCode) never shows an
+ * effort, even if a row holds one. Rows outlive the rule — a value could have
+ * been written before this existed, or by a shared write path that does not ask
+ * which runtime it is serving — and the screen is where "Not supported by
+ * OpenCode" is either true or a lie. The stored value is left alone; it is
+ * simply not displayed.
  *
  * @param target - The session object to mutate in place
  * @param stored - Persisted settings (only defined fields are applied)
+ * @param port - Runtime lookup, for reading the owning runtime's declaration
  */
-export function applyStoredSettings(target: Session, stored: SessionSettings): void {
+export function applyStoredSettings(
+  target: Session,
+  stored: SessionSettings,
+  port: SessionSettingsOverlayPort
+): void {
   if (stored.permissionMode !== undefined) target.permissionMode = stored.permissionMode;
   if (stored.model !== undefined) target.model = stored.model;
-  if (stored.effort !== undefined && runtimeSupportsEffort(target.runtime)) {
+  if (stored.effort !== undefined && supportsEffort(target.runtime, port)) {
     target.effort = stored.effort;
   }
   if (stored.fastMode !== undefined) target.fastMode = stored.fastMode;
+}
+
+/**
+ * Whether the runtime a session runs on takes an effort setting at all, read off
+ * that runtime's own `settings.supportsEffort` declaration.
+ *
+ * Unknown answers YES, in both shapes it comes in: a session the aggregation
+ * could not tag with a runtime, and a tag naming a runtime this server does not
+ * have registered. Muting a person's stored effort on a guess would hide a real
+ * setting; the mute is for runtimes that have SAID they have none.
+ *
+ * @param type - The session's runtime tag, or undefined when it has none
+ * @param port - Runtime lookup
+ */
+function supportsEffort(type: string | undefined, port: SessionSettingsOverlayPort): boolean {
+  if (type === undefined || !port.has(type)) return true;
+  return port.get(type).getCapabilities().settings.supportsEffort;
 }
 
 /** The one store key for a session: its owning runtime's canonical id. */
@@ -128,6 +163,6 @@ export function overlayStoredSettings(sessions: Session[], port: SessionSettings
   const stored = port.getSessionSettingsMany([...new Set(keys)]);
   sessions.forEach((session, i) => {
     const settings = stored.get(keys[i]!);
-    if (settings) applyStoredSettings(session, settings);
+    if (settings) applyStoredSettings(session, settings, port);
   });
 }

@@ -31,6 +31,45 @@ function createTempDir(): string {
 }
 
 /**
+ * Register the runtimes `GET /api/config` builds `executionDefaults` from.
+ *
+ * The report is derived from each REGISTERED runtime's own `settings`
+ * declaration rather than a list the server keeps, so a test app with an empty
+ * registry honestly reports no per-runtime defaults at all. These fakes carry
+ * the four shipped declarations verbatim — including `test-mode`, whose
+ * `configSection: null` is the case the report has to leave out, and can only
+ * be shown leaving out if it was offered.
+ *
+ * Called after the router is imported so both see the same singleton: every
+ * test in this file resets the module registry, which mints a fresh one.
+ */
+async function registerDeclaringRuntimes(): Promise<void> {
+  const { runtimeRegistry } = await import('../../services/core/runtime-registry.js');
+  const { FakeAgentRuntime } = await import('@dorkos/test-utils');
+  const [
+    { CLAUDE_CODE_CAPABILITIES },
+    { CODEX_CAPABILITIES },
+    { OPENCODE_CAPABILITIES },
+    { TEST_MODE_CAPABILITIES },
+  ] = await Promise.all([
+    import('../../services/runtimes/claude-code/runtime-constants.js'),
+    import('../../services/runtimes/codex/runtime-constants.js'),
+    import('../../services/runtimes/opencode/runtime-constants.js'),
+    import('../../services/runtimes/test-mode/runtime-constants.js'),
+  ]);
+  for (const capabilities of [
+    CLAUDE_CODE_CAPABILITIES,
+    CODEX_CAPABILITIES,
+    OPENCODE_CAPABILITIES,
+    TEST_MODE_CAPABILITIES,
+  ]) {
+    runtimeRegistry.register(
+      new FakeAgentRuntime(capabilities.type, { settings: capabilities.settings })
+    );
+  }
+}
+
+/**
  * Stands in for `sessionGate`'s resolved user. `PATCH /api/config` now skips the
  * operator-only write policy only for a caller that may DECIDE approvals, and
  * with login ON that requires an authenticated user on `res.locals` — which the
@@ -554,6 +593,7 @@ describe('GET /api/config', () => {
     initConfigManager(tmpDir);
 
     const configRouter = (await import('../config.js')).default;
+    await registerDeclaringRuntimes();
     const app = express();
     app.use(express.json());
     mountCallerFixture(app);
@@ -585,6 +625,55 @@ describe('GET /api/config', () => {
     expect(res.body).toHaveProperty('tasks');
     expect(res.body).toHaveProperty('relay');
     expect(res.body).toHaveProperty('mesh');
+  });
+
+  // The Defaults card reads this and nothing else. Its shape is a client
+  // contract: it survived the move from a server-kept runtime→section list to
+  // each runtime's own declaration, and that is what this pins.
+  describe('executionDefaults — the shape the cockpit reads', () => {
+    it('reports the same keys, with the same types, on a fresh install', async () => {
+      const res = await request(server).get('/api/config').expect(200);
+      const { executionDefaults } = res.body;
+
+      expect(typeof executionDefaults.runtime).toBe('string');
+      expect(executionDefaults.trustStop).toBeNull();
+      expect(Array.isArray(executionDefaults.perRuntime)).toBe(true);
+      for (const entry of executionDefaults.perRuntime) {
+        expect(Object.keys(entry).sort()).toEqual([
+          'effort',
+          'model',
+          'runtime',
+          'supportsEffort',
+          'trustStop',
+        ]);
+        expect(typeof entry.runtime).toBe('string');
+        expect(typeof entry.supportsEffort).toBe('boolean');
+        expect(entry.model).toBeNull();
+        expect(entry.effort).toBeNull();
+        expect(entry.trustStop).toBeNull();
+      }
+    });
+
+    it('reports one entry per runtime that declares a config section', async () => {
+      // `test-mode` is registered and declares none, so it is absent — the same
+      // answer it gave when a hand-kept map left it out, now said by the runtime.
+      const res = await request(server).get('/api/config').expect(200);
+
+      expect(
+        res.body.executionDefaults.perRuntime.map((e: { runtime: string }) => e.runtime)
+      ).toEqual(['claude-code', 'codex', 'opencode']);
+    });
+
+    it('reports each runtime’s declared effort support', async () => {
+      const res = await request(server).get('/api/config').expect(200);
+      const supports = Object.fromEntries(
+        res.body.executionDefaults.perRuntime.map(
+          (e: { runtime: string; supportsEffort: boolean }) => [e.runtime, e.supportsEffort]
+        )
+      );
+
+      expect(supports).toEqual({ 'claude-code': true, codex: true, opencode: false });
+    });
   });
 
   // First-run setup asks one question of this response: has the default runtime

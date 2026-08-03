@@ -16,7 +16,18 @@ import { USER_CONFIG_DEFAULTS, type UserConfig } from '@dorkos/shared/config-sch
 const persistSessionRuntime = vi.fn().mockResolvedValue(true);
 /** What `session_metadata` holds for the session under test — `null` = no row. */
 let storedSettings: Record<string, unknown> | null = null;
-const getCapabilities = vi.fn().mockReturnValue({ logBackedHistory: false, nativeContext: [] });
+/**
+ * What the runtime under test declares about itself. `settings` is load-bearing
+ * for the seeding tests below: which `runtimes.*` section a room turn inherits
+ * its model and effort from is the RUNTIME's declaration, not a list the
+ * resolver keeps, so this fixture is what points them at `runtimes.claudeCode`.
+ */
+const DECLARED_CAPABILITIES = {
+  logBackedHistory: false,
+  nativeContext: [],
+  settings: { configSection: 'claudeCode', supportsEffort: true, sections: [] },
+};
+const getCapabilities = vi.fn().mockReturnValue(DECLARED_CAPABILITIES);
 
 /**
  * What the runtime calls this session. `undefined` — no alias — is the honest
@@ -963,7 +974,7 @@ describe('a room turn is recorded durably', () => {
     setSessionEventStore(store);
     internalSessionId = () => undefined;
     turnBehaviour = saysAndCloses('green');
-    getCapabilities.mockReturnValue({ logBackedHistory: false, nativeContext: [] });
+    getCapabilities.mockReturnValue(DECLARED_CAPABILITIES);
   });
 
   afterEach(() => {
@@ -1006,7 +1017,7 @@ describe('a room turn is recorded durably', () => {
   });
 
   it('still stores a log-backed runtime in full, because there the rows ARE the history', async () => {
-    getCapabilities.mockReturnValue({ logBackedHistory: true, nativeContext: [] });
+    getCapabilities.mockReturnValue({ ...DECLARED_CAPABILITIES, logBackedHistory: true });
     turnBehaviour = saysAndCloses('green');
 
     const result = await createSessionRoomTurnRunner().run(request());

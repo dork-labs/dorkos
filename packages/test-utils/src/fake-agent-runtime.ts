@@ -8,6 +8,7 @@ import type {
   CommandIntentOpts,
   RuntimeCapabilities,
   McpAppServerConnection,
+  RuntimeSettingsCapability,
   ToolDecisionOptions,
 } from '@dorkos/shared/agent-runtime';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
@@ -31,6 +32,28 @@ import type {
 
 type ScenarioFn = (content: string) => AsyncGenerator<StreamEvent>;
 
+/** Construction-time overrides for the fake's STATIC capability declarations. */
+export interface FakeAgentRuntimeOptions {
+  /**
+   * Settings declaration the fake reports from `getCapabilities().settings`.
+   * Defaults to {@link DEFAULT_FAKE_SETTINGS} — no config section, no effort,
+   * no bespoke sections. Override it to model a real runtime's declaration, or
+   * cast a deliberately-malformed value through it to prove a consumer
+   * validates what it reads rather than trusting the declaration.
+   */
+  settings?: RuntimeSettingsCapability;
+}
+
+/**
+ * The settings declaration a fake reports unless construction overrides it: a
+ * runtime with nothing configurable, which is the honest default for a double.
+ */
+export const DEFAULT_FAKE_SETTINGS: RuntimeSettingsCapability = {
+  configSection: null,
+  supportsEffort: false,
+  sections: [],
+};
+
 /**
  * A full implementation of AgentRuntime for use in Vitest tests.
  *
@@ -50,14 +73,20 @@ export class FakeAgentRuntime implements AgentRuntime {
 
   private _scenarios: ScenarioFn[] = [];
   private _scenarioIndex = 0;
+  /** Read lazily by `getCapabilities`, so construction order does not matter. */
+  private _settings: RuntimeSettingsCapability = DEFAULT_FAKE_SETTINGS;
 
   /**
+   * Build a fake runtime, optionally overriding its static declarations.
+   *
    * @param type - Runtime type identifier. Defaults to `'fake'`; pass distinct
    *   types (e.g. `'fake-a'`, `'fake-b'`) to register multiple fakes in a
    *   `RuntimeRegistry`, which keys runtimes by type.
+   * @param opts - Overrides for the fake's static capability declarations.
    */
-  constructor(type = 'fake') {
+  constructor(type = 'fake', opts: FakeAgentRuntimeOptions = {}) {
     this.type = type;
+    if (opts.settings !== undefined) this._settings = opts.settings;
   }
 
   /**
@@ -236,6 +265,10 @@ export class FakeAgentRuntime implements AgentRuntime {
     // exercises for the supported path (its executeCommandIntent yields a real
     // synthetic compact_boundary).
     commandIntents: { compact: { supported: true } },
+    // Construction-time override (`new FakeAgentRuntime('fake', { settings })`)
+    // so a test can model a real runtime's declaration — or hand a
+    // deliberately-malformed one to a consumer that must validate it.
+    settings: this._settings,
     features: {},
   }));
   getSupportedModels = vi.fn<() => Promise<ModelOption[]>>().mockResolvedValue([]);

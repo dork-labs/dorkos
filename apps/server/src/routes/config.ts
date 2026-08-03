@@ -7,6 +7,10 @@ import { configManager } from '../services/core/config-manager.js';
 // in the projector, transcript readers, and the turn trigger, none of which a
 // config GET needs to load.
 import { describeExecutionDefaults } from '../services/session/resolve-session-defaults.js';
+// The route is where the registry and the resolver meet. `resolve-session-defaults`
+// cannot reach the registry itself — the registry imports IT — so the caller
+// hands over the capability map instead of the module reaching for it.
+import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { env } from '../env.js';
 import {
   SIDEBAR_PREFS_DEFAULTS,
@@ -106,7 +110,7 @@ router.get('/', async (_req, res) => {
     // What a new session starts with — the runtime, and the model and effort per
     // runtime. Writable through PATCH already; this is the read the Defaults card
     // needs, because a curated view is the only config the cockpit ever sees.
-    executionDefaults: describeExecutionDefaults(),
+    executionDefaults: describeExecutionDefaults(runtimeRegistry.getAllCapabilities()),
     boundary: getBoundary(),
     // Set by index.ts at startup before routes are registered — always present at request time
     dorkHome: process.env.DORK_HOME!,

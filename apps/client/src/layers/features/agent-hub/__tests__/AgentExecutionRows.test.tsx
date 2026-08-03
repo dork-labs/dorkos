@@ -78,13 +78,51 @@ function manifest(extra: Partial<AgentManifest> = {}): AgentManifest {
   } as AgentManifest;
 }
 
+/**
+ * A capability map that declares both runtimes' settings surface, so the rows
+ * can be rendered against the runtime's own answer rather than a defaults row.
+ */
+function capabilityMap(opencodeSupportsEffort: boolean) {
+  const entry = (type: string, supportsEffort: boolean) => ({
+    type,
+    supportsToolApproval: true,
+    supportsCostTracking: false,
+    supportsResume: true,
+    supportsMcp: true,
+    supportsQuestionPrompt: true,
+    supportsPlugins: false,
+    permissionModes: { supported: false, values: [] },
+    settings: { configSection: type, supportsEffort, sections: [] },
+    features: {},
+  });
+  return {
+    capabilities: {
+      'claude-code': entry('claude-code', true),
+      opencode: entry('opencode', opencodeSupportsEffort),
+    },
+    defaultRuntime: 'claude-code',
+  };
+}
+
+/**
+ * A capability map that never lands — the window between the first paint and
+ * the query answering, which used to render an editable effort control.
+ */
+const WITHHELD = 'withheld' as const;
+
 function renderRows(
   agent: AgentManifest,
   executionDefaults: ExecutionDefaults = DEFAULTS,
-  models: typeof MODELS = MODELS
+  models: typeof MODELS = MODELS,
+  capabilities: ReturnType<typeof capabilityMap> | typeof WITHHELD = capabilityMap(false)
 ) {
   const onUpdate = vi.fn();
   const transport = createMockTransport({
+    getCapabilities: vi
+      .fn()
+      .mockImplementation(() =>
+        capabilities === WITHHELD ? new Promise(() => {}) : Promise.resolve(capabilities)
+      ),
     getConfig: vi.fn().mockResolvedValue({
       version: '1.0.0',
       port: 4242,
@@ -276,5 +314,50 @@ describe('AgentExecutionRows', () => {
     expect(await screen.findByTestId('agent-effort-unsupported-model')).toHaveTextContent(
       'haiku does not take an effort setting'
     );
+  });
+
+  // ── The runtime's own declaration is the source, not a list in the client ──
+  // The defaults carry no `opencode` row here, so the only thing left that can
+  // say OpenCode takes no effort is the capability map.
+  const NO_OPENCODE_ROW: ExecutionDefaults = {
+    runtime: 'claude-code',
+    trustStop: null,
+    perRuntime: [
+      {
+        runtime: 'claude-code',
+        model: 'opus',
+        effort: 'medium',
+        supportsEffort: true,
+        trustStop: null,
+      },
+    ],
+  };
+
+  it('reads the runtime-level unsupported state off the capability map', async () => {
+    renderRows(manifest({ runtime: 'opencode' }), NO_OPENCODE_ROW, MODELS, capabilityMap(false));
+    expect(await screen.findByTestId('agent-effort-unsupported-runtime')).toHaveTextContent(
+      'Not supported by OpenCode'
+    );
+    expect(screen.queryByTestId('agent-effort-row')).toBeNull();
+  });
+
+  // The discriminator: flip only the declaration and the control comes back.
+  it('offers the effort control when the same runtime declares it takes one', async () => {
+    renderRows(manifest({ runtime: 'opencode' }), NO_OPENCODE_ROW, MODELS, capabilityMap(true));
+    expect(await screen.findByTestId('agent-effort-row')).toBeInTheDocument();
+    expect(screen.queryByTestId('agent-effort-unsupported-runtime')).toBeNull();
+  });
+
+  // The third state, between those two: nothing has answered yet. An editable
+  // control here would be offered and then taken away a round-trip later.
+  it('offers no effort control while the declaration is still in flight', async () => {
+    renderRows(manifest({ runtime: 'opencode' }), NO_OPENCODE_ROW, MODELS, WITHHELD);
+    expect(await screen.findByTestId('agent-effort-pending')).toHaveTextContent(
+      'Checking what OpenCode supports'
+    );
+    expect(screen.queryByTestId('agent-effort-row')).toBeNull();
+    // Nor does it guess the other way: "Not supported" is a claim, and nothing
+    // has said it.
+    expect(screen.queryByTestId('agent-effort-unsupported-runtime')).toBeNull();
   });
 });

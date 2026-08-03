@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260803-181550",
+      "slug": "runtimes-settings-redesign",
+      "title": "Runtimes settings redesign — per-runtime cards, default as a state, runtime-declared settings",
+      "created": "2026-08-03",
+      "status": "specified"
+    },
+    {
       "id": "260803-204801",
       "slug": "feedback-pipeline",
       "title": "Feedback pipeline — diagnostics, Linear intake, tracking",

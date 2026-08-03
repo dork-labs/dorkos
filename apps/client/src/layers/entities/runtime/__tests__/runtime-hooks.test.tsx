@@ -91,6 +91,7 @@ const CLAUDE_CODE_PROFILE: RuntimeCapabilities = {
     ],
   },
   commandIntents: { compact: { supported: false } },
+  settings: { configSection: null, supportsEffort: false, sections: [] },
   features: {},
 };
 
@@ -137,6 +138,7 @@ const CODEX_PROFILE: RuntimeCapabilities = {
     ],
   },
   commandIntents: { compact: { supported: false } },
+  settings: { configSection: null, supportsEffort: false, sections: [] },
   features: {},
 };
 
@@ -180,6 +182,7 @@ const OPENCODE_PROFILE: RuntimeCapabilities = {
     ],
   },
   commandIntents: { compact: { supported: false } },
+  settings: { configSection: null, supportsEffort: false, sections: [] },
   features: {},
 };
 

@@ -99,8 +99,37 @@ describe('describeAgentExecution', () => {
       agent: { runtime: 'opencode', effort: 'high' },
       defaultRuntime: 'opencode',
       knownRuntimes: ['opencode'],
+      runtimeSupportsEffort: false,
     });
     expect(report.breakages.map((b) => b.kind)).toEqual(['effort-unsupported-runtime']);
+    expect(report.breakages[0].message).toBe(
+      'OpenCode has no effort setting, so this one does nothing.'
+    );
+  });
+
+  it('says nothing about a runtime that declares it does take an effort', () => {
+    const report = describeAgentExecution({
+      agent: { runtime: 'opencode', effort: 'high' },
+      defaultRuntime: 'opencode',
+      knownRuntimes: ['opencode'],
+      runtimeSupportsEffort: true,
+    });
+    expect(report.breakages).toEqual([]);
+  });
+
+  // The behavior change from the retired shared helper, which answered `true`
+  // for a runtime it had never heard of and `false` for one hard-coded name.
+  // Now the answer only ever arrives from the runtime's own declaration, so an
+  // absent one has to be read as "not asked yet" rather than as either verdict.
+  it('reports no effort breakage when the runtime has not answered yet', () => {
+    const report = describeAgentExecution({
+      agent: { runtime: 'opencode', effort: 'high' },
+      defaultRuntime: 'opencode',
+      knownRuntimes: ['opencode'],
+    });
+    expect(report.breakages).toEqual([]);
+    expect(report.isBroken).toBe(false);
+    expect(report.isException).toBe(true);
   });
 
   it('breaks on an effort set for a model that does not take one', () => {

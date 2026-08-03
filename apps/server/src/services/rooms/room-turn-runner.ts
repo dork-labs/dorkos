@@ -160,6 +160,11 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // closing it would mean holding the session lock across a config read on
       // the room's hot path to fix a race a person can only lose by changing a
       // setting in the same instant a room message arrives.
+      // Which `runtimes.*` section holds this runtime's defaults, and whether it
+      // takes an effort at all, are the RUNTIME's own declarations. They are
+      // handed to the resolver rather than looked up there: the registry imports
+      // the resolver, so the arrow only points one way.
+      const declared = runtime.getCapabilities().settings;
       const seed =
         (await runtimeRegistry.getSessionSettings(sessionId)) === null
           ? resolveSessionDefaults({
@@ -168,6 +173,10 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
               // addressed — so this is the one surface where the per-agent
               // setting is the whole point rather than a refinement.
               agent: await readAgentExecutionDefaults(request.agentPath),
+              configSection: declared.configSection,
+              // The room's addressed agent can name an effort on any runtime,
+              // including one that has none — this is what drops it there.
+              supportsEffort: declared.supportsEffort,
             })
           : {};
 

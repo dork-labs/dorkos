@@ -78,6 +78,16 @@ export const OPENCODE_CAPABILITIES: RuntimeCapabilities = {
       },
     ],
   },
+  // `supportsEffort: false` because OpenCode's prompt body carries no effort
+  // field in either the pinned or the current SDK — effort exists there only as
+  // config-file variants with no API selection. The `opencode-power-source`
+  // section is the provider picker; the current provider is dynamic and stays
+  // on `GET /api/config`.
+  settings: {
+    configSection: 'opencode',
+    supportsEffort: false,
+    sections: [{ kind: 'opencode-power-source' }],
+  },
   // OpenCode fulfills `compact` via its native sidecar compaction
   // (`client.session.summarize`; DOR-109 task 2.2, ADR-0273) —
   // `executeCommandIntent` carries that body.

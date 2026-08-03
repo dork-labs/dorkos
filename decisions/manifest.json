@@ -3132,6 +3132,15 @@
       "created": "2026-08-01",
       "specSlug": "claude-code-accounts",
       "extractedFrom": "claude-code-accounts"
+    },
+    {
+      "id": "260803-183016",
+      "slug": "runtime-declared-settings-surface",
+      "title": "Runtimes declare their settings surface via RuntimeCapabilities.settings",
+      "status": "draft",
+      "created": "2026-08-03",
+      "specSlug": "runtimes-settings-redesign",
+      "extractedFrom": "runtimes-settings-redesign"
     }
   ]
 }

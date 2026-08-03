@@ -117,13 +117,27 @@ const CAPS: RuntimeCapabilities = {
     ],
   },
   commandIntents: { compact: { supported: false } },
+  // Where this runtime keeps its settings, declared by the runtime itself. The
+  // hook reads the per-runtime config leaf off this, so a fixture that lied
+  // here would let the offer write a leaf nothing reads.
+  settings: { configSection: 'claudeCode', supportsEffort: true, sections: [] },
   features: {},
+};
+
+/**
+ * What `GET /api/capabilities` has answered so far. Mutable because "it has not
+ * answered yet" is a state the hook has to survive, not an impossible one.
+ */
+const capabilityMap = {
+  current: { capabilities: { 'claude-code': CAPS }, defaultRuntime: 'claude-code' } as
+    | { capabilities: Record<string, RuntimeCapabilities>; defaultRuntime: string }
+    | undefined,
 };
 
 vi.mock('@/layers/entities/runtime', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/runtime')>()),
   useCapabilitiesForRuntime: () => CAPS,
-  useRuntimeCapabilities: () => ({ data: undefined }),
+  useRuntimeCapabilities: () => ({ data: capabilityMap.current }),
 }));
 
 vi.mock('@/layers/entities/session/model/use-sessions', async (importOriginal) => ({
@@ -297,6 +311,7 @@ beforeEach(() => {
   updateConfig.mockClear();
   standingAck.current = null;
   canRemember.current = true;
+  capabilityMap.current = { capabilities: { 'claude-code': CAPS }, defaultRuntime: 'claude-code' };
   executionDefaults.current = {
     runtime: 'claude-code',
     trustStop: null,
@@ -496,6 +511,34 @@ describe('the offer writes the leaf it compared', () => {
 
   it('writes the global leaf when nothing overrides it', async () => {
     executionDefaults.current = { ...executionDefaults.current, trustStop: 'ask' };
+    renderSection();
+    fireEvent.click(screen.getByTestId('select-act'));
+    fireEvent.click(await screen.findByTestId('make-default-confirm'));
+
+    expect(updateConfig.mock.calls[0]![0]).toEqual({ runtimes: { defaultTrustStop: 'act' } });
+  });
+
+  it('falls back to the global leaf while the capability map has not arrived', async () => {
+    // Which leaf a runtime's override lives under is the RUNTIME's declaration,
+    // and before it arrives there is no honest per-runtime key to write. The
+    // global leaf is the fallback rather than a guessed section name: a guess
+    // that got the spelling wrong would write somewhere nothing reads and
+    // report success. The offer still stands, so the write is still possible —
+    // the map lands in milliseconds and the next attempt targets correctly.
+    capabilityMap.current = undefined;
+    executionDefaults.current = {
+      runtime: 'claude-code',
+      trustStop: null,
+      perRuntime: [
+        {
+          runtime: 'claude-code',
+          model: null,
+          effort: null,
+          supportsEffort: true,
+          trustStop: 'ask',
+        },
+      ],
+    };
     renderSection();
     fireEvent.click(screen.getByTestId('select-act'));
     fireEvent.click(await screen.findByTestId('make-default-confirm'));

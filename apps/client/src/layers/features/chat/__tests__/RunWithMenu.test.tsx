@@ -144,6 +144,7 @@ function makeCaps(...types: string[]): CapabilitiesMap {
     nativeContext: [],
     permissionModes: { supported: false, values: [] },
     commandIntents: { compact: { supported: false } },
+    settings: { configSection: null, supportsEffort: false, sections: [] },
     features: {},
   });
   return {

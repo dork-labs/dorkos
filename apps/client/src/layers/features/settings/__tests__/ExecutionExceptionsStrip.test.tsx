@@ -65,9 +65,19 @@ const CATALOG = [
   { value: 'haiku', displayName: 'Haiku', description: '', supportsEffort: false },
 ];
 
+/** The runtimes this machine has, and what each declares about effort. */
+const CAPABILITIES = {
+  capabilities: { 'claude-code': { type: 'claude-code' } },
+  defaultRuntime: 'claude-code',
+};
+
 function renderStrip(
   agents: Record<string, AgentManifest>,
-  opts: { models?: typeof CATALOG; perRuntimeModel?: string | null } = {}
+  opts: {
+    models?: typeof CATALOG;
+    perRuntimeModel?: string | null;
+    capabilities?: typeof CAPABILITIES;
+  } = {}
 ) {
   const models = opts.models ?? CATALOG;
   const transport = createMockTransport({
@@ -99,10 +109,7 @@ function renderStrip(
         tokenConfigured: false,
       },
     }),
-    getCapabilities: vi.fn().mockResolvedValue({
-      capabilities: { 'claude-code': { type: 'claude-code' } },
-      defaultRuntime: 'claude-code',
-    }),
+    getCapabilities: vi.fn().mockResolvedValue(opts.capabilities ?? CAPABILITIES),
     listMeshAgentPaths: vi
       .fn()
       .mockResolvedValue({ agents: Object.keys(agents).map((p) => ({ projectPath: p })) }),
@@ -187,16 +194,43 @@ describe('ExecutionExceptionsStrip', () => {
     );
   });
 
+  // A runtime this machine does not have declares nothing, so its effort
+  // support is unknown rather than absent — and unknown is never reported. The
+  // one breakage a person can act on is the one they get.
+  it('says only that an unconnected runtime is missing, not what its effort would do', async () => {
+    renderStrip({ '/a': agent('alpha', { runtime: 'opencode', effort: 'high' }) });
+    const row = await screen.findByTestId('execution-exception-broken');
+    expect(row).toHaveTextContent('OpenCode is not connected on this machine.');
+    expect(row).not.toHaveTextContent('so this one does nothing.');
+  });
+
   // ── I4: a joined multi-breakage sentence must not be cut off mid-word ──────
   it('carries the whole reason in a tooltip, however many breakages joined it', async () => {
-    renderStrip({ '/a': agent('alpha', { runtime: 'opencode', effort: 'high' }) });
+    // A connected OpenCode that declares no effort, carrying a model pin its
+    // catalog dropped: two breakages at once, from one agent, both real.
+    renderStrip(
+      { '/a': agent('alpha', { runtime: 'opencode', model: 'haiku', effort: 'high' }) },
+      {
+        capabilities: {
+          capabilities: {
+            'claude-code': { type: 'claude-code' },
+            opencode: {
+              type: 'opencode',
+              settings: { configSection: 'opencode', supportsEffort: false, sections: [] },
+            },
+          },
+          defaultRuntime: 'claude-code',
+        } as unknown as typeof CAPABILITIES,
+        models: [{ value: 'opus', displayName: 'Opus', description: '', supportsEffort: true }],
+      }
+    );
     const row = await screen.findByTestId('execution-exception-broken');
     const reason = row.querySelector('[title]');
     expect(reason).not.toBeNull();
     // The full sentence, not the clipped render — both breakages, both intact.
     expect(reason).toHaveAttribute(
       'title',
-      expect.stringContaining('OpenCode is not connected on this machine.')
+      expect.stringContaining('OpenCode no longer offers haiku.')
     );
     expect(reason?.getAttribute('title')).toContain('so this one does nothing.');
     // Clamped to two lines rather than one, so the pair fits without a tooltip

@@ -8306,6 +8306,43 @@
                             ],
                             "description": "Structured permission-mode capability. `supported: false, values: []` means no picker is shown."
                           },
+                          "settings": {
+                            "type": "object",
+                            "properties": {
+                              "configSection": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "description": "Key of this runtime’s section under `runtimes.*` in user config (`claudeCode`, `codex`, `opencode`). `null` when the runtime has no config section, in which case it never appears in `executionDefaults.perRuntime`."
+                              },
+                              "supportsEffort": {
+                                "type": "boolean",
+                                "description": "Whether this runtime takes a reasoning-effort setting at all. Per-model support is a separate, catalog-level fact on `ModelOption.supportsEffort`."
+                              },
+                              "sections": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind"
+                                  ]
+                                },
+                                "description": "Ordered bespoke settings sections the runtime declares, by renderer kind (`claude-accounts`, `opencode-power-source`). Unknown kinds render nothing."
+                              }
+                            },
+                            "required": [
+                              "configSection",
+                              "supportsEffort",
+                              "sections"
+                            ],
+                            "description": "Static settings declaration: which config section holds this runtime’s defaults, whether it takes effort, and which bespoke sections its settings card renders."
+                          },
                           "features": {
                             "type": "object",
                             "additionalProperties": {},
@@ -8321,6 +8358,7 @@
                           "supportsQuestionPrompt",
                           "supportsPlugins",
                           "permissionModes",
+                          "settings",
                           "features"
                         ]
                       }

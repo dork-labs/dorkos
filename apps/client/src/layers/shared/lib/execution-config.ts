@@ -12,8 +12,9 @@
  *
  * **Evidence it does not have is never evidence against.** A model catalog is
  * remote and a runtime can be disconnected while somebody edits, so `undefined`
- * for the known-runtimes or known-models input means "not asked", and no breakage
- * is reported from it. That is the same accepted-at-write rule the server applies
+ * for the known-runtimes, known-models or runtime-supports-effort input means
+ * "not asked", and no breakage is reported from it. That is the same
+ * accepted-at-write rule the server applies
  * (`resolve-session-defaults.ts`): a value nobody can currently verify is
  * reported when it is known to be wrong, never guessed at.
  *
@@ -31,7 +32,6 @@
  *
  * @module shared/lib/execution-config
  */
-import { runtimeSupportsEffort } from '@dorkos/shared/constants';
 import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import type { EffortLevel } from '@dorkos/shared/types';
 
@@ -151,6 +151,13 @@ export interface DescribeAgentExecutionInput {
    */
   modelSupportsEffort?: boolean;
   /**
+   * Whether the runtime this agent runs on takes an effort setting at all,
+   * from that runtime's declared `settings.supportsEffort`. `undefined` means
+   * the capability map has not answered yet, and the permissive reading is the
+   * right one: an unanswered runtime is never called broken on a guess.
+   */
+  runtimeSupportsEffort?: boolean;
+  /**
    * How to name a runtime in a sentence a person reads.
    *
    * Passed in rather than resolved here so the wording matches whatever screen
@@ -208,6 +215,7 @@ export function describeAgentExecution(input: DescribeAgentExecutionInput): Agen
     knownRuntimes,
     knownModels,
     modelSupportsEffort,
+    runtimeSupportsEffort,
     runtimeLabel = runtimeDisplayName,
   } = input;
   const breakages: ExecutionBreakage[] = [];
@@ -242,7 +250,7 @@ export function describeAgentExecution(input: DescribeAgentExecutionInput): Agen
   }
 
   if (agent.effort != null) {
-    if (!runtimeSupportsEffort(runtime)) {
+    if (runtimeSupportsEffort === false) {
       breakages.push({
         kind: 'effort-unsupported-runtime',
         message: `${runtimeLabel(runtime)} has no effort setting, so this one does nothing.`,

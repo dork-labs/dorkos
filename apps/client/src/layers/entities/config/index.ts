@@ -8,7 +8,6 @@
  */
 
 export { configKeys } from './api/query-keys';
-export { configSectionForRuntime } from './lib/runtime-config-section';
 export { useConfig } from './model/use-config';
 export { useEngagedWindow } from './model/use-engaged-window';
 export { useDefaultAgentSession, resolveDefaultAgentDir } from './model/use-default-agent-session';

@@ -49,7 +49,11 @@ import {
 import { useTransport } from '@/layers/shared/model';
 import { useConfig } from '@/layers/entities/config';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
-import { getRuntimeDescriptor, useRuntimeCapabilities } from '@/layers/entities/runtime';
+import {
+  getRuntimeDescriptor,
+  settingsForRuntime,
+  useRuntimeCapabilities,
+} from '@/layers/entities/runtime';
 import { modelsQueryOptions } from '@/layers/entities/session';
 import { useResolvedAgents } from './use-resolved-agents';
 
@@ -191,6 +195,9 @@ export function useExecutionExceptions(opts?: { checkModels?: boolean }): Execut
       // effort. A model that is missing is already reported as missing, and
       // guessing at its capabilities would say the same thing twice.
       modelSupportsEffort: effective ? (effective.supportsEffort ?? false) : undefined,
+      // The runtime's own declaration, not a list kept here. A runtime the map
+      // has not answered for reports `undefined`, which is read as "not asked".
+      runtimeSupportsEffort: settingsForRuntime(capabilityMap, runtime)?.supportsEffort,
       // Named the way the Settings cards above the strip name them.
       runtimeLabel: (type) => getRuntimeDescriptor(type).label,
     });
