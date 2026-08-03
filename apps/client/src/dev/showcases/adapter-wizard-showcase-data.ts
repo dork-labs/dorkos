@@ -271,6 +271,6 @@ export const ERROR_FIELDS: ConfigField[] = [
 export const ERROR_MAP: Record<string, string> = {
   'api-key': 'API Key is required.',
   secret: 'Must start with xoxb-',
-  'auto-reconnect': 'Auto reconnect requires a valid connection.',
+  'auto-reconnect': 'Auto reconnect requires the adapter to be reachable.',
   region: 'Region is required.',
 };

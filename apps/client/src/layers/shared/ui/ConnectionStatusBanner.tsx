@@ -38,7 +38,7 @@ export function ConnectionStatusBanner({
         <Wifi className="animate-tasks size-3.5" />
       )}
       <span>
-        {isDisconnected ? 'Connection lost. Check your network.' : `Reconnecting...${attemptText}`}
+        {isDisconnected ? 'Server link lost. Check your network.' : `Reconnecting...${attemptText}`}
       </span>
     </div>
   );

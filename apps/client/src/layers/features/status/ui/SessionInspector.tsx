@@ -115,7 +115,7 @@ function LiveGroup({ diagnostics: d, live }: { diagnostics: SessionDiagnostics; 
 
   return (
     <Group label="Live">
-      <Row label="Connection">
+      <Row label="Live stream">
         <span className="inline-flex items-center gap-1.5">
           <span
             aria-hidden

@@ -128,7 +128,7 @@ export function useTunnelMachine({ open }: { open: boolean }): TunnelMachine {
     const timer = setTimeout(() => {
       if (state === 'starting') {
         setState('error');
-        setError('Connection timed out. Please try again.');
+        setError('Tunnel timed out. Please try again.');
       } else if (state === 'stopping') {
         setState('off');
         setUrl(null);

@@ -40,7 +40,7 @@ async function request(
     });
   } catch (err) {
     if (err instanceof DOMException && err.name === 'TimeoutError') {
-      throw new Error(`Request timed out after ${timeout / 1000}s — check your network connection`);
+      throw new Error(`Request timed out after ${timeout / 1000}s — check your network`);
     }
     throw err;
   }

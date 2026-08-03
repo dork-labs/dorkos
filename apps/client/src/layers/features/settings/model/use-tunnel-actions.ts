@@ -55,7 +55,7 @@ export function useTunnelActions({
     machine.setError(null);
     const timeout = setTimeout(() => {
       machine.setState('error');
-      machine.setError('Connection timed out after 15 seconds');
+      machine.setError('Tunnel timed out after 15 seconds');
     }, START_TIMEOUT_MS);
     try {
       const result = await transport.startTunnel();

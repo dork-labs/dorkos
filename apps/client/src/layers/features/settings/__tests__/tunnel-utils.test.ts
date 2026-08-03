@@ -13,11 +13,9 @@ describe('friendlyErrorMessage', () => {
 
   it('maps timeout errors', () => {
     expect(friendlyErrorMessage('connection ETIMEDOUT')).toBe(
-      'Connection timed out. Check your network.'
+      'Tunnel timed out. Check your network.'
     );
-    expect(friendlyErrorMessage('timeout after 30s')).toBe(
-      'Connection timed out. Check your network.'
-    );
+    expect(friendlyErrorMessage('timeout after 30s')).toBe('Tunnel timed out. Check your network.');
   });
 
   it('maps tunnel limit errors', () => {
@@ -56,7 +54,7 @@ describe('friendlyErrorMessage', () => {
 
   it('maps ECONNREFUSED errors', () => {
     expect(friendlyErrorMessage('ECONNREFUSED 127.0.0.1:4242')).toBe(
-      'Connection refused. Ensure the server is running.'
+      'Tunnel refused. Ensure the server is running.'
     );
   });
 

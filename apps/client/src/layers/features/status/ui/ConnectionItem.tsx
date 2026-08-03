@@ -51,7 +51,7 @@ export const CONNECTION_STATE_CONFIG: Record<ConnectionState, ConnectionStateCon
   // shorter true sentence, never a truncated one.
   disconnected: {
     color: 'bg-red-500',
-    label: 'Connection lost',
+    label: 'Live stream lost',
     shortLabel: 'Offline',
     icon: WifiOff,
     tasks: false,
@@ -129,7 +129,7 @@ function HoverDescription({ connectionState }: { connectionState: ConnectionStat
   if (connectionState === 'connecting') {
     return (
       <p className={base}>
-        Opening the live connection to this session. New messages and updates appear once it&apos;s
+        Opening the live stream for this session. New messages and updates appear once it&apos;s
         open.
       </p>
     );
@@ -139,8 +139,8 @@ function HoverDescription({ connectionState }: { connectionState: ConnectionStat
     return (
       <div className="space-y-1.5">
         <p className={base}>
-          The live connection dropped and is reconnecting automatically. Incoming messages and
-          updates are paused — nothing is lost; anything missed replays when it reconnects.
+          The live stream dropped and is reconnecting automatically. Incoming messages and updates
+          are paused — nothing is lost; anything missed replays when it reconnects.
         </p>
         <p className={cn(base, 'text-muted-foreground/70')}>No action needed.</p>
       </div>
@@ -151,8 +151,8 @@ function HoverDescription({ connectionState }: { connectionState: ConnectionStat
   return (
     <div className="space-y-1.5">
       <p className={base}>
-        Could not re-establish the live connection after several attempts. New messages and updates
-        will not appear until it&apos;s restored.
+        Could not re-establish the live stream after several attempts. New messages and updates will
+        not appear until it&apos;s restored.
       </p>
       <p className={cn(base, 'text-muted-foreground/70')}>
         Try refreshing the page. If the issue persists, check that the DorkOS server is running.

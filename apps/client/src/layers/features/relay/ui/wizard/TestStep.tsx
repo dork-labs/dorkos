@@ -10,7 +10,7 @@ interface TestStepProps {
   onRetry: () => void;
 }
 
-/** Connection test step showing pending/success/error state. */
+/** Reachability test step showing pending/success/error state. */
 export function TestStep({
   isPending,
   isSuccess,
@@ -24,13 +24,13 @@ export function TestStep({
       {isPending && (
         <>
           <Loader2 className="text-muted-foreground size-8 animate-spin" />
-          <p className="text-muted-foreground text-sm">Testing connection...</p>
+          <p className="text-muted-foreground text-sm">Checking reachability...</p>
         </>
       )}
       {isSuccess && (
         <div className="flex flex-col items-center gap-2">
           <CheckCircle2 className="size-8 text-green-500" />
-          <p className="text-sm text-green-700 dark:text-green-400">Connection successful</p>
+          <p className="text-sm text-green-700 dark:text-green-400">Reachable</p>
           {botUsername && (
             <div className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
               <span className="font-mono">@{botUsername}</span>
@@ -41,7 +41,7 @@ export function TestStep({
       {isError && (
         <>
           <XCircle className="size-8 text-red-500" />
-          <p className="text-sm text-red-700 dark:text-red-400">Connection failed</p>
+          <p className="text-sm text-red-700 dark:text-red-400">Not reachable</p>
           {errorMessage && (
             <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
               <AlertTriangle className="mt-0.5 size-3 shrink-0" />

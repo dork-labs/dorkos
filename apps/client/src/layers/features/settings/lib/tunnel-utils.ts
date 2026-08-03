@@ -4,7 +4,7 @@ export function friendlyErrorMessage(raw: string): string {
     return 'Check your auth token at dashboard.ngrok.com';
   }
   if (/timeout|ETIMEDOUT/i.test(raw)) {
-    return 'Connection timed out. Check your network.';
+    return 'Tunnel timed out. Check your network.';
   }
   if (/limit|ERR_NGROK_108/i.test(raw)) {
     return 'Tunnel limit reached. Free ngrok accounts allow one active tunnel.';
@@ -19,7 +19,7 @@ export function friendlyErrorMessage(raw: string): string {
     return 'Feature requires a paid ngrok plan.';
   }
   if (/ECONNREFUSED/i.test(raw)) {
-    return 'Connection refused. Ensure the server is running.';
+    return 'Tunnel refused. Ensure the server is running.';
   }
   return raw;
 }

@@ -14,27 +14,27 @@ describe('classifyTransportError', () => {
     expect(result.autoDismissMs).toBe(TIMING.SESSION_BUSY_CLEAR_MS);
   });
 
-  it('classifies TypeError as "Connection failed", retryable', () => {
+  it('classifies TypeError as "Server link failed", retryable', () => {
     const err = new TypeError('Failed to fetch');
     const result = classifyTransportError(err);
 
-    expect(result.heading).toBe('Connection failed');
+    expect(result.heading).toBe('Server link failed');
     expect(result.retryable).toBe(true);
   });
 
-  it('classifies error with "network" in message as "Connection failed", retryable', () => {
+  it('classifies error with "network" in message as "Server link failed", retryable', () => {
     const err = new Error('network error occurred');
     const result = classifyTransportError(err);
 
-    expect(result.heading).toBe('Connection failed');
+    expect(result.heading).toBe('Server link failed');
     expect(result.retryable).toBe(true);
   });
 
-  it('classifies error with "fetch" in message as "Connection failed", retryable', () => {
+  it('classifies error with "fetch" in message as "Server link failed", retryable', () => {
     const err = new Error('fetch failed');
     const result = classifyTransportError(err);
 
-    expect(result.heading).toBe('Connection failed');
+    expect(result.heading).toBe('Server link failed');
     expect(result.retryable).toBe(true);
   });
 

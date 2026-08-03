@@ -17,8 +17,8 @@ import { formatModelLabel } from '@/layers/entities/runtime';
 // DorkOS's own catalogs and runtime descriptors carry are held to it by test
 // (`Claude Code`, `GPT-5.3 Codex`), and that promise is only worth anything if the
 // server's own model catalogs can be held to the same number. Labels written
-// elsewhere are not all inside it — `Bypass permissions` (18) and `Connection lost`
-// (15) both ship — so pixels stay the browser's job: see
+// elsewhere are not all inside it — `Bypass permissions` (18) and `Live stream lost`
+// (17) both ship — so pixels stay the browser's job: see
 // `features/status/ui/StatusLine`, where a value that still does not fit truncates
 // with an ellipsis.
 

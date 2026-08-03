@@ -121,7 +121,7 @@ function shrinkFactorFor(item: PromotedStatusItem, urgencyOrder: readonly string
  * question; the other half is who actually does, and flexbox's default answer is
  * "everyone at once, in proportion to their width". That inverted the whole
  * design at the last step: measured at the 438px compact floor, `connection` —
- * `Connection lost`, the loudest signal the line has at severity 100 — was cut to
+ * `Live stream lost`, the loudest signal the line has at severity 100 — was cut to
  * 24px, a glyph and a sliver, while `subagents` at severity 35 kept every pixel
  * because it happened to be rigid. The budget picks by urgency and the layout
  * then took the pixels back from the most urgent thing on the row.

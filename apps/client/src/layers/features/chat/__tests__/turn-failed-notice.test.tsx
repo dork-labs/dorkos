@@ -48,7 +48,7 @@ const errorPart: MessagePart = {
 } as MessagePart;
 
 const transportError: TransportErrorInfo = {
-  heading: 'Connection failed',
+  heading: 'Server link failed',
   message: 'offline',
   retryable: true,
 };

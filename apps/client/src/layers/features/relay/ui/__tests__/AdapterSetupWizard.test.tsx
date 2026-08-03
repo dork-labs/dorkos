@@ -301,12 +301,12 @@ describe('AdapterSetupWizard', () => {
 
     // Should show test step
     await waitFor(() => {
-      expect(screen.getByText('Testing connection...')).toBeInTheDocument();
+      expect(screen.getByText('Checking reachability...')).toBeInTheDocument();
     });
 
     // After resolving, should show success
     await waitFor(() => {
-      expect(screen.getByText('Connection successful')).toBeInTheDocument();
+      expect(screen.getByText('Reachable')).toBeInTheDocument();
     });
   });
 
@@ -331,7 +331,7 @@ describe('AdapterSetupWizard', () => {
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
     await waitFor(() => {
-      expect(screen.getByText('Connection successful')).toBeInTheDocument();
+      expect(screen.getByText('Reachable')).toBeInTheDocument();
     });
     expect(screen.getByText('@mybot')).toBeInTheDocument();
   });
@@ -355,7 +355,7 @@ describe('AdapterSetupWizard', () => {
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
     await waitFor(() => {
-      expect(screen.getByText('Connection failed')).toBeInTheDocument();
+      expect(screen.getByText('Not reachable')).toBeInTheDocument();
     });
     expect(screen.getByText('Auth failed')).toBeInTheDocument();
   });
@@ -379,7 +379,7 @@ describe('AdapterSetupWizard', () => {
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
     await waitFor(() => {
-      expect(screen.getByText(/connection successful/i)).toBeInTheDocument();
+      expect(screen.getByText(/reachable/i)).toBeInTheDocument();
     });
     // On success the forward action collapses to a single "Continue" — no Skip.
     expect(screen.queryByRole('button', { name: /skip/i })).not.toBeInTheDocument();
@@ -442,7 +442,7 @@ describe('AdapterSetupWizard', () => {
 
     // Pass the test, then continue to confirm
     await waitFor(() => {
-      expect(screen.getByText(/connection successful/i)).toBeInTheDocument();
+      expect(screen.getByText(/reachable/i)).toBeInTheDocument();
     });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
@@ -470,7 +470,7 @@ describe('AdapterSetupWizard', () => {
 
     // Pass the test, then continue to confirm
     await waitFor(() => {
-      expect(screen.getByText(/connection successful/i)).toBeInTheDocument();
+      expect(screen.getByText(/reachable/i)).toBeInTheDocument();
     });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
@@ -517,7 +517,7 @@ describe('AdapterSetupWizard', () => {
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
     await waitFor(() => {
-      expect(screen.getByText(/connection successful/i)).toBeInTheDocument();
+      expect(screen.getByText(/reachable/i)).toBeInTheDocument();
     });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
@@ -549,7 +549,7 @@ describe('AdapterSetupWizard', () => {
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
     await waitFor(() => {
-      expect(screen.getByText(/connection successful/i)).toBeInTheDocument();
+      expect(screen.getByText(/reachable/i)).toBeInTheDocument();
     });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
@@ -589,7 +589,7 @@ describe('AdapterSetupWizard', () => {
 
     // After test succeeds, label should be auto-populated
     await waitFor(() => {
-      expect(screen.getByText('Connection successful')).toBeInTheDocument();
+      expect(screen.getByText('Reachable')).toBeInTheDocument();
     });
 
     // Navigate back to configure to verify label was set
@@ -624,7 +624,7 @@ describe('AdapterSetupWizard', () => {
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
     await waitFor(() => {
-      expect(screen.getByText('Connection successful')).toBeInTheDocument();
+      expect(screen.getByText('Reachable')).toBeInTheDocument();
     });
 
     // Navigate back to confirm label wasn't overwritten
@@ -656,7 +656,7 @@ describe('AdapterSetupWizard', () => {
 
     // Pass the test, then continue to confirm
     await waitFor(() => {
-      expect(screen.getByText(/connection successful/i)).toBeInTheDocument();
+      expect(screen.getByText(/reachable/i)).toBeInTheDocument();
     });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
@@ -687,7 +687,7 @@ describe('AdapterSetupWizard', () => {
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
     await waitFor(() => {
-      expect(screen.getByText(/connection successful/i)).toBeInTheDocument();
+      expect(screen.getByText(/reachable/i)).toBeInTheDocument();
     });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
@@ -716,7 +716,7 @@ describe('AdapterSetupWizard', () => {
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
     await waitFor(() => {
-      expect(screen.getByText(/connection successful/i)).toBeInTheDocument();
+      expect(screen.getByText(/reachable/i)).toBeInTheDocument();
     });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
@@ -746,7 +746,7 @@ describe('AdapterSetupWizard', () => {
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
     await waitFor(() => {
-      expect(screen.getByText(/connection successful/i)).toBeInTheDocument();
+      expect(screen.getByText(/reachable/i)).toBeInTheDocument();
     });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
