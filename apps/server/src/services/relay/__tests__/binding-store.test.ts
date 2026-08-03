@@ -664,7 +664,37 @@ describe('BindingStore', () => {
       };
       expect(sidecarBody.bindings.map((b) => b.id)).toEqual([NEWER_ID]);
 
+      // The bindings.json write from THIS load (not the sidecar) — what a
+      // real restart would read back next time.
+      const reconciledWrite = vi
+        .mocked(writeFile)
+        .mock.calls.find(
+          ([path]) => typeof path === 'string' && !path.includes('bindings.discarded-')
+        );
+      expect(reconciledWrite).toBeDefined();
+      const reconciledBody = reconciledWrite![1] as string;
+
       await freshStore.shutdown();
+
+      // Verification-round fix: a SECOND load of the already-reconciled file
+      // must be a no-op — `losers` recomputes on every load (the same
+      // already-disabled row still collides on chatId), so without filtering
+      // out rows that are ALREADY disabled, every server restart would
+      // re-write a fresh sidecar, re-save bindings.json, and re-log
+      // "auto-disabled" forever. Pin: no new sidecar, no re-save, same two
+      // rows in the same state.
+      vi.mocked(readFile).mockResolvedValue(reconciledBody);
+      vi.mocked(writeFile).mockClear();
+
+      const secondLoadStore = new BindingStore('/tmp/relay');
+      await secondLoadStore.init();
+
+      expect(writeFile).not.toHaveBeenCalled();
+      expect(secondLoadStore.getAll()).toHaveLength(2);
+      expect(secondLoadStore.getById(OLDER_ID)?.enabled).not.toBe(false);
+      expect(secondLoadStore.getById(NEWER_ID)?.enabled).toBe(false);
+
+      await secondLoadStore.shutdown();
     });
   });
 

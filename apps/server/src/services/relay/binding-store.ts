@@ -411,13 +411,23 @@ export class BindingStore {
       byChat.set(binding.chatId, older);
       losers.push(newer);
     }
-    if (losers.length === 0) return 0;
 
-    await this.writeDiscardedSidecar(losers);
+    // `losers` above is computed from `getAll()`, which does not care whether
+    // a colliding row is already disabled — so on every load AFTER the first
+    // reconciliation, the SAME already-disabled loser reappears in `losers`
+    // again (it still collides on chatId; it just no longer routes). Without
+    // this filter, every server start would re-write a fresh
+    // `bindings.discarded-<timestamp>.json`, re-run `save()`, and re-log
+    // "auto-disabled" for a collision that was already handled — forever.
+    // Only a row that is NOT YET disabled is newly-actionable this load.
+    const newlyDisabled = losers.filter((l) => this.bindings.get(l.id)?.enabled !== false);
+    if (newlyDisabled.length === 0) return 0;
 
-    for (const loser of losers) {
+    await this.writeDiscardedSidecar(newlyDisabled);
+
+    for (const loser of newlyDisabled) {
       const current = this.bindings.get(loser.id);
-      if (!current || current.enabled === false) continue; // already disabled/gone — nothing to do
+      if (!current) continue; // defensive — every loser id came from this.bindings itself
       this.bindings.set(loser.id, { ...current, enabled: false });
       logger.warn(
         'Auto-disabled a colliding binding for an already-bound chat during load (backed up, not deleted)',
@@ -431,7 +441,7 @@ export class BindingStore {
         }
       );
     }
-    return losers.length;
+    return newlyDisabled.length;
   }
 
   /**
