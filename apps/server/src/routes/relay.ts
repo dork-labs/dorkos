@@ -24,7 +24,7 @@ import type { AdapterManager } from '../services/relay/adapter-manager.js';
 import type { TraceStore } from '../services/relay/trace-store.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { resolveSubjectLabels, type SubjectLabel } from '../services/relay/subject-resolver.js';
-import { isConsentExemptPrincipal } from '../services/relay/initiate-consent.js';
+import { isServerOnlyPrincipal } from '../services/relay/initiate-consent.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { readManifest } from '@dorkos/shared/manifest';
 import { createAdapterRouter } from './relay-adapters.js';
@@ -199,7 +199,11 @@ export function createRelayRouter(
     // bypassing DOR-277. Server-injected principals never travel this route, so
     // rejecting them here is safe. Ordinary principals (`relay.human.console`,
     // `relay.agent.*`, …) still flow and remain subject to the gate.
-    if (isConsentExemptPrincipal(result.data.from)) {
+    //
+    // DOR-871: also rejects `relay.bridge.*`, which the gate evaluates
+    // (non-exempt) rather than skips — see `isServerOnlyPrincipal`'s doc for
+    // why that principal must still be unassertable here.
+    if (isServerOnlyPrincipal(result.data.from)) {
       return res.status(403).json({
         error:
           `Sender "${result.data.from}" is a reserved server principal and cannot be ` +

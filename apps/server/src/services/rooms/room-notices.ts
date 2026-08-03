@@ -298,7 +298,7 @@ export function buildAgentGoneNotice(agentName: string, subjectAuthorId: string)
  */
 export function buildBridgeSecondAgentRefusedNotice(agentName: string): RoomEntryBody {
   return {
-    text: `${agentName} was not added — a bridged room can hold only one agent. The platform connection's permission to reply is set for one agent at a time, so a second agent here would have no way to answer the chat safely.`,
+    text: `${agentName} was not added — a bridged room can hold only one agent. The platform binding's permission to reply is set for one agent at a time, so a second agent here would have no way to answer the chat safely.`,
     notice: 'bridge_second_agent_refused',
   };
 }

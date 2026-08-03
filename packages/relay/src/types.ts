@@ -141,8 +141,18 @@ export interface AccessResult {
  */
 export interface InitiateConsentDecision {
   allowed: boolean;
-  /** Stable code for the denial (used as the publish rejection reason). */
-  code?: 'INITIATE_NOT_ALLOWED' | 'NO_BINDING';
+  /**
+   * Stable code for the denial (used as the publish rejection reason).
+   *
+   * `MALFORMED_BRIDGE_PRINCIPAL` is distinct from `INITIATE_NOT_ALLOWED` on
+   * purpose (DOR-871): it means the `relay.bridge.*` principal itself could
+   * not be parsed — an unrecognized or missing classification segment — which
+   * is a different failure from a resolved binding refusing consent. A caller
+   * building user-facing copy from this code (e.g. the chat-bridge
+   * `bridge_blocked` notice) must not describe a parse failure as "this
+   * chat's consent settings say no."
+   */
+  code?: 'INITIATE_NOT_ALLOWED' | 'NO_BINDING' | 'MALFORMED_BRIDGE_PRINCIPAL';
   /** Human-readable reason recorded on the dead letter. */
   reason?: string;
 }
