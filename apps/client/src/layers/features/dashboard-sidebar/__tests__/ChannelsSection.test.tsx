@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import type { ReactNode } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, within, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
@@ -84,24 +84,28 @@ function channel(overrides: Partial<RoomSummary> = {}): RoomSummary {
  * port, and their tooltips need a provider. Every read on the mock answers
  * empty, so nothing here reaches a network.
  */
-function roomsWrapper() {
+function roomsWrapper(transport: ReturnType<typeof createMockTransport> = createMockTransport()) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
   });
   return ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>
-      <TransportProvider transport={createMockTransport()}>
+      <TransportProvider transport={transport}>
         <TooltipProvider>{children}</TooltipProvider>
       </TransportProvider>
     </QueryClientProvider>
   );
 }
 
-function renderSection(overrides: Partial<Parameters<typeof ChannelsSection>[0]> = {}) {
+function renderSection(
+  overrides: Partial<Parameters<typeof ChannelsSection>[0]> = {},
+  transport?: ReturnType<typeof createMockTransport>
+) {
   return render(
     <ChannelsSection
       channels={[]}
       hasGroupedChannels={false}
+      unreadChannelIds={[]}
       visualOf={() => ({ kind: 'sigil' })}
       isLoading={false}
       error={null}
@@ -110,8 +114,14 @@ function renderSection(overrides: Partial<Parameters<typeof ChannelsSection>[0]>
       onOpenAgentProfile={vi.fn()}
       {...overrides}
     />,
-    { wrapper: roomsWrapper() }
+    { wrapper: roomsWrapper(transport) }
   );
+}
+
+/** Open the header's "…" menu — Radix opens on pointerdown, not on click. */
+function openHeaderMenu(): HTMLElement {
+  fireEvent.pointerDown(screen.getByLabelText('Channels section actions'));
+  return screen.getByRole('menu');
 }
 
 beforeEach(() => {
@@ -202,7 +212,7 @@ describe('ChannelsSection', () => {
 
   it('persists the collapse toggle', () => {
     renderSection({ channels: [channel()] });
-    fireEvent.click(screen.getByRole('button', { name: /channels/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Channels' }));
     expect(mockUpdate).toHaveBeenCalledTimes(1);
     expect(mockUpdate.mock.calls[0]![0]({ channelsCollapsed: false })).toEqual({
       channelsCollapsed: true,
@@ -213,7 +223,7 @@ describe('ChannelsSection', () => {
     mockCollapsed = true;
     renderSection({ channels: [channel()] });
     expect(screen.queryByRole('button', { name: '#general' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /channels/i })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: 'Channels' })).toHaveAttribute(
       'aria-expanded',
       'false'
     );
@@ -250,5 +260,50 @@ describe('ChannelsSection', () => {
     renderSection();
     fireEvent.click(screen.getByRole('button', { name: 'New channel' }));
     expect(screen.getByText(/No channels yet/i)).toBeInTheDocument();
+  });
+
+  it('opens the same create dialog from the header menu as from the "+"', () => {
+    mockRosterRef.current = settled([{ agentPath: '/w/ana', displayName: 'Ana' }]);
+    renderSection();
+
+    fireEvent.click(within(openHeaderMenu()).getByText('New channel…'));
+
+    expect(within(screen.getByRole('dialog')).getByLabelText('Channel name')).toBeInTheDocument();
+  });
+
+  it('collapses the section from the header menu', () => {
+    renderSection({ channels: [channel()] });
+
+    fireEvent.click(within(openHeaderMenu()).getByText('Collapse'));
+
+    expect(mockUpdate.mock.calls[0]![0]({ channelsCollapsed: false })).toEqual({
+      channelsCollapsed: true,
+    });
+  });
+
+  it('marks every unread channel read, including the ones filed into groups', async () => {
+    // The list handed in is the whole kind, not this section's rows — "Mark all
+    // channels read" that quietly skipped grouped channels would leave badges
+    // behind on rooms the person just told it to clear.
+    const transport = createMockTransport({
+      listRoomEntries: vi
+        .fn()
+        .mockImplementation((roomId: string) => Promise.resolve([{ roomId, seq: 7 }])),
+    });
+    renderSection(
+      { channels: [channel({ unreadCount: 3 })], unreadChannelIds: ['room-1', 'room-9'] },
+      transport
+    );
+
+    fireEvent.click(within(openHeaderMenu()).getByText('Mark all channels read'));
+
+    await waitFor(() => expect(transport.setRoomReadCursor).toHaveBeenCalledWith('room-1', 7));
+    expect(transport.setRoomReadCursor).toHaveBeenCalledWith('room-9', 7);
+  });
+
+  it('withholds Mark all channels read when nothing is behind', () => {
+    renderSection({ channels: [channel()] });
+
+    expect(within(openHeaderMenu()).queryByText('Mark all channels read')).not.toBeInTheDocument();
   });
 });

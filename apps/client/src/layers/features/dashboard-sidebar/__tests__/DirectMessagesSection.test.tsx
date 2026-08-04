@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import type { ReactNode } from 'react';
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, within, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
@@ -146,13 +146,22 @@ function dm(overrides: Partial<RoomSummary> = {}): RoomSummary {
  * port, and their tooltips need a provider. Every read on the mock answers
  * empty, so nothing here reaches a network.
  */
+/** The read-cursor write "Mark all read" ends in, one room at a time. */
+const mockSetReadCursor = vi.fn().mockResolvedValue(undefined);
+
 function roomsWrapper() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
   });
+  const transport = createMockTransport({
+    listRoomEntries: vi
+      .fn()
+      .mockImplementation((roomId: string) => Promise.resolve([{ roomId, seq: 7 }])),
+    setRoomReadCursor: mockSetReadCursor,
+  });
   return ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>
-      <TransportProvider transport={createMockTransport()}>
+      <TransportProvider transport={transport}>
         <TooltipProvider>{children}</TooltipProvider>
       </TransportProvider>
     </QueryClientProvider>
@@ -161,7 +170,13 @@ function roomsWrapper() {
 
 /** Open the "+" picker beside the section heading. */
 function openPicker(): void {
-  fireEvent.click(screen.getByRole('button', { name: 'New direct message' }));
+  fireEvent.click(screen.getByRole('button', { name: 'New message' }));
+}
+
+/** Open the header's "…" menu — Radix opens on pointerdown, not on click. */
+function openHeaderMenu(): HTMLElement {
+  fireEvent.pointerDown(screen.getByLabelText('Direct messages section actions'));
+  return screen.getByRole('menu');
 }
 
 /**
@@ -190,6 +205,7 @@ function section({ __fleet, ...overrides }: SectionOverrides = {}) {
     <DirectMessagesSection
       dms={[]}
       hasGroupedDms={false}
+      unreadDmIds={[]}
       visualOf={() => ({ kind: 'sigil' })}
       isLoading={false}
       error={null}
@@ -211,6 +227,7 @@ beforeEach(() => {
   mockRosterRef.current = settled([]);
   mockUpdate.mockClear();
   mockStart.mockClear();
+  mockSetReadCursor.mockClear();
 });
 afterEach(cleanup);
 
@@ -257,7 +274,7 @@ describe('DirectMessagesSection', () => {
 
   it('persists the collapse toggle', () => {
     renderSection({ dms: [dm()] });
-    fireEvent.click(screen.getByRole('button', { name: /direct messages/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Direct messages' }));
     expect(mockUpdate.mock.calls[0]![0]({ dmsCollapsed: false })).toEqual({ dmsCollapsed: true });
   });
 
@@ -584,5 +601,27 @@ describe('DirectMessagesSection on a phone', () => {
 
     expect(mockStart).not.toHaveBeenCalled();
     expect(screen.getByRole('combobox')).toHaveValue('Kia');
+  });
+  it('opens the same picker from the header menu as from the "+"', () => {
+    renderSection({ __fleet: settledFleet({ '/repo/ana': 'Ana' }) });
+
+    fireEvent.click(within(openHeaderMenu()).getByText('New message…'));
+
+    expect(screen.getByRole('option', { name: 'Ana' })).toBeInTheDocument();
+  });
+
+  it('marks every unread conversation read, including the ones filed into groups', async () => {
+    renderSection({ dms: [dm({ unreadCount: 2 })], unreadDmIds: ['dm-1', 'dm-9'] });
+
+    fireEvent.click(within(openHeaderMenu()).getByText('Mark all read'));
+
+    await waitFor(() => expect(mockSetReadCursor).toHaveBeenCalledWith('dm-1', 7));
+    expect(mockSetReadCursor).toHaveBeenCalledWith('dm-9', 7);
+  });
+
+  it('withholds Mark all read when nothing is behind', () => {
+    renderSection({ dms: [dm()] });
+
+    expect(within(openHeaderMenu()).queryByText('Mark all read')).not.toBeInTheDocument();
   });
 });

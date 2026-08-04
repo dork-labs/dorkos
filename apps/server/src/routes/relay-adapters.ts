@@ -24,6 +24,7 @@ import {
 import { AdapterError, type AdapterManager } from '../services/relay/adapter-manager.js';
 import { broadcastBindingsChanged } from '../services/relay/relay-sse-events.js';
 import { BindingConflictError, type BindingUpdate } from '../services/relay/binding-store.js';
+import { RoomError } from '../services/rooms/room-errors.js';
 import type { TraceStore } from '../services/relay/trace-store.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 
@@ -52,6 +53,57 @@ function resolveAdapterName(adapterManager: AdapterManager, adapterId: string): 
   const info = adapterManager.getAdapter(adapterId);
   return info?.config.label || info?.config.id || adapterId;
 }
+
+/**
+ * The reason a non-DM binding cannot be bridged from the detail sheet yet.
+ * User-facing (writing-for-humans): says what works and what does not.
+ */
+const BRIDGE_NON_DM_REASON =
+  'Right now you can bridge a one-to-one chat into a channel. A group or broadcast ' +
+  "chat can't be bridged from here yet: on Telegram a broadcast channel looks exactly " +
+  'like a group once it reaches us, so we cannot yet tell them apart to keep a broadcast out.';
+
+/**
+ * The platform chat type a bridge needs from a stored binding, or a refusal when
+ * the binding cannot be **proven** to be a two-way conversation.
+ *
+ * The "Bridge to a channel" action fires against a stored binding with no live
+ * message in hand. A live message carries the raw platform type on
+ * `platformData.chatType`, but that is deliberately **not persisted**: the
+ * unclaimed-chat store and trace store both fold it into the subject-level
+ * `channelType` (dm/group), and `isGroupChat` folds a Telegram broadcast
+ * (`chat.type === 'channel'`) into `channelType: 'group'`
+ * (`packages/relay/src/adapters/telegram/inbound.ts:355`). So a stored **group**
+ * binding is byte-identical to a stored **broadcast** binding, and neither the
+ * binding nor anything it derives from records which it is.
+ *
+ * A broadcast is not a conversation and must not be bridged (spec §3.3, A3.7).
+ * The only stored binding we can prove is not a broadcast is a **DM** — a private
+ * chat cannot be a broadcast. So from this entry point a DM bridges as `private`
+ * and everything else is refused, rather than fabricating a `group` type that
+ * would sail a broadcast straight past `createBridgedRoom`'s refusal. Enabling
+ * group bridging here waits on persisting the raw platform chat type through
+ * binding creation (DOR-907).
+ *
+ * @param channelType - The stored binding's subject-level channel type.
+ * @returns The `private` chat type for a DM, or a `refusal` reason otherwise.
+ */
+function bridgeChatTypeForBinding(
+  channelType: string | null | undefined
+): { chatType: 'private' } | { refusal: string } {
+  if (channelType == null || channelType === 'dm') return { chatType: 'private' };
+  return { refusal: BRIDGE_NON_DM_REASON };
+}
+
+/** Map a {@link RoomError} raised while bridging to its HTTP status. */
+const BRIDGE_ROOM_ERROR_STATUS: Record<string, number> = {
+  BROADCAST_NOT_BRIDGEABLE: 400,
+  UNKNOWN_CHAT_TYPE: 400,
+  OPERATOR_ONLY: 403,
+  SLUG_TAKEN: 409,
+  ROOM_NOT_FOUND: 404,
+  ROOM_ARCHIVED: 409,
+};
 
 /**
  * Create a sub-router containing all adapter management endpoints.
@@ -402,6 +454,21 @@ export function createAdapterRouter(
       }
     }
 
+    // Flipping `bridge` is not a plain field write: turning it on mints the
+    // channel, adopts any live session, and only then sets `bridge`/`roomId`;
+    // turning it off archives the room first (spec §3.1–§3.5). That coordination
+    // is `BridgeLifecycle`'s, and this route is its first caller (DOR-878). A
+    // bare `bindingStore.update({ bridge: 'room' })` would flip a flag over no
+    // room — the exact "flag over a half-built room" §3.2 forbids — so a bridge
+    // TRANSITION is routed through the lifecycle here, and `bridge`/`roomId` are
+    // never written to the store directly from a client PATCH.
+    const lifecycle = adapterManager.getBridgeLifecycle?.();
+    const wantBridge = result.data.bridge;
+    const bridgingOn =
+      !!lifecycle && !!existing && wantBridge === 'room' && existing.bridge !== 'room';
+    const bridgingOff =
+      !!lifecycle && !!existing && wantBridge === 'off' && existing.bridge === 'room';
+
     // Convert null to undefined for clearing optional fields; absent fields
     // are dropped so they don't clobber existing values in the store's spread.
     // `roomId` is exempt: it is nullable, not optional, and `null` is its
@@ -413,30 +480,98 @@ export function createAdapterRouter(
         updates[key] = key === 'roomId' ? value : value === null ? undefined : value;
       }
     }
+    // The lifecycle owns `bridge`/`roomId` on a transition, so never let them
+    // also ride the direct-write path — that would double-write, or (with no
+    // transition) let a client set `roomId` by hand.
+    if (bridgingOn || bridgingOff) {
+      delete updates.bridge;
+      delete updates.roomId;
+    }
 
-    let updated;
-    try {
-      updated = await bindingStore.update(req.params.id, updates as BindingUpdate);
-    } catch (err) {
-      // "One chat, one agent": changing `chatId` onto a value another binding
-      // already owns is the same 409 the create path gives (see above).
-      if (err instanceof BindingConflictError) {
-        return res.status(409).json({
-          error: err.message,
-          code: 'CHAT_ALREADY_BOUND',
-          conflict: {
-            bindingId: err.conflict.id,
-            agentId: err.conflict.agentId,
-            label: err.conflict.label,
-          },
+    let updated: Awaited<ReturnType<typeof bindingStore.update>>;
+
+    if (bridgingOn && existing && lifecycle) {
+      // A bridged binding must carry a `chatId` — the merged-state check above
+      // already refused a wildcard, so this is present. The platform title is
+      // reconstructed from the binding (no inbound message is in hand); the
+      // room half sanitizes it (spec §9.2).
+      const chatId = existing.chatId;
+      if (!chatId) {
+        return res.status(400).json({
+          error: 'Validation failed',
+          details: { message: BRIDGE_REQUIRES_CHAT_ID_MESSAGE },
         });
       }
-      // The store re-validates the MERGED result independently of the
-      // pre-check above (any in-process caller can reach `update`, not just
-      // this route) — so a drift between the two checks lands here rather
-      // than as an unhandled 500.
-      const message = err instanceof Error ? err.message : 'Update failed';
-      return res.status(400).json({ error: 'Validation failed', details: { message } });
+      // Refuse anything we cannot prove is a two-way chat: a stored group binding
+      // is indistinguishable from a folded Telegram broadcast, and a broadcast
+      // must not be bridged (spec §3.3, A3.7). Only a DM is provably safe. This
+      // runs BEFORE the lifecycle, so a refused binding is left untouched.
+      const typed = bridgeChatTypeForBinding(existing.channelType);
+      if ('refusal' in typed) {
+        return res.status(400).json({ error: typed.refusal, code: 'BRIDGE_NOT_A_DM' });
+      }
+      const agentPath = adapterManager.getMeshCore()?.getProjectPath(existing.agentId);
+      if (!agentPath) {
+        return res.status(400).json({
+          error: `Agent '${existing.agentId}' not found in mesh registry`,
+        });
+      }
+      try {
+        await lifecycle.bridge({
+          adapterId: existing.adapterId,
+          chatId,
+          bindingId: existing.id,
+          agentId: existing.agentId,
+          // A DM: `private` chat type, and no subject-level channel type (§3.3).
+          chatType: typed.chatType,
+          channelType: null,
+          title: existing.label || chatId,
+          agentPath,
+        });
+      } catch (err) {
+        if (err instanceof RoomError) {
+          const status = BRIDGE_ROOM_ERROR_STATUS[err.code] ?? 500;
+          return res.status(status).json({ error: err.message, code: err.code });
+        }
+        const message = err instanceof Error ? err.message : 'Bridge failed';
+        return res.status(500).json({ error: message });
+      }
+      // The lifecycle already flipped `bridge`/`roomId`; apply any other fields
+      // the same PATCH carried on top, then read back the fully-updated row.
+      if (Object.keys(updates).length > 0) {
+        await bindingStore.update(existing.id, updates as BindingUpdate);
+      }
+      updated = bindingStore.getById(existing.id);
+    } else if (bridgingOff && existing && lifecycle) {
+      await lifecycle.unbridge(existing.id);
+      if (Object.keys(updates).length > 0) {
+        await bindingStore.update(existing.id, updates as BindingUpdate);
+      }
+      updated = bindingStore.getById(existing.id);
+    } else {
+      try {
+        updated = await bindingStore.update(req.params.id, updates as BindingUpdate);
+      } catch (err) {
+        // "One chat, one agent": changing `chatId` onto a value another binding
+        // already owns is the same 409 the create path gives (see above).
+        if (err instanceof BindingConflictError) {
+          return res.status(409).json({
+            error: err.message,
+            code: 'CHAT_ALREADY_BOUND',
+            conflict: {
+              bindingId: err.conflict.id,
+              agentId: err.conflict.agentId,
+              label: err.conflict.label,
+            },
+          });
+        }
+        // The store re-validates the MERGED result independently of the
+        // pre-check above (any in-process caller can reach `update`, not just
+        // this route) — so a drift between the two checks lands here rather
+        // than as an unhandled 500.
+        const message = err instanceof Error ? err.message : 'Update failed';
+        return res.status(400).json({ error: 'Validation failed', details: { message } });
+      }
     }
     if (!updated) {
       return res.status(404).json({ error: 'Binding not found' });

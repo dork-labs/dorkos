@@ -145,6 +145,25 @@ export const FEATURES_SECTIONS: PlaygroundSection[] = [
   },
   // AgentSidebarShowcases
   {
+    id: 'sidebarsectionheader',
+    title: 'SidebarSectionHeader',
+    page: 'features',
+    category: 'Agent',
+    keywords: [
+      'sidebar',
+      'section',
+      'header',
+      'menu',
+      'context menu',
+      'right-click',
+      'collapse',
+      'sort',
+      'show',
+      'channels',
+      'agents',
+    ],
+  },
+  {
     id: 'groupcreateinput',
     title: 'GroupCreateInput',
     page: 'features',

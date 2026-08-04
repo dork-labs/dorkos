@@ -2,6 +2,8 @@ import { useState, useRef, useEffect, type KeyboardEvent, type ReactNode } from 
 import {
   ChevronDown,
   ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
   MoreHorizontal,
   Pencil,
   ArrowUpDown,
@@ -59,17 +61,11 @@ import {
   convertSmartGroupToManual,
 } from '@/layers/entities/config';
 import { useMenuCloseFocusGuard } from '../model/use-menu-close-focus-guard';
+import { SECTION_SORT_OPTIONS, SORT_MENU_LABEL } from '../model/sort-sidebar-items';
 import { renderDisplayFilterSubmenu } from './DisplayFilterMenu';
 
 /** Maximum group-name length (matches `SidebarGroupSchema.name`). */
 const MAX_NAME = 40;
-
-/** Selectable per-group sort modes, in menu order. */
-const SORT_OPTIONS: { value: SidebarGroup['sortMode']; label: string }[] = [
-  { value: 'manual', label: 'Manual' },
-  { value: 'recent', label: 'Recent activity' },
-  { value: 'name', label: 'Name' },
-];
 
 /** Slot primitives so the "…" dropdown and right-click menu render one item list. */
 interface GroupMenuSlots {
@@ -212,7 +208,9 @@ export function GroupHeader({
   const isSmart = group.kind === 'smart';
   // Smart groups reject 'manual' sort at the schema level — derived
   // membership has no hand-orderable sequence, so the option never appears.
-  const sortOptions = isSmart ? SORT_OPTIONS.filter((o) => o.value !== 'manual') : SORT_OPTIONS;
+  const sortOptions = isSmart
+    ? SECTION_SORT_OPTIONS.filter((o) => o.value !== 'manual')
+    : SECTION_SORT_OPTIONS;
 
   const setSort = (mode: string) =>
     update((prev) => setGroupSortMode(prev, group.id, mode as SidebarGroup['sortMode']));
@@ -253,11 +251,22 @@ export function GroupHeader({
           <Pencil className="mr-2 size-4" />
           Rename…
         </Item>
+        {/* The same verb every other section header carries, in the same slot:
+            a group is a section, and collapsing one is the same act (spec
+            `rooms` §14.1). Named for what choosing it will do. */}
+        <Item onClick={toggleCollapse}>
+          {group.collapsed ? (
+            <ChevronsUpDown className="mr-2 size-4" />
+          ) : (
+            <ChevronsDownUp className="mr-2 size-4" />
+          )}
+          {group.collapsed ? 'Expand' : 'Collapse'}
+        </Item>
         {renderDisplayFilterSubmenu(slots, group.displayFilter, setFilter)}
         <Sub>
           <SubTrigger>
             <ArrowUpDown className="mr-2 size-4" />
-            Sort by
+            {SORT_MENU_LABEL}
           </SubTrigger>
           <SubContent className="w-44">
             <RadioGroup value={group.sortMode} onValueChange={setSort}>

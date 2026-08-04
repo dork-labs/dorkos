@@ -22,8 +22,8 @@ export class DashboardSidebarPage {
   readonly newSessionButton: Locator;
 
   /**
-   * The roster's "+" add-agent trigger (opens Create agent / Bring in a
-   * project / Browse Marketplace / New group). Scoped to the shadcn
+   * The roster's "+" add-agent trigger (opens New agent… / Bring in a
+   * project / Browse Marketplace / New group…). Scoped to the shadcn
    * `sidebar-group-action` slot so it never collides with
    * `AgentOnboardingCard`'s plain "Add agent" button, which matches the same
    * accessible name at small fleet sizes.
@@ -70,7 +70,7 @@ export class DashboardSidebarPage {
    */
   async createGroup(name: string) {
     await this.addAgentButton.click();
-    await this.page.getByRole('button', { name: 'New group' }).click();
+    await this.page.getByRole('button', { name: 'New group…' }).click();
     const input = this.page.getByRole('textbox', { name: 'New group name' });
     await input.fill(name);
     await input.press('Enter');

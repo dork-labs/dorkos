@@ -642,6 +642,16 @@ export class AdapterManager {
     return this.bindingSubsystem?.getBindingRouter();
   }
 
+  /**
+   * Get the bridge lifecycle coordinator, or undefined when the rooms subsystem
+   * is not wired. The relay bindings PATCH route (DOR-878) calls
+   * {@link BridgeLifecycle.bridge}/`unbridge` through it to turn a binding's
+   * bridge on and off from the cockpit.
+   */
+  getBridgeLifecycle(): import('./chat-bridge/index.js').BridgeLifecycle | undefined {
+    return this.bindingSubsystem?.getBridgeLifecycle();
+  }
+
   /** Get the MeshCore dependency, or undefined if not provided. */
   getMeshCore(): AdapterMeshCoreLike | undefined {
     return this.deps.meshCore;

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { useState } from 'react';
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
@@ -18,11 +19,21 @@ vi.mock('../model/use-agent-picker-candidates', () => ({
   useAgentPickerCandidates: () => mockRosterRef.current,
 }));
 
+/**
+ * Stateful stand-in for the section that owns the picker's open state, which
+ * the panel no longer holds itself — the section header's "New message…" opens
+ * the same panel, so there is one owner and two ways in (spec `rooms` §14.1).
+ */
+function Harness({ onStart }: { onStart: (chosen: AgentPickerCandidate[]) => void }) {
+  const [open, setOpen] = useState(false);
+  return <NewDirectMessageMenu open={open} onOpenChange={setOpen} onStart={onStart} />;
+}
+
 function renderMenu(candidates: AgentPickerCandidate[]) {
   mockRosterRef.current = { candidates, isLoading: false, isError: false, retry: vi.fn() };
   const onStart = vi.fn();
-  render(<NewDirectMessageMenu onStart={onStart} />);
-  fireEvent.click(screen.getByRole('button', { name: 'New direct message' }));
+  render(<Harness onStart={onStart} />);
+  fireEvent.click(screen.getByRole('button', { name: 'New message' }));
   return { onStart };
 }
 

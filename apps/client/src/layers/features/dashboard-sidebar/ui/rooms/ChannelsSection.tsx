@@ -15,7 +15,9 @@ import {
 } from '@/layers/entities/config';
 import { ChannelCreateDialog } from '@/layers/features/room-management';
 import type { SidebarItemVisual } from '../../model/sidebar-item';
-import { RoomSectionHeader } from './RoomSectionHeader';
+import { useMarkRoomsRead } from '../../model/use-mark-rooms-read';
+import { SidebarSectionHeader } from '../SidebarSectionHeader';
+import { buildChannelsHeaderMenuNodes } from '../SectionHeaderMenuItems';
 import { RoomRow } from './RoomRow';
 
 /** Skeleton rows shown while the first room list loads. */
@@ -30,6 +32,11 @@ interface ChannelsSectionProps {
   channels: RoomSummary[];
   /** Whether any channel is in a group, which changes what an empty list means. */
   hasGroupedChannels: boolean;
+  /**
+   * Every channel with unread, grouped ones included — so "Mark all channels
+   * read" means all of them and not just the ones this section happens to draw.
+   */
+  unreadChannelIds: string[];
   /** The mark to draw for a channel — a `#` sigil, from the item view model. */
   visualOf: (room: RoomSummary) => SidebarItemVisual;
   /** True while the room list is loading with nothing cached. */
@@ -65,6 +72,7 @@ interface ChannelsSectionProps {
 export function ChannelsSection({
   channels,
   hasGroupedChannels,
+  unreadChannelIds,
   visualOf,
   isLoading,
   error,
@@ -75,13 +83,25 @@ export function ChannelsSection({
   const { channelsCollapsed } = useSidebarPrefs();
   const { update } = useUpdateSidebarPrefs();
   const [creating, setCreating] = useState(false);
+  const markRoomsRead = useMarkRoomsRead();
+
+  const toggleCollapsed = () =>
+    update((prev) => setChannelsCollapsed(prev, !prev.channelsCollapsed));
 
   return (
     <SidebarGroup>
-      <RoomSectionHeader
+      <SidebarSectionHeader
         label="Channels"
         collapsed={channelsCollapsed}
-        onToggle={() => update((prev) => setChannelsCollapsed(prev, !prev.channelsCollapsed))}
+        onToggle={toggleCollapsed}
+        hasSectionAction
+        nodes={buildChannelsHeaderMenuNodes({
+          collapsed: channelsCollapsed,
+          hasUnread: unreadChannelIds.length > 0,
+          onNewChannel: () => setCreating(true),
+          onMarkAllRead: () => markRoomsRead(unreadChannelIds),
+          onToggleCollapsed: toggleCollapsed,
+        })}
       />
       <SidebarGroupAction aria-label="New channel" onClick={() => setCreating(true)}>
         <Plus />

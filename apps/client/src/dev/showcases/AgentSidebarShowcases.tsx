@@ -12,6 +12,11 @@ import { AgentContextMenu } from '@/layers/features/dashboard-sidebar';
 import { AgentOnboardingCard } from '@/layers/features/dashboard-sidebar';
 import { GroupsHintCard } from '@/layers/features/dashboard-sidebar';
 import { GroupCreateInput } from '@/layers/features/dashboard-sidebar';
+import {
+  SidebarSectionHeader,
+  buildAgentsHeaderMenuNodes,
+  buildChannelsHeaderMenuNodes,
+} from '@/layers/features/dashboard-sidebar';
 
 // ── Mock data ──
 
@@ -98,6 +103,7 @@ export function AgentSidebarShowcases() {
       <SessionRowCompactShowcase />
       <AgentListItemShowcase />
       <AgentContextMenuShowcase />
+      <SidebarSectionHeaderShowcase />
       <GroupCreateInputShowcase />
       <GroupsHintCardShowcase />
       <AgentOnboardingCardShowcase />
@@ -387,6 +393,57 @@ function AgentContextMenuShowcase() {
             Right-click me
           </div>
         </AgentContextMenu>
+      </ShowcaseDemo>
+    </PlaygroundSection>
+  );
+}
+
+// ── SidebarSectionHeader ──
+
+function SidebarSectionHeaderShowcase() {
+  const [collapsed, setCollapsed] = useState(false);
+  const [sortMode, setSortMode] = useState<'name' | 'recent'>('name');
+
+  return (
+    <PlaygroundSection
+      title="SidebarSectionHeader"
+      description="Every sidebar section header carries its own menu — right-click the header, or use the “…” that appears on hover and on focus. Both render ONE node list, so they can never drift. Channels collapses and can clear its unread; Agents has no collapse and exposes the section's own Show and Sort by settings."
+    >
+      <ShowcaseLabel>Channels — collapsible, with unread to clear</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="w-64">
+          <SidebarSectionHeader
+            label="Channels"
+            collapsed={collapsed}
+            onToggle={() => setCollapsed((prev) => !prev)}
+            nodes={buildChannelsHeaderMenuNodes({
+              collapsed,
+              hasUnread: true,
+              onNewChannel: () => {},
+              onMarkAllRead: () => {},
+              onToggleCollapsed: () => setCollapsed((prev) => !prev),
+            })}
+          />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        Agents — a label rather than a toggle, with the section settings
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="w-64">
+          <SidebarSectionHeader
+            label="Agents"
+            nodes={buildAgentsHeaderMenuNodes({
+              sortMode,
+              displayFilter: 'all',
+              onNewAgent: () => {},
+              onNewGroup: () => {},
+              onSortModeChange: setSortMode,
+              onDisplayFilterChange: () => {},
+            })}
+          />
+        </div>
       </ShowcaseDemo>
     </PlaygroundSection>
   );

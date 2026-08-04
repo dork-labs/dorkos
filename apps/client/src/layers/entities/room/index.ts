@@ -60,11 +60,13 @@ export {
   useSetRoomTopic,
   useArchiveRoom,
   useUnarchiveRoom,
+  useSetDeliverNotices,
 } from './model/use-room-settings';
 export type {
   RenameRoomInput,
   SetRoomTopicInput,
   UnarchiveRoomInput,
+  SetDeliverNoticesInput,
 } from './model/use-room-settings';
 export {
   useAddRoomMember,

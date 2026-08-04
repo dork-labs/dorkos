@@ -249,6 +249,21 @@ describe('BindingAdvancedSection permissions', () => {
     });
   });
 
+  describe('session strategy when bridged (chats-as-channels §7.2)', () => {
+    it('shows the session-strategy selector for an unbridged binding', () => {
+      renderSection({ bridged: false });
+      expect(screen.getByLabelText('Session Strategy')).toBeInTheDocument();
+      expect(screen.queryByText(/keeps its history in the channel/i)).not.toBeInTheDocument();
+    });
+
+    it('hides the selector for a bridged binding and explains why', () => {
+      renderSection({ bridged: true });
+      // The <select> is gone; a plain line takes its place.
+      expect(screen.queryByRole('combobox', { name: /session strategy/i })).not.toBeInTheDocument();
+      expect(screen.getByText(/keeps its history in the channel/i)).toBeInTheDocument();
+    });
+  });
+
   describe('a middle stop that never asks (DOR-816)', () => {
     /** A binding whose runtime declares Codex's shape: the Act stop cannot ask. */
     function renderCodexBinding(overrides: { permissionMode?: PermissionMode } = {}) {

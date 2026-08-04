@@ -2153,6 +2153,11 @@ export class RoomService {
    * @param viewerAuthorId - The caller this room was resolved for.
    */
   private withRoster(room: Room, viewerAuthorId: string): RoomWithRoster {
+    // One indexed lookup per room open (spec §14 budgets exactly this): a bridged
+    // room carries its `deliverNotices` override so the cockpit's bridge controls
+    // read their state from the room they already fetch, rather than a route of
+    // their own. Absent for an unbridged room, which is the honest tell.
+    const bridge = this.bridges.findBridgeByRoom(room.id);
     return {
       ...room,
       members: this.roster.list(room.id),
@@ -2162,6 +2167,7 @@ export class RoomService {
       // read, the create response, and the stream's hydration snapshot — and the
       // reader it belongs to is the id this call was already scoped by.
       reactionFrequents: this.reactions.frequents(viewerAuthorId),
+      ...(bridge ? { deliverNotices: bridge.deliverNotices } : {}),
       bridge: this.bridgeInfo(room.id),
     };
   }

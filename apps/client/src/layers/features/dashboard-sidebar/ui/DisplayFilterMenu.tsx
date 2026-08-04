@@ -9,6 +9,17 @@ export const DISPLAY_FILTER_OPTIONS: { value: SidebarDisplayFilter; label: strin
   { value: 'attention', label: 'Needs attention' },
 ];
 
+/**
+ * What the display-filter submenu is called, wherever it appears — a group's
+ * header menu, the Agents header menu, and any menu that adds it next. One
+ * constant because §14.1's whole point is that the same verb reads the same
+ * everywhere.
+ */
+export const DISPLAY_FILTER_MENU_LABEL = 'Show';
+
+/** The mark beside {@link DISPLAY_FILTER_MENU_LABEL}, shared for the same reason. */
+export const DISPLAY_FILTER_MENU_ICON = SlidersHorizontal;
+
 /** Slot primitives the "Show" submenu renders through — one per Radix menu family. */
 export interface DisplayFilterMenuSlots {
   Sub: ElementType;
@@ -37,8 +48,8 @@ export function renderDisplayFilterSubmenu(
   return (
     <Sub>
       <SubTrigger>
-        <SlidersHorizontal className="mr-2 size-4" />
-        Show
+        <DISPLAY_FILTER_MENU_ICON className="mr-2 size-4" />
+        {DISPLAY_FILTER_MENU_LABEL}
       </SubTrigger>
       <SubContent className="w-44">
         <RadioGroup value={current} onValueChange={onChange}>

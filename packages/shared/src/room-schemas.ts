@@ -396,6 +396,12 @@ export const RoomWithRosterSchema = RoomSchema.extend({
     .describe(
       "THIS reader's most-used reaction emoji, most-used first, always exactly three — the quick row in the message capsule. Counted across every room, because a person's reaction habits are theirs and not a room's, and padded from the shipped defaults so a new install still gets a full row. It rides the room rather than a route of its own for the same reason `viewerAuthorId` does: the reader is already resolved here, the value is one aggregate query, and a capsule that had to fetch it separately would draw an empty row first."
     ),
+  deliverNotices: z
+    .boolean()
+    .optional()
+    .describe(
+      "Present only on a bridged room: whether a turn_failed or halted notice reaches the bridged chat (chats-as-channels spec §6.2, D-6 Q5). The one per-bridge override, seeded true for a DM and false for a channel. Absent on any room with no bridge — the field IS the tell that this room projects to an external chat, so the cockpit's bridge controls read their state from it."
+    ),
 }).openapi('RoomWithRoster');
 
 export type RoomWithRoster = z.infer<typeof RoomWithRosterSchema>;

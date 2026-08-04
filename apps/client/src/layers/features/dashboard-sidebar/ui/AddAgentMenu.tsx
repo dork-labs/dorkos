@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, FolderPlus, FolderKanban, Store, Wand2 } from 'lucide-react';
+import { Plus, FolderPlus, FolderInput, Store, Wand2 } from 'lucide-react';
 import {
   Popover,
   PopoverTrigger,
@@ -31,12 +31,19 @@ interface AddAgentMenuProps {
  * in the AGENTS sidebar group header.
  *
  * Actions:
- * - Create agent -> opens CreateAgentDialog on the gallery
+ * - New agent… -> opens CreateAgentDialog on the gallery
  * - Bring in a project -> opens the standalone import dialog
  * - Browse Marketplace -> navigates to /marketplace
- * - New group -> opens the inline group-create flow (when `onNewGroup` is given)
+ * - New group… -> opens the inline group-create flow (when `onNewGroup` is given)
  * - Smart-group presets + "Custom rules…" -> one-click or dialog-based smart
  *   group creation (DOR-338), shown only once `smartGroupPresets` is non-empty
+ *
+ * **The two shared verbs are spelled exactly as the Agents section header
+ * spells them** — same words, same icons, same trailing `…` — because this "+"
+ * sits in that header's own row and the pair reading differently was the drift
+ * spec `rooms` §14.1 exists to stop. The header's renderer appends the ellipsis
+ * from `opensInput`; here it is written out, since these buttons are plain
+ * markup with no node list behind them.
  */
 export function AddAgentMenu({
   onNewGroup,
@@ -64,7 +71,7 @@ export function AddAgentMenu({
           className="hover:bg-accent hover:text-accent-foreground flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm"
         >
           <Plus className="size-4" />
-          Create agent
+          New agent…
         </button>
         <button
           type="button"
@@ -74,7 +81,10 @@ export function AddAgentMenu({
           }}
           className="hover:bg-accent hover:text-accent-foreground flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm"
         >
-          <FolderPlus className="size-4" />
+          {/* Not FolderPlus: that icon now belongs to "New group…", which the
+              section header spells the same way, and one popover cannot use one
+              glyph for two different things. */}
+          <FolderInput className="size-4" />
           Bring in a project
         </button>
         <button
@@ -99,8 +109,8 @@ export function AddAgentMenu({
               }}
               className="hover:bg-accent hover:text-accent-foreground flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm"
             >
-              <FolderKanban className="size-4" />
-              New group
+              <FolderPlus className="size-4" />
+              New group…
             </button>
           </>
         )}

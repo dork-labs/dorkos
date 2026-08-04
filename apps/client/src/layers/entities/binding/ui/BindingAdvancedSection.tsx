@@ -78,6 +78,12 @@ export interface BindingAdvancedSectionProps {
    * one-time "message your bot once" activation hint (bots can't text first).
    */
   notifyBootstrapHint?: boolean;
+  /**
+   * When this binding is bridged to a channel, its history lives in the room,
+   * not in a per-chat session — so the session-strategy selector is hidden and
+   * a one-line explanation takes its place (chats-as-channels spec §7.2).
+   */
+  bridged?: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   hasChanges: boolean;
@@ -117,6 +123,7 @@ export function BindingAdvancedSection({
   notifyOnTaskComplete,
   onNotifyOnTaskCompleteChange,
   notifyBootstrapHint,
+  bridged,
   open,
   onOpenChange,
   hasChanges,
@@ -166,25 +173,35 @@ export function BindingAdvancedSection({
           ) : undefined
         }
       >
-        {/* Session strategy selector */}
-        <div className="space-y-1.5 px-4 py-3">
-          <Label htmlFor="binding-session-strategy">Session Strategy</Label>
-          <Select value={strategy} onValueChange={(v) => onStrategyChange(v as SessionStrategy)}>
-            <SelectTrigger id="binding-session-strategy" className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {SESSION_STRATEGIES.map((s) => (
-                <SelectItem key={s.value} value={s.value}>
-                  {s.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {selectedStrategy && (
-            <p className="text-muted-foreground text-xs">{selectedStrategy.description}</p>
-          )}
-        </div>
+        {/* Session strategy selector — replaced by a note once bridged (§7.2) */}
+        {bridged ? (
+          <div className="space-y-1.5 px-4 py-3">
+            <Label>Session Strategy</Label>
+            <p className="text-muted-foreground text-xs">
+              A bridged chat keeps its history in the channel, so it does not use a session
+              strategy.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-1.5 px-4 py-3">
+            <Label htmlFor="binding-session-strategy">Session Strategy</Label>
+            <Select value={strategy} onValueChange={(v) => onStrategyChange(v as SessionStrategy)}>
+              <SelectTrigger id="binding-session-strategy" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SESSION_STRATEGIES.map((s) => (
+                  <SelectItem key={s.value} value={s.value}>
+                    {s.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {selectedStrategy && (
+              <p className="text-muted-foreground text-xs">{selectedStrategy.description}</p>
+            )}
+          </div>
+        )}
 
         {/* How much this agent may do without asking — the Trust Dial */}
         <div className="space-y-2 px-4 py-3">
