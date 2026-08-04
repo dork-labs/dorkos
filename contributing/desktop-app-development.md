@@ -247,6 +247,8 @@ The stream carries **transitions only, with no snapshot on connect**. That is ex
 
 `window.open` at the app's own origin opens a **real second cockpit window** (`window-manager.ts`'s window-open handler), built here rather than returned as `{ action: 'allow' }` so it gets the same preload, sandboxing and link guards as its opener. Everything else is still denied a window; `http(s)` goes to the system browser.
 
+This `http(s)`-only rule is the desktop shell's own layer on top of the client-wide link scheme allowlist; see [`link-dispatch-policy.md`](link-dispatch-policy.md) for the full policy and how the two relate.
+
 Three things are scoped to the **primary** window on purpose, and a second window does without them:
 
 | Scoped to primary                          | Why                                                                                                                          |

@@ -106,10 +106,13 @@ const APP_ROUTE_SET: ReadonlySet<string> = new Set(APP_ROUTE_PATHS);
  * else denied outright).
  *
  * **This policy does not govern markdown links.** Streamdown renders chat and
- * `MarkdownContent` anchors and dispatches them itself, under `rehype-harden`'s
- * sanitizer, which blocks `javascript:`/`data:`/`file:`/`vbscript:` but permits
- * `blob:`, `irc:` and `xmpp:` — schemes this list refuses. The two policies are
- * knowingly divergent; reconciling them is filed separately.
+ * `MarkdownContent` anchors and dispatches them itself, under `rehype-sanitize`'s
+ * schema, which blocks `javascript:`/`data:`/`file:`/`vbscript:`/`blob:` but
+ * permits `irc:`, `ircs:`, `xmpp:` and `tel:` — schemes this list refuses. The
+ * two policies are knowingly divergent; reconciling them is filed separately.
+ *
+ * Full write-up, including the desktop shell's stricter layer on top of this
+ * one: `contributing/link-dispatch-policy.md`.
  */
 const DISPATCHABLE_PROTOCOLS: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:']);
 
