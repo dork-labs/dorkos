@@ -1,10 +1,15 @@
 /**
- * Tests for the feedback forwarder (DOR-317, ADR 260713-143958 Phase 5).
+ * Tests for the feedback forwarder (DOR-317, ADR 260713-143958 Phase 5;
+ * dual-write per feedback-pipeline spec Part 3, decision 260803-205035).
  *
- * Proves the two things that make this NOT the usage path: it reports send
- * success/failure honestly (so the UI can toast truthfully), and it does NO
- * consent gating — it forwards even with every telemetry kill switch set,
- * because pressing Send is the consent.
+ * Proves the dual-write contract: `sendFeedback` posts to BOTH the durable
+ * site route (`POST /api/feedback`) and the metrics ingest
+ * (`/api/telemetry/events`), the returned `{ ok }` reflects ONLY the durable
+ * post's outcome, the metrics post is best-effort and never throws, and the
+ * whole function never throws regardless of which post fails. Also proves
+ * the two things that make this NOT the usage path: it does NO consent
+ * gating, and it does no consent-channel reads — pressing Send is the
+ * consent.
  */
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -21,6 +26,9 @@ import { getUserById } from '../auth/index.js';
 
 const mockGetUserById = vi.mocked(getUserById);
 
+const DURABLE_ENDPOINT = 'https://example.test/api/feedback';
+const METRICS_ENDPOINT = 'https://example.test/ingest';
+
 let dorkHome: string;
 
 beforeEach(async () => {
@@ -33,61 +41,319 @@ afterEach(async () => {
   vi.unstubAllEnvs();
 });
 
-/** A fetch stub that records its args and resolves an OK/!OK/rejecting response. */
-function makeFetch(behavior: 'ok' | 'not-ok' | 'reject') {
+/** A mocked `fetch`: a vitest mock usable both as `typeof fetch` and for call inspection. */
+type FetchMock = ReturnType<typeof vi.fn> & typeof fetch;
+
+/** A same-behavior-for-both-posts fetch stub. */
+function makeFetch(behavior: 'ok' | 'not-ok' | 'reject'): FetchMock {
   return vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => {
     if (behavior === 'reject') throw new Error('network down');
     return new Response(null, { status: behavior === 'ok' ? 200 : 500 });
-  }) as unknown as typeof fetch;
+  }) as unknown as FetchMock;
 }
 
-describe('sendFeedback', () => {
-  it('returns ok:true when the ingest accepts the POST', async () => {
+/**
+ * A fetch stub that behaves differently for the durable post vs the metrics
+ * post, distinguished by URL, so ok-semantics tests can prove the durable
+ * response (not the metrics one) decides the returned `ok`.
+ */
+function makeSplitFetch(behaviors: {
+  durable: 'ok' | 'not-ok' | 'reject';
+  metrics: 'ok' | 'not-ok' | 'reject';
+}): FetchMock {
+  return vi.fn(async (url: string | URL | Request, _init?: RequestInit) => {
+    const isDurable = String(url) === DURABLE_ENDPOINT;
+    const behavior = isDurable ? behaviors.durable : behaviors.metrics;
+    if (behavior === 'reject') throw new Error(isDurable ? 'durable down' : 'metrics down');
+    return new Response(null, { status: behavior === 'ok' ? 200 : 500 });
+  }) as unknown as FetchMock;
+}
+
+/** Default options shared by most `sendFeedback` calls below. */
+function baseOptions(overrides: Partial<Parameters<typeof sendFeedback>[0]> = {}) {
+  return {
+    submission: { kind: 'bug' as const, message: 'broken thing' },
+    dorkHome,
+    dorkosVersion: '0.47.0',
+    endpoint: METRICS_ENDPOINT,
+    cloudUrl: 'https://example.test',
+    ...overrides,
+  };
+}
+
+/** Find the call made to `url`, returning its parsed JSON body. */
+function bodyForUrl(fetchImpl: FetchMock, url: string): Record<string, unknown> {
+  const calls = fetchImpl.mock.calls as unknown as Array<[string | URL | Request, RequestInit]>;
+  const call = calls.find(([callUrl]) => String(callUrl) === url);
+  if (!call) throw new Error(`${url} was never called`);
+  const [, init] = call;
+  return JSON.parse(init.body as string) as Record<string, unknown>;
+}
+
+describe('sendFeedback — dual-write', () => {
+  it('posts to BOTH the durable site route and the metrics ingest', async () => {
     const fetchImpl = makeFetch('ok');
-    const result = await sendFeedback({
-      submission: { kind: 'bug', message: 'broken thing' },
-      dorkHome,
-      dorkosVersion: '0.47.0',
-      endpoint: 'https://example.test/ingest',
-      fetchImpl,
-    });
+    await sendFeedback(baseOptions({ fetchImpl }));
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    const calls = fetchImpl.mock.calls as unknown as Array<[string | URL | Request, RequestInit]>;
+    const urls = calls.map(([url]) => String(url));
+    expect(urls).toContain(DURABLE_ENDPOINT);
+    expect(urls).toContain(METRICS_ENDPOINT);
+  });
+
+  it('returns ok:true when the durable post succeeds', async () => {
+    const fetchImpl = makeSplitFetch({ durable: 'ok', metrics: 'ok' });
+    const result = await sendFeedback(baseOptions({ fetchImpl }));
     expect(result).toEqual({ ok: true });
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
-  it('returns ok:false on a non-OK response', async () => {
-    const result = await sendFeedback({
-      submission: { kind: 'feedback', message: 'hi' },
-      dorkHome,
-      dorkosVersion: '0.47.0',
-      fetchImpl: makeFetch('not-ok'),
-    });
+  it('returns ok:false when the durable post gets a non-OK response, EVEN THOUGH the metrics post succeeds', async () => {
+    const fetchImpl = makeSplitFetch({ durable: 'not-ok', metrics: 'ok' });
+    const result = await sendFeedback(baseOptions({ fetchImpl }));
     expect(result).toEqual({ ok: false });
   });
 
-  it('returns ok:false (never throws) on a network error', async () => {
-    const result = await sendFeedback({
-      submission: { kind: 'feedback', message: 'hi' },
-      dorkHome,
-      dorkosVersion: '0.47.0',
-      fetchImpl: makeFetch('reject'),
-    });
+  it('returns ok:true when the durable post succeeds EVEN THOUGH the metrics post fails', async () => {
+    const fetchImpl = makeSplitFetch({ durable: 'ok', metrics: 'not-ok' });
+    const result = await sendFeedback(baseOptions({ fetchImpl }));
+    expect(result).toEqual({ ok: true });
+  });
+
+  it('returns ok:false when the durable post throws, never throwing itself', async () => {
+    const fetchImpl = makeSplitFetch({ durable: 'reject', metrics: 'ok' });
+    const result = await sendFeedback(baseOptions({ fetchImpl }));
     expect(result).toEqual({ ok: false });
   });
 
-  it('builds the correct wire event: bug → feedback_submitted, cockpit surface, version', async () => {
+  it('returns ok:true when the durable post succeeds even though the metrics post throws', async () => {
+    const fetchImpl = makeSplitFetch({ durable: 'ok', metrics: 'reject' });
+    const result = await sendFeedback(baseOptions({ fetchImpl }));
+    expect(result).toEqual({ ok: true });
+  });
+
+  it('never throws when BOTH posts fail (network error)', async () => {
+    const fetchImpl = makeFetch('reject');
+    const result = await sendFeedback(baseOptions({ fetchImpl }));
+    expect(result).toEqual({ ok: false });
+  });
+
+  it('does NO consent gating: dual-writes even with every telemetry kill switch set', async () => {
+    vi.stubEnv('DO_NOT_TRACK', '1');
+    vi.stubEnv('DORKOS_TELEMETRY_DISABLED', '1');
     const fetchImpl = makeFetch('ok');
-    await sendFeedback({
-      submission: { kind: 'bug', message: 'crash on save', contact: 'a@b.com', route: '/tasks' },
-      dorkHome,
-      dorkosVersion: '0.47.0',
-      endpoint: 'https://example.test/ingest',
-      fetchImpl,
+    const result = await sendFeedback(baseOptions({ fetchImpl }));
+    expect(result).toEqual({ ok: true });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('sendFeedback — durable payload shape', () => {
+  /** Parse the JSON body of the call made to the durable endpoint. */
+  function durableBody(fetchImpl: FetchMock): Record<string, unknown> {
+    return bodyForUrl(fetchImpl, DURABLE_ENDPOINT);
+  }
+
+  it('sends instanceId, kind, message, surface:"cockpit" as the minimum shape', async () => {
+    const fetchImpl = makeFetch('ok');
+    await sendFeedback(
+      baseOptions({ submission: { kind: 'bug', message: 'crash on save' }, fetchImpl })
+    );
+
+    const body = durableBody(fetchImpl);
+    expect(body).toMatchObject({
+      kind: 'bug',
+      message: 'crash on save',
+      surface: 'cockpit',
     });
-    const [, init] = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
-    const body = JSON.parse((init as RequestInit).body as string) as {
+    expect(body.instanceId).toMatch(/^[0-9a-f-]{36}$/);
+    // No metrics-only or PostHog-envelope fields leak into the durable body.
+    expect(body).not.toHaveProperty('distinctId');
+    expect(body).not.toHaveProperty('properties');
+    expect(body).not.toHaveProperty('event');
+  });
+
+  it('carries contact and route through untouched', async () => {
+    const fetchImpl = makeFetch('ok');
+    await sendFeedback(
+      baseOptions({
+        submission: {
+          kind: 'feedback',
+          message: 'hi',
+          contact: 'a@b.com',
+          route: '/tasks',
+        },
+        fetchImpl,
+      })
+    );
+
+    const body = durableBody(fetchImpl);
+    expect(body.contact).toBe('a@b.com');
+    expect(body.route).toBe('/tasks');
+  });
+
+  it('attaches reporterEmail/reporterName from a resolved identity', async () => {
+    const fetchImpl = makeFetch('ok');
+    await sendFeedback(
+      baseOptions({
+        submission: { kind: 'bug', message: 'crash on save' },
+        identity: { userId: 'user_1', email: 'dorian@example.com', name: 'Dorian' },
+        fetchImpl,
+      })
+    );
+
+    const body = durableBody(fetchImpl);
+    expect(body.reporterEmail).toBe('dorian@example.com');
+    expect(body.reporterName).toBe('Dorian');
+    // The Better Auth user id itself never rides the wire payload.
+    expect(JSON.stringify(body)).not.toContain('user_1');
+  });
+
+  it('omits reporterEmail/reporterName when no identity was resolved', async () => {
+    const fetchImpl = makeFetch('ok');
+    await sendFeedback(baseOptions({ fetchImpl }));
+
+    const body = durableBody(fetchImpl);
+    expect(body).not.toHaveProperty('reporterEmail');
+    expect(body).not.toHaveProperty('reporterName');
+  });
+
+  it('renders diagnostics to text and includes it when present', async () => {
+    const fetchImpl = makeFetch('ok');
+    await sendFeedback(
+      baseOptions({
+        submission: {
+          kind: 'bug',
+          message: 'crash on save',
+          diagnostics: {
+            clientReport: {
+              version: '0.47.0',
+              platform: 'darwin-arm64',
+              runtimes: ['claude-code'],
+              flags: { darkMode: true },
+            },
+            breadcrumbs: [
+              { at: '2026-08-03T00:00:00.000Z', kind: 'console_error', message: 'boom' },
+            ],
+          },
+        },
+        fetchImpl,
+      })
+    );
+
+    const body = durableBody(fetchImpl);
+    expect(typeof body.diagnostics).toBe('string');
+    const diagnostics = body.diagnostics as string;
+    expect(diagnostics).toContain('0.47.0');
+    expect(diagnostics).toContain('darwin-arm64');
+    expect(diagnostics).toContain('claude-code');
+    expect(diagnostics).toContain('boom');
+    expect(diagnostics.length).toBeLessThanOrEqual(8000);
+  });
+
+  it('omits diagnostics when the submission has none', async () => {
+    const fetchImpl = makeFetch('ok');
+    await sendFeedback(baseOptions({ fetchImpl }));
+
+    const body = durableBody(fetchImpl);
+    expect(body).not.toHaveProperty('diagnostics');
+  });
+
+  it('carries transcriptExcerpt and sets hasTranscript:true when present', async () => {
+    const fetchImpl = makeFetch('ok');
+    await sendFeedback(
+      baseOptions({
+        submission: {
+          kind: 'bug',
+          message: 'crash on save',
+          transcriptExcerpt: 'user: it broke\nassistant: sorry',
+        },
+        fetchImpl,
+      })
+    );
+
+    const body = durableBody(fetchImpl);
+    expect(body.transcriptExcerpt).toBe('user: it broke\nassistant: sorry');
+    expect(body.hasTranscript).toBe(true);
+  });
+
+  it('truncates an oversized transcriptExcerpt to the durable route cap (8000 chars)', async () => {
+    const fetchImpl = makeFetch('ok');
+    const longExcerpt = 'x'.repeat(15_000);
+    await sendFeedback(
+      baseOptions({
+        submission: { kind: 'bug', message: 'crash on save', transcriptExcerpt: longExcerpt },
+        fetchImpl,
+      })
+    );
+
+    const body = durableBody(fetchImpl);
+    expect((body.transcriptExcerpt as string).length).toBe(8000);
+  });
+
+  it('omits transcriptExcerpt/hasTranscript when the submission has none', async () => {
+    const fetchImpl = makeFetch('ok');
+    await sendFeedback(baseOptions({ fetchImpl }));
+
+    const body = durableBody(fetchImpl);
+    expect(body).not.toHaveProperty('transcriptExcerpt');
+    expect(body).not.toHaveProperty('hasTranscript');
+  });
+
+  it('sets hasScreenshot:true when a screenshotUploadId is present', async () => {
+    const fetchImpl = makeFetch('ok');
+    await sendFeedback(
+      baseOptions({
+        submission: { kind: 'bug', message: 'crash on save', screenshotUploadId: 'upload_1' },
+        fetchImpl,
+      })
+    );
+
+    const body = durableBody(fetchImpl);
+    expect(body.hasScreenshot).toBe(true);
+    // The raw upload id itself is never forwarded — only the boolean hint.
+    expect(body).not.toHaveProperty('screenshotUploadId');
+  });
+
+  it('omits hasScreenshot when no screenshot was attached', async () => {
+    const fetchImpl = makeFetch('ok');
+    await sendFeedback(baseOptions({ fetchImpl }));
+
+    const body = durableBody(fetchImpl);
+    expect(body).not.toHaveProperty('hasScreenshot');
+  });
+
+  it('maps kind:"idea" straight through (the durable route has no PostHog-style event remapping)', async () => {
+    const fetchImpl = makeFetch('ok');
+    await sendFeedback(
+      baseOptions({ submission: { kind: 'idea', message: 'add dark mode' }, fetchImpl })
+    );
+
+    const body = durableBody(fetchImpl);
+    expect(body.kind).toBe('idea');
+  });
+});
+
+describe('sendFeedback — metrics post (best-effort)', () => {
+  /** Parse the JSON body of the call whose URL matches the metrics endpoint. */
+  function metricsBody(fetchImpl: FetchMock): {
+    events: Array<{ event: string; properties: Record<string, unknown>; distinctId: string }>;
+  } {
+    return bodyForUrl(fetchImpl, METRICS_ENDPOINT) as unknown as {
       events: Array<{ event: string; properties: Record<string, unknown>; distinctId: string }>;
     };
+  }
+
+  it('still fires the existing PostHog-shaped event: bug → feedback_submitted, cockpit surface, version', async () => {
+    const fetchImpl = makeFetch('ok');
+    await sendFeedback(
+      baseOptions({
+        submission: { kind: 'bug', message: 'crash on save', contact: 'a@b.com', route: '/tasks' },
+        fetchImpl,
+      })
+    );
+
+    const body = metricsBody(fetchImpl);
     const event = body.events[0];
     expect(event.event).toBe('feedback_submitted');
     expect(event.properties).toMatchObject({
@@ -98,77 +364,41 @@ describe('sendFeedback', () => {
       surface: 'cockpit',
       dorkosVersion: '0.47.0',
     });
-    // distinctId is the anonymous install id (a UUID), not a user id.
     expect(event.distinctId).toMatch(/^[0-9a-f-]{36}$/);
   });
 
   it('maps the idea kind to feature_requested with no kind property', async () => {
     const fetchImpl = makeFetch('ok');
-    await sendFeedback({
-      submission: { kind: 'idea', message: 'add dark mode' },
-      dorkHome,
-      dorkosVersion: '0.47.0',
-      endpoint: 'https://example.test/ingest',
-      fetchImpl,
-    });
-    const [, init] = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
-    const body = JSON.parse((init as RequestInit).body as string) as {
-      events: Array<{ event: string; properties: Record<string, unknown> }>;
-    };
+    await sendFeedback(
+      baseOptions({ submission: { kind: 'idea', message: 'add dark mode' }, fetchImpl })
+    );
+
+    const body = metricsBody(fetchImpl);
     expect(body.events[0].event).toBe('feature_requested');
     expect(body.events[0].properties).not.toHaveProperty('kind');
   });
 
-  it('does NO consent gating: forwards even with every telemetry kill switch set', async () => {
-    // The whole point of the feedback path — DO_NOT_TRACK / DORKOS_TELEMETRY_*
-    // govern tracking, not a user pressing Send. The reporter reads none of them.
-    vi.stubEnv('DO_NOT_TRACK', '1');
-    vi.stubEnv('DORKOS_TELEMETRY_DISABLED', '1');
-    const fetchImpl = makeFetch('ok');
-    const result = await sendFeedback({
-      submission: { kind: 'feedback', message: 'still sends' },
-      dorkHome,
-      dorkosVersion: '0.47.0',
-      endpoint: 'https://example.test/ingest',
-      fetchImpl,
-    });
-    expect(result).toEqual({ ok: true });
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-  });
-
   it('attaches reporterEmail/reporterName when the caller passes a resolved identity', async () => {
     const fetchImpl = makeFetch('ok');
-    await sendFeedback({
-      submission: { kind: 'bug', message: 'crash on save' },
-      dorkHome,
-      dorkosVersion: '0.47.0',
-      endpoint: 'https://example.test/ingest',
-      fetchImpl,
-      identity: { userId: 'user_1', email: 'dorian@example.com', name: 'Dorian' },
-    });
-    const [, init] = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
-    const body = JSON.parse((init as RequestInit).body as string) as {
-      events: Array<{ properties: Record<string, unknown> }>;
-    };
+    await sendFeedback(
+      baseOptions({
+        submission: { kind: 'bug', message: 'crash on save' },
+        identity: { userId: 'user_1', email: 'dorian@example.com', name: 'Dorian' },
+        fetchImpl,
+      })
+    );
+
+    const body = metricsBody(fetchImpl);
     expect(body.events[0].properties.reporterEmail).toBe('dorian@example.com');
     expect(body.events[0].properties.reporterName).toBe('Dorian');
-    // The Better Auth user id itself never rides the wire event.
     expect(JSON.stringify(body.events[0].properties)).not.toContain('user_1');
   });
 
-  it('sends no reporterEmail/reporterName when no identity was resolved (auth off / no session)', async () => {
+  it('sends no reporterEmail/reporterName when no identity was resolved', async () => {
     const fetchImpl = makeFetch('ok');
-    await sendFeedback({
-      submission: { kind: 'bug', message: 'crash on save' },
-      dorkHome,
-      dorkosVersion: '0.47.0',
-      endpoint: 'https://example.test/ingest',
-      fetchImpl,
-    });
-    const [, init] = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
-    const body = JSON.parse((init as RequestInit).body as string) as {
-      events: Array<{ properties: Record<string, unknown> }>;
-    };
+    await sendFeedback(baseOptions({ fetchImpl }));
+
+    const body = metricsBody(fetchImpl);
     expect(body.events[0].properties).not.toHaveProperty('reporterEmail');
     expect(body.events[0].properties).not.toHaveProperty('reporterName');
   });
