@@ -20,6 +20,17 @@ export interface ShortcutDef {
    * not working. Mark the shortcut, do not fork the panel.
    */
   desktopOnly?: boolean;
+  /**
+   * Live only in a development build, and so listed only there
+   * ({@link getShortcutsGrouped}).
+   *
+   * Same reasoning as {@link desktopOnly}, for the other axis: a chord whose
+   * handler is gated on `import.meta.env.DEV` does nothing once that flag is
+   * false, so a production reader who presses it gets silence DorkOS
+   * promised would do something (DOR-567). Mark the shortcut, do not fork
+   * the panel.
+   */
+  devOnly?: boolean;
 }
 
 /** Categories for grouping shortcuts in the reference panel. */
@@ -140,6 +151,7 @@ export const SHORTCUTS = {
     key: 'mod+shift+d',
     label: 'Dev playground',
     group: 'global',
+    devOnly: true,
   },
 } as const satisfies Record<string, ShortcutDef>;
 
@@ -173,9 +185,10 @@ export function formatShortcutKey(def: ShortcutDef | string): string {
  * order — what the reference panel renders.
  *
  * {@link ShortcutDef.desktopOnly} entries are dropped outside the desktop app,
- * so the panel never advertises a key the browser has already claimed. Read at
- * call time, not at module load, so it reflects the surface rather than the
- * import order.
+ * so the panel never advertises a key the browser has already claimed.
+ * {@link ShortcutDef.devOnly} entries are dropped outside a development build,
+ * for the same reason on the other axis. Read at call time, not at module
+ * load, so it reflects the surface rather than the import order.
  */
 export function getShortcutsGrouped(): {
   group: ShortcutGroup;
@@ -190,6 +203,7 @@ export function getShortcutsGrouped(): {
 
   for (const shortcut of all) {
     if (shortcut.desktopOnly && !desktop) continue;
+    if (shortcut.devOnly && !import.meta.env.DEV) continue;
     const list = map.get(shortcut.group) ?? [];
     list.push(shortcut);
     map.set(shortcut.group, list);
