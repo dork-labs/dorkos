@@ -1,10 +1,29 @@
+import {
+  Activity,
+  Bot,
+  Cable,
+  FolderGit2,
+  Inbox,
+  LayoutDashboard,
+  ListTodo,
+  MessageSquare,
+  MessagesSquare,
+  Store,
+  type LucideIcon,
+} from 'lucide-react';
+
 /**
  * What a tab's href points at, and what to call it.
  *
  * A tab stores nothing but a location, so everything a person sees on it —
  * the name, the icon, the live badge — is derived from that string. Keeping the
  * derivation here as pure functions means the strip can be tested without a
- * router, and the label rules stay in one readable place.
+ * router, and the label rules stay in one readable place. `ROUTE_LABELS` and
+ * `ROUTE_ICONS` live side by side for the same reason: each missed `/channels`
+ * once (DOR-587), then `ROUTE_ICONS` missed two more routes (DOR-919), all
+ * while living in separate files, and a route-map drift
+ * guard (`../__tests__/tab-target.test.ts`) checks both against the real router
+ * now that they can't drift apart just by being edited in different places.
  *
  * @module features/app-tabs/lib/tab-target
  */
@@ -23,8 +42,10 @@ export interface TabTarget {
  * Every route the tab strip can name, and the name a person would use for it.
  * `/session` is absent on purpose: a chat tab is named after its agent, not
  * after the route.
+ *
+ * @internal Exported for the route-map drift guard only.
  */
-const ROUTE_LABELS: Record<string, string> = {
+export const ROUTE_LABELS: Record<string, string> = {
   '/': 'Dashboard',
   '/activity': 'Activity',
   '/agents': 'Agents',
@@ -35,6 +56,33 @@ const ROUTE_LABELS: Record<string, string> = {
   '/marketplace/sources': 'Marketplace sources',
   '/tasks': 'Tasks',
   '/workspaces': 'Workspaces',
+};
+
+/**
+ * Icon per route. A chat tab uses its agent's emoji when one is known, so
+ * `/session` gets a real entry here (unlike {@link ROUTE_LABELS}) only as the
+ * fallback shown before that emoji resolves.
+ *
+ * @internal Exported for the route-map drift guard only.
+ */
+export const ROUTE_ICONS: Record<string, LucideIcon> = {
+  '/': LayoutDashboard,
+  '/activity': Activity,
+  '/agents': Bot,
+  // Plural on purpose: /session's single-bubble icon is taken, and two tabs
+  // that read alike should at least not look alike (DOR-587 review).
+  '/channels': MessagesSquare,
+  // Same icon the sidebar nav and the /connections page already use for this
+  // route (DOR-919).
+  '/connections': Cable,
+  // Same icon the help menu's "Feedback & requests" entry already uses
+  // (DOR-919).
+  '/feedback-requests': Inbox,
+  '/marketplace': Store,
+  '/marketplace/sources': Store,
+  '/session': MessageSquare,
+  '/tasks': ListTodo,
+  '/workspaces': FolderGit2,
 };
 
 /** Fallback name for a chat tab whose agent and project are both unknown. */

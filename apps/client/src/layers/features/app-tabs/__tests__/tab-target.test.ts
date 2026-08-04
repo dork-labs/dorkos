@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { parseTabHref, projectName, fallbackTabLabel } from '../lib/tab-target';
+import {
+  parseTabHref,
+  projectName,
+  fallbackTabLabel,
+  ROUTE_LABELS,
+  ROUTE_ICONS,
+} from '../lib/tab-target';
+import { APP_ROUTE_PATHS } from '@/layers/shared/lib';
 
 describe('parseTabHref', () => {
   it('reads the session and project off a chat tab', () => {
@@ -77,5 +84,46 @@ describe('fallbackTabLabel', () => {
   it('always produces something, even with no project', () => {
     expect(fallbackTabLabel(parseTabHref('/session'))).toBe('Session');
     expect(fallbackTabLabel(parseTabHref('/somewhere-new'))).toBe('DorkOS');
+  });
+});
+
+describe('route map key parity (drift guard)', () => {
+  // Routes deliberately absent from one map or the other. An addition here
+  // needs a matching "on purpose" comment on the map itself in tab-target.ts
+  // (that's what makes the absence a decision, not a gap) — see DOR-587
+  // (both maps missed `/channels`) and DOR-919 (`ROUTE_ICONS` missed two more
+  // routes), because nothing checked them against the real router.
+  const LABEL_EXCLUSIONS = ['/session']; // a chat tab is named after its agent, not the route
+  const ICON_EXCLUSIONS: string[] = []; // every route — including /session — names its own icon
+
+  it('gives every router route a ROUTE_LABELS entry, except the documented exclusions', () => {
+    const missing = APP_ROUTE_PATHS.filter(
+      (path) => !(path in ROUTE_LABELS) && !LABEL_EXCLUSIONS.includes(path)
+    );
+    expect(missing, `ROUTE_LABELS is missing: ${missing.join(', ') || '(none)'}`).toEqual([]);
+  });
+
+  it('gives every router route a ROUTE_ICONS entry, except the documented exclusions', () => {
+    const missing = APP_ROUTE_PATHS.filter(
+      (path) => !(path in ROUTE_ICONS) && !ICON_EXCLUSIONS.includes(path)
+    );
+    expect(missing, `ROUTE_ICONS is missing: ${missing.join(', ') || '(none)'}`).toEqual([]);
+  });
+
+  it('carries no stale ROUTE_LABELS entry for a route the router no longer serves', () => {
+    const stale = Object.keys(ROUTE_LABELS).filter(
+      (path) => !(APP_ROUTE_PATHS as readonly string[]).includes(path)
+    );
+    expect(stale, `ROUTE_LABELS has a stale entry: ${stale.join(', ') || '(none)'}`).toEqual([]);
+  });
+
+  it('carries no stale ROUTE_ICONS entry for a route the router no longer serves', () => {
+    // /session IS in APP_ROUTE_PATHS (it's a real route), so it's a valid
+    // ROUTE_ICONS key even though ROUTE_LABELS excludes it by name — the two
+    // maps' exclusion lists differ, not the route list they're checked against.
+    const stale = Object.keys(ROUTE_ICONS).filter(
+      (path) => !(APP_ROUTE_PATHS as readonly string[]).includes(path)
+    );
+    expect(stale, `ROUTE_ICONS has a stale entry: ${stale.join(', ') || '(none)'}`).toEqual([]);
   });
 });
