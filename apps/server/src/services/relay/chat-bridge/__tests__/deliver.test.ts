@@ -380,23 +380,31 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
     expect(publish).toHaveBeenCalledTimes(3);
   });
 
-  it('A10.2: a 429 with retry_after delays the retry and preserves seq order across a chat', async () => {
+  it('A10.2: a 429 holds the chat in seq order — the second delivery cannot publish during the first retry_after wait', async () => {
     const room = harness.service.createBridgedRoom(bridgeRequest('555'));
     const waits: number[] = [];
-    const publishCounts = new Map<string, number>();
-    // A delivery whose sleep records how long each wait was.
+    // The tag of every publish, in call order — 'first' or 'second' by content.
+    // This is the load-bearing assertion: a SET of outcomes ({both delivered},
+    // {waits has 5000}) is satisfied by the WRONG interleaving too, so seq order
+    // has to be proved on the ORDER of the calls themselves.
+    const order: Array<'first' | 'second'> = [];
+    let publishCount = 0;
     const delivery = new ChatBridgeDelivery({
       entries: harness.store,
       rooms: harness.service,
       bridges: harness.bridges,
       authors: harness.authors,
       publisher: {
-        publish: (async (subject: string, _p: unknown, opts: PublishOptions) => {
-          // First publish is rate-limited once, then succeeds; later ones succeed.
-          const key = opts.from;
-          const n = (publishCounts.get(key) ?? 0) + 1;
-          publishCounts.set(key, n);
-          if (subject.endsWith('.555') && n === 1) {
+        publish: (async (_subject: string, payload: unknown, _opts: PublishOptions) => {
+          const content = (payload as { content?: string }).content ?? '';
+          order.push(content.includes('first') ? 'first' : 'second');
+          publishCount += 1;
+          // The VERY FIRST publish (the first entry's first attempt) is rate
+          // limited; everything after succeeds. If the chain held, "everything
+          // after" is: the first entry's retry, then the second entry. If the
+          // chain were broken, the second entry would publish DURING the first's
+          // retry_after sleep and land here as the second call.
+          if (publishCount === 1) {
             return {
               messageId: 'm',
               deliveredTo: 0,
@@ -427,6 +435,11 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
     expect(b).toBe('delivered');
     // The 429's retry_after was honoured exactly.
     expect(waits).toContain(5000);
+    // Seq order held ACROSS the wait: the first entry is published (429) then
+    // re-published (success) before the second entry is published at all. Remove
+    // the per-chat serialization and the second would jump the queue during the
+    // first's sleep, giving ['first', 'second', 'first'] — which this rejects.
+    expect(order).toEqual(['first', 'first', 'second']);
   });
 
   it('A10.3: a 403 archives the room, turns the bridge off, and writes a notice with the reason', async () => {
