@@ -1,7 +1,7 @@
 ---
 id: 260803-183016
 title: Runtimes declare their settings surface via RuntimeCapabilities.settings
-status: draft
+status: accepted
 created: 2026-08-03
 spec: runtimes-settings-redesign
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: runtimes-settings-redesign)
+Accepted (implemented and shipped: PR #730 declaration layer, PR #738 consumer; 2026-08-04)
 
 ## Context
 
