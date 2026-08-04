@@ -50,6 +50,9 @@ import {
   TasksHeader,
   MarketplaceHeader,
   MarketplaceSourcesHeader,
+  WorkspacesHeader,
+  ConnectionsHeader,
+  FeedbackRequestsHeader,
 } from '@/layers/features/top-nav';
 import {
   Toaster,
@@ -162,7 +165,8 @@ function useSidebarSlot(): SidebarSlot {
  * All routes use a page-specific header with consistent `PageHeader` layout.
  * The session route includes a breadcrumb with the agent name; the channels
  * route names the open room rather than falling through to the dashboard's
- * (DOR-587).
+ * (DOR-587). Workspaces, Connections, and Feedback & requests had the same gap
+ * and are fixed the same way (DOR-919).
  */
 function useHeaderSlot({
   agentName,
@@ -211,6 +215,16 @@ function useHeaderSlot({
       return {
         key: 'channels',
         content: <ChannelsHeader roomTitle={roomTitle} />,
+        borderStyle: undefined,
+      };
+    case '/workspaces':
+      return { key: 'workspaces', content: <WorkspacesHeader />, borderStyle: undefined };
+    case '/connections':
+      return { key: 'connections', content: <ConnectionsHeader />, borderStyle: undefined };
+    case '/feedback-requests':
+      return {
+        key: 'feedback-requests',
+        content: <FeedbackRequestsHeader />,
         borderStyle: undefined,
       };
     case '/session':
