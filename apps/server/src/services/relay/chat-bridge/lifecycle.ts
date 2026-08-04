@@ -29,6 +29,7 @@
  */
 import type { ChatNoticeSender } from '@dorkos/relay';
 import type { BridgeStore } from './bridge-store.js';
+import type { BridgeSessionAdopter } from './adopt-session.js';
 
 /**
  * The room-domain half of a lifecycle event, as the coordinator needs it.
@@ -40,6 +41,33 @@ import type { BridgeStore } from './bridge-store.js';
  * service and nothing here knows the concrete class.
  */
 export interface BridgeRoomOps {
+  /**
+   * Mint a bridged room by bridge-row identity (spec §3.2–§3.4): room, roster
+   * (bound agent + operator), and `room_bridges` row in one transaction. A
+   * structural mirror of `RoomService.createBridgedRoom`, so this coordinator
+   * can drive it without importing the rooms domain back (see the interface
+   * doc). `chatType` is widened to `string` here because `RoomService` is what
+   * validates it against the closed union at the trust boundary.
+   *
+   * @param request - The resolved create request; `operatorAuthorId` is the
+   *   install owner the coordinator supplies.
+   * @returns The room's id, its roster (to find the bound agent's author id for
+   *   adoption), and whether it was freshly created or an idempotent replay.
+   */
+  createBridgedRoom(request: {
+    adapterId: string;
+    chatId: string;
+    bindingId: string;
+    chatType: string;
+    channelType: string | null;
+    title: string;
+    agentPath: string;
+    operatorAuthorId: string;
+  }): {
+    id: string;
+    created: boolean;
+    members: ReadonlyArray<{ authorId: string; author: { kind: string } }>;
+  };
   /**
    * Archive a bridged room and stamp its bridge row archived, posting the
    * disconnect notice first (spec §3.5). Safe on a room already archived out of
@@ -126,6 +154,39 @@ export interface BridgeLifecycleDeps {
    * owner the wiring actually holds at the moment of the flip.
    */
   operatorAuthorId: () => string;
+  /**
+   * Adopts an existing chat session into a freshly bridged room, gated on a real
+   * transcript probe (spec §7.3). Required only by {@link BridgeLifecycle.bridge};
+   * the archive/rebridge/out-of-band paths never touch it, so it is optional and
+   * a coordinator wired without it simply cannot create bridges.
+   */
+  adopter?: BridgeSessionAdopter;
+}
+
+/**
+ * The bridged-room create request, as {@link BridgeLifecycle.bridge} builds it —
+ * every field the room half needs except `operatorAuthorId` (the coordinator
+ * supplies the install owner), plus `agentId` for the adopter's transcript probe
+ * root. Mirrors `RoomService.CreateBridgedRoomRequest` structurally to keep this
+ * coordinator free of a rooms import.
+ */
+export interface BridgeCreateInput {
+  /** The relay adapter instance this chat lives on. */
+  adapterId: string;
+  /** The platform chat id, scoped to `adapterId`. */
+  chatId: string;
+  /** The binding this bridge is a mode of. */
+  bindingId: string;
+  /** The bound agent's id — resolves the probe's project root (§7.3). */
+  agentId: string;
+  /** The platform chat type, read from `platformData.chatType` (spec §3.3). */
+  chatType: string;
+  /** The channel type from the relay subject, or `null` for a DM subject. */
+  channelType: string | null;
+  /** The raw, unsanitized platform title (the room half sanitizes it). */
+  title: string;
+  /** The bound agent's directory. Exactly one agent seeds a bridged room. */
+  agentPath: string;
 }
 
 /** What {@link BridgeLifecycle.rebridge} needs to re-bridge a chat. */
@@ -152,6 +213,67 @@ export class BridgeLifecycle {
 
   constructor(deps: BridgeLifecycleDeps) {
     this.deps = deps;
+  }
+
+  /**
+   * Bridge a chat for the first time: mint the room, adopt an existing session
+   * if a real transcript proves one, then flip the binding on (spec §3.1–§3.4,
+   * §7.3). The create-side sibling of {@link BridgeLifecycle.unbridge} and
+   * {@link BridgeLifecycle.rebridge}, and the one call path session adoption runs
+   * on — DOR-878's "Bridge to a channel" route resolves the binding and calls
+   * this.
+   *
+   * The order — create, adopt, THEN flip the binding — makes the flag flip the
+   * last write (§3.4 implementation 2): a failure in the room half or the adopt
+   * leaves an unbridged binding and an orphan room the next start reaps, never a
+   * binding that says `'room'` over a half-built room. Adoption runs before the
+   * flip and before the room's first turn, because the ledger write it may make
+   * is first-write-wins and must beat the dispatcher's own placeholder mint.
+   *
+   * **Idempotent on the chat.** When the room half reports a replay
+   * (`created: false` — the chat was already bridged to this binding), there is
+   * nothing to adopt (the sessionMap entry was vacated the first time) and no
+   * notice to repeat, so this returns the existing room untouched.
+   *
+   * @param input - Which chat, which binding, which agent.
+   * @returns The bridged room's id and whether an existing session was adopted.
+   */
+  async bridge(input: BridgeCreateInput): Promise<{ id: string; adopted: boolean }> {
+    const adopter = this.deps.adopter;
+    if (!adopter) {
+      throw new Error('BridgeLifecycle.bridge requires a session adopter; none was wired');
+    }
+    const room = this.deps.rooms.createBridgedRoom({
+      adapterId: input.adapterId,
+      chatId: input.chatId,
+      bindingId: input.bindingId,
+      chatType: input.chatType,
+      channelType: input.channelType,
+      title: input.title,
+      agentPath: input.agentPath,
+      operatorAuthorId: this.deps.operatorAuthorId(),
+    });
+    // A replay is already bridged: its session was migrated the first time and
+    // its history notice already posted. Do not re-probe or re-notice.
+    if (!room.created) return { id: room.id, adopted: false };
+
+    const agentAuthorId = room.members.find((m) => m.author.kind === 'agent')?.authorId;
+    // A bridged room is always seeded with exactly one agent (§3.4), so a missing
+    // agent member is a structural fault in the create path, not a fresh-start.
+    if (!agentAuthorId) {
+      throw new Error(`bridged room ${room.id} has no agent member to adopt a session into`);
+    }
+
+    const { adopted } = await adopter.adoptAtBridge({
+      bindingId: input.bindingId,
+      chatId: input.chatId,
+      agentId: input.agentId,
+      roomId: room.id,
+      agentAuthorId,
+    });
+
+    await this.deps.bindings.update(input.bindingId, { bridge: 'room', roomId: room.id });
+    return { id: room.id, adopted };
   }
 
   /**
