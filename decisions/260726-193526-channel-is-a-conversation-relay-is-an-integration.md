@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted. **Supersedes ADR-0224** (User-Facing "Channels" Vocabulary Over "Relay Adapters").
 
+**Superseded in part by ADR 260804-021140** (Connections is the umbrella for the outside world). The Integration half of this decision — calling Relay's external adapters "Integration" — is retired in favor of "Connections", now that DOR-855 removed the network-sense "Connection" that had blocked that word. The Channel half — bare "channel" means a conversation — still stands unchanged.
+
 ## Context
 
 ADR-0224 chose "Channels" as the user-facing name for Relay's external messaging integrations — Telegram, Slack, webhooks. Its reasoning was sound at the time and is worth restating rather than dismissing: "Channels" is what Twilio, Intercom and most chatbot platforms call this, and a user trying to connect an agent to Telegram does not search for "Relay Adapters."

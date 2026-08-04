@@ -2,6 +2,14 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260804-021140",
+      "slug": "connections-is-the-outside-world-umbrella-and-the-last-rename",
+      "title": "\"Connections\" is the single umbrella for the outside world, and this is the last rename",
+      "status": "accepted",
+      "created": "2026-08-04",
+      "specSlug": "language-ia-simplification"
+    },
+    {
       "id": "260803-205037",
       "slug": "feedback-may-attach-authenticated-identity",
       "title": "Feedback submissions may attach the authenticated user's identity, shown plainly and resolved server-side",
