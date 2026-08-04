@@ -197,18 +197,34 @@ export function RuntimeCardHeader({
             </button>
           )}
           {toggleable && (
-            /* Decoration, not a control: it says which way the body is, and the
-             identity button beside it is what opens the body — for the mouse as
-             much as for the keyboard, since that button spans the whole left of
-             the header and the summary line beneath repeats the target. It was a
-             `<button aria-hidden tabIndex={-1}>`, which is the one shape ARIA
-             forbids outright: a thing still clickable and still programmatically
-             focusable, hidden from the tree that would have explained it. */
-            <span role="presentation" aria-hidden className="text-muted-foreground inline-flex">
+            /* A second, fully declared toggle for the same body. People aim at a
+             chevron, so it takes the click — but it takes it as a real button:
+             typed, named, carrying its own state, and in the tab order. That is
+             the legitimate shape of a redundant control, and the opposite of the
+             `<button aria-hidden tabIndex={-1}>` it replaces, which was the one
+             shape ARIA forbids outright — still clickable and still
+             programmatically focusable, hidden from the tree that would have
+             explained it. Redundant for a keyboard user, who already has the
+             identity button beside it; harmless, because both say the same thing
+             about the same body. */
+            <button
+              type="button"
+              onClick={onToggleExpanded}
+              aria-expanded={expanded}
+              aria-controls={expanded ? bodyId : undefined}
+              // A not-ready card's body holds setup, not settings — the card's
+              // own copy says settings unlock once it's connected, and the
+              // label should not promise otherwise.
+              aria-label={`${expanded ? 'Hide' : 'Show'} ${descriptor.label} ${ready ? 'settings' : 'setup'}`}
+              // -m-1 p-1 grows the 16px glyph to a 24px hit target without
+              // moving anything — the identity button plays the same trick.
+              className="focus-ring text-muted-foreground hover:text-foreground -m-1 inline-flex rounded-sm p-1 transition-colors"
+              data-testid={`runtime-card-chevron-${type}`}
+            >
               <ChevronDown
                 className={cn('size-4 transition-transform', expanded && 'rotate-180')}
               />
-            </span>
+            </button>
           )}
         </div>
       </div>
@@ -220,11 +236,11 @@ export function RuntimeCardHeader({
           the right half of the card sat empty.
 
           Clicking it opens the card, exactly as clicking the header does — a
-          second click target for the one body, kept out of the tab order the way
-          the chevron is, because the identity button above already carries this
-          control for the keyboard and the a11y tree. Unlike the chevron it is
-          not `aria-hidden`: this line is the card's whole answer at rest, and
-          hiding it would hide that answer from anyone not looking at it. */}
+          second click target for the one body, kept out of the tab order
+          (tabIndex -1) because the identity button above already carries this
+          control for the keyboard, and the chevron button now carries it too.
+          It is not `aria-hidden`: this line is the card's whole answer at rest,
+          and hiding it would hide that answer from anyone not looking at it. */}
       {children &&
         (toggleable ? (
           <button

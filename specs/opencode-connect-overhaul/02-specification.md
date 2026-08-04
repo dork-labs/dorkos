@@ -66,6 +66,8 @@ Apply in `projectModelOptions` (`services/runtimes/opencode/models.ts`): tag tie
 
 Selecting a card navigates within the dialog (with back); no tabs. The three existing path components are refactored into these steps, not rewritten from scratch.
 
+> **Amended by DOR-917 (2026-08-04):** the choose-list cards now show only the headline and the first description line. Each card's "Sub:" and "Trade-off:" copy moved verbatim into its connect step, shown above the step body — the honesty lands when a path is opened, before anything is committed.
+
 ### 6. Success moment + runtime handoff; kill the dead dropdown
 
 - On connect success (any path): a success panel — "✓ OpenCode is connected. Frontier models are unlocked. This session will use OpenCode — pick any model from the model menu, anytime." with a **Done** button. Dialog closes on Done (replace the silent auto-close for this flow).

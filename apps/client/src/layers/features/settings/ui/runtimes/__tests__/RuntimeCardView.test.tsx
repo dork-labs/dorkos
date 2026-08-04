@@ -88,7 +88,8 @@ describe('RuntimeCardView', () => {
     await user.click(summary);
     expect(onToggleExpanded).toHaveBeenCalledTimes(1);
 
-    // One control for the keyboard, not two — the same rule the chevron follows.
+    // A mouse shortcut, not a stop on the tab route: the identity button above
+    // already carries this body for the keyboard.
     expect(row).toHaveAttribute('tabindex', '-1');
     expect(screen.getByTestId('runtime-card-toggle-claude-code')).toHaveAttribute('aria-expanded');
   });
@@ -304,16 +305,62 @@ describe('RuntimeCardView', () => {
     expect(screen.getByRole('button', { name: 'Setup details' })).toBeInTheDocument();
   });
 
-  it('draws the chevron as decoration, never as a hidden second control', () => {
+  it('makes the chevron a declared second toggle, never a hidden one', async () => {
     // It was a `<button aria-hidden tabIndex={-1}>` — still clickable, still
     // programmatically focusable, and hidden from the tree that would explain it,
-    // which is the one shape ARIA forbids outright.
-    renderCard();
+    // which is the one shape ARIA forbids outright. The fix is not to take the
+    // click away but to declare it: a real button that says what it does.
+    const user = userEvent.setup();
+    const { onToggleExpanded } = renderCard();
 
     expect(document.querySelectorAll('button[aria-hidden]')).toHaveLength(0);
     expect(document.querySelectorAll('[aria-hidden] button')).toHaveLength(0);
-    // One control for the body, and it is the identity button.
-    expect(document.querySelectorAll('[aria-expanded]')).toHaveLength(1);
+    // Two controls for the one body now — the identity block and the chevron.
+    expect(document.querySelectorAll('[aria-expanded]')).toHaveLength(2);
+
+    const chevron = screen.getByTestId('runtime-card-chevron-claude-code');
+    await user.click(chevron);
+    expect(onToggleExpanded).toHaveBeenCalledTimes(1);
+  });
+
+  it('gives the chevron the state and the name a keyboard user needs', () => {
+    renderCard();
+
+    const chevron = screen.getByTestId('runtime-card-chevron-claude-code');
+    expect(chevron).toHaveAttribute('type', 'button');
+    expect(chevron).toHaveAttribute('aria-expanded', 'false');
+    // In the tab order, unlike the summary line: it is a control, not a shortcut.
+    expect(chevron).not.toHaveAttribute('tabindex');
+    // Named by the runtime it opens, so two cards never read as the same button.
+    expect(chevron).toHaveAccessibleName('Show Claude Code settings');
+    expect(chevron).not.toHaveAttribute('aria-controls');
+
+    cleanup();
+    renderCard({ expanded: true });
+
+    const open = screen.getByTestId('runtime-card-chevron-claude-code');
+    expect(open).toHaveAttribute('aria-expanded', 'true');
+    expect(open).toHaveAccessibleName('Hide Claude Code settings');
+    // Only points at the body while there is a body in the document to point at.
+    expect(open.getAttribute('aria-controls')).toBe(
+      screen.getByTestId('runtime-card-body-claude-code').id
+    );
+  });
+
+  it('names the not-ready chevron after setup, not settings it does not have', () => {
+    // A locked card's body holds setup details; its own copy says settings
+    // unlock once it's connected, so the button must not promise them.
+    renderCard({ ready: false, setupDetails: <p>claude binary found</p> });
+
+    expect(screen.getByTestId('runtime-card-chevron-claude-code')).toHaveAccessibleName(
+      'Show Claude Code setup'
+    );
+  });
+
+  it('offers no chevron on a card with nothing to open', () => {
+    renderCard({ ready: false, summary: [] });
+
+    expect(screen.queryByTestId('runtime-card-chevron-claude-code')).not.toBeInTheDocument();
   });
 
   it('renders declared sections in declared order and leaves no box where one renders nothing', () => {
