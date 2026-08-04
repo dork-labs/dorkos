@@ -24,6 +24,7 @@ function bridge(overrides: Partial<NewBridge> = {}): NewBridge {
     channelType: null,
     platformChatType: 'private',
     bindingId: 'binding-1',
+    platformTitle: null,
     deliverNotices: true,
     createdAt: '2026-08-03T00:00:00.000Z',
     ...overrides,

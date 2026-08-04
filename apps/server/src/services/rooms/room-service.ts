@@ -67,6 +67,7 @@ import type {
   RoomEntryBody,
   RoomEntryReaction,
   RoomKind,
+  RoomBridgeInfo,
   RoomMember,
   RoomPresencePayload,
   RoomReactionEvent,
@@ -80,7 +81,7 @@ import { THREAD_PREVIEW_MAX_CHARS } from '@dorkos/shared/room-schemas';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../lib/logger.js';
 import { eventFanOut } from '../core/event-fan-out.js';
-import type { BridgeStore, PlatformChatType } from '../relay/chat-bridge/bridge-store.js';
+import type { Bridge, BridgeStore, PlatformChatType } from '../relay/chat-bridge/bridge-store.js';
 import {
   bridgedRoomFraming,
   topicNamesForEntries,
@@ -733,6 +734,13 @@ export class RoomService {
           channelType,
           platformChatType,
           bindingId: request.bindingId,
+          // The SAME sanitized value that just named the room, never a second
+          // copy — `null` for a DM, whose title is the person's display name
+          // rather than a platform-side chat title (spec §3.4). This is what
+          // lets the room sheet show what the chat is *actually* called on
+          // the platform even after the room itself has been renamed, since a
+          // rename never touches this column.
+          platformTitle: kind === 'channel' ? title : null,
           // D-6 Q5: seeded by room kind — true for a bridged dm, false for a
           // bridged channel. The one per-bridge override lives on the row
           // itself; this create path never flips it later.
@@ -2154,6 +2162,28 @@ export class RoomService {
       // read, the create response, and the stream's hydration snapshot — and the
       // reader it belongs to is the id this call was already scoped by.
       reactionFrequents: this.reactions.frequents(viewerAuthorId),
+      bridge: this.bridgeInfo(room.id),
+    };
+  }
+
+  /**
+   * The header badge's and room sheet's view of this room's bridge (chats-as-
+   * channels spec §8, §3.4) — `null` for an unbridged room.
+   *
+   * `visibility` is projected through {@link bridgedRoomFraming}, the SAME
+   * derivation `room_context` carries into a turn: the header badge and the
+   * model's own view of the room read one function's output, never two
+   * independent encodings of "how much can this bot see" that could drift
+   * apart.
+   *
+   * @param roomId - The room.
+   */
+  private bridgeInfo(roomId: string): RoomBridgeInfo | null {
+    const bridge: Bridge | null = this.bridges.findBridgeByRoom(roomId);
+    if (!bridge) return null;
+    return {
+      visibility: bridgedRoomFraming(bridge).visibility,
+      platformTitle: bridge.platformTitle,
     };
   }
 

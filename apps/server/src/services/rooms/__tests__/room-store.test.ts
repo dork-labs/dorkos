@@ -284,6 +284,7 @@ describe('RoomStore.findDmByMemberSet', () => {
       channelType: null,
       platformChatType: 'private',
       bindingId: 'binding-1',
+      platformTitle: null,
       deliverNotices: true,
       createdAt: '2026-07-26T11:00:00.000Z',
     });
@@ -305,6 +306,7 @@ describe('RoomStore.findDmByMemberSet', () => {
       channelType: null,
       platformChatType: 'private',
       bindingId: 'binding-1',
+      platformTitle: null,
       deliverNotices: true,
       createdAt: '2026-07-20T10:00:00.000Z',
     });

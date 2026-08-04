@@ -28,6 +28,7 @@ function bridge(overrides: Partial<Bridge> = {}): Bridge {
     bindingId: 'binding-ana',
     visibility: null,
     visibilityCheckedAt: null,
+    platformTitle: null,
     deliverNotices: true,
     lastDeliveredSeq: 0,
     lastActivityAt: null,
