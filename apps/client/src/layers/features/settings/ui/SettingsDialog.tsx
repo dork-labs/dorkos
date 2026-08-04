@@ -82,6 +82,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         tabs={SETTINGS_TABS}
         sidebarExtras={<RemoteAccessAction onClick={() => setTunnelDialogOpen(true)} />}
         extensionSlot="settings.tabs"
+        maximized
         testId="settings-dialog"
       />
       <TunnelDialog open={tunnelDialogOpen} onOpenChange={setTunnelDialogOpen} />

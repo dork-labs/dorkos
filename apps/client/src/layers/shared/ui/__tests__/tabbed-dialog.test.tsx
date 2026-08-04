@@ -201,6 +201,7 @@ interface RenderOptions {
   extensionSlot?: 'settings.tabs';
   maxWidth?: string;
   minHeight?: string;
+  maximized?: boolean;
   testId?: string;
   tabs?: TabbedDialogTab<TabId>[];
   headerSlot?: React.ReactNode;
@@ -217,6 +218,7 @@ function renderDialog(options: RenderOptions = {}) {
     extensionSlot,
     maxWidth,
     minHeight,
+    maximized,
     testId,
     tabs = MOCK_TABS,
     headerSlot,
@@ -240,6 +242,7 @@ function renderDialog(options: RenderOptions = {}) {
       extensionSlot={extensionSlot}
       maxWidth={maxWidth}
       minHeight={minHeight}
+      maximized={maximized}
       testId={testId}
     />
   );
@@ -476,6 +479,74 @@ describe('TabbedDialog', () => {
       '[data-slot="navigation-layout-content"]'
     ) as HTMLElement;
     expect(navContent.className).toContain('min-h-[500px]');
+  });
+
+  // ── maximized (DOR-917) ────────────────────────────────────────
+  describe('maximized', () => {
+    /** The dialog surface itself — where the sizing classes land. */
+    function dialogSurface() {
+      return screen.getByTestId('dialog-root').firstElementChild as HTMLElement;
+    }
+
+    it('takes nearly the whole viewport when maximized, and hugs its content otherwise', () => {
+      renderDialog({ maximized: true });
+
+      const surface = dialogSurface();
+      expect(surface.className).toContain('md:h-[92svh]');
+      expect(surface.className).toContain('md:w-[95vw]');
+      expect(surface.className).toContain('md:max-w-[90rem]');
+      // Without this the 85vh cap would keep winning and the height would be a lie.
+      expect(surface.className).toContain('md:max-h-[92svh]');
+
+      cleanup();
+      renderDialog();
+
+      const plain = dialogSurface();
+      expect(plain.className).not.toContain('92svh');
+      expect(plain.className).toContain('max-w-2xl');
+      expect(plain.className).toContain('max-h-[85vh]');
+    });
+
+    it('keeps the width override a consumer asked for below the desktop breakpoint', () => {
+      renderDialog({ maximized: true, maxWidth: 'max-w-4xl' });
+
+      expect(dialogSurface().className).toContain('max-w-4xl');
+    });
+
+    it('leaves the mobile drawer alone: every sizing class it adds is behind `md`', () => {
+      // Below 768px `ResponsiveDialogContent` renders a bottom drawer, and a
+      // drawer handed `w-[95vw]` stops being a drawer. `md` is that same 768px
+      // boundary (`useIsMobile`), so gating there is what keeps the two agreeing.
+      renderDialog({ maximized: true });
+
+      const added = dialogSurface()
+        .className.split(' ')
+        .filter((c) => c.includes('svh') || c.includes('95vw') || c.includes('90rem'));
+
+      expect(added.length).toBeGreaterThan(0);
+      expect(added.every((c) => c.startsWith('md:'))).toBe(true);
+    });
+
+    it('lets the sidebar and the panel stretch to the height it just claimed', () => {
+      // A tall shell with a content-height body is worse than no change at all:
+      // the sidebar border stops halfway and the panel floats in empty space.
+      const { container } = renderDialog({ maximized: true });
+
+      const layout = container.querySelector('[data-slot="navigation-layout"]') as HTMLElement;
+      const body = container.querySelector('[data-slot="navigation-layout-body"]') as HTMLElement;
+      const content = container.querySelector(
+        '[data-slot="navigation-layout-content"]'
+      ) as HTMLElement;
+
+      // Each link in the chain claims the height above it, and clips rather than
+      // pushing the shell taller, so the panel is what scrolls.
+      expect(layout.className).toContain('flex-1');
+      expect(layout.className).toContain('overflow-hidden');
+      expect(body.className).toContain('flex-1');
+      expect(body.className).toContain('overflow-hidden');
+      expect(content.className).toContain('flex-1');
+      expect(content.className).toContain('overflow-y-auto');
+    });
   });
 
   it('wraps panels in Suspense for lazy components', async () => {

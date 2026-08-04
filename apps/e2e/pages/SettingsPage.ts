@@ -125,9 +125,10 @@ export class SettingsPage {
   /**
    * Runtimes tab: the card's own open/close control.
    *
-   * The identity block IS the button (the chevron beside it is `aria-hidden`
-   * and a mouse affordance only), so this carries the `aria-expanded` state.
-   * A card with nothing to open renders no button at all.
+   * The identity block IS the button, so this carries the `aria-expanded`
+   * state. The chevron beside it is a second, equally declared toggle for the
+   * same body (`runtime-card-chevron-<type>`), so either one opens the card.
+   * A card with nothing to open renders neither.
    */
   runtimeCardToggle(type: string) {
     return this.activePanel.getByTestId(`runtime-card-toggle-${type}`);

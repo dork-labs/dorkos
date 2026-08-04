@@ -84,6 +84,72 @@ describe('OpenCodeProviderPicker — power-source list (spec §5)', () => {
   });
 });
 
+// Three cards of four lines each is a wall to read before you have chosen
+// anything. The list says the headline and the one line under it; the detail
+// waits until you have picked a path, where it is what you actually need.
+describe('OpenCodeProviderPicker — the list is short, the detail is at the step (DOR-917)', () => {
+  const CLOUD_SUB = 'One OpenRouter account covers all of them. Pay only for what you use.';
+  const CLOUD_TRADE_OFF = "Your prompts and code are sent to the model's provider.";
+  const LOCAL_SUB = 'Runs Quick helpers and Solid coders. Frontier models stay cloud-only.';
+  const LOCAL_TRADE_OFF =
+    'Smaller models — great for edits and quick help, not frontier-level reasoning.';
+
+  it('keeps the sub-line and the trade-off off the choose list', () => {
+    renderPicker();
+
+    expect(screen.queryByText(CLOUD_SUB)).not.toBeInTheDocument();
+    expect(screen.queryByText(LOCAL_SUB)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Trade-off:/)).not.toBeInTheDocument();
+    // What survives on a card: the headline, its badge, and the one line under it.
+    expect(screen.getByText('Best models, zero setup')).toBeInTheDocument();
+    expect(screen.getByTestId('power-source-cloud')).toHaveTextContent('Recommended');
+  });
+
+  it('says the cloud path’s sub-line and trade-off at the step, word for word', async () => {
+    const user = userEvent.setup();
+    renderPicker();
+
+    await user.click(screen.getByTestId('power-source-cloud'));
+
+    const details = await screen.findByTestId('connect-step-details');
+    expect(details).toHaveTextContent(CLOUD_SUB);
+    expect(details).toHaveTextContent(`Trade-off: ${CLOUD_TRADE_OFF}`);
+  });
+
+  it('says the local path’s sub-line and trade-off at the step, word for word', async () => {
+    const user = userEvent.setup();
+    renderPicker({ detectOllama: vi.fn().mockResolvedValue({ running: false, models: [] }) });
+
+    await user.click(screen.getByTestId('power-source-local'));
+
+    const details = await screen.findByTestId('connect-step-details');
+    expect(details).toHaveTextContent(LOCAL_SUB);
+    expect(details).toHaveTextContent(`Trade-off: ${LOCAL_TRADE_OFF}`);
+  });
+
+  it('adds nothing to the quiet key path, which was already two lines', async () => {
+    const user = userEvent.setup();
+    renderPicker();
+
+    await user.click(screen.getByTestId('power-source-direct'));
+
+    expect(await screen.findByLabelText('API key')).toBeInTheDocument();
+    expect(screen.queryByTestId('connect-step-details')).not.toBeInTheDocument();
+  });
+
+  it('commits nothing on the way in: Back returns to the list unchanged', async () => {
+    const user = userEvent.setup();
+    const transport = renderPicker();
+
+    await user.click(screen.getByTestId('power-source-cloud'));
+    await user.click(await screen.findByTestId('connect-step-back'));
+
+    expect(screen.getByTestId('opencode-power-sources')).toBeInTheDocument();
+    expect(transport.storeOpenRouterKey).not.toHaveBeenCalled();
+    expect(transport.storeProviderCredential).not.toHaveBeenCalled();
+  });
+});
+
 describe('OpenCodeProviderPicker — Change power source label (spec §9)', () => {
   function renderWithProvider(currentProvider: string) {
     const transport = createMockTransport();

@@ -73,6 +73,20 @@ export interface TabbedDialogProps<T extends string> {
   maxWidth?: string;
   /** Override min content height. Defaults to `min-h-[280px]`. */
   minHeight?: string;
+  /**
+   * Open at near-viewport size instead of sizing to the content.
+   *
+   * For a dialog that is a workspace rather than a question — many tabs, long
+   * panels, settings you scroll through — where a content-height box means
+   * scrolling a small window inside a large empty screen. The sidebar and the
+   * panel stretch to the new height, and the panel is what scrolls.
+   *
+   * Desktop only: every class this adds is behind `md`, which lines up with
+   * the 768px boundary `useIsMobile` uses to swap the dialog for a drawer
+   * (exactly, under the default 16px root font — `md` is 48rem, the hook is
+   * hard pixels), so the phone layout is untouched.
+   */
+  maximized?: boolean;
   /** data-testid for browser tests. */
   testId?: string;
 }
@@ -100,6 +114,7 @@ export function TabbedDialog<T extends string>({
   extensionSlot,
   maxWidth = 'max-w-2xl',
   minHeight = 'min-h-[280px]',
+  maximized = false,
   testId,
 }: TabbedDialogProps<T>) {
   const extensionTabs = useSlotContributions(extensionSlot ?? 'settings.tabs');
@@ -148,7 +163,16 @@ export function TabbedDialog<T extends string>({
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent
         data-testid={testId}
-        className={cn('max-h-[85vh] gap-0 p-0', maxWidth)}
+        className={cn(
+          'max-h-[85vh] gap-0 p-0',
+          maxWidth,
+          // `md` (48rem) matches the hard 768px boundary `useIsMobile` uses to
+          // swap the dialog for a drawer — equal under the default 16px root
+          // font — so these classes never reach a drawer. `max-h` has to be
+          // restated or the 85vh cap above would keep winning and the height
+          // would be a lie.
+          maximized && 'md:h-[92svh] md:max-h-[92svh] md:w-[95vw] md:max-w-[90rem]'
+        )}
       >
         <NavigationLayout value={activeTab} onValueChange={(v) => setActiveTab(v as T)}>
           <ResponsiveDialogFullscreenToggle />
@@ -192,7 +216,11 @@ export function TabbedDialog<T extends string>({
                 const TabComponent = tab.component;
                 return (
                   <NavigationLayoutPanel key={tab.id} value={tab.id}>
-                    <div className="space-y-4">
+                    {/* A readable measure inside any width: at the default
+                        max-w-2xl the panel never reaches 48rem so this is
+                        inert, and in a maximized dialog it stops body text
+                        running 150+ characters per line. */}
+                    <div className="max-w-3xl space-y-4">
                       <NavigationLayoutPanelHeader
                         actions={tab.actions}
                         description={tab.description}
