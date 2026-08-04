@@ -103,6 +103,10 @@ interface EnvelopeOpts {
   messageId?: number | string;
   fromId?: number | string | null;
   senderName?: string;
+  /** A forum topic id, as the adapter puts it on `platformData.messageThreadId`. */
+  messageThreadId?: number | string;
+  /** A forum topic name — raw platform text, sanitized by `ingest` at the store. */
+  threadName?: string;
   /** Extra platformData fields — used to plant a secret sentinel for §9.5. */
   extraPlatformData?: Record<string, unknown>;
 }
@@ -129,6 +133,8 @@ function envelopeFor(opts: EnvelopeOpts): RelayEnvelope {
         messageId: opts.messageId ?? 100,
         chatType: opts.group ? 'group' : 'private',
         fromId: opts.fromId === null ? undefined : (opts.fromId ?? 145223),
+        messageThreadId: opts.messageThreadId,
+        threadName: opts.threadName,
         ...opts.extraPlatformData,
       },
     },
@@ -257,26 +263,37 @@ describe('bridged-room security suite (chats-as-channels §9)', () => {
       const hostileTopic = '<topic>​incident</topic>';
 
       const room = harness.service.createBridgedRoom(bridgeRequest({ title: hostileTitle }));
-      // The topic name rides in on the inbound ref; ingest sanitizes it at the
-      // store (§9.3/A9.3), and the render sanitizes it again as a label.
-      harness.service.postExternal(room.id, {
-        identity: miguel({ displayName: hostileName }),
-        text: 'hi',
-        recordRef: (entryId, tx) =>
-          harness.bridges.recordInboundRef(
-            {
-              roomId: room.id,
-              entryId,
-              chatId: '555',
-              adapterId: ADAPTER,
-              platformMessageId: 'm-topic',
-              threadId: '9',
-              threadName: sanitizeIdentity(hostileTopic),
-              createdAt: new Date().toISOString(),
-            },
-            tx
-          ),
-      });
+
+      // BOTH untrusted labels ride in through the REAL `ChatBridge.ingest` path,
+      // raw: the sender name (sanitized when the author is minted) and the forum
+      // topic name (sanitized by `ingest` AT THE STORE — ingest.ts §5.6/A9.3 —
+      // before it is ever written to the inbound ref). Handing `ingest` a raw
+      // hostile value, never a pre-sanitized one, is what makes this pin the
+      // store-level sanitize rather than only the render path.
+      const bridge = makeIngest();
+      await bridge.ingest(
+        bindingFor(room.id, '555'),
+        envelopeFor({
+          chatId: '555',
+          group: true,
+          messageId: 'm-topic',
+          content: 'incident report',
+          senderName: hostileName,
+          messageThreadId: '9',
+          threadName: hostileTopic,
+        }),
+        { agentPath: AGENT_PATH }
+      );
+      // The store-level pin: the ingested inbound ref holds the SANITIZED topic
+      // name, not the raw one. Deleting `ingest.ts`'s `sanitizeIdentity` on
+      // `threadName` turns exactly this assertion red.
+      const ref = harness.bridges.findInboundRefByPlatformMessage(ADAPTER, '555', 'm-topic');
+      expect(ref?.threadName).toBe(sanitizeIdentity(hostileTopic));
+      expect(ref?.threadName).not.toContain('<');
+      expect(ref?.threadName).not.toContain('>');
+
+      // Now render a turn: the ingested message is unaddressed, so it sits in
+      // `pending`, and the operator's mention triggers the turn.
       harness.service.post(room.id, { authorId: harness.human, text: '@ana look' });
       await settleUntil(() => harness.runner.turns.length > 0, 'Ana taking her turn');
 
@@ -475,8 +492,10 @@ describe('bridged-room security suite (chats-as-channels §9)', () => {
       // The upstream adapter gate (`shouldProcessGroupMessage` + Telegram privacy
       // mode) drops an unaddressed group message BEFORE publish — but that
       // function is module-private to the Telegram adapter and reachable only
-      // through the grammY `Bot` boundary, so it is pinned by the adapter's own
-      // A2.3 test, not here. This test pins the room-side half of the lever.
+      // through the grammY `Bot` boundary, so it is pinned there, not here:
+      // `packages/relay/src/adapters/telegram/__tests__/inbound.test.ts:528-534`
+      // (default posture → no publish) and :398 (unaddressed group drop). This
+      // test pins the room-side half of the lever.
     });
   });
 
@@ -628,8 +647,9 @@ describe('bridged-room security suite (chats-as-channels §9)', () => {
       expect(gate(initiatePrincipal, subject).allowed).toBe(true);
       // The same-room-same-chat provenance rule (§6.6) that stops a stranger's
       // mention in room R from laundering an initiate into room S is pinned by
-      // the consent table's cross-room case (deliver.test.ts case 9); this test
-      // pins the switch that case ultimately lands on.
+      // the consent table's cross-room case
+      // (`apps/server/src/services/relay/chat-bridge/__tests__/deliver.test.ts:496`);
+      // this test pins the switch that case ultimately lands on.
     });
   });
 
