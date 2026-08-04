@@ -90,7 +90,10 @@ function gatedTurn(): { runner: ScriptedTurnRunner; handed(): boolean; release()
 function wirePresence(
   service: ReturnType<typeof createRoomHarness>['service'],
   bridges: ReturnType<typeof createRoomHarness>['bridges']
-): { typingEvents: Array<{ subject: string; state: string }> } {
+): {
+  typingEvents: Array<{ subject: string; state: string }>;
+  presence: ChatBridgePresence;
+} {
   const emitter = new SignalEmitter();
   const typingEvents: Array<{ subject: string; state: string }> = [];
   emitter.subscribe('relay.human.>', (subject: string, signal: Signal) => {
@@ -111,7 +114,7 @@ function wirePresence(
       since: payload.since,
     });
   });
-  return { typingEvents };
+  return { typingEvents, presence };
 }
 
 describe('the bridge presence forwarder, through the real dispatcher (A6.8)', () => {
@@ -175,5 +178,66 @@ describe('the bridge presence forwarder, through the real dispatcher (A6.8)', ()
     await service.triggersIdle();
 
     expect(typingEvents).toEqual([]);
+  });
+
+  it('still clears the typing indicator when the bridge archives mid-claim (regression)', async () => {
+    // The bug an independent review reproduced against `forward`'s original
+    // fresh-lookup-only design: `findBridgeByRoom` is re-resolved on every
+    // call, which is right for the ordinary case — but a bridge that archives
+    // WHILE a claim is held (a reachable path: `BridgeLifecycle.unbridge` on
+    // operator disconnect or a bot-blocked 403, or
+    // `onRoomArchivedDuringIngest`) meant the claim's terminal `'stopped'`
+    // found no live bridge at release time and was silently dropped —
+    // Telegram would keep showing "typing…" for up to `TYPING_INACTIVITY_MS`
+    // (60s, `outbound.ts`) after the agent had actually stopped, on a chat
+    // that was not even bridged anymore. Without the `lastActiveSubject`
+    // fallback in `presence.ts`, this test fails: `typingEvents` stops at
+    // `'active'` and never gets a `'stopped'`.
+    const gate = gatedTurn();
+    const { service, bridges, human } = createRoomHarness({ agents, runner: gate.runner });
+    const { typingEvents, presence } = wirePresence(service, bridges);
+
+    const room = service.createBridgedRoom({
+      adapterId: 'tg-main',
+      chatId: '555222',
+      bindingId: 'binding-ana',
+      chatType: 'private',
+      channelType: null,
+      title: 'Miguel',
+      agentPath: AGENT_PATH,
+      operatorAuthorId: human,
+    });
+    const bridge = bridges.findBridgeByRoom(room.id);
+    if (!bridge) throw new Error('createBridgedRoom did not leave a bridge row');
+    const subject = subjectFor(bridge);
+
+    // The claim: Ana takes a turn, held open by the gate.
+    service.post(room.id, { authorId: human, text: 'can you check the deploy?' });
+    await settleUntil(() => gate.handed(), 'Ana handed a turn in the bridged room');
+    expect(typingEvents).toEqual([{ subject, state: 'active' }]);
+    expect(presence.trackedClaimCount).toBe(1);
+
+    // The bridge archives WHILE the claim is still held — the reachable path
+    // this regression is about, not a contrived ordering.
+    service.archiveBridgedRoom(room.id, human);
+    expect(bridges.findBridgeByRoom(room.id)?.archivedAt).not.toBeNull();
+
+    // The claim ends. Its post-delivery write hits the now-archived room and
+    // is refused (`ROOM_ARCHIVED`) — the dispatcher's own `catch` in `runOne`
+    // turns that into a `'failed'` outcome and a damped silence-notice
+    // attempt, neither of which is this test's concern — but the `finally`
+    // still releases the claim and publishes `'done'` regardless of how the
+    // turn's delivery went, which is what drives `forward` here.
+    gate.release();
+    await service.triggersIdle();
+
+    // The terminal 'stopped' reached the LAST-KNOWN subject exactly once,
+    // even though a fresh `findBridgeByRoom` now returns an archived row —
+    // and the claim's tracked entry is gone, so nothing here can leak.
+    expect(typingEvents).toEqual([
+      { subject, state: 'active' },
+      { subject, state: 'stopped' },
+    ]);
+    expect(presence.trackedClaimCount).toBe(0);
   });
 });
