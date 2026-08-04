@@ -5,9 +5,10 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
-import type { RoomEntry, RoomRosterEntry } from '@dorkos/shared/room-schemas';
+import type { AuthorOrigin, RoomEntry, RoomRosterEntry } from '@dorkos/shared/room-schemas';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
+import { authorColor } from '@/layers/entities/room';
 import { RoomTimeline } from '../ui/RoomTimeline';
 import { unreadPlacement, toMessageAuthor, authorsById, groupByThread } from '../lib/room-timeline';
 
@@ -28,15 +29,28 @@ beforeAll(() => {
 });
 afterEach(cleanup);
 
-function member(id: string, displayName: string, kind: 'human' | 'agent' = 'agent') {
+/** A roster member's optional render-cache and origin fields, for the tests that vary them. */
+interface MemberOverrides {
+  emoji?: string;
+  color?: string;
+  origin?: AuthorOrigin;
+}
+
+function member(
+  id: string,
+  displayName: string,
+  kind: 'human' | 'agent' = 'agent',
+  overrides: MemberOverrides = {}
+): RoomRosterEntry {
   return {
     roomId: 'room-1',
     authorId: id,
     responseMode: 'always',
     joinedAt: '2026-07-26T09:00:00.000Z',
     lastReadSeq: 0,
-    author: { id, kind, displayName },
-  } as RoomRosterEntry;
+    origin: overrides.origin ?? 'local',
+    author: { id, kind, displayName, emoji: overrides.emoji, color: overrides.color },
+  };
 }
 
 function entry(seq: number, overrides: Partial<RoomEntry> = {}): RoomEntry {
@@ -742,5 +756,36 @@ describe('toMessageAuthor', () => {
     const second = toMessageAuthor('ana', new Map());
     expect(first.color).toBe(second.color);
     expect(first.color).not.toBe(toMessageAuthor('bo', new Map()).color);
+  });
+
+  it("passes through the roster's own emoji and color rather than guessing over them", () => {
+    const authors = authorsById([
+      member('ana', 'Ana', 'agent', { emoji: '🎨', color: 'hsl(210 70% 55%)' }),
+    ]);
+    const author = toMessageAuthor('ana', authors);
+    expect(author.emoji).toBe('🎨');
+    expect(author.color).toBe('hsl(210 70% 55%)');
+  });
+
+  it('falls back to the hashed color and no emoji when the roster stores neither — the common case', () => {
+    // ~16% of agents have an icon and ~5% a color (verified live), so this
+    // path — not the one above — is what most agents actually render through.
+    const authors = authorsById([member('ana', 'Ana')]);
+    const author = toMessageAuthor('ana', authors);
+    expect(author.emoji).toBeUndefined();
+    expect(author.color).toBe(authorColor('ana'));
+  });
+
+  it('marks a bridged member external, and a local one not', () => {
+    const authors = authorsById([
+      member('ana', 'Ana', 'agent'),
+      member('bo', 'Bo', 'human', { origin: { platform: 'telegram' } }),
+    ]);
+    expect(toMessageAuthor('ana', authors).isExternal).toBe(false);
+    expect(toMessageAuthor('bo', authors).isExternal).toBe(true);
+  });
+
+  it('treats a departed member as local rather than as an unknown platform', () => {
+    expect(toMessageAuthor('gone', new Map()).isExternal).toBe(false);
   });
 });

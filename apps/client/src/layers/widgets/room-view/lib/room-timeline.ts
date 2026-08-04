@@ -3,38 +3,52 @@
  *
  * @module widgets/room-view/lib/room-timeline
  */
-import type { AuthorRef, RoomEntry, RoomRosterEntry } from '@/layers/entities/room';
+import type { AuthorOrigin, AuthorRef, RoomEntry, RoomRosterEntry } from '@/layers/entities/room';
 import { authorColor, threadRootIdOf } from '@/layers/entities/room';
 import type { MessageAuthor } from '@/layers/shared/model';
+
+/**
+ * A roster member's `AuthorRef` paired back up with its `origin` — the two
+ * live as sibling fields on `RoomRosterEntry` rather than one holding the
+ * other, so a lookup keyed by author id has to carry both or lose one.
+ */
+type RosterAuthor = AuthorRef & { origin: AuthorOrigin };
 
 /**
  * Build the roster lookup the list renders authors from.
  *
  * A room entry stores an opaque `authorId` and nothing else (ADR 260726-170126),
- * so the roster is the only place a name comes from — the client never derives
- * an author from the session, the selected agent, or the message's own shape.
+ * so the roster is the only place a name — or an emoji, a color, an origin —
+ * comes from; the client never derives an author from the session, the
+ * selected agent, or the message's own shape.
  *
  * @param members - The room's roster.
  */
-export function authorsById(members: readonly RoomRosterEntry[]): Map<string, AuthorRef> {
-  return new Map(members.map((member) => [member.author.id, member.author]));
+export function authorsById(members: readonly RoomRosterEntry[]): Map<string, RosterAuthor> {
+  return new Map(
+    members.map((member) => [member.author.id, { ...member.author, origin: member.origin }])
+  );
 }
 
 /**
  * The view model the shared message primitives render an author from.
  *
- * Colors are hashed from the opaque author id, so one participant reads as one
- * color everywhere without the server having to choose. An agent's emoji is
- * deliberately NOT resolved here: it would mean matching the roster back to a
- * local agent by display name, and a wrong avatar on someone's words is worse
- * than a plain one.
+ * `emoji` and `color` are read straight off the roster's own render cache
+ * (`AuthorRef`) rather than re-derived: the roster IS the resolved identity,
+ * so there is nothing to guess. Most agents carry neither today, which is why
+ * `color` still falls back to a hash of the opaque author id — the common
+ * path stays common, and a participant reads as one stable color everywhere
+ * even with nothing stored for them. `isExternal` marks a roster member
+ * bridged in from another platform, which is what lets a caller draw them
+ * apart from someone local without this resolver knowing anything about how
+ * that distinction is drawn.
  *
  * @param authorId - The entry's stored author id.
  * @param authors - The room's roster, keyed by author id.
  */
 export function toMessageAuthor(
   authorId: string,
-  authors: ReadonlyMap<string, AuthorRef>
+  authors: ReadonlyMap<string, RosterAuthor>
 ): MessageAuthor {
   const author = authors.get(authorId);
   return {
@@ -43,7 +57,9 @@ export function toMessageAuthor(
     kind: author?.kind ?? 'system',
     id: authorId,
     displayName: author?.displayName ?? 'Unknown',
-    color: authorColor(authorId),
+    emoji: author?.emoji,
+    color: author?.color ?? authorColor(authorId),
+    isExternal: typeof author?.origin === 'object',
   };
 }
 

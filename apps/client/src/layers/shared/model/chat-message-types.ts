@@ -56,6 +56,12 @@ export interface MessageAuthor {
   color?: string;
   /** Runtime brand key, when the identity falls back to a runtime. */
   runtime?: string;
+  /**
+   * True when this identity is posting from outside this machine — a bridged
+   * chat platform rather than a person or agent local to this install. Absent
+   * (never `true`) for `agent`/`system`, which are always local.
+   */
+  isExternal?: boolean;
 }
 
 export type GroupPosition = 'only' | 'first' | 'middle' | 'last';
