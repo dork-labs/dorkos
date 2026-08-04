@@ -115,12 +115,16 @@ export const PALETTE_QUICK_ACTIONS: CommandPaletteContribution[] = [
     priority: 8,
   },
   {
-    id: 'report-issue',
-    label: 'Report an issue',
-    icon: 'Bug',
-    action: 'reportIssue',
+    id: 'open-feedback',
+    label: 'Send feedback',
+    icon: 'MessageSquarePlus',
+    action: 'openFeedback',
     category: 'quick-action',
     priority: 9,
+    // The GitHub "Report an issue" entry was removed from the palette (it stays
+    // in the help menu, demoted). Searching these still lands on the in-app
+    // dialog, which is now the primary path.
+    keywords: ['feedback', 'report', 'bug', 'issue', 'idea', 'feature request'],
   },
 ];
 

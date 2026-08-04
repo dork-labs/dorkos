@@ -22,6 +22,9 @@ vi.mock('../../services/core/feedback-reporter.js', () => ({
 vi.mock('../../lib/log-excerpt.js', () => ({
   getRecentLogExcerpt: vi.fn(),
 }));
+vi.mock('../../lib/transcript-excerpt.js', () => ({
+  getSessionTranscriptExcerpt: vi.fn(),
+}));
 vi.mock('../../lib/dork-home.js', () => ({
   resolveDorkHome: vi.fn().mockReturnValue('/tmp/dork-test'),
 }));
@@ -36,12 +39,14 @@ import {
   listMyFeedback,
 } from '../../services/core/feedback-reporter.js';
 import { getRecentLogExcerpt } from '../../lib/log-excerpt.js';
+import { getSessionTranscriptExcerpt } from '../../lib/transcript-excerpt.js';
 import feedbackRouter from '../feedback.js';
 
 const mockSend = vi.mocked(sendFeedback);
 const mockResolveIdentity = vi.mocked(resolveFeedbackIdentity);
 const mockGetLogExcerpt = vi.mocked(getRecentLogExcerpt);
 const mockListMyFeedback = vi.mocked(listMyFeedback);
+const mockGetTranscript = vi.mocked(getSessionTranscriptExcerpt);
 
 /**
  * Build the test app. `sessionUser`, when passed, simulates what `sessionGate`
@@ -66,6 +71,7 @@ describe('feedback route', () => {
     vi.clearAllMocks();
     mockResolveIdentity.mockResolvedValue(undefined);
     mockGetLogExcerpt.mockResolvedValue(undefined);
+    mockGetTranscript.mockResolvedValue(undefined);
   });
 
   it('forwards a valid submission and relays ok:true', async () => {
@@ -170,6 +176,138 @@ describe('feedback route', () => {
       expect(res.status).toBe(200);
       expect(mockResolveIdentity).not.toHaveBeenCalled();
       expect(mockSend.mock.calls[0][0]).toMatchObject({ identity: undefined });
+    });
+
+    it('skips the identity lookup when the submission asks to send anonymously — even with a verified session', async () => {
+      // "Send anonymously" (design-decisions §3) withholds a verified identity on
+      // purpose: the lookup never runs, so nothing derived from the session is
+      // attached. Reverting the `!parsed.data.anonymous` guard turns this red.
+      mockSend.mockResolvedValue({ ok: true });
+      mockResolveIdentity.mockResolvedValue({
+        userId: 'user_1',
+        email: 'dorian@example.com',
+        name: 'Dorian',
+      });
+
+      const res = await request(buildApp({ userId: 'user_1', credential: 'cookie' }))
+        .post('/api/feedback')
+        .send({ kind: 'bug', message: 'hi', anonymous: true });
+
+      expect(res.status).toBe(200);
+      expect(mockResolveIdentity).not.toHaveBeenCalled();
+      expect(mockSend.mock.calls[0][0]).toMatchObject({ identity: undefined });
+    });
+  });
+
+  describe('transcript excerpt (feedback-pipeline spec Parts 5-6)', () => {
+    it('gathers and attaches a transcript excerpt when the Conversation toggle asked for one', async () => {
+      mockSend.mockResolvedValue({ ok: true });
+      mockGetTranscript.mockResolvedValue('user: it broke\nassistant: looking');
+
+      const res = await request(buildApp()).post('/api/feedback').send({
+        kind: 'bug',
+        message: 'it crashed',
+        sessionId: 'sess_123',
+        includeTranscript: true,
+      });
+
+      expect(res.status).toBe(200);
+      expect(mockGetTranscript).toHaveBeenCalledWith('sess_123');
+      expect(mockSend.mock.calls[0][0]).toMatchObject({
+        submission: { transcriptExcerpt: 'user: it broke\nassistant: looking' },
+      });
+    });
+
+    it('does NOT gather a transcript when includeTranscript is not set', async () => {
+      mockSend.mockResolvedValue({ ok: true });
+      await request(buildApp())
+        .post('/api/feedback')
+        .send({ kind: 'bug', message: 'it crashed', sessionId: 'sess_123' });
+      expect(mockGetTranscript).not.toHaveBeenCalled();
+    });
+
+    it('does NOT gather a transcript when no sessionId is present', async () => {
+      mockSend.mockResolvedValue({ ok: true });
+      await request(buildApp())
+        .post('/api/feedback')
+        .send({ kind: 'bug', message: 'it crashed', includeTranscript: true });
+      expect(mockGetTranscript).not.toHaveBeenCalled();
+    });
+
+    it('never reads a transcript for an invalid submission (validation runs first)', async () => {
+      const res = await request(buildApp())
+        .post('/api/feedback')
+        .send({ kind: 'bug', message: '', sessionId: 'sess_123', includeTranscript: true });
+      expect(res.status).toBe(400);
+      expect(mockGetTranscript).not.toHaveBeenCalled();
+    });
+
+    it('leaves the submission unchanged when no excerpt was found', async () => {
+      mockSend.mockResolvedValue({ ok: true });
+      mockGetTranscript.mockResolvedValue(undefined);
+
+      await request(buildApp()).post('/api/feedback').send({
+        kind: 'bug',
+        message: 'it crashed',
+        sessionId: 'sess_123',
+        includeTranscript: true,
+      });
+
+      const submitted = mockSend.mock.calls[0][0] as {
+        submission: { transcriptExcerpt?: string };
+      };
+      expect(submitted.submission.transcriptExcerpt).toBeUndefined();
+    });
+
+    it('never forwards a client-supplied transcriptExcerpt or serverLogExcerpt (server is the sole author)', async () => {
+      // The schema bounds but does not scrub these; a client could send an
+      // unscrubbed value. The server strips both before gathering, so a gather
+      // miss (undefined below) leaves them ABSENT rather than surviving.
+      // Removing `stripServerAuthoredFields` in the route turns this red.
+      mockSend.mockResolvedValue({ ok: true });
+      mockGetTranscript.mockResolvedValue(undefined);
+      mockGetLogExcerpt.mockResolvedValue(undefined);
+
+      await request(buildApp())
+        .post('/api/feedback')
+        .send({
+          kind: 'bug',
+          message: 'it crashed',
+          sessionId: 'sess_123',
+          includeTranscript: true,
+          includeServerLogs: true,
+          transcriptExcerpt: 'CLIENT unscrubbed /Users/dorian/secret sk-deadbeef00000000',
+          diagnostics: {
+            clientReport: { version: '0.47.0', platform: 'darwin-arm64', runtimes: [], flags: {} },
+            serverLogExcerpt: 'CLIENT log leak /Users/dorian/.env',
+          },
+        });
+
+      const submitted = mockSend.mock.calls[0][0] as {
+        submission: { transcriptExcerpt?: string; diagnostics?: { serverLogExcerpt?: string } };
+      };
+      // The client values never survive — they are absent (gather returned nothing).
+      expect(submitted.submission.transcriptExcerpt).toBeUndefined();
+      expect(submitted.submission.diagnostics?.serverLogExcerpt).toBeUndefined();
+    });
+
+    it('replaces a client-supplied transcriptExcerpt with the server-gathered one', async () => {
+      mockSend.mockResolvedValue({ ok: true });
+      mockGetTranscript.mockResolvedValue('user: it broke\nassistant: looking');
+
+      await request(buildApp()).post('/api/feedback').send({
+        kind: 'bug',
+        message: 'it crashed',
+        sessionId: 'sess_123',
+        includeTranscript: true,
+        transcriptExcerpt: 'CLIENT unscrubbed /Users/dorian/secret',
+      });
+
+      const submitted = mockSend.mock.calls[0][0] as {
+        submission: { transcriptExcerpt?: string };
+      };
+      expect(submitted.submission.transcriptExcerpt).toBe('user: it broke\nassistant: looking');
+      expect(submitted.submission.transcriptExcerpt).not.toContain('/Users/dorian');
     });
   });
 
