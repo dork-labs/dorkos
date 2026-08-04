@@ -162,15 +162,17 @@ export function WidgetActionProvider({
     async (action: WidgetAction, opts?: { origin?: CelebrationOrigin }): Promise<void> => {
       switch (action.kind) {
         case 'ui': {
-          // getState() snapshot at call-time — the dispatcher is a pure side effect.
+          // The dispatcher is a pure side effect and reads the store itself.
           // `supportsTerminal` keeps `open_terminal` degrading gracefully on a
           // transport with no terminal (DirectTransport/Obsidian), matching the
           // agent-stream dispatch path. `celebrationOrigin` makes a `celebrate`
           // command erupt from the clicked control (origin-aware confetti).
           // `sessionId` lets session-scoped commands (open_pip) target the
           // widget's own session instead of degrading to the no-session toast.
+          // No `panelUrlSignal`: a widget-issued close/toggle of a deep-linked
+          // Settings or Tasks dialog is a known gap (DOR-908).
           const ctx: DispatcherContext = {
-            store: useAppStore.getState(),
+            getStore: useAppStore.getState,
             setTheme,
             supportsTerminal: transport.supportsTerminal,
             celebrationOrigin: opts?.origin,

@@ -1,45 +1,59 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, cleanup } from '@testing-library/react';
+import { setPlatformAdapter } from '@/layers/shared/lib';
 import { useGlobalPalette } from '../use-global-palette';
 
 // Mock app store state — only the global palette fields are read directly.
-// Closing other dialogs now flows through URL deep-link `close()` actions.
+// Closing other dialogs flows through the deep-link `close()` actions.
 const mockState = {
   globalPaletteOpen: false,
   toggleGlobalPalette: vi.fn(),
   setGlobalPaletteOpen: vi.fn(),
 };
 
-// Deep-link `close` spies — useGlobalPalette calls these to clear feature
-// dialog URL signals before opening the palette.
+// Deep-link `close` spies — useGlobalPalette calls these to dismiss the feature
+// dialogs before opening the palette.
 const mockCloseSettings = vi.fn();
 const mockCloseTasks = vi.fn();
 
-vi.mock('@/layers/shared/model', () => ({
-  useAppStore: (selector?: (s: typeof mockState) => unknown) =>
-    selector ? selector(mockState) : mockState,
-  useSettingsDeepLink: () => ({
-    isOpen: false,
-    activeTab: null,
-    section: null,
-    open: vi.fn(),
-    close: mockCloseSettings,
-    setTab: vi.fn(),
-    setSection: vi.fn(),
-  }),
-  useTasksDeepLink: () => ({
-    isOpen: false,
-    activeTab: null,
-    section: null,
-    open: vi.fn(),
-    close: mockCloseTasks,
-    setTab: vi.fn(),
-    setSection: vi.fn(),
-  }),
-}));
+// The palette fields are faked; the two deep-link hooks are the REAL ones,
+// wrapped so `close` is still observable. That matters because what `close`
+// does is the whole question here: it owns both halves of a dialog's open
+// signal now (URL param + store flag, DOR-839), so Cmd+K dismisses a
+// store-opened dialog too. A hand-written stub would answer that question by
+// assumption. Note the real hooks read the real app store (they import it
+// directly, not through this barrel), which is what the assertion below reads.
+vi.mock('@/layers/shared/model', async (importActual) => {
+  const actual = await importActual<typeof import('@/layers/shared/model')>();
+  return {
+    ...actual,
+    useAppStore: (selector?: (s: typeof mockState) => unknown) =>
+      selector ? selector(mockState) : mockState,
+    useSettingsDeepLink: () => {
+      const real = actual.useSettingsDeepLink();
+      return {
+        ...real,
+        close: () => {
+          mockCloseSettings();
+          real.close();
+        },
+      };
+    },
+    useTasksDeepLink: () => {
+      const real = actual.useTasksDeepLink();
+      return {
+        ...real,
+        close: () => {
+          mockCloseTasks();
+          real.close();
+        },
+      };
+    },
+  };
+});
 
 function fireKeydown(key: string, modifiers: { metaKey?: boolean; ctrlKey?: boolean } = {}) {
   act(() => {
@@ -58,8 +72,17 @@ describe('useGlobalPalette', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockState.globalPaletteOpen = false;
+    // The real deep-link hooks read route state, and there is no RouterProvider
+    // here. The embedded adapter is the supported router-less mode: `useSafeSearch`
+    // returns an empty search and `useSafeNavigate` returns null, so `close()`
+    // takes its store-only branch — which is exactly the half this file asserts on.
+    setPlatformAdapter({ isEmbedded: true, openFile: async () => {} });
     // Ensure all previous hooks are unmounted so their event listeners are removed
     cleanup();
+  });
+
+  afterEach(() => {
+    setPlatformAdapter({ isEmbedded: false, openFile: async () => {} });
   });
 
   it('returns globalPaletteOpen, setGlobalPaletteOpen, and toggleGlobalPalette', () => {
@@ -96,6 +119,24 @@ describe('useGlobalPalette', () => {
 
     expect(mockCloseSettings).toHaveBeenCalled();
     expect(mockCloseTasks).toHaveBeenCalled();
+  });
+
+  // The behaviour change this branch makes deliberate (DOR-839): `close()` owns
+  // the store flag as well as the URL, so Cmd+K now dismisses a Settings dialog
+  // opened from the sidebar, not only a deep-linked one. This harness runs the
+  // embedded (router-less) branch, so what it pins is that THAT branch clears
+  // the store flag; the router-present regression (a close() reverting to
+  // URL-only) is pinned by use-dialog-deep-link.test.tsx and the replay-setup
+  // test, which run against a real router.
+  it('opening the palette clears a Settings dialog the store flag opened', async () => {
+    const { useAppStore: realAppStore } =
+      await vi.importActual<typeof import('@/layers/shared/model')>('@/layers/shared/model');
+    realAppStore.getState().setSettingsOpen(true);
+
+    renderHook(() => useGlobalPalette());
+    fireKeydown('k', { metaKey: true });
+
+    expect(realAppStore.getState().settingsOpen).toBe(false);
   });
 
   it('does not close other dialogs when palette is already open (closing it)', () => {

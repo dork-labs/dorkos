@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useAppStore } from '@/layers/shared/model';
+import { useAppStore, useSettingsDeepLink } from '@/layers/shared/model';
 import { useUpdateConfig } from '@/layers/entities/config';
 import {
   Button,
@@ -35,9 +35,9 @@ export function PreferencesTab() {
     setEnableTasksNotifications,
     promoEnabled,
     setPromoEnabled,
-    setSettingsOpen,
     setOnboardingHiddenForSession,
   } = useAppStore();
+  const { close: closeSettings } = useSettingsDeepLink();
   const updateConfig = useUpdateConfig();
   const queryClient = useQueryClient();
 
@@ -45,6 +45,11 @@ export function PreferencesTab() {
    * Reopen the first-run setup flow: clear the authoritative completion signals
    * (`completedAt`/`dismissedAt`) and step history, drop the session-local
    * suppression flag, and close Settings so the overlay is visible.
+   *
+   * Closing goes through the deep-link `close()`, which owns both halves of the
+   * dialog's open state. The store flag alone is not enough: the skip-setup
+   * toast's own "Replay setup" action opens this tab via `?settings=preferences`,
+   * and that param kept the dialog parked over the welcome screen (DOR-839).
    */
   const replaySetup = () => {
     updateConfig.mutate(
@@ -67,7 +72,7 @@ export function PreferencesTab() {
       }
     );
     setOnboardingHiddenForSession(false);
-    setSettingsOpen(false);
+    closeSettings();
   };
 
   return (

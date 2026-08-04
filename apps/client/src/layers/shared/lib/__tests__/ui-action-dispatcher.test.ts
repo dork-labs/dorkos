@@ -45,13 +45,40 @@ function makeMockStore(overrides: Partial<DispatcherStore> = {}): DispatcherStor
   };
 }
 
+/**
+ * A context over a *fixed* mock store. `ctx.getStore()` returns the same object
+ * every call, so assertions read `ctx.getStore().setX`. Tests that care about
+ * the store changing under a live context use {@link makeLiveCtx} instead.
+ */
 function makeMockCtx(storeOverrides: Partial<DispatcherStore> = {}): DispatcherContext {
+  const store = makeMockStore(storeOverrides);
   return {
-    store: makeMockStore(storeOverrides),
+    getStore: () => store,
     setTheme: vi.fn(),
     scrollToMessage: vi.fn(),
     switchAgent: vi.fn(),
     applyShape: vi.fn(),
+  };
+}
+
+/**
+ * A context whose store can be swapped after the context is built — the shape
+ * Zustand actually has, where every `set` hands back a NEW state object.
+ *
+ * @returns The context plus `setStore`, which replaces the state the next
+ *   dispatch will read.
+ */
+function makeLiveCtx(initial: Partial<DispatcherStore> = {}): {
+  ctx: DispatcherContext;
+  setStore: (overrides: Partial<DispatcherStore>) => DispatcherStore;
+} {
+  let store = makeMockStore(initial);
+  return {
+    ctx: {
+      getStore: () => store,
+      setTheme: vi.fn(),
+    },
+    setStore: (overrides) => (store = makeMockStore(overrides)),
   };
 }
 
@@ -61,37 +88,154 @@ describe('executeUiCommand — panel commands', () => {
   it('open_panel calls the correct setter with true', () => {
     const ctx = makeMockCtx();
     executeUiCommand(ctx, { action: 'open_panel', panel: 'tasks' }, 'agent');
-    expect(ctx.store.setTasksOpen).toHaveBeenCalledWith(true);
+    expect(ctx.getStore().setTasksOpen).toHaveBeenCalledWith(true);
   });
 
   it('close_panel calls the correct setter with false', () => {
     const ctx = makeMockCtx();
     executeUiCommand(ctx, { action: 'close_panel', panel: 'settings' }, 'agent');
-    expect(ctx.store.setSettingsOpen).toHaveBeenCalledWith(false);
+    expect(ctx.getStore().setSettingsOpen).toHaveBeenCalledWith(false);
   });
 
   it('toggle_panel opens a closed panel', () => {
     const ctx = makeMockCtx({ relayOpen: false });
     executeUiCommand(ctx, { action: 'toggle_panel', panel: 'relay' }, 'agent');
-    expect(ctx.store.setRelayOpen).toHaveBeenCalledWith(true);
+    expect(ctx.getStore().setRelayOpen).toHaveBeenCalledWith(true);
   });
 
   it('toggle_panel closes an open panel', () => {
     const ctx = makeMockCtx({ relayOpen: true });
     executeUiCommand(ctx, { action: 'toggle_panel', panel: 'relay' }, 'agent');
-    expect(ctx.store.setRelayOpen).toHaveBeenCalledWith(false);
+    expect(ctx.getStore().setRelayOpen).toHaveBeenCalledWith(false);
   });
 
   it('open_panel picker calls setPickerOpen', () => {
     const ctx = makeMockCtx();
     executeUiCommand(ctx, { action: 'open_panel', panel: 'picker' }, 'agent');
-    expect(ctx.store.setPickerOpen).toHaveBeenCalledWith(true);
+    expect(ctx.getStore().setPickerOpen).toHaveBeenCalledWith(true);
   });
 
   it('close_panel settings calls setSettingsOpen with false', () => {
     const ctx = makeMockCtx();
     executeUiCommand(ctx, { action: 'close_panel', panel: 'settings' }, 'agent');
-    expect(ctx.store.setSettingsOpen).toHaveBeenCalledWith(false);
+    expect(ctx.getStore().setSettingsOpen).toHaveBeenCalledWith(false);
+  });
+});
+
+// --- The store a dispatch reads is the store as of the dispatch ---
+//
+// The app entry builds ONE `DispatcherContext` at module scope and hands it to
+// every extension for the life of the app. Zustand replaces the whole state
+// object on every `set`, so a context that captured a state *value* would answer
+// every later `toggle_panel` from boot-time flags — a bug that hides well,
+// because the setters keep working (their identities are stable) and only the
+// reads go stale. `getStore` is the reason that cannot happen; these pin it.
+
+describe('executeUiCommand — reads the live store, not the one the context was built over', () => {
+  // Each of these dispatches TWICE against one context, swapping the state
+  // object in between — the real shape, where the app entry's single context is
+  // dispatched against for the app's whole life. A context (or a dispatcher)
+  // that captures the store on its first use passes a single dispatch and only
+  // goes wrong on the second.
+
+  it('toggle_panel reads the flag as of this dispatch, not the last one', () => {
+    const { ctx, setStore } = makeLiveCtx({ relayOpen: false });
+    const atBoot = ctx.getStore();
+
+    // Boot state: closed. Toggle opens it.
+    executeUiCommand(ctx, { action: 'toggle_panel', panel: 'relay' }, 'agent');
+    expect(atBoot.setRelayOpen).toHaveBeenCalledWith(true);
+
+    // The panel is open now, and Zustand has replaced the state object.
+    const live = setStore({ relayOpen: true });
+    executeUiCommand(ctx, { action: 'toggle_panel', panel: 'relay' }, 'agent');
+
+    // Read the live flag → close it. Answering from the boot snapshot reads
+    // `relayOpen: false` and "opens" the panel already on screen — the DOR-839
+    // toggle bug, one layer down.
+    expect(live.setRelayOpen).toHaveBeenCalledWith(false);
+  });
+
+  it('drives the setters on the live state object, not the one it saw first', () => {
+    const { ctx, setStore } = makeLiveCtx({ tasksOpen: false });
+    const atBoot = ctx.getStore();
+
+    executeUiCommand(ctx, { action: 'open_panel', panel: 'tasks' }, 'agent');
+    expect(atBoot.setTasksOpen).toHaveBeenCalledTimes(1);
+
+    const live = setStore({ tasksOpen: true });
+    executeUiCommand(ctx, { action: 'open_panel', panel: 'tasks' }, 'agent');
+
+    expect(live.setTasksOpen).toHaveBeenCalledWith(true);
+    // The first state object must not have been written to a second time.
+    expect(atBoot.setTasksOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it('reveals the canvas through the live state object', () => {
+    const { ctx, setStore } = makeLiveCtx();
+    const atBoot = ctx.getStore();
+
+    executeUiCommand(ctx, { action: 'open_diff', sourcePath: 'src/App.tsx' }, 'agent');
+    expect(atBoot.setRightPanelOpen).toHaveBeenCalledTimes(1);
+
+    const live = setStore({});
+    executeUiCommand(ctx, { action: 'open_diff', sourcePath: 'src/Other.tsx' }, 'agent');
+
+    expect(live.setRightPanelOpen).toHaveBeenCalledWith(true);
+    expect(atBoot.setRightPanelOpen).toHaveBeenCalledTimes(1);
+  });
+});
+
+// --- Panels with a URL half (DOR-839) ---
+//
+// Settings and Tasks can be held open by a search param as well as the store
+// flag, and `DialogHost` renders them on either. Dispatch runs outside React, so
+// the URL half arrives as an injected `panelUrlSignal`; without it, closing a
+// deep-linked dialog left it on screen and toggling it read closed and reopened.
+
+describe('executeUiCommand — panels with a URL half', () => {
+  function makeSignalCtx(urlOpen: Record<string, boolean>, storeOverrides = {}) {
+    const close = vi.fn();
+    const ctx: DispatcherContext = {
+      ...makeMockCtx(storeOverrides),
+      panelUrlSignal: { isOpen: (panel) => urlOpen[panel] ?? false, close },
+    };
+    return { ctx, close };
+  }
+
+  it('close_panel clears the URL half as well as the store flag', () => {
+    const { ctx, close } = makeSignalCtx({ settings: true });
+    executeUiCommand(ctx, { action: 'close_panel', panel: 'settings' }, 'agent');
+    expect(ctx.getStore().setSettingsOpen).toHaveBeenCalledWith(false);
+    expect(close).toHaveBeenCalledWith('settings');
+  });
+
+  it('open_panel leaves the URL half alone', () => {
+    const { ctx, close } = makeSignalCtx({});
+    executeUiCommand(ctx, { action: 'open_panel', panel: 'settings' }, 'agent');
+    expect(ctx.getStore().setSettingsOpen).toHaveBeenCalledWith(true);
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it('toggle_panel closes a panel the URL alone is holding open', () => {
+    // The store flag says closed, so a store-only read toggles it to open —
+    // which does nothing visible, because the URL already has it on screen.
+    const { ctx, close } = makeSignalCtx({ settings: true }, { settingsOpen: false });
+    executeUiCommand(ctx, { action: 'toggle_panel', panel: 'settings' }, 'agent');
+    expect(ctx.getStore().setSettingsOpen).toHaveBeenCalledWith(false);
+    expect(close).toHaveBeenCalledWith('settings');
+  });
+
+  it('toggle_panel still opens a panel neither signal is holding open', () => {
+    const { ctx } = makeSignalCtx({ settings: false }, { settingsOpen: false });
+    executeUiCommand(ctx, { action: 'toggle_panel', panel: 'settings' }, 'agent');
+    expect(ctx.getStore().setSettingsOpen).toHaveBeenCalledWith(true);
+  });
+
+  it('works without a signal — the dep is optional and closing still runs', () => {
+    const ctx = makeMockCtx({ settingsOpen: true });
+    executeUiCommand(ctx, { action: 'toggle_panel', panel: 'settings' }, 'agent');
+    expect(ctx.getStore().setSettingsOpen).toHaveBeenCalledWith(false);
   });
 });
 
@@ -106,37 +250,37 @@ describe('executeUiCommand — sidebar commands', () => {
   it('open_sidebar calls setSidebarOpen(true)', () => {
     const ctx = makeMockCtx();
     executeUiCommand(ctx, { action: 'open_sidebar' }, 'agent');
-    expect(ctx.store.setSidebarOpen).toHaveBeenCalledWith(true);
+    expect(ctx.getStore().setSidebarOpen).toHaveBeenCalledWith(true);
   });
 
   it('close_sidebar calls setSidebarOpen(false)', () => {
     const ctx = makeMockCtx();
     executeUiCommand(ctx, { action: 'close_sidebar' }, 'agent');
-    expect(ctx.store.setSidebarOpen).toHaveBeenCalledWith(false);
+    expect(ctx.getStore().setSidebarOpen).toHaveBeenCalledWith(false);
   });
 
   it('switch_sidebar_tab sets the tab and opens the sidebar on the embedded host', () => {
     setEmbedded(true);
     const ctx = makeMockCtx();
     executeUiCommand(ctx, { action: 'switch_sidebar_tab', tab: 'sessions' }, 'agent');
-    expect(ctx.store.setSidebarActiveTab).toHaveBeenCalledWith('sessions');
-    expect(ctx.store.setSidebarOpen).toHaveBeenCalledWith(true);
+    expect(ctx.getStore().setSidebarActiveTab).toHaveBeenCalledWith('sessions');
+    expect(ctx.getStore().setSidebarOpen).toHaveBeenCalledWith(true);
   });
 
   it('switch_sidebar_tab works with the connections tab on the embedded host', () => {
     setEmbedded(true);
     const ctx = makeMockCtx();
     executeUiCommand(ctx, { action: 'switch_sidebar_tab', tab: 'connections' }, 'agent');
-    expect(ctx.store.setSidebarActiveTab).toHaveBeenCalledWith('connections');
-    expect(ctx.store.setSidebarOpen).toHaveBeenCalledWith(true);
+    expect(ctx.getStore().setSidebarActiveTab).toHaveBeenCalledWith('connections');
+    expect(ctx.getStore().setSidebarOpen).toHaveBeenCalledWith(true);
   });
 
   it('switch_sidebar_tab is a no-op on the web cockpit (no sidebar tab strip)', () => {
     setEmbedded(false);
     const ctx = makeMockCtx();
     executeUiCommand(ctx, { action: 'switch_sidebar_tab', tab: 'connections' }, 'agent');
-    expect(ctx.store.setSidebarActiveTab).not.toHaveBeenCalled();
-    expect(ctx.store.setSidebarOpen).not.toHaveBeenCalled();
+    expect(ctx.getStore().setSidebarActiveTab).not.toHaveBeenCalled();
+    expect(ctx.getStore().setSidebarOpen).not.toHaveBeenCalled();
   });
 });
 
@@ -155,17 +299,17 @@ describe('executeUiCommand — canvas commands', () => {
     );
     // Edit-protection is enforced inside openCanvasDocument (per-doc), so the
     // dispatcher unconditionally forwards the content.
-    expect(ctx.store.openCanvasDocument).toHaveBeenCalledWith({
+    expect(ctx.getStore().openCanvasDocument).toHaveBeenCalledWith({
       type: 'markdown',
       content: '# Hello',
     });
     // Live render path (DOR-97): the canvas only shows when the right panel is
     // open AND its active tab is 'canvas'. Agent origin → the tab switch is
     // view-only so it never persists over the user's preference (DOR-227).
-    expect(ctx.store.setRightPanelOpen).toHaveBeenCalledWith(true);
-    expect(ctx.store.setActiveRightPanelTabView).toHaveBeenCalledWith('canvas');
-    expect(ctx.store.setActiveRightPanelTab).not.toHaveBeenCalled();
-    expect(ctx.store.setCanvasOpen).toHaveBeenCalledWith(true);
+    expect(ctx.getStore().setRightPanelOpen).toHaveBeenCalledWith(true);
+    expect(ctx.getStore().setActiveRightPanelTabView).toHaveBeenCalledWith('canvas');
+    expect(ctx.getStore().setActiveRightPanelTab).not.toHaveBeenCalled();
+    expect(ctx.getStore().setCanvasOpen).toHaveBeenCalledWith(true);
   });
 
   it('open_canvas from a user origin persists the tab pick', () => {
@@ -175,8 +319,8 @@ describe('executeUiCommand — canvas commands', () => {
       { action: 'open_canvas', content: { type: 'markdown', content: '# Hello' } },
       'user'
     );
-    expect(ctx.store.setActiveRightPanelTab).toHaveBeenCalledWith('canvas');
-    expect(ctx.store.setActiveRightPanelTabView).not.toHaveBeenCalled();
+    expect(ctx.getStore().setActiveRightPanelTab).toHaveBeenCalledWith('canvas');
+    expect(ctx.getStore().setActiveRightPanelTabView).not.toHaveBeenCalled();
   });
 
   it('open_canvas with preferredWidth sets the width', () => {
@@ -190,7 +334,7 @@ describe('executeUiCommand — canvas commands', () => {
       },
       'agent'
     );
-    expect(ctx.store.setCanvasPreferredWidth).toHaveBeenCalledWith(60);
+    expect(ctx.getStore().setCanvasPreferredWidth).toHaveBeenCalledWith(60);
   });
 
   it('open_canvas without preferredWidth does not call setCanvasPreferredWidth', () => {
@@ -203,7 +347,7 @@ describe('executeUiCommand — canvas commands', () => {
       },
       'agent'
     );
-    expect(ctx.store.setCanvasPreferredWidth).not.toHaveBeenCalled();
+    expect(ctx.getStore().setCanvasPreferredWidth).not.toHaveBeenCalled();
   });
 
   it('update_canvas mutates the active document only', () => {
@@ -216,18 +360,18 @@ describe('executeUiCommand — canvas commands', () => {
       },
       'agent'
     );
-    expect(ctx.store.updateActiveDocument).toHaveBeenCalledWith({
+    expect(ctx.getStore().updateActiveDocument).toHaveBeenCalledWith({
       type: 'json',
       data: { key: 'value' },
     });
-    expect(ctx.store.setCanvasOpen).not.toHaveBeenCalled();
+    expect(ctx.getStore().setCanvasOpen).not.toHaveBeenCalled();
   });
 
   it('close_canvas closes the canvas and its right-panel host', () => {
     const ctx = makeMockCtx();
     executeUiCommand(ctx, { action: 'close_canvas' }, 'agent');
-    expect(ctx.store.setCanvasOpen).toHaveBeenCalledWith(false);
-    expect(ctx.store.setRightPanelOpen).toHaveBeenCalledWith(false);
+    expect(ctx.getStore().setCanvasOpen).toHaveBeenCalledWith(false);
+    expect(ctx.getStore().setRightPanelOpen).toHaveBeenCalledWith(false);
   });
 });
 
@@ -237,7 +381,7 @@ describe('executeUiCommand — pip commands', () => {
   it('open_pip pops a widget descriptor for the issuing session', () => {
     const ctx = { ...makeMockCtx(), sessionId: 'sess-1' };
     executeUiCommand(ctx, { action: 'open_pip', title: 'Tic-Tac-Toe' }, 'agent');
-    expect(ctx.store.openPip).toHaveBeenCalledWith({
+    expect(ctx.getStore().openPip).toHaveBeenCalledWith({
       kind: 'widget',
       sessionId: 'sess-1',
       title: 'Tic-Tac-Toe',
@@ -247,7 +391,7 @@ describe('executeUiCommand — pip commands', () => {
   it("open_pip falls back to 'Widget' when no title is given", () => {
     const ctx = { ...makeMockCtx(), sessionId: 'sess-1' };
     executeUiCommand(ctx, { action: 'open_pip' }, 'agent');
-    expect(ctx.store.openPip).toHaveBeenCalledWith({
+    expect(ctx.getStore().openPip).toHaveBeenCalledWith({
       kind: 'widget',
       sessionId: 'sess-1',
       title: 'Widget',
@@ -259,7 +403,7 @@ describe('executeUiCommand — pip commands', () => {
     vi.spyOn(toast, 'info');
     const ctx = makeMockCtx(); // no sessionId (palette/extension dispatch)
     executeUiCommand(ctx, { action: 'open_pip' }, 'agent');
-    expect(ctx.store.openPip).not.toHaveBeenCalled();
+    expect(ctx.getStore().openPip).not.toHaveBeenCalled();
     expect(toast.info).toHaveBeenCalledWith(
       'Picture-in-picture needs an active session',
       expect.anything()
@@ -269,7 +413,7 @@ describe('executeUiCommand — pip commands', () => {
   it('close_pip closes the floating panel', () => {
     const ctx = makeMockCtx();
     executeUiCommand(ctx, { action: 'close_pip' }, 'agent');
-    expect(ctx.store.closePip).toHaveBeenCalled();
+    expect(ctx.getStore().closePip).toHaveBeenCalled();
   });
 });
 
@@ -279,20 +423,20 @@ describe('executeUiCommand — open_file', () => {
   it('resolves a code file to the file viewer and opens + reveals it (agent origin: view-only)', () => {
     const ctx = makeMockCtx();
     executeUiCommand(ctx, { action: 'open_file', sourcePath: 'src/index.ts' }, 'agent');
-    expect(ctx.store.openCanvasDocument).toHaveBeenCalledWith({
+    expect(ctx.getStore().openCanvasDocument).toHaveBeenCalledWith({
       type: 'file',
       sourcePath: 'src/index.ts',
     });
-    expect(ctx.store.setActiveRightPanelTabView).toHaveBeenCalledWith('canvas');
-    expect(ctx.store.setActiveRightPanelTab).not.toHaveBeenCalled();
-    expect(ctx.store.setCanvasOpen).toHaveBeenCalledWith(true);
+    expect(ctx.getStore().setActiveRightPanelTabView).toHaveBeenCalledWith('canvas');
+    expect(ctx.getStore().setActiveRightPanelTab).not.toHaveBeenCalled();
+    expect(ctx.getStore().setCanvasOpen).toHaveBeenCalledWith(true);
   });
 
   it('open_file from the file tree (user origin) persists the tab pick', () => {
     const ctx = makeMockCtx();
     executeUiCommand(ctx, { action: 'open_file', sourcePath: 'src/index.ts' }, 'user');
-    expect(ctx.store.setActiveRightPanelTab).toHaveBeenCalledWith('canvas');
-    expect(ctx.store.setActiveRightPanelTabView).not.toHaveBeenCalled();
+    expect(ctx.getStore().setActiveRightPanelTab).toHaveBeenCalledWith('canvas');
+    expect(ctx.getStore().setActiveRightPanelTabView).not.toHaveBeenCalled();
   });
 
   it('resolves media/3D/audio/video/csv extensions to their viewers', () => {
@@ -309,7 +453,7 @@ describe('executeUiCommand — open_file', () => {
     for (const [path, expected] of cases) {
       const ctx = makeMockCtx();
       executeUiCommand(ctx, { action: 'open_file', sourcePath: path }, 'agent');
-      expect(ctx.store.openCanvasDocument).toHaveBeenCalledWith(expected);
+      expect(ctx.getStore().openCanvasDocument).toHaveBeenCalledWith(expected);
     }
   });
 
@@ -317,7 +461,7 @@ describe('executeUiCommand — open_file', () => {
     const ctx = makeMockCtx();
     ctx.workbenchViewerOverrides = { csv: 'file' };
     executeUiCommand(ctx, { action: 'open_file', sourcePath: 'data.csv' }, 'agent');
-    expect(ctx.store.openCanvasDocument).toHaveBeenCalledWith({
+    expect(ctx.getStore().openCanvasDocument).toHaveBeenCalledWith({
       type: 'file',
       sourcePath: 'data.csv',
     });
@@ -330,21 +474,21 @@ describe('executeUiCommand — open_diff', () => {
   it('opens a diff document and reveals the canvas view-only at agent origin (DOR-227)', () => {
     const ctx = makeMockCtx();
     executeUiCommand(ctx, { action: 'open_diff', sourcePath: 'src/App.tsx' }, 'agent');
-    expect(ctx.store.openCanvasDocument).toHaveBeenCalledWith({
+    expect(ctx.getStore().openCanvasDocument).toHaveBeenCalledWith({
       type: 'diff',
       sourcePath: 'src/App.tsx',
     });
     // Agent-driven auto-open must not overwrite the user's pinned tab preference.
-    expect(ctx.store.setActiveRightPanelTabView).toHaveBeenCalledWith('canvas');
-    expect(ctx.store.setActiveRightPanelTab).not.toHaveBeenCalled();
-    expect(ctx.store.setCanvasOpen).toHaveBeenCalledWith(true);
+    expect(ctx.getStore().setActiveRightPanelTabView).toHaveBeenCalledWith('canvas');
+    expect(ctx.getStore().setActiveRightPanelTab).not.toHaveBeenCalled();
+    expect(ctx.getStore().setCanvasOpen).toHaveBeenCalledWith(true);
   });
 
   it('persists the tab pick when a user deliberately opens a diff', () => {
     const ctx = makeMockCtx();
     executeUiCommand(ctx, { action: 'open_diff', sourcePath: 'src/App.tsx' }, 'user');
-    expect(ctx.store.setActiveRightPanelTab).toHaveBeenCalledWith('canvas');
-    expect(ctx.store.setActiveRightPanelTabView).not.toHaveBeenCalled();
+    expect(ctx.getStore().setActiveRightPanelTab).toHaveBeenCalledWith('canvas');
+    expect(ctx.getStore().setActiveRightPanelTabView).not.toHaveBeenCalled();
   });
 });
 
@@ -356,17 +500,17 @@ describe('executeUiCommand — open_terminal', () => {
     // must NOT rewrite their per-agent tab preference.
     const ctx = makeMockCtx();
     executeUiCommand(ctx, { action: 'open_terminal' }, 'agent');
-    expect(ctx.store.setRightPanelOpen).toHaveBeenCalledWith(true);
-    expect(ctx.store.setActiveRightPanelTabView).toHaveBeenCalledWith('terminal');
-    expect(ctx.store.setActiveRightPanelTab).not.toHaveBeenCalled();
+    expect(ctx.getStore().setRightPanelOpen).toHaveBeenCalledWith(true);
+    expect(ctx.getStore().setActiveRightPanelTabView).toHaveBeenCalledWith('terminal');
+    expect(ctx.getStore().setActiveRightPanelTab).not.toHaveBeenCalled();
   });
 
   it('user origin: focusing the Terminal tab persists the preference', () => {
     const ctx = makeMockCtx();
     executeUiCommand(ctx, { action: 'open_terminal' }, 'user');
-    expect(ctx.store.setRightPanelOpen).toHaveBeenCalledWith(true);
-    expect(ctx.store.setActiveRightPanelTab).toHaveBeenCalledWith('terminal');
-    expect(ctx.store.setActiveRightPanelTabView).not.toHaveBeenCalled();
+    expect(ctx.getStore().setRightPanelOpen).toHaveBeenCalledWith(true);
+    expect(ctx.getStore().setActiveRightPanelTab).toHaveBeenCalledWith('terminal');
+    expect(ctx.getStore().setActiveRightPanelTabView).not.toHaveBeenCalled();
   });
 
   it('ignores the advisory cwd hint (PTY spawns in the session worktree)', () => {
@@ -374,7 +518,7 @@ describe('executeUiCommand — open_terminal', () => {
     // reaches the store.
     const ctx = makeMockCtx();
     executeUiCommand(ctx, { action: 'open_terminal', cwd: '/somewhere/else' }, 'agent');
-    expect(ctx.store.setActiveRightPanelTabView).toHaveBeenCalledWith('terminal');
+    expect(ctx.getStore().setActiveRightPanelTabView).toHaveBeenCalledWith('terminal');
   });
 
   it('degrades to a toast (no phantom tab) when the transport has no terminal', async () => {
@@ -385,9 +529,9 @@ describe('executeUiCommand — open_terminal', () => {
     const ctx = makeMockCtx();
     ctx.supportsTerminal = false;
     executeUiCommand(ctx, { action: 'open_terminal' }, 'agent');
-    expect(ctx.store.setActiveRightPanelTab).not.toHaveBeenCalled();
-    expect(ctx.store.setActiveRightPanelTabView).not.toHaveBeenCalled();
-    expect(ctx.store.setRightPanelOpen).not.toHaveBeenCalled();
+    expect(ctx.getStore().setActiveRightPanelTab).not.toHaveBeenCalled();
+    expect(ctx.getStore().setActiveRightPanelTabView).not.toHaveBeenCalled();
+    expect(ctx.getStore().setRightPanelOpen).not.toHaveBeenCalled();
     expect(toast.info).toHaveBeenCalled();
   });
 });
@@ -400,15 +544,15 @@ describe('executeUiCommand — browser_navigate', () => {
     executeUiCommand(ctx, { action: 'browser_navigate', url: 'http://localhost:5173' }, 'agent');
     // Append-and-activate (dedup by URL inside the store) — never clobbers an
     // edited document.
-    expect(ctx.store.openCanvasDocument).toHaveBeenCalledWith({
+    expect(ctx.getStore().openCanvasDocument).toHaveBeenCalledWith({
       type: 'browser',
       url: 'http://localhost:5173',
     });
-    expect(ctx.store.setRightPanelOpen).toHaveBeenCalledWith(true);
+    expect(ctx.getStore().setRightPanelOpen).toHaveBeenCalledWith(true);
     // Agent origin → view-only tab switch (DOR-227).
-    expect(ctx.store.setActiveRightPanelTabView).toHaveBeenCalledWith('canvas');
-    expect(ctx.store.setActiveRightPanelTab).not.toHaveBeenCalled();
-    expect(ctx.store.setCanvasOpen).toHaveBeenCalledWith(true);
+    expect(ctx.getStore().setActiveRightPanelTabView).toHaveBeenCalledWith('canvas');
+    expect(ctx.getStore().setActiveRightPanelTab).not.toHaveBeenCalled();
+    expect(ctx.getStore().setCanvasOpen).toHaveBeenCalledWith(true);
   });
 });
 
@@ -543,7 +687,7 @@ describe('executeUiCommand — open_command_palette', () => {
   it('calls setGlobalPaletteOpen(true)', () => {
     const ctx = makeMockCtx();
     executeUiCommand(ctx, { action: 'open_command_palette' }, 'agent');
-    expect(ctx.store.setGlobalPaletteOpen).toHaveBeenCalledWith(true);
+    expect(ctx.getStore().setGlobalPaletteOpen).toHaveBeenCalledWith(true);
   });
 });
 

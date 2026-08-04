@@ -4,6 +4,10 @@
  * @module features/settings
  */
 export { SettingsDialog } from './ui/SettingsDialog';
+// The Preferences tab on its own. Its "Replay setup" control has to close the
+// dialog it sits in, and only `DialogHost` (widgets) decides that a dialog is
+// open — so the test that proves it lives up there and needs this export.
+export { PreferencesTab } from './ui/tabs/PreferencesTab';
 export { TunnelDialog } from './ui/TunnelDialog';
 export { ServerRestartOverlay } from './ui/ServerRestartOverlay';
 

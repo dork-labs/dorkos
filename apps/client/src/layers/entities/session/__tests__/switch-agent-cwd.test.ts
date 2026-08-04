@@ -102,7 +102,7 @@ describe('executeUiCommand switch_agent → switchAgentCwd (wired path)', () => 
 
     const ctx: DispatcherContext = {
       // switch_agent never reads the dispatcher store; a bare stub is honest here.
-      store: {} as DispatcherStore,
+      getStore: () => ({}) as DispatcherStore,
       setTheme: vi.fn(),
       switchAgent: (cwd) => switchAgentCwd(cwd, { store, queryClient, navigate }),
     };

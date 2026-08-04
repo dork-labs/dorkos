@@ -82,8 +82,22 @@ const TERMINAL_TAB_ID = 'terminal';
 
 /** Dependencies injected by the caller. All are obtainable outside React. */
 export interface DispatcherContext {
-  /** useAppStore.getState() — the raw Zustand state object */
-  store: DispatcherStore;
+  /**
+   * Reader for the live app store — pass `useAppStore.getState` itself, never a
+   * value you already called it on.
+   *
+   * A getter rather than a snapshot because a `DispatcherContext` is allowed to
+   * outlive a dispatch: the app entry builds one at module scope and hands it to
+   * every extension for the life of the app (`ExtensionAPIDeps`). Zustand hands
+   * back a NEW state object on every `set`, so a snapshot captured at boot keeps
+   * boot-time values for the fields the dispatcher *reads* — `settingsOpen`,
+   * `tasksOpen`, `relayOpen`, `pickerOpen` — and `toggle_panel` decides against a
+   * constant. (The setters survive: their identities are stable. That is exactly
+   * why the bug was invisible — every command still ran, only the reads lied.)
+   * Called once per dispatch, so a command sees the state as of the moment it
+   * runs.
+   */
+  getStore: () => DispatcherStore;
   /** Theme setter (from useTheme or stored ref) */
   setTheme: (theme: 'light' | 'dark') => void;
   /** Optional: scroll-to-message handler */
@@ -127,6 +141,38 @@ export interface DispatcherContext {
    * which have no originating session — `open_pip` then degrades to a toast.
    */
   sessionId?: string;
+  /**
+   * Optional: the URL half of the dual dialog open signal (DOR-839).
+   *
+   * Settings and Tasks can be held open by a search param as well as by the
+   * store flag — `DialogHost` renders on either — so closing one by store flag
+   * alone leaves a deep-linked dialog on screen, and toggling one reads it as
+   * closed and "opens" it again. Dispatch happens outside React, so it cannot
+   * reach the deep-link hooks; the app entry injects a router-backed adapter
+   * instead, the same shape as `switchAgent`. Omit at call sites that never
+   * dispatch panel commands — a Shape apply only ever emits `open_panel`, and
+   * the file explorer only `open_file`.
+   *
+   * One call site can dispatch panel commands and still omits it: the gen-ui
+   * widget context builds its context per click and accepts the full
+   * `UiCommandSchema`, so a widget button carrying `close_panel` or
+   * `toggle_panel` against a deep-linked Settings or Tasks dialog hits the
+   * original bug. Known gap, not an oversight — filed as DOR-908.
+   */
+  panelUrlSignal?: PanelUrlSignal;
+}
+
+/**
+ * Reader/closer for the URL half of a panel's open state.
+ *
+ * Built in the app entry from the router, keyed by `isDualSignalDialog`. Panels
+ * with no URL signal (`relay`, `picker`) report `false` and ignore `close`.
+ */
+interface PanelUrlSignal {
+  /** Whether the panel's URL signal currently holds it open. */
+  isOpen: (panel: UiPanelId) => boolean;
+  /** Clear the panel's URL signal. No-op for panels that have none. */
+  close: (panel: UiPanelId) => void;
 }
 
 /**
@@ -148,18 +194,20 @@ export function executeUiCommand(
   command: UiCommand,
   origin: UiCommandOrigin
 ): void {
-  const { store } = ctx;
+  // One read per dispatch, so every branch below sees the state as of now — not
+  // as of whenever this context was built (see `getStore`).
+  const store = ctx.getStore();
 
   switch (command.action) {
     // --- Panels ---
     case 'open_panel':
-      setPanelOpen(store, command.panel, true);
+      setPanelOpen(ctx, store, command.panel, true);
       break;
     case 'close_panel':
-      setPanelOpen(store, command.panel, false);
+      setPanelOpen(ctx, store, command.panel, false);
       break;
     case 'toggle_panel':
-      togglePanel(store, command.panel);
+      togglePanel(ctx, store, command.panel);
       break;
 
     // --- Sidebar ---
@@ -389,7 +437,12 @@ function buildOpenFileContent(viewer: CanvasViewerType, sourcePath: string): UiC
   }
 }
 
-function setPanelOpen(store: DispatcherStore, panel: UiPanelId, open: boolean): void {
+function setPanelOpen(
+  ctx: DispatcherContext,
+  store: DispatcherStore,
+  panel: UiPanelId,
+  open: boolean
+): void {
   const setterMap: Record<UiPanelId, (open: boolean) => void> = {
     settings: store.setSettingsOpen,
     tasks: store.setTasksOpen,
@@ -397,14 +450,22 @@ function setPanelOpen(store: DispatcherStore, panel: UiPanelId, open: boolean): 
     picker: store.setPickerOpen,
   };
   setterMap[panel]?.(open);
+  // Closing clears every signal that can hold the panel open, not just the store
+  // flag — a deep-linked Settings or Tasks dialog stays on screen otherwise
+  // (DOR-839). No-op for panels with no URL signal, and when none is injected.
+  if (!open) ctx.panelUrlSignal?.close(panel);
 }
 
-function togglePanel(store: DispatcherStore, panel: UiPanelId): void {
+function togglePanel(ctx: DispatcherContext, store: DispatcherStore, panel: UiPanelId): void {
   const getterMap: Record<UiPanelId, boolean> = {
     settings: store.settingsOpen,
     tasks: store.tasksOpen,
     relay: store.relayOpen,
     picker: store.pickerOpen,
   };
-  setPanelOpen(store, panel, !getterMap[panel]);
+  // Same open rule `DialogHost` renders by: either signal counts. Reading the
+  // store alone reports a deep-linked dialog as closed, so a toggle "opens" the
+  // thing already on screen instead of closing it.
+  const isOpen = getterMap[panel] || (ctx.panelUrlSignal?.isOpen(panel) ?? false);
+  setPanelOpen(ctx, store, panel, !isOpen);
 }
