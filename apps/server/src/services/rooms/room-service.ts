@@ -90,6 +90,7 @@ import { RoomError, type RoomAgentLookup } from './room-errors.js';
 import {
   buildBridgeAgentSwappedNotice,
   buildBridgeDisconnectedNotice,
+  buildBridgeHistoryNotice,
   buildBridgeSecondAgentRefusedNotice,
 } from './room-notices.js';
 import { RoomRoster, type AddMemberInput } from './room-roster.js';
@@ -907,6 +908,44 @@ export class RoomService {
 
     const fresh = this.requireRoom(room.id);
     return { ...this.withRoster(fresh, operator.id), created: false };
+  }
+
+  /**
+   * Bind a session adopted at bridge time into the `(room, agent)` ledger
+   * (chats-as-channels spec §7.3, step 3).
+   *
+   * **First-write-wins, so it MUST run before the room's first turn.** The
+   * dispatcher mints a fresh id for a `(room, agent)` pair that has never
+   * answered ({@link RoomStore.bindRoomSession} via `room-trigger.ts`); writing
+   * the adopted id here first means that mint is a no-op and the first turn
+   * resumes the adopted conversation instead of starting the agent over. That
+   * ordering is the whole mechanism A7.1 asserts on — the transcript the turn
+   * receives, not this row.
+   *
+   * The room log is deliberately NOT touched: the earlier messages stay in the
+   * adopted session's own runtime-owned transcript and are never copied here
+   * (§7.3, ADR-0310). The pointer notice ({@link buildBridgeHistoryNotice}) is
+   * the only thing the log gains, and the adopter posts it.
+   *
+   * @param roomId - The bridged room.
+   * @param agentAuthorId - The bound agent's author id in this room.
+   * @param sessionId - The session the bridge adopted, already transcript-probed.
+   */
+  bindAdoptedSession(roomId: string, agentAuthorId: string, sessionId: string): void {
+    this.store.bindRoomSession(roomId, agentAuthorId, sessionId, new Date().toISOString());
+  }
+
+  /**
+   * Post the one-line history notice a bridge writes at creation
+   * (chats-as-channels spec §7.3): where the conversation's earlier messages
+   * live, and that this channel's own record starts now.
+   *
+   * @param roomId - The freshly bridged room.
+   * @param priorSession - `true` when an existing session was adopted (the
+   *   pointer variant), `false` when the bridge started fresh (pointer-less).
+   */
+  postBridgeHistoryNotice(roomId: string, priorSession: boolean): void {
+    this.postNotice(roomId, buildBridgeHistoryNotice(priorSession));
   }
 
   /**
