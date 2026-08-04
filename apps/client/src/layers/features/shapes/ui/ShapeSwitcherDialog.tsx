@@ -82,7 +82,33 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
     isInlineErrorVisible: () => inlineForkErrorRef.current,
   });
 
-  const closeForkForm = useCallback(() => setForkOpen(false), []);
+  // Armed by the ways OUT of the form that put the footer back at rest, so the
+  // trigger can take focus again the moment it remounts (DOR-513).
+  //
+  // Leaving the form removes the input it was focused on while the switcher
+  // stays open, and Radix's FocusScope answers a removed focus owner with a
+  // generic fallback: it focuses the DialogContent container. Tab from there
+  // restarts at the top of the Shape list — place-loss on a control people use
+  // repeatedly (fork, adjust, fork again).
+  const restoreForkFocusRef = useRef(false);
+
+  /** Leave the form and hand focus back to the trigger that opened it. */
+  const closeForkForm = useCallback(() => {
+    restoreForkFocusRef.current = true;
+    setForkOpen(false);
+  }, []);
+
+  // A callback ref, not a stored ref read from an effect: the trigger UNMOUNTS
+  // while the form is open, so at close time the node to focus does not exist
+  // yet. React invokes this in the same commit that re-creates it — still inside
+  // the keypress's own task, ahead of the FocusScope MutationObserver that would
+  // otherwise claim the container, since that one only acts on focus it finds
+  // parked on `document.body`.
+  const focusForkTriggerOnReturn = useCallback((el: HTMLButtonElement | null) => {
+    if (!el || !restoreForkFocusRef.current) return;
+    restoreForkFocusRef.current = false;
+    el.focus();
+  }, []);
 
   const handleOpenChange = useCallback(
     (next: boolean) => {
@@ -102,6 +128,13 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
       // Applying moves the active Shape, and the fork form only ever targets the
       // active one. Leaving it open would silently re-aim a half-typed name at a
       // Shape the person never asked to copy — so close it first.
+      //
+      // Deliberately NOT `closeForkForm`: picking a Shape is not backing out of
+      // the form, and focus belongs on the row that was just chosen rather than
+      // being yanked down to the footer. The explicit disarm makes that true by
+      // construction — without it, a stale arm (a fork settling after Escape
+      // already consumed the remount) would fire here (DOR-513 review).
+      restoreForkFocusRef.current = false;
       setForkOpen(false);
       applyShape.mutate(
         { name: shape.name, label },
@@ -147,6 +180,16 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
   // nothing renders from the ref.
   // eslint-disable-next-line react-hooks/refs -- deliberate latest-value mirror
   inlineForkErrorRef.current = open && forkOpen;
+
+  // A pending restore only means anything while the switcher is on screen. Left
+  // armed across a close it would fire on the NEXT open, when the trigger
+  // remounts — stealing focus from the dialog's own entry point. A copy that
+  // succeeds after you hit ✕ arms exactly that way (its `onSuccess` leaves a
+  // form that is already gone), and an outside actor closing the dialog (the
+  // palette, or an agent's `control_ui` writing the store) never routes through
+  // `handleOpenChange` at all. Answering it here covers both.
+  // eslint-disable-next-line react-hooks/refs -- deliberate latest-value mirror
+  if (!open) restoreForkFocusRef.current = false;
   useEffect(
     () => () => {
       // Defensive. `DialogHost` renders the switcher unconditionally for the app's
@@ -408,6 +451,7 @@ export function ShapeSwitcherDialog({ open, onOpenChange }: ShapeSwitcherDialogP
                   Reset {shapeLabel(activeShape)} to defaults
                 </Button>
                 <Button
+                  ref={focusForkTriggerOnReturn}
                   variant="ghost"
                   size="sm"
                   disabled={applyShape.isPending}

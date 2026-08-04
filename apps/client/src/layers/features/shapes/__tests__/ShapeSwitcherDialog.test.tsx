@@ -728,4 +728,84 @@ describe('ShapeSwitcherDialog', () => {
     ).toBeInTheDocument();
     expect(forkShape).not.toHaveBeenCalled();
   });
+
+  // --- Keyboard place-keeping (DOR-513) ---
+  //
+  // These lock the wiring: leaving the form arms a restore, and the trigger
+  // takes focus the moment it remounts. Seeded without the fix, the Escape and
+  // Cancel cases go red here, and on the same wrong answer the browser gives —
+  // the `DialogContent` container, `div[role=dialog][tabindex="-1"]`, Radix
+  // `FocusScope`'s generic fallback for a removed focus owner. The other two
+  // cases guard the arm/disarm logic the fix introduces.
+  //
+  // That agreement is luck, not a contract, and it is not what makes the fix
+  // safe. jsdom's focus model diverges from a real browser's exactly where this
+  // bug lives (event ordering around removal, and the MutationObserver the
+  // fallback rides), and the consequence that made this worth fixing — where the
+  // NEXT Tab goes — has no meaning here at all. The proof is the browser drive:
+  // `apps/e2e/tests/shapes/shape-switcher-focus.spec.ts`.
+
+  /** The footer button that opens the name form — the thing focus must return to. */
+  function forkTrigger() {
+    return screen.getByRole('button', { name: /make your own version/i });
+  }
+
+  it('hands focus back to the trigger when Escape folds the form away', async () => {
+    await openForkForm(createMockTransport({ listShapes: vi.fn().mockResolvedValue(SHAPES) }));
+
+    pressEscape();
+    await waitForFormGone();
+
+    expect(forkTrigger()).toHaveFocus();
+  });
+
+  it('hands focus back to the trigger when Cancel folds the form away', async () => {
+    await openForkForm(createMockTransport({ listShapes: vi.fn().mockResolvedValue(SHAPES) }));
+
+    fireEvent.click(screen.getByRole('button', { name: /^cancel$/i }));
+    await waitForFormGone();
+
+    expect(forkTrigger()).toHaveFocus();
+  });
+
+  it('does not pull focus to the fork trigger when a Shape is picked instead of backing out', async () => {
+    // Picking a Shape closes the form too, but that is not backing out of it,
+    // so the trigger must not take focus. (In a real browser focus lands on
+    // the dialog container here, before and after DOR-513 — this asserts only
+    // the non-restore, which handleApply's explicit disarm now guarantees.)
+    await openForkForm(
+      createMockTransport({
+        listShapes: vi.fn().mockResolvedValue(SHAPES),
+        applyShape: vi.fn().mockResolvedValue(applyResult()),
+      })
+    );
+
+    fireEvent.click(screen.getByText('Linear Ops'));
+    await waitForFormGone();
+
+    expect(forkTrigger()).not.toHaveFocus();
+  });
+
+  it('does not take focus on a later open when a copy landed after the switcher closed', async () => {
+    // The trap the render-time disarm exists for: the copy settles while the
+    // switcher is gone, so its `onSuccess` leaves the form — and arms a restore
+    // — with no trigger on screen to receive it. Reopening the switcher remounts
+    // that trigger, and a still-armed restore would snatch focus off whatever
+    // the dialog just put it on.
+    const { forkShape, resolve } = deferredFork();
+    const { setOpen } = await openForkForm(
+      createMockTransport({ listShapes: vi.fn().mockResolvedValue(SHAPES), forkShape })
+    );
+    await submitFork(forkShape, 'my-board');
+
+    // Closed from outside (the palette, or an agent writing the store), which
+    // never routes through the dialog's own `onOpenChange`.
+    act(() => setOpen(false));
+    await act(async () => {
+      resolve(forkResult('my-board'));
+    });
+    act(() => setOpen(true));
+
+    expect(await screen.findByRole('button', { name: /make your own version/i })).not.toHaveFocus();
+  });
 });
