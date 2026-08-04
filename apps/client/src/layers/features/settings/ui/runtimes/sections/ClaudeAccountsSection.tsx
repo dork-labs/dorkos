@@ -1,3 +1,9 @@
+/**
+ * Claude Code's declared `claude-accounts` settings section.
+ *
+ * @module features/settings/ui/runtimes/sections/ClaudeAccountsSection
+ */
+
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { CircleAlert, Trash2 } from 'lucide-react';
@@ -11,8 +17,6 @@ import {
 import {
   Button,
   DirectoryPicker,
-  FieldCard,
-  FieldCardContent,
   Input,
   Label,
   PathInput,
@@ -23,7 +27,7 @@ import {
   SelectValue,
   SettingRow,
 } from '@/layers/shared/ui';
-import { useConfig, useUpdateConfig } from '@/layers/entities/config';
+import { configKeys, useConfig, useUpdateConfig } from '@/layers/entities/config';
 
 /**
  * Stands in for "no account chosen", which writes `activeAccount: null`. Radix
@@ -59,20 +63,22 @@ function describeWriteFailure(err: unknown): string {
  * Which Claude Code account new work runs on, and the accounts DorkOS knows
  * about (spec `claude-code-accounts` D7).
  *
- * A sibling card in the Runtimes tab rather than part of the Claude Code runtime
- * card: that card is `entities/runtime`'s props-only `RuntimeSection`, and
- * entities cannot reach the config hooks this needs.
+ * A boxed sub-section of the Claude Code runtime card, rendered through the
+ * kind-keyed section registry because Claude Code's runtime declares it. It
+ * owns its own hooks: `entities/runtime`'s card view is props-only and cannot
+ * reach config, so the section — a feature — does the reading and writing.
  *
  * Every write is one `PATCH /api/config`, and every failure is shown. Both leaves
  * are `operator-only`, so a refusal here is a real outcome, not an edge case.
  */
-export function ClaudeAccountsCard() {
+export function ClaudeAccountsSection() {
   const { data: config } = useConfig();
   const updateConfig = useUpdateConfig();
   const queryClient = useQueryClient();
 
   const [newPath, setNewPath] = useState('');
   const [newLabel, setNewLabel] = useState('');
+  const [adding, setAdding] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [writeError, setWriteError] = useState<string | null>(null);
 
@@ -95,10 +101,12 @@ export function ClaudeAccountsCard() {
   /**
    * Persist a `runtimes.claudeCode` change.
    *
-   * Invalidates the `['config']` PREFIX, not the entity hook's exact key: the
-   * settings tabs, `useFeatureEnabled`, and this card's own reader are split
-   * across `['config']` and `['config','current']`, and the status-bar switcher
-   * and sidebar badges have to move with this write.
+   * Invalidates the `configKeys.all` PREFIX, not the entity hook's exact key:
+   * the settings tabs, `useFeatureEnabled`, and this section's own reader are
+   * split across `configKeys.all` and `configKeys.current()`, and the
+   * status-bar switcher and sidebar badges have to move with this write. The
+   * key comes from the entity's factory rather than a literal, so every writer
+   * on this tab spells the prefix one way.
    */
   function write(patch: ClaudeCodePatch, onDone?: () => void) {
     setWriteError(null);
@@ -106,7 +114,7 @@ export function ClaudeAccountsCard() {
       { runtimes: { claudeCode: patch } },
       {
         onSuccess: () => {
-          void queryClient.invalidateQueries({ queryKey: ['config'] });
+          void queryClient.invalidateQueries({ queryKey: configKeys.all });
           onDone?.();
         },
         onError: (err) => setWriteError(describeWriteFailure(err)),
@@ -130,6 +138,7 @@ export function ClaudeAccountsCard() {
       () => {
         setNewPath('');
         setNewLabel('');
+        setAdding(false);
       }
     );
   }
@@ -146,46 +155,66 @@ export function ClaudeAccountsCard() {
   }
 
   return (
-    <FieldCard>
-      <FieldCardContent>
-        <SettingRow
-          label="Claude Code account"
-          description="New sessions run and bill on this account. Sessions you already started stay on the account that created them."
+    <section
+      className="bg-muted/30 space-y-3 rounded-lg border p-3"
+      data-testid="claude-accounts-section"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <h4 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+          Billing account
+        </h4>
+        {/* Quiet by design: adding an account is a rare, deliberate act, and the
+            fields would otherwise crowd the card every time it is opened. */}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-muted-foreground h-auto px-1 py-0 text-xs"
+          onClick={() => setAdding((open) => !open)}
+          aria-expanded={adding}
         >
-          <Select value={activeValue} onValueChange={chooseAccount}>
-            <SelectTrigger
-              className="w-52"
-              aria-label="Claude Code account"
-              data-testid="claude-account-select"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={DEFAULT_ACCOUNT}>
-                {inherited && resolvedAccount
-                  ? `Default (${shortenHomePath(resolvedAccount)})`
-                  : 'Default'}
+          Add account
+        </Button>
+      </div>
+
+      <SettingRow
+        label="Account"
+        description="New sessions run and bill on this account. Sessions you already started stay on the account that created them."
+      >
+        <Select value={activeValue} onValueChange={chooseAccount}>
+          <SelectTrigger
+            className="w-52"
+            aria-label="Claude Code account"
+            data-testid="claude-account-select"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={DEFAULT_ACCOUNT}>
+              {inherited && resolvedAccount
+                ? `Default (${shortenHomePath(resolvedAccount)})`
+                : 'Default'}
+            </SelectItem>
+            {claudeAccountOptions(accounts, inherited ? null : resolvedAccount).map((option) => (
+              <SelectItem key={option.path} value={option.path}>
+                {claudeAccountName(option.path, accounts)}
               </SelectItem>
-              {claudeAccountOptions(accounts, inherited ? null : resolvedAccount).map((option) => (
-                <SelectItem key={option.path} value={option.path}>
-                  {claudeAccountName(option.path, accounts)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </SettingRow>
+            ))}
+          </SelectContent>
+        </Select>
+      </SettingRow>
 
-        {accounts.map((account) => (
-          <AccountRow
-            key={account.path}
-            account={account}
-            accounts={accounts}
-            isActive={!inherited && resolvedAccount === account.path}
-            onRemove={() => removeAccount(account.path)}
-            disabled={updateConfig.isPending}
-          />
-        ))}
+      {accounts.map((account) => (
+        <AccountRow
+          key={account.path}
+          account={account}
+          accounts={accounts}
+          isActive={!inherited && resolvedAccount === account.path}
+          onRemove={() => removeAccount(account.path)}
+          disabled={updateConfig.isPending}
+        />
+      ))}
 
+      {adding && (
         <SettingRow
           orientation="vertical"
           label="Add an account"
@@ -233,17 +262,17 @@ export function ClaudeAccountsCard() {
             )}
           </div>
         </SettingRow>
+      )}
 
-        {writeError && (
-          <p
-            className="text-destructive flex items-start gap-1.5 text-xs"
-            data-testid="claude-account-error"
-          >
-            <CircleAlert className="mt-px size-3 shrink-0" aria-hidden />
-            <span>{writeError}</span>
-          </p>
-        )}
-      </FieldCardContent>
+      {writeError && (
+        <p
+          className="text-destructive flex items-start gap-1.5 text-xs"
+          data-testid="claude-account-error"
+        >
+          <CircleAlert className="mt-px size-3 shrink-0" aria-hidden />
+          <span>{writeError}</span>
+        </p>
+      )}
 
       <DirectoryPicker
         open={pickerOpen}
@@ -251,7 +280,7 @@ export function ClaudeAccountsCard() {
         onSelect={setNewPath}
         initialPath={trimmedPath || null}
       />
-    </FieldCard>
+    </section>
   );
 }
 

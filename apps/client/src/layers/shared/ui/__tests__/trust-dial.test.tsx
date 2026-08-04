@@ -179,6 +179,50 @@ describe('TrustDial', () => {
       expect(onChangeMode).not.toHaveBeenCalled();
     });
 
+    it('lets a SURFACE re-word the stops, without letting a runtime do it', () => {
+      // Settings reads cold, months later, so its dials say what a stop does
+      // rather than what picking it means right now. Still one vocabulary per
+      // surface: every position is re-worded together, and the runtime behind
+      // the dial has no say in it.
+      render(
+        <TrustDial
+          mode="acceptEdits"
+          descriptors={CODEX}
+          onChangeMode={vi.fn()}
+          stopLabels={{
+            ask: 'Asks before acting',
+            act: 'Pauses at big steps',
+            autonomy: 'Full autonomy',
+          }}
+        />
+      );
+
+      const stops = within(dial()).getAllByRole('radio');
+      expect(stops.map((s) => s.textContent)).toEqual([
+        'Asks before acting',
+        'Pauses at big steps',
+        'Full autonomy',
+      ]);
+      expect(screen.getByRole('radio', { name: 'Pauses at big steps' })).toBeChecked();
+    });
+
+    it('keeps its own word for any stop a surface did not re-word', () => {
+      render(
+        <TrustDial
+          mode="default"
+          descriptors={CLAUDE}
+          onChangeMode={vi.fn()}
+          stopLabels={{ act: 'Pauses at big steps' }}
+        />
+      );
+
+      expect(
+        within(dial())
+          .getAllByRole('radio')
+          .map((s) => s.textContent)
+      ).toEqual(['Ask first', 'Pauses at big steps', 'Full autonomy']);
+    });
+
     it('shows a refinement as selecting the stop that holds it', () => {
       // A session in `auto` is at Act — auto is a setting inside the stop.
       render(<TrustDial mode="auto" descriptors={CLAUDE} onChangeMode={vi.fn()} />);

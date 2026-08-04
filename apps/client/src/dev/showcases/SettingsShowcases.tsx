@@ -25,13 +25,18 @@ import { PreferencesTab } from '@/layers/features/settings/ui/tabs/PreferencesTa
 import { ServerTab } from '@/layers/features/settings/ui/ServerTab';
 import { ToolsTab } from '@/layers/features/settings/ui/ToolsTab';
 import { AdvancedTab } from '@/layers/features/settings/ui/AdvancedTab';
-import { ClaudeAccountsCard } from '@/layers/features/settings/ui/ClaudeAccountsCard';
+import { ClaudeAccountsSection, ExecutionExceptionsStrip } from '@/layers/features/settings';
 import {
+  LiveRuntimeCard,
   MockedQueryProvider,
   RefusedConfigWriteProvider,
   TabShell,
 } from './settings-showcase-helpers';
-import { MOCK_SERVER_CONFIG_MULTI_ACCOUNT } from './settings-mock-data';
+import {
+  MOCK_EXECUTION_DEVIATIONS,
+  MOCK_EXECUTION_EXCEPTIONS,
+  MOCK_SERVER_CONFIG_MULTI_ACCOUNT,
+} from './settings-mock-data';
 
 /** Comprehensive showcase for the Settings dialog system. */
 export function SettingsShowcases() {
@@ -39,7 +44,8 @@ export function SettingsShowcases() {
     <>
       <FullSettingsDialogSection />
       <IndividualTabsSection />
-      <ClaudeAccountsSection />
+      <ClaudeAccountsShowcaseSection />
+      <ExecutionExceptionsSection />
       <MobileDrillInSection />
       <LoadingEmptyStatesSection />
       <PrimitivesSection />
@@ -48,42 +54,96 @@ export function SettingsShowcases() {
 }
 
 /**
- * Section 2b — the Claude Code account card in every state it can reach
- * (spec `claude-code-accounts`).
+ * Section 2b — the Claude Code billing-account section in every state it can
+ * reach (spec `claude-code-accounts`).
  *
- * Worth its own section because three of these states are invisible on the
- * playground's default data: a registered roster, a folder that is not an account
- * yet, and a refused write.
+ * It used to be a card of its own at the bottom of the Runtimes tab; it is now a
+ * section the Claude Code runtime declares, so it is shown where it actually
+ * renders — inside that card's opened body. Worth its own playground section
+ * because three of these states are invisible on the playground's default data:
+ * a registered roster, a folder that is not an account yet, and a refused write.
  */
-function ClaudeAccountsSection() {
+function ClaudeAccountsShowcaseSection() {
   return (
     <PlaygroundSection
       title="Claude Code Accounts"
-      description="Which Claude account new work runs and bills on. An operator running one account per client registers each folder here and names it after the client."
+      description="Which Claude account new work runs and bills on, inside the Claude Code card that carries it. An operator running one account per client registers each folder here and names it after the client."
     >
-      <ShowcaseLabel>Default install — nothing registered</ShowcaseLabel>
+      <ShowcaseLabel>Default install: nothing registered</ShowcaseLabel>
       <ShowcaseDemo>
         <MockedQueryProvider>
-          <ClaudeAccountsCard />
+          <LiveRuntimeCard type="claude-code" expanded renderSection={accountsSection} />
         </MockedQueryProvider>
       </ShowcaseDemo>
 
       <ShowcaseLabel>
-        Several accounts — one in use, one unnamed, one not an account yet
+        Several accounts: one in use, one unnamed, one not an account yet
       </ShowcaseLabel>
       <ShowcaseDemo>
         <MockedQueryProvider config={MOCK_SERVER_CONFIG_MULTI_ACCOUNT}>
-          <ClaudeAccountsCard />
+          <LiveRuntimeCard
+            type="claude-code"
+            expanded
+            renderSection={accountsSection}
+            sectionValues={{ 'claude-accounts': 'Acme Corp' }}
+          />
         </MockedQueryProvider>
       </ShowcaseDemo>
 
-      <ShowcaseLabel>Write refused — pick an account to see the message</ShowcaseLabel>
+      <ShowcaseLabel>Write refused: pick an account to see the message</ShowcaseLabel>
       <ShowcaseDemo>
         <RefusedConfigWriteProvider>
           <MockedQueryProvider config={MOCK_SERVER_CONFIG_MULTI_ACCOUNT}>
-            <ClaudeAccountsCard />
+            <LiveRuntimeCard
+              type="claude-code"
+              expanded
+              renderSection={accountsSection}
+              sectionValues={{ 'claude-accounts': 'Acme Corp' }}
+            />
           </MockedQueryProvider>
         </RefusedConfigWriteProvider>
+      </ShowcaseDemo>
+    </PlaygroundSection>
+  );
+}
+
+/** Claude Code's declared accounts section, drawn the way the card's registry draws it. */
+function accountsSection(kind: string) {
+  return kind === 'claude-accounts' ? <ClaudeAccountsSection /> : null;
+}
+
+/**
+ * Section 2c — the exceptions strip beneath the runtime cards.
+ *
+ * The strip is normally the fleet's own answer, read through a hook, which is
+ * why it had no playground coverage: the playground has no fleet. It now takes
+ * an injected list, so every shape it can be in is reachable here — including
+ * the one that matters most, which is drawing nothing at all.
+ */
+function ExecutionExceptionsSection() {
+  return (
+    <PlaygroundSection
+      title="Execution Exceptions Strip"
+      description="Every agent that does not run on the defaults above. Broken rows come first, in warning color, because those are the ones that stopped working rather than the ones somebody chose. The order is the caller's: the strip draws the list it is handed, so nothing here re-sorts."
+    >
+      <ShowcaseLabel>
+        Broken first, then the deviations: a runtime nobody connected, a model that is gone, an
+        effort the runtime has no use for
+      </ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <ExecutionExceptionsStrip exceptions={MOCK_EXECUTION_EXCEPTIONS} />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Choices only: nothing is broken, so nothing is amber</ShowcaseLabel>
+      <ShowcaseDemo>
+        <ExecutionExceptionsStrip exceptions={MOCK_EXECUTION_DEVIATIONS} />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        A fleet that inherits everything: the strip draws nothing at all, on purpose
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <ExecutionExceptionsStrip exceptions={[]} />
       </ShowcaseDemo>
     </PlaygroundSection>
   );

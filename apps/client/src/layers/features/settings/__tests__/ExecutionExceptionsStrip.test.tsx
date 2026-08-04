@@ -5,10 +5,11 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import type { ExecutionException } from '@/layers/entities/agent';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { useAgentHubStore } from '@/layers/features/agent-hub';
-import { ExecutionExceptionsStrip } from '../ui/execution-defaults/ExecutionExceptionsStrip';
+import { ExecutionExceptionsStrip } from '../ui/runtimes/ExecutionExceptionsStrip';
 
 // No RouterProvider here — the strip only asks the deep-link hook to CLOSE the
 // dialog, which the openHub assertion below stands in for. URL behavior is
@@ -127,6 +128,62 @@ function renderStrip(
     </QueryClientProvider>
   );
 }
+
+describe('ExecutionExceptionsStrip — an injected fleet (showcase path)', () => {
+  /** One exception, already decided, as a showcase hands it over. */
+  function exception(name: string, broken: boolean): ExecutionException {
+    return {
+      path: `/${name}`,
+      agent: agent(name),
+      report: {
+        breakages: broken
+          ? [{ kind: 'runtime-not-connected', message: 'Codex is not connected.' }]
+          : [],
+        deviations: broken ? [] : [{ field: 'model', label: 'opus' }],
+        isException: true,
+        isBroken: broken,
+      },
+    };
+  }
+
+  function renderInjected(exceptions: ExecutionException[]) {
+    const transport = createMockTransport();
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>
+          <ExecutionExceptionsStrip exceptions={exceptions} />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+    return transport;
+  }
+
+  it('draws what it was handed, over a fleet that deviates in nothing', async () => {
+    // The transport's fleet is empty, so every row on screen came from the prop.
+    renderInjected([exception('beta', true), exception('alpha', false)]);
+
+    expect(await screen.findByTestId('execution-exception-broken')).toHaveTextContent(
+      'Codex is not connected.'
+    );
+    expect(screen.getByTestId('execution-exception')).toHaveTextContent('model opus');
+  });
+
+  it('spends no catalog round-trip deciding what the caller already decided', async () => {
+    const transport = renderInjected([exception('alpha', false)]);
+    await screen.findByTestId('execution-exception');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(transport.getModels).not.toHaveBeenCalled();
+  });
+
+  it('still draws nothing at all when it is handed an empty fleet', async () => {
+    renderInjected([]);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.queryByTestId('execution-exceptions-strip')).toBeNull();
+  });
+});
 
 describe('ExecutionExceptionsStrip', () => {
   it('draws nothing at all when the whole fleet inherits', async () => {

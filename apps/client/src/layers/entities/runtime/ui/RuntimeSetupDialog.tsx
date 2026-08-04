@@ -19,6 +19,7 @@ import {
 } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import { PRIMARY_RUNTIME_TYPES, getRuntimeDescriptor } from '../config/runtime-descriptors';
+import { listRuntimeTypes } from '../lib/list-runtime-types';
 import { useRuntimeCapabilities } from '../model/use-runtime-capabilities';
 import { useRuntimeRequirements, selectRuntimeReadiness } from '../model/use-runtime-requirements';
 import { useProvisionRuntime } from '../model/use-provision-runtime';
@@ -103,10 +104,8 @@ interface RuntimeSetupPanelProps {
 
 /**
  * Which runtimes the panel covers. Scoped mode is just the one runtime; the
- * overview always lists DorkOS's three sibling runtimes (Claude, Codex,
- * OpenCode) so discovery is complete — each renders identically as
- * Ready-or-one-Connect — plus any other registered runtime (a future backend),
- * appended stably so the list never reshuffles when a recheck flips a state.
+ * overview lists every runtime this machine has, through the shared
+ * {@link listRuntimeTypes} rule the Runtimes settings tab reads as well.
  */
 function selectTargetRuntimes(
   runtime: string | undefined,
@@ -115,10 +114,7 @@ function selectTargetRuntimes(
 ): string[] {
   if (runtime) return [runtime];
   if (types) return types;
-  const extras = registeredTypes.filter(
-    (t) => !(PRIMARY_RUNTIME_TYPES as readonly string[]).includes(t) && t !== 'test-mode'
-  );
-  return [...PRIMARY_RUNTIME_TYPES, ...extras];
+  return listRuntimeTypes(registeredTypes);
 }
 
 /**
