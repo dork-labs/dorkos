@@ -1,16 +1,12 @@
 import type { ThreadSummary } from '@dorkos/shared/room-schemas';
-import {
-  SidebarGroup,
-  SidebarMenu,
-  SidebarMenuItem,
-  SidebarMenuSkeleton,
-} from '@/layers/shared/ui';
+import { SidebarGroup, SidebarMenu, SidebarMenuItem } from '@/layers/shared/ui';
 import {
   useSidebarPrefs,
   useUpdateSidebarPrefs,
   setThreadsCollapsed,
 } from '@/layers/entities/config';
-import { RoomSectionHeader } from './RoomSectionHeader';
+import { SidebarSectionHeader } from '../SidebarSectionHeader';
+import { buildThreadsHeaderMenuNodes } from '../SectionHeaderMenuItems';
 import { ThreadRow } from './ThreadRow';
 
 interface ThreadsSectionProps {
@@ -63,12 +59,18 @@ export function ThreadsSection({
   // every install that has no threads, which is most of them at first.
   if (!error && threads.length === 0) return null;
 
+  const toggleCollapsed = () => update((prev) => setThreadsCollapsed(prev, !prev.threadsCollapsed));
+
   return (
     <SidebarGroup>
-      <RoomSectionHeader
+      <SidebarSectionHeader
         label="Threads"
         collapsed={threadsCollapsed}
-        onToggle={() => update((prev) => setThreadsCollapsed(prev, !prev.threadsCollapsed))}
+        onToggle={toggleCollapsed}
+        nodes={buildThreadsHeaderMenuNodes({
+          collapsed: threadsCollapsed,
+          onToggleCollapsed: toggleCollapsed,
+        })}
       />
 
       {!threadsCollapsed && (

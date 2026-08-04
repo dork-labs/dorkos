@@ -28,6 +28,7 @@ import {
   useThreads,
   useRoomOpenThreadStore,
   roomDisplayTitle,
+  hasUnread,
   type RoomSummary,
 } from '@/layers/entities/room';
 import {
@@ -342,6 +343,14 @@ export function DashboardSidebar() {
     () => dms.filter((room) => !groupedRooms.has(room.id)),
     [dms, groupedRooms]
   );
+  // "Mark all … read" means every room of that kind, including the ones filed
+  // into a group and drawn somewhere else entirely — so the lists it works from
+  // are the whole kind, not the section's own rows.
+  const unreadChannelIds = useMemo(
+    () => channels.filter(hasUnread).map((room) => room.id),
+    [channels]
+  );
+  const unreadDmIds = useMemo(() => dms.filter(hasUnread).map((room) => room.id), [dms]);
   // The mark a room row draws, from the one place that resolves faces. The
   // fallback is the type's floor rather than a behaviour: the index is built
   // from the same query these lists are partitioned out of, so every room in
@@ -634,6 +643,7 @@ export function DashboardSidebar() {
               agents={agents ?? {}}
               displayNames={displayNamesRecord}
               onSelectSession={handleResumeRecentSession}
+              onNewSession={() => handleNewSession()}
             />
           )}
 
@@ -647,6 +657,7 @@ export function DashboardSidebar() {
           <ChannelsSection
             channels={ungroupedChannels}
             hasGroupedChannels={ungroupedChannels.length < channels.length}
+            unreadChannelIds={unreadChannelIds}
             visualOf={roomVisualOf}
             isLoading={roomsQuery.isLoading}
             error={roomsQuery.error}
@@ -658,6 +669,7 @@ export function DashboardSidebar() {
           <DirectMessagesSection
             dms={ungroupedDms}
             hasGroupedDms={ungroupedDms.length < dms.length}
+            unreadDmIds={unreadDmIds}
             visualOf={roomVisualOf}
             isLoading={roomsQuery.isLoading}
             error={roomsQuery.error}

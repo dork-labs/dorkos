@@ -1,8 +1,15 @@
 import { useMemo } from 'react';
 import type { SidebarDisplayFilter } from '@dorkos/shared/config-schema';
-import { SidebarGroup, SidebarGroupLabel, SidebarMenu } from '@/layers/shared/ui';
+import { SidebarGroup, SidebarMenu } from '@/layers/shared/ui';
+import { useAgentCreationStore } from '@/layers/shared/model';
+import {
+  useUpdateSidebarPrefs,
+  setUngroupedSortMode,
+  setUngroupedDisplayFilter,
+} from '@/layers/entities/config';
 import { AddAgentMenu } from './AddAgentMenu';
-import { UngroupedSectionMenu } from './UngroupedSectionMenu';
+import { SidebarSectionHeader } from './SidebarSectionHeader';
+import { buildAgentsHeaderMenuNodes } from './SectionHeaderMenuItems';
 import { RevealRow } from './RevealRow';
 import { Droppable, SortableList, agentRowDndId } from './dnd/SidebarDndPrimitives';
 import type { RenderSidebarItem, SidebarItem } from '../model/sidebar-item';
@@ -74,6 +81,7 @@ export function UngroupedSection({
   onCreatePresetSmartGroup,
   onOpenSmartGroupDialog,
 }: UngroupedSectionProps) {
+  const { update } = useUpdateSidebarPrefs();
   const filtered = useMemo(
     () => filterSidebarItems(items, { filter, groupMuted: false }),
     [items, filter]
@@ -86,12 +94,19 @@ export function UngroupedSection({
   return (
     <SidebarGroup>
       {organized ? (
-        <div className="group/us relative flex h-8 items-center">
-          <SidebarGroupLabel className="text-sidebar-foreground/70 text-xs font-medium tracking-wider uppercase">
-            Agents
-          </SidebarGroupLabel>
-          <UngroupedSectionMenu />
-        </div>
+        <SidebarSectionHeader
+          label="Agents"
+          hasSectionAction
+          nodes={buildAgentsHeaderMenuNodes({
+            sortMode,
+            displayFilter: filter,
+            onNewAgent: () => useAgentCreationStore.getState().open(),
+            onNewGroup,
+            onSortModeChange: (mode) => update((prev) => setUngroupedSortMode(prev, mode)),
+            onDisplayFilterChange: (next) =>
+              update((prev) => setUngroupedDisplayFilter(prev, next)),
+          })}
+        />
       ) : (
         // Reserve the header row so the top-right "+" never overlaps the first row.
         <div className="h-8" aria-hidden />

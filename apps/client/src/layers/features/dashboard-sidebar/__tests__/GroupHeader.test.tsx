@@ -285,7 +285,7 @@ describe('GroupHeader', () => {
     renderHeader();
     // Context menu items
     openContextMenu();
-    for (const label of ['Rename…', 'Show', 'Sort by', 'Mute group', 'Delete group']) {
+    for (const label of ['Rename…', 'Collapse', 'Show', 'Sort by', 'Mute group', 'Delete group']) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
     fireEvent.keyDown(document.body, { key: 'Escape' });
@@ -293,9 +293,28 @@ describe('GroupHeader', () => {
     // "…" dropdown items
     fireEvent.pointerDown(screen.getByLabelText('Clients group actions'));
     fireEvent.click(screen.getByLabelText('Clients group actions'));
-    for (const label of ['Rename…', 'Show', 'Sort by', 'Mute group', 'Delete group']) {
+    for (const label of ['Rename…', 'Collapse', 'Show', 'Sort by', 'Mute group', 'Delete group']) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
+  });
+
+  // --- Collapse (spec `rooms` §14.1: every section header carries the verb) ---
+
+  it('collapses the group from the menu, the same verb every other header has', () => {
+    renderHeader();
+    openContextMenu();
+
+    fireEvent.click(screen.getByText('Collapse'));
+
+    expect(applyLatestUpdater()).toEqual([{ name: 'setGroupCollapsed', args: [PREV, 'g1', true] }]);
+  });
+
+  it('names the item Expand once the group is collapsed', () => {
+    renderHeader({ group: makeGroup({ collapsed: true }) });
+    openContextMenu();
+
+    expect(screen.getByText('Expand')).toBeInTheDocument();
+    expect(screen.queryByText('Collapse')).not.toBeInTheDocument();
   });
 
   // --- Smart groups (DOR-338) ---

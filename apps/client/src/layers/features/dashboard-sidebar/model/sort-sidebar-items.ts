@@ -16,6 +16,25 @@ import type { SidebarItem } from './sidebar-item';
 export type SidebarSortMode = 'manual' | 'name' | 'recent';
 
 /**
+ * What the sort submenu is called, wherever it appears — a group's header menu
+ * and the Agents header menu today. One constant so the same verb reads the
+ * same in every menu that carries it (spec `rooms` §14.1).
+ */
+export const SORT_MENU_LABEL = 'Sort by';
+
+/**
+ * Every sort mode a section can offer, in menu order, with the words a person
+ * sees. A section that cannot offer one filters it out — the ungrouped Agents
+ * list and smart groups both drop `manual`, because neither has a
+ * hand-orderable sequence — but no section renames one.
+ */
+export const SECTION_SORT_OPTIONS: { value: SidebarSortMode; label: string }[] = [
+  { value: 'manual', label: 'Manual' },
+  { value: 'recent', label: 'Recent activity' },
+  { value: 'name', label: 'Name' },
+];
+
+/**
  * The last-resort tiebreak, so rows that tie never swap places between renders.
  *
  * A group can hold an agent and a room whose names and activity both tie, and

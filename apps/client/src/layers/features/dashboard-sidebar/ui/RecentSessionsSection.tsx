@@ -1,9 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { Session } from '@dorkos/shared/types';
 import type { SessionListWarning } from '@dorkos/shared/types';
-import { cn } from '@/layers/shared/lib';
 import {
   SidebarGroup,
   SidebarMenu,
@@ -16,6 +14,8 @@ import {
   setRecentsCollapsed,
 } from '@/layers/entities/config';
 import { partitionSessionsByOrigin } from '@/layers/entities/session';
+import { SidebarSectionHeader } from './SidebarSectionHeader';
+import { buildRecentHeaderMenuNodes } from './SectionHeaderMenuItems';
 import { RecentSessionRow } from './RecentSessionRow';
 
 /** Most sessions the Recent section ever renders. */
@@ -36,6 +36,8 @@ interface RecentSessionsSectionProps {
   displayNames: Record<string, string>;
   /** Resume the given session. */
   onSelectSession: (session: Session) => void;
+  /** Start a new session, from the header menu. */
+  onNewSession: () => void;
 }
 
 /**
@@ -51,6 +53,7 @@ export function RecentSessionsSection({
   agents,
   displayNames,
   onSelectSession,
+  onNewSession,
 }: RecentSessionsSectionProps) {
   const { recentsCollapsed } = useSidebarPrefs();
   const { update } = useUpdateSidebarPrefs();
@@ -75,24 +78,20 @@ export function RecentSessionsSection({
   const resolveDisplayName = (session: Session) =>
     (session.cwd && displayNames[session.cwd]) || session.cwd?.split('/').pop() || 'Agent';
 
+  const toggleCollapsed = () => update((prev) => setRecentsCollapsed(prev, !prev.recentsCollapsed));
+
   return (
     <SidebarGroup>
-      <button
-        type="button"
-        onClick={() => update((prev) => setRecentsCollapsed(prev, !prev.recentsCollapsed))}
-        aria-expanded={!recentsCollapsed}
-        className={cn(
-          'text-sidebar-foreground/70 hover:text-sidebar-foreground focus-visible:ring-sidebar-ring',
-          'flex h-8 w-full items-center gap-1 rounded-md px-2 text-xs font-medium outline-hidden focus-visible:ring-2'
-        )}
-      >
-        {recentsCollapsed ? (
-          <ChevronRight className="size-3.5 shrink-0" />
-        ) : (
-          <ChevronDown className="size-3.5 shrink-0" />
-        )}
-        <span className="tracking-wider uppercase">Recent</span>
-      </button>
+      <SidebarSectionHeader
+        label="Recent"
+        collapsed={recentsCollapsed}
+        onToggle={toggleCollapsed}
+        nodes={buildRecentHeaderMenuNodes({
+          collapsed: recentsCollapsed,
+          onNewSession,
+          onToggleCollapsed: toggleCollapsed,
+        })}
+      />
 
       {!recentsCollapsed && (
         <SidebarMenu>
