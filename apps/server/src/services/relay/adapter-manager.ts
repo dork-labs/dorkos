@@ -44,7 +44,7 @@ import {
   broadcastUnclaimedChat,
   broadcastUnclaimedChatBurst,
 } from './relay-sse-events.js';
-import { BindingSubsystem } from './binding-subsystem.js';
+import { BindingSubsystem, type BindingSubsystemDeps } from './binding-subsystem.js';
 import type { UnclaimedChatStore } from './unclaimed-chat-store.js';
 import type { RelayCoreLike } from './binding-router.js';
 import {
@@ -164,6 +164,17 @@ export interface AdapterManagerDeps {
    * exercise the unbound-inbound path (most tests) can omit it.
    */
   unclaimedChats?: UnclaimedChatStore;
+  /**
+   * The rooms service, its bridge store, and the operator-author resolver —
+   * threaded straight to {@link BindingSubsystem} for the inbound chat bridge
+   * (chats-as-channels §5). Optional so a manager built without a rooms
+   * subsystem still runs; a bridged binding then simply cannot be routed.
+   */
+  roomService?: BindingSubsystemDeps['roomService'];
+  /** The bridge identity store the rooms service writes through (chats-as-channels §3.1). */
+  roomBridges?: BindingSubsystemDeps['roomBridges'];
+  /** The install owner's author id, read per call (chats-as-channels §3.5, §10.9). */
+  operatorAuthorId?: BindingSubsystemDeps['operatorAuthorId'];
 }
 
 /** Server-side adapter lifecycle manager. */
@@ -340,6 +351,9 @@ export class AdapterManager {
       unclaimedChats: this.deps.unclaimedChats,
       onUnclaimedChat: broadcastUnclaimedChat,
       onUnclaimedChatBurst: broadcastUnclaimedChatBurst,
+      roomService: this.deps.roomService,
+      roomBridges: this.deps.roomBridges,
+      operatorAuthorId: this.deps.operatorAuthorId,
     });
   }
 
