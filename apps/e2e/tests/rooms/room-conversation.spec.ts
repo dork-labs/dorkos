@@ -89,6 +89,56 @@ test.describe('Rooms — posting, switching and staying live @smoke', () => {
     expect(posted.slug).toBe(slug);
   });
 
+  test('an archived room dims the send button it will not honour (DOR-850)', async ({
+    page,
+    basePage,
+    roomsApi,
+    roomsPage,
+  }) => {
+    // The one refusal that can be seeded outright: an archived room is readable,
+    // its composer stays on screen, and every send it offers is inert.
+    //
+    // **This assertion only exists in a browser.** The button is a `motion.button`
+    // whose `animate` target motion writes inline on every frame, so an
+    // `opacity-50` class beside it never applied — the send was `disabled` and
+    // `pointer-events-none` while looking exactly as live as a working one, on
+    // every composer in the product (DOR-850). jsdom loads no stylesheet and
+    // commits no motion frame, so it reports the same opacity before and after
+    // the fix and cannot tell them apart. Only `getComputedStyle` in Chromium can.
+    // The slug deliberately does not say "archived": the room title is drawn
+    // in the masthead beside the Archived badge, and a title that carried the
+    // word would make that region ambiguous for a human reading a failure
+    // screenshot (the exact-match locator below is not confused either way).
+    const slug = `e2e-dimmed-${roomsApi.runId}`;
+    const room = await roomsApi.createChannel(slug);
+    await roomsApi.archive(room.id);
+
+    await basePage.goto(`/channels?id=${room.id}`);
+    await basePage.waitForAppReady();
+
+    // Archived, still open, still readable — the state the rest of this depends on.
+    await expect(page.getByText('Archived', { exact: true })).toBeVisible({
+      timeout: SERVER_ROUND_TRIP_MS,
+    });
+
+    // The button is only offered once there is something to send.
+    const composer = roomsPage.composer(`#${slug}`);
+    await composer.fill('This one has nowhere to go.');
+    await expect(
+      page.getByText('This conversation is archived. You can read it, but not add to it.')
+    ).toBeVisible();
+
+    const send = page.getByRole('button', { name: 'Send message' });
+    await expect(send).toBeDisabled();
+    // The rendered value, not a class name: the class is exactly what the bug
+    // proved a test cannot trust here.
+    await expect
+      .poll(() => send.evaluate((el) => getComputedStyle(el).opacity), {
+        timeout: SERVER_ROUND_TRIP_MS,
+      })
+      .toBe('0.5');
+  });
+
   test('a channel is born with its agents in it, and the panel says so (DOR-599, DOR-600)', async ({
     page,
     basePage,

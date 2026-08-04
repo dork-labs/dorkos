@@ -466,6 +466,23 @@ export class RoomsApi {
   }
 
   /**
+   * Archive a room now, rather than at teardown.
+   *
+   * Archiving is the product's read-only state — the room stays open and
+   * readable and its composer stays on screen, but nothing new may be added.
+   * That makes it the one refusal a browser test can seed outright, which is
+   * why it is offered here and not left to {@link RoomsApi.cleanup}.
+   *
+   * Still tracked for teardown; archiving twice is a no-op.
+   *
+   * @param roomId - The room to archive.
+   */
+  async archive(roomId: string): Promise<void> {
+    const res = await this.request.patch(`/api/rooms/${roomId}`, { data: { archived: true } });
+    if (!res.ok()) throw new Error(`Could not archive room ${roomId}: ${await res.text()}`);
+  }
+
+  /**
    * Read a room back with its roster resolved.
    *
    * @param roomId - The room to read.
