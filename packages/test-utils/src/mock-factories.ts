@@ -761,6 +761,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     claimUnclaimedChat: vi.fn(),
     ignoreUnclaimedChat: vi.fn().mockResolvedValue(undefined),
     blockUnclaimedChat: vi.fn().mockResolvedValue(undefined),
+    leaveUnclaimedChat: vi.fn().mockResolvedValue(undefined),
     moveBinding: vi.fn(),
     ...overrides,
   };

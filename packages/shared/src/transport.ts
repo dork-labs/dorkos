@@ -1998,4 +1998,16 @@ export interface Transport extends RoomTransport {
    * @param id - The unclaimed-chat row id.
    */
   blockUnclaimedChat(id: string): Promise<void>;
+
+  /**
+   * Leave an unclaimed chat's platform group — the group-add claim flow's
+   * "Leave" action (DOR-883). A real removal, through the adapter's own
+   * platform call: after this resolves the bot is no longer in the chat, and
+   * no room or binding was ever created for it. Rejects (never silently
+   * no-ops) when the underlying adapter cannot leave a chat, so the card
+   * stays visible rather than disappearing over a leave that did not happen.
+   *
+   * @param id - The unclaimed-chat row id.
+   */
+  leaveUnclaimedChat(id: string): Promise<void>;
 }
