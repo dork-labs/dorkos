@@ -442,7 +442,7 @@ export interface RuntimeSettingsCapability {
    * static fact, declared by the runtime itself rather than kept in a list
    * somewhere else. Per-model effort support remains
    * `ModelOption.supportsEffort` / `supportedEffortLevels`; both gates apply,
-   * exactly as ExecutionDefaultsCard implements today.
+   * exactly as the runtime card's Effort row implements today.
    */
   supportsEffort: boolean;
   /** Ordered bespoke sections for the settings card. Empty for most runtimes. */

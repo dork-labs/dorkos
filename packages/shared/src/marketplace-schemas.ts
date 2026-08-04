@@ -165,6 +165,15 @@ export interface MarketplaceManifestSummary {
   homepage?: string;
   license?: string;
   requires?: string[];
+  /**
+   * DorkOS extension: adapter type identifier, mirroring the manifest's
+   * `adapterType` (e.g. `'slack'`, or the well-known `'connector'` value —
+   * `CONNECTOR_ADAPTER_TYPE` in `@dorkos/marketplace`). The install route
+   * returns the full adapter manifest, so this rides through on adapter
+   * installs and lets a post-install surface route to the matching Connections
+   * region. Absent for every other package type.
+   */
+  adapterType?: string;
 }
 
 // ---------------------------------------------------------------------------

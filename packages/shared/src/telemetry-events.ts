@@ -376,11 +376,17 @@ export type FeedbackEvent = z.infer<typeof FeedbackEventSchema>;
  * `kind`/`message`/`contact`/`route` are new plumbing (feedback-pipeline spec
  * Part 1): `sessionId` names the session a transcript excerpt would come from;
  * `diagnostics` is the bounded client/server diagnostics bundle; `transcriptExcerpt`
- * and `screenshotUploadId` are opt-in attachments the dialog (a later PR) lets the
- * user preview and remove before sending; `includeServerLogs` is how the client
- * asks the server to gather and attach a scrubbed log excerpt (see
+ * and `screenshotUploadId` are opt-in attachments the dialog lets the user
+ * preview and remove before sending; `includeServerLogs` is how the client asks
+ * the server to gather and attach a scrubbed log excerpt (see
  * {@link FeedbackDiagnosticsSchema.serverLogExcerpt}) — the client never reads
- * the log file itself.
+ * the log file itself; `includeTranscript` is the parallel opt-in that asks the
+ * server to gather and attach a bounded, scrubbed `transcriptExcerpt` from
+ * `sessionId` (gathered server-side, mirroring `serverLogExcerpt` — the client
+ * never truncates or scrubs the transcript itself); `anonymous` is the dialog's
+ * "Send anonymously" flag — when `true`, the route skips the server-side
+ * identity lookup even for a verified session, so no `reporterEmail`/
+ * `reporterName` is attached (the pseudonymous `instanceId` still rides along).
  */
 export const FeedbackSubmissionSchema = z
   .object({
@@ -393,6 +399,8 @@ export const FeedbackSubmissionSchema = z
     transcriptExcerpt: z.string().max(MAX_TRANSCRIPT_LEN).optional(),
     screenshotUploadId: z.string().min(1).max(MAX_FEEDBACK_UPLOAD_ID_LEN).optional(),
     includeServerLogs: z.boolean().optional(),
+    includeTranscript: z.boolean().optional(),
+    anonymous: z.boolean().optional(),
   })
   .strict();
 
@@ -486,8 +494,9 @@ export interface FeedbackEventContext {
  *
  * Only `message`/`contact`/`route`/`dorkosVersion`/`reporterEmail`/`reporterName`
  * ride the built event — `sessionId`, `diagnostics`, `transcriptExcerpt`,
- * `screenshotUploadId`, and `includeServerLogs` are NOT part of the PostHog wire
- * shape (they have no property slot on {@link FeedbackSubmittedProperties} /
+ * `screenshotUploadId`, `includeServerLogs`, `includeTranscript`, and `anonymous`
+ * are NOT part of the PostHog wire shape (they have no property slot on
+ * {@link FeedbackSubmittedProperties} /
  * {@link FeatureRequestedProperties}); this stays the narrow metrics event, not
  * the durable record the site's richer intake route (a later PR) builds from the
  * full submission.

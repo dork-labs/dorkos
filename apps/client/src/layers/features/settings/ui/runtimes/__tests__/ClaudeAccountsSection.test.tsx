@@ -1,9 +1,14 @@
 /**
  * @vitest-environment jsdom
  *
- * The Claude Code account card (spec `claude-code-accounts` D6/D7): which
- * account new work bills to, the accounts DorkOS knows about, and what happens
- * when the write is refused.
+ * The Claude Code billing-account section (spec `claude-code-accounts` D6/D7,
+ * relocated into the Claude Code runtime card by `runtimes-settings-redesign`):
+ * which account new work bills to, the accounts DorkOS knows about, and what
+ * happens when the write is refused.
+ *
+ * Every case here was carried over from the retired accounts card's test
+ * unchanged except for the extra click that opens the add-account form, which
+ * is now a quiet affordance in the section heading rather than a permanent row.
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
@@ -13,7 +18,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ServerConfig } from '@dorkos/shared/types';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
-import { ClaudeAccountsCard } from '../ui/ClaudeAccountsCard';
+import { ClaudeAccountsSection } from '../sections/ClaudeAccountsSection';
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -52,13 +57,13 @@ function serverConfig(claudeCode: ClaudeCodeBlock): Partial<ServerConfig> {
 
 let updateConfigResult: () => Promise<void> = () => Promise.resolve();
 
-function renderCard(claudeCode: ClaudeCodeBlock) {
+function renderSection(claudeCode: ClaudeCodeBlock) {
   const transport = createMockTransport({
     getConfig: vi.fn().mockResolvedValue(serverConfig(claudeCode)),
     updateConfig: vi.fn(() => updateConfigResult()),
   });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(<ClaudeAccountsCard />, {
+  render(<ClaudeAccountsSection />, {
     wrapper: ({ children }: { children: React.ReactNode }) => (
       <QueryClientProvider client={queryClient}>
         <TransportProvider transport={transport}>{children}</TransportProvider>
@@ -75,15 +80,35 @@ async function chooseOption(user: ReturnType<typeof userEvent.setup>, name: RegE
   await user.click(within(listbox).getByRole('option', { name }));
 }
 
-describe('ClaudeAccountsCard', () => {
+/** Reveal the add-account fields, which sit behind the quiet heading affordance. */
+async function openAddForm(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: 'Add account' }));
+  await screen.findByLabelText('Account folder');
+}
+
+describe('ClaudeAccountsSection', () => {
   beforeEach(() => {
     updateConfigResult = () => Promise.resolve();
     vi.clearAllMocks();
   });
   afterEach(cleanup);
 
+  it('renders as a boxed sub-section headed "Billing account"', async () => {
+    renderSection({ resolvedAccount: HOME, inherited: true, accounts: [] });
+
+    // The section lives INSIDE the Claude Code runtime card now, so its own
+    // heading is what tells an operator which part of the card they are in.
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Billing account' })).toBeInTheDocument()
+    );
+    // No card chrome of its own: the runtime card supplies that.
+    expect(screen.getByTestId('claude-accounts-section')).toBeInTheDocument();
+    // The add fields stay out of the way until asked for.
+    expect(screen.queryByLabelText('Account folder')).not.toBeInTheDocument();
+  });
+
   it('shows the resolved default rather than a blank field when no account is chosen', async () => {
-    renderCard({ resolvedAccount: HOME, inherited: true, accounts: [] });
+    renderSection({ resolvedAccount: HOME, inherited: true, accounts: [] });
 
     // The client cannot compute this: the server's inherited CLAUDE_CONFIG_DIR is
     // invisible to it, so an unset field would otherwise read as empty (AC8).
@@ -96,7 +121,7 @@ describe('ClaudeAccountsCard', () => {
 
   it('writes the chosen account so new work runs on it', async () => {
     const user = userEvent.setup();
-    const transport = renderCard({
+    const transport = renderSection({
       resolvedAccount: HOME,
       inherited: true,
       accounts: [
@@ -114,7 +139,7 @@ describe('ClaudeAccountsCard', () => {
 
   it('writes activeAccount: null when Default is chosen', async () => {
     const user = userEvent.setup();
-    const transport = renderCard({
+    const transport = renderSection({
       resolvedAccount: WORK,
       inherited: false,
       accounts: [{ path: WORK, label: 'Acme Corp', isAccountRoot: true }],
@@ -132,7 +157,7 @@ describe('ClaudeAccountsCard', () => {
     // configuration guide shows exactly that) without appearing under
     // `accounts`. A picker built from the roster alone would then have no option
     // matching its own value and would render blank.
-    renderCard({
+    renderSection({
       resolvedAccount: WORK,
       inherited: false,
       accounts: [{ path: HOME, label: 'Personal', isAccountRoot: true }],
@@ -147,13 +172,14 @@ describe('ClaudeAccountsCard', () => {
 
   it('registers a new account, and an empty name is stored as no name at all', async () => {
     const user = userEvent.setup();
-    const transport = renderCard({
+    const transport = renderSection({
       resolvedAccount: HOME,
       inherited: true,
       accounts: [{ path: HOME, label: 'Personal', isAccountRoot: true }],
     });
     await waitFor(() => expect(screen.getByText('Personal')).toBeInTheDocument());
 
+    await openAddForm(user);
     await user.type(screen.getByLabelText('Account folder'), WORK);
     // Whitespace only: `.trim() || null` keeps a blank name out of the config.
     await user.type(screen.getByLabelText('Name'), '   ');
@@ -173,7 +199,7 @@ describe('ClaudeAccountsCard', () => {
 
   it("refuses a path that is not the folder's full path, and says what to type", async () => {
     const user = userEvent.setup();
-    const transport = renderCard({ resolvedAccount: HOME, inherited: true, accounts: [] });
+    const transport = renderSection({ resolvedAccount: HOME, inherited: true, accounts: [] });
     await waitFor(() =>
       expect(screen.getByRole('combobox', { name: 'Claude Code account' })).toBeInTheDocument()
     );
@@ -181,6 +207,7 @@ describe('ClaudeAccountsCard', () => {
     // Nothing between this field and the config file expands `~`, so a shorthand
     // path registers a folder that is not there — and that junk entry still
     // counts towards "more than one account", turning badges on for every row.
+    await openAddForm(user);
     await user.type(screen.getByLabelText('Account folder'), '~/.claude2');
 
     expect(screen.getByTestId('claude-account-not-absolute')).toHaveTextContent(
@@ -192,11 +219,12 @@ describe('ClaudeAccountsCard', () => {
 
   it('accepts a full path with no complaint', async () => {
     const user = userEvent.setup();
-    renderCard({ resolvedAccount: HOME, inherited: true, accounts: [] });
+    renderSection({ resolvedAccount: HOME, inherited: true, accounts: [] });
     await waitFor(() =>
       expect(screen.getByRole('combobox', { name: 'Claude Code account' })).toBeInTheDocument()
     );
 
+    await openAddForm(user);
     await user.type(screen.getByLabelText('Account folder'), WORK);
 
     expect(screen.queryByTestId('claude-account-not-absolute')).not.toBeInTheDocument();
@@ -205,13 +233,14 @@ describe('ClaudeAccountsCard', () => {
 
   it('refuses to add the same folder twice', async () => {
     const user = userEvent.setup();
-    renderCard({
+    renderSection({
       resolvedAccount: HOME,
       inherited: true,
       accounts: [{ path: WORK, label: 'Acme Corp', isAccountRoot: true }],
     });
     await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
 
+    await openAddForm(user);
     await user.type(screen.getByLabelText('Account folder'), WORK);
 
     expect(screen.getByTestId('claude-account-duplicate')).toBeInTheDocument();
@@ -220,7 +249,7 @@ describe('ClaudeAccountsCard', () => {
 
   it('releases the active account when that account is removed', async () => {
     const user = userEvent.setup();
-    const transport = renderCard({
+    const transport = renderSection({
       resolvedAccount: WORK,
       inherited: false,
       accounts: [
@@ -234,6 +263,9 @@ describe('ClaudeAccountsCard', () => {
 
     // Removing the account work runs on must stop the work running there too,
     // or DorkOS keeps billing an account the operator just took off the list.
+    // One patch, both leaves: a second request could land after a reload that
+    // already re-read the old active account.
+    expect(transport.updateConfig).toHaveBeenCalledTimes(1);
     expect(transport.updateConfig).toHaveBeenCalledWith({
       runtimes: {
         claudeCode: { accounts: [{ path: HOME, label: 'Personal' }], activeAccount: null },
@@ -243,7 +275,7 @@ describe('ClaudeAccountsCard', () => {
 
   it('leaves the active account alone when a different account is removed', async () => {
     const user = userEvent.setup();
-    const transport = renderCard({
+    const transport = renderSection({
       resolvedAccount: WORK,
       inherited: false,
       accounts: [
@@ -255,13 +287,14 @@ describe('ClaudeAccountsCard', () => {
 
     await user.click(screen.getByRole('button', { name: 'Remove Personal' }));
 
+    expect(transport.updateConfig).toHaveBeenCalledTimes(1);
     expect(transport.updateConfig).toHaveBeenCalledWith({
       runtimes: { claudeCode: { accounts: [{ path: WORK, label: 'Acme Corp' }] } },
     });
   });
 
   it('says plainly when a registered folder is not a usable account', async () => {
-    renderCard({
+    renderSection({
       resolvedAccount: HOME,
       inherited: true,
       // `isAccountRoot` is the STRUCTURAL check (spec D4): a folder that really
@@ -278,7 +311,7 @@ describe('ClaudeAccountsCard', () => {
   });
 
   it('shows nothing of the sort when every registered folder is usable', async () => {
-    renderCard({
+    renderSection({
       resolvedAccount: HOME,
       inherited: true,
       accounts: [{ path: WORK, label: 'Acme Corp', isAccountRoot: true }],
@@ -297,7 +330,7 @@ describe('ClaudeAccountsCard', () => {
           code: 'operator_only_config',
         })
       );
-    renderCard({
+    renderSection({
       resolvedAccount: HOME,
       inherited: true,
       accounts: [
@@ -310,7 +343,7 @@ describe('ClaudeAccountsCard', () => {
     await chooseOption(user, 'Acme Corp');
 
     // Both leaves are operator-only, so under Require login this 403 is a real
-    // outcome. Red when the failure is swallowed and the card looks unchanged.
+    // outcome. Red when the failure is swallowed and the section looks unchanged.
     await waitFor(() =>
       expect(screen.getByTestId('claude-account-error')).toHaveTextContent(
         'Only a person can change those settings'

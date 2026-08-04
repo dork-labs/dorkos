@@ -39,6 +39,29 @@ import { QUERY_TIMING } from './constants';
 import { addBreadcrumb } from './breadcrumbs';
 
 /**
+ * Open the feedback dialog as a bug report from an error toast's "Report" action.
+ *
+ * The toast handlers run OUTSIDE React (they are cache callbacks, not
+ * components), so they reach the dialog through its shared store. The store is
+ * imported lazily — a static import from this widely-imported module into
+ * `shared/model` risks an import cycle (`shared/model` re-exports code that
+ * imports this file), the same reason `event-stream-context.tsx` reaches back
+ * here with a dynamic import. `getState()` is the store's out-of-React seam.
+ *
+ * @param message - A prefilled message stub (the action name plus the error).
+ */
+function reportBugFromToast(message: string): void {
+  void import('@/layers/shared/model/feedback-dialog/feedback-dialog-store').then((m) =>
+    m.useFeedbackDialogStore.getState().openFeedback({ kind: 'bug', message })
+  );
+}
+
+/** The "Report" toast action that opens a prefilled bug report. */
+function reportAction(message: string): { label: string; onClick: () => void } {
+  return { label: 'Report', onClick: () => reportBugFromToast(message) };
+}
+
+/**
  * Is this cache entry kept current by a durable subscription of its own?
  *
  * A query that declares `meta.streamOwned` is hydrated once by its read and
@@ -82,7 +105,8 @@ export function createQueryClientConfig(): QueryClientConfig {
         });
         addBreadcrumb('query_error', `${String(query.queryKey[0] ?? 'query')}: ${error.message}`);
         if (query.meta?.showToastOnError) {
-          toast.error((query.meta.errorLabel as string) ?? 'Failed to load data');
+          const label = (query.meta.errorLabel as string) ?? 'Failed to load data';
+          toast.error(label, { action: reportAction(`${label}: ${error.message}`) });
         }
       },
     }),
@@ -110,11 +134,14 @@ export function createQueryClientConfig(): QueryClientConfig {
         // than stack a column of identical ones. Sonner keys on the id.
         const id = mutation.meta?.errorToastId as string | undefined;
         const line = label ? `${label} — ${error.message}` : 'Action failed. Please try again.';
-        // Called with ONE argument when there is no id, not with an empty
-        // options object: the difference is invisible to Sonner and very visible
-        // to every test that pins what this handler said.
-        if (id === undefined) toast.error(line);
-        else toast.error(line, { id });
+        // Every failure toast now carries a "Report" action that opens a
+        // prefilled bug report — the highest-intent moment to capture one. The
+        // `id` (when set) still collapses repeats; it is merged into the same
+        // options object as the action.
+        toast.error(line, {
+          action: reportAction(line),
+          ...(id !== undefined ? { id } : {}),
+        });
       },
     }),
     defaultOptions: {

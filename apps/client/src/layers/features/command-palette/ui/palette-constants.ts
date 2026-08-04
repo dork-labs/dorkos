@@ -8,6 +8,7 @@ import {
   FolderOpen,
   Moon,
   Shapes,
+  MessageSquarePlus,
 } from 'lucide-react';
 
 /** Lucide icon name → component mapping for palette items. */
@@ -21,6 +22,7 @@ export const ICON_MAP: Record<string, React.ElementType> = {
   FolderOpen,
   Moon,
   Shapes,
+  MessageSquarePlus,
 };
 
 /** Ease-out curve for entrances (design system standard). */

@@ -91,4 +91,80 @@ export class SettingsPage {
   get nodeInfo() {
     return this.activePanel.getByRole('button', { name: /^node\.js/i });
   }
+
+  // ---------------------------------------------------------------------------
+  // Runtimes tab
+  //
+  // Every control on a runtime card is namespaced by runtime type, because the
+  // tab draws three cards at once and a page-global id could not name one of
+  // them. The accessors below take that type and nothing else, so a spec never
+  // hand-builds `runtime-…-<type>` strings.
+  // ---------------------------------------------------------------------------
+
+  /** Runtimes tab: one runtime's whole card. */
+  runtimeCard(type: string) {
+    return this.activePanel.getByTestId(`runtime-card-${type}`);
+  }
+
+  /**
+   * Runtimes tab: every `Default` pill on the tab.
+   *
+   * Exactly one runtime is the default, so this is the locator that says how
+   * many cards claim to be it — a count, where {@link SettingsPage.runtimeDefaultPill}
+   * asks about one card.
+   */
+  get runtimeDefaultPills() {
+    return this.activePanel.locator('[data-testid^="runtime-default-pill-"]');
+  }
+
+  /** Runtimes tab: the `Default` pill on one runtime's card. */
+  runtimeDefaultPill(type: string) {
+    return this.activePanel.getByTestId(`runtime-default-pill-${type}`);
+  }
+
+  /**
+   * Runtimes tab: the card's own open/close control.
+   *
+   * The identity block IS the button (the chevron beside it is `aria-hidden`
+   * and a mouse affordance only), so this carries the `aria-expanded` state.
+   * A card with nothing to open renders no button at all.
+   */
+  runtimeCardToggle(type: string) {
+    return this.activePanel.getByTestId(`runtime-card-toggle-${type}`);
+  }
+
+  /** Runtimes tab: one runtime's expanded body. */
+  runtimeCardBody(type: string) {
+    return this.activePanel.getByTestId(`runtime-card-body-${type}`);
+  }
+
+  /** Runtimes tab: the collapsed one-line summary of a connected runtime. */
+  runtimeCardSummary(type: string) {
+    return this.activePanel.getByTestId(`runtime-card-summary-${type}`);
+  }
+
+  /** Runtimes tab: the green Ready marker, present only on a connected runtime. */
+  runtimeReady(type: string) {
+    return this.activePanel.getByTestId(`runtime-ready-${type}`);
+  }
+
+  /** Runtimes tab: point new conversations at this runtime. */
+  runtimeMakeDefault(type: string) {
+    return this.activePanel.getByTestId(`runtime-make-default-${type}`);
+  }
+
+  /** Runtimes tab: the Model row's select, inside an expanded card. */
+  runtimeModelSelect(type: string) {
+    return this.activePanel.getByTestId(`runtime-model-select-${type}`);
+  }
+
+  /** Runtimes tab: re-run every runtime's connection checks. */
+  get runtimesRecheck() {
+    return this.activePanel.getByTestId('runtimes-recheck');
+  }
+
+  /** Runtimes tab: the fleet-wide trust row that sits beneath every card. */
+  get globalTrustRow() {
+    return this.activePanel.getByTestId('global-trust-row');
+  }
 }

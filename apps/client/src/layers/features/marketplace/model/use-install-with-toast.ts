@@ -28,9 +28,10 @@ import { useCallback } from 'react';
 import { toast } from 'sonner';
 
 import { humanizePackageName } from '@/layers/shared/lib';
-import { useAppStore } from '@/layers/shared/model';
+import { useAppStore, useOpenConnections } from '@/layers/shared/model';
 import { useInstallPackage, type InstallPackageArgs } from '@/layers/entities/marketplace';
 import type { InstallResult } from '@dorkos/shared/marketplace-schemas';
+import { adapterBridge } from '../lib/adapter-bridge';
 
 /**
  * Format an install error for a sonner toast message.
@@ -41,23 +42,47 @@ function formatInstallError(err: unknown): string {
 }
 
 /**
- * The success-toast options for one install. A Shape install is staged, not
- * activated — so its toast carries an "Apply…" action that opens the Shape
- * switcher landed on the just-installed Shape (highlighted, never auto-applied).
- * Every other package type installs to a plain confirmation.
+ * The success-toast options for one install. Two package types carry a
+ * follow-through action; the rest install to a plain confirmation:
  *
- * @param result - The install outcome (its `type` decides the action).
+ * - A **Shape** is staged, not activated, so its toast carries an "Apply…"
+ *   action that opens the Shape switcher landed on the just-installed Shape
+ *   (highlighted, never auto-applied).
+ * - An **adapter** just became a Connection, so its toast deep-links to the
+ *   matching Connections region — Messaging for a messaging adapter, Accounts
+ *   for a connector-refinement one — the seam between the marketplace word
+ *   ("adapter") and the user word ("connection"), said out loud (ADR
+ *   260804-021140).
+ *
+ * @param result - The install outcome (its `type` and `adapterType` decide the action).
  * @param toastId - The loading toast id to replace in place.
+ * @param goToRegion - Navigates to one of the Connections regions.
  */
-function successToastOptions(result: InstallResult, toastId: string | number) {
-  if (result.type !== 'shape') return { id: toastId };
-  return {
-    id: toastId,
-    action: {
-      label: 'Apply…',
-      onClick: () => useAppStore.getState().openShapeSwitcherToShape(result.packageName),
-    },
-  };
+function successToastOptions(
+  result: InstallResult,
+  toastId: string | number,
+  goToRegion: (region: 'messaging' | 'accounts') => void
+) {
+  if (result.type === 'shape') {
+    return {
+      id: toastId,
+      action: {
+        label: 'Apply…',
+        onClick: () => useAppStore.getState().openShapeSwitcherToShape(result.packageName),
+      },
+    };
+  }
+  const bridge = adapterBridge(result.type, result.manifest?.adapterType);
+  if (bridge) {
+    return {
+      id: toastId,
+      action: {
+        label: bridge.region === 'messaging' ? 'Open Messaging' : 'Open Accounts',
+        onClick: () => goToRegion(bridge.region),
+      },
+    };
+  }
+  return { id: toastId };
 }
 
 /**
@@ -100,6 +125,9 @@ function successToastOptions(result: InstallResult, toastId: string | number) {
  */
 export function useInstallWithToast() {
   const install = useInstallPackage();
+  // Typed `(region) => void` that centralizes the /connections deep-link and
+  // no-ops in the router-less Obsidian embed. A region typo fails to compile.
+  const goToRegion = useOpenConnections();
   const { mutate: baseMutate, mutateAsync: baseMutateAsync } = install;
 
   const mutate = useCallback(
@@ -108,14 +136,14 @@ export function useInstallWithToast() {
       const toastId = toast.loading(`Installing ${label}…`);
       baseMutate(args, {
         onSuccess: (result) => {
-          toast.success(`Installed ${label}`, successToastOptions(result, toastId));
+          toast.success(`Installed ${label}`, successToastOptions(result, toastId, goToRegion));
         },
         onError: (err) => {
           toast.error(formatInstallError(err), { id: toastId });
         },
       });
     },
-    [baseMutate]
+    [baseMutate, goToRegion]
   );
 
   const mutateAsync = useCallback(
@@ -124,14 +152,14 @@ export function useInstallWithToast() {
       const toastId = toast.loading(`Installing ${label}…`);
       try {
         const result = await baseMutateAsync(args);
-        toast.success(`Installed ${label}`, successToastOptions(result, toastId));
+        toast.success(`Installed ${label}`, successToastOptions(result, toastId, goToRegion));
         return result;
       } catch (err) {
         toast.error(formatInstallError(err), { id: toastId });
         throw err;
       }
     },
-    [baseMutateAsync]
+    [baseMutateAsync, goToRegion]
   );
 
   return { ...install, mutate, mutateAsync };

@@ -105,6 +105,15 @@ with the hint "Every runtime follows this unless its card says otherwise."
 Semantics identical to today's `DefaultTrustStopSection` global dial; per-card
 rows are the overrides. Set-time-is-consent-time is preserved.
 
+**Addendum (2026-08-03, P2 adversarial review):** the row ships as "Where new
+conversations stop for you", not the wording above. DOR-853's D0 invariant
+reserves the bare word "agent" for a named teammate in the fleet, and this
+setting governs neither a teammate nor a fleet: it sets where a new
+conversation starts on the trust dial, whichever runtime it lands on. The
+newer vocabulary invariant outranks the older local design copy. Everything
+else in this decision (placement, the three stops, the hint line, the
+overrides, the consent contract) is unchanged.
+
 ## 4. Disclosure model: all collapsed, summary lines do the talking
 
 **Screen:** `03-disclosure.html` · **Options:** A all collapsed · B default

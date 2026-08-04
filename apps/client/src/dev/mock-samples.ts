@@ -777,3 +777,96 @@ export const SESSION_DIAGNOSTICS: Record<'healthy' | 'degraded' | 'cold', Sessio
     clientVersion: null,
   },
 };
+
+// ---------------------------------------------------------------------------
+// Identity surfaces — MentionPill, IdentityHoverCard, IdentityAvatar
+// ---------------------------------------------------------------------------
+
+/**
+ * One identity as the phase-1 identity surfaces need it. Deliberately not
+ * `AuthorRef` — that's the wire shape a later slice resolves mentions and
+ * avatars against; this is only what a presentational component reads.
+ * `MentionPill` and `IdentityHoverCard` each pull a couple of these fields
+ * under their own prop name (`label` vs. `displayName`), so one mock per
+ * identity covers both showcases.
+ */
+export interface MockIdentity {
+  kind: 'human' | 'agent' | 'system';
+  displayName: string;
+  handle?: string;
+  color?: string;
+  emoji?: string;
+  origin?: 'local' | { platform: string };
+  agent?: { runtime?: string; model?: string; working?: { forMs: number } };
+}
+
+/**
+ * The cast the identity showcases draw from: an agent with a live working
+ * chip, an agent with none, a local person, a bridged external person, a
+ * room's own system voice, and the edge cases the design doc calls out by
+ * name — a long name/handle pair, a light fill with no emoji (the case
+ * `readableForeground` exists for), and multi-codepoint ZWJ emoji.
+ */
+export const MOCK_IDENTITIES: Record<string, MockIdentity> = {
+  warden: {
+    kind: 'agent',
+    displayName: 'Warden',
+    handle: 'warden',
+    color: '#6d5ae0',
+    emoji: '🛡️',
+    agent: { runtime: 'Claude Code', model: 'Opus 4.8', working: { forMs: 134_000 } },
+  },
+  scout: {
+    kind: 'agent',
+    displayName: 'Scout',
+    handle: 'scout',
+    color: '#12a594',
+    emoji: '🔭',
+    agent: { runtime: 'Claude Code', model: 'Sonnet 5' },
+  },
+  ana: {
+    kind: 'human',
+    displayName: 'Ana',
+    handle: 'ana',
+    origin: 'local',
+  },
+  priya: {
+    kind: 'human',
+    displayName: 'Priya',
+    handle: 'priya',
+    origin: { platform: 'Telegram' },
+  },
+  roomNotice: {
+    kind: 'system',
+    displayName: 'General',
+  },
+  longHandle: {
+    kind: 'agent',
+    displayName: 'Codebase Migration Orchestrator (staging)',
+    handle: 'codebase-migration-orchestrator-v2',
+    color: '#d4770a',
+  },
+  // No `emoji` — the fallback letter has to pick its own contrast against a
+  // pale fill rather than assume white, exactly the case `readableForeground`
+  // was added for.
+  noEmojiFill: {
+    kind: 'agent',
+    displayName: 'Relay',
+    handle: 'relay',
+    color: '#fde68a',
+  },
+  multiCodepointEmoji: {
+    kind: 'agent',
+    displayName: 'Pair',
+    handle: 'pair',
+    color: '#0ea5e9',
+    emoji: '🧑‍💻',
+  },
+  externalFlag: {
+    kind: 'agent',
+    displayName: 'Privateer',
+    handle: 'privateer',
+    color: '#334155',
+    emoji: '🏴‍☠️',
+  },
+};

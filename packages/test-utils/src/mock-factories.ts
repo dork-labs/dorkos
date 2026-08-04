@@ -391,6 +391,104 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
           },
           features: {},
         },
+        // The other two product runtimes, registered here rather than re-invented
+        // per test file. A settings surface writes into the section a runtime
+        // DECLARES, so a capability map with one runtime in it cannot express
+        // "the model row wrote into Codex's section" — which is the whole point
+        // of scoping model and effort per runtime. Each declaration mirrors the
+        // shipped one (`codex/runtime-constants.ts`,
+        // `opencode/runtime-constants.ts`), abbreviated only in prose fields.
+        codex: {
+          type: 'codex',
+          supportsToolApproval: false,
+          supportsCostTracking: false,
+          supportsResume: true,
+          supportsMcp: false,
+          supportsQuestionPrompt: false,
+          supportsPlugins: false,
+          permissionModes: {
+            supported: true,
+            default: 'default',
+            values: [
+              {
+                id: 'default',
+                label: 'Read only',
+                stop: 'ask',
+                asks: 'never',
+                reach: 'read',
+                promise: 'Reads files and answers questions. Nothing on your machine changes.',
+              },
+              {
+                id: 'acceptEdits',
+                label: 'Workspace write',
+                stop: 'act',
+                asks: 'never',
+                reach: 'workspace',
+                promise:
+                  "Edits files and runs commands inside the workspace — Codex can't pause to ask.",
+              },
+              {
+                id: 'bypassPermissions',
+                label: 'Full access',
+                stop: 'autonomy',
+                asks: 'never',
+                reach: 'everything',
+                promise:
+                  'Runs everything without asking, anywhere on your machine, network included.',
+              },
+            ],
+          },
+          // Effort is real; no bespoke section — Codex's card is the common rows.
+          settings: { configSection: 'codex', supportsEffort: true, sections: [] },
+          features: {},
+        },
+        opencode: {
+          type: 'opencode',
+          supportsToolApproval: true,
+          supportsCostTracking: true,
+          supportsResume: true,
+          supportsMcp: false,
+          supportsQuestionPrompt: false,
+          supportsPlugins: false,
+          permissionModes: {
+            supported: true,
+            default: 'default',
+            values: [
+              {
+                id: 'default',
+                label: 'Default',
+                stop: 'ask',
+                asks: 'always',
+                reach: 'edit',
+                promise: 'Asks before it edits a file, runs a command, or fetches a page.',
+              },
+              {
+                id: 'acceptEdits',
+                label: 'Accept edits',
+                stop: 'act',
+                asks: 'when-risky',
+                reach: 'edit',
+                promise: 'Edits files on its own. Asks before it runs a command.',
+              },
+              {
+                id: 'bypassPermissions',
+                label: 'Bypass permissions',
+                stop: 'autonomy',
+                asks: 'never',
+                reach: 'everything',
+                promise: 'Runs everything without asking, including outside this project.',
+              },
+            ],
+          },
+          // No effort leaf at OpenCode's API, and its bespoke section is the
+          // power-source picker — both load-bearing absences for the cards.
+          settings: {
+            configSection: 'opencode',
+            supportsEffort: false,
+            sections: [{ kind: 'opencode-power-source' }],
+          },
+          features: {},
+        },
       },
       defaultRuntime: 'claude-code',
     }),

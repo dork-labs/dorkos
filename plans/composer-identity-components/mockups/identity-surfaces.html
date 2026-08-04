@@ -1,0 +1,725 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Identity surfaces — mockups (directional, not final)</title>
+    <style>
+      :root {
+        color-scheme: light;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          Roboto,
+          sans-serif;
+        color: #1f2937;
+        background: #f7f8fa;
+        line-height: 1.5;
+      }
+      .wrap {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 28px 22px 80px;
+      }
+      .banner {
+        background: #fff7ed;
+        border: 1px solid #fdba74;
+        color: #9a3412;
+        border-radius: 12px;
+        padding: 14px 16px;
+        margin-bottom: 26px;
+        font-size: 13.5px;
+      }
+      .banner b {
+        font-weight: 700;
+      }
+      h1 {
+        font-size: 22px;
+        margin: 0 0 4px;
+        color: #111827;
+      }
+      .sub {
+        color: #6b7280;
+        font-size: 13.5px;
+        margin: 0 0 26px;
+      }
+      h2 {
+        font-size: 15px;
+        margin: 30px 0 4px;
+        color: #111827;
+      }
+      .h2note {
+        font-size: 12.5px;
+        color: #6b7280;
+        margin: 0 0 12px;
+      }
+      .panel {
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 14px 16px;
+      }
+      .lbl {
+        font-size: 11px;
+        color: #94a0af;
+        margin: 12px 0 6px;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+      }
+      code {
+        background: #eef1f5;
+        padding: 0 5px;
+        border-radius: 4px;
+        font-size: 0.88em;
+      }
+
+      /* ---------- mention pills (Direction B) ---------- */
+      .msg {
+        display: flex;
+        gap: 11px;
+        padding: 12px 4px;
+      }
+      .ava {
+        width: 36px;
+        height: 36px;
+        border-radius: 11px;
+        display: grid;
+        place-items: center;
+        font-size: 16px;
+        flex: 0 0 auto;
+        position: relative;
+      }
+      .ava.person {
+        border-radius: 50%;
+        background: #eef1f5;
+        color: #48566a;
+        font-weight: 650;
+        font-size: 15px;
+      }
+      .ava.agent {
+        background: #6d5ae0;
+        color: #fff;
+      }
+      .name {
+        font-weight: 600;
+        font-size: 13.5px;
+        color: #111827;
+      }
+      .time {
+        font-size: 11px;
+        color: #9aa3b2;
+        margin-left: 7px;
+      }
+      .text {
+        font-size: 13.5px;
+        line-height: 1.7;
+        color: #1f2937;
+        margin-top: 3px;
+      }
+      .m {
+        border-radius: 6px;
+        padding: 1px 6px 1px 5px;
+        font-weight: 500;
+        font-size: 0.95em;
+        -webkit-box-decoration-break: clone;
+        box-decoration-break: clone;
+      }
+      .m.agent-warden {
+        background: #ece8fb;
+        color: #5a45cf;
+      }
+      .m.agent-scout {
+        background: #d9f3ef;
+        color: #0e8f80;
+      }
+      .m.person {
+        background: #eaeef2;
+        color: #475569;
+      }
+      .m .plat {
+        opacity: 0.75;
+        margin-left: 3px;
+      }
+      .plain {
+        color: #9096a1;
+      }
+      .g {
+        vertical-align: -0.14em;
+      }
+      .corner {
+        position: absolute;
+        right: -4px;
+        bottom: -4px;
+        width: 16px;
+        height: 16px;
+        border-radius: 6px;
+        display: grid;
+        place-items: center;
+        background: #fff;
+        box-shadow:
+          0 0 0 2px #fff,
+          0 1px 2px rgba(0, 0, 0, 0.18);
+      }
+      .corner.round {
+        border-radius: 50%;
+      }
+      .bot-warden {
+        color: #5a45cf;
+      }
+      .plat-i {
+        color: #2f83d4;
+      }
+
+      /* ---------- feed avatars (Direction C) ---------- */
+      .frow {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 9px 4px;
+        max-width: 340px;
+      }
+      .frow + .frow {
+        border-top: 1px solid #f1f3f5;
+      }
+      .av {
+        width: 40px;
+        height: 40px;
+        flex: 0 0 auto;
+        display: grid;
+        place-items: center;
+        position: relative;
+        font-size: 18px;
+      }
+      .sq {
+        border-radius: 12px;
+      }
+      .circle {
+        border-radius: 50%;
+      }
+      .fill-warden {
+        background: #6d5ae0;
+        color: #fff;
+      }
+      .fill-scout {
+        background: #12a594;
+        color: #fff;
+      }
+      .neutral {
+        background: #eef1f5;
+        color: #48566a;
+        font-weight: 650;
+        font-size: 16px;
+      }
+      .who {
+        min-width: 0;
+      }
+      .nm {
+        font-weight: 600;
+        font-size: 13.5px;
+        color: #111827;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .hd {
+        font-size: 11.5px;
+        color: #6b7280;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      /* ---------- hover card (Direction A, compact) ---------- */
+      .cardrow {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+      }
+      .hc {
+        width: 236px;
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.16);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+      .hc-head {
+        display: flex;
+        gap: 11px;
+        padding: 14px 14px 10px;
+        align-items: center;
+      }
+      .hc-name {
+        font-weight: 650;
+        font-size: 15px;
+        color: #111827;
+        line-height: 1.15;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .hc-handle {
+        font-size: 12px;
+        color: #5f6b7a;
+        font-weight: 600;
+        margin-top: 2px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .hc-who {
+        min-width: 0;
+      }
+      .chiprow {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        padding: 0 14px 12px;
+      }
+      .chip {
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: #f1f3f5;
+        color: #475569;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .chip.work {
+        background: #e7f7ef;
+        color: #0f7a4d;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+      .chip.ext {
+        background: #e8f1fb;
+        color: #2f6fb0;
+      }
+      .pulse {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #12a37a;
+        flex: 0 0 auto;
+      }
+      .hc-foot {
+        margin-top: auto;
+        border-top: 1px solid #eef1f4;
+        padding: 9px 14px;
+        font-size: 12px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .hc-foot .act {
+        color: #5646c9;
+        font-weight: 600;
+      }
+      .hc-foot .soon {
+        color: #9aa3b2;
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+
+      .rules {
+        font-size: 13px;
+        line-height: 1.7;
+        color: #3f4753;
+        padding-left: 18px;
+      }
+      .rules li {
+        margin-bottom: 6px;
+      }
+      .msg.wrap .m {
+        white-space: normal;
+        overflow-wrap: anywhere;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="banner">
+        <b>⚠︎ MOCKUPS — directional reference, NOT final designs.</b> These capture the agreed
+        <em>intent</em> (which direction, what distinguishes agent/person/external, how overflow
+        behaves). Colors, spacing, exact tokens, and emoji are illustrative — build to the Calm Tech
+        design system and the real <code>IdentityAvatar</code> / <code>HoverCard</code> primitives,
+        and refine in code + review. The authoritative spec is <code>design-handoff.md</code> beside
+        this file.
+      </div>
+
+      <h1>Phase-1 identity surfaces</h1>
+      <p class="sub">
+        Rooms &amp; chat: how a participant reads as an agent, a person, or an external (bridged)
+        person — in message text, in the feed, and on hover. Sample cast: 🛡️ <b>Warden</b> &amp; 🔭
+        <b>Scout</b> (agents), <b>Ana</b> (you, local), <b>Priya</b> (external, Telegram).
+      </p>
+
+      <!-- ============ MENTIONS ============ -->
+      <h2>1 · Inline mention pills &nbsp;— chosen: Direction B (identity-color)</h2>
+      <p class="h2note">
+        Explored A (single accent, Buzz-faithful) and C (understated underline); chose <b>B</b>:
+        agent wears its own identity color, a Bot glyph replaces the <code>@</code>; person =
+        neutral <code>@name</code> pill; external = neutral pill + platform glyph; unresolved =
+        plain, non-clickable text.
+      </p>
+      <div class="panel">
+        <div class="msg">
+          <div class="ava agent">🧑‍💻</div>
+          <div>
+            <div><span class="name">Ana</span><span class="time">2:14 PM</span></div>
+            <div class="text">
+              <span class="m agent-warden"
+                ><svg
+                  class="g"
+                  viewBox="0 0 24 24"
+                  width="1em"
+                  height="1em"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M12 8V4H8" />
+                  <rect width="16" height="12" x="4" y="8" rx="2" />
+                  <path d="M2 14h2" />
+                  <path d="M20 14h2" />
+                  <path d="M15 13v2" />
+                  <path d="M9 13v2" /></svg
+                >Warden</span
+              >
+              <span class="m agent-scout"
+                ><svg
+                  class="g"
+                  viewBox="0 0 24 24"
+                  width="1em"
+                  height="1em"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M12 8V4H8" />
+                  <rect width="16" height="12" x="4" y="8" rx="2" />
+                  <path d="M2 14h2" />
+                  <path d="M20 14h2" />
+                  <path d="M15 13v2" />
+                  <path d="M9 13v2" /></svg
+                >Scout</span
+              >
+              — can you pair on the PR&nbsp;#734 deploy?
+              <span class="m person">@dorian</span> will merge once it's green, and
+              <span class="m person"
+                >@priya<span class="plat"
+                  ><svg
+                    class="g"
+                    viewBox="0 0 24 24"
+                    width=".85em"
+                    height=".85em"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="m22 2-7 20-4-9-9-4Z" />
+                    <path d="M22 2 11 13" /></svg></span
+              ></span>
+              flagged it from Telegram. <span class="plain">(ignore the @99 charge line)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ AVATARS ============ -->
+      <h2>2 · Feed avatars &nbsp;— chosen: Direction C (shape + badge + fill)</h2>
+      <p class="h2note">
+        Square = agent, circle = person (colorblind-safe); Bot corner badge on agents; filled
+        identity-color disc; external person = circle + platform corner badge.
+        <code>IdentityAvatar</code> is <code>rounded-full</code>/18%-tint today — this adds a
+        <code>shape</code> and a filled variant.
+      </p>
+      <div class="panel">
+        <div class="frow">
+          <div class="av sq fill-warden">
+            🛡️<span class="corner"
+              ><svg
+                class="bot-warden"
+                viewBox="0 0 24 24"
+                width="11"
+                height="11"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M12 8V4H8" />
+                <rect width="16" height="12" x="4" y="8" rx="2" />
+                <path d="M2 14h2" />
+                <path d="M20 14h2" />
+                <path d="M15 13v2" />
+                <path d="M9 13v2" /></svg
+            ></span>
+          </div>
+          <div class="who">
+            <div class="nm">Warden</div>
+            <div class="hd">agent</div>
+          </div>
+        </div>
+        <div class="frow">
+          <div class="av sq fill-scout">
+            🔭<span class="corner"
+              ><svg
+                class="bot-warden"
+                viewBox="0 0 24 24"
+                width="11"
+                height="11"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M12 8V4H8" />
+                <rect width="16" height="12" x="4" y="8" rx="2" />
+                <path d="M2 14h2" />
+                <path d="M20 14h2" />
+                <path d="M15 13v2" />
+                <path d="M9 13v2" /></svg
+            ></span>
+          </div>
+          <div class="who">
+            <div class="nm">Scout</div>
+            <div class="hd">agent</div>
+          </div>
+        </div>
+        <div class="frow">
+          <div class="av circle neutral">A</div>
+          <div class="who">
+            <div class="nm">Ana</div>
+            <div class="hd">you · on this machine</div>
+          </div>
+        </div>
+        <div class="frow">
+          <div class="av circle neutral">
+            P<span class="corner round"
+              ><svg
+                class="plat-i"
+                viewBox="0 0 24 24"
+                width="11"
+                height="11"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="m22 2-7 20-4-9-9-4Z" />
+                <path d="M22 2 11 13" /></svg
+            ></span>
+          </div>
+          <div class="who">
+            <div class="nm">Priya</div>
+            <div class="hd">via Telegram</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ HOVER CARD ============ -->
+      <h2>3 · Hover / long-press card &nbsp;— chosen: Direction A (compact)</h2>
+      <p class="h2note">
+        Name on top, <code>@handle</code> as the subtitle (omitted if none), context in chips,
+        footer bottom-pinned so "View profile" (marked <em>soon</em>; click deferred) sits at a
+        constant baseline.
+      </p>
+      <div class="panel">
+        <div class="cardrow">
+          <div class="hc">
+            <div class="hc-head">
+              <div class="av sq fill-warden">
+                🛡️<span class="corner"
+                  ><svg
+                    class="bot-warden"
+                    viewBox="0 0 24 24"
+                    width="11"
+                    height="11"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M12 8V4H8" />
+                    <rect width="16" height="12" x="4" y="8" rx="2" />
+                    <path d="M2 14h2" />
+                    <path d="M20 14h2" />
+                    <path d="M15 13v2" />
+                    <path d="M9 13v2" /></svg
+                ></span>
+              </div>
+              <div class="hc-who">
+                <div class="hc-name">Warden</div>
+                <div class="hc-handle">@warden</div>
+              </div>
+            </div>
+            <div class="chiprow">
+              <span class="chip">Claude Code · Opus 4.8</span>
+              <span class="chip work"><span class="pulse"></span>Working · 2m14s</span>
+            </div>
+            <div class="hc-foot">
+              <span class="act">View profile</span><span class="soon">soon</span>
+            </div>
+          </div>
+          <div class="hc">
+            <div class="hc-head">
+              <div class="av circle neutral">A</div>
+              <div class="hc-who">
+                <div class="hc-name">Ana</div>
+                <div class="hc-handle">@ana</div>
+              </div>
+            </div>
+            <div class="chiprow"><span class="chip">You · on this machine</span></div>
+            <div class="hc-foot">
+              <span class="act">View profile</span><span class="soon">soon</span>
+            </div>
+          </div>
+          <div class="hc">
+            <div class="hc-head">
+              <div class="av circle neutral">
+                P<span class="corner round"
+                  ><svg
+                    class="plat-i"
+                    viewBox="0 0 24 24"
+                    width="11"
+                    height="11"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="m22 2-7 20-4-9-9-4Z" />
+                    <path d="M22 2 11 13" /></svg
+                ></span>
+              </div>
+              <div class="hc-who">
+                <div class="hc-name">Priya</div>
+                <div class="hc-handle">@priya</div>
+              </div>
+            </div>
+            <div class="chiprow"><span class="chip ext">Telegram</span></div>
+            <div class="hc-foot">
+              <span class="act">View profile</span><span class="soon">soon</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ EDGE CASES ============ -->
+      <h2>4 · Edge cases</h2>
+      <p class="h2note">
+        Long names, long handles, overflow — the behavior the implementor must honor.
+      </p>
+      <div class="panel">
+        <div class="lbl">Long mention → wraps within the line (never truncated)</div>
+        <div class="msg wrap" style="padding-left: 0">
+          <div class="text">
+            can you rebase this onto
+            <span class="m agent-warden"
+              ><svg
+                class="g"
+                viewBox="0 0 24 24"
+                width="1em"
+                height="1em"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M12 8V4H8" />
+                <rect width="16" height="12" x="4" y="8" rx="2" />
+                <path d="M2 14h2" />
+                <path d="M20 14h2" />
+                <path d="M15 13v2" />
+                <path d="M9 13v2" /></svg
+              >codebase-migration-orchestrator-v2</span
+            >
+            before the freeze?
+          </div>
+        </div>
+        <div class="lbl" style="margin-top: 16px">
+          Long name/handle in a row → avatar fixed, text ellipsizes (needs <code>min-width:0</code>)
+        </div>
+        <div class="frow">
+          <div class="av sq fill-warden">
+            🛡️<span class="corner"
+              ><svg
+                class="bot-warden"
+                viewBox="0 0 24 24"
+                width="11"
+                height="11"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M12 8V4H8" />
+                <rect width="16" height="12" x="4" y="8" rx="2" />
+                <path d="M2 14h2" />
+                <path d="M20 14h2" />
+                <path d="M15 13v2" />
+                <path d="M9 13v2" /></svg
+            ></span>
+          </div>
+          <div class="who">
+            <div class="nm">Codebase Migration Orchestrator (staging)</div>
+            <div class="hd">@codebase-migration-orchestrator-v2</div>
+          </div>
+        </div>
+        <ul class="rules" style="margin-top: 16px">
+          <li>
+            <b>Mentions are never silently truncated</b> — wrap within the line (<code
+              >overflow-wrap:anywhere</code
+            >
+            + <code>box-decoration-break:clone</code>).
+          </li>
+          <li>
+            <b>Names &amp; handles in rows/cards ellipsize to one line</b>; the fixed avatar never
+            shrinks; the hover card is the full-value escape hatch.
+          </li>
+          <li>
+            <b>No handle</b> → omit the subtitle (never fake one; matches the picker's "No @name").
+          </li>
+          <li>
+            <b>No emoji on a filled agent disc</b> → the fallback letter needs contrast against the
+            identity color (light vs dark), not assumed white.
+          </li>
+          <li>
+            <b>Multi-codepoint emoji</b> (flags, ZWJ like 🧑‍💻 / 🏴‍☠️) must be constrained to the disc.
+          </li>
+          <li>
+            <b>Unresolved <code>@thing</code></b> → plain text, no pointer, no pill.
+          </li>
+        </ul>
+      </div>
+    </div>
+  </body>
+</html>

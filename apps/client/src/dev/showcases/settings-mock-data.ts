@@ -17,9 +17,18 @@
  *
  * @module dev/showcases/settings-mock-data
  */
-import type { ServerConfig } from '@dorkos/shared/types';
+import type { EffortLevel, ModelOption, ServerConfig } from '@dorkos/shared/types';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import type {
+  PermissionModeDescriptor,
+  PermissionStop,
+  RuntimeSettingsCapability,
+} from '@dorkos/shared/agent-runtime';
 import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
+import type { ExecutionException } from '@/layers/entities/agent';
+import { getRuntimeDescriptor } from '@/layers/entities/runtime';
+import { buildRuntimeCardSummary, type RuntimeCardViewProps } from '@/layers/features/settings';
+import { PLAYGROUND_CAPABILITIES } from '../playground-transport';
 
 /**
  * Realistic mock `ServerConfig` consumed by the `ServerTab`, `ToolsTab`,
@@ -134,7 +143,7 @@ export const MOCK_SERVER_CONFIG_MULTI_ACCOUNT: ServerConfig = {
  * renders the editable affordances (rename, delete, persona editor)
  * rather than the read-only system-agent state.
  */
-export const MOCK_AGENT_MANIFEST: AgentManifest = {
+const MOCK_AGENT_MANIFEST: AgentManifest = {
   id: 'mock-agent-01',
   name: 'Mock Agent',
   description: 'A static agent used for playground showcases.',
@@ -157,6 +166,286 @@ export const MOCK_AGENT_MANIFEST: AgentManifest = {
   enabledToolGroups: {},
   mcpServers: [],
 };
+
+/**
+ * The model catalog a runtime card is handed, in the shape `GET /api/models`
+ * answers with.
+ *
+ * Three entries because the Effort row needs all three cases to be reachable: a
+ * model that takes every rung, one that takes a narrower ladder, and one that
+ * takes no effort at all — which is what makes the "saved here and does nothing"
+ * affordance visible in the playground.
+ */
+const MOCK_RUNTIME_MODELS: ModelOption[] = [
+  {
+    value: 'claude-opus-4-6',
+    displayName: 'Opus 4.6',
+    description: 'The most capable model.',
+    supportsEffort: true,
+    supportedEffortLevels: ['low', 'medium', 'high'],
+  },
+  {
+    value: 'claude-sonnet-4-5-20250929',
+    displayName: 'Sonnet 4.5',
+    description: 'Fast, and capable enough for most work.',
+    supportsEffort: true,
+    supportedEffortLevels: ['low', 'medium', 'high', 'max'],
+  },
+  {
+    value: 'claude-haiku-4-5',
+    displayName: 'Haiku 4.5',
+    description: 'The quick one.',
+    supportsEffort: false,
+  },
+];
+
+/** A model id no catalog offers any more — the `(no longer offered)` case. */
+export const MOCK_RETIRED_MODEL_ID = 'claude-opus-3';
+
+/**
+ * The modes a runtime declared, read from the playground's capability mirror.
+ *
+ * Never a hand-written list: a dial's whole job is to render what a runtime said
+ * about itself, so a fixture written here would demonstrate the fixture.
+ *
+ * @param type - Runtime type id, e.g. `'claude-code'`.
+ * @returns Its declared modes, or none for a runtime the mirror has never heard of.
+ */
+function playgroundRuntimeModes(type: string): PermissionModeDescriptor[] {
+  return PLAYGROUND_CAPABILITIES[type]?.permissionModes?.values ?? [];
+}
+
+/**
+ * The settings surface a runtime declared — whether it takes an effort, and
+ * which bespoke sections its card carries.
+ *
+ * @param type - Runtime type id, e.g. `'opencode'`.
+ * @returns Its declared settings capability, or undefined when it declares none.
+ */
+function playgroundRuntimeSettings(type: string): RuntimeSettingsCapability | undefined {
+  return PLAYGROUND_CAPABILITIES[type]?.settings;
+}
+
+/** The state a showcase puts one runtime card in. */
+export interface RuntimeCardShowcaseOptions {
+  /** Runtime type id, e.g. `'claude-code'`. */
+  type?: string;
+  /** Whether the runtime can start a conversation right now. */
+  ready?: boolean;
+  /** Whether new conversations start on this runtime. */
+  isDefault?: boolean;
+  /** Whether the body is open. */
+  expanded?: boolean;
+  /** The catalog the Model row offers; omit for the standard three. */
+  models?: ModelOption[] | undefined;
+  /** The configured model id, or `null` for the runtime's own choice. */
+  model?: string | null;
+  /** The configured effort, or `null` for the runtime's own choice. */
+  effort?: EffortLevel | null;
+  /** This runtime's own stop, or `null` when it follows the shared row. */
+  trustStop?: PermissionStop | null;
+  /** What the shared row is set to — what a `null` above resolves through. */
+  globalStop?: PermissionStop;
+  /** Resolved display values for the runtime's declared sections. */
+  sectionValues?: Record<string, string | null>;
+  /**
+   * Whether the runtime has anywhere to keep the three standing rows. Omit and
+   * it is read off the runtime's own declaration, exactly as the container reads
+   * it; pass `false` to show the card a runtime with no `configSection` gets.
+   */
+  storesDefaults?: boolean;
+  /** Open the body. Showcases that drive expansion themselves pass their own. */
+  onToggleExpanded?: () => void;
+  /** Offer Make default. Pass `null` for a surface that does not offer it. */
+  onMakeDefault?: (() => void) | null;
+  /**
+   * The flow a connected runtime can reopen — "Fix sign-in" or "Change". Worth
+   * passing on a phone showcase: it is the second affordance the header hands to
+   * the opened body at that width.
+   */
+  reconnect?: RuntimeCardViewProps['reconnect'];
+}
+
+/** A handler a showcase does not care about. */
+function noop() {}
+
+/**
+ * Build one runtime card's props, with the summary line computed by the real
+ * `buildRuntimeCardSummary` rather than written out here.
+ *
+ * That last part is the point. The collapsed line is the card's whole answer at
+ * rest, and its rules are pure — so the showcase feeds the same input the
+ * container feeds and shows the line the app would draw, including the absences
+ * (no effort segment on a runtime that takes none, no summary at all on one that
+ * is not connected).
+ *
+ * @param options - See {@link RuntimeCardShowcaseOptions}.
+ * @returns Props ready to spread onto `RuntimeCardView`.
+ */
+export function createRuntimeCardProps(
+  options: RuntimeCardShowcaseOptions = {}
+): RuntimeCardViewProps {
+  const {
+    type = 'claude-code',
+    ready = true,
+    isDefault = false,
+    expanded = false,
+    models = MOCK_RUNTIME_MODELS,
+    model = 'claude-opus-4-6',
+    effort = 'high',
+    trustStop = null,
+    globalStop = 'ask',
+    sectionValues,
+    onToggleExpanded = noop,
+    onMakeDefault = noop,
+    reconnect,
+  } = options;
+
+  const settings = playgroundRuntimeSettings(type);
+  // The container's own rule, not a second one: a declaration that has not
+  // arrived reads as "yes", and only an explicit `configSection: null` says no.
+  const storesDefaults =
+    options.storesDefaults ?? (settings ? settings.configSection !== null : true);
+  const selectedModel = model === null ? undefined : models?.find((m) => m.value === model);
+
+  const { subtitle } = getRuntimeDescriptor(type);
+
+  return {
+    type,
+    // From the registry, like the container reads it: the showcase shows the
+    // identity line the app shows, and a runtime without one shows none.
+    ...(subtitle ? { subtitle } : {}),
+    ready,
+    isDefault,
+    expanded,
+    onToggleExpanded,
+    onMakeDefault: onMakeDefault ?? undefined,
+    ...(reconnect ? { reconnect } : {}),
+    summary: buildRuntimeCardSummary({
+      ready,
+      settings,
+      model,
+      models,
+      effort,
+      // The same second answer the Effort row gets, so the showcase's collapsed
+      // line cannot promise an effort its own opened card calls stranded.
+      modelTakesEffort: selectedModel ? (selectedModel.supportsEffort ?? false) : undefined,
+      trustStop: trustStop ?? globalStop,
+      trustInherited: trustStop === null,
+      ...(sectionValues ? { sectionValues } : {}),
+    }),
+    model: { models, value: model, onChange: noop },
+    effort: {
+      supportsEffort: settings?.supportsEffort ?? false,
+      selectedModel,
+      configuredModelId: model,
+      value: effort,
+      onChange: noop,
+    },
+    trust: {
+      descriptors: playgroundRuntimeModes(type),
+      stop: trustStop,
+      globalStop,
+      onChange: noop,
+    },
+    storesDefaults,
+    sections: settings?.sections ?? [],
+  };
+}
+
+/**
+ * A fleet that does not run on the defaults — one row per breakage kind, plus a
+ * healthy deviation, in the order the strip's own hook would emit them.
+ *
+ * The ordering is the caller's, and that is worth showing: the strip renders
+ * what it is handed, so broken rows come first because
+ * `useExecutionExceptions` sorted them there, not because the strip re-sorts.
+ */
+export const MOCK_EXECUTION_EXCEPTIONS: ExecutionException[] = [
+  {
+    path: '/Users/dev/projects/legacy-api',
+    agent: {
+      ...MOCK_AGENT_MANIFEST,
+      id: 'exception-01',
+      name: 'legacy-api',
+      icon: '🗄️',
+      color: '#f97316',
+    },
+    report: {
+      breakages: [{ kind: 'runtime-not-connected', message: 'Codex is not connected.' }],
+      deviations: [{ field: 'runtime', label: 'Codex' }],
+      isException: true,
+      isBroken: true,
+    },
+  },
+  {
+    path: '/Users/dev/projects/data-pipeline',
+    agent: {
+      ...MOCK_AGENT_MANIFEST,
+      id: 'exception-02',
+      name: 'data-pipeline',
+      icon: '🧪',
+      color: '#8b5cf6',
+    },
+    report: {
+      breakages: [
+        { kind: 'model-unavailable', message: 'Opus 3 is no longer offered by Claude Code.' },
+        {
+          kind: 'effort-unsupported-model',
+          message: 'High effort does nothing on the model it is set with.',
+        },
+      ],
+      deviations: [],
+      isException: true,
+      isBroken: true,
+    },
+  },
+  {
+    path: '/Users/dev/projects/docs-site',
+    agent: {
+      ...MOCK_AGENT_MANIFEST,
+      id: 'exception-03',
+      name: 'docs-site',
+      icon: '📘',
+      color: '#0ea5e9',
+    },
+    report: {
+      breakages: [
+        {
+          kind: 'effort-unsupported-runtime',
+          message: 'OpenCode has no effort setting, so this one does nothing.',
+        },
+      ],
+      deviations: [{ field: 'runtime', label: 'OpenCode' }],
+      isException: true,
+      isBroken: true,
+    },
+  },
+  {
+    path: '/Users/dev/projects/marketing',
+    agent: {
+      ...MOCK_AGENT_MANIFEST,
+      id: 'exception-04',
+      name: 'marketing',
+      icon: '📣',
+      color: '#22c55e',
+    },
+    report: {
+      breakages: [],
+      deviations: [
+        { field: 'model', label: 'Sonnet 4.5' },
+        { field: 'effort', label: 'Low' },
+      ],
+      isException: true,
+      isBroken: false,
+    },
+  },
+];
+
+/** The healthy half of {@link MOCK_EXECUTION_EXCEPTIONS} — deviations, nothing broken. */
+export const MOCK_EXECUTION_DEVIATIONS: ExecutionException[] = MOCK_EXECUTION_EXCEPTIONS.filter(
+  (exception) => !exception.report.isBroken
+);
 
 /**
  * Mock mesh agents listing. Mirrors the shape returned by

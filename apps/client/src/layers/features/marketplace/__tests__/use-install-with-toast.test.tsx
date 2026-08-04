@@ -23,6 +23,15 @@ vi.mock('@/layers/entities/marketplace', () => ({
   useInstallPackage: vi.fn(),
 }));
 
+// Spy on router navigation so the adapter deep-link toast action can be clicked
+// and its target asserted. The real `useOpenConnections` chain runs on top of
+// this — `useSafeNavigate` → `useNavigate()` resolves to `mockNavigate`.
+const mockNavigate = vi.fn();
+vi.mock('@tanstack/react-router', async (importActual) => {
+  const actual = await importActual<typeof import('@tanstack/react-router')>();
+  return { ...actual, useNavigate: () => mockNavigate };
+});
+
 const mockLoading = vi.fn(() => 'toast-id-abc');
 const mockSuccess = vi.fn();
 const mockError = vi.fn();
@@ -235,6 +244,72 @@ describe('useInstallWithToast', () => {
       const opts = mockSuccess.mock.calls[0][1] as { id: string; action?: unknown };
       expect(opts).toEqual({ id: 'toast-id-abc' });
       expect(opts.action).toBeUndefined();
+    });
+  });
+
+  describe('adapter install → Connections deep-link', () => {
+    it('deep-links a messaging adapter to the Messaging region', () => {
+      const { result } = renderHook(() => useInstallWithToast());
+
+      act(() => {
+        result.current.mutate({ name: 'telegram-adapter' });
+      });
+
+      const perCall = fakes.mutate.mock.calls[0][1] as { onSuccess: (r: unknown) => void };
+      act(() => {
+        perCall.onSuccess({
+          type: 'adapter',
+          packageName: 'telegram-adapter',
+          manifest: { adapterType: 'telegram' },
+        });
+      });
+
+      const opts = mockSuccess.mock.calls[0][1] as {
+        action?: { label: string; onClick: () => void };
+      };
+      expect(opts.action?.label).toBe('Open Messaging');
+
+      // Clicking navigates to the Connections page, Messaging region.
+      expect(mockNavigate).not.toHaveBeenCalled();
+      act(() => {
+        opts.action?.onClick();
+      });
+      expect(mockNavigate).toHaveBeenCalledWith({
+        to: '/connections',
+        search: { region: 'messaging' },
+      });
+    });
+
+    it('deep-links a connector-refinement adapter to the Accounts region', () => {
+      const { result } = renderHook(() => useInstallWithToast());
+
+      act(() => {
+        result.current.mutate({ name: 'gmail-connector' });
+      });
+
+      const perCall = fakes.mutate.mock.calls[0][1] as { onSuccess: (r: unknown) => void };
+      act(() => {
+        perCall.onSuccess({
+          type: 'adapter',
+          packageName: 'gmail-connector',
+          manifest: { adapterType: 'connector' },
+        });
+      });
+
+      const opts = mockSuccess.mock.calls[0][1] as {
+        action?: { label: string; onClick: () => void };
+      };
+      expect(opts.action?.label).toBe('Open Accounts');
+
+      // Clicking navigates to the Connections page, Accounts region.
+      expect(mockNavigate).not.toHaveBeenCalled();
+      act(() => {
+        opts.action?.onClick();
+      });
+      expect(mockNavigate).toHaveBeenCalledWith({
+        to: '/connections',
+        search: { region: 'accounts' },
+      });
     });
   });
 

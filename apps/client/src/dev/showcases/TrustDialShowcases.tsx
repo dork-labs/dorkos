@@ -15,7 +15,7 @@
 import { useState, type ReactNode } from 'react';
 import type { PermissionModeDescriptor, PermissionStop } from '@dorkos/shared/agent-runtime';
 import { PlanModeItem, AutonomyConfirmDialog, MakeDefaultStopLine } from '@/layers/features/status';
-import { DefaultTrustStopSection, type DefaultTrustStopRuntime } from '@/layers/features/settings';
+import { GlobalTrustRow, TrustRow, type GlobalTrustRowRuntime } from '@/layers/features/settings';
 import { Button, TrustDial, UnattendedAutonomyDialog } from '@/layers/shared/ui';
 import { needsConsentRitual } from '@/layers/shared/lib';
 import { PlaygroundSection } from '../PlaygroundSection';
@@ -260,34 +260,57 @@ const TASK_CONSEQUENCE = (
   </>
 );
 
+/** The three runtimes the settings surfaces below talk about, with their modes. */
+const SETTINGS_RUNTIMES = [
+  { runtime: 'claude-code', label: 'Claude Code', descriptors: CLAUDE },
+  { runtime: 'codex', label: 'Codex', descriptors: CODEX },
+  { runtime: 'opencode', label: 'OpenCode', descriptors: OPENCODE },
+];
+
 /**
- * Settings' "New sessions start in" — the one dial that belongs to no runtime,
- * with the per-runtime consequences beneath it (spec `trust-dial`, decision 6B).
+ * Settings' shared trust setting and the per-runtime override beneath it, live
+ * (spec `trust-dial` decision 6B, as the runtimes redesign rebuilt it).
  *
- * The real section, driven by the same declared modes as every dial above, so
- * the captions here are the sentences a person would actually read. The writes
- * stay local: this is a playground, and the real thing changes where every new
- * session starts.
+ * One question is now asked in one row under the runtime cards, and each card
+ * carries its own way out of it — so the two components are shown together, with
+ * the same state behind them that the tab keeps. The writes stay local: this is
+ * a playground, and the real thing changes where every new session starts.
  */
-function LiveDefaultStopSection({ initial }: { initial: PermissionStop | null }) {
+function LiveSettingsTrust({ initial }: { initial: PermissionStop | null }) {
   const [stop, setStop] = useState<PermissionStop | null>(initial);
   const [overrides, setOverrides] = useState<Record<string, PermissionStop | null>>({});
-  const runtimes: DefaultTrustStopRuntime[] = [
-    { runtime: 'claude-code', label: 'Claude Code', descriptors: CLAUDE },
-    { runtime: 'codex', label: 'Codex', descriptors: CODEX },
-    { runtime: 'opencode', label: 'OpenCode', descriptors: OPENCODE },
-  ].map((entry) => ({ ...entry, stop: overrides[entry.runtime] ?? null }));
+  const runtimes: GlobalTrustRowRuntime[] = SETTINGS_RUNTIMES.map((entry) => ({
+    runtime: entry.runtime,
+    label: entry.label,
+    stop: overrides[entry.runtime] ?? null,
+  }));
+  const globalStop = stop ?? 'ask';
   return (
-    <div className="w-96">
-      <DefaultTrustStopSection
+    <div className="w-full max-w-xl space-y-6">
+      <GlobalTrustRow
         stop={stop}
         effectiveStop="ask"
         runtimes={runtimes}
-        onChangeGlobal={setStop}
+        onChange={setStop}
         onChangeRuntime={(runtime, next) =>
           setOverrides((current) => ({ ...current, [runtime]: next }))
         }
       />
+      {/* Each card's own row, which is where the per-runtime override moved. In
+          the tab these sit one per card, above this row rather than below it. */}
+      <div className="space-y-4 border-t pt-4">
+        {SETTINGS_RUNTIMES.map((entry) => (
+          <TrustRow
+            key={entry.runtime}
+            runtimeType={entry.runtime}
+            runtimeLabel={entry.label}
+            descriptors={entry.descriptors}
+            stop={overrides[entry.runtime] ?? null}
+            globalStop={globalStop}
+            onChange={(next) => setOverrides((current) => ({ ...current, [entry.runtime]: next }))}
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -514,18 +537,18 @@ export function TrustDialShowcases() {
 
       <PlaygroundSection
         title="Trust Dial — where new sessions start"
-        description="The one dial that belongs to no runtime. It sets a runtime-neutral stop; each runtime resolves it through its own profile, and the lines beneath say what that means — including the amber where Codex cannot keep the middle stop's promise. Full autonomy is a permitted default, asked for once at the moment it is chosen."
+        description="Settings asks this question once, for every runtime, and each runtime card carries its own way out of it. Note the vocabulary: a session dial says 'Ask first' because a person is choosing what to do next, while these settings surfaces say 'Asks before acting' because they describe what agents will keep doing. Same three stops, one reading voice each. A card can sit at Full autonomy while the shared row reads Asks before acting, and the note says so either way."
       >
-        <ShowcaseLabel>Settings — Ask first, the shipped default</ShowcaseLabel>
-        <ShowcaseDemo>
-          <LiveDefaultStopSection initial={null} />
+        <ShowcaseLabel>Settings — Asks before acting, the shipped default</ShowcaseLabel>
+        <ShowcaseDemo responsive>
+          <LiveSettingsTrust initial={null} />
         </ShowcaseDemo>
 
         <ShowcaseLabel>
           Settings — Full autonomy standing, with the note that keeps it findable
         </ShowcaseLabel>
-        <ShowcaseDemo>
-          <LiveDefaultStopSection initial="autonomy" />
+        <ShowcaseDemo responsive>
+          <LiveSettingsTrust initial="autonomy" />
         </ShowcaseDemo>
 
         <ShowcaseLabel>

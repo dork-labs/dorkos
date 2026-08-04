@@ -1,12 +1,44 @@
+/**
+ * The fleet's answer to the cards above it: every agent that does NOT run on
+ * the defaults the Runtimes tab just showed.
+ *
+ * It sits with the tab it belongs to. The `execution-defaults/` folder it used
+ * to live in held the settings card the runtime cards replaced, and the strip
+ * outlived it — the only piece of that stack the redesign kept.
+ *
+ * @module features/settings/ui/runtimes/ExecutionExceptionsStrip
+ */
 import { TriangleAlert } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
-import { useExecutionExceptions, AgentAvatar } from '@/layers/entities/agent';
+import {
+  useExecutionExceptions,
+  AgentAvatar,
+  type ExecutionException,
+} from '@/layers/entities/agent';
 import { useAppStore, useSettingsDeepLink } from '@/layers/shared/model';
 import { useAgentHubStore } from '@/layers/features/agent-hub';
 
 /** How one deviation is worded in a row's summary. */
 function deviationText(field: 'runtime' | 'model' | 'effort', label: string): string {
   return field === 'effort' ? `effort ${label}` : `${field} ${label}`;
+}
+
+/** The one thing the strip can be told rather than look up for itself. */
+export interface ExecutionExceptionsStripProps {
+  /**
+   * Exceptions to render instead of the live ones.
+   *
+   * **Showcase-only injection.** The strip is the fleet's own answer, so the tab
+   * passes nothing and the hook below is what draws it. The dev playground has
+   * no fleet to deviate from, and a component that could only be seen with a
+   * server behind it is exactly the coverage gap this redesign closes (design
+   * §7) — so a showcase hands it a fleet directly.
+   *
+   * Supplying this also turns the catalog check off: those are per-runtime
+   * round-trips whose only purpose is to decide which rows are broken, and the
+   * injected rows have already decided.
+   */
+  exceptions?: readonly ExecutionException[];
 }
 
 /**
@@ -28,9 +60,17 @@ function deviationText(field: 'runtime' | 'model' | 'effort', label: string): st
  * make — the hub's open intent is a store action every surface reaches for, and
  * a prop threaded through the Settings dialog for this one row would be the
  * exception, not the rule.
+ *
+ * @param props - See {@link ExecutionExceptionsStripProps}; the live tab passes
+ *   nothing.
  */
-export function ExecutionExceptionsStrip() {
-  const { exceptions } = useExecutionExceptions({ checkModels: true });
+export function ExecutionExceptionsStrip({
+  exceptions: injected,
+}: ExecutionExceptionsStripProps = {}) {
+  // Called unconditionally whatever the prop says — rules of hooks — and simply
+  // not read when a showcase has supplied its own fleet.
+  const live = useExecutionExceptions({ checkModels: injected === undefined });
+  const exceptions = injected ?? live.exceptions;
   const settings = useSettingsDeepLink();
   const setRightPanelOpen = useAppStore((s) => s.setRightPanelOpen);
   const setActiveRightPanelTab = useAppStore((s) => s.setActiveRightPanelTab);

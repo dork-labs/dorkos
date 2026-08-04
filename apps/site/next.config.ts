@@ -82,6 +82,18 @@ const nextConfig: NextConfig = {
         destination: '/docs/integrations/building-integrations',
         permanent: true,
       },
+      // docs/connectors/ became docs/connections/ in the 2026-08 Connections
+      // rename (DOR-860). Keep every old connector URL alive.
+      {
+        source: '/docs/connectors',
+        destination: '/docs/connections',
+        permanent: true,
+      },
+      {
+        source: '/docs/connectors/:path*',
+        destination: '/docs/connections/:path*',
+        permanent: true,
+      },
     ];
   },
 

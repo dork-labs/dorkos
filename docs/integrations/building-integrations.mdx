@@ -3,7 +3,16 @@ title: Building Integrations
 description: Create custom clients using the DorkOS Transport interface
 ---
 
+import { Callout } from 'fumadocs-ui/components/callout';
+
 # Building Integrations
+
+<Callout type="info">
+  This whole section is for **builders**: people writing custom clients, extensions, marketplace
+  adapters, or MCP servers on top of DorkOS. If you just want to connect a chat app or a service to
+  your agents, like Telegram or Gmail, you want the [Connections](/docs/connections) page instead,
+  no code required.
+</Callout>
 
 DorkOS uses a hexagonal (ports & adapters) architecture centered on the **Transport** interface. Build custom clients by implementing this interface or by calling the REST/SSE API directly.
 

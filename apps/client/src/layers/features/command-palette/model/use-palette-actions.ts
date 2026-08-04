@@ -8,7 +8,7 @@ import {
   useSettingsDeepLink,
   useTasksDeepLink,
   useOpenConnections,
-  useReportIssue,
+  useFeedbackDialogStore,
 } from '@/layers/shared/model';
 import { openLink } from '@/layers/shared/lib';
 import { useDirectoryState } from '@/layers/entities/session';
@@ -48,7 +48,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
   const navigate = useNavigate();
 
   const setPreviousCwd = useAppStore((s) => s.setPreviousCwd);
-  const reportIssue = useReportIssue();
+  const openFeedback = useFeedbackDialogStore((s) => s.openFeedback);
 
   // URL-based openers for dialog panels. These update TanStack Router
   // search params; DialogHost listens to both the store flag and the URL
@@ -169,8 +169,8 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
         case 'toggleTheme':
           setTheme(theme === 'dark' ? 'light' : 'dark');
           return;
-        case 'reportIssue':
-          reportIssue('bug');
+        case 'openFeedback':
+          openFeedback();
           return;
         case 'openTasks':
           openTasks();
@@ -202,7 +202,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
       openTasks,
       openConnections,
       openSettings,
-      reportIssue,
+      openFeedback,
     ]
   );
 

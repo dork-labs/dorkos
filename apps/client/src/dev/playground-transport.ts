@@ -15,8 +15,13 @@ import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
  *
  * A copy can go stale: if a runtime renames a mode, this list is not updated for it.
  * What the showcases depend on is label *length*, so keep the longest ones in step.
+ *
+ * Exported because the props-only showcases read it directly: the runtime cards
+ * are handed declared modes and a declared settings surface rather than fetching
+ * them, and a fourth hand-written copy of each runtime's declaration is exactly
+ * the drift this one exists to avoid.
  */
-const PLAYGROUND_CAPABILITIES: Record<string, RuntimeCapabilities> = {
+export const PLAYGROUND_CAPABILITIES: Record<string, RuntimeCapabilities> = {
   'claude-code': {
     type: 'claude-code',
     supportsToolApproval: true,

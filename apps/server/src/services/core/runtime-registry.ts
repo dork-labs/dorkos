@@ -339,6 +339,26 @@ export class RuntimeRegistry {
   // ---------------------------------------------------------------------------
 
   /**
+   * Read the working directory a session is bound to (`agentPath`), or null when
+   * no bound row exists yet. This is the project directory the session's
+   * transcript lives under — the one input a transcript read needs beyond the
+   * session id (see `lib/transcript-excerpt.ts`). Null when the session has not
+   * started (no binding row) or was created without an owning agent path; the
+   * caller then falls back to the default working directory.
+   *
+   * @param sessionId - Session identifier
+   */
+  async getSessionAgentPath(sessionId: string): Promise<string | null> {
+    const db = this.requireDb('getSessionAgentPath');
+    const row = db
+      .select({ agentPath: sessionMetadata.agentPath })
+      .from(sessionMetadata)
+      .where(eq(sessionMetadata.sessionId, sessionId))
+      .get();
+    return row?.agentPath ?? null;
+  }
+
+  /**
    * Read a session's persisted settings, or null when no row exists. NULL
    * columns are omitted from the result (not surfaced as explicit values).
    *
