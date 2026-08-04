@@ -40,6 +40,7 @@ function chat(overrides: Partial<UnclaimedChat> = {}): UnclaimedChat {
     chatId: '998877',
     channelType: 'dm',
     chatKind: 'dm',
+    platformChatType: null,
     senderName: 'Miguel',
     senderId: '42',
     chatTitle: null,
@@ -143,5 +144,73 @@ describe('ClaimFeed — "Answer in a channel" (DOR-882)', () => {
       expect(toast.warning).toHaveBeenCalledWith(expect.stringContaining('broadcast channel'))
     );
     expect(navigateSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('ClaimFeed — the group-add claim flow (DOR-883)', () => {
+  it('Join always claims with bridge: true for a group', async () => {
+    const claimed = {
+      id: 'b-1',
+      adapterId: 'telegram-1',
+      agentId: 'dorkbot',
+      bridge: 'room',
+      roomId: 'room-9',
+    };
+    transport.claimUnclaimedChat = vi.fn().mockResolvedValue({ binding: claimed });
+    transport.listUnclaimedChats = vi
+      .fn()
+      .mockResolvedValue([
+        chat({ chatKind: 'group', platformChatType: 'supergroup', chatTitle: 'Release train' }),
+      ]);
+    renderFeed();
+
+    await waitFor(() =>
+      expect(screen.getByText('Miguel added your bot to “Release train”')).toBeInTheDocument()
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Join' }));
+
+    await waitFor(() =>
+      expect(transport.claimUnclaimedChat).toHaveBeenCalledWith('uc-1', {
+        agentId: 'dorkbot',
+        bridge: true,
+      })
+    );
+  });
+
+  it('Leave calls the transport and reports success, without navigating anywhere', async () => {
+    transport.listUnclaimedChats = vi
+      .fn()
+      .mockResolvedValue([chat({ chatKind: 'group', platformChatType: 'supergroup' })]);
+    transport.leaveUnclaimedChat = vi.fn().mockResolvedValue(undefined);
+    renderFeed();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Leave' })).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Leave' }));
+
+    await waitFor(() => expect(transport.leaveUnclaimedChat).toHaveBeenCalledWith('uc-1'));
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(expect.stringContaining('Left the group'))
+    );
+    expect(navigateSpy).not.toHaveBeenCalled();
+  });
+
+  it('a broadcast channel offers only Ignore and Leave — no agent picker, no Join', async () => {
+    transport.listUnclaimedChats = vi
+      .fn()
+      .mockResolvedValue([
+        chat({ chatKind: 'group', platformChatType: 'channel', chatTitle: 'Announcements' }),
+      ]);
+    renderFeed();
+
+    await waitFor(() =>
+      expect(screen.getByText('Miguel added your bot to “Announcements”')).toBeInTheDocument()
+    );
+
+    expect(screen.getByRole('button', { name: 'Ignore' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Leave' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Join' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
   });
 });

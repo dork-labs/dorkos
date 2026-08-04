@@ -103,3 +103,21 @@ export function useBlockUnclaimedChat() {
     onSuccess: () => invalidateFeed(queryClient),
   });
 }
+
+/**
+ * Leave an unclaimed chat's group on its platform — the group-add claim
+ * flow's "Leave" action (DOR-883). A real removal: the bot stops being a
+ * member of the chat, and no room or binding was ever created for it.
+ * Rejects, rather than settling, when the underlying adapter cannot leave a
+ * chat — the card is left exactly as it was rather than being dismissed over
+ * a leave that did not happen.
+ */
+export function useLeaveUnclaimedChat() {
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => transport.leaveUnclaimedChat(id),
+    meta: { errorLabel: "Couldn't leave this chat" },
+    onSuccess: () => invalidateFeed(queryClient),
+  });
+}

@@ -293,5 +293,11 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
         method: 'POST',
       });
     },
+
+    leaveUnclaimedChat(id: string): Promise<void> {
+      return fetchNoContent(baseUrl, `/relay/unclaimed-chats/${encodeURIComponent(id)}/leave`, {
+        method: 'POST',
+      });
+    },
   };
 }

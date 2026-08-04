@@ -24,6 +24,7 @@ export {
   useClaimUnclaimedChat,
   useIgnoreUnclaimedChat,
   useBlockUnclaimedChat,
+  useLeaveUnclaimedChat,
   UNCLAIMED_CHATS_QUERY_KEY,
   unclaimedChatsKey,
 } from './model/use-unclaimed-chats';
