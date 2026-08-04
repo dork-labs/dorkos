@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(client): mention pills render inside real room messages'
+  - "fix(client): whitelist mention pills by the entry's own server-emitted spans"
 ---
 
 ### Added
