@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   ListTodo,
   MessageSquare,
+  MessagesSquare,
   Store,
   X,
   type LucideIcon,
@@ -25,6 +26,9 @@ const ROUTE_ICONS: Record<string, LucideIcon> = {
   '/': LayoutDashboard,
   '/activity': Activity,
   '/agents': Bot,
+  // Plural on purpose: /session's single-bubble icon is taken, and two tabs
+  // that read alike should at least not look alike (DOR-587 review).
+  '/channels': MessagesSquare,
   '/marketplace': Store,
   '/marketplace/sources': Store,
   '/session': MessageSquare,

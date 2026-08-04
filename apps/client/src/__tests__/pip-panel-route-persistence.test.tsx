@@ -60,6 +60,7 @@ vi.mock('@/layers/features/top-nav', () => ({
 
 vi.mock('@/layers/widgets/app-layout', () => ({
   DialogHost: () => null,
+  FeedbackDialogHost: () => null,
 }));
 
 vi.mock('@/layers/features/tours', () => ({
