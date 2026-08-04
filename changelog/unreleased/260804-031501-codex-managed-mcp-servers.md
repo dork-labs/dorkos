@@ -5,4 +5,4 @@ covers:
 
 ### Added
 
-- Codex agents can now use managed MCP servers too. Add a server on a Codex agent's Toolkit tab, the same way you already can for Claude Code agents: give it a local command or a remote URL, turn it on or off, and DorkOS makes it available to the agent on its next turn.
+- Codex agents can now use managed MCP servers too, the same way Claude Code agents already can. Add one from a Codex agent's Toolkit tab: point it at a local command or a remote URL, turn it on or off, and DorkOS makes it available to the agent on its next turn. Codex doesn't support the third connection type (a persistent streaming link), so that option isn't offered when you're adding a server to a Codex agent.

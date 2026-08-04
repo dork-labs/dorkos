@@ -11,9 +11,25 @@ import {
   useTestAgentMcpServer,
 } from '@/layers/entities/agent';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
-import type { AgentManifest, ManagedMcpServer } from '@dorkos/shared/mesh-schemas';
+import type { AgentManifest, AgentRuntime, ManagedMcpServer } from '@dorkos/shared/mesh-schemas';
 import type { AgentMcpTestResult, McpServerEntry } from '@dorkos/shared/transport';
-import { AddMcpServerForm } from './AddMcpServerForm';
+import { AddMcpServerForm, TRANSPORTS, type TransportKind } from './AddMcpServerForm';
+
+/**
+ * Transport kinds each runtime can actually run a managed server over.
+ *
+ * Interim until a per-transport runtime capability exists (DOR-892): Codex has
+ * no SSE transport, so an SSE server added to a Codex agent is silently
+ * dropped at turn time. Every other runtime accepts the full set.
+ */
+const SUPPORTED_TRANSPORTS_BY_RUNTIME: Partial<Record<AgentRuntime, readonly TransportKind[]>> = {
+  codex: ['stdio', 'http'],
+};
+
+/** Transport kinds the Add form should offer for a given agent runtime. */
+function supportedTransportsFor(runtime: AgentRuntime): readonly TransportKind[] {
+  return SUPPORTED_TRANSPORTS_BY_RUNTIME[runtime] ?? TRANSPORTS;
+}
 
 // MCP status indicator colors, keyed by the live status a runtime reports.
 const MCP_STATUS_COLORS: Partial<Record<string, string>> = {
@@ -195,14 +211,18 @@ export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold">MCP Servers</h3>
         {canAdd && (
-          <AddMcpServerForm agentId={agent.id} agentLabel={agent.displayName ?? agent.name} />
+          <AddMcpServerForm
+            agentId={agent.id}
+            agentLabel={agent.displayName ?? agent.name}
+            supportedTransports={supportedTransportsFor(agent.runtime)}
+          />
         )}
       </div>
 
       {!canAdd && (
         <p className="text-muted-foreground text-xs">
-          This agent&rsquo;s runtime (OpenCode) can&rsquo;t run DorkOS-managed MCP servers yet. Any
-          servers below show read-only status.
+          This agent&rsquo;s runtime can&rsquo;t run DorkOS-managed MCP servers yet. Any servers
+          below show read-only status.
         </p>
       )}
 

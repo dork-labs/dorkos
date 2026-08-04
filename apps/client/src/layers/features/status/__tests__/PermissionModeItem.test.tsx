@@ -220,7 +220,7 @@ const CODEX_CAPABILITIES: RuntimeCapabilities = {
   supportsCostTracking: false,
   supportsResume: true,
   supportsMcp: false,
-  supportsManagedMcpServers: false,
+  supportsManagedMcpServers: true,
   supportsQuestionPrompt: false,
   supportsPlugins: false,
   nativeContext: [],
