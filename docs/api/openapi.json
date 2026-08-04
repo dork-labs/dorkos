@@ -5062,6 +5062,9 @@
           "channelType": {
             "$ref": "#/components/schemas/ChannelType"
           },
+          "platformChatType": {
+            "$ref": "#/components/schemas/PlatformChatType"
+          },
           "sessionStrategy": {
             "$ref": "#/components/schemas/SessionStrategy"
           },
@@ -5131,6 +5134,15 @@
           "group",
           "channel",
           "thread"
+        ]
+      },
+      "PlatformChatType": {
+        "type": "string",
+        "enum": [
+          "private",
+          "group",
+          "supergroup",
+          "channel"
         ]
       },
       "SessionStrategy": {

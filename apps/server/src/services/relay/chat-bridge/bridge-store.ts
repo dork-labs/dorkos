@@ -34,8 +34,13 @@ import {
   type DbTransaction,
 } from '@dorkos/db';
 
-/** `room_bridges.platform_chat_type` — read from `platformData.chatType`, never re-derived (spec §3.3). */
-export type PlatformChatType = 'private' | 'group' | 'supergroup';
+/**
+ * `room_bridges.platform_chat_type` — read from `platformData.chatType`, never
+ * re-derived (spec §3.3). The shared {@link PlatformChatType} MINUS `channel`:
+ * a broadcast is refused before any bridge row is written, so a stored row can
+ * only ever hold one of these three bridgeable types.
+ */
+export type BridgeablePlatformChatType = 'private' | 'group' | 'supergroup';
 
 /** `room_bridges.visibility` — spec §8's privacy-mode badge. */
 export type BridgeVisibility = 'mentions-only' | 'everything' | null;
@@ -49,7 +54,7 @@ export interface Bridge {
   adapterId: string;
   chatId: string;
   channelType: string | null;
-  platformChatType: PlatformChatType;
+  platformChatType: BridgeablePlatformChatType;
   bindingId: string;
   visibility: BridgeVisibility;
   visibilityCheckedAt: string | null;
@@ -73,7 +78,7 @@ export interface NewBridge {
   adapterId: string;
   chatId: string;
   channelType: string | null;
-  platformChatType: PlatformChatType;
+  platformChatType: BridgeablePlatformChatType;
   bindingId: string;
   /**
    * The platform chat's sanitized title at bridge time, or `null` for a
@@ -130,7 +135,7 @@ export interface NewOutboundRef {
 function toBridge(row: typeof roomBridges.$inferSelect): Bridge {
   return {
     ...row,
-    platformChatType: row.platformChatType as PlatformChatType,
+    platformChatType: row.platformChatType as BridgeablePlatformChatType,
     visibility: row.visibility as BridgeVisibility,
   };
 }

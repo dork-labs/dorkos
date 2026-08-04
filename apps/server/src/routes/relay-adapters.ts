@@ -20,6 +20,7 @@ import {
   AdapterConfigUpdateSchema,
   bridgeAllowsChatId,
   BRIDGE_REQUIRES_CHAT_ID_MESSAGE,
+  type PlatformChatType,
 } from '@dorkos/shared/relay-schemas';
 import { AdapterError, type AdapterManager } from '../services/relay/adapter-manager.js';
 import { broadcastBindingsChanged } from '../services/relay/relay-sse-events.js';
@@ -55,44 +56,82 @@ function resolveAdapterName(adapterManager: AdapterManager, adapterId: string): 
 }
 
 /**
- * The reason a non-DM binding cannot be bridged from the detail sheet yet.
- * User-facing (writing-for-humans): says what works and what does not.
+ * The reason a proven broadcast cannot be bridged. User-facing
+ * (writing-for-humans): says what this chat is and why it can't become a
+ * channel.
  */
-const BRIDGE_NON_DM_REASON =
-  'Right now you can bridge a one-to-one chat into a channel. A group or broadcast ' +
-  "chat can't be bridged from here yet: on Telegram a broadcast channel looks exactly " +
-  'like a group once it reaches us, so we cannot yet tell them apart to keep a broadcast out.';
+const BRIDGE_BROADCAST_REASON =
+  "This is a broadcast channel, not a two-way conversation, so it can't become a " +
+  'channel here: your agent would have no one to reply to, and a broadcast is a one-way ' +
+  'feed by design.';
 
 /**
- * The platform chat type a bridge needs from a stored binding, or a refusal when
- * the binding cannot be **proven** to be a two-way conversation.
+ * The reason a binding whose platform type we never recorded cannot be bridged
+ * unless it is a one-to-one chat. Old bindings (created before DOR-907) and
+ * bindings made outside the claim flow carry no platform type; we bridge only
+ * what we can prove is safe.
+ */
+const BRIDGE_UNKNOWN_TYPE_REASON =
+  'We connected this chat before we started noting whether it is a one-to-one, a group, ' +
+  "or a broadcast, so we can't safely turn it into a channel: a broadcast must never be " +
+  'bridged, and from here we cannot yet rule that out. Re-connect this chat from a new ' +
+  'message and it will carry what it is.';
+
+/** The refusal codes {@link bridgeChatTypeForBinding} can return. */
+type BridgeRefusalCode = 'BROADCAST_NOT_BRIDGEABLE' | 'BRIDGE_NOT_A_DM';
+
+/**
+ * The platform chat type and subject channel type a bridge needs from a stored
+ * binding, or a precise refusal when the binding must not be bridged.
  *
  * The "Bridge to a channel" action fires against a stored binding with no live
- * message in hand. A live message carries the raw platform type on
- * `platformData.chatType`, but that is deliberately **not persisted**: the
- * unclaimed-chat store and trace store both fold it into the subject-level
- * `channelType` (dm/group), and `isGroupChat` folds a Telegram broadcast
- * (`chat.type === 'channel'`) into `channelType: 'group'`
- * (`packages/relay/src/adapters/telegram/inbound.ts:355`). So a stored **group**
- * binding is byte-identical to a stored **broadcast** binding, and neither the
- * binding nor anything it derives from records which it is.
+ * message in hand. A binding now persists the RAW platform chat type it was
+ * created from (`platformChatType`, DOR-907), captured through the claim feed
+ * from `platformData.chatType`, so this can tell the cases apart that the
+ * subject-level `channelType` folds together (a broadcast `channel` and a
+ * `group` both arrive as `channelType: 'group'`):
  *
- * A broadcast is not a conversation and must not be bridged (spec §3.3, A3.7).
- * The only stored binding we can prove is not a broadcast is a **DM** — a private
- * chat cannot be a broadcast. So from this entry point a DM bridges as `private`
- * and everything else is refused, rather than fabricating a `group` type that
- * would sail a broadcast straight past `createBridgedRoom`'s refusal. Enabling
- * group bridging here waits on persisting the raw platform chat type through
- * binding creation (DOR-907).
+ * - `private` → bridges as a DM (`private`, no subject channel type).
+ * - `group`/`supergroup` → bridges as a channel, mention-only-seeded by
+ *   `createBridgedRoom` (spec §3.4). Now allowed, where DOR-878 refused it.
+ * - `channel` → **refused** as `BROADCAST_NOT_BRIDGEABLE`: a broadcast is not a
+ *   conversation and must never be bridged (spec §3.3, A3.7).
+ * - **absent/unknown** (an old binding, or one made outside the claim flow) →
+ *   the conservative DM-only rule: only a `channelType` of `dm` (a chat that
+ *   cannot be a broadcast) bridges, everything else is refused as
+ *   `BRIDGE_NOT_A_DM`. We never bridge a non-DM we cannot prove is a group.
  *
- * @param channelType - The stored binding's subject-level channel type.
- * @returns The `private` chat type for a DM, or a `refusal` reason otherwise.
+ * @param platformChatType - The binding's persisted raw platform chat type, or
+ *   `undefined` when it carries none.
+ * @param channelType - The binding's subject-level channel type, used only in
+ *   the conservative fallback when `platformChatType` is absent.
+ * @returns The resolved `chatType`/`channelType` to bridge with, or a `refusal`
+ *   reason and its `code`.
  */
 function bridgeChatTypeForBinding(
+  platformChatType: PlatformChatType | undefined,
   channelType: string | null | undefined
-): { chatType: 'private' } | { refusal: string } {
-  if (channelType == null || channelType === 'dm') return { chatType: 'private' };
-  return { refusal: BRIDGE_NON_DM_REASON };
+):
+  | { chatType: PlatformChatType; channelType: 'group' | null }
+  | { refusal: string; code: BridgeRefusalCode } {
+  switch (platformChatType) {
+    case 'private':
+      return { chatType: 'private', channelType: null };
+    case 'group':
+    case 'supergroup':
+      return { chatType: platformChatType, channelType: 'group' };
+    case 'channel':
+      return { refusal: BRIDGE_BROADCAST_REASON, code: 'BROADCAST_NOT_BRIDGEABLE' };
+    default:
+      // No persisted platform type: fall back to the DM-only rule DOR-878
+      // shipped. A `dm` (or absent) subject channel type is the only stored
+      // shape provably not a broadcast; anything else is refused rather than
+      // risk bridging a broadcast we cannot rule out.
+      if (channelType == null || channelType === 'dm') {
+        return { chatType: 'private', channelType: null };
+      }
+      return { refusal: BRIDGE_UNKNOWN_TYPE_REASON, code: 'BRIDGE_NOT_A_DM' };
+  }
 }
 
 /** Map a {@link RoomError} raised while bridging to its HTTP status. */
@@ -502,13 +541,14 @@ export function createAdapterRouter(
           details: { message: BRIDGE_REQUIRES_CHAT_ID_MESSAGE },
         });
       }
-      // Refuse anything we cannot prove is a two-way chat: a stored group binding
-      // is indistinguishable from a folded Telegram broadcast, and a broadcast
-      // must not be bridged (spec §3.3, A3.7). Only a DM is provably safe. This
-      // runs BEFORE the lifecycle, so a refused binding is left untouched.
-      const typed = bridgeChatTypeForBinding(existing.channelType);
+      // Resolve what this binding bridges as from its persisted raw platform
+      // type (DOR-907): a DM bridges private, a group/supergroup bridges as a
+      // channel, a broadcast is refused precisely, and a binding with no
+      // recorded type falls back to the conservative DM-only rule. Runs BEFORE
+      // the lifecycle, so a refused binding is left untouched.
+      const typed = bridgeChatTypeForBinding(existing.platformChatType, existing.channelType);
       if ('refusal' in typed) {
-        return res.status(400).json({ error: typed.refusal, code: 'BRIDGE_NOT_A_DM' });
+        return res.status(400).json({ error: typed.refusal, code: typed.code });
       }
       const agentPath = adapterManager.getMeshCore()?.getProjectPath(existing.agentId);
       if (!agentPath) {
@@ -522,9 +562,12 @@ export function createAdapterRouter(
           chatId,
           bindingId: existing.id,
           agentId: existing.agentId,
-          // A DM: `private` chat type, and no subject-level channel type (§3.3).
+          // Resolved from the binding's persisted platform type: a DM bridges
+          // `private` with no subject channel type; a group/supergroup bridges
+          // with `channelType: 'group'`, which seeds the channel mention-only
+          // (§3.3, §3.4).
           chatType: typed.chatType,
-          channelType: null,
+          channelType: typed.channelType,
           title: existing.label || chatId,
           agentPath,
         });

@@ -92,6 +92,18 @@ export const unclaimedChats = sqliteTable(
     channelType: text('channel_type'),
     /** `'dm' | 'group'` — derived from the relay subject's channel segment, not the payload. */
     chatKind: text('chat_kind', { enum: ['dm', 'group'] }).notNull(),
+    /**
+     * The RAW platform chat type this sighting arrived as (`platformData.
+     * chatType`), when the adapter reported one — `private`/`group`/
+     * `supergroup`/`channel` for Telegram. Unlike {@link chatKind}, which folds
+     * a broadcast into `group`, this keeps `channel` distinct, so a binding
+     * claimed from this row can carry the real type through to the bridge
+     * action (DOR-907). Null for an adapter that reports no raw type (Slack) or
+     * a sighting recorded before this column existed.
+     */
+    platformChatType: text('platform_chat_type', {
+      enum: ['private', 'group', 'supergroup', 'channel'],
+    }),
     /** Display name only — never a raw platform identity blob. */
     senderName: text('sender_name'),
     /** Platform user id of the first sender seen, when the payload carries one. */

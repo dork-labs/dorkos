@@ -548,6 +548,25 @@ export function bridgeAllowsChatId(binding: { bridge: string; chatId?: string | 
 }
 
 /**
+ * The RAW platform chat type a message arrived from, exactly as the adapter's
+ * own API reported it (Telegram's `chat.type`): a two-way `private` chat, a
+ * `group` or `supergroup`, or a one-way broadcast `channel`.
+ *
+ * Distinct from {@link ChannelTypeSchema}: that is the subject-level routing
+ * classification (`dm`/`group`/…), which deliberately folds a broadcast into
+ * `group` and so cannot tell the two apart. This preserves the distinction the
+ * subject throws away, so a stored binding can be bridged as a channel when it
+ * is a real group and refused precisely when it is a broadcast (DOR-907, spec
+ * §3.3). `channel` is the value that must never be bridged; `group`/`supergroup`
+ * are the values DOR-878 could not safely allow before this field existed.
+ */
+export const PlatformChatTypeSchema = z
+  .enum(['private', 'group', 'supergroup', 'channel'])
+  .openapi('PlatformChatType');
+
+export type PlatformChatType = z.infer<typeof PlatformChatTypeSchema>;
+
+/**
  * The bare object shape, split out from {@link AdapterBindingSchema} so
  * `CreateBindingRequestSchema` can still `.omit()` fields — `.omit` is a
  * `ZodObject` method and is not carried by the `ZodEffects` wrapper `.refine()`
@@ -564,6 +583,21 @@ export const AdapterBindingObjectSchema = z.object({
   agentId: z.string().min(1),
   chatId: z.string().optional(),
   channelType: ChannelTypeSchema.optional(),
+  /**
+   * The RAW platform chat type this binding's chat is, captured at creation
+   * from the sighting that produced it (`platformData.chatType`) and never
+   * re-derived. Unlike {@link ChannelTypeSchema}'s `channelType`, this keeps a
+   * broadcast `channel` distinct from a `group`, which is what lets the
+   * "Bridge to a channel" action bridge a real group and refuse a broadcast
+   * precisely (DOR-907, spec §3.3).
+   *
+   * Optional, so it is additive and back-compatible: a binding that predates
+   * this field (or was created outside the claim flow, which carries no
+   * platform type) parses with it absent, and the bridge action falls back to
+   * the conservative DM-only rule for any binding whose platform type is
+   * unknown — it never bridges a non-DM it cannot prove is a group.
+   */
+  platformChatType: PlatformChatTypeSchema.optional(),
   sessionStrategy: SessionStrategySchema.default('per-chat'),
   label: z.string().default(''),
   /**

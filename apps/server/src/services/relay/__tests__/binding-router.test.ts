@@ -1788,6 +1788,48 @@ describe('BindingRouter', () => {
       expect(JSON.stringify(broadcast)).not.toContain(BODY_SENTINEL);
     });
 
+    // DOR-907: the raw platform chat type on `platformData.chatType` flows all
+    // the way from the inbound payload into the persisted sighting, kept
+    // distinct from the folded `chatKind`. A folded broadcast (a `channel` that
+    // reaches us on a group subject) is now recorded AS a broadcast, which is
+    // what a later claim carries onto the binding to refuse it precisely.
+    it('DOR-907: threads platformData.chatType into the sighting, distinct from the folded chatKind', async () => {
+      await claimHandler!(
+        unboundEnvelope({
+          subject: 'relay.human.telegram.tg-bot.group.555',
+          payload: {
+            content: BODY_SENTINEL,
+            senderName: 'Ana',
+            platformData: { fromId: 7, chatType: 'channel' },
+          },
+        })
+      );
+
+      const row = claimStore.list('pending').find((c) => c.chatId === '555')!;
+      expect(row).toBeDefined();
+      // Folded to a coarse `group` for routing...
+      expect(row.chatKind).toBe('group');
+      // ...but the RAW type survived as `channel` — the whole point of DOR-907.
+      expect(row.platformChatType).toBe('channel');
+    });
+
+    it('DOR-907: a real group sighting records platformChatType supergroup', async () => {
+      await claimHandler!(
+        unboundEnvelope({
+          subject: 'relay.human.telegram.tg-bot.group.556',
+          payload: { content: BODY_SENTINEL, platformData: { fromId: 8, chatType: 'supergroup' } },
+        })
+      );
+      const row = claimStore.list('pending').find((c) => c.chatId === '556')!;
+      expect(row.platformChatType).toBe('supergroup');
+    });
+
+    it('DOR-907: a DM sighting with no chatType in the payload records platformChatType null', async () => {
+      await claimHandler!(unboundEnvelope());
+      const row = claimStore.list('pending').find((c) => c.chatId === '999')!;
+      expect(row.platformChatType).toBeNull();
+    });
+
     it('block short-circuits before any store write — recordless from that point on', async () => {
       await claimHandler!(unboundEnvelope());
       const chat = claimStore.list('pending')[0]!;

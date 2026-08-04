@@ -73,6 +73,49 @@ describe('unclaimed-chats router', () => {
     expect(store.getById(chat.id)?.decidedAgentId).toBe('agent-a');
   });
 
+  // DOR-907: the full chain — a group sighting persists its raw platform type to
+  // SQLite, and claiming it copies that type onto the created binding, so the
+  // "Bridge to a channel" action can later bridge it as a channel. Real stores
+  // and a real DB, no mocks: the binding is read back from the JSON store.
+  it('DOR-907: claim copies the sighting platformChatType onto the created binding', async () => {
+    const chat = store.recordSighting({
+      adapterId: 'tg-bot',
+      chatId: '999',
+      channelType: 'group',
+      chatKind: 'group',
+      platformChatType: 'supergroup',
+    }).chat;
+
+    const res = await request(app)
+      .post(`/api/relay/unclaimed-chats/${chat.id}/claim`)
+      .send({ agentId: 'agent-a' });
+
+    expect(res.status).toBe(201);
+    expect(res.body.binding.platformChatType).toBe('supergroup');
+    // And it is actually on the persisted binding, not just the response.
+    expect(bindingStore.getById(res.body.binding.id)?.platformChatType).toBe('supergroup');
+  });
+
+  // DOR-907: a broadcast sighting round-trips its `channel` type onto the
+  // binding too — the binding the bridge action will refuse precisely.
+  it('DOR-907: claim on a broadcast sighting carries channel onto the binding', async () => {
+    const chat = store.recordSighting({
+      adapterId: 'tg-bot',
+      chatId: '777',
+      channelType: 'group',
+      chatKind: 'group',
+      platformChatType: 'channel',
+    }).chat;
+
+    const res = await request(app)
+      .post(`/api/relay/unclaimed-chats/${chat.id}/claim`)
+      .send({ agentId: 'agent-a' });
+
+    expect(res.status).toBe(201);
+    expect(res.body.binding.platformChatType).toBe('channel');
+    expect(bindingStore.getById(res.body.binding.id)?.platformChatType).toBe('channel');
+  });
+
   it('AC3.4: claiming a chat a manual binding has since taken 409s (the same race the create route handles)', async () => {
     const chat = store.recordSighting({ adapterId: 'tg-bot', chatId: '123', chatKind: 'dm' }).chat;
     // Someone else bound this chat manually in the meantime.

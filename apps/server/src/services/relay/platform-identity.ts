@@ -16,7 +16,18 @@
  * @module services/relay/platform-identity
  */
 import { z } from 'zod';
+import { PlatformChatTypeSchema, type PlatformChatType } from '@dorkos/shared/relay-schemas';
 import type { ExternalAuthorIdentity } from '../rooms/author-registry.js';
+
+/**
+ * The RAW platform chat type an inbound payload carries on
+ * `platformData.chatType` — Telegram's `chat.type`. Parsed, not cast, since
+ * `platformData` is `z.unknown()` on the envelope; anything outside the known
+ * set (or an adapter that carries none, like Slack) reads as `undefined`.
+ */
+const PlatformChatTypeCarrierSchema = z
+  .object({ chatType: PlatformChatTypeSchema.optional() })
+  .partial();
 
 /**
  * The identity fields an inbound chat payload carries for the person who wrote
@@ -72,6 +83,26 @@ export function extractPlatformUserId(payload: unknown): string | undefined {
   if (raw === undefined) return undefined;
   const asString = String(raw);
   return asString.length > 0 ? asString : undefined;
+}
+
+/**
+ * The RAW platform chat type this message arrived from
+ * (`platformData.chatType`), or `undefined` when the payload carries none or an
+ * unrecognized value. Kept distinct from the subject-level channel type so a
+ * broadcast `channel` survives to the claim feed and, through it, to a binding
+ * — which is what lets the bridge action tell a group from a broadcast
+ * (DOR-907). Reading an unknown value as `undefined` (rather than passing it
+ * through) is deliberate: an unrecognized type is treated as "unknown," which
+ * the bridge action then refuses conservatively rather than mis-bridging.
+ *
+ * @param payload - The relay envelope payload as it arrived.
+ */
+export function extractPlatformChatType(payload: unknown): PlatformChatType | undefined {
+  if (payload === null || typeof payload !== 'object') return undefined;
+  const platformData = (payload as { platformData?: unknown }).platformData;
+  const parsed = PlatformChatTypeCarrierSchema.safeParse(platformData);
+  if (!parsed.success) return undefined;
+  return parsed.data.chatType;
 }
 
 /**

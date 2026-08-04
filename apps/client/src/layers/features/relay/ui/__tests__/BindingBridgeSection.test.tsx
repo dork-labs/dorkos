@@ -96,19 +96,38 @@ describe('BindingBridgeSection — refusals render their reason, not a dead butt
     expect(screen.queryByRole('button', { name: /bridge to a channel/i })).not.toBeInTheDocument();
   });
 
-  it('a group binding (the shape a folded broadcast takes) shows the reason and offers no bridge button', () => {
-    renderSection(makeBinding({ channelType: 'group' }));
+  // DOR-907: a REAL broadcast (persisted platformChatType: 'channel') shows a
+  // broadcast-specific reason, never bridged — a one-way feed is not a chat.
+  it('a real broadcast binding (platformChatType: channel) shows the broadcast reason and offers no bridge button', () => {
+    renderSection(makeBinding({ platformChatType: 'channel', channelType: 'group' }));
     expect(screen.getByText(/Can't bridge this chat/i)).toBeInTheDocument();
-    expect(screen.getByText(/one-to-one chat/i)).toBeInTheDocument();
-    expect(screen.getByText(/group or broadcast/i)).toBeInTheDocument();
+    expect(screen.getByText(/broadcast channel, not a two-way conversation/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /bridge to a channel/i })).not.toBeInTheDocument();
   });
 
-  it('an explicitly broadcast-typed binding (channelType: channel) shows the reason and offers no bridge button', () => {
-    renderSection(makeBinding({ channelType: 'channel' }));
+  // Back-compat: an OLD binding (no persisted platform type) that is a group by
+  // its subject channel type takes the conservative refusal — we cannot prove
+  // it is not a folded broadcast, so we do not bridge it.
+  it('an old group binding with no platform type shows the conservative reason and offers no bridge button', () => {
+    renderSection(makeBinding({ channelType: 'group', platformChatType: undefined }));
     expect(screen.getByText(/Can't bridge this chat/i)).toBeInTheDocument();
-    expect(screen.getByText(/group or broadcast/i)).toBeInTheDocument();
+    expect(screen.getByText(/before we started noting/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /bridge to a channel/i })).not.toBeInTheDocument();
+  });
+});
+
+describe('BindingBridgeSection — a known group is now bridgeable (DOR-907)', () => {
+  it('a group binding (platformChatType: group) shows the warnings and a live bridge action', () => {
+    renderSection(makeBinding({ platformChatType: 'group', channelType: 'group' }));
+    expect(
+      screen.getByText(/lets people you may not know put text in front of your agent/i)
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Bridge to a channel$/i })).toBeEnabled();
+  });
+
+  it('a supergroup binding (platformChatType: supergroup) is bridgeable', () => {
+    renderSection(makeBinding({ platformChatType: 'supergroup', channelType: 'group' }));
+    expect(screen.getByRole('button', { name: /^Bridge to a channel$/i })).toBeEnabled();
   });
 });
 
