@@ -908,6 +908,10 @@ const RuntimeCapabilitiesSchema = z.object({
   supportsCostTracking: z.boolean(),
   supportsResume: z.boolean(),
   supportsMcp: z.boolean(),
+  supportsManagedMcpServers: z.boolean().openapi({
+    description:
+      'Whether DorkOS can inject the agent’s own managed MCP servers into its sessions (distinct from the in-process DorkOS tool server, `supportsMcp`).',
+  }),
   supportsQuestionPrompt: z.boolean(),
   supportsPlugins: z.boolean().openapi({
     description: 'Whether this runtime can load plugins.',

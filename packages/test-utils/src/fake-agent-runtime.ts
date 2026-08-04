@@ -201,6 +201,7 @@ export class FakeAgentRuntime implements AgentRuntime {
     supportsCostTracking: false,
     supportsResume: false,
     supportsMcp: false,
+    supportsManagedMcpServers: false,
     supportsQuestionPrompt: true,
     supportsPlugins: false,
     nativeContext: [],

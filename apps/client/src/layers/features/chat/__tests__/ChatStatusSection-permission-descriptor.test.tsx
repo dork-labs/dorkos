@@ -26,6 +26,7 @@ const EXOTIC_CAPABILITIES: RuntimeCapabilities = {
   supportsCostTracking: false,
   supportsResume: false,
   supportsMcp: false,
+  supportsManagedMcpServers: false,
   supportsQuestionPrompt: false,
   supportsPlugins: false,
   nativeContext: [],

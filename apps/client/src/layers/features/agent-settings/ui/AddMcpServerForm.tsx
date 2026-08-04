@@ -18,9 +18,10 @@ import { useAddAgentMcpServer } from '@/layers/entities/agent';
 import type { McpServerTransport } from '@dorkos/shared/mesh-schemas';
 import type { AddAgentMcpServerInput, CapabilityApprovalRequired } from '@dorkos/shared/transport';
 
-/** Transport kinds a managed server can use. */
-const TRANSPORTS = ['stdio', 'http', 'sse'] as const;
-type TransportKind = (typeof TRANSPORTS)[number];
+/** Every transport kind a managed server can use, across all runtimes. */
+export const TRANSPORTS = ['stdio', 'http', 'sse'] as const;
+/** A transport kind a managed server can use. */
+export type TransportKind = (typeof TRANSPORTS)[number];
 
 /** Server name contract, mirrored from `ManagedMcpServerSchema` for inline validation. */
 const NAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
@@ -49,6 +50,12 @@ interface AddMcpServerFormProps {
   agentId: string;
   /** Display label for the agent, used in the confirmation copy. */
   agentLabel: string;
+  /**
+   * Transport kinds the agent's runtime can actually use. The form only offers
+   * these — a transport the runtime can't run would otherwise be silently
+   * dropped at turn time (DOR-892).
+   */
+  supportedTransports: readonly TransportKind[];
 }
 
 /**
@@ -57,11 +64,22 @@ interface AddMcpServerFormProps {
  * confirmation showing the exact command/args/url before the write lands. The
  * operator is the approver, so the confirm is a clean yes — not an agent card.
  */
-export function AddMcpServerForm({ agentId, agentLabel }: AddMcpServerFormProps) {
+export function AddMcpServerForm({
+  agentId,
+  agentLabel,
+  supportedTransports,
+}: AddMcpServerFormProps) {
   const addServer = useAddAgentMcpServer();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
-  const [kind, setKind] = useState<TransportKind>('stdio');
+  const [selectedKind, setKind] = useState<TransportKind>(supportedTransports[0] ?? 'stdio');
+  // Derived, not synced via effect: if the runtime's supported set no longer
+  // includes what's selected (e.g. switching to a Codex agent with `sse`
+  // picked), fall back to the first transport it can actually use rather than
+  // submitting one that gets silently dropped at turn time (DOR-892).
+  const kind = supportedTransports.includes(selectedKind)
+    ? selectedKind
+    : (supportedTransports[0] ?? 'stdio');
   const [command, setCommand] = useState('');
   const [argsText, setArgsText] = useState('');
   const [envText, setEnvText] = useState('');
@@ -96,13 +114,13 @@ export function AddMcpServerForm({ agentId, agentLabel }: AddMcpServerFormProps)
     setPending(null);
     setError(null);
     setName('');
-    setKind('stdio');
+    setKind(supportedTransports[0] ?? 'stdio');
     setCommand('');
     setArgsText('');
     setEnvText('');
     setUrl('');
     setHeadersText('');
-  }, []);
+  }, [supportedTransports]);
 
   const submit = useCallback(async () => {
     setError(null);
@@ -213,7 +231,7 @@ export function AddMcpServerForm({ agentId, agentLabel }: AddMcpServerFormProps)
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {TRANSPORTS.map((t) => (
+              {supportedTransports.map((t) => (
                 <SelectItem key={t} value={t}>
                   {t}
                 </SelectItem>

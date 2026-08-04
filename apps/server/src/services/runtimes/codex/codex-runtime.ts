@@ -53,6 +53,7 @@ import type {
   CommandIntentOpts,
   SseResponse,
   SessionSettingsPort,
+  ManagedMcpServerResolver,
 } from '@dorkos/shared/agent-runtime';
 import type {
   SessionSnapshot,
@@ -79,6 +80,7 @@ import {
 } from './thread-map.js';
 import { CODEX_CAPABILITIES, CODEX_MODELS } from './runtime-constants.js';
 import { CODEX_UI_MCP_SERVER } from './codex-ui-mcp-server.js';
+import { toCodexMcpServers, type CodexMcpServerRecord } from './mcp-server-config.js';
 import { buildCodexPrompt, projectThreadOptions } from './turn-input.js';
 import { enumerateCodexMcpServers } from './enumerate-mcp-servers.js';
 import { scanSkillCommands } from './scan-skill-commands.js';
@@ -122,9 +124,12 @@ export interface CodexRuntimeOptions {
  * Build the {@link CodexOptions} for the SDK `Codex` client.
  *
  * `codexPathOverride` is set only when a binary path is configured (otherwise
- * the SDK resolves its own vendored binary). `config.mcp_servers.dorkos_ui` is
- * added only when a UI MCP URL is provided, registering the scoped
- * `control_ui` server so Codex agents can open the canvas.
+ * the SDK resolves its own vendored binary). `config.mcp_servers` carries the
+ * agent's enabled managed servers (`managedServers`, spec
+ * `mcp-server-management`) plus the scoped `dorkos_ui` bridge when a UI MCP URL
+ * is provided — see {@link buildMcpServersConfig} for the merge and the
+ * shadowing guarantee. `config` is omitted entirely when neither source
+ * contributes a server.
  *
  * `extraEnv` is the ONLY reason to set `CodexOptions.env`: when provided the SDK
  * stops inheriting `process.env` wholesale, so this function spreads the parent
@@ -136,18 +141,43 @@ export interface CodexRuntimeOptions {
  * @param mcpUiUrl - Loopback URL of the scoped `dorkos_ui` MCP server, or undefined
  * @param extraEnv - Extra environment entries for the `codex exec` subprocess
  *   (the agent's identity token). Omitted or empty leaves `env` unset.
+ * @param managedServers - The agent's enabled managed MCP servers, already
+ *   converted to Codex config shape. Omitted or empty adds none.
  */
 export function buildCodexOptions(
   binaryPath?: string | null,
   mcpUiUrl?: string,
-  extraEnv?: Record<string, string>
+  extraEnv?: Record<string, string>,
+  managedServers?: CodexMcpServerRecord
 ): CodexOptions {
   const hasExtraEnv = extraEnv !== undefined && Object.keys(extraEnv).length > 0;
+  const mcpServers = buildMcpServersConfig(mcpUiUrl, managedServers);
   return {
     ...(binaryPath ? { codexPathOverride: binaryPath } : {}),
-    ...(mcpUiUrl ? { config: { mcp_servers: { [CODEX_UI_MCP_SERVER]: { url: mcpUiUrl } } } } : {}),
+    ...(mcpServers ? { config: { mcp_servers: mcpServers } } : {}),
     ...(hasExtraEnv ? { env: { ...inheritedEnv(), ...extraEnv } } : {}),
   };
+}
+
+/**
+ * Merge the agent's managed MCP servers with the scoped `dorkos_ui` bridge into
+ * one `mcp_servers` config record, or `undefined` when neither contributes.
+ *
+ * The `dorkos_ui` entry is written LAST, so a managed server can never shadow
+ * the UI bridge whatever its name — the same ordering guarantee the claude-code
+ * adapter's `mergeSessionMcpServers` gives, and defense in depth on top of the
+ * converter already dropping the reserved name.
+ *
+ * @param mcpUiUrl - Loopback URL of the `dorkos_ui` server, or undefined.
+ * @param managedServers - Enabled managed servers in Codex config shape.
+ */
+function buildMcpServersConfig(
+  mcpUiUrl?: string,
+  managedServers?: CodexMcpServerRecord
+): CodexMcpServerRecord | undefined {
+  const servers: CodexMcpServerRecord = { ...(managedServers ?? {}) };
+  if (mcpUiUrl) servers[CODEX_UI_MCP_SERVER] = { url: mcpUiUrl };
+  return Object.keys(servers).length > 0 ? servers : undefined;
 }
 
 /**
@@ -183,6 +213,12 @@ export class CodexRuntime implements AgentRuntime {
    * same guard the Claude adapter applies before minting an identity token.
    */
   private meshCore: AgentRegistryPort | undefined;
+  /**
+   * Resolver for an agent's enabled managed MCP servers, when the composition
+   * root injected it. Absent leaves every turn with only the `dorkos_ui`
+   * bridge — the safe default (spec `mcp-server-management`, DOR-892).
+   */
+  private managedMcpServers: ManagedMcpServerResolver | undefined;
   private readonly threadMap: CodexThreadMap;
   /** Floor of the turn cwd resolution chain — see {@link CodexRuntimeOptions.defaultCwd}. */
   private readonly defaultCwd: string;
@@ -230,19 +266,60 @@ export class CodexRuntime implements AgentRuntime {
   }
 
   /**
+   * Accept the managed-MCP-server resolver so a turn can inject the agent's own
+   * enabled servers alongside the `dorkos_ui` bridge (spec
+   * `mcp-server-management`; Codex declares `supportsManagedMcpServers`).
+   *
+   * @param resolver - The managed-server resolver from the composition root.
+   */
+  setManagedMcpServers(resolver: ManagedMcpServerResolver): void {
+    this.managedMcpServers = resolver;
+  }
+
+  /**
    * The `Codex` client for one turn.
    *
-   * Returns the shared boot-time client, whose subprocess inherits `process.env`
-   * untouched, unless this turn carries an agent identity token, in which case a
-   * turn-scoped client is built so the token reaches `codex exec` through its
-   * environment and nowhere else. Constructing a client is cheap next to spawning
-   * the model subprocess: it resolves the binary path and stores options.
+   * Returns the shared boot-time client (subprocess inherits `process.env`
+   * untouched, `dorkos_ui` bridge only) unless this turn needs a turn-scoped
+   * one: it carries an agent identity token (so the token reaches `codex exec`
+   * through its environment and nowhere else), or the agent has enabled managed
+   * MCP servers (which vary by session cwd, so they cannot ride the shared boot
+   * client). Constructing a client is cheap next to spawning the model
+   * subprocess: it resolves the binary path and stores options.
    *
    * @param tokenEnv - The identity-token env fragment, `{}` when unattributed.
+   * @param managedServers - Enabled managed servers in Codex config shape, `{}` when none.
    */
-  private clientForTurn(tokenEnv: Record<string, string>): Codex {
-    if (Object.keys(tokenEnv).length === 0) return this.codex;
-    return new Codex(buildCodexOptions(this.binaryPath, this.mcpUiUrl, tokenEnv));
+  private clientForTurn(
+    tokenEnv: Record<string, string>,
+    managedServers: CodexMcpServerRecord
+  ): Codex {
+    const hasToken = Object.keys(tokenEnv).length > 0;
+    const hasManaged = Object.keys(managedServers).length > 0;
+    if (!hasToken && !hasManaged) return this.codex;
+    return new Codex(buildCodexOptions(this.binaryPath, this.mcpUiUrl, tokenEnv, managedServers));
+  }
+
+  /**
+   * Resolve the agent's enabled managed MCP servers for a session cwd and map
+   * them to Codex config shape. Returns `{}` when no resolver is wired or the
+   * cwd hosts no agent manifest — the safe default (absence withholds). SSE
+   * servers have no Codex transport and are dropped with a one-line debug log,
+   * never mismapped.
+   *
+   * @param cwd - The session's working directory (the agent's workspace path).
+   */
+  private resolveManagedMcpServers(cwd: string): CodexMcpServerRecord {
+    if (!this.managedMcpServers) return {};
+    const neutral = this.managedMcpServers.injectableServersForCwd(cwd);
+    const { servers, skipped } = toCodexMcpServers(neutral, new Set([CODEX_UI_MCP_SERVER]));
+    if (skipped.length > 0) {
+      logger.debug('[CodexRuntime] skipped SSE managed MCP servers — Codex has no SSE transport', {
+        cwd,
+        skipped,
+      });
+    }
+    return servers;
   }
 
   // --- Session lifecycle ---
@@ -486,8 +563,13 @@ export class CodexRuntime implements AgentRuntime {
       meshAgent?.name ?? undefined
     );
 
+    // The agent's ENABLED managed MCP servers for this cwd, injected inline via
+    // `config.mcp_servers` (spec `mcp-server-management` §6, DOR-892). Resolved
+    // at turn time because the resolver keys on the session cwd; a non-agent
+    // session has no manifest and contributes none.
+    const managedMcpServers = this.resolveManagedMcpServers(cwd);
     const threadOptions = projectThreadOptions(settings, cwd);
-    const client = this.clientForTurn(agentTokenEnv);
+    const client = this.clientForTurn(agentTokenEnv, managedMcpServers);
     const thread =
       boundThreadId !== undefined
         ? client.resumeThread(boundThreadId, threadOptions)

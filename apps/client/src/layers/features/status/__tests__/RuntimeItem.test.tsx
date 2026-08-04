@@ -272,6 +272,7 @@ function makeCaps(type: string): RuntimeCapabilities {
     supportsCostTracking: false,
     supportsResume: false,
     supportsMcp: false,
+    supportsManagedMcpServers: false,
     supportsQuestionPrompt: false,
     supportsPlugins: false,
     nativeContext: [],
