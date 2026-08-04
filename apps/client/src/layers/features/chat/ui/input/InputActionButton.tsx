@@ -262,7 +262,16 @@ export function InputActionButton({
           </div>
         ) : buttonState && ActionIcon ? (
           <motion.button
-            animate={{ opacity: 1, scale: 1 }}
+            // Motion owns this element's opacity outright, so the blocked state
+            // is expressed HERE and not as a class. An `opacity-50` beside an
+            // animated `opacity: 1` is not a tie the stylesheet can win: motion
+            // writes the value inline every frame, so every blocked send looked
+            // fully live while being inert (DOR-850). One owner, no fight.
+            animate={{ opacity: sendBlocked ? 0.5 : 1, scale: 1 }}
+            // First paint takes the animate target directly: without this, a
+            // button mounting into the blocked state paints fully live and
+            // fades to dim over the transition, which reads as a flash.
+            initial={false}
             transition={{ duration: 0.15 }}
             whileHover={!sendBlocked ? { scale: 1.1 } : undefined}
             whileTap={!sendBlocked ? { scale: 0.9 } : undefined}
@@ -272,7 +281,7 @@ export function InputActionButton({
             className={cn(
               'focus-ring rounded-lg p-1.5 transition-colors max-md:p-2',
               BUTTON_CONFIG[buttonState].className,
-              sendBlocked && 'pointer-events-none opacity-50'
+              sendBlocked && 'pointer-events-none'
             )}
             aria-label={BUTTON_CONFIG[buttonState].label}
           >

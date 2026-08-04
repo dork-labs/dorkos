@@ -96,6 +96,7 @@ export { RoomAvatar } from './ui/RoomAvatar';
 export { RoomTitle } from './ui/RoomTitle';
 export { MemberList } from './ui/MemberList';
 export type {
+  AuthorOrigin,
   AuthorRef,
   Room,
   RoomEntry,
