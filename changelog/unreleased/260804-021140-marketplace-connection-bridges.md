@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(marketplace): adapter cards bridge to Connections + install-toast deep-link (DOR-860)'
+  - 'feat(marketplace): typed Connections deep-link + click-through test (DOR-860)'
 ---
 
 ### Added
