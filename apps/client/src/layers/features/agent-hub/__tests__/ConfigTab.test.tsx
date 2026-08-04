@@ -119,10 +119,10 @@ describe('ConfigTab', () => {
   // --- Accordion sections ---
   // Note: Tools & MCP moved to Toolkit tab (marketplace-scoped-installs spec)
 
-  it('renders accordion section titles (Integrations and Advanced)', () => {
+  it('renders accordion section titles (Connections and Advanced)', () => {
     render(<ConfigTab />, { wrapper: Wrapper });
     expect(screen.queryByText('Tools & MCP')).not.toBeInTheDocument();
-    expect(screen.getByText('Integrations')).toBeInTheDocument();
+    expect(screen.getByText('Connections')).toBeInTheDocument();
     expect(screen.getByText('Advanced')).toBeInTheDocument();
   });
 
@@ -132,9 +132,9 @@ describe('ConfigTab', () => {
     expect(screen.queryByTestId('personality-inner')).not.toBeInTheDocument();
   });
 
-  it('clicking Integrations expands to show IntegrationsTab content', () => {
+  it('clicking Connections expands to show IntegrationsTab content', () => {
     render(<ConfigTab />, { wrapper: Wrapper });
-    fireEvent.click(screen.getByText('Integrations'));
+    fireEvent.click(screen.getByText('Connections'));
     expect(screen.getByTestId('integrations-inner')).toBeInTheDocument();
   });
 
@@ -146,15 +146,15 @@ describe('ConfigTab', () => {
 
   it('toggling an accordion section closed hides its content', () => {
     render(<ConfigTab />, { wrapper: Wrapper });
-    fireEvent.click(screen.getByText('Integrations'));
+    fireEvent.click(screen.getByText('Connections'));
     expect(screen.getByTestId('integrations-inner')).toBeInTheDocument();
-    fireEvent.click(screen.getByText('Integrations'));
+    fireEvent.click(screen.getByText('Connections'));
     expect(screen.queryByTestId('integrations-inner')).not.toBeInTheDocument();
   });
 
   it('section buttons have aria-expanded reflecting open state', () => {
     render(<ConfigTab />, { wrapper: Wrapper });
-    const integrationsButton = screen.getByText('Integrations').closest('button')!;
+    const integrationsButton = screen.getByText('Connections').closest('button')!;
     expect(integrationsButton).toHaveAttribute('aria-expanded', 'false');
     fireEvent.click(integrationsButton);
     expect(integrationsButton).toHaveAttribute('aria-expanded', 'true');
@@ -162,7 +162,7 @@ describe('ConfigTab', () => {
 
   it('multiple sections can be open simultaneously', () => {
     render(<ConfigTab />, { wrapper: Wrapper });
-    fireEvent.click(screen.getByText('Integrations'));
+    fireEvent.click(screen.getByText('Connections'));
     fireEvent.click(screen.getByText('Advanced'));
     expect(screen.getByTestId('integrations-inner')).toBeInTheDocument();
     expect(screen.getByTestId('personality-inner')).toBeInTheDocument();
