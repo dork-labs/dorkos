@@ -28,7 +28,7 @@ function makeDeps(overrides: Partial<ExtensionAPIDeps> = {}): ExtensionAPIDeps {
       register: vi.fn().mockReturnValue(vi.fn()),
     },
     dispatcherContext: {
-      store: {} as ExtensionAPIDeps['dispatcherContext']['store'],
+      getStore: () => ({}) as ReturnType<ExtensionAPIDeps['dispatcherContext']['getStore']>,
       setTheme: vi.fn(),
     },
     navigate: vi.fn(),

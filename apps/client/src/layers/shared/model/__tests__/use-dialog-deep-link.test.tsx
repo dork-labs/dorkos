@@ -16,6 +16,7 @@ import { zodValidator } from '@tanstack/zod-adapter';
 import { z } from 'zod';
 
 import { mergeDialogSearch } from '../dialog-search-schema';
+import { useAppStore } from '../app-store';
 import {
   useSettingsDeepLink,
   useTasksDeepLink,
@@ -105,6 +106,13 @@ function buildHarness(initialUrl = '/') {
 }
 
 type RouterTestHarness = ReturnType<typeof buildHarness>;
+
+// The app store is a module singleton, and `close()` now writes to it — reset
+// the dialog flags so one test's open dialog cannot leak into the next.
+beforeEach(() => {
+  useAppStore.getState().setSettingsOpen(false);
+  useAppStore.getState().setTasksOpen(false);
+});
 
 // ─────────────────────────────────────────────────────────────
 // resolveDeepLinkTarget — the route-capable resolution model (DOR-854)
@@ -313,6 +321,27 @@ describe('useSettingsDeepLink', () => {
     });
   });
 
+  // DOR-839. `DialogHost` renders Settings on `storeOpen || urlIsOpen`, so a
+  // close that owns one half is not a close — whichever half it left behind
+  // keeps the dialog on screen. Both halves genuinely hold it open here, so
+  // either one going unowned turns this red. (The URL-only close is already
+  // pinned by "close() clears both settings and settingsSection" above.)
+  it('close() clears the store flag as well as the URL, when both hold it open', async () => {
+    harness = buildHarness('/?settings=preferences');
+    useAppStore.getState().setSettingsOpen(true);
+    const { result } = renderHook(() => useSettingsDeepLink(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+
+    await act(async () => {
+      result.current.close();
+    });
+
+    await waitFor(() => {
+      expect(harness.readSearch().settings).toBeUndefined();
+    });
+    expect(useAppStore.getState().settingsOpen).toBe(false);
+  });
+
   it('setTab() updates settings via replace (no new history entry)', async () => {
     harness = buildHarness('/?settings=tools');
     const { result } = renderHook(() => useSettingsDeepLink(), { wrapper: harness.Wrapper });
@@ -391,6 +420,23 @@ describe('useTasksDeepLink', () => {
         await waitFor(() => {
           expect(harness.readSearch()[name]).toBeUndefined();
         });
+      });
+
+      // Same dual-signal rule as Settings (DOR-839).
+      it('close clears the store flag too', async () => {
+        const harness = buildHarness(`/?${name}=open`);
+        useAppStore.getState().setTasksOpen(true);
+        const { result } = renderHook(() => hook(), { wrapper: harness.Wrapper });
+        await harness.waitForRouterReady();
+
+        await act(async () => {
+          result.current.close();
+        });
+
+        await waitFor(() => {
+          expect(harness.readSearch()[name]).toBeUndefined();
+        });
+        expect(useAppStore.getState().tasksOpen).toBe(false);
       });
     });
   }

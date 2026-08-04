@@ -35,9 +35,10 @@ export function useApplyShape() {
   return useMutation<ApplyShapeResult, Error, ApplyShapeVars>({
     mutationFn: ({ name, label }) => {
       const dispatch = (command: UiCommand): void => {
-        // Read the store fresh per command so the layout applies against live state.
+        // The dispatcher reads the store per command, so the layout applies
+        // against live state as each piece of chrome lands.
         const ctx: DispatcherContext = {
-          store: useAppStore.getState(),
+          getStore: useAppStore.getState,
           setTheme,
           supportsTerminal: transport.supportsTerminal,
         };

@@ -59,7 +59,7 @@ export function useAutoOpenDiff(): void {
       // preference is untouched (DOR-227). The store coalesces repeated edits to
       // one diff document per path.
       executeUiCommand(
-        { store: useAppStore.getState(), setTheme: () => {} },
+        { getStore: useAppStore.getState, setTheme: () => {} },
         { action: 'open_diff', sourcePath },
         'agent'
       );

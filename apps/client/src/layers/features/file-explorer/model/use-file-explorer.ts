@@ -175,7 +175,7 @@ export function useFileExplorer(cwd: string | null): FileExplorerApi {
       // already relative to cwd (the file-service contract). `supportsTerminal`
       // keeps the shared dispatch contract uniform (only `open_file` fires here).
       const ctx: DispatcherContext = {
-        store: useAppStore.getState(),
+        getStore: useAppStore.getState,
         setTheme,
         supportsTerminal: transport.supportsTerminal,
       };
