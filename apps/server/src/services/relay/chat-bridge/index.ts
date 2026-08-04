@@ -1,9 +1,9 @@
 /**
  * The chat bridge: a bound external chat projected into a DorkOS room
  * (chats-as-channels spec). This barrel carries what leaves the package — the
- * inbound path (`ChatBridge.ingest`), the lifecycle coordinator, and the two
- * stores' public surface. The outbound path (`deliver`) and the catch-up scan
- * are later tasks and are not exported here yet.
+ * inbound path (`ChatBridge.ingest`), the outbound path (`ChatBridgeDelivery`),
+ * the catch-up scan (`BridgeCatchUp`), the lifecycle coordinator, and the two
+ * stores' public surface.
  *
  * @module server/services/relay/chat-bridge
  */
@@ -38,3 +38,14 @@ export {
   type BridgeVisibility,
   type RefDirection,
 } from './bridge-store.js';
+export {
+  ChatBridgeDelivery,
+  type ChatBridgeDeliveryDeps,
+  type DeliverOutcome,
+  type DeliverEntryReader,
+  type DeliverNoticeWriter,
+  type DeliverAuthorReader,
+  type DeliverPublisher,
+  type DeliverLifecycle,
+} from './deliver.js';
+export { BridgeCatchUp, type BridgeCatchUpDeps, type CatchUpDelivery } from './catch-up.js';
