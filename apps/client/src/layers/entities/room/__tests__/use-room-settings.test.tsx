@@ -50,8 +50,13 @@ describe('room settings failures', () => {
     result.current.mutate({ roomId: 'room-1', title: 'Backend' });
 
     await waitFor(() =>
+      // The second argument is the shared "Report" action every mutation-error
+      // toast now carries; its content is query-client.test.ts's subject, not
+      // this file's. Asserted as `anything()` rather than dropped, so a toast
+      // raised with no options at all still fails here.
       expect(toast.error).toHaveBeenCalledWith(
-        "Couldn't rename that room — A channel called #backend already exists"
+        "Couldn't rename that room — A channel called #backend already exists",
+        expect.anything()
       )
     );
     // Exactly one line. A per-call `onError` toast beside this one is what
@@ -76,7 +81,8 @@ describe('room settings failures', () => {
 
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
-        "Couldn't bring that room back — A channel called #backend already exists"
+        "Couldn't bring that room back — A channel called #backend already exists",
+        expect.anything()
       )
     );
   });

@@ -55,6 +55,13 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
   },
   // FeedbackShowcases
   {
+    id: 'feedback-dialog',
+    title: 'Feedback dialog',
+    page: 'components',
+    category: 'Feedback',
+    keywords: ['feedback', 'bug', 'report', 'idea', 'praise', 'diagnostics', 'attachments'],
+  },
+  {
     id: 'skeleton',
     title: 'Skeleton',
     page: 'components',

@@ -92,6 +92,7 @@ let mockGlobalPaletteOpen = true;
 
 const mockSetPreviousCwd = vi.fn();
 const mockClearGlobalPaletteInitialSearch = vi.fn();
+const mockOpenFeedback = vi.fn();
 
 vi.mock('@/layers/shared/model', () => ({
   useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
@@ -105,6 +106,12 @@ vi.mock('@/layers/shared/model', () => ({
       globalPaletteInitialSearch: null,
       clearGlobalPaletteInitialSearch: mockClearGlobalPaletteInitialSearch,
     };
+    return selector ? selector(state) : state;
+  },
+  // Selector-shaped like the real zustand store: `usePaletteActions` reads it
+  // as `useFeedbackDialogStore((s) => s.openFeedback)`.
+  useFeedbackDialogStore: (selector?: (s: Record<string, unknown>) => unknown) => {
+    const state = { openFeedback: mockOpenFeedback };
     return selector ? selector(state) : state;
   },
   useTheme: () => ({ theme: 'light', setTheme: vi.fn() }),

@@ -145,7 +145,10 @@ test.describe('Connections — save key, connect, multi-account', () => {
     await expect(card.getByText('Not set up')).toBeVisible();
     // The custody stance is disclosed on the setup card BEFORE any key exists.
     await expect(card).toContainText(CUSTODY_FRAGMENT);
-    await expect(page.getByText('No services to connect yet')).toBeVisible();
+    // With nothing connectable, the region leads with its own first-run card
+    // rather than an empty service grid (DOR-857) — the grid's own empty copy
+    // is no longer what a person in this state is shown.
+    await expect(page.getByText('Nothing can be connected yet')).toBeVisible();
 
     // Save the key → the provider registers live, no restart: the badge flips
     // to Ready and the scripted toolkits appear as service tiles.

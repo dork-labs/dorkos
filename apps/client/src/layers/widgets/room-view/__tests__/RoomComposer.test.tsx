@@ -215,7 +215,12 @@ describe('RoomComposer', () => {
     // comes from the shared MutationCache rather than from this component,
     // because this component is not always still here when a refusal lands.
     expect(toastError).toHaveBeenCalledTimes(1);
-    expect(toastError).toHaveBeenCalledWith("Couldn't send your message — This room is archived");
+    // `expect.anything()` covers the shared "Report" action that cache adds;
+    // its content is query-client.test.ts's subject, not this file's.
+    expect(toastError).toHaveBeenCalledWith(
+      "Couldn't send your message — This room is archived",
+      expect.anything()
+    );
   });
 
   it('sends the same words twice when that is what was asked for', async () => {

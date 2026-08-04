@@ -281,7 +281,11 @@ describe('AdapterSetupWizard — fields no setup step names', () => {
     await advanceToConfigure();
 
     expect(screen.queryByRole('heading', { name: 'Advanced' })).not.toBeInTheDocument();
-    expect(screen.getByLabelText('Inbound Subject')).toBeInTheDocument();
+    // A required field's label carries a real aria-hidden asterisk node (DOR-651),
+    // which joins the label's text content. This file's claim is that the field
+    // reaches a screen at all, so it tolerates the marker rather than pinning it;
+    // ConfigFieldInput.test.tsx is what holds the asterisk's own shape.
+    expect(screen.getByLabelText(/^Inbound Subject\*?$/)).toBeInTheDocument();
     expect(screen.getByLabelText('Outbound URL')).toBeInTheDocument();
   });
 

@@ -89,4 +89,40 @@ describe('AccountsRegion', () => {
     expect(screen.queryByText(/nothing can be connected yet/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/couldn.t load your services/i)).not.toBeInTheDocument();
   });
+
+  // --- the carrier section's opening state -------------------------------
+  // Asserting the section's *content*, never its trigger: the trigger renders
+  // identically open or closed, so a test that stops at the trigger passes
+  // whichever way this goes. These two are what caught the carriers being
+  // pinned shut for every visitor — `defaultOpen` is read once at mount, and
+  // the first render is always the loading one, where `hasConnectableServices`
+  // is false for a reason that has nothing to do with being empty.
+
+  it('opens the carrier section when there is nothing else to connect', async () => {
+    const transport = createMockTransport();
+    renderRegion(transport);
+
+    await waitFor(() => {
+      expect(screen.getByText(/nothing can be connected yet/i)).toBeInTheDocument();
+    });
+    // The one-time setup is the only way forward from here, so it is already open.
+    expect(screen.getByText(/These outside services hold the sign-ins/i)).toBeVisible();
+  });
+
+  it('leaves the carrier section closed when services are already connectable', async () => {
+    const transport = createMockTransport({
+      getConnectorToolkits: vi.fn().mockResolvedValue({
+        toolkits: [{ slug: 'gmail', displayName: 'Gmail' }],
+        warnings: [],
+      }),
+    });
+    renderRegion(transport);
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Connected' })).toBeInTheDocument();
+    });
+    // Deep enough to keep, quiet enough not to lead — the trigger is still there.
+    expect(screen.queryByText(/These outside services hold the sign-ins/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Composio & Nango' })).toBeInTheDocument();
+  });
 });

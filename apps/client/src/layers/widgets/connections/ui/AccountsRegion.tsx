@@ -76,21 +76,31 @@ export function AccountsRegion() {
       )}
 
       {/* Named for what they are. Every word tried above this one — "engine",
-          "provider" — failed to mean anything to the people using it. */}
-      <div ref={carrierRef}>
-        <Collapsible defaultOpen={!isLoading && !isError && !hasConnectableServices}>
-          <CollapsibleTrigger className="text-muted-foreground hover:text-foreground focus-ring rounded-md text-sm font-medium">
-            Composio &amp; Nango
-          </CollapsibleTrigger>
-          <CollapsibleContent className="space-y-3 pt-3">
-            <p className="text-muted-foreground max-w-prose text-sm leading-relaxed">
-              These outside services hold the sign-ins that let your agents act for you. Add a key
-              from one and the services it reaches appear above.
-            </p>
-            <ProviderSetup />
-          </CollapsibleContent>
-        </Collapsible>
-      </div>
+          "provider" — failed to mean anything to the people using it.
+
+          Held back until the toolkits query settles. `defaultOpen` is
+          uncontrolled — Radix reads it once, at mount — and on the very first
+          render `isLoading` is true for every visitor, so mounting this any
+          earlier pinned it shut permanently and the open-when-empty intent
+          below could never fire. "Still loading" and "genuinely nothing to
+          connect" both make `hasConnectableServices` false, and only one of
+          them means this section should lead. */}
+      {!isLoading && (
+        <div ref={carrierRef}>
+          <Collapsible defaultOpen={!isError && !hasConnectableServices}>
+            <CollapsibleTrigger className="text-muted-foreground hover:text-foreground focus-ring rounded-md text-sm font-medium">
+              Composio &amp; Nango
+            </CollapsibleTrigger>
+            <CollapsibleContent className="space-y-3 pt-3">
+              <p className="text-muted-foreground max-w-prose text-sm leading-relaxed">
+                These outside services hold the sign-ins that let your agents act for you. Add a key
+                from one and the services it reaches appear above.
+              </p>
+              <ProviderSetup />
+            </CollapsibleContent>
+          </Collapsible>
+        </div>
+      )}
     </section>
   );
 }

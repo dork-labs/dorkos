@@ -66,6 +66,7 @@ const mockOpenConnections = vi.fn();
 const mockSetPickerOpen = vi.fn();
 const mockImportOpen = vi.fn();
 const mockSetTheme = vi.fn();
+const mockOpenFeedback = vi.fn();
 
 let mockGlobalPaletteOpen = true;
 let mockTheme = 'light';
@@ -85,6 +86,12 @@ vi.mock('@/layers/shared/model', () => ({
       globalPaletteInitialSearch: null,
       clearGlobalPaletteInitialSearch: vi.fn(),
     };
+    return selector ? selector(state) : state;
+  },
+  // Selector-shaped like the real zustand store: `usePaletteActions` reads it
+  // as `useFeedbackDialogStore((s) => s.openFeedback)`.
+  useFeedbackDialogStore: (selector?: (s: Record<string, unknown>) => unknown) => {
+    const state = { openFeedback: mockOpenFeedback };
     return selector ? selector(state) : state;
   },
   useTheme: () => ({ theme: mockTheme, setTheme: mockSetTheme }),
