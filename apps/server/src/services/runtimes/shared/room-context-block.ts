@@ -91,9 +91,10 @@ const FENCE_LABEL = 'UNTRUSTED ROOM MESSAGES';
 const NONCE_CHARS = 8;
 
 /**
- * Cap on a rendered room topic. Longer than a handle because a topic is a
- * sentence; shorter than the 500 the schema allows, because this rides every
- * turn.
+ * Cap on a rendered room topic — and, reused for the same reason, on a
+ * per-entry forum-topic label (chats-as-channels §5.6). Longer than a handle
+ * because a topic is a sentence; shorter than the 500 the room schema allows
+ * for its own topic, because this rides every turn.
  */
 const TOPIC_MAX_LENGTH = 200;
 
@@ -148,6 +149,22 @@ const BRIDGED_FENCE_NOTE = [
 
 /** The one word an entry from outside this machine is labelled with. */
 const EXTERNAL_MARK = 'external';
+
+/**
+ * §8's honesty line for a partially-visible bridged group: Telegram's privacy
+ * mode (or the absence of a confirmed reading otherwise) means the bot only
+ * received messages addressed to it, so `pending` is not the whole
+ * conversation. Said once, in the labels region — never inside the fence,
+ * because it is a fact ABOUT what the fence contains, not a message inside it.
+ *
+ * Silent for `'full'` visibility and for an unbridged room, the same way
+ * {@link BRIDGED_FENCE_NOTE} is silent for an unbridged one: a line that rides
+ * every turn to say nothing has gone wrong is a line spent for free.
+ */
+const VISIBILITY_PARTIAL_NOTE =
+  'This channel is only partially visible to you: the platform only delivered messages ' +
+  'that were addressed to you here, so the messages below are not the whole conversation ' +
+  'that happened in this chat.';
 
 /**
  * A label, safe to put in a line DorkOS wrote.
@@ -354,6 +371,13 @@ function memberLine(member: RoomContextMember): string {
  * reaches somebody who is not on the roster any more. So the line names them and
  * says the name is not an address.
  *
+ * A folded Telegram forum topic (chats-as-channels §5.6, §9.2) adds one more
+ * bracket: the topic's sanitized name. It renders like the `external` mark
+ * above it — a LABEL through {@link label}, sanitized again here even though
+ * `ingest.ts` already sanitized it once at write time, never as part of
+ * {@link body}'s untrusted text — so a folded room's interleaved topics stay
+ * readable as more than one conversation.
+ *
  * @param entry - The flattened room entry.
  */
 function entryLine(entry: RoomContextEntry): string {
@@ -369,8 +393,9 @@ function entryLine(entry: RoomContextEntry): string {
     entry.kind === 'notice'
       ? ''
       : ` (${entry.authorIsPerson ? 'person' : 'agent'}${from}${addressNote(author)})`;
+  const topic = entry.topicLabel ? ` [topic: ${label(entry.topicLabel, TOPIC_MAX_LENGTH)}]` : '';
   const mention = entry.mentionsMe ? ' [mentions you]' : '';
-  return `[${clock(entry.at)}] ${who}${what}${mention}: ${body(entry.text)}`;
+  return `[${clock(entry.at)}] ${who}${what}${topic}${mention}: ${body(entry.text)}`;
 }
 
 /**
@@ -460,6 +485,16 @@ function preamble(data: RoomContextData, where: string): string[] {
     `You are in ${where}, a ${data.room.kind === 'dm' ? 'direct message' : 'channel'}.` +
       (data.room.topic ? ` Topic: ${label(data.room.topic, TOPIC_MAX_LENGTH)}` : ''),
   ];
+
+  // §8: a model that believes it saw a whole conversation it saw a tenth of
+  // will confidently describe a group it cannot read.
+  if (data.room.visibility === 'partial') lines.push(VISIBILITY_PARTIAL_NOTE);
+
+  // §15: guidance only, never enforcement — the outbound adapter remains the
+  // backstop that actually splits and escapes. This is a fixed, server-authored
+  // constant (never user input), so unlike everything else in this function it
+  // is not a label and does not go through `sanitizeIdentity`.
+  if (data.room.bridged && data.room.formatting) lines.push(data.room.formatting.instructions);
 
   const identity = self ? selfIdentity(self) : 'You are a member here.';
   const addressed = data.addressing.addressedNow ? ' This message mentions you.' : '';

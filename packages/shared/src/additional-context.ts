@@ -190,6 +190,17 @@ export interface RoomContextMember extends RoomContextAuthor {
 /** One room entry, flattened for the model. */
 export interface RoomContextEntry {
   /**
+   * The sanitized forum-topic label this entry was posted under, or `null` for
+   * an entry with none (chats-as-channels spec §5.6, §9.2). Phase 1 folds every
+   * Telegram forum topic into one room (D-6 Q1), so this is what keeps a folded
+   * room's log readable as more than one interleaved conversation.
+   *
+   * Read off the external ref's stored `threadName`, already sanitized once at
+   * write time (`ingest.ts`) — carried through here unsanitized so the renderer
+   * can sanitize it AGAIN at render, because §9.2 requires both.
+   */
+  topicLabel: string | null;
+  /**
    * What an `@mention` resolves to this entry's author, or `null` when nothing
    * does — see {@link RoomContextAuthor.handle}.
    *
@@ -300,6 +311,32 @@ export interface RoomContextData {
      * it.
      */
     bridged: boolean;
+    /**
+     * How much of a bridged GROUP's traffic actually reaches this room
+     * (chats-as-channels spec §8) — `'full'` when Telegram's privacy mode is
+     * off for this bot, `'partial'` when it is on (the shipped default) or has
+     * never been confirmed. Absent for an unbridged room and for a bridged DM:
+     * privacy mode is a group-only switch, and Telegram delivers every
+     * private-chat message regardless of it, so there is nothing partial to
+     * report there (§8: "a DM has no badge").
+     *
+     * A model that believes it saw a whole conversation it saw a tenth of will
+     * confidently describe a group it cannot read — this is what stops that.
+     */
+    visibility?: 'partial' | 'full';
+    /**
+     * The far-end platform's formatting guidance for a bridged room, or absent
+     * when unbridged (chats-as-channels spec §15) — the same information the
+     * adapter already puts on an inbound envelope's
+     * `responseContext.formattingInstructions`, now available to a turn a ROOM
+     * triggered rather than one envelope did.
+     *
+     * **Guidance, not enforcement.** This rides in the labels region so an
+     * agent answering here knows what the far end renders; the outbound
+     * adapter remains the sole enforcement backstop for splitting and
+     * escaping, unchanged by this field's presence.
+     */
+    formatting?: { instructions: string; maxLength: number };
   };
   /**
    * Non-null when this turn was triggered inside a thread: which entry the
@@ -457,6 +494,27 @@ export const RelayContextDataSchema = z.object({
   replyTo: z.string().optional(),
 });
 
+/**
+ * The shape of `room-schemas.ts`'s `AuthorOriginSchema`, inlined rather than
+ * imported.
+ *
+ * A VALUE import of that schema back into this file closes a real circular
+ * import: `room-schemas.ts` imports `SignalTypeSchema` from
+ * `relay-envelope-schemas.ts`, which imports `schemas.ts`, which imports
+ * `ClientContextSchema` from THIS file. Adding a value edge from here back to
+ * `room-schemas.ts` completes the cycle, and depending on which module a test
+ * happens to import first, `SignalTypeSchema` can still be `undefined` at the
+ * point `room-schemas.ts` builds `RoomSignalEventSchema` — observed as
+ * `zod-to-openapi` throwing `Invalid element at key "signal"` while generating
+ * the OpenAPI document. The shape is a two-armed literal union with nothing to
+ * drift out of sync; keep it identical to `AuthorOriginSchema` if that one
+ * changes.
+ */
+const RoomContextOriginSchema = z.union([
+  z.literal('local'),
+  z.object({ platform: z.string().min(1) }),
+]);
+
 /** Zod schema for {@link RoomContextAuthor}. */
 export const RoomContextAuthorSchema = z.object({
   handle: z.string().nullable(),
@@ -467,6 +525,7 @@ export const RoomContextAuthorSchema = z.object({
 export const RoomContextMemberSchema = RoomContextAuthorSchema.extend({
   isPerson: z.boolean(),
   isSelf: z.boolean(),
+  origin: RoomContextOriginSchema,
   responseMode: ResponseModeSchema.optional(),
 });
 
@@ -475,10 +534,12 @@ export const RoomContextEntrySchema = z.object({
   authorHandle: z.string().nullable(),
   authorDisplayName: z.string(),
   authorIsPerson: z.boolean(),
+  authorOrigin: z.enum(['local', 'external']),
   kind: z.enum(['post', 'notice']),
   at: z.string(),
   text: z.string(),
   mentionsMe: z.boolean(),
+  topicLabel: z.string().nullable(),
 });
 
 /** Zod schema for {@link RoomContextAcknowledgment}. */
@@ -496,6 +557,9 @@ export const RoomContextDataSchema = z.object({
     kind: z.enum(['channel', 'dm']),
     name: z.string(),
     topic: z.string().optional(),
+    bridged: z.boolean(),
+    visibility: z.enum(['partial', 'full']).optional(),
+    formatting: z.object({ instructions: z.string(), maxLength: z.number().int() }).optional(),
   }),
   thread: z
     .object({

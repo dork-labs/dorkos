@@ -41,6 +41,7 @@ import type {
 } from '@dorkos/shared/additional-context';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
+import type { BridgedRoomFraming } from '../relay/chat-bridge/room-context-framing.js';
 import { advertisedHandles, rosterMentionCandidates } from './author-handles.js';
 import type { EngagementWindow } from './engagement.js';
 import {
@@ -101,19 +102,33 @@ export interface RoomContextDeps {
   /** Resolves an agent's handle from its directory — one name an `@` may match. */
   agents: RoomAgentLookup;
   /**
-   * Whether this room projects an external chat (chats-as-channels §9.2).
+   * What this room's turn is told about the chat it projects, or `null` for an
+   * unbridged room (chats-as-channels §8, §9.2, §15).
    *
    * Injected as a predicate, in the same style as `RoomServiceDeps.isOwnerAuthor`
-   * and `maxAgentDepth`, so this module still reads no store it does not already
-   * own. It decides one thing: whether the untrusted fence carries the standing
-   * line about strangers.
+   * and `maxAgentDepth`, so this module still reads no store — and no platform —
+   * it does not already own: everything Telegram-shaped stays behind this one
+   * function (`chat-bridge/room-context-framing.ts`), which is what keeps this
+   * file honest about "no runtime knows a room is bridged" extending to "this
+   * builder does not know Telegram exists either."
+   *
+   * Non-`null` decides three things: whether the untrusted fence carries the
+   * standing line about strangers, whether `room.visibility` is reported, and
+   * whether `room.formatting` guidance rides the turn.
    *
    * A property of the ROOM, deliberately not of the members who happen to have
    * spoken. A bridged group that no stranger has posted in yet is still a
    * channel that receives messages from strangers, and the sentence is about
    * what may arrive rather than about what already has.
    */
-  isBridgedRoom(roomId: string): boolean;
+  bridgedFraming(roomId: string): BridgedRoomFraming | null;
+  /**
+   * The stored forum-topic name for a batch of entries, keyed by entry id, or
+   * an empty map for any entry with none — chats-as-channels §5.6's per-entry
+   * label, read once per turn for every candidate in `pending` and `ownRecent`
+   * rather than once per entry.
+   */
+  topicNamesFor(entryIds: readonly string[]): Map<string, string>;
 }
 
 /** The one turn being described. */
@@ -157,11 +172,15 @@ export interface RoomContextInput {
  * @returns The structured entry an adapter renders into `<room_context>`.
  */
 export function buildRoomContext(deps: RoomContextDeps, input: RoomContextInput): RoomContextData {
+  // Read once, reused for the frame below and for gating the topic-label
+  // lookup further down — a second call would be a second bridge-store read
+  // for the same answer.
+  const framing = deps.bridgedFraming(input.room.id);
   // The two rooms collapsed into one (ADR 260728-022013): a thread reply lives
   // in the channel's own log, so the room the turn HAPPENED in and the
   // conversation it is ABOUT are the same room, and `frame` reads the position
   // within it off the triggering entry rather than off a container.
-  const frame = resolveFrame(deps, input.room, input.entry);
+  const frame = resolveFrame(deps, input.room, input.entry, framing);
   const members = deps.store.listMembers(input.room.id);
   const self = members.find((member) => member.authorId === input.agentAuthorId);
 
@@ -188,6 +207,13 @@ export function buildRoomContext(deps: RoomContextDeps, input: RoomContextInput)
     input.agentAuthorId,
     OWN_RECENT_MAX_ENTRIES
   );
+
+  // The forum-topic label for every candidate this turn might render, in ONE
+  // query — gated on `framing` so an unbridged room's turn never touches the
+  // bridge store at all (chats-as-channels §5.6).
+  const topicNames = framing
+    ? deps.topicNamesFor([...missed, ...ownRecent].map((entry) => entry.id))
+    : new Map<string, string>();
 
   // Reactions on those same posts, in ONE query. Scoped to `ownRecent` because
   // that is what makes an acknowledgment age out on its own: five more messages
@@ -247,6 +273,9 @@ export function buildRoomContext(deps: RoomContextDeps, input: RoomContextInput)
       at: entry.createdAt,
       text: entry.body.text,
       mentionsMe: entry.mentions.includes(input.agentAuthorId),
+      // Already sanitized once, at write time (spec §9.2, A9.3) — carried
+      // through raw so the renderer can sanitize it again at render.
+      topicLabel: topicNames.get(entry.id) ?? null,
     };
   };
 
@@ -354,9 +383,16 @@ interface ContextFrame {
  *
  * @param room - The room the turn was triggered in.
  * @param entry - The entry that triggered it; its thread pointer is the position.
+ * @param framing - What the room's turn is told about the chat it projects, or
+ *   `null` for an unbridged room.
  */
-function resolveFrame(deps: RoomContextDeps, room: Room, entry: RoomEntry): ContextFrame {
-  return { room: frameOf(room, deps.isBridgedRoom(room.id)), thread: threadOf(deps, room, entry) };
+function resolveFrame(
+  deps: RoomContextDeps,
+  room: Room,
+  entry: RoomEntry,
+  framing: BridgedRoomFraming | null
+): ContextFrame {
+  return { room: frameOf(room, framing), thread: threadOf(deps, room, entry) };
 }
 
 /**
@@ -386,15 +422,18 @@ function threadOf(deps: RoomContextDeps, room: Room, entry: RoomEntry): RoomCont
  * Project a room onto the frame shape.
  *
  * @param room - The room the turn is happening in.
- * @param bridged - Whether it projects an external chat.
+ * @param framing - What the room's turn is told about the chat it projects, or
+ *   `null` for an unbridged room.
  */
-function frameOf(room: Room, bridged: boolean): RoomContextData['room'] {
+function frameOf(room: Room, framing: BridgedRoomFraming | null): RoomContextData['room'] {
   return {
     id: room.id,
     kind: room.kind,
     name: roomName(room),
     ...(room.topic ? { topic: room.topic } : {}),
-    bridged,
+    bridged: framing !== null,
+    ...(framing?.visibility ? { visibility: framing.visibility } : {}),
+    ...(framing ? { formatting: framing.formatting } : {}),
   };
 }
 

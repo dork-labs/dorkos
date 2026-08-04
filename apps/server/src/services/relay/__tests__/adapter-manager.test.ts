@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { createTestDb } from '@dorkos/test-utils/db';
 import { AdapterManager, AdapterError } from '../adapter-manager.js';
 import type { AdapterRegistry, RelayAdapter } from '@dorkos/relay';
 import type { AdapterManagerDeps, AdapterMeshCoreLike } from '../adapter-manager.js';
+import { BridgeStore } from '../chat-bridge/bridge-store.js';
+import { RoomStore } from '../../rooms/room-store.js';
 
 // Mock fs/promises
 vi.mock('node:fs/promises', () => ({
@@ -51,6 +54,16 @@ vi.mock('../../../lib/logger.js', () => ({
   })),
 }));
 
+/**
+ * The mocked `TelegramAdapter`'s `getMe`, controllable per test — the §8
+ * visibility-refresh describe block below is the only consumer. Defaults to
+ * `null` ("not yet connected"), same as the real accessor before `start()`,
+ * so every OTHER test in this file that never touches it is unaffected.
+ */
+const mockGetMe = vi.fn(
+  async (): Promise<{ username: string; canReadAllGroupMessages: boolean } | null> => null
+);
+
 // Mock TelegramAdapter, WebhookAdapter, and ClaudeCodeAdapter
 vi.mock('@dorkos/relay', async () => {
   const actual = await vi.importActual<object>('@dorkos/relay');
@@ -71,6 +84,7 @@ vi.mock('@dorkos/relay', async () => {
         }),
         testConnection: vi.fn().mockResolvedValue({ ok: true }),
         setLogger: vi.fn(),
+        getMe: mockGetMe,
       };
     }),
     WebhookAdapter: vi.fn().mockImplementation(function (id: string) {
@@ -346,6 +360,99 @@ describe('AdapterManager', () => {
       await initAndStart(manager);
 
       await expect(manager.enable('nonexistent')).rejects.toThrow('Adapter not found: nonexistent');
+    });
+  });
+
+  describe('refreshBridgeVisibility — the §8 write path (chats-as-channels task 1.13)', () => {
+    // Every other describe block in this file drives `emitAdapterLifecycle`
+    // through the SAME 'connected' event this reads (start, in `initAndStart`)
+    // without ever wiring `roomBridges`, so `refreshBridgeVisibility` early-
+    // returns for them and nothing here changes their behaviour.
+    //
+    // The refresh is fire-and-forget from `emitAdapterLifecycle` (a visibility
+    // check must never sit in front of the lifecycle broadcast), so
+    // `adaptersStarted()` resolving does not guarantee it has settled —
+    // `vi.waitFor` polls for the write rather than assuming a fixed number of
+    // microtask hops.
+    const ROOM_ID = 'room-visibility-1';
+    const ADAPTER_ID = 'tg-main'; // the one enabled adapter in VALID_CONFIG
+
+    /** A real, in-memory `BridgeStore` with one live bridge seeded on tg-main. */
+    function seededBridges(): BridgeStore {
+      const db = createTestDb();
+      new RoomStore(db).createRoom(
+        {
+          id: ROOM_ID,
+          kind: 'channel',
+          slug: 'ops',
+          title: 'Ops',
+          topic: null,
+          workspaceId: null,
+          createdAt: '2026-08-04T00:00:00.000Z',
+        },
+        []
+      );
+      const bridges = new BridgeStore(db);
+      bridges.createBridge({
+        roomId: ROOM_ID,
+        adapterId: ADAPTER_ID,
+        chatId: '555',
+        channelType: 'group',
+        platformChatType: 'group',
+        bindingId: 'binding-ana',
+        deliverNotices: false,
+        createdAt: '2026-08-04T00:00:00.000Z',
+      });
+      return bridges;
+    }
+
+    it("stamps the bridge 'everything' when getMe reports privacy mode OFF", async () => {
+      const bridges = seededBridges();
+      mockGetMe.mockResolvedValueOnce({ username: 'bot', canReadAllGroupMessages: true });
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      const m = new AdapterManager(registry, configPath, { ...mockDeps, roomBridges: bridges });
+
+      await initAndStart(m);
+
+      await vi.waitFor(() => {
+        expect(bridges.findBridgeByRoom(ROOM_ID)?.visibility).toBe('everything');
+      });
+      expect(bridges.findBridgeByRoom(ROOM_ID)?.visibilityCheckedAt).not.toBeNull();
+    });
+
+    it("stamps the bridge 'mentions-only' when getMe reports privacy mode ON — the dangerous direction to get backwards", async () => {
+      // §8 exists so a partially-visible group is never reported as fully
+      // seen. An inversion of the true/false branch below (swap 'everything'
+      // and 'mentions-only') would make THIS test fail while the previous one
+      // still passed — asymmetric coverage is what closes the gap the
+      // injected-mock tests left.
+      const bridges = seededBridges();
+      mockGetMe.mockResolvedValueOnce({ username: 'bot', canReadAllGroupMessages: false });
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      const m = new AdapterManager(registry, configPath, { ...mockDeps, roomBridges: bridges });
+
+      await initAndStart(m);
+
+      await vi.waitFor(() => {
+        expect(bridges.findBridgeByRoom(ROOM_ID)?.visibility).toBe('mentions-only');
+      });
+    });
+
+    it('leaves the stored value untouched when getMe reports not-yet-connected (null)', async () => {
+      const bridges = seededBridges();
+      mockGetMe.mockResolvedValueOnce(null);
+      vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
+      const m = new AdapterManager(registry, configPath, { ...mockDeps, roomBridges: bridges });
+
+      await initAndStart(m);
+      // Nothing to wait for — asserting an absence needs the settle to have
+      // already happened. `adaptersStarted()` awaits the synchronous part of
+      // `emitAdapterLifecycle`; give the detached refresh one more microtask
+      // turn to have run (or declined to run) before checking it left no mark.
+      await Promise.resolve();
+
+      expect(bridges.findBridgeByRoom(ROOM_ID)?.visibility).toBeNull();
+      expect(bridges.findBridgeByRoom(ROOM_ID)?.visibilityCheckedAt).toBeNull();
     });
   });
 

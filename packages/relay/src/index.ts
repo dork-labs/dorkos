@@ -145,7 +145,12 @@ export {
 export { AdapterRegistry } from './adapter-registry.js';
 
 // Adapter implementations
-export { TelegramAdapter, TELEGRAM_MANIFEST } from './adapters/telegram/index.js';
+export {
+  TelegramAdapter,
+  TELEGRAM_MANIFEST,
+  TELEGRAM_FORMATTING_RULES,
+  MAX_MESSAGE_LENGTH,
+} from './adapters/telegram/index.js';
 export { WebhookAdapter, verifySignature, WEBHOOK_MANIFEST } from './adapters/webhook/index.js';
 export { SlackAdapter, SLACK_MANIFEST } from './adapters/slack/index.js';
 

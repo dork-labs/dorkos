@@ -117,7 +117,11 @@ describe('BridgeSessionAdopter + BridgeLifecycle.bridge (chats-as-channels §7.1
     return { adopter, probe };
   }
 
-  function makeLifecycle(adopter: BridgeSessionAdopter, bindings: ReturnType<typeof bindingsFake>) {
+  function makeLifecycle(
+    adopter: BridgeSessionAdopter,
+    bindings: ReturnType<typeof bindingsFake>,
+    refreshVisibility?: (adapterId: string) => Promise<void>
+  ) {
     return new BridgeLifecycle({
       rooms: harness.service,
       bridges: harness.bridges,
@@ -125,6 +129,7 @@ describe('BridgeSessionAdopter + BridgeLifecycle.bridge (chats-as-channels §7.1
       chatNotice: async () => true,
       operatorAuthorId: () => harness.human,
       adopter,
+      refreshVisibility,
     });
   }
 
@@ -413,5 +418,45 @@ describe('BridgeSessionAdopter + BridgeLifecycle.bridge (chats-as-channels §7.1
         .listEntries(id, { limit: 100 })
         .filter((e) => e.kind === 'notice' && e.body.notice === 'bridge_history_note')
     ).toHaveLength(1);
+  });
+
+  describe('the bridge-create half of §8 visibility refresh (task 1.13)', () => {
+    it('calls refreshVisibility with the adapter it just bridged', async () => {
+      const bindings = bindingsFake();
+      const { adopter } = makeAdopter({});
+      const refreshVisibility = vi.fn(async () => undefined);
+      const lifecycle = makeLifecycle(adopter, bindings, refreshVisibility);
+
+      await lifecycle.bridge(createInput());
+
+      expect(refreshVisibility).toHaveBeenCalledWith(ADAPTER);
+      expect(refreshVisibility).toHaveBeenCalledTimes(1);
+    });
+
+    it('is best-effort: a rejected refresh does not fail the bridge it followed', async () => {
+      const bindings = bindingsFake();
+      const { adopter } = makeAdopter({});
+      const refreshVisibility = vi.fn(async () => {
+        throw new Error('getMe timed out');
+      });
+      const lifecycle = makeLifecycle(adopter, bindings, refreshVisibility);
+
+      const { id, adopted } = await lifecycle.bridge(createInput());
+
+      // `makeAdopter({})` has no candidate session, so this is the honest
+      // fresh-start path — `adopted` is about session adoption, not about
+      // whether the bridge itself succeeded, which is what this test is for.
+      expect(id).toBeTruthy();
+      expect(adopted).toBe(false);
+      expect(bindings.rows.get(BINDING_ID)).toMatchObject({ bridge: 'room', roomId: id });
+    });
+
+    it('is optional: a coordinator wired without it bridges exactly as before', async () => {
+      const bindings = bindingsFake();
+      const { adopter } = makeAdopter({});
+      const lifecycle = makeLifecycle(adopter, bindings); // no refreshVisibility
+
+      await expect(lifecycle.bridge(createInput())).resolves.toMatchObject({ adopted: false });
+    });
   });
 });
