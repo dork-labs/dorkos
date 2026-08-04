@@ -1,3 +1,8 @@
+---
+covers:
+  - 'feat(feedback): tracking loop — Linear webhook, status endpoints, tracking view, and status emails (PR D)'
+---
+
 ### Added
 
 - Feedback, bug reports, and ideas you send from DorkOS are now trackable.
