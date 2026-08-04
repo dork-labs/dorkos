@@ -26,7 +26,16 @@ export {
   type BridgeBindingWriter,
   type LifecycleBinding,
   type RebridgeInput,
+  type BridgeCreateInput,
 } from './lifecycle.js';
+export {
+  BridgeSessionAdopter,
+  type BridgeSessionAdopterDeps,
+  type TranscriptProbe,
+  type AdoptRoomOps,
+  type AdoptInput,
+  type AdoptResult,
+} from './adopt-session.js';
 export {
   BridgeStore,
   type Bridge,

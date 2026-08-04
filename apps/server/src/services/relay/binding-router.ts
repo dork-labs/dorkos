@@ -461,6 +461,56 @@ export class BindingRouter {
   }
 
   /**
+   * Take the single `{bindingId}:chat:{chatId}` session out of the map — the
+   * migration off `sessionMap` a chat performs when it is bridged
+   * (chats-as-channels spec §7.3, step 1; §7.2).
+   *
+   * **The key identifies the conversation, not the strategy label.** A chat's
+   * session is keyed `{bindingId}:chat:{chatId}` whatever the binding's
+   * `sessionStrategy` was (a `per-user` binding only ever writes a `:chat:` key
+   * as its no-user-id fallback — {@link BindingRouter.sessionKeyFor}), so this
+   * looks for exactly that key and nothing else. Zero matches, or more than one,
+   * means there is no single conversation to adopt and the caller starts fresh.
+   *
+   * **It removes unconditionally, and persists.** Once a chat is bridged its
+   * binding vacates `sessionMap` entirely (§7.2, §7.4): the room's ledger owns
+   * the session now, and a stale id left behind here would be resurrected by
+   * {@link BindingRouter.resolveSession} the moment the chat ever returns to
+   * private-pipe mode — resuming a conversation the room had already taken over.
+   * So the entry leaves the map whether or not the caller's transcript probe
+   * later adopts it; the probe decides the ledger write and the notice, not
+   * whether this row survives.
+   *
+   * The removed id is NOT itself the adoption verdict — it may name a session
+   * that was rekeyed out from under `sessions.json` (the router is not an
+   * `onProjectorRekey` listener), which is exactly why the caller probes the
+   * durable transcript before trusting it (§7.3, step 2).
+   *
+   * @param bindingId - The binding being bridged.
+   * @param chatId - The platform chat id the bridge is for.
+   * @returns The taken session's id, or `undefined` when there was not exactly
+   *   one candidate.
+   */
+  async takeChatSession(
+    bindingId: string,
+    chatId: string
+  ): Promise<{ sessionId: string } | undefined> {
+    const key = `${bindingId}:chat:${chatId}`;
+    const matches = [...this.sessionMap.keys()].filter((k) => k === key);
+    if (matches.length !== 1) return undefined;
+    const record = this.sessionMap.get(key);
+    if (!record) return undefined;
+    this.sessionMap.delete(key);
+    this.inFlight.delete(key);
+    try {
+      await this.saveSessionMap();
+    } catch (err) {
+      logger.warn('BindingRouter: failed to persist sessionMap after taking a bridged chat', err);
+    }
+    return { sessionId: record.sessionId };
+  }
+
+  /**
    * Route one inbound chat message, or say why it was not routed.
    *
    * Every refusal path does three things now, where it used to do one:

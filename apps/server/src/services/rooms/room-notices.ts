@@ -398,6 +398,34 @@ export function buildBridgeAgentSwappedNotice(
 }
 
 /**
+ * The durable `notice` a room writes once when a chat is bridged, saying where
+ * the conversation's earlier history lives (chats-as-channels spec §7.3).
+ *
+ * **The room log never gains the old messages, and this notice is where that is
+ * said plainly.** The platform gives a bot no way to read past messages, and a
+ * session's own transcript is runtime-owned (ADR-0310) — copying it into the
+ * room log would be DorkOS asserting a record it did not witness. So the log
+ * starts from the bridge, and the notice tells the reader that.
+ *
+ * Two variants, one code:
+ *
+ * - **pointer** (`priorSession: true`) — an existing session was adopted, so the
+ *   earlier messages are still the agent's working memory even though they are
+ *   not shown here. The agent picks the conversation up without repeating it.
+ * - **pointer-less** (`priorSession: false`) — the bridge started a fresh
+ *   session (there was none to adopt, or its transcript could not be verified),
+ *   so this channel is the whole conversation from here on.
+ *
+ * @param priorSession - Whether an existing session was adopted at bridge time.
+ */
+export function buildBridgeHistoryNotice(priorSession: boolean): RoomEntryBody {
+  const text = priorSession
+    ? "This channel picks up a conversation that was already going. The earlier messages stay in the agent's own session and aren't copied here, because the platform doesn't share past messages. The agent still remembers them. This channel's record starts now."
+    : "This channel starts a new conversation. The platform doesn't share past messages, so nothing said before is shown here. This channel's record starts now.";
+  return { text, notice: 'bridge_history_note' };
+}
+
+/**
  * Which switch a blocked bridge delivery ran into, chosen so the notice names
  * the exact thing a person would change (chats-as-channels spec §6.6).
  *
