@@ -440,6 +440,69 @@ describe('BridgeStore', () => {
     });
   });
 
+  describe('listStaleNullOutboundRefs — the startup stranded-ref sweep candidate list (spec §10.1, DOR-898)', () => {
+    it('returns a null-platformMessageId outbound ref older than the cutoff', () => {
+      store.createBridge(bridge());
+      const stranded = entry(rooms, ROOM_ID, 'entry-stranded');
+      store.recordOutboundRef({
+        roomId: ROOM_ID,
+        entryId: stranded.id,
+        chatId: CHAT_ID,
+        adapterId: ADAPTER_ID,
+        createdAt: '2026-08-03T00:00:00.000Z',
+      });
+
+      const stale = store.listStaleNullOutboundRefs('2026-08-03T00:10:00.000Z');
+
+      expect(stale.map((r) => r.entryId)).toEqual([stranded.id]);
+      expect(stale[0].platformMessageId).toBeNull();
+    });
+
+    it('excludes a null-id ref that is not yet older than the cutoff (a plausibly in-flight retry)', () => {
+      store.createBridge(bridge());
+      const fresh = entry(rooms, ROOM_ID, 'entry-fresh');
+      store.recordOutboundRef({
+        roomId: ROOM_ID,
+        entryId: fresh.id,
+        chatId: CHAT_ID,
+        adapterId: ADAPTER_ID,
+        createdAt: '2026-08-03T00:15:00.000Z',
+      });
+
+      expect(store.listStaleNullOutboundRefs('2026-08-03T00:10:00.000Z')).toEqual([]);
+    });
+
+    it('excludes a ref that already carries a platform id (delivered)', () => {
+      store.createBridge(bridge());
+      const delivered = entry(rooms, ROOM_ID, 'entry-delivered-old');
+      store.recordOutboundRef({
+        roomId: ROOM_ID,
+        entryId: delivered.id,
+        chatId: CHAT_ID,
+        adapterId: ADAPTER_ID,
+        createdAt: '2026-08-03T00:00:00.000Z',
+      });
+      store.patchOutboundPlatformId(delivered.id, 'pm-delivered');
+
+      expect(store.listStaleNullOutboundRefs('2026-08-03T00:10:00.000Z')).toEqual([]);
+    });
+
+    it('excludes an inbound ref — this candidate list is outbound-only', () => {
+      store.createBridge(bridge());
+      const inbound = entry(rooms, ROOM_ID, 'entry-inbound-old');
+      store.recordInboundRef({
+        roomId: ROOM_ID,
+        entryId: inbound.id,
+        chatId: CHAT_ID,
+        adapterId: ADAPTER_ID,
+        platformMessageId: 'pm-in',
+        createdAt: '2026-08-03T00:00:00.000Z',
+      });
+
+      expect(store.listStaleNullOutboundRefs('2026-08-03T00:10:00.000Z')).toEqual([]);
+    });
+  });
+
   describe('optional transaction handle — participation, not atomicity (spec §5.2 steps 4–6)', () => {
     it('a ref written inside the caller-supplied transaction rolls back with it', () => {
       store.createBridge(bridge());

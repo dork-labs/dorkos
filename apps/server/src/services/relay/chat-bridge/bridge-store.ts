@@ -571,6 +571,44 @@ export class BridgeStore {
   }
 
   /**
+   * Outbound refs whose platform id is STILL NULL and whose `createdAt` is
+   * strictly before `olderThanIso` — the startup stranded-ref sweep's
+   * candidate list (spec §10.1's crash divergence, DOR-898).
+   *
+   * `deliver`'s write-before-send (spec §6.3) writes this ref BEFORE the
+   * platform call and patches the id in once the send returns; a KNOWN
+   * failure (consent denied, retry budget exhausted) rolls it back via
+   * {@link BridgeStore.deleteOutboundRef}. A ref that is still null-id past
+   * the sweep's age threshold reached neither outcome — the process crashed
+   * between the write and the send settling — and {@link listUndeliveredAboveSeq}
+   * structurally EXCLUDES it (it has a ref, full stop), so nothing else in
+   * this module will ever surface it again. This is the one query that does.
+   *
+   * Backed by `idx_room_bridge_messages_outbound_pending`, a partial index on
+   * exactly this predicate (`direction = 'outbound' AND platform_message_id
+   * IS NULL`), so the sweep costs a lookup over the (normally empty) pending
+   * slice rather than a scan of every ref ever written.
+   *
+   * @param olderThanIso - Only refs created strictly before this ISO 8601
+   *   timestamp qualify — the caller's `now - sweep threshold`, wide enough
+   *   that a ref this age cannot still be a legitimate in-flight retry.
+   */
+  listStaleNullOutboundRefs(olderThanIso: string): ExternalRef[] {
+    return this.db
+      .select()
+      .from(roomBridgeMessages)
+      .where(
+        and(
+          eq(roomBridgeMessages.direction, 'outbound'),
+          isNull(roomBridgeMessages.platformMessageId),
+          lt(roomBridgeMessages.createdAt, olderThanIso)
+        )
+      )
+      .all()
+      .map(toRef);
+  }
+
+  /**
    * Entries above a `seq` that carry NO external ref of either direction, in
    * `seq` order — the catch-up scan's candidate list (spec §6.1).
    *

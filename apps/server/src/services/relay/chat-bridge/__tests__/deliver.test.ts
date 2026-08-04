@@ -739,4 +739,84 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
       expect(payload.content).not.toContain('session');
     });
   });
+
+  describe('sweepStrandedRefs — the startup stranded-ref sweep (spec §10.1 crash divergence, DOR-898)', () => {
+    /** An outbound ref written but never patched — simulates a crash between the write and the send. */
+    function seedStrandedRef(roomId: string, chatId: string, entryId: string, createdAt: string) {
+      harness.bridges.recordOutboundRef({
+        roomId,
+        entryId,
+        chatId,
+        adapterId: ADAPTER,
+        createdAt,
+      });
+    }
+
+    const WELL_PAST_THRESHOLD = new Date(Date.now() - 20 * 60_000).toISOString();
+
+    it('a stranded null-id ref older than the threshold gets exactly one bridge_undelivered notice, and is neither deleted nor re-sent', async () => {
+      const room = harness.service.createBridgedRoom(bridgeRequest('900'));
+      const delivery = makeDelivery(bindingRow(room.id, '900'));
+      const post = operatorPost(room.id, 'crashed before the send landed');
+      seedStrandedRef(room.id, '900', post.id, WELL_PAST_THRESHOLD);
+
+      await delivery.sweepStrandedRefs();
+
+      // Never re-sent: the crashed send may have already reached the platform.
+      expect(publish).not.toHaveBeenCalled();
+      // Never deleted: a rollback would return the entry to the catch-up
+      // scan's candidate set and risk a duplicate on the next reconnect.
+      const ref = harness.bridges.findRefByEntry(post.id);
+      expect(ref).not.toBeNull();
+      expect(ref?.direction).toBe('outbound');
+      expect(ref?.platformMessageId).toBeNull();
+      // The same notice code the exhausted-retry path writes (spec §10.1) —
+      // exactly one, naming this entry.
+      const notices = noticesOf(room.id, 'bridge_undelivered');
+      expect(notices).toHaveLength(1);
+      expect(notices[0].body.text).toContain('crashed before the send landed');
+    });
+
+    it('a null-id ref younger than the threshold (a plausibly in-flight retry) is not swept', async () => {
+      const room = harness.service.createBridgedRoom(bridgeRequest('901'));
+      const delivery = makeDelivery(bindingRow(room.id, '901'));
+      const post = operatorPost(room.id, 'still retrying, do not touch');
+      seedStrandedRef(room.id, '901', post.id, new Date().toISOString());
+
+      await delivery.sweepStrandedRefs();
+
+      expect(publish).not.toHaveBeenCalled();
+      expect(noticesOf(room.id, 'bridge_undelivered')).toHaveLength(0);
+      // The ref is untouched either way — the point is no PREMATURE notice.
+      expect(harness.bridges.findRefByEntry(post.id)?.platformMessageId).toBeNull();
+    });
+
+    it('a ref that already carries a platform id (delivered) is never swept', async () => {
+      const room = harness.service.createBridgedRoom(bridgeRequest('902'));
+      const delivery = makeDelivery(bindingRow(room.id, '902'));
+      const post = operatorPost(room.id, 'delivered long ago');
+      seedStrandedRef(room.id, '902', post.id, WELL_PAST_THRESHOLD);
+      harness.bridges.patchOutboundPlatformId(post.id, 'tg-out-delivered');
+
+      await delivery.sweepStrandedRefs();
+
+      expect(publish).not.toHaveBeenCalled();
+      expect(noticesOf(room.id, 'bridge_undelivered')).toHaveLength(0);
+    });
+
+    it('damping: two startup sweeps do not double-notice the same stranded ref', async () => {
+      const room = harness.service.createBridgedRoom(bridgeRequest('903'));
+      const delivery = makeDelivery(bindingRow(room.id, '903'));
+      const post = operatorPost(room.id, 'crashed, and checked on twice');
+      seedStrandedRef(room.id, '903', post.id, WELL_PAST_THRESHOLD);
+
+      await delivery.sweepStrandedRefs();
+      await delivery.sweepStrandedRefs();
+
+      expect(noticesOf(room.id, 'bridge_undelivered')).toHaveLength(1);
+      // Still neither deleted nor re-sent after the second pass.
+      expect(publish).not.toHaveBeenCalled();
+      expect(harness.bridges.findRefByEntry(post.id)?.platformMessageId).toBeNull();
+    });
+  });
 });
