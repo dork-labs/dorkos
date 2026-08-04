@@ -66,7 +66,6 @@ const mockOpenConnections = vi.fn();
 const mockSetPickerOpen = vi.fn();
 const mockImportOpen = vi.fn();
 const mockSetTheme = vi.fn();
-const mockOpenFeedback = vi.fn();
 
 let mockGlobalPaletteOpen = true;
 let mockTheme = 'light';
@@ -88,14 +87,14 @@ vi.mock('@/layers/shared/model', () => ({
     };
     return selector ? selector(state) : state;
   },
-  // Selector-shaped like the real zustand store: `usePaletteActions` reads it
-  // as `useFeedbackDialogStore((s) => s.openFeedback)`.
-  useFeedbackDialogStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-    const state = { openFeedback: mockOpenFeedback };
-    return selector ? selector(state) : state;
-  },
   useTheme: () => ({ theme: mockTheme, setTheme: mockSetTheme }),
   useReportIssue: () => vi.fn(),
+  // `usePaletteActions` reads the feedback dialog's store, so the palette does
+  // not render at all without it (DOR-902).
+  useFeedbackDialogStore: (selector?: (s: Record<string, unknown>) => unknown) => {
+    const state = { openFeedback: vi.fn() };
+    return selector ? selector(state) : state;
+  },
   useIsMobile: () => false,
   useNow: () => Date.now(),
   // URL deep-link hooks — during the dual-signal era we forward open/close

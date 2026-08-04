@@ -128,8 +128,11 @@ const DECLARED: Record<string, string> = {
   // Window-level, but registered with a text-input guard so it cannot fire
   // while you are typing a `?`.
   'shortcuts-panel': 'features/shortcuts/model/use-shortcuts-panel',
-  // Registered by SidebarFooterBar, and only under `import.meta.env.DEV` — it
-  // does not exist in a production build.
+  // Registered by SidebarFooterBar, and only under `import.meta.env.DEV`.
+  // Proving it here would mean mounting SidebarFooterBar's full provider
+  // stack (transport, query client, settings deep link), so its `devOnly`
+  // flag is proved against the panel listing below instead (DOR-567) — the
+  // handler keeps its own `import.meta.env.DEV` guard as defense in depth.
   'dev-playground': 'features/session-list/ui/SidebarFooterBar (dev only)',
   // Composer keys — the chat composer's own `onKeyDown`.
   'new-line': 'features/chat composer',
@@ -190,6 +193,45 @@ describe('a desktop-only shortcut is neither listed nor live in a browser', () =
     enterDesktopShell();
     const listed = getShortcutsGrouped().flatMap((group) => group.shortcuts);
     for (const shortcut of desktopOnly) {
+      expect(listed.map((s) => s.id)).toContain(shortcut.id);
+    }
+  });
+});
+
+describe('a dev-only shortcut is not listed in a production build', () => {
+  const devOnly = ALL.filter((shortcut) => shortcut.devOnly);
+
+  it('has some — otherwise the cases below prove nothing', () => {
+    expect(devOnly.length).toBeGreaterThan(0);
+  });
+
+  it.each(devOnly.map((s) => [s.id, s.key, s.label] as const))(
+    '%s (%s) — "%s"',
+    (id, _key, label) => {
+      // vitest runs with import.meta.env.DEV === true by default, so the
+      // production case has to be forced — same pattern used by
+      // route-error-fallback.test.tsx, tabbed-dialog.test.tsx and
+      // app-crash-fallback.test.tsx for this same env-dependent branch.
+      const originalDev = import.meta.env.DEV;
+      import.meta.env.DEV = false;
+      try {
+        const listed = getShortcutsGrouped().flatMap((group) => group.shortcuts);
+        expect(listed.map((s) => s.id)).not.toContain(id);
+
+        // …and the panel is the surface a person reads, so check the label
+        // too: a row that reappears under a different id is the same broken
+        // promise.
+        expect(listed.map((s) => s.label)).not.toContain(label);
+      } finally {
+        import.meta.env.DEV = originalDev;
+      }
+    }
+  );
+
+  it('lists them again in a dev build', () => {
+    // No override needed — this is the default vitest env.
+    const listed = getShortcutsGrouped().flatMap((group) => group.shortcuts);
+    for (const shortcut of devOnly) {
       expect(listed.map((s) => s.id)).toContain(shortcut.id);
     }
   });

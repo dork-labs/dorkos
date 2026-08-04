@@ -57,6 +57,14 @@
       "patterns": ["apps/desktop/"]
     },
     {
+      "guide": "link-dispatch-policy.md",
+      "description": "The client-wide link scheme allowlist (`classifyLink`/`DISPATCHABLE_PROTOCOLS`), why it's an allowlist, the surfaces it protects, the desktop shell's stricter layer, and the chat-markdown divergence (DOR-547)",
+      "patterns": [
+        "apps/client/src/layers/shared/lib/link-navigation.ts",
+        "apps/desktop/src/main/window-manager.ts"
+      ]
+    },
+    {
       "guide": "data-fetching.md",
       "description": "TanStack Query patterns, Transport abstraction, SSE streaming",
       "patterns": [
@@ -510,6 +518,11 @@
       "doc": "docs/guides/relay-messaging.mdx",
       "description": "Relay messaging guide",
       "patterns": ["packages/relay/", "services/relay/"]
+    },
+    {
+      "doc": "docs/guides/bridged-channels.mdx",
+      "description": "Bridged channels guide (a connected chat becomes a channel)",
+      "patterns": ["services/relay/chat-bridge/", "createBridgedRoom", "room_bridges"]
     },
     {
       "doc": "docs/guides/relay-observability.mdx",

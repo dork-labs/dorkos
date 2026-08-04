@@ -17,6 +17,7 @@ import { usePaletteItems } from '../model/use-palette-items';
 import { useGlobalPalette } from '../model/use-global-palette';
 import { usePaletteSearch } from '../model/use-palette-search';
 import { usePaletteActions } from '../model/use-palette-actions';
+import { useLeadingRowPin } from '../model/use-leading-row-pin';
 import { AgentPreviewPanel } from './AgentPreviewPanel';
 import { AgentSubMenu } from './AgentSubMenu';
 import { PaletteFooter } from './PaletteFooter';
@@ -44,6 +45,7 @@ export function CommandPaletteDialog() {
   const [search, setSearch] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   const [selectedValue, setSelectedValue] = useState('');
+  const commandRootRef = useRef<HTMLDivElement>(null);
   // cmdk pages stack: each entry is a page name; last entry is the active page
   const [pages, setPages] = useState<string[]>([]);
   // The agent that was drilled into (set when navigating to 'agent-actions' page)
@@ -224,6 +226,11 @@ export function CommandPaletteDialog() {
   const goBack = useCallback(() => {
     setPages((prev) => prev.slice(0, -1));
     setSubMenuAgent((prev) => (pages.length <= 1 ? null : prev));
+    // Reset selected value so cmdk auto-selects the landing page's first row,
+    // exactly as the forward path below does. Left at the sub-menu's row, cmdk's
+    // `state.value || selectFirstItem()` guard blocks re-selection and the
+    // landing page shows no highlight at all until something re-renders.
+    setSelectedValue('');
   }, [pages.length]);
 
   // Push the agent-actions page and set the active agent for sub-menu.
@@ -272,6 +279,18 @@ export function CommandPaletteDialog() {
     },
     [setGlobalPaletteOpen]
   );
+
+  // Keep the highlight on the row that leads the list until the operator moves
+  // it themselves — the palette's leading rows are live, and a message arriving
+  // must not leave Enter aimed at a row that has slid out from under it
+  // (DOR-699). The highlight goes back to following the list whenever the list
+  // starts over: the palette opens, the query changes, or a page does.
+  const leadingRowPin = useLeadingRowPin({
+    rootRef: commandRootRef,
+    activePage: page ?? 'root',
+    onPin: setSelectedValue,
+    resetKey: JSON.stringify([globalPaletteOpen, page ?? null, search]),
+  });
 
   // Zero-query state: show Recent Agents, Features, Quick Actions (default layout)
   const isZeroQuery = !search;
@@ -332,16 +351,21 @@ export function CommandPaletteDialog() {
         >
           {/* Command list — takes remaining width when preview panel is absent */}
           <Command
+            ref={commandRootRef}
             loop
             shouldFilter={false}
             value={selectedValue}
             onValueChange={setSelectedValue}
+            onPointerMove={leadingRowPin.onPointerMove}
             className={cn(
               'min-w-0 flex-1',
               isMobile &&
                 'flex flex-col [&_[cmdk-list]]:max-h-none [&_[cmdk-list]]:flex-1 [&_[cmdk-list]]:overflow-y-auto'
             )}
             onKeyDown={(e) => {
+              // First, so the highlight stops following the leading row the
+              // moment this keystroke is one that moves it.
+              leadingRowPin.onKeyDown(e);
               // Cmd+Enter (or Ctrl+Enter) on root page opens selected agent in new tab
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !page && selectedAgent) {
                 e.preventDefault();
@@ -425,6 +449,11 @@ export function CommandPaletteDialog() {
                 <AnimatePresence mode="wait" initial={false}>
                   <motion.div
                     key={page ?? 'root'}
+                    // The pin scopes its leading-row read to this attribute. An
+                    // exiting wrapper keeps the page name it was rendered with,
+                    // so during the exit animation the active page has no rows
+                    // in the DOM and the pin holds off (DOR-699 review).
+                    data-palette-page={page ?? 'root'}
                     initial={{ opacity: 0, x: page ? 16 : -16 }}
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: page ? -16 : 16 }}

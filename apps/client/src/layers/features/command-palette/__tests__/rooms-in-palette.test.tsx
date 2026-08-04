@@ -178,7 +178,6 @@ afterEach(cleanup);
 // --- Mocks: everything the palette needs that is NOT rooms ---
 
 const mockNavigate = vi.fn();
-const mockOpenFeedback = vi.fn();
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
 }));
@@ -203,14 +202,14 @@ vi.mock('@/layers/shared/model', () => ({
     };
     return selector ? selector(state) : state;
   },
-  // Selector-shaped like the real zustand store: `usePaletteActions` reads it
-  // as `useFeedbackDialogStore((s) => s.openFeedback)`.
-  useFeedbackDialogStore: (selector?: (s: Record<string, unknown>) => unknown) => {
-    const state = { openFeedback: mockOpenFeedback };
-    return selector ? selector(state) : state;
-  },
   useTheme: () => ({ theme: 'light', setTheme: vi.fn() }),
   useReportIssue: () => vi.fn(),
+  // `usePaletteActions` reads the feedback dialog's store, so the palette does
+  // not render at all without it (DOR-902).
+  useFeedbackDialogStore: (selector?: (s: Record<string, unknown>) => unknown) => {
+    const state = { openFeedback: vi.fn() };
+    return selector ? selector(state) : state;
+  },
   useIsMobile: () => false,
   useNow: () => Date.now(),
   // One feature and one quick action, so "unread comes first" is a claim about
