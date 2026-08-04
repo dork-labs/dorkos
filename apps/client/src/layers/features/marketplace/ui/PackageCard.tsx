@@ -3,6 +3,7 @@ import { Button } from '@/layers/shared/ui';
 import { cn, packageDisplayLabel } from '@/layers/shared/lib';
 import type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
 import { PackageTypeBadge } from './PackageTypeBadge';
+import { adapterBridge } from '../lib/adapter-bridge';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -80,6 +81,7 @@ export function PackageCard({
   const packageType = pkg.type ?? 'plugin';
   const authorLabel = resolveAuthorLabel(pkg.author) ?? pkg.marketplace ?? null;
   const isCompact = variant === 'compact';
+  const bridge = adapterBridge(pkg.type, pkg.adapterType);
 
   const handleInstallClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -126,8 +128,11 @@ export function PackageCard({
       <PackageTypeBadge
         type={packageType}
         adapterType={pkg.adapterType}
-        className="mb-3 self-start"
+        className="mb-2 self-start"
       />
+
+      {/* Bridge line: what this adapter becomes on the Connections page */}
+      {bridge && <p className="text-muted-foreground/90 mb-3 text-[11px]">{bridge.line}</p>}
 
       {/* Description */}
       {pkg.description && (

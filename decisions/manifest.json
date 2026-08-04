@@ -2,6 +2,15 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260804-021140",
+      "slug": "connections-is-the-outside-world-umbrella-and-the-last-rename",
+      "title": "\"Connections\" is the single umbrella for the outside world, and this is the last rename",
+      "status": "accepted",
+      "created": "2026-08-04",
+      "specSlug": "language-ia-simplification",
+      "supersedes": "260726-193526"
+    },
+    {
       "id": "260803-233414",
       "slug": "managed-mcp-servers-inline-injection",
       "title": "Manage agent MCP servers by inline injection, not by writing .mcp.json",

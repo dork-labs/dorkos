@@ -157,11 +157,15 @@ Each row manages its own installation independently:
 To add the package to another scope (for example, you have it globally and want a pinned copy on one agent), use **Install…** at the bottom of the panel to open the dialog and pick the new target.
 
 <Callout type="info">
-  Extensions are enabled globally, not per agent. If a package ships extensions, installing it to a
-  single agent still affects every agent, and uninstalling it from one agent disables those
-  extensions everywhere. Skills and commands, by contrast, do respect scope: an agent-scoped
-  install's skills and commands only run for that agent. DorkOS warns you in the install dialog
-  whenever the global-extensions caveat applies.
+  A **plugin** is the package; an **extension** is one of the things a plugin can ship. A plugin may
+  bundle skills, commands, hooks, and extensions (custom UI or automation that runs in your
+  browser), so every extension arrives inside a plugin, but not every plugin ships an extension.
+  That distinction matters here because the pieces have different scopes: extensions are enabled
+  globally, not per agent. If a package ships extensions, installing it to a single agent still
+  affects every agent, and uninstalling it from one agent disables those extensions everywhere.
+  Skills and commands, by contrast, do respect scope: an agent-scoped install's skills and commands
+  only run for that agent. DorkOS warns you in the install dialog whenever the global-extensions
+  caveat applies.
 </Callout>
 
 ## Marketplace sources

@@ -25,7 +25,7 @@ Spec: [`specs/connector-gateway/02-specification.md`](../specs/connector-gateway
 | REST surface                       | `apps/server/src/routes/connectors.ts`                                                                                             |
 | Credential funnel                  | `apps/server/src/services/core/credential-provider.ts` + the connect `credentials.ts` / relay `adapter-secrets.ts` DOR-280 pattern |
 | Distribution convention            | `packages/marketplace/src/manifest-schema.ts` (`CONNECTOR_ADAPTER_TYPE`)                                                           |
-| Setup docs                         | `docs/connectors/*.mdx`                                                                                                            |
+| Setup docs                         | `docs/connections/*.mdx`                                                                                                           |
 
 ## The ConnectorProvider Contract
 
@@ -110,7 +110,7 @@ Distribute the provider as a marketplace **adapter** package with `type: 'adapte
 
 ### 9. Document the setup
 
-Add or extend a `docs/connectors/<name>.mdx` setup guide, following the [`writing-for-humans`](../.claude/skills/writing-for-humans/SKILL.md) skill: state where the login lives (custody) in plain language, before the steps. **Respect the demo-claim gate** ([AGENTS.md](../AGENTS.md) §Product state): do not claim a provider works end-to-end until its evals are green. Register the new MDX file in [`contributing/INDEX.md`](INDEX.md) (External Docs Coverage + Maintenance) and regenerate the coverage map.
+Add or extend a `docs/connections/<name>.mdx` setup guide, following the [`writing-for-humans`](../.claude/skills/writing-for-humans/SKILL.md) skill: state where the login lives (custody) in plain language, before the steps. **Respect the demo-claim gate** ([AGENTS.md](../AGENTS.md) §Product state): do not claim a provider works end-to-end until its evals are green. Register the new MDX file in [`contributing/INDEX.md`](INDEX.md) (External Docs Coverage + Maintenance) and regenerate the coverage map.
 
 ### 10. Verify
 

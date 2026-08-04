@@ -1,0 +1,136 @@
+---
+title: Connections
+description: Let people reach your agents, and let your agents act in the apps you already use
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+
+# Connections
+
+The **Connections** page is everything outside DorkOS, in one place. It has two halves:
+
+- **Messaging** — where people and platforms reach your agents, like Telegram and Slack. Set this up so an agent can message you the moment it finishes, and you can message it back. See the [Relay Messaging](/docs/guides/relay-messaging) guide.
+- **Accounts** — services your agents can act on for you, like Gmail, GitHub, or Notion. You connect an account once. After that, you can attach it to any session, and that session's agent can use it.
+
+This page covers the **Accounts** half: connecting a service your agents act on.
+
+<Callout type="warn">
+  Accounts are new and still in alpha. The whole flow is covered by automated browser tests against
+  a test provider, but it has not been confirmed with real vendor accounts yet. Treat it as preview,
+  not finished.
+</Callout>
+
+## Connect a service from the Connections page
+
+Here is the whole path, start to finish:
+
+<Steps>
+
+<Step>
+
+### Open Connections
+
+Click **Connections** in the sidebar, then scroll to the **Accounts** region.
+
+</Step>
+
+<Step>
+
+### Find your service
+
+Look in the **Services** grid. Some services connect directly, through their own sign-in, and are ready right away. Others connect through a carrier that holds the sign-in for you (Composio or Nango). If the service you want needs a carrier, open the **Composio & Nango** section at the bottom, add a key from one, and the services it reaches appear in the grid above. No restart needed.
+
+</Step>
+
+<Step>
+
+### Connect a service
+
+Find the service in the grid and click **Connect**. You can add a label like "work", which helps when you later connect a second account of the same service.
+
+</Step>
+
+<Step>
+
+### Read where your sign-in lives
+
+Before anything opens, DorkOS shows you one plain sentence saying where your login will be stored. This is the custody line (more below). Read it, then click **Open the sign-in page**.
+
+</Step>
+
+<Step>
+
+### Sign in
+
+The service's own sign-in page opens in a new tab. You sign in there, never inside DorkOS. You can even close the DorkOS dialog while you finish; DorkOS keeps checking and records the account when the sign-in completes.
+
+</Step>
+
+<Step>
+
+### See your account
+
+The account appears under **Connected**, named like "Gmail (work)", with its own custody line and a disconnect button.
+
+</Step>
+
+<Step>
+
+### Attach it to a session
+
+Open a session, then open the right panel's **Session** tab. The **Connections** group lists your accounts. Attaching one shows the custody line again, then the account's tools reach that session's agent on its next turn. Only sessions you attach an account to can use it.
+
+</Step>
+
+</Steps>
+
+## Or just ask your agent
+
+You can also connect a service from inside a chat. Ask your agent something like "connect my Gmail". It replies with a sign-in link and the same custody sentence. Sign in, tell it you are done, and it confirms the new account. When an agent wants to attach an account to its session, DorkOS asks you to approve first. An agent can never grant itself one of your accounts.
+
+## Connect more than one account
+
+You can connect two accounts of the same service and keep them apart. A personal Gmail and a work Gmail show up as two separate rows, each with its own label. An agent uses whichever you attach to the session. Neither one leaks into the other.
+
+## Where your login lives (custody)
+
+Every account connection moves your login somewhere. DorkOS tells you where, in plain words, before you connect and again on each connected account. This is the honest part: you always know who holds the keys.
+
+There are three custody types:
+
+- **Direct**: the service's own sign-in, and the key stays on your machine. Nothing in the middle holds it. This is the strongest custody line DorkOS can offer.
+- **Managed**: a trusted company (Composio) holds your login in its own secure vault, not on your computer. This is the easiest path for services that don't connect directly.
+- **Self-host**: your own server (Nango) holds the login, on infrastructure you control. Nothing leaves your systems.
+
+You pick the path per service. You can hold a direct GitHub and a managed Gmail at the same time.
+
+## Which path to pick
+
+When you click Connect, DorkOS routes the service for you:
+
+- If the service runs its own sign-in that DorkOS can talk to directly, that is the default. The key stays on your machine.
+- If the service has a purpose-built two-way messaging adapter in DorkOS (like Slack), that lives on the **Messaging** half of this page instead. It is richer than a generic connection.
+- If neither fits, a carrier (Composio, or Nango if you self-host) connects the long tail of services.
+- If you already run your own remote tool server for the service, you can point straight at it.
+
+## Set up a carrier
+
+<Cards>
+  <Card
+    title="Composio (managed)"
+    href="/docs/connections/composio"
+    description="The simple default for services that don't connect directly. Composio's secure vault holds the sign-in."
+  />
+  <Card
+    title="Raw MCP server"
+    href="/docs/connections/raw-mcp"
+    description="Point DorkOS at a remote tool server that manages its own sign-in."
+  />
+  <Card
+    title="Nango (self-host)"
+    href="/docs/connections/nango"
+    description="Keep every login on infrastructure you control."
+  />
+</Cards>

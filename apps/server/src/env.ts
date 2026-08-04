@@ -248,7 +248,7 @@ const serverEnvSchema = z.object({
   // (base URL + secret key), it refuses to register unless this is set to a valid
   // 32-byte base64 key — without it Nango stores logins unencrypted and the "your
   // infrastructure, your keys" promise is false (spec §Detailed Design 4). Set the
-  // SAME value here and on your Nango server. See docs/connectors/nango.mdx.
+  // SAME value here and on your Nango server. See docs/connections/nango.mdx.
   NANGO_ENCRYPTION_KEY: z.string().optional(),
 });
 

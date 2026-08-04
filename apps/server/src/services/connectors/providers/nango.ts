@@ -130,14 +130,14 @@ export function assertNangoEncryptionKey(key: string | undefined): void {
     throw new NangoEncryptionKeyError(
       'NANGO_ENCRYPTION_KEY is not set. Self-hosted Nango stores logins unencrypted without it, ' +
         'so DorkOS will not run the self-host connector. Set a 256-bit base64 key (the same value ' +
-        'your Nango server uses) — see docs/connectors/nango.mdx.'
+        'your Nango server uses) — see docs/connections/nango.mdx.'
     );
   }
   const decoded = Buffer.from(key, 'base64');
   if (decoded.length !== REQUIRED_ENCRYPTION_KEY_BYTES) {
     throw new NangoEncryptionKeyError(
       `NANGO_ENCRYPTION_KEY must be a 256-bit key written in base64 (32 bytes decoded); ` +
-        `the value provided decodes to ${decoded.length} bytes. See docs/connectors/nango.mdx.`
+        `the value provided decodes to ${decoded.length} bytes. See docs/connections/nango.mdx.`
     );
   }
 }

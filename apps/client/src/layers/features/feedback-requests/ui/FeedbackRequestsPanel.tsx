@@ -146,7 +146,7 @@ export function FeedbackRequestsPanel() {
         <div className="space-y-1">
           <p className="text-sm font-medium">Couldn&apos;t load your reports</p>
           <p className="text-muted-foreground mt-1 text-xs">
-            The feedback service is unreachable. Check your connection and try again.
+            The feedback service is unreachable. Check that you&apos;re online and try again.
           </p>
         </div>
         <Button size="sm" onClick={() => void refetch()} disabled={isFetching} className="mt-1">
