@@ -45,6 +45,7 @@ import {
   broadcastUnclaimedChatBurst,
 } from './relay-sse-events.js';
 import { BindingSubsystem, type BindingSubsystemDeps } from './binding-subsystem.js';
+import { reportsVisibility, type BridgeVisibility } from './chat-bridge/index.js';
 import type { UnclaimedChatStore } from './unclaimed-chat-store.js';
 import type { RelayCoreLike } from './binding-router.js';
 import {
@@ -375,6 +376,10 @@ export class AdapterManager {
       registerEntryCommitListener: this.deps.registerEntryCommitListener,
       relaySignal: this.deps.relaySignal,
       registerSignalListener: this.deps.registerSignalListener,
+      // The bridge-create half of §8's visibility refresh (task 1.13) — bound
+      // here because only `AdapterManager` holds the adapter registry
+      // `refreshBridgeVisibility` needs; the binding subsystem never sees it.
+      refreshVisibility: (adapterId) => this.refreshBridgeVisibility(adapterId),
     });
   }
 
@@ -1027,6 +1032,20 @@ export class AdapterManager {
           });
         });
       }
+      // The adapter-start/reconnect half of §8's visibility refresh (chats-as-
+      // channels task 1.13): this codebase has no event narrower than a fresh
+      // `'connected'` emit, so — like the catch-up scan above — a genuine
+      // reconnect and a first start both ride this branch. Detached and
+      // best-effort for the same reason: a visibility check must never sit in
+      // front of the lifecycle broadcast, and a failed one leaves every live
+      // bridge's stored value exactly where it was (the conservative default,
+      // per `room-context-framing.ts`).
+      void this.refreshBridgeVisibility(id).catch((err: unknown) => {
+        logger.warn('[AdapterManager] bridge visibility refresh failed', {
+          adapterId: id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
     }
 
     const activity = this.deps.activityService;
@@ -1043,6 +1062,42 @@ export class AdapterManager {
       summary: `${name} adapter ${state}`,
       linkPath: '/',
     });
+  }
+
+  /**
+   * Refresh `visibility`/`visibilityCheckedAt` on every live bridge on one
+   * adapter, from that adapter's own live `getMe()` — chats-as-channels §8's
+   * source of truth, and the FLAG task 1.13 resolves: refresh on bridge
+   * create ({@link BridgeLifecycle.bridge}, threaded through
+   * {@link BindingSubsystemDeps.refreshVisibility}) and here, on adapter
+   * start/reconnect.
+   *
+   * A no-op for any adapter that does not report visibility — every adapter
+   * except Telegram today — and for one with no live bridges. Errors
+   * propagate to the caller, which is `emitAdapterLifecycle`'s job to log and
+   * swallow: a failed refresh must never fail an adapter's start.
+   *
+   * @param adapterId - The adapter that just started or reconnected.
+   */
+  private async refreshBridgeVisibility(adapterId: string): Promise<void> {
+    const bridges = this.deps.roomBridges;
+    if (!bridges) return;
+    const adapter = this.registry.get(adapterId);
+    if (!adapter || !reportsVisibility(adapter)) return;
+
+    const me = await adapter.getMe();
+    // `null` means "not yet connected", not "checked and off" — nothing to
+    // record, and the stored value (already the conservative `'partial'`
+    // default when absent) is left exactly where it was.
+    if (!me) return;
+
+    const visibility: BridgeVisibility = me.canReadAllGroupMessages
+      ? 'everything'
+      : 'mentions-only';
+    const checkedAt = new Date().toISOString();
+    for (const bridge of bridges.listLiveBridgesByAdapter(adapterId)) {
+      bridges.setVisibility(bridge.roomId, visibility, checkedAt);
+    }
   }
 
   /** Delegate adapter instantiation to the factory module. */

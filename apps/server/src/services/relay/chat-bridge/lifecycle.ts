@@ -28,6 +28,7 @@
  * @module server/services/relay/chat-bridge/lifecycle
  */
 import type { ChatNoticeSender } from '@dorkos/relay';
+import { logger } from '../../../lib/logger.js';
 import type { BridgeStore } from './bridge-store.js';
 import type { BridgeSessionAdopter } from './adopt-session.js';
 
@@ -161,6 +162,17 @@ export interface BridgeLifecycleDeps {
    * a coordinator wired without it simply cannot create bridges.
    */
   adopter?: BridgeSessionAdopter;
+  /**
+   * Refresh the freshly created bridge's `visibility` badge from the platform
+   * (spec §8's task-1.13 refresh cadence: bridge create is one of the two
+   * triggers, the other being adapter start/reconnect). Optional and
+   * best-effort — {@link BridgeLifecycle.bridge} awaits it but swallows a
+   * failure, because a visibility check must never turn a successful bridge
+   * into a failed one. Absent in a coordinator wired without an adapter
+   * registry (most unit tests), in which case the room simply keeps reporting
+   * `'partial'` until the next adapter reconnect.
+   */
+  refreshVisibility?: (adapterId: string) => Promise<void>;
 }
 
 /**
@@ -259,6 +271,18 @@ export class BridgeLifecycle {
       title: input.title,
       agentPath: input.agentPath,
       operatorAuthorId: this.deps.operatorAuthorId(),
+    });
+    // The bridge-create half of §8's visibility refresh (task 1.13). Runs
+    // before the created/replay branch below so both paths get it — a replay
+    // is idempotent here exactly like the binding flip is. Best-effort: a
+    // room this call just minted must not fail to bridge because Telegram's
+    // `getMe` timed out.
+    await this.deps.refreshVisibility?.(input.adapterId).catch((err: unknown) => {
+      logger.warn('[chat-bridge] visibility refresh at bridge-create failed', {
+        adapterId: input.adapterId,
+        roomId: room.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
     });
     // A replay's session was migrated the first time and its history notice
     // already posted, so do not re-probe or re-notice. But DO re-issue the flip:
