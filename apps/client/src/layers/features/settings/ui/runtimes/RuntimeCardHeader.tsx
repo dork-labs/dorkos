@@ -197,20 +197,18 @@ export function RuntimeCardHeader({
             </button>
           )}
           {toggleable && (
-            /* A mouse affordance only: people click chevrons, but the identity
-             button above already carries this control for the keyboard and the
-             a11y tree, and two controls for one body would just say it twice. */
-            <button
-              type="button"
-              aria-hidden
-              tabIndex={-1}
-              onClick={onToggleExpanded}
-              className="text-muted-foreground hover:text-foreground rounded-sm transition-colors"
-            >
+            /* Decoration, not a control: it says which way the body is, and the
+             identity button beside it is what opens the body — for the mouse as
+             much as for the keyboard, since that button spans the whole left of
+             the header and the summary line beneath repeats the target. It was a
+             `<button aria-hidden tabIndex={-1}>`, which is the one shape ARIA
+             forbids outright: a thing still clickable and still programmatically
+             focusable, hidden from the tree that would have explained it. */
+            <span role="presentation" aria-hidden className="text-muted-foreground inline-flex">
               <ChevronDown
                 className={cn('size-4 transition-transform', expanded && 'rotate-180')}
               />
-            </button>
+            </span>
           )}
         </div>
       </div>

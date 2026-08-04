@@ -191,6 +191,11 @@ function SomethingWrongSection() {
       <ShowcaseDemo>
         <LiveRuntimeCard type="opencode" expanded model={null} effort={null} />
       </ShowcaseDemo>
+
+      <ShowcaseLabel>A runtime with nowhere to keep a setting at all</ShowcaseLabel>
+      <ShowcaseDemo>
+        <LiveRuntimeCard type="codex" expanded storesDefaults={false} />
+      </ShowcaseDemo>
     </PlaygroundSection>
   );
 }

@@ -36,7 +36,9 @@ function renderRow(props: Partial<Parameters<typeof GlobalTrustRow>[0]> = {}) {
 describe('GlobalTrustRow', () => {
   it('asks the question once, in the design’s words, and says what it governs', () => {
     renderRow();
-    expect(screen.getByText('Where agents stop for you')).toBeInTheDocument();
+    // Not "Where agents stop for you": DOR-853 reserves the bare word "agent"
+    // for a named fleet teammate, and this row governs new conversations.
+    expect(screen.getByText('Where new conversations stop for you')).toBeInTheDocument();
     expect(
       screen.getByText('Every runtime follows this unless its card says otherwise.')
     ).toBeInTheDocument();

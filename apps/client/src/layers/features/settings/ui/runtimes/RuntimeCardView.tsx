@@ -47,6 +47,14 @@ const BROKEN_DEFAULT_LINE =
   'Your default runtime isn’t connected. New conversations can’t start here.';
 
 /**
+ * What a card says instead of rows when the runtime has nowhere to keep them.
+ *
+ * @param label - The runtime's name, as a person calls it.
+ */
+const noSettingsLine = (label: string) =>
+  `${label} keeps no settings of its own. It uses its own model and follows the shared setting below.`;
+
+/**
  * The words that turn the summary's chips into a sentence (design §4).
  *
  * View chrome, not a segment: `buildRuntimeCardSummary` stays a pure list of
@@ -101,6 +109,19 @@ export interface RuntimeCardViewProps {
   effort: RowProps<EffortRowProps>;
   /** The trust row's props, minus the identity the card already carries. */
   trust: RowProps<TrustRowProps>;
+  /**
+   * Whether this runtime has anywhere to keep the three standing rows — model,
+   * effort, and where it stops. It does when it declares a `configSection`, and
+   * a runtime that declares none (`test-mode` is the real one) has nowhere:
+   * every one of those writes would fall on the floor. So the card says that in
+   * one line rather than drawing three controls that look live and are not
+   * (design §5: absences are said, not skipped).
+   *
+   * Default `true`, which is also what a card renders while the capability map
+   * is still loading: a declaration that has not arrived yet is not evidence
+   * against, exactly as it is not for `effort.supportsEffort`.
+   */
+  storesDefaults?: boolean | undefined;
   /** The sections this runtime declares, in declared order. */
   sections?: readonly RuntimeSettingsSection[] | undefined;
   /**
@@ -134,6 +155,7 @@ export function RuntimeCardView({
   model,
   effort,
   trust,
+  storesDefaults = true,
   sections,
   renderSection,
   setupDetails,
@@ -286,14 +308,29 @@ export function RuntimeCardView({
             </div>
           )}
 
-          {ready && (
-            <>
-              <ModelRow runtimeType={type} runtimeLabel={descriptor.label} {...model} />
-              <EffortRow runtimeType={type} runtimeLabel={descriptor.label} {...effort} />
-              <TrustRow runtimeType={type} runtimeLabel={descriptor.label} {...trust} />
-              {sectionNodes}
-            </>
-          )}
+          {ready &&
+            (storesDefaults ? (
+              <>
+                <ModelRow runtimeType={type} runtimeLabel={descriptor.label} {...model} />
+                <EffortRow runtimeType={type} runtimeLabel={descriptor.label} {...effort} />
+                <TrustRow runtimeType={type} runtimeLabel={descriptor.label} {...trust} />
+                {sectionNodes}
+              </>
+            ) : (
+              <>
+                {/* One honest line where three live-looking controls used to be.
+                    Their writes went into a section this runtime never declared,
+                    so the picker moved, the card said nothing, and the setting
+                    was gone on the next read (design §5). */}
+                <p
+                  className="text-muted-foreground text-xs"
+                  data-testid={`runtime-card-no-settings-${type}`}
+                >
+                  {noSettingsLine(descriptor.label)}
+                </p>
+                {sectionNodes}
+              </>
+            ))}
 
           {setupDetails && (
             <Collapsible open={setupOpen} onOpenChange={setSetupOpen}>

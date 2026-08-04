@@ -247,6 +247,12 @@ export interface RuntimeCardShowcaseOptions {
   globalStop?: PermissionStop;
   /** Resolved display values for the runtime's declared sections. */
   sectionValues?: Record<string, string | null>;
+  /**
+   * Whether the runtime has anywhere to keep the three standing rows. Omit and
+   * it is read off the runtime's own declaration, exactly as the container reads
+   * it; pass `false` to show the card a runtime with no `configSection` gets.
+   */
+  storesDefaults?: boolean;
   /** Open the body. Showcases that drive expansion themselves pass their own. */
   onToggleExpanded?: () => void;
   /** Offer Make default. Pass `null` for a surface that does not offer it. */
@@ -295,6 +301,10 @@ export function createRuntimeCardProps(
   } = options;
 
   const settings = playgroundRuntimeSettings(type);
+  // The container's own rule, not a second one: a declaration that has not
+  // arrived reads as "yes", and only an explicit `configSection: null` says no.
+  const storesDefaults =
+    options.storesDefaults ?? (settings ? settings.configSection !== null : true);
   const selectedModel = model === null ? undefined : models?.find((m) => m.value === model);
 
   const { subtitle } = getRuntimeDescriptor(type);
@@ -334,6 +344,7 @@ export function createRuntimeCardProps(
       globalStop,
       onChange: noop,
     },
+    storesDefaults,
     sections: settings?.sections ?? [],
   };
 }

@@ -272,6 +272,50 @@ describe('RuntimeCardView', () => {
     expect(screen.queryByTestId('runtime-trust-claude-code')).not.toBeInTheDocument();
   });
 
+  it('says a runtime keeps no settings rather than drawing rows that write nowhere', () => {
+    // A runtime that declares no `configSection` has nowhere to keep any of the
+    // three: the model and effort writes fall on the floor, and so does the stop,
+    // because the trust hook needs the same declaration. Three live-looking
+    // controls that silently do nothing are worse than one honest line.
+    renderCard({ expanded: true, storesDefaults: false });
+
+    expect(screen.getByTestId('runtime-card-no-settings-claude-code')).toHaveTextContent(
+      'Claude Code keeps no settings of its own.'
+    );
+    expect(screen.queryByTestId('runtime-model-select-claude-code')).not.toBeInTheDocument();
+    expect(screen.queryByTestId(/^runtime-effort-/)).not.toBeInTheDocument();
+    expect(screen.queryByTestId('runtime-trust-claude-code')).not.toBeInTheDocument();
+  });
+
+  it('keeps a sectionless runtime’s declared sections and setup details', () => {
+    // Only the three standing rows go: a bespoke section owns its own write path,
+    // and setup details are a read.
+    renderCard({
+      expanded: true,
+      storesDefaults: false,
+      sections: [{ kind: 'claude-accounts' }],
+      renderSection: (kind) => <p>section: {kind}</p>,
+      setupDetails: <p>claude binary found</p>,
+    });
+
+    expect(
+      screen.getByTestId('runtime-card-section-claude-accounts-claude-code')
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Setup details' })).toBeInTheDocument();
+  });
+
+  it('draws the chevron as decoration, never as a hidden second control', () => {
+    // It was a `<button aria-hidden tabIndex={-1}>` — still clickable, still
+    // programmatically focusable, and hidden from the tree that would explain it,
+    // which is the one shape ARIA forbids outright.
+    renderCard();
+
+    expect(document.querySelectorAll('button[aria-hidden]')).toHaveLength(0);
+    expect(document.querySelectorAll('[aria-hidden] button')).toHaveLength(0);
+    // One control for the body, and it is the identity button.
+    expect(document.querySelectorAll('[aria-expanded]')).toHaveLength(1);
+  });
+
   it('renders declared sections in declared order and leaves no box where one renders nothing', () => {
     renderCard({
       expanded: true,

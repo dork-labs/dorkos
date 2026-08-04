@@ -95,7 +95,7 @@ export function PowerSourceSectionView({
           <button
             type="button"
             onClick={() => setChanging(false)}
-            className="text-muted-foreground hover:text-foreground text-xs transition-colors"
+            className="focus-ring text-muted-foreground hover:text-foreground rounded-sm text-xs transition-colors"
             data-testid="power-source-cancel"
           >
             Keep current source

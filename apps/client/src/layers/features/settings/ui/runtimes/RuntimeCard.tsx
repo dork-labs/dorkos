@@ -14,10 +14,13 @@
  *   runtime is ready AND the card is open or has a model whose name the summary
  *   needs. Until then the summary says the raw model id, which is honest interim
  *   truth (spec, open question 2).
- * - **A runtime with no config section writes nothing.** Where a setting lives
- *   is something the runtime declares (`settings.configSection`); a card for a
- *   runtime that declares none reports its row changes into nowhere rather than
- *   inventing a key nobody can read back.
+ * - **A runtime with no config section OFFERS nothing, and says so.** Where a
+ *   setting lives is something the runtime declares (`settings.configSection`);
+ *   a card for a runtime that declares none invents no key nobody can read back
+ *   — and, because a control whose write falls on the floor is worse than no
+ *   control, it draws one line instead of the three rows. Trust is the same
+ *   story: `useTrustStopWrites` also needs a declared section, so it too would
+ *   go nowhere.
  * - **Trust is not written here.** The tab holds the single `useTrustStopWrites`
  *   call and the single autonomy dialog for every card, because consent is one
  *   contract with the server and two of them would drift. This card reports the
@@ -39,7 +42,7 @@ import { runtimeAuthConnectKind, runtimeDisplayName } from '@dorkos/shared/agent
 import { claudeAccountName, cn } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 import { Button, InlineCode } from '@/layers/shared/ui';
-import { useConfig, useUpdateConfig } from '@/layers/entities/config';
+import { configKeys, useConfig, useUpdateConfig } from '@/layers/entities/config';
 import {
   CommandTransparencyNote,
   DependencyInstallHint,
@@ -194,10 +197,11 @@ export function RuntimeCard({
   /**
    * Persist one change under `runtimes`.
    *
-   * Invalidates the `['config']` PREFIX, not this card's key: the status bar,
-   * the sidebar badges and `useFeatureEnabled` read config off a broader key
-   * set, and the server applies these live, so every reader has to move with the
-   * write.
+   * Invalidates the `configKeys.all` PREFIX, not this card's key: the status
+   * bar, the sidebar badges and `useFeatureEnabled` read config off a broader
+   * key set, and the server applies these live, so every reader has to move
+   * with the write. The key comes from the entity's factory rather than a
+   * literal, so every writer on this tab spells the prefix one way.
    */
   function write(patch: Record<string, unknown>) {
     setWriteError(null);
@@ -205,7 +209,7 @@ export function RuntimeCard({
       { runtimes: patch },
       {
         onSuccess: () => {
-          void queryClient.invalidateQueries({ queryKey: ['config'] });
+          void queryClient.invalidateQueries({ queryKey: configKeys.all });
           setChanged(true);
         },
         onError: (err) => setWriteError(describeWriteFailure(err)),
@@ -214,11 +218,23 @@ export function RuntimeCard({
   }
 
   /**
+   * Whether this runtime has anywhere to keep the card's three standing rows.
+   *
+   * A declaration that has not arrived is not evidence against, so an unknown
+   * `settings` reads as yes — the same permissive rule `supportsEffort` follows
+   * below. Only a runtime that has actually said `configSection: null` gets the
+   * one-line card.
+   */
+  const storesDefaults = settings ? settings.configSection !== null : true;
+
+  /**
    * Persist a change into the leaf this runtime declared for its settings.
    *
    * A runtime with no declared section returns early. Inventing a key from its
    * type would write config the server never reads back, which is worse than
-   * doing nothing: the control would look like it worked.
+   * doing nothing: the control would look like it worked. That early return is
+   * the backstop, not the whole answer — {@link storesDefaults} is what keeps
+   * such a control off the card in the first place.
    */
   function writeForRuntime(patch: Record<string, unknown>) {
     const section = settings?.configSection;
@@ -368,6 +384,7 @@ export function RuntimeCard({
           globalStop,
           onChange: onChangeTrustStop,
         }}
+        storesDefaults={storesDefaults}
         sections={settings?.sections}
         renderSection={(kind) => renderRuntimeSettingsSection(kind, { type })}
         setupDetails={setupDetails}

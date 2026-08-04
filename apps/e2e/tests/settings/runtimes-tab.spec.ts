@@ -41,9 +41,9 @@ import { test, expect } from '../../fixtures';
  *   under a mocked capability map is `RuntimeCard.test.tsx`.
  *
  * The test-mode server is not an escape hatch for that gap either: `TestModeRuntime`
- * declares `settings.configSection: null`, so a per-runtime write there goes
- * deliberately nowhere, and its project (`chromium-mock`) is a single spec file
- * by design.
+ * declares `settings.configSection: null`, which means it has nowhere to keep a
+ * per-runtime setting at all — its card says so and offers no rows to drive —
+ * and its project (`chromium-mock`) is a single spec file by design.
  *
  * SERIAL, and it has to be: two of these tests move `runtimes.default`, which is
  * one global setting on a server the whole suite shares. Run in parallel with

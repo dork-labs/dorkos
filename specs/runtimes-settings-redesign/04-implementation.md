@@ -6,7 +6,9 @@
 
 ## Session
 
-- **Worktree:** `~/.dork/workspaces/dorkos/dor-888-runtimes-declaration` (branch `dor-888-runtimes-declaration`, PR 1 / P1 declaration layer)
+- **Worktrees:** two, one per phase.
+  - P1 (declaration layer): `~/.dork/workspaces/dorkos/dor-888-runtimes-declaration`, branch `dor-888-runtimes-declaration` — PR #730, merged through the queue.
+  - P2 (the tab itself): `~/.dork/workspaces/dorkos/runtimes-settings-tab`, branch `runtimes-settings-tab` — tasks 2.1 to 2.14 plus the adversarial-review fixes.
 - **Tracker:** DOR-888
 - **Orchestration:** main-session orchestrator + resumable Opus/Sonnet implementation agents; batch-level verification gates (standing operator preference) + adversarial REVIEW.md review before each PR
 
@@ -52,20 +54,46 @@
 
 ## Files Modified/Created
 
-**Source files:**
+Roughly 40 source and test files across `packages/shared`, `apps/server`,
+`apps/client`, `packages/test-utils` and `apps/e2e`. The per-task entries above
+name what each one changed, and the two PR diffs are the authoritative list:
+PR #730 for the P1 declaration layer, and the `runtimes-settings-tab` PR for the
+tab. The largest clusters:
 
-_(None yet)_
-
-**Test files:**
-
-_(None yet)_
+- **P1:** `packages/shared/src/agent-runtime.ts` (the `settings` capability),
+  the four runtime adapters, every `RuntimeCapabilities` fixture, the
+  conformance suite, and `docs/api/openapi.json`.
+- **P2:** the new `apps/client/src/layers/features/settings/ui/runtimes/` tree
+  (tab, card container, card view, header, three rows, two sections, section
+  registry, summary builder, global trust row) with its `__tests__/` twin, the
+  `use-trust-stop-writes` hook, the retired components' removal, the playground
+  showcases, and `apps/e2e/tests/settings/runtimes-tab.spec.ts`.
 
 ## Known Issues
 
-_(None yet)_
+_(None)_
 
 ## Implementation Notes
 
 ### Session 1
 
-_(Implementation in progress)_
+Built as an orchestrated multi-agent run rather than one long pass: the
+orchestrator held the spec and the task graph, and resumable Opus and Sonnet
+implementation agents took one task each, in waves whose boundaries were the
+dependency edges (declaration layer, then building blocks, then containers, then
+composition, then retirements). Verification was batch-level by standing
+operator preference — a gate at the end of each wave rather than a review after
+each task — and each PR met an adversarial REVIEW.md review before it opened,
+which is where the real catches came from (a settings-capability requiredness
+hole in P1, and eight defects in P2 that no test could see).
+
+The last gate was not a test run. Task 2.14 drove the real cockpit at desktop,
+expanded and mobile widths, and found things the suite is structurally blind to:
+a trust row whose halves collided inside the Settings dialog, an orphaned middot
+after a wrap, Make default offered on a card that could not be the default,
+missing subtitles, an effort control crushed to eight illegible segments, a
+runtime name truncated to "Clau…" on a phone, and a summary line with no lead-in
+reading as a list of fragments. A P2 adversarial review after that added eight
+more fixes, the two largest being a sectionless runtime that had been drawing
+live-looking rows whose writes fell on the floor, and the tab's vocabulary being
+brought in line with DOR-853 (see the addendum in `04-design-decisions.md` §3).

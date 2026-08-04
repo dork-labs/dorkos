@@ -27,7 +27,7 @@ import {
   SelectValue,
   SettingRow,
 } from '@/layers/shared/ui';
-import { useConfig, useUpdateConfig } from '@/layers/entities/config';
+import { configKeys, useConfig, useUpdateConfig } from '@/layers/entities/config';
 
 /**
  * Stands in for "no account chosen", which writes `activeAccount: null`. Radix
@@ -101,10 +101,12 @@ export function ClaudeAccountsSection() {
   /**
    * Persist a `runtimes.claudeCode` change.
    *
-   * Invalidates the `['config']` PREFIX, not the entity hook's exact key: the
-   * settings tabs, `useFeatureEnabled`, and this section's own reader are split
-   * across `['config']` and `['config','current']`, and the status-bar switcher
-   * and sidebar badges have to move with this write.
+   * Invalidates the `configKeys.all` PREFIX, not the entity hook's exact key:
+   * the settings tabs, `useFeatureEnabled`, and this section's own reader are
+   * split across `configKeys.all` and `configKeys.current()`, and the
+   * status-bar switcher and sidebar badges have to move with this write. The
+   * key comes from the entity's factory rather than a literal, so every writer
+   * on this tab spells the prefix one way.
    */
   function write(patch: ClaudeCodePatch, onDone?: () => void) {
     setWriteError(null);
@@ -112,7 +114,7 @@ export function ClaudeAccountsSection() {
       { runtimes: { claudeCode: patch } },
       {
         onSuccess: () => {
-          void queryClient.invalidateQueries({ queryKey: ['config'] });
+          void queryClient.invalidateQueries({ queryKey: configKeys.all });
           onDone?.();
         },
         onError: (err) => setWriteError(describeWriteFailure(err)),

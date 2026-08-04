@@ -1,6 +1,13 @@
 /**
- * "Where agents stop for you" — the one shared trust setting, beneath the cards
- * (design decision 3, option A).
+ * "Where new conversations stop for you" — the one shared trust setting,
+ * beneath the cards (design decision 3, option A).
+ *
+ * The heading is deliberately NOT the design session's original "Where agents
+ * stop for you". DOR-853 reserved the bare word "agent" for a named teammate in
+ * the fleet, and this setting governs neither a teammate nor a fleet: it is
+ * where a NEW CONVERSATION starts on the trust dial, whichever runtime it lands
+ * on. The newer invariant outranks the older local copy, so the row says what it
+ * actually governs (design §3 addendum).
  *
  * It answers the question once for every runtime; each card's `TrustRow` is the
  * override for the person who wants something narrower somewhere. That is why
@@ -112,7 +119,7 @@ export function GlobalTrustRow({
           fullscreened dialog or any wider host. */}
       <div className="flex flex-col gap-3 @2xl/trust-row:flex-row @2xl/trust-row:items-center @2xl/trust-row:justify-between @2xl/trust-row:gap-6">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <p className="text-sm font-medium">Where agents stop for you</p>
+          <p className="text-sm font-medium">Where new conversations stop for you</p>
           <p className="text-muted-foreground text-xs">
             Every runtime follows this unless its card says otherwise.
           </p>
@@ -121,7 +128,7 @@ export function GlobalTrustRow({
         {/* Full width while stacked; its own width, and no squeezing, beside the
             label (design §6). */}
         <SegmentedControl
-          aria-label="Where agents stop for you"
+          aria-label="Where new conversations stop for you"
           className="w-full @2xl/trust-row:w-auto @2xl/trust-row:shrink-0"
           value={selected}
           onValueChange={(next) => onChange(next as PermissionStop)}

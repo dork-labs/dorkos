@@ -27,7 +27,7 @@ import { CircleAlert, RefreshCw } from 'lucide-react';
 import { useReducedMotion } from 'motion/react';
 import type { PermissionStop } from '@dorkos/shared/agent-runtime';
 import { cn } from '@/layers/shared/lib';
-import { useConfig, useUpdateConfig } from '@/layers/entities/config';
+import { configKeys, useConfig, useUpdateConfig } from '@/layers/entities/config';
 import {
   getRuntimeDescriptor,
   listRuntimeTypes,
@@ -80,17 +80,18 @@ export function RuntimesTab() {
   /**
    * Point new conversations at a runtime.
    *
-   * Invalidates the `['config']` PREFIX, not one key: the status bar, the
+   * Invalidates the `configKeys.all` PREFIX, not one key: the status bar, the
    * sidebar badges and `useFeatureEnabled` read config off a broader key set,
    * and the server applies the default live, so every reader has to move with
-   * the write.
+   * the write. The key comes from the entity's factory rather than a literal,
+   * so the prefix is spelled once for every writer on this tab.
    */
   function makeDefault(type: string) {
     setDefaultError(null);
     updateConfig.mutate(
       { runtimes: { default: type } },
       {
-        onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['config'] }),
+        onSuccess: () => void queryClient.invalidateQueries({ queryKey: configKeys.all }),
         onError: (err) => setDefaultError(describeWriteFailure(err)),
       }
     );
@@ -115,12 +116,15 @@ export function RuntimesTab() {
         </p>
         {/* A maintenance action, not a primary one (design §1): the labeled
             "Check again" row became this. Icon-only, so it says its name to a
-            screen reader rather than nothing. */}
+            screen reader rather than nothing — and that name says "runtimes",
+            never "connections", because the language plan's §D2 (shipped as
+            DOR-855) reserves that word for the Connections page and this button
+            re-probes the runtimes themselves. */}
         <button
           type="button"
           onClick={() => void requirementsQuery.refetch()}
           disabled={requirementsQuery.isFetching}
-          aria-label="Check runtime connections again"
+          aria-label="Check runtimes again"
           title="Check again"
           className="focus-ring text-muted-foreground hover:text-foreground shrink-0 rounded-sm p-1 transition-colors disabled:opacity-50"
           data-testid="runtimes-recheck"

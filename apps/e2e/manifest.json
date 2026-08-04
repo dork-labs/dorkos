@@ -300,18 +300,6 @@
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
-    },
-    "zz-probe": {
-      "specFile": "tests/settings/zz-probe.spec.ts",
-      "feature": "settings",
-      "description": "probe recheck",
-      "lastRun": "2026-08-03T22:35:06.726Z",
-      "lastStatus": "passed",
-      "runCount": 1,
-      "passCount": 1,
-      "failCount": 0,
-      "relatedCode": [],
-      "lastModified": ""
     }
   },
   "runHistory": [

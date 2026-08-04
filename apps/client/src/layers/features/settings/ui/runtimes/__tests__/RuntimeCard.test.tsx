@@ -258,11 +258,13 @@ describe('RuntimeCard — write paths', () => {
     );
   });
 
-  it('writes nothing at all for a runtime that declares no config section', async () => {
+  it('offers no rows at all for a runtime that declares no config section, and says why', async () => {
     // `test-mode` is the real one: registered, usable, and with nowhere under
-    // `runtimes.*` to keep a setting. Its rows report changes into a section that
-    // does not exist, so the card invents no key rather than writing one nobody
-    // can read back.
+    // `runtimes.*` to keep a setting. Every one of the three rows would report
+    // its change into a section that does not exist — model and effort through
+    // `writeForRuntime`, the stop through `useTrustStopWrites`, which needs the
+    // same declaration — so the card says that in one line instead of drawing
+    // controls that look live and are not.
     const { updateConfig } = renderCard(
       { type: 'test-mode' },
       {
@@ -274,11 +276,26 @@ describe('RuntimeCard — write paths', () => {
     );
     await expand('test-mode');
 
-    await userEvent.click(await screen.findByTestId('runtime-model-select-test-mode'));
-    await userEvent.click(await screen.findByRole('option', { name: 'GPT-5.5' }));
-
-    await waitFor(() => expect(screen.getByTestId('runtime-model-select-test-mode')));
+    expect(await screen.findByTestId('runtime-card-no-settings-test-mode')).toHaveTextContent(
+      'keeps no settings of its own'
+    );
+    expect(screen.queryByTestId('runtime-model-select-test-mode')).not.toBeInTheDocument();
+    // Whichever control the effort row would have drawn, and whether or not it
+    // would have called itself unsupported.
+    expect(screen.queryByTestId(/^runtime-effort-/)).not.toBeInTheDocument();
+    expect(screen.queryByTestId('runtime-trust-test-mode')).not.toBeInTheDocument();
     expect(updateConfig).not.toHaveBeenCalled();
+  });
+
+  it('keeps the three rows while the runtime has not yet said whether it stores anything', async () => {
+    // A declaration in flight is not a declaration of `null`. A card that said
+    // "keeps no settings of its own" for the length of one round-trip would be
+    // lying, exactly as an effort row calling effort unsupported would be.
+    renderCard({}, { getCapabilities: vi.fn(() => new Promise(() => {})) });
+    await expand();
+
+    expect(await screen.findByTestId('runtime-model-select-codex')).toBeInTheDocument();
+    expect(screen.queryByTestId('runtime-card-no-settings-codex')).not.toBeInTheDocument();
   });
 
   it('renders a half-loaded capability map without sections and without throwing', async () => {
