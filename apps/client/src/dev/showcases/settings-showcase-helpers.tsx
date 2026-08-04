@@ -7,6 +7,7 @@ import {
   NavigationLayoutBody,
   NavigationLayoutContent,
   NavigationLayoutPanel,
+  NavigationLayoutPanelHeader,
 } from '@/layers/shared/ui';
 import { TransportProvider } from '@/layers/shared/model';
 import { RuntimeCardView } from '@/layers/features/settings';
@@ -117,15 +118,44 @@ export function LiveRuntimeCard({
   );
 }
 
-/** Bare `NavigationLayout` shell with a single panel for showcasing one tab in isolation. */
-export function TabShell({ value, children }: { value: string; children: React.ReactNode }) {
+/**
+ * Bare `NavigationLayout` shell with a single panel for showcasing one tab in
+ * isolation.
+ *
+ * `title` draws the panel header the real dialog draws. Pass it: no settings
+ * tab titles itself any more (DOR-918 — that heading belongs to the dialog), so
+ * a shell without it shows a headless panel the product never renders.
+ *
+ * @param value - Panel id, matched against the layout's active value.
+ * @param title - Panel header title, as `TabbedDialog` would render it.
+ * @param actions - Optional header actions, as the tab declares them.
+ * @param children - The tab component under test.
+ */
+export function TabShell({
+  value,
+  title,
+  actions,
+  children,
+}: {
+  value: string;
+  title?: string;
+  actions?: ReactNode;
+  children: React.ReactNode;
+}) {
   return (
     <div className="border-border overflow-hidden rounded-lg border">
       <NavigationLayout value={value} onValueChange={() => {}}>
         <NavigationLayoutBody>
           <NavigationLayoutContent className="p-4">
             <NavigationLayoutPanel value={value}>
-              <div className="space-y-4">{children}</div>
+              <div className="space-y-4">
+                {title && (
+                  <NavigationLayoutPanelHeader actions={actions}>
+                    {title}
+                  </NavigationLayoutPanelHeader>
+                )}
+                {children}
+              </div>
             </NavigationLayoutPanel>
           </NavigationLayoutContent>
         </NavigationLayoutBody>

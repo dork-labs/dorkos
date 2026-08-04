@@ -7,7 +7,6 @@ import {
   SettingRow,
   FieldCard,
   FieldCardContent,
-  NavigationLayoutPanelHeader,
 } from '@/layers/shared/ui';
 
 /**
@@ -77,8 +76,6 @@ export function PreferencesTab() {
 
   return (
     <div className="space-y-4">
-      <NavigationLayoutPanelHeader>Preferences</NavigationLayoutPanelHeader>
-
       <FieldCard>
         <FieldCardContent>
           <SwitchSettingRow

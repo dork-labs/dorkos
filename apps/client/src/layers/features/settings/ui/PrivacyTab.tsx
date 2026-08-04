@@ -30,7 +30,8 @@ export function PrivacyTab() {
   return (
     <div className="space-y-6">
       <div className="space-y-1">
-        <h3 className="text-sm font-semibold">Privacy &amp; Data</h3>
+        {/* No heading here: the Settings dialog draws the panel's own "Privacy
+            & Data" header. This is the explainer that sits under it. */}
         <p className="text-muted-foreground text-xs">
           DorkOS shares a little anonymous data by default so we can count active installs and see
           which features get used. It is anonymous by construction: no prompts, code, file paths, or
