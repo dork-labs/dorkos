@@ -178,6 +178,8 @@ export interface AdapterManagerDeps {
   transcriptProbe?: BindingSubsystemDeps['transcriptProbe'];
   /** The install owner's author id, read per call (chats-as-channels §3.5, §10.9). */
   operatorAuthorId?: BindingSubsystemDeps['operatorAuthorId'];
+  /** The real operator-name prefix for a bridged group post, read per call (§6.7, DOR-899). */
+  operatorDisplayName?: BindingSubsystemDeps['operatorDisplayName'];
   /** The room store, for outbound delivery's entry reads (chats-as-channels §6). */
   roomStore?: BindingSubsystemDeps['roomStore'];
   /** The author registry, for the delivering-author check and name prefix (§6.6, §6.7). */
@@ -370,6 +372,7 @@ export class AdapterManager {
       roomBridges: this.deps.roomBridges,
       transcriptProbe: this.deps.transcriptProbe,
       operatorAuthorId: this.deps.operatorAuthorId,
+      operatorDisplayName: this.deps.operatorDisplayName,
       roomStore: this.deps.roomStore,
       roomAuthors: this.deps.roomAuthors,
       resolveBridgeSubject: this.deps.resolveBridgeSubject,
