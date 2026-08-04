@@ -456,6 +456,50 @@ describe('AdapterManager', () => {
     });
   });
 
+  describe('leaveChat — the group-add claim flow (DOR-883)', () => {
+    /** A minimal adapter shape, registered directly on the mock registry. */
+    function fakeAdapter(id: string, extra: Record<string, unknown> = {}): RelayAdapter {
+      return {
+        id,
+        subjectPrefix: `relay.human.${id}`,
+        displayName: id,
+        start: vi.fn().mockResolvedValue(undefined),
+        stop: vi.fn().mockResolvedValue(undefined),
+        deliver: vi.fn().mockResolvedValue({ success: true, durationMs: 0 }),
+        getStatus: vi.fn().mockReturnValue({
+          state: 'connected',
+          messageCount: { inbound: 0, outbound: 0 },
+          errorCount: 0,
+        }),
+        ...extra,
+      } as unknown as RelayAdapter;
+    }
+
+    it("calls the live adapter instance's own leaveChat, and nothing else", async () => {
+      const leaveChat = vi.fn().mockResolvedValue(undefined);
+      await registry.register(fakeAdapter('tg-main', { leaveChat }));
+
+      await manager.leaveChat('tg-main', '555');
+
+      expect(leaveChat).toHaveBeenCalledWith('555');
+      expect(leaveChat).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects for an adapter that is not registered', async () => {
+      await expect(manager.leaveChat('ghost-adapter', '555')).rejects.toThrow(/not registered/i);
+    });
+
+    it('rejects for an adapter that does not support leaving a chat — every adapter except Telegram today', async () => {
+      // Registered, connected, but no `leaveChat` on the instance — the shape
+      // a Webhook or Slack adapter has today.
+      await registry.register(fakeAdapter('wh-main'));
+
+      await expect(manager.leaveChat('wh-main', '555')).rejects.toThrow(
+        /does not support leaving a chat/i
+      );
+    });
+  });
+
   describe('disable()', () => {
     it('updates config and stops adapter', async () => {
       vi.mocked(readFile).mockResolvedValue(VALID_CONFIG);
