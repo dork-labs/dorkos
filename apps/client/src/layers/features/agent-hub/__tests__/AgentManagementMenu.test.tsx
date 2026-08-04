@@ -30,8 +30,9 @@ vi.mock('@/layers/entities/mesh', () => ({
 }));
 
 // The default agent lives in server config; the menu reads it and writes it.
+// `undefined` models a fresh install where `defaultAgent` was never written.
 const mockSetDefaultAgent = vi.fn().mockResolvedValue(undefined);
-let mockDefaultAgentName = 'someone-else';
+let mockDefaultAgentName: string | undefined = 'someone-else';
 
 const mockAgent = {
   id: 'agent-1',
@@ -124,6 +125,7 @@ async function clickAction(title: string) {
 afterEach(() => {
   cleanup();
   mockAgent.isSystem = false;
+  mockAgent.name = 'Test Agent';
   mockAgent.displayName = 'Test Agent';
   mockDeniedData = { denied: [] };
   mockDefaultAgentName = 'someone-else';
@@ -317,6 +319,20 @@ describe('AgentManagementMenu', () => {
 
   it('shows a disabled "Default agent" card when the agent already is the default', async () => {
     mockDefaultAgentName = 'Test Agent';
+    render(<AgentManagementMenu />, { wrapper: createWrapper() });
+    await openDialog();
+
+    const card = await screen.findByText('Default agent');
+    expect(card).toBeInTheDocument();
+    expect(card.closest('button')).toBeDisabled();
+    expect(screen.queryByText('Set as default')).not.toBeInTheDocument();
+  });
+
+  it('treats DorkBot as the default on a fresh install (defaultAgent unset)', async () => {
+    // Fresh install: config has no defaultAgent yet, so the effective default
+    // is DorkBot. Its card must read "Default agent", not offer to set it.
+    mockDefaultAgentName = undefined;
+    mockAgent.name = 'dorkbot';
     render(<AgentManagementMenu />, { wrapper: createWrapper() });
     await openDialog();
 

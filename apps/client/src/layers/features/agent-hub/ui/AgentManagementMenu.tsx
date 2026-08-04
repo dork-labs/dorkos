@@ -177,7 +177,12 @@ export function AgentManagementMenu({ className }: AgentManagementMenuProps) {
   });
 
   const isSystem = agent.isSystem === true;
-  const isDefaultAgent = config?.agents?.defaultAgent === agent.name;
+  // On a fresh install `defaultAgent` is unset, but the effective default is
+  // DorkBot — the config schema's own default (config-schema.ts) and what the
+  // retired Settings tab fell back to. Mirror it so DorkBot's card reads
+  // "Default agent" from the start instead of offering to set what already is.
+  const effectiveDefaultAgent = config?.agents?.defaultAgent ?? 'dorkbot';
+  const isDefaultAgent = effectiveDefaultAgent === agent.name;
   const isDenied = deniedData?.denied?.some((d) => d.path === projectPath) ?? false;
   const displayName = agent.displayName ?? agent.name;
 
