@@ -367,10 +367,13 @@ function isGroupChat(chatType: string): boolean {
  * Extract the optional channel title from a Telegram chat object.
  *
  * Group and supergroup chats have a `title` field; private chats do not.
+ * Exported so `chat-member.ts` can read the same field off a
+ * `my_chat_member` update's `chat` (the group-add claim flow, DOR-883) — one
+ * reader, not a second copy.
  *
  * @param chat - The Telegram chat object from grammy context
  */
-function extractChannelName(chat: GrammyContext['chat']): string | undefined {
+export function extractChannelName(chat: GrammyContext['chat']): string | undefined {
   if (!chat) return undefined;
   if ('title' in chat && typeof (chat as { title?: string }).title === 'string') {
     return (chat as { title: string }).title;
