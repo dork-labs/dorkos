@@ -256,6 +256,23 @@ export function buildTurnFailedNotice(agentName: string, subjectAuthorId: string
 }
 
 /**
+ * The text a bridged chat hears for a `turn_failed` notice, in place of the
+ * room's own line (chats-as-channels spec §6.2).
+ *
+ * **`buildTurnFailedNotice`'s "Open Ana's session" is written for a cockpit
+ * reader who has a session tab to open.** The person on the other end of a
+ * bridged chat has no such thing — sending them that sentence points at a
+ * door they cannot walk through. `ChatBridgeDelivery` renders THIS text to
+ * the platform instead; the room's own entry, and the pointer it gives a
+ * cockpit reader, is unchanged.
+ *
+ * @param agentName - Display name of the agent whose turn failed.
+ */
+export function bridgeTurnFailedText(agentName: string): string {
+  return `${agentName} ran into a problem and couldn't answer. Try sending your message again.`;
+}
+
+/**
  * The durable `notice` for a member whose agent is no longer there.
  *
  * Deliberately not `turn_failed`, and the difference is the whole point of the

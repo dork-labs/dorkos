@@ -360,6 +360,23 @@ export class BridgeStore {
     return this.readBridge(exec, bridgeId);
   }
 
+  /**
+   * Flip the one per-bridge override for outbound notice delivery (D-6 Q5,
+   * spec §6.2). `createBridge` seeds `deliverNotices` from room kind at
+   * creation (`true` for a bridged `dm`, `false` for a bridged `channel`);
+   * this is the only way to change it afterward — `RoomService.updateRoom`
+   * is its one caller, gated on the room actually being bridged.
+   *
+   * @param bridgeId - The bridge's room id.
+   * @param deliverNotices - The new value.
+   * @param tx - An existing transaction to write inside.
+   */
+  setDeliverNotices(bridgeId: string, deliverNotices: boolean, tx?: DbTransaction): Bridge | null {
+    const exec = tx ?? this.db;
+    exec.update(roomBridges).set({ deliverNotices }).where(eq(roomBridges.roomId, bridgeId)).run();
+    return this.readBridge(exec, bridgeId);
+  }
+
   // === External refs ===
 
   /**

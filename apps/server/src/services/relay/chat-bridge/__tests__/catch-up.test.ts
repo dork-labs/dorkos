@@ -173,20 +173,31 @@ describe('BridgeCatchUp (chats-as-channels §6.1)', () => {
     // A bridged DM delivers notices by default (§6.2).
     const room = harness.service.createBridgedRoom(bridgeRequest('555'));
     const inbound = seedInbound(room.id, '555', 'do a thing', 'pm-1');
+    const ana = harness.authors.resolveAgent(AGENT_PATH, 'Ana');
     // The turn crashes while the adapter is down; the notice is committed but not
     // delivered. It is a NOTICE, not a post — a scan scoped to kind:'post' would
     // never catch it up, which is exactly the notice a bridged DM exists to send.
     const notice = harness.service.postNotice(
       room.id,
-      { text: 'A turn failed.', notice: 'turn_failed' },
+      {
+        text: "Ana ran into a problem and could not answer here. Open Ana's session to see what went wrong.",
+        notice: 'turn_failed',
+        subjectAuthorId: ana.id,
+      },
       { root: inbound.id, depth: 1 }
     );
 
     await catchUp.scanRoom(room.id);
 
     expect(harness.bridges.findRefByEntry(notice.id)?.direction).toBe('outbound');
+    // The DELIVERED content is re-rendered for a bridged reader (§6.2) rather
+    // than forwarded verbatim — the stored line above points a cockpit reader
+    // at "Ana's session", which a person on the platform chat has no way to
+    // open (`bridgeTurnFailedText`, room-notices.ts).
     const delivered = publish.mock.calls.filter(
-      (c) => (c[1] as Record<string, unknown>).content === 'A turn failed.'
+      (c) =>
+        (c[1] as Record<string, unknown>).content ===
+        "Ana ran into a problem and couldn't answer. Try sending your message again."
     );
     expect(delivered).toHaveLength(1);
   });

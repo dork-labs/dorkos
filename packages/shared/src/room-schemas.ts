@@ -586,6 +586,12 @@ export const UpdateRoomRequestSchema = z
     title: z.string().min(1).max(200).optional(),
     topic: z.string().max(500).nullable().optional(),
     archived: z.boolean().optional(),
+    deliverNotices: z
+      .boolean()
+      .optional()
+      .describe(
+        "The one per-bridge override for outbound notices (chats-as-channels spec §6.2, D-6 Q5): whether a turn_failed or halted notice reaches this room's bridged chat. Valid only on a bridged room; a room with no bridge refuses this field with NOT_A_BRIDGED_ROOM."
+      ),
   })
   .openapi('UpdateRoomRequest');
 

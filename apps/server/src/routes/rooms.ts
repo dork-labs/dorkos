@@ -149,7 +149,11 @@ router.get('/:id', (req, res) => {
   }
 });
 
-/** PATCH /:id — title, topic, archive. */
+/**
+ * PATCH /:id — title, topic, archive, and — on a bridged room — the
+ * `deliverNotices` override (chats-as-channels spec §6.2). `NOT_A_BRIDGED_ROOM`
+ * (409) when `deliverNotices` is sent for a room with no bridge.
+ */
 router.patch('/:id', (req, res) => {
   const body = parseBody(UpdateRoomRequestSchema, req.body, res);
   if (!body) return;

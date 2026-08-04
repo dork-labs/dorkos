@@ -59,7 +59,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 }));
 
 import { createApp, finalizeApp } from '../../app.js';
-import { createRoomSubsystem, setRoomService } from '../../services/rooms/index.js';
+import { createRoomSubsystem, getRoomService, setRoomService } from '../../services/rooms/index.js';
 import {
   initAgentIdentityService,
   resetAgentIdentityService,
@@ -274,6 +274,56 @@ describe('/api/rooms', () => {
       const asAgent = await request(app).get(`/api/rooms/${room.id}`).set('X-DorkOS-Agent', token);
 
       expect(asAgent.body.viewerAuthorId).not.toBe(asHuman.body.viewerAuthorId);
+    });
+  });
+
+  describe('PATCH /:id — deliverNotices (chats-as-channels spec §6.2)', () => {
+    /** Seed a bridged room directly through the service, as the local caller. */
+    function bridgeRoom(chatId: string, group = false) {
+      const service = getRoomService();
+      const operatorAuthorId = service.authorRegistry.localHuman().id;
+      return service.createBridgedRoom({
+        adapterId: 'tg-main',
+        chatId,
+        bindingId: `binding-${chatId}`,
+        chatType: group ? 'group' : 'private',
+        channelType: group ? 'group' : null,
+        title: group ? 'Team' : 'Miguel',
+        agentPath: ANA_PATH,
+        operatorAuthorId,
+      });
+    }
+
+    it('flips the override on a bridged room and it sticks', async () => {
+      const room = bridgeRoom('900', true);
+      const res = await request(app).patch(`/api/rooms/${room.id}`).send({ deliverNotices: true });
+      expect(res.status).toBe(200);
+
+      const { bridges } = createRoomSubsystem({ db });
+      expect(bridges.findBridgeByRoom(room.id)?.deliverNotices).toBe(true);
+    });
+
+    it('flips it off on a bridged dm and it sticks', async () => {
+      const room = bridgeRoom('901');
+      const res = await request(app).patch(`/api/rooms/${room.id}`).send({ deliverNotices: false });
+      expect(res.status).toBe(200);
+
+      const { bridges } = createRoomSubsystem({ db });
+      expect(bridges.findBridgeByRoom(room.id)?.deliverNotices).toBe(false);
+    });
+
+    it('refuses NOT_A_BRIDGED_ROOM (409) on a plain channel', async () => {
+      const room = await createChannel();
+      const res = await request(app).patch(`/api/rooms/${room.id}`).send({ deliverNotices: true });
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('NOT_A_BRIDGED_ROOM');
+    });
+
+    it('leaves a title/topic patch on an unbridged room unaffected when deliverNotices is absent', async () => {
+      const room = await createChannel();
+      const res = await request(app).patch(`/api/rooms/${room.id}`).send({ topic: 'hello' });
+      expect(res.status).toBe(200);
+      expect(res.body.topic).toBe('hello');
     });
   });
 
