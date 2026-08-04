@@ -111,6 +111,35 @@ export interface UnarchiveRoomInput {
   title?: string;
 }
 
+/** Which bridged room to change, and whether its chat hears about stalls. */
+export interface SetDeliverNoticesInput {
+  roomId: string;
+  /** True: a failed or stopped turn posts a plain note into the bridged chat. */
+  deliverNotices: boolean;
+}
+
+/**
+ * Choose whether a bridged chat hears when a turn fails or is stopped
+ * (chats-as-channels spec §6.2). Valid only on a bridged room — the server
+ * refuses this on any other with `NOT_A_BRIDGED_ROOM`, which the shared toast
+ * surfaces with the label below.
+ */
+export function useSetDeliverNotices(): UseMutationResult<
+  RoomWithRoster,
+  Error,
+  SetDeliverNoticesInput
+> {
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ roomId, deliverNotices }: SetDeliverNoticesInput) =>
+      transport.updateRoom(roomId, { deliverNotices }),
+    onSuccess: (_room, { roomId }) => refreshRoom(queryClient, roomId),
+    meta: { errorLabel: "Couldn't change what reaches the chat" },
+  });
+}
+
 /** Bring an archived room back. */
 export function useUnarchiveRoom(): UseMutationResult<RoomWithRoster, Error, UnarchiveRoomInput> {
   const transport = useTransport();

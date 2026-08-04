@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Loader2, Trash2 } from 'lucide-react';
 import {
   ResponsiveDialog,
@@ -67,6 +67,17 @@ export interface BindingDialogProps {
   bindingId?: string;
   /** Whether a parent mutation is pending (disables submit button). */
   isPending?: boolean;
+  /**
+   * Whether this binding is bridged to a channel. Hides the session-strategy
+   * selector (a bridged chat keeps its history in the channel — §7.2).
+   */
+  bridged?: boolean;
+  /**
+   * The "Bridge to a channel" controls for this binding, rendered in edit mode
+   * (chats-as-channels spec §3.1). Supplied by the feature layer so the entity
+   * dialog stays free of the cross-entity room reads the bridge action needs.
+   */
+  bridgeSlot?: ReactNode;
 }
 
 /**
@@ -87,6 +98,8 @@ export function BindingDialog({
   onDelete,
   bindingId,
   isPending,
+  bridged,
+  bridgeSlot,
 }: BindingDialogProps) {
   const isEdit = mode === 'edit';
 
@@ -222,10 +235,15 @@ export function BindingDialog({
                 <div className="space-y-5 overflow-y-auto px-4 py-5">
                   {isEdit ? (
                     /* Edit mode: adapter and agent are read-only */
-                    <p className="text-muted-foreground text-sm">
-                      Connection: <span className="text-foreground font-medium">{adapterName}</span>{' '}
-                      &rarr; <span className="text-foreground font-medium">{agentName}</span>
-                    </p>
+                    <>
+                      <p className="text-muted-foreground text-sm">
+                        Connection:{' '}
+                        <span className="text-foreground font-medium">{adapterName}</span> &rarr;{' '}
+                        <span className="text-foreground font-medium">{agentName}</span>
+                      </p>
+                      {/* Bridge to a channel — supplied by the feature layer (§3.1) */}
+                      {bridgeSlot}
+                    </>
                   ) : (
                     /* Create mode: adapter and agent pickers */
                     <>
@@ -404,6 +422,7 @@ export function BindingDialog({
                       form.setFieldValue('notifyOnTaskComplete', v)
                     }
                     notifyBootstrapHint={observedChats.length === 0}
+                    bridged={bridged}
                     open={advancedOpen}
                     onOpenChange={setAdvancedOpen}
                     hasChanges={hasAdvancedChanges}
