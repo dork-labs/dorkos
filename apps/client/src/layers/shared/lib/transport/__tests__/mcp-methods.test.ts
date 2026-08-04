@@ -83,6 +83,33 @@ describe('addAgentMcpServer', () => {
   });
 });
 
+describe('importAgentMcpServer', () => {
+  const input = { agentId: 'agent-1', name: 'filesystem' };
+
+  it('invokes mcp.import with just the agent id and name', async () => {
+    stubFetch([{ name: 'filesystem', enabled: true }], 200);
+    const result = await setup().importAgentMcpServer(input);
+    const [url, init] = lastCall();
+    expect(url).toBe('http://localhost:4242/api/capabilities/mcp.import/invoke');
+    expect(init.body).toBe(JSON.stringify({ agentId: 'agent-1', name: 'filesystem' }));
+    expect(result).toEqual({ status: 'ok', servers: [{ name: 'filesystem', enabled: true }] });
+  });
+
+  it('maps a 202 approval envelope to an approval_required result', async () => {
+    const approval = { status: 'approval_required', approvalId: 'a-1', approvalToken: 't-1' };
+    stubFetch(approval, 202);
+    const result = await setup().importAgentMcpServer(input);
+    expect(result).toEqual({ status: 'approval_required', approval });
+  });
+
+  it('carries the approval token on the confirming retry', async () => {
+    stubFetch([{ name: 'filesystem', enabled: true }], 200);
+    await setup().importAgentMcpServer(input, { approvalToken: 't-1' });
+    const [, init] = lastCall();
+    expect((init.headers as Record<string, string>)['X-DorkOS-Approval']).toBe('t-1');
+  });
+});
+
 describe('testAgentMcpServer', () => {
   it('returns the probe result object unchanged', async () => {
     stubFetch({ ok: true, toolCount: 3 });

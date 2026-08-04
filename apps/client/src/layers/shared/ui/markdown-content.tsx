@@ -8,7 +8,7 @@
  */
 import type { ReactNode } from 'react';
 import { Streamdown } from 'streamdown';
-import type { LinkSafetyModalProps } from 'streamdown';
+import type { AllowedTags, Components, LinkSafetyModalProps } from 'streamdown';
 // Streamdown's own stylesheet, which is what actually draws this markdown.
 // Imported here rather than relied on from elsewhere: it was only ever loaded
 // because the chat's `StreamingText` imports it, so every surface that renders
@@ -36,6 +36,35 @@ interface MarkdownContentProps {
    * pass copy that fits the surface (e.g. "This README couldn't be displayed.").
    */
   errorFallback?: ReactNode;
+  /**
+   * Tag → component overrides forwarded straight to Streamdown, for a surface
+   * that draws one of its own inline tags (e.g. a room's `<mention>`) as
+   * something other than raw HTML. Undefined everywhere else — this component
+   * stays ignorant of what any tag means; the caller supplies both the tag and
+   * what it renders as.
+   */
+  components?: Components;
+  /**
+   * Custom tags (and their permitted attributes) to allow through Streamdown's
+   * sanitizer, keyed by tag name. Paired with `components` — a tag left out of
+   * both is sanitized away like any other unrecognised HTML.
+   *
+   * **The trust boundary lives at the call site, not here.** Streamdown
+   * renders a tag listed here from ANY matching text in `content` — one this
+   * component's caller spliced in from trusted data, or one that arrived
+   * verbatim inside otherwise-untrusted `content` (a message a room member
+   * typed, say) and merely happens to look the same. This component cannot
+   * tell those apart, so a caller allowing a tag whose attributes carry
+   * meaning (like an id to look up) must itself gate what that tag is allowed
+   * to resolve against — see `RoomEntryRow`'s `spannedIds` for the pattern.
+   */
+  allowedTags?: AllowedTags;
+  /**
+   * Tag names (a subset of `allowedTags`) whose children Streamdown treats as
+   * plain text rather than markdown to re-parse — for a data label like a
+   * mention's `@handle`, not prose.
+   */
+  literalTagContent?: string[];
 }
 
 const LINK_SAFETY_CONFIG = {
@@ -49,6 +78,9 @@ export function MarkdownContent({
   className,
   linkSafety = false,
   errorFallback,
+  components,
+  allowedTags,
+  literalTagContent,
 }: MarkdownContentProps) {
   return (
     // desktop-darwin:select-text — see message-variants.ts for why: the
@@ -71,7 +103,14 @@ export function MarkdownContent({
       {/* Guard the render so a failed code-block chunk degrades to a note here
           instead of throwing to the route boundary. Reset on content change. */}
       <MarkdownErrorBoundary resetKey={content} fallback={errorFallback}>
-        <Streamdown linkSafety={linkSafety ? LINK_SAFETY_CONFIG : undefined}>{content}</Streamdown>
+        <Streamdown
+          linkSafety={linkSafety ? LINK_SAFETY_CONFIG : undefined}
+          components={components}
+          allowedTags={allowedTags}
+          literalTagContent={literalTagContent}
+        >
+          {content}
+        </Streamdown>
       </MarkdownErrorBoundary>
     </div>
   );

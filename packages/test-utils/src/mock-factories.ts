@@ -749,6 +749,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // exercises them (an add can resolve to `{ status: 'approval_required' }`).
     listAgentMcpServers: vi.fn().mockResolvedValue([]),
     addAgentMcpServer: vi.fn(),
+    importAgentMcpServer: vi.fn(),
     updateAgentMcpServer: vi.fn(),
     removeAgentMcpServer: vi.fn().mockResolvedValue([]),
     enableAgentMcpServer: vi.fn().mockResolvedValue([]),

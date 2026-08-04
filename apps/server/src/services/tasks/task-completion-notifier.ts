@@ -14,6 +14,13 @@
  * "cannot deliver" outcome (relay off, no binding, no chat session,
  * `canInitiate` off, over-budget) is a silent no-op that never errors a run.
  *
+ * A resolved target whose chat is bridged (chats-as-channels spec §7.5)
+ * publishes under `relay.bridge.initiate.*` instead of the fixed
+ * {@link TASK_NOTIFIER_PRINCIPAL} — see {@link resolveNotifyTarget}'s
+ * `bridged` flag — so the send still reads as a "scheduled task" INITIATE
+ * through the bridge consent branch rather than the exempt system principal
+ * quietly bypassing it.
+ *
  * @module services/tasks/task-completion-notifier
  */
 import type { Task, TaskRun } from '@dorkos/shared/types';
@@ -25,7 +32,9 @@ import {
   type NotifyTargetBindingStore,
   type NotifyTargetBindingRouter,
   type NotifyTargetAdapterManager,
+  type NotifyTargetBridgeStore,
 } from '../relay/notify-target.js';
+import { buildBridgePrincipal } from '../relay/bridge-principal.js';
 
 /** Relay `from` principal for automatic task-completion notifications. */
 const TASK_NOTIFIER_PRINCIPAL = 'relay.system.tasks.notifier';
@@ -60,6 +69,8 @@ export interface TaskCompletionNotifierDeps {
   bindingStore?: NotifyTargetBindingStore;
   bindingRouter?: NotifyTargetBindingRouter;
   adapterManager?: NotifyTargetAdapterManager;
+  /** Live bridge rows, so a bridged chat still resolves once its session vacates `sessionMap` (§7.5). */
+  bridgeStore?: NotifyTargetBridgeStore;
   relayCore?: NotifierRelayPublisher;
   /** Reads the task when the terminal hook could not supply it. */
   taskStore?: NotifierTaskStore;
@@ -111,6 +122,7 @@ export class TaskCompletionNotifier {
         bindingStore,
         bindingRouter,
         adapterManager: this.deps.adapterManager,
+        bridgeStore: this.deps.bridgeStore,
       });
       if (!target.ok) {
         this.logger.debug(`skip run ${run.id}: cannot resolve integration (${target.reason})`);
@@ -127,8 +139,17 @@ export class TaskCompletionNotifier {
       // A completion ping is a terminal leaf (no downstream agent turn), so a
       // minimal budget is correct; the PR #210 gate rejects + dead-letters if
       // ever over budget rather than dispatching.
+      //
+      // A bridged target (§7.5) publishes under the bridge delivery principal
+      // instead of the fixed system one — this is a "scheduled task" send with
+      // no inbound cascade root, so it classifies as an INITIATE (spec §6.6)
+      // and must be gated as one, not slip through under an exemption that
+      // predates bridges.
+      const from = target.bridged
+        ? buildBridgePrincipal('initiate', target.adapterId, target.chatId)
+        : TASK_NOTIFIER_PRINCIPAL;
       const result = await relayCore.publish(target.subject, message, {
-        from: TASK_NOTIFIER_PRINCIPAL,
+        from,
         budget: { maxHops: 2, ttl: Date.now() + 30_000, callBudgetRemaining: 1 },
       });
       if (result.deliveredTo === 0) {

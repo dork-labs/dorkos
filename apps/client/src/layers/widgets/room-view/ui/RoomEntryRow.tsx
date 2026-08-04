@@ -45,6 +45,13 @@ import {
 } from '@/layers/features/entry-actions';
 import { entrySummary } from '../lib/entry-summary';
 import { formatAbsoluteTime, formatTime } from '../lib/entry-time';
+import {
+  MENTION_ALLOWED_TAGS,
+  MENTION_LITERAL_TAG_CONTENT,
+  withMentionTags,
+} from '../lib/mention-markup';
+import type { RosterAuthor } from '../lib/room-timeline';
+import { buildMentionComponents } from './MentionPillRenderer';
 
 interface RoomEntryRowProps {
   /** The room this entry belongs to, which its actions act on. */
@@ -59,6 +66,14 @@ interface RoomEntryRowProps {
    * them — a display name routinely contains spaces and reaches nobody.
    */
   authorRef: AuthorRef | undefined;
+  /**
+   * The room's whole roster, keyed by author id — how a `<mention>` spliced
+   * into the body (`mention-markup.ts`) resolves to who it names. The same
+   * map `authorRef` above is drawn from one entry of; a mention needs the
+   * whole thing because it can name anybody in the room, not just this row's
+   * own author.
+   */
+  authors: ReadonlyMap<string, RosterAuthor>;
   /** The reader's own author id here, so they are not offered to themselves. */
   viewerAuthorId: string;
   /**
@@ -262,6 +277,7 @@ export function RoomEntryRow({
   entry,
   author,
   authorRef,
+  authors,
   viewerAuthorId,
   authorNames,
   reactionFrequents,
@@ -278,6 +294,34 @@ export function RoomEntryRow({
   // six passes per row per render of a feed that re-renders on every arriving
   // reaction, and the answer only changes when the words do.
   const summary = useMemo(() => entrySummary(entry.body.text), [entry.body.text]);
+  // The body with every resolved mention spliced in as a literal `<mention>`
+  // tag (`mention-markup.ts`), for `MarkdownContent` to draw a pill over.
+  // Memoised for the same reason `summary` is: this runs on every row of a
+  // feed that re-renders on every reaction.
+  const markdown = useMemo(
+    () => withMentionTags(entry.body.text, entry.mentionSpans),
+    [entry.body.text, entry.mentionSpans]
+  );
+  // Which author ids the SERVER actually spanned for this entry — the
+  // whitelist `buildMentionComponents` gates on. `markdown` only ever splices
+  // a `<mention>` tag for one of these, but Streamdown cannot tell a spliced
+  // tag from one somebody typed literally in their message: both parse as the
+  // same element once `mention` is an allowed tag. Without this set, a body
+  // containing `<mention author_id="<a real roster id>">fake</mention>` would
+  // resolve and render exactly like a real mention — this is what keeps it
+  // inert instead.
+  const spannedIds = useMemo(
+    () => new Set(entry.mentionSpans?.map((span) => span.authorId) ?? []),
+    [entry.mentionSpans]
+  );
+  // The `mention` tag's renderer, closed over the roster it resolves against
+  // and the spans that authorize it. Built even for a body with no mentions
+  // in it — cheap, and it keeps this row from having to know in advance
+  // whether `markdown` contains any.
+  const mentionComponents = useMemo(
+    () => buildMentionComponents(authors, spannedIds),
+    [authors, spannedIds]
+  );
   const domId = useId();
   const headerId = `${domId}-author`;
   const contentId = `${domId}-content`;
@@ -513,7 +557,13 @@ export function RoomEntryRow({
               '[&_:not(pre)>code]:wrap-anywhere [&_pre]:overflow-x-auto'
             )}
           >
-            <MarkdownContent content={entry.body.text} linkSafety />
+            <MarkdownContent
+              content={markdown}
+              linkSafety
+              allowedTags={MENTION_ALLOWED_TAGS}
+              literalTagContent={MENTION_LITERAL_TAG_CONTENT}
+              components={mentionComponents}
+            />
           </div>
           {summary !== null && (
             /*

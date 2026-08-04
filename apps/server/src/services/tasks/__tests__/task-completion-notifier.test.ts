@@ -80,6 +80,8 @@ function makeDeps(
     }>;
     relayEnabled?: boolean;
     publish?: TaskCompletionNotifierDeps['relayCore'];
+    /** Live bridge rows (spec §7.5) — omitted means no bridges exist. */
+    bridges?: Array<{ bindingId: string; chatId: string; lastActivityAt?: string | null }>;
   } = {}
 ): { deps: TaskCompletionNotifierDeps; publish: ReturnType<typeof vi.fn> } {
   const publish = vi.fn().mockResolvedValue({ deliveredTo: 1 });
@@ -90,6 +92,10 @@ function makeDeps(
     bindingStore: { getAll: () => overrides.bindings ?? [binding()] },
     bindingRouter: { getSessionsByBinding: () => sessions },
     adapterManager: { listAdapters: () => [{ config: { id: 'tg-main', type: 'telegram' } }] },
+    bridgeStore: {
+      listLiveBridges: () =>
+        (overrides.bridges ?? []).map((b) => ({ lastActivityAt: b.lastActivityAt ?? null, ...b })),
+    },
     relayCore: overrides.publish ?? { publish },
     isRelayEnabled: () => overrides.relayEnabled ?? true,
     logger: { debug: vi.fn() },
@@ -183,6 +189,79 @@ describe('TaskCompletionNotifier', () => {
     await new TaskCompletionNotifier(withStore).handle(run(), null);
     expect(withStore.taskStore!.getTask).toHaveBeenCalledWith('task-1');
     expect(publish).toHaveBeenCalledTimes(1);
+  });
+
+  // A "scheduled task" completion ping is exactly consent-table row 5/6 (spec
+  // §13): it has no inbound cascade root, so it classifies as an INITIATE.
+  // For a bridged binding this must publish under `relay.bridge.initiate.*`
+  // (DOR-876, spec §7.5) rather than the fixed system principal, and
+  // `canInitiate` must still gate it exactly as it always has.
+  describe('bridged target (spec §7.5, consent table cases 5 & 6)', () => {
+    /** A binding whose sessionMap is vacated (§7.2) and is bridged to a live room. */
+    function bridgedBinding(overrides: Partial<AdapterBinding> = {}): AdapterBinding {
+      return binding({
+        bridge: 'room',
+        roomId: 'room-1',
+        chatId: 'chat-42',
+        ...overrides,
+      });
+    }
+
+    it('case 5: canInitiate=true delivers, publishing under relay.bridge.initiate.*', async () => {
+      const { deps, publish } = makeDeps({
+        bindings: [bridgedBinding({ canInitiate: true })],
+        // sessionMap fully vacated — a bridged binding has nothing here (§7.2).
+        sessions: [],
+        bridges: [
+          { bindingId: 'b-1', chatId: 'chat-42', lastActivityAt: '2026-01-01T00:05:00.000Z' },
+        ],
+      });
+
+      await new TaskCompletionNotifier(deps).handle(run({ status: 'failed' }), task());
+
+      expect(publish).toHaveBeenCalledTimes(1);
+      const [subject, , options] = publish.mock.calls[0];
+      expect(subject).toBe('relay.human.telegram.tg-main.chat-42');
+      // The distinguishing assertion: NOT the fixed system principal — the
+      // bridge delivery principal, so the send reads as an INITIATE through
+      // the bridge consent branch (initiate-consent.ts's non-exempt path).
+      expect(options.from).toBe('relay.bridge.initiate.tg-main.chat-42');
+    });
+
+    it('case 6: canInitiate=false blocks the send — still gated as an initiate', async () => {
+      const { deps, publish } = makeDeps({
+        bindings: [bridgedBinding({ canInitiate: false })],
+        sessions: [],
+        bridges: [
+          { bindingId: 'b-1', chatId: 'chat-42', lastActivityAt: '2026-01-01T00:05:00.000Z' },
+        ],
+      });
+
+      await new TaskCompletionNotifier(deps).handle(run({ status: 'failed' }), task());
+
+      // canInitiate remains the switch it always was (spec §7.5) — nothing
+      // published, bridged or not.
+      expect(publish).not.toHaveBeenCalled();
+    });
+
+    it('does not resolve the bridge for a different binding, and falls back to NO_ACTIVE_SESSIONS', async () => {
+      const { deps, publish } = makeDeps({
+        bindings: [bridgedBinding({ canInitiate: true })],
+        sessions: [],
+        // A live bridge exists, but for a binding this agent does not own.
+        bridges: [{ bindingId: 'b-OTHER', chatId: 'chat-99' }],
+      });
+
+      await new TaskCompletionNotifier(deps).handle(run({ status: 'failed' }), task());
+      expect(publish).not.toHaveBeenCalled();
+    });
+
+    it('an unbridged binding still publishes under the fixed system principal (no regression)', async () => {
+      const { deps, publish } = makeDeps(); // default binding: bridge: 'off'
+      await new TaskCompletionNotifier(deps).handle(run(), task());
+      const [, , options] = publish.mock.calls[0];
+      expect(options.from).toBe('relay.system.tasks.notifier');
+    });
   });
 });
 

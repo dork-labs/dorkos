@@ -14,6 +14,7 @@ import type {
   RuntimeProvisionProgress,
   RuntimeProvisionResult,
   AddAgentMcpServerInput,
+  ImportAgentMcpServerInput,
   UpdateAgentMcpServerInput,
   AgentMcpMutationResult,
   AgentMcpTestResult,
@@ -982,6 +983,13 @@ export const mcpManagementStubs = {
 
   async addAgentMcpServer(
     _input: AddAgentMcpServerInput,
+    _opts?: { approvalToken?: string }
+  ): Promise<AgentMcpMutationResult> {
+    throw new Error(EMBEDDED_MCP_NOTICE);
+  },
+
+  async importAgentMcpServer(
+    _input: ImportAgentMcpServerInput,
     _opts?: { approvalToken?: string }
   ): Promise<AgentMcpMutationResult> {
     throw new Error(EMBEDDED_MCP_NOTICE);
