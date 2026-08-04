@@ -36,6 +36,27 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
     category: 'Messages',
     keywords: ['message', 'item', 'grouping', 'position', 'bubble'],
   },
+  {
+    id: 'messageauthoravatar',
+    title: 'MessageAuthorAvatar',
+    page: 'chat',
+    category: 'Messages',
+    keywords: [
+      'author',
+      'avatar',
+      'identity',
+      'agent',
+      'human',
+      'person',
+      'system',
+      'external',
+      'bridged',
+      'shape',
+      'badge',
+      'square',
+      'circle',
+    ],
+  },
   // ToolShowcases
   {
     id: 'toolcallcard',

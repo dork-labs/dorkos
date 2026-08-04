@@ -1,4 +1,5 @@
 import { MessageItem } from '@/layers/features/chat/ui/message/MessageItem';
+import { MessageAuthorAvatar } from '@/layers/features/chat/ui/message/MessageAuthorAvatar';
 import { UserMessageContent } from '@/layers/features/chat/ui/message/UserMessageContent';
 import { AssistantMessageContent } from '@/layers/features/chat/ui/message/AssistantMessageContent';
 import { MessageProvider } from '@/layers/features/chat/ui/message/MessageContext';
@@ -32,6 +33,38 @@ const AGENT_AUTHOR: MessageAuthor = {
   color: 'hsl(210, 70%, 55%)',
 };
 const SYSTEM_AUTHOR: MessageAuthor = { kind: 'system', id: 'system', displayName: 'System' };
+/**
+ * The common shape an agent actually renders through: no stored emoji, no
+ * stored colour (verified live — roughly 16% of agents have an icon, 5% a
+ * colour). The filled square this falls back to has to stay legible on
+ * whatever the id hashes to, not just on a hand-picked brand colour like
+ * {@link AGENT_AUTHOR} above.
+ */
+const AGENT_AUTHOR_UNBRANDED: MessageAuthor = {
+  kind: 'agent',
+  id: 'lifeos',
+  displayName: 'LifeOS',
+};
+/**
+ * Session chat's other common case: no agent for the session, so
+ * `resolveMessageAuthor` falls back to the runtime's own brand — its color is
+ * a theme token (`var(--color-orange-500)`), not a concrete color, which is
+ * why this one draws tinted rather than filled (`readableForeground` cannot
+ * read a `var()` token — see `MessageAuthorAvatar`'s own doc).
+ */
+const AGENT_AUTHOR_RUNTIME_BRAND: MessageAuthor = {
+  kind: 'agent',
+  id: 'runtime:claude-code',
+  displayName: 'Claude Code',
+  runtime: 'claude-code',
+};
+/** A person bridged into the room from outside this machine — the Send badge's one case. */
+const EXTERNAL_HUMAN_AUTHOR: MessageAuthor = {
+  kind: 'human',
+  id: 'author-bo',
+  displayName: 'Bo',
+  isExternal: true,
+};
 
 const STANDALONE_CTX = {
   sessionId: MOCK_SESSION_ID,
@@ -296,6 +329,41 @@ export function MessageShowcases() {
             author={SYSTEM_AUTHOR}
             sessionId={MOCK_SESSION_ID}
           />
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="MessageAuthorAvatar"
+        description="Shape and fill are the colourblind-safe signal for who is speaking, in both the room feed and session chat (spec composer-identity-components, direction C): an agent draws as a filled square with a small Bot badge; a person stays a tinted circle, gaining a Send badge only when they are bridged in from outside this machine. The unbranded agent below is the common case, not the exception — its fallback letter still has to read against whatever the id hashes to. The runtime-brand agent stays square but draws TINTED rather than filled: its colour is a theme token, which the fill variant's contrast pass cannot parse, so it falls back to the same tint every person uses."
+      >
+        <ShowcaseLabel>Agent — stored emoji and colour</ShowcaseLabel>
+        <ShowcaseDemo>
+          <MessageAuthorAvatar author={AGENT_AUTHOR} />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Agent — no stored emoji or colour (the common case)</ShowcaseLabel>
+        <ShowcaseDemo>
+          <MessageAuthorAvatar author={AGENT_AUTHOR_UNBRANDED} />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Agent — runtime brand fallback, no agent for the session</ShowcaseLabel>
+        <ShowcaseDemo>
+          <MessageAuthorAvatar author={AGENT_AUTHOR_RUNTIME_BRAND} />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Person — on this machine</ShowcaseLabel>
+        <ShowcaseDemo>
+          <MessageAuthorAvatar author={HUMAN_AUTHOR} />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Person — bridged in from another platform</ShowcaseLabel>
+        <ShowcaseDemo>
+          <MessageAuthorAvatar author={EXTERNAL_HUMAN_AUTHOR} />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>System</ShowcaseLabel>
+        <ShowcaseDemo>
+          <MessageAuthorAvatar author={SYSTEM_AUTHOR} />
         </ShowcaseDemo>
       </PlaygroundSection>
     </>
