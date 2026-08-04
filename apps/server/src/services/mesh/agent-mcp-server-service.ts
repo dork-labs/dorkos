@@ -24,10 +24,12 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { readManifest, writeManifest, MANIFEST_DIR, MANIFEST_FILE } from '@dorkos/shared/manifest';
-import { AgentManifestSchema } from '@dorkos/shared/mesh-schemas';
+import { AgentManifestSchema, McpServerTransportSchema } from '@dorkos/shared/mesh-schemas';
 import type { ManagedMcpServer, McpServerTransport } from '@dorkos/shared/mesh-schemas';
 import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
 import type { Logger } from '@dorkos/shared/logger';
+
+import { readMcpJsonServers, resolveMcpJsonConnection } from './mcp-json.js';
 
 /** The DorkOS tool server's own name — reserved so a managed server can never shadow it. */
 export const RESERVED_MCP_SERVER_NAME = 'dorkos';
@@ -41,7 +43,8 @@ export type AgentMcpServerErrorCode =
   | 'MANIFEST_UNREADABLE'
   | 'RESERVED_NAME'
   | 'DUPLICATE_NAME'
-  | 'SERVER_NOT_FOUND';
+  | 'SERVER_NOT_FOUND'
+  | 'DISCOVERED_NOT_FOUND';
 
 /** Error thrown by {@link AgentMcpServerService}; `code` drives the caller's status mapping. */
 export class AgentMcpServerError extends Error {
@@ -85,6 +88,23 @@ export interface AddManagedServerOptions {
   addedBy: string;
   /** Whether the server is enabled on add. `add` enables by default (spec §4). */
   enabled?: boolean;
+}
+
+/** Arguments for {@link AgentMcpServerService.import}. */
+export interface ImportManagedServerOptions {
+  /** Agent id whose manifest gains the imported server. */
+  agentId: string;
+  /** The discovered server's name — the key under `.mcp.json`'s `mcpServers`. */
+  name: string;
+  /** Who approved the import — recorded on the entry for audit. */
+  addedBy: string;
+  /**
+   * Fallback connection resolver, invoked only when the workspace `.mcp.json`
+   * does not resolve the named server. Lets a runtime (claude-code) supply an
+   * already-captured connection without this runtime-neutral service importing a
+   * runtime SDK. A returned value is re-validated before use.
+   */
+  resolveFallback?: () => McpAppServerConnection | null;
 }
 
 /** Arguments for {@link AgentMcpServerService.update}. */
@@ -150,6 +170,53 @@ export class AgentMcpServerService {
       name: opts.name,
       enabled: opts.enabled ?? true,
       connection: opts.connection,
+      addedAt: new Date().toISOString(),
+      addedBy: opts.addedBy,
+    };
+    const next = [...manifest.mcpServers, entry];
+    await this.persist(projectPath, manifest, next);
+    return next;
+  }
+
+  /**
+   * Import a discovered (read-only) `.mcp.json` server into the managed store as
+   * an enabled, editable entry (DOR-894).
+   *
+   * Resolution order matters, and the name checks come FIRST: the reserved name
+   * `dorkos` and any name the agent already manages are rejected before the file
+   * is read, so importing an already-managed name fails as `DUPLICATE_NAME`
+   * rather than as a missing discovered server. It then resolves the connection
+   * from the workspace `.mcp.json` (primary), falling back to
+   * {@link ImportManagedServerOptions.resolveFallback} when the file cannot
+   * resolve it, and throws `DISCOVERED_NOT_FOUND` when neither can. The write is
+   * a normal managed `add`, so an imported server is enabled and injected like
+   * any other.
+   *
+   * @param opts - The agent id, discovered name, approver, and optional fallback.
+   * @returns The updated `mcpServers` list.
+   * @throws {AgentMcpServerError} `RESERVED_NAME`, `DUPLICATE_NAME`, or
+   *   `DISCOVERED_NOT_FOUND`.
+   */
+  async import(opts: ImportManagedServerOptions): Promise<ManagedMcpServer[]> {
+    const { projectPath, manifest } = await this.load(opts.agentId);
+    this.assertNameAvailable(manifest.mcpServers, opts.name);
+
+    const connection = await this.resolveDiscoveredConnection(
+      projectPath,
+      opts.name,
+      opts.resolveFallback
+    );
+    if (!connection) {
+      throw new AgentMcpServerError(
+        'DISCOVERED_NOT_FOUND',
+        `No discovered MCP server named "${opts.name}" could be resolved from ${projectPath}/.mcp.json`
+      );
+    }
+
+    const entry: ManagedMcpServer = {
+      name: opts.name,
+      enabled: true,
+      connection,
       addedAt: new Date().toISOString(),
       addedBy: opts.addedBy,
     };
@@ -344,6 +411,28 @@ export class AgentMcpServerService {
     enabled: boolean
   ): Promise<ManagedMcpServer[]> {
     return this.update({ agentId, name, enabled });
+  }
+
+  /**
+   * Resolve a discovered server's connection: the workspace `.mcp.json` first,
+   * then the optional runtime fallback. A fallback value is re-validated through
+   * {@link McpServerTransportSchema} so a partial runtime shape (optional
+   * `args`/`env`/`headers`) lands with the schema's defaults, exactly like the
+   * `.mcp.json` path.
+   */
+  private async resolveDiscoveredConnection(
+    projectPath: string,
+    name: string,
+    resolveFallback?: () => McpAppServerConnection | null
+  ): Promise<McpServerTransport | null> {
+    const servers = await readMcpJsonServers(projectPath);
+    const primary = resolveMcpJsonConnection(servers, name);
+    if (primary) return primary;
+
+    const fallback = resolveFallback?.();
+    if (!fallback) return null;
+    const parsed = McpServerTransportSchema.safeParse(fallback);
+    return parsed.success ? parsed.data : null;
   }
 
   /** Reject the reserved name (case-insensitive) and any duplicate within the agent. */

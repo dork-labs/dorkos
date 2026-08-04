@@ -83,6 +83,7 @@ import {
   mergeSessionMcpServers,
 } from './services/runtimes/claude-code/mcp-server-config.js';
 import { AgentMcpServerService } from './services/mesh/agent-mcp-server-service.js';
+import type { McpCapabilityDeps } from './services/mesh/mcp-capabilities.js';
 import { setRelayEnabled, setRelayInitError } from './services/relay/relay-state.js';
 import { AdapterManager } from './services/relay/adapter-manager.js';
 import {
@@ -2181,6 +2182,33 @@ async function start() {
   // The attribution observer records an Activity event for every invocation
   // made by an agent that presented an identity token (spec `agent-trust`
   // §3.1). Unattributed calls write nothing, so the no-token path is unchanged.
+  //
+  // The MCP-server-management domain (spec `mcp-server-management` §5): the
+  // eight `mcp.*` verbs over the same service the injection factory reads, so a
+  // server added through the gated capability is what the next session injects.
+  // Built here (not inline) so `meshCore` narrows for the fallback closure.
+  // Present only when meshCore initialized (the service needs the agent registry
+  // to resolve workspace paths). `resolveDiscoveredFallback` backs `mcp.import`
+  // when a workspace `.mcp.json` cannot resolve a name: the agent's own runtime
+  // may hold an already-captured connection from a prior turn (claude-code's
+  // cache). Resolved lazily and only on the file miss, so it never runs for the
+  // common `.mcp.json` case.
+  let mcpDeps: McpCapabilityDeps | undefined;
+  if (agentMcpServerService && meshCore) {
+    const agentRegistry = meshCore.agentRegistry;
+    mcpDeps = {
+      service: agentMcpServerService,
+      agents: agentRegistry,
+      resolveDiscoveredFallback: (agentId: string, name: string) => {
+        const agent = agentRegistry.get(agentId);
+        if (!agent) return null;
+        const runtime = runtimeRegistry.has(agent.runtime)
+          ? runtimeRegistry.get(agent.runtime)
+          : runtimeRegistry.getDefault();
+        return runtime.getMcpServerConfig?.(agent.projectPath, name) ?? null;
+      },
+    };
+  }
   capabilityRegistry = composeDorkOsCapabilityRegistry(
     {
       logger,
@@ -2195,15 +2223,9 @@ async function start() {
         flowBindings: connectorFlowBindings,
         ...(adapterManager && { relay: adapterManager }),
       },
-      // The MCP-server-management domain (spec `mcp-server-management` §5): the
-      // seven `mcp.*` verbs over the same service the injection factory reads,
-      // so a server added through the gated capability is what the next session
-      // injects. Present only when meshCore initialized (the service needs the
-      // agent registry to resolve workspace paths).
-      ...(agentMcpServerService &&
-        meshCore && {
-          mcpDeps: { service: agentMcpServerService, agents: meshCore.agentRegistry },
-        }),
+      // The MCP-server-management domain — its deps are built above so the
+      // `mcp.import` fallback closure narrows `meshCore`.
+      ...(mcpDeps && { mcpDeps }),
     },
     createCapabilityAttributionObserver(activityService)
   );

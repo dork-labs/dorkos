@@ -6,6 +6,7 @@ import type {
   AgentMcpMutationResult,
   AgentMcpTestResult,
   CapabilityApprovalRequired,
+  ImportAgentMcpServerInput,
   UpdateAgentMcpServerInput,
 } from '@dorkos/shared/transport';
 import type { ManagedMcpServer } from '@dorkos/shared/mesh-schemas';
@@ -66,6 +67,20 @@ function useDestructiveMcpMutation<TInput extends { agentId: string }>(
 export function useAddAgentMcpServer() {
   return useDestructiveMcpMutation<AddAgentMcpServerInput>((transport, input, approvalToken) =>
     transport.addAgentMcpServer(input, approvalToken ? { approvalToken } : undefined)
+  );
+}
+
+/**
+ * Import a discovered `.mcp.json` server into DorkOS management (destructive
+ * `mcp.import`). The server-side handler resolves the connection from the name,
+ * so the input carries only `{ agentId, name }`; the approval → grant → retry
+ * flow is identical to {@link useAddAgentMcpServer}. On success both the managed
+ * list and the discovered/live roster are invalidated, so the row moves from
+ * discovered to managed.
+ */
+export function useImportAgentMcpServer() {
+  return useDestructiveMcpMutation<ImportAgentMcpServerInput>((transport, input, approvalToken) =>
+    transport.importAgentMcpServer(input, approvalToken ? { approvalToken } : undefined)
   );
 }
 
