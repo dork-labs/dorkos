@@ -1,7 +1,7 @@
 ---
 id: 260803-205035
 title: Feedback submissions dual-write to Linear with Neon as system of record, not PostHog alone
-status: proposed
+status: accepted
 created: 2026-08-03
 spec: feedback-pipeline
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

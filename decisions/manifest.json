@@ -30,7 +30,7 @@
       "id": "260803-205037",
       "slug": "feedback-may-attach-authenticated-identity",
       "title": "Feedback submissions may attach the authenticated user's identity, shown plainly and resolved server-side",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-08-03",
       "specSlug": "feedback-pipeline"
     },
@@ -38,7 +38,7 @@
       "id": "260803-205035",
       "slug": "feedback-dual-writes-to-linear-with-neon-as-system-of-record",
       "title": "Feedback submissions dual-write to Linear with Neon as system of record, not PostHog alone",
-      "status": "proposed",
+      "status": "accepted",
       "created": "2026-08-03",
       "specSlug": "feedback-pipeline"
     },
