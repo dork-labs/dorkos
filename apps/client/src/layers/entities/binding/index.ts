@@ -37,5 +37,10 @@ export {
   buildDefaultValues,
   hasNonDefaultAdvanced,
 } from './model/binding-form';
-export { buildPreviewSentence, SELECT_ANY } from './lib/build-preview-sentence';
+export {
+  buildPreviewSentence,
+  chatTypeLabel,
+  CHAT_TYPE_OPTIONS,
+  SELECT_ANY,
+} from './lib/build-preview-sentence';
 export { SESSION_STRATEGY_LABELS, sessionStrategyLabel } from './lib/session-strategy-labels';

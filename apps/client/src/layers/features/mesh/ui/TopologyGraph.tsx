@@ -290,14 +290,14 @@ function TopologyGraphInner({
       aria-describedby="topology-graph-summary"
     >
       {/* Screen-reader summary. Also names the keyboard-accessible path to
-          creating an integration: canvas binding is drag-only (no keyboard
+          creating a connection: canvas binding is drag-only (no keyboard
           equivalent — see PR notes), so assistive-tech users are pointed at the
-          Integrations tab, which is fully keyboard-operable. */}
+          agent's Connections section, which is fully keyboard-operable. */}
       <div id="topology-graph-summary" className="sr-only">
         Network topology: {agentCount} agent{agentCount !== 1 ? 's' : ''}, {adapterCount} adapter
         {adapterCount !== 1 ? 's' : ''}, {bindingCount} binding{bindingCount !== 1 ? 's' : ''}. To
-        bind an integration to an agent with the keyboard, use the Integrations tab in the Relay
-        panel.
+        create a connection between an adapter and an agent with the keyboard, use the agent&apos;s
+        Connections section.
       </div>
       <ReactFlow
         nodes={layoutedNodes}
@@ -369,7 +369,7 @@ function TopologyGraphInner({
       )}
       {hasAdapters && hasAgents && !hasBindings && (
         <div className="bg-muted/80 text-muted-foreground pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-md px-3 py-1.5 text-xs">
-          Drag from an integration to an agent to connect it
+          Drag from an adapter to an agent to create a connection
         </div>
       )}
       {/* Subtle re-layout indicator — canvas stays mounted so the viewport is preserved. */}
@@ -402,9 +402,9 @@ function TopologyGraphInner({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remove integration</AlertDialogTitle>
+            <AlertDialogTitle>Remove connection</AlertDialogTitle>
             <AlertDialogDescription>
-              Remove this integration? The agent will no longer receive messages from it.
+              Remove this connection? The agent will no longer receive messages from it.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
