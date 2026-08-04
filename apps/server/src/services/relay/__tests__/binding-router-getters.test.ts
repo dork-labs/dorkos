@@ -142,6 +142,29 @@ describe('BindingRouter getters', () => {
     });
   });
 
+  describe('takeChatSession (chats-as-channels §7.2/§7.3 migration off sessionMap)', () => {
+    it('takes and removes the single {bindingId}:chat:{chatId} entry, persisting the map', async () => {
+      const taken = await router.takeChatSession('b1', '12345');
+      expect(taken).toEqual({ sessionId: 'session-aaa' });
+      // Gone from the map afterwards — a bridged binding vacates sessionMap.
+      expect(router.getSessionsByBinding('b1').map((s) => s.key)).not.toContain('b1:chat:12345');
+      expect(router.getSessionsByBinding('b1')).toHaveLength(1);
+      // Persisted (the atomic rename ran once for the removal).
+      expect(vi.mocked(writeFile)).toHaveBeenCalled();
+    });
+
+    it('returns undefined when there is no chat entry for the pair', async () => {
+      expect(await router.takeChatSession('b1', 'nonexistent')).toBeUndefined();
+    });
+
+    it('never takes a per-user session — the key identifies the conversation, not the person', async () => {
+      // b2 has a `:user:alice` session but no `:chat:alice` one, so a chat-keyed
+      // take finds nothing and the caller starts fresh.
+      expect(await router.takeChatSession('b2', 'alice')).toBeUndefined();
+      expect(router.getSessionsByBinding('b2').map((s) => s.key)).toContain('b2:user:alice');
+    });
+  });
+
   describe('return value isolation', () => {
     it('getSessionsByBinding returns a copy — mutations do not affect internal state', () => {
       const first = router.getSessionsByBinding('b1');
