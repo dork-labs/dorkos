@@ -339,6 +339,27 @@ export interface PublishOptions {
    * the trace is a single row, exactly as before.
    */
   dispatchId?: string;
+  /**
+   * The publisher's assertion that it is trusted server code legitimately
+   * publishing under a `relay.bridge.*` delivery principal (DOR-889).
+   *
+   * A `from` string reaching the publish pipeline carries no provenance, so the
+   * pipeline cannot tell a trusted server-constructed bridge publish apart from
+   * an untrusted, caller-supplied `from` that happens to spell one. This marker
+   * is that provenance: it is an in-process argument, never a wire field, so
+   * only code that calls `publish` directly can set it. The pipeline **rejects
+   * any `relay.bridge.*` `from` that arrives without it** (see
+   * `RelayPublishPipeline.publish`), making the server-only property hold for
+   * every ingress by construction rather than relying on each HTTP route to
+   * guard its own `from`.
+   *
+   * Set by exactly the three legitimate bridge publishers — chat-bridge
+   * `deliver`, the task-completion notifier, and the `relay_notify_user` tool —
+   * and by nothing else. It is inert on any non-bridge `from`, so setting it is
+   * harmless but pointless outside those callers; the HTTP publish route never
+   * sets it, which is what keeps a client-supplied bridge `from` unpublishable.
+   */
+  serverBridgePrincipal?: boolean;
 }
 
 // === Adapter Logger ===
@@ -399,7 +420,12 @@ export interface PublishResult {
       | 'circuit_open'
       | 'rate_limited'
       | 'budget_exceeded'
-      | 'initiate_denied';
+      | 'initiate_denied'
+      // DOR-889: a `relay.bridge.*` `from` reached the pipeline without the
+      // `serverBridgePrincipal` trust marker — a caller-supplied bridge
+      // principal that slipped past or around the HTTP route guard. Rejected
+      // before the consent gate and any delivery.
+      | 'untrusted_bridge_principal';
   }>;
 
   /** Per-endpoint pressure ratios for proactive signaling (0.0-1.0). */

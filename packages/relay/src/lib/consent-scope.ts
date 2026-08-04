@@ -14,6 +14,22 @@
 export const HUMAN_SUBJECT_PREFIX = 'relay.human.';
 
 /**
+ * Prefix of the server-only chat-bridge delivery principal (DOR-871,
+ * chats-as-channels §6.4): `relay.bridge.{reply|initiate}.{adapterId}.{chatId}`.
+ *
+ * Unlike the two constants above, this is a `from`-principal prefix, not a
+ * subject prefix — but it lives here for the same anti-drift reason: it is read
+ * from both sides of the publish seam. The publish pipeline treats any `from`
+ * under this prefix as **unpublishable unless the caller sets the
+ * `serverBridgePrincipal` trust marker** on `PublishOptions` (DOR-889), so the
+ * property "a `relay.bridge.*` principal is only publishable by trusted server
+ * code" holds for every ingress by construction, not per-route. The server's
+ * `services/relay/bridge-principal.ts` grammar re-exports this exact constant so
+ * there is one definition, never two that can drift.
+ */
+export const BRIDGE_PRINCIPAL_PREFIX = 'relay.bridge.';
+
+/**
  * Prefix of the in-app console's own subjects.
  *
  * The console is the operator's own UI on their own machine: there is no
