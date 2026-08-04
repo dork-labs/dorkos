@@ -79,6 +79,12 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
   let nextAdapterResult: (attempt: number) => DeliveryResult;
   /** Every publish the delivery made: subject, payload, from. */
   let publish: ReturnType<typeof vi.fn>;
+  /**
+   * The real operator name `ChatBridgeDelivery` resolves for the §6.7 prefix
+   * (DOR-899) — `null` by default, the "nothing configured" case, so most
+   * tests exercise the fallback path without asking for it.
+   */
+  let operatorDisplayName: () => string | null;
 
   function bridgeRequest(chatId: string, group = false): CreateBridgedRoomRequest {
     return {
@@ -153,6 +159,7 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
       lifecycle,
       resolveSubject: subjectFor,
       operatorAuthorId: () => harness.human,
+      operatorDisplayName: () => operatorDisplayName(),
       sleep: async () => {},
       retryBackoffMs: [1, 1],
     });
@@ -216,6 +223,7 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
     harness = createRoomHarness({ agents: agentLookup });
     binding = makeBinding();
     nextAdapterResult = () => ({ success: true, responseMessageId: 'tg-out-1' });
+    operatorDisplayName = () => null;
   });
 
   it('A6.1: an inbound message never round-trips back to the platform', async () => {
@@ -334,7 +342,8 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
     expect(payload.replyToMessageId).toBe('pm-1');
   });
 
-  it('A6.9: an operator post carries the display-name prefix on the wire and NOT in the stored body', async () => {
+  it('A6.9: with a real name configured, an operator post carries THAT name on the wire — never the "You" author-registry label — and NOT in the stored body (DOR-899)', async () => {
+    operatorDisplayName = () => 'Dorian';
     const room = harness.service.createBridgedRoom(bridgeRequest('555'));
     const delivery = makeDelivery(bindingRow(room.id, '555'));
     const post = operatorPost(room.id, 'raw cockpit text');
@@ -342,10 +351,40 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
     await delivery.deliverEntry(post);
 
     const wire = (publish.mock.calls[0][1] as Record<string, unknown>).content as string;
-    const operatorName = harness.authors.getById(harness.human)!.displayName;
-    expect(wire).toBe(`${operatorName}: raw cockpit text`);
+    // The author-registry row for this same author is still 'You' — proving
+    // the wire prefix came from the real-name resolver, not that cache.
+    expect(harness.authors.getById(harness.human)!.displayName).toBe('You');
+    expect(wire).toBe('Dorian: raw cockpit text');
     // The stored entry body is exactly what was typed — no prefix (§6.7).
     expect(harness.store.getEntryById(room.id, post.id)!.body.text).toBe('raw cockpit text');
+  });
+
+  it('DOR-899: with no real name configured, an operator post falls back to a neutral wire label — NEVER "You:" — and the stored body is still unchanged', async () => {
+    // operatorDisplayName resolves null by default (beforeEach) — the
+    // "nothing configured" case.
+    const room = harness.service.createBridgedRoom(bridgeRequest('555'));
+    const delivery = makeDelivery(bindingRow(room.id, '555'));
+    const post = operatorPost(room.id, 'raw cockpit text');
+
+    await delivery.deliverEntry(post);
+
+    const wire = (publish.mock.calls[0][1] as Record<string, unknown>).content as string;
+    expect(wire).not.toMatch(/^You:/);
+    expect(wire).toBe('Operator: raw cockpit text');
+    expect(harness.store.getEntryById(room.id, post.id)!.body.text).toBe('raw cockpit text');
+  });
+
+  it('DOR-899: a bridged GROUP operator post gets the real-name prefix the same way a DM does — the fix is not room-kind-conditional', async () => {
+    operatorDisplayName = () => 'Dorian';
+    const group = harness.service.createBridgedRoom(bridgeRequest('555', true));
+    const delivery = makeDelivery(bindingRow(group.id, '555'));
+    const post = operatorPost(group.id, 'hello group');
+
+    await delivery.deliverEntry(post);
+
+    expect((publish.mock.calls[0][1] as Record<string, unknown>).content).toBe(
+      'Dorian: hello group'
+    );
   });
 
   it('the bound agent own posts are NOT prefixed — the bot is its identity (§6.7)', async () => {

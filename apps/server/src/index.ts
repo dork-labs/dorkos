@@ -222,6 +222,7 @@ import {
   shutdownAiMetadataReporter,
 } from './services/core/ai-metadata-reporter.js';
 import { resolveTelemetryConsent, isTelemetryDebugEnabled } from '@dorkos/shared/telemetry-consent';
+import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import {
   decideTier1Boot,
   formatFirstRunTelemetryNotice,
@@ -802,6 +803,22 @@ async function start() {
     return owner ? roomAuthors.bindOwner(owner.id).id : roomAuthors.localHuman().id;
   };
 
+  // The REAL name a bridged group sees prefixed on an operator's post (chats-
+  // as-channels §6.7, DOR-899). `config.profile.displayName` ("what the user
+  // likes to be called", spec `user-profile-onboarding`) is the only place a
+  // real human name is stored on this machine — NOT `roomAuthors`' own
+  // `displayName` for this same person, which `bindOwner` fixes at `'You'`
+  // forever on purpose (the right word from the operator's own cockpit seat,
+  // the wrong one on the wire in somebody else's group). `sanitizeIdentity`
+  // runs the same label treatment every other agent-writable profile value
+  // gets before it reaches a line DorkOS wrote — `config_patch` can set this
+  // field mid-conversation, so it is not purely operator-authored text.
+  const resolveOperatorDisplayName = (): string | null => {
+    const raw = configManager.getAll().profile.displayName;
+    if (!raw) return null;
+    return sanitizeIdentity(raw) ?? null;
+  };
+
   // A room's memory is its `room_sessions` binding, and the id in it moves: the
   // room mints a placeholder before the first turn and Claude Code renames the
   // session mid-turn. Follow the RENAME rather than the turn's return value —
@@ -1085,6 +1102,7 @@ async function start() {
             : undefined;
         })(),
         operatorAuthorId: resolveOperatorAuthorId,
+        operatorDisplayName: resolveOperatorDisplayName,
         // The extra rooms reads outbound delivery needs (chats-as-channels §6):
         // read an entry by id, resolve an author, and register the inline
         // delivery hook on the room service.
