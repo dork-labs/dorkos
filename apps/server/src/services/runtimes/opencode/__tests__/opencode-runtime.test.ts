@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { OpencodeClient, GlobalEvent } from '@opencode-ai/sdk';
-import type { DependencyCheck, SessionSettingsPort } from '@dorkos/shared/agent-runtime';
+import type {
+  DependencyCheck,
+  SessionSettingsPort,
+  ManagedMcpServerResolver,
+  McpAppServerConnection,
+} from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { wrapKickoff, filterKickoffHistory } from '@dorkos/shared/kickoff';
 import { SESSIONS } from '../../../../config/constants.js';
@@ -120,6 +125,12 @@ function createMockClient() {
     },
     postSessionIdPermissionsPermissionId: vi.fn(async () => ({ data: true })),
     provider: { list: vi.fn(async () => ({ data: { all: [], default: {}, connected: [] } })) },
+    mcp: {
+      status: vi.fn(async () => ({ data: {} as Record<string, unknown> })),
+      add: vi.fn(async () => ({ data: {} as Record<string, unknown> })),
+      disconnect: vi.fn(async () => ({ data: true })),
+    },
+    config: { get: vi.fn(async () => ({ data: {} as Record<string, unknown> })) },
   };
   return { client, source };
 }
@@ -1034,6 +1045,7 @@ describe('OpenCodeRuntime', () => {
         supportsCostTracking: true,
         supportsResume: true,
         supportsMcp: false,
+        supportsManagedMcpServers: true,
         supportsQuestionPrompt: false,
         supportsPlugins: false,
         nativeContext: [],
@@ -1205,6 +1217,215 @@ describe('OpenCodeRuntime', () => {
         session: { id: sessionId, title: 'Renamed' },
       });
       await iterator.return?.();
+    });
+  });
+
+  describe('getMcpStatus (read-only roster)', () => {
+    it('returns null until the sidecar probe warms, then the joined roster', async () => {
+      const { runtime, client } = makeRuntime();
+      client.mcp.status.mockResolvedValue({ data: { fs: { status: 'connected' } } });
+      client.config.get.mockResolvedValue({
+        data: { mcp: { fs: { type: 'local', command: ['fs'] } } },
+      });
+
+      // Synchronous first read: nothing cached yet, warm is fire-and-forget.
+      expect(runtime.getMcpStatus(DIRECTORY)).toBeNull();
+
+      await vi.waitFor(() =>
+        expect(runtime.getMcpStatus(DIRECTORY)).toEqual([
+          { name: 'fs', type: 'stdio', status: 'connected' },
+        ])
+      );
+      expect(client.mcp.status).toHaveBeenCalledWith({ query: { directory: DIRECTORY } });
+    });
+
+    it('never boots the sidecar to serve status (peek-only)', async () => {
+      const provider = createProvider(null);
+      const runtime = new OpenCodeRuntime({ provider });
+
+      expect(runtime.getMcpStatus(DIRECTORY)).toBeNull();
+      expect(provider.peekClient).toHaveBeenCalled();
+      expect(provider.getClient).not.toHaveBeenCalled();
+
+      // Let the fire-and-forget warm settle: still null, no probe attempted.
+      await Promise.resolve();
+      expect(runtime.getMcpStatus(DIRECTORY)).toBeNull();
+    });
+
+    it('dedupes concurrent warms into a single probe per cwd', async () => {
+      const { runtime, client } = makeRuntime();
+      client.mcp.status.mockResolvedValue({ data: {} });
+
+      runtime.getMcpStatus(DIRECTORY);
+      runtime.getMcpStatus(DIRECTORY);
+      runtime.getMcpStatus(DIRECTORY);
+
+      await vi.waitFor(() => expect(client.mcp.status).toHaveBeenCalledTimes(1));
+    });
+  });
+
+  describe('setManagedMcpServers (managed injection)', () => {
+    const STDIO_CONN: McpAppServerConnection = {
+      transport: 'stdio',
+      command: 'my-server',
+      args: ['--flag'],
+      env: { API_KEY: 'x' },
+    };
+    const HTTP_CONN: McpAppServerConnection = {
+      transport: 'http',
+      url: 'https://example.com/mcp',
+      headers: { Authorization: 'Bearer t' },
+    };
+    const SSE_CONN: McpAppServerConnection = { transport: 'sse', url: 'https://example.com/sse' };
+
+    function resolverReturning(
+      servers: Record<string, McpAppServerConnection>
+    ): ManagedMcpServerResolver & { injectableServersForCwd: ReturnType<typeof vi.fn> } {
+      return { injectableServersForCwd: vi.fn(() => servers) };
+    }
+
+    /** Drive one full turn (turn N), returning once its `done` has been consumed. */
+    async function driveTurn(
+      harness: ReturnType<typeof makeRuntime>,
+      sessionId: string,
+      turnNo: number
+    ): Promise<void> {
+      const { runtime, client, source } = harness;
+      const eventCallsBefore = client.global.event.mock.calls.length;
+      const { finished } = consume(
+        runtime.sendMessage(sessionId, `msg ${turnNo}`, { cwd: DIRECTORY })
+      );
+      await vi.waitFor(() =>
+        expect(client.global.event.mock.calls.length).toBeGreaterThan(eventCallsBefore)
+      );
+      const connection = source.latest();
+      connection.push(globalEvent(DIRECTORY, serverConnected()));
+      await vi.waitFor(() => expect(client.session.promptAsync).toHaveBeenCalledTimes(turnNo));
+      for (const event of opencodeSimpleTurn(OC_SESSION_A, 'ok')) {
+        connection.push(globalEvent(DIRECTORY, event));
+      }
+      await finished;
+    }
+
+    it('registers enabled managed servers into the sidecar before the prompt, dropping sse', async () => {
+      const harness = makeRuntime();
+      const { runtime, client } = harness;
+      runtime.setManagedMcpServers(
+        resolverReturning({ fs: STDIO_CONN, api: HTTP_CONN, streamy: SSE_CONN })
+      );
+      await driveTurn(harness, nextSessionId(), 1);
+
+      const addCalls = client.mcp.add.mock.calls.map((c) => c[0]!.body!);
+      const addNames = addCalls.map((b) => b.name);
+      expect(new Set(addNames)).toEqual(new Set(['fs', 'api']));
+      expect(addNames).not.toContain('streamy'); // sse withheld
+
+      const fsCall = client.mcp.add.mock.calls.find((c) => c[0]!.body!.name === 'fs')![0]!;
+      expect(fsCall.query).toEqual({ directory: DIRECTORY });
+      expect(fsCall.body!.config).toEqual({
+        type: 'local',
+        command: ['my-server', '--flag'],
+        environment: { API_KEY: 'x' },
+        enabled: true,
+      });
+      const apiCall = client.mcp.add.mock.calls.find((c) => c[0]!.body!.name === 'api')![0]!;
+      expect(apiCall.body!.config).toEqual({
+        type: 'remote',
+        url: 'https://example.com/mcp',
+        headers: { Authorization: 'Bearer t' },
+        enabled: true,
+      });
+    });
+
+    it('injects nothing when no resolver is wired', async () => {
+      const harness = makeRuntime();
+      await driveTurn(harness, nextSessionId(), 1);
+      expect(harness.client.mcp.add).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op on a second turn when the enabled set is unchanged (same live sidecar)', async () => {
+      const harness = makeRuntime();
+      const { runtime, client } = harness;
+      runtime.setManagedMcpServers(resolverReturning({ fs: STDIO_CONN }));
+      const sessionId = nextSessionId();
+
+      await driveTurn(harness, sessionId, 1);
+      expect(client.mcp.add).toHaveBeenCalledTimes(1);
+
+      await driveTurn(harness, sessionId, 2);
+      // Same client + unchanged signature → not re-registered.
+      expect(client.mcp.add).toHaveBeenCalledTimes(1);
+    });
+
+    it('disconnects ONLY the managed server we removed — never a user-configured one', async () => {
+      const harness = makeRuntime();
+      const { runtime, client } = harness;
+      const resolver = resolverReturning({ fs: STDIO_CONN, api: HTTP_CONN });
+      runtime.setManagedMcpServers(resolver);
+      const sessionId = nextSessionId();
+
+      // The sidecar already hosts the user's OWN server (we never injected it).
+      client.mcp.status.mockResolvedValue({ data: { userserver: { status: 'connected' } } });
+      await driveTurn(harness, sessionId, 1);
+      expect(client.mcp.add).toHaveBeenCalledTimes(2); // fs + api; userserver untouched
+
+      // The live set now reflects our two adds alongside the user's server — if
+      // the disconnect loop diffed against `GET /mcp` instead of the names WE
+      // injected, it would wrongly disconnect `userserver` here.
+      client.mcp.status.mockResolvedValue({
+        data: {
+          userserver: { status: 'connected' },
+          fs: { status: 'connected' },
+          api: { status: 'connected' },
+        },
+      });
+      // Operator disables `api`.
+      resolver.injectableServersForCwd.mockReturnValue({ fs: STDIO_CONN });
+      await driveTurn(harness, sessionId, 2);
+
+      const disconnectNames = client.mcp.disconnect.mock.calls.map((c) => c[0]!.path!.name);
+      // EXACTLY the removed managed server — the user's own server is never touched.
+      expect(disconnectNames).toEqual(['api']);
+      expect(disconnectNames).not.toContain('userserver');
+    });
+
+    it('skips a managed server whose name collides with a user-configured one and surfaces it as a conflict', async () => {
+      const harness = makeRuntime();
+      const { runtime, client } = harness;
+      runtime.setManagedMcpServers(resolverReturning({ shared: STDIO_CONN, fs: STDIO_CONN }));
+      const sessionId = nextSessionId();
+
+      // The user already configured `shared` in their own opencode.json.
+      client.mcp.status.mockResolvedValue({ data: { shared: { status: 'connected' } } });
+      await driveTurn(harness, sessionId, 1);
+
+      // `shared` is never injected (that would overwrite the user's); `fs` is.
+      const addNames = client.mcp.add.mock.calls.map((c) => c[0]!.body!.name);
+      expect(addNames).toEqual(['fs']);
+      expect(addNames).not.toContain('shared');
+
+      // The conflict is surfaced in the roster as a failed entry.
+      const status = runtime.getMcpStatus(DIRECTORY);
+      const sharedEntry = status?.find((s) => s.name === 'shared');
+      expect(sharedEntry?.status).toBe('failed');
+      expect(sharedEntry?.error).toContain('already configured in OpenCode');
+    });
+
+    it('retries a failed add on the next turn instead of stranding it for the session', async () => {
+      const harness = makeRuntime();
+      const { runtime, client } = harness;
+      runtime.setManagedMcpServers(resolverReturning({ fs: STDIO_CONN }));
+      const sessionId = nextSessionId();
+
+      // Turn 1: the add throws (transient) — must NOT be recorded as applied.
+      client.mcp.add.mockRejectedValueOnce(new Error('transient boom'));
+      await driveTurn(harness, sessionId, 1);
+      expect(client.mcp.add).toHaveBeenCalledTimes(1);
+
+      // Turn 2: same desired set, but because turn 1 did not fully apply, the
+      // signature guard does NOT short-circuit — the failed server is retried.
+      await driveTurn(harness, sessionId, 2);
+      expect(client.mcp.add).toHaveBeenCalledTimes(2);
     });
   });
 });

@@ -52,6 +52,7 @@ import type {
   SseResponse,
   SessionSettingsPort,
   ToolDecisionOptions,
+  ManagedMcpServerResolver,
 } from '@dorkos/shared/agent-runtime';
 import type {
   SessionSnapshot,
@@ -59,6 +60,7 @@ import type {
   SessionListEvent,
 } from '@dorkos/shared/session-stream';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
+import type { McpServerEntry } from '@dorkos/shared/transport';
 import { getOrCreateProjector, peekProjector } from '../../session/session-state-projector.js';
 import { readLogBackedHistory } from '../../session/log-backed-history.js';
 import { SessionLockManager } from '../../session/session-lock.js';
@@ -86,6 +88,7 @@ import { PendingApprovalStore, resolveApprovalDecision } from './approvals.js';
 import { OPENCODE_CAPABILITIES, STREAM_LIVE_TIMEOUT_MS } from './runtime-constants.js';
 import { buildOpenCodeParts, parseModelSelection } from './turn-input.js';
 import { projectModelOptions } from './models.js';
+import { OpenCodeMcpManager } from './mcp-manager.js';
 
 /** Constructor dependencies for {@link OpenCodeRuntime} (composition root). */
 export interface OpenCodeRuntimeOptions {
@@ -132,12 +135,15 @@ export class OpenCodeRuntime implements AgentRuntime {
   private readonly binding = new Map<string, Promise<string>>();
   /** OpenCode session id → its `Session.directory` (the demux key half). */
   private readonly directoryByOcId = new Map<string, string>();
+  /** MCP status + managed injection, keyed by directory (DOR-893). */
+  private readonly mcp: OpenCodeMcpManager;
   private settingsPort: SessionSettingsPort | undefined;
 
   constructor(options: OpenCodeRuntimeOptions) {
     this.provider = options.provider;
     this.mapper = new OpenCodeSessionMapper(options.provider, options.sessionMap);
     this.hub = new OpenCodeGlobalEventHub(options.provider);
+    this.mcp = new OpenCodeMcpManager(options.provider);
   }
 
   // --- Session lifecycle ---
@@ -333,6 +339,12 @@ export class OpenCodeRuntime implements AgentRuntime {
   ): AsyncGenerator<StreamEvent> {
     const ocSessionId = await this.resolveOpenCodeSession(sessionId, cwd, title);
     const client = await this.provider.getClient(cwd);
+    // Register the agent's enabled managed MCP servers into the live sidecar for
+    // this directory BEFORE the prompt, so their tools are available this turn
+    // (spec `mcp-server-management` §6, DOR-893). Ephemeral: the sidecar's
+    // `POST /mcp` mutates only its in-memory per-directory registry — no
+    // `opencode.json` write — so this never pollutes the user's config.
+    await this.mcp.ensureManaged(client, cwd);
     const directory = await this.resolveSessionDirectory(client, ocSessionId);
 
     const ctx = createOpenCodeEventContext(sessionId);
@@ -819,6 +831,22 @@ export class OpenCodeRuntime implements AgentRuntime {
     return { commands: [], lastScanned: new Date().toISOString() };
   }
 
+  // --- MCP (read-only status + managed injection, delegated to OpenCodeMcpManager) ---
+
+  /**
+   * @inheritdoc
+   *
+   * Surfaces the MCP servers OpenCode loaded for a directory from its OWN config
+   * (the merged global + per-project `opencode.json` `mcp` map), read-only:
+   * `supportsMcp` stays false, so these render as discovered, non-editable rows
+   * in the Agent Hub roster. Delegated to {@link OpenCodeMcpManager}, which warms
+   * a per-cwd cache out-of-band and peek-only (never boots the sidecar just to
+   * populate a read-only roster).
+   */
+  getMcpStatus(cwd: string): McpServerEntry[] | null {
+    return this.mcp.getStatus(cwd);
+  }
+
   // --- Lifecycle ---
 
   /**
@@ -843,6 +871,19 @@ export class OpenCodeRuntime implements AgentRuntime {
   /** Inject the core session-settings store for durable hydrate/write-through (ADR-0260). */
   setSessionSettings(port: SessionSettingsPort): void {
     this.settingsPort = port;
+  }
+
+  /**
+   * Accept the managed-MCP-server resolver so a turn can register the agent's
+   * enabled managed servers into the live sidecar (DOR-892 seam; the injection
+   * runs per turn via {@link OpenCodeMcpManager.ensureManaged}). The composition
+   * root calls this on every runtime that implements it; gated by
+   * `supportsManagedMcpServers: true`.
+   *
+   * @param resolver - The managed-server resolver from the composition root.
+   */
+  setManagedMcpServers(resolver: ManagedMcpServerResolver): void {
+    this.mcp.setResolver(resolver);
   }
 
   // --- Internals ---

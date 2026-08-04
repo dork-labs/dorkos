@@ -19,12 +19,13 @@ import { AddMcpServerForm, TRANSPORTS, type TransportKind } from './AddMcpServer
 /**
  * Transport kinds each runtime can actually run a managed server over.
  *
- * Interim until a per-transport runtime capability exists (DOR-892): Codex has
- * no SSE transport, so an SSE server added to a Codex agent is silently
- * dropped at turn time. Every other runtime accepts the full set.
+ * Interim until a per-transport runtime capability exists (DOR-892): Codex and
+ * OpenCode have no SSE transport, so an SSE server added to one of those agents
+ * is silently dropped at turn time. Every other runtime accepts the full set.
  */
 const SUPPORTED_TRANSPORTS_BY_RUNTIME: Partial<Record<AgentRuntime, readonly TransportKind[]>> = {
   codex: ['stdio', 'http'],
+  opencode: ['stdio', 'http'],
 };
 
 /** Transport kinds the Add form should offer for a given agent runtime. */

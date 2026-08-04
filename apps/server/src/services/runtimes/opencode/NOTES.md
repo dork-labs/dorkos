@@ -251,3 +251,70 @@ Revisit v2 when opencode documents it as the public SDK surface.
    env-var-only "0 credentials" false-missing (item 4 above).
 6. Basic-auth round trip: spawn with `OPENCODE_SERVER_PASSWORD`, confirm 401 without header and 200
    with `Basic b64("opencode:" + password)`.
+
+## 6. MCP: read-only status + managed apply both shipped (DOR-893)
+
+**Spike verdict (against the pinned `@opencode-ai/sdk@1.17.13` + the `sst/opencode`
+server source at v1.17.13):**
+
+- **READ status — yes.** The sidecar exposes `GET /mcp` (`client.mcp.status`) →
+  `{ [name]: McpStatus }` where `McpStatus` is one of
+  `connected | disabled | failed | needs_auth | needs_client_registration`, and
+  `GET /config` (`client.config.get`) returns the merged `mcp` map
+  (`McpLocalConfig` type `local` / `McpRemoteConfig` type `remote`). Both take a
+  `directory` query (OpenCode boots one instance per directory — §1), so status
+  is per-cwd. `mcp-status.ts` joins the two (status for connectivity, config for
+  transport type) into `McpServerEntry[]`; `getMcpStatus` serves it peek-only
+  (never boots the sidecar). OpenCode reads its configured MCP servers from its
+  own `opencode.json` (global + project merged), NOT from DorkOS.
+
+- **APPLY a managed server — yes, and EPHEMERAL (so shipped).** The sidecar
+  exposes `POST /mcp` (`client.mcp.add`, `{ name, config }`), `POST
+/mcp/{name}/connect`, and `POST /mcp/{name}/disconnect`, all `directory`-scoped.
+  The SDK is a pure HTTP client; the behaviour lives in the `opencode` server.
+  Reading `packages/opencode/src/mcp/index.ts` at v1.17.13 settles the one
+  question that mattered: `add`/`connect`/`disconnect` mutate ONLY the in-memory
+  per-directory `InstanceState` registry (`s.config` / `s.clients` / `s.status`)
+  via `createAndStore` — there is **no config-file write**, no `Config.set`, and
+  no file-watch/reload that would wipe a dynamically-added server. Dynamically
+  added servers live for the running instance's lifetime and vanish on restart.
+  That is exactly claude's inline-injection guarantee (no `opencode.json`
+  pollution), so managed apply is safe to ship.
+
+  **How Part B works** (`OpenCodeMcpManager.ensureManaged`, `mcp-server-config.ts`
+  converter): before each turn, resolve the agent's ENABLED managed servers for
+  the cwd (`ManagedMcpServerResolver`, the DOR-892 seam), convert to OpenCode's
+  `local`/`remote` config (stdio → `local` with a single `command` array +
+  `environment`; http → `remote` with `url` + `headers`; `sse` withheld —
+  OpenCode has no SSE transport, mirrors codex), and register each via
+  `client.mcp.add`. Reconciliation is keyed by `(cwd, live client instance,
+  desired-set signature, fully-applied?)`: a repeat turn on the same live sidecar
+  with an unchanged set that fully applied last run is a no-op; a new client
+  instance (sidecar restarted → empty registry) re-adds everything and removes
+  nothing; a changed set disconnects the names WE injected that are no longer
+  enabled and re-adds the desired ones.
+
+  **Never clobbers a user's server.** Before injecting, `GET /mcp` is read for
+  the live server set; a desired name already present that we did NOT inject is a
+  user-configured collision — skipped (never `mcp.add`-ed over), logged, and
+  surfaced as a `failed` conflict entry in the roster. The disconnect loop only
+  ever iterates names WE registered, so a user's server is untouchable on both
+  the add and the remove side.
+
+  **Honest failure handling.** Only names that ACTUALLY registered are recorded
+  as injected, so a transient `mcp.add` failure leaves `complete: false` and is
+  retried next turn rather than stranded for the session. A server whose add
+  threw is absent from `GET /mcp` and therefore renders as MISSING (not `failed`)
+  in the roster until it registers; only a name collision renders as `failed`.
+
+  `supportsManagedMcpServers: true` (NOT `supportsMcp`, which stays false — that
+  flag is specifically the in-process `dorkos` tool server, which OpenCode does
+  not host). The client `SUPPORTED_TRANSPORTS_BY_RUNTIME` map lists opencode as
+  `stdio`+`http` so the Add form withholds `sse`.
+
+  **Follow-up (unpinned assumption):** the ephemerality claim above is proven by
+  the server source at this pin, but nothing in the test suite guards it against
+  an OpenCode upgrade (the tests mock the SDK, as all OpenCode-adapter tests do).
+  A live-sidecar smoke test — spawn `opencode serve`, `mcp.add` a server, assert
+  the user's `opencode.json` is byte-unchanged — would pin it. Deferred (no real
+  binary in CI); revisit if OpenCode changes its MCP endpoints.
