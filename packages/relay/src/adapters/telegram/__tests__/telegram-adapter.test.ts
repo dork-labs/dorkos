@@ -624,6 +624,36 @@ describe('TelegramAdapter', () => {
     expect(firstChunk.length + secondChunk.length).toBe(5000);
   });
 
+  it('deliver() sends a markdown table without throwing, escaped but otherwise literal (§15 backstop, §13)', async () => {
+    // The chats-as-channels spec's §15 backstop: the outbound adapter has to
+    // survive a model that ignores room_context's formatting guidance and
+    // sends a Markdown table anyway. `markdownToTelegramHtml` has no table
+    // handling at all — pipes and dashes carry no special meaning to it — so
+    // this pins the REAL, unmocked conversion (this file mocks grammy and
+    // node:http, never `payload-utils.js`) surviving a table end to end: no
+    // throw, one send, and the one HTML-significant character in a cell
+    // escaped so Telegram's parser does not reject the whole message.
+    await adapter.start(mockRelay);
+
+    const table = ['| Service | Status |', '| --- | --- |', '| api | up |', '| db | <down> |'].join(
+      '\n'
+    );
+    const envelope = createEnvelope('relay.human.telegram.tg1.12345', { content: table });
+
+    const result = await adapter.deliver('relay.human.telegram.tg1.12345', envelope);
+
+    expect(result.success).toBe(true);
+    expect(mockSendMessage).toHaveBeenCalledTimes(1);
+    const sent = vi.mocked(mockSendMessage).mock.calls[0][1] as string;
+    // Mangled — the table's own syntax rides through as literal text — but
+    // not broken: no throw above, and the one thing that WOULD have broken
+    // Telegram's parser (an unescaped angle bracket) did not survive.
+    expect(sent).toContain('| Service | Status |');
+    expect(sent).toContain('| --- | --- |');
+    expect(sent).toContain('&lt;down&gt;');
+    expect(sent).not.toContain('<down>');
+  });
+
   it('deliver() returns failure for invalid subject (non-telegram prefix)', async () => {
     await adapter.start(mockRelay);
 

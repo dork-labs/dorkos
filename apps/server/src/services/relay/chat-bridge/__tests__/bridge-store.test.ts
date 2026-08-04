@@ -286,6 +286,42 @@ describe('BridgeStore', () => {
       expect(store.findRefByEntry('no-such-entry')).toBeNull();
     });
 
+    it('findRefsByEntries reads a batch in one query — room_context topic-label lookup (task 1.13)', () => {
+      store.createBridge(bridge());
+      const withTopic = entry(rooms, ROOM_ID, 'entry-topic');
+      const noTopic = entry(rooms, ROOM_ID, 'entry-no-topic');
+      store.recordInboundRef({
+        roomId: ROOM_ID,
+        entryId: withTopic.id,
+        chatId: CHAT_ID,
+        adapterId: ADAPTER_ID,
+        platformMessageId: 'pm-topic',
+        threadId: 'topic-1',
+        threadName: 'Release 2.0',
+        createdAt: withTopic.createdAt,
+      });
+      store.recordInboundRef({
+        roomId: ROOM_ID,
+        entryId: noTopic.id,
+        chatId: CHAT_ID,
+        adapterId: ADAPTER_ID,
+        platformMessageId: 'pm-no-topic',
+        createdAt: noTopic.createdAt,
+      });
+
+      const refs = store.findRefsByEntries([withTopic.id, noTopic.id, 'entry-never-existed']);
+
+      expect(refs.size).toBe(2);
+      expect(refs.get(withTopic.id)?.threadName).toBe('Release 2.0');
+      expect(refs.get(noTopic.id)?.threadName).toBeNull();
+      expect(refs.has('entry-never-existed')).toBe(false);
+    });
+
+    it('findRefsByEntries returns an empty map for an empty list without querying', () => {
+      store.createBridge(bridge());
+      expect(store.findRefsByEntries([])).toEqual(new Map());
+    });
+
     it('findInboundRefByPlatformMessage is the dedup lookup (spec §5.2 step 1)', () => {
       store.createBridge(bridge());
       const posted = entry(rooms, ROOM_ID, 'entry-dedup');
