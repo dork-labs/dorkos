@@ -124,6 +124,7 @@ import {
   type ClaimOutcome,
   type TriggerTarget,
 } from './room-claims.js';
+import type { BridgedRoomFraming } from '../relay/chat-bridge/room-context-framing.js';
 import type { AuthorRegistry } from './author-registry.js';
 import { isLiveAuthor } from './author-handles.js';
 import { evaluateCascade } from './cascade-guard.js';
@@ -184,12 +185,17 @@ export interface RoomTriggerDeps {
   authors: AuthorRegistry;
   agents: RoomAgentLookup;
   /**
-   * Whether a room projects an external chat. Read only by
-   * `buildRoomContext` — the dispatcher itself never branches on it, because a
-   * bridged room's turns are decided by exactly the machinery every other
-   * room's are (chats-as-channels §11.1).
+   * What a room's turn is told about the chat it projects, or `null` when
+   * unbridged. Read only by `buildRoomContext` — the dispatcher itself never
+   * branches on it, because a bridged room's turns are decided by exactly the
+   * machinery every other room's are (chats-as-channels §11.1).
    */
-  isBridgedRoom(roomId: string): boolean;
+  bridgedFraming(roomId: string): BridgedRoomFraming | null;
+  /**
+   * The stored forum-topic name for a batch of entries. Read only by
+   * `buildRoomContext`, for the same reason as {@link RoomTriggerDeps.bridgedFraming}.
+   */
+  topicNamesFor(entryIds: readonly string[]): Map<string, string>;
   runner: RoomTurnRunner;
   writer: RoomTriggerWriter;
   /**
