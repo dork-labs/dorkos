@@ -40,7 +40,7 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { APIError } from 'better-auth/api';
 import { toNodeHandler, fromNodeHeaders } from 'better-auth/node';
 import { apiKey } from '@better-auth/api-key';
-import { user, session, account, verification, apikey, type Db } from '@dorkos/db';
+import { user, session, account, verification, apikey, eq, type Db } from '@dorkos/db';
 import { env } from '../../../env.js';
 import { logger } from '../../../lib/logger.js';
 import { resolveTrustedOrigins } from '../../../lib/trusted-origins.js';
@@ -199,6 +199,33 @@ export function initAuth(db: Db, dorkHome: string): Auth {
   activeDb = db;
   activeAuth = createAuth(db, dorkHome);
   return activeAuth;
+}
+
+/**
+ * The `{ id, email, name }` of a user by id, or `null` when unknown — including
+ * when auth was never initialized (no db bound) or the id does not resolve to
+ * any row.
+ *
+ * A direct, synchronous better-sqlite3 read against the `user` table, keyed by
+ * an id a caller already verified some other way (a session cookie, an API
+ * key) — mirroring {@link hasAnyUser} and {@link readOwnerAccount}. The
+ * feedback pipeline (feedback-pipeline spec Part 1, ADR 260803-205037) is the
+ * first caller: it resolves a reporter's identity server-side, from
+ * `sessionGate`'s already-verified `userId`, never from a client-supplied
+ * field.
+ *
+ * @param userId - The Better Auth user id to look up.
+ */
+export function getUserById(userId: string): { id: string; email: string; name: string } | null {
+  if (!activeDb) return null;
+  return (
+    activeDb
+      .select({ id: user.id, email: user.email, name: user.name })
+      .from(user)
+      .where(eq(user.id, userId))
+      .limit(1)
+      .get() ?? null
+  );
 }
 
 /**

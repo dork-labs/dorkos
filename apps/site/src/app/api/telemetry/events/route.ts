@@ -198,8 +198,15 @@ type AcceptedEvent = TelemetryEvent | ExceptionEvent | AiGenerationEvent;
 const MAX_FEEDBACK_MESSAGE_LEN = 4000;
 const MAX_FEEDBACK_CONTACT_LEN = 254;
 const MAX_FEEDBACK_ROUTE_LEN = 256;
+const MAX_REPORTER_NAME_LEN = 128;
 
-/** Mirrors `FeedbackSubmittedProperties` in the shared registry. */
+/**
+ * Mirrors `FeedbackSubmittedProperties` in the shared registry — including the
+ * server-resolved `reporterEmail`/`reporterName` fields (feedback-pipeline spec
+ * Part 1, ADR 260803-205037). This ingest never resolves identity itself; it
+ * only mirrors the allowlist so a cockpit-forwarded event carrying these fields
+ * is accepted rather than silently dropped by `.strict()`.
+ */
 const FeedbackSubmittedProperties = z
   .object({
     kind: z.enum(['feedback', 'bug']),
@@ -208,10 +215,12 @@ const FeedbackSubmittedProperties = z
     surface: z.enum(['cockpit', 'site']),
     route: z.string().min(1).max(MAX_FEEDBACK_ROUTE_LEN).optional(),
     dorkosVersion: z.string().min(1).max(MAX_STRING_LEN).optional(),
+    reporterEmail: z.string().min(1).max(MAX_FEEDBACK_CONTACT_LEN).optional(),
+    reporterName: z.string().min(1).max(MAX_REPORTER_NAME_LEN).optional(),
   })
   .strict();
 
-/** Mirrors `FeatureRequestedProperties` in the shared registry. */
+/** Mirrors `FeatureRequestedProperties` in the shared registry (see above). */
 const FeatureRequestedProperties = z
   .object({
     message: z.string().min(1).max(MAX_FEEDBACK_MESSAGE_LEN),
@@ -219,6 +228,8 @@ const FeatureRequestedProperties = z
     surface: z.enum(['cockpit', 'site']),
     route: z.string().min(1).max(MAX_FEEDBACK_ROUTE_LEN).optional(),
     dorkosVersion: z.string().min(1).max(MAX_STRING_LEN).optional(),
+    reporterEmail: z.string().min(1).max(MAX_FEEDBACK_CONTACT_LEN).optional(),
+    reporterName: z.string().min(1).max(MAX_REPORTER_NAME_LEN).optional(),
   })
   .strict();
 

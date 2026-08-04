@@ -61,6 +61,7 @@ import {
   TransportListStreamPump,
   type TransportStreams,
 } from './transport-stream-pump';
+import { addBreadcrumb } from '../breadcrumbs';
 
 /**
  * Minimal surface of {@link SSEConnection} StreamManager depends on. Defining it
@@ -701,6 +702,13 @@ export class StreamManager {
   private openSessionStream(sessionId: string, cwd: string | null): SSEConnectionLike {
     const eventHandlers = this.buildSessionEventHandlers(sessionId);
     const onStateChange = (state: ConnectionState): void => {
+      // A bug-report breadcrumb (feedback-pipeline spec Part 1): the durable
+      // session stream dropping is exactly the kind of "what just happened"
+      // context a bug report benefits from, without the user having to notice
+      // and describe it themselves.
+      if (state === 'disconnected') {
+        addBreadcrumb('sse_disconnect', `session stream disconnected (${sessionId})`);
+      }
       this.listeners.onSessionConnectionState?.(sessionId, state);
     };
     if (this.source.kind === 'transport') {

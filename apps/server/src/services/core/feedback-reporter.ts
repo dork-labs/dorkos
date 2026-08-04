@@ -26,11 +26,13 @@
 import {
   buildFeedbackEvent,
   FeedbackEventSchema,
+  type FeedbackEventContext,
   type FeedbackSubmission,
 } from '@dorkos/shared/telemetry-events';
 
 import { getOrCreateInstanceId } from '../../lib/instance-id.js';
 import { logger, logError } from '../../lib/logger.js';
+import { getUserById } from './auth/index.js';
 
 /** Where feedback events are delivered (the one owned ingest). */
 export const FEEDBACK_ENDPOINT = 'https://dorkos.ai/api/telemetry/events';
@@ -38,14 +40,43 @@ export const FEEDBACK_ENDPOINT = 'https://dorkos.ai/api/telemetry/events';
 /** How long to wait on the ingest before giving up (ms). */
 const FEEDBACK_TIMEOUT_MS = 10_000;
 
+/** The server-resolved identity of an authenticated feedback submitter. */
+export type FeedbackIdentity = NonNullable<FeedbackEventContext['identity']>;
+
+/**
+ * Resolve the identity of an authenticated feedback submitter, SERVER-SIDE,
+ * from their already-verified session `userId` — never from anything a client
+ * sends (ADR 260803-205037). One extra lookup against the `user` table via
+ * {@link getUserById}, which the feedback route calls with `res.locals.user.userId`
+ * (set by `sessionGate`, only when `auth.enabled`).
+ *
+ * @param userId - The Better Auth user id `sessionGate` already verified.
+ * @returns The resolved `{ userId, email, name }`, or `undefined` when the id
+ *   does not resolve to a user (should not happen for a verified session, but
+ *   never throws — a feedback submission must still be deliverable).
+ */
+export async function resolveFeedbackIdentity(
+  userId: string
+): Promise<FeedbackIdentity | undefined> {
+  const row = getUserById(userId);
+  if (!row) return undefined;
+  return { userId: row.id, email: row.email, name: row.name };
+}
+
 /** Inputs for {@link sendFeedback}. */
 export interface SendFeedbackOptions {
-  /** The user-typed submission (`kind`, `message`, optional `contact`/`route`). */
+  /** The user-typed submission (`kind`, `message`, optional `contact`/`route`, plus diagnostics). */
   submission: FeedbackSubmission;
   /** Resolved dorkHome path (for the anonymous instance id). */
   dorkHome: string;
   /** Current DorkOS version, attached as a context property. */
   dorkosVersion: string;
+  /**
+   * The requester's identity, resolved server-side by {@link resolveFeedbackIdentity}
+   * — `undefined` when auth is off or no session exists. Forwarded into the
+   * built event's `reporterEmail`/`reporterName` properties.
+   */
+  identity?: FeedbackIdentity;
   /** Override the ingest endpoint (tests). Defaults to {@link FEEDBACK_ENDPOINT}. */
   endpoint?: string;
   /** Override `fetch` (tests). Defaults to the global. */
@@ -61,7 +92,7 @@ export interface SendFeedbackOptions {
  * @returns `{ ok: true }` when the ingest accepted the POST, else `{ ok: false }`.
  */
 export async function sendFeedback(options: SendFeedbackOptions): Promise<{ ok: boolean }> {
-  const { submission, dorkHome, dorkosVersion } = options;
+  const { submission, dorkHome, dorkosVersion, identity } = options;
   const endpoint = options.endpoint ?? FEEDBACK_ENDPOINT;
   const fetchImpl = options.fetchImpl ?? fetch;
 
@@ -72,6 +103,7 @@ export async function sendFeedback(options: SendFeedbackOptions): Promise<{ ok: 
       distinctId,
       timestamp: new Date().toISOString(),
       dorkosVersion,
+      identity,
     });
 
     // Validate our own envelope before sending — a malformed event should fail
