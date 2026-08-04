@@ -28,12 +28,7 @@ import {
 } from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
 import { MarkdownContent } from '@/layers/shared/ui';
-import {
-  hasReacted,
-  useToggleReaction,
-  type AuthorRef,
-  type RoomEntry,
-} from '@/layers/entities/room';
+import { OriginMark, hasReacted, useToggleReaction, type RoomEntry } from '@/layers/entities/room';
 import { MessageAuthorAvatar, messageItem } from '@/layers/features/chat';
 import {
   EntryActionBar,
@@ -63,9 +58,11 @@ interface RoomEntryRowProps {
   /**
    * The same author as the ROSTER holds them, or undefined once they have left.
    * Carries `mentionHandle`, which is the only string that reliably addresses
-   * them — a display name routinely contains spaces and reaches nobody.
+   * them — a display name routinely contains spaces and reaches nobody — and
+   * `origin`, which is what draws the origin mark beside an external author's
+   * name (chats-as-channels spec §4.3, §9).
    */
-  authorRef: AuthorRef | undefined;
+  authorRef: RosterAuthor | undefined;
   /**
    * The room's whole roster, keyed by author id — how a `<mention>` spliced
    * into the body (`mention-markup.ts`) resolves to who it names. The same
@@ -513,6 +510,9 @@ export function RoomEntryRow({
           {showAuthorHeader && (
             <div id={headerId} className={styles.header()}>
               <span className={styles.authorName()}>{author.displayName}</span>
+              {/* Legible at a glance beside the message it is about (spec §9)
+                  — never a tooltip a reader would have to go looking for. */}
+              {authorRef && <OriginMark origin={authorRef.origin} />}
               {time.length > 0 && (
                 // A `<time>` with its own date on it, and the whole date as the
                 // title a pointer reveals. A room scrolled back a week showed

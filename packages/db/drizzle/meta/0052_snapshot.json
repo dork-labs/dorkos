@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "34247f8c-6b36-480d-a71f-4b7a41500e61",
-  "prevId": "4c1047cc-ed59-42aa-89ef-65614734e562",
+  "id": "5f282cee-49cc-4637-9053-95fbb3780af1",
+  "prevId": "34247f8c-6b36-480d-a71f-4b7a41500e61",
   "tables": {
     "a2a_tasks": {
       "name": "a2a_tasks",
@@ -2372,6 +2372,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
+          "autoincrement": false
+        },
+        "platform_chat_type": {
+          "name": "platform_chat_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
           "autoincrement": false
         },
         "sender_name": {

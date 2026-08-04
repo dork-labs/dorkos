@@ -33,5 +33,5 @@ export type RoomDetailsFocus = 'members' | 'add' | 'topic';
  */
 export type RoomDetailsRoom = Pick<
   Room,
-  'id' | 'kind' | 'slug' | 'title' | 'topic' | 'archived' | 'createdAt'
+  'id' | 'kind' | 'slug' | 'title' | 'topic' | 'archived' | 'createdAt' | 'bridge'
 >;

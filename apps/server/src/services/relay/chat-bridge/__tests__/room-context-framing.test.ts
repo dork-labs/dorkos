@@ -21,6 +21,7 @@ function bridge(overrides: Partial<Bridge> = {}): Bridge {
     bindingId: 'binding-1',
     visibility: null,
     visibilityCheckedAt: null,
+    platformTitle: null,
     deliverNotices: false,
     lastDeliveredSeq: 0,
     lastActivityAt: null,

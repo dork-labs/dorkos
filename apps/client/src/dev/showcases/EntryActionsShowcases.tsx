@@ -32,7 +32,7 @@ interface BenchRowProps {
   /** Who wrote it. Defaults to the agent, so the reader can mention them. */
   author?: MessageAuthor;
   /** The same author as a roster holds them, or undefined for a former member. */
-  authorRef?: AuthorRef | undefined;
+  authorRef?: (AuthorRef & { origin: 'local' }) | undefined;
   /** Where the row sits in its author group. */
   grouping?: MessageGrouping;
   /** True to draw the row as a room whose live stream has given up. */

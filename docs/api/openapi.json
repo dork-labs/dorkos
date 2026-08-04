@@ -5655,6 +5655,38 @@
           },
           "lastActivityAt": {
             "type": "string"
+          },
+          "bridge": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "visibility": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "partial",
+                  "full",
+                  null
+                ],
+                "description": "Telegram's privacy-mode switch: 'partial' (mentions/commands/replies only) or 'full' (everything). `null` for a bridged DM, or a group whose first visibility check has not yet completed."
+              },
+              "platformTitle": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The platform chat's title, sanitized, as recorded when this room was bridged (spec §3.4). A room's own `title` can be renamed afterward without this column moving with it, which is the whole reason to carry it: the room sheet shows this alongside the room's title so the two are never silently different things. `null` for a bridged DM."
+              }
+            },
+            "required": [
+              "visibility",
+              "platformTitle"
+            ],
+            "description": "This room's bridge, when it has one. Optional as well as nullable: the sidebar's bulk room list does not resolve it today (a per-row bridge lookup a list never renders is cost nobody asked for), so absent and `null` both mean 'draw nothing bridge-related here' — only `GET /api/rooms/:id` and the room-create responses populate it for real."
           }
         },
         "required": [

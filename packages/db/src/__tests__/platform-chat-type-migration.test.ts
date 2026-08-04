@@ -1,10 +1,10 @@
 /**
- * Migration 0051 — `unclaimed_chats.platform_chat_type` (DOR-907).
+ * Migration 0052 — `unclaimed_chats.platform_chat_type` (DOR-907).
  *
  * A purely additive, nullable column: it carries the RAW platform chat type a
  * sighting arrived as (`private`/`group`/`supergroup`/`channel`), so a binding
  * claimed from the row can tell a real group from a folded broadcast. This test
- * builds the database at the shape 0050 left, proves the column did not exist
+ * builds the database at the shape 0051 left, proves the column did not exist
  * there, applies the migration, and shows an old row reads NULL while a new row
  * round-trips a real value — the back-compat guarantee the bridge action leans
  * on (an old sighting with no type takes the conservative path).
@@ -24,9 +24,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DRIZZLE_DIR = path.join(__dirname, '../../drizzle');
 
 /** The migration under test. */
-const TAG = '0051_dizzy_tyger_tiger';
+const TAG = '0052_ambitious_prism';
 /** Its index in the journal — the shape this test builds is everything below it. */
-const IDX = 51;
+const IDX = 52;
 
 type Raw = Database.Database;
 
@@ -38,13 +38,13 @@ function columns(raw: Raw): string[] {
 }
 
 /**
- * A database at the shape 0050 left — every migration before 0051 applied, and
- * 0051 itself not. Built by copying the migration folder minus 0051 and
+ * A database at the shape 0051 left — every migration before 0052 applied, and
+ * 0052 itself not. Built by copying the migration folder minus 0052 and
  * truncating the journal, the same construction the other migration tests use
  * (there is no "up to N" option on the migrator).
  */
 function databaseAtOldShape(): Raw {
-  const folder = mkdtempSync(path.join(tmpdir(), 'dorkos-0050-'));
+  const folder = mkdtempSync(path.join(tmpdir(), 'dorkos-0051-'));
   mkdirSync(path.join(folder, 'meta'));
 
   const journal = JSON.parse(
@@ -52,7 +52,7 @@ function databaseAtOldShape(): Raw {
   ) as { entries: { idx: number; tag: string }[] };
   const before = journal.entries.filter((e) => e.idx < IDX);
 
-  // A renumbered 0051 would leave this asserting against a shape that already
+  // A renumbered 0052 would leave this asserting against a shape that already
   // includes it, and every expectation below would pass for the wrong reason.
   expect(before.map((e) => e.tag)).not.toContain(TAG);
   expect(journal.entries.map((e) => e.tag)).toContain(TAG);
@@ -71,7 +71,7 @@ function databaseAtOldShape(): Raw {
   return sqlite;
 }
 
-/** Apply 0051 the way production does — the real migrator over the real folder. */
+/** Apply 0052 the way production does — the real migrator over the real folder. */
 function applyMigration(raw: Raw): void {
   migrate(drizzle(raw), { migrationsFolder: DRIZZLE_DIR });
 }
@@ -86,7 +86,7 @@ function seedOldRow(raw: Raw, id: string, chatKind: string): void {
     .run(id, 'tg-bot', id, chatKind === 'group' ? 'group' : null, chatKind, null, null, null);
 }
 
-describe('0051 — unclaimed_chats.platform_chat_type (DOR-907)', () => {
+describe('0052 — unclaimed_chats.platform_chat_type (DOR-907)', () => {
   it('the column does not exist before the migration', () => {
     const raw = databaseAtOldShape();
     expect(columns(raw)).not.toContain('platform_chat_type');

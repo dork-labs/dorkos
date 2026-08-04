@@ -58,6 +58,13 @@ export interface Bridge {
   bindingId: string;
   visibility: BridgeVisibility;
   visibilityCheckedAt: string | null;
+  /**
+   * The platform chat's sanitized title, as recorded when this room was
+   * bridged (spec §3.4) — `null` for a bridged DM. Read by
+   * {@link RoomService.withRoster} for the room sheet's subtitle; never
+   * updated by a room rename, which is the whole point of it.
+   */
+  platformTitle: string | null;
   deliverNotices: boolean;
   lastDeliveredSeq: number;
   lastActivityAt: string | null;
@@ -73,6 +80,12 @@ export interface NewBridge {
   channelType: string | null;
   platformChatType: BridgeablePlatformChatType;
   bindingId: string;
+  /**
+   * The platform chat's sanitized title at bridge time, or `null` for a
+   * bridged DM (spec §3.4). The SAME sanitized value `RoomService.
+   * createBridgedRoom` used to name the room — never a second sanitization.
+   */
+  platformTitle: string | null;
   /** Seeded by room kind at creation (D-6 Q5) — true for a bridged `dm`, false for a bridged `channel`. */
   deliverNotices: boolean;
   createdAt: string;
