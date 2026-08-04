@@ -19,8 +19,10 @@
  * - `POST /api/relay/unclaimed-chats/:id/leave` — the group-add claim flow's
  *   "Leave" action (DOR-883, spec §12, design-decisions D-3 item 4): calls
  *   the platform's own leave, through the adapter, and writes NO room and NO
- *   binding — a real removal, not a mute. 501 when the adapter behind this
- *   chat cannot leave a chat (every adapter except Telegram today).
+ *   binding — a real removal, not a mute. An adapter that cannot leave a chat
+ *   (every adapter except Telegram today) surfaces its refusal as a 500 with a
+ *   descriptive message; the 501 below is the fallback for the case where no
+ *   leave capability is wired at all.
  *
  * @module routes/unclaimed-chats
  */
@@ -58,9 +60,12 @@ export interface UnclaimedChatsRouterDeps {
   lifecycle?: BridgeLifecycle;
   /**
    * Leave a chat on its platform — the group-add claim flow's "Leave" action
-   * (DOR-883). Optional: an install whose adapter cannot leave a chat (every
-   * adapter except Telegram today) still lists, claims, ignores, and blocks;
-   * only `/leave` itself answers 501.
+   * (DOR-883). An install whose adapter cannot leave a chat (every adapter
+   * except Telegram today) still lists, claims, ignores, and blocks; only
+   * `/leave` itself errors — a per-adapter "cannot leave" refusal surfaces as a
+   * 500 with a descriptive message (thrown by AdapterManager.leaveChat), while
+   * the `if (!leaveChat)` 501 below covers the case where no leave capability
+   * is wired at all.
    *
    * @param adapterId - The adapter instance the chat lives on.
    * @param chatId - The platform chat id to leave.
