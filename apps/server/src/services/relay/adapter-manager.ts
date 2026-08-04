@@ -194,6 +194,26 @@ export interface AdapterManagerDeps {
   registerSignalListener?: BindingSubsystemDeps['registerSignalListener'];
 }
 
+/**
+ * An adapter that can remove the bot from a chat via the platform's own leave
+ * call (DOR-883) — Telegram only today.
+ */
+interface LeaveCapableAdapter {
+  leaveChat(chatId: string): Promise<void>;
+}
+
+/**
+ * Whether a live adapter instance exposes `leaveChat` at all. A structural
+ * check rather than an `instanceof TelegramAdapter`, the same reasoning
+ * {@link reportsVisibility} gives for `getMe` — so a future platform that
+ * gains the same accessor works here without an import of its class.
+ *
+ * @param adapter - The live adapter instance from `AdapterRegistry.get`.
+ */
+function canLeaveChat(adapter: RelayAdapter): adapter is RelayAdapter & LeaveCapableAdapter {
+  return typeof (adapter as { leaveChat?: unknown }).leaveChat === 'function';
+}
+
 /** Server-side adapter lifecycle manager. */
 export class AdapterManager {
   private readonly registry: AdapterRegistry;
@@ -658,6 +678,28 @@ export class AdapterManager {
   /** Get the MeshCore dependency, or undefined if not provided. */
   getMeshCore(): AdapterMeshCoreLike | undefined {
     return this.deps.meshCore;
+  }
+
+  /**
+   * Leave a chat on its platform — the group-add claim flow's "Leave" action
+   * (DOR-883, spec §12). Removes the bot from the chat through the live
+   * adapter instance's own platform call; writes nothing here, on purpose —
+   * the unclaimed-chats route owns dismissing the card once this resolves.
+   *
+   * @param adapterId - The adapter instance the chat lives on.
+   * @param chatId - The platform chat id to leave.
+   * @throws When the adapter is not registered or not connected, or does not
+   *   support leaving a chat at all (every adapter except Telegram today).
+   */
+  async leaveChat(adapterId: string, chatId: string): Promise<void> {
+    const adapter = this.registry.get(adapterId);
+    if (!adapter) {
+      throw new Error(`Adapter '${adapterId}' is not registered`);
+    }
+    if (!canLeaveChat(adapter)) {
+      throw new Error(`Adapter '${adapterId}' does not support leaving a chat`);
+    }
+    await adapter.leaveChat(chatId);
   }
 
   /**

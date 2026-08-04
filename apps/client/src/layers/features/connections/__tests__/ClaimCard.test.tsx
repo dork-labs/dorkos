@@ -22,6 +22,7 @@ function chat(overrides: Partial<UnclaimedChat> = {}): UnclaimedChat {
     chatId: '998877',
     channelType: 'dm',
     chatKind: 'dm',
+    platformChatType: null,
     senderName: 'Miguel',
     senderId: '42',
     chatTitle: null,
@@ -39,6 +40,7 @@ function renderCard(c: UnclaimedChat, handlers: Partial<Record<string, () => voi
   const onClaim = vi.fn();
   const onIgnore = vi.fn();
   const onBlock = vi.fn();
+  const onLeave = vi.fn();
   render(
     <ClaimCard
       chat={c}
@@ -46,10 +48,11 @@ function renderCard(c: UnclaimedChat, handlers: Partial<Record<string, () => voi
       onClaim={onClaim}
       onIgnore={onIgnore}
       onBlock={onBlock}
+      onLeave={onLeave}
       {...handlers}
     />
   );
-  return { onClaim, onIgnore, onBlock };
+  return { onClaim, onIgnore, onBlock, onLeave };
 }
 
 describe('ClaimCard', () => {
@@ -97,6 +100,7 @@ describe('ClaimCard', () => {
         onClaim={onClaim}
         onIgnore={vi.fn()}
         onBlock={vi.fn()}
+        onLeave={vi.fn()}
       />
     );
 
@@ -115,6 +119,7 @@ describe('ClaimCard', () => {
         onClaim={onClaim}
         onIgnore={vi.fn()}
         onBlock={vi.fn()}
+        onLeave={vi.fn()}
       />
     );
 
@@ -124,22 +129,67 @@ describe('ClaimCard', () => {
     expect(onClaim).toHaveBeenCalledWith('dorkbot', false);
   });
 
-  it('a group chat keeps its single Join action, unaffected by the primary/secondary split', () => {
+  it('a group chat offers a single Join action that always bridges (DOR-883)', () => {
+    renderCard(
+      chat({
+        chatKind: 'group',
+        platformChatType: 'supergroup',
+        senderName: 'Ana',
+        chatTitle: 'Release train',
+      })
+    );
+
+    expect(screen.getByText('Ana added your bot to “Release train”')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Answer in a channel' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Answer privately' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Block' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Join' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Leave' })).toBeInTheDocument();
+  });
+
+  it('Join claims with bridge: true once an agent is picked', () => {
     const onClaim = vi.fn();
     render(
       <ClaimCard
-        chat={chat({ chatKind: 'group', senderName: 'Ana', chatTitle: 'Release train' })}
+        chat={chat({ chatKind: 'group', platformChatType: 'group' })}
         agentOptions={[AGENTS[0]!]}
         onClaim={onClaim}
         onIgnore={vi.fn()}
         onBlock={vi.fn()}
+        onLeave={vi.fn()}
       />
     );
 
-    expect(screen.queryByRole('button', { name: 'Answer in a channel' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Answer privately' })).not.toBeInTheDocument();
+    // A single agent option pre-selects (`ClaimCard`'s own `useState` default),
+    // so Join is enabled without any Select interaction.
     fireEvent.click(screen.getByRole('button', { name: 'Join' }));
-    expect(onClaim).toHaveBeenCalledWith('dorkbot', false);
+    expect(onClaim).toHaveBeenCalledWith('dorkbot', true);
+  });
+
+  it('Leave calls onLeave for a group', () => {
+    const { onLeave } = renderCard(chat({ chatKind: 'group', platformChatType: 'group' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Leave' }));
+    expect(onLeave).toHaveBeenCalled();
+  });
+
+  it('a broadcast channel offers only Ignore and Leave — no agent picker, no Join (DOR-883, DOR-907)', () => {
+    renderCard(
+      chat({
+        chatKind: 'group',
+        platformChatType: 'channel',
+        senderName: 'Ana',
+        chatTitle: 'Announcements',
+      })
+    );
+
+    expect(screen.getByText('Ana added your bot to “Announcements”')).toBeInTheDocument();
+    expect(screen.getByText(/broadcast channel/i)).toBeInTheDocument();
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Join' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Block' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ignore' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Leave' })).toBeInTheDocument();
   });
 
   it('offers ignore and block without needing an agent first', () => {
@@ -157,5 +207,13 @@ describe('ClaimCard', () => {
 
     expect(screen.getByRole('button', { name: 'Ignore' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Block' })).toBeDisabled();
+  });
+
+  it('locks Leave while a decision is in flight, for a group', () => {
+    renderCard(chat({ chatKind: 'group', platformChatType: 'group' }), {
+      isDeciding: true,
+    } as never);
+
+    expect(screen.getByRole('button', { name: 'Leave' })).toBeDisabled();
   });
 });

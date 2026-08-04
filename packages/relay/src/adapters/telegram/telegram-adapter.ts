@@ -23,6 +23,7 @@ import type {
   Unsubscribe,
 } from '../../types.js';
 import { handleInboundMessage } from './inbound.js';
+import { handleChatMemberUpdate } from './chat-member.js';
 import { GrammyPlatformClient } from './grammy-platform-client.js';
 import { TelegramThreadIdCodec } from '../../lib/thread-id.js';
 import { mayApprove } from '../approver-allowlist.js';
@@ -364,6 +365,27 @@ export class TelegramAdapter extends BaseRelayAdapter {
     return { username: me.username, canReadAllGroupMessages: me.can_read_all_group_messages };
   }
 
+  /**
+   * Leave a chat — the group-add claim flow's "Leave" action (DOR-883, spec
+   * §12). A real platform removal, not a DorkOS-side mute: after this call the
+   * bot is no longer a member of `chatId`, and nothing further from it can
+   * arrive by any path. The caller (the claim route) owns dismissing the
+   * card; this method writes nothing of its own.
+   *
+   * Telegram's `leaveChat` accepts the chat id as a string or a number and
+   * treats a numeric string identically to the number it names, so the id is
+   * passed through exactly as the claim feed stored it — no coercion, no
+   * second parse of a value already validated on the way in.
+   *
+   * @param chatId - The Telegram chat id to leave.
+   * @throws When the adapter is not connected, or Telegram refuses the call
+   *   (the bot was already removed, or the id no longer resolves).
+   */
+  async leaveChat(chatId: string): Promise<void> {
+    if (!this.bot) throw new Error('Telegram adapter is not connected');
+    await this.bot.api.leaveChat(chatId);
+  }
+
   /** Connect to Telegram and start receiving messages. */
   protected async _start(relay: RelayPublisher): Promise<void> {
     const bot = new Bot(this.config.token);
@@ -495,6 +517,13 @@ export class TelegramAdapter extends BaseRelayAdapter {
         dmAllowlist: this.config.dmAllowlist,
         deniedNotices: this.deniedNotices,
       })
+    );
+    // The group-add claim flow's entry point (DOR-883): the bot's own
+    // membership changing, never carried by 'message'. See `chat-member.ts`'s
+    // module doc for why this is safe to publish unconditionally, including
+    // on a chat that already has a binding.
+    bot.on('my_chat_member', (ctx) =>
+      handleChatMemberUpdate(ctx, relay, this.makeInboundCallbacks(), this.logger, this.codec)
     );
     // Callback query handler for tool approval inline keyboard buttons
     bot.on('callback_query:data', (ctx) => this.handleApprovalCallback(ctx, relay));

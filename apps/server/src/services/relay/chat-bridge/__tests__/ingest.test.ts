@@ -198,6 +198,31 @@ describe('ChatBridge.ingest (chats-as-channels §5)', () => {
     expect(harness.runner.turns).toHaveLength(1);
   });
 
+  // DOR-883: the group-add claim flow republishes a `my_chat_member` update
+  // through the SAME unbound-chat path a message uses — including on a chat
+  // that is already bridged (a bot removed and re-added to a group it once
+  // left). It deliberately carries NO `platformData.messageId`, because this
+  // is the refusal that keeps that safe: no entry, no notice, no turn over an
+  // event that said nothing. This test is the general-purpose proof of that
+  // refusal (`missing_message_id` had no direct test before this task, only a
+  // comment referencing it).
+  it('missing_message_id: an inbound envelope with no platform message id is refused, writing no room entry', async () => {
+    const room = harness.service.createBridgedRoom(bridgeRequest('555', true));
+    const bridge = makeBridge(bindingFor(room.id, '555'));
+    const before = harness.store.listEntries(room.id, { limit: 100 });
+
+    const envelope = envelopeFor({ chatId: '555', group: true, content: '' });
+    delete (envelope.payload as { platformData?: { messageId?: unknown } }).platformData?.messageId;
+
+    const result = await bridge.ingest(bindingFor(room.id, '555'), envelope, {
+      agentPath: AGENT_PATH,
+    });
+
+    expect(result).toMatchObject({ status: 'refused', reason: 'missing_message_id' });
+    expect(harness.store.listEntries(room.id, { limit: 100 })).toEqual(before);
+    expect(harness.runner.turns).toHaveLength(0);
+  });
+
   it('A2.2: a bridged DM turn goes through the real dispatcher (observed as a turn claim)', async () => {
     const room = harness.service.createBridgedRoom(bridgeRequest('555'));
     const bridge = makeBridge(bindingFor(room.id, '555'));

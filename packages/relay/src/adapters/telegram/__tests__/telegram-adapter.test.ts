@@ -67,6 +67,7 @@ const mockSendMessage = vi.fn().mockResolvedValue({ message_id: 1 });
 const mockSendChatAction = vi.fn().mockResolvedValue(true);
 const mockSetWebhook = vi.fn().mockResolvedValue(true);
 const mockDeleteWebhook = vi.fn().mockResolvedValue(true);
+const mockLeaveChat = vi.fn().mockResolvedValue(true);
 const mockGetMe = vi.fn().mockResolvedValue({
   id: 777,
   is_bot: true,
@@ -82,6 +83,8 @@ const mockBotCatch = vi.fn();
 let capturedMessageHandler: ((ctx: unknown) => Promise<void>) | null = null;
 /** Captured callback query handler registered via bot.on('callback_query:data', handler) */
 let capturedCallbackQueryHandler: ((ctx: unknown) => Promise<void>) | null = null;
+/** Captured chat-member handler registered via bot.on('my_chat_member', handler) — DOR-883. */
+let capturedChatMemberHandler: ((ctx: unknown) => Promise<void>) | null = null;
 /** Captured error handler registered via bot.catch(handler) */
 let _capturedErrorHandler: ((err: unknown) => void) | null = null;
 /** Captured onStart callback from bot.start({ onStart }) */
@@ -98,6 +101,7 @@ vi.mock('grammy', () => {
       setWebhook: mockSetWebhook,
       deleteWebhook: mockDeleteWebhook,
       getMe: mockGetMe,
+      leaveChat: mockLeaveChat,
     };
 
     botInfo = { username: 'test_bot' };
@@ -105,7 +109,9 @@ vi.mock('grammy', () => {
     on(event: string, handler: (ctx: unknown) => Promise<void>) {
       if (event === 'callback_query:data') {
         capturedCallbackQueryHandler = handler;
-      } else {
+      } else if (event === 'my_chat_member') {
+        capturedChatMemberHandler = handler;
+      } else if (event === 'message') {
         capturedMessageHandler = handler;
       }
     }
@@ -550,6 +556,50 @@ describe('TelegramAdapter', () => {
 
     expect(adapter.getStatus().errorCount).toBe(1);
     expect(adapter.getStatus().lastError).toContain('Relay unavailable');
+  });
+
+  // --- chat-member updates (DOR-883: the group-add claim flow's entry point) ---
+
+  it("wires 'my_chat_member' and publishes when the bot is added to a group", async () => {
+    await adapter.start(mockRelay);
+    expect(capturedChatMemberHandler).not.toBeNull();
+
+    await capturedChatMemberHandler!({
+      myChatMember: {
+        chat: { id: -100999, type: 'supergroup', title: 'Ops' },
+        from: { id: 42, is_bot: false, first_name: 'Ana', username: 'ana' },
+        date: 0,
+        old_chat_member: { status: 'left', user: BOT_IDENTITY },
+        new_chat_member: { status: 'member', user: BOT_IDENTITY },
+      },
+    });
+
+    expect(mockRelay.publish).toHaveBeenCalledWith(
+      'relay.human.telegram.tg1.group.-100999',
+      expect.objectContaining({
+        content: '',
+        senderName: 'Ana',
+        channelName: 'Ops',
+        channelType: 'group',
+      }),
+      expect.objectContaining({ from: 'relay.human.telegram.tg1.bot' })
+    );
+  });
+
+  it("does not publish for a 'my_chat_member' update that is not an add (e.g. a promotion)", async () => {
+    await adapter.start(mockRelay);
+
+    await capturedChatMemberHandler!({
+      myChatMember: {
+        chat: { id: -100999, type: 'supergroup', title: 'Ops' },
+        from: { id: 42, is_bot: false, first_name: 'Ana', username: 'ana' },
+        date: 0,
+        old_chat_member: { status: 'member', user: BOT_IDENTITY },
+        new_chat_member: { status: 'administrator', user: BOT_IDENTITY },
+      },
+    });
+
+    expect(mockRelay.publish).not.toHaveBeenCalled();
   });
 
   // --- Echo guard ---
@@ -1028,6 +1078,29 @@ describe('TelegramAdapter', () => {
     mockGetMe.mockRejectedValueOnce(new Error('Unauthorized: revoked token'));
 
     await expect(adapter.getMe()).rejects.toThrow('Unauthorized: revoked token');
+  });
+
+  // --- leaveChat() (DOR-883: the group-add claim flow's "Leave" action) ---
+
+  it('leaveChat() throws when the adapter has not connected — no live bot to ask', async () => {
+    await expect(adapter.leaveChat('555')).rejects.toThrow(/not connected/i);
+    expect(mockLeaveChat).not.toHaveBeenCalled();
+  });
+
+  it("leaveChat() calls the platform's own leave with the chat id, unchanged", async () => {
+    await adapter.start(mockRelay);
+
+    await adapter.leaveChat('-100555');
+
+    expect(mockLeaveChat).toHaveBeenCalledWith('-100555');
+    expect(mockLeaveChat).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaveChat() propagates a platform refusal rather than swallowing it', async () => {
+    await adapter.start(mockRelay);
+    mockLeaveChat.mockRejectedValueOnce(new Error('Bad Request: chat not found'));
+
+    await expect(adapter.leaveChat('555')).rejects.toThrow('Bad Request: chat not found');
   });
 
   // --- Webhook mode ---
