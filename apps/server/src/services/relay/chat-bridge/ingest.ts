@@ -35,11 +35,7 @@
  */
 import { z } from 'zod';
 import type { DbTransaction } from '@dorkos/db';
-import {
-  TelegramMediaDescriptorSchema,
-  type RelayEnvelope,
-  type TelegramMediaDescriptor,
-} from '@dorkos/shared/relay-schemas';
+import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { RoomEntryBody } from '@dorkos/shared/room-schemas';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import type { ChatNoticeSender, SubscriberVerdict } from '@dorkos/relay';
@@ -173,6 +169,26 @@ export interface ChatBridgeIngest {
  * additive (spec §11.2) and optional, and numeric ids (Telegram's are numbers)
  * are coerced to their string form.
  */
+/**
+ * A media descriptor as `ingest` reads it — deliberately LOOSER than
+ * `TelegramMediaDescriptorSchema`'s closed `type` enum. `type` is a plain string
+ * so a descriptor from a newer adapter carrying a media kind this phase does not
+ * model yet (a future `gif`, say) still parses, and {@link mediaPlaceholder}'s
+ * `[attachment]` fallback catches it. Coupled with the `.catch(undefined)` below,
+ * this is what keeps media-schema drift from dropping an otherwise valid message
+ * (§5.5): a bad or unknown descriptor degrades to a placeholder, it never fails
+ * the whole payload parse and loses the `messageId` with it.
+ */
+const IngestMediaSchema = z.object({
+  type: z.string().min(1),
+  durationSec: z.number().optional(),
+  fileName: z.string().optional(),
+  mimeType: z.string().optional(),
+});
+
+/** A media descriptor as {@link mediaPlaceholder} needs it — loose on `type`. */
+type IngestMedia = z.infer<typeof IngestMediaSchema>;
+
 const IngestPayloadSchema = z.object({
   content: z.string().optional(),
   platformData: z
@@ -180,7 +196,12 @@ const IngestPayloadSchema = z.object({
       messageId: z.union([z.string().min(1), z.number()]).optional(),
       messageThreadId: z.union([z.string().min(1), z.number()]).optional(),
       threadName: z.string().optional(),
-      media: TelegramMediaDescriptorSchema.optional(),
+      // Field-scoped `.catch(undefined)`: a media descriptor that fails to parse
+      // (a non-object, or a shape a newer adapter changed) degrades to no media
+      // rather than failing the whole payload — the message still ingests with
+      // its `messageId` intact (§5.5). Unknown-but-well-formed kinds parse fine
+      // through the loose `type` above and render as `[attachment]`.
+      media: IngestMediaSchema.optional().catch(undefined),
       /** The bound bot's own `@`-handle, from `getMe().username` (spec §5.4). */
       botUsername: z.string().min(1).optional(),
     })
@@ -194,7 +215,7 @@ interface IngestPayload {
   platformMessageId: string | undefined;
   threadId: string | undefined;
   threadName: string | undefined;
-  media: TelegramMediaDescriptor | undefined;
+  media: IngestMedia | undefined;
   botUsername: string | undefined;
 }
 
@@ -236,7 +257,7 @@ function formatDuration(totalSeconds: number): string {
  *
  * @param media - The descriptor the adapter put on `platformData.media`.
  */
-function mediaPlaceholder(media: TelegramMediaDescriptor): string {
+function mediaPlaceholder(media: IngestMedia): string {
   const named = (label: string): string =>
     media.fileName ? `[${label}: ${media.fileName}]` : `[${label}]`;
   const timed = (label: string): string =>
@@ -445,6 +466,13 @@ export class ChatBridge implements ChatBridgeIngest {
       // is written — a duplicate or a refusal never does. Safe without a lock:
       // this whole method is serialized per chat.
       this.recordAccepted(adapterId, chatId);
+      // The room just accepted a message, so it is not flooding now: forget a
+      // rate-limit stamp older than the damp window rather than letting it linger
+      // for the process lifetime (bounds `rateNoticedAt` at the many-rooms scale).
+      const noticedAt = this.rateNoticedAt.get(roomId);
+      if (noticedAt !== undefined && this.now() - noticedAt >= RATE_NOTICE_DAMP_MS) {
+        this.rateNoticedAt.delete(roomId);
+      }
       // A live bridge is an active chat, so proactive notices still find it
       // after `sessionMap` is vacated (§7.5).
       this.deps.bridges.stampActivity(roomId, createdAt);
@@ -493,12 +521,23 @@ export class ChatBridge implements ChatBridgeIngest {
   /**
    * Whether this chat is at or past its rolling ingest ceiling (§5.2 step 2).
    * Prunes the window to {@link INGEST_RATE_WINDOW_MS} before counting.
+   *
+   * **Evict-when-empty, so the map cannot grow unbounded across many chats.** A
+   * chat whose window has fully aged out drops its key entirely rather than
+   * holding an empty array for the process lifetime — the one bound this needs at
+   * the many-chats scale, and no more than that (no LRU, no sweep). A chat that
+   * keeps sending re-creates its key on {@link recordAccepted}; a chat that goes
+   * quiet leaves nothing behind the next time it is looked at.
    */
   private overCeiling(adapterId: string, chatId: string): boolean {
     const key = serialKey(adapterId, chatId);
     const cutoff = this.now() - INGEST_RATE_WINDOW_MS;
     const window = (this.rateWindows.get(key) ?? []).filter((at) => at > cutoff);
-    this.rateWindows.set(key, window);
+    if (window.length === 0) {
+      this.rateWindows.delete(key);
+    } else {
+      this.rateWindows.set(key, window);
+    }
     return window.length >= INGEST_RATE_CEILING;
   }
 

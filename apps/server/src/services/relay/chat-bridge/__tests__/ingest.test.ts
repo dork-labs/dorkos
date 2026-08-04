@@ -27,7 +27,12 @@ import {
 import type { CreateBridgedRoomRequest } from '../../../rooms/room-service.js';
 import { RoomRoster } from '../../../rooms/room-roster.js';
 import { claimNames } from '../../../rooms/mentions.js';
-import { ChatBridge, BridgeLifecycle, type LifecycleBinding } from '../index.js';
+import {
+  ChatBridge,
+  BridgeLifecycle,
+  INGEST_RATE_CEILING,
+  type LifecycleBinding,
+} from '../index.js';
 
 const AGENT_PATH = '/agents/ana';
 const agentLookup = agentLookupFor({
@@ -399,6 +404,49 @@ describe('ChatBridge.ingest (chats-as-channels §5)', () => {
     expect(texts).toContain('[voice message, 0:14]');
   });
 
+  it('media schema drift: an unknown media kind still ingests as [attachment], not a missing_message_id drop', async () => {
+    const room = harness.service.createBridgedRoom(bridgeRequest('555', true));
+    const bridge = makeBridge(bindingFor(room.id, '555'));
+
+    // A future media kind a newer adapter might send, outside the closed enum.
+    // The old all-or-nothing parse would lose the messageId with it and refuse
+    // as `missing_message_id`; the field-scoped tolerance degrades it instead.
+    const unknown = await bridge.ingest(
+      bindingFor(room.id, '555'),
+      envelopeFor({
+        chatId: '555',
+        group: true,
+        messageId: 7,
+        content: '',
+        media: { type: 'gif' },
+      }),
+      { agentPath: AGENT_PATH }
+    );
+    expect(unknown.status).toBe('ingested');
+
+    // A media descriptor that is not even an object degrades to no media, so the
+    // caption stands alone — still one entry, still ingested.
+    const malformed = await bridge.ingest(
+      bindingFor(room.id, '555'),
+      envelopeFor({
+        chatId: '555',
+        group: true,
+        messageId: 8,
+        content: 'hello',
+        media: 'not-an-object',
+      }),
+      { agentPath: AGENT_PATH }
+    );
+    expect(malformed.status).toBe('ingested');
+
+    const texts = harness.store
+      .listEntries(room.id, { limit: 100 })
+      .filter((e) => e.kind === 'post')
+      .map((e) => e.body.text);
+    expect(texts).toContain('[attachment]');
+    expect(texts).toContain('hello');
+  });
+
   it('A5.8: a bridge:room binding with a missing room refuses with an in-chat notice and creates nothing', async () => {
     // A binding that names a room and chat with NO bridge row behind it.
     const bridge = makeBridge(bindingFor('no-such-room', '999'));
@@ -454,6 +502,59 @@ describe('ChatBridge.ingest (chats-as-channels §5)', () => {
     // Exactly one notice — damped per room.
     expect(noticesOf(room.id, 'bridge_rate_limited')).toHaveLength(1);
     expect(harness.runner.turns).toHaveLength(0);
+  });
+
+  it('rate maps are bounded: an aged-out window and a stale notice stamp are both evicted', async () => {
+    const room = harness.service.createBridgedRoom(bridgeRequest('555', true));
+    let clock = 1_000_000;
+    const bridge = makeBridge(bindingFor(room.id, '555'), () => clock);
+    // Reach into the instance's private maps — the growth this test guards is
+    // internal and has no observable behaviour until it is a memory leak.
+    const maps = bridge as unknown as {
+      rateWindows: Map<string, number[]>;
+      rateNoticedAt: Map<string, number>;
+    };
+
+    // Trip the ceiling: the chat holds a rate window, and the room a notice stamp.
+    for (let i = 0; i < INGEST_RATE_CEILING; i += 1) {
+      await bridge.ingest(
+        bindingFor(room.id, '555'),
+        envelopeFor({ chatId: '555', group: true, messageId: i, content: `m${i}` }),
+        { agentPath: AGENT_PATH }
+      );
+    }
+    const over = await bridge.ingest(
+      bindingFor(room.id, '555'),
+      envelopeFor({ chatId: '555', group: true, messageId: 999, content: 'too much' }),
+      { agentPath: AGENT_PATH }
+    );
+    expect(over).toMatchObject({ status: 'refused', reason: 'bridge_rate_limited' });
+    expect(maps.rateWindows.size).toBe(1);
+    expect(maps.rateNoticedAt.size).toBe(1);
+
+    // Jump well past both the rolling window and the notice damp window, then
+    // accept one more message. `overCeiling` evicts the fully-aged window (then
+    // re-adds just this message), and the accepted path drops the stale stamp.
+    clock += 3_600_000; // one hour — past the 60s window and the 10min damp
+    const ok = await bridge.ingest(
+      bindingFor(room.id, '555'),
+      envelopeFor({ chatId: '555', group: true, messageId: 1000, content: 'later' }),
+      { agentPath: AGENT_PATH }
+    );
+    expect(ok.status).toBe('ingested');
+    expect(maps.rateNoticedAt.size).toBe(0); // stale stamp evicted
+    expect(maps.rateWindows.size).toBe(1); // the aged window was evicted and re-created
+    expect([...maps.rateWindows.values()][0]).toHaveLength(1); // only the new message
+
+    // And a message that ages out with no acceptance behind it evicts the window
+    // entirely: a no-author message runs the ceiling check, then refuses.
+    clock += 3_600_000;
+    await bridge.ingest(
+      bindingFor(room.id, '555'),
+      envelopeFor({ chatId: '555', group: true, messageId: 1001, content: 'ghost', fromId: null }),
+      { agentPath: AGENT_PATH }
+    );
+    expect(maps.rateWindows.size).toBe(0); // nothing left behind
   });
 
   it('A5.10: a forum-topic message carries the topic id and a SANITIZED topic name on its ref', async () => {
