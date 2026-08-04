@@ -117,6 +117,16 @@ interface ErrorResponse {
  * path — including a Linear failure — is `200 { ok: true, id }`.
  */
 export async function POST(request: Request): Promise<Response> {
+  // Best-effort early reject before buffering: an honest, oversized
+  // Content-Length is turned away without materializing the body. It can be
+  // absent or wrong, so the post-read byte check below stays the authoritative
+  // bound (and the platform's own serverless body limit is the real memory
+  // ceiling regardless).
+  const declaredLen = Number(request.headers.get('content-length'));
+  if (Number.isFinite(declaredLen) && declaredLen > MAX_BODY_BYTES) {
+    return Response.json({ ok: false, error: 'Payload too large' }, { status: 413 });
+  }
+
   let raw: string;
   try {
     raw = await request.text();
