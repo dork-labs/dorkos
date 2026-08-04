@@ -358,6 +358,10 @@ export const bindingStubs = {
   async blockUnclaimedChat(_id: string): Promise<void> {
     throw new Error('Relay bindings are not supported in embedded mode');
   },
+
+  async leaveUnclaimedChat(_id: string): Promise<void> {
+    throw new Error('Relay bindings are not supported in embedded mode');
+  },
 };
 
 // ---------------------------------------------------------------------------

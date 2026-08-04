@@ -1678,6 +1678,12 @@ async function start() {
       // uses — optional, so a claim still lands (privately) on an install
       // where bridging isn't wired.
       const lifecycleForClaims = adapterManager?.getBridgeLifecycle();
+      // The group-add claim flow's "Leave" action (DOR-883) — bound to this
+      // one narrowed reference rather than closing over `adapterManager`
+      // itself, so the route keeps asking for exactly the one capability it
+      // needs (and so TS can see the closure below is over a value already
+      // known non-null, not the outer optional).
+      const leaveChatForClaims = adapterManager;
       app.use(
         '/api/relay/unclaimed-chats',
         createUnclaimedChatsRouter({
@@ -1685,6 +1691,10 @@ async function start() {
           bindingStore: bindingStoreForClaims,
           ...(meshCore && { meshCore }),
           ...(lifecycleForClaims && { lifecycle: lifecycleForClaims }),
+          ...(leaveChatForClaims && {
+            leaveChat: (adapterId: string, chatId: string) =>
+              leaveChatForClaims.leaveChat(adapterId, chatId),
+          }),
         })
       );
     }

@@ -8,6 +8,7 @@ import {
   useClaimUnclaimedChat,
   useIgnoreUnclaimedChat,
   useBlockUnclaimedChat,
+  useLeaveUnclaimedChat,
   MoveChatDialog,
   readChatConflict,
   type ChatConflict,
@@ -34,6 +35,7 @@ export function ClaimFeed({ enabled }: { enabled: boolean }) {
   const claim = useClaimUnclaimedChat();
   const ignore = useIgnoreUnclaimedChat();
   const block = useBlockUnclaimedChat();
+  const leave = useLeaveUnclaimedChat();
   const navigate = useNavigate();
   // A chat can be taken between the card rendering and the decision landing.
   // The refusal names who has it, so the answer is an offer to move it.
@@ -41,7 +43,7 @@ export function ClaimFeed({ enabled }: { enabled: boolean }) {
 
   const agentOptions = agentsData?.agents ?? [];
   const pending = chats ?? [];
-  const isDeciding = claim.isPending || ignore.isPending || block.isPending;
+  const isDeciding = claim.isPending || ignore.isPending || block.isPending || leave.isPending;
 
   if (!enabled) return null;
   if (isLoading) return <Skeleton className="h-28 w-full rounded-lg" />;
@@ -100,6 +102,11 @@ export function ClaimFeed({ enabled }: { enabled: boolean }) {
           onBlock={() =>
             block.mutate(chat.id, {
               onSuccess: () => toast.success('Blocked. Nothing from this chat is recorded now.'),
+            })
+          }
+          onLeave={() =>
+            leave.mutate(chat.id, {
+              onSuccess: () => toast.success('Left the group. Nothing from it is recorded now.'),
             })
           }
         />

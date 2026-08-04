@@ -167,5 +167,16 @@ export const roomBridgeMessages = sqliteTable(
     // sending twice.
     uniqueIndex('room_bridge_messages_entry_unique').on(table.entryId),
     index('idx_room_bridge_messages_room_direction').on(table.roomId, table.direction),
+    // The startup stranded-ref sweep's candidate lookup (DOR-898,
+    // `BridgeStore.listStaleNullOutboundRefs`): a null-`platform_message_id`
+    // outbound row that survives past the sweep threshold is a crash victim
+    // (write-before-send wrote the ref, then the process died before the
+    // platform call returned or the send failed onto the rollback path).
+    // Partial and scoped exactly to that predicate, the same pattern as the
+    // inbound dedup index above, so the sweep never pays for a scan of every
+    // ref — only the (normally tiny, normally empty) still-pending slice.
+    index('idx_room_bridge_messages_outbound_pending')
+      .on(table.createdAt)
+      .where(sql`"direction" = 'outbound' AND "platform_message_id" IS NULL`),
   ]
 );

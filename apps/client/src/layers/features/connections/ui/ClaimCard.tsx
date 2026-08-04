@@ -32,6 +32,21 @@ function claimQuestion(chat: UnclaimedChat): string {
   return chat.chatKind === 'group' ? 'Which agent should join?' : 'Which agent should answer?';
 }
 
+/**
+ * Whether this row is a broadcast channel rather than a two-way group — a
+ * Telegram `channel`, folded into `chatKind: 'group'` for routing but kept
+ * distinct here on `platformChatType` (DOR-907). A broadcast is one-way: there
+ * is nobody in it for an agent to answer, so it never offers to join, only to
+ * be ignored or left (design-decisions D-3 item 4, DOR-883). A row with no
+ * recorded platform type (an older sighting, or an adapter that reports none)
+ * is treated as an ordinary group rather than a broadcast — the conservative
+ * direction, since the server's own bridge refusal (`BROADCAST_NOT_BRIDGEABLE`)
+ * still catches a genuine broadcast if this ever guesses wrong.
+ */
+function isBroadcastChannel(chat: UnclaimedChat): boolean {
+  return chat.chatKind === 'group' && chat.platformChatType === 'channel';
+}
+
 interface ClaimCardProps {
   chat: UnclaimedChat;
   agentOptions: { id: string; name: string }[];
@@ -40,10 +55,18 @@ interface ClaimCardProps {
    * @param bridge - `true` for the primary action, "Answer in a channel"
    *   (claims, binds, and bridges atomically, landing in a room); `false` for
    *   the secondary action, "Answer privately" (today's behaviour, no room).
+   *   A group's "Join" always passes `true` — a group has no private,
+   *   room-less mode to fall back to (DOR-883).
    */
   onClaim: (agentId: string, bridge: boolean) => void;
   onIgnore: () => void;
   onBlock: () => void;
+  /**
+   * Leave the chat's group on its platform (DOR-883) — a real removal, not a
+   * mute. Only ever shown for a group or a broadcast channel; a DM has
+   * nothing to leave.
+   */
+  onLeave: () => void;
   /** True while any decision on this chat is in flight. */
   isDeciding?: boolean;
 }
@@ -55,11 +78,18 @@ interface ClaimCardProps {
  * it, no money has been spent, and the bot has said nothing back. Picking an
  * agent is what starts any of that.
  *
- * A direct message offers two ways to answer: "Answer in a channel" (the
- * primary action — a room to see and reply from) or "Answer privately"
- * (today's session-per-chat behaviour, no room). A group chat still joins
- * into a room the same way it always has; the group-add flow's own card
- * (Ignore/Leave, broadcast refusal) is a separate piece of work.
+ * Three shapes, three cards:
+ *
+ * - A **direct message** offers two ways to answer: "Answer in a channel"
+ *   (the primary action, a room to see and reply from) or "Answer privately"
+ *   (today's session-per-chat behaviour, no room).
+ * - A **group** (added-to-a-group is a claim like any other, D-3 item 4)
+ *   offers "Join", which always lands in a room mention-gated by default
+ *   (chats-as-channels §3.4) — a group has no private, room-less mode the way
+ *   a DM does. Leave really leaves the group on the platform; Ignore only
+ *   mutes the card.
+ * - A **broadcast channel** offers no agent at all: it is one-way, so there
+ *   is nobody in it for an agent to answer. Only Ignore and Leave remain.
  *
  * @param props - The chat, the agents that could take it, and the decisions.
  */
@@ -69,12 +99,14 @@ export function ClaimCard({
   onClaim,
   onIgnore,
   onBlock,
+  onLeave,
   isDeciding = false,
 }: ClaimCardProps) {
   const [agentId, setAgentId] = useState(
     agentOptions.length === 1 ? (agentOptions[0]?.id ?? '') : ''
   );
   const isGroup = chat.chatKind === 'group';
+  const isBroadcast = isBroadcastChannel(chat);
 
   return (
     <div
@@ -92,28 +124,30 @@ export function ClaimCard({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Select value={agentId} onValueChange={setAgentId} disabled={isDeciding}>
-          <SelectTrigger
-            className="w-full sm:w-56"
-            aria-label={claimQuestion(chat)}
-            data-testid={`claim-agent-${chat.id}`}
-          >
-            <SelectValue placeholder={claimQuestion(chat)} />
-          </SelectTrigger>
-          <SelectContent>
-            {agentOptions.map((agent) => (
-              <SelectItem key={agent.id} value={agent.id}>
-                {getAgentDisplayName(agent)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {!isBroadcast && (
+          <Select value={agentId} onValueChange={setAgentId} disabled={isDeciding}>
+            <SelectTrigger
+              className="w-full sm:w-56"
+              aria-label={claimQuestion(chat)}
+              data-testid={`claim-agent-${chat.id}`}
+            >
+              <SelectValue placeholder={claimQuestion(chat)} />
+            </SelectTrigger>
+            <SelectContent>
+              {agentOptions.map((agent) => (
+                <SelectItem key={agent.id} value={agent.id}>
+                  {getAgentDisplayName(agent)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
 
-        {isGroup ? (
+        {isBroadcast ? null : isGroup ? (
           <Button
             size="sm"
             disabled={!agentId || isDeciding}
-            onClick={() => onClaim(agentId, false)}
+            onClick={() => onClaim(agentId, true)}
           >
             Join
           </Button>
@@ -139,14 +173,24 @@ export function ClaimCard({
         <Button size="sm" variant="ghost" disabled={isDeciding} onClick={onIgnore}>
           Ignore
         </Button>
-        <Button size="sm" variant="ghost" disabled={isDeciding} onClick={onBlock}>
-          Block
-        </Button>
+        {isGroup ? (
+          <Button size="sm" variant="ghost" disabled={isDeciding} onClick={onLeave}>
+            Leave
+          </Button>
+        ) : (
+          <Button size="sm" variant="ghost" disabled={isDeciding} onClick={onBlock}>
+            Block
+          </Button>
+        )}
       </div>
 
       <p className="text-muted-foreground text-xs">
-        {isGroup ? (
-          'Ignore hides this and stays quiet. Block stops anything from this chat being recorded again.'
+        {isBroadcast ? (
+          "This is a broadcast channel, not a conversation, so there's no one here for an agent " +
+          'to answer. Ignore hides this and stays quiet. Leave removes the bot from the channel.'
+        ) : isGroup ? (
+          'Ignore hides this and stays quiet. Leave removes the bot from the group, so nothing ' +
+          'further can arrive from it.'
         ) : (
           <>
             A channel gives you a room to see and reply from; answering privately keeps this chat as

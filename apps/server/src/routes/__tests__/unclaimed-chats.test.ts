@@ -344,4 +344,136 @@ describe('unclaimed-chats router — "Answer in a channel" (DOR-882)', () => {
     expect(res.body.binding.bridge).toBe('off');
     expect(store.getById(chat.id)?.status).toBe('claimed');
   });
+
+  // DOR-883: a group's "Join" claims with bridge: true, and the room it mints
+  // must be titled from the platform's own group name — not the numeric chat
+  // id the DM path falls back to (`title: '123'` above, unaffected: a DM
+  // sighting carries no `chatTitle`).
+  it('DOR-883: a group bridge titles the room from the sighting chatTitle, not the raw chat id', async () => {
+    const lifecycle = fakeLifecycle(bindingStore, { roomId: 'room-77' });
+    const app = createApp(lifecycle);
+    const chat = store.recordSighting({
+      adapterId: 'tg-bot',
+      chatId: '555',
+      channelType: 'group',
+      chatKind: 'group',
+      platformChatType: 'supergroup',
+      chatTitle: 'Release train',
+    }).chat;
+
+    const res = await request(app)
+      .post(`/api/relay/unclaimed-chats/${chat.id}/claim`)
+      .send({ agentId: 'agent-a', bridge: true });
+
+    expect(res.status).toBe(201);
+    expect(lifecycle.bridge).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Release train',
+        chatType: 'supergroup',
+        channelType: 'group',
+      })
+    );
+  });
+});
+
+/**
+ * The group-add claim flow's "Leave" action (DOR-883, spec §12,
+ * design-decisions D-3 item 4) — a real platform removal, distinct from
+ * Ignore (a mute) and separate from Block's own row semantics, which this
+ * reuses to dismiss the card once the platform call succeeds.
+ */
+describe('unclaimed-chats router — Leave (DOR-883)', () => {
+  let db: Db;
+  let tmpDir: string;
+  let bindingStore: BindingStore;
+  let store: UnclaimedChatStore;
+
+  beforeEach(async () => {
+    db = createDb(':memory:');
+    runMigrations(db);
+    tmpDir = mkdtempSync(join(tmpdir(), 'dorkos-unclaimed-leave-'));
+    bindingStore = new BindingStore(tmpDir);
+    await bindingStore.init();
+    store = new UnclaimedChatStore(db);
+  });
+
+  afterEach(async () => {
+    await bindingStore.shutdown();
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function createApp(leaveChat?: (adapterId: string, chatId: string) => Promise<void>) {
+    const app = express();
+    app.use(express.json());
+    app.use(
+      '/api/relay/unclaimed-chats',
+      createUnclaimedChatsRouter({
+        store,
+        bindingStore,
+        ...(leaveChat && { leaveChat }),
+      })
+    );
+    return app;
+  }
+
+  it('calls the adapter leave, then dismisses the card, writing no binding', async () => {
+    const leaveChat = vi.fn().mockResolvedValue(undefined);
+    const app = createApp(leaveChat);
+    const chat = store.recordSighting({
+      adapterId: 'tg-bot',
+      chatId: '555',
+      channelType: 'group',
+      chatKind: 'group',
+      platformChatType: 'supergroup',
+    }).chat;
+
+    const res = await request(app).post(`/api/relay/unclaimed-chats/${chat.id}/leave`);
+
+    expect(res.status).toBe(204);
+    expect(leaveChat).toHaveBeenCalledWith('tg-bot', '555');
+    expect(store.getById(chat.id)?.status).toBe('blocked');
+    // No binding, no room — leaving creates neither.
+    expect(bindingStore.getAll()).toHaveLength(0);
+  });
+
+  it('leaves the card untouched when the platform call fails — no false "handled"', async () => {
+    const leaveChat = vi.fn().mockRejectedValue(new Error('Telegram: bot was already kicked'));
+    const app = createApp(leaveChat);
+    const chat = store.recordSighting({
+      adapterId: 'tg-bot',
+      chatId: '555',
+      channelType: 'group',
+      chatKind: 'group',
+    }).chat;
+
+    const res = await request(app).post(`/api/relay/unclaimed-chats/${chat.id}/leave`);
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).toMatch(/already kicked/i);
+    // The row is unchanged — still pending, not silently dismissed.
+    expect(store.getById(chat.id)?.status).toBe('pending');
+  });
+
+  it('501s when no adapter can leave a chat on this install', async () => {
+    const app = createApp(undefined);
+    const chat = store.recordSighting({
+      adapterId: 'tg-bot',
+      chatId: '555',
+      channelType: 'group',
+      chatKind: 'group',
+    }).chat;
+
+    const res = await request(app).post(`/api/relay/unclaimed-chats/${chat.id}/leave`);
+
+    expect(res.status).toBe(501);
+    expect(store.getById(chat.id)?.status).toBe('pending');
+  });
+
+  it('404s for an unknown chat id', async () => {
+    const leaveChat = vi.fn().mockResolvedValue(undefined);
+    const app = createApp(leaveChat);
+    const res = await request(app).post('/api/relay/unclaimed-chats/does-not-exist/leave');
+    expect(res.status).toBe(404);
+    expect(leaveChat).not.toHaveBeenCalled();
+  });
 });

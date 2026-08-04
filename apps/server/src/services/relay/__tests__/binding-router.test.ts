@@ -1830,6 +1830,39 @@ describe('BindingRouter', () => {
       expect(row.platformChatType).toBeNull();
     });
 
+    // DOR-883: the group-add claim flow's entry point publishes through this
+    // SAME unbound-chat path (`chat-member.ts`'s module doc explains why) —
+    // `content: ''`, no `platformData.messageId`, and `senderName` set to the
+    // ADDER's name rather than a message author's. This is that envelope,
+    // proving the claim feed shows the right person without any change to
+    // the router itself.
+    it('DOR-883: a group-add event (no messageId, empty content) still records ONE sighting naming the adder and the group', async () => {
+      await claimHandler!(
+        unboundEnvelope({
+          subject: 'relay.human.telegram.tg-bot.group.888',
+          payload: {
+            content: '',
+            senderName: 'Ana',
+            channelName: 'Release train',
+            platformData: { fromId: 42, chatType: 'supergroup' },
+          },
+        })
+      );
+
+      const row = claimStore.list('pending').find((c) => c.chatId === '888')!;
+      expect(row).toBeDefined();
+      expect(row.senderName).toBe('Ana');
+      expect(row.chatTitle).toBe('Release train');
+      expect(row.chatKind).toBe('group');
+      expect(row.platformChatType).toBe('supergroup');
+      expect(onUnclaimedChat).toHaveBeenCalledTimes(1);
+      // No turn, same as every other unbound sighting.
+      const agentManager = (
+        claimRouter as unknown as { deps: { agentManager: AgentSessionCreator } }
+      ).deps.agentManager;
+      expect(agentManager.createSession).not.toHaveBeenCalled();
+    });
+
     it('block short-circuits before any store write — recordless from that point on', async () => {
       await claimHandler!(unboundEnvelope());
       const chat = claimStore.list('pending')[0]!;

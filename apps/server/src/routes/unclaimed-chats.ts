@@ -16,6 +16,13 @@
  * - `POST /api/relay/unclaimed-chats/:id/ignore` — mute (idempotent).
  * - `POST /api/relay/unclaimed-chats/:id/block` — drop future traffic
  *   recordless (idempotent).
+ * - `POST /api/relay/unclaimed-chats/:id/leave` — the group-add claim flow's
+ *   "Leave" action (DOR-883, spec §12, design-decisions D-3 item 4): calls
+ *   the platform's own leave, through the adapter, and writes NO room and NO
+ *   binding — a real removal, not a mute. An adapter that cannot leave a chat
+ *   (every adapter except Telegram today) surfaces its refusal as a 500 with a
+ *   descriptive message; the 501 below is the fallback for the case where no
+ *   leave capability is wired at all.
  *
  * @module routes/unclaimed-chats
  */
@@ -51,6 +58,19 @@ export interface UnclaimedChatsRouterDeps {
    * created, rather than failing the claim.
    */
   lifecycle?: BridgeLifecycle;
+  /**
+   * Leave a chat on its platform — the group-add claim flow's "Leave" action
+   * (DOR-883). An install whose adapter cannot leave a chat (every adapter
+   * except Telegram today) still lists, claims, ignores, and blocks; only
+   * `/leave` itself errors — a per-adapter "cannot leave" refusal surfaces as a
+   * 500 with a descriptive message (thrown by AdapterManager.leaveChat), while
+   * the `if (!leaveChat)` 501 below covers the case where no leave capability
+   * is wired at all.
+   *
+   * @param adapterId - The adapter instance the chat lives on.
+   * @param chatId - The platform chat id to leave.
+   */
+  leaveChat?: (adapterId: string, chatId: string) => Promise<void>;
 }
 
 /** Body for `POST /:id/claim` — the binding fields `claim` cannot derive from the unclaimed row. */
@@ -71,7 +91,7 @@ const ClaimRequestSchema = z.object({
  */
 export function createUnclaimedChatsRouter(deps: UnclaimedChatsRouterDeps): Router {
   const router = Router();
-  const { store, bindingStore, meshCore, lifecycle } = deps;
+  const { store, bindingStore, meshCore, lifecycle, leaveChat } = deps;
 
   router.get('/', (req, res) => {
     const statusParam = req.query.status;
@@ -190,7 +210,16 @@ export function createUnclaimedChatsRouter(deps: UnclaimedChatsRouterDeps): Rout
         agentId: result.data.agentId,
         chatType: typed.chatType,
         channelType: typed.channelType,
-        title: binding.label || chat.chatId,
+        // Prefer the sighting's own platform title over the raw chat id — the
+        // only reason the claim route (unlike the PATCH-based "Bridge to a
+        // channel" toggle in `relay-adapters.ts`) can afford to: `chat` is
+        // this row's own unclaimed-chat sighting, still in hand here, and it
+        // carries `chatTitle` off the adapter's payload (`extractChannelName`
+        // in `inbound.ts`) whenever the platform gave one — a group's real
+        // name rather than its numeric chat id. `createBridgedRoom` sanitizes
+        // it at creation (`room-service.ts`'s own doc comment), so this is
+        // the raw value on purpose.
+        title: binding.label || chat.chatTitle || chat.chatId,
         agentPath,
       });
     } catch (err) {
@@ -226,6 +255,34 @@ export function createUnclaimedChatsRouter(deps: UnclaimedChatsRouterDeps): Rout
       res.status(404).json({ error: 'Unclaimed chat not found' });
       return;
     }
+    store.block(chat.id);
+    res.status(204).end();
+  });
+
+  router.post('/:id/leave', async (req, res) => {
+    const chat = store.getById(req.params.id);
+    if (!chat) {
+      res.status(404).json({ error: 'Unclaimed chat not found' });
+      return;
+    }
+    if (!leaveChat) {
+      res.status(501).json({ error: 'This adapter cannot leave a chat on its platform yet.' });
+      return;
+    }
+    try {
+      // The platform call runs BEFORE the row is touched: if it throws, the
+      // card stays exactly as it was — visible, still pending — rather than
+      // silently hiding a chat the bot never actually left.
+      await leaveChat(chat.adapterId, chat.chatId);
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Leave failed' });
+      return;
+    }
+    // Leaving is stronger than Block, not a second name for it: the bot is no
+    // longer in the chat at all, so nothing further CAN arrive. `block` is the
+    // one existing status that already means "stop recording this chat" — no
+    // new status is needed to say a platform-level thing the store never has
+    // to enforce itself.
     store.block(chat.id);
     res.status(204).end();
   });

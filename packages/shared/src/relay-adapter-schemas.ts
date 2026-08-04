@@ -748,6 +748,16 @@ export const UnclaimedChatSchema = z
     chatId: z.string(),
     channelType: ChannelTypeSchema.nullable(),
     chatKind: z.enum(['dm', 'group']),
+    /**
+     * The RAW platform chat type (DOR-907), kept distinct from the folded
+     * {@link chatKind} so a broadcast `channel` stays tellable apart from a
+     * real `group`/`supergroup` on THIS card, not only on a binding a claim
+     * later creates. `null` for an adapter that reports none (Slack) or a
+     * sighting recorded before this column existed. The group-add claim flow
+     * (DOR-883) is what reads it: a broadcast offers only Ignore/Leave, never
+     * Join, because there is no one in a one-way feed for an agent to answer.
+     */
+    platformChatType: PlatformChatTypeSchema.nullable(),
     senderName: z.string().max(MAX_UNCLAIMED_DISPLAY_NAME_LENGTH).nullable(),
     senderId: z.string().nullable(),
     /** Group/channel display title (`payload.channelName`), when the adapter carried one. */

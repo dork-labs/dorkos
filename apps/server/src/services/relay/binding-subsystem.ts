@@ -425,6 +425,19 @@ export class BindingSubsystem {
               error: err instanceof Error ? err.message : String(err),
             });
           });
+          // The startup stranded-ref sweep (spec §10.1's crash divergence,
+          // DOR-898): a null-id outbound ref old enough that it cannot still
+          // be an in-flight retry survived a PRIOR process's crash between
+          // the write-before-send ref write and the platform call. It is
+          // invisible to `catchUp.scanAll` above (an entry with any ref, null
+          // id or not, is excluded from that scan's candidate list), so this
+          // runs alongside it, at the same startup trigger, detached for the
+          // same reason.
+          void delivery.sweepStrandedRefs().catch((err: unknown) => {
+            logger.warn('[BindingSubsystem] initial bridge stranded-ref sweep failed', {
+              error: err instanceof Error ? err.message : String(err),
+            });
+          });
         }
 
         // The presence forwarder (chats-as-channels §6.8), independent of the

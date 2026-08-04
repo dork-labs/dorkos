@@ -14,6 +14,7 @@ import {
   useClaimUnclaimedChat,
   useIgnoreUnclaimedChat,
   useBlockUnclaimedChat,
+  useLeaveUnclaimedChat,
 } from '../use-unclaimed-chats';
 
 function createWrapper(transport: Transport) {
@@ -36,6 +37,7 @@ const CHAT: UnclaimedChat = {
   chatId: '99887766',
   channelType: 'dm',
   chatKind: 'dm',
+  platformChatType: null,
   senderName: 'Miguel',
   senderId: '4242',
   chatTitle: null,
@@ -185,10 +187,11 @@ describe('unclaimed-chat decisions', () => {
     expect((result.current.error as { code?: string })?.code).toBe('CHAT_ALREADY_BOUND');
   });
 
-  it('ignore and block each take a bare row id', async () => {
+  it('ignore, block, and leave each take a bare row id', async () => {
     const transport = createMockTransport({
       ignoreUnclaimedChat: vi.fn().mockResolvedValue(undefined),
       blockUnclaimedChat: vi.fn().mockResolvedValue(undefined),
+      leaveUnclaimedChat: vi.fn().mockResolvedValue(undefined),
     });
     const wrapper = createWrapper(transport);
 
@@ -201,5 +204,25 @@ describe('unclaimed-chat decisions', () => {
     block.result.current.mutate('uc-2');
     await waitFor(() => expect(block.result.current.isSuccess).toBe(true));
     expect(transport.blockUnclaimedChat).toHaveBeenCalledWith('uc-2');
+
+    const leave = renderHook(() => useLeaveUnclaimedChat(), { wrapper });
+    leave.result.current.mutate('uc-3');
+    await waitFor(() => expect(leave.result.current.isSuccess).toBe(true));
+    expect(transport.leaveUnclaimedChat).toHaveBeenCalledWith('uc-3');
+  });
+
+  it('leave rejects (never silently settles) when the adapter cannot leave a chat', async () => {
+    const refusal = Object.assign(new Error('This adapter cannot leave a chat'), { status: 501 });
+    const transport = createMockTransport({
+      leaveUnclaimedChat: vi.fn().mockRejectedValue(refusal),
+    });
+
+    const { result } = renderHook(() => useLeaveUnclaimedChat(), {
+      wrapper: createWrapper(transport),
+    });
+
+    result.current.mutate('uc-1');
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
   });
 });
