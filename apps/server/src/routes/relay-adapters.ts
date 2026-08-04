@@ -55,28 +55,44 @@ function resolveAdapterName(adapterManager: AdapterManager, adapterId: string): 
 }
 
 /**
- * Derive the platform chat type a bridge needs from a binding's `channelType`.
- *
- * A live inbound message carries `platformData.chatType` (`private`/`group`/
- * `supergroup`), but the "Bridge to a channel" action fires against a stored
- * binding with no message in hand — so the platform type is reconstructed from
- * the binding's subject-level `channelType`. `'group'`/`'thread'` map to a
- * `group` (kind `channel`); a broadcast `'channel'` is passed through so
- * `createBridgedRoom` refuses it by name (spec §3.3); everything else, including
- * an absent filter, is a `private` DM. `'supergroup'` is not reconstructable
- * from the binding and is not needed: `createBridgedRoom` maps it to the same
- * `channel` kind as `group`.
+ * The reason a non-DM binding cannot be bridged from the detail sheet yet.
+ * User-facing (writing-for-humans): says what works and what does not.
  */
-function deriveChatTypeForBridge(channelType: string | null | undefined): string {
-  switch (channelType) {
-    case 'group':
-    case 'thread':
-      return 'group';
-    case 'channel':
-      return 'channel';
-    default:
-      return 'private';
-  }
+const BRIDGE_NON_DM_REASON =
+  'Right now you can bridge a one-to-one chat into a channel. A group or broadcast ' +
+  "chat can't be bridged from here yet: on Telegram a broadcast channel looks exactly " +
+  'like a group once it reaches us, so we cannot yet tell them apart to keep a broadcast out.';
+
+/**
+ * The platform chat type a bridge needs from a stored binding, or a refusal when
+ * the binding cannot be **proven** to be a two-way conversation.
+ *
+ * The "Bridge to a channel" action fires against a stored binding with no live
+ * message in hand. A live message carries the raw platform type on
+ * `platformData.chatType`, but that is deliberately **not persisted**: the
+ * unclaimed-chat store and trace store both fold it into the subject-level
+ * `channelType` (dm/group), and `isGroupChat` folds a Telegram broadcast
+ * (`chat.type === 'channel'`) into `channelType: 'group'`
+ * (`packages/relay/src/adapters/telegram/inbound.ts:355`). So a stored **group**
+ * binding is byte-identical to a stored **broadcast** binding, and neither the
+ * binding nor anything it derives from records which it is.
+ *
+ * A broadcast is not a conversation and must not be bridged (spec §3.3, A3.7).
+ * The only stored binding we can prove is not a broadcast is a **DM** — a private
+ * chat cannot be a broadcast. So from this entry point a DM bridges as `private`
+ * and everything else is refused, rather than fabricating a `group` type that
+ * would sail a broadcast straight past `createBridgedRoom`'s refusal. Enabling
+ * group bridging here waits on persisting the raw platform chat type through
+ * binding creation (DOR-907).
+ *
+ * @param channelType - The stored binding's subject-level channel type.
+ * @returns The `private` chat type for a DM, or a `refusal` reason otherwise.
+ */
+function bridgeChatTypeForBinding(
+  channelType: string | null | undefined
+): { chatType: 'private' } | { refusal: string } {
+  if (channelType == null || channelType === 'dm') return { chatType: 'private' };
+  return { refusal: BRIDGE_NON_DM_REASON };
 }
 
 /** Map a {@link RoomError} raised while bridging to its HTTP status. */
@@ -486,6 +502,14 @@ export function createAdapterRouter(
           details: { message: BRIDGE_REQUIRES_CHAT_ID_MESSAGE },
         });
       }
+      // Refuse anything we cannot prove is a two-way chat: a stored group binding
+      // is indistinguishable from a folded Telegram broadcast, and a broadcast
+      // must not be bridged (spec §3.3, A3.7). Only a DM is provably safe. This
+      // runs BEFORE the lifecycle, so a refused binding is left untouched.
+      const typed = bridgeChatTypeForBinding(existing.channelType);
+      if ('refusal' in typed) {
+        return res.status(400).json({ error: typed.refusal, code: 'BRIDGE_NOT_A_DM' });
+      }
       const agentPath = adapterManager.getMeshCore()?.getProjectPath(existing.agentId);
       if (!agentPath) {
         return res.status(400).json({
@@ -498,8 +522,9 @@ export function createAdapterRouter(
           chatId,
           bindingId: existing.id,
           agentId: existing.agentId,
-          chatType: deriveChatTypeForBridge(existing.channelType),
-          channelType: existing.channelType ?? null,
+          // A DM: `private` chat type, and no subject-level channel type (§3.3).
+          chatType: typed.chatType,
+          channelType: null,
           title: existing.label || chatId,
           agentPath,
         });

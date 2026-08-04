@@ -64,11 +64,15 @@ export function BindingBridgeSection({ binding, onDone }: BindingBridgeSectionPr
     );
   }
 
-  // A broadcast feed is one-way, not a conversation, so it cannot be a channel
-  // (§3.3). The server refuses it too; this states the reason up front.
-  if (binding.channelType === 'channel') {
+  // Only a one-to-one chat can be bridged from here. A group and a broadcast
+  // channel arrive looking identical once they reach us (Telegram folds a
+  // broadcast into a group), so we cannot yet tell them apart to keep a
+  // broadcast out — and a broadcast is not a conversation to bridge (spec §3.3).
+  // The server refuses this too; this states the reason instead of a dead button.
+  const isDirectMessage = binding.channelType == null || binding.channelType === 'dm';
+  if (!isDirectMessage) {
     return (
-      <BridgeRefusal reason="A broadcast channel is a one-way feed, not a back-and-forth chat, so it cannot become a channel." />
+      <BridgeRefusal reason="Right now you can bridge a one-to-one chat into a channel. A group or broadcast chat can't be bridged from here yet, because a broadcast channel looks just like a group by the time it reaches us and we can't yet tell them apart." />
     );
   }
 
@@ -128,6 +132,10 @@ function BridgedControls({ binding, onDone }: BindingBridgeSectionProps) {
   const updateBinding = useUpdateBinding();
   const setDeliverNotices = useSetDeliverNotices();
   const { data: room } = useRoom(binding.roomId ?? null);
+  // Until the room resolves we do not know the seeded value (a DM seeds true, a
+  // channel false), so the toggle stays disabled rather than flashing `off`
+  // and then flipping — an honest "not ready yet" over a wrong answer.
+  const roomLoaded = room !== undefined;
   const deliverNotices = room?.deliverNotices ?? false;
 
   async function handleUnbridge() {
@@ -156,7 +164,7 @@ function BridgedControls({ binding, onDone }: BindingBridgeSectionProps) {
             <Switch
               id="bridge-deliver-notices"
               checked={deliverNotices}
-              disabled={setDeliverNotices.isPending}
+              disabled={!roomLoaded || setDeliverNotices.isPending}
               onCheckedChange={(v) =>
                 setDeliverNotices.mutate({ roomId: binding.roomId!, deliverNotices: v })
               }

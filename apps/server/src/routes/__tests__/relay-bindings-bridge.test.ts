@@ -3,8 +3,8 @@
  * `bridge` TRANSITION through `BridgeLifecycle` rather than writing the flag
  * straight to the store. These tests pin that the route is the first production
  * caller of `BridgeLifecycle.bridge`/`unbridge` (spec §3.1, A12.2), derives the
- * lifecycle's input from the stored binding, and surfaces a bridge refusal
- * honestly.
+ * lifecycle's input from the stored binding, and REFUSES anything it cannot
+ * prove is a two-way chat before touching the lifecycle (spec §3.3, A3.7).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
@@ -37,7 +37,11 @@ interface StoredBinding {
   updatedAt: string;
 }
 
-/** A stateful store whose contents survive across the requests in one test. */
+/**
+ * A stateful store whose contents survive across the requests in one test. The
+ * default binding is a **DM** (no `channelType`) — the one shape the detail
+ * sheet can bridge; group/broadcast cases override it.
+ */
 function createStore(seed: Partial<StoredBinding>) {
   const now = new Date().toISOString();
   const binding: StoredBinding = {
@@ -45,9 +49,8 @@ function createStore(seed: Partial<StoredBinding>) {
     adapterId: 'telegram-1',
     agentId: 'agent-1',
     chatId: '12345',
-    channelType: 'group',
     sessionStrategy: 'per-chat',
-    label: 'Support',
+    label: 'Ana',
     bridge: 'off',
     roomId: null,
     createdAt: now,
@@ -121,7 +124,7 @@ describe('PATCH /bindings/:id — bridge transitions route through BridgeLifecyc
     lifecycle = createLifecycle(store);
   });
 
-  it('A12.2: one PATCH { bridge: "room" } fires BridgeLifecycle.bridge exactly once and flips the binding — no restart', async () => {
+  it('A12.2: one PATCH { bridge: "room" } on a DM fires BridgeLifecycle.bridge once and flips the binding — no restart', async () => {
     const app = createApp(store, {
       getBridgeLifecycle: vi.fn().mockReturnValue(lifecycle) as never,
     });
@@ -133,20 +136,18 @@ describe('PATCH /bindings/:id — bridge transitions route through BridgeLifecyc
 
     // One cockpit action → exactly one lifecycle bridge call (A12.2).
     expect(lifecycle.bridge).toHaveBeenCalledTimes(1);
-    // The lifecycle input is derived from the stored binding, with the platform
-    // chat type reconstructed from `channelType: 'group'`.
+    // The lifecycle input is derived from the stored binding; a DM bridges as a
+    // `private` chat with no subject-level channel type (spec §3.3).
     expect(lifecycle.bridge).toHaveBeenCalledWith({
       adapterId: 'telegram-1',
       chatId: '12345',
       bindingId: 'b-1',
       agentId: 'agent-1',
-      chatType: 'group',
-      channelType: 'group',
-      title: 'Support',
+      chatType: 'private',
+      channelType: null,
+      title: 'Ana',
       agentPath: '/agents/agent-1',
     });
-    // The binding is bridged and carries the new room — the value the cockpit
-    // navigates to. The flag was flipped by the lifecycle, not a direct write.
     expect(res.body.binding.bridge).toBe('room');
     expect(res.body.binding.roomId).toBe('room-9');
   });
@@ -180,13 +181,14 @@ describe('PATCH /bindings/:id — bridge transitions route through BridgeLifecyc
     expect(res.body.binding.roomId).toBeNull();
   });
 
-  it('surfaces a broadcast refusal by name and leaves the binding unbridged', async () => {
-    lifecycle = createLifecycle(store, {
-      throwOnBridge: new RoomError(
-        'BROADCAST_NOT_BRIDGEABLE',
-        'A broadcast channel is not a conversation and cannot be bridged'
-      ),
-    });
+  // The refusal that must actually fire on a real Telegram broadcast. A broadcast
+  // reaches us folded into `channelType: 'group'` (isGroupChat, inbound.ts:355),
+  // so a group-typed binding is the shape a real broadcast takes. The refusal
+  // runs through the REAL derivation (bridgeChatTypeForBinding), NOT a mock throw,
+  // so this fails if the refusal is ever made unreachable.
+  it('refuses a group binding (the shape a folded broadcast takes) before the lifecycle', async () => {
+    store = createStore({ channelType: 'group' });
+    lifecycle = createLifecycle(store);
     const app = createApp(store, {
       getBridgeLifecycle: vi.fn().mockReturnValue(lifecycle) as never,
     });
@@ -196,9 +198,60 @@ describe('PATCH /bindings/:id — bridge transitions route through BridgeLifecyc
       .send({ bridge: 'room' })
       .expect(400);
 
-    expect(res.body.code).toBe('BROADCAST_NOT_BRIDGEABLE');
-    expect(res.body.error).toContain('broadcast channel is not a conversation');
-    // The refusal must not half-apply.
+    expect(res.body.code).toBe('BRIDGE_NOT_A_DM');
+    expect(res.body.error).toMatch(/broadcast/i);
+    expect(lifecycle.bridge).not.toHaveBeenCalled();
+    expect(store.map.get('b-1')!.bridge).toBe('off');
+  });
+
+  it('refuses an explicitly broadcast-typed binding (channelType: channel)', async () => {
+    store = createStore({ channelType: 'channel' });
+    lifecycle = createLifecycle(store);
+    const app = createApp(store, {
+      getBridgeLifecycle: vi.fn().mockReturnValue(lifecycle) as never,
+    });
+
+    const res = await request(app)
+      .patch('/api/relay/bindings/b-1')
+      .send({ bridge: 'room' })
+      .expect(400);
+
+    expect(res.body.code).toBe('BRIDGE_NOT_A_DM');
+    expect(lifecycle.bridge).not.toHaveBeenCalled();
+    expect(store.map.get('b-1')!.bridge).toBe('off');
+  });
+
+  it('refuses a chat-wildcard binding (no chatId) with the wildcard reason, before the lifecycle', async () => {
+    store = createStore({ chatId: undefined });
+    lifecycle = createLifecycle(store);
+    const app = createApp(store, {
+      getBridgeLifecycle: vi.fn().mockReturnValue(lifecycle) as never,
+    });
+
+    const res = await request(app)
+      .patch('/api/relay/bindings/b-1')
+      .send({ bridge: 'room' })
+      .expect(400);
+
+    expect(JSON.stringify(res.body)).toContain('one room cannot honestly be the channel');
+    expect(lifecycle.bridge).not.toHaveBeenCalled();
+    expect(store.map.get('b-1')!.bridge).toBe('off');
+  });
+
+  it('maps a RoomError thrown by the lifecycle to its HTTP status', async () => {
+    lifecycle = createLifecycle(store, {
+      throwOnBridge: new RoomError('OPERATOR_ONLY', 'Only you can bridge a chat'),
+    });
+    const app = createApp(store, {
+      getBridgeLifecycle: vi.fn().mockReturnValue(lifecycle) as never,
+    });
+
+    const res = await request(app)
+      .patch('/api/relay/bindings/b-1')
+      .send({ bridge: 'room' })
+      .expect(403);
+
+    expect(res.body.code).toBe('OPERATOR_ONLY');
     expect(store.map.get('b-1')!.bridge).toBe('off');
   });
 

@@ -21,9 +21,11 @@ function makeBinding(overrides: Partial<AdapterBinding> = {}): AdapterBinding {
     adapterId: 'telegram-1',
     agentId: 'agent-1',
     chatId: '12345',
-    channelType: 'group',
+    // Default is a DM — the one shape the detail sheet can bridge. A private
+    // chat is provably not a broadcast; group/broadcast cases override this.
+    channelType: 'dm',
     sessionStrategy: 'per-chat',
-    label: 'Support',
+    label: 'Ana',
     permissionMode: 'default',
     enabled: true,
     canInitiate: false,
@@ -94,10 +96,18 @@ describe('BindingBridgeSection — refusals render their reason, not a dead butt
     expect(screen.queryByRole('button', { name: /bridge to a channel/i })).not.toBeInTheDocument();
   });
 
-  it('a broadcast channel shows the reason and offers no bridge button', () => {
+  it('a group binding (the shape a folded broadcast takes) shows the reason and offers no bridge button', () => {
+    renderSection(makeBinding({ channelType: 'group' }));
+    expect(screen.getByText(/Can't bridge this chat/i)).toBeInTheDocument();
+    expect(screen.getByText(/one-to-one chat/i)).toBeInTheDocument();
+    expect(screen.getByText(/group or broadcast/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /bridge to a channel/i })).not.toBeInTheDocument();
+  });
+
+  it('an explicitly broadcast-typed binding (channelType: channel) shows the reason and offers no bridge button', () => {
     renderSection(makeBinding({ channelType: 'channel' }));
     expect(screen.getByText(/Can't bridge this chat/i)).toBeInTheDocument();
-    expect(screen.getByText(/one-way feed/i)).toBeInTheDocument();
+    expect(screen.getByText(/group or broadcast/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /bridge to a channel/i })).not.toBeInTheDocument();
   });
 });
@@ -144,8 +154,11 @@ describe('BindingBridgeSection — bridged state', () => {
     const toggle = await screen.findByRole('switch', {
       name: /tell this chat when a turn fails or is stopped/i,
     });
-    // Reads its current state from the room, not a guess.
-    await waitFor(() => expect(toggle).not.toBeChecked());
+    // Disabled until the room resolves, so it never flashes a wrong state
+    // (Fix 3). Once loaded it reads its value from the room, not a guess.
+    expect(toggle).toBeDisabled();
+    await waitFor(() => expect(toggle).toBeEnabled());
+    expect(toggle).not.toBeChecked();
 
     fireEvent.click(toggle);
     await waitFor(() =>
