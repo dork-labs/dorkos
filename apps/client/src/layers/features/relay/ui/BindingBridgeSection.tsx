@@ -64,15 +64,27 @@ export function BindingBridgeSection({ binding, onDone }: BindingBridgeSectionPr
     );
   }
 
-  // Only a one-to-one chat can be bridged from here. A group and a broadcast
-  // channel arrive looking identical once they reach us (Telegram folds a
-  // broadcast into a group), so we cannot yet tell them apart to keep a
-  // broadcast out — and a broadcast is not a conversation to bridge (spec §3.3).
-  // The server refuses this too; this states the reason instead of a dead button.
-  const isDirectMessage = binding.channelType == null || binding.channelType === 'dm';
-  if (!isDirectMessage) {
+  // What this chat can become is decided by its raw platform type (DOR-907),
+  // mirroring the server's own rule. A broadcast never bridges: it is a one-way
+  // feed, not a conversation (spec §3.3). A group or supergroup now can. A chat
+  // whose type we never recorded (a binding made before DOR-907, or outside the
+  // claim flow) bridges only when it is a one-to-one, since a DM is the one
+  // shape provably not a broadcast. The server refuses the same cases; this
+  // states the reason instead of a dead button.
+  if (binding.platformChatType === 'channel') {
     return (
-      <BridgeRefusal reason="Right now you can bridge a one-to-one chat into a channel. A group or broadcast chat can't be bridged from here yet, because a broadcast channel looks just like a group by the time it reaches us and we can't yet tell them apart." />
+      <BridgeRefusal reason="This is a broadcast channel, not a two-way conversation, so it can't become a channel here: your agent would have no one to reply to." />
+    );
+  }
+  const isDirectMessage = binding.channelType == null || binding.channelType === 'dm';
+  const bridgeable =
+    binding.platformChatType === 'private' ||
+    binding.platformChatType === 'group' ||
+    binding.platformChatType === 'supergroup' ||
+    (binding.platformChatType == null && isDirectMessage);
+  if (!bridgeable) {
+    return (
+      <BridgeRefusal reason="We connected this chat before we started noting whether it's a one-to-one, a group, or a broadcast, so we can't safely turn it into a channel yet. Re-connect it from a new message and it will carry what it is." />
     );
   }
 
