@@ -8,6 +8,20 @@ import { TransportProvider } from '@/layers/shared/model';
 import { ExternalMcpCard } from '../ui/external-mcp/ExternalMcpCard';
 import type { ServerConfig } from '@dorkos/shared/types';
 
+// The card's outbound-direction cross-link uses useNavigate + useSettingsDeepLink's
+// close(), both of which need TanStack Router context. Mock them to plain spies —
+// everything else in the shared/model barrel (TransportProvider above) stays real.
+const { navigateSpy, closeSpy } = vi.hoisted(() => ({
+  navigateSpy: vi.fn(),
+  closeSpy: vi.fn(),
+}));
+vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigateSpy }));
+vi.mock('@/layers/shared/model', async () => {
+  const actual =
+    await vi.importActual<typeof import('@/layers/shared/model')>('@/layers/shared/model');
+  return { ...actual, useSettingsDeepLink: () => ({ open: vi.fn(), close: closeSpy }) };
+});
+
 type McpConfig = NonNullable<ServerConfig['mcp']>;
 
 const DEFAULT_MCP: McpConfig = {
@@ -44,23 +58,38 @@ function createWrapper() {
 
 /** Click the chevron to expand the card content. */
 async function expandCard(user: ReturnType<typeof userEvent.setup>) {
-  const btn = screen.getByRole('button', { name: /expand external mcp server settings/i });
+  const btn = screen.getByRole('button', { name: /expand mcp server settings/i });
   await user.click(btn);
 }
 
 describe('ExternalMcpCard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    navigateSpy.mockClear();
+    closeSpy.mockClear();
   });
 
   afterEach(() => {
     cleanup();
   });
 
-  it('renders External MCP Server label', () => {
+  it('renders the "Connect other apps to DorkOS" label (plan D7)', () => {
     const { Wrapper } = createWrapper();
     render(<ExternalMcpCard mcp={DEFAULT_MCP} authEnabled={false} />, { wrapper: Wrapper });
-    expect(screen.getByText('External MCP Server')).toBeInTheDocument();
+    expect(screen.getByText('Connect other apps to DorkOS')).toBeInTheDocument();
+  });
+
+  it('cross-links to the Agents page for the outbound MCP direction, closing itself first', async () => {
+    const user = userEvent.setup();
+    const { Wrapper } = createWrapper();
+    render(<ExternalMcpCard mcp={DEFAULT_MCP} authEnabled={false} />, { wrapper: Wrapper });
+    await expandCard(user);
+    expect(
+      screen.getByText(/give one of your agents tools from another mcp server instead/i)
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /open the agents page/i }));
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+    expect(navigateSpy).toHaveBeenCalledWith({ to: '/agents' });
   });
 
   it('shows Enabled badge when enabled and auth configured', () => {
@@ -127,7 +156,7 @@ describe('ExternalMcpCard', () => {
     const { Wrapper, transport } = createWrapper();
     render(<ExternalMcpCard mcp={DEFAULT_MCP} authEnabled={false} />, { wrapper: Wrapper });
 
-    const toggle = screen.getByRole('switch', { name: /toggle external mcp access/i });
+    const toggle = screen.getByRole('switch', { name: /toggle access for other apps/i });
     await user.click(toggle);
 
     expect(transport.updateConfig).toHaveBeenCalledWith(

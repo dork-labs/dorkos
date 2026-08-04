@@ -10,28 +10,28 @@ DorkOS exposes an external [MCP](https://modelcontextprotocol.io) server at `/mc
 These are two directions of the same protocol, and fittingly symmetric ones: DorkOS as a server other agents connect to, and DorkOS as a host that renders apps other servers ship. This page covers both.
 
 <Callout type="info">
-  **Quick win:** flip on **Settings → Tools → External MCP Server**, copy the Claude Code snippet it
-  generates, and paste it into `~/.claude.json`. That's the whole setup for the common case. The
-  rest of this page is the reference.
+  **Quick win:** flip on **Settings → Tools → Connect other apps to DorkOS**, copy the Claude Code
+  snippet it generates, and paste it into `~/.claude.json`. That's the whole setup for the common
+  case. The rest of this page is the reference.
 </Callout>
 
 ## Connecting to the DorkOS MCP server
 
 The endpoint is `/mcp` on your DorkOS server (`http://localhost:4242/mcp` by default). It speaks **Streamable HTTP** and is **stateless**: every request gets a fresh server instance. There's no session to keep alive and no `GET`/`DELETE` lifecycle to manage (both return `405`).
 
-Manage it from **Settings → Tools → External MCP Server**: an enable/disable toggle, the live endpoint URL, current auth mode, rate limiting, and copy-pasteable setup snippets for Claude Code, the Claude Code CLI, Cursor, and Windsurf.
+Manage it from **Settings → Tools → Connect other apps to DorkOS**: an enable/disable toggle, the live endpoint URL, current auth mode, rate limiting, and copy-pasteable setup snippets for Claude Code, the Claude Code CLI, Cursor, and Windsurf.
 
 <Callout type="info">
   **Copy the endpoint, don't type it.** Every example on this page uses `http://localhost:4242`,
   which is right for the CLI and for Docker. The [desktop app](/docs/getting-started/desktop-app)
   uses that address too, unless something else on your machine already had port 4242, in which case
-  it moves to the next free one. **Settings → Tools → External MCP Server** and **Settings →
-  Server** both show your real endpoint with a copy button, so copying from there always works.
+  it moves to the next free one. **Settings → Tools → Connect other apps to DorkOS** and **Settings
+  → Server** both show your real endpoint with a copy button, so copying from there always works.
 </Callout>
 
 <Callout type="info">
-  A screenshot of the Settings → Tools → External MCP Server card would help here (toggle, endpoint
-  URL, auth mode, rate limit, and snippets in one view). Flagged for the media pipeline.
+  A screenshot of the Settings → Tools → Connect other apps to DorkOS card would help here (toggle,
+  endpoint URL, auth mode, rate limit, and snippets in one view). Flagged for the media pipeline.
 </Callout>
 
 <Callout type="warn">
@@ -65,7 +65,7 @@ curl -X POST http://localhost:4242/mcp \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_agent","arguments":{}}}'
 ```
 
-Find your token in **Settings → Tools → External MCP Server**: click **Reveal token**, and the setup snippets fill in with it so you can copy one and paste it straight into your client. It also lives in a file called `mcp-local-token` in your DorkOS data folder (`~/.dork/` by default). Rotating the token from Settings makes a new one and turns off the old one right away, so any client you already set up stops working until you paste in the new token.
+Find your token in **Settings → Tools → Connect other apps to DorkOS**: click **Reveal token**, and the setup snippets fill in with it so you can copy one and paste it straight into your client. It also lives in a file called `mcp-local-token` in your DorkOS data folder (`~/.dork/` by default). Rotating the token from Settings makes a new one and turns off the old one right away, so any client you already set up stops working until you paste in the new token.
 
 One honest note on what this protects: it stops tokenless calls, keeps the token out of reach of anything that can't open a local connection, and guards the endpoint anywhere the port is reachable from outside (a tunnel or proxy). While login is off, though, a program running on your computer can still ask DorkOS for the token the same way the app does. If that matters for your machine, [turn on login](/docs/self-hosting/securing-your-instance) — that is the boundary that closes it.
 

@@ -76,7 +76,7 @@ Every A2A JSON-RPC call runs a prompt against one of your agents, so **execution
 
 Which token you send depends on your setup:
 
-- **Login off (the default):** send the **local MCP token** as a Bearer header. It's the same token the [MCP endpoint](/docs/integrations/mcp-server) uses — find it in **Settings → Tools → External MCP Server**, or in the `mcp-local-token` file in your DorkOS data folder (`~/.dork/` by default). Without it, a JSON-RPC `POST` comes back `401`; an Agent Card `GET` still works.
+- **Login off (the default):** send the **local MCP token** as a Bearer header. It's the same token the [MCP endpoint](/docs/integrations/mcp-server) uses — find it in **Settings → Tools → Connect other apps to DorkOS**, or in the `mcp-local-token` file in your DorkOS data folder (`~/.dork/` by default). Without it, a JSON-RPC `POST` comes back `401`; an Agent Card `GET` still works.
 - **Headless deployments:** set `MCP_API_KEY` and send it as the Bearer token. It overrides everything else.
 - **Login on:** a per-user [Better Auth](/docs/getting-started/configuration) API key works as the Bearer token.
 

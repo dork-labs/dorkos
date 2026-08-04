@@ -9,6 +9,16 @@ vi.mock('@/layers/entities/runtime', () => ({
   useCapabilitiesForRuntime: vi.fn(() => ({ supportsMcp: true })),
 }));
 
+// The section's inbound-direction cross-link uses useSettingsDeepLink's open(),
+// which needs TanStack Router context. Mock it to a plain spy — everything else
+// in the shared/model barrel (TransportProvider below) stays real.
+const { openSettingsSpy } = vi.hoisted(() => ({ openSettingsSpy: vi.fn() }));
+vi.mock('@/layers/shared/model', async () => {
+  const actual =
+    await vi.importActual<typeof import('@/layers/shared/model')>('@/layers/shared/model');
+  return { ...actual, useSettingsDeepLink: () => ({ open: openSettingsSpy }) };
+});
+
 import { AgentMcpServers } from '../ui/AgentMcpServers';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
 import { TransportProvider } from '@/layers/shared/model';
@@ -58,9 +68,24 @@ function renderComponent(transport: Transport) {
 describe('AgentMcpServers', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    openSettingsSpy.mockClear();
     vi.mocked(useCapabilitiesForRuntime).mockReturnValue({
       supportsMcp: true,
     } as RuntimeCapabilities);
+  });
+
+  it('cross-links to Settings → Tools for the inbound MCP direction (plan D7)', async () => {
+    const transport = createMockTransport({
+      listAgentMcpServers: vi.fn().mockResolvedValue([]),
+      getMcpConfig: vi.fn().mockResolvedValue({ servers: [] }),
+    });
+    const { container } = renderComponent(transport);
+
+    await waitFor(() =>
+      expect(within(container).getByText(/other apps to use dorkos as an mcp server/i))
+    );
+    fireEvent.click(within(container).getByRole('button', { name: /see settings.*tools/i }));
+    expect(openSettingsSpy).toHaveBeenCalledWith('tools', 'external-mcp');
   });
 
   it('renders a managed row joined with live status by name', async () => {
