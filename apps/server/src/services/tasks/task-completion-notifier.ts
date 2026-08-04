@@ -151,6 +151,10 @@ export class TaskCompletionNotifier {
       const result = await relayCore.publish(target.subject, message, {
         from,
         budget: { maxHops: 2, ttl: Date.now() + 30_000, callBudgetRemaining: 1 },
+        // A bridged target publishes under `relay.bridge.initiate.*`; assert the
+        // DOR-889 trust marker so the pipeline guard admits this trusted server
+        // publisher. Inert (and omitted) on the non-bridged system principal.
+        ...(target.bridged ? { serverBridgePrincipal: true } : {}),
       });
       if (result.deliveredTo === 0) {
         this.logger.debug(`run ${run.id} notification not delivered (rejected or queued)`);

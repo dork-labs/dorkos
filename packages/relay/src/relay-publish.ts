@@ -9,7 +9,7 @@
  */
 import { monotonicFactory } from 'ulidx';
 import { validateSubject, matchesPattern } from './subject-matcher.js';
-import { requiresInitiateConsent } from './lib/consent-scope.js';
+import { requiresInitiateConsent, BRIDGE_PRINCIPAL_PREFIX } from './lib/consent-scope.js';
 import { createDefaultBudget, enforceBudget } from './budget-enforcer.js';
 import { checkRateLimit } from './rate-limiter.js';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
@@ -173,6 +173,9 @@ export class RelayPublishPipeline {
    * 2. Check access control (from -> subject)
    * 3. Rate limit check (per-sender sliding window, before fan-out)
    * 4. Build envelope with ULID ID, budget, and payload
+   * 4a. Server-only bridge-principal guard — a `relay.bridge.*` `from` without
+   *    the `serverBridgePrincipal` trust marker is dead-lettered and NO
+   *    delivery path runs (DOR-889)
    * 4b. Authoritative initiate-consent gate — an agent-initiated send to a
    *    bound human channel without `canInitiate` consent is dead-lettered and
    *    NO delivery path runs (DOR-277)
@@ -296,6 +299,32 @@ export class RelayPublishPipeline {
     options: PublishOptions,
     messageId: string
   ): Promise<PublishResult> {
+    // 4a. Server-only bridge-principal guard (DOR-889). A `relay.bridge.*`
+    //     `from` is emitted only by trusted server code, which asserts that
+    //     provenance by setting `serverBridgePrincipal`. Any bridge principal
+    //     reaching the pipeline WITHOUT that marker is a caller-supplied `from`
+    //     — one that slipped past, or around, the HTTP route guard
+    //     (`isServerOnlyPrincipal`, `routes/relay.ts`). A future ingress that
+    //     forwards an untrusted `from` without re-implementing that route guard
+    //     lands here. Rejecting it at the pipeline — ahead of the consent gate
+    //     and every delivery path — makes "a `relay.bridge.*` principal is only
+    //     publishable by trusted server code" hold for every ingress by
+    //     construction, the second, structural line of defense the per-route
+    //     guard alone could not provide. This runs before the consent gate on
+    //     purpose: an unmarked bridge `from` is illegitimate regardless of
+    //     whether a binding would consent, so it is never handed to the gate to
+    //     be classified as a reply or an initiate.
+    if (envelope.from.startsWith(BRIDGE_PRINCIPAL_PREFIX) && !options.serverBridgePrincipal) {
+      return this.rejectAtGate(
+        envelope,
+        subject,
+        messageId,
+        'untrusted_bridge_principal',
+        `untrusted bridge principal: "${envelope.from}" was published without the ` +
+          `server trust marker, so it is treated as a caller-supplied principal and rejected`
+      );
+    }
+
     // 4b. Authoritative agent→human initiate-consent gate (DOR-277). Runs
     //     BEFORE the budget gate and any delivery path, as a sibling
     //     authoritative check: an agent-initiated send to a bound human channel

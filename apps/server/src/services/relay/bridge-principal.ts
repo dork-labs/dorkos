@@ -21,9 +21,18 @@
  *
  * @module server/services/relay/bridge-principal
  */
+import { BRIDGE_PRINCIPAL_PREFIX } from '@dorkos/relay';
 
-/** Every `relay.bridge.*` principal starts here. */
-export const BRIDGE_PRINCIPAL_PREFIX = 'relay.bridge.';
+/**
+ * Every `relay.bridge.*` principal starts here.
+ *
+ * Re-exported from `@dorkos/relay`, which owns the canonical definition: the
+ * publish pipeline reads the same prefix to enforce the server-only trust
+ * marker (DOR-889), and a second copy here is exactly the drift that guard
+ * cannot afford. This module keeps the export name stable for its existing
+ * importers (the consent gate, the HTTP route guard).
+ */
+export { BRIDGE_PRINCIPAL_PREFIX };
 
 /**
  * The two provenance classifications a bridge delivery can assert (spec

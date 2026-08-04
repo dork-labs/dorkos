@@ -473,7 +473,14 @@ export class ChatBridgeDelivery {
     const attempts = this.retryBackoffMs.length + 1;
 
     for (let i = 0; i < attempts; i += 1) {
-      const result = await this.deps.publisher.publish(subject, payload, { from });
+      // `from` is always a `relay.bridge.*` principal here (built by
+      // `buildBridgePrincipal` above), so this trusted server publisher asserts
+      // the DOR-889 trust marker; without it the pipeline guard would reject the
+      // delivery as a caller-supplied bridge principal.
+      const result = await this.deps.publisher.publish(subject, payload, {
+        from,
+        serverBridgePrincipal: true,
+      });
 
       // Consent refusal (spec §6.6): the gate denied it. Keep the ref so it is
       // never retried into the same wall (re-enabling a switch does not

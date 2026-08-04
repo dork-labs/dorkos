@@ -213,6 +213,7 @@ export {
   isConsoleSubject,
   HUMAN_SUBJECT_PREFIX,
   CONSOLE_SUBJECT_PREFIX,
+  BRIDGE_PRINCIPAL_PREFIX,
 } from './lib/consent-scope.js';
 
 // One-line notices a person reads in the chat where they asked (DOR-789)
