@@ -190,7 +190,15 @@ function pickMostRecentChat(
     for (const bridge of bridgeStore.listLiveBridges()) {
       const binding = bindingById.get(bridge.bindingId);
       if (!binding) continue; // not one of this agent's eligible bindings
-      const at = bridge.lastActivityAt ? Date.parse(bridge.lastActivityAt) : 0;
+      // The sole writer (`BridgeStore.stampActivity`) always writes a valid
+      // ISO string, so this can't happen today — but that invariant lives in
+      // a different file (deliver.ts) than this comparison, and `Date.parse`
+      // returns NaN for a malformed value. Every `at > best.at` comparison
+      // against NaN is false, which would freeze the scan on the bad
+      // candidate and silently skip every genuinely more-recent one after
+      // it — a worse failure than just treating it as "never active".
+      const parsed = bridge.lastActivityAt ? Date.parse(bridge.lastActivityAt) : 0;
+      const at = Number.isFinite(parsed) ? parsed : 0;
       if (!best || at > best.at) {
         best = { binding, chatId: bridge.chatId, at, bridged: true };
       }

@@ -445,5 +445,45 @@ describe('relay_notify_user', () => {
       expect(data.code).toBe('INITIATE_NOT_ALLOWED');
       expect(deps.relayCore!.publish).not.toHaveBeenCalled();
     });
+
+    it('builds a correct principal for a chat id containing a dot (positional parse, not split-on-dot)', async () => {
+      // `buildBridgePrincipal`/`parseBridgePrincipal` read `classification` and
+      // `adapterId` from fixed positions and treat everything after as the chat
+      // id, rejoined — never by counting dots. A Telegram chat id can itself
+      // contain one (e.g. a forum-topic-qualified id), so this pins that a
+      // dotted chat id lands whole in `from`, rather than getting truncated or
+      // shifting the adapterId read.
+      const deps = makeMockDeps({
+        bindingStore: makeMockBindingStore({
+          getAll: vi
+            .fn()
+            .mockReturnValue([
+              makeBinding({ bridge: 'room', roomId: 'room-1', chatId: '123.456' }),
+            ]),
+        }) as unknown as McpToolDeps['bindingStore'],
+        bindingRouter: makeMockBindingRouter({
+          getSessionsByBinding: vi.fn().mockReturnValue([]),
+        }) as unknown as McpToolDeps['bindingRouter'],
+        bridgeStore: makeMockBridgeStore({
+          listLiveBridges: vi
+            .fn()
+            .mockReturnValue([
+              { bindingId: 'b-1', chatId: '123.456', lastActivityAt: '2026-01-01T00:05:00.000Z' },
+            ]),
+        }) as unknown as McpToolDeps['bridgeStore'],
+      });
+      const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+      const result = await handler({ message: 'Topic-qualified chat' });
+
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.sent).toBe(true);
+      expect(data.chatId).toBe('123.456');
+      expect(deps.relayCore!.publish).toHaveBeenCalledWith(
+        'relay.human.telegram.tg-main.123.456',
+        'Topic-qualified chat',
+        { from: 'relay.bridge.initiate.tg-main.123.456' }
+      );
+    });
   });
 });

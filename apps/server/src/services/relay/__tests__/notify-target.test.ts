@@ -383,6 +383,57 @@ describe('resolveNotifyTarget', () => {
       expect(result.bridged).toBe(false);
     });
 
+    it('a malformed lastActivityAt does not poison the scan (NaN never beats, never freezes it)', () => {
+      // `Date.parse` of a malformed value returns NaN, and `at > best.at` is
+      // false for every `at` once `best.at` is NaN — including a genuinely
+      // more-recent candidate processed afterward. Order matters here: the
+      // malformed row is listed FIRST, so an unguarded scan would seed `best`
+      // with a NaN `at` (nothing beats `!best`), and the valid, more-recent
+      // row second would then lose to it purely because `at > NaN` is always
+      // false. The current sole writer of this field (BridgeStore.stampActivity)
+      // never writes a bad value, but the invariant lives in a different file
+      // than this comparison, so it's guarded here too.
+      const result = resolveNotifyTarget('agent-1', {
+        bindingStore: store([
+          binding({
+            id: 'b-malformed',
+            adapterId: 'tg-malformed',
+            bridge: 'room',
+            roomId: 'room-malformed',
+            chatId: 'chat-malformed',
+          }),
+          binding({
+            id: 'b-good',
+            adapterId: 'tg-good',
+            bridge: 'room',
+            roomId: 'room-good',
+            chatId: 'chat-good',
+          }),
+        ]),
+        bindingRouter: router({}),
+        bridgeStore: bridges([
+          {
+            bindingId: 'b-malformed',
+            chatId: 'chat-malformed',
+            lastActivityAt: 'not-a-real-timestamp',
+          },
+          {
+            bindingId: 'b-good',
+            chatId: 'chat-good',
+            lastActivityAt: new Date(9_000).toISOString(),
+          },
+        ]),
+        adapterManager: adapters([
+          { id: 'tg-malformed', type: 'telegram' },
+          { id: 'tg-good', type: 'telegram' },
+        ]),
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.chatId).toBe('chat-good');
+      expect(result.bindingId).toBe('b-good');
+    });
+
     it('omitting bridgeStore behaves exactly as before bridging existed', () => {
       const result = resolveNotifyTarget('agent-1', {
         bindingStore: store([binding({ bridge: 'room', roomId: 'room-1', chatId: 'chat-42' })]),
