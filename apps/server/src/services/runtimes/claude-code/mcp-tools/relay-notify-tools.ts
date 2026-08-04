@@ -112,6 +112,10 @@ export function createRelayNotifyUserHandler(deps: McpToolDeps, identity: Sender
         : identity.subject;
       const result = await deps.relayCore!.publish(target.subject, args.message, {
         from,
+        // A bridged target publishes under `relay.bridge.initiate.*`; assert the
+        // DOR-889 trust marker so the pipeline guard admits this trusted server
+        // publisher. Inert (and omitted) on the agent's own identity subject.
+        ...(target.bridged ? { serverBridgePrincipal: true } : {}),
       });
       return jsonContent({
         sent: true,

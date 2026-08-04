@@ -311,6 +311,13 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
     const froms = publish.mock.calls.map((c) => (c[2] as PublishOptions).from);
     expect(froms).toContain('relay.bridge.reply.tg-main.55.5');
     expect(froms).toContain('relay.bridge.initiate.tg-main.55.5');
+
+    // DOR-889: every bridge delivery asserts the server trust marker, or the
+    // publish pipeline's bridge-principal guard would reject it as a
+    // caller-supplied `relay.bridge.*` `from`. Both the reply and the initiate
+    // above carry it.
+    const markers = publish.mock.calls.map((c) => (c[2] as PublishOptions).serverBridgePrincipal);
+    expect(markers.every((m) => m === true)).toBe(true);
   });
 
   it('A6.5: a post whose author is neither the bound agent nor the operator is refused inside deliver, before any publish', async () => {

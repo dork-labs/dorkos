@@ -411,10 +411,13 @@ describe('relay_notify_user', () => {
       // The distinguishing assertion: NOT the caller's own agent identity —
       // the bridge delivery principal, so the send is gated as an initiate
       // through the bridge consent branch, not the agent-sender check.
+      // DOR-889: the bridged notify asserts the server trust marker alongside
+      // the bridge principal, so the pipeline's bridge-principal guard admits
+      // this trusted server publisher.
       expect(deps.relayCore!.publish).toHaveBeenCalledWith(
         'relay.human.telegram.tg-main.chat-42',
         'Bridged heads up!',
-        { from: 'relay.bridge.initiate.tg-main.chat-42' }
+        { from: 'relay.bridge.initiate.tg-main.chat-42', serverBridgePrincipal: true }
       );
     });
 
@@ -482,7 +485,7 @@ describe('relay_notify_user', () => {
       expect(deps.relayCore!.publish).toHaveBeenCalledWith(
         'relay.human.telegram.tg-main.123.456',
         'Topic-qualified chat',
-        { from: 'relay.bridge.initiate.tg-main.123.456' }
+        { from: 'relay.bridge.initiate.tg-main.123.456', serverBridgePrincipal: true }
       );
     });
   });

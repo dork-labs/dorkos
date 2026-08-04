@@ -226,6 +226,9 @@ describe('TaskCompletionNotifier', () => {
       // bridge delivery principal, so the send reads as an INITIATE through
       // the bridge consent branch (initiate-consent.ts's non-exempt path).
       expect(options.from).toBe('relay.bridge.initiate.tg-main.chat-42');
+      // DOR-889: a bridged notify asserts the server trust marker so the
+      // pipeline's bridge-principal guard admits it.
+      expect(options.serverBridgePrincipal).toBe(true);
     });
 
     it('case 6: canInitiate=false blocks the send — still gated as an initiate', async () => {
@@ -261,6 +264,10 @@ describe('TaskCompletionNotifier', () => {
       await new TaskCompletionNotifier(deps).handle(run(), task());
       const [, , options] = publish.mock.calls[0];
       expect(options.from).toBe('relay.system.tasks.notifier');
+      // DOR-889: the marker is bridge-specific — the unbridged system publish
+      // does not carry it (and does not need it: a non-bridge `from` never
+      // trips the pipeline guard).
+      expect(options.serverBridgePrincipal).toBeUndefined();
     });
   });
 });
