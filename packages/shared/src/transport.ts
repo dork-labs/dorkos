@@ -59,6 +59,7 @@ import type {
   UnclaimedChat,
   UnclaimedChatStatus,
   ClaimUnclaimedChatRequest,
+  ClaimUnclaimedChatResponse,
 } from './relay-schemas.js';
 import type {
   AgentManifest,
@@ -1968,10 +1969,19 @@ export interface Transport extends RoomTransport {
    * Goes through the same uniqueness check as any other binding create, so a
    * chat another binding took in the meantime rejects with `CHAT_ALREADY_BOUND`.
    *
+   * `input.bridge: true` is the claim card's primary action, "Answer in a
+   * channel": claim, binding, and bridge happen in one call. The claim always
+   * succeeds when this resolves — a bridge step that could not complete comes
+   * back as `bridgeError` on the response rather than as a rejection, so the
+   * chat is never left unclaimed over a bridge failure.
+   *
    * @param id - The unclaimed-chat row id.
    * @param input - The agent to answer, plus optional binding settings.
    */
-  claimUnclaimedChat(id: string, input: ClaimUnclaimedChatRequest): Promise<AdapterBinding>;
+  claimUnclaimedChat(
+    id: string,
+    input: ClaimUnclaimedChatRequest
+  ): Promise<ClaimUnclaimedChatResponse>;
 
   /**
    * Mute an unclaimed chat: it stops surfacing, but its traffic is still
