@@ -27,12 +27,18 @@ import {
 } from './binding-router.js';
 import type { AdapterMeshCoreLike } from './adapter-manager.js';
 import type { UnclaimedChat, UnclaimedChatStore } from './unclaimed-chat-store.js';
+import type { RoomEntry } from '@dorkos/shared/room-schemas';
 import {
   ChatBridge,
   BridgeLifecycle,
+  ChatBridgeDelivery,
+  BridgeCatchUp,
   type BridgeStore,
   type BridgeRoomOps,
   type IngestRoomOps,
+  type Bridge,
+  type DeliverEntryReader,
+  type DeliverAuthorReader,
 } from './chat-bridge/index.js';
 
 /** Dependencies required to initialize the binding subsystem. */
@@ -78,6 +84,27 @@ export interface BindingSubsystemDeps {
    * lifecycle writes (§3.5, §10.9).
    */
   operatorAuthorId?: () => string;
+  /**
+   * The room store, for outbound delivery to read an entry by id — provenance
+   * classification and the catch-up scan (chats-as-channels §6). Present only
+   * once the rooms subsystem is wired; without it, outbound delivery is not
+   * built and posts never reach the platform.
+   */
+  roomStore?: DeliverEntryReader;
+  /** The author registry, for the delivering-author check and the name prefix (§6.6, §6.7). */
+  roomAuthors?: DeliverAuthorReader;
+  /**
+   * Build a chat's `relay.human.*` subject from its bridge row — outbound
+   * delivery's target (§6.4). The platform segment lives on the adapter, not the
+   * bridge row, so the composition root supplies this from the adapter registry.
+   */
+  resolveBridgeSubject?: (bridge: Bridge) => string | null;
+  /**
+   * Register the outbound bridge's inline-delivery hook on the room service
+   * (§6.1). The composition root wires this to `RoomService.setEntryCommitListener`,
+   * so the binding subsystem never needs the service's concrete shape.
+   */
+  registerEntryCommitListener?: (listener: (entry: RoomEntry) => void) => void;
 }
 
 /**
@@ -165,6 +192,12 @@ export class BindingSubsystem {
   private readonly agentSessionStore: AgentSessionStore;
   private bindingRouter: BindingRouter | undefined;
   private isShutdown = false;
+  /**
+   * The outbound catch-up scan (chats-as-channels §6.1), when outbound delivery
+   * is wired. `AdapterManager` reads it to re-scan a chat's undelivered entries
+   * when its adapter reconnects.
+   */
+  bridgeCatchUp: BridgeCatchUp | undefined;
 
   private constructor(bindingStore: BindingStore, agentSessionStore: AgentSessionStore) {
     this.bindingStore = bindingStore;
@@ -239,21 +272,59 @@ export class BindingSubsystem {
       // archived-out-of-band recovery seam. Absent when the rooms subsystem is
       // not wired (some unit tests), and the router then refuses a bridged
       // binding rather than routing it as an unbridged one.
-      const bridgeIngest =
-        deps.roomService && deps.roomBridges && deps.operatorAuthorId
-          ? new ChatBridge({
-              rooms: deps.roomService,
-              bridges: deps.roomBridges,
-              lifecycle: new BridgeLifecycle({
-                rooms: deps.roomService,
-                bridges: deps.roomBridges,
-                bindings: bindingStore,
-                chatNotice,
-                operatorAuthorId: deps.operatorAuthorId,
-              }),
-              chatNotice,
-            })
-          : undefined;
+      let bridgeIngest: ChatBridge | undefined;
+      if (deps.roomService && deps.roomBridges && deps.operatorAuthorId) {
+        // One lifecycle shared by the inbound and outbound halves: the §10.9
+        // archived-out-of-band recovery ingest calls and the §10.3 terminal
+        // archival delivery calls are the same coordinator over the same tables.
+        const bridgeLifecycle = new BridgeLifecycle({
+          rooms: deps.roomService,
+          bridges: deps.roomBridges,
+          bindings: bindingStore,
+          chatNotice,
+          operatorAuthorId: deps.operatorAuthorId,
+        });
+        bridgeIngest = new ChatBridge({
+          rooms: deps.roomService,
+          bridges: deps.roomBridges,
+          lifecycle: bridgeLifecycle,
+          chatNotice,
+        });
+
+        // The outbound half (chats-as-channels §6), when the extra rooms reads
+        // are wired. Built here so it shares the lifecycle and the one
+        // `bindingStore`/`relayCore` the whole subsystem already holds.
+        if (deps.roomStore && deps.roomAuthors && deps.resolveBridgeSubject) {
+          const delivery = new ChatBridgeDelivery({
+            entries: deps.roomStore,
+            rooms: deps.roomService,
+            bridges: deps.roomBridges,
+            authors: deps.roomAuthors,
+            publisher: deps.relayCore,
+            lifecycle: bridgeLifecycle,
+            resolveSubject: deps.resolveBridgeSubject,
+            operatorAuthorId: deps.operatorAuthorId,
+          });
+          const catchUp = new BridgeCatchUp({
+            bridges: deps.roomBridges,
+            entries: deps.roomStore,
+            delivery,
+          });
+          // The third catch-up trigger (§6.1): a delivery that recovers from a
+          // transient failure re-scans its room to flush whatever queued behind.
+          delivery.setRecoveryHook((roomId) => void catchUp.scanRoom(roomId));
+          // The inline fast path (§6.1): deliver on commit.
+          deps.registerEntryCommitListener?.((entry) => delivery.onCommit(entry));
+          subsystem.bridgeCatchUp = catchUp;
+          // The first trigger (§6.1): catch up everything the log already holds,
+          // detached so a disk walk never sits in front of the router coming up.
+          void catchUp.scanAll().catch((err: unknown) => {
+            logger.warn('[BindingSubsystem] initial bridge catch-up failed', {
+              error: err instanceof Error ? err.message : String(err),
+            });
+          });
+        }
+      }
 
       subsystem.bindingRouter = new BindingRouter({
         bindingStore,
