@@ -185,10 +185,10 @@
       "specFile": "tests/connections/marketplace-connectors.spec.ts",
       "feature": "connections",
       "description": "shows the CONNECTOR badge and narrows the grid with the Connectors facet",
-      "lastRun": "2026-08-04T15:36:14.821Z",
+      "lastRun": "2026-08-04T17:53:47.653Z",
       "lastStatus": "passed",
-      "runCount": 10,
-      "passCount": 10,
+      "runCount": 11,
+      "passCount": 11,
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
@@ -197,10 +197,10 @@
       "specFile": "tests/connections/connections.spec.ts",
       "feature": "connections",
       "description": "walks unconfigured → key saved → connect Gmail twice with custody disclosed before every auth step, attaches Gmail (work) to a session, shows it with exposure state, and detaches",
-      "lastRun": "2026-08-04T15:36:14.821Z",
+      "lastRun": "2026-08-04T17:53:47.653Z",
       "lastStatus": "passed",
-      "runCount": 10,
-      "passCount": 7,
+      "runCount": 11,
+      "passCount": 8,
       "failCount": 3,
       "relatedCode": [],
       "lastModified": ""
@@ -329,10 +329,10 @@
       "specFile": "tests/relay/adapter-wizard-fields.spec.ts",
       "feature": "relay",
       "description": "surfacing the DM policy leaves it on its safe default, the Slack access controls render in the add wizard, the approvers field is reachable by keyboard, the access controls stay on screen at 390px, no external adapter declares a field the wizard never renders, Configure surfaces the fields on a config saved before they existed, a stored approver list survives being edited, a refused save says why once, and keeps the stored rules",
-      "lastRun": "2026-08-04T15:42:22.153Z",
+      "lastRun": "2026-08-04T17:53:21.222Z",
       "lastStatus": "passed",
-      "runCount": 13,
-      "passCount": 3,
+      "runCount": 14,
+      "passCount": 4,
       "failCount": 9,
       "relatedCode": [],
       "lastModified": ""
@@ -459,24 +459,6 @@
     }
   },
   "runHistory": [
-    {
-      "id": "2026-03-12T10-49-18",
-      "timestamp": "2026-03-12T10:49:18.105Z",
-      "total": 3,
-      "passed": 1,
-      "failed": 2,
-      "skipped": 0,
-      "duration": 17754
-    },
-    {
-      "id": "2026-03-12T11-23-56",
-      "timestamp": "2026-03-12T11:23:56.946Z",
-      "total": 3,
-      "passed": 1,
-      "failed": 2,
-      "skipped": 0,
-      "duration": 21976
-    },
     {
       "id": "2026-04-06T21-46-01",
       "timestamp": "2026-04-06T21:46:01.013Z",
@@ -1358,6 +1340,24 @@
       "failed": 0,
       "skipped": 0,
       "duration": 22815
+    },
+    {
+      "id": "2026-08-04T17-53-21",
+      "timestamp": "2026-08-04T17:53:21.222Z",
+      "total": 8,
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 26445
+    },
+    {
+      "id": "2026-08-04T17-53-47",
+      "timestamp": "2026-08-04T17:53:47.653Z",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 21389
     }
   ]
 }
