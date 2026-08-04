@@ -1055,6 +1055,33 @@ async function start() {
         roomService,
         roomBridges,
         operatorAuthorId: resolveOperatorAuthorId,
+        // The extra rooms reads outbound delivery needs (chats-as-channels §6):
+        // read an entry by id, resolve an author, and register the inline
+        // delivery hook on the room service.
+        roomStore,
+        roomAuthors,
+        registerEntryCommitListener: (listener) => roomService.setEntryCommitListener(listener),
+        // Build a chat's outbound subject from its bridge row (§6.4). The
+        // platform segment lives on the adapter's own subject prefix, not the
+        // bridge row, so it is resolved from the adapter registry here — keeping
+        // the delivery engine platform-agnostic. The prefix is instance-scoped
+        // in production (`relay.human.telegram.<id>`); the fallback inserts the
+        // adapter id when it is not, so both shapes round-trip through
+        // `parseHumanSubject` to the same binding the consent gate resolves.
+        resolveBridgeSubject: (bridge) => {
+          const adapter = adapterRegistry?.get(bridge.adapterId);
+          if (!adapter) return null;
+          const prefixes = Array.isArray(adapter.subjectPrefix)
+            ? adapter.subjectPrefix
+            : [adapter.subjectPrefix];
+          const prefix = prefixes[0];
+          if (!prefix) return null;
+          const base = prefix.endsWith(`.${bridge.adapterId}`)
+            ? prefix
+            : `${prefix}.${bridge.adapterId}`;
+          const groupSegment = bridge.platformChatType === 'private' ? '' : '.group';
+          return `${base}${groupSegment}.${bridge.chatId}`;
+        },
       });
       await adapterManager.initialize();
       relayCore.setAdapterContextBuilder(adapterManager.buildContext.bind(adapterManager));

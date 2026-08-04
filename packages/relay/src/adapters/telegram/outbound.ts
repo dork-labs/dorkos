@@ -198,29 +198,97 @@ export interface TelegramDeliverOptions {
  * @param startTime - Timestamp (ms) for delivery duration calculation
  * @param callbacks - Callbacks to mutate adapter state
  */
+/**
+ * How the outbound send should target a message: as a reply to a specific
+ * platform message, and/or inside a forum topic (chats-as-channels spec §6.5).
+ * Both are optional; a plain send passes neither.
+ */
+interface TelegramSendTargeting {
+  /** The platform message id this send replies to — Telegram's `reply_to_message_id`. */
+  replyToMessageId?: number;
+  /** The forum topic this send belongs in — Telegram's `message_thread_id`. */
+  messageThreadId?: number;
+}
+
+/**
+ * Turn a thrown Telegram send error into the failure `code` (and `retryAfterMs`)
+ * the chats-as-channels delivery ladder branches on (spec §10).
+ *
+ * A grammY `GrammyError` carries the Bot API `error_code`: `403` is the bot
+ * being blocked, kicked, or the chat being gone — terminal (§10.3); `429` is a
+ * rate limit, whose `parameters.retry_after` (seconds) becomes `retryAfterMs`
+ * (§10.2). The `autoRetry` plugin already absorbs most 429s under its cap, so a
+ * 429 reaching here has exceeded it and is honoured once more by the caller.
+ * Anything else has no code and is treated as transient (§10.1).
+ *
+ * **Duck-typed on `error_code`, not `instanceof GrammyError`**, on purpose: the
+ * adapter's own tests mock the `grammy` module, so the imported class is not the
+ * one a thrown error was built from — an `instanceof` check would throw there.
+ * The Bot API error shape (`{ error_code, parameters?: { retry_after } }`) is the
+ * stable contract, and reading it directly survives the mock.
+ *
+ * @param err - The error `bot.api.sendMessage` threw.
+ */
+function classifyTelegramSendError(err: unknown): Pick<DeliveryResult, 'code' | 'retryAfterMs'> {
+  if (!err || typeof err !== 'object') return {};
+  const errorCode = (err as { error_code?: unknown }).error_code;
+  if (errorCode === 403) return { code: 'chat_unavailable' };
+  if (errorCode === 429) {
+    const params = (err as { parameters?: { retry_after?: unknown } }).parameters;
+    const retryAfter = params?.retry_after;
+    return {
+      code: 'rate_limited',
+      ...(typeof retryAfter === 'number' ? { retryAfterMs: retryAfter * 1000 } : {}),
+    };
+  }
+  return {};
+}
+
 async function sendAndTrack(
   bot: Bot,
   chatId: number,
   text: string,
   startTime: number,
-  callbacks: AdapterOutboundCallbacks
+  callbacks: AdapterOutboundCallbacks,
+  targeting: TelegramSendTargeting = {}
 ): Promise<DeliveryResult> {
   try {
     const chunks = splitTelegramHtml(text);
 
-    for (const chunk of chunks) {
-      await bot.api.sendMessage(chatId, chunk, { parse_mode: 'HTML' } as Parameters<
-        typeof bot.api.sendMessage
-      >[2]);
+    // Reply/topic targeting rides only the FIRST chunk: a long answer split
+    // across several sends should be one reply thread, not one reply per chunk,
+    // and every chunk still lands in the same forum topic because Telegram
+    // infers the topic from the reply. The last chunk's id is what a caller
+    // patches its outbound ref with (spec §6.5).
+    let lastMessageId: number | undefined;
+    for (let i = 0; i < chunks.length; i += 1) {
+      const options: Record<string, unknown> = { parse_mode: 'HTML' };
+      if (targeting.messageThreadId !== undefined) {
+        options.message_thread_id = targeting.messageThreadId;
+      }
+      if (i === 0 && targeting.replyToMessageId !== undefined) {
+        options.reply_to_message_id = targeting.replyToMessageId;
+      }
+      const sent = await bot.api.sendMessage(
+        chatId,
+        chunks[i],
+        options as Parameters<typeof bot.api.sendMessage>[2]
+      );
+      lastMessageId = sent.message_id;
     }
 
     callbacks.trackOutbound();
-    return { success: true, durationMs: Date.now() - startTime };
+    return {
+      success: true,
+      ...(lastMessageId !== undefined ? { responseMessageId: String(lastMessageId) } : {}),
+      durationMs: Date.now() - startTime,
+    };
   } catch (err) {
     callbacks.recordError(err);
     return {
       success: false,
       error: err instanceof Error ? err.message : String(err),
+      ...classifyTelegramSendError(err),
       durationMs: Date.now() - startTime,
     };
   }
@@ -450,7 +518,42 @@ export async function deliverMessage(opts: TelegramDeliverOptions): Promise<Deli
   state.spokenTurns.add(turnKey);
   const content = extractPayloadContent(envelope.payload);
   logger.debug(`deliver: standard payload to chat ${chatId} (${content.length} chars)`);
-  return sendAndTrack(bot, chatId, content, startTime, callbacks);
+  return sendAndTrack(
+    bot,
+    chatId,
+    content,
+    startTime,
+    callbacks,
+    readSendTargeting(envelope.payload)
+  );
+}
+
+/**
+ * Read the optional reply/topic targeting a bridge delivery puts on its payload
+ * (chats-as-channels spec §6.5). Both fields are additive and absent on every
+ * other outbound payload, so an ordinary send passes neither. Numeric strings —
+ * the form the bridge stores platform ids in — are coerced back to the numbers
+ * Telegram's API wants.
+ *
+ * @param payload - The outbound envelope payload.
+ */
+function readSendTargeting(payload: unknown): TelegramSendTargeting {
+  if (!payload || typeof payload !== 'object') return {};
+  const record = payload as Record<string, unknown>;
+  const asNumber = (value: unknown): number | undefined => {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+    if (typeof value === 'string' && value.trim() !== '') {
+      const n = Number(value);
+      return Number.isFinite(n) ? n : undefined;
+    }
+    return undefined;
+  };
+  const replyToMessageId = asNumber(record.replyToMessageId);
+  const messageThreadId = asNumber(record.messageThreadId);
+  return {
+    ...(replyToMessageId !== undefined ? { replyToMessageId } : {}),
+    ...(messageThreadId !== undefined ? { messageThreadId } : {}),
+  };
 }
 
 /**

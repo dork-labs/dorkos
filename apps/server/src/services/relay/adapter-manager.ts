@@ -175,6 +175,14 @@ export interface AdapterManagerDeps {
   roomBridges?: BindingSubsystemDeps['roomBridges'];
   /** The install owner's author id, read per call (chats-as-channels §3.5, §10.9). */
   operatorAuthorId?: BindingSubsystemDeps['operatorAuthorId'];
+  /** The room store, for outbound delivery's entry reads (chats-as-channels §6). */
+  roomStore?: BindingSubsystemDeps['roomStore'];
+  /** The author registry, for the delivering-author check and name prefix (§6.6, §6.7). */
+  roomAuthors?: BindingSubsystemDeps['roomAuthors'];
+  /** Build a chat's outbound subject from its bridge row (§6.4). */
+  resolveBridgeSubject?: BindingSubsystemDeps['resolveBridgeSubject'];
+  /** Register the outbound bridge's inline-delivery hook on the room service (§6.1). */
+  registerEntryCommitListener?: BindingSubsystemDeps['registerEntryCommitListener'];
 }
 
 /** Server-side adapter lifecycle manager. */
@@ -354,6 +362,10 @@ export class AdapterManager {
       roomService: this.deps.roomService,
       roomBridges: this.deps.roomBridges,
       operatorAuthorId: this.deps.operatorAuthorId,
+      roomStore: this.deps.roomStore,
+      roomAuthors: this.deps.roomAuthors,
+      resolveBridgeSubject: this.deps.resolveBridgeSubject,
+      registerEntryCommitListener: this.deps.registerEntryCommitListener,
     });
   }
 
@@ -991,6 +1003,22 @@ export class AdapterManager {
     // Every connect/disconnect is a status change connected clients should see
     // without waiting for the 10s poll — signal before the activity early-return.
     broadcastAdaptersChanged();
+
+    // The reconnect catch-up trigger (chats-as-channels §6.1): when an adapter
+    // comes (back) up, re-scan every bridged chat on it for entries that could
+    // not be delivered while it was down. Detached — a delivery walk must never
+    // sit in front of the lifecycle broadcast — and best-effort.
+    if (state === 'connected') {
+      const catchUp = this.bindingSubsystem?.bridgeCatchUp;
+      if (catchUp) {
+        void catchUp.scanAdapter(id).catch((err: unknown) => {
+          logger.warn('[AdapterManager] bridge catch-up on reconnect failed', {
+            adapterId: id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
+      }
+    }
 
     const activity = this.deps.activityService;
     if (!activity) return;

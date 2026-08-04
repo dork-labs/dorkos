@@ -381,6 +381,71 @@ export function buildBridgeAgentSwappedNotice(
 }
 
 /**
+ * Which switch a blocked bridge delivery ran into, chosen so the notice names
+ * the exact thing a person would change (chats-as-channels spec §6.6).
+ *
+ * - `reply_off` — a reply was refused because the connection's "Reply" switch is
+ *   off (`canReply`).
+ * - `initiate_off` — a message that started a conversation was refused because
+ *   the connection's "Start conversations" switch is off (`canInitiate`).
+ * - `lost_provenance` — an agent's answer lost the link back to the message it
+ *   was answering (the server restarted mid-turn), so it was treated as a new
+ *   conversation and blocked by the same "Start conversations" switch. This one
+ *   gets its own words because the cause is a restart, not a setting the person
+ *   chose (§6.6's dedicated copy).
+ */
+export type BridgeBlockedReason = 'reply_off' | 'initiate_off' | 'lost_provenance';
+
+/**
+ * The durable `notice` a room writes when a bridge delivery is refused by the
+ * reply/initiate consent switches (chats-as-channels spec §6.6, A6.3, A6.4).
+ *
+ * **A blocked delivery is never silent.** A post that fails to reach the chat
+ * with no trace is exactly the invisible failure `.claude/rules/room-conduct.md`
+ * forbids, so the room says so, names the switch, and says where it lives. The
+ * caller damps this per `(room, reason)`, so a run of blocked posts produces one
+ * line per reason, not one per post.
+ *
+ * @param reason - Which switch the delivery ran into (see {@link BridgeBlockedReason}).
+ */
+export function buildBridgeBlockedNotice(reason: BridgeBlockedReason): RoomEntryBody {
+  const text =
+    reason === 'reply_off'
+      ? 'This answer was not sent to the chat because replying is turned off for this connection. ' +
+        'Turn on "Reply" for it in Connections › Messaging to let answers through.'
+      : reason === 'initiate_off'
+        ? 'This message was not sent to the chat because starting a message there is turned off for ' +
+          'this connection. Turn on "Start conversations" for it in Connections › Messaging to let ' +
+          'the agent reach out first.'
+        : // lost_provenance — the server restarted mid-turn (§6.6).
+          'This answer lost its provenance — the server restarted mid-turn — and was treated as a ' +
+          'new conversation. It stayed here.';
+  return { text, notice: 'bridge_blocked' };
+}
+
+/**
+ * The durable `notice` a room writes when a bridge delivery exhausts its retry
+ * budget without reaching the chat (chats-as-channels spec §10.1, A10.1).
+ *
+ * This is the visible half of the write-before-send bargain (§6.3): the safe
+ * failure is a message that is missing from the chat but present here, and this
+ * notice is what makes "missing" legible rather than silent. It quotes the entry
+ * so a person can see which message did not land, and the caller damps it per
+ * `(room, reason)` so a platform outage produces one line, not one per attempt.
+ *
+ * @param message - The text of the entry that could not be delivered, quoted in
+ *   brief so the reader can identify it.
+ */
+export function buildBridgeUndeliveredNotice(message: string): RoomEntryBody {
+  return {
+    text:
+      `This message could not be delivered to the chat after several tries, so it stayed here: ` +
+      `"${excerpt(message)}". The chat itself did not receive it.`,
+    notice: 'bridge_undelivered',
+  };
+}
+
+/**
  * An answer that arrived after the room stopped waiting for it, saying which
  * message it belongs to.
  *
