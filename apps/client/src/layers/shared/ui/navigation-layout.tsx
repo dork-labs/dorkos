@@ -412,6 +412,10 @@ function NavigationLayoutContent({ children, className }: NavigationLayoutConten
           </motion.button>
         )}
         <div className="flex-1 overflow-y-auto">
+          {/* This exiting-wrapper crossfade is only safe because mobile panels
+              render no `id`/`role` — adding either here recreates the DOR-693
+              duplicate-panel window the desktop branch below was rebuilt to
+              eliminate. */}
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
               key={value}
@@ -428,22 +432,28 @@ function NavigationLayoutContent({ children, className }: NavigationLayoutConten
     );
   }
 
+  // One panel at a time, deliberately.
+  //
+  // This used to be an `AnimatePresence mode="popLayout"` crossfade, and the
+  // crossfade never worked: `children` is the full set of `NavigationLayoutPanel`
+  // elements, each of which decides for itself whether to render by reading
+  // `value` off context. The exiting wrapper stays mounted in this subtree, so a
+  // context change re-renders it too — it dropped the panel it was supposed to be
+  // fading OUT and drew the incoming one instead. Both halves showed the same
+  // content, so there was nothing to cross-fade, and for the ~150ms of the exit
+  // the dialog held two `role="tabpanel"` elements carrying the same DOM id.
+  // Duplicate ids are invalid HTML, and they make the tab's `aria-controls`
+  // ambiguous: a screen reader is offered two panels for one tab.
+  //
+  // A keyed plain div matches what users actually saw: the two superimposed
+  // copies composited to near-opaque, so the switch always read as instant.
+  // React swaps the subtree in one commit, so the second panel never exists.
   return (
     <div
       data-slot="navigation-layout-content"
       className={cn('relative min-w-0 flex-1 overflow-y-auto', className)}
     >
-      <AnimatePresence mode="popLayout" initial={false}>
-        <motion.div
-          key={value}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.15, ease: [0, 0, 0.2, 1] }}
-        >
-          {children}
-        </motion.div>
-      </AnimatePresence>
+      <div key={value}>{children}</div>
     </div>
   );
 }
