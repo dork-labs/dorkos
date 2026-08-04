@@ -21,6 +21,30 @@ const NAMES = new Map([
   ['author-you', 'You'],
 ]);
 
+/** The roster a `<mention>` resolves against — same members `rowElement` draws. */
+const AUTHORS = new Map([
+  [
+    'ana',
+    {
+      id: 'ana',
+      kind: 'agent' as const,
+      displayName: 'Ana',
+      mentionHandle: 'ana',
+      origin: 'local' as const,
+    },
+  ],
+  [
+    'author-you',
+    {
+      id: 'author-you',
+      kind: 'human' as const,
+      displayName: 'You',
+      mentionHandle: 'you',
+      origin: 'local' as const,
+    },
+  ],
+]);
+
 /** A desktop: `useIsMobile` reads matchMedia, and the menu branches on it. */
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -84,6 +108,7 @@ function rowElement(
       entry={target}
       author={{ id: 'ana', kind: 'agent', displayName: 'Ana', color: '#888' }}
       authorRef={{ id: 'ana', kind: 'agent', displayName: 'Ana', mentionHandle: 'ana' }}
+      authors={AUTHORS}
       viewerAuthorId="author-you"
       authorNames={NAMES}
       reactionFrequents={FREQUENTS}

@@ -187,6 +187,110 @@ describe('AgentMcpServers', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('offers Manage on a discovered row for a managed-capable runtime', async () => {
+    const transport = createMockTransport({
+      listAgentMcpServers: vi.fn().mockResolvedValue([]),
+      getMcpConfig: vi.fn().mockResolvedValue({
+        servers: [{ name: 'legacy', type: 'stdio', status: 'connected' }],
+      }),
+    });
+    const { container } = renderComponent(transport);
+
+    await waitFor(() =>
+      expect(within(container).getByRole('button', { name: 'Manage legacy' })).toBeInTheDocument()
+    );
+  });
+
+  it('hides Manage on a discovered row when the runtime cannot manage servers', async () => {
+    vi.mocked(useCapabilitiesForRuntime).mockReturnValue({
+      supportsManagedMcpServers: false,
+    } as RuntimeCapabilities);
+    const transport = createMockTransport({
+      listAgentMcpServers: vi.fn().mockResolvedValue([]),
+      getMcpConfig: vi.fn().mockResolvedValue({
+        servers: [{ name: 'legacy', type: 'stdio', status: 'connected' }],
+      }),
+    });
+    const { container } = renderComponent(transport);
+
+    await waitFor(() => expect(within(container).getByText('legacy')).toBeInTheDocument());
+    expect(
+      within(container).queryByRole('button', { name: 'Manage legacy' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('imports a discovered server: Manage → approval → confirm → grant → retry → managed', async () => {
+    const approval: CapabilityApprovalRequired = {
+      status: 'approval_required',
+      capabilityId: 'mcp.import',
+      capabilityTitle: 'Import a discovered MCP server into DorkOS management',
+      tier: 'destructive',
+      approvalId: 'appr-2',
+      approvalToken: 'tok-2',
+      expiresAt: '2026-01-01T00:10:00.000Z',
+      reason: 'destructive_tier',
+      message: 'Approve to manage the server.',
+      retry: {
+        channel: 'http-header',
+        field: 'X-DorkOS-Approval',
+        instructions: 'retry with token',
+      },
+    };
+    const importAgentMcpServer = vi
+      .fn()
+      .mockResolvedValueOnce({ status: 'approval_required', approval })
+      .mockResolvedValueOnce({ status: 'ok', servers: [managedServer] });
+    const grantApproval = vi
+      .fn()
+      .mockResolvedValue({ ok: true, approvalId: 'appr-2', outcome: 'granted' });
+    // The list is empty first, then reports the imported server after invalidation.
+    const listAgentMcpServers = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([managedServer]);
+    const getMcpConfig = vi.fn().mockResolvedValue({
+      servers: [{ name: 'filesystem', type: 'stdio', status: 'connected' }],
+    });
+    const transport = createMockTransport({
+      listAgentMcpServers,
+      getMcpConfig,
+      importAgentMcpServer,
+      grantApproval,
+    });
+    const { container } = renderComponent(transport);
+
+    await waitFor(() =>
+      expect(
+        within(container).getByRole('button', { name: 'Manage filesystem' })
+      ).toBeInTheDocument()
+    );
+    fireEvent.click(within(container).getByRole('button', { name: 'Manage filesystem' }));
+
+    // The confirm surface names the server being brought under management.
+    await waitFor(() =>
+      expect(
+        within(container).getByText(/Manage .*filesystem.* for Test Agent/i)
+      ).toBeInTheDocument()
+    );
+    fireEvent.click(within(container).getByRole('button', { name: /confirm & manage/i }));
+
+    await waitFor(() => expect(grantApproval).toHaveBeenCalledWith('appr-2'));
+    expect(importAgentMcpServer).toHaveBeenCalledTimes(2);
+    // First call has no token; the confirming retry carries it.
+    expect(importAgentMcpServer.mock.calls[0][1]).toBeUndefined();
+    expect(importAgentMcpServer.mock.calls[1][1]).toEqual({ approvalToken: 'tok-2' });
+    expect(importAgentMcpServer.mock.calls[0][0]).toEqual({
+      agentId: agent.id,
+      name: 'filesystem',
+    });
+
+    // The row transitions discovered → managed: the managed (editable) row now
+    // shows its enable switch, which a discovered row never has.
+    await waitFor(() =>
+      expect(within(container).getByLabelText('Enable filesystem')).toBeInTheDocument()
+    );
+  });
+
   it('adds a server through the confirm step: approval → grant → retry → success', async () => {
     const approval: CapabilityApprovalRequired = {
       status: 'approval_required',

@@ -1,8 +1,8 @@
 /**
- * The `mcp.*` capability domain (spec `mcp-server-management` §5): the seven
+ * The `mcp.*` capability domain (spec `mcp-server-management` §5): the eight
  * agent-facing verbs that let a user (or an agent acting for one) manage the MCP
- * servers a specific agent runs — list, add, update, remove, enable, disable,
- * and test.
+ * servers a specific agent runs — list, add, import, update, remove, enable,
+ * disable, and test.
  *
  * Every verb is a thin wrapper over {@link AgentMcpServerService}, which owns the
  * manifest CRUD and the trust model (spec §4). The domain declares each verb once
@@ -11,9 +11,11 @@
  * `registry.invoke`.
  *
  * Trust posture (spec §4): `list` is `observe` (a free read with the read-only
- * carve-out); `add` and `update` are `destructive` because they introduce or
- * change a command that will run in the agent's environment, so a person approves
- * them at a card that shows the exact `command`/`args`/`url` first; `remove`,
+ * carve-out); `add`, `import`, and `update` are `destructive` because they
+ * introduce or change a command that will run in the agent's environment, so a
+ * person approves them first (`add`/`update` at a card that shows the exact
+ * `command`/`args`/`url`; `import` promotes an existing `.mcp.json` server, so
+ * its card names the agent and server being brought under management); `remove`,
  * `enable`, `disable`, and `test` are `act` (no new command is introduced, and
  * `test` only ever probes an already-approved entry).
  *
@@ -27,6 +29,7 @@
 import { z } from 'zod';
 import type { AgentRegistry } from '@dorkos/mesh';
 import { McpServerTransportSchema, ManagedMcpServerSchema } from '@dorkos/shared/mesh-schemas';
+import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
 
 import { defineCapability, type CapabilityDomain } from '../core/capabilities/index.js';
 import type { CapabilityDeps, CapabilityHandlerContext } from '../core/capabilities/index.js';
@@ -39,6 +42,13 @@ export interface McpCapabilityDeps {
   service: AgentMcpServerService;
   /** The mesh agent registry — the same instance the service resolves workspace paths through. */
   agents: AgentRegistry;
+  /**
+   * Fallback connection resolver for `mcp.import`, used only when the agent's
+   * workspace `.mcp.json` cannot resolve the named server. Boot wires it to the
+   * runtime's `getMcpServerConfig`; omitted in tests, which exercise the
+   * `.mcp.json` path directly.
+   */
+  resolveDiscoveredFallback?: (agentId: string, name: string) => McpAppServerConnection | null;
 }
 
 /**
@@ -129,9 +139,9 @@ const CONNECTION_APPROVAL_FIELDS = [
 ] as const;
 
 /**
- * The `mcp.*` domain: a read (`list`), the two gated command-introducing writes
- * (`add`, `update`), the reversible lifecycle verbs (`remove`, `enable`,
- * `disable`), and the reachability probe (`test`).
+ * The `mcp.*` domain: a read (`list`), the gated command-introducing writes
+ * (`add`, `import`, `update`), the reversible lifecycle verbs (`remove`,
+ * `enable`, `disable`), and the reachability probe (`test`).
  */
 export const mcpDomain: CapabilityDomain = {
   name: 'mcp',
@@ -198,6 +208,47 @@ export const mcpDomain: CapabilityDomain = {
             connection: input.connection,
             addedBy: resolveAddedBy(context),
             ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
+          });
+        } catch (err) {
+          rethrowAsCapabilityError(err);
+        }
+      },
+    }),
+    defineCapability({
+      id: 'mcp.import',
+      title: 'Import a discovered MCP server into DorkOS management',
+      description:
+        'Bring a server DorkOS discovered in a project’s .mcp.json under DorkOS management: ' +
+        'resolve its transport, then add it as an enabled, editable managed server. Routed ' +
+        'through the same approval gate as add, because the imported entry will run in the ' +
+        'agent’s environment. Rejects the reserved name "dorkos" and any name already managed; ' +
+        'reports a clear error when no such discovered server can be resolved.',
+      tier: 'destructive',
+      input: z.object({ agentId: agentIdField, name: serverNameField }),
+      output: ManagedServerListOutput,
+      // The card names the AGENT and the discovered SERVER being promoted — not
+      // connection.* like `add`. The connection is resolved server-side, AFTER
+      // the gate runs, and stdio command/env are never sent to a caller, so no
+      // `connection.*` value exists in the pre-gate input to render (it would
+      // read "not set"). Naming what the operator actually decides — "promote
+      // this .mcp.json server they already have" — is the honest card. Unlike
+      // add, import introduces no new command: the entry already runs under the
+      // bare CLI from the project's own .mcp.json.
+      approvalDisplayFields: ['agentId', 'name'],
+      surfaces: {
+        mcp: { toolName: 'mcp_import_server', servers: ['in-session', 'external'] },
+        http: { method: 'post', path: '/api/agents/{agentId}/mcp-servers/{name}/import' },
+      },
+      invoke: async (deps, input, context) => {
+        const { service, resolveDiscoveredFallback } = requireMcpDeps(deps);
+        try {
+          return await service.import({
+            agentId: input.agentId,
+            name: input.name,
+            addedBy: resolveAddedBy(context),
+            ...(resolveDiscoveredFallback
+              ? { resolveFallback: () => resolveDiscoveredFallback(input.agentId, input.name) }
+              : {}),
           });
         } catch (err) {
           rethrowAsCapabilityError(err);

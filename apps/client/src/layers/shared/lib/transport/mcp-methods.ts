@@ -17,6 +17,7 @@ import type {
   AgentMcpMutationResult,
   AgentMcpTestResult,
   CapabilityApprovalRequired,
+  ImportAgentMcpServerInput,
   UpdateAgentMcpServerInput,
 } from '@dorkos/shared/transport';
 import type { ManagedMcpServer } from '@dorkos/shared/mesh-schemas';
@@ -93,6 +94,13 @@ export function createMcpMethods(baseUrl: string) {
       opts?: { approvalToken?: string }
     ): Promise<AgentMcpMutationResult> {
       return invokeMutation('mcp.add', input, opts?.approvalToken);
+    },
+
+    importAgentMcpServer(
+      input: ImportAgentMcpServerInput,
+      opts?: { approvalToken?: string }
+    ): Promise<AgentMcpMutationResult> {
+      return invokeMutation('mcp.import', input, opts?.approvalToken);
     },
 
     updateAgentMcpServer(

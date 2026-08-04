@@ -57,6 +57,7 @@ import {
   Sidebar,
   SidebarProvider,
   SidebarInset,
+  SidebarMobileNavigationClose,
   SidebarTrigger,
   SidebarFooter,
   SidebarRail,
@@ -403,6 +404,11 @@ export function AppShell() {
                   className="flex-1 overflow-hidden"
                   style={{ '--sidebar-width': '20rem' } as React.CSSProperties}
                 >
+                  {/* On a phone the sidebar is a sheet over the whole screen,
+                      so it has to get out of the way once a row has taken you
+                      somewhere (DOR-610). Mounted here rather than folded into
+                      the provider because this is where the router is. */}
+                  <SidebarMobileNavigationClose />
                   <Sidebar variant="inset">
                     <TitlebarDragStrip />
                     {/* ── Dynamic sidebar body with directional slide ──

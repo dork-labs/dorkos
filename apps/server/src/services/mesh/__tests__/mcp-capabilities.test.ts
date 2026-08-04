@@ -85,10 +85,21 @@ function baseManifest(): AgentManifest {
 
 const tempDirs: string[] = [];
 
-async function setup(): Promise<{ service: AgentMcpServerService; deps: CapabilityDeps }> {
+async function setup(mcpJson?: Record<string, unknown>): Promise<{
+  service: AgentMcpServerService;
+  deps: CapabilityDeps;
+  projectPath: string;
+}> {
   const projectPath = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-cap-'));
   tempDirs.push(projectPath);
   await writeManifest(projectPath, baseManifest());
+  if (mcpJson) {
+    await fs.writeFile(
+      path.join(projectPath, '.mcp.json'),
+      JSON.stringify({ mcpServers: mcpJson }),
+      'utf-8'
+    );
+  }
 
   const service = new AgentMcpServerService({
     agents: new FakeLocator({ [AGENT_ID]: projectPath }),
@@ -98,7 +109,7 @@ async function setup(): Promise<{ service: AgentMcpServerService; deps: Capabili
     logger: noopLogger,
     mcpDeps: { service, agents: new AgentRegistry(createTestDb()) },
   };
-  return { service, deps };
+  return { service, deps, projectPath };
 }
 
 afterEach(async () => {
@@ -124,13 +135,21 @@ describe('mcp.* tier posture', () => {
       ]);
     }
 
+    // Import is destructive too, but its card names the agent + discovered
+    // server (the connection is resolved server-side, after the gate), not the
+    // connection.* fields add/update show.
+    const imp = capability('mcp.import');
+    expect(imp.tier).toBe('destructive');
+    expect(imp.surfaces.mcp?.readOnlyCarveOut).toBeUndefined();
+    expect(imp.approvalDisplayFields).toEqual(['agentId', 'name']);
+
     for (const id of ['mcp.remove', 'mcp.enable', 'mcp.disable', 'mcp.test']) {
       expect(capability(id).tier).toBe('act');
     }
   });
 
   it('every verb projects the mcp_<verb>_server tool and an HTTP surface', () => {
-    for (const verb of ['list', 'add', 'update', 'remove', 'enable', 'disable', 'test']) {
+    for (const verb of ['list', 'add', 'import', 'update', 'remove', 'enable', 'disable', 'test']) {
       const cap = capability(`mcp.${verb}`);
       expect(cap.surfaces.mcp?.toolName).toBe(`mcp_${verb}_server`);
       // No curated CLI verb: `dorkos call mcp.<verb>` reaches it generically.
@@ -272,5 +291,126 @@ describe('mcp domain error mapping', () => {
     await expect(
       capability('mcp.update').invoke(deps, { agentId: AGENT_ID, name: 'nope', enabled: false }, {})
     ).rejects.toMatchObject({ name: 'CapabilityToolError', payload: { code: 'SERVER_NOT_FOUND' } });
+  });
+
+  it('re-raises an unresolvable import as a structured DISCOVERED_NOT_FOUND error', async () => {
+    const { deps } = await setup(); // no .mcp.json — nothing to resolve
+    await expect(
+      capability('mcp.import').invoke(deps, { agentId: AGENT_ID, name: 'ghost' }, {})
+    ).rejects.toMatchObject({
+      name: 'CapabilityToolError',
+      payload: { code: 'DISCOVERED_NOT_FOUND' },
+    });
+  });
+
+  it('re-raises importing an already-managed name as DUPLICATE_NAME', async () => {
+    const { service, deps } = await setup({ dup: { command: 'node' } });
+    await service.add({
+      agentId: AGENT_ID,
+      name: 'dup',
+      connection: STDIO_CONNECTION,
+      addedBy: 'operator',
+    });
+    await expect(
+      capability('mcp.import').invoke(deps, { agentId: AGENT_ID, name: 'dup' }, {})
+    ).rejects.toMatchObject({ name: 'CapabilityToolError', payload: { code: 'DUPLICATE_NAME' } });
+  });
+});
+
+describe('mcp.import approval card', () => {
+  it('names the agent and the discovered server being brought under management', () => {
+    // The connection is resolved server-side after the gate, so the card names
+    // what the operator decides — the agent and the .mcp.json server — rather
+    // than connection.* fields that have no value in the pre-gate input.
+    const summary = describeGatedAttempt(capability('mcp.import'), {
+      agentId: AGENT_ID,
+      name: 'filesystem',
+    });
+    expect(summary).toContain('name: "filesystem"');
+    expect(summary).toContain(`agentId: ${JSON.stringify(AGENT_ID)}`);
+  });
+});
+
+describe('mcp.import gate enforcement (through registry.invoke)', () => {
+  let approvals: ApprovalService;
+
+  beforeEach(() => {
+    vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
+    approvals = new ApprovalService(createTestDb());
+    initCapabilityTierGate({ approvals });
+  });
+  afterEach(() => {
+    resetCapabilityTierGate();
+    vi.restoreAllMocks();
+  });
+
+  /** The approval payload a refused destructive call returns. */
+  interface ApprovalCard {
+    status: string;
+    capabilityId: string;
+    tier: string;
+    approvalId: string;
+    approvalToken: string;
+  }
+
+  async function invokeExpectingRefusal(
+    registry: CapabilityRegistry,
+    input: unknown
+  ): Promise<ApprovalCard> {
+    try {
+      await registry.invoke('mcp.import', input, { identity: AGENT });
+    } catch (err) {
+      if (err instanceof CapabilityGateRefusal)
+        return err.decision.payload as unknown as ApprovalCard;
+      throw err;
+    }
+    throw new Error('Expected mcp.import to be refused by the tier gate, but it ran.');
+  }
+
+  it('without approval returns approval_required and writes NOTHING', async () => {
+    const { service, deps } = await setup({
+      filesystem: { command: 'npx', args: ['-y', '@mcp/fs'] },
+    });
+    const registry = composeRegistry([mcpDomain], deps);
+
+    const card = await invokeExpectingRefusal(registry, { agentId: AGENT_ID, name: 'filesystem' });
+    expect(card).toMatchObject({
+      status: 'approval_required',
+      capabilityId: 'mcp.import',
+      tier: 'destructive',
+    });
+    // The gate is the only writer: a refused import left the manifest untouched,
+    // so no discovered server was silently promoted.
+    expect(await service.list(AGENT_ID)).toEqual([]);
+  });
+
+  it('on a granted retry resolves the .mcp.json connection and writes it managed + enabled', async () => {
+    const { service, deps } = await setup({
+      filesystem: { command: 'npx', args: ['-y', '@mcp/fs'], env: { ROOT: '/tmp' } },
+    });
+    const registry = composeRegistry([mcpDomain], deps);
+
+    const card = await invokeExpectingRefusal(registry, { agentId: AGENT_ID, name: 'filesystem' });
+    approvals.grant(card.approvalId);
+
+    const written = (await registry.invoke(
+      'mcp.import',
+      { agentId: AGENT_ID, name: 'filesystem' },
+      { identity: AGENT, approvalToken: card.approvalToken }
+    )) as AgentManifest['mcpServers'];
+
+    expect(written).toHaveLength(1);
+    expect(written[0]).toMatchObject({
+      name: 'filesystem',
+      enabled: true,
+      addedBy: AGENT.agentPath,
+      connection: {
+        transport: 'stdio',
+        command: 'npx',
+        args: ['-y', '@mcp/fs'],
+        env: { ROOT: '/tmp' },
+      },
+    });
+    expect(await service.list(AGENT_ID)).toHaveLength(1);
   });
 });

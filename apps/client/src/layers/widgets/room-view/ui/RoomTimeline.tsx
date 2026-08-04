@@ -240,6 +240,7 @@ export function RoomTimeline({
                 entry={entry}
                 author={toMessageAuthor(entry.authorId, authors)}
                 authorRef={authors.get(entry.authorId)}
+                authors={authors}
                 viewerAuthorId={viewerAuthorId}
                 authorNames={authorNames}
                 reactionFrequents={reactionFrequents}

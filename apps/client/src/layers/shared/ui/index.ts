@@ -291,6 +291,7 @@ export {
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
+  SidebarMobileNavigationClose,
   SidebarProvider,
   SidebarRail,
   SidebarSeparator,

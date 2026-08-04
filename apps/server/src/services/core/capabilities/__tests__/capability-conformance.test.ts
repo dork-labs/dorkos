@@ -422,6 +422,7 @@ capabilityConformance(registry, {
       name: 'conformance-srv',
       connection: { transport: 'stdio', command: 'node', args: [], env: {} },
     },
+    'mcp.import': { agentId: 'conformance-agent', name: 'conformance-srv' },
     'mcp.update': { agentId: 'conformance-agent', name: 'conformance-srv', enabled: false },
     'mcp.remove': { agentId: 'conformance-agent', name: 'conformance-srv' },
     'mcp.enable': { agentId: 'conformance-agent', name: 'conformance-srv' },

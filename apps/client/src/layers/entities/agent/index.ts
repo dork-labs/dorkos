@@ -21,6 +21,7 @@ export { useMcpConfig } from './model/use-mcp-config';
 export { useAgentMcpServers } from './model/use-agent-mcp-servers';
 export {
   useAddAgentMcpServer,
+  useImportAgentMcpServer,
   useUpdateAgentMcpServer,
   useRemoveAgentMcpServer,
   useEnableAgentMcpServer,

@@ -4,6 +4,7 @@ import type { RelayCore } from '@dorkos/relay';
 import type { AdapterManager } from '../../../relay/adapter-manager.js';
 import type { BindingStore } from '../../../relay/binding-store.js';
 import type { BindingRouter } from '../../../relay/binding-router.js';
+import type { BridgeStore } from '../../../relay/chat-bridge/bridge-store.js';
 import type { TraceStore } from '../../../relay/trace-store.js';
 import type { MeshCore } from '@dorkos/mesh';
 import type { ExtensionManager } from '../../../extensions/extension-manager.js';
@@ -30,6 +31,12 @@ export interface McpToolDeps {
   bindingStore?: BindingStore;
   /** Optional BindingRouter for session map queries. */
   bindingRouter?: BindingRouter;
+  /**
+   * Optional BridgeStore — live bridge rows so `relay_notify_user` still
+   * resolves a bridged chat once its session vacates `sessionMap`
+   * (chats-as-channels spec §7.5). Undefined when Rooms/bridging is not wired.
+   */
+  bridgeStore?: BridgeStore;
   /** Optional MeshCore — undefined when Mesh is disabled */
   meshCore?: MeshCore;
   /** Optional ExtensionManager — undefined when extensions are disabled */

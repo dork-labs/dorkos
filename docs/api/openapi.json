@@ -15352,6 +15352,57 @@
         }
       }
     },
+    "/api/agents/{agentId}/mcp-servers/{name}/import": {
+      "post": {
+        "tags": [
+          "Mcp"
+        ],
+        "summary": "Import a discovered MCP server into DorkOS management",
+        "description": "Bring a server DorkOS discovered in a project’s .mcp.json under DorkOS management: resolve its transport, then add it as an enabled, editable managed server. Routed through the same approval gate as add, because the imported entry will run in the agent’s environment. Rejects the reserved name \"dorkos\" and any name already managed; reports a clear error when no such discovered server can be resolved.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "agentId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The id of the agent whose managed MCP servers this acts on."
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[a-zA-Z0-9_-]+$",
+                    "description": "The managed server name, unique within the agent."
+                  }
+                },
+                "required": [
+                  "agentId",
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Import a discovered MCP server into DorkOS management result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ManagedMcpServer"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/agents/{agentId}/mcp-servers/{name}": {
       "patch": {
         "tags": [

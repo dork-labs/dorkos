@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Loader2, Trash2 } from 'lucide-react';
+import { Loader2, ShieldAlert, Sparkles, Trash2 } from 'lucide-react';
 import { Badge, Button, FieldCard, FieldCardContent, Skeleton, Switch } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import { useSettingsDeepLink } from '@/layers/shared/model';
@@ -8,12 +8,17 @@ import {
   useMcpConfig,
   useEnableAgentMcpServer,
   useDisableAgentMcpServer,
+  useImportAgentMcpServer,
   useRemoveAgentMcpServer,
   useTestAgentMcpServer,
 } from '@/layers/entities/agent';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
 import type { AgentManifest, AgentRuntime, ManagedMcpServer } from '@dorkos/shared/mesh-schemas';
-import type { AgentMcpTestResult, McpServerEntry } from '@dorkos/shared/transport';
+import type {
+  AgentMcpTestResult,
+  CapabilityApprovalRequired,
+  McpServerEntry,
+} from '@dorkos/shared/transport';
 import { AddMcpServerForm, TRANSPORTS, type TransportKind } from './AddMcpServerForm';
 
 /**
@@ -128,16 +133,125 @@ function ManagedServerRow({
   );
 }
 
-/** One discovered (read-only) server from `.mcp.json` / live status with no managed match. */
-function DiscoveredServerRow({ entry }: { entry: McpServerEntry }) {
+interface DiscoveredServerRowProps {
+  /** The discovered entry from `.mcp.json` / live status. */
+  entry: McpServerEntry;
+  /** The agent the server would be imported into. */
+  agentId: string;
+  /** Display label for the agent, used in the confirm copy. */
+  agentLabel: string;
+  /** Whether the agent's runtime can run DorkOS-managed servers (gates Import). */
+  canImport: boolean;
+}
+
+/**
+ * One discovered (read-only) server from `.mcp.json` / live status with no
+ * managed match. When the runtime can manage servers, it offers a one-click
+ * Import that promotes the server into the managed (editable) store through the
+ * same operator-approval flow as Add: `mcp.import` returns `approval_required`
+ * first, the operator confirms, and the granted retry writes it — after which
+ * the managed list and the discovered roster both refresh and the row moves.
+ */
+function DiscoveredServerRow({ entry, agentId, agentLabel, canImport }: DiscoveredServerRowProps) {
+  const importServer = useImportAgentMcpServer();
+  const [pending, setPending] = useState<CapabilityApprovalRequired | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const start = useCallback(async () => {
+    setError(null);
+    try {
+      const result = await importServer.mutateAsync({ input: { agentId, name: entry.name } });
+      if (result.status === 'approval_required') setPending(result.approval);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not import the server.');
+    }
+  }, [importServer, agentId, entry.name]);
+
+  const confirm = useCallback(async () => {
+    if (!pending) return;
+    setError(null);
+    try {
+      const result = await importServer.mutateAsync({
+        input: { agentId, name: entry.name },
+        approval: pending,
+      });
+      // On success the row moves to managed via query invalidation; nothing to
+      // reset here because this component unmounts with the discovered list.
+      if (result.status !== 'ok') setError('The import still needs approval. Try again.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not import the server.');
+    }
+  }, [importServer, agentId, entry.name, pending]);
+
+  if (pending) {
+    return (
+      <div className="border-border/60 my-1.5 space-y-3 rounded-md border p-3">
+        <div className="flex items-start gap-2">
+          <ShieldAlert className="mt-0.5 size-4 shrink-0 text-amber-500" />
+          <div className="space-y-1">
+            <p className="text-sm font-medium">
+              Manage &ldquo;{entry.name}&rdquo; for {agentLabel}?
+            </p>
+            <p className="text-muted-foreground text-xs">
+              This brings the {entry.type} server from this project&rsquo;s config under DorkOS
+              management, so you can enable, disable, and edit it here.
+            </p>
+          </div>
+        </div>
+        {error && <p className="text-destructive text-xs">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setPending(null)}
+            disabled={importServer.isPending}
+            className="focus-visible:ring-2"
+          >
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            onClick={confirm}
+            disabled={importServer.isPending}
+            className="focus-visible:ring-2"
+          >
+            {importServer.isPending ? 'Importing…' : 'Confirm & manage'}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex items-center gap-2 py-1.5">
-      <StatusDot statusKey={entry.status} />
-      <span className="min-w-0 truncate text-sm">{entry.name}</span>
-      <span className="text-muted-foreground/50 text-xs">{entry.type}</span>
-      <Badge variant="outline" className="text-muted-foreground ml-auto text-xs font-normal">
-        discovered
-      </Badge>
+    <div className="flex flex-col gap-1 py-1.5">
+      <div className="flex items-center gap-2">
+        <StatusDot statusKey={entry.status} />
+        <span className="min-w-0 truncate text-sm">{entry.name}</span>
+        <span className="text-muted-foreground/50 text-xs">{entry.type}</span>
+        <Badge variant="outline" className="text-muted-foreground ml-auto text-xs font-normal">
+          discovered
+        </Badge>
+        {canImport && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={start}
+            disabled={importServer.isPending}
+            aria-label={`Manage ${entry.name}`}
+            className="focus-visible:ring-2"
+          >
+            {importServer.isPending ? (
+              <Loader2 className="size-3 animate-spin" />
+            ) : (
+              <>
+                <Sparkles className="size-3.5" />
+                Manage
+              </>
+            )}
+          </Button>
+        )}
+      </div>
+      {error && <p className="text-destructive pl-4 text-xs">{error}</p>}
     </div>
   );
 }
@@ -302,7 +416,13 @@ export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
               />
             ))}
             {discovered.map((entry) => (
-              <DiscoveredServerRow key={entry.name} entry={entry} />
+              <DiscoveredServerRow
+                key={entry.name}
+                entry={entry}
+                agentId={agent.id}
+                agentLabel={agent.displayName ?? agent.name}
+                canImport={canAdd}
+              />
             ))}
           </FieldCardContent>
         </FieldCard>

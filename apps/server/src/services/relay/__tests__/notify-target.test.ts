@@ -4,6 +4,7 @@ import type {
   NotifyTargetBindingStore,
   NotifyTargetBindingRouter,
   NotifyTargetAdapterManager,
+  NotifyTargetBridgeStore,
 } from '../notify-target.js';
 import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
 
@@ -57,6 +58,15 @@ function router(sessionsByBinding: Record<string, TestSession[]>): NotifyTargetB
 
 function adapters(list: Array<{ id: string; type: string }>): NotifyTargetAdapterManager {
   return { listAdapters: () => list.map((config) => ({ config })) };
+}
+
+/** A live bridge row as the store reports it, boilerplate fields defaulted. */
+type TestBridge = { bindingId: string; chatId: string; lastActivityAt?: string | null };
+
+function bridges(rows: TestBridge[]): NotifyTargetBridgeStore {
+  return {
+    listLiveBridges: () => rows.map((r) => ({ lastActivityAt: r.lastActivityAt ?? null, ...r })),
+  };
 }
 
 describe('resolveNotifyTarget', () => {
@@ -217,6 +227,221 @@ describe('resolveNotifyTarget', () => {
       });
       // Knowing who was active is not knowing where to answer. Guessing here is
       // what put a group's notification into somebody's private messages.
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.reason).toBe('NO_ACTIVE_SESSIONS');
+    });
+  });
+
+  // Bridged bindings vacate `sessionMap` (chats-as-channels spec §7.2), so a
+  // live bridge row must compete as a recency candidate too — otherwise a
+  // bridged chat looks exactly like one that was never active (DOR-876).
+  describe('bridged bindings (§7.5)', () => {
+    it('A7.5: resolves the bridged chat with every session vacated from sessionMap', () => {
+      const result = resolveNotifyTarget('agent-1', {
+        bindingStore: store([binding({ bridge: 'room', roomId: 'room-1', chatId: 'chat-42' })]),
+        // The sessionMap for this binding is fully empty — this is the whole
+        // point of §7.2: bridging adopts/starts a room session and removes
+        // the sessionMap entry, so there is nothing here to find it by.
+        bindingRouter: router({}),
+        bridgeStore: bridges([
+          { bindingId: 'b-1', chatId: 'chat-42', lastActivityAt: '2026-01-01T00:05:00.000Z' },
+        ]),
+        adapterManager: adapters([{ id: 'tg-main', type: 'telegram' }]),
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.chatId).toBe('chat-42');
+      expect(result.subject).toBe('relay.human.telegram.tg-main.chat-42');
+      expect(result.bindingId).toBe('b-1');
+      // The caller's cue to publish under `relay.bridge.initiate.*` instead
+      // of its own principal — the actual gate/principal assertion lives in
+      // the two callers' own test suites (task-completion-notifier,
+      // relay_notify_user), since `subject` alone never carries this.
+      expect(result.bridged).toBe(true);
+    });
+
+    it('returns NO_ACTIVE_SESSIONS when a bridge row exists for a DIFFERENT binding', () => {
+      const result = resolveNotifyTarget('agent-1', {
+        bindingStore: store([binding({ bridge: 'room', roomId: 'room-1', chatId: 'chat-42' })]),
+        bindingRouter: router({}),
+        // A live bridge for someone else's binding must not leak in as this
+        // agent's target — the resolver already scopes `myBindings` to this
+        // agent, and the bridge-row pass must respect the same scope.
+        bridgeStore: bridges([{ bindingId: 'b-OTHER', chatId: 'chat-99' }]),
+        adapterManager: adapters([{ id: 'tg-main', type: 'telegram' }]),
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.reason).toBe('NO_ACTIVE_SESSIONS');
+    });
+
+    it('mixed: a more-recent bridge row wins over an unbridged session', () => {
+      const result = resolveNotifyTarget('agent-1', {
+        bindingStore: store([
+          binding({ id: 'b-unbridged', adapterId: 'tg-unbridged' }),
+          binding({
+            id: 'b-bridged',
+            adapterId: 'tg-bridged',
+            bridge: 'room',
+            roomId: 'room-1',
+            chatId: 'chat-bridged',
+          }),
+        ]),
+        bindingRouter: router({
+          'b-unbridged': [{ chatId: 'chat-session', sessionId: 's1', lastActivityAt: 1_000 }],
+        }),
+        bridgeStore: bridges([
+          {
+            bindingId: 'b-bridged',
+            chatId: 'chat-bridged',
+            // Epoch 5_000ms as ISO — well past the session's lastActivityAt.
+            lastActivityAt: new Date(5_000).toISOString(),
+          },
+        ]),
+        adapterManager: adapters([
+          { id: 'tg-unbridged', type: 'telegram' },
+          { id: 'tg-bridged', type: 'telegram' },
+        ]),
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.chatId).toBe('chat-bridged');
+      expect(result.bindingId).toBe('b-bridged');
+      expect(result.bridged).toBe(true);
+    });
+
+    it('mixed, reversed: a more-recent unbridged session wins over a bridge row', () => {
+      const result = resolveNotifyTarget('agent-1', {
+        bindingStore: store([
+          binding({ id: 'b-unbridged', adapterId: 'tg-unbridged' }),
+          binding({
+            id: 'b-bridged',
+            adapterId: 'tg-bridged',
+            bridge: 'room',
+            roomId: 'room-1',
+            chatId: 'chat-bridged',
+          }),
+        ]),
+        bindingRouter: router({
+          'b-unbridged': [{ chatId: 'chat-session', sessionId: 's1', lastActivityAt: 9_000 }],
+        }),
+        bridgeStore: bridges([
+          {
+            bindingId: 'b-bridged',
+            chatId: 'chat-bridged',
+            lastActivityAt: new Date(1_000).toISOString(),
+          },
+        ]),
+        adapterManager: adapters([
+          { id: 'tg-unbridged', type: 'telegram' },
+          { id: 'tg-bridged', type: 'telegram' },
+        ]),
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.chatId).toBe('chat-session');
+      expect(result.bindingId).toBe('b-unbridged');
+      expect(result.bridged).toBe(false);
+    });
+
+    it('a tie resolves exactly as today: the sessionMap candidate wins, not the bridge row', () => {
+      const result = resolveNotifyTarget('agent-1', {
+        bindingStore: store([
+          binding({ id: 'b-unbridged', adapterId: 'tg-unbridged' }),
+          binding({
+            id: 'b-bridged',
+            adapterId: 'tg-bridged',
+            bridge: 'room',
+            roomId: 'room-1',
+            chatId: 'chat-bridged',
+          }),
+        ]),
+        bindingRouter: router({
+          'b-unbridged': [{ chatId: 'chat-session', sessionId: 's1', lastActivityAt: 5_000 }],
+        }),
+        // Exactly the same instant as the session above, as an ISO string.
+        bridgeStore: bridges([
+          {
+            bindingId: 'b-bridged',
+            chatId: 'chat-bridged',
+            lastActivityAt: new Date(5_000).toISOString(),
+          },
+        ]),
+        adapterManager: adapters([
+          { id: 'tg-unbridged', type: 'telegram' },
+          { id: 'tg-bridged', type: 'telegram' },
+        ]),
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // No unbridged case changes: on a tie, the pre-existing session-based
+      // pick still wins — a bridge row must beat it, never merely match it.
+      expect(result.chatId).toBe('chat-session');
+      expect(result.bindingId).toBe('b-unbridged');
+      expect(result.bridged).toBe(false);
+    });
+
+    it('a malformed lastActivityAt does not poison the scan (NaN never beats, never freezes it)', () => {
+      // `Date.parse` of a malformed value returns NaN, and `at > best.at` is
+      // false for every `at` once `best.at` is NaN — including a genuinely
+      // more-recent candidate processed afterward. Order matters here: the
+      // malformed row is listed FIRST, so an unguarded scan would seed `best`
+      // with a NaN `at` (nothing beats `!best`), and the valid, more-recent
+      // row second would then lose to it purely because `at > NaN` is always
+      // false. The current sole writer of this field (BridgeStore.stampActivity)
+      // never writes a bad value, but the invariant lives in a different file
+      // than this comparison, so it's guarded here too.
+      const result = resolveNotifyTarget('agent-1', {
+        bindingStore: store([
+          binding({
+            id: 'b-malformed',
+            adapterId: 'tg-malformed',
+            bridge: 'room',
+            roomId: 'room-malformed',
+            chatId: 'chat-malformed',
+          }),
+          binding({
+            id: 'b-good',
+            adapterId: 'tg-good',
+            bridge: 'room',
+            roomId: 'room-good',
+            chatId: 'chat-good',
+          }),
+        ]),
+        bindingRouter: router({}),
+        bridgeStore: bridges([
+          {
+            bindingId: 'b-malformed',
+            chatId: 'chat-malformed',
+            lastActivityAt: 'not-a-real-timestamp',
+          },
+          {
+            bindingId: 'b-good',
+            chatId: 'chat-good',
+            lastActivityAt: new Date(9_000).toISOString(),
+          },
+        ]),
+        adapterManager: adapters([
+          { id: 'tg-malformed', type: 'telegram' },
+          { id: 'tg-good', type: 'telegram' },
+        ]),
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.chatId).toBe('chat-good');
+      expect(result.bindingId).toBe('b-good');
+    });
+
+    it('omitting bridgeStore behaves exactly as before bridging existed', () => {
+      const result = resolveNotifyTarget('agent-1', {
+        bindingStore: store([binding({ bridge: 'room', roomId: 'room-1', chatId: 'chat-42' })]),
+        bindingRouter: router({}),
+        // No bridgeStore dep at all — mirrors any caller that hasn't been
+        // updated to pass one yet.
+        adapterManager: adapters([{ id: 'tg-main', type: 'telegram' }]),
+      });
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.reason).toBe('NO_ACTIVE_SESSIONS');

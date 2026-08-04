@@ -9,6 +9,16 @@
  * through this one function so the two paths honor identical binding, session,
  * and consent rules.
  *
+ * A bridged binding (`bridge: 'room'`) vacates `sessionMap` (chats-as-channels
+ * spec §7.2), so `pickMostRecentChat` also considers live bridge rows as
+ * recency candidates (§7.5) — otherwise a bridged chat could never win and a
+ * proactive notice would silently stop reaching it. The resolved `bridged`
+ * flag on a successful result tells the caller to publish under the
+ * `relay.bridge.initiate.*` principal instead of its own, so the send is still
+ * gated as an initiate rather than riding an exemption that was never meant to
+ * cover it (see `buildBridgePrincipal` in `bridge-principal.ts` and the
+ * non-exempt branch it feeds in `initiate-consent.ts`).
+ *
  * @module services/relay/notify-target
  */
 import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
@@ -39,12 +49,39 @@ export interface NotifyTargetAdapterManager {
   listAdapters(): Array<{ config: { id: string; type: string } }>;
 }
 
+/**
+ * Minimal bridge-store surface the resolver reads — live bridge rows compete
+ * as recency candidates alongside `sessionMap` sessions (§7.5).
+ */
+export interface NotifyTargetBridgeStore {
+  /**
+   * Every live (non-archived) bridge, across every binding and adapter. The
+   * resolver filters this down to rows whose `bindingId` names one of the
+   * agent's own eligible bindings — mirroring how the session loop already
+   * scopes `bindingRouter.getSessionsByBinding` to those same bindings.
+   */
+  listLiveBridges(): Array<{
+    /** The binding this bridge is attached to. */
+    bindingId: string;
+    /** The platform chat id the room projects to. */
+    chatId: string;
+    /** ISO 8601 timestamp of the bridge's last inbound or delivered activity; `null` if never. */
+    lastActivityAt: string | null;
+  }>;
+}
+
 /** Dependencies for {@link resolveNotifyTarget}. */
 export interface NotifyTargetDeps {
   bindingStore: NotifyTargetBindingStore;
   bindingRouter: NotifyTargetBindingRouter;
   /** Optional — used for channel-by-type filtering and adapter-type lookup. */
   adapterManager?: NotifyTargetAdapterManager;
+  /**
+   * Optional — live bridge rows considered alongside `sessionMap` sessions as
+   * recency candidates (§7.5). Undefined behaves exactly as before bridging
+   * existed: only `sessionMap` sessions are considered.
+   */
+  bridgeStore?: NotifyTargetBridgeStore;
   /** Optional adapter type or id to target (e.g. "telegram", "telegram-lifeos"). */
   channel?: string;
 }
@@ -65,6 +102,19 @@ export type NotifyTarget =
       bindingId: string;
       /** The resolved binding's per-integration task-completion opt-in (DOR-240). */
       notifyOnTaskComplete: boolean;
+      /**
+       * Whether this target was resolved via a live bridge row rather than a
+       * `sessionMap` session (§7.5). A caller MUST publish under
+       * `buildBridgePrincipal('initiate', adapterId, chatId)` when this is
+       * `true`, rather than its own principal — `subject` alone does not
+       * carry that distinction. This keeps every bridge-routed send legible
+       * under the one `relay.bridge.*` classification DOR-871 established
+       * (A7.5), instead of a proactive notice being indistinguishable from
+       * any other send once it lands under a generic system/agent
+       * principal. `canInitiate` was already checked below either way — the
+       * principal choice does not change whether the send is allowed.
+       */
+      bridged: boolean;
     }
   | { ok: false; reason: 'NO_BINDING'; availableChannels: string[] }
   | { ok: false; reason: 'NO_ACTIVE_SESSIONS'; availableAdapters: string[] }
@@ -91,27 +141,71 @@ export type NotifyTarget =
  * does not, we know who was active but not where, and that candidate is skipped
  * rather than guessed at.
  *
+ * ## A live bridge also counts as an active chat (§7.5)
+ *
+ * A binding with `bridge: 'room'` vacates `sessionMap` (§7.2) — bridging
+ * adopts or starts a room session and removes the `sessionMap` entry, so the
+ * loop above never sees it again. Left unfixed, a bridged chat would look
+ * exactly like one that was never active, and `resolveNotifyTarget` would
+ * report `NO_ACTIVE_SESSIONS` for a chat someone is actively using. So a
+ * second pass considers `bridgeStore.listLiveBridges()`, each row
+ * contributing a candidate `{ binding, chatId, at: bridge.lastActivityAt }` —
+ * `lastActivityAt` is an ISO 8601 string here (stamped by `ingest` and by
+ * successful delivery) rather than the epoch-ms number sessions carry, so it
+ * is parsed before competing on the same recency axis.
+ *
+ * This pass runs strictly after the session pass and only replaces `best` on
+ * a **strict** improvement (`at > best.at`, never `>=`), so a bridge row that
+ * ties a session's recency never displaces it — the existing (unbridged)
+ * behavior wins every tie, exactly as it did before bridges existed. A
+ * binding that is itself bridged has, by §7.2, no session-loop candidate to
+ * tie against in the first place — the two passes source disjoint bindings
+ * in practice, not just by tie-break rule.
+ *
  * @param bindings - The agent's eligible (non-paused, channel-filtered) bindings.
  * @param bindingRouter - Session lookup.
+ * @param bridgeStore - Live-bridge lookup; omitted deps behave as if no
+ *   binding is ever bridged (pre-§7.5 behavior).
  * @returns The best binding/chat pair, or `null` when none is addressable.
  */
 function pickMostRecentChat(
   bindings: AdapterBinding[],
-  bindingRouter: NotifyTargetBindingRouter
-): { binding: AdapterBinding; chatId: string } | null {
-  let best: { binding: AdapterBinding; chatId: string; at: number } | null = null;
+  bindingRouter: NotifyTargetBindingRouter,
+  bridgeStore?: NotifyTargetBridgeStore
+): { binding: AdapterBinding; chatId: string; bridged: boolean } | null {
+  let best: { binding: AdapterBinding; chatId: string; at: number; bridged: boolean } | null = null;
 
   for (const binding of bindings) {
     for (const session of bindingRouter.getSessionsByBinding(binding.id)) {
       const chatId = session.scope === 'chat' ? session.chatId : binding.chatId;
       if (!chatId) continue; // active person, unknown conversation — see above
       if (!best || session.lastActivityAt > best.at) {
-        best = { binding, chatId, at: session.lastActivityAt };
+        best = { binding, chatId, at: session.lastActivityAt, bridged: false };
       }
     }
   }
 
-  return best ? { binding: best.binding, chatId: best.chatId } : null;
+  if (bridgeStore) {
+    const bindingById = new Map(bindings.map((b) => [b.id, b]));
+    for (const bridge of bridgeStore.listLiveBridges()) {
+      const binding = bindingById.get(bridge.bindingId);
+      if (!binding) continue; // not one of this agent's eligible bindings
+      // The sole writer (`BridgeStore.stampActivity`) always writes a valid
+      // ISO string, so this can't happen today — but that invariant lives in
+      // a different file (deliver.ts) than this comparison, and `Date.parse`
+      // returns NaN for a malformed value. Every `at > best.at` comparison
+      // against NaN is false, which would freeze the scan on the bad
+      // candidate and silently skip every genuinely more-recent one after
+      // it — a worse failure than just treating it as "never active".
+      const parsed = bridge.lastActivityAt ? Date.parse(bridge.lastActivityAt) : 0;
+      const at = Number.isFinite(parsed) ? parsed : 0;
+      if (!best || at > best.at) {
+        best = { binding, chatId: bridge.chatId, at, bridged: true };
+      }
+    }
+  }
+
+  return best ? { binding: best.binding, chatId: best.chatId, bridged: best.bridged } : null;
 }
 
 /**
@@ -122,7 +216,7 @@ function pickMostRecentChat(
  * @returns A structured target on success, or a structured non-delivery reason.
  */
 export function resolveNotifyTarget(agentId: string, deps: NotifyTargetDeps): NotifyTarget {
-  const { bindingStore, bindingRouter, adapterManager, channel } = deps;
+  const { bindingStore, bindingRouter, adapterManager, bridgeStore, channel } = deps;
 
   const allBindings = bindingStore.getAll();
   // Paused bindings (enabled === false) are excluded up front: the schema
@@ -160,7 +254,7 @@ export function resolveNotifyTarget(agentId: string, deps: NotifyTargetDeps): No
     return { ok: false, reason: 'NO_BINDING', availableChannels: available };
   }
 
-  const best = pickMostRecentChat(myBindings, bindingRouter);
+  const best = pickMostRecentChat(myBindings, bindingRouter, bridgeStore);
 
   if (!best) {
     return {
@@ -198,5 +292,6 @@ export function resolveNotifyTarget(agentId: string, deps: NotifyTargetDeps): No
     chatId: best.chatId,
     bindingId: best.binding.id,
     notifyOnTaskComplete: best.binding.notifyOnTaskComplete,
+    bridged: best.bridged,
   };
 }
