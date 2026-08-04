@@ -62,9 +62,19 @@
       "reason": "The add/edit-binding dialog's \"Add connection\" / \"Edit connection\" / \"Remove connection\" copy (plan D2, DOR-859) names the entity a person is creating or deleting — one binding of a Telegram/Slack/webhook to an agent, which is exactly what a Connection is. Not the network-health sense DOR-855 retires; a binding's reachability is reported separately by its test action."
     },
     {
-      "path": "apps/client/src/layers/features/agent-settings/ui/",
+      "path": "apps/client/src/layers/features/agent-settings/ui/IntegrationsTab.tsx",
       "terms": ["connection"],
-      "reason": "The per-agent Connections tab's toasts (\"Connection added/removed/paused\") and its \"Add a connection\" / \"Remove connection\" copy (plan D2, DOR-859) name the Connections-domain entity — a Telegram/Slack/webhook binding for this agent — not a network-health reading. Whether a binding is currently reachable is reported by its own test action, not this copy."
+      "reason": "The per-agent Connections tab's toasts (\"Connection added/removed/paused\") and its \"Add a connection\" copy (plan D2, DOR-859) name the Connections-domain entity — a Telegram/Slack/webhook binding for this agent — not a network-health reading. Whether a binding is currently reachable is reported by its own test action, not this copy."
+    },
+    {
+      "path": "apps/client/src/layers/features/agent-settings/ui/IntegrationPicker.tsx",
+      "terms": ["connection"],
+      "reason": "The per-agent Connections tab's picker \"Add connection\" button and \"No connections available\" empty state (plan D2, DOR-859) name the Connections-domain entity — a Telegram/Slack/webhook binding for this agent — not a network-health reading."
+    },
+    {
+      "path": "apps/client/src/layers/features/agent-settings/ui/IntegrationBindingCard.tsx",
+      "terms": ["connection"],
+      "reason": "The per-agent Connections tab's binding card \"Remove connection\" confirmation (plan D2, DOR-859) names the Connections-domain entity a person is deleting — one Telegram/Slack/webhook binding — not a network-health reading."
     }
   ]
 }
