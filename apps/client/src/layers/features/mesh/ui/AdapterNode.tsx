@@ -135,7 +135,7 @@ function AdapterDefaultCard({
         <span className="text-muted-foreground text-xs capitalize">{d.adapterType}</span>
         {d.bindingCount > 0 && (
           <Badge variant="secondary" className="text-xs">
-            {d.bindingCount} {d.bindingCount === 1 ? 'integration' : 'integrations'}
+            {d.bindingCount} {d.bindingCount === 1 ? 'connection' : 'connections'}
           </Badge>
         )}
       </div>

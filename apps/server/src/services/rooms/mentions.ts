@@ -14,6 +14,7 @@
  *
  * @module server/services/rooms/mentions
  */
+import type { MentionSpan } from '@dorkos/shared/room-schemas';
 
 /**
  * One roster member as mention resolution sees it. `names` is tried in order,
@@ -181,12 +182,19 @@ const BLOCKQUOTE = /^ {0,3}>/;
 const INLINE_CODE = /`[^`]*`/g;
 
 /**
- * The part of a message that is the author speaking, with everything they were
- * merely QUOTING removed.
+ * A same-length MASK of a message, with everything the author was merely
+ * QUOTING blanked to spaces rather than removed.
  *
- * Three things are dropped: CLOSED fenced code blocks, blockquote lines, and
+ * Three things are blanked: CLOSED fenced code blocks, blockquote lines, and
  * inline code spans. Each is text the author reproduced rather than wrote, and
- * an `@name` inside one is a citation, not an address.
+ * an `@name` inside one is a citation, not an address. Every other character is
+ * kept verbatim, and every blanked region is replaced character-for-character
+ * with spaces — so the result is **exactly as long as the input, index for
+ * index**. That is the whole reason it masks instead of dropping: a match found
+ * in the mask sits at the SAME offset in the raw body, which is what lets a
+ * caller both resolve a mention and say where it is (`mentionSpans`). Blanked
+ * regions hold no `@`, so masking yields the identical mention tokens, in the
+ * identical order, that dropping the regions once did.
  *
  * **This is what keeps "mentions resolve once, at write time" true.** Without
  * it, quoting a message re-addressed everybody it named — so a room's own late
@@ -215,9 +223,10 @@ const INLINE_CODE = /`[^`]*`/g;
  * not a regex's.
  *
  * @param text - The raw message body.
- * @returns The same text with every quoted region removed, lines still in order.
+ * @returns A string the same length as `text`, with every quoted region blanked
+ *   to spaces and everything else left where it was.
  */
-function speakingParts(text: string): string {
+function speakingMask(text: string): string {
   const lines = text.split('\n');
   /** Lines inside a fence that actually closed, and the two delimiters. */
   const fenced = new Set<number>();
@@ -232,12 +241,21 @@ function speakingParts(text: string): string {
     at = closedAt;
   }
 
-  const kept: string[] = [];
+  const masked: string[] = [];
   for (let at = 0; at < lines.length; at += 1) {
-    if (fenced.has(at) || BLOCKQUOTE.test(lines[at])) continue;
-    kept.push(lines[at].replace(INLINE_CODE, ' '));
+    const line = lines[at];
+    // A blanked LINE stays its own length so the newline structure — and thus
+    // every later offset — is untouched; a blanked inline SPAN stays its own
+    // length for the same reason. Both were once collapsed (line dropped, span
+    // shrunk to one space), which changed offsets and is exactly what a span
+    // cannot tolerate.
+    if (fenced.has(at) || BLOCKQUOTE.test(line)) {
+      masked.push(' '.repeat(line.length));
+      continue;
+    }
+    masked.push(line.replace(INLINE_CODE, (span) => ' '.repeat(span.length)));
   }
-  return kept.join('\n');
+  return masked.join('\n');
 }
 
 /**
@@ -271,8 +289,8 @@ function closingFence(lines: readonly string[], from: number, opener: string): n
  * the call site.
  *
  * **Quoted text does not address anybody.** Blockquote lines, fenced code blocks
- * and inline code spans are removed before matching — see
- * {@link speakingParts}.
+ * and inline code spans are blanked before matching — see
+ * {@link speakingMask}.
  *
  * @param text - The raw message body.
  * @param roster - The room's members and the names each answers to.
@@ -295,6 +313,16 @@ export interface Addressing {
    * ghost sharing a live member's display name costs that live member nothing.
    */
   unreachable: string[];
+  /**
+   * Every resolved `@mention`, in text order, located by its offset in the raw
+   * body — the per-occurrence sibling of {@link Addressing.mentions}. One span
+   * per written `@handle` (NOT deduped: `@ana @ana` is two spans, one deduped
+   * id), emitted only for a token that reached a LIVE author. A quoted or
+   * unreachable `@name` gets none, exactly as it contributes nothing to
+   * `mentions`. This is what the client draws pills from; it never re-parses the
+   * text (`.claude/rules/room-conduct.md`).
+   */
+  spans: MentionSpan[];
 }
 
 /**
@@ -344,23 +372,37 @@ function addressingIn(
 
   const mentions: string[] = [];
   const missed: string[] = [];
+  const spans: MentionSpan[] = [];
   const seen = new Set<string>();
-  for (const match of speakingParts(text).matchAll(MENTION_PATTERN)) {
+  for (const match of speakingMask(text).matchAll(MENTION_PATTERN)) {
+    // `matchAll` over a global pattern always sets `index`; the guard is for the
+    // type, which admits `undefined`, not for a case that occurs.
+    if (match.index === undefined) continue;
     const raw = match[1].toLowerCase();
     const bare = raw.replace(TRAILING_PUNCTUATION, '');
-    const authorId = byName.get(raw) ?? byName.get(bare);
+    // Try the exact token before the shaved one, exactly as the mention set
+    // does — and remember WHICH won, because the span covers the handle the
+    // resolver actually used: the whole `@token` when the exact name owned it,
+    // or just `@bare` when a trailing `.`/`-`/`_` was shaved off to resolve it.
+    const exactId = byName.get(raw);
+    const authorId = exactId ?? byName.get(bare);
     if (authorId) {
-      if (seen.has(authorId)) continue;
-      seen.add(authorId);
-      mentions.push(authorId);
+      const handleLength = exactId ? match[1].length : bare.length;
+      // One span PER occurrence — a pill is drawn at every position, even a
+      // repeat the deduped `mentions` set drops. `+ 1` for the `@` itself.
+      spans.push({ offset: match.index, length: handleLength + 1, authorId });
+      if (!seen.has(authorId)) {
+        seen.add(authorId);
+        mentions.push(authorId);
+      }
       continue;
     }
     // Only now — a name a live member owns is that member's, and a ghost behind
-    // it is not news to anybody.
+    // it is not news to anybody. A ghost draws no pill, so it earns no span.
     const ghostId = byGhostName?.get(raw) ?? byGhostName?.get(bare);
     if (!ghostId || seen.has(ghostId)) continue;
     seen.add(ghostId);
     missed.push(ghostId);
   }
-  return { mentions, unreachable: missed };
+  return { mentions, unreachable: missed, spans };
 }

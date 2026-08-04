@@ -10,7 +10,7 @@ import {
 import { AnimatePresence, motion } from 'motion/react';
 import { X } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
-import { sessionStrategyLabel } from '@/layers/entities/binding';
+import { sessionStrategyLabel, chatTypeLabel } from '@/layers/entities/binding';
 import { useRelayFlowStore } from '../model/relay-flow-store';
 import { usePrefersReducedMotion } from '../lib/use-reduced-motion';
 import { PULSE_MIN_ZOOM, PULSE_DURATION_MS } from '../config/relay-flow-constants';
@@ -34,11 +34,11 @@ export interface BindingEdgeData extends Record<string, unknown> {
   onDelete?: (edgeId: string) => void;
 }
 
-/** Resolve the display label: prefer explicit label, then a friendly strategy label, then 'Integration'. */
+/** Resolve the display label: prefer explicit label, then a friendly strategy label, then 'Connection'. */
 function resolveDisplayLabel(data: BindingEdgeData | undefined): string {
   if (data?.label) return data.label;
   if (data?.sessionStrategy) return sessionStrategyLabel(data.sessionStrategy);
-  return 'Integration';
+  return 'Connection';
 }
 
 /** React Flow custom edge for adapter-agent bindings with hover-to-reveal label. */
@@ -152,7 +152,7 @@ function BindingEdgeInner({
                 <button
                   onClick={handleDelete}
                   className="text-destructive/60 hover:bg-destructive/10 hover:text-destructive ml-0.5 shrink-0 rounded-sm p-0.5"
-                  aria-label="Remove integration"
+                  aria-label="Remove connection"
                 >
                   <X className="size-3" />
                 </button>
@@ -168,7 +168,7 @@ function BindingEdgeInner({
                 )}
                 {d.channelType && (
                   <span className="bg-muted text-muted-foreground rounded px-1 py-px text-[9px]">
-                    {d.channelType}
+                    {chatTypeLabel(d.channelType)}
                   </span>
                 )}
               </div>

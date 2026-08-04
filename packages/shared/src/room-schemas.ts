@@ -500,6 +500,47 @@ export const RoomEntryReactionSchema = z
 export type RoomEntryReaction = z.infer<typeof RoomEntryReactionSchema>;
 
 /**
+ * One resolved `@mention`, located by where it sits in the entry's raw body.
+ *
+ * **The per-occurrence sibling of {@link RoomEntrySchema.mentions}**, and the
+ * two answer different questions. `mentions` is the deduped set of author ids a
+ * message reached — what addressing, dispatch and the cascade guard key on.
+ * A span says *where* one `@handle` sits in {@link RoomEntryBody.text} so the
+ * client can draw a pill exactly over it, without ever re-parsing the body (the
+ * one thing "mentions resolve once, at write time" forbids). So there is one
+ * span per written `@handle`, not one per author: `@ana @ana` yields two spans
+ * and a single-id `mentions`.
+ *
+ * `offset` and `length` index the RAW body by UTF-16 code unit, the same units
+ * a `string` is indexed and sliced by, so `body.text.slice(offset, offset +
+ * length)` is exactly the matched `@handle`. When trailing sentence punctuation
+ * was shaved to resolve the name (`@ana.` → `ana`), `length` covers only the
+ * handle the resolver actually used (`@ana`), never the full stop.
+ *
+ * A span is emitted only for a handle that resolved to a LIVE author. A quoted
+ * `@name` (blockquote, fenced or inline code) addresses nobody and gets none,
+ * exactly as it contributes nothing to `mentions`; an unreachable ghost gets
+ * none either, since there is no live pill to draw.
+ */
+export const MentionSpanSchema = z
+  .object({
+    offset: z
+      .number()
+      .int()
+      .min(0)
+      .describe('UTF-16 code-unit offset of the `@` in the raw body text.'),
+    length: z
+      .number()
+      .int()
+      .min(1)
+      .describe('Length in UTF-16 code units of the matched `@handle`, `@` included.'),
+    authorId: z.string().min(1).describe('The live author this occurrence resolved to.'),
+  })
+  .openapi('MentionSpan');
+
+export type MentionSpan = z.infer<typeof MentionSpanSchema>;
+
+/**
  * One durable item in a room's log.
  *
  * `seq` is per-room and monotonic — it is the cursor an unread divider, a
@@ -522,6 +563,12 @@ export const RoomEntrySchema = z
     mentions: z
       .array(z.string())
       .describe('Author ids resolved from @name at write time. Never re-parsed by the client.'),
+    mentionSpans: z
+      .array(MentionSpanSchema)
+      .optional()
+      .describe(
+        "Where each resolved @mention sits in the raw body, so the client can draw a pill over it without re-parsing the text. One span per written @handle (not deduped like `mentions`), resolved once at write time. Optional for the same reason as `reactions`: the server's internal entry shape and entries that predate the field carry none, and absent should be read as empty — every wire path that carries a local room entry populates it."
+      ),
     sessionId: z.string().nullable(),
     cascadeRoot: z.string().min(1),
     cascadeDepth: z.number().int().min(0),
