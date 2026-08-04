@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef } from 'react';
 import { Plus } from 'lucide-react';
 import {
   Button,
@@ -19,6 +19,15 @@ interface NewDirectMessageMenuProps {
    * gives a one-to-one; two or more give a group.
    */
   onStart: (chosen: AgentPickerCandidate[]) => void;
+  /**
+   * Whether the picker is showing. Controlled by the caller, because the "+"
+   * this hangs off is no longer the only way in: the section header's
+   * "New message…" opens the same panel (spec `rooms` §14.1), and two owners of
+   * one panel is two panels waiting to happen.
+   */
+  open: boolean;
+  /** Show or hide the picker. */
+  onOpenChange: (open: boolean) => void;
 }
 
 /**
@@ -59,12 +68,11 @@ interface NewDirectMessageMenuProps {
  * room sheet stopped doing that; this is the same panel, offering the same way
  * out of the same sentence.
  */
-export function NewDirectMessageMenu({ onStart }: NewDirectMessageMenuProps) {
+export function NewDirectMessageMenu({ onStart, open, onOpenChange }: NewDirectMessageMenuProps) {
   // Read here rather than taken as a prop: the fleet is this slice's business,
   // and asking for it directly is what keeps the sidebar from having to know
   // about it (see the module doc on `features/room-management`).
   const roster = useAgentPickerCandidates();
-  const [open, setOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
   /**
@@ -77,14 +85,17 @@ export function NewDirectMessageMenu({ onStart }: NewDirectMessageMenuProps) {
    * it, so there is no half-assembled conversation to lose.
    */
   const startAgentCreation = () => {
-    setOpen(false);
+    onOpenChange(false);
     useAgentCreationStore.getState().open();
   };
 
   return (
-    <ResponsivePopover open={open} onOpenChange={setOpen} modal fullHeight>
+    <ResponsivePopover open={open} onOpenChange={onOpenChange} modal fullHeight>
       <ResponsivePopoverTrigger asChild>
-        <SidebarGroupAction aria-label="New direct message">
+        {/* "New message", not "New direct message": the section header's own
+            item beside it opens this very panel and is named that, and the
+            panel it opens is titled that too. One action, one name. */}
+        <SidebarGroupAction aria-label="New message">
           <Plus />
         </SidebarGroupAction>
       </ResponsivePopoverTrigger>
@@ -115,7 +126,7 @@ export function NewDirectMessageMenu({ onStart }: NewDirectMessageMenuProps) {
           inputRef={searchRef}
           roster={roster}
           onSubmit={(chosen) => {
-            setOpen(false);
+            onOpenChange(false);
             onStart(chosen);
           }}
           submitLabel={(count) => (count > 1 ? 'Start group conversation' : 'Start conversation')}

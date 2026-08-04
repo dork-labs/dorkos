@@ -14,3 +14,10 @@ export { AgentActivityBadge } from './ui/AgentActivityBadge';
 export { AgentOnboardingCard } from './ui/AgentOnboardingCard';
 export { GroupsHintCard } from './ui/GroupsHintCard';
 export { GroupCreateInput } from './ui/GroupCreateInput';
+// The section header and the item lists it renders — exported for the Dev
+// Playground, which showcases the sibling agent-row menu the same way.
+export { SidebarSectionHeader } from './ui/SidebarSectionHeader';
+export {
+  buildAgentsHeaderMenuNodes,
+  buildChannelsHeaderMenuNodes,
+} from './ui/SectionHeaderMenuItems';

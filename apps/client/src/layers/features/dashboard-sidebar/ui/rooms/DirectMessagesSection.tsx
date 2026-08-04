@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { toast } from 'sonner';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import {
@@ -10,7 +11,9 @@ import type { AgentPickerCandidate } from '@/layers/entities/agent';
 import { useSidebarPrefs, useUpdateSidebarPrefs, setDmsCollapsed } from '@/layers/entities/config';
 import { directMessageTitle, useStartDirectMessage } from '@/layers/entities/room';
 import type { SidebarItemVisual } from '../../model/sidebar-item';
-import { RoomSectionHeader } from './RoomSectionHeader';
+import { useMarkRoomsRead } from '../../model/use-mark-rooms-read';
+import { SidebarSectionHeader } from '../SidebarSectionHeader';
+import { buildDirectMessagesHeaderMenuNodes } from '../SectionHeaderMenuItems';
 import { RoomRow } from './RoomRow';
 import { NewDirectMessageMenu } from '@/layers/features/room-management';
 
@@ -26,6 +29,11 @@ interface DirectMessagesSectionProps {
   dms: RoomSummary[];
   /** Whether any conversation is in a group, which changes what an empty list means. */
   hasGroupedDms: boolean;
+  /**
+   * Every conversation with unread, grouped ones included — so "Mark all read"
+   * means all of them and not just the ones this section happens to draw.
+   */
+  unreadDmIds: string[];
   /** The faces to draw for a conversation, from the item view model. */
   visualOf: (room: RoomSummary) => SidebarItemVisual;
   /** True while the room list is loading with nothing cached. */
@@ -52,6 +60,7 @@ interface DirectMessagesSectionProps {
 export function DirectMessagesSection({
   dms,
   hasGroupedDms,
+  unreadDmIds,
   visualOf,
   isLoading,
   error,
@@ -62,6 +71,11 @@ export function DirectMessagesSection({
   const { dmsCollapsed } = useSidebarPrefs();
   const { update } = useUpdateSidebarPrefs();
   const startDirectMessage = useStartDirectMessage();
+  const markRoomsRead = useMarkRoomsRead();
+  // The picker's open state lives here rather than inside the "+" it hangs off,
+  // because the header menu's "New message…" opens the same panel — one state,
+  // two ways in, no second picker.
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   // Every agent is offerable, always — the picker reads the fleet unfiltered. It
   // used to exclude anyone already on a DM's roster, which was how a duplicate
@@ -91,14 +105,24 @@ export function DirectMessagesSection({
     );
   };
 
+  const toggleCollapsed = () => update((prev) => setDmsCollapsed(prev, !prev.dmsCollapsed));
+
   return (
     <SidebarGroup>
-      <RoomSectionHeader
+      <SidebarSectionHeader
         label="Direct messages"
         collapsed={dmsCollapsed}
-        onToggle={() => update((prev) => setDmsCollapsed(prev, !prev.dmsCollapsed))}
+        onToggle={toggleCollapsed}
+        hasSectionAction
+        nodes={buildDirectMessagesHeaderMenuNodes({
+          collapsed: dmsCollapsed,
+          hasUnread: unreadDmIds.length > 0,
+          onNewMessage: () => setPickerOpen(true),
+          onMarkAllRead: () => markRoomsRead(unreadDmIds),
+          onToggleCollapsed: toggleCollapsed,
+        })}
       />
-      <NewDirectMessageMenu onStart={handleStart} />
+      <NewDirectMessageMenu open={pickerOpen} onOpenChange={setPickerOpen} onStart={handleStart} />
 
       {!dmsCollapsed && (
         <SidebarMenu>

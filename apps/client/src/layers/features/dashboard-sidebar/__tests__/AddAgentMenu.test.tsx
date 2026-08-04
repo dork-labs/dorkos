@@ -86,15 +86,15 @@ describe('AddAgentMenu', () => {
   it('opens popover on click showing three actions', () => {
     renderMenu();
     fireEvent.click(screen.getByLabelText('Add agent'));
-    expect(screen.getByText('Create agent')).toBeInTheDocument();
+    expect(screen.getByText('New agent…')).toBeInTheDocument();
     expect(screen.getByText('Bring in a project')).toBeInTheDocument();
     expect(screen.getByText('Browse Marketplace')).toBeInTheDocument();
   });
 
-  it('Create agent opens creation dialog on default tab', () => {
+  it('New agent… opens creation dialog on default tab', () => {
     renderMenu();
     fireEvent.click(screen.getByLabelText('Add agent'));
-    fireEvent.click(screen.getByText('Create agent'));
+    fireEvent.click(screen.getByText('New agent…'));
     expect(mockOpen).toHaveBeenCalledWith();
   });
 
@@ -116,17 +116,17 @@ describe('AddAgentMenu', () => {
   it('hides the New group entry when onNewGroup is not provided', () => {
     renderMenu();
     fireEvent.click(screen.getByLabelText('Add agent'));
-    expect(screen.queryByText('New group')).not.toBeInTheDocument();
+    expect(screen.queryByText('New group…')).not.toBeInTheDocument();
   });
 
   it('New group opens the inline create flow (DOR-329 entry point)', () => {
     const onNewGroup = vi.fn();
     renderMenu({ onNewGroup });
     fireEvent.click(screen.getByLabelText('Add agent'));
-    fireEvent.click(screen.getByText('New group'));
+    fireEvent.click(screen.getByText('New group…'));
     expect(onNewGroup).toHaveBeenCalledOnce();
     // The popover closes after selection.
-    expect(screen.queryByText('Create agent')).not.toBeInTheDocument();
+    expect(screen.queryByText('New agent…')).not.toBeInTheDocument();
   });
 
   // --- Smart-group presets (DOR-338) ---
@@ -147,7 +147,7 @@ describe('AddAgentMenu', () => {
     fireEvent.click(screen.getByText('Active now'));
     expect(onCreatePresetSmartGroup).toHaveBeenCalledWith(preset);
     // The popover closes — no dialog opened.
-    expect(screen.queryByText('Create agent')).not.toBeInTheDocument();
+    expect(screen.queryByText('New agent…')).not.toBeInTheDocument();
   });
 
   it('renders one chip per preset and a trailing "Custom rules…" entry', () => {

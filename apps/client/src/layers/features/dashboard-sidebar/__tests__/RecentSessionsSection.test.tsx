@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { createMockSession } from '@dorkos/test-utils';
 import type { Session } from '@dorkos/shared/types';
@@ -55,6 +55,7 @@ function renderSection(
       agents={{}}
       displayNames={{}}
       onSelectSession={vi.fn()}
+      onNewSession={vi.fn()}
       {...overrides}
     />,
     { wrapper: Wrapper }
@@ -113,5 +114,15 @@ describe('RecentSessionsSection', () => {
     const sessions = [createMockSession({ id: 't1', title: 'Task session', origin: 'task' })];
     renderSection(sessions);
     expect(screen.getByText('+ 1 automated')).toBeInTheDocument();
+  });
+  it('starts a session from the header menu', () => {
+    const onNewSession = vi.fn();
+    renderSection([createMockSession({ id: 'u1', title: 'User session 1' })], { onNewSession });
+
+    // Radix opens on pointerdown, not on click.
+    fireEvent.pointerDown(screen.getByLabelText('Recent section actions'));
+    fireEvent.click(within(screen.getByRole('menu')).getByText('New session'));
+
+    expect(onNewSession).toHaveBeenCalledOnce();
   });
 });

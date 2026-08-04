@@ -117,7 +117,9 @@ export class RoomsPage {
   /**
    * One sidebar section, found by its collapse header.
    *
-   * @param label - The header's label, exactly as `RoomSectionHeader` is given it.
+   * @param label - The header's label, exactly as `SidebarSectionHeader` is given
+   *   it. Matched exactly, so it resolves to the collapse button and never to
+   *   the header's "… section actions" trigger beside it.
    */
   section(label: string): Locator {
     return this.page
@@ -232,7 +234,7 @@ export class RoomsPage {
 
   /** Open the "+" beside Direct messages. */
   async openDirectMessagePicker(): Promise<void> {
-    await this.directMessages.getByRole('button', { name: 'New direct message' }).click();
+    await this.directMessages.getByRole('button', { name: 'New message' }).click();
     await this.agentSearch.waitFor({ state: 'visible' });
   }
 
