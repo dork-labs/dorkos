@@ -81,6 +81,21 @@ const requiredField: ConfigField = {
   required: true,
 };
 
+// Mirrors the shipped DM Access field (slack-manifest.ts / telegram-adapter.ts):
+// a required radio-cards select, whose label reaches the radiogroup through
+// aria-labelledby rather than <label for> — the surface DOR-651 actually broke.
+const requiredRadioCardsField: ConfigField = {
+  key: 'dmPolicy',
+  label: 'DM Access',
+  type: 'select',
+  required: true,
+  displayAs: 'radio-cards',
+  options: [
+    { label: 'Open (anyone)', value: 'open' },
+    { label: 'Allowlist', value: 'allowlist' },
+  ],
+};
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -138,13 +153,16 @@ describe('ConfigFieldInput', () => {
 
   it('renders a password input for type "password"', () => {
     renderField(passwordField);
-    const input = screen.getByLabelText('API Token');
+    // The required field's label text now carries a real asterisk node (it was
+    // CSS ::after content, invisible to textContent), so the lookup anchors an
+    // exact regex instead of the bare string.
+    const input = screen.getByLabelText(/^API Token\*?$/);
     expect(input).toHaveAttribute('type', 'password');
   });
 
   it('toggles password visibility when eye button is clicked', () => {
     renderField(passwordField);
-    const input = screen.getByLabelText('API Token');
+    const input = screen.getByLabelText(/^API Token\*?$/);
     expect(input).toHaveAttribute('type', 'password');
 
     fireEvent.click(screen.getByRole('button', { name: /show password/i }));
@@ -197,18 +215,51 @@ describe('ConfigFieldInput', () => {
     expect(screen.queryByText('text-red-500')).toBeNull();
   });
 
-  // --- required asterisk -----------------------------------------------------
+  // --- required asterisk -------------------------------------------------
+  // The asterisk must be visible in the DOM but excluded from the accessible
+  // name (DOR-651). jsdom cannot see CSS pseudo-elements, so a reintroduced
+  // ::after asterisk is caught by the DOM-shape test below (the span would be
+  // gone), not by the accessible-name tests — those guard the aria-hidden
+  // attribute on the span. The ::after-joins-the-name behavior itself was
+  // verified against Chromium's real accessibility tree in review.
 
-  it('applies required asterisk class when field.required is true', () => {
+  it('renders a visible, aria-hidden asterisk next to a required field label', () => {
     renderField(requiredField);
     const label = screen.getByText('API Key');
-    expect(label.className).toMatch(/after:/);
+    const asterisk = label.querySelector('span[aria-hidden="true"]');
+    expect(asterisk).not.toBeNull();
+    expect(asterisk).toHaveTextContent('*');
+    expect(asterisk).toHaveClass('text-destructive');
   });
 
-  it('does not apply required asterisk class when field.required is false', () => {
+  it('does not render an asterisk when field.required is false', () => {
     renderField(textField);
     const label = screen.getByText('Name');
-    expect(label.className).not.toMatch(/after:text-destructive/);
+    expect(label.querySelector('span[aria-hidden="true"]')).toBeNull();
+  });
+
+  it('computes the accessible name of a required field from the label text only, excluding the asterisk', () => {
+    renderField(requiredField);
+    // If the asterisk leaked into the accessible name, this query (exact match,
+    // the getByRole default) would fail to find the control.
+    const input = screen.getByRole('textbox', { name: 'API Key' });
+    expect(input).toBeInTheDocument();
+    expect(input).toHaveAttribute('aria-required', 'true');
+  });
+
+  it('computes the accessible name of the required radio-cards group from the label text only', () => {
+    // The radio-cards label reaches its group via aria-labelledby, a different
+    // accessible-name mechanism from <label for> — this was the field the bug
+    // report named ("DM Access *").
+    renderField(requiredRadioCardsField, { value: 'allowlist' });
+    const group = screen.getByRole('radiogroup', { name: 'DM Access' });
+    expect(group).toBeInTheDocument();
+    expect(group).toHaveAttribute('aria-required', 'true');
+
+    const label = screen.getByText('DM Access');
+    const asterisk = label.querySelector('span[aria-hidden="true"]');
+    expect(asterisk).not.toBeNull();
+    expect(asterisk).toHaveTextContent('*');
   });
 
   // --- showWhen conditional visibility ----------------------------------------
