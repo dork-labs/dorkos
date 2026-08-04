@@ -5,6 +5,7 @@ import {
   ChevronRight,
   Compass,
   MessageSquare,
+  Plug,
   Plus,
   Clock,
   Server,
@@ -13,7 +14,12 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { DORKBOT_ONBOARDING_LINES } from '@dorkos/shared/dorkbot-templates';
-import { useAgentCreationStore, useAppStore, useSettingsDeepLink } from '@/layers/shared/model';
+import {
+  useAgentCreationStore,
+  useAppStore,
+  useOpenConnections,
+  useSettingsDeepLink,
+} from '@/layers/shared/model';
 import { useDefaultAgentSession } from '@/layers/entities/config';
 import { useProfile } from '../model/use-profile';
 import { ProfileRolePicker } from './ProfileRolePicker';
@@ -36,20 +42,21 @@ type ProfileRowPhase = 'closed' | 'open' | 'saving' | 'error';
  * Compact sidebar "Getting started" card. The first row starts a conversation
  * with the default agent (DorkBot on a fresh install); the rest are deep links
  * into the real surface for each task — creating an agent, scheduling a task,
- * connecting more runtimes — rather than a replay of onboarding steps. Shown
- * after the first-run flow finishes, until the user dismisses it.
+ * connecting more runtimes, connecting a service — rather than a replay of
+ * onboarding steps. Shown after the first-run flow finishes, until the user
+ * dismisses it.
  *
  * While the profile is still empty, a "Tell DorkBot about your work" row sits
  * right after "Talk to DorkBot" and expands the shared role picker inline
- * (spec `user-profile-onboarding` §ProgressCard items). A "Connect a service"
- * row is deliberately NOT here yet: the Connections page it would deep-link to
- * ships in `specs/connector-completion`, and until that route exists the row
- * would be a dead link.
+ * (spec `user-profile-onboarding` §ProgressCard items). The "Connect a service"
+ * row deep-links to the Accounts region of the Connections page
+ * (`/connections?region=accounts`).
  */
 export function ProgressCard({ onDismiss }: ProgressCardProps) {
   const reducedMotion = useReducedMotion();
   const navigate = useNavigate();
   const { open: openSettings } = useSettingsDeepLink();
+  const openConnections = useOpenConnections();
   const requestTour = useAppStore((s) => s.requestTour);
   const { startSession } = useDefaultAgentSession();
   const { roles, rolePromptDismissedAt, isLoading, saveRoles } = useProfile();
@@ -110,6 +117,11 @@ export function ProgressCard({ onDismiss }: ProgressCardProps) {
       icon: Server,
       label: 'Connect more runtimes',
       onClick: () => openSettings('runtimes'),
+    },
+    {
+      icon: Plug,
+      label: 'Connect a service',
+      onClick: () => openConnections('accounts'),
     },
   ];
 

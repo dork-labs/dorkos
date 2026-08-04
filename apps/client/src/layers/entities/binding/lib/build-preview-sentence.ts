@@ -13,6 +13,30 @@ const STRATEGY_PHRASES: Record<SessionStrategy, string> = {
   stateless: 'No memory between messages',
 };
 
+/**
+ * Human labels for a binding's chat-kind filter, keyed by the platform's raw
+ * wire value. The bare platform-sense "channel" is qualified ("Broadcast
+ * channel") so it never reads as the cockpit's conversation-sense Channels nav.
+ * Wire values (dm/group/channel/thread) are unchanged — only the display label.
+ */
+export const CHAT_TYPE_OPTIONS: { value: 'dm' | 'group' | 'channel' | 'thread'; label: string }[] =
+  [
+    { value: 'dm', label: 'Direct message' },
+    { value: 'group', label: 'Group' },
+    { value: 'channel', label: 'Broadcast channel' },
+    { value: 'thread', label: 'Thread' },
+  ];
+
+/**
+ * Resolve a chat-kind wire value to its human label, falling back to the raw
+ * value for kinds a platform reports that are outside the known set.
+ *
+ * @param value - The chat-kind wire value (e.g. `dm`, `channel`).
+ */
+export function chatTypeLabel(value: string): string {
+  return CHAT_TYPE_OPTIONS.find((option) => option.value === value)?.label ?? value;
+}
+
 interface BuildPreviewSentenceInput {
   sessionStrategy: SessionStrategy;
   chatDisplayName?: string;
@@ -34,6 +58,6 @@ export function buildPreviewSentence({
 }: BuildPreviewSentenceInput): string {
   const strategy = STRATEGY_PHRASES[sessionStrategy];
   if (chatDisplayName) return `${strategy} in ${chatDisplayName}`;
-  if (channelType) return `${strategy} · ${channelType}`;
+  if (channelType) return `${strategy} · ${chatTypeLabel(channelType)}`;
   return strategy;
 }

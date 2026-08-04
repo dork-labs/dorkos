@@ -26,9 +26,15 @@ describe('buildPreviewSentence', () => {
     );
   });
 
-  it('appends channel type with separator when no chat name is present', () => {
+  it('appends the humanized chat type with a separator when no chat name is present', () => {
     expect(buildPreviewSentence({ sessionStrategy: 'per-chat', channelType: 'group' })).toBe(
-      'One thread for each conversation · group'
+      'One thread for each conversation · Group'
+    );
+  });
+
+  it('humanizes the bare platform "channel" kind as "Broadcast channel"', () => {
+    expect(buildPreviewSentence({ sessionStrategy: 'per-chat', channelType: 'channel' })).toBe(
+      'One thread for each conversation · Broadcast channel'
     );
   });
 
