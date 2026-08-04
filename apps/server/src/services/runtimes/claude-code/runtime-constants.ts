@@ -24,6 +24,7 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
   supportsCostTracking: true,
   supportsResume: true,
   supportsMcp: true,
+  supportsManagedMcpServers: true,
   supportsQuestionPrompt: true,
   supportsPlugins: true,
   // Native git is suppressed via `excludeDynamicSections` (ADR-0273 A2), so the

@@ -6,7 +6,7 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 vi.mock('@/layers/entities/runtime', () => ({
-  useCapabilitiesForRuntime: vi.fn(() => ({ supportsMcp: true })),
+  useCapabilitiesForRuntime: vi.fn(() => ({ supportsManagedMcpServers: true })),
 }));
 
 import { AgentMcpServers } from '../ui/AgentMcpServers';
@@ -59,7 +59,7 @@ describe('AgentMcpServers', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(useCapabilitiesForRuntime).mockReturnValue({
-      supportsMcp: true,
+      supportsManagedMcpServers: true,
     } as RuntimeCapabilities);
   });
 
@@ -119,9 +119,9 @@ describe('AgentMcpServers', () => {
     expect(within(container).getByRole('button', { name: 'Retry' })).toBeInTheDocument();
   });
 
-  it('disables Add and explains when the runtime cannot run managed servers', async () => {
+  it('disables Add and explains when the runtime cannot run managed servers (OpenCode)', async () => {
     vi.mocked(useCapabilitiesForRuntime).mockReturnValue({
-      supportsMcp: false,
+      supportsManagedMcpServers: false,
     } as RuntimeCapabilities);
     const transport = createMockTransport({
       listAgentMcpServers: vi.fn().mockResolvedValue([]),
@@ -136,6 +136,29 @@ describe('AgentMcpServers', () => {
     );
     expect(
       within(container).queryByRole('button', { name: /add server/i })
+    ).not.toBeInTheDocument();
+  });
+
+  it('enables Add for a Codex agent (supportsManagedMcpServers is the gate, not supportsMcp)', async () => {
+    // Codex is the DOR-892 case: it hosts no in-process DorkOS tool server
+    // (`supportsMcp: false`) but DOES accept injected managed servers. The Add
+    // affordance must key on `supportsManagedMcpServers`, so a false `supportsMcp`
+    // here must not gate it off.
+    vi.mocked(useCapabilitiesForRuntime).mockReturnValue({
+      supportsMcp: false,
+      supportsManagedMcpServers: true,
+    } as RuntimeCapabilities);
+    const transport = createMockTransport({
+      listAgentMcpServers: vi.fn().mockResolvedValue([]),
+      getMcpConfig: vi.fn().mockResolvedValue({ servers: [] }),
+    });
+    const { container } = renderComponent(transport);
+
+    await waitFor(() =>
+      expect(within(container).getByRole('button', { name: /add server/i })).toBeInTheDocument()
+    );
+    expect(
+      within(container).queryByText(/can.t run DorkOS-managed MCP servers yet/i)
     ).not.toBeInTheDocument();
   });
 

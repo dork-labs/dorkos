@@ -62,6 +62,7 @@ const CAPS: RuntimeCapabilities = {
   supportsCostTracking: true,
   supportsResume: true,
   supportsMcp: true,
+  supportsManagedMcpServers: true,
   supportsQuestionPrompt: true,
   supportsPlugins: true,
   nativeContext: [],

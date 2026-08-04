@@ -8348,6 +8348,10 @@
                           "supportsMcp": {
                             "type": "boolean"
                           },
+                          "supportsManagedMcpServers": {
+                            "type": "boolean",
+                            "description": "Whether DorkOS can inject the agent’s own managed MCP servers into its sessions (distinct from the in-process DorkOS tool server, `supportsMcp`)."
+                          },
                           "supportsQuestionPrompt": {
                             "type": "boolean"
                           },
@@ -8493,6 +8497,7 @@
                           "supportsCostTracking",
                           "supportsResume",
                           "supportsMcp",
+                          "supportsManagedMcpServers",
                           "supportsQuestionPrompt",
                           "supportsPlugins",
                           "permissionModes",
