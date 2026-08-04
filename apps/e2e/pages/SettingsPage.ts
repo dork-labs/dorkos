@@ -29,20 +29,20 @@ export class SettingsPage {
   }
 
   /**
-   * Switch tabs, and wait for the outgoing panel to finish leaving.
+   * Switch tabs, and confirm the dialog is showing exactly one panel.
    *
-   * For ~150ms after a switch there are genuinely **two** `role="tabpanel"`
-   * elements in the dialog: the panel host crossfades with
-   * `AnimatePresence mode="popLayout"`, and the exiting wrapper re-renders
-   * against the new tab, so both wrappers hold a panel with the same `id`.
-   * Settling here rather than in each caller is what keeps {@link
-   * SettingsPage.activePanel} unambiguous — and it is why `switches.count()`
-   * once answered 16 for a tab that has 8 switches: `count()` does not retry, so
-   * it could sample mid-animation and see both copies.
+   * There used to be a ~150ms window after every switch in which the dialog
+   * genuinely held **two** `role="tabpanel"` elements with the same `id`: the
+   * panel host crossfaded with `AnimatePresence mode="popLayout"`, and the
+   * exiting wrapper re-rendered against the new tab, so both wrappers drew the
+   * incoming panel. That is why `switches.count()` once answered 16 for a tab
+   * that has 8 — `count()` does not retry, so it could sample mid-animation and
+   * see both copies. DOR-693 removed the crossfade, so the window is gone and
+   * {@link SettingsPage.activePanel} is unambiguous at every instant.
    *
-   * (The duplicate `id` is a real defect in `navigation-layout.tsx`, not
-   * something this suite should paper over — but it is a defect about tab
-   * animation, and these tests are about settings.)
+   * The count assertion stays as the cheap always-on guard. The instant-by-
+   * instant proof lives in `settings-tab-panels.spec.ts`, which samples the
+   * whole transition rather than its endpoints.
    */
   async switchTab(tabName: string) {
     await this.dialog.getByRole('tab', { name: new RegExp(tabName, 'i') }).click();
