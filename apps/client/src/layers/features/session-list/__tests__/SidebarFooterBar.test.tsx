@@ -79,7 +79,7 @@ vi.mock('@/layers/shared/model/extension-registry', () => ({
     {
       id: 'settings',
       icon: MockIcon,
-      label: 'App Settings',
+      label: 'Settings',
       onClick: () => mockSetSettingsOpen(true),
       priority: 2,
     },
@@ -154,7 +154,7 @@ describe('SidebarFooterBar', () => {
   it('opens settings via URL deep link when settings button is clicked', () => {
     render(<SidebarFooterBar />);
 
-    fireEvent.click(screen.getByLabelText('App Settings'));
+    fireEvent.click(screen.getByLabelText('Settings'));
     expect(mockOpenSettings).toHaveBeenCalled();
   });
 

@@ -13,7 +13,7 @@ export const SIDEBAR_FOOTER_BUTTONS: SidebarFooterContribution[] = [
   {
     id: 'settings',
     icon: Settings,
-    label: 'App Settings',
+    label: 'Settings',
     onClick: () => {
       // Overridden in SidebarFooterBar — the actual handler calls
       // `useSettingsDeepLink().open()` which requires the router context.
