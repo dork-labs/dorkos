@@ -108,6 +108,17 @@ export interface BindingSubsystemDeps {
    */
   operatorAuthorId?: () => string;
   /**
+   * Refresh a bridged room's `visibility` badge from the platform, right after
+   * it is created — the bridge-create half of chats-as-channels §8's refresh
+   * cadence (task 1.13; the adapter-start/reconnect half lives in
+   * `AdapterManager.emitAdapterLifecycle`, which is also this function's other
+   * caller). The composition root wires this to `AdapterManager`'s own
+   * `getMe()`-backed refresh, so the binding subsystem never needs to know an
+   * adapter registry exists. Best-effort by contract: `BridgeLifecycle.bridge`
+   * awaits it but a failure must never fail the bridge it followed.
+   */
+  refreshVisibility?: (adapterId: string) => Promise<void>;
+  /**
    * The room store, for outbound delivery to read an entry by id — provenance
    * classification and the catch-up scan (chats-as-channels §6). Present only
    * once the rooms subsystem is wired; without it, outbound delivery is not
@@ -360,6 +371,7 @@ export class BindingSubsystem {
           chatNotice,
           operatorAuthorId: deps.operatorAuthorId,
           adopter,
+          refreshVisibility: deps.refreshVisibility,
         });
         // Held for the cockpit's bridge action (DOR-878), which reaches it via
         // the adapter manager. The same coordinator the ingest/delivery halves use.

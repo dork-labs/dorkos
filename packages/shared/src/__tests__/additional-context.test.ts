@@ -18,9 +18,9 @@ const ALL_KINDS: ContextKind[] = [
 
 /** A minimal but complete room context — every field the union requires. */
 const SAMPLE_ROOM_CONTEXT = {
-  room: { id: 'room-1', kind: 'channel', name: '#build' },
+  room: { id: 'room-1', kind: 'channel', name: '#build', bridged: false },
   thread: null,
-  members: [{ handle: 'ana', displayName: 'Ana', isPerson: false, isSelf: true }],
+  members: [{ handle: 'ana', displayName: 'Ana', isPerson: false, isSelf: true, origin: 'local' }],
   working: [],
   pending: [],
   pendingTruncated: false,

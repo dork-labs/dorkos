@@ -36,8 +36,15 @@ const UNKNOWN_SENDER = 'unknown';
 /** Maximum inbound message content length (32 KB). */
 export const MAX_CONTENT_LENGTH = 32_768;
 
-/** Telegram-specific formatting rules injected into agent system prompts via responseContext. */
-const TELEGRAM_FORMATTING_RULES = [
+/**
+ * Telegram-specific formatting rules injected into agent system prompts via
+ * `responseContext.formattingInstructions`.
+ *
+ * Exported so the chat bridge (`apps/server/src/services/relay/chat-bridge/`)
+ * can carry the SAME text into `room_context` for a room-triggered turn
+ * (chats-as-channels spec §15) — never a second copy of the rules.
+ */
+export const TELEGRAM_FORMATTING_RULES = [
   'FORMATTING RULES (you MUST follow these):',
   '- Do NOT use Markdown tables. Telegram cannot render them.',
   '- For structured data: use bullet points or bold key-value pairs.',

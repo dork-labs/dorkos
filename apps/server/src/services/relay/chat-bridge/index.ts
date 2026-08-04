@@ -59,6 +59,13 @@ export {
 } from './deliver.js';
 export { BridgeCatchUp, type BridgeCatchUpDeps, type CatchUpDelivery } from './catch-up.js';
 export {
+  bridgedRoomFraming,
+  topicNamesForEntries,
+  reportsVisibility,
+  type BridgedRoomFraming,
+  type VisibilityReportingAdapter,
+} from './room-context-framing.js';
+export {
   ChatBridgePresence,
   type ChatBridgePresenceDeps,
   type PresenceSignalPublisher,

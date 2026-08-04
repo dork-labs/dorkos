@@ -81,6 +81,10 @@ import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../lib/logger.js';
 import { eventFanOut } from '../core/event-fan-out.js';
 import type { BridgeStore, PlatformChatType } from '../relay/chat-bridge/bridge-store.js';
+import {
+  bridgedRoomFraming,
+  topicNamesForEntries,
+} from '../relay/chat-bridge/room-context-framing.js';
 import type { AuthorRecord, AuthorRegistry, ExternalAuthorIdentity } from './author-registry.js';
 import { deriveCascade } from './cascade-guard.js';
 import type { EngagedWindow } from './engagement.js';
@@ -302,8 +306,13 @@ export class RoomService {
       // An ARCHIVED bridge still counts, and that is the deliberate direction.
       // Unbinding stops new messages arriving; it does not remove the ones
       // already in the log, and a room whose history holds a stranger's words
-      // should not quietly lose the sentence that says so.
-      isBridgedRoom: (roomId) => this.bridges.findBridgeByRoom(roomId) !== null,
+      // should not quietly lose the sentence that says so — so this reads
+      // `findBridgeByRoom`, not a live-only lookup.
+      bridgedFraming: (roomId) => {
+        const bridge = this.bridges.findBridgeByRoom(roomId);
+        return bridge ? bridgedRoomFraming(bridge) : null;
+      },
+      topicNamesFor: (entryIds) => topicNamesForEntries(this.bridges, entryIds),
       runner: deps.turns,
       budget: deps.budget,
       maxAgentDepth: deps.maxAgentDepth,

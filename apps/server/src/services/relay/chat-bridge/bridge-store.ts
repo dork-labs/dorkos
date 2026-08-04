@@ -27,6 +27,7 @@ import {
   and,
   eq,
   gt,
+  inArray,
   isNull,
   lt,
   type Db,
@@ -498,6 +499,28 @@ export class BridgeStore {
         and(eq(roomBridgeMessages.entryId, entryId), eq(roomBridgeMessages.direction, 'outbound'))
       )
       .run();
+  }
+
+  /**
+   * The refs for a batch of entries, keyed by entry id — `room_context`'s
+   * per-turn read of every pending and own-recent entry's forum-topic label
+   * (chats-as-channels §5.6, §9.2), one query rather than one per entry.
+   * Entries with no ref of either direction are simply absent from the map.
+   *
+   * @param entryIds - The entries to look up. An empty list short-circuits to
+   *   an empty map without a query — the common case for an unbridged room's
+   *   turn, and for a bridged room's turn before this batch is ever called.
+   */
+  findRefsByEntries(entryIds: readonly string[]): Map<string, ExternalRef> {
+    if (entryIds.length === 0) return new Map();
+    const rows = this.db
+      .select()
+      .from(roomBridgeMessages)
+      .where(inArray(roomBridgeMessages.entryId, entryIds))
+      .all();
+    const map = new Map<string, ExternalRef>();
+    for (const row of rows) map.set(row.entryId, toRef(row));
+    return map;
   }
 
   /**

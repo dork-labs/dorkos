@@ -62,6 +62,7 @@ function context(overrides: Partial<RoomContextData> = {}): RoomContextData {
         at: '2026-07-28T14:01:00.000Z',
         text: 'can someone check the deploy',
         mentionsMe: false,
+        topicLabel: null,
       },
       {
         authorHandle: 'kai',
@@ -72,6 +73,7 @@ function context(overrides: Partial<RoomContextData> = {}): RoomContextData {
         at: '2026-07-28T14:02:00.000Z',
         text: 'on it',
         mentionsMe: false,
+        topicLabel: null,
       },
     ],
     pendingTruncated: false,
@@ -85,6 +87,7 @@ function context(overrides: Partial<RoomContextData> = {}): RoomContextData {
         at: '2026-07-28T13:58:00.000Z',
         text: 'I looked at this yesterday.',
         mentionsMe: false,
+        topicLabel: null,
       },
     ],
     acknowledgments: [],
@@ -114,6 +117,7 @@ function said(text: string): RoomContextData['pending'][number] {
     at: '2026-07-28T14:01:00.000Z',
     text,
     mentionsMe: false,
+    topicLabel: null,
   };
 }
 
