@@ -6,14 +6,16 @@
 
 ## Session
 
-- **Worktree:** `~/.dork/workspaces/dorkos/dor-888-runtimes-declaration` (branch `dor-888-runtimes-declaration`, PR 1 / P1 declaration layer)
+- **Worktrees:** two, one per phase.
+  - P1 (declaration layer): `~/.dork/workspaces/dorkos/dor-888-runtimes-declaration`, branch `dor-888-runtimes-declaration` — PR #730, merged through the queue.
+  - P2 (the tab itself): `~/.dork/workspaces/dorkos/runtimes-settings-tab`, branch `runtimes-settings-tab` — tasks 2.1 to 2.14 plus the adversarial-review fixes.
 - **Tracker:** DOR-888
 - **Orchestration:** main-session orchestrator + resumable Opus/Sonnet implementation agents; batch-level verification gates (standing operator preference) + adversarial REVIEW.md review before each PR
 
 ## Progress
 
-**Status:** In Progress
-**Tasks Completed:** 9 / 25
+**Status:** Complete
+**Tasks Completed:** 25 / 25
 
 ## Tasks Completed
 
@@ -28,23 +30,70 @@
 - Task 1.7: server free of `runtimeSupportsEffort` — `resolveSessionDefaults` takes `supportsEffort?: boolean` (omitted → true, permissive), overlay routes the answer through a widened `SessionSettingsOverlayPort.get` returning narrow `getCapabilities`; prove-it-can-fail: hardcoding the gate red 7 tests
 - Task 1.9: `settingsForRuntime` selector in entities/runtime; `configSectionForRuntime`/runtime-config-section.ts deleted; both consumers re-pointed; capability-map-not-loaded case falls back to the global trust leaf (tested + commented). NOTE for P2: shared `createMockTransport().getCapabilities()` registers only claude-code — add codex/opencode there, then delete the local override in ExecutionDefaultsCard.test.tsx
 - Task 1.10: adding-a-runtime.md documents `settings` (three-part RuntimeCapabilities section, field table, renderer + static/dynamic paragraphs, real claude-code example)
+- Task 1.11: P1 gate (full suite 29/29 uncached, live-server wire proof) + adversarial REVIEW.md review (1 Important + 5 nits, all fixed, delta-verified) + PR #730 (merged via queue)
+- Task 2.1: `buildRuntimeCardSummary` pure segment builder (17 table tests, mutation-verified)
+- Task 2.2: ModelRow / EffortRow / TrustRow props-only rows (per-runtime test ids; `knownModelsFrom` guards the gone-model accusation during catalog load)
+- Task 2.3: `useTrustStopWrites` (consent contract verbatim; single-request ack+stop mutation-proven; one call per tree)
+- Task 2.4: RuntimeCardView + RuntimeCardHeader (structural no-propagation: toggle is the button, controls are siblings; accent via `--runtime-accent`)
+- Task 2.5: ClaudeAccountsSection (all `claude-account-*` ids byte-identical; add-account behind the quiet affordance per mockup)
+- Task 2.6: PowerSourceSection (view/container split for showcasing) + kind-keyed section registry (unknown kinds render nothing)
+- Task 2.7: GlobalTrustRow (presentational; standing-autonomy note; design vocabulary)
+- Task 2.8: RuntimeCard container (lazy models query, sectioned writes, shared mock-factory now registers all three runtimes)
+- Task 2.9: RuntimesTab recomposition (single trust-write owner + one AutonomyConfirmDialog; make-default write; refresh icon; `listRuntimeTypes` extracted to one place; TrustDial `stopLabels` surface re-word; strip `exceptions` prop)
+- Task 2.10: retirements (ExecutionDefaultsCard, ClaudeAccountsCard, DefaultTrustStopSection, tabs bridge; full old-test→new-home parity table in the task report; sweep greps zero)
+- Task 2.11: playground showcases for every card state + registry entries (props-first components showcased; strip + accounts coverage gaps closed per design §7)
+- Task 2.12: test-id sweep (zero stale) + browser flow `apps/e2e/tests/settings/runtimes-tab.spec.ts` (5 tests incl. the capability-hole round-trip; readiness-gated test documented for CI)
+- Task 2.13: changelog fragment `260803-222358-runtimes-settings-cards.md` + configuration.md trust-wording fix
+- Task 2.14: visual gate — drove the real cockpit (desktop/expanded/mobile screenshots), found and fixed 8 defects tests could not see (trust-row layout, orphaned middot, ready-gated Make default, missing subtitles, crushed effort control → menu fallback, mobile name truncation, Starts-with lead-in, full-width summary row)
+
+### Deliberate deviations from task text (all recorded in task reports)
+
+- GlobalTrustRow + RuntimeCard receive trust wiring via props; the tab owns the single `useTrustStopWrites` call and dialog (one-call-per-tree constraint).
+- Settings-tab trust vocabulary unified via optional `TrustDial.stopLabels`; session surfaces unchanged.
+- EffortRow falls back to a Select above 5 positions (Claude's real ladder is 8).
 
 ## Files Modified/Created
 
-**Source files:**
+Roughly 40 source and test files across `packages/shared`, `apps/server`,
+`apps/client`, `packages/test-utils` and `apps/e2e`. The per-task entries above
+name what each one changed, and the two PR diffs are the authoritative list:
+PR #730 for the P1 declaration layer, and the `runtimes-settings-tab` PR for the
+tab. The largest clusters:
 
-_(None yet)_
-
-**Test files:**
-
-_(None yet)_
+- **P1:** `packages/shared/src/agent-runtime.ts` (the `settings` capability),
+  the four runtime adapters, every `RuntimeCapabilities` fixture, the
+  conformance suite, and `docs/api/openapi.json`.
+- **P2:** the new `apps/client/src/layers/features/settings/ui/runtimes/` tree
+  (tab, card container, card view, header, three rows, two sections, section
+  registry, summary builder, global trust row) with its `__tests__/` twin, the
+  `use-trust-stop-writes` hook, the retired components' removal, the playground
+  showcases, and `apps/e2e/tests/settings/runtimes-tab.spec.ts`.
 
 ## Known Issues
 
-_(None yet)_
+_(None)_
 
 ## Implementation Notes
 
 ### Session 1
 
-_(Implementation in progress)_
+Built as an orchestrated multi-agent run rather than one long pass: the
+orchestrator held the spec and the task graph, and resumable Opus and Sonnet
+implementation agents took one task each, in waves whose boundaries were the
+dependency edges (declaration layer, then building blocks, then containers, then
+composition, then retirements). Verification was batch-level by standing
+operator preference — a gate at the end of each wave rather than a review after
+each task — and each PR met an adversarial REVIEW.md review before it opened,
+which is where the real catches came from (a settings-capability requiredness
+hole in P1, and eight defects in P2 that no test could see).
+
+The last gate was not a test run. Task 2.14 drove the real cockpit at desktop,
+expanded and mobile widths, and found things the suite is structurally blind to:
+a trust row whose halves collided inside the Settings dialog, an orphaned middot
+after a wrap, Make default offered on a card that could not be the default,
+missing subtitles, an effort control crushed to eight illegible segments, a
+runtime name truncated to "Clau…" on a phone, and a summary line with no lead-in
+reading as a list of fragments. A P2 adversarial review after that added eight
+more fixes, the two largest being a sectionless runtime that had been drawing
+live-looking rows whose writes fell on the floor, and the tab's vocabulary being
+brought in line with DOR-853 (see the addendum in `04-design-decisions.md` §3).

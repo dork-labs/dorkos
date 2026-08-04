@@ -6,6 +6,12 @@
  * reached with the playground's default data at all — a registered roster, and a
  * refused config write — so the helpers that fake them are the thing under test.
  *
+ * The accounts panel is no longer a card of its own: it is a section the Claude
+ * Code runtime declares, so these render it the way the showcase does, inside
+ * that card's opened body. That composition is worth asserting on its own — a
+ * declaration that stopped naming `claude-accounts` would leave the card whole
+ * and the section gone.
+ *
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
@@ -13,9 +19,10 @@ import { render, screen, cleanup, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { TransportProvider } from '@/layers/shared/model';
-import { ClaudeAccountsCard } from '@/layers/features/settings/ui/ClaudeAccountsCard';
+import { ClaudeAccountsSection } from '@/layers/features/settings';
 import { createPlaygroundTransport } from '../playground-transport';
 import {
+  LiveRuntimeCard,
   MockedQueryProvider,
   RefusedConfigWriteProvider,
 } from '../showcases/settings-showcase-helpers';
@@ -57,14 +64,38 @@ function PlaygroundShell({ children }: { children: React.ReactNode }) {
   return <TransportProvider transport={createPlaygroundTransport()}>{children}</TransportProvider>;
 }
 
+/** The Claude Code card, opened, with its declared accounts section drawn. */
+function AccountsCard() {
+  return (
+    <LiveRuntimeCard
+      type="claude-code"
+      expanded
+      renderSection={(kind) => (kind === 'claude-accounts' ? <ClaudeAccountsSection /> : null)}
+    />
+  );
+}
+
 describe('Claude accounts showcase states', () => {
   afterEach(cleanup);
+
+  it('renders the section inside the card that declares it', () => {
+    render(
+      <PlaygroundShell>
+        <MockedQueryProvider>
+          <AccountsCard />
+        </MockedQueryProvider>
+      </PlaygroundShell>
+    );
+
+    const section = screen.getByTestId('runtime-card-section-claude-accounts-claude-code');
+    expect(within(section).getByRole('combobox', { name: 'Claude Code account' })).toBeVisible();
+  });
 
   it('shows the default install with nothing registered', () => {
     render(
       <PlaygroundShell>
         <MockedQueryProvider>
-          <ClaudeAccountsCard />
+          <AccountsCard />
         </MockedQueryProvider>
       </PlaygroundShell>
     );
@@ -79,7 +110,7 @@ describe('Claude accounts showcase states', () => {
     render(
       <PlaygroundShell>
         <MockedQueryProvider config={MOCK_SERVER_CONFIG_MULTI_ACCOUNT}>
-          <ClaudeAccountsCard />
+          <AccountsCard />
         </MockedQueryProvider>
       </PlaygroundShell>
     );
@@ -96,7 +127,7 @@ describe('Claude accounts showcase states', () => {
     render(
       <RefusedConfigWriteProvider>
         <MockedQueryProvider config={MOCK_SERVER_CONFIG_MULTI_ACCOUNT}>
-          <ClaudeAccountsCard />
+          <AccountsCard />
         </MockedQueryProvider>
       </RefusedConfigWriteProvider>
     );
@@ -105,7 +136,7 @@ describe('Claude accounts showcase states', () => {
     const listbox = await screen.findByRole('listbox');
     await user.click(within(listbox).getByRole('option', { name: 'Personal' }));
 
-    // Red if the transport override stops reaching the card — the state would
+    // Red if the transport override stops reaching the section — the state would
     // then look identical to a successful write.
     await waitFor(() =>
       expect(screen.getByTestId('claude-account-error')).toHaveTextContent(

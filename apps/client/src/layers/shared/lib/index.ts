@@ -81,6 +81,11 @@ export {
 export { DirectTransport, type DirectTransportServices } from './direct-transport';
 export { reportClientError, installClientErrorHandlers } from './client-error-reporter';
 export { getBreadcrumbs, installBreadcrumbHandlers } from './breadcrumbs';
+export {
+  stashPendingFeedback,
+  takePendingFeedback,
+  type PendingFeedback,
+} from './pending-feedback';
 export { getToolLabel, getMcpServerBadge, parseMcpToolName } from './tool-labels';
 export { ToolArgumentsDisplay } from './tool-arguments-formatter';
 export {

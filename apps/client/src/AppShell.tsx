@@ -26,7 +26,7 @@ import { useBindingsSync } from '@/layers/entities/binding';
 import { useRelayAdaptersSync } from '@/layers/entities/relay';
 import { useUnattendedAutonomySync } from '@/layers/entities/unattended-autonomy';
 import { motion, AnimatePresence, MotionConfig } from 'motion/react';
-import { DialogHost } from '@/layers/widgets/app-layout';
+import { DialogHost, FeedbackDialogHost } from '@/layers/widgets/app-layout';
 import { AppBannerSlot, useAppBanners } from '@/layers/widgets/app-banner';
 import { ApprovalsIndicator } from '@/layers/widgets/approvals-indicator';
 import { usePulseFreshness } from '@/layers/widgets/pulse';
@@ -546,6 +546,7 @@ export function AppShell() {
           )}
         </AnimatePresence>
         <DialogHost />
+        <FeedbackDialogHost />
         <CommandPaletteDialog />
         <CreateAgentDialog />
         <ImportProjectsDialog />

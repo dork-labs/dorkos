@@ -13,3 +13,6 @@
 export { RuntimeConnectFlow, renderRuntimeConnect } from './ui/RuntimeConnectFlow';
 export { LoginConnect } from './ui/LoginConnect';
 export { OpenCodeProviderPicker } from './ui/OpenCodeProviderPicker';
+// The runtimes settings tab names the connected source too ("Power source"), and
+// it must say it the same way the picker does — one wording, one map.
+export { describePowerSource } from './lib/power-source';
