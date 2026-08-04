@@ -2,6 +2,7 @@
 covers:
   - 'feat(feedback): tracking loop — Linear webhook, status endpoints, tracking view, and status emails (PR D)'
   - 'fix(client): register /feedback-requests in the route-path and tab-label registries'
+  - 'fix(feedback): address PR D review — shipped-email transition guard, unset-secret test, version-prefix'
 ---
 
 ### Added
