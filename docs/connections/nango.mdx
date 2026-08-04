@@ -61,12 +61,12 @@ Two more values:
 
 - `NANGO_BASE_URL`: the address of your Nango server, for example `http://localhost:3003`. A
   malformed address fails at startup with a clear message instead of failing later.
-- Your Nango **secret key**: open **Connections** in the sidebar, scroll to **Providers**, paste it
+- Your Nango **secret key**: open **Connections** in the sidebar, scroll to the **Composio & Nango** section, paste it
   into the Nango card, and click **Save key**. It lands in DorkOS's encrypted secret store, so it
   never sits in a plain config file. Saving it turns the connector on right away; no restart.
 
 When the base URL, the secret key, and a valid `NANGO_ENCRYPTION_KEY` are all set, the self-host
-connector is on. When any of them is missing, DorkOS leaves it off and the Providers card says what
+connector is on. When any of them is missing, DorkOS leaves it off and the Nango card says what
 is missing. Nothing breaks.
 
 ## How your agent uses a self-host account
