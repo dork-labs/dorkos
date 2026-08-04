@@ -30,6 +30,7 @@ function makeManifest(overrides: Partial<AgentManifest> = {}): AgentManifest {
     capabilities: [],
     behavior: { responseMode: 'always' },
     enabledToolGroups: {},
+    mcpServers: [],
     registeredAt: '2026-02-24T00:00:00.000Z',
     registeredBy: 'test',
     personaEnabled: true,

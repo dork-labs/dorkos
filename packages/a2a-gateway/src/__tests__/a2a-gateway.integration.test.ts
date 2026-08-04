@@ -104,6 +104,7 @@ function makeManifest(overrides: Partial<AgentManifest> = {}): AgentManifest {
     registeredBy: 'mesh',
     personaEnabled: true,
     enabledToolGroups: {},
+    mcpServers: [],
     ...overrides,
   } as AgentManifest;
 }

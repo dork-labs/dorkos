@@ -183,6 +183,7 @@ export async function register(
     model: overrides?.model,
     effort: overrides?.effort,
     enabledToolGroups: overrides?.enabledToolGroups ?? {},
+    mcpServers: [],
   };
 
   return registerInternal(candidate.path, manifest, namespace, effectiveScanRoot, deps);
@@ -228,6 +229,7 @@ export async function registerByPath(
     model: partial.model,
     effort: partial.effort,
     enabledToolGroups: partial.enabledToolGroups ?? {},
+    mcpServers: [],
   };
 
   return registerInternal(projectPath, manifest, namespace, effectiveScanRoot, deps);

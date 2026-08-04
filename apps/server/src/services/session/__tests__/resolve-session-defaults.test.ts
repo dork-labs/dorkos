@@ -38,6 +38,7 @@ const BASE_MANIFEST: AgentManifest = {
   registeredBy: 'test',
   personaEnabled: true,
   enabledToolGroups: {},
+  mcpServers: [],
 };
 
 /** The stored `runtimes` block, with one section's fields replaced. */

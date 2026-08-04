@@ -32,6 +32,7 @@ function manifest(id: string, overrides: Partial<AgentManifest> = {}): AgentMani
     registeredBy: 'test',
     personaEnabled: true,
     enabledToolGroups: {},
+    mcpServers: [],
     ...overrides,
   } as AgentManifest;
 }

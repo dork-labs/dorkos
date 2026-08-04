@@ -18,6 +18,7 @@ function row(overrides: Partial<AgentTableRow> & { id: string; name: string }): 
     registeredBy: 'user',
     personaEnabled: true,
     enabledToolGroups: {},
+    mcpServers: [],
     projectPath: `/Users/kai/code/${overrides.name}`,
     healthStatus: 'active',
     relayAdapters: [],

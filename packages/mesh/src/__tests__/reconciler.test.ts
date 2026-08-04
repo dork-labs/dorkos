@@ -23,6 +23,7 @@ function makeEntry(overrides: Partial<AgentRegistryEntry> = {}): AgentRegistryEn
     behavior: { responseMode: 'always' },
     personaEnabled: true,
     enabledToolGroups: {},
+    mcpServers: [],
     registeredAt: new Date().toISOString(),
     registeredBy: 'user',
     projectPath: '/home/user/projects/backend',
@@ -44,6 +45,7 @@ function makeManifest(overrides: Partial<AgentManifest> = {}): AgentManifest {
     registeredBy: 'user',
     personaEnabled: true,
     enabledToolGroups: {},
+    mcpServers: [],
     ...overrides,
   };
 }

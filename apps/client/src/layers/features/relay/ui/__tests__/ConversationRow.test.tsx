@@ -111,6 +111,7 @@ const mockAgents = [
     registeredBy: 'test',
     personaEnabled: true,
     enabledToolGroups: {},
+    mcpServers: [],
   },
   {
     id: 'agent-2',
@@ -123,6 +124,7 @@ const mockAgents = [
     registeredBy: 'test',
     personaEnabled: true,
     enabledToolGroups: {},
+    mcpServers: [],
   },
 ];
 

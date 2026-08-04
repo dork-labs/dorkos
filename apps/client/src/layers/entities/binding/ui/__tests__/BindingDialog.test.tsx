@@ -72,6 +72,7 @@ const MOCK_AGENTS: AgentManifest[] = [
     registeredAt: new Date().toISOString(),
     registeredBy: 'test',
     enabledToolGroups: {},
+    mcpServers: [],
     personaEnabled: true,
   },
 ];

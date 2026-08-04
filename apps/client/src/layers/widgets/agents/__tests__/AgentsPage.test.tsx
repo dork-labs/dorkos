@@ -137,6 +137,7 @@ const makeTopologyResult = (agentCount: number) => ({
               registeredBy: 'user',
               personaEnabled: true,
               enabledToolGroups: {},
+              mcpServers: [],
               projectPath: `/project-${i + 1}`,
               healthStatus: 'active',
               relayAdapters: [],

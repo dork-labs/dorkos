@@ -51,6 +51,7 @@ const MANIFEST: AgentManifest = {
   personaEnabled: true,
   isSystem: false,
   enabledToolGroups: {},
+  mcpServers: [],
 };
 
 const MESH_STATUS: MeshStatus = {

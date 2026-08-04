@@ -144,6 +144,66 @@ export const EnabledToolGroupsSchema = z
 
 export type EnabledToolGroups = z.infer<typeof EnabledToolGroupsSchema>;
 
+// === Managed MCP Servers ===
+
+/**
+ * Connection details for a managed MCP server, as a discriminated union over
+ * `transport`. This is the on-manifest mirror of the runtime-neutral
+ * `McpAppServerConnection` shape (`agent-runtime.ts`) — same three transports
+ * (`stdio`/`http`/`sse`), same field names — so the claude-code adapter's
+ * `toSdkMcpServerConfig` can convert an enabled entry directly, with no
+ * remapping. `args`/`env`/`headers` default to empty so a converted entry is
+ * always fully populated. **Server-only in practice**: a stdio `command`/`env`
+ * must never reach the browser client (see `McpAppServerConnection`).
+ */
+export const McpServerTransportSchema = z.discriminatedUnion('transport', [
+  z.object({
+    transport: z.literal('stdio'),
+    command: z.string().min(1),
+    args: z.array(z.string()).default([]),
+    env: z.record(z.string(), z.string()).default({}),
+  }),
+  z.object({
+    transport: z.literal('http'),
+    url: z.string().url(),
+    headers: z.record(z.string(), z.string()).default({}),
+  }),
+  z.object({
+    transport: z.literal('sse'),
+    url: z.string().url(),
+    headers: z.record(z.string(), z.string()).default({}),
+  }),
+]);
+
+export type McpServerTransport = z.infer<typeof McpServerTransportSchema>;
+
+/**
+ * One DorkOS-managed MCP server declared on an agent's manifest.
+ *
+ * Introducing a server is a capability grant — a stdio entry runs an arbitrary
+ * command in the agent's environment — so the security model (ADR 260803-233420)
+ * anchors on two safe defaults here: `enabled` defaults to `false` (absence
+ * withholds; injection fires only for `enabled === true`) and there is no
+ * `.catch()` on the surrounding array, so a malformed entry fails the whole
+ * manifest parse loudly rather than degrading a security-relevant list to `[]`.
+ * `addedBy` records who approved it for audit.
+ */
+export const ManagedMcpServerSchema = z
+  .object({
+    name: z
+      .string()
+      .min(1)
+      .max(64)
+      .regex(/^[a-zA-Z0-9_-]+$/, 'Must be alphanumeric with dashes/underscores'),
+    enabled: z.boolean().default(false),
+    connection: McpServerTransportSchema,
+    addedAt: z.string().datetime(),
+    addedBy: z.string().min(1),
+  })
+  .openapi('ManagedMcpServer');
+
+export type ManagedMcpServer = z.infer<typeof ManagedMcpServerSchema>;
+
 // === Agent Personality ===
 
 /** Personality trait levels (1-5 scale, default 3 = Balanced) */
@@ -270,6 +330,14 @@ export const AgentManifestSchema = z
       example: 'high',
     }),
     enabledToolGroups: EnabledToolGroupsSchema,
+    // DorkOS-managed MCP servers for this agent. Deliberately NOT `.catch([])`
+    // (unlike `model`/`effort` above): a malformed entry must fail the manifest
+    // parse loudly rather than silently degrade a security-relevant list to
+    // empty — a dropped server is invisible, a failed parse is not. Defaults to
+    // `[]` (absence withholds); each entry's `enabled` defaults to `false`.
+    // Mutated only through the gated `mcp.*` capabilities, never the agent
+    // PATCH surface — which is why it is absent from `AgentManifestUpdate`.
+    mcpServers: z.array(ManagedMcpServerSchema).default([]),
   })
   .openapi('AgentManifest');
 

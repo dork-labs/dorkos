@@ -176,6 +176,7 @@ async function seedSelfEditAgent(sandbox: EvalSandbox): Promise<void> {
     registeredBy: 'dorkos-evals',
     personaEnabled: true,
     enabledToolGroups: {},
+    mcpServers: [],
   };
   await writeManifest(sandbox.projectCwd, manifest);
   await writeConventionFile(

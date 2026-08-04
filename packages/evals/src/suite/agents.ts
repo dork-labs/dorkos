@@ -145,6 +145,7 @@ async function seedNewbornAgent(sandbox: EvalSandbox): Promise<void> {
     personaEnabled: true,
     isSystem: false,
     enabledToolGroups: {},
+    mcpServers: [],
   };
   await writeManifest(sandbox.projectCwd, manifest);
   await writeConventionFile(
