@@ -1,9 +1,8 @@
 import { Router } from 'express';
-import { readFile } from 'fs/promises';
-import path from 'path';
 import { z } from 'zod';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
+import { readMcpJsonServers, summarizeMcpJsonServers } from '../services/mesh/mcp-json.js';
 import { logger } from '../lib/logger.js';
 
 const router = Router();
@@ -46,23 +45,8 @@ router.get('/', async (req, res) => {
       return res.json({ servers: [] });
     }
 
-    const mcpJsonPath = path.join(validatedPath, '.mcp.json');
-
-    try {
-      const raw = await readFile(mcpJsonPath, 'utf-8');
-      const json = JSON.parse(raw) as { mcpServers?: Record<string, { type?: string }> };
-      const mcpServers = json.mcpServers ?? {};
-
-      const servers = Object.entries(mcpServers).map(([name, cfg]) => ({
-        name,
-        type: (cfg.type ?? 'stdio') as 'stdio' | 'sse' | 'http',
-      }));
-
-      res.json({ servers });
-    } catch {
-      // Missing file or malformed JSON — treat as no MCP servers configured.
-      res.json({ servers: [] });
-    }
+    const mcpServers = await readMcpJsonServers(validatedPath);
+    res.json({ servers: summarizeMcpJsonServers(mcpServers) });
   } catch (err) {
     if (err instanceof BoundaryError) {
       return res.status(403).json({ error: err.message, code: err.code });

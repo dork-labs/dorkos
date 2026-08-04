@@ -242,6 +242,14 @@ export interface AddAgentMcpServerInput {
   enabled?: boolean;
 }
 
+/** Input for {@link Transport.importAgentMcpServer}. */
+export interface ImportAgentMcpServerInput {
+  /** ULID of the agent that will own the imported server. */
+  agentId: string;
+  /** The discovered server's name (its key in the project's `.mcp.json`). */
+  name: string;
+}
+
 /** Input for {@link Transport.updateAgentMcpServer}. */
 export interface UpdateAgentMcpServerInput {
   /** ULID of the agent that owns the server. */
@@ -1455,6 +1463,23 @@ export interface Transport extends RoomTransport {
    */
   addAgentMcpServer(
     input: AddAgentMcpServerInput,
+    opts?: { approvalToken?: string }
+  ): Promise<AgentMcpMutationResult>;
+
+  /**
+   * Bring a discovered `.mcp.json` server under DorkOS management (the
+   * destructive `mcp.import` capability). The connection is resolved server-side
+   * from the name; the client never supplies it.
+   *
+   * Destructive: the first call returns `{ status: 'approval_required' }`; grant
+   * it with {@link grantApproval} and call again with the returned `approvalToken`
+   * in `opts` to complete the import.
+   *
+   * @param input - Agent id and the discovered server name to import.
+   * @param opts - Carries `approvalToken` on the confirming retry.
+   */
+  importAgentMcpServer(
+    input: ImportAgentMcpServerInput,
     opts?: { approvalToken?: string }
   ): Promise<AgentMcpMutationResult>;
 
