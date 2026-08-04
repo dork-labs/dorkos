@@ -15,18 +15,19 @@ vi.mock('../model/use-agent-context-config', () => ({
     updateConfig: vi.fn(),
   })),
 }));
-vi.mock('@/layers/entities/agent', () => ({
-  useMcpConfig: vi.fn(() => ({ data: null })),
-}));
 vi.mock('@/layers/entities/runtime', () => ({
   // Default: the runtime supports MCP (Claude) → tool groups render.
   useCapabilitiesForRuntime: vi.fn(() => ({ supportsMcp: true })),
+}));
+// The managed-MCP section has its own test (AgentMcpServers.test.tsx); stub it
+// here so ToolsTab tests stay focused on the tool-group toggles.
+vi.mock('../ui/AgentMcpServers', () => ({
+  AgentMcpServers: () => <div data-testid="agent-mcp-servers" />,
 }));
 
 import { ToolsTab } from '../ui/ToolsTab';
 import { useRelayEnabled } from '@/layers/entities/relay';
 import { useTasksEnabled } from '@/layers/entities/tasks';
-import { useMcpConfig } from '@/layers/entities/agent';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
 import { useAgentContextConfig } from '../model/use-agent-context-config';
 import { TooltipProvider } from '@/layers/shared/ui';
@@ -151,11 +152,6 @@ describe('ToolsTab', () => {
   });
 
   describe('Runtime MCP gating', () => {
-    it('scopes the MCP config query to the agent runtime', () => {
-      renderTab({ ...baseAgent, runtime: 'codex' }, onUpdate);
-      expect(useMcpConfig).toHaveBeenCalledWith('/projects/test', 'codex');
-    });
-
     it('hides the tool-group toggles when the runtime cannot consume MCP', () => {
       vi.mocked(useCapabilitiesForRuntime).mockReturnValue({
         supportsMcp: false,
