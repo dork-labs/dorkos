@@ -1,6 +1,8 @@
 # Feedback pipeline — specification
 
-Source: `specs/feedback-pipeline/01-ideation.md`. Four PRs, in dependency order:
+Source: `specs/feedback-pipeline/01-ideation.md`. UI decisions (dialog, help
+menu, tracking view) are settled in `design-decisions.md` + `mockups/` — the
+authoritative reference for PRs C and D. Four PRs, in dependency order:
 **A** (submission payload: diagnostics + identity) → **B** (site intake: Neon +
 Linear) can proceed in parallel with A once the payload shape is frozen → **C**
 (dialog UI + entry points + GitHub demotion) depends on A → **D** (tracking +
@@ -341,13 +343,15 @@ tracking link.
 
 ### Cockpit tracking view
 
-New client feature, name TBD at the design checkpoint (task #3) — not "My
-Reports." Lists submissions for the current `instanceId` via
+New client feature, named **Feedback & requests** (see `design-decisions.md`
+§7 for the full design). Lists submissions for the current `instanceId` via
 `GET /api/feedback/mine?instanceId=...` proxied through the local server
-(same pattern as other site-backed reads) or called directly from the
-client depending on what the design checkpoint settles for placement
-(dialog vs. dedicated view — open question #3 from the ideation doc).
-Status badges use the same four-state vocabulary as the public endpoint.
+(same pattern as other site-backed reads). Opens from the help menu and an
+Open-feedback palette entry; no login required. Rows show kind icon, message
+first line, kind + date, an attachment hint when present, and a status badge
+using the `Received → Triaged → In progress → Shipped vX.Y.Z / Closed`
+vocabulary mirrored from Linear (never Linear internals). Handle empty,
+loading, and error states.
 
 ### Resend emails
 
