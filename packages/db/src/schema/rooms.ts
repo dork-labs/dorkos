@@ -250,6 +250,15 @@ export const roomEntries = sqliteTable(
     /** JSON array of author ids, resolved from `@name` once at write time. */
     mentions: text('mentions').notNull().default('[]'),
 
+    /**
+     * JSON array of `{ offset, length, authorId }` — where each resolved
+     * `@mention` sits in `body.text`, so the client can draw a pill over it
+     * without re-parsing. One entry per written `@handle` (not deduped like
+     * `mentions`), resolved in the SAME pass at write time. Defaults `'[]'` so
+     * a row that predates this column reads as "no spans", never null.
+     */
+    mentionSpans: text('mention_spans').notNull().default('[]'),
+
     /** The session that produced this entry, if any. */
     sessionId: text('session_id'),
 

@@ -351,6 +351,13 @@
       "when": 1785782106810,
       "tag": "0049_flowery_moondragon",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "6",
+      "when": 1785819414616,
+      "tag": "0050_shiny_richard_fisk",
+      "breakpoints": true
     }
   ]
 }
