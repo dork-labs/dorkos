@@ -2,6 +2,7 @@
 covers:
   - 'feat(client): Connections is the outside-world umbrella — rename family + chat-type relabel (DOR-859)'
   - 'fix(relay): plain, Slack-qualified channel labels in the Slack setup form (DOR-859)'
+  - 'fix(server): channel-origin session badge reads "Connection", retiring "Integration" (DOR-859)'
 ---
 
 ### Changed
