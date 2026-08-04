@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, KeyRound } from 'lucide-react';
 import { toast } from 'sonner';
@@ -25,7 +26,7 @@ import {
   Switch,
 } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
-import { useTransport } from '@/layers/shared/model';
+import { useSettingsDeepLink, useTransport } from '@/layers/shared/model';
 import { DuplicateToolWarning } from './DuplicateToolWarning';
 import { EndpointRow } from './EndpointRow';
 import { RateLimitSection } from './RateLimitSection';
@@ -45,11 +46,13 @@ interface ExternalMcpCardProps {
 }
 
 /**
- * External MCP Server card for the ToolsTab.
+ * "Connect other apps to DorkOS" card for the ToolsTab — the inbound MCP surface
+ * (DorkOS as an MCP server for outside clients).
  *
- * Provides a collapsible control surface for the external MCP endpoint: enable/disable
- * toggle, per-user API key guidance, rate limiting, per-client setup instructions, and
- * a duplicate-tool collision warning.
+ * Provides a collapsible control surface for the inbound MCP endpoint: enable/disable
+ * toggle, per-user API key guidance, rate limiting, per-client setup instructions, a
+ * duplicate-tool collision warning, and a cross-link to the outbound direction (giving
+ * an agent tools from other MCP servers, in that agent's own Toolkit tab — plan D7).
  *
  * MCP clients authenticate with a personal API key (Better Auth `apiKey` plugin),
  * created and revoked in Settings → Security → API keys, or via the `MCP_API_KEY`
@@ -124,9 +127,9 @@ export function ExternalMcpCard({ mcp, authEnabled }: ExternalMcpCardProps) {
         {/* Header row — always visible */}
         <div className="flex items-center justify-between px-4 py-3">
           <div className="min-w-0">
-            <p className="text-sm font-medium">External MCP Server</p>
+            <p className="text-sm font-medium">Connect other apps to DorkOS</p>
             <p className="text-muted-foreground text-xs">
-              Add the DorkOS MCP to agents outside of DorkOS
+              Let Claude Code, Cursor, and other apps use DorkOS as a tool server
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -134,12 +137,12 @@ export function ExternalMcpCard({ mcp, authEnabled }: ExternalMcpCardProps) {
             <Switch
               checked={mcp.enabled}
               onCheckedChange={handleToggle}
-              aria-label="Toggle external MCP access"
+              aria-label="Toggle access for other apps"
             />
             <CollapsibleTrigger asChild>
               <button
                 className="text-muted-foreground hover:text-foreground rounded-sm p-0.5 transition-colors duration-150"
-                aria-label={`${expanded ? 'Collapse' : 'Expand'} external MCP server settings`}
+                aria-label={`${expanded ? 'Collapse' : 'Expand'} MCP server settings`}
               >
                 <ChevronDown
                   className={cn(
@@ -156,6 +159,7 @@ export function ExternalMcpCard({ mcp, authEnabled }: ExternalMcpCardProps) {
         <CollapsibleContent>
           <FieldCardContent className="border-t">
             <DuplicateToolWarning />
+            <OutboundToolsCrossLink />
             <EndpointRow endpoint={mcp.endpoint} />
             <McpAuthRow
               authSource={mcp.authSource}
@@ -170,6 +174,36 @@ export function ExternalMcpCard({ mcp, authEnabled }: ExternalMcpCardProps) {
         </CollapsibleContent>
       </Collapsible>
     </FieldCard>
+  );
+}
+
+/**
+ * Cross-link to the outbound MCP direction (plan D7): this card gives OTHER apps
+ * tools FROM DorkOS; giving one of DorkOS's own agents tools FROM another MCP
+ * server is the opposite direction, managed per agent in that agent's Toolkit
+ * tab (Agent Hub → Toolkit), not here. Closes this dialog before navigating so
+ * the Agents page renders clean.
+ */
+function OutboundToolsCrossLink() {
+  const navigate = useNavigate();
+  const { close } = useSettingsDeepLink();
+
+  return (
+    <p className="text-muted-foreground text-xs leading-relaxed">
+      Want to give one of your agents tools from another MCP server instead? That is the other
+      direction — open the agent and check its Toolkit tab.{' '}
+      <Button
+        variant="link"
+        size="sm"
+        className="h-auto p-0 text-xs"
+        onClick={() => {
+          close();
+          void navigate({ to: '/agents' });
+        }}
+      >
+        Open the Agents page
+      </Button>
+    </p>
   );
 }
 

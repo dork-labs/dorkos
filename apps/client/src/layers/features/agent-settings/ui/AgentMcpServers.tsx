@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { Loader2, Trash2 } from 'lucide-react';
 import { Badge, Button, FieldCard, FieldCardContent, Skeleton, Switch } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
+import { useSettingsDeepLink } from '@/layers/shared/model';
 import {
   useAgentMcpServers,
   useMcpConfig,
@@ -148,6 +149,29 @@ interface AgentMcpServersProps {
 }
 
 /**
+ * Cross-link to the inbound MCP direction (plan D7): this section gives THIS
+ * agent tools FROM other MCP servers; letting OTHER apps use DorkOS itself as
+ * an MCP server is the opposite direction, in Settings → Tools, not here.
+ */
+function InboundMcpCrossLink() {
+  const { open } = useSettingsDeepLink();
+
+  return (
+    <p className="text-muted-foreground text-xs leading-relaxed">
+      Want other apps to use DorkOS as an MCP server instead? That is the other direction.{' '}
+      <Button
+        variant="link"
+        size="sm"
+        className="h-auto p-0 text-xs"
+        onClick={() => open('tools', 'external-mcp')}
+      >
+        See Settings → Tools
+      </Button>
+    </p>
+  );
+}
+
+/**
  * The managed MCP servers section of the Agent Hub Toolkit: managed servers
  * (editable, joined with live status by name), discovered servers (read-only),
  * and a gated Add affordance. Add is disabled for runtimes that cannot run
@@ -218,6 +242,8 @@ export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
           />
         )}
       </div>
+
+      <InboundMcpCrossLink />
 
       {!canAdd && (
         <p className="text-muted-foreground text-xs">
