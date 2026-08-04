@@ -70,6 +70,41 @@ describe('shortcuts registry', () => {
         expect(listed.map((s) => s.id)).not.toContain(shortcut.id);
       }
     });
+
+    it('leaves the dev-only shortcuts out of a production build (DOR-567)', async () => {
+      // Same promise as desktopOnly, for the other axis: a chord whose handler
+      // only exists under `import.meta.env.DEV` must not be advertised once
+      // that flag is false, or the panel is lying to a production user.
+      vi.doMock('../platform', () => ({ isMac: true, isDesktopShell: () => true }));
+      const { getShortcutsGrouped, SHORTCUTS } = await import('../shortcuts');
+      const all: ShortcutDef[] = Object.values(SHORTCUTS);
+      const devOnly = all.filter((s) => s.devOnly);
+      const originalDev = import.meta.env.DEV;
+      import.meta.env.DEV = false;
+      try {
+        const listed = getShortcutsGrouped().flatMap((g) => g.shortcuts);
+
+        expect(devOnly.length).toBeGreaterThan(0);
+        expect(listed).toHaveLength(all.length - devOnly.length);
+        for (const shortcut of devOnly) {
+          expect(listed.map((s) => s.id)).not.toContain(shortcut.id);
+        }
+      } finally {
+        import.meta.env.DEV = originalDev;
+      }
+    });
+
+    it('lists the dev-only shortcuts again in a dev build', async () => {
+      vi.doMock('../platform', () => ({ isMac: true, isDesktopShell: () => true }));
+      const { getShortcutsGrouped, SHORTCUTS } = await import('../shortcuts');
+      const all: ShortcutDef[] = Object.values(SHORTCUTS);
+      const devOnly = all.filter((s) => s.devOnly);
+      // vitest runs with import.meta.env.DEV === true by default — no override needed.
+      const listed = getShortcutsGrouped().flatMap((g) => g.shortcuts);
+      for (const shortcut of devOnly) {
+        expect(listed.map((s) => s.id)).toContain(shortcut.id);
+      }
+    });
   });
 
   describe('SHORTCUTS constant', () => {
