@@ -12,7 +12,7 @@
     {
       "id": "260803-233420",
       "slug": "managed-mcp-server-trust-model",
-      "title": "Managed MCP server trust model — gated writes, marketplace rejection, absence withholds",
+      "title": "Managed MCP server trust model \u2014 gated writes, marketplace rejection, absence withholds",
       "status": "proposed",
       "created": "2026-08-03",
       "specSlug": "mcp-server-management"
@@ -3153,7 +3153,7 @@
       "id": "260803-183016",
       "slug": "runtime-declared-settings-surface",
       "title": "Runtimes declare their settings surface via RuntimeCapabilities.settings",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-08-03",
       "specSlug": "runtimes-settings-redesign",
       "extractedFrom": "runtimes-settings-redesign"
