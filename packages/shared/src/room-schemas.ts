@@ -251,6 +251,39 @@ export type AuthorRef = z.infer<typeof AuthorRefSchema>;
 /** Characters a channel slug may use — lowercase, digits, hyphens. */
 export const ROOM_SLUG_REGEX = /^[a-z0-9][a-z0-9-]{0,79}$/;
 
+/**
+ * What a bridged room's header and room sheet need about its bridge
+ * (chats-as-channels spec §8's badge, §3.4's title subtitle). `null` on an
+ * unbridged room.
+ *
+ * **`visibility` is sourced from the bridge row, which is sourced from
+ * Telegram's own `getMe` — never from config, and never inferred from
+ * observed traffic.** `null` for a bridged DM (privacy mode is a group-only
+ * switch) or before the first check completes; `'partial'` or `'full'`
+ * otherwise. This is the exact value `room_context` carries into a turn
+ * (`resolveBridgeFraming`, the one function that computes it) — the header
+ * badge and the model's own view of the room can never silently disagree,
+ * because there is only the one source.
+ */
+export const RoomBridgeInfoSchema = z
+  .object({
+    visibility: z
+      .enum(['partial', 'full'])
+      .nullable()
+      .describe(
+        "Telegram's privacy-mode switch: 'partial' (mentions/commands/replies only) or 'full' (everything). `null` for a bridged DM, or a group whose first visibility check has not yet completed."
+      ),
+    platformTitle: z
+      .string()
+      .nullable()
+      .describe(
+        "The platform chat's title, sanitized, as recorded when this room was bridged (spec §3.4). A room's own `title` can be renamed afterward without this column moving with it, which is the whole reason to carry it: the room sheet shows this alongside the room's title so the two are never silently different things. `null` for a bridged DM."
+      ),
+  })
+  .openapi('RoomBridgeInfo');
+
+export type RoomBridgeInfo = z.infer<typeof RoomBridgeInfoSchema>;
+
 export const RoomSchema = z
   .object({
     id: z.string().min(1),
@@ -265,6 +298,11 @@ export const RoomSchema = z
     archived: z.boolean(),
     createdAt: z.string(),
     lastActivityAt: z.string(),
+    bridge: RoomBridgeInfoSchema.nullable()
+      .optional()
+      .describe(
+        "This room's bridge, when it has one. Optional as well as nullable: the sidebar's bulk room list does not resolve it today (a per-row bridge lookup a list never renders is cost nobody asked for), so absent and `null` both mean 'draw nothing bridge-related here' — only `GET /api/rooms/:id` and the room-create responses populate it for real."
+      ),
   })
   .openapi('Room');
 

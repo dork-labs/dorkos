@@ -5,10 +5,10 @@ import type { PlaygroundSection } from '../playground-registry';
  *
  * Section IDs must equal `slugify(title)` — verified by the playground-registry test suite.
  *
- * Sources: RoomsShowcases — Room Sheet, RoomMemberRow, ResponseModeControl,
- * LoudnessMeter, RoomLoudnessLine, AgentRosterPicker, RemoveMemberConfirm.
- * RoomThreadShowcases — RoomThreadReplyRow, RoomThreadPanel, Thread arrival
- * animations.
+ * Sources: RoomsShowcases — Room Sheet, RoomMemberRow, BridgeVisibilityBadge,
+ * ResponseModeControl, LoudnessMeter, RoomLoudnessLine, AgentRosterPicker,
+ * RemoveMemberConfirm. RoomThreadShowcases — RoomThreadReplyRow,
+ * RoomThreadPanel, Thread arrival animations.
  */
 export const ROOMS_SECTIONS: PlaygroundSection[] = [
   {
@@ -35,6 +35,22 @@ export const ROOMS_SECTIONS: PlaygroundSection[] = [
     page: 'rooms',
     category: 'Rooms',
     keywords: ['member', 'row', 'roster', 'working', 'presence', 'avatar', 'agent', 'person'],
+  },
+  {
+    id: 'bridgevisibilitybadge',
+    title: 'BridgeVisibilityBadge',
+    page: 'rooms',
+    category: 'Rooms',
+    keywords: [
+      'bridge',
+      'visibility',
+      'badge',
+      'telegram',
+      'privacy',
+      'mentions',
+      'everything',
+      'chats-as-channels',
+    ],
   },
   {
     id: 'responsemodecontrol',

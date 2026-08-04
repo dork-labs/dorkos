@@ -45,6 +45,18 @@ export const roomBridges = sqliteTable(
     platformChatType: text('platform_chat_type').notNull(),
 
     /**
+     * The platform chat's title, sanitized, as recorded when this room was
+     * bridged (chats-as-channels spec §3.4). A room's own `title` can be
+     * renamed afterward without touching this column (`room-service.ts`'s
+     * rename path never writes here) — that gap is exactly what lets the room
+     * sheet show the platform's own title as a subtitle next to a room name
+     * that may have since diverged from it. `null` for a bridged DM, whose
+     * title is the person's display name rather than a platform-side chat
+     * title.
+     */
+    platformTitle: text('platform_title'),
+
+    /**
      * The binding currently pointing at this bridge. Re-pointed, never
      * duplicated, when a different agent adopts the surviving row (spec §3.5).
      */

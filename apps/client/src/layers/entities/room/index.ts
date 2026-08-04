@@ -78,7 +78,13 @@ export type {
   RemoveRoomMemberInput,
   SetResponseModeInput,
 } from './model/use-room-members';
-export { roomDisplayTitle, directMessageTitle, authorColor, hasUnread } from './lib/room-display';
+export {
+  roomDisplayTitle,
+  directMessageTitle,
+  authorColor,
+  hasUnread,
+  platformLabel,
+} from './lib/room-display';
 export { replyRootFor, threadReplySummary, threadRootIdOf } from './lib/thread';
 export type { ThreadReplySummary } from './lib/thread';
 export { presenceElapsed } from './lib/presence-copy';
@@ -97,10 +103,13 @@ export { ResponseModeControl } from './ui/ResponseModeControl';
 export { RoomAvatar } from './ui/RoomAvatar';
 export { RoomTitle } from './ui/RoomTitle';
 export { MemberList } from './ui/MemberList';
+export { OriginMark } from './ui/OriginMark';
+export { BridgeVisibilityBadge } from './ui/BridgeVisibilityBadge';
 export type {
   AuthorOrigin,
   AuthorRef,
   Room,
+  RoomBridgeInfo,
   RoomEntry,
   RoomEntryReaction,
   RoomKind,

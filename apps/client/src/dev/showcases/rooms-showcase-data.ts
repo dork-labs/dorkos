@@ -167,6 +167,16 @@ export const MEMBER = {
     responseMode: 'always',
     joinedAt: minutesBeforeNow(35),
   }),
+  /**
+   * A stranger, bridged in from Telegram (chats-as-channels spec §4.3, §9,
+   * DOR-879) — the row that carries the origin mark.
+   */
+  miguel: createRoomMember({
+    author: createRoomAuthor({ id: 'author-miguel', displayName: 'Miguel' }),
+    responseMode: 'engaged',
+    joinedAt: minutesBeforeNow(60 * 6),
+    origin: { platform: 'telegram' },
+  }),
 } satisfies Record<string, RoomRosterEntry>;
 
 // ---------------------------------------------------------------------------
@@ -208,6 +218,21 @@ export const ARCHIVED_ROOM: RoomWithRoster = createRoomWithRoster({
   topic: 'Shipped in April, kept for the log',
   archived: true,
   members: [MEMBER.reader, MEMBER.pm, MEMBER.code],
+});
+
+/**
+ * A Telegram group, bridged into a channel (chats-as-channels spec §8, §3.4,
+ * §4.3, DOR-879) — Miguel's messages carry an origin mark, the header wears
+ * the visibility badge, and the sheet's subtitle shows Telegram's own name
+ * for the chat, which a rename here has already let drift from the room's.
+ */
+export const BRIDGED_CHANNEL_ROOM: RoomWithRoster = createRoomWithRoster({
+  id: 'room-ops-team',
+  slug: 'ops-team',
+  title: 'Ops Team',
+  topic: 'Bridged from Telegram',
+  members: [MEMBER.reader, MEMBER.pm, MEMBER.miguel],
+  bridge: { visibility: 'partial', platformTitle: 'Ops Team 🚀' },
 });
 
 // ---------------------------------------------------------------------------

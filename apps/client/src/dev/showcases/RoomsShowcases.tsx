@@ -19,6 +19,7 @@ import { toast } from 'sonner';
 import type { RoomKind, RoomRosterEntry } from '@dorkos/shared/room-schemas';
 import { Button } from '@/layers/shared/ui';
 import {
+  BridgeVisibilityBadge,
   LoudnessMeter,
   ResponseModeControl,
   RoomLoudnessLine,
@@ -37,6 +38,7 @@ import { ShowcaseLabel } from '../ShowcaseLabel';
 import { createAgentRoster, createRoomMember, minutesBeforeNow } from '../mock-factories';
 import {
   ARCHIVED_ROOM,
+  BRIDGED_CHANNEL_ROOM,
   CHANNEL_ROOM,
   DM_ROOM,
   EMPTY_ROOM,
@@ -107,6 +109,18 @@ function RoomSheetShowcase() {
           holds={EMPTY_ROOM}
           fleet={[]}
           focus="add"
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        A bridged Telegram channel — Miguel&apos;s origin mark, and Telegram&apos;s own name for the
+        chat, drifted from the room&apos;s (chats-as-channels §3.4, §4.3, DOR-879)
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <RoomSheetDemo
+          label="#ops-team — bridged"
+          read={BRIDGED_CHANNEL_ROOM}
+          holds={BRIDGED_CHANNEL_ROOM}
         />
       </ShowcaseDemo>
     </PlaygroundSection>
@@ -224,6 +238,13 @@ function RoomMemberRowShowcase() {
           visual={{ color: '#3ca078', emoji: '🔔' }}
           rungError="Only you can change who is in a room"
         />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        Bridged in from Telegram — the origin mark (chats-as-channels §4.3, §9, DOR-879)
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <MemberRowDemo member={MEMBER.miguel} />
       </ShowcaseDemo>
     </PlaygroundSection>
   );
@@ -591,12 +612,39 @@ function RemoveMemberConfirmShowcase() {
   );
 }
 
+/**
+ * The channel header's visibility badge (chats-as-channels spec §8, DOR-879)
+ * — "sees mentions only" and "sees everything", each expandable into the
+ * same disclosure a reader gets in the real header. Never a DM: privacy
+ * mode is a group concept, so a bridged direct message shows no badge at
+ * all — there is nothing to demo, which is the point.
+ */
+function BridgeVisibilityBadgeShowcase() {
+  return (
+    <PlaygroundSection
+      title="BridgeVisibilityBadge"
+      description="Telegram's own privacy-mode switch for the bot, sourced from the bridge row's visibility — never from config. A disclosure, not a control: press it and it explains itself, including the two honest gaps (bot-wide not per-group, and DorkOS's own reply setting as a second gate) rather than offering a switch that would be lying about what it can change."
+    >
+      <ShowcaseLabel>Partial — "sees mentions only"</ShowcaseLabel>
+      <ShowcaseDemo>
+        <BridgeVisibilityBadge visibility="partial" />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Full — "sees everything"</ShowcaseLabel>
+      <ShowcaseDemo>
+        <BridgeVisibilityBadge visibility="full" />
+      </ShowcaseDemo>
+    </PlaygroundSection>
+  );
+}
+
 /** Every room component, every state, with no server behind any of it. */
 export function RoomsShowcases() {
   return (
     <>
       <RoomSheetShowcase />
       <RoomMemberRowShowcase />
+      <BridgeVisibilityBadgeShowcase />
       <ResponseModeControlShowcase />
       <LoudnessMeterShowcase />
       <RoomLoudnessLineShowcase />

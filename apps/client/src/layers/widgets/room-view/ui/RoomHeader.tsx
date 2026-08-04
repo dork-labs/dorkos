@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { CircleStop } from 'lucide-react';
 import type { RoomWithRoster } from '@/layers/entities/room';
 import {
+  BridgeVisibilityBadge,
   MemberList,
   RoomAvatar,
   RoomTitle,
@@ -56,6 +57,13 @@ export function RoomHeader({ room, onOpenMembers }: RoomHeaderProps) {
         </h1>
         {room.topic && <p className="text-muted-foreground truncate text-xs">{room.topic}</p>}
       </div>
+      {/* Sourced from the bridge row's own `visibility`, never from config —
+          and never rendered for a DM, where `room.bridge?.visibility` is
+          always `null` (privacy mode is a group concept, spec §8). Outside
+          the `h1` on purpose: it is a disclosure with its own accessible
+          name, and a heading whose name silently grew "sees mentions only"
+          would say something no reader asked the room's TITLE to say. */}
+      {room.bridge?.visibility && <BridgeVisibilityBadge visibility={room.bridge.visibility} />}
       {working > 0 && (
         // A count and a dot, and no elapsed time: this says THAT something is
         // running, and the line under the composer says how long. Two clocks on

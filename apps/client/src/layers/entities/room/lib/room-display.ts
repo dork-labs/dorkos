@@ -131,3 +131,23 @@ export function authorColor(authorId: string): string {
 export function hasUnread(room: RoomSummary): boolean {
   return room.unreadCount !== null && room.unreadCount > 0;
 }
+
+/** Proper names for the platforms a bridged room or member can come from. */
+const PLATFORM_LABELS: Record<string, string> = {
+  telegram: 'Telegram',
+  slack: 'Slack',
+};
+
+/**
+ * What to call a platform in prose — the second half of an origin mark
+ * ("Miguel · Telegram") and a bridge badge's expanded copy.
+ *
+ * Capitalizes anything not in the known list rather than showing a raw
+ * lowercase identifier, so a platform this client does not recognize yet
+ * still reads as a proper name and not as internal plumbing.
+ *
+ * @param platform - The origin's `platform` string, e.g. `'telegram'`.
+ */
+export function platformLabel(platform: string): string {
+  return PLATFORM_LABELS[platform] ?? platform.charAt(0).toUpperCase() + platform.slice(1);
+}

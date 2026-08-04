@@ -278,4 +278,31 @@ describe('RoomMemberRow', () => {
       expect(screen.getByText('Answers every message in this room.')).toBeInTheDocument();
     });
   });
+
+  describe('the origin mark (chats-as-channels spec §4.3, §9, DOR-879)', () => {
+    it('marks an external member with their platform, legible without a hover', () => {
+      const external: RoomRosterEntry = {
+        ...member({ kind: 'human', id: 'author-miguel', displayName: 'Miguel' }),
+        origin: { platform: 'telegram' },
+      };
+
+      renderRow({ member: external });
+
+      const mark = screen.getByTestId('origin-mark');
+      expect(mark).toHaveTextContent('Telegram');
+      // Legible AT A GLANCE (spec §9) — not inside a `title` attribute or a
+      // hover-only element nobody can see without a pointer.
+      expect(mark).toBeVisible();
+    });
+
+    it('marks nothing for the operator — a local human draws no origin mark', () => {
+      renderRow({ member: PERSON });
+      expect(screen.queryByTestId('origin-mark')).not.toBeInTheDocument();
+    });
+
+    it('marks nothing for an agent — agents are always local', () => {
+      renderRow({ member: AGENT });
+      expect(screen.queryByTestId('origin-mark')).not.toBeInTheDocument();
+    });
+  });
 });
