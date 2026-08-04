@@ -7,6 +7,7 @@ import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { BANNER_PRIORITY, type BannerDescriptor } from '@/layers/widgets/app-banner';
+import { APP_ROUTE_PATHS } from '@/layers/shared/lib';
 
 // ── Route-aware mock: control the pathname returned by useRouterState ──
 
@@ -578,6 +579,34 @@ describe('AppShell slot integration', () => {
       renderAppShell();
       expect(screen.getByTestId('feedback-requests-header')).toBeInTheDocument();
       expect(screen.queryByTestId('dashboard-header')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('header slot completeness (drift guard)', () => {
+    // DOR-587 and DOR-919 were both the same shape: a route added to the
+    // router with no case in useHeaderSlot's switch, so it fell through to
+    // `default` and silently rendered DashboardHeader instead of its own
+    // header. This iterates the router's real, current route list — the same
+    // source app-route-paths.test.ts checks against — so a future route added
+    // the same way fails here by name instead of waiting for a human to
+    // notice "Dashboard" over the wrong page.
+    it('renders a non-dashboard header for every route except /', () => {
+      const nonRootRoutes = APP_ROUTE_PATHS.filter((path) => path !== '/');
+      for (const path of nonRootRoutes) {
+        mockPathname = path;
+        renderAppShell();
+        expect(
+          screen.queryByTestId('dashboard-header'),
+          `${path} rendered the dashboard header — give it a case in useHeaderSlot (AppShell.tsx)`
+        ).not.toBeInTheDocument();
+        cleanup();
+      }
+    });
+
+    it('renders DashboardHeader at / — the one route allowed to use it', () => {
+      mockPathname = '/';
+      renderAppShell();
+      expect(screen.getByTestId('dashboard-header')).toBeInTheDocument();
     });
   });
 

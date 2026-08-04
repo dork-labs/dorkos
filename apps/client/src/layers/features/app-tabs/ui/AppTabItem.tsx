@@ -1,48 +1,14 @@
 import { useEffect, useMemo, useRef } from 'react';
-import {
-  Activity,
-  Bot,
-  Cable,
-  FolderGit2,
-  Inbox,
-  LayoutDashboard,
-  ListTodo,
-  MessageSquare,
-  MessagesSquare,
-  Store,
-  X,
-  type LucideIcon,
-} from 'lucide-react';
+import { MessageSquare, X } from 'lucide-react';
 import { cn, getAgentDisplayName } from '@/layers/shared/lib';
 import type { AppTab } from '@/layers/shared/model';
 import type { RovingTabProps, TabActivationSource } from '@/layers/shared/ui';
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
 import { useSessionBorderState, type SessionBorderKind } from '@/layers/entities/session';
-import { fallbackTabLabel, parseTabHref } from '../lib/tab-target';
+import { fallbackTabLabel, parseTabHref, ROUTE_ICONS } from '../lib/tab-target';
 
 /** DOM id of the routed content region the active tab controls. */
 export const APP_TAB_PANEL_ID = 'app-tab-panel';
-
-/** Icon per route. A chat tab uses its agent's emoji when one is known. */
-const ROUTE_ICONS: Record<string, LucideIcon> = {
-  '/': LayoutDashboard,
-  '/activity': Activity,
-  '/agents': Bot,
-  // Plural on purpose: /session's single-bubble icon is taken, and two tabs
-  // that read alike should at least not look alike (DOR-587 review).
-  '/channels': MessagesSquare,
-  // Same icon the sidebar nav and the /connections page already use for this
-  // route (DOR-919).
-  '/connections': Cable,
-  // Same icon the help menu's "Feedback & requests" entry already uses
-  // (DOR-919).
-  '/feedback-requests': Inbox,
-  '/marketplace': Store,
-  '/marketplace/sources': Store,
-  '/session': MessageSquare,
-  '/tasks': ListTodo,
-  '/workspaces': FolderGit2,
-};
 
 /**
  * Dot colour per live state. Idle is absent on purpose — a tab that needs
