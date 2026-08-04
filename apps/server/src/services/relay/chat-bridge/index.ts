@@ -43,7 +43,7 @@ export {
   type ExternalRef,
   type NewInboundRef,
   type NewOutboundRef,
-  type PlatformChatType,
+  type BridgeablePlatformChatType,
   type BridgeVisibility,
   type RefDirection,
 } from './bridge-store.js';

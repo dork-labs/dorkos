@@ -59,7 +59,12 @@
 import { ulid } from 'ulidx';
 import type { DbTransaction } from '@dorkos/db';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
-import { ChannelTypeSchema, type ChannelType, type SignalType } from '@dorkos/shared/relay-schemas';
+import {
+  ChannelTypeSchema,
+  type ChannelType,
+  type PlatformChatType,
+  type SignalType,
+} from '@dorkos/shared/relay-schemas';
 import type {
   CreateRoomRequest,
   Room,
@@ -80,7 +85,7 @@ import { THREAD_PREVIEW_MAX_CHARS } from '@dorkos/shared/room-schemas';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../lib/logger.js';
 import { eventFanOut } from '../core/event-fan-out.js';
-import type { BridgeStore, PlatformChatType } from '../relay/chat-bridge/bridge-store.js';
+import type { BridgeStore, BridgeablePlatformChatType } from '../relay/chat-bridge/bridge-store.js';
 import {
   bridgedRoomFraming,
   topicNamesForEntries,
@@ -189,10 +194,13 @@ export interface CreateBridgedRoomRequest {
   /** The binding this bridge is a mode of. */
   bindingId: string;
   /**
-   * Read from `platformData.chatType`, never re-derived (spec §3.3). `'channel'`
-   * — a Telegram broadcast — is refused; see {@link RoomService.createBridgedRoom}.
+   * Read from `platformData.chatType`, never re-derived (spec §3.3). The full
+   * raw {@link PlatformChatType}: `'channel'` — a Telegram broadcast — is
+   * accepted at the boundary and refused inside
+   * {@link RoomService.createBridgedRoom}, so the refusal lives at the one trust
+   * boundary rather than being pushed onto every caller's type.
    */
-  chatType: PlatformChatType | 'channel';
+  chatType: PlatformChatType;
   /**
    * `ChannelTypeSchema` value read off the relay subject, or `null` for a DM
    * subject. Typed loosely at the boundary (`string | null`) and parsed
@@ -593,15 +601,15 @@ export class RoomService {
    * @returns The new bridged room with its roster.
    */
   createBridgedRoom(request: CreateBridgedRoomRequest): OpenedRoom {
-    // `request.chatType` is typed as the closed union `PlatformChatType |
-    // 'channel'`, but that type is a claim about the CALLER's discipline, not
-    // a runtime guarantee: the value crosses a trust boundary from Telegram's
+    // `request.chatType` is typed as the closed `PlatformChatType` union, but
+    // that type is a claim about the CALLER's discipline, not a runtime
+    // guarantee: the value crosses a trust boundary from Telegram's
     // own string (`chat.type`, `packages/relay/src/adapters/telegram/
     // inbound.ts:470`) through several untyped hops before it reaches here.
     // This switch is exhaustive and refuses anything it does not recognize,
     // rather than letting an unrecognized string fall through the
     // kind-mapping ternary below and get silently treated as `channel`.
-    let platformChatType: PlatformChatType;
+    let platformChatType: BridgeablePlatformChatType;
     switch (request.chatType) {
       case 'private':
       case 'group':
