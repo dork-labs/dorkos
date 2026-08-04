@@ -198,7 +198,7 @@ export function DataDisplayShowcases() {
 
       <PlaygroundSection
         title="IdentityAvatar"
-        description="The one tinted disc every identity is drawn as — an agent, a person, whoever a direct message is with. Shows its emoji when it has one, its initial when it does not."
+        description="The one disc every identity is drawn as — an agent, a person, whoever a direct message is with. Shows its emoji when it has one, its initial when it does not; circle or square, tinted or filled."
       >
         <ShowcaseLabel>Sizes</ShowcaseLabel>
         <ShowcaseDemo>
@@ -258,6 +258,57 @@ export function DataDisplayShowcases() {
                 className="border-background size-6 border"
               />
             ))}
+          </div>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          Shape — square is the agent shape, circle is the person shape (colourblind-safe)
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <div className="flex items-center gap-4">
+            {IDENTITIES.map((identity) => (
+              <IdentityAvatar
+                key={identity.name}
+                color={identity.color}
+                emoji={'emoji' in identity ? identity.emoji : undefined}
+                fallback={identity.name[0]}
+                size="md"
+                shape={'emoji' in identity ? 'square' : 'circle'}
+                badge={'emoji' in identity ? <Bot /> : undefined}
+              />
+            ))}
+          </div>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          Fill variant — the solid disc, and the fallback letter picking its own contrast
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <div className="flex items-end gap-4">
+            <div className="flex flex-col items-center gap-2">
+              <IdentityAvatar color="#6366f1" emoji="🔍" variant="fill" shape="square" size="lg" />
+              <span className="text-muted-foreground text-[10px]">emoji fill</span>
+            </div>
+            <div className="flex flex-col items-center gap-2">
+              <IdentityAvatar
+                color="#fde68a"
+                fallback="R"
+                variant="fill"
+                shape="square"
+                size="lg"
+              />
+              <span className="text-muted-foreground text-[10px]">light fill → dark letter</span>
+            </div>
+            <div className="flex flex-col items-center gap-2">
+              <IdentityAvatar
+                color="#1e1b4b"
+                fallback="R"
+                variant="fill"
+                shape="square"
+                size="lg"
+              />
+              <span className="text-muted-foreground text-[10px]">dark fill → light letter</span>
+            </div>
           </div>
         </ShowcaseDemo>
       </PlaygroundSection>

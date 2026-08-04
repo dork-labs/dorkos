@@ -53,6 +53,53 @@ describe('IdentityAvatar', () => {
     expect(container.querySelector('[data-slot="identity-avatar"]')).toHaveClass('size-7');
   });
 
+  describe('shape and variant', () => {
+    it('defaults to circle and tint, so every existing call site is unaffected', () => {
+      const { container } = render(<IdentityAvatar color="#7c3aed" fallback="A" />);
+      const disc = container.querySelector('[data-slot="identity-avatar"]') as HTMLElement;
+
+      const probe = document.createElement('span');
+      probe.style.backgroundColor = 'color-mix(in oklch, #7c3aed 18%, transparent)';
+
+      expect(disc).toHaveClass('rounded-full');
+      expect(disc).not.toHaveClass('rounded-xl');
+      expect(disc.style.backgroundColor).toBe(probe.style.backgroundColor);
+    });
+
+    it('draws square as the agent shape', () => {
+      const { container } = render(<IdentityAvatar color="#7c3aed" fallback="A" shape="square" />);
+      const disc = container.querySelector('[data-slot="identity-avatar"]') as HTMLElement;
+
+      expect(disc).toHaveClass('rounded-xl');
+      expect(disc).not.toHaveClass('rounded-full');
+    });
+
+    it('fills with the solid identity colour rather than a tint', () => {
+      const { container } = render(<IdentityAvatar color="#7c3aed" fallback="A" variant="fill" />);
+      const disc = container.querySelector('[data-slot="identity-avatar"]') as HTMLElement;
+      const probe = document.createElement('span');
+      probe.style.backgroundColor = '#7c3aed';
+
+      expect(disc.style.backgroundColor).toBe(probe.style.backgroundColor);
+    });
+
+    it("picks the fallback letter's colour from the fill, not a fixed white", () => {
+      // A light fill needs dark text — the exact case "don't assume white" is
+      // guarding against.
+      const { container } = render(<IdentityAvatar color="#fef3c7" fallback="A" variant="fill" />);
+      const disc = container.querySelector('[data-slot="identity-avatar"]') as HTMLElement;
+
+      expect(disc.style.color).toBe('oklch(0.2 0 0)');
+    });
+
+    it('leaves text colour alone for tint, where the ambient foreground already reads', () => {
+      const { container } = render(<IdentityAvatar color="#7c3aed" fallback="A" />);
+      const disc = container.querySelector('[data-slot="identity-avatar"]') as HTMLElement;
+
+      expect(disc.style.color).toBe('');
+    });
+  });
+
   it('sets a letter a step below the circle, so one rule covers every size', () => {
     // jsdom does no layout, so what can be pinned is the rule itself: the
     // fallback glyph is sized relative to the disc's own font size. An emoji

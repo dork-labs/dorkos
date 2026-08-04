@@ -98,6 +98,13 @@ export { HoverBorderGradient } from './hover-border-gradient';
 export { HoverCard, HoverCardTrigger, HoverCardContent } from './hover-card';
 export { IdentityAvatar, identityAvatarVariants } from './identity-avatar';
 export type { IdentityAvatarProps } from './identity-avatar';
+export { IdentityHoverCard } from './identity-hover-card';
+export type {
+  IdentityHoverCardProps,
+  IdentityHoverCardDescriptor,
+  IdentityHoverCardAgentInfo,
+  IdentityOrigin,
+} from './identity-hover-card';
 export { InlineCode } from './inline-code';
 export { Kbd } from './kbd';
 export { Label } from './label';
@@ -242,6 +249,8 @@ export { FeatureDisabledState } from './FeatureDisabledState';
 export { LinkSafetyModal } from './link-safety-modal';
 export { MarkdownContent } from './markdown-content';
 export { MarkdownErrorBoundary } from './markdown-error-boundary';
+export { MentionPill, mentionPillVariants } from './mention-pill';
+export type { MentionPillProps, MentionOrigin } from './mention-pill';
 export {
   Sheet,
   SheetTrigger,
