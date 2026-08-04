@@ -27,6 +27,10 @@ vi.mock('@tanstack/react-router', () => ({
       return { location: { pathname: mockPathname, href: mockPathname } };
     },
     history: { subscribe: () => () => {} },
+    // `SidebarMobileNavigationClose` listens for a committed destination so the
+    // mobile sheet gets out of its way (DOR-610). Nothing here navigates, so
+    // the listener is registered and never fired.
+    subscribe: () => () => {},
   }),
   Outlet: () => <div data-testid="outlet">outlet</div>,
   useNavigate: () => vi.fn(),
