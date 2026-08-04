@@ -43,6 +43,48 @@ describe('UnclaimedChatStore', () => {
     expect(store.list('pending')).toHaveLength(1);
   });
 
+  // DOR-907: the raw platform chat type is captured at sighting and survives a
+  // reload (getById re-reads from SQLite through `toDomain`), so a binding
+  // claimed from this row later carries the real type. A group and a broadcast
+  // stay distinguishable here even though both fold to `chatKind: 'group'`.
+  it('DOR-907: persists the raw platformChatType and round-trips it through the DB', () => {
+    const group = store.recordSighting({
+      adapterId: 'tg-bot',
+      chatId: 'g1',
+      channelType: 'group',
+      chatKind: 'group',
+      platformChatType: 'supergroup',
+    }).chat;
+    const broadcast = store.recordSighting({
+      adapterId: 'tg-bot',
+      chatId: 'c1',
+      channelType: 'group',
+      chatKind: 'group',
+      platformChatType: 'channel',
+    }).chat;
+
+    // Present on the returned row...
+    expect(group.platformChatType).toBe('supergroup');
+    expect(broadcast.platformChatType).toBe('channel');
+    // ...and after a fresh read from SQLite (proves it was actually persisted).
+    expect(store.getById(group.id)?.platformChatType).toBe('supergroup');
+    expect(store.getById(broadcast.id)?.platformChatType).toBe('channel');
+    // Both fold to the same coarse chatKind — the raw type is the only thing
+    // that tells them apart.
+    expect(store.getById(group.id)?.chatKind).toBe('group');
+    expect(store.getById(broadcast.id)?.chatKind).toBe('group');
+  });
+
+  it('DOR-907: a sighting with no platformChatType (e.g. Slack) persists it as null', () => {
+    const chat = store.recordSighting({
+      adapterId: 'slack-bot',
+      chatId: 's1',
+      chatKind: 'dm',
+    }).chat;
+    expect(chat.platformChatType).toBeNull();
+    expect(store.getById(chat.id)?.platformChatType).toBeNull();
+  });
+
   it('a sighting on a different chatId creates a separate row', () => {
     store.recordSighting({ adapterId: 'tg-bot', chatId: '123', chatKind: 'dm' });
     store.recordSighting({ adapterId: 'tg-bot', chatId: '456', chatKind: 'dm' });
@@ -114,6 +156,7 @@ describe('UnclaimedChatStore', () => {
         'chatId',
         'channelType',
         'chatKind',
+        'platformChatType',
         'senderName',
         'senderId',
         'chatTitle',

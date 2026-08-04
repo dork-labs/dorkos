@@ -29,6 +29,8 @@ interface StoredBinding {
   agentId: string;
   chatId?: string;
   channelType?: string;
+  /** The raw platform chat type (DOR-907); absent on a pre-DOR-907 binding. */
+  platformChatType?: 'private' | 'group' | 'supergroup' | 'channel';
   sessionStrategy: string;
   label: string;
   bridge: 'off' | 'room';
@@ -125,6 +127,8 @@ describe('PATCH /bindings/:id — bridge transitions route through BridgeLifecyc
   });
 
   it('A12.2: one PATCH { bridge: "room" } on a DM fires BridgeLifecycle.bridge once and flips the binding — no restart', async () => {
+    store = createStore({ platformChatType: 'private' });
+    lifecycle = createLifecycle(store);
     const app = createApp(store, {
       getBridgeLifecycle: vi.fn().mockReturnValue(lifecycle) as never,
     });
@@ -136,8 +140,8 @@ describe('PATCH /bindings/:id — bridge transitions route through BridgeLifecyc
 
     // One cockpit action → exactly one lifecycle bridge call (A12.2).
     expect(lifecycle.bridge).toHaveBeenCalledTimes(1);
-    // The lifecycle input is derived from the stored binding; a DM bridges as a
-    // `private` chat with no subject-level channel type (spec §3.3).
+    // The lifecycle input is derived from the stored binding; a `private` chat
+    // bridges as `private` with no subject-level channel type (spec §3.3).
     expect(lifecycle.bridge).toHaveBeenCalledWith({
       adapterId: 'telegram-1',
       chatId: '12345',
@@ -150,6 +154,50 @@ describe('PATCH /bindings/:id — bridge transitions route through BridgeLifecyc
     });
     expect(res.body.binding.bridge).toBe('room');
     expect(res.body.binding.roomId).toBe('room-9');
+  });
+
+  // DOR-907: a binding that persisted the raw platform type `group` (or
+  // `supergroup`) now BRIDGES as a channel, where DOR-878 refused it. The
+  // lifecycle is called with `chatType: 'group'` and `channelType: 'group'`,
+  // which is what makes `createBridgedRoom` seed the channel mention-only.
+  it('bridges a group binding (platformChatType: group) as a channel', async () => {
+    store = createStore({ platformChatType: 'group', channelType: 'group' });
+    lifecycle = createLifecycle(store);
+    const app = createApp(store, {
+      getBridgeLifecycle: vi.fn().mockReturnValue(lifecycle) as never,
+    });
+
+    const res = await request(app)
+      .patch('/api/relay/bindings/b-1')
+      .send({ bridge: 'room' })
+      .expect(200);
+
+    expect(lifecycle.bridge).toHaveBeenCalledTimes(1);
+    expect(lifecycle.bridge).toHaveBeenCalledWith({
+      adapterId: 'telegram-1',
+      chatId: '12345',
+      bindingId: 'b-1',
+      agentId: 'agent-1',
+      chatType: 'group',
+      channelType: 'group',
+      title: 'Ana',
+      agentPath: '/agents/agent-1',
+    });
+    expect(res.body.binding.bridge).toBe('room');
+  });
+
+  it('bridges a supergroup binding (platformChatType: supergroup) as a channel', async () => {
+    store = createStore({ platformChatType: 'supergroup', channelType: 'group' });
+    lifecycle = createLifecycle(store);
+    const app = createApp(store, {
+      getBridgeLifecycle: vi.fn().mockReturnValue(lifecycle) as never,
+    });
+
+    await request(app).patch('/api/relay/bindings/b-1').send({ bridge: 'room' }).expect(200);
+
+    expect(lifecycle.bridge).toHaveBeenCalledWith(
+      expect.objectContaining({ chatType: 'supergroup', channelType: 'group' })
+    );
   });
 
   it('does not re-run bridge when the binding is already bridged (no transition)', async () => {
@@ -181,13 +229,34 @@ describe('PATCH /bindings/:id — bridge transitions route through BridgeLifecyc
     expect(res.body.binding.roomId).toBeNull();
   });
 
-  // The refusal that must actually fire on a real Telegram broadcast. A broadcast
-  // reaches us folded into `channelType: 'group'` (isGroupChat, inbound.ts:355),
-  // so a group-typed binding is the shape a real broadcast takes. The refusal
-  // runs through the REAL derivation (bridgeChatTypeForBinding), NOT a mock throw,
-  // so this fails if the refusal is ever made unreachable.
-  it('refuses a group binding (the shape a folded broadcast takes) before the lifecycle', async () => {
-    store = createStore({ channelType: 'group' });
+  // DOR-907's precise refusal: the binding carries the REAL persisted broadcast
+  // type (`platformChatType: 'channel'`), so the route refuses it as
+  // BROADCAST_NOT_BRIDGEABLE. This fires through the REAL derivation
+  // (bridgeChatTypeForBinding reading the persisted field), NOT a mock throw, so
+  // it fails if the broadcast branch is ever made unreachable.
+  it('refuses a real broadcast binding (platformChatType: channel) with BROADCAST_NOT_BRIDGEABLE', async () => {
+    store = createStore({ platformChatType: 'channel', channelType: 'group' });
+    lifecycle = createLifecycle(store);
+    const app = createApp(store, {
+      getBridgeLifecycle: vi.fn().mockReturnValue(lifecycle) as never,
+    });
+
+    const res = await request(app)
+      .patch('/api/relay/bindings/b-1')
+      .send({ bridge: 'room' })
+      .expect(400);
+
+    expect(res.body.code).toBe('BROADCAST_NOT_BRIDGEABLE');
+    expect(res.body.error).toMatch(/broadcast/i);
+    expect(lifecycle.bridge).not.toHaveBeenCalled();
+    expect(store.map.get('b-1')!.bridge).toBe('off');
+  });
+
+  // Back-compat: an OLD binding (no persisted platform type) that is a group by
+  // its subject channel type takes the CONSERVATIVE refusal — we never bridge a
+  // non-DM we cannot prove is a group, because it might be a folded broadcast.
+  it('refuses an old group binding with no persisted platform type (conservative BRIDGE_NOT_A_DM)', async () => {
+    store = createStore({ channelType: 'group' }); // no platformChatType
     lifecycle = createLifecycle(store);
     const app = createApp(store, {
       getBridgeLifecycle: vi.fn().mockReturnValue(lifecycle) as never,
@@ -204,21 +273,21 @@ describe('PATCH /bindings/:id — bridge transitions route through BridgeLifecyc
     expect(store.map.get('b-1')!.bridge).toBe('off');
   });
 
-  it('refuses an explicitly broadcast-typed binding (channelType: channel)', async () => {
-    store = createStore({ channelType: 'channel' });
+  // Back-compat: an OLD binding that is a DM by its subject channel type still
+  // bridges as `private`, even with no persisted platform type — a DM is the one
+  // shape provably not a broadcast.
+  it('bridges an old DM binding with no persisted platform type (conservative allow)', async () => {
+    store = createStore({}); // no platformChatType, no channelType → a DM
     lifecycle = createLifecycle(store);
     const app = createApp(store, {
       getBridgeLifecycle: vi.fn().mockReturnValue(lifecycle) as never,
     });
 
-    const res = await request(app)
-      .patch('/api/relay/bindings/b-1')
-      .send({ bridge: 'room' })
-      .expect(400);
+    await request(app).patch('/api/relay/bindings/b-1').send({ bridge: 'room' }).expect(200);
 
-    expect(res.body.code).toBe('BRIDGE_NOT_A_DM');
-    expect(lifecycle.bridge).not.toHaveBeenCalled();
-    expect(store.map.get('b-1')!.bridge).toBe('off');
+    expect(lifecycle.bridge).toHaveBeenCalledWith(
+      expect.objectContaining({ chatType: 'private', channelType: null })
+    );
   });
 
   it('refuses a chat-wildcard binding (no chatId) with the wildcard reason, before the lifecycle', async () => {

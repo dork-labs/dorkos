@@ -91,6 +91,13 @@ export function createUnclaimedChatsRouter(deps: UnclaimedChatsRouterDeps): Rout
         agentId: result.data.agentId,
         chatId: chat.chatId,
         ...(channelType.success && { channelType: channelType.data }),
+        // Carry the raw platform chat type from the sighting onto the binding,
+        // so the "Bridge to a channel" action can later tell a real group from
+        // a broadcast without a live probe (DOR-907). Null on the row (an
+        // adapter that reported none, or a pre-migration sighting) is simply
+        // omitted — the binding then has no platform type, and the bridge
+        // action falls back to its conservative DM-only rule.
+        ...(chat.platformChatType && { platformChatType: chat.platformChatType }),
         ...(result.data.sessionStrategy && { sessionStrategy: result.data.sessionStrategy }),
         ...(result.data.permissionMode && { permissionMode: result.data.permissionMode }),
         ...(result.data.label && { label: result.data.label }),
