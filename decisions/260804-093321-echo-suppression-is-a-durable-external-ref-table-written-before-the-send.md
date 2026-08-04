@@ -15,7 +15,7 @@ Proposed. To be accepted when the `chats-as-channels` spec reaches `implemented`
 
 ## Context
 
-Inbound messages become room posts and committed room posts get delivered to the platform, so without a suppression mechanism a stranger's message would be written to the room and then immediately sent back to the same chat. Heuristic suppression — text comparison, a time window, a recently-sent cache — fails on legitimate repeats, restarts, and races, and would occasionally send a message a person sees twice into someone else's chat, which is not recallable.
+Inbound messages become room posts and committed room posts get delivered to the platform, so without a suppression mechanism a stranger's message would be written to the room and then immediately sent back to the same chat. Heuristic suppression - text comparison, a time window, a recently-sent cache - fails on legitimate repeats, restarts, and races, and would occasionally send a message a person sees twice into someone else's chat, which is not recallable.
 
 ## Decision
 
@@ -26,10 +26,10 @@ We will suppress echoes structurally through a durable **external-ref table**: a
 ### Positive
 
 - No heuristic to tune or misfire: the ref table is the only mechanism, and it is exact.
-- The write-before-send order fails on the recoverable side — a missing message is visible in the room and re-sendable by the person, where a duplicate in a stranger's chat is not.
+- The write-before-send order fails on the recoverable side - a missing message is visible in the room and re-sendable by the person, where a duplicate in a stranger's chat is not.
 - Re-bridging stays correct across archive/un-archive because the refs are never deleted, so reply targeting and echo suppression continue seamlessly.
 
 ### Negative
 
-- A crash in the write-send window strands an entry as "delivered" until the retry budget resolves it into a visible `bridge_undelivered` notice — correct, but it means the honest failure is a delayed notice rather than an instant retry.
+- A crash in the write-send window strands an entry as "delivered" until the retry budget resolves it into a visible `bridge_undelivered` notice - correct, but it means the honest failure is a delayed notice rather than an instant retry.
 - Every received and every delivered message costs one small ref row, which the log carries forever by design.

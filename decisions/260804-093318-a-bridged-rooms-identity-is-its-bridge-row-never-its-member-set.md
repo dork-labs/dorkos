@@ -15,7 +15,7 @@ Proposed. To be accepted when the `chats-as-channels` spec reaches `implemented`
 
 ## Context
 
-`RoomStore.findDmByMemberSet` identifies a DM by its exact member set, and `createRoom` consults it for every `kind: 'dm'` request, returning — and un-archiving — a match. A bridged Telegram private chat whose roster is `{operator, bound agent}` is byte-identical to the operator's own private DM with that agent. Routing a bridge create through member-set matching would silently return the operator's existing private conversation, land strangers' messages in it, and make its private posts delivery candidates for a chat the operator never meant to expose.
+`RoomStore.findDmByMemberSet` identifies a DM by its exact member set, and `createRoom` consults it for every `kind: 'dm'` request, returning - and un-archiving - a match. A bridged Telegram private chat whose roster is `{operator, bound agent}` is byte-identical to the operator's own private DM with that agent. Routing a bridge create through member-set matching would silently return the operator's existing private conversation, land strangers' messages in it, and make its private posts delivery candidates for a chat the operator never meant to expose.
 
 ## Decision
 
@@ -26,10 +26,10 @@ We will identify a bridged room by its **bridge row**, keyed on `(adapterId, cha
 ### Positive
 
 - A stranger's message can never land in the operator's private DM: the two are different rooms with different logs even when their rosters match exactly.
-- Re-bridging is idempotent on the chat — the natural key — so an archived bridged room is re-used, not duplicated, and its echo-suppression and reply-targeting refs stay continuous.
+- Re-bridging is idempotent on the chat - the natural key - so an archived bridged room is re-used, not duplicated, and its echo-suppression and reply-targeting refs stay continuous.
 - The exclusion is enforced in the query, not by convention, so a future caller of `findDmByMemberSet` cannot reintroduce the bug by not knowing to avoid it.
 
 ### Negative
 
 - Two conceptually similar "DM with this agent" rooms can now coexist, which a user could find surprising until the origin marks explain it.
-- A second dedupe rule (bridge-row identity) sits beside the member-set rule; both must be kept correct, and `kind: 'dm'` for a bridged private chat is safe _only_ because of this exclusion. If it ever proves invasive, the recorded fallback is `kind: 'channel'` — never a weakening of the exclusion.
+- A second dedupe rule (bridge-row identity) sits beside the member-set rule; both must be kept correct, and `kind: 'dm'` for a bridged private chat is safe _only_ because of this exclusion. If it ever proves invasive, the recorded fallback is `kind: 'channel'` - never a weakening of the exclusion.

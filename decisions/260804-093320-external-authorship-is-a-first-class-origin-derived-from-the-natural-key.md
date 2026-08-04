@@ -27,9 +27,9 @@ We will make external authorship a first-class property, `origin: 'local' | { pl
 
 - Untrusted is a property of the _author_, established at write time and carried on the entry, so it cannot be spoofed by message content or lost at render.
 - The origin of any entry is stable for the life of the log, because it reads the key that was written at mint, not the live subject.
-- A person can always tell "someone on my machine wrote this" from "a stranger on the internet wrote this" — the difference §9 makes a security boundary.
+- A person can always tell "someone on my machine wrote this" from "a stranger on the internet wrote this" - the difference §9 makes a security boundary.
 
 ### Negative
 
 - Identity is per-install and does not travel: two installs bridging the same group mint unrelated authors, the same honest limit agents already have.
-- A message with no resolvable platform user id gets no author and is dropped, rather than folded into a shared "someone" — correct for a log meant to be evidence, but it means a malformed payload is silently refused.
+- A message with no resolvable platform user id gets no author and is dropped, rather than folded into a shared "someone" - correct for a log meant to be evidence, but it means a malformed payload is silently refused.
