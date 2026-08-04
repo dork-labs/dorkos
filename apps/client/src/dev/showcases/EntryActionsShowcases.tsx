@@ -11,6 +11,7 @@ import { ShowcaseLabel } from '../ShowcaseLabel';
 import {
   BENCH_AGENT,
   BENCH_AGENT_REF,
+  BENCH_AUTHORS,
   BENCH_FREQUENTS,
   BENCH_NAMES,
   BENCH_ROOM_ID,
@@ -58,6 +59,7 @@ function BenchRow({
       entry={entry}
       author={author}
       authorRef={authorRef}
+      authors={BENCH_AUTHORS}
       viewerAuthorId={BENCH_VIEWER_ID}
       authorNames={BENCH_NAMES}
       reactionFrequents={BENCH_FREQUENTS}

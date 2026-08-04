@@ -52,6 +52,16 @@ export const BENCH_VIEWER_REF: AuthorRef = {
   mentionHandle: 'you',
 };
 
+/**
+ * The bench's roster, keyed by author id — what a `RoomEntryRow` resolves a
+ * `<mention>` against. `origin: 'local'` for both: neither seeded author is
+ * bridged in from another platform.
+ */
+export const BENCH_AUTHORS: ReadonlyMap<string, AuthorRef & { origin: 'local' }> = new Map([
+  [BENCH_AGENT_REF.id, { ...BENCH_AGENT_REF, origin: 'local' }],
+  [BENCH_VIEWER_REF.id, { ...BENCH_VIEWER_REF, origin: 'local' }],
+]);
+
 let seq = 0;
 
 /**
