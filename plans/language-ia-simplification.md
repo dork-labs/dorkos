@@ -20,7 +20,7 @@ Status: critic verdict AGREE (round 2). This is the canonical plan for the HTML 
 ### D0 — Fix the "agent" overload first
 
 **Invariant:** bare "agent" in user copy resolves to exactly one sense — a named teammate in your fleet (DorkBot, security-auditor…). The runtime sense uses brand names (Claude Code / Codex / OpenCode) — no category noun at all on first-run surfaces (not "engine", not "coding agent" where avoidable). The SDK-subagent sense uses "subagent" consistently.
-**Acceptance test:** sweep user-facing strings; every bare "agent" must be fleet-sense; runtime-sense = brand names; subagent surfaces (SubagentBlock, SubagentsItem, BackgroundTaskBar aria-label "N more agents running" → "N more subagents running") use "subagent".
+**Acceptance test:** sweep user-facing strings; every bare "agent" must be fleet-sense; runtime-sense = brand names; subagent surfaces (SubagentBlock, SubagentsItem, BackgroundTaskBar aria-label "N more agents running" → "1 more subagent running" / "N more subagents running") use "subagent".
 Known sites (not exhaustive — the invariant governs): onboarding ProgressCard "Add more agents"→opens Runtimes (rename to name the missing runtimes; contrast: AgentOnboardingCard "Add more agents to your fleet" is CORRECT and must not be swept); SystemRequirementsStep "Connect your first agent" / "DorkOS drives coding agents" / "Looking for coding agents on your machine" / "1 more agent available" / "An agent is connected"; RuntimeSetupDialog "more agents available"; RuntimesTab "DorkOS speaks three agent runtimes"; status-bar-registry "Which agent runtime runs this session".
 The evidence line for the ADR: two sidebar cards ship the identical string "Add more agents" meaning two different concepts.
 

@@ -189,8 +189,21 @@ describe('BackgroundTaskBar', () => {
     expect(screen.getByTestId('agent-runner-of-3')).toBeInTheDocument();
     expect(screen.queryByTestId('agent-runner-of-4')).not.toBeInTheDocument();
 
-    // Overflow badge shows +2
+    // Overflow badge shows +2, pluralized since count > 1
     expect(screen.getByText('+2')).toBeInTheDocument();
+    expect(screen.getByLabelText('2 more subagents running')).toBeInTheDocument();
+  });
+
+  it('singularizes the overflow badge aria-label when exactly 1 agent overflows', () => {
+    const tasks = Array.from({ length: 5 }, (_, i) =>
+      makeTask({ taskId: `so-${i}`, taskType: 'agent', description: `Agent ${i}` })
+    );
+
+    render(<BackgroundTaskBar tasks={tasks} onStopTask={vi.fn()} />);
+
+    // Overflow badge shows +1, singular since count === 1
+    expect(screen.getByText('+1')).toBeInTheDocument();
+    expect(screen.getByLabelText('1 more subagent running')).toBeInTheDocument();
   });
 
   it('renders mixed agent + bash tasks with correct aria-label', () => {
