@@ -370,4 +370,48 @@ describe('BridgeSessionAdopter + BridgeLifecycle.bridge (chats-as-channels §7.1
         .filter((e) => e.kind === 'notice' && e.body.notice === 'bridge_history_note')
     ).toHaveLength(1);
   });
+
+  it('a replay after a TORN first flip re-issues the binding flip and heals (self-healing replay)', async () => {
+    // A binding writer whose FIRST flip throws (the room + ledger already
+    // committed), then succeeds — the torn-first-attempt the fix protects.
+    const rows = new Map<string, LifecycleBinding>([
+      [
+        BINDING_ID,
+        { id: BINDING_ID, adapterId: ADAPTER, chatId: CHAT_ID, bridge: 'off', roomId: null },
+      ],
+    ]);
+    let flips = 0;
+    const update = vi.fn(
+      async (id: string, updates: { bridge?: 'off' | 'room'; roomId?: string | null }) => {
+        flips += 1;
+        if (flips === 1) throw new Error('binding store write failed');
+        const next = { ...rows.get(id)!, ...updates };
+        rows.set(id, next);
+        return next;
+      }
+    );
+    const bindings = { rows, getById: (id: string) => rows.get(id), update };
+    const { adopter } = makeAdopter({ candidate: undefined }); // fresh path — no ledger write
+    const lifecycle = makeLifecycle(adopter, bindings);
+
+    // First attempt: room + history notice commit, then the flip throws.
+    await expect(lifecycle.bridge(createInput())).rejects.toThrow('binding store write failed');
+    // The tear: the binding is still unbridged over a live bridged room, so
+    // inbound would keep routing as a private pipe.
+    expect(rows.get(BINDING_ID)!.bridge).toBe('off');
+
+    // The retry: createBridgedRoom replays the same room, and the replay branch
+    // heals the flip rather than returning a healthy-looking still-broken state.
+    const { id, adopted } = await lifecycle.bridge(createInput());
+    expect(adopted).toBe(false);
+    // Healed: the binding now points at the SAME room the first attempt built.
+    expect(rows.get(BINDING_ID)).toMatchObject({ bridge: 'room', roomId: id });
+
+    // No second room and no re-notice: exactly one history notice in the one room.
+    expect(
+      harness.store
+        .listEntries(id, { limit: 100 })
+        .filter((e) => e.kind === 'notice' && e.body.notice === 'bridge_history_note')
+    ).toHaveLength(1);
+  });
 });

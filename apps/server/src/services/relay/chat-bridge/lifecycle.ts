@@ -230,10 +230,17 @@ export class BridgeLifecycle {
    * flip and before the room's first turn, because the ledger write it may make
    * is first-write-wins and must beat the dispatcher's own placeholder mint.
    *
-   * **Idempotent on the chat.** When the room half reports a replay
-   * (`created: false` — the chat was already bridged to this binding), there is
-   * nothing to adopt (the sessionMap entry was vacated the first time) and no
-   * notice to repeat, so this returns the existing room untouched.
+   * **Idempotent on the chat, and self-healing on a torn first attempt.** When
+   * the room half reports a replay (`created: false` — the chat was already
+   * bridged to this binding), there is nothing to adopt (the sessionMap entry
+   * was vacated the first time) and no notice to repeat. But the replay branch
+   * still re-issues the binding flip before returning, because a FIRST attempt
+   * can commit the room and the ledger and then have this final `bindings.update`
+   * throw: the room is bridged but the binding still says `'off'`, and inbound
+   * keeps routing as a private pipe. A retry then finds `created: false` and
+   * would otherwise return a healthy-looking result over a still-unbridged
+   * binding. Re-flipping here (idempotent — a no-op on a truly-already-bridged
+   * replay) is what makes that retry actually heal.
    *
    * @param input - Which chat, which binding, which agent.
    * @returns The bridged room's id and whether an existing session was adopted.
@@ -253,9 +260,15 @@ export class BridgeLifecycle {
       agentPath: input.agentPath,
       operatorAuthorId: this.deps.operatorAuthorId(),
     });
-    // A replay is already bridged: its session was migrated the first time and
-    // its history notice already posted. Do not re-probe or re-notice.
-    if (!room.created) return { id: room.id, adopted: false };
+    // A replay's session was migrated the first time and its history notice
+    // already posted, so do not re-probe or re-notice. But DO re-issue the flip:
+    // if a first attempt committed the room and ledger and then the flip below
+    // threw, the binding is still `'off'` over a live bridged room, and this is
+    // the retry that heals it (idempotent when it was already bridged).
+    if (!room.created) {
+      await this.deps.bindings.update(input.bindingId, { bridge: 'room', roomId: room.id });
+      return { id: room.id, adopted: false };
+    }
 
     const agentAuthorId = room.members.find((m) => m.author.kind === 'agent')?.authorId;
     // A bridged room is always seeded with exactly one agent (§3.4), so a missing
