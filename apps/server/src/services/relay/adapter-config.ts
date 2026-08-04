@@ -161,8 +161,8 @@ function setNestedValueCopying(
  * Read a JSON-object field that may arrive as text from a textarea.
  *
  * Unparseable text is refused rather than resolved to `{}`. Swallowing it meant
- * one stray keystroke in the Channel Overrides box erased every per-channel rule
- * and reported success (DOR-640 review); a refused save leaves the stored value
+ * one stray keystroke in the Slack channel settings box erased every per-channel
+ * rule and reported success (DOR-640 review); a refused save leaves the stored value
  * alone and says why. Empty text still means an empty object — that is a person
  * clearing the field, not a typo.
  *
