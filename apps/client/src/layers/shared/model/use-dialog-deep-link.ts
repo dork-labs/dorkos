@@ -8,6 +8,7 @@
  * @module shared/model/use-dialog-deep-link
  */
 import { useCallback, useEffect } from 'react';
+import type { UiPanelId } from '@dorkos/shared/types';
 import { useAppStore } from './app-store';
 import type { SettingsTab } from './app-store/app-store-panels';
 import { useSafeSearch, useSafeNavigate } from './use-safe-router';
@@ -19,6 +20,36 @@ import { useSafeSearch, useSafeNavigate } from './use-safe-router';
 type AnySearchUpdater = (
   prev: Record<string, string | undefined>
 ) => Record<string, string | undefined>;
+
+/**
+ * Every search param a dual-signal dialog owns — the open signal itself plus any
+ * param that only makes sense while it is open (the settings section anchor).
+ *
+ * A dual-signal dialog is one `DialogHost` renders on `storeOpen || urlIsOpen`,
+ * so closing it means clearing *both* halves. This map is the single place that
+ * says which params the URL half is made of; every close path builds its patch
+ * from {@link clearedDialogSearch} rather than listing params again (DOR-839).
+ */
+const DIALOG_SEARCH_PARAMS = {
+  settings: ['settings', 'settingsSection'],
+  tasks: ['tasks'],
+} as const satisfies Record<string, readonly string[]>;
+
+/** A dialog with both a store open flag and a URL open signal. */
+export type DualSignalDialog = keyof typeof DIALOG_SEARCH_PARAMS;
+
+/**
+ * Build the search patch that clears a dual-signal dialog's URL half.
+ *
+ * Spread into a search updater (`{ ...prev, ...clearedDialogSearch('settings') }`);
+ * TanStack Router drops the `undefined` entries from the resulting URL.
+ *
+ * @param dialog - Which dialog's params to clear.
+ * @returns A patch setting each of the dialog's params to `undefined`.
+ */
+export function clearedDialogSearch(dialog: DualSignalDialog): Record<string, undefined> {
+  return Object.fromEntries(DIALOG_SEARCH_PARAMS[dialog].map((param) => [param, undefined]));
+}
 
 /**
  * A legacy `?settings=` id that has moved out of the Settings dialog entirely
@@ -161,12 +192,16 @@ export function useSettingsDeepLink(): DialogDeepLink<SettingsTab> {
   );
 
   const close = useCallback(() => {
-    if (!navigate) return setSettingsOpen(false);
-    const updater: AnySearchUpdater = (prev) => ({
-      ...prev,
-      settings: undefined,
-      settingsSection: undefined,
-    });
+    // Both halves, every time — this is the only close the dialog has.
+    // `DialogHost` renders Settings on `storeOpen || urlIsOpen`, so a close that
+    // clears one half leaves the other holding the dialog up. That is exactly
+    // what "Replay setup" hit: it cleared the store flag while the toast's
+    // `?settings=preferences` link kept the dialog parked over the welcome
+    // screen (DOR-839). Clearing an already-false flag is a no-op, so owning
+    // both costs nothing on the common path.
+    setSettingsOpen(false);
+    if (!navigate) return;
+    const updater: AnySearchUpdater = (prev) => ({ ...prev, ...clearedDialogSearch('settings') });
     navigate({ search: updater as never });
   }, [navigate, setSettingsOpen]);
 
@@ -201,6 +236,22 @@ export function useSettingsDeepLink(): DialogDeepLink<SettingsTab> {
 /** Tasks dialog deep-link state and actions. No tabs. */
 export function useTasksDeepLink(): DialogDeepLink<never> {
   return useSimpleDialogDeepLink('tasks');
+}
+
+/**
+ * Whether a dispatcher panel id names one of the dual-signal dialogs — the ones
+ * a search param can hold open alongside the store flag.
+ *
+ * The app entry uses this to build the dispatcher's `panelUrlSignal`: agent UI
+ * commands run outside React, so they cannot reach these hooks and need the
+ * mapping spelled out (DOR-839). Panels absent from the map (`relay`, `picker`)
+ * have no URL half at all.
+ *
+ * @param panel - A dispatcher panel id.
+ * @returns True when the panel has a URL half to read or clear.
+ */
+export function isDualSignalDialog(panel: UiPanelId): panel is UiPanelId & DualSignalDialog {
+  return Object.hasOwn(DIALOG_SEARCH_PARAMS, panel);
 }
 
 /**
@@ -241,8 +292,10 @@ function useSimpleDialogDeepLink(paramName: 'tasks'): DialogDeepLink<never> {
   }, [navigate, paramName, setStoreOpen]);
 
   const close = useCallback(() => {
-    if (!navigate) return setStoreOpen(false);
-    const updater: AnySearchUpdater = (prev) => ({ ...prev, [paramName]: undefined });
+    // Both halves, for the same reason the Settings close owns both (DOR-839).
+    setStoreOpen(false);
+    if (!navigate) return;
+    const updater: AnySearchUpdater = (prev) => ({ ...prev, ...clearedDialogSearch(paramName) });
     navigate({ search: updater as never });
   }, [navigate, paramName, setStoreOpen]);
 

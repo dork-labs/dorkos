@@ -27,6 +27,9 @@ import {
   useExtensionRegistry,
   useThemeStore,
   EventStreamProvider,
+  clearedDialogSearch,
+  isDualSignalDialog,
+  type DialogSearch,
 } from '@/layers/shared/model';
 import { openTabAt } from '@/layers/features/app-tabs';
 import { AuthGuard, OwnerSetupHost } from '@/layers/features/auth';
@@ -276,9 +279,12 @@ const extensionDeps: ExtensionAPIDeps = {
   // ExtensionAPIDeps contract — cast to satisfy the looser interface.
   registry: useExtensionRegistry.getState() as ExtensionAPIDeps['registry'],
   dispatcherContext: {
+    // The getter, not a snapshot: this context is built once and lives as long as
+    // the app, so anything it captured at boot would still be boot-time state on
+    // every later dispatch (see `DispatcherContext.getStore`).
     // AppState.setSidebarActiveTab accepts a union of literals; DispatcherStore
     // widens it to `string`. Cast to satisfy the structural interface.
-    store: useAppStore.getState() as ExtensionAPIDeps['dispatcherContext']['store'],
+    getStore: useAppStore.getState as ExtensionAPIDeps['dispatcherContext']['getStore'],
     // Route the agent's `control_ui set_theme` through the shared theme store, so
     // every consumer — mounted canvas viewers (useResolvedTheme) included —
     // updates at once and the choice persists like a user pick. A direct classList
@@ -288,6 +294,26 @@ const extensionDeps: ExtensionAPIDeps = {
     // Gates the agent's `open_terminal` command: HttpTransport supports a
     // server-side PTY, so the Terminal tab exists and can be focused.
     supportsTerminal: transport.supportsTerminal,
+    // The URL half of the Settings/Tasks open signal. `DialogHost` renders those
+    // dialogs on `storeOpen || urlIsOpen`, so an agent's `close_panel` that only
+    // cleared the store flag left a deep-linked dialog on screen, and
+    // `toggle_panel` read it as closed (DOR-839). Components reach the URL half
+    // through `useSettingsDeepLink`/`useTasksDeepLink`; dispatch here happens
+    // outside React and cannot call hooks, so this inline adapter reads and
+    // clears the search params off the router directly — same shape as
+    // `switchAgent` below. `isDualSignalDialog` keeps the two in step: it is the
+    // same map the hooks build their close patches from.
+    panelUrlSignal: {
+      isOpen: (panel) =>
+        isDualSignalDialog(panel) && !!(router.state.location.search as DialogSearch)[panel],
+      close: (panel) => {
+        if (!isDualSignalDialog(panel)) return;
+        const cleared = clearedDialogSearch(panel);
+        void router.navigate({
+          search: ((prev: Record<string, unknown>) => ({ ...prev, ...cleared })) as never,
+        });
+      },
+    },
     // Wires the agent's `control_ui switch_agent` command to the same CWD switch
     // the command palette performs (DOR-354). Reads the store fresh per call so
     // the switch-back target reflects the current directory, and drives the
@@ -299,20 +325,16 @@ const extensionDeps: ExtensionAPIDeps = {
         navigate: (search) => void router.navigate({ to: '/session', search }),
       }),
     // Wires the agent's `control_ui apply_layout` command (and the switcher UI's
-    // shared action) to the real apply flow (DOR-355 task 3.1). Reads the store
-    // fresh per dispatch so the restored chrome applies against live state, and
-    // reuses the same cwd switch for the arrival agent's auto-follow (W1a). The
-    // `extensionDeps` self-reference resolves at call time, never construction.
+    // shared action) to the real apply flow (DOR-355 task 3.1). Each restored
+    // chrome command applies against live state — the dispatcher re-reads the
+    // store per dispatch — and the arrival agent's auto-follow (W1a) reuses the
+    // same cwd switch. The `extensionDeps` self-reference resolves at call time,
+    // never construction.
     applyShape: (shape: string) =>
       void applyShapeAction(shape, {
         transport,
         queryClient,
-        dispatch: (command) =>
-          executeUiCommand(
-            { ...extensionDeps.dispatcherContext, store: useAppStore.getState() },
-            command,
-            'agent'
-          ),
+        dispatch: (command) => executeUiCommand(extensionDeps.dispatcherContext, command, 'agent'),
         switchAgent: (cwd) =>
           switchAgentCwd(cwd, {
             store: useAppStore.getState(),

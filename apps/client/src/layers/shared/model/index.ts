@@ -113,6 +113,8 @@ export {
   useSettingsDeepLink,
   useTasksDeepLink,
   useOpenConnections,
+  clearedDialogSearch,
+  isDualSignalDialog,
   type DialogDeepLink,
 } from './use-dialog-deep-link';
 export { useDeepLinkScroll } from './use-deep-link-scroll';

@@ -4,10 +4,19 @@ import { useAppStore, useSettingsDeepLink, useTasksDeepLink } from '@/layers/sha
 /**
  * Register the global Cmd+K / Ctrl+K keyboard shortcut to toggle the command palette.
  *
- * Before opening the palette, clears the URL signals for the feature dialogs
- * (settings, tasks, mesh) so a deep-linked dialog does not stay
- * visible behind the palette. Follows the same pattern as the Cmd+B sidebar
- * toggle in App.tsx.
+ * Opening the palette first closes the Settings and Tasks dialogs, so neither
+ * is left sitting behind it. It closes them through their deep-link `close()`
+ * actions, which own *both* halves of a dialog's open signal — the search param
+ * and the app-store flag — because `DialogHost` renders on either and clearing
+ * one leaves the other holding the dialog up (DOR-839).
+ *
+ * That means Cmd+K now dismisses a dialog you opened from the sidebar or the
+ * palette, not just one you reached by a link. Before, `close()` cleared only
+ * the URL, so a store-opened Settings survived the shortcut and stayed on
+ * screen behind the palette.
+ *
+ * Closing the palette leaves both dialogs alone — nothing was opened, so there
+ * is nothing to clear.
  */
 export function useGlobalPalette() {
   const toggleGlobalPalette = useAppStore((s) => s.toggleGlobalPalette);
