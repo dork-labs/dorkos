@@ -2,6 +2,62 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260804-093322",
+      "slug": "bridging-adopts-a-session-only-behind-a-transcript-probe-and-imports-no-history",
+      "title": "Bridging adopts an existing session only behind a transcript probe, and never imports platform history",
+      "status": "proposed",
+      "created": "2026-08-04",
+      "specSlug": "chats-as-channels"
+    },
+    {
+      "id": "260804-093321",
+      "slug": "echo-suppression-is-a-durable-external-ref-table-written-before-the-send",
+      "title": "Echo suppression is a durable external-ref table written before the send, never a heuristic",
+      "status": "proposed",
+      "created": "2026-08-04",
+      "specSlug": "chats-as-channels"
+    },
+    {
+      "id": "260804-093320",
+      "slug": "external-authorship-is-a-first-class-origin-derived-from-the-natural-key",
+      "title": "External authorship is a first-class author origin derived from the stored natural key",
+      "status": "proposed",
+      "created": "2026-08-04",
+      "specSlug": "chats-as-channels"
+    },
+    {
+      "id": "260804-093319",
+      "slug": "outbound-delivery-asserts-a-server-only-bridge-principal-and-the-gate-enforces-canreply",
+      "title": "Outbound delivery asserts a server-only non-exempt relay.bridge.* principal, and the consent gate finally enforces canReply",
+      "status": "proposed",
+      "created": "2026-08-04",
+      "specSlug": "chats-as-channels"
+    },
+    {
+      "id": "260804-093318",
+      "slug": "a-bridged-rooms-identity-is-its-bridge-row-never-its-member-set",
+      "title": "A bridged room's identity is its bridge row, never its member set",
+      "status": "proposed",
+      "created": "2026-08-04",
+      "specSlug": "chats-as-channels"
+    },
+    {
+      "id": "260804-093317",
+      "slug": "the-bridge-writes-entries-and-never-triggers-a-turn",
+      "title": "The bridge writes room entries and never triggers a turn",
+      "status": "proposed",
+      "created": "2026-08-04",
+      "specSlug": "chats-as-channels"
+    },
+    {
+      "id": "260804-093316",
+      "slug": "a-bound-chat-projects-into-a-room-whose-log-is-the-shared-history",
+      "title": "A bound external chat projects into a room, and the room log is its shared history",
+      "status": "proposed",
+      "created": "2026-08-04",
+      "specSlug": "chats-as-channels"
+    },
+    {
       "id": "260804-021140",
       "slug": "connections-is-the-outside-world-umbrella-and-the-last-rename",
       "title": "\"Connections\" is the single umbrella for the outside world, and this is the last rename",
