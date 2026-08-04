@@ -183,6 +183,10 @@ export interface AdapterManagerDeps {
   resolveBridgeSubject?: BindingSubsystemDeps['resolveBridgeSubject'];
   /** Register the outbound bridge's inline-delivery hook on the room service (§6.1). */
   registerEntryCommitListener?: BindingSubsystemDeps['registerEntryCommitListener'];
+  /** Emit an ephemeral relay signal, for the bridge's presence forwarder (§6.8). */
+  relaySignal?: BindingSubsystemDeps['relaySignal'];
+  /** Register the bridge's presence forwarder on the room service (§6.8). */
+  registerSignalListener?: BindingSubsystemDeps['registerSignalListener'];
 }
 
 /** Server-side adapter lifecycle manager. */
@@ -366,6 +370,8 @@ export class AdapterManager {
       roomAuthors: this.deps.roomAuthors,
       resolveBridgeSubject: this.deps.resolveBridgeSubject,
       registerEntryCommitListener: this.deps.registerEntryCommitListener,
+      relaySignal: this.deps.relaySignal,
+      registerSignalListener: this.deps.registerSignalListener,
     });
   }
 

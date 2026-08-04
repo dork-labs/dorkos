@@ -258,6 +258,20 @@ export class RoomService {
    * errors, and this call site does too.
    */
   private onEntryCommitted?: (entry: RoomEntry) => void;
+  /**
+   * Called synchronously after every published ephemeral signal — the chat
+   * bridge's presence forwarder (chats-as-channels §6.8). Registered after
+   * construction, same as {@link RoomService.onEntryCommitted}, and unset by
+   * default, so an install with no bridge pays nothing here. It must never
+   * throw into the publish; {@link RoomService.publishSignal} guards the call
+   * the same way {@link RoomService.publishEntry} guards its own listener.
+   */
+  private onSignalPublished?: (
+    roomId: string,
+    signal: SignalType,
+    authorId: string,
+    presence?: Partial<RoomPresencePayload>
+  ) => void;
 
   constructor(deps: RoomServiceDeps) {
     this.store = deps.store;
@@ -1775,6 +1789,43 @@ export class RoomService {
       at: new Date().toISOString(),
       ...presence,
     });
+    // The bridge's presence forwarder (chats-as-channels §6.8). Deliberately
+    // AFTER the broadcast, and guarded, so a bridge with nothing to forward to
+    // (or a forwarder that throws) can never fail the room's own signal —
+    // same shape as `publishEntry`'s guard around `onEntryCommitted`.
+    if (this.onSignalPublished) {
+      try {
+        this.onSignalPublished(roomId, signal, authorId, presence);
+      } catch (err) {
+        logger.warn('[rooms] signal listener threw', {
+          roomId,
+          signal,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  }
+
+  /**
+   * Register the chat bridge's presence forwarder (chats-as-channels §6.8),
+   * called for every ephemeral signal this service fans out. At most one is
+   * set; the binding subsystem wires it once the bridge presence forwarder
+   * exists — the same one-listener shape as
+   * {@link RoomService.setEntryCommitListener}.
+   *
+   * @param listener - Called with each published signal, or `undefined` to clear.
+   */
+  setSignalListener(
+    listener:
+      | ((
+          roomId: string,
+          signal: SignalType,
+          authorId: string,
+          presence?: Partial<RoomPresencePayload>
+        ) => void)
+      | undefined
+  ): void {
+    this.onSignalPublished = listener;
   }
 
   // === Internals ===
