@@ -137,4 +137,18 @@ describe('FeedbackRequestsPanel', () => {
     expect(screen.queryByText('screenshot')).toBeNull();
     expect(screen.queryByText('transcript')).toBeNull();
   });
+
+  it('renders a non-version shippedVersion (a Linear milestone/cycle name) without a "v" prefix', async () => {
+    const transport = createMockTransport({
+      listMyFeedback: vi
+        .fn()
+        .mockResolvedValue([item({ status: 'shipped', shippedVersion: 'Cycle 12' })]),
+    });
+    render(<FeedbackRequestsPanel />, { wrapper: createWrapper(transport) });
+
+    await waitFor(() => {
+      expect(screen.getByText('Shipped Cycle 12')).toBeTruthy();
+    });
+    expect(screen.queryByText(/vCycle/)).toBeNull();
+  });
 });

@@ -21,6 +21,7 @@
 import { Resend } from 'resend';
 
 import { env } from '@/env';
+import { formatShippedVersionLabel } from '@/lib/feedback/version-label';
 
 /** Arguments shared by every DorkOS account email. */
 interface AccountEmail {
@@ -111,7 +112,12 @@ export async function sendNewsletterConfirmation({ to, url }: AccountEmail): Pro
 interface FeedbackShippedDetails {
   /** The reporter's own message, so the email echoes what they actually said. */
   message: string;
-  /** The DorkOS version the fix/feature shipped in. */
+  /**
+   * The DorkOS version the fix/feature shipped in — or, when Linear resolved
+   * this from a milestone/cycle *name* rather than an actual version, that
+   * name verbatim. Rendered through {@link formatShippedVersionLabel}, which
+   * only prefixes `v` when the value looks like a bare version.
+   */
   shippedVersion: string;
   /** Optional link to the release notes covering this version. */
   changelogUrl?: string;
@@ -174,13 +180,14 @@ export async function sendFeedbackShipped(
   to: string,
   { message, shippedVersion, changelogUrl }: FeedbackShippedDetails
 ): Promise<void> {
+  const versionLabel = formatShippedVersionLabel(shippedVersion);
   try {
     await getResend().emails.send({
       from: env.RESEND_FROM,
       to,
-      subject: `Your DorkOS report shipped in v${shippedVersion}`,
+      subject: `Your DorkOS report shipped in ${versionLabel}`,
       html: [
-        `<p>Good news: this shipped in v${shippedVersion}.</p>`,
+        `<p>Good news: this shipped in ${versionLabel}.</p>`,
         `<p>"${quoteFirstLine(message)}"</p>`,
         changelogUrl ? `<p><a href="${changelogUrl}">See what changed</a></p>` : '',
         "<p>We'll only email you about this report.</p>",

@@ -3,6 +3,7 @@ import { useMyFeedback } from '@/layers/entities/feedback-requests';
 import { cn, formatRelativeTime } from '@/layers/shared/lib';
 import { Button, Skeleton } from '@/layers/shared/ui';
 import type { FeedbackListItem } from '@dorkos/shared/telemetry-events';
+import { formatShippedVersionLabel } from '../lib/version-label';
 
 const KIND_ICON: Record<FeedbackListItem['kind'], typeof Bug> = {
   bug: Bug,
@@ -19,6 +20,11 @@ const KIND_LABEL: Record<FeedbackListItem['kind'], string> = {
 /**
  * Cockpit-visible status label, per design-decisions.md §7:
  * `Received → Triaged → In progress → Shipped vX.Y.Z / Closed`.
+ *
+ * The `v` prefix on a shipped version goes through
+ * {@link formatShippedVersionLabel} — a Linear milestone/cycle name that
+ * isn't a bare version (e.g. "Cycle 12") renders as-is instead of "vCycle 12",
+ * agreeing with the shipped email and the public status page.
  */
 function statusLabel(item: FeedbackListItem): string {
   switch (item.status) {
@@ -29,7 +35,9 @@ function statusLabel(item: FeedbackListItem): string {
     case 'in_progress':
       return 'In progress';
     case 'shipped':
-      return item.shippedVersion ? `Shipped v${item.shippedVersion}` : 'Shipped';
+      return item.shippedVersion
+        ? `Shipped ${formatShippedVersionLabel(item.shippedVersion)}`
+        : 'Shipped';
     case 'closed':
       return 'Closed';
   }

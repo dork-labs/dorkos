@@ -220,4 +220,44 @@ describe('POST /api/webhooks/linear — shipped email (the core correctness clai
     await POST(webhookRequest(body));
     expect(sendFeedbackShipped).not.toHaveBeenCalled();
   });
+
+  it('does NOT re-fire the shipped email for a later update on an issue that is already shipped (Linear sends an Issue update webhook for every field change)', async () => {
+    // The row was already marked shipped by an earlier delivery — this
+    // delivery is some unrelated later edit (label, assignee, description...)
+    // that still resolves to the same completed/shipped state. Pins the
+    // transition guard: `status === 'shipped'` alone is not enough, the prior
+    // row status must NOT already be 'shipped'.
+    foundRow = {
+      ...foundRow,
+      reporterEmail: 'kai@example.com',
+      status: 'shipped',
+      shippedVersion: '0.56.3',
+    };
+    await POST(webhookRequest(ISSUE_UPDATE_SHIPPED));
+    expect(sendFeedbackShipped).not.toHaveBeenCalled();
+    // The row is still (harmlessly) re-written with the same status/version —
+    // only the email send is gated, not the status write.
+    expect(mockUpdate).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('POST /api/webhooks/linear — unset signing secret (fail closed)', () => {
+  it('rejects every delivery with 401 and never reads or writes the database when LINEAR_WEBHOOK_SECRET is unset', async () => {
+    vi.resetModules();
+    vi.doMock('@/env', () => ({ env: {} }));
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const { POST: postWithoutSecret } = await import('../route');
+    const res = await postWithoutSecret(webhookRequest(ISSUE_UPDATE_SHIPPED));
+
+    expect(res.status).toBe(401);
+    const payload = (await res.json()) as { ok: boolean; error: string };
+    expect(payload).toEqual({ ok: false, error: 'Webhook not configured' });
+    expect(mockSelect).not.toHaveBeenCalled();
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(sendFeedbackShipped).not.toHaveBeenCalled();
+
+    consoleErrorSpy.mockRestore();
+    vi.doUnmock('@/env');
+  });
 });

@@ -161,5 +161,15 @@ describe('mailer (Resend seam)', () => {
 
       consoleErrorSpy.mockRestore();
     });
+
+    it('renders a non-version shippedVersion (a Linear milestone/cycle name) without a "v" prefix', async () => {
+      await sendFeedbackShipped(TO, { message: 'Add dark mode', shippedVersion: 'Cycle 12' });
+
+      const payload = sendMock.mock.calls[0][0] as { subject: string; html: string };
+      expect(payload.subject).toBe('Your DorkOS report shipped in Cycle 12');
+      expect(payload.html).toContain('Good news: this shipped in Cycle 12.');
+      expect(payload.subject).not.toContain('vCycle');
+      expect(payload.html).not.toContain('vCycle');
+    });
   });
 });

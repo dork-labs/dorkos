@@ -14,11 +14,15 @@
  * `feedback_submission.linearIssueId`, the issue's workflow state is mapped
  * to the cockpit's four-plus-received status vocabulary
  * (`lib/feedback/linear-status-map.ts`) and written onto that row. A mapped
- * status of `shipped` also best-effort captures a `shippedVersion` and fires
- * the "your report shipped" email via `sendFeedbackShipped` when the row has
- * a usable email — a mail failure never fails the webhook response, since
- * Linear will retry a non-2xx delivery and this repo's Linear issue is
- * already the source of truth for what happened.
+ * status of `shipped` also best-effort captures a `shippedVersion`. The
+ * "your report shipped" email fires via `sendFeedbackShipped` only on the
+ * **transition into** `shipped` (the row's status before this update was
+ * something else) — Linear sends an `Issue` `update` webhook for every field
+ * change (label, assignee, description…), so an already-shipped issue keeps
+ * generating deliveries this route must not re-notify on. A mail failure
+ * never fails the webhook response, since Linear will retry a non-2xx
+ * delivery and this repo's Linear issue is already the source of truth for
+ * what happened.
  *
  * Every other event shape (a different `type`, a non-`update` `action`, an
  * issue that isn't ours, or a state with no mapping) is accepted with a bare
@@ -152,7 +156,7 @@ export async function POST(request: Request): Promise<Response> {
     })
     .where(eq(feedbackSubmission.id, row.id));
 
-  if (status === 'shipped') {
+  if (status === 'shipped' && row.status !== 'shipped') {
     const to = resolveNotifyEmail(row);
     const version = shippedVersion ?? row.shippedVersion;
     if (to && version) {

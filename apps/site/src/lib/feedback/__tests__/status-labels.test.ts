@@ -18,4 +18,8 @@ describe('feedbackStatusLabel', () => {
     expect(feedbackStatusLabel('shipped', null)).toBe('Shipped');
     expect(feedbackStatusLabel('shipped', undefined)).toBe('Shipped');
   });
+
+  it('renders a non-version shippedVersion (a Linear milestone/cycle name) without a "v" prefix', () => {
+    expect(feedbackStatusLabel('shipped', 'Cycle 12')).toBe('Shipped Cycle 12');
+  });
 });
