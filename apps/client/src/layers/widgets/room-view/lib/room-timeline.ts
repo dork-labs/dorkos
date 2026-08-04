@@ -11,8 +11,12 @@ import type { MessageAuthor } from '@/layers/shared/model';
  * A roster member's `AuthorRef` paired back up with its `origin` — the two
  * live as sibling fields on `RoomRosterEntry` rather than one holding the
  * other, so a lookup keyed by author id has to carry both or lose one.
+ *
+ * Exported for `RoomEntryRow`, which reads the same map to resolve a
+ * `<mention>` tag against the roster — a mention pill draws from exactly the
+ * fields this type carries (kind, name, color, emoji, origin).
  */
-type RosterAuthor = AuthorRef & { origin: AuthorOrigin };
+export type RosterAuthor = AuthorRef & { origin: AuthorOrigin };
 
 /**
  * Build the roster lookup the list renders authors from.

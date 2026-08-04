@@ -320,6 +320,7 @@ export function RoomThreadPanel({
               entry={root}
               author={toMessageAuthor(root.authorId, authors)}
               authorRef={authors.get(root.authorId)}
+              authors={authors}
               viewerAuthorId={room.viewerAuthorId}
               authorNames={authorNames}
               reactionFrequents={reactionFrequents}
@@ -366,6 +367,7 @@ export function RoomThreadPanel({
                         entry={reply}
                         author={toMessageAuthor(reply.authorId, authors)}
                         authorRef={authors.get(reply.authorId)}
+                        authors={authors}
                         viewerAuthorId={room.viewerAuthorId}
                         authorNames={authorNames}
                         reactionFrequents={reactionFrequents}

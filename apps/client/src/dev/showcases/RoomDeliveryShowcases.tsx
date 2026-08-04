@@ -129,6 +129,7 @@ function NoticesSection() {
               entry={noticeEntry(code, text)}
               author={{ id: 'system', kind: 'system', displayName: 'DorkOS' }}
               authorRef={undefined}
+              authors={new Map()}
               viewerAuthorId="author-you"
               authorNames={new Map()}
               reactionFrequents={[]}
