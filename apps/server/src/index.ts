@@ -1380,6 +1380,13 @@ async function start() {
   // claude-code injection factory below and the `mcp.*` capability domain.
   if (meshCore) {
     agentMcpServerService = new AgentMcpServerService({ agents: meshCore.agentRegistry, logger });
+    // Inject the resolver into every runtime that folds managed servers in via
+    // the DI setter (codex, DOR-892; opencode later, DOR-893). Claude-code uses
+    // its own `setMcpServerFactory` seam below and does not implement this, so
+    // the optional call is a no-op there — no double injection.
+    for (const runtime of runtimeRegistry.listRuntimes()) {
+      runtime.setManagedMcpServers?.(agentMcpServerService);
+    }
   }
   if (claudeRuntime) {
     // Connector attachment hydration is claude-code-only today, mirroring

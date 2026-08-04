@@ -139,6 +139,7 @@ function makeCaps(...types: string[]): CapabilitiesMap {
     supportsCostTracking: false,
     supportsResume: false,
     supportsMcp: false,
+    supportsManagedMcpServers: false,
     supportsQuestionPrompt: false,
     supportsPlugins: false,
     nativeContext: [],

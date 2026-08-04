@@ -211,6 +211,42 @@ describe('CodexRuntime', () => {
     });
   });
 
+  describe('buildCodexOptions — managed MCP servers (DOR-892)', () => {
+    const UI_URL = 'http://127.0.0.1:4242/codex-ui-mcp';
+    const managed = {
+      files: { command: 'npx', args: ['-y', 'server-filesystem'] },
+      remote: { url: 'https://example.com/mcp' },
+    };
+
+    it('folds enabled managed servers into config.mcp_servers alongside dorkos_ui', () => {
+      const options = buildCodexOptions(null, UI_URL, undefined, managed);
+      expect(options.config?.mcp_servers).toEqual({
+        files: { command: 'npx', args: ['-y', 'server-filesystem'] },
+        remote: { url: 'https://example.com/mcp' },
+        [CODEX_UI_MCP_SERVER]: { url: UI_URL },
+      });
+    });
+
+    it('writes dorkos_ui LAST so a managed server can never shadow it', () => {
+      // A managed server literally named `dorkos_ui` must still resolve to the
+      // real UI bridge URL, not the managed command.
+      const shadowing = { [CODEX_UI_MCP_SERVER]: { command: 'evil' } };
+      const options = buildCodexOptions(null, UI_URL, undefined, shadowing);
+      expect(options.config?.mcp_servers?.[CODEX_UI_MCP_SERVER]).toEqual({ url: UI_URL });
+    });
+
+    it('injects managed servers even when no dorkos_ui URL is configured', () => {
+      const options = buildCodexOptions(null, undefined, undefined, managed);
+      expect(options.config?.mcp_servers).toEqual(managed);
+      expect(options.config?.mcp_servers).not.toHaveProperty(CODEX_UI_MCP_SERVER);
+    });
+
+    it('omits config entirely when there are no managed servers and no UI URL', () => {
+      expect(buildCodexOptions(null, undefined, undefined, {})).not.toHaveProperty('config');
+      expect(buildCodexOptions(null)).not.toHaveProperty('config');
+    });
+  });
+
   describe('capabilities', () => {
     it('returns the finalized capability shape from the 2.2 verification', () => {
       const { runtime } = makeRuntime();
@@ -222,6 +258,9 @@ describe('CodexRuntime', () => {
         supportsCostTracking: false,
         supportsResume: true,
         supportsMcp: false,
+        // Codex hosts no in-process DorkOS tool server (`supportsMcp: false`)
+        // but DOES accept the agent's own managed MCP servers (DOR-892).
+        supportsManagedMcpServers: true,
         supportsQuestionPrompt: false,
         supportsPlugins: false,
         nativeContext: [],
@@ -775,6 +814,58 @@ describe('CodexRuntime', () => {
       const input = thread.runStreamed.mock.calls[0]![0];
       expect(input).toContain('<gen_ui>');
       expect(String(input).endsWith('plain message')).toBe(true);
+    });
+  });
+
+  describe('sendMessage — managed MCP servers (DOR-892)', () => {
+    /** Latest per-turn client options recorded by the SDK mock, or undefined. */
+    function lastConstructedConfig(): Record<string, unknown> | undefined {
+      const last = sdkMocks.constructorOptions.at(-1) as { config?: Record<string, unknown> };
+      return last?.config;
+    }
+
+    it('injects the resolver’s enabled servers into a per-turn client, keyed by the turn cwd', async () => {
+      const { runtime } = makeRuntime();
+      const injectableServersForCwd = vi.fn().mockReturnValue({
+        files: { transport: 'stdio', command: 'npx', args: ['-y', 'fs'] },
+      });
+      runtime.setManagedMcpServers({ injectableServersForCwd });
+      const sessionId = crypto.randomUUID();
+
+      await drain(runtime.sendMessage(sessionId, 'hi', { cwd: '/projects/demo' }));
+
+      expect(injectableServersForCwd).toHaveBeenCalledWith('/projects/demo');
+      expect(lastConstructedConfig()?.mcp_servers).toEqual({
+        files: { command: 'npx', args: ['-y', 'fs'] },
+      });
+    });
+
+    it('drops an sse managed server (Codex has no SSE transport) and injects the rest', async () => {
+      const { runtime } = makeRuntime();
+      runtime.setManagedMcpServers({
+        injectableServersForCwd: () => ({
+          files: { transport: 'stdio', command: 'npx' },
+          stream: { transport: 'sse', url: 'https://example.com/sse' },
+        }),
+      });
+
+      await drain(runtime.sendMessage(crypto.randomUUID(), 'hi', { cwd: '/projects/demo' }));
+
+      const servers = lastConstructedConfig()?.mcp_servers as Record<string, unknown>;
+      expect(servers).toHaveProperty('files');
+      expect(servers).not.toHaveProperty('stream');
+    });
+
+    it('builds no per-turn client (uses the shared boot client) when the agent has no managed servers', async () => {
+      const { runtime } = makeRuntime();
+      runtime.setManagedMcpServers({ injectableServersForCwd: () => ({}) });
+      // One boot-client construction happened in makeRuntime; a turn with no
+      // managed servers and no identity token must not add a second.
+      sdkMocks.constructorOptions.length = 0;
+
+      await drain(runtime.sendMessage(crypto.randomUUID(), 'hi', { cwd: '/projects/demo' }));
+
+      expect(sdkMocks.constructorOptions).toHaveLength(0);
     });
   });
 

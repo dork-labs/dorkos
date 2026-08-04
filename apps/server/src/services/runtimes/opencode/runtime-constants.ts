@@ -23,6 +23,8 @@ import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
  *   are re-listable/promptable across DorkOS and sidecar restarts.
  * - `supportsMcp: false` — DorkOS cannot inject its MCP tool server into the
  *   sidecar; user-configured OpenCode MCP servers still surface as tool parts.
+ * - `supportsManagedMcpServers: false` — DorkOS cannot yet inject an agent's
+ *   own managed MCP servers into an OpenCode session (DOR-893).
  * - `supportsQuestionPrompt: false` — no AskUserQuestion-equivalent surface
  *   on the v1 API.
  * - `supportsPlugins: false` — OpenCode plugins are its own ecosystem, not
@@ -38,6 +40,7 @@ export const OPENCODE_CAPABILITIES: RuntimeCapabilities = {
   supportsCostTracking: true,
   supportsResume: true,
   supportsMcp: false,
+  supportsManagedMcpServers: false,
   supportsQuestionPrompt: false,
   supportsPlugins: false,
   nativeContext: [],

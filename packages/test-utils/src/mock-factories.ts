@@ -335,6 +335,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
           supportsCostTracking: false,
           supportsResume: true,
           supportsMcp: true,
+          supportsManagedMcpServers: true,
           supportsQuestionPrompt: true,
           supportsPlugins: true,
           permissionModes: {

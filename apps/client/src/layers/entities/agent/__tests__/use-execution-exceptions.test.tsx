@@ -32,6 +32,7 @@ function runtimeEntry(type: string, supportsEffort: boolean): RuntimeCapabilitie
     supportsCostTracking: false,
     supportsResume: true,
     supportsMcp: true,
+    supportsManagedMcpServers: true,
     supportsQuestionPrompt: true,
     supportsPlugins: false,
     permissionModes: { supported: false, values: [] },

@@ -135,13 +135,13 @@ interface AgentMcpServersProps {
  * The managed MCP servers section of the Agent Hub Toolkit: managed servers
  * (editable, joined with live status by name), discovered servers (read-only),
  * and a gated Add affordance. Add is disabled for runtimes that cannot run
- * DorkOS-managed servers (Codex/OpenCode) — the roster still shows.
+ * DorkOS-managed servers (OpenCode today, DOR-893) — the roster still shows.
  */
 export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
   const managed = useAgentMcpServers(agent.id);
   const { data: liveConfig } = useMcpConfig(projectPath, agent.runtime);
   const caps = useCapabilitiesForRuntime(agent.runtime);
-  const canAdd = caps?.supportsMcp ?? true;
+  const canAdd = caps?.supportsManagedMcpServers ?? true;
 
   const enableServer = useEnableAgentMcpServer();
   const disableServer = useDisableAgentMcpServer();
@@ -201,8 +201,8 @@ export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
 
       {!canAdd && (
         <p className="text-muted-foreground text-xs">
-          This agent&rsquo;s runtime can&rsquo;t run DorkOS-managed MCP servers yet — see DOR-892 /
-          DOR-893. Servers below are read-only status.
+          This agent&rsquo;s runtime (OpenCode) can&rsquo;t run DorkOS-managed MCP servers yet. Any
+          servers below show read-only status.
         </p>
       )}
 

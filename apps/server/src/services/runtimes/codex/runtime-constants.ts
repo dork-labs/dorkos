@@ -28,6 +28,13 @@ import type { EffortLevel, ModelOption } from '@dorkos/shared/types';
  *   general MCP support, so this flag stays honestly `false`. User-configured
  *   servers in `~/.codex/config.toml` still stream as `mcp_tool_call` items
  *   and render as tool events.
+ * - `supportsManagedMcpServers: true` — Codex DOES accept an agent's own
+ *   managed MCP servers (the `mcp.*` verbs, spec `mcp-server-management`),
+ *   injected per-turn as `--config mcp_servers.*` overrides through
+ *   `CodexOptions.config` (stdio and streamable-HTTP; SSE has no Codex
+ *   transport and is skipped). This is orthogonal to `supportsMcp` above:
+ *   external managed servers work without the in-process DorkOS tool server
+ *   (DOR-892). See {@link ./mcp-server-config}.
  * - Permission-mode ids reuse existing `PermissionModeSchema` members so the
  *   PATCH persistence path validates them (NOTES.md Verdict 2 enum decision).
  */
@@ -37,6 +44,7 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
   supportsCostTracking: false,
   supportsResume: true,
   supportsMcp: false,
+  supportsManagedMcpServers: true,
   supportsQuestionPrompt: false,
   supportsPlugins: false,
   nativeContext: [],

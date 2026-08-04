@@ -142,6 +142,7 @@ const BOOLEAN_CAPABILITY_FLAGS = [
   'supportsCostTracking',
   'supportsResume',
   'supportsMcp',
+  'supportsManagedMcpServers',
   'supportsQuestionPrompt',
   'supportsPlugins',
 ] as const satisfies readonly (keyof RuntimeCapabilities)[];

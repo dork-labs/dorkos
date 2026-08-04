@@ -190,6 +190,20 @@ export interface RelayPort {
 }
 
 /**
+ * Narrow port for resolving an agent's enabled managed MCP servers for a
+ * session's working directory. The server-side `AgentMcpServerService`
+ * satisfies this structurally — a runtime depends on this minimal shape rather
+ * than the whole service so it stays SDK- and DB-agnostic and trivially
+ * testable. Returns the runtime-neutral {@link McpAppServerConnection} map keyed
+ * by server name, or `{}` when the cwd hosts no readable agent manifest.
+ * Mirrors {@link AgentRegistryPort}/{@link RelayPort}.
+ */
+export interface ManagedMcpServerResolver {
+  /** Enabled managed servers for a session cwd, by name; `{}` when none apply. */
+  injectableServersForCwd(cwd: string): Record<string, McpAppServerConnection>;
+}
+
+/**
  * Narrow port for durable per-session settings. The API core layer implements
  * this (over the `session_metadata` table) and injects it into runtimes via
  * {@link AgentRuntime.setSessionSettings}; runtimes never touch the DB directly.
@@ -459,6 +473,17 @@ export interface RuntimeCapabilities {
 
   /** Whether MCP tool servers can be injected */
   supportsMcp: boolean;
+
+  /**
+   * Whether DorkOS can inject an agent's own managed MCP servers (the
+   * `mcp.*` management verbs, spec `mcp-server-management`) into its sessions.
+   *
+   * Distinct from {@link supportsMcp}, which specifically means the in-process
+   * DorkOS tool server. A runtime can accept external managed servers without
+   * hosting the DorkOS tool server (Codex, DOR-892) or vice versa. Gates the
+   * client's "Add server" affordance in the Agent Hub toolkit.
+   */
+  supportsManagedMcpServers: boolean;
 
   /** Whether AskUserQuestion interactive flow is supported */
   supportsQuestionPrompt: boolean;
@@ -1024,6 +1049,14 @@ export interface AgentRuntime {
 
   /** Inject an agent registry for peer-agent context and agent manifest resolution. */
   setMeshCore?(meshCore: AgentRegistryPort): void;
+
+  /**
+   * Inject the resolver for an agent's managed MCP servers, so a runtime that
+   * declares `supportsManagedMcpServers` can fold them into each session
+   * (spec `mcp-server-management`). Claude-code uses its own MCP factory seam
+   * instead and does not implement this; Codex does (DOR-892).
+   */
+  setManagedMcpServers?(resolver: ManagedMcpServerResolver): void;
 
   /** Inject a relay instance for Relay-aware context building. */
   setRelay?(relay: RelayPort): void;

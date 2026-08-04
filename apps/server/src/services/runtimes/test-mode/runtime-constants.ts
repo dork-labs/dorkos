@@ -27,6 +27,7 @@ export const TEST_MODE_CAPABILITIES: RuntimeCapabilities = {
   // Emulates session resume so round-trip integration tests can exercise it.
   supportsResume: true,
   supportsMcp: false,
+  supportsManagedMcpServers: false,
   supportsCostTracking: false,
   // Test-mode uses approval events to drive deterministic scenario scripts.
   supportsToolApproval: true,
