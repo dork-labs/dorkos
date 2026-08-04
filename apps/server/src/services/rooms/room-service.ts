@@ -1479,6 +1479,10 @@ export class RoomService {
         kind: 'post',
         body: { text: input.text },
         mentions: addressed.mentions,
+        // The per-occurrence positions of those mentions, resolved in the SAME
+        // pass and stored beside them so the client draws pills without ever
+        // re-parsing the body (`.claude/rules/room-conduct.md`).
+        mentionSpans: addressed.spans,
         sessionId: input.sessionId ?? null,
         ...this.threadPointers(roomId, input.replyTo),
         ...deriveCascade(id, {
@@ -1553,6 +1557,7 @@ export class RoomService {
       kind: 'notice',
       body,
       mentions: [],
+      mentionSpans: [],
       sessionId: null,
       ...this.threadPointers(roomId, replyTo),
       cascadeRoot: cascade?.root ?? id,

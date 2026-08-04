@@ -12,6 +12,7 @@
 import type { rooms, roomMembers, roomEntries } from '@dorkos/db';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type {
+  MentionSpan,
   Room,
   RoomEntry,
   RoomEntryBody,
@@ -46,6 +47,12 @@ export interface NewRoomEntry {
   kind: RoomEntryKind;
   body: RoomEntryBody;
   mentions: readonly string[];
+  /**
+   * Where each resolved `@mention` sits in `body.text`, one per written
+   * `@handle`. Optional at the seam: a writer with nothing to place (a notice,
+   * a test fixture) may omit it and {@link RoomStore.appendEntry} stores `[]`.
+   */
+  mentionSpans?: readonly MentionSpan[];
   sessionId: string | null;
   cascadeRoot: string;
   cascadeDepth: number;
@@ -112,6 +119,7 @@ export function toEntry(row: RoomEntryRow): RoomEntry {
     kind: row.kind as RoomEntryKind,
     body: parseEntryBody(row.body),
     mentions: parseJson<string[]>(row.mentions, []),
+    mentionSpans: parseJson<MentionSpan[]>(row.mentionSpans, []),
   };
 }
 
