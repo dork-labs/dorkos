@@ -236,11 +236,22 @@ export class BridgeLifecycle {
    * this.
    *
    * The order — create, adopt, THEN flip the binding — makes the flag flip the
-   * last write (§3.4 implementation 2): a failure in the room half or the adopt
-   * leaves an unbridged binding and an orphan room the next start reaps, never a
-   * binding that says `'room'` over a half-built room. Adoption runs before the
-   * flip and before the room's first turn, because the ledger write it may make
-   * is first-write-wins and must beat the dispatcher's own placeholder mint.
+   * last write (§3.4 implementation 2): a failure in the adopt or the flip leaves
+   * the binding `'off'` over a LIVE room, never a binding that says `'room'` over
+   * a half-built room. That live room is not stranded, and there is **no startup
+   * reaper** (none exists, and none is needed): a retry of `bridge()` finds the
+   * surviving, un-archived bridge row, replays (`created: false`), skips adopt,
+   * and re-flips — the self-heal below — and a `rebridge` of the same chat reuses
+   * it (DOR-869). The room is deliberately **not archived** on failure:
+   * `createBridgedRoom` refuses an archived bridge row with `CHAT_ALREADY_BRIDGED`
+   * (room-service.ts), so archiving it would turn that retry-heal into a hard 409
+   * — the room stays live precisely so the retry can reach the replay branch. The
+   * only lasting residue is a fresh-mint failure the operator never retries and
+   * never re-bridges: an unreferenced room with its binding `'off'`, which nothing
+   * routes to (inbound only bridges when `bridge === 'room'`) and which a later
+   * re-bridge of that chat still reuses. Adoption runs before the flip and before
+   * the room's first turn, because the ledger write it may make is
+   * first-write-wins and must beat the dispatcher's own placeholder mint.
    *
    * **Idempotent on the chat, and self-healing on a torn first attempt.** When
    * the room half reports a replay (`created: false` — the chat was already
@@ -294,23 +305,50 @@ export class BridgeLifecycle {
       return { id: room.id, adopted: false };
     }
 
-    const agentAuthorId = room.members.find((m) => m.author.kind === 'agent')?.authorId;
-    // A bridged room is always seeded with exactly one agent (§3.4), so a missing
-    // agent member is a structural fault in the create path, not a fresh-start.
-    if (!agentAuthorId) {
-      throw new Error(`bridged room ${room.id} has no agent member to adopt a session into`);
+    // This attempt minted the room (`created === true`), and every step below —
+    // resolving the seeded agent, adopting a prior session, the final flip — runs
+    // AFTER the room and its bridge row are committed. A throw here therefore
+    // leaves the room LIVE with the binding still `'off'`. We do NOT archive it:
+    // `createBridgedRoom` refuses an archived bridge row with `CHAT_ALREADY_BRIDGED`
+    // (room-service.ts), so archiving would turn the retry-heal (the replay branch
+    // above) into a hard 409. Leaving it live is what lets a retry replay and
+    // re-flip. The catch only makes the orphan observable, then rethrows.
+    try {
+      const agentAuthorId = room.members.find((m) => m.author.kind === 'agent')?.authorId;
+      // A bridged room is always seeded with exactly one agent (§3.4), so a
+      // missing agent member is a structural fault in the create path, not a
+      // fresh-start.
+      if (!agentAuthorId) {
+        throw new Error(`bridged room ${room.id} has no agent member to adopt a session into`);
+      }
+
+      const { adopted } = await adopter.adoptAtBridge({
+        bindingId: input.bindingId,
+        chatId: input.chatId,
+        agentId: input.agentId,
+        roomId: room.id,
+        agentAuthorId,
+      });
+
+      await this.deps.bindings.update(input.bindingId, { bridge: 'room', roomId: room.id });
+      return { id: room.id, adopted };
+    } catch (err) {
+      // The bridge tore after minting its room: the room is live, its bridge row
+      // is un-archived, and the binding is still `'off'`. A retry of `bridge()`
+      // replays that surviving row and re-flips (the self-heal above), and a
+      // `rebridge` of this chat reuses it — no startup reaper runs or is needed.
+      logger.warn(
+        '[chat-bridge] bridge() tore after minting its room; it is live but unbridged — a retry or re-bridge of this chat heals it',
+        {
+          adapterId: input.adapterId,
+          chatId: input.chatId,
+          bindingId: input.bindingId,
+          roomId: room.id,
+          error: err instanceof Error ? err.message : String(err),
+        }
+      );
+      throw err;
     }
-
-    const { adopted } = await adopter.adoptAtBridge({
-      bindingId: input.bindingId,
-      chatId: input.chatId,
-      agentId: input.agentId,
-      roomId: room.id,
-      agentAuthorId,
-    });
-
-    await this.deps.bindings.update(input.bindingId, { bridge: 'room', roomId: room.id });
-    return { id: room.id, adopted };
   }
 
   /**
