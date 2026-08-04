@@ -238,6 +238,48 @@ describe('useInstallWithToast', () => {
     });
   });
 
+  describe('adapter install → Connections deep-link', () => {
+    it('deep-links a messaging adapter to the Messaging region', () => {
+      const { result } = renderHook(() => useInstallWithToast());
+
+      act(() => {
+        result.current.mutate({ name: 'telegram-adapter' });
+      });
+
+      const perCall = fakes.mutate.mock.calls[0][1] as { onSuccess: (r: unknown) => void };
+      act(() => {
+        perCall.onSuccess({
+          type: 'adapter',
+          packageName: 'telegram-adapter',
+          manifest: { adapterType: 'telegram' },
+        });
+      });
+
+      const opts = mockSuccess.mock.calls[0][1] as { action?: { label: string } };
+      expect(opts.action?.label).toBe('Open Messaging');
+    });
+
+    it('deep-links a connector-refinement adapter to the Accounts region', () => {
+      const { result } = renderHook(() => useInstallWithToast());
+
+      act(() => {
+        result.current.mutate({ name: 'gmail-connector' });
+      });
+
+      const perCall = fakes.mutate.mock.calls[0][1] as { onSuccess: (r: unknown) => void };
+      act(() => {
+        perCall.onSuccess({
+          type: 'adapter',
+          packageName: 'gmail-connector',
+          manifest: { adapterType: 'connector' },
+        });
+      });
+
+      const opts = mockSuccess.mock.calls[0][1] as { action?: { label: string } };
+      expect(opts.action?.label).toBe('Open Accounts');
+    });
+  });
+
   describe('mutateAsync (awaitable)', () => {
     it('resolves with the install result and fires a success toast', async () => {
       fakes.mutateAsync.mockResolvedValue({ success: true, packagePath: '/tmp/x' });
