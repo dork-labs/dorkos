@@ -1193,6 +1193,7 @@ async function start() {
           bindingStore,
           bindingRouter,
           adapterManager,
+          bridgeStore: roomBridges,
           relayCore,
           taskStore,
           logger,
@@ -1433,6 +1434,7 @@ async function start() {
       ...(adapterManager && { adapterManager }),
       ...(adapterManager && { bindingStore: adapterManager.getBindingStore() }),
       ...(adapterManager && { bindingRouter: adapterManager.getBindingRouter() }),
+      bridgeStore: roomBridges,
       ...(traceStore && { traceStore }),
       ...(meshCore && { meshCore }),
     };
