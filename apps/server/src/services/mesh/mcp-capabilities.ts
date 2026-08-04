@@ -208,7 +208,7 @@ export const mcpDomain: CapabilityDomain = {
       id: 'mcp.update',
       title: 'Update a managed MCP server',
       description:
-        'Change a managed server’s connection and/or enabled state. Changing the connection ' +
+        'Change a managed server’s transport and/or enabled state. Changing the transport ' +
         'introduces a new command/endpoint, so it is approved at a card showing the exact ' +
         'command/args/url, exactly like add.',
       tier: 'destructive',
@@ -216,7 +216,7 @@ export const mcpDomain: CapabilityDomain = {
         agentId: agentIdField,
         name: serverNameField,
         connection: McpServerTransportSchema.optional().describe(
-          'Replacement connection. Omit to leave the connection unchanged.'
+          'Replacement transport. Omit to leave the server’s transport unchanged.'
         ),
         enabled: z.boolean().optional().describe('New enabled state. Omit to leave it unchanged.'),
       }),
