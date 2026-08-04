@@ -89,6 +89,10 @@ export function createQueryClientConfig(): QueryClientConfig {
     mutationCache: new MutationCache({
       onError: (error, _variables, _onMutateResult, mutation) => {
         console.error('[dorkos:mutation-error]', { error: error.message });
+        // Recorded under `query_error`, which the breadcrumb enum uses for any
+        // failed data operation (query or mutation) — the bug-report trail only
+        // needs "a data call failed here", not the query/mutation distinction,
+        // so the enum stays small. The message is prefixed with the mutation key.
         addBreadcrumb(
           'query_error',
           `${String(mutation.options?.mutationKey?.[0] ?? 'mutation')}: ${error.message}`
