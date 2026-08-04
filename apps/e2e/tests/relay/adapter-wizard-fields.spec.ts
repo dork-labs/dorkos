@@ -132,7 +132,7 @@ test.describe('Adapter setup wizard — every declared field reaches a screen', 
     await expect(dialog.getByLabel('Approvers')).toBeVisible();
     // And the rest of the stranded set.
     await expect(dialog.getByText('Respond Mode')).toBeVisible();
-    await expect(dialog.getByLabel('Channel Overrides')).toBeVisible();
+    await expect(dialog.getByLabel('Slack channel settings')).toBeVisible();
 
     // The fields the step does name are still there, above the new section.
     await expect(dialog.getByLabel('Bot Token')).toBeVisible();
@@ -234,7 +234,7 @@ test.describe('Adapter setup wizard — every declared field reaches a screen', 
       // One id per line, not comma-joined; real JSON, not [object Object].
       await expect(dialog.getByLabel('Approvers')).toHaveValue('U01ABC123\nU02DEF456');
       await expect(dialog.getByLabel('DM Allowlist')).toHaveValue('U01ABC123\nU02DEF456');
-      await expect(dialog.getByLabel('Channel Overrides')).toHaveValue(
+      await expect(dialog.getByLabel('Slack channel settings')).toHaveValue(
         JSON.stringify({ C01ABC: { respondMode: 'always' } }, null, 2)
       );
 
@@ -285,7 +285,7 @@ test.describe('Adapter setup wizard — every declared field reaches a screen', 
       const dialog = wizard(page);
 
       // Break the JSON the way a stray keystroke would.
-      await dialog.getByLabel('Channel Overrides').fill('{"C01ABC": ');
+      await dialog.getByLabel('Slack channel settings').fill('{"C01ABC": ');
       await dialog.getByRole('button', { name: 'Continue' }).click();
       await dialog.getByRole('button', { name: /^(Continue|Skip)$/ }).click();
       await dialog.getByRole('button', { name: 'Save Changes' }).click();
