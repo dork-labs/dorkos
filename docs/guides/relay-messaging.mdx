@@ -33,7 +33,7 @@ The examples below use port 4242, the default. If yours is different, swap it in
 </Step>
 <Step>
 
-**Send a message.** Every message needs a subject: a named channel, like an email address for a message. This one is addressed to an agent called `backend`:
+**Send a message.** Every message needs a subject: a named address, like an email address for a message. This one is addressed to an agent called `backend`:
 
 ```bash
 curl -X POST http://localhost:4242/api/relay/messages \
@@ -211,11 +211,11 @@ The Telegram adapter connects a Telegram bot to Relay. Messages from the chat ar
 
 In a one-on-one chat the bot replies to everything you send it. In a group chat, `respondMode` decides when it joins in: `thread-aware` (default: when someone mentions it by name, sends it a command, or replies to one of its messages), `mention-only` (only when named), or `always` (every message in the group).
 
-Your bot never replies to another bot, whatever you pick. That is not a setting, because two bots that reply to each other will keep going forever and neither can tell it is happening. The one exception is an anonymous group admin: Telegram sends their messages in a way that looks like a bot, but they are a person, so your bot treats them like anyone else in the group. Posts from a linked channel are treated as automated and ignored.
+Your bot never replies to another bot, whatever you pick. That is not a setting, because two bots that reply to each other will keep going forever and neither can tell it is happening. The one exception is an anonymous group admin: Telegram sends their messages in a way that looks like a bot, but they are a person, so your bot treats them like anyone else in the group. Posts from a linked Telegram channel are treated as automated and ignored.
 
 ### Slack adapter
 
-The Slack adapter connects a Slack workspace to Relay using Socket Mode, so you don't need a public URL. It supports streaming replies, threads, a working indicator, and access control per channel.
+The Slack adapter connects a Slack workspace to Relay using Socket Mode, so you don't need a public URL. It supports streaming replies, threads, a working indicator, and access control per Slack channel.
 
 When an agent starts working on your message, Slack shows it: your message gets an 👀 reaction, which comes off when the agent replies or fails. A message nobody picks up is never marked — the reaction means somebody is on it, not that the message arrived. Nothing is added when the work finishes: the reply is the answer. Set the working indicator to **None** to turn it off.
 
@@ -237,7 +237,7 @@ When an agent starts working on your message, Slack shows it: your message gets 
 }
 ```
 
-`respondMode` controls when the bot replies in a channel: `thread-aware` (default: replies to @mentions and to threads it's already part of), `mention-only` (only @mentions), or `always` (every message). `dmPolicy` controls direct messages: `allowlist` (default: only the user IDs listed in `dmAllowlist`) or `open` (anyone in the workspace). A direct message can start an agent turn on your machine, so it is limited to people you name unless you open it. You can also set overrides per channel with `channelOverrides`.
+`respondMode` controls when the bot replies in a Slack channel: `thread-aware` (default: replies to @mentions and to threads it's already part of), `mention-only` (only @mentions), or `always` (every message). `dmPolicy` controls direct messages: `allowlist` (default: only the user IDs listed in `dmAllowlist`) or `open` (anyone in the workspace). A direct message can start an agent turn on your machine, so it is limited to people you name unless you open it. You can also set overrides per Slack channel with `channelOverrides`.
 
 ### Webhook adapter
 
