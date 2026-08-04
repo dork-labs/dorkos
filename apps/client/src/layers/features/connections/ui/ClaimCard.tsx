@@ -35,7 +35,13 @@ function claimQuestion(chat: UnclaimedChat): string {
 interface ClaimCardProps {
   chat: UnclaimedChat;
   agentOptions: { id: string; name: string }[];
-  onClaim: (agentId: string) => void;
+  /**
+   * @param agentId - The agent to answer.
+   * @param bridge - `true` for the primary action, "Answer in a channel"
+   *   (claims, binds, and bridges atomically, landing in a room); `false` for
+   *   the secondary action, "Answer privately" (today's behaviour, no room).
+   */
+  onClaim: (agentId: string, bridge: boolean) => void;
   onIgnore: () => void;
   onBlock: () => void;
   /** True while any decision on this chat is in flight. */
@@ -43,11 +49,17 @@ interface ClaimCardProps {
 }
 
 /**
- * One waiting chat, and the three ways to answer it.
+ * One waiting chat, and the ways to answer it.
  *
  * Nothing has run: an unclaimed chat never starts a turn, so no agent has read
  * it, no money has been spent, and the bot has said nothing back. Picking an
  * agent is what starts any of that.
+ *
+ * A direct message offers two ways to answer: "Answer in a channel" (the
+ * primary action — a room to see and reply from) or "Answer privately"
+ * (today's session-per-chat behaviour, no room). A group chat still joins
+ * into a room the same way it always has; the group-add flow's own card
+ * (Ignore/Leave, broadcast refusal) is a separate piece of work.
  *
  * @param props - The chat, the agents that could take it, and the decisions.
  */
@@ -62,6 +74,7 @@ export function ClaimCard({
   const [agentId, setAgentId] = useState(
     agentOptions.length === 1 ? (agentOptions[0]?.id ?? '') : ''
   );
+  const isGroup = chat.chatKind === 'group';
 
   return (
     <div
@@ -96,9 +109,33 @@ export function ClaimCard({
           </SelectContent>
         </Select>
 
-        <Button size="sm" disabled={!agentId || isDeciding} onClick={() => onClaim(agentId)}>
-          {chat.chatKind === 'group' ? 'Join' : 'Answer'}
-        </Button>
+        {isGroup ? (
+          <Button
+            size="sm"
+            disabled={!agentId || isDeciding}
+            onClick={() => onClaim(agentId, false)}
+          >
+            Join
+          </Button>
+        ) : (
+          <>
+            <Button
+              size="sm"
+              disabled={!agentId || isDeciding}
+              onClick={() => onClaim(agentId, true)}
+            >
+              Answer in a channel
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!agentId || isDeciding}
+              onClick={() => onClaim(agentId, false)}
+            >
+              Answer privately
+            </Button>
+          </>
+        )}
         <Button size="sm" variant="ghost" disabled={isDeciding} onClick={onIgnore}>
           Ignore
         </Button>
@@ -108,7 +145,15 @@ export function ClaimCard({
       </div>
 
       <p className="text-muted-foreground text-xs">
-        Ignore hides this and stays quiet. Block stops anything from this chat being recorded again.
+        {isGroup ? (
+          'Ignore hides this and stays quiet. Block stops anything from this chat being recorded again.'
+        ) : (
+          <>
+            A channel gives you a room to see and reply from; answering privately keeps this chat as
+            it is today. Ignore hides this and stays quiet. Block stops anything from this chat
+            being recorded again.
+          </>
+        )}
       </p>
     </div>
   );

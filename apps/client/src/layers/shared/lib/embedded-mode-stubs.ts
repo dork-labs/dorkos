@@ -90,6 +90,7 @@ import type {
   UnclaimedChat,
   UnclaimedChatStatus,
   ClaimUnclaimedChatRequest,
+  ClaimUnclaimedChatResponse,
 } from '@dorkos/shared/relay-schemas';
 import type {
   AgentManifest,
@@ -346,7 +347,7 @@ export const bindingStubs = {
   async claimUnclaimedChat(
     _id: string,
     _input: ClaimUnclaimedChatRequest
-  ): Promise<AdapterBinding> {
+  ): Promise<ClaimUnclaimedChatResponse> {
     throw new Error('Relay bindings are not supported in embedded mode');
   },
 

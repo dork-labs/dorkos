@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createDb, runMigrations, type Db } from '@dorkos/db';
@@ -7,7 +7,27 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { BindingStore } from '../../services/relay/binding-store.js';
 import { UnclaimedChatStore } from '../../services/relay/unclaimed-chat-store.js';
+import type { BridgeLifecycle } from '../../services/relay/chat-bridge/index.js';
 import { createUnclaimedChatsRouter } from '../unclaimed-chats.js';
+
+/**
+ * A lifecycle stand-in that mutates the real `BindingStore` exactly as the
+ * real coordinator does — `bridge()` flips `bridge: 'room'` + a roomId — so a
+ * route re-read reflects a real flip, not a mock artifact. Mirrors
+ * `relay-bindings-bridge.test.ts`'s `createLifecycle`.
+ */
+function fakeLifecycle(
+  bindingStore: BindingStore,
+  opts: { throwOnBridge?: Error; roomId?: string } = {}
+) {
+  const bridge = vi.fn(async (input: { bindingId: string }) => {
+    if (opts.throwOnBridge) throw opts.throwOnBridge;
+    const roomId = opts.roomId ?? 'room-9';
+    await bindingStore.update(input.bindingId, { bridge: 'room', roomId });
+    return { id: roomId, adopted: false };
+  });
+  return { bridge, unbridge: vi.fn(), rebridge: vi.fn() } as unknown as BridgeLifecycle;
+}
 
 describe('unclaimed-chats router', () => {
   let db: Db;
@@ -159,5 +179,169 @@ describe('unclaimed-chats router', () => {
     const res = await request(app).post(`/api/relay/unclaimed-chats/${chat.id}/block`);
     expect(res.status).toBe(204);
     expect(store.isBlocked('tg-bot', '123')).toBe(true);
+  });
+});
+
+/**
+ * "Answer in a channel" (chats-as-channels spec §3.1, task 2.1, DOR-882) — the
+ * claim card's primary action. Claims, binds, and bridges through the SAME
+ * `BridgeLifecycle.bridge()` path task 1.14 (DOR-878) already uses; there is
+ * no second create path. A bridge failure must never leave a broken partial
+ * state — the claim (this task's "Answer privately", unchanged) already
+ * stands on its own, so failure degrades to that and reports why.
+ */
+describe('unclaimed-chats router — "Answer in a channel" (DOR-882)', () => {
+  let db: Db;
+  let tmpDir: string;
+  let bindingStore: BindingStore;
+  let store: UnclaimedChatStore;
+
+  beforeEach(async () => {
+    db = createDb(':memory:');
+    runMigrations(db);
+    tmpDir = mkdtempSync(join(tmpdir(), 'dorkos-unclaimed-bridge-'));
+    bindingStore = new BindingStore(tmpDir);
+    await bindingStore.init();
+    store = new UnclaimedChatStore(db);
+  });
+
+  afterEach(async () => {
+    await bindingStore.shutdown();
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function createApp(lifecycle?: BridgeLifecycle, withMesh = true) {
+    const app = express();
+    app.use(express.json());
+    app.use(
+      '/api/relay/unclaimed-chats',
+      createUnclaimedChatsRouter({
+        store,
+        bindingStore,
+        ...(withMesh && {
+          meshCore: { getProjectPath: (id: string) => (id === 'agent-a' ? '/proj/a' : undefined) },
+        }),
+        ...(lifecycle && { lifecycle }),
+      })
+    );
+    return app;
+  }
+
+  it('claims, binds, and bridges atomically in one call — the response binding carries the room', async () => {
+    const lifecycle = fakeLifecycle(bindingStore, { roomId: 'room-42' });
+    const app = createApp(lifecycle);
+    const chat = store.recordSighting({
+      adapterId: 'tg-bot',
+      chatId: '123',
+      chatKind: 'dm',
+      platformChatType: 'private',
+    }).chat;
+
+    const res = await request(app)
+      .post(`/api/relay/unclaimed-chats/${chat.id}/claim`)
+      .send({ agentId: 'agent-a', bridge: true });
+
+    expect(res.status).toBe(201);
+    expect(res.body.bridgeError).toBeUndefined();
+    expect(res.body.binding).toMatchObject({ bridge: 'room', roomId: 'room-42' });
+    expect(lifecycle.bridge).toHaveBeenCalledTimes(1);
+    expect(lifecycle.bridge).toHaveBeenCalledWith({
+      adapterId: 'tg-bot',
+      chatId: '123',
+      bindingId: res.body.binding.id,
+      agentId: 'agent-a',
+      chatType: 'private',
+      channelType: null,
+      title: '123',
+      agentPath: '/proj/a',
+    });
+    // All four artifacts: the unclaimed row is claimed, the binding exists
+    // and is bridged, and the room the lifecycle minted is what the binding
+    // now points at (the fourth — the room itself — is BridgeLifecycle's own
+    // property, asserted at lifecycle.test.ts and room-bridged-create.test.ts;
+    // this suite pins that the claim route reaches it atomically).
+    expect(store.getById(chat.id)?.status).toBe('claimed');
+    expect(bindingStore.getById(res.body.binding.id)).toMatchObject({
+      bridge: 'room',
+      roomId: 'room-42',
+    });
+  });
+
+  it("'Answer privately' (bridge omitted) never touches the lifecycle", async () => {
+    const lifecycle = fakeLifecycle(bindingStore);
+    const app = createApp(lifecycle);
+    const chat = store.recordSighting({ adapterId: 'tg-bot', chatId: '123', chatKind: 'dm' }).chat;
+
+    const res = await request(app)
+      .post(`/api/relay/unclaimed-chats/${chat.id}/claim`)
+      .send({ agentId: 'agent-a' });
+
+    expect(res.status).toBe(201);
+    expect(lifecycle.bridge).not.toHaveBeenCalled();
+    expect(res.body.binding.bridge).toBe('off');
+  });
+
+  it('a bridge failure leaves the claim standing, never a binding that says bridged over a broken room', async () => {
+    const lifecycle = fakeLifecycle(bindingStore, { throwOnBridge: new Error('room mint failed') });
+    const app = createApp(lifecycle);
+    const chat = store.recordSighting({
+      adapterId: 'tg-bot',
+      chatId: '123',
+      chatKind: 'dm',
+      platformChatType: 'private',
+    }).chat;
+
+    const res = await request(app)
+      .post(`/api/relay/unclaimed-chats/${chat.id}/claim`)
+      .send({ agentId: 'agent-a', bridge: true });
+
+    // The claim itself succeeded — the person is not left with an unclaimed
+    // chat because a room failed to mint.
+    expect(res.status).toBe(201);
+    expect(res.body.bridgeError).toBe('room mint failed');
+    expect(res.body.binding.bridge).toBe('off');
+    expect(res.body.binding.roomId).toBeNull();
+    expect(store.getById(chat.id)?.status).toBe('claimed');
+    // Persisted, not just the response: no partial bridge survives.
+    expect(bindingStore.getById(res.body.binding.id)).toMatchObject({
+      bridge: 'off',
+      roomId: null,
+    });
+  });
+
+  it('with no lifecycle wired, bridge: true still claims privately and says why', async () => {
+    const app = createApp(undefined);
+    const chat = store.recordSighting({ adapterId: 'tg-bot', chatId: '123', chatKind: 'dm' }).chat;
+
+    const res = await request(app)
+      .post(`/api/relay/unclaimed-chats/${chat.id}/claim`)
+      .send({ agentId: 'agent-a', bridge: true });
+
+    expect(res.status).toBe(201);
+    expect(res.body.bridgeError).toMatch(/not available/i);
+    expect(res.body.binding.bridge).toBe('off');
+    expect(store.getById(chat.id)?.status).toBe('claimed');
+  });
+
+  it('a broadcast sighting refuses the bridge but the claim still stands', async () => {
+    const lifecycle = fakeLifecycle(bindingStore);
+    const app = createApp(lifecycle);
+    const chat = store.recordSighting({
+      adapterId: 'tg-bot',
+      chatId: '777',
+      channelType: 'group',
+      chatKind: 'group',
+      platformChatType: 'channel',
+    }).chat;
+
+    const res = await request(app)
+      .post(`/api/relay/unclaimed-chats/${chat.id}/claim`)
+      .send({ agentId: 'agent-a', bridge: true });
+
+    expect(res.status).toBe(201);
+    expect(res.body.bridgeError).toMatch(/broadcast channel/i);
+    expect(lifecycle.bridge).not.toHaveBeenCalled();
+    expect(res.body.binding.bridge).toBe('off');
+    expect(store.getById(chat.id)?.status).toBe('claimed');
   });
 });
