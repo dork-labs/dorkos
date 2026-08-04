@@ -75,6 +75,21 @@
       "path": "apps/client/src/layers/features/agent-settings/ui/IntegrationBindingCard.tsx",
       "terms": ["connection"],
       "reason": "The per-agent Connections tab's binding card \"Remove connection\" confirmation (plan D2, DOR-859) names the Connections-domain entity a person is deleting — one Telegram/Slack/webhook binding — not a network-health reading."
+    },
+    {
+      "path": "apps/client/src/layers/features/mesh/ui/AdapterNode.tsx",
+      "terms": ["connection"],
+      "reason": "The topology graph's adapter-node badge (\"1 connection\" / \"N connections\", plan D2, DOR-896) counts bindings attached to that adapter — the Connections-domain entity, same count IntegrationBindingCard and RelayHealthBar report elsewhere. Not a network-health reading."
+    },
+    {
+      "path": "apps/client/src/layers/features/mesh/ui/BindingEdge.tsx",
+      "terms": ["connection"],
+      "reason": "The topology graph's binding-edge \"Remove connection\" aria-label (plan D2, DOR-896) names the Connections-domain entity a person is deleting — one adapter-to-agent binding — the same action IntegrationBindingCard's confirm dialog names elsewhere. The edge's own fallback display label ('Connection', in resolveDisplayLabel) is the same entity name but isn't a copy-bearing position the gate's static scan reaches (a bare `return` — the documented gap in check-vocab-gate.ts's module doc), so it needs no entry, only this note for the audit trail."
+    },
+    {
+      "path": "apps/client/src/layers/features/mesh/ui/TopologyGraph.tsx",
+      "terms": ["connection"],
+      "reason": "The topology graph's keyboard-fallback summary, drag-to-bind hint, and remove-binding confirm dialog (plan D2, DOR-896) all name the same Connections-domain entity as BindingEdge and AdapterNode in this directory: an adapter-to-agent binding a person creates or deletes. Not a network-health reading — a binding's own reachability is reported by its test action, not this copy."
     }
   ]
 }

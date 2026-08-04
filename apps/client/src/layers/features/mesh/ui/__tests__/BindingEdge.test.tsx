@@ -164,35 +164,35 @@ describe('BindingEdge', () => {
 
     it('falls back to "Binding" when neither label nor sessionStrategy and selected', () => {
       render(<BindingEdge {...BASE_EDGE_PROPS} selected data={{}} />);
-      expect(screen.getByText('Integration')).toBeInTheDocument();
+      expect(screen.getByText('Connection')).toBeInTheDocument();
     });
 
     it('shows "Binding" when data is undefined and selected', () => {
       render(<BindingEdge {...BASE_EDGE_PROPS} selected />);
-      expect(screen.getByText('Integration')).toBeInTheDocument();
+      expect(screen.getByText('Connection')).toBeInTheDocument();
     });
   });
 
   describe('delete button', () => {
     it('renders delete button when selected and onDelete is provided', () => {
       render(<BindingEdge {...BASE_EDGE_PROPS} selected data={{ onDelete: vi.fn() }} />);
-      expect(screen.getByRole('button', { name: /remove integration/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /remove connection/i })).toBeInTheDocument();
     });
 
     it('does not render delete button when not selected even with onDelete', () => {
       render(<BindingEdge {...BASE_EDGE_PROPS} data={{ onDelete: vi.fn() }} />);
-      expect(screen.queryByRole('button', { name: /remove integration/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /remove connection/i })).not.toBeInTheDocument();
     });
 
     it('does not render delete button when onDelete is absent', () => {
       render(<BindingEdge {...BASE_EDGE_PROPS} selected data={{}} />);
-      expect(screen.queryByRole('button', { name: /remove integration/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /remove connection/i })).not.toBeInTheDocument();
     });
 
     it('calls onDelete with the edge id when delete button is clicked', () => {
       const onDelete = vi.fn();
       render(<BindingEdge {...BASE_EDGE_PROPS} selected data={{ onDelete }} />);
-      fireEvent.click(screen.getByRole('button', { name: /remove integration/i }));
+      fireEvent.click(screen.getByRole('button', { name: /remove connection/i }));
       expect(onDelete).toHaveBeenCalledWith('binding-edge-1');
       expect(onDelete).toHaveBeenCalledTimes(1);
     });
@@ -210,18 +210,18 @@ describe('BindingEdge', () => {
       expect(screen.getByText('12345')).toBeInTheDocument();
     });
 
-    it('renders channelType badge when present and selected', () => {
+    it('renders a humanized channelType badge when present and selected', () => {
       render(
         <BindingEdge
           {...BASE_EDGE_PROPS}
           selected
-          data={{ channelType: 'private', sessionStrategy: 'per-chat' }}
+          data={{ channelType: 'dm', sessionStrategy: 'per-chat' }}
         />
       );
-      expect(screen.getByText('private')).toBeInTheDocument();
+      expect(screen.getByText('Direct message')).toBeInTheDocument();
     });
 
-    it('renders both chatId and channelType badges when both present', () => {
+    it('renders both chatId and a humanized channelType badge when both present', () => {
       render(
         <BindingEdge
           {...BASE_EDGE_PROPS}
@@ -230,7 +230,18 @@ describe('BindingEdge', () => {
         />
       );
       expect(screen.getByText('12345')).toBeInTheDocument();
-      expect(screen.getByText('group')).toBeInTheDocument();
+      expect(screen.getByText('Group')).toBeInTheDocument();
+    });
+
+    it('humanizes the "channel" wire value as "Broadcast channel" so it never reads as the app nav', () => {
+      render(
+        <BindingEdge
+          {...BASE_EDGE_PROPS}
+          selected
+          data={{ channelType: 'channel', sessionStrategy: 'per-chat' }}
+        />
+      );
+      expect(screen.getByText('Broadcast channel')).toBeInTheDocument();
     });
 
     it('does not render filter badges when neither chatId nor channelType present', () => {
@@ -241,12 +252,10 @@ describe('BindingEdge', () => {
     });
 
     it('does not render filter badges when not selected or hovered', () => {
-      render(
-        <BindingEdge {...BASE_EDGE_PROPS} data={{ chatId: '12345', channelType: 'private' }} />
-      );
+      render(<BindingEdge {...BASE_EDGE_PROPS} data={{ chatId: '12345', channelType: 'dm' }} />);
       // Label (and badges) should not be visible at rest
       expect(screen.queryByText('12345')).not.toBeInTheDocument();
-      expect(screen.queryByText('private')).not.toBeInTheDocument();
+      expect(screen.queryByText('Direct message')).not.toBeInTheDocument();
     });
   });
 });
