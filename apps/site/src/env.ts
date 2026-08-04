@@ -102,6 +102,37 @@ const webEnvSchema = z.object({
   // by design: when unset, the cron route refuses to run (401) so it can never be
   // triggered unauthenticated. Set a strong random value in the deployment.
   CRON_SECRET: z.string().optional(),
+
+  // Linear feedback intake (feedback-pipeline, decision 260803-205035).
+  // Server-only write key `POST /api/feedback` uses to mirror a durable Neon
+  // submission into a Linear issue (`lib/feedback/linear.ts`). Unlike the existing
+  // read-only, user-supplied-key Linear extension
+  // (`apps/server/src/core-extensions/linear-issues`), this key is provisioned
+  // once by ops and lives only in site env. Optional by design: when unset,
+  // `createFeedbackIssue` no-ops (returns null) and the route degrades to
+  // "Neon insert succeeded, Linear best-effort skipped" — the same
+  // graceful-degrade posture as every other optional external integration in
+  // this pipeline (PostHog, the Resend segment mirror).
+  LINEAR_API_KEY: z.string().optional(),
+  // The Linear team the feedback issue is filed under — a team **id** (uuid),
+  // not the short key (`DOR`) the read-only extension above uses; the
+  // `issueCreate` mutation takes `teamId`. Required alongside LINEAR_API_KEY
+  // for a create to actually happen: if the key is set but this is not, the
+  // client degrades the same as an unset key rather than throwing out of a
+  // best-effort integration.
+  LINEAR_TEAM_ID: z.string().optional(),
+  // The dedicated "Feedback intake" Linear project the issue is filed into
+  // (a project id, created once by hand in Linear — not by this code).
+  // Optional: when unset, the issue is still created at the team level, just
+  // unassigned to a project.
+  LINEAR_FEEDBACK_PROJECT_ID: z.string().optional(),
+  // Label ids applied by submission kind — `bug` gets this label, `idea` gets
+  // LINEAR_FEATURE_LABEL_ID, plain `feedback` gets neither (see
+  // `lib/feedback/linear.ts`'s kind→label mapping). Ids, not names, because
+  // `issueCreate` takes `labelIds`. Both optional: an unset label for a given
+  // kind just files the issue without it.
+  LINEAR_BUG_LABEL_ID: z.string().optional(),
+  LINEAR_FEATURE_LABEL_ID: z.string().optional(),
 });
 
 // Client bundles do not get the whole process.env object — Next.js (webpack
