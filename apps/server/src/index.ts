@@ -78,7 +78,11 @@ import {
   AgentConnectorAttachmentStore,
   SessionConnectorAttachmentStore,
 } from './services/connectors/attachment-store.js';
-import { toSdkMcpServers } from './services/runtimes/claude-code/mcp-server-config.js';
+import {
+  toSdkMcpServers,
+  mergeSessionMcpServers,
+} from './services/runtimes/claude-code/mcp-server-config.js';
+import { AgentMcpServerService } from './services/mesh/agent-mcp-server-service.js';
 import { setRelayEnabled, setRelayInitError } from './services/relay/relay-state.js';
 import { AdapterManager } from './services/relay/adapter-manager.js';
 import {
@@ -269,6 +273,7 @@ let adapterRegistry: AdapterRegistry | undefined;
 let adapterManager: AdapterManager | undefined;
 let traceStore: TraceStore | undefined;
 let meshCore: MeshCore | undefined;
+let agentMcpServerService: AgentMcpServerService | undefined;
 let extensionManager: ExtensionManager | undefined;
 let taskFileWatcher: TaskFileWatcher | undefined;
 let taskReconciler: TaskReconciler | undefined;
@@ -1055,6 +1060,33 @@ async function start() {
         roomService,
         roomBridges,
         operatorAuthorId: resolveOperatorAuthorId,
+        // The extra rooms reads outbound delivery needs (chats-as-channels §6):
+        // read an entry by id, resolve an author, and register the inline
+        // delivery hook on the room service.
+        roomStore,
+        roomAuthors,
+        registerEntryCommitListener: (listener) => roomService.setEntryCommitListener(listener),
+        // Build a chat's outbound subject from its bridge row (§6.4). The
+        // platform segment lives on the adapter's own subject prefix, not the
+        // bridge row, so it is resolved from the adapter registry here — keeping
+        // the delivery engine platform-agnostic. The prefix is instance-scoped
+        // in production (`relay.human.telegram.<id>`); the fallback inserts the
+        // adapter id when it is not, so both shapes round-trip through
+        // `parseHumanSubject` to the same binding the consent gate resolves.
+        resolveBridgeSubject: (bridge) => {
+          const adapter = adapterRegistry?.get(bridge.adapterId);
+          if (!adapter) return null;
+          const prefixes = Array.isArray(adapter.subjectPrefix)
+            ? adapter.subjectPrefix
+            : [adapter.subjectPrefix];
+          const prefix = prefixes[0];
+          if (!prefix) return null;
+          const base = prefix.endsWith(`.${bridge.adapterId}`)
+            ? prefix
+            : `${prefix}.${bridge.adapterId}`;
+          const groupSegment = bridge.platformChatType === 'private' ? '' : '.group';
+          return `${base}${groupSegment}.${bridge.chatId}`;
+        },
       });
       await adapterManager.initialize();
       relayCore.setAdapterContextBuilder(adapterManager.buildContext.bind(adapterManager));
@@ -1341,6 +1373,14 @@ async function start() {
   // request id are not stranded on the pre-remap id (mirrors the projector +
   // DevTools-store rekeys).
   onProjectorRekey((oldId, newId) => sessionConnectorService.migrateSession(oldId, newId));
+  // Managed per-agent MCP servers (spec `mcp-server-management`). Constructed
+  // once meshCore exists — the service resolves an agent id to its workspace
+  // path through the mesh registry (the single instance, shared, ADR-0043) and
+  // owns every read/write of `AgentManifest.mcpServers`. Wired into both the
+  // claude-code injection factory below and the `mcp.*` capability domain.
+  if (meshCore) {
+    agentMcpServerService = new AgentMcpServerService({ agents: meshCore.agentRegistry, logger });
+  }
   if (claudeRuntime) {
     // Connector attachment hydration is claude-code-only today, mirroring
     // `setMcpServerFactory` below — codex/opencode don't implement the MCP
@@ -1359,26 +1399,40 @@ async function start() {
       ...(traceStore && { traceStore }),
       ...(meshCore && { meshCore }),
     };
-    claudeRuntime.setMcpServerFactory((session, sessionId) => ({
-      // `marketplaceMcpDeps` is populated later in boot (the relay-enabled
-      // marketplace-wiring block). This factory closure runs per query, so it
-      // reads the captured binding lazily — by the time any session dispatches
-      // a turn, it is either populated or intentionally undefined (marketplace
-      // disabled), in which case the in-session marketplace tools are omitted.
-      dorkos: createDorkOsToolServer(
-        mcpToolDeps!,
-        session,
-        sessionId,
-        marketplaceMcpDeps,
-        capabilityRegistry
-      ),
-      // Connected accounts explicitly attached to this session become named MCP
-      // tool servers (`gmail-personal`, `gmail-work`). The connection details
-      // are provider-neutral; the SDK-shape conversion is confined to the
-      // claude-code runtime. Null-branch accounts (expired/revoked) are skipped
-      // here and surfaced via the session connector status.
-      ...toSdkMcpServers(sessionConnectorService.mcpServersForSession(sessionId).servers),
-    }));
+    claudeRuntime.setMcpServerFactory((session, sessionId) =>
+      // Managed servers first, connectors second, `dorkos` last so it can never
+      // be shadowed — the ordering guarantee lives in `mergeSessionMcpServers`
+      // (spec `mcp-server-management` §6).
+      mergeSessionMcpServers({
+        // The agent's ENABLED managed servers, injected inline so no `.mcp.json`
+        // is written. The agent workspace is the session cwd; a non-agent
+        // session has no manifest and contributes nothing.
+        managed:
+          session.cwd && agentMcpServerService
+            ? toSdkMcpServers(agentMcpServerService.injectableServersForCwd(session.cwd))
+            : {},
+        // Connected accounts explicitly attached to this session become named
+        // MCP tool servers (`gmail-personal`, `gmail-work`). The connection
+        // details are provider-neutral; the SDK-shape conversion is confined to
+        // the claude-code runtime. Null-branch accounts (expired/revoked) are
+        // skipped and surfaced via the session connector status.
+        connectors: toSdkMcpServers(
+          sessionConnectorService.mcpServersForSession(sessionId).servers
+        ),
+        // `marketplaceMcpDeps` is populated later in boot (the relay-enabled
+        // marketplace-wiring block). This factory closure runs per query, so it
+        // reads the captured binding lazily — by the time any session dispatches
+        // a turn, it is either populated or intentionally undefined (marketplace
+        // disabled), in which case the in-session marketplace tools are omitted.
+        dorkos: createDorkOsToolServer(
+          mcpToolDeps!,
+          session,
+          sessionId,
+          marketplaceMcpDeps,
+          capabilityRegistry
+        ),
+      })
+    );
   }
 
   // Always mount /mcp — requireMcpEnabled handles the disabled case with a clean 503.
@@ -2121,6 +2175,15 @@ async function start() {
         flowBindings: connectorFlowBindings,
         ...(adapterManager && { relay: adapterManager }),
       },
+      // The MCP-server-management domain (spec `mcp-server-management` §5): the
+      // seven `mcp.*` verbs over the same service the injection factory reads,
+      // so a server added through the gated capability is what the next session
+      // injects. Present only when meshCore initialized (the service needs the
+      // agent registry to resolve workspace paths).
+      ...(agentMcpServerService &&
+        meshCore && {
+          mcpDeps: { service: agentMcpServerService, agents: meshCore.agentRegistry },
+        }),
     },
     createCapabilityAttributionObserver(activityService)
   );

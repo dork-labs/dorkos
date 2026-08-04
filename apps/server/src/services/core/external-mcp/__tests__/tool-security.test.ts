@@ -50,6 +50,8 @@ import { operatorDomain } from '../../operator/operator-capabilities.js';
 import { marketplaceDomain } from '../../../marketplace-mcp/marketplace-capabilities.js';
 import { connectorDomain } from '../../../connectors/connector-capabilities.js';
 import type { ConnectorCapabilityDeps } from '../../../connectors/connector-capabilities.js';
+import { mcpDomain } from '../../../mesh/mcp-capabilities.js';
+import type { McpCapabilityDeps } from '../../../mesh/mcp-capabilities.js';
 import { capabilitiesDomain } from '../../self-description/capabilities-domain.js';
 import { composeDorkOsCapabilityRegistry } from '../../self-description/dorkos-registry.js';
 import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
@@ -97,6 +99,7 @@ function createStatelessTestApp() {
         operatorDeps: deps,
         marketplaceDeps,
         connectorDeps: {} as ConnectorCapabilityDeps,
+        mcpDeps: {} as McpCapabilityDeps,
       });
       const server = createExternalMcpServer(deps, marketplaceDeps, registry);
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
@@ -141,13 +144,14 @@ async function fetchLiveTools(): Promise<ToolListEntry[]> {
 }
 
 describe('READ_ONLY_MCP_TOOL_NAMES drift guard', () => {
-  it('has exactly 31 members (the audited read-only set)', () => {
+  it('has exactly 32 members (the audited read-only set)', () => {
     // A hard count anchors the constant against silent additions/removals.
-    // 18 legacy (`LEGACY_READ_ONLY_TOOL_NAMES`) + 13 registry-derived carve-outs:
-    // 4 operator, 5 marketplace, 3 connector, plus `list_capabilities` from the
+    // 18 legacy (`LEGACY_READ_ONLY_TOOL_NAMES`) + 14 registry-derived carve-outs:
+    // 4 operator, 5 marketplace, 3 connector, `mcp_list_server` from the
+    // MCP-server-management domain, plus `list_capabilities` from the
     // self-description domain. A carve-out only counts when its tool reaches the
     // `external` server, which is what `readOnlyCarveOutToolNames` checks.
-    expect(READ_ONLY_MCP_TOOL_NAMES.size).toBe(31);
+    expect(READ_ONLY_MCP_TOOL_NAMES.size).toBe(32);
   });
 
   it('every live tool with readOnlyHint === true is in the constant', async () => {
@@ -194,6 +198,7 @@ describe('READ_ONLY_MCP_TOOL_NAMES drift guard', () => {
       ...operatorDomain.capabilities,
       ...marketplaceDomain.capabilities,
       ...connectorDomain.capabilities,
+      ...mcpDomain.capabilities,
       ...capabilitiesDomain.capabilities,
     ];
     const derived = readOnlyCarveOutToolNames(migratedCapabilities);

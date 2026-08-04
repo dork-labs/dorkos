@@ -15,7 +15,7 @@
  *
  * @module shared/lib/transport/feedback-methods
  */
-import type { FeedbackSubmission } from '@dorkos/shared/telemetry-events';
+import type { FeedbackListItem, FeedbackSubmission } from '@dorkos/shared/telemetry-events';
 import { fetchJSON } from './http-client';
 
 /**
@@ -36,6 +36,16 @@ export function createFeedbackMethods(baseUrl: string) {
         // exception the caller must handle.
         return { ok: false };
       }
+    },
+
+    /**
+     * List this install's own feedback submissions from the local server's
+     * `GET /api/feedback/mine` proxy. Rejects on failure — unlike
+     * `sendFeedback`, the tracking view's own loading/error UI handles this
+     * directly, so there is no honest-`{ ok }` degrade to construct here.
+     */
+    async listMyFeedback(): Promise<FeedbackListItem[]> {
+      return fetchJSON<FeedbackListItem[]>(baseUrl, '/feedback/mine');
     },
   };
 }

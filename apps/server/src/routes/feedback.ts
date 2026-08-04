@@ -14,13 +14,24 @@
  * switches — pressing Send IS the consent (see the feedback-reporter and
  * `@dorkos/shared/telemetry-events` for the reasoning).
  *
+ * `GET /api/feedback/mine` — thin proxy for the "Feedback & requests"
+ * tracking view (feedback-pipeline Part 4, decision 260803-205035). Resolves
+ * this install's own anonymous `instanceId` and forwards to the site's
+ * `GET /api/feedback/mine` via {@link listMyFeedback}, so the client never
+ * makes a cross-origin request to dorkos.ai itself.
+ *
  * @module routes/feedback
  */
 import { Router } from 'express';
 import { FeedbackSubmissionSchema, type FeedbackSubmission } from '@dorkos/shared/telemetry-events';
-import { sendFeedback, resolveFeedbackIdentity } from '../services/core/feedback-reporter.js';
+import {
+  sendFeedback,
+  resolveFeedbackIdentity,
+  listMyFeedback,
+} from '../services/core/feedback-reporter.js';
 import { getRecentLogExcerpt } from '../lib/log-excerpt.js';
 import { resolveDorkHome } from '../lib/dork-home.js';
+import { logger, logError } from '../lib/logger.js';
 import { SERVER_VERSION } from '../lib/version.js';
 import type { RequestUser } from '../services/core/auth/index.js';
 
@@ -77,6 +88,22 @@ router.post('/', async (req, res) => {
   // retry; the UI reads `ok` to choose between "Thanks, sent." and the GitHub
   // fallback message.
   return res.json(result);
+});
+
+/**
+ * GET /api/feedback/mine — this install's own submission history, proxied
+ * from the site. `502` on any read failure (unreachable site, non-OK
+ * response) so the client's error state has something honest to show; never
+ * a client-error status, since nothing about the request itself is invalid.
+ */
+router.get('/mine', async (_req, res) => {
+  try {
+    const items = await listMyFeedback({ dorkHome: resolveDorkHome() });
+    return res.json(items);
+  } catch (err) {
+    logger.warn('[Feedback] Failed to read feedback history', logError(err));
+    return res.status(502).json({ error: 'Could not reach the feedback service' });
+  }
 });
 
 export default router;

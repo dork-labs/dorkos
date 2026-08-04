@@ -1,0 +1,9 @@
+{
+  "id": "260803-232451",
+  "slug": "mcp-server-management",
+  "title": "MCP server management for agents — cross-runtime add/remove/status with a uniform approval gate",
+  "created": "2026-08-03",
+  "status": "specified",
+  "linearIssue": "DOR-891",
+  "notes": "v1 ships the Claude-Code slice (inline-injected DorkOS-managed servers) plus the runtime-neutral capability domain, UI, CLI, and approval gate; Codex/OpenCode write paths deferred to follow-ups. Inline injection is chosen to dissolve the .mcp.json dual-trust confusion."
+}

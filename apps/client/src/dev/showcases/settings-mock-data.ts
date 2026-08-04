@@ -155,6 +155,7 @@ export const MOCK_AGENT_MANIFEST: AgentManifest = {
   icon: '🤖',
   isSystem: false,
   enabledToolGroups: {},
+  mcpServers: [],
 };
 
 /**
@@ -182,6 +183,7 @@ export const MOCK_MESH_AGENTS: { agents: AgentManifest[] } = {
       personaEnabled: true,
       isSystem: true,
       enabledToolGroups: {},
+      mcpServers: [],
     },
     MOCK_AGENT_MANIFEST,
   ],

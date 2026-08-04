@@ -107,6 +107,7 @@ function makeManifest(): AgentManifest {
     registeredBy: 'mesh',
     personaEnabled: true,
     enabledToolGroups: {},
+    mcpServers: [],
   } as AgentManifest;
 }
 

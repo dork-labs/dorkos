@@ -25,7 +25,12 @@ vi.mock('@/env', () => ({
   },
 }));
 
-import { sendResetPassword, sendVerificationEmail } from '../mailer';
+import {
+  sendFeedbackReceipt,
+  sendFeedbackShipped,
+  sendResetPassword,
+  sendVerificationEmail,
+} from '../mailer';
 
 const TO = 'kai' + '@' + 'dork.test';
 const URL = 'https://dorkos.ai/api/auth/verify?token=abc123';
@@ -78,5 +83,93 @@ describe('mailer (Resend seam)', () => {
 
     await expect(sendWithoutKey({ to: TO, url: URL })).rejects.toThrow(/RESEND_API_KEY/);
     vi.doUnmock('@/env');
+  });
+
+  describe('sendFeedbackReceipt', () => {
+    const trackingUrl = 'https://dorkos.ai/feedback/row-uuid-1';
+
+    it('sends the receipt with the tracking link and the scoped-consent line', async () => {
+      await sendFeedbackReceipt(TO, trackingUrl);
+
+      expect(sendMock).toHaveBeenCalledTimes(1);
+      const payload = sendMock.mock.calls[0][0] as { to: string; subject: string; html: string };
+      expect(payload.to).toBe(TO);
+      expect(payload.subject).toBe('We got your DorkOS report');
+      expect(payload.html).toContain(trackingUrl);
+      expect(payload.html).toMatch(/only email you about this report/i);
+    });
+
+    it('never throws when RESEND_API_KEY is unset — catches and logs instead', async () => {
+      vi.resetModules();
+      vi.doMock('@/env', () => ({ env: { RESEND_FROM: 'DorkOS <accounts@dork.test>' } }));
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const { sendFeedbackReceipt: sendWithoutKey } = await import('../mailer');
+
+      await expect(sendWithoutKey(TO, trackingUrl)).resolves.toBeUndefined();
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        '[mailer] sendFeedbackReceipt failed',
+        expect.objectContaining({ message: expect.stringContaining('RESEND_API_KEY') })
+      );
+
+      consoleErrorSpy.mockRestore();
+      vi.doUnmock('@/env');
+    });
+  });
+
+  describe('sendFeedbackShipped', () => {
+    it('sends the shipped email quoting the report and naming the version', async () => {
+      await sendFeedbackShipped(TO, {
+        message: 'Chat stopped updating after the stream dropped.\nMore detail here.',
+        shippedVersion: '0.56.3',
+      });
+
+      expect(sendMock).toHaveBeenCalledTimes(1);
+      const payload = sendMock.mock.calls[0][0] as { to: string; subject: string; html: string };
+      expect(payload.to).toBe(TO);
+      expect(payload.subject).toBe('Your DorkOS report shipped in v0.56.3');
+      expect(payload.html).toContain('Chat stopped updating after the stream dropped.');
+      expect(payload.html).not.toContain('More detail here.');
+      expect(payload.html).toMatch(/only email you about this report/i);
+    });
+
+    it('includes the changelog link only when one is provided', async () => {
+      await sendFeedbackShipped(TO, {
+        message: 'Add dark mode',
+        shippedVersion: '0.56.3',
+        changelogUrl: 'https://dorkos.ai/blog/dorkos-0-56-3',
+      });
+      const withLink = sendMock.mock.calls[0][0] as { html: string };
+      expect(withLink.html).toContain('https://dorkos.ai/blog/dorkos-0-56-3');
+
+      sendMock.mockClear();
+      await sendFeedbackShipped(TO, { message: 'Add dark mode', shippedVersion: '0.56.3' });
+      const withoutLink = sendMock.mock.calls[0][0] as { html: string };
+      expect(withoutLink.html).not.toContain('<a href');
+    });
+
+    it('never throws on a Resend send failure — catches and logs instead', async () => {
+      sendMock.mockRejectedValueOnce(new Error('resend outage'));
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      await expect(
+        sendFeedbackShipped(TO, { message: 'Add dark mode', shippedVersion: '0.56.3' })
+      ).resolves.toBeUndefined();
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        '[mailer] sendFeedbackShipped failed',
+        expect.objectContaining({ message: 'resend outage' })
+      );
+
+      consoleErrorSpy.mockRestore();
+    });
+
+    it('renders a non-version shippedVersion (a Linear milestone/cycle name) without a "v" prefix', async () => {
+      await sendFeedbackShipped(TO, { message: 'Add dark mode', shippedVersion: 'Cycle 12' });
+
+      const payload = sendMock.mock.calls[0][0] as { subject: string; html: string };
+      expect(payload.subject).toBe('Your DorkOS report shipped in Cycle 12');
+      expect(payload.html).toContain('Good news: this shipped in Cycle 12.');
+      expect(payload.subject).not.toContain('vCycle');
+      expect(payload.html).not.toContain('vCycle');
+    });
   });
 });

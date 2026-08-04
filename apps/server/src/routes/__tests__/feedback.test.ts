@@ -17,6 +17,7 @@ import request from 'supertest';
 vi.mock('../../services/core/feedback-reporter.js', () => ({
   sendFeedback: vi.fn(),
   resolveFeedbackIdentity: vi.fn(),
+  listMyFeedback: vi.fn(),
 }));
 vi.mock('../../lib/log-excerpt.js', () => ({
   getRecentLogExcerpt: vi.fn(),
@@ -29,13 +30,18 @@ vi.mock('../../lib/version.js', () => ({
   IS_DEV_BUILD: false,
 }));
 
-import { sendFeedback, resolveFeedbackIdentity } from '../../services/core/feedback-reporter.js';
+import {
+  sendFeedback,
+  resolveFeedbackIdentity,
+  listMyFeedback,
+} from '../../services/core/feedback-reporter.js';
 import { getRecentLogExcerpt } from '../../lib/log-excerpt.js';
 import feedbackRouter from '../feedback.js';
 
 const mockSend = vi.mocked(sendFeedback);
 const mockResolveIdentity = vi.mocked(resolveFeedbackIdentity);
 const mockGetLogExcerpt = vi.mocked(getRecentLogExcerpt);
+const mockListMyFeedback = vi.mocked(listMyFeedback);
 
 /**
  * Build the test app. `sessionUser`, when passed, simulates what `sessionGate`
@@ -256,6 +262,38 @@ describe('feedback route', () => {
         submission: { diagnostics?: { serverLogExcerpt?: string } };
       };
       expect(submitted.submission.diagnostics?.serverLogExcerpt).toBeUndefined();
+    });
+  });
+
+  describe('GET /api/feedback/mine (feedback-pipeline Part 4)', () => {
+    it('returns the items resolved by listMyFeedback', async () => {
+      const items = [
+        {
+          id: 'row-1',
+          kind: 'bug' as const,
+          message: 'it broke',
+          status: 'in_progress' as const,
+          createdAt: '2026-08-01T00:00:00.000Z',
+          hasScreenshot: false,
+          hasTranscript: false,
+        },
+      ];
+      mockListMyFeedback.mockResolvedValue(items);
+
+      const res = await request(buildApp()).get('/api/feedback/mine');
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual(items);
+      expect(mockListMyFeedback).toHaveBeenCalledWith({ dorkHome: '/tmp/dork-test' });
+    });
+
+    it('returns 502 when listMyFeedback throws (site unreachable or non-OK)', async () => {
+      mockListMyFeedback.mockRejectedValue(new Error('Feedback tracking read failed: HTTP 500'));
+
+      const res = await request(buildApp()).get('/api/feedback/mine');
+
+      expect(res.status).toBe(502);
+      expect(res.body).toEqual({ error: 'Could not reach the feedback service' });
     });
   });
 });

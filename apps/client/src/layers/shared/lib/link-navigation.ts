@@ -68,6 +68,7 @@ export const APP_ROUTE_PATHS = [
   '/agents',
   '/channels',
   '/connections',
+  '/feedback-requests',
   '/marketplace',
   '/marketplace/sources',
   '/session',

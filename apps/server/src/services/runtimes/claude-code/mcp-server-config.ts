@@ -55,3 +55,32 @@ export function toSdkMcpServers(
   }
   return out;
 }
+
+/** The three sources of a claude-code session's MCP tool servers, pre-converted to SDK shape. */
+export interface SessionMcpServerSources {
+  /** The agent's enabled managed servers (spec `mcp-server-management` §6). */
+  managed: Record<string, McpServerConfig>;
+  /** The accounts explicitly attached to this session (connector session-exposure). */
+  connectors: Record<string, McpServerConfig>;
+  /** The DorkOS tool server — always present, and it must never be shadowed. */
+  dorkos: McpServerConfig;
+}
+
+/**
+ * Merge a session's MCP tool servers with the ordering the trust model depends
+ * on: managed servers first, connectors second, and the DorkOS tool server LAST.
+ *
+ * Because later keys win in an object spread and `dorkos` is written as an
+ * explicit final property, neither a managed nor a connector server — whatever
+ * its name — can shadow `dorkos` (spec `mcp-server-management` §6; `mcp.add` also
+ * rejects the reserved name). A managed↔connector name clash resolves to the
+ * connector, the documented edge for two user-controlled sources.
+ *
+ * @param sources - The managed, connector, and dorkos servers for one session.
+ * @returns The merged name → SDK-config record for `setMcpServerFactory`.
+ */
+export function mergeSessionMcpServers(
+  sources: SessionMcpServerSources
+): Record<string, McpServerConfig> {
+  return { ...sources.managed, ...sources.connectors, dorkos: sources.dorkos };
+}

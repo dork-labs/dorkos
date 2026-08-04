@@ -135,6 +135,7 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
         personaEnabled: true,
         isSystem: false,
         enabledToolGroups: {},
+        mcpServers: [],
       };
 
       await writeManifest(agentPath, manifest);

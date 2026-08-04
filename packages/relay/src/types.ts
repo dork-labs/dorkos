@@ -688,10 +688,20 @@ export interface DeliveryResult {
    * Machine code for a failure, when the adapter has one.
    *
    * Read in preference to the message text, so a surface that reacts to a
-   * specific failure (the chat notice for a runtime at capacity) does not
-   * depend on the exact wording of somebody's error string.
+   * specific failure does not depend on the exact wording of somebody's error
+   * string. The chats-as-channels delivery ladder (spec §10) branches on this:
+   * `chat_unavailable` is terminal (the bot was blocked, kicked, or the chat was
+   * deleted — a 403, §10.3), and `rate_limited` carries {@link DeliveryResult.retryAfterMs}
+   * for the honour-`retry_after` path (§10.2). A failure with no code is treated
+   * as transient (platform down / adapter disconnected, §10.1).
    */
-  code?: 'at_capacity';
+  code?: 'at_capacity' | 'chat_unavailable' | 'rate_limited';
+  /**
+   * How long to wait before retrying, in milliseconds, when the platform asked
+   * for it (a Telegram 429's `retry_after`). Set only alongside
+   * `code: 'rate_limited'` (chats-as-channels spec §10.2).
+   */
+  retryAfterMs?: number;
   /** Whether a dead letter was created for this failure */
   deadLettered?: boolean;
   /** Response message ID if the adapter published a reply */

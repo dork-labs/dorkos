@@ -27,6 +27,7 @@ function makeManifest(overrides?: Partial<AgentManifest>): AgentManifest {
     personaEnabled: true,
     isSystem: false,
     enabledToolGroups: {},
+    mcpServers: [],
     ...overrides,
   };
 }
@@ -435,5 +436,55 @@ describe('round-trip with new fields', () => {
     const result = await readManifest(projectDir);
 
     expect(result).toEqual(manifest);
+  });
+
+  it('round-trips a manifest carrying managed mcpServers', async () => {
+    const projectDir = await makeTempDir();
+    const manifest = makeManifest({
+      mcpServers: [
+        {
+          name: 'my-server',
+          enabled: true,
+          connection: { transport: 'stdio', command: 'node', args: ['server.js'], env: {} },
+          addedAt: '2026-08-03T00:00:00.000Z',
+          addedBy: 'dorian',
+        },
+      ],
+    });
+
+    await writeManifest(projectDir, manifest);
+    const result = await readManifest(projectDir);
+
+    expect(result?.mcpServers).toEqual(manifest.mcpServers);
+  });
+
+  it('refuses to write, and reads back null, when an mcpServers entry is malformed', async () => {
+    const projectDir = await makeTempDir();
+    // A stdio entry with an empty command is invalid — the array is strict (no
+    // `.catch`), so the whole manifest must fail rather than shed the server.
+    // Built through `unknown` because the shape is deliberately off-schema.
+    const bad = {
+      ...makeManifest(),
+      mcpServers: [
+        {
+          name: 'broken',
+          enabled: true,
+          connection: { transport: 'stdio', command: '' },
+          addedAt: '2026-08-03T00:00:00.000Z',
+          addedBy: 'dorian',
+        },
+      ],
+    } as unknown as AgentManifest;
+
+    await expect(writeManifest(projectDir, bad)).rejects.toThrow(/invalid agent manifest/i);
+
+    // And if such a file somehow lands on disk, readManifest returns null
+    // (present-but-invalid) rather than silently dropping the bad entry.
+    const manifestPath = path.join(projectDir, MANIFEST_DIR, MANIFEST_FILE);
+    await fs.mkdir(path.dirname(manifestPath), { recursive: true });
+    await fs.writeFile(manifestPath, JSON.stringify(bad), 'utf-8');
+    const warn = vi.fn();
+    expect(await readManifest(projectDir, { warn })).toBeNull();
+    expect(warn).toHaveBeenCalled();
   });
 });

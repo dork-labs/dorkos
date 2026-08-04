@@ -22,6 +22,7 @@ const makeAgent = (overrides: Partial<TopologyAgent> & { id: string }): Topology
   registeredBy: 'user',
   personaEnabled: true,
   enabledToolGroups: {},
+  mcpServers: [],
   projectPath: overrides.projectPath ?? `/${overrides.id}`,
   healthStatus: overrides.healthStatus ?? 'active',
   relayAdapters: [],

@@ -249,6 +249,15 @@ export class RoomService {
   /** Whether an author is the install's owner. Read per check, never captured. */
   private readonly isOwnerAuthor: (authorId: string) => boolean;
   private readonly bridges: BridgeStore;
+  /**
+   * Called synchronously after every committed entry — the chat bridge's
+   * inline-delivery fast path (chats-as-channels §6.1). Registered after
+   * construction (the delivery engine is built later, in the binding subsystem)
+   * and unset by default, so an install with no bridge pays nothing here. It
+   * must never throw into the commit; the bridge's own handler swallows its
+   * errors, and this call site does too.
+   */
+  private onEntryCommitted?: (entry: RoomEntry) => void;
 
   constructor(deps: RoomServiceDeps) {
     this.store = deps.store;
@@ -1957,6 +1966,17 @@ export class RoomService {
     });
   }
 
+  /**
+   * Register the chat bridge's inline-delivery hook (chats-as-channels §6.1),
+   * called for every committed entry. At most one is set; the binding subsystem
+   * wires it once the delivery engine exists.
+   *
+   * @param listener - Called with each committed entry, or `undefined` to clear.
+   */
+  setEntryCommitListener(listener: ((entry: RoomEntry) => void) | undefined): void {
+    this.onEntryCommitted = listener;
+  }
+
   /** Publish a committed entry to the room's readers and bump global activity. */
   private publishEntry(entry: RoomEntry): void {
     // `reactions: []` rather than omitted: an entry a millisecond old genuinely
@@ -1972,6 +1992,21 @@ export class RoomService {
       seq: entry.seq,
       lastActivityAt: entry.createdAt,
     });
+    // The bridge's inline fast path (chats-as-channels §6.1). Deliberately AFTER
+    // the broadcast and fan-out, and guarded, so a bridge delivery can never
+    // fail a commit or stall the room's own readers. The listener itself is
+    // fire-and-forget; this guard is only for a synchronous throw building it.
+    if (this.onEntryCommitted) {
+      try {
+        this.onEntryCommitted(entry);
+      } catch (err) {
+        logger.warn('[rooms] entry-commit listener threw', {
+          roomId: entry.roomId,
+          entryId: entry.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
   }
 
   /**

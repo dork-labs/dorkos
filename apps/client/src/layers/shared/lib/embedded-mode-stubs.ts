@@ -13,6 +13,10 @@ import type {
   McpConfigResponse,
   RuntimeProvisionProgress,
   RuntimeProvisionResult,
+  AddAgentMcpServerInput,
+  UpdateAgentMcpServerInput,
+  AgentMcpMutationResult,
+  AgentMcpTestResult,
 } from '@dorkos/shared/transport';
 import type { RecentSessionsResponse } from '@dorkos/shared/types';
 import type { UnattendedAutonomyState } from '@dorkos/shared/permission-semantics';
@@ -98,6 +102,7 @@ import type {
   UpdateAccessRuleRequest,
   TransportScanOptions,
   TransportScanEvent,
+  ManagedMcpServer,
 } from '@dorkos/shared/mesh-schemas';
 import type {
   Task,
@@ -959,3 +964,49 @@ export const connectorStubs = {
 /** The one honest notice every refused connector write carries (spec OQ4). */
 const EMBEDDED_CONNECTORS_NOTICE =
   'Connections can only be managed from the web cockpit — open DorkOS in your browser to connect services.';
+
+/** The one honest notice every refused managed-MCP write carries. */
+const EMBEDDED_MCP_NOTICE =
+  'MCP servers can only be managed from the web cockpit — open DorkOS in your browser to add or change them.';
+
+/**
+ * Managed per-agent MCP servers (spec `mcp-server-management`). Server-only: the
+ * capability registry and `AgentMcpServerService` that back these verbs live on
+ * the server, so the embedded runtime reads honest-empty and refuses every
+ * write with {@link EMBEDDED_MCP_NOTICE}.
+ */
+export const mcpManagementStubs = {
+  async listAgentMcpServers(_agentId: string): Promise<ManagedMcpServer[]> {
+    return [];
+  },
+
+  async addAgentMcpServer(
+    _input: AddAgentMcpServerInput,
+    _opts?: { approvalToken?: string }
+  ): Promise<AgentMcpMutationResult> {
+    throw new Error(EMBEDDED_MCP_NOTICE);
+  },
+
+  async updateAgentMcpServer(
+    _input: UpdateAgentMcpServerInput,
+    _opts?: { approvalToken?: string }
+  ): Promise<AgentMcpMutationResult> {
+    throw new Error(EMBEDDED_MCP_NOTICE);
+  },
+
+  async removeAgentMcpServer(_agentId: string, _name: string): Promise<ManagedMcpServer[]> {
+    throw new Error(EMBEDDED_MCP_NOTICE);
+  },
+
+  async enableAgentMcpServer(_agentId: string, _name: string): Promise<ManagedMcpServer[]> {
+    throw new Error(EMBEDDED_MCP_NOTICE);
+  },
+
+  async disableAgentMcpServer(_agentId: string, _name: string): Promise<ManagedMcpServer[]> {
+    throw new Error(EMBEDDED_MCP_NOTICE);
+  },
+
+  async testAgentMcpServer(_agentId: string, _name: string): Promise<AgentMcpTestResult> {
+    throw new Error(EMBEDDED_MCP_NOTICE);
+  },
+};

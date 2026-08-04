@@ -226,6 +226,35 @@ export class BridgeStore {
   }
 
   /**
+   * Every live (non-archived) bridge — the catch-up scan's worklist on start
+   * (spec §6.1's first trigger). Archived bridges are excluded because a chat
+   * that is no longer connected has nothing to catch up.
+   */
+  listLiveBridges(): Bridge[] {
+    return this.db
+      .select()
+      .from(roomBridges)
+      .where(isNull(roomBridges.archivedAt))
+      .all()
+      .map(toBridge);
+  }
+
+  /**
+   * Every live bridge on one adapter — the catch-up scan's worklist when that
+   * adapter reconnects (spec §6.1's reconnect trigger).
+   *
+   * @param adapterId - The adapter instance that just came back.
+   */
+  listLiveBridgesByAdapter(adapterId: string): Bridge[] {
+    return this.db
+      .select()
+      .from(roomBridges)
+      .where(and(eq(roomBridges.adapterId, adapterId), isNull(roomBridges.archivedAt)))
+      .all()
+      .map(toBridge);
+  }
+
+  /**
    * Stamp a bridge archived. The row and every ref survive (spec §3.5) — this
    * is the only column the method touches.
    *
@@ -423,6 +452,38 @@ export class BridgeStore {
   }
 
   /**
+   * Remove an entry's OUTBOUND ref — the write-before-send rollback (spec §6.1,
+   * §10.1).
+   *
+   * `deliver` writes its outbound ref BEFORE the platform call (spec §6.3), so a
+   * send that DEFINITIVELY never reached the platform — the consent gate refused
+   * it, or the adapter reported it undelivered after the retry budget — must not
+   * leave the entry looking delivered forever. Removing the ref returns the entry
+   * to `listUndeliveredAboveSeq`'s candidate set, which is what lets the catch-up
+   * scan re-deliver it when the adapter comes back (spec §10.1's "the ref's null
+   * platform id makes the entry eligible for the catch-up scan").
+   *
+   * **This is only ever called for a send `deliver` KNOWS did not land** — a
+   * refusal or an exhausted retry, both observed by running code. A process that
+   * crashed between the ref write and the send cannot reach here, so its null-id
+   * ref survives and idempotence suppresses the retry (spec §6.3's fail-on-the-
+   * suppressed-side): the row is scoped to `direction = 'outbound'` so it can
+   * never touch the inbound dedup row.
+   *
+   * @param entryId - The entry whose outbound ref to remove.
+   * @param tx - An existing transaction to write inside.
+   */
+  deleteOutboundRef(entryId: string, tx?: DbTransaction): void {
+    const exec = tx ?? this.db;
+    exec
+      .delete(roomBridgeMessages)
+      .where(
+        and(eq(roomBridgeMessages.entryId, entryId), eq(roomBridgeMessages.direction, 'outbound'))
+      )
+      .run();
+  }
+
+  /**
    * The inbound ref for a platform message, if one was already recorded — the
    * dedup lookup `ingest` runs first (spec §5.2 step 1). An existing row here
    * means the message has already produced an entry and `ingest` stops.
@@ -465,14 +526,17 @@ export class BridgeStore {
    *
    * This is the candidate list, not the eligibility test: whether an
    * undelivered entry actually qualifies for delivery (`kind`, author, consent
-   * — spec §6.1 criteria 2, 4, 5) is `deliver`'s job, arriving in a later task.
+   * — spec §6.1 criteria 2, 4, 5) is `deliver`'s job. It returns only each
+   * candidate's `id` and `seq` — the light key the scan walks by — and the scan
+   * hydrates the full entry through the room store's own reader rather than this
+   * store re-parsing a `room_entries` row it does not own.
    *
    * @param roomId - The bridged room.
    * @param seq - Return entries with `seq` strictly above this.
    */
-  listUndeliveredAboveSeq(roomId: string, seq: number): Array<typeof roomEntries.$inferSelect> {
+  listUndeliveredAboveSeq(roomId: string, seq: number): Array<{ id: string; seq: number }> {
     return this.db
-      .select({ entry: roomEntries })
+      .select({ id: roomEntries.id, seq: roomEntries.seq })
       .from(roomEntries)
       .leftJoin(
         roomBridgeMessages,
@@ -489,7 +553,6 @@ export class BridgeStore {
         )
       )
       .orderBy(roomEntries.seq)
-      .all()
-      .map((row) => row.entry);
+      .all();
   }
 }

@@ -7,7 +7,24 @@
       "title": "\"Connections\" is the single umbrella for the outside world, and this is the last rename",
       "status": "accepted",
       "created": "2026-08-04",
-      "specSlug": "language-ia-simplification"
+      "specSlug": "language-ia-simplification",
+      "supersedes": "260726-193526"
+    },
+    {
+      "id": "260803-233414",
+      "slug": "managed-mcp-servers-inline-injection",
+      "title": "Manage agent MCP servers by inline injection, not by writing .mcp.json",
+      "status": "proposed",
+      "created": "2026-08-03",
+      "specSlug": "mcp-server-management"
+    },
+    {
+      "id": "260803-233420",
+      "slug": "managed-mcp-server-trust-model",
+      "title": "Managed MCP server trust model — gated writes, marketplace rejection, absence withholds",
+      "status": "proposed",
+      "created": "2026-08-03",
+      "specSlug": "mcp-server-management"
     },
     {
       "id": "260803-205037",

@@ -531,6 +531,10 @@ export class AgentRegistry {
       // enabledToolGroups is not yet persisted in the DB schema — defaults to {} (inherit global).
       // A future migration will add a JSON column; until then, read from the manifest file.
       enabledToolGroups: {},
+      // mcpServers is manifest-file-only by design (no DB column, no reconciler
+      // diff — ADR 260803-233420). The derived cache carries the empty default;
+      // the file remains the source of truth for managed servers.
+      mcpServers: [],
     };
   }
 

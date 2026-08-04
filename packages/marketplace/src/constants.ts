@@ -16,6 +16,14 @@ export const PACKAGE_MANIFEST_PATH = '.dork/manifest.json';
 export const CLAUDE_PLUGIN_MANIFEST_PATH = '.claude-plugin/plugin.json';
 
 /**
+ * The agent identity manifest path, relative to a package root. A `type: 'agent'`
+ * package normally has this scaffolded by the installer, but a package could ship
+ * its own — which is exactly the vector the packaged-MCP-servers guard closes
+ * (a shipped `agent.json` declaring `mcpServers` would auto-inject a command).
+ */
+export const AGENT_MANIFEST_PATH = '.dork/agent.json';
+
+/**
  * The marketplace registry filename.
  */
 export const MARKETPLACE_JSON_FILENAME = 'marketplace.json';
