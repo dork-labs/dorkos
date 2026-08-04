@@ -11,12 +11,10 @@ import { initialOf } from '../lib/initial-of';
 import { cn } from '../lib/utils';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from './hover-card';
 import { IdentityAvatar } from './identity-avatar';
+import type { IdentityOrigin } from './identity-origin';
 
 /** How long the pointer has to sit on a trigger before the card opens. Radix's own default (700ms) reads as sluggish for something this small; this favours a quick glance. */
 const OPEN_DELAY_MS = 300;
-
-/** Where a human participant is posting from — mirrors {@link MentionPillProps.origin}. */
-export type IdentityOrigin = 'local' | { platform: string };
 
 /** What an agent identity adds to the card: how it runs, and whether it is working right now. */
 export interface IdentityHoverCardAgentInfo {
@@ -96,7 +94,13 @@ function InfoChip({ className, children }: { className?: string; children: React
  */
 function IdentityHoverCard({ identity, children, className }: IdentityHoverCardProps) {
   const { kind, displayName, handle, color, emoji, origin, agent } = identity;
-  const avatarColor = color ?? 'var(--muted-foreground)';
+  // `IdentityAvatar` mixes this straight into `color-mix()`, and this app's
+  // theme tokens store a bare `H S% L%` triple (e.g. `0 0% 9%`) rather than a
+  // full `<color>` — an unwrapped `var(--muted-foreground)` here makes the
+  // whole `color-mix()` invalid CSS, which silently drops the declaration
+  // rather than just the fallback, leaving every colourless identity with no
+  // disc background at all.
+  const avatarColor = color ?? 'hsl(var(--muted-foreground))';
   const isExternal = typeof origin === 'object' && origin !== null;
 
   return (

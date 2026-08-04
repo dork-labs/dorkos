@@ -103,8 +103,8 @@ export type {
   IdentityHoverCardProps,
   IdentityHoverCardDescriptor,
   IdentityHoverCardAgentInfo,
-  IdentityOrigin,
 } from './identity-hover-card';
+export type { IdentityOrigin } from './identity-origin';
 export { InlineCode } from './inline-code';
 export { Kbd } from './kbd';
 export { Label } from './label';
@@ -250,7 +250,7 @@ export { LinkSafetyModal } from './link-safety-modal';
 export { MarkdownContent } from './markdown-content';
 export { MarkdownErrorBoundary } from './markdown-error-boundary';
 export { MentionPill, mentionPillVariants } from './mention-pill';
-export type { MentionPillProps, MentionOrigin } from './mention-pill';
+export type { MentionPillProps } from './mention-pill';
 export {
   Sheet,
   SheetTrigger,

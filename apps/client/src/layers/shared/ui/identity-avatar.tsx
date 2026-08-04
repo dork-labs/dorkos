@@ -31,13 +31,16 @@ const identityAvatarVariants = cva(
       /**
        * Square is the agent shape, circle the person shape — a colourblind-safe
        * distinction that does not depend on the badge rendering (spec
-       * `composer-identity-components`, direction C). `rounded-xl` sits one step
-       * past the 8px card radius (`rounded-lg`): a 40px disc reads as a squircle
-       * rather than a rounded card at the same radius a much larger surface uses.
+       * `composer-identity-components`, direction C). The base radius here is
+       * `xs`'s: a fixed radius that reads fine on a 48px `lg` disc clamps to a
+       * full circle on a 20px `xs` one — 12px of corner rounding on a 20px box
+       * IS a circle — which would erase the shape distinction exactly where the
+       * design calls it dominant (the picker, the sidebar). `compoundVariants`
+       * below step the radius up with the diameter instead.
        */
       shape: {
         circle: 'rounded-full',
-        square: 'rounded-xl',
+        square: 'rounded-md',
       },
       /**
        * `tint` (the long-standing look) mixes the colour into the surface behind
@@ -53,6 +56,16 @@ const identityAvatarVariants = cva(
         fill: '',
       },
     },
+    // The square radius steps up with the diameter — `rounded-md` (6px) is
+    // sized for `xs` (20px) and stays the `shape` default above; `sm`/`md`/`lg`
+    // override it here rather than in `size`, because `size` also drives
+    // `circle`, which has no radius to scale (`rounded-full` is already
+    // correct at every diameter).
+    compoundVariants: [
+      { shape: 'square', size: 'sm', class: 'rounded-lg' },
+      { shape: 'square', size: 'md', class: 'rounded-xl' },
+      { shape: 'square', size: 'lg', class: 'rounded-2xl' },
+    ],
     defaultVariants: {
       size: 'sm',
       shape: 'circle',

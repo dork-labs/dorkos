@@ -8,6 +8,7 @@ import type * as React from 'react';
 import { cva } from 'class-variance-authority';
 import { Bot, Send } from 'lucide-react';
 import { cn } from '../lib/utils';
+import type { IdentityOrigin } from './identity-origin';
 
 /**
  * How much of an agent's own colour tints the pill's background — lighter
@@ -19,10 +20,14 @@ const AGENT_TINT = '14%';
 /**
  * How much of an agent's own colour tints the pill's text, mixed toward the
  * theme's own foreground token rather than toward transparent. Mixing
- * against `var(--foreground)` — which the browser resolves at paint time —
- * is what makes this adapt to dark mode for free: the same mix lands as a
- * darkened shade of the colour in light mode and a lightened tint of it in
- * dark mode, without reading the theme in script.
+ * against `hsl(var(--foreground))` — which the browser resolves at paint
+ * time — is what makes this adapt to dark mode for free: the same mix lands
+ * as a darkened shade of the colour in light mode and a lightened tint of it
+ * in dark mode, without reading the theme in script. The `hsl()` wrapper is
+ * load-bearing: this app's theme tokens store a bare `H S% L%` triple (e.g.
+ * `0 0% 9%`), which is not a valid `<color>` on its own — `color-mix()` with
+ * an unwrapped triple is invalid CSS and the whole declaration is silently
+ * dropped, not just the offending channel.
  */
 const AGENT_TEXT_MIX = '65%';
 
@@ -57,9 +62,6 @@ const mentionPillVariants = cva(
   }
 );
 
-/** Where a human participant is posting from. */
-export type MentionOrigin = 'local' | { platform: string };
-
 export interface MentionPillProps extends Omit<React.ComponentProps<'span'>, 'color'> {
   /** What kind of identity this mention resolved to. */
   kind: 'human' | 'agent' | 'system';
@@ -78,7 +80,7 @@ export interface MentionPillProps extends Omit<React.ComponentProps<'span'>, 'co
    * the plain neutral pill; `{ platform }` adds a small platform glyph after
    * the name. Meaningless for `kind !== 'human'`.
    */
-  origin?: MentionOrigin;
+  origin?: IdentityOrigin;
   /**
    * Whether this mention resolved to a real member of the room. `false`
    * renders plain, inert text — no pill, no pointer — regardless of `kind`,
@@ -89,7 +91,11 @@ export interface MentionPillProps extends Omit<React.ComponentProps<'span'>, 'co
   /**
    * Whether this pill carries hover/click affordance. Click itself is not
    * wired up yet (no profile routes exist) — this only gates the cursor and
-   * hover styling for the surface that will add it.
+   * hover styling for the surface that will add it. **The `focus-visible`
+   * ring this turns on is dormant, not working keyboard support:** the pill
+   * is still a `<span>`, so nothing here makes it focusable. Real
+   * keyboard/focus wiring belongs to the follow-up slice that adds the click
+   * target.
    */
   interactive?: boolean;
 }
@@ -144,7 +150,7 @@ function MentionPill({
         className={cn(mentionPillVariants({ tone: 'agent', interactive }), className)}
         style={{
           backgroundColor: `color-mix(in oklch, ${color ?? 'currentColor'} ${AGENT_TINT}, transparent)`,
-          color: `color-mix(in oklch, ${color ?? 'currentColor'} ${AGENT_TEXT_MIX}, var(--foreground))`,
+          color: `color-mix(in oklch, ${color ?? 'currentColor'} ${AGENT_TEXT_MIX}, hsl(var(--foreground)))`,
         }}
         {...props}
       >

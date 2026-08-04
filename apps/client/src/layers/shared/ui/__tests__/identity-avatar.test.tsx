@@ -67,11 +67,44 @@ describe('IdentityAvatar', () => {
     });
 
     it('draws square as the agent shape', () => {
+      // Default size is `sm`, whose radius is `rounded-lg` — see the
+      // per-size stepping tested below.
       const { container } = render(<IdentityAvatar color="#7c3aed" fallback="A" shape="square" />);
       const disc = container.querySelector('[data-slot="identity-avatar"]') as HTMLElement;
 
-      expect(disc).toHaveClass('rounded-xl');
+      expect(disc).toHaveClass('rounded-lg');
       expect(disc).not.toHaveClass('rounded-full');
+    });
+
+    it('keeps the square radius well short of a circle at xs, where most of these render', () => {
+      // A fixed radius that reads fine on a 48px `lg` disc clamps to a full
+      // circle on a 20px `xs` one (12px of rounding on a 20px box IS a
+      // circle) — which would erase the colourblind-safe shape distinction
+      // exactly where the design calls it dominant: the picker, the sidebar.
+      const { container } = render(
+        <IdentityAvatar color="#7c3aed" fallback="A" shape="square" size="xs" />
+      );
+      const disc = container.querySelector('[data-slot="identity-avatar"]') as HTMLElement;
+
+      expect(disc).toHaveClass('rounded-md');
+      expect(disc).not.toHaveClass('rounded-full');
+    });
+
+    it('steps the square radius up with the diameter at sm/md/lg', () => {
+      const bySize = { sm: 'rounded-lg', md: 'rounded-xl', lg: 'rounded-2xl' } as const;
+
+      for (const [size, radius] of Object.entries(bySize)) {
+        const { container } = render(
+          <IdentityAvatar
+            color="#7c3aed"
+            fallback="A"
+            shape="square"
+            size={size as keyof typeof bySize}
+          />
+        );
+        expect(container.querySelector('[data-slot="identity-avatar"]')).toHaveClass(radius);
+        cleanup();
+      }
     });
 
     it('fills with the solid identity colour rather than a tint', () => {
