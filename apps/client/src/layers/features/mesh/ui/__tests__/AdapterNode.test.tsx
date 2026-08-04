@@ -135,12 +135,12 @@ describe('AdapterNode', () => {
   describe('binding count badge', () => {
     it('shows binding count badge when bindingCount > 0', () => {
       render(<AdapterNode {...makeMockProps({ bindingCount: 3 })} />);
-      expect(screen.getByText('3 integrations')).toBeInTheDocument();
+      expect(screen.getByText('3 connections')).toBeInTheDocument();
     });
 
     it('shows singular "binding" for count of 1', () => {
       render(<AdapterNode {...makeMockProps({ bindingCount: 1 })} />);
-      expect(screen.getByText('1 integration')).toBeInTheDocument();
+      expect(screen.getByText('1 connection')).toBeInTheDocument();
     });
 
     it('does not render badge when bindingCount is 0', () => {
