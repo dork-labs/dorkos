@@ -50,7 +50,7 @@ const CLOSED_EDIT_DIALOG: EditDialogState = { open: false, binding: null, adapte
 const CLOSED_WIZARD: WizardState = { open: false };
 
 /**
- * Integrations tab in the Agent dialog.
+ * Connections tab in the Agent dialog.
  *
  * Lists all relay bindings for the agent, lets the user add new bindings via
  * the IntegrationPicker, opens the BindingDialog for editing existing bindings,
@@ -121,9 +121,9 @@ export function IntegrationsTab({ agent }: IntegrationsTabProps) {
           canReply: true,
           canReceive: true,
         });
-        toast.success('Integration added');
+        toast.success('Connection added');
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to add integration');
+        toast.error(err instanceof Error ? err.message : 'Failed to add connection');
       }
     },
     [agent.id, createBinding]
@@ -148,9 +148,9 @@ export function IntegrationsTab({ agent }: IntegrationsTabProps) {
     async (bindingId: string) => {
       try {
         await deleteBinding.mutateAsync(bindingId);
-        toast.success('Integration removed');
+        toast.success('Connection removed');
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to remove integration');
+        toast.error(err instanceof Error ? err.message : 'Failed to remove connection');
       }
     },
     [deleteBinding]
@@ -160,9 +160,9 @@ export function IntegrationsTab({ agent }: IntegrationsTabProps) {
     async (bindingId: string, enabled: boolean) => {
       try {
         await updateBinding.mutateAsync({ id: bindingId, updates: { enabled } });
-        toast.success(enabled ? 'Integration resumed' : 'Integration paused');
+        toast.success(enabled ? 'Connection resumed' : 'Connection paused');
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to update integration');
+        toast.error(err instanceof Error ? err.message : 'Failed to update connection');
       }
     },
     [updateBinding]
@@ -194,10 +194,10 @@ export function IntegrationsTab({ agent }: IntegrationsTabProps) {
           id: editDialog.binding.id,
           updates: toUpdateBindingRequest(values),
         });
-        toast.success('Integration updated');
+        toast.success('Connection updated');
         setEditDialog(CLOSED_EDIT_DIALOG);
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to update integration');
+        toast.error(err instanceof Error ? err.message : 'Failed to update connection');
       }
     },
     [editDialog.binding, updateBinding]
@@ -207,10 +207,10 @@ export function IntegrationsTab({ agent }: IntegrationsTabProps) {
     async (bindingId: string) => {
       try {
         await deleteBinding.mutateAsync(bindingId);
-        toast.success('Integration removed');
+        toast.success('Connection removed');
         setEditDialog(CLOSED_EDIT_DIALOG);
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to remove integration');
+        toast.error(err instanceof Error ? err.message : 'Failed to remove connection');
       }
     },
     [deleteBinding]
@@ -268,10 +268,10 @@ export function IntegrationsTab({ agent }: IntegrationsTabProps) {
         <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed px-6 py-10">
           <Plug2 className="text-muted-foreground/40 size-8" />
           <div className="space-y-1 text-center">
-            <p className="text-sm font-medium">The Relay message bus is off</p>
+            <p className="text-sm font-medium">Messaging is off</p>
             <p className="text-muted-foreground max-w-xs text-xs leading-relaxed">
-              Integrations link this agent to external messaging platforms. Enable Relay in Settings
-              to get started.
+              Connections link this agent to messaging platforms. Turn on Messaging in Settings to
+              get started.
             </p>
           </div>
           <Button variant="outline" size="sm" onClick={() => openConnections('messaging')}>
@@ -290,14 +290,14 @@ export function IntegrationsTab({ agent }: IntegrationsTabProps) {
         <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed px-6 py-10">
           <Radio className="text-muted-foreground/40 size-8" />
           <div className="space-y-1 text-center">
-            <p className="text-sm font-medium">No integrations available</p>
+            <p className="text-sm font-medium">No connections available</p>
             <p className="text-muted-foreground max-w-xs text-xs leading-relaxed">
-              To connect this agent to Telegram, Slack, or a webhook, first add an integration in
-              Settings. It will appear here as soon as it&apos;s ready.
+              To connect this agent to Telegram, Slack, or a webhook, add a connection first. It
+              will appear here as soon as it&apos;s ready.
             </p>
           </div>
           <Button variant="outline" size="sm" onClick={() => openConnections('messaging')}>
-            Add an integration
+            Add a connection
           </Button>
         </div>
         {dialogs}

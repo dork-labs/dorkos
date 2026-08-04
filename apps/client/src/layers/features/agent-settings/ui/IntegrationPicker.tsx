@@ -92,14 +92,14 @@ export function IntegrationPicker({
       <PopoverTrigger asChild>
         <Button variant="outline" size="sm" disabled={disabled}>
           <Plus className="mr-1.5 size-3.5" />
-          Add Integration
+          Add connection
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-72 p-0" align="start">
         <div className="max-h-64 overflow-y-auto">
           {isEmpty ? (
             <div className="px-3 py-4 text-center">
-              <p className="text-muted-foreground text-sm">No integrations available</p>
+              <p className="text-muted-foreground text-sm">No connections available</p>
             </div>
           ) : (
             <>

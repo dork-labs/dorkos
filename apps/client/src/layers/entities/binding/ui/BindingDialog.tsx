@@ -34,19 +34,17 @@ import { useAdapterCatalog, useObservedChats } from '@/layers/entities/relay';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
 import type { PermissionMode } from '@dorkos/shared/schemas';
 import { BindingAdvancedSection } from './BindingAdvancedSection';
-import { buildPreviewSentence, SELECT_ANY } from '../lib/build-preview-sentence';
+import {
+  buildPreviewSentence,
+  CHAT_TYPE_OPTIONS,
+  chatTypeLabel,
+  SELECT_ANY,
+} from '../lib/build-preview-sentence';
 import {
   type BindingFormValues,
   buildDefaultValues,
   hasNonDefaultAdvanced,
 } from '../model/binding-form';
-
-const CHANNEL_TYPE_OPTIONS: { value: string; label: string }[] = [
-  { value: 'dm', label: 'Direct Message' },
-  { value: 'group', label: 'Group' },
-  { value: 'channel', label: 'Channel' },
-  { value: 'thread', label: 'Thread' },
-];
 
 export interface BindingDialogProps {
   open: boolean;
@@ -162,12 +160,10 @@ export function BindingDialog({
       <ResponsiveDialogContent className="max-h-[85vh] max-w-md gap-0 p-0">
         <ResponsiveDialogHeader className="border-b px-4 py-3">
           <ResponsiveDialogTitle>
-            {isEdit ? 'Edit Integration' : 'Add Integration'}
+            {isEdit ? 'Edit connection' : 'Add connection'}
           </ResponsiveDialogTitle>
           <ResponsiveDialogDescription className="sr-only">
-            {isEdit
-              ? "Edit this integration's configuration"
-              : 'Add a new integration for this agent'}
+            {isEdit ? "Edit this connection's settings" : 'Add a new connection for this agent'}
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
 
@@ -227,9 +223,8 @@ export function BindingDialog({
                   {isEdit ? (
                     /* Edit mode: adapter and agent are read-only */
                     <p className="text-muted-foreground text-sm">
-                      Integration:{' '}
-                      <span className="text-foreground font-medium">{adapterName}</span> &rarr;{' '}
-                      <span className="text-foreground font-medium">{agentName}</span>
+                      Connection: <span className="text-foreground font-medium">{adapterName}</span>{' '}
+                      &rarr; <span className="text-foreground font-medium">{agentName}</span>
                     </p>
                   ) : (
                     /* Create mode: adapter and agent pickers */
@@ -340,7 +335,10 @@ export function BindingDialog({
                                   <span>{chat.displayName ?? chat.chatId}</span>
                                   {(chat.channelType || chat.messageCount > 0) && (
                                     <span className="text-muted-foreground ml-2 text-xs">
-                                      {[chat.channelType, `${chat.messageCount} msgs`]
+                                      {[
+                                        chat.channelType ? chatTypeLabel(chat.channelType) : null,
+                                        `${chat.messageCount} msgs`,
+                                      ]
                                         .filter(Boolean)
                                         .join(' · ')}
                                     </span>
@@ -350,7 +348,7 @@ export function BindingDialog({
                             </SelectContent>
                           </Select>
                           <FieldDescription>
-                            Route only messages from a specific chat or channel
+                            Route only messages from a specific chat
                           </FieldDescription>
                         </div>
                       )}
@@ -360,14 +358,14 @@ export function BindingDialog({
                     <form.AppField name="channelType">
                       {(field) => (
                         <div className="space-y-1.5 px-4 py-3">
-                          <Label htmlFor="binding-channel-type">Channel Type</Label>
+                          <Label htmlFor="binding-channel-type">Chat type</Label>
                           <Select value={field.state.value} onValueChange={field.handleChange}>
                             <SelectTrigger id="binding-channel-type" className="w-full">
                               <SelectValue placeholder="Any type (wildcard)" />
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value={SELECT_ANY}>Any type (wildcard)</SelectItem>
-                              {CHANNEL_TYPE_OPTIONS.map((opt) => (
+                              {CHAT_TYPE_OPTIONS.map((opt) => (
                                 <SelectItem key={opt.value} value={opt.value}>
                                   {opt.label}
                                 </SelectItem>
@@ -434,9 +432,9 @@ export function BindingDialog({
                       </AlertDialogTrigger>
                       <AlertDialogContent>
                         <AlertDialogHeader>
-                          <AlertDialogTitle>Remove integration</AlertDialogTitle>
+                          <AlertDialogTitle>Remove connection</AlertDialogTitle>
                           <AlertDialogDescription>
-                            Remove this integration? The agent will no longer receive messages from
+                            Remove this connection? The agent will no longer receive messages from
                             it.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
@@ -457,7 +455,7 @@ export function BindingDialog({
                   </Button>
                   <Button size="sm" onClick={() => form.handleSubmit()} disabled={isSubmitDisabled}>
                     {isLoading && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
-                    {isLoading ? 'Saving...' : isEdit ? 'Save Changes' : 'Add Integration'}
+                    {isLoading ? 'Saving...' : isEdit ? 'Save Changes' : 'Add connection'}
                   </Button>
                 </ResponsiveDialogFooter>
               </>

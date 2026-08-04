@@ -89,8 +89,16 @@ async function renderCard(onDismiss = vi.fn(), profile: ProfileOverrides = {}) {
     validateSearch: zodValidator(searchSchema),
     component: () => <div data-testid="tasks-route" />,
   });
+  const connectionsRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/connections',
+    validateSearch: zodValidator(
+      mergeDialogSearch(z.object({ region: z.enum(['messaging', 'accounts']).optional() }))
+    ),
+    component: () => <div data-testid="connections-route" />,
+  });
   const router = createRouter({
-    routeTree: rootRoute.addChildren([indexRoute, tasksRoute]),
+    routeTree: rootRoute.addChildren([indexRoute, tasksRoute, connectionsRoute]),
     history: createMemoryHistory({ initialEntries: ['/'] }),
   });
 
@@ -134,6 +142,7 @@ describe('ProgressCard', () => {
     expect(screen.getByText('Create an agent')).toBeTruthy();
     expect(screen.getByText('Schedule a task')).toBeTruthy();
     expect(screen.getByText('Connect more runtimes')).toBeTruthy();
+    expect(screen.getByText('Connect a service')).toBeTruthy();
   });
 
   it('"Talk to DorkBot" is the first row and starts a session with the default agent', async () => {
@@ -221,13 +230,18 @@ describe('ProgressCard', () => {
         })
       );
     });
+  });
 
-    it('has no "Connect a service" row until the Connections route exists (never a dead link)', async () => {
-      // specs/connector-completion ships that surface; this goes red if the row
-      // lands before the route it deep-links to.
-      await renderCard();
-      expect(screen.queryByText('Connect a service')).toBeNull();
-    });
+  it('"Connect a service" deep-links to the Accounts region of the Connections page', async () => {
+    const harness = await renderCard();
+
+    fireEvent.click(screen.getByText('Connect a service'));
+
+    // The row lands on /connections and scrolls to the Accounts region — the
+    // `region` search param is what the page reads to pick which half to show.
+    expect(await screen.findByTestId('connections-route')).toBeTruthy();
+    await waitFor(() => expect(harness.router.state.location.pathname).toBe('/connections'));
+    expect((harness.router.state.location.search as { region?: string }).region).toBe('accounts');
   });
 
   it('dismiss button calls onDismiss', async () => {

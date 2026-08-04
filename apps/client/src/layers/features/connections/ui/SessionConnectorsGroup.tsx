@@ -24,7 +24,7 @@ const WARNING_COPY: Record<SessionConnectorWarning['reason'], string> = {
 };
 
 /**
- * The session view's Connectors group — quiet until relevant: it renders
+ * The session view's Connections group — quiet until relevant: it renders
  * nothing until at least one account is connected or attached, so a cockpit
  * with no connectors carries no connector chrome. When live, it lists the
  * session's attached accounts with status and null-branch warnings, offers
@@ -55,7 +55,7 @@ export function SessionConnectorsGroup({ sessionId }: { sessionId: string }) {
   return (
     <section data-testid="session-connectors" className="min-w-0 space-y-0.5">
       <h3 className="text-muted-foreground flex items-center justify-between px-1 pb-1 text-xs font-medium tracking-wide uppercase">
-        Connectors
+        Connections
         {!embedded && (
           <button
             type="button"

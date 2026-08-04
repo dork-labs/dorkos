@@ -249,10 +249,10 @@ export function IntegrationBindingCard({
       <AlertDialog open={showRemoveConfirm} onOpenChange={setShowRemoveConfirm}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remove integration binding</AlertDialogTitle>
+            <AlertDialogTitle>Remove connection</AlertDialogTitle>
             <AlertDialogDescription>
-              Remove the binding to {integrationName}? The agent will no longer receive messages
-              from this integration.
+              Remove the connection to {integrationName}? The agent will no longer receive messages
+              from it.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

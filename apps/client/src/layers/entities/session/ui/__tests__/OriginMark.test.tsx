@@ -39,7 +39,7 @@ function Wrapper({ children }: { children: React.ReactNode }) {
 describe('OriginMark', () => {
   it.each([
     ['agent', 'Agent'],
-    ['channel', 'Integration'],
+    ['channel', 'Connection'],
     ['task', 'Scheduled task'],
     ['external', 'External'],
   ] as const)('renders an icon + tooltip for origin=%s with fallback label', (origin, label) => {

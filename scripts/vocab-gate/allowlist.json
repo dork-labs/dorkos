@@ -50,6 +50,21 @@
       "path": "apps/client/src/layers/features/settings/config/tool-inventory.ts",
       "terms": ["connection"],
       "reason": "The Settings Tools tab group label \"Connection management\" (plan D4) names the tools that set up and route the Telegram/Slack/webhook Connections — the same Connections-domain entity as RelayHealthBar and mcp-tool-tiers, not the network-health sense DOR-855 retires."
+    },
+    {
+      "path": "apps/client/src/layers/entities/session/config/origin-descriptors.ts",
+      "terms": ["connection"],
+      "reason": "The session-origin badge label \"Connection\" (plan D2, DOR-859) marks a session started by an inbound Telegram/Slack message — it names the Connections-domain entity that reached the agent, not whether a network link is up. The origin's health is never shown here."
+    },
+    {
+      "path": "apps/client/src/layers/entities/binding/ui/BindingDialog.tsx",
+      "terms": ["connection"],
+      "reason": "The add/edit-binding dialog's \"Add connection\" / \"Edit connection\" / \"Remove connection\" copy (plan D2, DOR-859) names the entity a person is creating or deleting — one binding of a Telegram/Slack/webhook to an agent, which is exactly what a Connection is. Not the network-health sense DOR-855 retires; a binding's reachability is reported separately by its test action."
+    },
+    {
+      "path": "apps/client/src/layers/features/agent-settings/ui/",
+      "terms": ["connection"],
+      "reason": "The per-agent Connections tab's toasts (\"Connection added/removed/paused\") and its \"Add a connection\" / \"Remove connection\" copy (plan D2, DOR-859) name the Connections-domain entity — a Telegram/Slack/webhook binding for this agent — not a network-health reading. Whether a binding is currently reachable is reported by its own test action, not this copy."
     }
   ]
 }
