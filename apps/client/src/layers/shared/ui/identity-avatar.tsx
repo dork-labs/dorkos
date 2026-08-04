@@ -5,10 +5,12 @@
  */
 import type * as React from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
+import { readableForeground } from '../lib/readable-foreground';
 import { cn } from '../lib/utils';
 
 /**
- * How much of the identity's own colour tints the disc.
+ * How much of the identity's own colour tints the disc in the default
+ * `tint` variant.
  *
  * One number for every avatar in the cockpit: enough colour to tell two
  * identities apart at a glance, faint enough that the glyph on top stays
@@ -17,7 +19,7 @@ import { cn } from '../lib/utils';
 const TINT_STRENGTH = '18%';
 
 const identityAvatarVariants = cva(
-  'relative inline-flex shrink-0 items-center justify-center rounded-full transition-[background-color] duration-500 ease-in-out',
+  'relative inline-flex shrink-0 items-center justify-center transition-[background-color] duration-500 ease-in-out',
   {
     variants: {
       size: {
@@ -26,9 +28,48 @@ const identityAvatarVariants = cva(
         md: 'size-9 text-lg',
         lg: 'size-12 text-2xl',
       },
+      /**
+       * Square is the agent shape, circle the person shape — a colourblind-safe
+       * distinction that does not depend on the badge rendering (spec
+       * `composer-identity-components`, direction C). The base radius here is
+       * `xs`'s: a fixed radius that reads fine on a 48px `lg` disc clamps to a
+       * full circle on a 20px `xs` one — 12px of corner rounding on a 20px box
+       * IS a circle — which would erase the shape distinction exactly where the
+       * design calls it dominant (the picker, the sidebar). `compoundVariants`
+       * below step the radius up with the diameter instead.
+       */
+      shape: {
+        circle: 'rounded-full',
+        square: 'rounded-md',
+      },
+      /**
+       * `tint` (the long-standing look) mixes the colour into the surface behind
+       * it; `fill` makes the colour the disc itself. Carries no classes of its
+       * own — both the background and, for `fill`, the fallback letter's
+       * foreground are per-identity colours computed at render time, so they go
+       * through inline `style` the same way the tint mix already does. The slot
+       * exists so callers get `variant` in the component's own type rather than
+       * inferring it from a boolean.
+       */
+      variant: {
+        tint: '',
+        fill: '',
+      },
     },
+    // The square radius steps up with the diameter — `rounded-md` (6px) is
+    // sized for `xs` (20px) and stays the `shape` default above; `sm`/`md`/`lg`
+    // override it here rather than in `size`, because `size` also drives
+    // `circle`, which has no radius to scale (`rounded-full` is already
+    // correct at every diameter).
+    compoundVariants: [
+      { shape: 'square', size: 'sm', class: 'rounded-lg' },
+      { shape: 'square', size: 'md', class: 'rounded-xl' },
+      { shape: 'square', size: 'lg', class: 'rounded-2xl' },
+    ],
     defaultVariants: {
       size: 'sm',
+      shape: 'circle',
+      variant: 'tint',
     },
   }
 );
@@ -78,6 +119,13 @@ export interface IdentityAvatarProps
  * fallback glyph is sized relative to the circle's own font size: one rule
  * covers every size rather than a lookup per size per face.
  *
+ * **Stays kind-agnostic on purpose.** `shape` (circle/square) and `variant`
+ * (tint/fill) are the disc's whole vocabulary for telling one kind of
+ * identity from another — the mapping from an actual `kind` (agent, person,
+ * external person) to a `{ shape, variant, badge }` triple belongs to the
+ * caller, the same way it already does for `badge`. A room importing this
+ * component never needs `entities/agent` to draw an agent square.
+ *
  * Contributes nothing to the accessibility tree on its own — an emoji has a
  * spoken name nobody asked to hear. Give it a sibling label, or an `sr-only`
  * child when the mark stands alone.
@@ -92,21 +140,34 @@ function IdentityAvatar({
   fallback,
   badge,
   size,
+  shape,
+  variant,
   className,
   style,
   children,
   ...props
 }: IdentityAvatarProps) {
+  const isFill = variant === 'fill';
+
   return (
     <span
       data-slot="identity-avatar"
       {...props}
-      className={cn(identityAvatarVariants({ size }), className)}
-      // The tint mixes a per-identity colour — carried on the record or hashed
-      // from an id — that Tailwind cannot know at build time, so this is the
-      // one place a colour is written inline rather than as a theme token.
+      className={cn(identityAvatarVariants({ size, shape, variant }), className)}
+      // The background is a per-identity colour — carried on the record or
+      // hashed from an id — that Tailwind cannot know at build time, so this
+      // is the one place a colour is written inline rather than as a theme
+      // token. `fill` uses the colour outright; `tint` mixes it toward
+      // transparent over whatever surface the disc sits on. `fill` also has
+      // to pick the fallback letter's own colour rather than trust it will
+      // read against an arbitrary background — `readableForeground` is the
+      // same "don't assume white" call this inline exception already makes
+      // for the background.
       style={{
-        backgroundColor: `color-mix(in oklch, ${color} ${TINT_STRENGTH}, transparent)`,
+        backgroundColor: isFill
+          ? color
+          : `color-mix(in oklch, ${color} ${TINT_STRENGTH}, transparent)`,
+        ...(isFill ? { color: readableForeground(color) } : {}),
         ...style,
       }}
     >

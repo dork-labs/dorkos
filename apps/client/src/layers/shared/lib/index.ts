@@ -162,6 +162,7 @@ export type { TextEffectMode, TextEffectConfig } from './text-effects';
 export { useAppForm, withForm, formOptions, useFieldContext, useFormContext } from './form';
 export { formatDuration } from './format-duration';
 export { humanizePackageName, packageDisplayLabel, isSingleEmoji } from './humanize-name';
+export { readableForeground } from './readable-foreground';
 export { truncateMiddle } from './truncate-middle';
 export { queryClient, createQueryClientConfig, isStreamOwnedQuery } from './query-client';
 export { classifyContent, type ContentType } from './classify-content';
