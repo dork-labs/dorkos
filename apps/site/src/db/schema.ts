@@ -12,11 +12,13 @@
  *
  * The Better Auth **DorkOS account** tables (`user`, `session`, `account`,
  * `verification`), the plugin tables (`apikey`, `deviceCode`), the device-link
- * `instance` registry, and the `audit_log` are defined in `./auth-schema.ts` /
- * `./instance-schema.ts` / `./audit-schema.ts` and re-exported below so
- * drizzle-kit and the db client see one schema. They are hard-isolated from
- * `marketplaceInstallEvents` — no foreign keys, join columns, or shared
- * identifiers cross the account ↔ telemetry boundary (see `auth-schema.ts`).
+ * `instance` registry, the `audit_log`, the `newsletter_subscriber` list, and
+ * the `feedback_submission` table are defined in `./auth-schema.ts` /
+ * `./instance-schema.ts` / `./audit-schema.ts` / `./newsletter-schema.ts` /
+ * `./feedback-schema.ts` and re-exported below so drizzle-kit and the db
+ * client see one schema. They are hard-isolated from `marketplaceInstallEvents`
+ * — no foreign keys, join columns, or shared identifiers cross the account ↔
+ * telemetry boundary (see `auth-schema.ts`).
  *
  * @module db/schema
  */
@@ -41,6 +43,14 @@ export {
   type NewsletterStatus,
   type NewsletterSource,
 } from './newsletter-schema';
+export {
+  feedbackSubmission,
+  type FeedbackSubmission,
+  type NewFeedbackSubmission,
+  type FeedbackKind,
+  type FeedbackSurface,
+  type FeedbackStatus,
+} from './feedback-schema';
 
 /**
  * `marketplace_install_events` — append-only event log for opt-in install
