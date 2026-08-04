@@ -80,6 +80,17 @@ const NOTICE_DAMP_MS = 10 * 60_000;
  */
 const DEFAULT_RETRY_BACKOFF_MS: readonly number[] = [2_000, 30_000];
 
+/**
+ * The wire label an operator-authored post is prefixed with (spec §6.7) when
+ * no real name is configured ({@link ChatBridgeDeliveryDeps.operatorDisplayName}
+ * resolves `null`). Deliberately not `'You'`: that word only reads correctly
+ * from the operator's own cockpit seat, and a bridged group has no such seat
+ * (DOR-899). Neutral rather than invented — nothing here knows the person's
+ * name, so this says what IS known (somebody is operating this install)
+ * instead of guessing at who.
+ */
+const OPERATOR_FALLBACK_LABEL = 'Operator';
+
 /** The outcome of one {@link ChatBridgeDelivery.deliverEntry}. */
 export type DeliverOutcome =
   /** Sent to the chat; the outbound ref now carries the platform message id. */
@@ -189,6 +200,20 @@ export interface ChatBridgeDeliveryDeps {
   resolveSubject: (bridge: Bridge) => string | null;
   /** The install owner's author id — one of the two authors allowed to deliver (spec §6.6). */
   operatorAuthorId: () => string;
+  /**
+   * The REAL name to prefix an operator-authored post with on the wire (spec
+   * §6.7), or `null` when nothing is configured. Resolved per call, like
+   * {@link ChatBridgeDeliveryDeps.operatorAuthorId} — the person can set or
+   * change it at any time. Optional; a caller that omits it gets a delivery
+   * that always falls back to {@link OPERATOR_FALLBACK_LABEL}, which is the
+   * safe default for a test or an early wiring that has not threaded one.
+   *
+   * **NEVER the author row's cached `displayName`.** `author-registry.ts`
+   * fixes that at `'You'` on purpose — the right word for the operator's OWN
+   * cockpit seat, and exactly the identity confusion the §6.7 prefix exists
+   * to prevent when it is the word a bridged group reads instead (DOR-899).
+   */
+  operatorDisplayName?: () => string | null;
   /** Clock, injectable so activity stamps and the notice damper are testable. */
   now?: () => number;
   /** Sleep between retries, injectable so the failure ladder does not really wait in tests. */
@@ -223,6 +248,8 @@ export class ChatBridgeDelivery {
   private readonly now: () => number;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly retryBackoffMs: readonly number[];
+  /** Resolves the real operator-name prefix (spec §6.7); see {@link ChatBridgeDeliveryDeps.operatorDisplayName}. */
+  private readonly operatorDisplayName: () => string | null;
   /** Per-`(adapterId, chatId)` serialization tail — deliveries never interleave (spec §10.2). */
   private readonly chains = new Map<string, Promise<unknown>>();
   /** Per-`(roomId, noticeCode)` last-written time, for the notice damper. */
@@ -235,6 +262,7 @@ export class ChatBridgeDelivery {
     this.now = deps.now ?? Date.now;
     this.sleep = deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.retryBackoffMs = deps.retryBackoffMs ?? DEFAULT_RETRY_BACKOFF_MS;
+    this.operatorDisplayName = deps.operatorDisplayName ?? (() => null);
   }
 
   /**
@@ -479,11 +507,21 @@ export class ChatBridgeDelivery {
   /**
    * The wire content for an entry (spec §6.7). A post whose author is NOT the
    * bound agent — in practice the operator posting from the cockpit — is
-   * prefixed with that author's display name, at delivery time only. The prefix
-   * is NEVER written into the entry body: the log holds exactly what the person
+   * prefixed with a REAL operator name, at delivery time only. The prefix is
+   * NEVER written into the entry body: the log holds exactly what the person
    * typed, and a stored prefix would re-apply on every re-delivery. Notices and
    * the bound agent's own posts carry no prefix — the bot IS the agent's
    * identity, so its own words need none.
+   *
+   * **The prefix is never the author row's `displayName` (DOR-899).** By the
+   * time a `post`-kind entry reaches here, {@link ChatBridgeDelivery.deliverSerial}
+   * has already refused every author but the bound agent or the operator
+   * (spec §6.6 step 2), so a non-agent author is always the operator — and
+   * the operator author's cached `displayName` is fixed at `'You'`
+   * (`author-registry.ts`), a word that is correct only from the operator's
+   * own cockpit seat. {@link ChatBridgeDeliveryDeps.operatorDisplayName}
+   * resolves a real configured name instead, falling back to
+   * {@link OPERATOR_FALLBACK_LABEL} — never `'You'` — when none is set.
    *
    * **A `turn_failed` notice is re-rendered, not forwarded (spec §6.2).** The
    * room's own copy of it points a reader at "Ana's session" — the right
@@ -498,8 +536,8 @@ export class ChatBridgeDelivery {
     if (entry.kind === 'notice') return this.buildNoticeContent(entry);
     const text = entry.body.text;
     if (author?.kind === 'agent') return text;
-    const name = author?.displayName;
-    return name ? `${name}: ${text}` : text;
+    const name = this.operatorDisplayName() ?? OPERATOR_FALLBACK_LABEL;
+    return `${name}: ${text}`;
   }
 
   /**
