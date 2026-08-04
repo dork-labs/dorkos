@@ -403,6 +403,54 @@ export type FeedbackSubmission = z.infer<typeof FeedbackSubmissionSchema>;
 export type FeedbackSubmissionKind = FeedbackSubmission['kind'];
 
 /**
+ * Cockpit-visible lifecycle status for a tracked feedback submission
+ * (feedback-pipeline Part 4, decision 260803-205035). Mirrors
+ * `apps/site`'s `feedback_submission.status` column — `received` is the row's
+ * initial state before Linear ever sees it; the rest are written back by the
+ * Linear webhook via `lib/feedback/linear-status-map.ts`'s translation table,
+ * never a literal mirror of Linear's own states.
+ */
+export const FEEDBACK_TRACKING_STATUSES = [
+  'received',
+  'triaged',
+  'in_progress',
+  'shipped',
+  'closed',
+] as const;
+
+/** One of the {@link FEEDBACK_TRACKING_STATUSES}. */
+export type FeedbackTrackingStatus = (typeof FEEDBACK_TRACKING_STATUSES)[number];
+
+/**
+ * One row of "what this install has sent the DorkOS team, and where it
+ * stands" — the wire shape `GET /api/feedback/mine` (site) returns, the
+ * server's `GET /api/feedback/mine` proxy forwards unchanged, and
+ * `Transport.listMyFeedback()` resolves to for the cockpit's "Feedback &
+ * requests" tracking view. Deliberately includes `message` (the reporter's
+ * own text) but never contact, reporter identity, or Linear ids/urls — those
+ * stay team-private regardless of who is asking (see the site route's module
+ * doc for the full reasoning).
+ */
+export interface FeedbackListItem {
+  /** The `feedback_submission` row id — also the public `/feedback/[id]` tracking id. */
+  id: string;
+  /** One of {@link FeedbackSubmissionKind}. */
+  kind: FeedbackSubmissionKind;
+  /** The reporter's own submitted text. */
+  message: string;
+  /** One of {@link FeedbackTrackingStatus}. */
+  status: FeedbackTrackingStatus;
+  /** ISO-8601 instant the submission was received. */
+  createdAt: string;
+  /** The DorkOS version the fix/feature shipped in, present once `status` is `shipped`. */
+  shippedVersion?: string;
+  /** Whether a screenshot was attached (design-decisions.md §7's attachment hint). */
+  hasScreenshot: boolean;
+  /** Whether a session transcript excerpt was attached (design-decisions.md §7's attachment hint). */
+  hasTranscript: boolean;
+}
+
+/**
  * Envelope context the sender fills in around a {@link FeedbackSubmission}.
  */
 export interface FeedbackEventContext {

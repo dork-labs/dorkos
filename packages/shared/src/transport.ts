@@ -126,7 +126,7 @@ import type {
 } from './marketplace-schemas.js';
 import type { RoomTransport } from './transport-rooms.js';
 import type { CloudLinkStatus, CloudLinkSummary, StartLinkResult } from './cloud-schemas.js';
-import type { FeedbackSubmission } from './telemetry-events.js';
+import type { FeedbackListItem, FeedbackSubmission } from './telemetry-events.js';
 import type {
   ConnectorAccountsResponse,
   ConnectorConnectPollResponse,
@@ -1606,6 +1606,24 @@ export interface Transport extends RoomTransport {
    * @param submission - The user-typed `{ kind, message, contact?, route? }`.
    */
   sendFeedback(submission: FeedbackSubmission): Promise<{ ok: boolean }>;
+
+  /**
+   * List this install's own feedback submissions for the "Feedback &
+   * requests" tracking view (feedback-pipeline Part 4, decision
+   * 260803-205035) — kept newest first, scoped to this install's own
+   * pseudonymous `instanceId` so no login is required.
+   *
+   * `HttpTransport` calls the local server's `GET /api/feedback/mine` proxy,
+   * which forwards to the site (never a cross-origin request from the
+   * client). `DirectTransport` (Obsidian) has no site-backed tracking store
+   * to read — it resolves `[]`, matching the empty state the view already
+   * has to handle.
+   *
+   * Unlike {@link sendFeedback}'s honest `{ ok }` posture, this **rejects**
+   * on failure — it is a read the tracking view's own loading/error UI
+   * handles directly, not a fire-and-forget send.
+   */
+  listMyFeedback(): Promise<FeedbackListItem[]>;
 
   // --- Connectors (connector-completion spec §Detailed Design 5) ---
 

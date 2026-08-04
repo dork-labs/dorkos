@@ -27,9 +27,11 @@ import {
   buildFeedbackEvent,
   FeedbackEventSchema,
   type FeedbackEventContext,
+  type FeedbackListItem,
   type FeedbackSubmission,
 } from '@dorkos/shared/telemetry-events';
 
+import { env } from '../../env.js';
 import { getOrCreateInstanceId } from '../../lib/instance-id.js';
 import { logger, logError } from '../../lib/logger.js';
 import { getUserById } from './auth/index.js';
@@ -39,6 +41,9 @@ export const FEEDBACK_ENDPOINT = 'https://dorkos.ai/api/telemetry/events';
 
 /** How long to wait on the ingest before giving up (ms). */
 const FEEDBACK_TIMEOUT_MS = 10_000;
+
+/** How long to wait on the site's tracking-list read before giving up (ms). */
+const FEEDBACK_MINE_TIMEOUT_MS = 10_000;
 
 /** The server-resolved identity of an authenticated feedback submitter. */
 export type FeedbackIdentity = NonNullable<FeedbackEventContext['identity']>;
@@ -128,4 +133,44 @@ export async function sendFeedback(options: SendFeedbackOptions): Promise<{ ok: 
     logger.warn('[Feedback] Failed to forward feedback', logError(err));
     return { ok: false };
   }
+}
+
+/** Inputs for {@link listMyFeedback}. */
+export interface ListMyFeedbackOptions {
+  /** Resolved dorkHome path (for the anonymous instance id). */
+  dorkHome: string;
+  /** Override the site base URL (tests). Defaults to `env.DORKOS_CLOUD_URL`. */
+  cloudUrl?: string;
+  /** Override `fetch` (tests). Defaults to the global. */
+  fetchImpl?: typeof fetch;
+}
+
+/**
+ * List this install's own feedback submissions for the "Feedback & requests"
+ * tracking view (feedback-pipeline Part 4, decision 260803-205035).
+ *
+ * A thin, read-only forward to the site's `GET /api/feedback/mine`,
+ * scoped by this install's own anonymous `instanceId` (the same id
+ * {@link sendFeedback} uses as `distinctId`) — the route this calls never
+ * sees a request straight from a browser, matching every other site-backed
+ * read in this pipeline. **Throws** on a network failure or non-OK response
+ * (unlike {@link sendFeedback}'s `{ ok }` posture): this is a read the
+ * tracking view's own loading/error UI is built to handle, not a
+ * fire-and-forget send whose failure the UI must degrade around silently.
+ *
+ * @param options - dorkHome plus injectable base URL/fetch (tests).
+ * @returns The install's own submissions, newest first (per the site route).
+ */
+export async function listMyFeedback(options: ListMyFeedbackOptions): Promise<FeedbackListItem[]> {
+  const cloudUrl = (options.cloudUrl ?? env.DORKOS_CLOUD_URL).replace(/\/+$/, '');
+  const fetchImpl = options.fetchImpl ?? fetch;
+
+  const instanceId = await getOrCreateInstanceId(options.dorkHome);
+  const url = `${cloudUrl}/api/feedback/mine?instanceId=${encodeURIComponent(instanceId)}`;
+
+  const res = await fetchImpl(url, { signal: AbortSignal.timeout(FEEDBACK_MINE_TIMEOUT_MS) });
+  if (!res.ok) {
+    throw new Error(`Feedback tracking read failed: HTTP ${res.status}`);
+  }
+  return (await res.json()) as FeedbackListItem[];
 }

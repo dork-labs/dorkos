@@ -30,13 +30,14 @@
  *
  * honeypot check → Zod validate (strict, per-field caps, whole-body size
  * cap) → insert `feedback_submission` (`status: 'received'`) → best-effort
- * `createFeedbackIssue` → on success, update the row with Linear ids and
- * `status: 'triaged'`. The response is `{ ok: true, id }` in **both** the
- * Linear-success and Linear-failure cases — the Neon insert is the durable,
- * caller-visible guarantee; Linear is retryable out-of-band later (a
- * reconciliation sweep for stuck `received` rows is a documented follow-up,
- * not built here). Only a failed Neon insert or an invalid body is
- * `{ ok: false }` / a non-200 status.
+ * receipt email (Part 4, when a `reporterEmail`/email-shaped `contact` is on
+ * the submission) → best-effort `createFeedbackIssue` → on success, update
+ * the row with Linear ids and `status: 'triaged'`. The response is
+ * `{ ok: true, id }` in **both** the Linear-success and Linear-failure cases —
+ * the Neon insert is the durable, caller-visible guarantee; Linear is
+ * retryable out-of-band later (a reconciliation sweep for stuck `received`
+ * rows is a documented follow-up, not built here). Only a failed Neon insert
+ * or an invalid body is `{ ok: false }` / a non-200 status.
  *
  * @module app/api/feedback
  */
@@ -46,6 +47,9 @@ import { z } from 'zod';
 import { getDb } from '@/db/client';
 import { feedbackSubmission } from '@/db/feedback-schema';
 import { createFeedbackIssue } from '@/lib/feedback/linear';
+import { resolveNotifyEmail } from '@/lib/feedback/notify-email';
+import { resolveBaseURL } from '@/lib/auth';
+import { sendFeedbackReceipt } from '@/lib/mailer';
 
 export const runtime = 'nodejs';
 
@@ -182,6 +186,16 @@ export async function POST(request: Request): Promise<Response> {
       { ok: false, error: 'Failed to record submission' } satisfies ErrorResponse,
       { status: 500 }
     );
+  }
+
+  // The receipt email (feedback-pipeline Part 4) fires right after the
+  // durable insert succeeds — it is the "we got it" confirmation, so it must
+  // not wait on the best-effort Linear mirror below. `sendFeedbackReceipt`
+  // never throws (it catches and logs internally), so a Resend outage can
+  // never turn this into a failed request.
+  const notifyEmail = resolveNotifyEmail(submission);
+  if (notifyEmail) {
+    await sendFeedbackReceipt(notifyEmail, `${resolveBaseURL()}/feedback/${insertedId}`);
   }
 
   // Linear is best-effort on top of the durable insert above — a failure

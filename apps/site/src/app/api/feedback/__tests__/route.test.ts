@@ -2,11 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getDb } from '@/db/client';
 import { createFeedbackIssue } from '@/lib/feedback/linear';
+import { sendFeedbackReceipt } from '@/lib/mailer';
 
 import { POST } from '../route';
 
 vi.mock('@/db/client', () => ({ getDb: vi.fn() }));
 vi.mock('@/lib/feedback/linear', () => ({ createFeedbackIssue: vi.fn() }));
+vi.mock('@/lib/mailer', () => ({ sendFeedbackReceipt: vi.fn().mockResolvedValue(undefined) }));
+vi.mock('@/lib/auth', () => ({ resolveBaseURL: () => 'https://dorkos.ai' }));
 
 const VALID_SUBMISSION = {
   instanceId: '00000000-0000-0000-0000-000000000000',
@@ -49,6 +52,7 @@ beforeEach(() => {
   mockDb = { insert: mockInsert, update: mockUpdate };
   vi.mocked(getDb).mockReturnValue(mockDb as never);
   vi.mocked(createFeedbackIssue).mockReset();
+  vi.mocked(sendFeedbackReceipt).mockClear();
   consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 });
 
@@ -236,5 +240,60 @@ describe('POST /api/feedback — Linear failure (the core correctness claim)', (
     const payload = (await res.json()) as { ok: boolean; id: string };
     expect(payload).toEqual({ ok: true, id: INSERTED_ROW_ID });
     expect(mockUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /api/feedback — receipt email (the core correctness claim)', () => {
+  it('fires the receipt email with the tracking URL when reporterEmail is present', async () => {
+    vi.mocked(createFeedbackIssue).mockResolvedValue(null);
+    const res = await POST(post(VALID_SUBMISSION));
+    expect(res.status).toBe(200);
+
+    expect(sendFeedbackReceipt).toHaveBeenCalledTimes(1);
+    expect(sendFeedbackReceipt).toHaveBeenCalledWith(
+      'kai@example.com',
+      `https://dorkos.ai/feedback/${INSERTED_ROW_ID}`
+    );
+  });
+
+  it('fires the receipt email using an email-shaped contact when reporterEmail is absent', async () => {
+    vi.mocked(createFeedbackIssue).mockResolvedValue(null);
+    const withoutReporterEmail = { ...VALID_SUBMISSION, reporterEmail: undefined };
+    await POST(post(withoutReporterEmail));
+    expect(sendFeedbackReceipt).toHaveBeenCalledTimes(1);
+    expect(sendFeedbackReceipt).toHaveBeenCalledWith(
+      'kai@example.com',
+      expect.stringContaining('/feedback/')
+    );
+  });
+
+  it('does NOT fire the receipt email when no email or email-shaped contact is present', async () => {
+    vi.mocked(createFeedbackIssue).mockResolvedValue(null);
+    const bare = {
+      ...VALID_SUBMISSION,
+      reporterEmail: undefined,
+      contact: '@kai_on_discord',
+    };
+    await POST(post(bare));
+    expect(sendFeedbackReceipt).not.toHaveBeenCalled();
+  });
+
+  it('does NOT fire the receipt email when the insert fails', async () => {
+    mockReturning.mockRejectedValueOnce(new Error('neon timeout'));
+    await POST(post(VALID_SUBMISSION));
+    expect(sendFeedbackReceipt).not.toHaveBeenCalled();
+  });
+
+  it('fires the receipt email before attempting the Linear mirror', async () => {
+    const callOrder: string[] = [];
+    vi.mocked(sendFeedbackReceipt).mockImplementationOnce(async () => {
+      callOrder.push('receipt');
+    });
+    vi.mocked(createFeedbackIssue).mockImplementationOnce(async () => {
+      callOrder.push('linear');
+      return null;
+    });
+    await POST(post(VALID_SUBMISSION));
+    expect(callOrder).toEqual(['receipt', 'linear']);
   });
 });

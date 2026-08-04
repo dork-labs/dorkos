@@ -1,15 +1,20 @@
 /**
- * Transactional email seam for DorkOS account flows (accounts-and-auth P2).
+ * Transactional email seam for DorkOS (accounts-and-auth P2; extended for
+ * feedback-pipeline Part 4).
  *
  * This module is the **only** place Resend is touched. Better Auth's
- * `sendVerificationEmail` / `sendResetPassword` hooks (`./auth.ts`) call these
- * two functions, so tests mock this module rather than the network — no test
- * ever performs real email I/O.
+ * `sendVerificationEmail` / `sendResetPassword` hooks (`./auth.ts`), the
+ * newsletter service, and the feedback pipeline (`app/api/feedback/route.ts`,
+ * `app/api/webhooks/linear/route.ts`) all call functions here, so tests mock
+ * this module rather than the network — no test ever performs real email I/O.
  *
  * The Resend client is constructed lazily on first send so importing this module
  * (during `next build`, or when auth is wired but no mail is sent) never
  * requires `RESEND_API_KEY`. Local self-hosted DorkOS never imports this at all;
- * email is a cloud-only concern.
+ * email is a cloud-only concern. The account/newsletter functions **throw** when
+ * `RESEND_API_KEY` is unset (a caller-visible failure is correct there); the two
+ * feedback functions instead catch and log internally — see their own doc
+ * comments for why.
  *
  * @module lib/mailer
  */
@@ -100,6 +105,92 @@ export async function sendNewsletterConfirmation({ to, url }: AccountEmail): Pro
       "<p>If you didn't sign up, you can ignore this email and you won't be added.</p>",
     ].join(''),
   });
+}
+
+/** Arguments for {@link sendFeedbackShipped}. */
+interface FeedbackShippedDetails {
+  /** The reporter's own message, so the email echoes what they actually said. */
+  message: string;
+  /** The DorkOS version the fix/feature shipped in. */
+  shippedVersion: string;
+  /** Optional link to the release notes covering this version. */
+  changelogUrl?: string;
+}
+
+/** Truncate a report to a short one-line quote for the shipped email. */
+function quoteFirstLine(message: string, maxLen = 140): string {
+  const line = message.trim().split('\n', 1)[0] ?? '';
+  return line.length > maxLen ? `${line.slice(0, maxLen - 1).trimEnd()}…` : line;
+}
+
+/**
+ * Send the "we got your report" receipt email (feedback-pipeline Part 4,
+ * decision 260803-205035).
+ *
+ * Fired once, from `POST /api/feedback` right after a successful Neon insert,
+ * when the reporter has an email on file. **Never throws** — unlike the
+ * account emails above, a missing `RESEND_API_KEY` or a Resend outage here
+ * must not fail the request that is the caller-visible "received" guarantee,
+ * so failures are caught and logged, matching every other best-effort
+ * external call in this pipeline (see `lib/newsletter/resend-segment.ts`).
+ *
+ * @param to - The reporter's email.
+ * @param trackingUrl - The public `/feedback/[id]` status page link.
+ */
+export async function sendFeedbackReceipt(to: string, trackingUrl: string): Promise<void> {
+  try {
+    await getResend().emails.send({
+      from: env.RESEND_FROM,
+      to,
+      subject: 'We got your DorkOS report',
+      html: [
+        "<p>Thanks for the report. We'll take a look.</p>",
+        `<p><a href="${trackingUrl}">Track its status</a></p>`,
+        "<p>We'll only email you about this report.</p>",
+      ].join(''),
+    });
+  } catch (error) {
+    console.error('[mailer] sendFeedbackReceipt failed', {
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/**
+ * Send the "your report shipped" email (feedback-pipeline Part 4, decision
+ * 260803-205035).
+ *
+ * Fired once, from the Linear webhook handler, the first time a mirrored
+ * issue's status maps to `shipped` and the row has an email on file. Same
+ * never-throws posture as {@link sendFeedbackReceipt} and for the same
+ * reason: a mail failure must never fail the webhook delivery Linear is
+ * waiting on.
+ *
+ * @param to - The reporter's email.
+ * @param details - The reporter's original message, the version it shipped
+ *   in, and an optional link to the release notes.
+ */
+export async function sendFeedbackShipped(
+  to: string,
+  { message, shippedVersion, changelogUrl }: FeedbackShippedDetails
+): Promise<void> {
+  try {
+    await getResend().emails.send({
+      from: env.RESEND_FROM,
+      to,
+      subject: `Your DorkOS report shipped in v${shippedVersion}`,
+      html: [
+        `<p>Good news: this shipped in v${shippedVersion}.</p>`,
+        `<p>"${quoteFirstLine(message)}"</p>`,
+        changelogUrl ? `<p><a href="${changelogUrl}">See what changed</a></p>` : '',
+        "<p>We'll only email you about this report.</p>",
+      ].join(''),
+    });
+  } catch (error) {
+    console.error('[mailer] sendFeedbackShipped failed', {
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 /**

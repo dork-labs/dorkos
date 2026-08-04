@@ -18,6 +18,7 @@ import { ChannelsPage } from '@/layers/widgets/room-view';
 import { WorkspacesPage } from '@/layers/widgets/workspaces';
 import { ConnectionsPage } from '@/layers/widgets/connections';
 import { MarketplacePage, MarketplaceSourcesPage } from '@/layers/widgets/marketplace';
+import { FeedbackRequestsPage } from '@/layers/widgets/feedback-requests';
 import { agentFilterSchema, ATTENTION_SORT_FIELD } from '@/layers/features/agents-list';
 import { marketplaceSearchSchema } from '@/layers/features/marketplace';
 import { onboardingStageSearchSchema } from '@/layers/features/onboarding';
@@ -347,6 +348,13 @@ const activityRoute = createRoute({
   component: ActivityPage,
 });
 
+// ── Feedback & requests at /feedback-requests ────────────────
+const feedbackRequestsRoute = createRoute({
+  getParentRoute: () => appShellRoute,
+  path: '/feedback-requests',
+  component: FeedbackRequestsPage,
+});
+
 // ── Route tree ──────────────────────────────────────────────
 const routeTree = rootRoute.addChildren([
   appShellRoute.addChildren([
@@ -360,6 +368,7 @@ const routeTree = rootRoute.addChildren([
     activityRoute,
     marketplaceRoute,
     marketplaceSourcesRoute,
+    feedbackRequestsRoute,
   ]),
 ]);
 
