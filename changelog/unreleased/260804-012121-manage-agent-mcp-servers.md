@@ -4,6 +4,7 @@ covers:
   - 'feat(mcp): mcp.* capability domain + claude-code managed-server injection (DOR-891 P2)'
   - 'feat(mcp): client Transport methods + Agent Hub Toolkit UI for managed MCP servers (DOR-891 P3)'
   - "fix(mcp): reword capability copy off the banned term 'connection' (DOR-891)"
+  - 'refactor(mcp): address adversarial review nits (DOR-891)'
 ---
 
 ### Added
