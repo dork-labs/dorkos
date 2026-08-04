@@ -19,6 +19,7 @@ import {
 } from '@/layers/shared/ui';
 import {
   LoudnessMeter,
+  OriginMark,
   RESPONSE_RUNGS,
   ResponseModeControl,
   levelOfRung,
@@ -213,9 +214,10 @@ export function RoomMemberRow({
         </IdentityAvatar>
 
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium">
-            {author.displayName}
-            {isReader && <span className="text-muted-foreground font-normal"> (you)</span>}
+          <p className="flex min-w-0 items-center truncate text-sm font-medium">
+            <span className="truncate">{author.displayName}</span>
+            {isReader && <span className="text-muted-foreground font-normal">&nbsp;(you)</span>}
+            <OriginMark origin={member.origin} className="ml-1 shrink-0" />
           </p>
           <p className="text-muted-foreground truncate text-xs">
             {memberSecondaryLine({ presence, lastSpokeAt, joinedAt: member.joinedAt })}

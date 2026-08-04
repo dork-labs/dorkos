@@ -107,7 +107,13 @@ function rowElement(
       roomId="room-1"
       entry={target}
       author={{ id: 'ana', kind: 'agent', displayName: 'Ana', color: '#888' }}
-      authorRef={{ id: 'ana', kind: 'agent', displayName: 'Ana', mentionHandle: 'ana' }}
+      authorRef={{
+        id: 'ana',
+        kind: 'agent',
+        displayName: 'Ana',
+        mentionHandle: 'ana',
+        origin: 'local',
+      }}
       authors={AUTHORS}
       viewerAuthorId="author-you"
       authorNames={NAMES}
@@ -655,5 +661,61 @@ describe('RoomEntryRow — the pills under a message', () => {
     expect(screen.getByTestId('entry-reaction')).toBeDisabled();
     expect(screen.getByTestId('entry-reactions-add')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'React with thumbsup' })).toBeDisabled();
+  });
+});
+
+describe('RoomEntryRow — the origin mark beside an entry (chats-as-channels spec §4.3, §9, DOR-879)', () => {
+  /** Render one entry with its author's roster-carried `origin` set directly. */
+  function renderWithOrigin(origin: 'local' | { platform: string }) {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    return render(
+      <RoomEntryRow
+        roomId="room-1"
+        entry={entry()}
+        author={{
+          id: 'ana',
+          kind: 'human',
+          displayName: 'Miguel',
+          color: '#888',
+          isExternal: origin !== 'local',
+        }}
+        authorRef={{
+          id: 'ana',
+          kind: 'human',
+          displayName: 'Miguel',
+          mentionHandle: 'miguel',
+          origin,
+        }}
+        authors={AUTHORS}
+        viewerAuthorId="author-you"
+        authorNames={NAMES}
+        reactionFrequents={FREQUENTS}
+        grouping={{ position: 'only' }}
+      />,
+      {
+        wrapper: ({ children }) => (
+          <QueryClientProvider client={queryClient}>
+            <TransportProvider transport={createMockTransport()}>
+              <TooltipProvider>{children}</TooltipProvider>
+            </TransportProvider>
+          </QueryClientProvider>
+        ),
+      }
+    );
+  }
+
+  it('marks an external author beside their message — legible at a glance, not a tooltip', () => {
+    renderWithOrigin({ platform: 'telegram' });
+
+    const mark = screen.getByTestId('origin-mark');
+    expect(mark).toHaveTextContent('Telegram');
+    expect(mark).toBeVisible();
+  });
+
+  it('marks nothing for a local author', () => {
+    renderWithOrigin('local');
+    expect(screen.queryByTestId('origin-mark')).not.toBeInTheDocument();
   });
 });

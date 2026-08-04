@@ -43,7 +43,7 @@ function listedRoom(working: number | undefined): RoomSummary {
   return { ...ROOM, unreadCount: 0, participants: null, working } as unknown as RoomSummary;
 }
 
-function renderHeader(listed: RoomSummary | undefined) {
+function renderHeader(listed: RoomSummary | undefined, room: RoomWithRoster = ROOM) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: Infinity } },
   });
@@ -61,7 +61,7 @@ function renderHeader(listed: RoomSummary | undefined) {
     );
   }
 
-  render(<RoomHeader room={ROOM} onOpenMembers={() => {}} />, { wrapper: Wrapper });
+  render(<RoomHeader room={room} onOpenMembers={() => {}} />, { wrapper: Wrapper });
   return { transport };
 }
 
@@ -142,5 +142,78 @@ describe('RoomHeader — the working chip', () => {
 
     expect(transport.listRooms).not.toHaveBeenCalled();
     expect(screen.queryByTestId('room-header-working')).not.toBeInTheDocument();
+  });
+});
+
+describe('RoomHeader — the bridge visibility badge (chats-as-channels spec §8, DOR-879)', () => {
+  it('A8.1: a bridged group room shows "sees mentions only", sourced from room.bridge.visibility', () => {
+    const bridgedGroup: RoomWithRoster = {
+      ...ROOM,
+      bridge: { visibility: 'partial', platformTitle: 'Ops Team' },
+    };
+    renderHeader(listedRoom(0), bridgedGroup);
+
+    const badge = screen.getByTestId('bridge-visibility-badge');
+    expect(badge).toHaveTextContent('sees mentions only');
+  });
+
+  it('A8.1: a bridged group room shows "sees everything" when the bridge reports full visibility', () => {
+    const bridgedGroup: RoomWithRoster = {
+      ...ROOM,
+      bridge: { visibility: 'full', platformTitle: 'Ops Team' },
+    };
+    renderHeader(listedRoom(0), bridgedGroup);
+
+    expect(screen.getByTestId('bridge-visibility-badge')).toHaveTextContent('sees everything');
+  });
+
+  it('A8.2: a bridged DM room shows no badge — privacy mode is a group concept', () => {
+    const bridgedDm: RoomWithRoster = {
+      ...ROOM,
+      kind: 'dm',
+      bridge: { visibility: null, platformTitle: null },
+    };
+    renderHeader(listedRoom(0), bridgedDm);
+
+    expect(screen.queryByTestId('bridge-visibility-badge')).not.toBeInTheDocument();
+  });
+
+  it('shows no badge on a room with no bridge at all', () => {
+    renderHeader(listedRoom(0), ROOM);
+    expect(screen.queryByTestId('bridge-visibility-badge')).not.toBeInTheDocument();
+  });
+
+  it("A8.3: expanding it names Telegram as the switch's owner, the re-add ritual, and the reply-setting gate", async () => {
+    const bridgedGroup: RoomWithRoster = {
+      ...ROOM,
+      bridge: { visibility: 'full', platformTitle: 'Ops Team' },
+    };
+    renderHeader(listedRoom(0), bridgedGroup);
+
+    await userEvent.click(screen.getByTestId('bridge-visibility-badge'));
+
+    // Telegram owns the switch, not DorkOS.
+    expect(await screen.findByText(/Telegram's own privacy switch/i)).toBeInTheDocument();
+    // The re-add ritual: leave the group and rejoin it.
+    expect(
+      screen.getByText(/removing the bot from this group and\s+adding it back/i)
+    ).toBeInTheDocument();
+    // The bot-wide-not-per-group honesty gap, in the task's own words.
+    expect(screen.getByText(/groups where it was added after this was set/i)).toBeInTheDocument();
+    // The second gate: DorkOS's own reply setting narrows things further.
+    expect(screen.getByText(/reply setting of its own/i)).toBeInTheDocument();
+  });
+
+  it('is a disclosure, never a toggle — no switch role, no pressed state', () => {
+    const bridgedGroup: RoomWithRoster = {
+      ...ROOM,
+      bridge: { visibility: 'partial', platformTitle: 'Ops Team' },
+    };
+    renderHeader(listedRoom(0), bridgedGroup);
+
+    const badge = screen.getByTestId('bridge-visibility-badge');
+    expect(badge).not.toHaveAttribute('role', 'switch');
+    expect(badge).not.toHaveAttribute('aria-pressed');
+    expect(badge.tagName).toBe('BUTTON');
   });
 });

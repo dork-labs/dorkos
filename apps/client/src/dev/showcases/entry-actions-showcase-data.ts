@@ -35,31 +35,36 @@ export const BENCH_VIEWER: MessageAuthor = {
   color: '#8b8b8b',
 };
 
-/** The agent as the roster holds them — the shape that carries `mentionHandle`. */
-export const BENCH_AGENT_REF: AuthorRef = {
+/**
+ * The agent as the roster holds them — the shape that carries `mentionHandle`
+ * and `origin`. `'local'`: this bench seeds nobody bridged in from another
+ * platform.
+ */
+export const BENCH_AGENT_REF: AuthorRef & { origin: 'local' } = {
   id: BENCH_AGENT.id,
   kind: 'agent',
   displayName: BENCH_AGENT.displayName,
   color: BENCH_AGENT.color,
   mentionHandle: 'ana',
+  origin: 'local',
 };
 
 /** The reader as the roster holds them. Never offered a mention of themselves. */
-export const BENCH_VIEWER_REF: AuthorRef = {
+export const BENCH_VIEWER_REF: AuthorRef & { origin: 'local' } = {
   id: BENCH_VIEWER_ID,
   kind: 'human',
   displayName: BENCH_VIEWER.displayName,
   mentionHandle: 'you',
+  origin: 'local',
 };
 
 /**
  * The bench's roster, keyed by author id — what a `RoomEntryRow` resolves a
- * `<mention>` against. `origin: 'local'` for both: neither seeded author is
- * bridged in from another platform.
+ * `<mention>` against.
  */
 export const BENCH_AUTHORS: ReadonlyMap<string, AuthorRef & { origin: 'local' }> = new Map([
-  [BENCH_AGENT_REF.id, { ...BENCH_AGENT_REF, origin: 'local' }],
-  [BENCH_VIEWER_REF.id, { ...BENCH_VIEWER_REF, origin: 'local' }],
+  [BENCH_AGENT_REF.id, BENCH_AGENT_REF],
+  [BENCH_VIEWER_REF.id, BENCH_VIEWER_REF],
 ]);
 
 let seq = 0;

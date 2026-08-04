@@ -119,6 +119,18 @@ export function RoomDetailsHeader({
               className="text-muted-foreground text-sm"
             />
           )}
+          {/* Only drawn when it says something the room's own name does not
+              already say. A rename here never reaches Telegram's side (spec
+              §3.4, `room-service.ts:317-321`), so this is what keeps that gap
+              from being a SILENT one — it shows what the chat is actually
+              called over there, without claiming to track it live. */}
+          {room.kind === 'channel' &&
+            room.bridge?.platformTitle &&
+            room.bridge.platformTitle !== room.title && (
+              <p className="text-muted-foreground truncate text-xs">
+                Telegram calls this chat &ldquo;{room.bridge.platformTitle}&rdquo;
+              </p>
+            )}
         </div>
       </div>
     </ResponsiveDialogHeader>

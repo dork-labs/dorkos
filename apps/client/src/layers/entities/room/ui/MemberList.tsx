@@ -3,10 +3,12 @@
  *
  * @module entities/room/ui/MemberList
  */
+import { ADAPTER_LOGO_MAP } from '@dorkos/icons/adapter-logos';
+import { Send } from 'lucide-react';
 import type { RoomRosterEntry } from '@dorkos/shared/room-schemas';
 import { cn, initialOf } from '@/layers/shared/lib';
 import { IdentityAvatar, Tooltip, TooltipContent, TooltipTrigger } from '@/layers/shared/ui';
-import { authorColor } from '../lib/room-display';
+import { authorColor, platformLabel } from '../lib/room-display';
 
 /** How many marks are drawn before the rest collapse into a `+N`. */
 const MAX_VISIBLE = 5;
@@ -64,23 +66,40 @@ export function MemberList({ members, onClick, label, className }: MemberListPro
   const overflow = members.length - visible.length;
   const countLabel = `${members.length} ${members.length === 1 ? 'member' : 'members'}`;
 
-  /** One member's disc, carrying its member's name for a screen reader. */
-  const disc = (author: RoomRosterEntry['author']) => (
-    <IdentityAvatar
-      // Named explicitly: the tooltip trigger this stands in for would
-      // otherwise stamp its own slot onto the disc.
-      data-slot="room-member-avatar"
-      size="xs"
-      color={author.color ?? authorColor(author.id)}
-      emoji={author.emoji}
-      fallback={initialOf(author.displayName)}
-      // A roster disc is a step larger than the sidebar's, and rings itself in
-      // the page background so the overlap still reads as separate people.
-      className="border-background size-6 border"
-    >
-      <span className="sr-only">{author.displayName}</span>
-    </IdentityAvatar>
-  );
+  /**
+   * One member's disc, carrying its member's name — and, for someone bridged
+   * in from outside this machine, the platform they are on — for a screen
+   * reader.
+   *
+   * The platform's own brand mark badges the disc for an external member, the
+   * same visual slot `RoomMemberRow` gives an agent's `Bot` glyph — legible at
+   * a glance rather than only on hover, which is what chats-as-channels §9
+   * requires of every origin mark (see `OriginMark`'s own doc for why).
+   */
+  const disc = ({ author, origin }: RoomRosterEntry) => {
+    const isExternal = typeof origin === 'object' && origin !== null;
+    const Logo = isExternal ? ADAPTER_LOGO_MAP[origin.platform] : undefined;
+    const name = isExternal
+      ? `${author.displayName}, from ${platformLabel(origin.platform)}`
+      : author.displayName;
+    return (
+      <IdentityAvatar
+        // Named explicitly: the tooltip trigger this stands in for would
+        // otherwise stamp its own slot onto the disc.
+        data-slot="room-member-avatar"
+        size="xs"
+        color={author.color ?? authorColor(author.id)}
+        emoji={author.emoji}
+        fallback={initialOf(author.displayName)}
+        badge={isExternal ? Logo ? <Logo /> : <Send /> : undefined}
+        // A roster disc is a step larger than the sidebar's, and rings itself in
+        // the page background so the overlap still reads as separate people.
+        className="border-background size-6 border"
+      >
+        <span className="sr-only">{name}</span>
+      </IdentityAvatar>
+    );
+  };
 
   const overflowDisc = overflow > 0 && (
     <span className="border-background bg-muted text-muted-foreground inline-flex size-6 items-center justify-center rounded-full border text-[10px] font-medium">
@@ -100,9 +119,9 @@ export function MemberList({ members, onClick, label, className }: MemberListPro
           className
         )}
       >
-        {visible.map(({ author }) => (
-          <span key={author.id} className="contents">
-            {disc(author)}
+        {visible.map((member) => (
+          <span key={member.author.id} className="contents">
+            {disc(member)}
           </span>
         ))}
         {overflowDisc}
@@ -116,11 +135,15 @@ export function MemberList({ members, onClick, label, className }: MemberListPro
       aria-label={countLabel}
       className={cn('flex items-center -space-x-1.5', className)}
     >
-      {visible.map(({ author }) => (
-        <li key={author.id}>
+      {visible.map((member) => (
+        <li key={member.author.id}>
           <Tooltip>
-            <TooltipTrigger asChild>{disc(author)}</TooltipTrigger>
-            <TooltipContent>{author.displayName}</TooltipContent>
+            <TooltipTrigger asChild>{disc(member)}</TooltipTrigger>
+            <TooltipContent>
+              {typeof member.origin === 'object' && member.origin !== null
+                ? `${member.author.displayName} · ${platformLabel(member.origin.platform)}`
+                : member.author.displayName}
+            </TooltipContent>
           </Tooltip>
         </li>
       ))}

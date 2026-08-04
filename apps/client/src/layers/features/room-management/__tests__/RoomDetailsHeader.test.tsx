@@ -245,4 +245,45 @@ describe('RoomDetailsHeader', () => {
 
     await waitFor(() => expect(topicLine()).toHaveFocus());
   });
+
+  describe('the platform-title subtitle (chats-as-channels spec §3.4, DOR-879)', () => {
+    it('shows what the chat is called on Telegram once a rename has let it diverge', () => {
+      // `room-service.ts:317-321`: a platform title change never renames the
+      // room, and a room rename never touches the bridge's recorded platform
+      // title either — so once the two differ, only this line says so.
+      renderHeader({
+        title: 'Backend',
+        bridge: { visibility: 'partial', platformTitle: 'Ops Team' },
+      });
+
+      expect(screen.getByText('Telegram calls this chat “Ops Team”')).toBeInTheDocument();
+    });
+
+    it('says nothing while the room title and the platform title still agree', () => {
+      // Redundant, not honest: repeating the room's own name back at it right
+      // under the field that already shows it is noise, not a safeguard.
+      renderHeader({
+        title: 'Ops Team',
+        bridge: { visibility: 'partial', platformTitle: 'Ops Team' },
+      });
+
+      expect(screen.queryByText(/Telegram calls this chat/)).not.toBeInTheDocument();
+    });
+
+    it('says nothing for an unbridged room', () => {
+      renderHeader({ title: 'General' });
+      expect(screen.queryByText(/Telegram calls this chat/)).not.toBeInTheDocument();
+    });
+
+    it('says nothing for a bridged direct message — a DM has no platform-side chat title', () => {
+      renderHeader({
+        kind: 'dm',
+        slug: null,
+        title: 'Ana',
+        bridge: { visibility: null, platformTitle: null },
+      });
+
+      expect(screen.queryByText(/Telegram calls this chat/)).not.toBeInTheDocument();
+    });
+  });
 });

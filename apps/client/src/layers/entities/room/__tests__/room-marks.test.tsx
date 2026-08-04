@@ -157,6 +157,32 @@ describe('MemberList', () => {
     expect(screen.getByText('+2')).toBeInTheDocument();
     expect(screen.getAllByText(/^A$/)).toHaveLength(5);
   });
+
+  describe('the origin mark (chats-as-channels spec §4.3, §9, DOR-879)', () => {
+    it('badges an external member so their platform is legible without a hover', () => {
+      const miguel: RoomRosterEntry = {
+        ...member({ id: 'author-miguel', kind: 'human', displayName: 'Miguel' }),
+        origin: { platform: 'telegram' },
+      };
+      const { container } = renderRoster([miguel]);
+
+      // The badge is drawn on the disc itself — always visible, never behind
+      // a tooltip a reader would have to go hovering for. `telegram` resolves
+      // to its own brand mark (`ADAPTER_LOGO_MAP`), so this is the SAME icon
+      // the connection surfaces already draw for it, not a generic stand-in.
+      const badgeSlot = container.querySelector(
+        '[data-slot="room-member-avatar"] > span:nth-child(2)'
+      );
+      expect(badgeSlot?.querySelector('svg')).not.toBeNull();
+      expect(screen.getByText('Miguel, from Telegram')).toHaveClass('sr-only');
+    });
+
+    it('badges nothing for a local member — no disc wears the mark for its own operator', () => {
+      const { container } = renderRoster([member(YOU)]);
+      const avatar = container.querySelector('[data-slot="room-member-avatar"]');
+      expect(avatar?.querySelector('svg')).toBeNull();
+    });
+  });
 });
 
 describe('RoomAvatar', () => {
