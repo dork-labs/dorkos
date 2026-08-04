@@ -22,7 +22,8 @@ import { cn, formatShortcutKey, SHORTCUTS } from '@/layers/shared/lib';
 
 /**
  * Top-level route navigation for the dashboard sidebar: Dashboard, Activity,
- * Agents, Tasks, Workspaces, Marketplace, and the command-palette Search row.
+ * Agents, Tasks, Workspaces, Connections, Marketplace, and the command-palette
+ * Search row.
  * Self-contained (reads its own router + app-store state) so the orchestrator
  * stays focused on the agent roster.
  */

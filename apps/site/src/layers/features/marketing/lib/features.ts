@@ -890,7 +890,7 @@ export const features: Feature[] = [
       'Attach a connection to one session, not your whole system',
       'Disconnect an account any time, from one screen',
     ],
-    docsUrl: '/docs/connectors',
+    docsUrl: '/docs/connections',
     relatedFeatures: ['marketplace', 'mcp-server', 'relay-message-bus'],
     sortOrder: 5,
   },
