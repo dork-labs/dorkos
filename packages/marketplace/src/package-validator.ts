@@ -256,6 +256,12 @@ export async function validatePackage(packagePath: string): Promise<ValidatePack
  * `.dork/agent.json` is not this check's concern (the normal case is that the
  * installer scaffolds it), so it is skipped silently.
  *
+ * This structural check is a fast, friendly rejection at publish/install time,
+ * not the whole defense: a differently-shaped smuggle (e.g. `mcpServers` as an
+ * object) slips this guard but is then rejected by `AgentManifestSchema` at
+ * load — the agent fails to parse, is hidden from the registry, and injects
+ * nothing. `injectableServersForCwd` is the final backstop.
+ *
  * @param packagePath - Absolute path to the package root directory.
  * @param issues - Mutable issue list to append a finding to.
  * @internal

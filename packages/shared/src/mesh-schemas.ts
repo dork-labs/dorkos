@@ -354,7 +354,16 @@ export type AgentManifest = z.infer<typeof AgentManifestSchema>;
  * here rather than at each caller so the chip's one action — "use server
  * default" — is expressible without a cast.
  */
-export type AgentManifestUpdate = Omit<Partial<AgentManifest>, 'model' | 'effort'> & {
+// `mcpServers` is deliberately excluded: managed MCP servers are mutated ONLY
+// through the gated `mcp.*` capabilities (add/update are destructive, with a
+// command-diff approval), never a blanket manifest PATCH. The runtime gate is
+// `UpdateAgentRequestSchema`'s `.pick()` allowlist, which omits it; the type
+// must say the same so a future caller cannot trust it as a legal write path
+// (ADR 260803-233420, guarantee 2).
+export type AgentManifestUpdate = Omit<
+  Partial<AgentManifest>,
+  'model' | 'effort' | 'mcpServers'
+> & {
   model?: string | null;
   effort?: (typeof EFFORT_LEVELS)[number] | null;
 };
