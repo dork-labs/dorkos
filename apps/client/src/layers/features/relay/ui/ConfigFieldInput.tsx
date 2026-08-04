@@ -91,19 +91,21 @@ export function ConfigFieldInput({
       <div>
         <Field orientation="horizontal" className="items-center justify-between gap-4">
           <FieldContent className="min-w-0">
-            <FieldLabel
-              htmlFor={fieldId}
-              className={cn(
-                'text-sm font-medium',
-                field.required && 'after:text-destructive after:ml-0.5 after:content-["*"]'
-              )}
-            >
+            <FieldLabel htmlFor={fieldId} className="text-sm font-medium">
               {field.label}
+              {field.required && (
+                <span aria-hidden="true" className="text-destructive ml-0.5">
+                  *
+                </span>
+              )}
             </FieldLabel>
             {field.description && (
               <FieldDescription className="text-xs">{field.description}</FieldDescription>
             )}
           </FieldContent>
+          {/* No aria-required here: Chromium's a11y tree drops it on role=switch
+              (a switch always has a value), and no shipped boolean field is
+              required anyway. */}
           <Switch
             id={fieldId}
             checked={Boolean(value)}
@@ -153,6 +155,7 @@ export function ConfigFieldInput({
             onChange={(e) => onChange(field.key, e.target.value)}
             placeholder={field.placeholder}
             aria-invalid={!!displayError || undefined}
+            aria-required={field.required || undefined}
           />
         );
 
@@ -172,6 +175,8 @@ export function ConfigFieldInput({
               onFocus={() => onChange(field.key, '')}
               onBlur={handleBlur}
               placeholder="Saved — enter a new one to replace"
+              // Sentinel already holds a saved value, so "required" doesn't apply here —
+              // matches the label, which also suppresses the asterisk in this state.
             />
           );
         }
@@ -189,6 +194,7 @@ export function ConfigFieldInput({
             onPaste={() => setTimeout(handleBlur, 0)}
             placeholder={field.placeholder}
             aria-invalid={!!displayError || undefined}
+            aria-required={field.required || undefined}
           />
         );
       }
@@ -204,6 +210,7 @@ export function ConfigFieldInput({
             }
             placeholder={field.placeholder}
             aria-invalid={!!displayError || undefined}
+            aria-required={field.required || undefined}
           />
         );
 
@@ -214,6 +221,7 @@ export function ConfigFieldInput({
               className="grid grid-cols-2 gap-3"
               role="radiogroup"
               aria-labelledby={`${fieldId}-label`}
+              aria-required={field.required || undefined}
             >
               {field.options?.map((opt) => (
                 <button
@@ -238,7 +246,11 @@ export function ConfigFieldInput({
         }
         return (
           <Select value={stringValue} onValueChange={(v) => onChange(field.key, v)}>
-            <SelectTrigger id={fieldId} aria-invalid={!!displayError || undefined}>
+            <SelectTrigger
+              id={fieldId}
+              aria-invalid={!!displayError || undefined}
+              aria-required={field.required || undefined}
+            >
               <SelectValue placeholder={field.placeholder ?? 'Select...'} />
             </SelectTrigger>
             <SelectContent>
@@ -260,6 +272,7 @@ export function ConfigFieldInput({
             placeholder={field.placeholder}
             rows={3}
             aria-invalid={!!displayError || undefined}
+            aria-required={field.required || undefined}
           />
         );
 
@@ -270,14 +283,13 @@ export function ConfigFieldInput({
 
   return (
     <Field>
-      <FieldLabel
-        id={`${fieldId}-label`}
-        htmlFor={isRadioCards ? undefined : fieldId}
-        className={cn(
-          field.required && !isSentinel && 'after:text-destructive after:ml-0.5 after:content-["*"]'
-        )}
-      >
+      <FieldLabel id={`${fieldId}-label`} htmlFor={isRadioCards ? undefined : fieldId}>
         {field.label}
+        {field.required && !isSentinel && (
+          <span aria-hidden="true" className="text-destructive ml-0.5">
+            *
+          </span>
+        )}
       </FieldLabel>
       {renderControl()}
       {field.description && (
