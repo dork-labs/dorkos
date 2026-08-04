@@ -33,7 +33,7 @@ Feedback submissions of kind `bug`/`feedback`/`idea` dual-write from a new
 site route (`POST /api/feedback`, `apps/site`) to two destinations: a new
 Neon table (`feedback_submission`) as the durable system of record, and a
 Linear issue (via a new minimal, server-key-authenticated GraphQL client,
-`apps/site/src/lib/linear.ts`, following the existing dependency-free
+`apps/site/src/lib/feedback/linear.ts`, following the existing dependency-free
 `fetch`-over-GraphQL style already used for read-only Linear access
 elsewhere in the repo — no `@linear/sdk`). The existing PostHog event keeps
 being sent unchanged, for aggregate metrics continuity. A Linear webhook

@@ -207,6 +207,27 @@ describe('StreamManager', () => {
     expect(onSessionConnectionState).toHaveBeenCalledWith('sess-a', 'connected');
   });
 
+  it('records a bug-report breadcrumb when the session stream disconnects', async () => {
+    // Real failure mode: a bug filed right after a stream drop should carry
+    // "the session stream just disconnected" without the user having to notice
+    // and describe it themselves (feedback-pipeline spec Part 1).
+    const { getBreadcrumbs, __resetBreadcrumbsForTests } = await import('../../breadcrumbs');
+    __resetBreadcrumbsForTests();
+    const { manager, connections } = setup();
+    manager.attachSession('sess-a');
+
+    connections[0]!.emitState('connected');
+    expect(getBreadcrumbs()).toHaveLength(0);
+
+    connections[0]!.emitState('disconnected');
+    const crumbs = getBreadcrumbs();
+    expect(crumbs).toHaveLength(1);
+    expect(crumbs[0].kind).toBe('sse_disconnect');
+    expect(crumbs[0].message).toContain('sess-a');
+
+    __resetBreadcrumbsForTests();
+  });
+
   it('connectList opens the global stream once and forwards validated list events', () => {
     // Real failure mode: the global /api/events stream must be a single idempotent
     // connection that forwards session-list events for the sidebar.

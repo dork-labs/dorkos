@@ -1323,12 +1323,26 @@ export class RoomService {
    *   at all and is dropped by the caller before it reaches here (§4.1).
    * @param input.text - What they wrote, exactly as they wrote it.
    * @param input.replyTo - The entry this answers, when the platform said so.
+   * @param input.mentionAugment - One extra `@`-name for the bound agent, from
+   *   the platform's own bot handle (`getMe().username`, §5.4). Threaded to
+   *   {@link RoomRoster.addressingCandidates} so `@botusername` resolves to the
+   *   agent; `ingest` rewrites nothing, and this never touches the stored text.
+   * @param input.recordRef - Runs inside the entry's OWN transaction, handed the
+   *   committed entry's id. This is what makes §5.2 step 6 — the inbound
+   *   external ref — atomic with the entry write (A5.6: both rows or neither),
+   *   since `better-sqlite3` is synchronous and the ref shares this transaction.
    * @returns The committed entry, the author it was written as, and whether
    *   this message is what put them on the roster.
    */
   postExternal(
     roomId: string,
-    input: { identity: ExternalAuthorIdentity; text: string; replyTo?: string }
+    input: {
+      identity: ExternalAuthorIdentity;
+      text: string;
+      replyTo?: string;
+      mentionAugment?: { agentPath: string; names: readonly string[] };
+      recordRef?: (entryId: string, tx: DbTransaction) => void;
+    }
   ): { entry: RoomEntry; author: AuthorRecord; joined: boolean } {
     const room = this.store.getRoom(roomId);
     if (!room) throw new RoomError('ROOM_NOT_FOUND', 'No such room');
@@ -1348,7 +1362,8 @@ export class RoomService {
       { authorId: author.id, text: input.text, replyTo: input.replyTo },
       joining
         ? (tx) => void this.store.addMember(this.roster.externalJoin(room, author), tx)
-        : undefined
+        : undefined,
+      { mentionAugment: input.mentionAugment, recordRef: input.recordRef }
     );
     // After the commit, never inside it: a broadcast is not rolled back, and a
     // roster event for a join that failed would leave every open cockpit
@@ -1370,6 +1385,14 @@ export class RoomService {
    *   whole life of the entry and a crash can never leave a log holding a post
    *   from somebody its roster says was never in the room (chats-as-channels
    *   §4.2). Passed straight through to {@link RoomStore.appendEntry}.
+   * @param opts.mentionAugment - Extra `@`-names for the bound agent, threaded to
+   *   {@link RoomRoster.addressingCandidates} (chats-as-channels §5.4). Only a
+   *   bridged inbound message carries one.
+   * @param opts.recordRef - Runs inside the SAME transaction as the entry write,
+   *   handed the entry's id once it is known — the inbound external ref (§5.2
+   *   step 6), made atomic with the entry it names (A5.6). Composed with
+   *   `within` rather than replacing it, so a first message both joins its author
+   *   and records its ref in one transaction.
    */
   private writePost(
     room: Room,
@@ -1380,7 +1403,11 @@ export class RoomService {
       trigger?: PostTrigger;
       replyTo?: string;
     },
-    within?: (tx: DbTransaction) => void
+    within?: (tx: DbTransaction) => void,
+    opts?: {
+      mentionAugment?: { agentPath: string; names: readonly string[] };
+      recordRef?: (entryId: string, tx: DbTransaction) => void;
+    }
   ): RoomEntry {
     const roomId = room.id;
 
@@ -1398,8 +1425,24 @@ export class RoomService {
     // member's agent is gone. The second half is what stops a released name
     // becoming a silent one (ADR 260801-003051) — the dispatcher writes the
     // room's answer to it below.
-    const addressed = resolveAddressing(input.text, this.roster.addressingCandidates(roomId));
+    const addressed = resolveAddressing(
+      input.text,
+      this.roster.addressingCandidates(roomId, opts?.mentionAugment)
+    );
     const id = ulid();
+    // The ref write shares the entry's transaction, so both land or neither does
+    // (§5.2, A5.6). Composed with `within` — a bridged first message both joins
+    // its author (`within`) and records its inbound ref (`recordRef`) in the one
+    // transaction — and built only when there is something extra to run, so an
+    // ordinary post pays nothing.
+    const recordRef = opts?.recordRef;
+    const transactional =
+      within || recordRef
+        ? (tx: DbTransaction) => {
+            within?.(tx);
+            recordRef?.(id, tx);
+          }
+        : undefined;
     const entry = this.store.appendEntry(
       {
         roomId,
@@ -1420,7 +1463,7 @@ export class RoomService {
         }),
         createdAt: new Date().toISOString(),
       },
-      within
+      transactional
     );
 
     this.publishEntry(entry);

@@ -46,6 +46,7 @@ import type { AdapterMeshCoreLike } from './adapter-manager.js';
 import { parseHumanSubject } from './human-subject.js';
 import { extractPlatformUserId, extractSenderName } from './platform-identity.js';
 import type { UnclaimedChat, UnclaimedChatStore } from './unclaimed-chat-store.js';
+import type { ChatBridgeIngest } from './chat-bridge/index.js';
 
 /**
  * Whether an inbound envelope's `content` is the empty string.
@@ -159,6 +160,14 @@ export interface BindingRouterDeps {
    * router had for every one of its drop paths (DOR-789).
    */
   chatNotice?: ChatNoticeSender;
+  /**
+   * The inbound bridge (chats-as-channels spec §5). When a resolved binding has
+   * `bridge: 'room'`, routing hands the message here INSTEAD of resolving a
+   * session — the terminal branch that writes a room post and stops (§5.1,
+   * A2.1/A5.2). Optional only so unit tests that never bridge can omit it; in the
+   * server it is always wired once the rooms subsystem exists.
+   */
+  bridgeIngest?: ChatBridgeIngest;
   /**
    * Optional callback fired once per delivered inbound message (`deliveredTo
    * > 0`), used solely to animate the topology pulse. Injected rather than
@@ -621,6 +630,38 @@ export class BindingRouter {
               'agent_missing',
               `agent '${binding.agentId}' is not in the mesh registry`
             );
+          }
+
+          // A bridged binding's inbound message becomes a room post, and that
+          // branch is TERMINAL: `ingest` writes the entry and stops. Falling
+          // through to `resolveSession` would run the turn twice from one
+          // message (chats-as-channels spec §5.1, A2.1/A5.2). The turn, if any,
+          // is chosen by `RoomTriggerDispatcher` off the committed post — never
+          // here — and `sessionMap` is neither read nor written for a bridged
+          // binding (§7.2, A7.3). `projectPath` above is the bound agent's
+          // directory, threaded so `@botusername` can address it (§5.4).
+          if (binding.bridge === 'room') {
+            if (!this.deps.bridgeIngest) {
+              // Can't happen in the server — the bridge is wired whenever the
+              // rooms subsystem exists — but falling through is the exact
+              // double-run this branch prevents, so refuse loudly instead.
+              logger.error('[relay] a bridged binding arrived but no chat bridge is wired', {
+                bindingId: binding.id,
+              });
+              recordDispatchEnd(dispatchId, 'refused');
+              return { handled: false, reason: 'the chat bridge is not available' };
+            }
+            const result = await this.deps.bridgeIngest.ingest(binding, envelope, {
+              agentPath: projectPath,
+            });
+            if (result.status === 'refused') {
+              recordDispatchEnd(dispatchId, 'refused');
+              return result.verdict;
+            }
+            // The message reached the room; any answer runs on the room's own
+            // dispatch, so from THIS relay dispatch nothing further is emitted.
+            recordDispatchEnd(dispatchId, 'quiet');
+            return;
           }
 
           let sessionId: string;

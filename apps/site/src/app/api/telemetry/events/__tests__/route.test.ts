@@ -383,6 +383,73 @@ describe('POST /api/telemetry/events', () => {
     });
   });
 
+  describe('reporterEmail/reporterName superset (feedback-pipeline spec Part 1, ADR 260803-205037)', () => {
+    it('accepts a feedback_submitted event carrying server-resolved identity', async () => {
+      const res = await POST(
+        makeRequest({
+          events: [
+            {
+              ...VALID_FEEDBACK_SUBMITTED,
+              properties: {
+                ...VALID_FEEDBACK_SUBMITTED.properties,
+                reporterEmail: 'dorian@example.com',
+                reporterName: 'Dorian',
+              },
+            },
+          ],
+        })
+      );
+      expect((await readJson(res)).accepted).toBe(1);
+    });
+
+    it('accepts a feature_requested event carrying server-resolved identity', async () => {
+      const res = await POST(
+        makeRequest({
+          events: [
+            {
+              ...VALID_FEATURE_REQUESTED,
+              properties: {
+                ...VALID_FEATURE_REQUESTED.properties,
+                reporterEmail: 'dorian@example.com',
+                reporterName: 'Dorian',
+              },
+            },
+          ],
+        })
+      );
+      expect((await readJson(res)).accepted).toBe(1);
+    });
+
+    it('forwards reporterEmail/reporterName through to PostHog unchanged', async () => {
+      env.POSTHOG_PROJECT_KEY = 'phc_test_key';
+      await POST(
+        makeRequest({
+          events: [
+            {
+              ...VALID_FEEDBACK_SUBMITTED,
+              properties: {
+                ...VALID_FEEDBACK_SUBMITTED.properties,
+                reporterEmail: 'dorian@example.com',
+                reporterName: 'Dorian',
+              },
+            },
+          ],
+        })
+      );
+      const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+      const sent = JSON.parse(init.body as string) as {
+        batch: Array<{ properties: Record<string, unknown> }>;
+      };
+      expect(sent.batch[0].properties.reporterEmail).toBe('dorian@example.com');
+      expect(sent.batch[0].properties.reporterName).toBe('Dorian');
+    });
+
+    it('an event omitting reporterEmail/reporterName still validates (optional fields)', async () => {
+      const res = await POST(makeRequest({ events: [VALID_FEEDBACK_SUBMITTED] }));
+      expect((await readJson(res)).accepted).toBe(1);
+    });
+  });
+
   describe('honeypot (bot trap; DOR-317)', () => {
     beforeEach(() => {
       env.POSTHOG_PROJECT_KEY = 'phc_test_key';

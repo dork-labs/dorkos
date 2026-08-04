@@ -7,6 +7,7 @@ import {
   apikey,
   auditLog,
   deviceCode,
+  feedbackSubmission,
   instance,
   instanceHeartbeats,
   marketplaceInstallEvents,
@@ -17,6 +18,7 @@ import {
 import type {
   InstanceHeartbeat,
   MarketplaceInstallEvent,
+  NewFeedbackSubmission,
   NewInstanceHeartbeat,
   NewMarketplaceInstallEvent,
 } from '../schema';
@@ -385,6 +387,127 @@ describe('telemetry ↔ account isolation (privacy contract)', () => {
         expect(fk.onDelete).toBe('cascade');
       }
     }
+  });
+});
+
+/**
+ * Isolation tests for `feedback_submission` (feedback-pipeline, decision
+ * 260803-205035). Mirrors `audit_log`'s reasoning: `instanceId`,
+ * `reporterEmail`/`reporterName`, and `linearIssueId` must stay plain text,
+ * never foreign keys, so a GDPR-erased user, a rotated Linear issue, or a
+ * regenerated instance id can never cascade-delete or orphan a feedback
+ * record. These assertions are the guard — if any of them fail, someone
+ * turned an opaque reference column into a real FK.
+ */
+describe('feedbackSubmission schema (isolation contract)', () => {
+  const columns = getTableColumns(feedbackSubmission);
+  const columnNames = Object.keys(columns);
+
+  it('exposes exactly the 14 allowed columns', () => {
+    const allowed = new Set([
+      'id',
+      'instanceId',
+      'kind',
+      'message',
+      'contact',
+      'reporterEmail',
+      'reporterName',
+      'route',
+      'surface',
+      'hasScreenshot',
+      'hasTranscript',
+      'linearIssueId',
+      'linearIssueUrl',
+      'status',
+      'shippedVersion',
+      'createdAt',
+      'updatedAt',
+    ]);
+    expect(new Set(columnNames)).toEqual(allowed);
+  });
+
+  it('exposes the underlying snake_case column names', () => {
+    expect(feedbackSubmission.instanceId.name).toBe('instance_id');
+    expect(feedbackSubmission.reporterEmail.name).toBe('reporter_email');
+    expect(feedbackSubmission.reporterName.name).toBe('reporter_name');
+    expect(feedbackSubmission.hasScreenshot.name).toBe('has_screenshot');
+    expect(feedbackSubmission.hasTranscript.name).toBe('has_transcript');
+    expect(feedbackSubmission.linearIssueId.name).toBe('linear_issue_id');
+    expect(feedbackSubmission.linearIssueUrl.name).toBe('linear_issue_url');
+    expect(feedbackSubmission.shippedVersion.name).toBe('shipped_version');
+    expect(feedbackSubmission.createdAt.name).toBe('created_at');
+    expect(feedbackSubmission.updatedAt.name).toBe('updated_at');
+  });
+
+  it('marks the required columns NOT NULL and leaves identity/linear fields optional', () => {
+    expect(feedbackSubmission.instanceId.notNull).toBe(true);
+    expect(feedbackSubmission.kind.notNull).toBe(true);
+    expect(feedbackSubmission.message.notNull).toBe(true);
+    expect(feedbackSubmission.surface.notNull).toBe(true);
+    expect(feedbackSubmission.hasScreenshot.notNull).toBe(true);
+    expect(feedbackSubmission.hasTranscript.notNull).toBe(true);
+    expect(feedbackSubmission.status.notNull).toBe(true);
+    expect(feedbackSubmission.createdAt.notNull).toBe(true);
+    expect(feedbackSubmission.updatedAt.notNull).toBe(true);
+
+    expect(feedbackSubmission.contact.notNull).toBe(false);
+    expect(feedbackSubmission.reporterEmail.notNull).toBe(false);
+    expect(feedbackSubmission.reporterName.notNull).toBe(false);
+    expect(feedbackSubmission.route.notNull).toBe(false);
+    expect(feedbackSubmission.linearIssueId.notNull).toBe(false);
+    expect(feedbackSubmission.linearIssueUrl.notNull).toBe(false);
+    expect(feedbackSubmission.shippedVersion.notNull).toBe(false);
+  });
+
+  it('defaults status to "received"', () => {
+    expect(feedbackSubmission.status.default).toBe('received');
+  });
+
+  it('defaults hasScreenshot and hasTranscript to false', () => {
+    expect(feedbackSubmission.hasScreenshot.default).toBe(false);
+    expect(feedbackSubmission.hasTranscript.default).toBe(false);
+  });
+
+  it('has NO foreign keys at all — instanceId, reporterEmail/reporterName, and linearIssueId are opaque text, never references', () => {
+    // The strongest form of the isolation contract: this table references
+    // nothing, so a `user` erasure or a Linear issue rotation cannot possibly
+    // cascade into or orphan a feedback row.
+    expect(getTableConfig(feedbackSubmission).foreignKeys).toHaveLength(0);
+
+    // The identity/linear-reference columns exist but are plain text.
+    expect(columns.reporterEmail.dataType).toBe('string');
+    expect(columns.reporterName.dataType).toBe('string');
+    expect(columns.linearIssueId.dataType).toBe('string');
+    expect(columns.instanceId.dataType).toBe('string');
+  });
+
+  it('no account-cluster foreign key references feedback_submission', () => {
+    const feedbackTableName = getTableName(feedbackSubmission);
+    for (const table of [user, session, account, verification, apikey, deviceCode, instance]) {
+      const referenced = getTableConfig(table).foreignKeys.map((fk) =>
+        getTableName(fk.reference().foreignTable)
+      );
+      expect(referenced).not.toContain(feedbackTableName);
+    }
+  });
+
+  it('account-cluster tables carry no feedback-shaped join columns', () => {
+    for (const table of [user, session, account, verification, apikey, deviceCode, instance]) {
+      const tableColumns = Object.keys(getTableColumns(table));
+      for (const col of tableColumns) {
+        expect(col.toLowerCase()).not.toContain('feedback');
+      }
+    }
+  });
+
+  it('inferred insert type matches the table shape (compile + smoke check)', () => {
+    const row: NewFeedbackSubmission = {
+      instanceId: '00000000-0000-0000-0000-000000000000',
+      kind: 'bug',
+      message: 'The session list flickers on refresh.',
+      surface: 'cockpit',
+    };
+    expect(row.kind).toBe('bug');
   });
 });
 

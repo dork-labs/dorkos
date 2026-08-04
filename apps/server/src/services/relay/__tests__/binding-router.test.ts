@@ -23,6 +23,7 @@ describe('BindingRouter', () => {
   let mockMeshCore: AdapterMeshCoreLike;
   let mockBindingStore: Partial<BindingStore>;
   let mockRuntimeResolver: RuntimeTypeResolver;
+  let mockBridgeIngest: { ingest: ReturnType<typeof vi.fn> };
   let capturedHandler: ((envelope: Record<string, unknown>) => Promise<void>) | undefined;
   const mockUnsubscribe = vi.fn();
 
@@ -43,6 +44,13 @@ describe('BindingRouter', () => {
 
     mockAgentManager = {
       createSession: vi.fn().mockResolvedValue({ id: 'session-abc' }),
+    };
+
+    // A stand-in for the inbound chat bridge. A `bridge: 'room'` binding routes
+    // here (chats-as-channels §5.1) instead of to session dispatch; most tests
+    // use unbridged bindings and never touch it.
+    mockBridgeIngest = {
+      ingest: vi.fn().mockResolvedValue({ status: 'ingested', entryId: 'e1', joined: false }),
     };
 
     mockMeshCore = {
@@ -66,6 +74,7 @@ describe('BindingRouter', () => {
       meshCore: mockMeshCore,
       relayDir: '/tmp/relay',
       runtimeResolver: mockRuntimeResolver,
+      bridgeIngest: mockBridgeIngest,
     });
     await router.init();
   });
@@ -1282,15 +1291,21 @@ describe('BindingRouter', () => {
       );
     });
 
-    it('does NOT drop a captionless-media envelope on a bridged binding — 1.6 inherits the unfiltered envelope', async () => {
+    it('does NOT drop a captionless-media envelope on a bridged binding — the bridge inherits the unfiltered envelope', async () => {
       vi.mocked(mockBindingStore.resolve!).mockReturnValue(makeBinding({ bridge: 'room' }));
       await capturedHandler!(makeEnvelope(''));
 
-      // Bridged bindings still route through the classic dispatch path today
-      // (task 1.6 has not landed the terminal ChatBridge.ingest branch yet),
-      // so "not gated" is observed the same way "routes normally" is above.
-      expect(mockAgentManager.createSession).toHaveBeenCalledTimes(1);
-      expect(mockRelayCore.publish).toHaveBeenCalledWith(
+      // The terminal ChatBridge.ingest branch (DOR-870) now consumes exactly this
+      // envelope — the empty-content gate let it through, and it reached the
+      // bridge rather than being dropped. It goes NOWHERE near session dispatch.
+      expect(mockBridgeIngest.ingest).toHaveBeenCalledTimes(1);
+      expect(mockBridgeIngest.ingest).toHaveBeenCalledWith(
+        expect.objectContaining({ bridge: 'room' }),
+        expect.objectContaining({ payload: expect.objectContaining({ content: '' }) }),
+        expect.objectContaining({ agentPath: expect.any(String) })
+      );
+      expect(mockAgentManager.createSession).not.toHaveBeenCalled();
+      expect(mockRelayCore.publish).not.toHaveBeenCalledWith(
         expect.stringContaining('relay.agent.'),
         expect.any(Object),
         expect.any(Object)

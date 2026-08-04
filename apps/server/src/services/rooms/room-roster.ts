@@ -218,12 +218,49 @@ export class RoomRoster {
    * gone WOULD have answered to, so typing one of those is answered instead of
    * swallowed (ADR 260801-003051).
    *
+   * **`augment` is the one platform translation a bridged room needs** (spec
+   * §5.4). Telegram addresses a bot as `@botusername`, which is not the agent's
+   * DorkOS handle, so `ingest` threads one extra candidate name for the bound
+   * agent here — sourced from `getMe().username`, never rewritten into the log.
+   * It is **appended after** that agent's own advertised handles, so
+   * `claimNames`' first-claimant-wins rule keeps the agent's real handle
+   * preferred and, across the roster, means the extra name can never displace a
+   * handle another member already claims (A5.5). Matched on the agent's
+   * `agentPath` (its author's natural key), so it lands on the bound agent and
+   * nobody else; a room with no such agent (a ghost, or the wrong path) is left
+   * exactly as it was.
+   *
    * @param roomId - The room.
+   * @param augment - Extra `@`-names for the bound agent, keyed by its
+   *   `agentPath`. Omitted everywhere except a bridged room's inbound path.
    */
-  addressingCandidates(roomId: string): RosterCandidates {
+  addressingCandidates(
+    roomId: string,
+    augment?: { agentPath: string; names: readonly string[] }
+  ): RosterCandidates {
     const members = this.store.listMembers(roomId);
     const authors = this.authors.getMany(members.map((m) => m.authorId));
-    return rosterMentionCandidates(members, authors, this.agents);
+    const candidates = rosterMentionCandidates(members, authors, this.agents);
+    if (!augment || augment.names.length === 0) return candidates;
+
+    // The bound agent's author id, resolved from the path its author is keyed
+    // on — the same key `resolveAgent` mints on, so this matches the one agent
+    // the binding names and not, say, a second agent that happens to render the
+    // same. Absent (a ghost, or a path with no live author here): nothing to
+    // augment, and the roster is returned untouched.
+    const boundAuthorId = [...authors.values()].find(
+      (a) => a.kind === 'agent' && a.naturalKey === augment.agentPath
+    )?.id;
+    if (!boundAuthorId) return candidates;
+
+    return {
+      ...candidates,
+      live: candidates.live.map((candidate) =>
+        candidate.authorId === boundAuthorId
+          ? { ...candidate, names: [...candidate.names, ...augment.names] }
+          : candidate
+      ),
+    };
   }
 
   /**

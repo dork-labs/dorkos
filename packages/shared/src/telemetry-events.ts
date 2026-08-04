@@ -174,6 +174,98 @@ export const MAX_FEEDBACK_CONTACT_LEN = 254;
 /** Maximum length of the optional `route` context prop (e.g. `/agents`). */
 export const MAX_FEEDBACK_ROUTE_LEN = 256;
 
+/** Maximum length of an optional session id attached to a bug/idea submission. */
+export const MAX_FEEDBACK_SESSION_ID_LEN = 128;
+
+/** Maximum length of an optional upload reference id (e.g. a screenshot). */
+export const MAX_FEEDBACK_UPLOAD_ID_LEN = 128;
+
+/** Maximum length of the optional `reporterName` resolved from an authenticated session. */
+export const MAX_REPORTER_NAME_LEN = 128;
+
+/**
+ * Maximum length of an opt-in, client-truncated session transcript excerpt
+ * attached to a bug report (see {@link FeedbackSubmissionSchema}). Generous (a
+ * few dozen turns) but still bounded so a single request can never carry an
+ * unbounded transcript.
+ */
+export const MAX_TRANSCRIPT_LEN = 20_000;
+
+/**
+ * Maximum length of the server-gathered, scrubbed log excerpt attached to a bug
+ * report (see {@link FeedbackDiagnosticsSchema}). Built server-side only — the
+ * client never sends this field, and never reads the log file directly.
+ */
+export const MAX_LOG_EXCERPT_LEN = 8_000;
+
+/**
+ * Maximum number of breadcrumbs a client may attach to a submission (see
+ * {@link FeedbackDiagnosticsSchema}). Matches the client-side ring buffer's
+ * capacity (`apps/client/src/layers/shared/lib/breadcrumbs.ts`).
+ */
+export const MAX_BREADCRUMBS = 50;
+
+/** Maximum length of a single breadcrumb's `message`. */
+export const MAX_BREADCRUMB_MESSAGE_LEN = 300;
+
+/** Maximum number of runtime names a `clientReport` may list. */
+export const MAX_CLIENT_REPORT_RUNTIMES = 16;
+
+/**
+ * One client-side signal captured in the moments before a bug report: a console
+ * error/warning, a TanStack Query/Mutation failure, or a durable-stream
+ * disconnect. Populated by the in-memory ring buffer at
+ * `apps/client/src/layers/shared/lib/breadcrumbs.ts`; never persisted.
+ */
+export const BreadcrumbSchema = z
+  .object({
+    /** ISO-8601 instant the breadcrumb was captured. */
+    at: z.string().datetime(),
+    /** Which signal produced this breadcrumb. */
+    kind: z.enum(['console_error', 'console_warn', 'query_error', 'sse_disconnect']),
+    /** A short, already-truncated description of what happened. */
+    message: z.string().max(MAX_BREADCRUMB_MESSAGE_LEN),
+  })
+  .strict();
+
+/** A single captured {@link BreadcrumbSchema} entry. */
+export type Breadcrumb = z.infer<typeof BreadcrumbSchema>;
+
+/**
+ * The bounded, allowlist-shaped diagnostics bundle a bug report may carry —
+ * mirrors the existing `FeedbackReport`/`sanitizeFlags` pair (`@dorkos/shared/feedback`)
+ * so nothing here can leak more than the GitHub issue path already shows the user.
+ *
+ * `clientReport` is required whenever `diagnostics` is present: it is the same
+ * safe subset {@link import('./feedback.js').sanitizeFlags} already produces for
+ * the GitHub path (version, platform, configured runtimes, on/off flags), just
+ * riding the in-app submission instead of a URL. `breadcrumbs` and
+ * `serverLogExcerpt` are both optional and gathered independently — the former
+ * client-side, the latter server-side (see `getRecentLogExcerpt` in
+ * `apps/server/src/lib/log-excerpt.ts`); the client never sends
+ * `serverLogExcerpt` itself.
+ */
+export const FeedbackDiagnosticsSchema = z
+  .object({
+    /** The safe, allowlisted subset of the client's environment. */
+    clientReport: z
+      .object({
+        version: z.string().max(MAX_STRING_LEN),
+        platform: z.string().max(MAX_STRING_LEN),
+        runtimes: z.array(z.string().max(MAX_STRING_LEN)).max(MAX_CLIENT_REPORT_RUNTIMES),
+        flags: z.record(z.string(), z.union([z.boolean(), z.string().max(MAX_STRING_LEN)])),
+      })
+      .strict(),
+    /** Recent client-side signals leading up to the report, oldest first. */
+    breadcrumbs: z.array(BreadcrumbSchema).max(MAX_BREADCRUMBS).optional(),
+    /** A scrubbed, bounded slice of recent server logs. Server-attached only. */
+    serverLogExcerpt: z.string().max(MAX_LOG_EXCERPT_LEN).optional(),
+  })
+  .strict();
+
+/** A registry-validated {@link FeedbackDiagnosticsSchema} bundle. */
+export type FeedbackDiagnostics = z.infer<typeof FeedbackDiagnosticsSchema>;
+
 /**
  * The kind of feedback a `feedback_submitted` event carries. `idea` is modeled
  * separately as {@link FeatureRequestedProperties} (the `feature_requested`
@@ -190,6 +282,11 @@ export type FeedbackKind = (typeof FEEDBACK_KINDS)[number];
  * registry allows — deliberately submitted content, exempt from the no-PII
  * allowlist that governs the usage events above. `surface` says where the form
  * lived; `route`/`dorkosVersion` are best-effort context (absent from the site).
+ * `reporterEmail`/`reporterName` are the requester's AUTHENTICATED identity,
+ * resolved server-side from their verified session (ADR 260803-205037) — never
+ * from a client-supplied field, and kept separate from `contact` ("typed by the
+ * user" vs "resolved from their account") so downstream consumers can tell the
+ * two apart.
  */
 export const FeedbackSubmittedProperties = z
   .object({
@@ -199,6 +296,8 @@ export const FeedbackSubmittedProperties = z
     surface: z.enum(['cockpit', 'site']),
     route: z.string().min(1).max(MAX_FEEDBACK_ROUTE_LEN).optional(),
     dorkosVersion: z.string().min(1).max(MAX_STRING_LEN).optional(),
+    reporterEmail: z.string().min(1).max(MAX_FEEDBACK_CONTACT_LEN).optional(),
+    reporterName: z.string().min(1).max(MAX_REPORTER_NAME_LEN).optional(),
   })
   .strict();
 
@@ -206,7 +305,8 @@ export const FeedbackSubmittedProperties = z
  * Properties for `feature_requested`: the same shape as
  * {@link FeedbackSubmittedProperties} minus `kind` (the event name already says
  * this is a feature idea). `message`/`contact` carry the same volunteered-text
- * exemption.
+ * exemption; `reporterEmail`/`reporterName` carry the same server-resolved
+ * identity exemption.
  */
 export const FeatureRequestedProperties = z
   .object({
@@ -215,6 +315,8 @@ export const FeatureRequestedProperties = z
     surface: z.enum(['cockpit', 'site']),
     route: z.string().min(1).max(MAX_FEEDBACK_ROUTE_LEN).optional(),
     dorkosVersion: z.string().min(1).max(MAX_STRING_LEN).optional(),
+    reporterEmail: z.string().min(1).max(MAX_FEEDBACK_CONTACT_LEN).optional(),
+    reporterName: z.string().min(1).max(MAX_REPORTER_NAME_LEN).optional(),
   })
   .strict();
 
@@ -265,11 +367,20 @@ export type FeedbackEvent = z.infer<typeof FeedbackEventSchema>;
  * The client→server feedback submission payload: what a cockpit form hands to
  * {@link import('./transport.js').Transport.sendFeedback} (and what the server
  * `POST /api/feedback` route validates). The server fills the rest — `surface`,
- * `distinctId`, `timestamp`, `dorkosVersion` — so a producer only ever describes
- * *what the person wrote*.
+ * `distinctId`, `timestamp`, `dorkosVersion`, and (when a session is verified)
+ * the reporter's identity — so a producer only ever describes *what the person
+ * wrote and observed*.
  *
  * `kind` here includes `idea` (which maps to a `feature_requested` event); the
- * two non-idea kinds map to `feedback_submitted`.
+ * two non-idea kinds map to `feedback_submitted`. The fields beyond
+ * `kind`/`message`/`contact`/`route` are new plumbing (feedback-pipeline spec
+ * Part 1): `sessionId` names the session a transcript excerpt would come from;
+ * `diagnostics` is the bounded client/server diagnostics bundle; `transcriptExcerpt`
+ * and `screenshotUploadId` are opt-in attachments the dialog (a later PR) lets the
+ * user preview and remove before sending; `includeServerLogs` is how the client
+ * asks the server to gather and attach a scrubbed log excerpt (see
+ * {@link FeedbackDiagnosticsSchema.serverLogExcerpt}) — the client never reads
+ * the log file itself.
  */
 export const FeedbackSubmissionSchema = z
   .object({
@@ -277,16 +388,23 @@ export const FeedbackSubmissionSchema = z
     message: z.string().min(1).max(MAX_FEEDBACK_MESSAGE_LEN),
     contact: z.string().min(1).max(MAX_FEEDBACK_CONTACT_LEN).optional(),
     route: z.string().min(1).max(MAX_FEEDBACK_ROUTE_LEN).optional(),
+    sessionId: z.string().min(1).max(MAX_FEEDBACK_SESSION_ID_LEN).optional(),
+    diagnostics: FeedbackDiagnosticsSchema.optional(),
+    transcriptExcerpt: z.string().max(MAX_TRANSCRIPT_LEN).optional(),
+    screenshotUploadId: z.string().min(1).max(MAX_FEEDBACK_UPLOAD_ID_LEN).optional(),
+    includeServerLogs: z.boolean().optional(),
   })
   .strict();
 
-/** The `{ kind, message, contact?, route? }` half a client submits. */
+/** The submission payload a client sends to `POST /api/feedback`. */
 export type FeedbackSubmission = z.infer<typeof FeedbackSubmissionSchema>;
 
 /** The kind selectable in a feedback form: the two feedback kinds plus `idea`. */
 export type FeedbackSubmissionKind = FeedbackSubmission['kind'];
 
-/** Envelope context the sender fills in around a {@link FeedbackSubmission}. */
+/**
+ * Envelope context the sender fills in around a {@link FeedbackSubmission}.
+ */
 export interface FeedbackEventContext {
   /** Where the form lived. */
   surface: 'cockpit' | 'site';
@@ -296,6 +414,19 @@ export interface FeedbackEventContext {
   timestamp: string;
   /** Emitting DorkOS build, when known (the cockpit has one; the site does not). */
   dorkosVersion?: string;
+  /**
+   * The requester's identity, resolved SERVER-SIDE from their verified session —
+   * never from a client-supplied field (ADR 260803-205037). `undefined` when
+   * auth is off or no session exists, which is the common case today.
+   */
+  identity?: {
+    /** The Better Auth user id that owns the session. Not sent in the event. */
+    userId: string;
+    /** Attached as `reporterEmail`, when present. */
+    email: string;
+    /** Attached as `reporterName`, when present. */
+    name: string;
+  };
 }
 
 /**
@@ -305,18 +436,27 @@ export interface FeedbackEventContext {
  * the same shape: `idea` → `feature_requested`; `feedback`/`bug` →
  * `feedback_submitted` (carrying `kind`).
  *
+ * Only `message`/`contact`/`route`/`dorkosVersion`/`reporterEmail`/`reporterName`
+ * ride the built event — `sessionId`, `diagnostics`, `transcriptExcerpt`,
+ * `screenshotUploadId`, and `includeServerLogs` are NOT part of the PostHog wire
+ * shape (they have no property slot on {@link FeedbackSubmittedProperties} /
+ * {@link FeatureRequestedProperties}); this stays the narrow metrics event, not
+ * the durable record the site's richer intake route (a later PR) builds from the
+ * full submission.
+ *
  * The result is NOT validated here (callers that need a guarantee run it through
  * {@link FeedbackEventSchema}); this is a pure shape builder.
  *
- * @param submission - The user-typed `{ kind, message, contact?, route? }`.
- * @param context - The `surface`/`distinctId`/`timestamp`/`dorkosVersion` envelope.
+ * @param submission - The user-typed `{ kind, message, contact?, route? }` (plus
+ *   the newer opt-in fields, ignored by this builder).
+ * @param context - The `surface`/`distinctId`/`timestamp`/`dorkosVersion`/`identity` envelope.
  */
 export function buildFeedbackEvent(
   submission: FeedbackSubmission,
   context: FeedbackEventContext
 ): FeedbackEvent {
   const { kind, message, contact, route } = submission;
-  const { surface, distinctId, timestamp, dorkosVersion } = context;
+  const { surface, distinctId, timestamp, dorkosVersion, identity } = context;
 
   // Only include optional props when present so the strict schema is satisfied
   // (an explicit `undefined` key would still fail `.strict()` on some paths).
@@ -326,6 +466,8 @@ export function buildFeedbackEvent(
     ...(contact ? { contact } : {}),
     ...(route ? { route } : {}),
     ...(dorkosVersion ? { dorkosVersion } : {}),
+    ...(identity?.email ? { reporterEmail: identity.email } : {}),
+    ...(identity?.name ? { reporterName: identity.name } : {}),
   };
 
   if (kind === 'idea') {

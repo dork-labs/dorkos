@@ -304,6 +304,30 @@ export function buildBridgeSecondAgentRefusedNotice(agentName: string): RoomEntr
 }
 
 /**
+ * The durable `notice` a room writes when `ingest` refuses an inbound message
+ * past the per-chat ingest ceiling (chats-as-channels spec §5.2 step 2, A5.9).
+ *
+ * **`ingest` refuses; it never trims.** The room log is the audit trail this
+ * feature offers in exchange for letting strangers reach a model (§9.4), and
+ * dropping the oldest entry to make room for a new one would corrupt the very
+ * record the ceiling exists to protect. The bound agent is already protected by
+ * the turn budget's two ceilings; this one protects the log and the disk, and it
+ * says so in a plain line rather than going silent — a message that vanished with
+ * no explanation is the failure `.claude/rules/room-conduct.md` forbids.
+ *
+ * Damped by the caller per `(room, reason)`, so a sustained burst produces one
+ * line, not one per refused message.
+ */
+export function buildBridgeRateLimitedNotice(): RoomEntryBody {
+  return {
+    text:
+      'Messages are arriving from the chat faster than this channel can record them, ' +
+      'so some were skipped here. This protects the channel; the chat itself still has them.',
+    notice: 'bridge_rate_limited',
+  };
+}
+
+/**
  * The durable `notice` a room writes when its bridge is switched off — the chat
  * is no longer connected (chats-as-channels spec §3.5). The room is archived
  * right after this line lands, so it is the last thing the log says: a person

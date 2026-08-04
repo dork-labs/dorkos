@@ -16,6 +16,7 @@ import {
   resolveApiBaseUrl,
   reportClientError,
   installClientErrorHandlers,
+  installBreadcrumbHandlers,
   isDesktopShell,
   registerLinkNavigator,
   registerTabOpener,
@@ -368,6 +369,12 @@ initializeExtensions();
 // rejections to the server, which scrubs and (only when opted in) forwards them
 // to PostHog Error Tracking. Deduped per session; never throws or loops.
 installClientErrorHandlers(transport);
+
+// Bug-report breadcrumbs (feedback-pipeline spec Part 1): wrap console.error/
+// console.warn so a bug report can carry "what just happened" in-memory only,
+// never persisted. QueryCache/MutationCache and the durable session stream
+// record their own breadcrumbs directly (query-client.ts, stream-manager.ts).
+installBreadcrumbHandlers();
 
 ReactDOM.createRoot(document.getElementById('root')!, {
   onCaughtError: (error, errorInfo) => {
