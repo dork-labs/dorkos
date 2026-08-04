@@ -108,6 +108,15 @@ export interface BindingSubsystemDeps {
    */
   operatorAuthorId?: () => string;
   /**
+   * The REAL name to prefix an operator-authored post with in a bridged chat
+   * (§6.7), or `null` when nothing is configured, read per call. Threaded
+   * straight to {@link ChatBridgeDeliveryDeps.operatorDisplayName} — see its
+   * doc for why this must never be the author registry's own `displayName`
+   * (DOR-899). Optional: a caller that omits it gets `deliver.ts`'s neutral
+   * fallback label, never `'You'`.
+   */
+  operatorDisplayName?: () => string | null;
+  /**
    * Refresh a bridged room's `visibility` badge from the platform, right after
    * it is created — the bridge-create half of chats-as-channels §8's refresh
    * cadence (task 1.13; the adapter-start/reconnect half lives in
@@ -396,6 +405,7 @@ export class BindingSubsystem {
             lifecycle: bridgeLifecycle,
             resolveSubject: deps.resolveBridgeSubject,
             operatorAuthorId: deps.operatorAuthorId,
+            operatorDisplayName: deps.operatorDisplayName,
           });
           const catchUp = new BridgeCatchUp({
             bridges: deps.roomBridges,
