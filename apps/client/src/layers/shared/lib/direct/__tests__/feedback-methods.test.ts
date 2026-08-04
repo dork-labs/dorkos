@@ -77,4 +77,9 @@ describe('createDirectFeedbackMethods', () => {
 
     expect(result).toEqual({ ok: false });
   });
+
+  it('listMyFeedback resolves an empty list — no site-backed store to read in the embedded surface', async () => {
+    const { listMyFeedback } = createDirectFeedbackMethods();
+    await expect(listMyFeedback()).resolves.toEqual([]);
+  });
 });

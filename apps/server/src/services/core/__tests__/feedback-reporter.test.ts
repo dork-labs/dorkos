@@ -16,7 +16,7 @@ vi.mock('../auth/index.js', () => ({
   getUserById: vi.fn(),
 }));
 
-import { sendFeedback, resolveFeedbackIdentity } from '../feedback-reporter.js';
+import { sendFeedback, resolveFeedbackIdentity, listMyFeedback } from '../feedback-reporter.js';
 import { getUserById } from '../auth/index.js';
 
 const mockGetUserById = vi.mocked(getUserById);
@@ -210,5 +210,63 @@ describe('resolveFeedbackIdentity', () => {
 
     expect(identity?.email).toBe('real@example.com');
     expect(identity?.name).toBe('Real Name');
+  });
+});
+
+describe('listMyFeedback', () => {
+  const ITEMS = [
+    {
+      id: 'row-1',
+      kind: 'bug' as const,
+      message: 'it broke',
+      status: 'in_progress' as const,
+      createdAt: '2026-08-01T00:00:00.000Z',
+    },
+  ];
+
+  it('reads this install own instanceId and forwards it as a query param', async () => {
+    const fetchImpl = vi.fn(async (url: string | URL | Request) => {
+      expect(String(url)).toMatch(/\/api\/feedback\/mine\?instanceId=[0-9a-f-]{36}$/);
+      return new Response(JSON.stringify(ITEMS), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const result = await listMyFeedback({
+      dorkHome,
+      cloudUrl: 'https://example.test',
+      fetchImpl,
+    });
+
+    expect(result).toEqual(ITEMS);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('strips trailing slashes from the cloud URL before building the request', async () => {
+    const fetchImpl = vi.fn(async (url: string | URL | Request) => {
+      expect(String(url)).toMatch(/^https:\/\/example\.test\/api\/feedback\/mine\?/);
+      return new Response('[]', { status: 200 });
+    }) as unknown as typeof fetch;
+
+    await listMyFeedback({ dorkHome, cloudUrl: 'https://example.test///', fetchImpl });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('throws (never swallows) on a non-OK response — this is a read the UI must show an error for', async () => {
+    const fetchImpl = vi.fn(
+      async () => new Response(null, { status: 500 })
+    ) as unknown as typeof fetch;
+
+    await expect(
+      listMyFeedback({ dorkHome, cloudUrl: 'https://example.test', fetchImpl })
+    ).rejects.toThrow(/500/);
+  });
+
+  it('throws (never swallows) on a network error', async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new Error('network down');
+    }) as unknown as typeof fetch;
+
+    await expect(
+      listMyFeedback({ dorkHome, cloudUrl: 'https://example.test', fetchImpl })
+    ).rejects.toThrow('network down');
   });
 });
