@@ -420,6 +420,124 @@ describe('BridgeSessionAdopter + BridgeLifecycle.bridge (chats-as-channels §7.1
     ).toHaveLength(1);
   });
 
+  describe('a torn fresh-mint failure leaves a live, self-healing orphan — never archives (DOR-915)', () => {
+    /**
+     * A bindings writer whose flip always succeeds (isolating adopt as the sole
+     * failure), recording every flip.
+     */
+    function healthyBindings() {
+      return bindingsFake();
+    }
+
+    it('a FRESH-create adopt throw leaves the room LIVE (not archived), the binding off, and propagates', async () => {
+      const bindings = healthyBindings();
+      // A candidate whose adoption throws — a failure AFTER the room + bridge row
+      // commit but BEFORE the flip. `createBridgedRoom` already minted the room.
+      const { adopter } = makeAdopter({ candidate: { sessionId: 'sess-live' } });
+      vi.spyOn(adopter, 'adoptAtBridge').mockRejectedValue(new Error('adopt exploded'));
+      const lifecycle = makeLifecycle(adopter, bindings);
+
+      await expect(lifecycle.bridge(createInput())).rejects.toThrow('adopt exploded');
+
+      // The just-minted room is LIVE, not archived, and its bridge row is
+      // un-archived — the deliberate DOR-915 choice: archiving would make the
+      // retry below throw CHAT_ALREADY_BRIDGED instead of healing.
+      const bridge = harness.bridges.findBridgeByChat(ADAPTER, CHAT_ID);
+      expect(bridge).toBeTruthy();
+      expect(bridge!.archivedAt).toBeNull();
+      expect(harness.store.getRoom(bridge!.roomId)?.archived).toBe(false);
+      // The flag flip is the last write, and it never ran — the binding is off.
+      expect(bindings.rows.get(BINDING_ID)).toMatchObject({ bridge: 'off', roomId: null });
+    });
+
+    it('a retry via bridge() replays the surviving room and heals — same room id, adopted:false (DOR-875 path)', async () => {
+      const bindings = healthyBindings();
+      const { adopter } = makeAdopter({ candidate: { sessionId: 'sess-live' } });
+      // Adopt throws on the first (fresh) attempt; the replay branch never calls
+      // it again, so a mock that always rejects proves the retry skips adopt.
+      const adoptSpy = vi
+        .spyOn(adopter, 'adoptAtBridge')
+        .mockRejectedValue(new Error('adopt exploded'));
+      const lifecycle = makeLifecycle(adopter, bindings);
+
+      await expect(lifecycle.bridge(createInput())).rejects.toThrow('adopt exploded');
+      const orphan = harness.bridges.findBridgeByChat(ADAPTER, CHAT_ID)!.roomId;
+
+      // The retry: createBridgedRoom finds the un-archived bridge row, replays
+      // (created:false), skips adopt, and re-flips. Heals over the SAME room.
+      const { id, adopted } = await lifecycle.bridge(createInput());
+      expect(id).toBe(orphan);
+      expect(adopted).toBe(false);
+      expect(adoptSpy).toHaveBeenCalledTimes(1); // only the first, fresh attempt
+      expect(harness.store.getRoom(id)?.archived).toBe(false);
+      expect(bindings.rows.get(BINDING_ID)).toMatchObject({ bridge: 'room', roomId: id });
+    });
+
+    it('a re-bridge of the same chat also reuses the surviving room (DOR-869 path)', async () => {
+      const bindings = healthyBindings();
+      const { adopter } = makeAdopter({ candidate: { sessionId: 'sess-live' } });
+      vi.spyOn(adopter, 'adoptAtBridge').mockRejectedValue(new Error('adopt exploded'));
+      const lifecycle = makeLifecycle(adopter, bindings);
+
+      await expect(lifecycle.bridge(createInput())).rejects.toThrow('adopt exploded');
+      const orphan = harness.bridges.findBridgeByChat(ADAPTER, CHAT_ID)!.roomId;
+
+      const back = await lifecycle.rebridge({
+        adapterId: ADAPTER,
+        chatId: CHAT_ID,
+        bindingId: BINDING_ID,
+        agentPath: AGENT_PATH,
+      });
+      expect(back.id).toBe(orphan);
+      expect(harness.store.getRoom(back.id)?.archived).toBe(false);
+      expect(bindings.rows.get(BINDING_ID)).toMatchObject({ bridge: 'room', roomId: orphan });
+    });
+
+    it('a flip that throws on a REPLAY (created:false) does NOT archive the surviving room, and a later retry re-flips', async () => {
+      // Flips throw on the first TWO calls (the torn fresh flip, then a torn
+      // replay flip), then succeed — so the middle attempt exercises a throw
+      // inside the replay branch specifically.
+      const rows = new Map<string, LifecycleBinding>([
+        [
+          BINDING_ID,
+          { id: BINDING_ID, adapterId: ADAPTER, chatId: CHAT_ID, bridge: 'off', roomId: null },
+        ],
+      ]);
+      let flips = 0;
+      const update = vi.fn(
+        async (id: string, updates: { bridge?: 'off' | 'room'; roomId?: string | null }) => {
+          flips += 1;
+          if (flips <= 2) throw new Error(`binding write failed (${flips})`);
+          const next = { ...rows.get(id)!, ...updates };
+          rows.set(id, next);
+          return next;
+        }
+      );
+      const bindings = { rows, getById: (id: string) => rows.get(id), update };
+      const { adopter } = makeAdopter({ candidate: undefined }); // fresh path, no adopt throw
+      const lifecycle = makeLifecycle(adopter, bindings);
+
+      // Attempt 1: fresh create (created:true), flip #1 throws — room minted, live.
+      await expect(lifecycle.bridge(createInput())).rejects.toThrow('binding write failed (1)');
+      const orphan = harness.bridges.findBridgeByChat(ADAPTER, CHAT_ID)!.roomId;
+      expect(harness.store.getRoom(orphan)?.archived).toBe(false);
+
+      // Attempt 2: REPLAY (created:false), flip #2 throws inside the replay branch.
+      await expect(lifecycle.bridge(createInput())).rejects.toThrow('binding write failed (2)');
+      // The replay-branch throw archived NOTHING — the room is still live and the
+      // bridge row un-archived, so a further retry can still reach the replay.
+      expect(harness.store.getRoom(orphan)?.archived).toBe(false);
+      expect(harness.bridges.findBridgeByChat(ADAPTER, CHAT_ID)!.archivedAt).toBeNull();
+      expect(rows.get(BINDING_ID)!.bridge).toBe('off');
+
+      // Attempt 3: REPLAY, flip #3 succeeds — heals over the same room.
+      const { id, adopted } = await lifecycle.bridge(createInput());
+      expect(id).toBe(orphan);
+      expect(adopted).toBe(false);
+      expect(rows.get(BINDING_ID)).toMatchObject({ bridge: 'room', roomId: orphan });
+    });
+  });
+
   describe('the bridge-create half of §8 visibility refresh (task 1.13)', () => {
     it('calls refreshVisibility with the adapter it just bridged', async () => {
       const bindings = bindingsFake();
