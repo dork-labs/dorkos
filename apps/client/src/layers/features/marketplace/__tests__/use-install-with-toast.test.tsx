@@ -23,6 +23,15 @@ vi.mock('@/layers/entities/marketplace', () => ({
   useInstallPackage: vi.fn(),
 }));
 
+// Spy on router navigation so the adapter deep-link toast action can be clicked
+// and its target asserted. The real `useOpenConnections` chain runs on top of
+// this — `useSafeNavigate` → `useNavigate()` resolves to `mockNavigate`.
+const mockNavigate = vi.fn();
+vi.mock('@tanstack/react-router', async (importActual) => {
+  const actual = await importActual<typeof import('@tanstack/react-router')>();
+  return { ...actual, useNavigate: () => mockNavigate };
+});
+
 const mockLoading = vi.fn(() => 'toast-id-abc');
 const mockSuccess = vi.fn();
 const mockError = vi.fn();
@@ -255,8 +264,20 @@ describe('useInstallWithToast', () => {
         });
       });
 
-      const opts = mockSuccess.mock.calls[0][1] as { action?: { label: string } };
+      const opts = mockSuccess.mock.calls[0][1] as {
+        action?: { label: string; onClick: () => void };
+      };
       expect(opts.action?.label).toBe('Open Messaging');
+
+      // Clicking navigates to the Connections page, Messaging region.
+      expect(mockNavigate).not.toHaveBeenCalled();
+      act(() => {
+        opts.action?.onClick();
+      });
+      expect(mockNavigate).toHaveBeenCalledWith({
+        to: '/connections',
+        search: { region: 'messaging' },
+      });
     });
 
     it('deep-links a connector-refinement adapter to the Accounts region', () => {
@@ -275,8 +296,20 @@ describe('useInstallWithToast', () => {
         });
       });
 
-      const opts = mockSuccess.mock.calls[0][1] as { action?: { label: string } };
+      const opts = mockSuccess.mock.calls[0][1] as {
+        action?: { label: string; onClick: () => void };
+      };
       expect(opts.action?.label).toBe('Open Accounts');
+
+      // Clicking navigates to the Connections page, Accounts region.
+      expect(mockNavigate).not.toHaveBeenCalled();
+      act(() => {
+        opts.action?.onClick();
+      });
+      expect(mockNavigate).toHaveBeenCalledWith({
+        to: '/connections',
+        search: { region: 'accounts' },
+      });
     });
   });
 

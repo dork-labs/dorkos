@@ -25,11 +25,10 @@
  * @module features/marketplace/model/use-install-with-toast
  */
 import { useCallback } from 'react';
-import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 
 import { humanizePackageName } from '@/layers/shared/lib';
-import { useAppStore } from '@/layers/shared/model';
+import { useAppStore, useOpenConnections } from '@/layers/shared/model';
 import { useInstallPackage, type InstallPackageArgs } from '@/layers/entities/marketplace';
 import type { InstallResult } from '@dorkos/shared/marketplace-schemas';
 import { adapterBridge } from '../lib/adapter-bridge';
@@ -126,15 +125,10 @@ function successToastOptions(
  */
 export function useInstallWithToast() {
   const install = useInstallPackage();
-  const navigate = useNavigate();
+  // Typed `(region) => void` that centralizes the /connections deep-link and
+  // no-ops in the router-less Obsidian embed. A region typo fails to compile.
+  const goToRegion = useOpenConnections();
   const { mutate: baseMutate, mutateAsync: baseMutateAsync } = install;
-
-  const goToRegion = useCallback(
-    (region: 'messaging' | 'accounts') => {
-      void navigate({ to: '/connections', search: { region } as never });
-    },
-    [navigate]
-  );
 
   const mutate = useCallback(
     (args: InstallPackageArgs) => {
