@@ -49,6 +49,7 @@ export {
 } from './bridge-store.js';
 export {
   ChatBridgeDelivery,
+  STRANDED_OUTBOUND_REF_THRESHOLD_MS,
   type ChatBridgeDeliveryDeps,
   type DeliverOutcome,
   type DeliverEntryReader,

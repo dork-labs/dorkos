@@ -40,6 +40,20 @@
  * a crash cannot reach that rollback, so its ref survives and idempotence
  * suppresses the retry.
  *
+ * **The suppressed retry must still not be SILENT (spec §10.1, DOR-898).** A
+ * crash-stranded null-id ref is invisible to {@link BridgeStore.listUndeliveredAboveSeq}
+ * — it has a ref, full stop, so the catch-up scan's candidate query excludes
+ * it exactly like a delivered entry — and nothing else in the running process
+ * ever revisits it. {@link ChatBridgeDelivery.sweepStrandedRefs} is the fix,
+ * run once at startup: it finds every null-id outbound ref old enough that it
+ * cannot still be a legitimate in-flight retry, and posts the same
+ * `bridge_undelivered` notice the exhausted-retry path already writes. It
+ * deliberately does NOT roll the ref back or re-send — the crashed send may
+ * have actually reached the platform before the process died, and re-sending
+ * on that guess risks the one outcome this whole design exists to avoid, a
+ * message a person sees twice. The notice makes the stranded case legible; a
+ * human (or a later explicit action) decides what happens to the message.
+ *
  * @module server/services/relay/chat-bridge/deliver
  */
 import type { PublishOptions, PublishResult } from '@dorkos/relay';
@@ -79,6 +93,18 @@ const NOTICE_DAMP_MS = 10 * 60_000;
  * but still spends against this budget.
  */
 const DEFAULT_RETRY_BACKOFF_MS: readonly number[] = [2_000, 30_000];
+
+/**
+ * How old a null-platform-id outbound ref must be before
+ * {@link ChatBridgeDelivery.sweepStrandedRefs} (DOR-898, spec §10.1's crash
+ * divergence) treats it as a stranded crash victim rather than a plausibly
+ * in-flight retry. The retry ladder itself is capped at "≤ 2 min" (spec
+ * §10.1) — `attemptDelivery` settles every send (delivered, blocked, rolled
+ * back, or archived) well inside that ceiling — so this threshold adds a wide
+ * margin on top of it. A ref this old was never going to settle; the process
+ * that owned it is gone.
+ */
+export const STRANDED_OUTBOUND_REF_THRESHOLD_MS = 10 * 60_000;
 
 /**
  * The wire label an operator-authored post is prefixed with (spec §6.7) when
@@ -276,6 +302,42 @@ export class ChatBridgeDelivery {
    */
   setRecoveryHook(onRecovered: (roomId: string) => void): void {
     this.onRecovered = onRecovered;
+  }
+
+  /**
+   * The startup stranded-ref reconciliation (spec §10.1's crash divergence,
+   * DOR-898). Run once, alongside {@link BridgeCatchUp.scanAll} (see
+   * `binding-subsystem.ts`) — the same moment in the boot sequence, because a
+   * process that starts back up is exactly when a PRIOR process's crash
+   * becomes visible.
+   *
+   * Finds every outbound ref whose platform id is still null and old enough
+   * ({@link STRANDED_OUTBOUND_REF_THRESHOLD_MS}) that it cannot still be a
+   * legitimate in-flight write-before-send, and posts one damped
+   * `bridge_undelivered` notice per stranded ref — the SAME notice
+   * {@link ChatBridgeDelivery.attemptDelivery}'s exhausted-retry path already
+   * writes, so a person reads one consistent message whether their entry was
+   * refused by the retry ladder or orphaned by a crash.
+   *
+   * **Deliberately does not delete the ref or re-send the entry.** The
+   * crashed process may have completed the platform call before it died —
+   * write-before-send means the ref existing tells us nothing about whether
+   * the send landed. Rolling the ref back would return the entry to the
+   * catch-up scan's candidate set and re-deliver it, and if the crashed send
+   * DID land, that is a duplicate: a message the person on the other end sees
+   * twice, with no way to recall it. That is the one failure mode the whole
+   * write-before-send design (spec §6.3) exists to avoid, so this sweep never
+   * risks it. The notice is the whole fix — it turns a silent, permanent
+   * stall into a visible one, and leaves the decision (resend, correct, or
+   * let it go) to a human.
+   */
+  async sweepStrandedRefs(): Promise<void> {
+    const cutoff = new Date(this.now() - STRANDED_OUTBOUND_REF_THRESHOLD_MS).toISOString();
+    const stale = this.deps.bridges.listStaleNullOutboundRefs(cutoff);
+    for (const ref of stale) {
+      const entry = this.deps.entries.getEntryById(ref.roomId, ref.entryId);
+      this.postUndeliveredNotice(ref.roomId, entry?.body.text ?? '(message unavailable)');
+    }
   }
 
   /**
