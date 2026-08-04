@@ -66,6 +66,11 @@ vi.mock('@/layers/features/top-nav', () => ({
   AgentsHeader: () => <div data-testid="agents-header">Agents</div>,
   ActivityHeader: () => <div data-testid="activity-header">Activity</div>,
   TasksHeader: () => <div data-testid="tasks-header">Tasks</div>,
+  WorkspacesHeader: () => <div data-testid="workspaces-header">Workspaces</div>,
+  ConnectionsHeader: () => <div data-testid="connections-header">Connections</div>,
+  FeedbackRequestsHeader: () => (
+    <div data-testid="feedback-requests-header">Feedback &amp; requests</div>
+  ),
 }));
 
 vi.mock('@/layers/widgets/app-layout', () => ({
@@ -548,6 +553,31 @@ describe('AppShell slot integration', () => {
       mockPathname = '/channels';
       renderAppShell();
       expect(screen.getByTestId('channels-header')).toHaveTextContent('Channels');
+    });
+
+    // DOR-919 (sibling of DOR-587): /workspaces, /connections, and
+    // /feedback-requests had no case in the route switch either, so all three
+    // fell through to `default` and rendered DashboardHeader — "Dashboard"
+    // over a page whose body said something else.
+    it('renders WorkspacesHeader at /workspaces, not the dashboard header', () => {
+      mockPathname = '/workspaces';
+      renderAppShell();
+      expect(screen.getByTestId('workspaces-header')).toBeInTheDocument();
+      expect(screen.queryByTestId('dashboard-header')).not.toBeInTheDocument();
+    });
+
+    it('renders ConnectionsHeader at /connections, not the dashboard header', () => {
+      mockPathname = '/connections';
+      renderAppShell();
+      expect(screen.getByTestId('connections-header')).toBeInTheDocument();
+      expect(screen.queryByTestId('dashboard-header')).not.toBeInTheDocument();
+    });
+
+    it('renders FeedbackRequestsHeader at /feedback-requests, not the dashboard header', () => {
+      mockPathname = '/feedback-requests';
+      renderAppShell();
+      expect(screen.getByTestId('feedback-requests-header')).toBeInTheDocument();
+      expect(screen.queryByTestId('dashboard-header')).not.toBeInTheDocument();
     });
   });
 

@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef } from 'react';
 import {
   Activity,
   Bot,
-  FolderTree,
+  Cable,
+  FolderGit2,
+  Inbox,
   LayoutDashboard,
   ListTodo,
   MessageSquare,
@@ -29,11 +31,17 @@ const ROUTE_ICONS: Record<string, LucideIcon> = {
   // Plural on purpose: /session's single-bubble icon is taken, and two tabs
   // that read alike should at least not look alike (DOR-587 review).
   '/channels': MessagesSquare,
+  // Same icon the sidebar nav and the /connections page already use for this
+  // route (DOR-919).
+  '/connections': Cable,
+  // Same icon the help menu's "Feedback & requests" entry already uses
+  // (DOR-919).
+  '/feedback-requests': Inbox,
   '/marketplace': Store,
   '/marketplace/sources': Store,
   '/session': MessageSquare,
   '/tasks': ListTodo,
-  '/workspaces': FolderTree,
+  '/workspaces': FolderGit2,
 };
 
 /**
