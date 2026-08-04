@@ -16,7 +16,12 @@ import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import { TransportProvider } from '@/layers/shared/model';
 import { createQueryClientConfig } from '@/layers/shared/lib/query-client';
-import { useArchiveRoom, useRenameRoom, useUnarchiveRoom } from '../model/use-room-settings';
+import {
+  useArchiveRoom,
+  useRenameRoom,
+  useSetDeliverNotices,
+  useUnarchiveRoom,
+} from '../model/use-room-settings';
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
@@ -113,6 +118,17 @@ describe('room settings failures', () => {
 
     await waitFor(() =>
       expect(transport.updateRoom).toHaveBeenCalledWith('room-1', { archived: true })
+    );
+  });
+
+  it('sets the per-bridge deliver-notices override on the room (chats-as-channels §6.2)', async () => {
+    const transport = createMockTransport({ updateRoom: vi.fn().mockResolvedValue({}) });
+    const { result } = renderHook(() => useSetDeliverNotices(), { wrapper: wrapperFor(transport) });
+
+    result.current.mutate({ roomId: 'room-1', deliverNotices: true });
+
+    await waitFor(() =>
+      expect(transport.updateRoom).toHaveBeenCalledWith('room-1', { deliverNotices: true })
     );
   });
 });

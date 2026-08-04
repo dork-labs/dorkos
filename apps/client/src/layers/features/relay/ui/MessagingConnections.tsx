@@ -31,6 +31,7 @@ import { useRegisteredAgents } from '@/layers/entities/mesh';
 import { getAgentDisplayName } from '@/layers/shared/lib';
 import type { AdapterBinding, AdapterManifest } from '@dorkos/shared/relay-schemas';
 import { AdapterCard } from './adapter/AdapterCard';
+import { BindingBridgeSection } from './BindingBridgeSection';
 import { AdapterEventLog } from './AdapterEventLog';
 import { CatalogCard } from './CatalogCard';
 import { AdapterSetupWizard } from './AdapterSetupWizard';
@@ -353,6 +354,15 @@ export function MessagingConnections({ enabled }: MessagingConnectionsProps) {
           onDelete={dialogs.bindingTarget.mode === 'edit' ? handleBindingDelete : undefined}
           bindingId={dialogs.bindingTarget.binding?.id}
           isPending={createBinding.isPending || updateBinding.isPending || deleteBinding.isPending}
+          bridged={dialogs.bindingTarget.binding?.bridge === 'room'}
+          bridgeSlot={
+            dialogs.bindingTarget.binding ? (
+              <BindingBridgeSection
+                binding={dialogs.bindingTarget.binding}
+                onDone={() => dialogs.closeBinding()}
+              />
+            ) : undefined
+          }
         />
       )}
 
