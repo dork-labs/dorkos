@@ -281,8 +281,10 @@ describe('AdapterSetupWizard — fields no setup step names', () => {
     await advanceToConfigure();
 
     expect(screen.queryByRole('heading', { name: 'Advanced' })).not.toBeInTheDocument();
-    expect(screen.getByLabelText('Inbound Subject')).toBeInTheDocument();
-    expect(screen.getByLabelText('Outbound URL')).toBeInTheDocument();
+    // Required labels carry a real asterisk node since DOR-651, so the lookup
+    // anchors a regex that tolerates it.
+    expect(screen.getByLabelText(/^Inbound Subject\*?$/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Outbound URL\*?$/)).toBeInTheDocument();
   });
 
   it('opens a config saved before the field existed on the safe default', () => {
