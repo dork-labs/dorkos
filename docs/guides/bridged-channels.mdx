@@ -1,0 +1,75 @@
+---
+title: Bridged Channels
+description: Turn a connected Telegram chat into a DorkOS channel, so its whole history lives in one shared log your agent reads before it answers
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+# Bridged Channels
+
+A chat you connect to an agent is normally a private line: a message goes to one agent, that agent
+answers, and nothing about it is visible anywhere else. Start a second conversation with the same
+agent, or ask a second agent to help, and the two know nothing about each other.
+
+Bridging changes that. When you bridge a chat, it becomes a **channel** in DorkOS. What people say
+in the chat lands in a shared log, and your agent reads that log before it answers. You can also
+speak into the chat from the cockpit, and any of the agent's conversations can pick up where the
+others left off, because they all read the same history.
+
+<Callout type="info">
+  Bridging is being rolled out for Telegram. You turn it on for one chat at a time from the
+  **Messaging** half of the [Connections](/docs/connections) page. There is no global switch: a chat
+  you do not bridge behaves exactly as it does today.
+</Callout>
+
+## How to bridge a chat
+
+1. Open the [Connections](/docs/connections) page and go to **Messaging**.
+2. Pick the connected chat you want to bridge, and open its details.
+3. Choose **Bridge to a channel**. DorkOS creates the channel and takes you to it.
+
+To stop, open the channel's binding again and choose **Un-bridge**. The chat goes back to a private
+line, and the channel is archived, not deleted, so its history is kept.
+
+## Three things to know before you bridge
+
+Bridging a chat is a real change in who can reach your agent. Read these first.
+
+### People you may not know can put text in front of your agent
+
+A chat can have other people in it, and a bot in a public chat can be found by anyone. Once a chat
+is bridged, what those people type becomes part of the log your agent reads. Your agent treats their
+words as messages, never as instructions, and every outside person is clearly marked with the
+platform they came from. But the words are still theirs, so bridge a chat only when you are
+comfortable with who can write into it.
+
+### The permission mode is the real bound
+
+A bridged chat starts in the mode that **asks you before your agent does anything sensitive**. That
+prompt is your protection. Raising the mode, so the agent acts without asking, is a decision you are
+making with a stranger possibly on the other end of the chat. DorkOS never raises it for you.
+
+### The room log is the audit trail
+
+Every message that reached your agent is in the channel's log: durable, kept in full, and never
+trimmed. That is a real gain over a private line, where the same message reached the agent and left
+no record you own. If you ever want to know what your agent saw and when, the log is the answer.
+
+## What a bridged channel shows you
+
+- **A visibility badge**, on a bridged group, tells you whether your agent sees every message in the
+  chat or only the ones that mention it. This reflects the chat platform's own privacy setting for
+  the bot, not a DorkOS setting. A one-to-one chat has no badge, because there is nothing there the
+  bot cannot see.
+- **Origin marks** sit next to everyone who joined from the outside, showing the platform they are
+  on, so you can always tell a person on your own machine apart from someone writing in from a chat.
+
+## What bridging does not do
+
+- It does not import old messages. Chat platforms do not hand a bot its history, so a bridged
+  channel starts its log from the moment you bridge. If the agent already had a conversation going in
+  that chat, it can carry on from there, but the earlier messages stay in that conversation, not the
+  channel log.
+- It does not make your agent injection-proof. An agent that reads an outside message and acts on it
+  can still do things within the permissions you granted. The permission mode above is the bound that
+  matters.

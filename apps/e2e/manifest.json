@@ -300,18 +300,21 @@
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
+    },
+    "bridged-channel": {
+      "specFile": "tests/relay/bridged-channel.spec.ts",
+      "feature": "relay",
+      "description": "shows the visibility badge and an external origin mark, and accepts a cockpit post",
+      "lastRun": "2026-08-04T09:54:34.219Z",
+      "lastStatus": "passed",
+      "runCount": 4,
+      "passCount": 1,
+      "failCount": 3,
+      "relatedCode": [],
+      "lastModified": ""
     }
   },
   "runHistory": [
-    {
-      "id": "2026-02-25T21-40-30",
-      "timestamp": "2026-02-25T21:40:30.882Z",
-      "total": 6,
-      "passed": 6,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 3684
-    },
     {
       "id": "2026-02-25T21-41-08",
       "timestamp": "2026-02-25T21:41:08.823Z",
@@ -1175,6 +1178,42 @@
       "failed": 0,
       "skipped": 0,
       "duration": 59878
+    },
+    {
+      "id": "2026-08-04T09-49-12",
+      "timestamp": "2026-08-04T09:49:12.478Z",
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 43001
+    },
+    {
+      "id": "2026-08-04T09-51-07",
+      "timestamp": "2026-08-04T09:51:07.919Z",
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 24631
+    },
+    {
+      "id": "2026-08-04T09-51-37",
+      "timestamp": "2026-08-04T09:51:37.527Z",
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 13062
+    },
+    {
+      "id": "2026-08-04T09-54-34",
+      "timestamp": "2026-08-04T09:54:34.219Z",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 25926
     }
   ]
 }

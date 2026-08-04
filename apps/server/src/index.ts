@@ -196,7 +196,7 @@ import { acquireInstanceLock } from './lib/instance-lock.js';
 import { localDialHost } from './lib/local-dial-host.js';
 import { SERVER_VERSION } from './lib/version.js';
 import { createWorkspaceSubsystem, setWorkspaceManager } from './services/workspace/index.js';
-import { createRoomSubsystem, setRoomService } from './services/rooms/index.js';
+import { createRoomSubsystem, setRoomService, setRoomInternals } from './services/rooms/index.js';
 import {
   followSessionRekeys,
   repairRoomSessionBindings,
@@ -790,6 +790,7 @@ async function start() {
     bridges: roomBridges,
   } = createRoomSubsystem({ db });
   setRoomService(roomService);
+  setRoomInternals(roomBridges, roomAuthors);
   logger.info('[Rooms] RoomService registered');
 
   // The install owner's author id, resolved per call (an install becomes owned

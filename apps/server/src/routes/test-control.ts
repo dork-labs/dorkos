@@ -7,6 +7,8 @@ import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { getBoundary } from '../lib/boundary.js';
 import { scenarioStore } from '../services/runtimes/test-mode/scenario-store.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
+import { getRoomService, getBridgeStore, getRoomAuthors } from '../services/rooms/index.js';
+import { readOwnerAccount } from '../services/core/auth/index.js';
 
 /**
  * Control routes for TestModeRuntime. Only mounted when DORKOS_TEST_RUNTIME=true.
@@ -128,4 +130,89 @@ testControlRouter.post('/seed-agent', async (_req, res) => {
   const agentDir = e2eAgentDir();
   await writeManifest(agentDir, manifest);
   res.json({ ok: true, agentDir });
+});
+
+const seedBridgeSchema = z.object({
+  /** The bound agent's directory, from `POST /api/test/seed-agent`. */
+  agentPath: z.string().min(1),
+});
+
+/**
+ * Seed a bridged **channel** — the platform faked one layer up, at the adapter
+ * boundary, so there is no grammY `Bot` and no live Telegram (the same fake the
+ * server-side integration suite uses). It mints the room and its `room_bridges`
+ * row through the real `RoomService.createBridgedRoom`, stamps a
+ * `mentions-only` visibility so the header badge renders, and writes one
+ * external-author entry through the real `postExternal` so an origin mark
+ * renders beside a message from outside the machine. The e2e (`tests/relay/
+ * bridged-channel.spec.ts`) then drives the cockpit-observable half: see the
+ * badge and the mark, post from the composer, watch the post land.
+ *
+ * Only reachable under `DORKOS_TEST_RUNTIME` (this whole router is), and it
+ * uses a fresh chat id per call so re-runs never collide on the bridge's
+ * `(adapterId, chatId)` unique index.
+ */
+testControlRouter.post('/seed-bridge', async (req, res) => {
+  const result = seedBridgeSchema.safeParse(req.body);
+  if (!result.success) {
+    return res
+      .status(400)
+      .json({ error: 'Validation failed', details: z.flattenError(result.error) });
+  }
+  try {
+    // Register the seeded agent into the mesh cache so the room roster can
+    // resolve it by path (ADR-0043's file-first write-through). `seed-agent`
+    // only writes the manifest to disk; the cockpit normally syncs on its own
+    // navigation, which this seam does not go through.
+    const meshCore = req.app.locals.meshCore as
+      | { syncFromDisk(path: string): Promise<unknown> }
+      | undefined;
+    if (meshCore) await meshCore.syncFromDisk(result.data.agentPath);
+
+    const rooms = getRoomService();
+    const bridges = getBridgeStore();
+    // The operator is the install owner when there is one (onboarding creates
+    // it), and the unbound local human otherwise — the same resolution the
+    // production bridge lifecycle uses, so `createBridgedRoom`'s owner check
+    // passes on a real (onboarded) server the same way it does in prod.
+    const authors = getRoomAuthors();
+    const owner = readOwnerAccount();
+    const operatorAuthorId = owner ? authors.bindOwner(owner.id).id : authors.localHuman().id;
+    const adapterId = 'tg-e2e';
+    const chatId = ulid();
+
+    const opened = rooms.createBridgedRoom({
+      adapterId,
+      chatId,
+      bindingId: `bind-e2e-${chatId}`,
+      chatType: 'group',
+      channelType: 'group',
+      title: 'E2E Ops Channel',
+      agentPath: result.data.agentPath,
+      operatorAuthorId,
+    });
+
+    // §8: the header badge reads the bridge row's visibility, sourced from the
+    // platform's `getMe` in production — stamped directly here.
+    bridges.setVisibility(opened.id, 'mentions-only', new Date().toISOString());
+
+    // One message from outside the machine, so an origin mark ("· Telegram")
+    // renders. `postExternal` mints the external author on the `platform:` key
+    // that carries the origin (spec §4.3).
+    rooms.postExternal(opened.id, {
+      identity: {
+        platformType: 'telegram',
+        instanceId: adapterId,
+        platformUserId: '145223',
+        displayName: 'Miguel',
+      },
+      text: 'Hi from Telegram — can the team see this?',
+    });
+
+    res.json({ ok: true, roomId: opened.id, slug: opened.slug, chatId });
+  } catch (err) {
+    return res
+      .status(500)
+      .json({ error: err instanceof Error ? err.message : 'seed-bridge failed' });
+  }
 });
