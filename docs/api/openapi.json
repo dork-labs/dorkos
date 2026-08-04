@@ -5976,6 +5976,13 @@
             },
             "description": "Author ids resolved from @name at write time. Never re-parsed by the client."
           },
+          "mentionSpans": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MentionSpan"
+            },
+            "description": "Where each resolved @mention sits in the raw body, so the client can draw a pill over it without re-parsing the text. One span per written @handle (not deduped like `mentions`), resolved once at write time. Optional for the same reason as `reactions`: the server's internal entry shape and entries that predate the field carry none, and absent should be read as empty — every wire path that carries a local room entry populates it."
+          },
           "sessionId": {
             "type": [
               "string",
@@ -6080,6 +6087,31 @@
           "bridge_second_agent_refused",
           "bridge_disconnected",
           "bridge_agent_swapped"
+        ]
+      },
+      "MentionSpan": {
+        "type": "object",
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "UTF-16 code-unit offset of the `@` in the raw body text."
+          },
+          "length": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Length in UTF-16 code units of the matched `@handle`, `@` included."
+          },
+          "authorId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The live author this occurrence resolved to."
+          }
+        },
+        "required": [
+          "offset",
+          "length",
+          "authorId"
         ]
       },
       "RoomEntryReaction": {
