@@ -1,6 +1,7 @@
 ---
 covers:
-  - 'feat(server): claim card primary action creates a claim, binding, and bridge in one call (DOR-882)'
+  - 'feat(shared): claim request/response schema carries the bridge field (DOR-882)'
+  - 'feat(server): claim card primary action creates claim, binding, and bridge atomically (DOR-882)'
   - 'feat(client): "Answer in a channel" and "Answer privately" on the claim card (DOR-882)'
 ---
 
