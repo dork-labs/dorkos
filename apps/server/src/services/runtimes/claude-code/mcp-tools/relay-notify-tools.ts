@@ -11,6 +11,7 @@ import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 import { requireRelay, type SenderIdentity } from './relay-helpers.js';
 import { resolveNotifyTarget } from '../../../relay/notify-target.js';
+import { buildBridgePrincipal } from '../../../relay/bridge-principal.js';
 
 /**
  * Send a message to a user on a bound external integration.
@@ -49,6 +50,7 @@ export function createRelayNotifyUserHandler(deps: McpToolDeps, identity: Sender
       bindingStore: deps.bindingStore,
       bindingRouter: deps.bindingRouter,
       adapterManager: deps.adapterManager,
+      bridgeStore: deps.bridgeStore,
       channel: args.channel,
     });
 
@@ -101,8 +103,15 @@ export function createRelayNotifyUserHandler(deps: McpToolDeps, identity: Sender
     try {
       // Same server-injected principal as every other send tool — the bare
       // agentId is not a relay subject and would not match any access rule.
+      // A bridged target (§7.5) is the one exception: it publishes under the
+      // bridge delivery principal instead, so a proactive notify still reads
+      // as an INITIATE through the bridge consent branch rather than riding
+      // this agent's own (already-checked) identity past it unlabeled.
+      const from = target.bridged
+        ? buildBridgePrincipal('initiate', target.adapterId, target.chatId)
+        : identity.subject;
       const result = await deps.relayCore!.publish(target.subject, args.message, {
-        from: identity.subject,
+        from,
       });
       return jsonContent({
         sent: true,

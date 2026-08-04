@@ -71,6 +71,14 @@ function makeMockAdapterManager(overrides?: Record<string, unknown>) {
   };
 }
 
+/** Create a mock BridgeStore with default stubs — no live bridges by default. */
+function makeMockBridgeStore(overrides?: Record<string, unknown>) {
+  return {
+    listLiveBridges: vi.fn().mockReturnValue([]),
+    ...overrides,
+  };
+}
+
 function makeMockDeps(overrides: Partial<McpToolDeps> = {}): McpToolDeps {
   return {
     transcriptReader: {} as McpToolDeps['transcriptReader'],
@@ -81,6 +89,7 @@ function makeMockDeps(overrides: Partial<McpToolDeps> = {}): McpToolDeps {
     bindingStore: makeMockBindingStore() as unknown as McpToolDeps['bindingStore'],
     bindingRouter: makeMockBindingRouter() as unknown as McpToolDeps['bindingRouter'],
     adapterManager: makeMockAdapterManager() as unknown as McpToolDeps['adapterManager'],
+    bridgeStore: makeMockBridgeStore() as unknown as McpToolDeps['bridgeStore'],
     ...overrides,
   };
 }
@@ -364,4 +373,77 @@ describe('relay_notify_user', () => {
   // touches. That "replies still flow when canInitiate=false" regression is
   // covered directly in binding-router.test.ts, see:
   // "canInitiate=false does not block inbound routing — replies keep flowing (DOR-239)".
+
+  // A bridged binding vacates sessionMap (chats-as-channels spec §7.2), so
+  // this tool must resolve through a live bridge row too, and publish under
+  // the bridge delivery principal rather than the caller's own agent
+  // identity (DOR-876, spec §7.5) — matching TaskCompletionNotifier's other
+  // proactive path so both honor identical binding/consent rules.
+  describe('bridged bindings (§7.5)', () => {
+    it('resolves and publishes under relay.bridge.initiate.* when the chat is bridged', async () => {
+      const deps = makeMockDeps({
+        bindingStore: makeMockBindingStore({
+          getAll: vi
+            .fn()
+            .mockReturnValue([
+              makeBinding({ bridge: 'room', roomId: 'room-1', chatId: 'chat-42' }),
+            ]),
+        }) as unknown as McpToolDeps['bindingStore'],
+        // sessionMap fully vacated — nothing for the router to find (§7.2).
+        bindingRouter: makeMockBindingRouter({
+          getSessionsByBinding: vi.fn().mockReturnValue([]),
+        }) as unknown as McpToolDeps['bindingRouter'],
+        bridgeStore: makeMockBridgeStore({
+          listLiveBridges: vi
+            .fn()
+            .mockReturnValue([
+              { bindingId: 'b-1', chatId: 'chat-42', lastActivityAt: '2026-01-01T00:05:00.000Z' },
+            ]),
+        }) as unknown as McpToolDeps['bridgeStore'],
+      });
+      const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+      const result = await handler({ message: 'Bridged heads up!' });
+
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0].text);
+      expect(data.sent).toBe(true);
+      expect(data.chatId).toBe('chat-42');
+      // The distinguishing assertion: NOT the caller's own agent identity —
+      // the bridge delivery principal, so the send is gated as an initiate
+      // through the bridge consent branch, not the agent-sender check.
+      expect(deps.relayCore!.publish).toHaveBeenCalledWith(
+        'relay.human.telegram.tg-main.chat-42',
+        'Bridged heads up!',
+        { from: 'relay.bridge.initiate.tg-main.chat-42' }
+      );
+    });
+
+    it('blocks the send when the bridged binding has canInitiate=false', async () => {
+      const deps = makeMockDeps({
+        bindingStore: makeMockBindingStore({
+          getAll: vi.fn().mockReturnValue([
+            makeBinding({
+              bridge: 'room',
+              roomId: 'room-1',
+              chatId: 'chat-42',
+              canInitiate: false,
+            }),
+          ]),
+        }) as unknown as McpToolDeps['bindingStore'],
+        bindingRouter: makeMockBindingRouter({
+          getSessionsByBinding: vi.fn().mockReturnValue([]),
+        }) as unknown as McpToolDeps['bindingRouter'],
+        bridgeStore: makeMockBridgeStore({
+          listLiveBridges: vi.fn().mockReturnValue([{ bindingId: 'b-1', chatId: 'chat-42' }]),
+        }) as unknown as McpToolDeps['bridgeStore'],
+      });
+      const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+      const result = await handler({ message: 'Should never arrive' });
+
+      expect(result.isError).toBe(true);
+      const data = JSON.parse(result.content[0].text);
+      expect(data.code).toBe('INITIATE_NOT_ALLOWED');
+      expect(deps.relayCore!.publish).not.toHaveBeenCalled();
+    });
+  });
 });
