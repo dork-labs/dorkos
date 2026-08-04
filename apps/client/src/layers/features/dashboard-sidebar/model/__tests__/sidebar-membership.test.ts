@@ -127,6 +127,26 @@ describe('groupedAgentPaths', () => {
     });
     expect([...groupedAgentPaths(p, new Set(['/a']))]).toEqual([]);
   });
+
+  it('ignores refs that leaked into a smart group, so the row keeps its home section', () => {
+    // Residue of the pre-DOR-581 move-to menu: a ref filed into a smart group
+    // was counted as grouped while nothing drew it — the row vanished. The
+    // read now enforces the invariant the schema documents (smart items are
+    // ignored), which also un-strands any config still carrying the residue.
+    const leaked = prefs({
+      groups: [
+        grp({
+          id: 'smart1',
+          kind: 'smart',
+          sortMode: 'recent',
+          rules: { statuses: ['active'] },
+          items: [agent('/a'), room('r1')],
+        }),
+      ],
+    });
+    expect([...groupedAgentPaths(leaked, new Set(['/a']))]).toEqual([]);
+    expect([...groupedRoomIds(leaked)]).toEqual([]);
+  });
 });
 
 describe('groupMemberItems', () => {

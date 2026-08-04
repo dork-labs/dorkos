@@ -10,6 +10,7 @@ import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
 import { cn } from '@/layers/shared/lib';
+import { sidebarItemKey } from '../../model/sidebar-item';
 import type { SidebarDndData } from '../../model/use-sidebar-dnd';
 
 /**
@@ -175,24 +176,38 @@ export function SortableList({ items, children }: SortableListProps) {
 }
 
 /**
- * Build the dnd id for an agent row from its section key prefix + path.
+ * Build the dnd id for a sidebar row from its section key prefix + reference.
  *
  * This is an ephemeral DOM identity dnd-kit requires as a string — never a
  * membership key. Membership is compared with `sameSidebarItem` over the
  * `SidebarItemRef` in the node's data.
+ *
+ * Takes a reference rather than an agent path (rooms-in-groups, DOR-581): a room
+ * row is a drag source too, and `sidebarItemKey` is the one place that spells a
+ * reference as a string, so the two kinds cannot collide.
  */
-export function agentRowDndId(keyPrefix: string, path: string): string {
-  return `${keyPrefix}::${path}`;
+export function sidebarRowDndId(keyPrefix: string, ref: SidebarItemRef): string {
+  return `${keyPrefix}::${sidebarItemKey(ref)}`;
 }
 
 /**
- * Build an agent row's node data from its section key prefix + path. The prefix
- * (`pinned` / `ungrouped` / a group id) names the home container that the drop
- * reducer reads back as the drag source or hovered target.
+ * Build a sidebar row's node data from its section key prefix + reference. The
+ * prefix (`pinned` / `ungrouped` / a group id) names the home container that the
+ * drop reducer reads back as the drag source or hovered target.
+ *
+ * `section` names the ungrouped section this row actually sits in, for the ARIA
+ * announcements only — "ungrouped" is three sections now (Agents, Channels,
+ * Direct messages), and a hover that says "Over Agents." while the cursor is
+ * over Channels is worse than no announcement at all.
  */
-export function agentDndData(keyPrefix: string, path: string): SidebarDndData {
-  const ref: SidebarItemRef = { kind: 'agent', path };
+export function sidebarDndData(
+  keyPrefix: string,
+  ref: SidebarItemRef,
+  section?: string
+): SidebarDndData {
   if (keyPrefix === 'pinned') return { type: 'item', ref, container: { kind: 'pinned' } };
-  if (keyPrefix === 'ungrouped') return { type: 'item', ref, container: { kind: 'ungrouped' } };
+  if (keyPrefix === 'ungrouped') {
+    return { type: 'item', ref, container: { kind: 'ungrouped', section } };
+  }
   return { type: 'item', ref, container: { kind: 'group', groupId: keyPrefix } };
 }

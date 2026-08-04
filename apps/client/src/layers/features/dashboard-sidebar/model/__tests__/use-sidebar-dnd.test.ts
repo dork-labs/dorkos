@@ -450,6 +450,27 @@ describe('buildSidebarAnnouncements', () => {
     expect(msg).toBe('Moved api-server to group Clients.');
   });
 
+  it('announces the ungrouped section actually under the cursor, not always Agents', () => {
+    // Rooms drag out of a group into Channels or Direct messages (DOR-581), and
+    // all three are the same `ungrouped` container to the reducer — only the
+    // announcement can tell them apart, so it carries the name.
+    const a = announcements(prefs());
+    const node: SidebarDndData = { type: 'item', ref: room('room-1'), container: UNGROUPED };
+    expect(
+      a.onDragOver({
+        active: active(node).active,
+        over: over({ type: 'container', container: { kind: 'ungrouped', section: 'Channels' } }),
+      })
+    ).toBe('Over Channels.');
+    // No name stored: the Agents section, which is what `ungrouped` used to be.
+    expect(
+      a.onDragOver({
+        active: active(node).active,
+        over: over({ type: 'container', container: UNGROUPED }),
+      })
+    ).toBe('Over Agents.');
+  });
+
   it('names a ROOM as the subject when a room is what moved', () => {
     const p = prefs({ groups: [grp({ id: 'g1', name: 'Clients' })] });
     const a = announcements(p);
@@ -499,7 +520,7 @@ describe('buildSidebarAnnouncements', () => {
         ...active(agentNode('/api', inGroup('g1'))),
         over: over({ type: 'container', container: UNGROUPED }),
       })
-    ).toBe('Moved api-server to Agents.');
+    ).toBe('Moved api-server out of its group.');
 
     // reorder within group
     expect(

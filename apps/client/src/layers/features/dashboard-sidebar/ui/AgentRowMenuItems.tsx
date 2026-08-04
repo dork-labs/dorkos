@@ -57,6 +57,15 @@ export interface RowMenuModel {
   /** Whether this agent path is individually muted (`ui.sidebar.muted`). */
   isMuted: boolean;
   currentGroupId: string | null;
+  /**
+   * The groups this agent can be moved into — MANUAL groups only.
+   *
+   * A smart group's membership is derived from its rules and its stored `items`
+   * is only the convert-to-manual materialization target, so a row filed into
+   * one is hidden from its home section and drawn by nobody: it disappears from
+   * the sidebar entirely. The drag layer already refuses that drop
+   * (`reject-smart-group`); the menu refuses it by not offering it.
+   */
   groups: { id: string; name: string }[];
   onTogglePin: () => void;
   /** Toggle this agent's individual mute state. */
@@ -228,7 +237,7 @@ interface AgentRowMenuItemsProps {
   /** Start a new session for this agent. */
   onNewSession: () => void;
   /** Open the inline group-create flow, moving this agent into the new group on commit. */
-  onRequestNewGroup: (agentPath: string) => void;
+  onRequestNewGroup: (ref: SidebarItemRef) => void;
 }
 
 /**
@@ -257,13 +266,13 @@ export function AgentRowMenuItems({
     isPinned,
     isMuted,
     currentGroupId,
-    groups: prefs.groups.map((g) => ({ id: g.id, name: g.name })),
+    groups: prefs.groups.filter((g) => g.kind !== 'smart').map((g) => ({ id: g.id, name: g.name })),
     onTogglePin: () => update((prev) => (isPinned ? unpinItem(prev, ref) : pinItem(prev, ref))),
     onToggleMute: () => update((prev) => (isMuted ? unmuteItem(prev, ref) : muteItem(prev, ref))),
     onOpenProfile,
     onNewSession,
     onMoveToGroup: (groupId) => update((prev) => moveToGroup(prev, ref, groupId)),
-    onNewGroup: () => onRequestNewGroup(path),
+    onNewGroup: () => onRequestNewGroup(ref),
   });
 
   return <>{renderNodes(nodes, VARIANT_SLOTS[variant])}</>;

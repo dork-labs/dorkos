@@ -11,7 +11,7 @@ import { AddAgentMenu } from './AddAgentMenu';
 import { SidebarSectionHeader } from './SidebarSectionHeader';
 import { buildAgentsHeaderMenuNodes } from './SectionHeaderMenuItems';
 import { RevealRow } from './RevealRow';
-import { Droppable, SortableList, agentRowDndId } from './dnd/SidebarDndPrimitives';
+import { Droppable, SortableList, sidebarRowDndId } from './dnd/SidebarDndPrimitives';
 import type { RenderSidebarItem, SidebarItem } from '../model/sidebar-item';
 import { sortSidebarItems } from '../model/sort-sidebar-items';
 import { filterSidebarItems } from '../model/filter-sidebar-items';
@@ -121,11 +121,7 @@ export function UngroupedSection({
         id="container::ungrouped"
         data={{ type: 'container', container: { kind: 'ungrouped' } }}
       >
-        <SortableList
-          items={sortedVisible.flatMap((item) =>
-            item.ref.kind === 'agent' ? [agentRowDndId('ungrouped', item.ref.path)] : []
-          )}
-        >
+        <SortableList items={sortedVisible.map((item) => sidebarRowDndId('ungrouped', item.ref))}>
           <SidebarMenu>{sortedVisible.map((item) => renderItem(item, 'ungrouped'))}</SidebarMenu>
         </SortableList>
         {allAgentsGrouped && (

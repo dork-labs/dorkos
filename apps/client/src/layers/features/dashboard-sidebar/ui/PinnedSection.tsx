@@ -1,5 +1,5 @@
 import { SidebarGroup, SidebarGroupLabel, SidebarMenu } from '@/layers/shared/ui';
-import { Droppable, SortableList, agentRowDndId } from './dnd/SidebarDndPrimitives';
+import { Droppable, SortableList, sidebarRowDndId } from './dnd/SidebarDndPrimitives';
 import type { RenderSidebarItem, SidebarItem } from '../model/sidebar-item';
 
 interface PinnedSectionProps {
@@ -26,15 +26,20 @@ export function PinnedSection({ items, renderItem }: PinnedSectionProps) {
         Pinned
       </SidebarGroupLabel>
       <Droppable id="container::pinned" data={{ type: 'container', container: { kind: 'pinned' } }}>
-        {/* Rooms are not a drag source until S3, so only agent rows join the
-            sortable context — an id with no matching `Sortable` makes dnd-kit
-            measure a node that is not there. */}
-        <SortableList
-          items={items.flatMap((item) =>
-            item.ref.kind === 'agent' ? [agentRowDndId('pinned', item.ref.path)] : []
-          )}
-        >
-          <SidebarMenu>{items.map((item) => renderItem(item, 'pinned'))}</SidebarMenu>
+        <SortableList items={items.map((item) => sidebarRowDndId('pinned', item.ref))}>
+          <SidebarMenu>
+            {items.map((item) =>
+              // A pinned ROOM stays undraggable: dragging it out would unpin
+              // it, and the room menu offers no Pin to undo that (rooms sort by
+              // recent activity; pinning one is an agent-written config act).
+              // Agents keep the drag: their menu can re-pin.
+              renderItem(
+                item,
+                'pinned',
+                item.ref.kind === 'room' ? { draggable: false } : undefined
+              )
+            )}
+          </SidebarMenu>
         </SortableList>
       </Droppable>
     </SidebarGroup>

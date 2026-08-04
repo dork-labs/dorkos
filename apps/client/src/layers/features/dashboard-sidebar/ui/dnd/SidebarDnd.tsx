@@ -31,9 +31,9 @@ interface SidebarDndProps {
   /** Agent display names keyed by projectPath — used for the overlay and announcements. */
   displayNames: Record<string, string>;
   /**
-   * Room titles keyed by room id, for the same two surfaces. A room reference
-   * can reach them before rooms are draggable: `ui.sidebar` is agent-writable,
-   * so `config_patch` can put one in `pinned` today.
+   * Room titles keyed by room id, for the same two surfaces: room rows are
+   * drag sources since DOR-581, and `ui.sidebar` is agent-writable besides,
+   * so `config_patch` can also put a room reference in `pinned`.
    */
   roomTitles: Record<string, string>;
 }

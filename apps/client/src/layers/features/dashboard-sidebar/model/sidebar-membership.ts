@@ -107,6 +107,11 @@ export function effectiveMutedAgentPaths(
 export function groupedAgentPaths(prefs: SidebarPrefs, known: ReadonlySet<string>): Set<string> {
   const set = new Set<string>();
   for (const group of prefs.groups) {
+    // Enforce the invariant the TSDoc above states: a smart group's stored
+    // items are ignored (config-schema says so too). A ref that leaked in —
+    // the pre-DOR-581 move-to menu allowed it — must not hide the row from
+    // its home section while nothing draws it.
+    if (group.kind === 'smart') continue;
     for (const path of agentPathsOf(group.items, known)) set.add(path);
   }
   return set;
@@ -125,6 +130,9 @@ export function groupedAgentPaths(prefs: SidebarPrefs, known: ReadonlySet<string
 export function groupedRoomIds(prefs: SidebarPrefs): Set<string> {
   const set = new Set<string>();
   for (const group of prefs.groups) {
+    // Same invariant as groupedAgentPaths: smart items are ignored, so a
+    // leaked ref cannot strand a room out of every visible list.
+    if (group.kind === 'smart') continue;
     for (const roomId of roomIdsOf(group.items)) set.add(roomId);
   }
   return set;

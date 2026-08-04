@@ -41,7 +41,7 @@ import {
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 import type { Session } from '@dorkos/shared/types';
 import type { ThreadSummary } from '@dorkos/shared/room-schemas';
-import type { SmartGroupRules } from '@dorkos/shared/config-schema';
+import type { SidebarItemRef, SmartGroupRules } from '@dorkos/shared/config-schema';
 import type { SmartGroupCandidate } from '@dorkos/shared/smart-groups';
 import { PromoSlot } from '@/layers/features/feature-promos';
 import { useAgentHubStore } from '@/layers/features/agent-hub';
@@ -63,8 +63,8 @@ import { SidebarDnd } from './dnd/SidebarDnd';
 import {
   Sortable,
   SortableList,
-  agentRowDndId,
-  agentDndData,
+  sidebarRowDndId,
+  sidebarDndData,
   DISABLED_SORTABLE_BINDINGS,
 } from './dnd/SidebarDndPrimitives';
 import {
@@ -98,9 +98,16 @@ import {
  */
 const LEGACY_PINNED_STORAGE_KEY = 'dorkos-pinned-agents';
 
-/** Pending group-create flow: `pendingPath` (if set) is moved into the group on commit. */
+/**
+ * Pending group-create flow: `pendingRef` (if set) is moved into the group on
+ * commit.
+ *
+ * A reference rather than an agent path (rooms-in-groups, DOR-581) — "New
+ * group…" is offered from a room row's menu too, and the group it creates has
+ * to be able to hold the thing it was started from.
+ */
 interface GroupCreationState {
-  pendingPath: string | null;
+  pendingRef: SidebarItemRef | null;
 }
 
 /**
@@ -142,9 +149,8 @@ export function DashboardSidebar() {
   // the browser tab's unread badge the moment either happened.
   const roomsQuery = useRooms();
   const { channels, dms } = useRoomsByKind(roomsQuery.data);
-  // Room titles for the drag layer's overlay and ARIA announcements. Rooms are
-  // not draggable until S3, but `ui.sidebar` is agent-writable, so a room
-  // reference can already arrive there via `config_patch`.
+  // Room titles for the drag layer's overlay and ARIA announcements — what a
+  // room is called while it is under the cursor (rooms-in-groups, DOR-581).
   const roomTitles = useMemo(
     () => Object.fromEntries((roomsQuery.data ?? []).map((r) => [r.id, roomDisplayTitle(r)])),
     [roomsQuery.data]
@@ -416,15 +422,15 @@ export function DashboardSidebar() {
 
   // ── Inline group-create flow ──
   const [groupCreation, setGroupCreation] = useState<GroupCreationState | null>(null);
-  const handleRequestNewGroup = useCallback((path?: string) => {
-    setGroupCreation({ pendingPath: path ?? null });
+  const handleRequestNewGroup = useCallback((ref?: SidebarItemRef) => {
+    setGroupCreation({ pendingRef: ref ?? null });
   }, []);
   const handleCommitNewGroup = useCallback(
     (name: string) => {
-      const pending = groupCreation?.pendingPath ?? null;
+      const pending = groupCreation?.pendingRef ?? null;
       updateSidebarPrefs((prev) => {
         const { next, id } = createGroup(prev, name);
-        return pending ? moveToGroup(next, { kind: 'agent', path: pending }, id) : next;
+        return pending ? moveToGroup(next, pending, id) : next;
       });
       setGroupCreation(null);
     },
@@ -534,6 +540,7 @@ export function DashboardSidebar() {
       options?: { draggable?: boolean }
     ): ReactNode => {
       const isActive = selectedCwd === path && pathname === '/session';
+      const ref: SidebarItemRef = { kind: 'agent', path };
       const itemProps = {
         path,
         agent: agents?.[path] ?? null,
@@ -566,8 +573,8 @@ export function DashboardSidebar() {
       return (
         <Sortable
           key={`${keyPrefix}-${path}`}
-          id={agentRowDndId(keyPrefix, path)}
-          data={agentDndData(keyPrefix, path)}
+          id={sidebarRowDndId(keyPrefix, ref)}
+          data={sidebarDndData(keyPrefix, ref)}
         >
           {(bindings) => <AgentListItem {...itemProps} sortable={bindings} />}
         </Sortable>
@@ -615,18 +622,36 @@ export function DashboardSidebar() {
       // always has its room. Answering `null` rather than throwing keeps a
       // torn render from taking the whole sidebar down with it.
       if (room === undefined) return null;
+      const key = `${keyPrefix}-${sidebarItemKey(item.ref)}`;
+      const roomProps = {
+        room,
+        visual: item.visual,
+        isActive: room.id === activeRoomId,
+        onSelect: () => handleSelectRoom(room),
+        onOpenAgentProfile: handleOpenProfile,
+        onRequestNewGroup: handleRequestNewGroup,
+      };
+      // Same rule the agent row follows: `draggable: false` renders with no
+      // `Sortable` wrapper at all, for a smart group's rule-owned members.
+      if (options?.draggable === false) return <RoomRow key={key} {...roomProps} />;
       return (
-        <RoomRow
-          key={`${keyPrefix}-${sidebarItemKey(item.ref)}`}
-          room={room}
-          visual={item.visual}
-          isActive={room.id === activeRoomId}
-          onSelect={() => handleSelectRoom(room)}
-          onOpenAgentProfile={handleOpenProfile}
-        />
+        <Sortable
+          key={key}
+          id={sidebarRowDndId(keyPrefix, item.ref)}
+          data={sidebarDndData(keyPrefix, item.ref)}
+        >
+          {(bindings) => <RoomRow {...roomProps} sortable={bindings} />}
+        </Sortable>
       );
     },
-    [renderAgentRow, roomsById, activeRoomId, handleSelectRoom, handleOpenProfile]
+    [
+      renderAgentRow,
+      roomsById,
+      activeRoomId,
+      handleSelectRoom,
+      handleOpenProfile,
+      handleRequestNewGroup,
+    ]
   );
 
   return (
@@ -664,6 +689,7 @@ export function DashboardSidebar() {
             activeRoomId={activeRoomId}
             onSelectRoom={handleSelectRoom}
             onOpenAgentProfile={handleOpenProfile}
+            onRequestNewGroup={handleRequestNewGroup}
           />
 
           <DirectMessagesSection
@@ -676,6 +702,7 @@ export function DashboardSidebar() {
             activeRoomId={activeRoomId}
             onSelectRoom={handleSelectRoom}
             onOpenAgentProfile={handleOpenProfile}
+            onRequestNewGroup={handleRequestNewGroup}
           />
 
           {pinnedItems.length > 0 && (

@@ -6,6 +6,7 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { AuthorRef, RoomSummary } from '@dorkos/shared/room-schemas';
+import { SIDEBAR_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { TransportProvider } from '@/layers/shared/model';
 import { agentAuthorRef } from '@dorkos/shared/room-schemas';
@@ -80,16 +81,22 @@ beforeAll(() => {
 const mockUpdate = vi.fn<(updater: (prev: { dmsCollapsed: boolean }) => unknown) => void>();
 let mockCollapsed = false;
 
-vi.mock('@/layers/entities/config', () => ({
-  useSidebarPrefs: () => ({ dmsCollapsed: mockCollapsed }),
-  useUpdateSidebarPrefs: () => ({
-    update: mockUpdate,
-    updateAsync: vi.fn(),
-    isPending: false,
-    isError: false,
-  }),
-  setDmsCollapsed: (prev: object, collapsed: boolean) => ({ ...prev, dmsCollapsed: collapsed }),
-}));
+// Partial-over-actual — see the note on the same mock in ChannelsSection.test.
+vi.mock('@/layers/entities/config', async () => {
+  const actual = await vi.importActual<typeof import('@/layers/entities/config')>(
+    '@/layers/entities/config'
+  );
+  return {
+    ...actual,
+    useSidebarPrefs: () => ({ ...SIDEBAR_PREFS_DEFAULTS, dmsCollapsed: mockCollapsed }),
+    useUpdateSidebarPrefs: () => ({
+      update: mockUpdate,
+      updateAsync: vi.fn(),
+      isPending: false,
+      isError: false,
+    }),
+  };
+});
 
 const mockStart = vi.fn();
 
@@ -212,6 +219,7 @@ function section({ __fleet, ...overrides }: SectionOverrides = {}) {
       activeRoomId={null}
       onSelectRoom={vi.fn()}
       onOpenAgentProfile={vi.fn()}
+      onRequestNewGroup={vi.fn()}
       {...overrides}
     />
   );

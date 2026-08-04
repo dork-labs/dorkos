@@ -435,10 +435,12 @@ describe('DashboardSidebar', () => {
 
   // --- Empty group ---
 
-  it('renders the "Drag agents here" hint for an empty group and does not remove it', () => {
+  it('renders the drag hint for an empty group and does not remove it', () => {
     mockSidebarPrefs.mockReturnValue(makePrefs({ groups: [group({ items: [] })] }));
     renderWithProviders(<DashboardSidebar />);
-    expect(screen.getByText('Drag agents here')).toBeInTheDocument();
+    // Names both things you can drag in: rooms became a drag source in DOR-581,
+    // and a hint that still said "agents" would be describing the old gesture.
+    expect(screen.getByText('Drag agents, channels, or conversations here')).toBeInTheDocument();
     expect(screen.getByText('Clients')).toBeInTheDocument();
     expect(mockUpdateSidebar).not.toHaveBeenCalled(); // never auto-deleted
   });
