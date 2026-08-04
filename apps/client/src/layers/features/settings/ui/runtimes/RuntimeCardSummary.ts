@@ -13,8 +13,9 @@
  * that formatting back in a component and out of reach of a test. And **it is
  * React-free**, so every rule below is one table row instead of a rendered card.
  *
- * The absences are the contract. A runtime that takes no effort emits no effort
- * segment (not an empty one); a declared section with no value emits nothing;
+ * The absences are the contract. A runtime that takes no effort — or one whose
+ * chosen model takes none — emits no effort segment (not an empty one); a
+ * declared section with no value emits nothing;
  * and a runtime that cannot start a conversation emits no summary at all, because
  * a summary of what a disconnected runtime "will do" is a sentence about nothing.
  *
@@ -71,6 +72,18 @@ export interface RuntimeCardSummaryInput {
   models?: readonly { value: string; displayName: string }[] | undefined;
   /** This runtime's configured default effort, or null/undefined when unset. */
   effort?: EffortLevel | null | undefined;
+  /**
+   * Whether the SELECTED model takes an effort setting, or undefined while the
+   * catalog cannot say — the same question the expanded card's Effort row asks a
+   * level below `supportsEffort`.
+   *
+   * Undefined is read as "not asked yet" and keeps the segment, matching the
+   * row's own rule that evidence nobody has is never evidence against. An
+   * explicit `false` is the one answer that silences it: the row says the model
+   * takes none and offers to clear the stranded value, so a collapsed line still
+   * promising "High effort" would contradict the card a click away.
+   */
+  modelTakesEffort?: boolean | undefined;
   /**
    * The stop that a new session on this runtime actually starts at — the runtime's
    * own override if it has one, else the global dial. Null/undefined means nobody
@@ -148,11 +161,11 @@ export function buildRuntimeCardSummary(input: RuntimeCardSummaryInput): Runtime
     segments.push({ kind: 'model', label: INHERIT_MODEL_LABEL, inherited: true });
   }
 
-  // Only when the runtime declares that it takes an effort at all. A saved effort
-  // on a runtime that takes none is stranded config: the expanded card offers to
-  // clear it, and the summary stays quiet rather than promising something the
-  // runtime will ignore.
-  if (input.settings?.supportsEffort && input.effort) {
+  // Only when the runtime declares that it takes an effort at all AND the chosen
+  // model has not said it takes none. A saved effort either of them will ignore
+  // is stranded config: the expanded card offers to clear it, and the summary
+  // stays quiet rather than promising something nothing will read.
+  if (input.settings?.supportsEffort && input.effort && input.modelTakesEffort !== false) {
     segments.push({ kind: 'effort', label: `${effortLabel(input.effort)} effort` });
   }
 

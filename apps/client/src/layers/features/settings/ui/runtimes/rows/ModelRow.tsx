@@ -40,7 +40,11 @@ export interface ModelRowProps {
   value: string | null;
   /** Report a pick. `null` means back to the runtime's choice. */
   onChange: (value: string | null) => void;
-  /** Freeze the control — a runtime that is not connected has nothing to offer. */
+  /**
+   * Freeze the control. Two callers, one meaning — there is nothing a pick could
+   * do: a runtime that is not connected has no catalog to offer, and one that has
+   * not said where its settings live has nowhere to keep the answer.
+   */
   disabled?: boolean;
 }
 

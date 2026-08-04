@@ -155,6 +155,7 @@ function renderTab(transportOverrides: Record<string, unknown> = {}) {
   );
   return {
     transport,
+    queryClient,
     updateConfig: vi.mocked(transport.updateConfig),
     checkRequirements: vi.mocked(transport.checkRequirements),
   };
@@ -294,9 +295,12 @@ describe('RuntimesTab — the rest of the page', () => {
   });
 
   it('draws no exceptions strip while the whole fleet inherits', async () => {
-    renderTab();
+    const { queryClient } = renderTab();
     await screen.findByTestId('runtime-card-claude-code');
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    // Everything the tab asked for has answered — the fleet the strip reads
+    // included — so an absent strip is a settled answer rather than one still
+    // in flight. A fixed sleep would have asserted the same thing about a race.
+    await waitFor(() => expect(queryClient.isFetching()).toBe(0));
     expect(screen.queryByTestId('execution-exceptions-strip')).not.toBeInTheDocument();
   });
 

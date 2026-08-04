@@ -58,6 +58,12 @@ export interface EffortRowProps {
   value: EffortLevel | null;
   /** Report a pick. `null` means back to the runtime's choice. */
   onChange: (value: EffortLevel | null) => void;
+  /**
+   * Freeze every control in the row — whichever one it drew, and the offer to
+   * clear a stranded value with it. For the window where the runtime has not
+   * said where its settings live and the write would land nowhere.
+   */
+  disabled?: boolean;
 }
 
 /**
@@ -92,6 +98,7 @@ export function EffortRow({
   configuredModelId,
   value,
   onChange,
+  disabled,
 }: EffortRowProps) {
   const modelTakesEffort = selectedModel ? (selectedModel.supportsEffort ?? false) : true;
   const rungs = EFFORT_LEVELS.filter(
@@ -124,7 +131,8 @@ export function EffortRow({
             <button
               type="button"
               onClick={() => onChange(null)}
-              className="focus-ring self-start rounded-sm text-xs text-amber-700 underline-offset-2 hover:underline dark:text-amber-400"
+              disabled={disabled}
+              className="focus-ring self-start rounded-sm text-xs text-amber-700 underline-offset-2 hover:underline disabled:pointer-events-none disabled:opacity-50 dark:text-amber-400"
               data-testid={`runtime-effort-clear-${runtimeType}`}
             >
               {effortLabel(value)} is saved here and does nothing — clear it
@@ -135,6 +143,7 @@ export function EffortRow({
         // Same choices, same sentinel, same test id — only the control changes.
         <Select
           value={value ?? INHERIT}
+          disabled={disabled}
           onValueChange={(next) => onChange(next === INHERIT ? null : (next as EffortLevel))}
         >
           <SelectTrigger
@@ -157,6 +166,7 @@ export function EffortRow({
         <SegmentedControl
           aria-label={`Default ${runtimeLabel} effort`}
           data-testid={`runtime-effort-${runtimeType}`}
+          disabled={disabled}
           value={value ?? INHERIT}
           onValueChange={(next) => onChange(next === INHERIT ? null : (next as EffortLevel))}
         >

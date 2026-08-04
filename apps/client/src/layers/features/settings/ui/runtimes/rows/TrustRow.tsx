@@ -34,6 +34,12 @@ export interface TrustRowProps {
   globalStop: PermissionStop;
   /** Set or clear this runtime's override. `null` returns it to the global choice. */
   onChange: (stop: PermissionStop | null) => void;
+  /**
+   * Freeze the dial and the way back to the shared setting. For the window where
+   * the runtime has not said where its settings live, which is the same window
+   * in which `useTrustStopWrites` has no section to write this stop into.
+   */
+  disabled?: boolean;
 }
 
 /**
@@ -57,6 +63,7 @@ export function TrustRow({
   stop,
   globalStop,
   onChange,
+  disabled,
 }: TrustRowProps) {
   const overridden = stop !== null;
   const resolved = stop ?? globalStop;
@@ -71,6 +78,7 @@ export function TrustRow({
             variant="ghost"
             size="sm"
             className="h-6 px-2 text-xs"
+            disabled={disabled}
             onClick={() => onChange(null)}
           >
             Use the setting above
@@ -102,6 +110,7 @@ export function TrustRow({
           // The tab's one vocabulary, so this dial and the global row beneath the
           // cards word the same three stops the same way (design §3).
           stopLabels={SETTINGS_STOP_LABELS}
+          disabled={disabled === true}
           strandsWorkingMode
           strandedNote={`${runtimeLabel} has no setting at this stop, so new sessions start where it starts them.`}
           onChangeMode={(next) => {

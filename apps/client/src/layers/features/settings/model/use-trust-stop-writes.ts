@@ -80,6 +80,17 @@ function describeWriteFailure(err: unknown): string {
  * instead of writing, the caller renders the dialog off
  * {@link TrustStopWrites.pendingAutonomy}, and confirming sends the
  * acknowledgement and the stop together.
+ *
+ * **The server's refusal is the backstop, not this dialog.** Both lookups below
+ * read the capability map, and a map still in flight answers neither: a
+ * per-runtime change has no section to write into and does nothing (the cards
+ * disable their rows through that window for the same reason), and a global
+ * change to Full autonomy finds no descriptor, skips the dialog, and goes to the
+ * server without an acknowledgement — where the config route refuses it with
+ * `428 AUTONOMY_ACK_REQUIRED` and the refusal surfaces as
+ * {@link TrustStopWrites.writeError}. Full autonomy is never granted by this
+ * hook failing to ask; the worst that window can produce is an error where a
+ * dialog belonged.
  */
 export function useTrustStopWrites(): TrustStopWrites {
   const { data: config } = useConfig();

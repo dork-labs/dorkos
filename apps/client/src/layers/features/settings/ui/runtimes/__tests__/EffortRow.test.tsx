@@ -179,6 +179,34 @@ describe('EffortRow', () => {
     expect(onChange).toHaveBeenCalledWith(null);
   });
 
+  it('freezes whichever control it drew when the write has nowhere to go', async () => {
+    const { onChange } = renderRow({ selectedModel: SHORT_LADDER, disabled: true });
+    const rung = screen.getByRole('radio', { name: 'High' });
+    expect(rung).toBeDisabled();
+    await userEvent.click(rung);
+    expect(onChange).not.toHaveBeenCalled();
+
+    cleanup();
+    renderRow({ selectedModel: undefined, configuredModelId: 'claude-opus-4-6', disabled: true });
+    const menu = screen.getByTestId('runtime-effort-claude-code');
+    expect(menu).toBeDisabled();
+    await userEvent.click(menu);
+    expect(screen.queryByRole('option')).not.toBeInTheDocument();
+  });
+
+  it('freezes the offer to clear a stranded effort too', async () => {
+    const { onChange } = renderRow({
+      selectedModel: HAIKU,
+      configuredModelId: 'haiku',
+      value: 'high',
+      disabled: true,
+    });
+    const clear = screen.getByTestId('runtime-effort-clear-claude-code');
+    expect(clear).toBeDisabled();
+    await userEvent.click(clear);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it('offers nothing to clear when nothing is stranded', () => {
     renderRow({ selectedModel: HAIKU, configuredModelId: 'haiku', value: null });
     expect(screen.queryByTestId('runtime-effort-clear-claude-code')).not.toBeInTheDocument();

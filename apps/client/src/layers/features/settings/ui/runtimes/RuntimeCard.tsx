@@ -20,7 +20,8 @@
  *   — and, because a control whose write falls on the floor is worse than no
  *   control, it draws one line instead of the three rows. Trust is the same
  *   story: `useTrustStopWrites` also needs a declared section, so it too would
- *   go nowhere.
+ *   go nowhere. While that declaration is still in flight the rows are drawn but
+ *   DISABLED, because the same writes fall on the floor in that window too.
  * - **Trust is not written here.** The tab holds the single `useTrustStopWrites`
  *   call and the single autonomy dialog for every card, because consent is one
  *   contract with the server and two of them would drift. This card reports the
@@ -228,6 +229,17 @@ export function RuntimeCard({
   const storesDefaults = settings ? settings.configSection !== null : true;
 
   /**
+   * Whether the runtime has said where its settings live yet.
+   *
+   * Until it has, {@link writeForRuntime} and `useTrustStopWrites` both resolve
+   * the section to `undefined` and do nothing — so the rows keep their permissive
+   * appearance ({@link storesDefaults} above) but arrive DISABLED, rather than
+   * looking live for the length of one round-trip and swallowing the change
+   * somebody made in it. They enable the moment the declaration lands.
+   */
+  const writesPending = settings === undefined;
+
+  /**
    * Persist a change into the leaf this runtime declared for its settings.
    *
    * A runtime with no declared section returns early. Inventing a key from its
@@ -261,12 +273,21 @@ export function RuntimeCard({
       : null,
   };
 
+  // The catalog entry for the model a new conversation would start on, resolved
+  // once: the Effort row reads it to decide what it may offer, and the summary
+  // reads the same answer so the collapsed line cannot promise an effort the
+  // opened card calls stranded.
+  const selectedModel = configuredModel
+    ? (models ?? []).find((model) => model.value === configuredModel)
+    : undefined;
+
   const summary = buildRuntimeCardSummary({
     ready,
     settings,
     model: configuredModel,
     models,
     effort: defaults?.effort,
+    modelTakesEffort: selectedModel ? (selectedModel.supportsEffort ?? false) : undefined,
     trustStop: effectiveStop,
     trustInherited: trustStop === null,
     sectionValues,
@@ -363,6 +384,7 @@ export function RuntimeCard({
           models,
           value: configuredModel,
           onChange: (value) => writeForRuntime({ defaultModel: value }),
+          disabled: writesPending,
         }}
         effort={{
           // Both answers the row needs, from the two places that hold them: the
@@ -371,18 +393,18 @@ export function RuntimeCard({
           // not evidence against — a row that called effort unsupported for the
           // length of one round-trip would be lying.
           supportsEffort: settings?.supportsEffort ?? true,
-          selectedModel: configuredModel
-            ? (models ?? []).find((model) => model.value === configuredModel)
-            : undefined,
+          selectedModel,
           configuredModelId: configuredModel,
           value: defaults?.effort ?? null,
           onChange: (value: EffortLevel | null) => writeForRuntime({ defaultEffort: value }),
+          disabled: writesPending,
         }}
         trust={{
           descriptors: capabilityMap?.capabilities[type]?.permissionModes?.values ?? [],
           stop: trustStop,
           globalStop,
           onChange: onChangeTrustStop,
+          disabled: writesPending,
         }}
         storesDefaults={storesDefaults}
         sections={settings?.sections}

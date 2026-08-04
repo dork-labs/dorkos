@@ -167,6 +167,81 @@ const CASES: SummaryCase[] = [
     ],
   },
   {
+    name: 'a model that takes no effort silences the segment, even on a runtime that does',
+    // The stranded-effort case the opened card already names: the Effort row
+    // says the model does not take one and offers to clear it, so a collapsed
+    // line still reading "High effort" would be the card contradicting itself.
+    input: {
+      ready: true,
+      settings: CODEX_SETTINGS,
+      model: 'claude-sonnet-4-5',
+      models: CATALOG,
+      effort: 'high',
+      modelTakesEffort: false,
+      trustStop: 'ask',
+      trustInherited: true,
+    },
+    expected: [
+      { kind: 'model', label: 'Sonnet 4.5', inherited: false },
+      { kind: 'trust', label: 'Asks first', inherited: true },
+    ],
+  },
+  {
+    name: 'a model nobody has asked about yet keeps the effort segment',
+    // Undefined is "not asked", never "no" — the same permissive rule the row
+    // itself follows while a catalog is in flight.
+    input: {
+      ready: true,
+      settings: CODEX_SETTINGS,
+      model: 'claude-sonnet-4-5',
+      models: CATALOG,
+      effort: 'high',
+      modelTakesEffort: undefined,
+      trustStop: 'ask',
+      trustInherited: true,
+    },
+    expected: [
+      { kind: 'model', label: 'Sonnet 4.5', inherited: false },
+      { kind: 'effort', label: 'High effort' },
+      { kind: 'trust', label: 'Asks first', inherited: true },
+    ],
+  },
+  {
+    name: 'a model that does take an effort keeps the segment',
+    input: {
+      ready: true,
+      settings: CODEX_SETTINGS,
+      model: 'claude-sonnet-4-5',
+      models: CATALOG,
+      effort: 'high',
+      modelTakesEffort: true,
+      trustStop: 'ask',
+      trustInherited: true,
+    },
+    expected: [
+      { kind: 'model', label: 'Sonnet 4.5', inherited: false },
+      { kind: 'effort', label: 'High effort' },
+      { kind: 'trust', label: 'Asks first', inherited: true },
+    ],
+  },
+  {
+    name: 'a runtime that takes no effort stays quiet whatever the model says',
+    input: {
+      ready: true,
+      settings: OPENCODE_SETTINGS,
+      model: 'claude-sonnet-4-5',
+      models: CATALOG,
+      effort: 'high',
+      modelTakesEffort: true,
+      trustStop: 'ask',
+      trustInherited: true,
+    },
+    expected: [
+      { kind: 'model', label: 'Sonnet 4.5', inherited: false },
+      { kind: 'trust', label: 'Asks first', inherited: true },
+    ],
+  },
+  {
     name: 'a trust stop overridden on the runtime is not inherited',
     input: {
       ready: true,

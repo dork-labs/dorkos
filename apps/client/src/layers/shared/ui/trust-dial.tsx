@@ -172,6 +172,16 @@ export interface TrustDialProps {
   /** True while a way of working (Plan) holds the session, freezing the stops. */
   planActive?: boolean;
   /**
+   * Freeze the stops for a reason that is not the session's mode — a surface
+   * whose write has nowhere to go yet, typically because the runtime has not
+   * finished declaring itself.
+   *
+   * Distinct from {@link TrustDialProps.planActive}, which freezes AND says why
+   * in the caption ("Turn off Plan to change this"). This one adds no sentence,
+   * because the reason belongs to the caller's screen and lasts a round-trip.
+   */
+  disabled?: boolean;
+  /**
    * What to say when the current mode is not one of the stops — replacing the
    * default sentence, which is written for a live session where picking a stop
    * takes effect at once.
@@ -241,6 +251,7 @@ export function TrustDial({
   descriptors,
   onChangeMode,
   planActive,
+  disabled,
   strandedNote,
   strandsWorkingMode,
   stopLabels,
@@ -260,6 +271,10 @@ export function TrustDial({
   // does not depend on the caller passing the flag.
   const working = current !== undefined && isWorkingMode(current);
   const frozen = planActive === true || (working && strandsWorkingMode !== true);
+  // What the controls actually obey. Kept apart from `frozen` on purpose: the
+  // caption's "Turn off Plan to change this" explains a MODE holding the dial,
+  // and a caller's own freeze has no such sentence to offer.
+  const locked = frozen || disabled === true;
   // A mode the dial cannot place: dropped by the runtime, or filtered out for
   // this model. In a session a way of working is not stranded — it is declared,
   // it is just not a stop, and the switch that owns it is one strip away. On a
@@ -275,7 +290,7 @@ export function TrustDial({
           aria-label="How much this agent may do without asking"
           aria-describedby={captionId}
           value={selected?.stop ?? ''}
-          disabled={frozen}
+          disabled={locked}
           onValueChange={(stop) => {
             const next = stops.find((s) => s.stop === stop);
             if (next) onChangeMode(next.mode.id);
@@ -329,7 +344,7 @@ export function TrustDial({
           stop={selected}
           mode={mode}
           onChangeMode={onChangeMode}
-          disabled={frozen}
+          disabled={locked}
         />
       ))}
     </div>

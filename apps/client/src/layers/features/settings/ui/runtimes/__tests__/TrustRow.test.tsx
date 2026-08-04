@@ -109,6 +109,24 @@ describe('TrustRow', () => {
     expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
   });
 
+  it('freezes the dial and the way back when the write has nowhere to go', async () => {
+    // No caption about turning something off: this freeze is the card's, not a
+    // mode's, and it lasts exactly as long as the runtime takes to declare
+    // where its settings live.
+    const { onChange } = renderRow({ stop: 'autonomy', globalStop: 'ask', disabled: true });
+
+    const stop = screen.getByRole('radio', { name: 'Pauses at big steps' });
+    expect(stop).toBeDisabled();
+    await userEvent.click(stop);
+
+    const revert = screen.getByRole('button', { name: 'Use the setting above' });
+    expect(revert).toBeDisabled();
+    await userEvent.click(revert);
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByTestId('trust-dial-caption')).not.toHaveTextContent('Turn off');
+  });
+
   it('keeps a stored way of working named instead of freezing a control nobody can unfreeze', () => {
     // A settings form has no Plan switch, so a mode with no stop is stranded
     // here exactly as it is on the binding and task dials (`strandsWorkingMode`).

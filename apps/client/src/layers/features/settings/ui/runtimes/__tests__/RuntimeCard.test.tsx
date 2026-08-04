@@ -117,6 +117,20 @@ async function sectionlessRuntime() {
   };
 }
 
+/**
+ * A registered runtime whose capability entry declares no `settings` at all.
+ *
+ * The resolved twin of a capability map still in flight: both leave the card
+ * with no section to write into, and both are the window where a live-looking
+ * control would swallow the change somebody made in it.
+ */
+async function undeclaredSettingsRuntime() {
+  const base = await createMockTransport().getCapabilities();
+  const codex = { ...base.capabilities.codex! };
+  delete (codex as { settings?: unknown }).settings;
+  return { ...base, capabilities: { ...base.capabilities, codex } };
+}
+
 /** Every runtime ready — the state most of these assertions are about. */
 const ALL_READY: SystemRequirements = {
   runtimes: {
@@ -298,6 +312,47 @@ describe('RuntimeCard — write paths', () => {
     expect(screen.queryByTestId('runtime-card-no-settings-codex')).not.toBeInTheDocument();
   });
 
+  it('freezes the three rows while the runtime has not said where its settings live', async () => {
+    // The rows stay (a declaration in flight is not a declaration of `null`),
+    // but nothing on them is live: every write in this window resolves to no
+    // section and does nothing, so a control that accepted a change would take
+    // it and drop it.
+    const { updateConfig, onChangeTrustStop } = renderCard(
+      {},
+      { getCapabilities: vi.fn(undeclaredSettingsRuntime) }
+    );
+    await expand();
+
+    expect(await screen.findByTestId('runtime-model-select-codex')).toBeDisabled();
+    expect(screen.getByTestId('runtime-effort-codex')).toBeDisabled();
+    const stop = screen.getByRole('radio', { name: 'Pauses at big steps' });
+    expect(stop).toBeDisabled();
+
+    await userEvent.click(screen.getByTestId('runtime-model-select-codex'));
+    await userEvent.click(screen.getByTestId('runtime-effort-codex'));
+    await userEvent.click(stop);
+    expect(screen.queryByRole('option')).not.toBeInTheDocument();
+    expect(updateConfig).not.toHaveBeenCalled();
+    expect(onChangeTrustStop).not.toHaveBeenCalled();
+  });
+
+  it('freezes them the same way while the capability map is still in flight', async () => {
+    renderCard({}, { getCapabilities: vi.fn(() => new Promise(() => {})) });
+    await expand();
+
+    expect(await screen.findByTestId('runtime-model-select-codex')).toBeDisabled();
+    expect(screen.getByTestId('runtime-effort-codex')).toBeDisabled();
+  });
+
+  it('hands the rows back the moment the declaration lands', async () => {
+    renderCard();
+    await expand();
+
+    expect(await screen.findByTestId('runtime-model-select-codex')).toBeEnabled();
+    expect(screen.getByTestId('runtime-effort-codex')).toBeEnabled();
+    expect(screen.getByRole('radio', { name: 'Pauses at big steps' })).toBeEnabled();
+  });
+
   it('renders a half-loaded capability map without sections and without throwing', async () => {
     // Nobody has answered what this runtime declares yet. Optional all the way
     // down: a card, no bespoke sections, and no crash.
@@ -395,6 +450,37 @@ describe('RuntimeCard — the summary line', () => {
 
     const summary = await screen.findByTestId('runtime-card-summary-codex');
     await waitFor(() => expect(summary).toHaveTextContent('gpt-4.1-retired'));
+  });
+
+  it('leaves a stranded effort out of the line, and names it in the opened row', async () => {
+    // One card, two voices: the collapsed line used to promise "High effort"
+    // while the row a click away said the model takes none and offered to clear
+    // it. The catalog answers that question once, and both read the answer.
+    renderCard(
+      {},
+      {
+        getConfig: vi.fn().mockResolvedValue(
+          makeConfig({
+            executionDefaults: {
+              runtime: 'claude-code',
+              trustStop: null,
+              perRuntime: [entry('codex', { model: 'gpt-5.5-mini', effort: 'high' })],
+            },
+          })
+        ),
+      }
+    );
+
+    const summary = await screen.findByTestId('runtime-card-summary-codex');
+    // The catalog has landed by the time it can name the model — which is also
+    // when it knows the model takes no effort.
+    await waitFor(() => expect(summary).toHaveTextContent('GPT-5.5 mini'));
+    expect(summary).not.toHaveTextContent('High effort');
+
+    await expand();
+    expect(await screen.findByTestId('runtime-effort-clear-codex')).toHaveTextContent(
+      'does nothing'
+    );
   });
 
   it("names this runtime's own stop as its own once it overrides the global one", async () => {

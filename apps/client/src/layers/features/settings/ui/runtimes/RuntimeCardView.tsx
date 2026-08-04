@@ -265,7 +265,7 @@ export function RuntimeCardView({
           className="flex items-start gap-1.5 px-4 pb-3 text-xs text-amber-700 dark:text-amber-400"
           data-testid={`runtime-default-broken-${type}`}
         >
-          <CircleAlert className="mt-px size-3.5 shrink-0" />
+          <CircleAlert className="mt-px size-3.5 shrink-0" aria-hidden />
           {BROKEN_DEFAULT_LINE}
         </p>
       )}

@@ -326,6 +326,9 @@ export function createRuntimeCardProps(
       model,
       models,
       effort,
+      // The same second answer the Effort row gets, so the showcase's collapsed
+      // line cannot promise an effort its own opened card calls stranded.
+      modelTakesEffort: selectedModel ? (selectedModel.supportsEffort ?? false) : undefined,
       trustStop: trustStop ?? globalStop,
       trustInherited: trustStop === null,
       ...(sectionValues ? { sectionValues } : {}),
