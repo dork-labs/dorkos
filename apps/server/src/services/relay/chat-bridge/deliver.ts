@@ -47,6 +47,7 @@ import type { RoomEntry, RoomEntryBody } from '@dorkos/shared/room-schemas';
 import { logger } from '../../../lib/logger.js';
 import type { AuthorRecord } from '../../rooms/author-registry.js';
 import {
+  bridgeTurnFailedText,
   buildBridgeBlockedNotice,
   buildBridgeUndeliveredNotice,
   type BridgeBlockedReason,
@@ -483,12 +484,38 @@ export class ChatBridgeDelivery {
    * typed, and a stored prefix would re-apply on every re-delivery. Notices and
    * the bound agent's own posts carry no prefix — the bot IS the agent's
    * identity, so its own words need none.
+   *
+   * **A `turn_failed` notice is re-rendered, not forwarded (spec §6.2).** The
+   * room's own copy of it points a reader at "Ana's session" — the right
+   * pointer for a cockpit reader, meaningless to a person on Telegram who has
+   * no session to open. {@link ChatBridgeDelivery.buildContent} sends this
+   * one plain sentence instead; the stored entry, and what a cockpit reader
+   * sees scrolling the same room, is unchanged. `halted` needs no such
+   * rewrite — its stored text already names nothing cockpit-shaped — so it,
+   * and every other kind, forward the stored text as-is.
    */
   private buildContent(entry: RoomEntry, author: AuthorRecord | null | undefined): string {
+    if (entry.kind === 'notice') return this.buildNoticeContent(entry);
     const text = entry.body.text;
-    if (entry.kind !== 'post' || author?.kind === 'agent') return text;
+    if (author?.kind === 'agent') return text;
     const name = author?.displayName;
     return name ? `${name}: ${text}` : text;
+  }
+
+  /**
+   * The delivered text for a notice. Only `turn_failed` and `halted` ever
+   * reach here (the eligibility gate in {@link ChatBridgeDelivery.deliverSerial}
+   * refuses every other code before content is ever built), and only
+   * `turn_failed` needs a different rendering than the room's own line — see
+   * {@link ChatBridgeDelivery.buildContent}.
+   */
+  private buildNoticeContent(entry: RoomEntry): string {
+    if (entry.body.notice === 'turn_failed') {
+      const subjectId = entry.body.subjectAuthorId;
+      const subject = subjectId ? this.deps.authors.getById(subjectId) : null;
+      return bridgeTurnFailedText(subject?.displayName ?? 'The agent');
+    }
+    return entry.body.text;
   }
 
   /** The outbound payload: content, plus reply/topic targeting for a reply (spec §6.5). */
