@@ -1,4 +1,4 @@
-import { Suspense, useEffect, type ComponentType, type ReactNode } from 'react';
+import { Fragment, Suspense, useEffect, type ComponentType, type ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
   ResponsiveDialog,
@@ -10,6 +10,7 @@ import {
   NavigationLayoutDialogHeader,
   NavigationLayoutBody,
   NavigationLayoutSidebar,
+  NavigationLayoutSectionHeader,
   NavigationLayoutItem,
   NavigationLayoutContent,
   NavigationLayoutPanel,
@@ -33,6 +34,14 @@ export interface TabbedDialogTab<T extends string> {
   actions?: ReactNode;
   /** Optional description rendered below the panel header title on desktop. */
   description?: ReactNode;
+  /**
+   * Optional sidebar group this tab sits under. Tabs sharing a group render
+   * beneath one section header; tabs with no group render ungrouped at the top,
+   * above the first header. Group order follows first appearance in the tab
+   * list, so the ungrouped tabs always lead. When no tab declares a group the
+   * sidebar stays flat and no headers render.
+   */
+  group?: string;
 }
 
 /** Props for `TabbedDialog`. */
@@ -96,6 +105,16 @@ export function TabbedDialog<T extends string>({
   const extensionTabs = useSlotContributions(extensionSlot ?? 'settings.tabs');
   const allTabs = extensionSlot ? [...tabs, ...extensionTabs.map(toTabbedDialogTab<T>)] : tabs;
 
+  // Group the tabs for the sidebar. Order follows first appearance so the
+  // ungrouped tabs (declared first) always lead; every later group renders once,
+  // in the order its first member appears. When no tab has a group the list is
+  // one ungrouped run and no headers show — flat, as before.
+  const groupOrder: (string | undefined)[] = [];
+  for (const tab of allTabs) {
+    if (!groupOrder.includes(tab.group)) groupOrder.push(tab.group);
+  }
+  const hasGroups = allTabs.some((tab) => tab.group);
+
   // A deep link can name a tab that does not exist — a stale bookmark, a
   // renamed tab, a typo in `?settings=`, or a tour pointing at a tab that was
   // removed (tour deep links are unconstrained `string`). Selecting it would
@@ -145,11 +164,26 @@ export function TabbedDialog<T extends string>({
 
           <NavigationLayoutBody>
             <NavigationLayoutSidebar>
-              {allTabs.map((tab) => (
-                <NavigationLayoutItem key={tab.id} value={tab.id} icon={tab.icon}>
-                  {tab.label}
-                </NavigationLayoutItem>
-              ))}
+              {hasGroups
+                ? groupOrder.map((group) => (
+                    <Fragment key={group ?? '__ungrouped'}>
+                      {group && (
+                        <NavigationLayoutSectionHeader>{group}</NavigationLayoutSectionHeader>
+                      )}
+                      {allTabs
+                        .filter((tab) => tab.group === group)
+                        .map((tab) => (
+                          <NavigationLayoutItem key={tab.id} value={tab.id} icon={tab.icon}>
+                            {tab.label}
+                          </NavigationLayoutItem>
+                        ))}
+                    </Fragment>
+                  ))
+                : allTabs.map((tab) => (
+                    <NavigationLayoutItem key={tab.id} value={tab.id} icon={tab.icon}>
+                      {tab.label}
+                    </NavigationLayoutItem>
+                  ))}
               {sidebarExtras}
             </NavigationLayoutSidebar>
 
@@ -184,17 +218,26 @@ function TabSuspenseFallback() {
   return <div className="text-muted-foreground py-8 text-center text-sm">Loading…</div>;
 }
 
-/** Convert a `SettingsTabContribution` from the registry into a `TabbedDialogTab`. */
+/**
+ * Convert a `SettingsTabContribution` from the registry into a `TabbedDialogTab`.
+ *
+ * A contribution with no `group` lands under "Add-ons" — the home the settings
+ * dialog reserves for extension-contributed tabs — so a third-party tab written
+ * before this field existed still files itself somewhere honest rather than
+ * floating ungrouped above the first section header.
+ */
 function toTabbedDialogTab<T extends string>(contribution: {
   id: string;
   label: string;
   icon: LucideIcon;
   component: ComponentType;
+  group?: string;
 }): TabbedDialogTab<T> {
   return {
     id: contribution.id as T,
     label: contribution.label,
     icon: contribution.icon,
     component: contribution.component,
+    group: contribution.group ?? 'Add-ons',
   };
 }

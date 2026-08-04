@@ -120,6 +120,7 @@ export function initializeExtensions(): void {
       import('@/layers/features/extensions').then((m) => ({ default: m.ExtensionsSettingsTab }))
     ),
     priority: 70,
+    group: 'Add-ons',
   });
 
   // Right-panel inspector tabs — shared by every shell (the routed cockpit and

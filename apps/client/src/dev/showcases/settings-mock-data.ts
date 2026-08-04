@@ -2,7 +2,7 @@
  * Static mock data for the Settings playground showcases.
  *
  * The Settings showcases (`SettingsShowcases.tsx`) render real production
- * components such as `ServerTab`, `ToolsTab`, `AgentDialog`, and `AgentsTab`
+ * components such as `ServerTab`, `ToolsTab`, and `ClaudeAccountsCard`
  * inside a `MockedQueryProvider` that primes the TanStack Query cache with
  * the literals exported from this module. The dev playground uses
  * `createPlaygroundTransport()` which returns `null` for every request, so
@@ -158,15 +158,15 @@ export const MOCK_AGENT_MANIFEST: AgentManifest = {
 };
 
 /**
- * Mock mesh agents listing consumed by the `AgentsTab` showcase. Mirrors
- * the shape returned by `Transport.listMeshAgents()` (`{ agents: AgentManifest[] }`)
- * so the showcase can prime the TanStack Query cache via
- * `setQueryData(['mesh', 'agents'], MOCK_MESH_AGENTS)` without any
- * adapter glue.
+ * Mock mesh agents listing. Mirrors the shape returned by
+ * `Transport.listMeshAgents()` (`{ agents: AgentManifest[] }`) so
+ * `settings-showcase-helpers.tsx`'s `MockedQueryProvider` can prime the
+ * TanStack Query cache via `setQueryData(['mesh', 'agents'], MOCK_MESH_AGENTS)`,
+ * giving any showcase that reads the mesh-agents query real data without
+ * network or adapter glue.
  *
- * Includes one system agent (`dorkbot`) and one user agent so the tab
- * exercises both row variants — the system row is read-only while the
- * user row exposes edit/delete affordances.
+ * Includes one system agent (`dorkbot`) and one user agent so consumers can
+ * exercise both the read-only system variant and the editable user variant.
  */
 export const MOCK_MESH_AGENTS: { agents: AgentManifest[] } = {
   agents: [

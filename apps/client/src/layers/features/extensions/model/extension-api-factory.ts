@@ -49,7 +49,12 @@ export function createExtensionAPI(
       slot: ExtensionPointId,
       id: string,
       component: ComponentType,
-      options?: { priority?: number; label?: string; icon?: ComponentType<{ className?: string }> }
+      options?: {
+        priority?: number;
+        label?: string;
+        icon?: ComponentType<{ className?: string }>;
+        group?: string;
+      }
     ): () => void {
       const contribution = adaptToContribution(slot, `${extId}:${id}`, component, options);
       const unsub = deps.registry.register(slot, contribution);
@@ -110,7 +115,12 @@ export function createExtensionAPI(
       } as { open: () => void; close: () => void };
     },
 
-    registerSettingsTab(id: string, label: string, component: ComponentType): () => void {
+    registerSettingsTab(
+      id: string,
+      label: string,
+      component: ComponentType,
+      options?: { group?: string }
+    ): () => void {
       const contribution = {
         id: `${extId}:${id}`,
         label,
@@ -118,6 +128,9 @@ export function createExtensionAPI(
         // so icon is intentionally absent here — the registry accepts undefined.
         icon: undefined as unknown as import('lucide-react').LucideIcon,
         component,
+        // Absent group means "Add-ons"; the Settings dialog applies that default
+        // when it renders, so we forward whatever the extension asked for.
+        group: options?.group,
       };
       const unsub = deps.registry.register('settings.tabs', contribution);
       cleanups.push(unsub);
@@ -253,7 +266,12 @@ function adaptToContribution(
   slot: ExtensionPointId,
   id: string,
   component: ComponentType,
-  options?: { priority?: number; label?: string; icon?: ComponentType<{ className?: string }> }
+  options?: {
+    priority?: number;
+    label?: string;
+    icon?: ComponentType<{ className?: string }>;
+    group?: string;
+  }
 ): Record<string, unknown> {
   const base = { id, priority: options?.priority ?? DEFAULT_PRIORITY };
   // Human label for labelled/tabbed slots; namespaced id is the honest fallback.
@@ -290,6 +308,8 @@ function adaptToContribution(
         component,
         label,
         icon: undefined as unknown as import('lucide-react').LucideIcon,
+        // Absent group is resolved to "Add-ons" by the Settings dialog itself.
+        group: options?.group,
       };
     case 'dialog':
       return { ...base, component, openStateKey: `ext:${id}` };

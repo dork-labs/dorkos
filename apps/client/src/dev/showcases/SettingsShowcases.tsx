@@ -24,8 +24,6 @@ import { AppearanceTab } from '@/layers/features/settings/ui/tabs/AppearanceTab'
 import { PreferencesTab } from '@/layers/features/settings/ui/tabs/PreferencesTab';
 import { ServerTab } from '@/layers/features/settings/ui/ServerTab';
 import { ToolsTab } from '@/layers/features/settings/ui/ToolsTab';
-import { IntegrationsTab } from '@/layers/features/settings/ui/IntegrationsTab';
-import { AgentsTab } from '@/layers/features/settings/ui/AgentsTab';
 import { AdvancedTab } from '@/layers/features/settings/ui/AdvancedTab';
 import { ClaudeAccountsCard } from '@/layers/features/settings/ui/ClaudeAccountsCard';
 import {
@@ -97,7 +95,7 @@ function FullSettingsDialogSection() {
   return (
     <PlaygroundSection
       title="Full Settings Dialog"
-      description="The complete Settings dialog with all tabs. Server/Tools/Integrations tabs render in their empty state because the playground transport returns null for all queries — see Loading & Empty States for richer demos."
+      description="The complete Settings dialog with all tabs. Server and Tools tabs render in their empty state because the playground transport returns null for all queries — see Loading & Empty States for richer demos."
     >
       <ShowcaseDemo responsive>
         <Button onClick={() => setOpen(true)}>Open Settings</Button>
@@ -142,24 +140,6 @@ function IndividualTabsSection() {
         <MockedQueryProvider>
           <TabShell value="tools">
             <ToolsTab />
-          </TabShell>
-        </MockedQueryProvider>
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>Integrations Tab</ShowcaseLabel>
-      <ShowcaseDemo>
-        <MockedQueryProvider>
-          <TabShell value="integrations">
-            <IntegrationsTab />
-          </TabShell>
-        </MockedQueryProvider>
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>Agents Tab</ShowcaseLabel>
-      <ShowcaseDemo>
-        <MockedQueryProvider>
-          <TabShell value="agents">
-            <AgentsTab />
           </TabShell>
         </MockedQueryProvider>
       </ShowcaseDemo>
@@ -250,20 +230,6 @@ function LoadingEmptyStatesSection() {
       <ShowcaseDemo>
         <TabShell value="server">
           <ServerTab />
-        </TabShell>
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>Integrations Tab — Empty Catalog</ShowcaseLabel>
-      <ShowcaseDemo>
-        <TabShell value="integrations">
-          <IntegrationsTab />
-        </TabShell>
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>Agents Tab — No Default Agent</ShowcaseLabel>
-      <ShowcaseDemo>
-        <TabShell value="agents">
-          <AgentsTab />
         </TabShell>
       </ShowcaseDemo>
     </PlaygroundSection>

@@ -55,32 +55,38 @@ export interface ToolGroupDef {
   implicitNote?: string;
 }
 
-/** Ordered list of toggleable tool groups shown in the Settings Tools tab. */
+/**
+ * Ordered list of toggleable tool groups shown in the Settings Tools tab.
+ *
+ * Labels name what the tools do, not the subsystem behind them — the cockpit
+ * does not say "Relay" or "Mesh" (the Language & IA program, plan D4/D6). The
+ * matching per-agent Tools view uses the same plain names.
+ */
 export const TOOL_GROUPS: ToolGroupDef[] = [
   {
     key: 'tasks',
-    label: 'Tasks (Scheduling)',
-    description: 'Create and manage scheduled agent runs',
+    label: 'Scheduling',
+    description: 'Create and manage scheduled runs',
     tools: TOOL_INVENTORY.tasks,
   },
   {
     key: 'relay',
-    label: 'Relay (Messaging)',
-    description: 'Send messages, check inbox, register endpoints',
+    label: 'Messaging',
+    description: 'Send messages and check the inbox',
     tools: TOOL_INVENTORY.relay,
     implicitNote: 'Includes trace tools',
   },
   {
     key: 'mesh',
-    label: 'Mesh (Discovery)',
-    description: 'Discover, register, and query agents',
+    label: 'Agent discovery',
+    description: 'Find and register agents, and see who is available',
     tools: TOOL_INVENTORY.mesh,
   },
   {
     key: 'adapter',
-    label: 'Relay Adapters',
-    description: 'Manage Telegram, Slack, webhooks, and bindings',
+    label: 'Connection management',
+    description: 'Set up Telegram, Slack, and webhooks, and route each chat to an agent',
     tools: TOOL_INVENTORY.adapter,
-    implicitNote: 'Includes binding tools',
+    implicitNote: 'Includes routing tools',
   },
 ];

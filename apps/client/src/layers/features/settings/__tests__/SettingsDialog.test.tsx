@@ -118,9 +118,9 @@ function navigateTo(name: RegExp | string) {
 
 describe('SettingsDialog', () => {
   // Verifies the dialog renders with the correct title
-  it('renders with "App Settings" title when open', () => {
+  it('renders with "Settings" title when open', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
-    expect(screen.getByText('App Settings')).toBeDefined();
+    expect(screen.getByText('Settings')).toBeDefined();
   });
 
   // Verifies appearance controls are visible on the default tab
@@ -171,7 +171,7 @@ describe('SettingsDialog', () => {
   // Verifies the dialog content is not rendered when closed
   it('does not render content when closed', () => {
     render(<SettingsDialog open={false} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
-    expect(screen.queryByText('App Settings')).toBeNull();
+    expect(screen.queryByText('Settings')).toBeNull();
   });
 
   // Verifies uptime is formatted in human-readable form
@@ -186,17 +186,34 @@ describe('SettingsDialog', () => {
     expect(uptime).toBeDefined();
   });
 
-  // Verifies sidebar navigation items render correctly
-  it('renders eight sidebar items: Appearance, Preferences, Server, Tools, Integrations, Agents, Runtimes, Advanced', () => {
+  // Verifies sidebar navigation items render correctly (built-in tabs only —
+  // the Extensions tab arrives through the settings.tabs slot, unmounted here).
+  it('renders the built-in sidebar items and drops the retired Integrations and Agents tabs', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
     expect(screen.getByRole('tab', { name: /appearance/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /preferences/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /server/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /tools/i })).toBeDefined();
-    expect(screen.getByRole('tab', { name: /integrations/i })).toBeDefined();
-    expect(screen.getByRole('tab', { name: /agents/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /^runtimes/i })).toBeDefined();
+    expect(screen.getByRole('tab', { name: /security/i })).toBeDefined();
+    expect(screen.getByRole('tab', { name: /privacy & data/i })).toBeDefined();
     expect(screen.getByRole('tab', { name: /advanced/i })).toBeDefined();
+    // The two deleted tabs are gone.
+    expect(screen.queryByRole('tab', { name: /integrations/i })).toBeNull();
+    expect(screen.queryByRole('tab', { name: /^agents$/i })).toBeNull();
+  });
+
+  // Verifies the grouped-nav section headers render in the sidebar. Scoped to the
+  // section-header slot because some group names ("System") also occur as ordinary
+  // content elsewhere (the theme selector's "System" option).
+  it('renders grouped-nav section headers', () => {
+    const { container } = render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, {
+      wrapper: createWrapper(),
+    });
+    const headers = Array.from(
+      container.querySelectorAll('[data-slot="navigation-layout-section-header"]')
+    ).map((el) => el.textContent);
+    expect(headers).toEqual(['Agents & sessions', 'Access & privacy', 'System']);
   });
 
   // Verifies font family selector appears in the Appearance tab

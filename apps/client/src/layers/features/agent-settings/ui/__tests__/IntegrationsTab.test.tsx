@@ -276,8 +276,17 @@ function buildRouter() {
     validateSearch: zodValidator(searchSchema),
     component: RouteSlot,
   });
+  // The empty-state CTAs navigate to the Connections page now (DOR-857/858), so
+  // the harness registers that route to let the navigation resolve and the
+  // assertions read the landing pathname + region.
+  const connectionsRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/connections',
+    validateSearch: zodValidator(z.object({ region: z.string().optional() })),
+    component: RouteSlot,
+  });
   return createRouter({
-    routeTree: rootRoute.addChildren([indexRoute]),
+    routeTree: rootRoute.addChildren([indexRoute, connectionsRoute]),
     history: createMemoryHistory({ initialEntries: ['/'] }),
   });
 }
@@ -292,6 +301,16 @@ beforeEach(async () => {
 /** The Settings tab the URL currently deep-links to, or `undefined` for none. */
 function readSettingsTab(): string | undefined {
   return (router.state.location.search as { settings?: string }).settings;
+}
+
+/** The path the router is currently on. */
+function readPathname(): string {
+  return router.state.location.pathname;
+}
+
+/** The Connections region the URL currently points to, or `undefined`. */
+function readConnectionsRegion(): string | undefined {
+  return (router.state.location.search as { region?: string }).region;
 }
 
 /**
@@ -333,17 +352,19 @@ describe('IntegrationsTab', () => {
       mockUseRelayEnabled.mockReturnValue(false);
       const view = renderTab();
       expect(view.getByText('The Relay message bus is off')).toBeInTheDocument();
-      expect(view.getByRole('button', { name: 'Open Relay settings' })).toBeInTheDocument();
+      expect(view.getByRole('button', { name: 'Open Messaging settings' })).toBeInTheDocument();
     });
 
-    // `?settings=<tab>` is what the Settings dialog reads to pick its tab.
-    // Asserting only that the CTA fired an action is what let both of these
-    // silently land on Appearance for as long as they did (DOR-484).
-    it('State A: the CTA lands Settings on the Advanced tab, where Relay is switched on', async () => {
+    // Messaging lives on the Connections page now (DOR-857), so the CTA lands
+    // there, in the messaging region — not on a Settings tab. Asserting the
+    // landing path + region is what keeps a CTA from silently going nowhere,
+    // the way "Open Relay settings" used to open the Advanced tab (DOR-858).
+    it('State A: the CTA lands on the Connections page, messaging region', async () => {
       mockUseRelayEnabled.mockReturnValue(false);
       const view = renderTab();
-      fireEvent.click(view.getByRole('button', { name: 'Open Relay settings' }));
-      await waitFor(() => expect(readSettingsTab()).toBe('advanced'));
+      fireEvent.click(view.getByRole('button', { name: 'Open Messaging settings' }));
+      await waitFor(() => expect(readPathname()).toBe('/connections'));
+      expect(readConnectionsRegion()).toBe('messaging');
     });
 
     it('State B: shows no-adapters message when relay is on but catalog is empty', () => {
@@ -353,17 +374,19 @@ describe('IntegrationsTab', () => {
       expect(view.getByRole('button', { name: 'Add an integration' })).toBeInTheDocument();
     });
 
-    it('State B: the CTA lands Settings on the Integrations tab', async () => {
+    it('State B: the CTA lands on the Connections page, messaging region', async () => {
       mockUseExternalAdapterCatalog.mockReturnValue({ data: [] });
       const view = renderTab();
       fireEvent.click(view.getByRole('button', { name: 'Add an integration' }));
-      await waitFor(() => expect(readSettingsTab()).toBe('integrations'));
+      await waitFor(() => expect(readPathname()).toBe('/connections'));
+      expect(readConnectionsRegion()).toBe('messaging');
     });
 
-    // The Obsidian embed mounts no router, so these CTAs cannot write a URL.
-    // They must still open Settings — on its default tab, which is what they did
-    // before the deep link existed. Throwing would make them worse than the
-    // mislabelled buttons they replaced.
+    // The Obsidian embed mounts no router, so these CTAs have nowhere to
+    // navigate. Following DOR-857's decision for the retired messaging deep
+    // links, the Connections navigation is a no-op in the embed rather than a
+    // lie — the click must not throw and must not fabricate a Settings dialog
+    // that no longer owns this surface.
     describe('in the router-less embed', () => {
       beforeEach(() => {
         setPlatformAdapter({ isEmbedded: true, openFile: async () => {} });
@@ -373,22 +396,26 @@ describe('IntegrationsTab', () => {
         setPlatformAdapter({ isEmbedded: false, openFile: async () => {} });
       });
 
-      it('State A: the CTA opens Settings instead of throwing', () => {
+      it('State A: the CTA is inert instead of throwing', () => {
         mockUseRelayEnabled.mockReturnValue(false);
         const view = renderTabWithoutRouter();
 
-        fireEvent.click(view.getByRole('button', { name: 'Open Relay settings' }));
+        expect(() =>
+          fireEvent.click(view.getByRole('button', { name: 'Open Messaging settings' }))
+        ).not.toThrow();
 
-        expect(useAppStore.getState().settingsOpen).toBe(true);
+        expect(useAppStore.getState().settingsOpen).toBe(false);
       });
 
-      it('State B: the CTA opens Settings instead of throwing', () => {
+      it('State B: the CTA is inert instead of throwing', () => {
         mockUseExternalAdapterCatalog.mockReturnValue({ data: [] });
         const view = renderTabWithoutRouter();
 
-        fireEvent.click(view.getByRole('button', { name: 'Add an integration' }));
+        expect(() =>
+          fireEvent.click(view.getByRole('button', { name: 'Add an integration' }))
+        ).not.toThrow();
 
-        expect(useAppStore.getState().settingsOpen).toBe(true);
+        expect(useAppStore.getState().settingsOpen).toBe(false);
       });
     });
 
@@ -468,11 +495,11 @@ describe('IntegrationsTab', () => {
       expect(view.getByText('Add Integration')).toBeInTheDocument();
     });
 
-    it('does not render IntegrationPicker in State A (relay off) — shows relay CTA instead', () => {
+    it('does not render IntegrationPicker in State A (relay off) — shows messaging CTA instead', () => {
       mockUseRelayEnabled.mockReturnValue(false);
       const view = renderTab();
       expect(view.queryByText('Add Integration')).not.toBeInTheDocument();
-      expect(view.getByRole('button', { name: 'Open Relay settings' })).toBeInTheDocument();
+      expect(view.getByRole('button', { name: 'Open Messaging settings' })).toBeInTheDocument();
     });
   });
 
