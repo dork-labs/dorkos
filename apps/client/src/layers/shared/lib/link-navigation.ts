@@ -471,13 +471,14 @@ export function openLink(href: string, options: OpenLinkOptions = {}): boolean {
 /**
  * Open a link outside the app, whatever it points at.
  *
- * The right call for any action that promises to leave. Its three direct call
- * sites are the canvas browser's "Open in system browser" button and the two
- * surfaces that render {@link LinkSafetyModal} themselves — the gen-UI widget
- * `url` action and the MCP App iframe — plus the MCP elicitation prompt. That
- * modal's contract is "this leaves what you are looking at", so a target that
- * happens to be one of our own routes must still leave, not navigate the view
- * out from under the reader. Works with no router registered, so it behaves
+ * The right call for any action that promises to leave. Its callers range from
+ * first-party buttons to agent-fed surfaces (gen-UI widget `url` actions, the
+ * MCP App iframe, elicitation prompts, touch chips in the embed); the full
+ * surface list lives in `contributing/link-dispatch-policy.md` rather than
+ * here, where a count would drift. Where a {@link LinkSafetyModal} confirms
+ * first, that modal's contract is "this leaves what you are looking at", so a
+ * target that happens to be one of our own routes must still leave, not
+ * navigate the view out from under the reader. Works with no router registered, so it behaves
  * identically in the router-less Obsidian embed.
  *
  * **Not every link in the product comes through here.** Markdown links in chat

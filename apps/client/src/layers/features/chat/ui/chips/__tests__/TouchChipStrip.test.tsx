@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, cleanup, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
@@ -663,6 +663,91 @@ describe('TouchChipStrip — clicking through to the canvas', () => {
       rightPanelOpen: false,
       activeRightPanelTab: null,
     });
+  });
+});
+
+describe('TouchChipStrip — the link gate inside the plugin', () => {
+  let openSpy: ReturnType<typeof vi.spyOn>;
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    // The plugin has no canvas, so a url chip there hands its target to the
+    // browser — the one path in this component that leaves the app.
+    setPlatformAdapter({ isEmbedded: true, openFile: async () => {} });
+    openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    openSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
+
+  /** Click the single url chip in the tray of a turn that fetched `url`. */
+  async function clickFetchedChip(url: string) {
+    const user = userEvent.setup();
+    render(<TouchChipStrip sessionId={SESSION_ID} parts={[toolCall('WebFetch', { url })]} />);
+    const tray = await openTray(user);
+    await user.click(within(tray).getByTestId('touch-chip'));
+  }
+
+  it('opens a page the agent fetched', async () => {
+    await clickFetchedChip('https://example.com/page');
+
+    expect(openSpy).toHaveBeenCalledWith(
+      'https://example.com/page',
+      '_blank',
+      'noopener,noreferrer'
+    );
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('refuses a script-bearing scheme the agent supplied', async () => {
+    // `fullTarget` is the agent's own `WebFetch` input, so this is the scheme
+    // allowlist's whole reason for existing arriving at the one surface that
+    // used to skip it (DOR-921).
+    await clickFetchedChip('javascript:alert(1)');
+
+    expect(openSpy).not.toHaveBeenCalled();
+    // The seam is what said no. Without this the case would still pass if the
+    // whole branch were deleted, which is a different bug wearing this test's
+    // green.
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('unsupported-scheme'),
+      'javascript:alert(1)'
+    );
+  });
+
+  it('refuses a scheme nobody has thought of yet', async () => {
+    // The allowlist is what makes this a refusal without anyone having named
+    // `dorkos-evil:` anywhere — a denylist would have opened it.
+    await clickFetchedChip('dorkos-evil://take-over');
+
+    expect(openSpy).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('unsupported-scheme'),
+      'dorkos-evil://take-over'
+    );
+  });
+
+  it('still routes the same target to the canvas, which refuses it out loud', async () => {
+    // The two branches are gated by two different policies ON PURPOSE, and this
+    // pins the half that is NOT the link seam. The canvas asks
+    // `classifyBrowserTarget`, which frames only `http(s)`/`file:` and renders
+    // "This address can't be displayed for security reasons" for everything
+    // else — so the reader is told what the agent fetched. Gating this branch on
+    // the link seam instead would trade that sentence for a chip that does
+    // nothing when clicked, and would refuse the `file:` targets the canvas
+    // serves legitimately.
+    setPlatformAdapter({ isEmbedded: false, openFile: async () => {} });
+    await clickFetchedChip('javascript:alert(1)');
+
+    expect(canvasState().openDocuments[0].content).toEqual({
+      type: 'url',
+      url: 'javascript:alert(1)',
+    });
+    // Nothing left the app: the canvas is a frame, not a navigation.
+    expect(openSpy).not.toHaveBeenCalled();
   });
 });
 
