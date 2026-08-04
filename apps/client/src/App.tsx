@@ -22,6 +22,7 @@ import {
   Kbd,
 } from '@/layers/shared/ui';
 import { CommandPaletteDialog } from '@/layers/features/command-palette';
+import { FeedbackDialogHost } from '@/layers/widgets/app-layout';
 import { PipHost } from '@/layers/features/pip-panel';
 import { ShortcutsPanel, useShortcutsPanel } from '@/layers/features/shortcuts';
 import {
@@ -202,6 +203,7 @@ export function App({ transformContent }: AppProps) {
           </div>
         </div>
         <CommandPaletteDialog />
+        <FeedbackDialogHost />
         <ShortcutsPanel />
         <Toaster />
         <PipHost />

@@ -59,6 +59,10 @@ export {
 } from './agent-creation-store';
 export { useImportProjectsStore } from './import-projects-store';
 export {
+  useFeedbackDialogStore,
+  type FeedbackPrefill,
+} from './feedback-dialog/feedback-dialog-store';
+export {
   useAgentBirthStore,
   useAgentBirthRecord,
   type AgentBirthRecord,

@@ -53,7 +53,10 @@ describe('mutation error toast policy', () => {
   it('shows the generic toast for a mutation that declared no meta', () => {
     fireMutationError(undefined);
 
-    expect(toast.error).toHaveBeenCalledWith('Action failed. Please try again.');
+    expect(toast.error).toHaveBeenCalledWith(
+      'Action failed. Please try again.',
+      expect.objectContaining({ action: expect.objectContaining({ label: 'Report' }) })
+    );
   });
 
   it('stays silent when the mutation opts out via meta.suppressErrorToast', () => {
@@ -71,6 +74,9 @@ describe('mutation error toast policy', () => {
   it('shows the toast when meta exists but does not opt out', () => {
     fireMutationError({ somethingElse: true });
 
-    expect(toast.error).toHaveBeenCalledWith('Action failed. Please try again.');
+    expect(toast.error).toHaveBeenCalledWith(
+      'Action failed. Please try again.',
+      expect.objectContaining({ action: expect.objectContaining({ label: 'Report' }) })
+    );
   });
 });

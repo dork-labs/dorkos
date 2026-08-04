@@ -1,15 +1,31 @@
+import type { CSSProperties } from 'react';
 import type { FallbackProps } from 'react-error-boundary';
+import { stashPendingFeedback } from '@/layers/shared/lib';
 
 /**
  * Last-resort crash fallback for catastrophic errors.
  *
  * Uses inline styles only — no shadcn, no Tailwind, no app context.
  * If providers crashed, any dependency on them would also crash.
- * The only recovery action is a full page reload.
+ *
+ * Two recovery actions: a full page reload, and "Report this crash", which
+ * stashes a prefilled bug report (message stubbed from the error, stack folded
+ * into diagnostics) and reloads — the dialog's host picks it up on the next boot
+ * (`shared/lib/pending-feedback.ts`). The dialog itself cannot render here: the
+ * whole app tree, its host included, has already unmounted.
  */
 export function AppCrashFallback({ error }: FallbackProps) {
   const message = error instanceof Error ? error.message : String(error);
   const stack = error instanceof Error ? error.stack : undefined;
+
+  function reportCrash(): void {
+    stashPendingFeedback({
+      kind: 'bug',
+      message: `Crash: ${message}`,
+      ...(stack ? { crashStack: stack } : {}),
+    });
+    window.location.reload();
+  }
 
   return (
     <div
@@ -67,34 +83,56 @@ export function AppCrashFallback({ error }: FallbackProps) {
         </details>
       )}
 
-      <button
-        onClick={() => window.location.reload()}
-        style={{
-          marginTop: '1.5rem',
-          padding: '0.5rem 1rem',
-          fontSize: '0.875rem',
-          backgroundColor: 'transparent',
-          color: '#d4d4d8',
-          border: '1px solid #3f3f46',
-          borderRadius: '0.375rem',
-          cursor: 'pointer',
-          fontFamily: 'inherit',
-        }}
-        onMouseOver={(e) => {
-          (e.target as HTMLButtonElement).style.backgroundColor = '#18181b';
-        }}
-        onFocus={(e) => {
-          (e.target as HTMLButtonElement).style.backgroundColor = '#18181b';
-        }}
-        onMouseOut={(e) => {
-          (e.target as HTMLButtonElement).style.backgroundColor = 'transparent';
-        }}
-        onBlur={(e) => {
-          (e.target as HTMLButtonElement).style.backgroundColor = 'transparent';
-        }}
-      >
-        Reload DorkOS
-      </button>
+      <div style={{ marginTop: '1.5rem', display: 'flex', gap: '0.75rem' }}>
+        <button
+          onClick={reportCrash}
+          style={{ ...CRASH_BUTTON_STYLE, borderColor: '#52525b' }}
+          onMouseOver={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#18181b';
+          }}
+          onFocus={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#18181b';
+          }}
+          onMouseOut={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'transparent';
+          }}
+          onBlur={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'transparent';
+          }}
+        >
+          Report this crash
+        </button>
+        <button
+          onClick={() => window.location.reload()}
+          style={CRASH_BUTTON_STYLE}
+          onMouseOver={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#18181b';
+          }}
+          onFocus={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#18181b';
+          }}
+          onMouseOut={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'transparent';
+          }}
+          onBlur={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'transparent';
+          }}
+        >
+          Reload DorkOS
+        </button>
+      </div>
     </div>
   );
 }
+
+/** Shared inline style for the crash-fallback buttons (this file uses no Tailwind). */
+const CRASH_BUTTON_STYLE: CSSProperties = {
+  padding: '0.5rem 1rem',
+  fontSize: '0.875rem',
+  backgroundColor: 'transparent',
+  color: '#d4d4d8',
+  border: '1px solid #3f3f46',
+  borderRadius: '0.375rem',
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+};

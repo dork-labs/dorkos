@@ -18,13 +18,43 @@ import {
   CollapsibleTrigger,
   CollapsibleContent,
 } from '@/layers/shared/ui';
+import { FeedbackDialog } from '@/layers/features/feedback';
 
 /** Feedback component showcases: Skeleton, Separator, Tooltip, HoverCard, Collapsible, Toaster. */
 export function FeedbackShowcases() {
   const [collapsibleOpen, setCollapsibleOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [feedbackBugOpen, setFeedbackBugOpen] = useState(false);
 
   return (
     <>
+      <PlaygroundSection
+        title="Feedback dialog"
+        description="Message-first send dialog: kind selector, identity line with anonymous toggle, and a collapsible Attachments & details panel (diagnostics + conversation + screenshot placeholder)."
+      >
+        <ShowcaseDemo>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => setFeedbackOpen(true)}>
+              Open (Feedback)
+            </Button>
+            <Button variant="outline" onClick={() => setFeedbackBugOpen(true)}>
+              Open (Bug)
+            </Button>
+          </div>
+          <FeedbackDialog
+            open={feedbackOpen}
+            onOpenChange={setFeedbackOpen}
+            currentUser={{ email: 'you@example.com', name: 'You' }}
+          />
+          <FeedbackDialog
+            open={feedbackBugOpen}
+            onOpenChange={setFeedbackBugOpen}
+            initialKind="bug"
+            currentUser={{ email: 'you@example.com', name: 'You' }}
+          />
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
       <PlaygroundSection title="Skeleton" description="Loading placeholder with animated tasks.">
         <ShowcaseDemo>
           <div className="flex items-center gap-4">

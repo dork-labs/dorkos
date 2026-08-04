@@ -198,6 +198,19 @@ describe('feedback event registry', () => {
         transcriptExcerpt: 'last few turns...',
         screenshotUploadId: 'upload_abc',
         includeServerLogs: true,
+        includeTranscript: true,
+        anonymous: true,
+      });
+      expect(res.success).toBe(true);
+    });
+
+    it('accepts the opt-in transcript + anonymous flags on their own', () => {
+      const res = FeedbackSubmissionSchema.safeParse({
+        kind: 'bug',
+        message: 'crash on save',
+        sessionId: 'sess_123',
+        includeTranscript: true,
+        anonymous: true,
       });
       expect(res.success).toBe(true);
     });
