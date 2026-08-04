@@ -157,6 +157,12 @@ export function useSessionSubmit({
    *   dequeues before the trigger resolves, so ANY failed trigger — a lock the
    *   server still holds while a turn sits blocked on an approval, a dead
    *   network — has to put the message back rather than drop it (DOR-480).
+   *   `{ cwd }` pins the working directory for THIS send, overriding the ambient
+   *   selected directory. The newborn-agent kickoff uses it to run the first turn
+   *   in the agent's own directory (from the birth record) rather than whatever
+   *   directory global state happens to hold when the auto-fire races the URL's
+   *   `?dir=` settling — a mismatch that wrote the transcript under the wrong
+   *   project slug, so every later resume failed with "No conversation found".
    */
   const executeSubmission = useCallback(
     async (
@@ -164,7 +170,7 @@ export function useSessionSubmit({
       clearInput: boolean,
       restoreContentOnLock: string,
       queued = false,
-      opts: { kickoff?: boolean; restoreQueued?: () => void } = {}
+      opts: { kickoff?: boolean; restoreQueued?: () => void; cwd?: string } = {}
     ) => {
       // Native (client-side) command: runs locally and must NEVER reach the
       // runtime/model. This is the funnel safety net for the non-streaming paths
@@ -225,7 +231,10 @@ export function useSessionSubmit({
       }
 
       const targetSessionId = sessionId!;
-      const cwd = selectedCwdRef.current;
+      // An explicit override (the newborn kickoff's agent directory) wins over the
+      // ambient selected directory, which the auto-fire can read before the URL's
+      // `?dir=` has settled onto the new agent.
+      const cwd = opts.cwd ?? selectedCwdRef.current;
       setError(null);
 
       // Subscribe-first, and BEFORE the upload await. `attachSession` re-targets
@@ -479,7 +488,7 @@ export function useSessionSubmit({
     async (
       content: string,
       originSessionId?: string,
-      opts?: { queued: boolean; restore?: () => void }
+      opts?: { queued: boolean; restore?: () => void; cwd?: string }
     ) => {
       if (!content.trim() || status === 'streaming') {
         // A turn started between the drain decision and this call. The message is
@@ -500,6 +509,7 @@ export function useSessionSubmit({
       }
       await executeSubmission(content.trim(), false, '', opts?.queued ?? false, {
         ...(opts?.restore ? { restoreQueued: opts.restore } : {}),
+        ...(opts?.cwd ? { cwd: opts.cwd } : {}),
       });
     },
     [status, sessionId, executeSubmission]
@@ -530,10 +540,18 @@ export function useSessionSubmit({
    * The caller (useAutoKickoff) owns the fire-once guard.
    *
    * @param content - The fenced kickoff message.
+   * @param cwd - The agent's own directory (from the birth record). Pins the
+   *   first turn to it so the transcript is written under the agent's project
+   *   slug — the same slug the session view later resumes from — instead of the
+   *   ambient selected directory, which can still be the previous default when
+   *   the kickoff fires on navigation.
    */
   const submitKickoff = useCallback(
-    async (content: string) => {
-      await executeSubmission(content, false, '', false, { kickoff: true });
+    async (content: string, cwd?: string) => {
+      await executeSubmission(content, false, '', false, {
+        kickoff: true,
+        ...(cwd ? { cwd } : {}),
+      });
     },
     [executeSubmission]
   );

@@ -189,7 +189,7 @@ describe('SystemRequirementsStep', () => {
 
     // Connect-first heading and the setup panel with per-runtime cards.
     expect(await screen.findByTestId('runtime-setup-panel')).toBeInTheDocument();
-    expect(screen.getByRole('heading')).toHaveTextContent('Connect your first agent');
+    expect(screen.getByRole('heading')).toHaveTextContent('Connect your first runtime');
     // The one-click install card is present; the login card renders the injected flow.
     expect(screen.getByRole('button', { name: 'Install OpenCode' })).toBeInTheDocument();
     expect(screen.getByTestId('connect-codex')).toBeInTheDocument();
@@ -197,7 +197,7 @@ describe('SystemRequirementsStep', () => {
     expect(screen.queryByTestId('onboarding-get-started')).not.toBeInTheDocument();
   });
 
-  it('all runtimes ready: success state without a "more agents" disclosure', async () => {
+  it('all runtimes ready: success state without a "more runtimes" disclosure', async () => {
     renderStep({
       requirements: {
         runtimes: { 'claude-code': CLAUDE_READY, codex: { ...CODEX_LOGIN, state: 'ready' } },
@@ -205,7 +205,7 @@ describe('SystemRequirementsStep', () => {
     });
 
     await screen.findByTestId('onboarding-get-started');
-    expect(screen.queryByText(/more agent/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/more runtime/)).not.toBeInTheDocument();
   });
 
   it('ready with others available: reveals the count and setup cards on expand', async () => {
@@ -214,7 +214,7 @@ describe('SystemRequirementsStep', () => {
     });
 
     await screen.findByTestId('onboarding-get-started');
-    const disclosure = screen.getByText('1 more agent available');
+    const disclosure = screen.getByText('1 more runtime available');
     expect(disclosure).toBeInTheDocument();
 
     await userEvent.click(disclosure);
@@ -230,7 +230,7 @@ describe('SystemRequirementsStep', () => {
     });
 
     await screen.findByTestId('onboarding-get-started');
-    await userEvent.click(screen.getByText('1 more agent available'));
+    await userEvent.click(screen.getByText('1 more runtime available'));
 
     const keyField = await screen.findByLabelText('stub-key-codex');
     await userEvent.click(keyField);
@@ -398,7 +398,7 @@ describe('SystemRequirementsStep — the default runtime (spec execution-default
     // The next settle tries again on its own — this is the ref release, not the
     // picker: a recheck re-answers readiness and the decision gets another go.
     vi.mocked(transport.updateConfig).mockResolvedValue(undefined);
-    await userEvent.click(screen.getByText('1 more agent available'));
+    await userEvent.click(screen.getByText('1 more runtime available'));
     await userEvent.click(await screen.findByRole('button', { name: /Check again/ }));
 
     await waitFor(() =>

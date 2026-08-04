@@ -461,6 +461,20 @@ describe('IntegrationsTab', () => {
     expect(screen.queryByText('Session Delivery')).not.toBeInTheDocument();
   });
 
+  it('DOR-853: the delivery switch description names Claude Code, not a bare "agent"', () => {
+    // "Start a Claude Code agent session..." read exactly like the fleet sense
+    // (a named teammate) the D0 sweep exists to kill — the runtime sense (a
+    // Claude Code session) needed no noun at all here.
+    mockFullCatalogData = [makeClaudeCodeEntry()];
+
+    render(<IntegrationsTab />);
+
+    expect(
+      screen.getByText('Start a Claude Code session automatically when a relay message arrives')
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/agent session/i)).not.toBeInTheDocument();
+  });
+
   it('calls toggleAdapter with the instance id when the delivery switch is toggled', async () => {
     const user = userEvent.setup();
     mockFullCatalogData = [makeClaudeCodeEntry({ enabled: true })];

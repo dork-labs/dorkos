@@ -37,7 +37,7 @@ export function RuntimesTab() {
   return (
     <div className="space-y-4">
       <p className="text-muted-foreground text-sm">
-        DorkOS speaks three agent runtimes: connect any of them, each ready or one click away. Run
+        DorkOS speaks three runtimes: connect any of them, each ready or one click away. Run
         frontier models in the cloud, or your own models locally, private and free.
       </p>
 
