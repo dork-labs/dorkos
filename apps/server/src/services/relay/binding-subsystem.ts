@@ -31,16 +31,30 @@ import type { RoomEntry, RoomPresencePayload } from '@dorkos/shared/room-schemas
 import {
   ChatBridge,
   BridgeLifecycle,
+  BridgeSessionAdopter,
   ChatBridgeDelivery,
   BridgeCatchUp,
   ChatBridgePresence,
   type BridgeStore,
   type BridgeRoomOps,
   type IngestRoomOps,
+  type AdoptRoomOps,
+  type TranscriptProbe,
   type Bridge,
   type DeliverEntryReader,
   type DeliverAuthorReader,
 } from './chat-bridge/index.js';
+
+/**
+ * The fallback transcript probe when the composition root wired none: it can
+ * probe no runtime, so every bridge starts a fresh session (chats-as-channels
+ * spec §7.3's per-runtime flag). Safe by construction — it never claims a
+ * session exists — and the shape the tests that omit rooms wiring inherit.
+ */
+const NO_TRANSCRIPT_PROBE: TranscriptProbe = {
+  canProbe: () => false,
+  hasTranscript: () => Promise.resolve({ exists: false }),
+};
 
 /** Dependencies required to initialize the binding subsystem. */
 export interface BindingSubsystemDeps {
@@ -76,9 +90,17 @@ export interface BindingSubsystemDeps {
    * only once the rooms subsystem is wired; without it, bridged bindings cannot
    * be routed and `bridge: 'room'` never resolves in the router.
    */
-  roomService?: BridgeRoomOps & IngestRoomOps;
+  roomService?: BridgeRoomOps & IngestRoomOps & AdoptRoomOps;
   /** The bridge identity store — the same instance the rooms service writes through. */
   roomBridges?: BridgeStore;
+  /**
+   * The per-runtime transcript probe for session adoption at bridge time
+   * (chats-as-channels spec §7.3). Backed by the claude-code `TranscriptReader`
+   * in the composition root so the runtime SDK stays confined to its adapter
+   * dir. When absent, the adopter reports no runtime can be probed and every
+   * bridge starts a fresh session — the safe default.
+   */
+  transcriptProbe?: TranscriptProbe;
   /**
    * The install owner's author id, read per call (an install becomes owned
    * partway through its life). The bridge acts as the operator for its
@@ -265,6 +287,11 @@ export class BindingSubsystem {
       logger.info('[BindingSubsystem] AgentSessionStore initialized');
 
       subsystem = new BindingSubsystem(bindingStore, agentSessionStore);
+      // A definite handle for the closures below: `subsystem` is a reassignable
+      // `let` whose narrowing does not survive into an arrow function, but the
+      // instance is built now and never replaced, so the adopter's lazy read of
+      // `bindingRouter` (set later in this same init) closes over this instead.
+      const self = subsystem;
 
       // New sessions created by the BindingRouter (e.g., first chat-platform
       // message from a user) need a runtime to be created against. Existing
@@ -298,6 +325,21 @@ export class BindingSubsystem {
       // binding rather than routing it as an unbridged one.
       let bridgeIngest: ChatBridge | undefined;
       if (deps.roomService && deps.roomBridges && deps.operatorAuthorId) {
+        const roomService = deps.roomService;
+        // Session adoption at bridge time (chats-as-channels §7.3). The
+        // `takeChatSession` seam reads the router built LATER in this same init
+        // (line below), so it is a lazy closure rather than a captured handle —
+        // it is only ever called at a user-triggered bridge, long after init.
+        // The probe is gated per runtime: absent (`transcriptProbe` unwired) or a
+        // non-claude-code session both take the fresh-start path (§7.3's flag).
+        const adopter = new BridgeSessionAdopter({
+          takeChatSession: (bindingId, chatId) =>
+            self.bindingRouter?.takeChatSession(bindingId, chatId) ?? Promise.resolve(undefined),
+          getSessionRuntimeType: (sessionId) => runtimeRegistry.getSessionRuntimeType(sessionId),
+          probe: deps.transcriptProbe ?? NO_TRANSCRIPT_PROBE,
+          resolveAgentRoot: (agentId) => deps.meshCore.getProjectPath(agentId) ?? undefined,
+          rooms: roomService,
+        });
         // One lifecycle shared by the inbound and outbound halves: the §10.9
         // archived-out-of-band recovery ingest calls and the §10.3 terminal
         // archival delivery calls are the same coordinator over the same tables.
@@ -307,6 +349,7 @@ export class BindingSubsystem {
           bindings: bindingStore,
           chatNotice,
           operatorAuthorId: deps.operatorAuthorId,
+          adopter,
         });
         bridgeIngest = new ChatBridge({
           rooms: deps.roomService,

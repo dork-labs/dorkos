@@ -1065,6 +1065,23 @@ async function start() {
         // builds the bridge where `bindingStore` and `chatNotice` already exist.
         roomService,
         roomBridges,
+        // Session adoption at bridge time (chats-as-channels §7.3) probes the
+        // DURABLE claude-code transcript on disk. Backed by the claude-code
+        // runtime's own `TranscriptReader` so the runtime SDK stays confined to
+        // its adapter dir; the reader is captured once (it is stable) and the
+        // probe answers `canProbe` only for claude-code, so codex/opencode
+        // sessions take the fresh-start path. Absent in test mode (no claude
+        // runtime), where every bridge starts fresh.
+        transcriptProbe: (() => {
+          const reader = claudeRuntime?.getTranscriptReader();
+          return reader
+            ? {
+                canProbe: (runtimeType: string) => runtimeType === 'claude-code',
+                hasTranscript: (vaultRoot: string, sessionId: string) =>
+                  reader.hasTranscript(vaultRoot, sessionId),
+              }
+            : undefined;
+        })(),
         operatorAuthorId: resolveOperatorAuthorId,
         // The extra rooms reads outbound delivery needs (chats-as-channels §6):
         // read an entry by id, resolve an author, and register the inline

@@ -127,6 +127,12 @@ export type RoomEntryKind = z.infer<typeof RoomEntryKindSchema>;
  * - `bridge_second_agent_refused` — `RoomService.addMember` refused a second
  *   agent on a bridged room (spec §3.4, D-6 Q3): outbound consent is per
  *   binding, so a second agent's replies would have no gate that names them.
+ * - `bridge_history_note` — posted once when a chat is bridged, saying where the
+ *   conversation's earlier history lives (chats-as-channels spec §7.3). The
+ *   pointer variant is written when an existing session is adopted (its own
+ *   transcript holds the earlier messages); the pointer-less variant when the
+ *   bridge starts fresh. Either way the room log does NOT gain the old messages,
+ *   and the notice says so — the platform gives bots no history to import.
  *
  * **This four-code addition is the one non-additive change in the whole
  * chats-as-channels feature (spec §11.2, A11.1).** Widening an enum is not
@@ -154,6 +160,7 @@ export const RoomNoticeCodeSchema = z
     'bridge_second_agent_refused',
     'bridge_disconnected',
     'bridge_agent_swapped',
+    'bridge_history_note',
   ])
   .openapi('RoomNoticeCode');
 

@@ -173,6 +173,8 @@ export interface AdapterManagerDeps {
   roomService?: BindingSubsystemDeps['roomService'];
   /** The bridge identity store the rooms service writes through (chats-as-channels §3.1). */
   roomBridges?: BindingSubsystemDeps['roomBridges'];
+  /** The per-runtime transcript probe for session adoption at bridge time (§7.3). */
+  transcriptProbe?: BindingSubsystemDeps['transcriptProbe'];
   /** The install owner's author id, read per call (chats-as-channels §3.5, §10.9). */
   operatorAuthorId?: BindingSubsystemDeps['operatorAuthorId'];
   /** The room store, for outbound delivery's entry reads (chats-as-channels §6). */
@@ -365,6 +367,7 @@ export class AdapterManager {
       onUnclaimedChatBurst: broadcastUnclaimedChatBurst,
       roomService: this.deps.roomService,
       roomBridges: this.deps.roomBridges,
+      transcriptProbe: this.deps.transcriptProbe,
       operatorAuthorId: this.deps.operatorAuthorId,
       roomStore: this.deps.roomStore,
       roomAuthors: this.deps.roomAuthors,

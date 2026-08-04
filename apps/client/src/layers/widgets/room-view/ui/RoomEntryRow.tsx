@@ -4,6 +4,7 @@ import {
   CircleStop,
   Gauge,
   Hand,
+  History,
   Hourglass,
   Info,
   Link2Off,
@@ -173,6 +174,10 @@ const NOTICE_STYLES: Record<RoomNoticeCode, { Icon: LucideIcon; tone?: string }>
   // A re-bridge handed the chat to a different agent. The room working as
   // designed — nobody has to act — so it stays quiet in tone.
   bridge_agent_swapped: { Icon: Repeat },
+  // Where the conversation's earlier history lives, posted once when a chat is
+  // bridged (chats-as-channels §7.3). Informational, never a fault, so it stays
+  // quiet in tone.
+  bridge_history_note: { Icon: History },
 };
 
 /** The mark on a notice whose code this client does not recognise. */
