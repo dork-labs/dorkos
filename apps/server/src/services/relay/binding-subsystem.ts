@@ -14,7 +14,7 @@ import { createChatNoticeSender } from '@dorkos/relay';
 import type { ChatNoticeTargetResolver } from '@dorkos/relay';
 import { parseHumanSubject } from './human-subject.js';
 import type { PermissionMode } from '@dorkos/shared/schemas';
-import type { RelayFlowEvent } from '@dorkos/shared/relay-schemas';
+import type { RelayFlowEvent, Signal, SignalType } from '@dorkos/shared/relay-schemas';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import { logger } from '../../lib/logger.js';
 import { BindingStore } from './binding-store.js';
@@ -27,12 +27,13 @@ import {
 } from './binding-router.js';
 import type { AdapterMeshCoreLike } from './adapter-manager.js';
 import type { UnclaimedChat, UnclaimedChatStore } from './unclaimed-chat-store.js';
-import type { RoomEntry } from '@dorkos/shared/room-schemas';
+import type { RoomEntry, RoomPresencePayload } from '@dorkos/shared/room-schemas';
 import {
   ChatBridge,
   BridgeLifecycle,
   ChatBridgeDelivery,
   BridgeCatchUp,
+  ChatBridgePresence,
   type BridgeStore,
   type BridgeRoomOps,
   type IngestRoomOps,
@@ -105,6 +106,29 @@ export interface BindingSubsystemDeps {
    * so the binding subsystem never needs the service's concrete shape.
    */
   registerEntryCommitListener?: (listener: (entry: RoomEntry) => void) => void;
+  /**
+   * Emit an ephemeral relay signal — {@link RelayCore.signal}. Present only
+   * once the rooms subsystem is wired; without it, the presence forwarder is
+   * not built and a bridged room's typing indicator never reaches the
+   * platform (chats-as-channels §6.8). Narrower than `relayCore` on purpose:
+   * presence never goes through the publish/consent pipeline `relayCore`'s
+   * other uses do, so widening `RelayCoreLike` for this one method would hand
+   * every other consumer of that type a capability nothing else here needs.
+   */
+  relaySignal?: (subject: string, signal: Signal) => void;
+  /**
+   * Register the chat bridge's presence forwarder on the room service (§6.8).
+   * The composition root wires this to `RoomService.setSignalListener`, the
+   * same pattern as {@link BindingSubsystemDeps.registerEntryCommitListener}.
+   */
+  registerSignalListener?: (
+    listener: (
+      roomId: string,
+      signal: SignalType,
+      authorId: string,
+      presence?: Partial<RoomPresencePayload>
+    ) => void
+  ) => void;
 }
 
 /**
@@ -321,6 +345,34 @@ export class BindingSubsystem {
           void catchUp.scanAll().catch((err: unknown) => {
             logger.warn('[BindingSubsystem] initial bridge catch-up failed', {
               error: err instanceof Error ? err.message : String(err),
+            });
+          });
+        }
+
+        // The presence forwarder (chats-as-channels §6.8), independent of the
+        // outbound entry-delivery block above: it needs only the bridge store,
+        // the subject resolver, and a way to emit a live relay signal — never
+        // `roomStore`/`roomAuthors`, which are entry-delivery-specific.
+        if (deps.resolveBridgeSubject && deps.relaySignal) {
+          const presence = new ChatBridgePresence({
+            bridges: deps.roomBridges,
+            resolveSubject: deps.resolveBridgeSubject,
+            publisher: { signal: deps.relaySignal },
+          });
+          deps.registerSignalListener?.((roomId, signal, authorId, payload) => {
+            // Only a whole `progress` payload is forwardable: `state` is what
+            // decides the Telegram chat action, and a partial community-adapter
+            // publish that omits it has nothing to forward (chats-as-channels
+            // §6.8 is about the dispatcher's own claim lifecycle, which always
+            // supplies all three fields — `publishPresence`'s dep type in
+            // `room-trigger.ts` requires them).
+            if (signal !== 'progress' || !payload?.state || !payload.entryId || !payload.since) {
+              return;
+            }
+            presence.forward(roomId, authorId, {
+              state: payload.state,
+              entryId: payload.entryId,
+              since: payload.since,
             });
           });
         }

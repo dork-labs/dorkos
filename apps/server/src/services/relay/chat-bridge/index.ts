@@ -49,3 +49,8 @@ export {
   type DeliverLifecycle,
 } from './deliver.js';
 export { BridgeCatchUp, type BridgeCatchUpDeps, type CatchUpDelivery } from './catch-up.js';
+export {
+  ChatBridgePresence,
+  type ChatBridgePresenceDeps,
+  type PresenceSignalPublisher,
+} from './presence.js';

@@ -624,19 +624,20 @@ function startTypingLoop(bot: Bot | null, chatId: number, state: TelegramOutboun
  * Telegram as the same chat action.
  *
  * This is the seam for lifecycles the adapter cannot observe in its own
- * outbound stream. Today nothing on the relay bus emits either signal for
- * this adapter, so the live driver is the turn itself (see
- * {@link deliverMessage}). Both are wired to the same handler on purpose:
- * `typing` is a placeholder for a future direct signal, and `progress` is
- * what `publishPresence` (`room-trigger.ts`) actually emits for a room —
- * agents work, they do not type — so a Telegram chat bridged to a **room**
- * maps the room's `working`/`done` presence onto this one loop rather than a
- * second one (spec `chats-as-channels` §6.8). The adapter side of that wiring
- * (`telegram-adapter.ts`'s signal subscription routing `progress` here) has
- * landed; the room-side forwarder that turns a room's presence into a relay
- * signal on this chat's subject has not (task 1.10) — until it does, no
- * `progress` signal actually reaches a bridged chat, only `typing` does, from
- * wherever a future direct producer emits it.
+ * outbound stream. For a plain (unbridged) chat nothing on the relay bus
+ * emits either signal, so the live driver there is still the turn itself
+ * (see {@link deliverMessage}). Both are wired to the same handler on
+ * purpose: `typing` is a placeholder for a future direct signal, and
+ * `progress` is what `publishPresence` (`room-trigger.ts`) actually emits for
+ * a room — agents work, they do not type — so a Telegram chat bridged to a
+ * **room** maps the room's `working`/`done` presence onto this one loop
+ * rather than a second one (spec `chats-as-channels` §6.8). The adapter side
+ * of that wiring (`telegram-adapter.ts`'s signal subscription routing
+ * `progress` here) and the room-side forwarder that turns a room's presence
+ * into a relay signal on this chat's subject (`ChatBridgePresence`,
+ * `apps/server/src/services/relay/chat-bridge/presence.ts`) have both
+ * landed: a `progress` signal now reaches a bridged chat for exactly as long
+ * as the room's turn claim is held.
  *
  * @param bot - The grammy Bot instance, or null if not started
  * @param subject - The Relay subject the signal was emitted on

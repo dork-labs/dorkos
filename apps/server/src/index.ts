@@ -1041,6 +1041,12 @@ async function start() {
   if (relayEnabled && relayCore && adapterRegistry && traceStore && relayAgentRuntime) {
     try {
       const adapterConfigPath = path.join(dorkHome, 'relay', 'adapters.json');
+      // Narrowed once, outside the closures below: `relayCore` is a `let`
+      // reassigned elsewhere in this function, so TypeScript cannot carry the
+      // `if` guard's narrowing into an arrow function defined inside this
+      // object literal — the closure sees the widened `RelayCore | undefined`
+      // declared type, not the guard.
+      const relayCoreInstance = relayCore;
       adapterManager = new AdapterManager(adapterRegistry, adapterConfigPath, {
         agentRuntimes: new Map([[relayAgentRuntime.type, relayAgentRuntime]]),
         traceStore,
@@ -1066,6 +1072,13 @@ async function start() {
         roomStore,
         roomAuthors,
         registerEntryCommitListener: (listener) => roomService.setEntryCommitListener(listener),
+        // The bridge's presence forwarder (§6.8): a room's live `progress`
+        // signal becomes a relay signal on the bridged chat's subject, reusing
+        // `RelayCore.signal` — the same ephemeral emit the Telegram adapter's
+        // signal subscription already listens for — rather than the
+        // publish/consent pipeline `relayCore.publish` runs for messages.
+        relaySignal: (subject, signal) => relayCoreInstance.signal(subject, signal),
+        registerSignalListener: (listener) => roomService.setSignalListener(listener),
         // Build a chat's outbound subject from its bridge row (§6.4). The
         // platform segment lives on the adapter's own subject prefix, not the
         // bridge row, so it is resolved from the adapter registry here — keeping
