@@ -91,6 +91,10 @@ type BridgeRefusalCode = 'BROADCAST_NOT_BRIDGEABLE' | 'BRIDGE_NOT_A_DM';
  * subject-level `channelType` folds together (a broadcast `channel` and a
  * `group` both arrive as `channelType: 'group'`):
  *
+ * Exported so the claim route's "Answer in a channel" primary action
+ * (DOR-882) can resolve the same `chatType`/`channelType` for the freshly
+ * created binding it bridges — one resolution rule, not two.
+ *
  * - `private` → bridges as a DM (`private`, no subject channel type).
  * - `group`/`supergroup` → bridges as a channel, mention-only-seeded by
  *   `createBridgedRoom` (spec §3.4). Now allowed, where DOR-878 refused it.
@@ -108,7 +112,7 @@ type BridgeRefusalCode = 'BROADCAST_NOT_BRIDGEABLE' | 'BRIDGE_NOT_A_DM';
  * @returns The resolved `chatType`/`channelType` to bridge with, or a `refusal`
  *   reason and its `code`.
  */
-function bridgeChatTypeForBinding(
+export function bridgeChatTypeForBinding(
   platformChatType: PlatformChatType | undefined,
   channelType: string | null | undefined
 ):

@@ -1654,12 +1654,18 @@ async function start() {
     const unclaimedChatsStore = adapterManager?.getUnclaimedChats();
     const bindingStoreForClaims = adapterManager?.getBindingStore();
     if (unclaimedChatsStore && bindingStoreForClaims) {
+      // The claim card's "Answer in a channel" primary action (DOR-882) needs
+      // the same lifecycle coordinator DOR-878's "Bridge to a channel" route
+      // uses — optional, so a claim still lands (privately) on an install
+      // where bridging isn't wired.
+      const lifecycleForClaims = adapterManager?.getBridgeLifecycle();
       app.use(
         '/api/relay/unclaimed-chats',
         createUnclaimedChatsRouter({
           store: unclaimedChatsStore,
           bindingStore: bindingStoreForClaims,
           ...(meshCore && { meshCore }),
+          ...(lifecycleForClaims && { lifecycle: lifecycleForClaims }),
         })
       );
     }
