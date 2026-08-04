@@ -251,8 +251,9 @@ export function sidebarItemKey(ref: SidebarItemRef): string {
  * @param item - The item to draw.
  * @param keyPrefix - The section's own key (`pinned`, `ungrouped`, or a group id).
  * @param options.draggable - `false` renders the row with no drag wrapper at
- *   all, for rows that are not a drag source: smart-group members, and every
- *   room until rooms become draggable in S3.
+ *   all, for rows that are not a drag source: smart-group members, and pinned
+ *   rooms (dragging one out would unpin it, and the room menu offers no Pin
+ *   to undo that).
  */
 export type RenderSidebarItem = (
   item: SidebarItem,

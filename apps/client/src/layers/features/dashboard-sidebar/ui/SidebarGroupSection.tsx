@@ -6,7 +6,7 @@ import { useAgentsAggregateStatus } from '@/layers/entities/session';
 import { GroupHeader } from './GroupHeader';
 import { RevealRow } from './RevealRow';
 import type { RuntimeOption } from './SmartGroupRuleDialog';
-import { Droppable, Sortable, SortableList, agentRowDndId } from './dnd/SidebarDndPrimitives';
+import { Droppable, Sortable, SortableList, sidebarRowDndId } from './dnd/SidebarDndPrimitives';
 import type { RenderSidebarItem, SidebarItem } from '../model/sidebar-item';
 import { sortSidebarItems, type SidebarSortMode } from '../model/sort-sidebar-items';
 import { filterSidebarItems } from '../model/filter-sidebar-items';
@@ -46,9 +46,8 @@ interface SidebarGroupSectionProps {
  * The header is draggable (reorder groups, including smart ones) and the body is
  * a drop zone for manual groups; smart groups reject drops (handled upstream in
  * `use-sidebar-dnd`'s `classifySidebarDrop`, surfaced as a hint) and their
- * member rows render without a drag handle. A room's row carries no drag handle
- * either — a room reaches a group today by an agent writing `ui.sidebar`, and by
- * hand once S3 lands. When collapsed, rows are hidden and the header shows an
+ * member rows render without a drag handle. Room rows drag exactly as agent rows
+ * do (rooms-in-groups, DOR-581). When collapsed, rows are hidden and the header shows an
  * activity dot if any member agent is working. An empty manual group shows a
  * "drag agents here" hint; an empty smart group shows "no agents match these
  * rules" — information, not disappearance. A non-empty group whose filter hides
@@ -78,14 +77,11 @@ export function SidebarGroupSection({
     () => sortSidebarItems(filtered.visible, sortMode),
     [filtered.visible, sortMode]
   );
-  // Rooms are not a drag source until S3, so only agent rows are registered with
-  // the sortable context — a `SortableList` id with no matching `Sortable` makes
-  // dnd-kit measure a node that is not there.
+  // Every visible member registers, agents and rooms alike (rooms-in-groups,
+  // DOR-581) — each one is wrapped in a matching `Sortable` by `renderItem`, so
+  // dnd-kit never measures a node that is not there.
   const sortableIds = useMemo(
-    () =>
-      sortedVisible.flatMap((item) =>
-        item.ref.kind === 'agent' ? [agentRowDndId(group.id, item.ref.path)] : []
-      ),
+    () => sortedVisible.map((item) => sidebarRowDndId(group.id, item.ref)),
     [sortedVisible, group.id]
   );
 
@@ -139,10 +135,9 @@ export function SidebarGroupSection({
         >
           {items.length === 0 ? (
             <p className="text-muted-foreground/50 px-3 py-1.5 text-xs italic">
-              {/* "Agents", not "agents and channels": until S3 an agent is the
-                  only thing you can actually drag in here, and the hint names
-                  the gesture that works today. */}
-              {isSmart ? 'No agents match these rules' : 'Drag agents here'}
+              {isSmart
+                ? 'No agents match these rules'
+                : 'Drag agents, channels, or conversations here'}
             </p>
           ) : (
             <>

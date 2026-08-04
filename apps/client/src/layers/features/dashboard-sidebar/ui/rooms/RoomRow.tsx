@@ -1,9 +1,18 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { MoreHorizontal } from 'lucide-react';
+import { BellOff, MoreHorizontal } from 'lucide-react';
 import { toast } from 'sonner';
 import { agentAuthorRef, type RoomSummary } from '@dorkos/shared/room-schemas';
+import type { SidebarItemRef } from '@dorkos/shared/config-schema';
+import { sameSidebarItem } from '@dorkos/shared/config-schema';
 import { cn } from '@/layers/shared/lib';
 import { useIsMobile } from '@/layers/shared/model';
+import {
+  useSidebarPrefs,
+  useUpdateSidebarPrefs,
+  moveToGroup,
+  muteItem,
+  unmuteItem,
+} from '@/layers/entities/config';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import {
   AlertDialog,
@@ -36,6 +45,7 @@ import {
 } from '@/layers/entities/room';
 import { useMenuCloseFocusGuard } from '../../model/use-menu-close-focus-guard';
 import { sidebarItemFaces, type SidebarItemVisual } from '../../model/sidebar-item';
+import { DISABLED_SORTABLE_BINDINGS, type SortableBindings } from '../dnd/SidebarDndPrimitives';
 import { RoomRowMenuItems } from './RoomRowMenuItems';
 import { RoomDetailsDialog, type RoomDetailsFocus } from '@/layers/features/room-management';
 
@@ -58,6 +68,14 @@ interface RoomRowProps {
   onSelect: () => void;
   /** Open an agent's profile in the right-panel hub. */
   onOpenAgentProfile: (agentPath: string) => void;
+  /** Open the inline group-create flow, moving this room into the new group on commit. */
+  onRequestNewGroup: (ref: SidebarItemRef) => void;
+  /**
+   * Drag bindings applied to the row's root when the sidebar drag layer is
+   * active (rooms-in-groups, DOR-581). Absent for a row that is not a drag
+   * source, which renders exactly as before.
+   */
+  sortable?: SortableBindings;
 }
 
 /**
@@ -80,7 +98,25 @@ interface RoomRowProps {
  * own for one text field; the sheet is where the topic is now written, and this
  * menu item is one of its doors.
  */
-export function RoomRow({ room, visual, isActive, onSelect, onOpenAgentProfile }: RoomRowProps) {
+export function RoomRow({
+  room,
+  visual,
+  isActive,
+  onSelect,
+  onOpenAgentProfile,
+  onRequestNewGroup,
+  sortable = DISABLED_SORTABLE_BINDINGS,
+}: RoomRowProps) {
+  // Destructured rather than read through `sortable.*` at each use: dnd-kit's
+  // `setNodeRef` is a callback ref, and reading it off an object during render
+  // trips the lint rule that guards against reading a real ref's `.current`.
+  const {
+    setNodeRef: setDragNodeRef,
+    handleProps: dragHandleProps,
+    style: dragStyle,
+    isDragging,
+    isOver,
+  } = sortable;
   const isMobile = useIsMobile();
   const meshAgents = useMeshAgentPaths().data?.agents ?? [];
   const unread = hasUnread(room);
@@ -214,11 +250,47 @@ export function RoomRow({ room, visual, isActive, onSelect, onOpenAgentProfile }
       : (meshAgents.find((a) => agentAuthorRef(a.projectPath) === soleAgentRef)?.projectPath ??
         null);
 
+  // ── Where this room sits in the sidebar's organization (rooms-in-groups,
+  // DOR-581) ──
+  // Read here rather than inside `RoomRowMenuItems` so that component stays a
+  // pure function of its model: it is the list the command palette and the room
+  // slash commands are meant to consume next (spec `rooms` §15.3), and a hook
+  // inside it would make it callable only from a React tree.
+  //
+  // Smart groups are filtered out of the move targets: their membership comes
+  // from rules about agents, so a room filed into one would be counted as
+  // grouped (and hidden from Channels) while that group drew its derived
+  // members instead — the row would vanish. The drag layer refuses the same
+  // drop; this refuses to offer it.
+  const sidebarPrefs = useSidebarPrefs();
+  const { update: updateSidebarPrefs } = useUpdateSidebarPrefs();
+  const roomRef: SidebarItemRef = { kind: 'room', roomId: room.id };
+  const isMuted = sidebarPrefs.muted.some((m) => sameSidebarItem(m, roomRef));
+  const currentGroupId =
+    sidebarPrefs.groups.find((g) => g.items.some((m) => sameSidebarItem(m, roomRef)))?.id ?? null;
+  const moveTargetGroups = sidebarPrefs.groups
+    .filter((g) => g.kind !== 'smart')
+    .map((g) => ({ id: g.id, name: g.name }));
+
   const menuModel = {
     kind: room.kind,
     hasUnread: unread,
     soleAgentPath,
+    isMuted,
+    currentGroupId,
+    groups: moveTargetGroups,
     onMarkRead: handleMarkRead,
+    onToggleMute: () =>
+      updateSidebarPrefs((prev) => (isMuted ? unmuteItem(prev, roomRef) : muteItem(prev, roomRef))),
+    onMoveToGroup: (groupId: string | null) =>
+      updateSidebarPrefs((prev) => moveToGroup(prev, roomRef, groupId)),
+    onNewGroup: () => {
+      // The inline name editor mounts elsewhere in the sidebar and the menu
+      // closes in a second commit whose focus restore would blur it — the same
+      // race "Rename…" arms this guard for.
+      armCloseFocusGuard();
+      onRequestNewGroup(roomRef);
+    },
     onAddAgents: () => setDetailsFocus('add'),
     onOpenMembers: () => setDetailsFocus('members'),
     onOpenAgentProfile,
@@ -232,123 +304,148 @@ export function RoomRow({ room, visual, isActive, onSelect, onOpenAgentProfile }
 
   return (
     <SidebarMenuItem>
-      <ContextMenu>
-        <ContextMenuTrigger asChild>
-          <div className="group/room relative">
-            {isRenaming ? (
-              <div className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5">
-                <RoomAvatar room={room} participants={room.participants} visuals={faces} />
-                <input
-                  ref={renameRef}
-                  value={renameValue}
-                  maxLength={MAX_NAME}
-                  aria-label={`Rename ${title}`}
-                  onChange={(e) => setRenameValue(e.target.value)}
-                  onKeyDown={handleRenameKeyDown}
-                  onBlur={commitRename}
-                  // The row is a context-menu trigger, and this field sits
-                  // inside it. Without this, right-clicking to paste opened the
-                  // ROOM menu, which blurred the editor and blur-committed a
-                  // half-typed name nobody confirmed. Propagation stops here so
-                  // the browser's own edit menu appears instead; the event is
-                  // deliberately not prevented, because that menu is the whole
-                  // point of right-clicking a text field.
-                  onContextMenu={(e) => e.stopPropagation()}
-                  className={cn(
-                    'bg-background text-foreground',
-                    'focus-visible:ring-ring min-w-0 flex-1 rounded border px-1.5 py-0.5 text-xs outline-none focus-visible:ring-1'
-                  )}
-                />
-              </div>
-            ) : (
-              <button
-                ref={rowRef}
-                type="button"
-                onClick={onSelect}
-                aria-current={isActive ? 'page' : undefined}
-                className={cn(
-                  'focus-visible:ring-sidebar-ring flex w-full items-center gap-2 rounded-md py-1.5 pr-7 pl-2.5 text-left text-xs outline-hidden transition-colors duration-100 focus-visible:ring-2 active:scale-[0.98]',
-                  isActive
-                    ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                    : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-                  unread && !isActive && 'text-foreground font-medium'
-                )}
-              >
-                <RoomAvatar room={room} participants={room.participants} visuals={faces} />
-                <RoomTitle room={room} className="min-w-0 flex-1" />
-                {working > 0 && (
-                  <span
-                    // `img` because the dot has no text of its own: a bare
-                    // `aria-label` on a generic element is not reliably read
-                    // out, and a role is what turns this from decoration into
-                    // something with a name.
-                    role="img"
-                    // The success token, which is this cockpit's colour for
-                    // "live" — deliberately NOT the brand tint of the unread
-                    // badge it sits beside. Two facts about one row have to be
-                    // tellable apart at a glance, and a second orange mark next
-                    // to an orange pill reads as part of it.
-                    //
-                    // The TOKEN and not the raw palette value it happens to
-                    // resolve to: `RoomMemberRow` draws the identical fact with
-                    // `bg-status-success`, and one fact wearing two spellings is
-                    // one that drifts the first time either theme moves.
-                    className="bg-status-success size-1.5 shrink-0 rounded-full motion-safe:animate-pulse"
-                    // A dot, and nothing else. The unread badge beside it counts
-                    // messages waiting to be read; this counts work in flight,
-                    // which is a fact about right now that will be gone shortly
-                    // and needs no number on screen to be useful. A reader who
-                    // cannot see it gets the count in the label, where a number
-                    // costs no room.
-                    //
-                    // Like the unread badge, it does not name the room again —
-                    // the row's own name is already the first half of what a
-                    // screen reader reads out.
-                    aria-label={working === 1 ? '1 agent working' : `${working} agents working`}
+      {/* The drag root. Separate from the context-menu trigger below because
+          dnd-kit registers this node as its own activator: a keydown has to
+          land on the row itself to pick it up, so the "…" trigger and the
+          rename editor inside keep their own keyboard behaviour. */}
+      <div
+        ref={setDragNodeRef}
+        style={dragStyle}
+        {...dragHandleProps}
+        className={cn(
+          'focus-visible:ring-sidebar-ring rounded-md outline-hidden focus-visible:ring-2',
+          isDragging && 'opacity-40',
+          isOver && 'ring-sidebar-ring ring-2',
+          // Muted dims the whole row and drops the unread emphasis below, the
+          // same way a muted agent row reads (DOR-339): still there, still
+          // clickable, just no longer asking for anything.
+          isMuted && 'opacity-60'
+        )}
+      >
+        <ContextMenu>
+          <ContextMenuTrigger asChild>
+            <div className="group/room relative">
+              {isRenaming ? (
+                <div className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5">
+                  <RoomAvatar room={room} participants={room.participants} visuals={faces} />
+                  <input
+                    ref={renameRef}
+                    value={renameValue}
+                    maxLength={MAX_NAME}
+                    aria-label={`Rename ${title}`}
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    onKeyDown={handleRenameKeyDown}
+                    onBlur={commitRename}
+                    // The row is a context-menu trigger, and this field sits
+                    // inside it. Without this, right-clicking to paste opened the
+                    // ROOM menu, which blurred the editor and blur-committed a
+                    // half-typed name nobody confirmed. Propagation stops here so
+                    // the browser's own edit menu appears instead; the event is
+                    // deliberately not prevented, because that menu is the whole
+                    // point of right-clicking a text field.
+                    onContextMenu={(e) => e.stopPropagation()}
+                    className={cn(
+                      'bg-background text-foreground',
+                      'focus-visible:ring-ring min-w-0 flex-1 rounded border px-1.5 py-0.5 text-xs outline-none focus-visible:ring-1'
+                    )}
                   />
-                )}
-                {unread && (
-                  <span
-                    className="bg-brand/15 text-brand shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium tabular-nums"
-                    // The room is NOT named again here. This label joins the row's own
-                    // name to make it, so repeating the room turned every unread row
-                    // into "#general 3 unread in #general" — the same name twice, which
-                    // is the defect this row was just fixed for.
-                    aria-label={`${room.unreadCount} unread`}
-                  >
-                    {room.unreadCount}
-                  </span>
-                )}
-              </button>
-            )}
-
-            {!isRenaming && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <SidebarMenuAction
-                    showOnHover={!isMobile}
-                    aria-label={`${title} actions`}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <MoreHorizontal className="size-4" />
-                  </SidebarMenuAction>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  side="right"
-                  align="start"
-                  className="w-52"
-                  onCloseAutoFocus={onCloseAutoFocus}
+                </div>
+              ) : (
+                <button
+                  ref={rowRef}
+                  type="button"
+                  onClick={onSelect}
+                  aria-current={isActive ? 'page' : undefined}
+                  className={cn(
+                    'focus-visible:ring-sidebar-ring flex w-full items-center gap-2 rounded-md py-1.5 pr-7 pl-2.5 text-left text-xs outline-hidden transition-colors duration-100 focus-visible:ring-2 active:scale-[0.98]',
+                    isActive
+                      ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                      : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                    unread && !isActive && !isMuted && 'text-foreground font-medium'
+                  )}
                 >
-                  <RoomRowMenuItems variant="dropdown" {...menuModel} />
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
-          </div>
-        </ContextMenuTrigger>
-        <ContextMenuContent className="w-52" onCloseAutoFocus={onCloseAutoFocus}>
-          <RoomRowMenuItems variant="context" {...menuModel} />
-        </ContextMenuContent>
-      </ContextMenu>
+                  <RoomAvatar room={room} participants={room.participants} visuals={faces} />
+                  <RoomTitle room={room} className="min-w-0 flex-1" />
+                  {isMuted && (
+                    <BellOff
+                      className="text-muted-foreground/60 size-3 shrink-0"
+                      aria-label="Muted"
+                    />
+                  )}
+                  {working > 0 && (
+                    <span
+                      // `img` because the dot has no text of its own: a bare
+                      // `aria-label` on a generic element is not reliably read
+                      // out, and a role is what turns this from decoration into
+                      // something with a name.
+                      role="img"
+                      // The success token, which is this cockpit's colour for
+                      // "live" — deliberately NOT the brand tint of the unread
+                      // badge it sits beside. Two facts about one row have to be
+                      // tellable apart at a glance, and a second orange mark next
+                      // to an orange pill reads as part of it.
+                      //
+                      // The TOKEN and not the raw palette value it happens to
+                      // resolve to: `RoomMemberRow` draws the identical fact with
+                      // `bg-status-success`, and one fact wearing two spellings is
+                      // one that drifts the first time either theme moves.
+                      className="bg-status-success size-1.5 shrink-0 rounded-full motion-safe:animate-pulse"
+                      // A dot, and nothing else. The unread badge beside it counts
+                      // messages waiting to be read; this counts work in flight,
+                      // which is a fact about right now that will be gone shortly
+                      // and needs no number on screen to be useful. A reader who
+                      // cannot see it gets the count in the label, where a number
+                      // costs no room.
+                      //
+                      // Like the unread badge, it does not name the room again —
+                      // the row's own name is already the first half of what a
+                      // screen reader reads out.
+                      aria-label={working === 1 ? '1 agent working' : `${working} agents working`}
+                    />
+                  )}
+                  {unread && (
+                    <span
+                      className="bg-brand/15 text-brand shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium tabular-nums"
+                      // The room is NOT named again here. This label joins the row's own
+                      // name to make it, so repeating the room turned every unread row
+                      // into "#general 3 unread in #general" — the same name twice, which
+                      // is the defect this row was just fixed for.
+                      aria-label={`${room.unreadCount} unread`}
+                    >
+                      {room.unreadCount}
+                    </span>
+                  )}
+                </button>
+              )}
+
+              {!isRenaming && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <SidebarMenuAction
+                      showOnHover={!isMobile}
+                      aria-label={`${title} actions`}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <MoreHorizontal className="size-4" />
+                    </SidebarMenuAction>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    side="right"
+                    align="start"
+                    className="w-52"
+                    onCloseAutoFocus={onCloseAutoFocus}
+                  >
+                    <RoomRowMenuItems variant="dropdown" {...menuModel} />
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+            </div>
+          </ContextMenuTrigger>
+          <ContextMenuContent className="w-52" onCloseAutoFocus={onCloseAutoFocus}>
+            <RoomRowMenuItems variant="context" {...menuModel} />
+          </ContextMenuContent>
+        </ContextMenu>
+      </div>
 
       <AlertDialog open={archiveOpen} onOpenChange={setArchiveOpen}>
         <AlertDialogContent>

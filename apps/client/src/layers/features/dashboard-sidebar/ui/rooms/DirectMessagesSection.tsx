@@ -10,12 +10,23 @@ import {
 import type { AgentPickerCandidate } from '@/layers/entities/agent';
 import { useSidebarPrefs, useUpdateSidebarPrefs, setDmsCollapsed } from '@/layers/entities/config';
 import { directMessageTitle, useStartDirectMessage } from '@/layers/entities/room';
+import type { SidebarItemRef } from '@dorkos/shared/config-schema';
 import type { SidebarItemVisual } from '../../model/sidebar-item';
 import { useMarkRoomsRead } from '../../model/use-mark-rooms-read';
 import { SidebarSectionHeader } from '../SidebarSectionHeader';
 import { buildDirectMessagesHeaderMenuNodes } from '../SectionHeaderMenuItems';
+import {
+  Droppable,
+  Sortable,
+  SortableList,
+  sidebarDndData,
+  sidebarRowDndId,
+} from '../dnd/SidebarDndPrimitives';
 import { RoomRow } from './RoomRow';
 import { NewDirectMessageMenu } from '@/layers/features/room-management';
+
+/** This section's own name, as the drag layer announces it. */
+const SECTION_LABEL = 'Direct messages';
 
 /** Skeleton rows shown while the first room list loads. */
 const SKELETON_ROWS = 2;
@@ -46,6 +57,8 @@ interface DirectMessagesSectionProps {
   onSelectRoom: (room: RoomSummary) => void;
   /** Open an agent's profile in the right-panel hub. */
   onOpenAgentProfile: (agentPath: string) => void;
+  /** Open the inline group-create flow, moving the chosen conversation into it on commit. */
+  onRequestNewGroup: (ref: SidebarItemRef) => void;
 }
 
 /**
@@ -67,6 +80,7 @@ export function DirectMessagesSection({
   activeRoomId,
   onSelectRoom,
   onOpenAgentProfile,
+  onRequestNewGroup,
 }: DirectMessagesSectionProps) {
   const { dmsCollapsed } = useSidebarPrefs();
   const { update } = useUpdateSidebarPrefs();
@@ -125,42 +139,67 @@ export function DirectMessagesSection({
       <NewDirectMessageMenu open={pickerOpen} onOpenChange={setPickerOpen} onStart={handleStart} />
 
       {!dmsCollapsed && (
-        <SidebarMenu>
-          {isLoading && dms.length === 0 ? (
-            Array.from({ length: SKELETON_ROWS }, (_, i) => (
-              <SidebarMenuSkeleton key={`dm-skeleton-${i}`} showIcon />
-            ))
-          ) : error ? (
-            <SidebarMenuItem>
-              <p className="text-muted-foreground px-2.5 py-1.5 text-xs">
-                Couldn&apos;t load your messages. They&apos;re still there — reload to try again.
-              </p>
-            </SidebarMenuItem>
-          ) : (
-            <>
-              {dms.map((room) => (
-                <RoomRow
-                  key={room.id}
-                  room={room}
-                  visual={visualOf(room)}
-                  isActive={room.id === activeRoomId}
-                  onSelect={() => onSelectRoom(room)}
-                  onOpenAgentProfile={onOpenAgentProfile}
-                />
-              ))}
+        // A drop zone as well as a list: this is where a conversation lands
+        // when it is dragged back out of a group (rooms-in-groups, DOR-581).
+        <Droppable
+          id="container::dms"
+          data={{ type: 'container', container: { kind: 'ungrouped', section: SECTION_LABEL } }}
+        >
+          <SidebarMenu>
+            {isLoading && dms.length === 0 ? (
+              Array.from({ length: SKELETON_ROWS }, (_, i) => (
+                <SidebarMenuSkeleton key={`dm-skeleton-${i}`} showIcon />
+              ))
+            ) : error ? (
+              <SidebarMenuItem>
+                <p className="text-muted-foreground px-2.5 py-1.5 text-xs">
+                  Couldn&apos;t load your messages. They&apos;re still there — reload to try again.
+                </p>
+              </SidebarMenuItem>
+            ) : (
+              <>
+                <SortableList
+                  items={dms.map((room) =>
+                    sidebarRowDndId('ungrouped', { kind: 'room', roomId: room.id })
+                  )}
+                >
+                  {dms.map((room) => {
+                    const ref: SidebarItemRef = { kind: 'room', roomId: room.id };
+                    return (
+                      <Sortable
+                        key={room.id}
+                        id={sidebarRowDndId('ungrouped', ref)}
+                        data={sidebarDndData('ungrouped', ref, SECTION_LABEL)}
+                      >
+                        {(bindings) => (
+                          <RoomRow
+                            room={room}
+                            visual={visualOf(room)}
+                            isActive={room.id === activeRoomId}
+                            onSelect={() => onSelectRoom(room)}
+                            onOpenAgentProfile={onOpenAgentProfile}
+                            onRequestNewGroup={onRequestNewGroup}
+                            sortable={bindings}
+                          />
+                        )}
+                      </Sortable>
+                    );
+                  })}
+                </SortableList>
 
-              {dms.length === 0 && (
-                <SidebarMenuItem>
-                  <p className="text-muted-foreground px-2.5 py-1.5 text-xs">
-                    {hasGroupedDms
-                      ? 'Your conversations are all in groups above.'
-                      : 'No messages yet — start one to talk to an agent on its own, or to a few at once.'}
-                  </p>
-                </SidebarMenuItem>
-              )}
-            </>
-          )}
-        </SidebarMenu>
+                {dms.length === 0 && (
+                  <SidebarMenuItem>
+                    <p className="text-muted-foreground px-2.5 py-1.5 text-xs">
+                      {hasGroupedDms
+                        ? 'Your conversations are all in groups above.'
+                        : 'No messages yet — start one to talk to an agent on its own, or to a few at once.'}
+                    </p>
+                  </SidebarMenuItem>
+                )}
+              </>
+            )}
+          </SidebarMenu>
+        </Droppable>
       )}
     </SidebarGroup>
   );

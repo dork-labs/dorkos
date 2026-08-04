@@ -22,6 +22,11 @@ const API_SERVER: SidebarItemRef = { kind: 'agent', path: '/agents/api-server' }
 const groups = [
   { id: 'g1', name: 'Clients', items: [API_SERVER] },
   { id: 'g2', name: 'Experiments', items: [] },
+  // A smart group must never be offered as a move target: filing a row into
+  // one hides it from its home section while the group draws rule-derived
+  // members instead (DOR-581 review). The exact-labels assertions below are
+  // what prove the filter: revert it and 'Active now' joins the tree.
+  { id: 'g3', name: 'Active now', kind: 'smart' as const, items: [] },
 ];
 const mockUpdate = vi.fn<(updater: (prev: unknown) => unknown) => void>();
 const moveToGroupCalls: unknown[][] = [];

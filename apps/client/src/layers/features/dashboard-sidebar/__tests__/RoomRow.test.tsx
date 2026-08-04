@@ -6,6 +6,8 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
+import type { SidebarItemRef, SidebarPrefs } from '@dorkos/shared/config-schema';
+import { SIDEBAR_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
 import { agentAuthorRef, type AuthorRef, type RoomSummary } from '@dorkos/shared/room-schemas';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { TransportProvider } from '@/layers/shared/model';
@@ -112,6 +114,8 @@ function renderRow(
     onOpenAgentProfile?: (path: string) => void;
     /** The mark the sidebar's view model resolved for this room. */
     visual?: SidebarItemVisual;
+    /** Asked for the inline group-create editor, carrying this room's reference. */
+    onRequestNewGroup?: (ref: SidebarItemRef) => void;
   } = {}
 ) {
   // Mesh is always answered: the row maps a 1:1's `agentRef` back to a path
@@ -136,6 +140,7 @@ function renderRow(
       isActive={false}
       onSelect={vi.fn()}
       onOpenAgentProfile={opts.onOpenAgentProfile ?? vi.fn()}
+      onRequestNewGroup={opts.onRequestNewGroup ?? vi.fn()}
     />,
     { wrapper }
   );
@@ -183,7 +188,12 @@ describe('RoomRow menus', () => {
 
   it('writes the ellipsis onto exactly the items that open something', () => {
     renderRow(channel());
+    // "Move to group" is a submenu trigger. It reads as a `menuitem` like the
+    // rest, and takes no ellipsis: opening a submenu is not the row asking you
+    // for anything, it is one more level of the same menu.
     expect(itemLabels(openDropdown())).toEqual([
+      'Mute channel',
+      'Move to group',
       'Add agents…',
       'Members…',
       'Rename…',
@@ -496,5 +506,148 @@ describe('RoomRow working dot', () => {
     renderRow(channel({ working: 1, unreadCount: 2 }));
     expect(screen.getByLabelText('1 agent working')).toBeInTheDocument();
     expect(screen.getByLabelText('2 unread')).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Organization: mute + move to group (rooms-in-groups, DOR-581)
+// ---------------------------------------------------------------------------
+
+/** A stored `ui.sidebar` with one manual group and one smart group. */
+function configWithGroups(overrides: Partial<SidebarPrefs> = {}) {
+  return {
+    ui: {
+      sidebar: {
+        ...SIDEBAR_PREFS_DEFAULTS,
+        groups: [
+          {
+            id: 'g-manual',
+            name: 'Clients',
+            items: [],
+            sortMode: 'manual' as const,
+            collapsed: false,
+            displayFilter: 'all' as const,
+            muted: false,
+            kind: 'manual' as const,
+          },
+          {
+            id: 'g-smart',
+            name: 'Active now',
+            items: [],
+            sortMode: 'recent' as const,
+            collapsed: false,
+            displayFilter: 'all' as const,
+            muted: false,
+            kind: 'smart' as const,
+            rules: { statuses: ['active' as const] },
+          },
+        ],
+        ...overrides,
+      },
+    },
+  };
+}
+
+/** A transport whose config carries the groups above. */
+function transportWithGroups(overrides: Partial<SidebarPrefs> = {}) {
+  const transport = createMockTransport();
+  transport.getConfig = vi.fn().mockResolvedValue(configWithGroups(overrides));
+  return transport;
+}
+
+/** The `ui.sidebar` payload of the last `updateConfig` call. */
+function lastSidebarWrite(transport: Transport): SidebarPrefs {
+  const calls = vi.mocked(transport.updateConfig).mock.calls;
+  const last = calls.at(-1)?.[0] as { ui?: { sidebar?: SidebarPrefs } } | undefined;
+  if (!last?.ui?.sidebar) throw new Error('expected a ui.sidebar write');
+  return last.ui.sidebar;
+}
+
+/** Open "Move to group ▸" and return the submenu that appears. */
+async function openMoveToGroup(): Promise<HTMLElement> {
+  fireEvent.pointerDown(screen.getByLabelText('#general actions'));
+  fireEvent.click(await screen.findByText('Move to group'));
+  const menus = await screen.findAllByRole('menu');
+  // The submenu is the one mounted last; the trigger's own menu stays open.
+  return menus[menus.length - 1]!;
+}
+
+describe('RoomRow organization', () => {
+  it('mutes a room into the SHARED muted list, as a room reference', async () => {
+    const transport = transportWithGroups();
+    renderRow(channel(), { transport });
+    await screen.findByRole('button', { name: '#general' });
+
+    fireEvent.pointerDown(screen.getByLabelText('#general actions'));
+    fireEvent.click(screen.getByText('Mute channel'));
+
+    await waitFor(() => expect(transport.updateConfig).toHaveBeenCalled());
+    // The one list agents write into too — never a second, room-only one.
+    expect(lastSidebarWrite(transport).muted).toEqual([{ kind: 'room', roomId: 'room-1' }]);
+  });
+
+  it('reads its own mute state back: the item says Unmute and the row is marked', async () => {
+    const transport = transportWithGroups({ muted: [{ kind: 'room', roomId: 'room-1' }] });
+    renderRow(channel(), { transport });
+
+    await waitFor(() => expect(screen.getByLabelText('Muted')).toBeInTheDocument());
+    expect(itemLabels(openDropdown())).toContain('Unmute channel');
+  });
+
+  it('unmutes by removing the reference rather than writing a false', async () => {
+    const transport = transportWithGroups({ muted: [{ kind: 'room', roomId: 'room-1' }] });
+    renderRow(channel(), { transport });
+    await waitFor(() => expect(screen.getByLabelText('Muted')).toBeInTheDocument());
+
+    fireEvent.pointerDown(screen.getByLabelText('#general actions'));
+    fireEvent.click(screen.getByText('Unmute channel'));
+
+    await waitFor(() => expect(transport.updateConfig).toHaveBeenCalled());
+    expect(lastSidebarWrite(transport).muted).toEqual([]);
+  });
+
+  it('offers only MANUAL groups as move targets — a room in a smart group vanishes', async () => {
+    // A smart group derives its members from rules about agents and draws those
+    // instead of its stored `items`, while `groupedRoomIds` still counts the
+    // room as grouped and hides it from Channels. Offering it would file the
+    // room somewhere no section draws it.
+    const transport = transportWithGroups();
+    renderRow(channel(), { transport });
+    await screen.findByRole('button', { name: '#general' });
+
+    // A group target is a tickable choice, so it reads as `menuitemcheckbox` —
+    // asserting over exactly those is what makes "not offered" mean it.
+    const submenu = await openMoveToGroup();
+    const targets = within(submenu)
+      .getAllByRole('menuitemcheckbox')
+      .map((item) => item.textContent ?? '');
+    expect(targets).toEqual(['Clients']);
+  });
+
+  it('files the room into the group that was picked', async () => {
+    const transport = transportWithGroups();
+    renderRow(channel(), { transport });
+    await screen.findByRole('button', { name: '#general' });
+
+    const submenu = await openMoveToGroup();
+    fireEvent.click(within(submenu).getByText('Clients'));
+
+    await waitFor(() => expect(transport.updateConfig).toHaveBeenCalled());
+    const groups = lastSidebarWrite(transport).groups;
+    expect(groups.find((g) => g.id === 'g-manual')?.items).toEqual([
+      { kind: 'room', roomId: 'room-1' },
+    ]);
+  });
+
+  it('hands the group-create flow this room, so the new group is not born empty', async () => {
+    const onRequestNewGroup = vi.fn();
+    const transport = transportWithGroups();
+    renderRow(channel(), { transport, onRequestNewGroup });
+    await screen.findByRole('button', { name: '#general' });
+
+    const submenu = await openMoveToGroup();
+    fireEvent.click(within(submenu).getByText('New group…'));
+
+    expect(onRequestNewGroup).toHaveBeenCalledWith({ kind: 'room', roomId: 'room-1' });
   });
 });

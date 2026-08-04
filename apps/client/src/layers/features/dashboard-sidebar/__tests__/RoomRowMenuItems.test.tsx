@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest';
+import { Bell, BellOff } from 'lucide-react';
 import type { RoomKind } from '@dorkos/shared/room-schemas';
 import { buildRoomRowMenuNodes, type RoomRowMenuModel } from '../ui/rooms/RoomRowMenuItems';
 
@@ -8,8 +9,14 @@ function model(overrides: Partial<RoomRowMenuModel> = {}): RoomRowMenuModel {
   return {
     kind: 'channel' as RoomKind,
     hasUnread: false,
+    isMuted: false,
+    currentGroupId: null,
+    groups: [],
     soleAgentPath: null,
     onMarkRead: vi.fn(),
+    onToggleMute: vi.fn(),
+    onMoveToGroup: vi.fn(),
+    onNewGroup: vi.fn(),
     onAddAgents: vi.fn(),
     onOpenMembers: vi.fn(),
     onOpenAgentProfile: vi.fn(),
@@ -28,6 +35,9 @@ function ids(overrides: Partial<RoomRowMenuModel> = {}): string[] {
 describe('buildRoomRowMenuNodes', () => {
   it('offers a read channel exactly these items, in this order', () => {
     expect(ids()).toEqual([
+      'mute',
+      'move-to-group',
+      'sep-organize',
       'add',
       'members',
       'sep-settings',
@@ -42,6 +52,9 @@ describe('buildRoomRowMenuNodes', () => {
     expect(ids({ hasUnread: true })).toEqual([
       'mark-read',
       'sep-unread',
+      'mute',
+      'move-to-group',
+      'sep-organize',
       'add',
       'members',
       'sep-settings',
@@ -54,6 +67,9 @@ describe('buildRoomRowMenuNodes', () => {
 
   it('drops Edit topic from a direct message — only a channel is about a subject', () => {
     expect(ids({ kind: 'dm' })).toEqual([
+      'mute',
+      'move-to-group',
+      'sep-organize',
       'add',
       'members',
       'sep-settings',
@@ -65,6 +81,9 @@ describe('buildRoomRowMenuNodes', () => {
 
   it('offers Agent profile on a one-to-one, where exactly one agent is named', () => {
     expect(ids({ kind: 'dm', soleAgentPath: '/repo/ana' })).toEqual([
+      'mute',
+      'move-to-group',
+      'sep-organize',
       'add',
       'members',
       'agent-profile',
@@ -102,6 +121,7 @@ describe('buildRoomRowMenuNodes', () => {
     expect(labels.some((label) => label.endsWith('…'))).toBe(false);
     expect(labels).toEqual([
       'Mark as read',
+      'Mute channel',
       'Add agents',
       'Members',
       'Rename',
@@ -128,11 +148,95 @@ describe('buildRoomRowMenuNodes', () => {
     expect(onOpenAgentProfile).toHaveBeenCalledWith('/repo/ana');
   });
 
-  it('carries no Mute and no Move to group — both wait for the unified reference (DOR-581)', () => {
-    // The rule this pins is the one that matters: nothing here may invent a
-    // second, room-only mute concept before agents and rooms share one.
-    const all = ids({ hasUnread: true, kind: 'dm', soleAgentPath: '/repo/ana' });
-    expect(all).not.toContain('mute');
-    expect(all).not.toContain('move-to-group');
+  // -------------------------------------------------------------------------
+  // Mute + Move to group (rooms-in-groups, DOR-581)
+  // -------------------------------------------------------------------------
+
+  /** The submenu's contents, which is where every group target lives. */
+  function moveItems(overrides: Partial<RoomRowMenuModel> = {}) {
+    const sub = buildRoomRowMenuNodes(model(overrides)).find((n) => n.id === 'move-to-group');
+    if (sub?.kind !== 'submenu') throw new Error('expected a submenu node');
+    return sub.items;
+  }
+
+  it('names mute after the room it acts on, and flips both word and icon when muted', () => {
+    const muteOf = (overrides: Partial<RoomRowMenuModel>) =>
+      buildRoomRowMenuNodes(model(overrides)).find((n) => n.id === 'mute');
+
+    expect(muteOf({})).toMatchObject({ label: 'Mute channel', icon: BellOff });
+    expect(muteOf({ isMuted: true })).toMatchObject({ label: 'Unmute channel', icon: Bell });
+    expect(muteOf({ kind: 'dm' })).toMatchObject({ label: 'Mute conversation' });
+    expect(muteOf({ kind: 'dm', isMuted: true })).toMatchObject({ label: 'Unmute conversation' });
+  });
+
+  it('runs the mute toggle the caller supplied, rather than deciding the direction itself', () => {
+    const onToggleMute = vi.fn();
+    const mute = buildRoomRowMenuNodes(model({ isMuted: true, onToggleMute })).find(
+      (n) => n.id === 'mute'
+    );
+    if (mute?.kind !== 'action') throw new Error('expected an action node');
+    mute.run();
+    expect(onToggleMute).toHaveBeenCalledTimes(1);
+  });
+
+  it('lists every group in the submenu and ticks the one the room is already in', () => {
+    const items = moveItems({
+      groups: [
+        { id: 'g1', name: 'Clients' },
+        { id: 'g2', name: 'Infra' },
+      ],
+      currentGroupId: 'g2',
+    });
+    expect(items.filter((n) => n.kind === 'choice')).toEqual([
+      expect.objectContaining({ id: 'group-g1', label: 'Clients', checked: false }),
+      expect.objectContaining({ id: 'group-g2', label: 'Infra', checked: true }),
+    ]);
+  });
+
+  it('moves the room by group id, and out of every group with null', () => {
+    const onMoveToGroup = vi.fn();
+    const items = moveItems({
+      groups: [{ id: 'g1', name: 'Clients' }],
+      currentGroupId: 'g1',
+      onMoveToGroup,
+    });
+
+    const target = items.find((n) => n.id === 'group-g1');
+    if (target?.kind !== 'choice') throw new Error('expected a choice node');
+    target.run();
+    expect(onMoveToGroup).toHaveBeenCalledWith('g1');
+
+    const remove = items.find((n) => n.id === 'remove-from-group');
+    if (remove?.kind !== 'action') throw new Error('expected an action node');
+    remove.run();
+    expect(onMoveToGroup).toHaveBeenLastCalledWith(null);
+  });
+
+  it('withholds Remove from group from a room that is in none — there is nothing to leave', () => {
+    expect(moveItems({ currentGroupId: null }).map((n) => n.id)).not.toContain('remove-from-group');
+  });
+
+  it('offers New group even with no groups yet, so the submenu is never a dead end', () => {
+    const items = moveItems({ groups: [] });
+    const newGroup = items.find((n) => n.id === 'new-group');
+    // `opensInput` is what earns it the renderer's ellipsis — it mounts the
+    // inline name editor rather than creating a group on the spot.
+    expect(newGroup).toMatchObject({ label: 'New group', opensInput: true });
+  });
+
+  it('starts the group-create flow from the row, without naming a group first', () => {
+    const onNewGroup = vi.fn();
+    const newGroup = moveItems({ onNewGroup }).find((n) => n.id === 'new-group');
+    if (newGroup?.kind !== 'action') throw new Error('expected an action node');
+    newGroup.run();
+    expect(onNewGroup).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers only the groups it was given — a smart group is never a move target', () => {
+    // The builder is pure, so what it must guarantee is that it invents no
+    // target of its own: the caller filters smart groups out, because a room
+    // filed into one is counted as grouped and drawn by nobody, and vanishes.
+    // `RoomRow` is where that filter lives and where its own test pins it.
+    expect(moveItems({ groups: [] }).filter((n) => n.kind === 'choice')).toEqual([]);
   });
 });

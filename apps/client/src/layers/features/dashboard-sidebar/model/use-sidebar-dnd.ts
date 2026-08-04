@@ -34,7 +34,15 @@ import {
 export type SidebarContainer =
   | { kind: 'pinned' }
   | { kind: 'group'; groupId: string }
-  | { kind: 'ungrouped' };
+  /**
+   * "In no group at all", which since rooms became draggable (DOR-581) is three
+   * sections rather than one: Agents, Channels and Direct messages. They behave
+   * identically as a drop target — landing in any of them takes the row out of
+   * its group and lets it fall back to wherever it belongs — so they share the
+   * kind. `section` is the name of the one actually under the cursor, read ONLY
+   * by the ARIA announcements; nothing in the reducer branches on it.
+   */
+  | { kind: 'ungrouped'; section?: string };
 
 /**
  * The `data` object a draggable/droppable node carries. dnd-kit reuses one data
@@ -90,7 +98,11 @@ type SidebarDropOp =
 function isSidebarContainer(value: unknown): value is SidebarContainer {
   if (typeof value !== 'object' || value === null) return false;
   const kind = (value as { kind?: unknown }).kind;
-  if (kind === 'pinned' || kind === 'ungrouped') return true;
+  if (kind === 'pinned') return true;
+  if (kind === 'ungrouped') {
+    const section = (value as { section?: unknown }).section;
+    return section === undefined || typeof section === 'string';
+  }
   return kind === 'group' && typeof (value as { groupId?: unknown }).groupId === 'string';
 }
 
@@ -361,7 +373,11 @@ function describeSidebarDropOp(op: SidebarDropOp, ctx: SidebarDndAnnounceContext
     case 'unpin':
       return `Unpinned ${ctx.itemName(op.ref)}.`;
     case 'remove-from-group':
-      return `Moved ${ctx.itemName(op.ref)} to Agents.`;
+      // Names no destination section on purpose. The row lands back wherever it
+      // belongs — an agent in Agents, a channel in Channels, a conversation in
+      // Direct messages — and which of the three received the drop does not
+      // decide that, so naming one would be right only a third of the time.
+      return `Moved ${ctx.itemName(op.ref)} out of its group.`;
     case 'reorder-within-group':
       return `Reordered ${ctx.itemName(op.ref)} in group ${ctx.groupName(op.groupId)}.`;
     case 'reorder-pinned':
@@ -384,7 +400,7 @@ function describeSidebarDragOver(
     case 'pinned':
       return 'Over Pinned.';
     case 'ungrouped':
-      return 'Over Agents.';
+      return `Over ${container.section ?? 'Agents'}.`;
     case 'group':
       return `Over group ${ctx.groupName(container.groupId)}.`;
   }

@@ -14,11 +14,22 @@ import {
   setChannelsCollapsed,
 } from '@/layers/entities/config';
 import { ChannelCreateDialog } from '@/layers/features/room-management';
+import type { SidebarItemRef } from '@dorkos/shared/config-schema';
 import type { SidebarItemVisual } from '../../model/sidebar-item';
 import { useMarkRoomsRead } from '../../model/use-mark-rooms-read';
 import { SidebarSectionHeader } from '../SidebarSectionHeader';
 import { buildChannelsHeaderMenuNodes } from '../SectionHeaderMenuItems';
+import {
+  Droppable,
+  Sortable,
+  SortableList,
+  sidebarDndData,
+  sidebarRowDndId,
+} from '../dnd/SidebarDndPrimitives';
 import { RoomRow } from './RoomRow';
+
+/** This section's own name, as the drag layer announces it. */
+const SECTION_LABEL = 'Channels';
 
 /** Skeleton rows shown while the first room list loads. */
 const SKELETON_ROWS = 2;
@@ -49,6 +60,8 @@ interface ChannelsSectionProps {
   onSelectRoom: (room: RoomSummary) => void;
   /** Open an agent's profile in the right-panel hub. */
   onOpenAgentProfile: (agentPath: string) => void;
+  /** Open the inline group-create flow, moving the chosen channel into it on commit. */
+  onRequestNewGroup: (ref: SidebarItemRef) => void;
 }
 
 /**
@@ -79,6 +92,7 @@ export function ChannelsSection({
   activeRoomId,
   onSelectRoom,
   onOpenAgentProfile,
+  onRequestNewGroup,
 }: ChannelsSectionProps) {
   const { channelsCollapsed } = useSidebarPrefs();
   const { update } = useUpdateSidebarPrefs();
@@ -119,42 +133,67 @@ export function ChannelsSection({
       )}
 
       {!channelsCollapsed && (
-        <SidebarMenu>
-          {isLoading && channels.length === 0 ? (
-            Array.from({ length: SKELETON_ROWS }, (_, i) => (
-              <SidebarMenuSkeleton key={`channel-skeleton-${i}`} showIcon />
-            ))
-          ) : error ? (
-            <SidebarMenuItem>
-              <p className="text-muted-foreground px-2.5 py-1.5 text-xs">
-                Couldn&apos;t load your channels. They&apos;re still there — reload to try again.
-              </p>
-            </SidebarMenuItem>
-          ) : (
-            <>
-              {channels.map((room) => (
-                <RoomRow
-                  key={room.id}
-                  room={room}
-                  visual={visualOf(room)}
-                  isActive={room.id === activeRoomId}
-                  onSelect={() => onSelectRoom(room)}
-                  onOpenAgentProfile={onOpenAgentProfile}
-                />
-              ))}
+        // A drop zone as well as a list: this is where a channel lands when it
+        // is dragged back out of a group (rooms-in-groups, DOR-581).
+        <Droppable
+          id="container::channels"
+          data={{ type: 'container', container: { kind: 'ungrouped', section: SECTION_LABEL } }}
+        >
+          <SidebarMenu>
+            {isLoading && channels.length === 0 ? (
+              Array.from({ length: SKELETON_ROWS }, (_, i) => (
+                <SidebarMenuSkeleton key={`channel-skeleton-${i}`} showIcon />
+              ))
+            ) : error ? (
+              <SidebarMenuItem>
+                <p className="text-muted-foreground px-2.5 py-1.5 text-xs">
+                  Couldn&apos;t load your channels. They&apos;re still there — reload to try again.
+                </p>
+              </SidebarMenuItem>
+            ) : (
+              <>
+                <SortableList
+                  items={channels.map((room) =>
+                    sidebarRowDndId('ungrouped', { kind: 'room', roomId: room.id })
+                  )}
+                >
+                  {channels.map((room) => {
+                    const ref: SidebarItemRef = { kind: 'room', roomId: room.id };
+                    return (
+                      <Sortable
+                        key={room.id}
+                        id={sidebarRowDndId('ungrouped', ref)}
+                        data={sidebarDndData('ungrouped', ref, SECTION_LABEL)}
+                      >
+                        {(bindings) => (
+                          <RoomRow
+                            room={room}
+                            visual={visualOf(room)}
+                            isActive={room.id === activeRoomId}
+                            onSelect={() => onSelectRoom(room)}
+                            onOpenAgentProfile={onOpenAgentProfile}
+                            onRequestNewGroup={onRequestNewGroup}
+                            sortable={bindings}
+                          />
+                        )}
+                      </Sortable>
+                    );
+                  })}
+                </SortableList>
 
-              {channels.length === 0 && (
-                <SidebarMenuItem>
-                  <p className="text-muted-foreground px-2.5 py-1.5 text-xs">
-                    {hasGroupedChannels
-                      ? 'Your channels are all in groups above.'
-                      : 'No channels yet — create one to get a few agents talking in the same place.'}
-                  </p>
-                </SidebarMenuItem>
-              )}
-            </>
-          )}
-        </SidebarMenu>
+                {channels.length === 0 && (
+                  <SidebarMenuItem>
+                    <p className="text-muted-foreground px-2.5 py-1.5 text-xs">
+                      {hasGroupedChannels
+                        ? 'Your channels are all in groups above.'
+                        : 'No channels yet — create one to get a few agents talking in the same place.'}
+                    </p>
+                  </SidebarMenuItem>
+                )}
+              </>
+            )}
+          </SidebarMenu>
+        </Droppable>
       )}
     </SidebarGroup>
   );

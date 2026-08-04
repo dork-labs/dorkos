@@ -3,6 +3,7 @@ import { motion, AnimatePresence, type Variants } from 'motion/react';
 import { Plus, MoreHorizontal, BellOff } from 'lucide-react';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { Session } from '@dorkos/shared/types';
+import type { SidebarItemRef } from '@dorkos/shared/config-schema';
 import { cn, getAgentDisplayName } from '@/layers/shared/lib';
 import {
   SidebarMenuItem,
@@ -86,7 +87,7 @@ interface AgentListItemProps {
   /** Open agent profile in the right panel hub. */
   onOpenProfile: () => void;
   /** Open the inline group-create flow, moving this agent into the new group on commit. */
-  onRequestNewGroup: (agentPath: string) => void;
+  onRequestNewGroup: (ref: SidebarItemRef) => void;
   /** Recent sessions for this agent (only needed when expanded). */
   sessions: Session[];
   /** True while the initial sessions fetch is in-flight (no cached data yet). */
@@ -249,9 +250,9 @@ export function AgentListItem({
                   path={path}
                   onOpenProfile={onOpenProfile}
                   onNewSession={onNewSession}
-                  onRequestNewGroup={(agentPath) => {
+                  onRequestNewGroup={(ref) => {
                     armCloseFocusGuard();
-                    onRequestNewGroup(agentPath);
+                    onRequestNewGroup(ref);
                   }}
                 />
               </DropdownMenuContent>

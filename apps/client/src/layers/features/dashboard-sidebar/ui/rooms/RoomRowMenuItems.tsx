@@ -1,7 +1,12 @@
 import type { ElementType, ReactNode } from 'react';
 import {
   Archive,
+  Bell,
+  BellOff,
   CheckCheck,
+  FolderInput,
+  FolderMinus,
+  FolderPlus,
   Pencil,
   Text,
   User,
@@ -11,10 +16,18 @@ import {
 } from 'lucide-react';
 import type { RoomKind } from '@dorkos/shared/room-schemas';
 import {
+  ContextMenuCheckboxItem,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+  DropdownMenuCheckboxItem,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
 } from '@/layers/shared/ui';
 
 /** Which Radix menu the shared item list renders into. */
@@ -40,6 +53,10 @@ type RoomRowMenuVariant = 'context' | 'dropdown';
  */
 export type RoomMenuActionId =
   | 'mark-read'
+  | 'mute'
+  | 'move-to-group'
+  | 'remove-from-group'
+  | 'new-group'
   | 'add'
   | 'members'
   | 'agent-profile'
@@ -80,11 +97,33 @@ export interface RoomMenuAction {
  * table all consume ONE list, which is the invariant spec §15.3 states — every
  * room command has a menu equivalent and every menu item has a command.
  *
- * S3 (DOR-581) adds two entries: Mute/Unmute is one more `action`, and
- * "Move to group ▸" adds a `submenu` variant. The walk below switches on `kind`,
- * so a new variant is a new case rather than a change to the existing ones.
+ * S3 (DOR-581) added the two variants the note above anticipated: Mute/Unmute is
+ * one more `action`, and "Move to group ▸" is a `submenu` holding one `choice`
+ * per group. The walk below switches on `kind`, so each was a new case rather
+ * than a change to the existing ones.
  */
-export type RoomRowMenuNode = RoomMenuAction | { kind: 'separator'; id: string };
+export type RoomRowMenuNode =
+  | RoomMenuAction
+  | { kind: 'separator'; id: string }
+  /**
+   * A nested menu. Its children are the same node type, so the walk that renders
+   * the top level renders the submenu unchanged — and a flat consumer (the
+   * palette, the slash-command table) can walk into `items` for the same
+   * actions rather than being handed a shape it cannot read.
+   */
+  | {
+      kind: 'submenu';
+      id: RoomMenuActionId;
+      label: string;
+      icon: LucideIcon;
+      items: RoomRowMenuNode[];
+    }
+  /**
+   * One of a set of mutually-exclusive targets, drawn with a tick when it is the
+   * current one. A group is a place the room IS rather than a verb, which is why
+   * it carries `checked` instead of {@link RoomMenuAction}'s two flags.
+   */
+  | { kind: 'choice'; id: string; label: string; checked: boolean; run: () => void };
 
 /** Inputs the pure item list is built from (fabricated directly in unit tests). */
 export interface RoomRowMenuModel {
@@ -97,6 +136,25 @@ export interface RoomRowMenuModel {
   /** Whether the reader is behind. Nothing to clear means no "Mark as read". */
   hasUnread: boolean;
   /**
+   * Whether this room is muted in its own right — its entry in the shared
+   * `ui.sidebar.muted` list, which holds agents and rooms alike. There is no
+   * second, room-only mute list, so "muted" means one thing across the sidebar.
+   */
+  isMuted: boolean;
+  /** The group this room currently sits in, or `null` when it is in none. */
+  currentGroupId: string | null;
+  /**
+   * The groups this room can be moved into — MANUAL groups only.
+   *
+   * A smart group derives its membership from rules about agents, and its stored
+   * `items` is only the convert-to-manual materialization target. A room filed
+   * into one would be hidden from Channels (it counts as grouped) and drawn by
+   * nobody (the smart group renders its derived members instead) — it would
+   * simply vanish. The drag layer already refuses that drop; the menu refuses it
+   * by not offering it.
+   */
+  groups: { id: string; name: string }[];
+  /**
    * The directory of the one agent a one-to-one conversation is with, or `null`
    * for a channel, a group conversation, or a DM whose roster has not resolved.
    * Only a 1:1 names an unambiguous agent, so only a 1:1 offers its profile.
@@ -104,6 +162,12 @@ export interface RoomRowMenuModel {
   soleAgentPath: string | null;
   /** Clear the unread badge without opening the room. */
   onMarkRead: () => void;
+  /** Toggle this room's own mute state. */
+  onToggleMute: () => void;
+  /** Move the room into a group, or out of every group with `null`. */
+  onMoveToGroup: (groupId: string | null) => void;
+  /** Open the inline group-create flow, moving this room into the new group on commit. */
+  onNewGroup: () => void;
   /** Open the members panel with the picker focused. */
   onAddAgents: () => void;
   /** Open the members panel on its roster. */
@@ -119,26 +183,81 @@ export interface RoomRowMenuModel {
 }
 
 /**
+ * The contents of "Move to group ▸": one tickable target per manual group, the
+ * way out when the room is already in one, and the door to a brand-new group.
+ *
+ * Mirrors the agent row's submenu exactly (`buildRowMenuNodes`) rather than
+ * inventing a room-shaped variant, because the two menus name the same
+ * operation on the same stored list — `ui.sidebar.groups[].items`.
+ *
+ * "New group…" is offered even with no groups yet: an empty submenu holding only
+ * a separator would be a dead end, and creating the first group from the row you
+ * want in it is the fastest path there is.
+ */
+function buildMoveToGroupItems(model: RoomRowMenuModel): RoomRowMenuNode[] {
+  const items: RoomRowMenuNode[] = model.groups.map((group) => ({
+    kind: 'choice',
+    id: `group-${group.id}`,
+    label: group.name,
+    checked: group.id === model.currentGroupId,
+    run: () => model.onMoveToGroup(group.id),
+  }));
+
+  if (model.currentGroupId !== null) {
+    items.push({
+      kind: 'action',
+      id: 'remove-from-group',
+      label: 'Remove from group',
+      icon: FolderMinus,
+      opensInput: false,
+      destructive: false,
+      run: () => model.onMoveToGroup(null),
+    });
+  }
+
+  items.push(
+    { kind: 'separator', id: 'sep-new-group' },
+    {
+      kind: 'action',
+      id: 'new-group',
+      label: 'New group',
+      icon: FolderPlus,
+      // Earns the ellipsis: it mounts the inline name editor rather than
+      // creating anything on the spot.
+      opensInput: true,
+      destructive: false,
+      run: model.onNewGroup,
+    }
+  );
+
+  return items;
+}
+
+/**
  * Build the ordered room-row menu items from a model. Pure — exported so the
  * item definitions can be asserted directly and shared by every renderer.
  *
  * The order mirrors the agent row's: state first, then the things that open
  * something, then the destructive one on its own at the bottom.
  *
- * Three omissions are deliberate rather than pending. There is no **Leave**:
+ * Two omissions are deliberate rather than pending. There is no **Leave**:
  * with a single human author, leaving a room you created makes it invisible
- * with no route back, and Archive is the honest verb for that intent. There is
- * no **Pin**: rooms sort by recent activity and there are few of them, so pin
- * earns its place when the list is long enough to lose something in. And there
- * is no **Mute** yet — it waits for the unified sidebar reference (DOR-581),
- * because muting must be one concept across agents and rooms rather than a
- * second, room-only mute list.
+ * with no route back, and Archive is the honest verb for that intent. And there
+ * is no **Pin**: rooms sort by recent activity and there are few of them, so pin
+ * earns its place when the list is long enough to lose something in.
+ *
+ * **Mute is one concept, not a room-only copy of one.** It writes the room's
+ * reference into the same `ui.sidebar.muted` list an agent writes its path into,
+ * which is why the wording here ("Mute channel" / "Mute conversation") differs
+ * from the agent row's only in the noun.
  *
  * @param model - The room's state plus the action callbacks.
  * @internal Exported for testing and cross-renderer use.
  */
 export function buildRoomRowMenuNodes(model: RoomRowMenuModel): RoomRowMenuNode[] {
   const isChannel = model.kind === 'channel';
+  /** The noun every room-level label ends in, so one room is called one thing. */
+  const noun = isChannel ? 'channel' : 'conversation';
   const nodes: RoomRowMenuNode[] = [];
 
   if (model.hasUnread) {
@@ -155,6 +274,26 @@ export function buildRoomRowMenuNodes(model: RoomRowMenuModel): RoomRowMenuNode[
       { kind: 'separator', id: 'sep-unread' }
     );
   }
+
+  nodes.push(
+    {
+      kind: 'action',
+      id: 'mute',
+      label: model.isMuted ? `Unmute ${noun}` : `Mute ${noun}`,
+      icon: model.isMuted ? Bell : BellOff,
+      opensInput: false,
+      destructive: false,
+      run: model.onToggleMute,
+    },
+    {
+      kind: 'submenu',
+      id: 'move-to-group',
+      label: 'Move to group',
+      icon: FolderInput,
+      items: buildMoveToGroupItems(model),
+    },
+    { kind: 'separator', id: 'sep-organize' }
+  );
 
   nodes.push(
     {
@@ -244,26 +383,71 @@ export function buildRoomRowMenuNodes(model: RoomRowMenuModel): RoomRowMenuNode[
  */
 interface RoomMenuSlots {
   Item: ElementType;
+  CheckboxItem: ElementType;
   Separator: ElementType;
+  Sub: ElementType;
+  SubTrigger: ElementType;
+  SubContent: ElementType;
 }
 
 const VARIANT_SLOTS: Record<RoomRowMenuVariant, RoomMenuSlots> = {
-  context: { Item: ContextMenuItem, Separator: ContextMenuSeparator },
-  dropdown: { Item: DropdownMenuItem, Separator: DropdownMenuSeparator },
+  context: {
+    Item: ContextMenuItem,
+    CheckboxItem: ContextMenuCheckboxItem,
+    Separator: ContextMenuSeparator,
+    Sub: ContextMenuSub,
+    SubTrigger: ContextMenuSubTrigger,
+    SubContent: ContextMenuSubContent,
+  },
+  dropdown: {
+    Item: DropdownMenuItem,
+    CheckboxItem: DropdownMenuCheckboxItem,
+    Separator: DropdownMenuSeparator,
+    Sub: DropdownMenuSub,
+    SubTrigger: DropdownMenuSubTrigger,
+    SubContent: DropdownMenuSubContent,
+  },
 };
 
 /** Render the shared nodes through one generic walk using the given slots. */
 function renderNodes(nodes: RoomRowMenuNode[], slots: RoomMenuSlots): ReactNode {
-  const { Item, Separator } = slots;
+  const { Item, CheckboxItem, Separator, Sub, SubTrigger, SubContent } = slots;
   return nodes.map((node) => {
-    if (node.kind === 'separator') return <Separator key={node.id} />;
-    const Icon = node.icon;
-    return (
-      <Item key={node.id} variant={node.destructive ? 'destructive' : undefined} onClick={node.run}>
-        <Icon className="mr-2 size-4" />
-        {node.opensInput ? `${node.label}…` : node.label}
-      </Item>
-    );
+    switch (node.kind) {
+      case 'separator':
+        return <Separator key={node.id} />;
+      case 'choice':
+        return (
+          <CheckboxItem key={node.id} checked={node.checked} onClick={node.run}>
+            {node.label}
+          </CheckboxItem>
+        );
+      case 'submenu': {
+        const Icon = node.icon;
+        return (
+          <Sub key={node.id}>
+            <SubTrigger>
+              <Icon className="mr-2 size-4" />
+              {node.label}
+            </SubTrigger>
+            <SubContent className="w-48">{renderNodes(node.items, slots)}</SubContent>
+          </Sub>
+        );
+      }
+      case 'action': {
+        const Icon = node.icon;
+        return (
+          <Item
+            key={node.id}
+            variant={node.destructive ? 'destructive' : undefined}
+            onClick={node.run}
+          >
+            <Icon className="mr-2 size-4" />
+            {node.opensInput ? `${node.label}…` : node.label}
+          </Item>
+        );
+      }
+    }
   });
 }
 

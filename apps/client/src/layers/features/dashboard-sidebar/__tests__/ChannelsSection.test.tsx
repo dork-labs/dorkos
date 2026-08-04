@@ -6,6 +6,7 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
+import { SIDEBAR_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { TransportProvider } from '@/layers/shared/model';
 import { ChannelsSection } from '../ui/rooms/ChannelsSection';
@@ -34,19 +35,26 @@ function settled(candidates: { agentPath: string; displayName: string }[] = []) 
 const mockUpdate = vi.fn<(updater: (prev: { channelsCollapsed: boolean }) => unknown) => void>();
 let mockCollapsed = false;
 
-vi.mock('@/layers/entities/config', () => ({
-  useSidebarPrefs: () => ({ channelsCollapsed: mockCollapsed }),
-  useUpdateSidebarPrefs: () => ({
-    update: mockUpdate,
-    updateAsync: vi.fn(),
-    isPending: false,
-    isError: false,
-  }),
-  setChannelsCollapsed: (prev: object, collapsed: boolean) => ({
-    ...prev,
-    channelsCollapsed: collapsed,
-  }),
-}));
+// Partial-over-actual, NOT a hand-written barrel. Every row this section draws
+// reads its own organization state out of the same module (`muted`, `groups`),
+// and a stub listing only the keys the SECTION happens to use crashed the row
+// the moment it started reading one more (rooms-in-groups, DOR-581). Only the
+// two hooks that must be observable are replaced; the pure helpers stay real.
+vi.mock('@/layers/entities/config', async () => {
+  const actual = await vi.importActual<typeof import('@/layers/entities/config')>(
+    '@/layers/entities/config'
+  );
+  return {
+    ...actual,
+    useSidebarPrefs: () => ({ ...SIDEBAR_PREFS_DEFAULTS, channelsCollapsed: mockCollapsed }),
+    useUpdateSidebarPrefs: () => ({
+      update: mockUpdate,
+      updateAsync: vi.fn(),
+      isPending: false,
+      isError: false,
+    }),
+  };
+});
 
 // The create call now belongs to `ChannelCreateDialog`, which this section
 // mounts — so the mock stays where it was and the assertion moves through one
@@ -112,6 +120,7 @@ function renderSection(
       activeRoomId={null}
       onSelectRoom={vi.fn()}
       onOpenAgentProfile={vi.fn()}
+      onRequestNewGroup={vi.fn()}
       {...overrides}
     />,
     { wrapper: roomsWrapper(transport) }

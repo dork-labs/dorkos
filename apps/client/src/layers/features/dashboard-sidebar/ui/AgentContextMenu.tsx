@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import type { SidebarItemRef } from '@dorkos/shared/config-schema';
 import { ContextMenu, ContextMenuTrigger, ContextMenuContent } from '@/layers/shared/ui';
 import { AgentRowMenuItems } from './AgentRowMenuItems';
 import { useMenuCloseFocusGuard } from '../model/use-menu-close-focus-guard';
@@ -12,7 +13,7 @@ interface AgentContextMenuProps {
   /** Start a new session for this agent. */
   onNewSession: () => void;
   /** Open the inline group-create flow, moving this agent into the new group on commit. */
-  onRequestNewGroup: (agentPath: string) => void;
+  onRequestNewGroup: (ref: SidebarItemRef) => void;
 }
 
 /**
@@ -44,9 +45,9 @@ export function AgentContextMenu({
           path={path}
           onOpenProfile={onOpenProfile}
           onNewSession={onNewSession}
-          onRequestNewGroup={(agentPath) => {
+          onRequestNewGroup={(ref) => {
             arm();
-            onRequestNewGroup(agentPath);
+            onRequestNewGroup(ref);
           }}
         />
       </ContextMenuContent>

@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { SidebarDnd } from '../ui/dnd/SidebarDnd';
-import { Sortable, agentDndData } from '../ui/dnd/SidebarDndPrimitives';
+import { Sortable, sidebarDndData, sidebarRowDndId } from '../ui/dnd/SidebarDndPrimitives';
 
 let mockIsMobile = false;
 vi.mock('@/layers/shared/model', () => ({
@@ -29,7 +29,10 @@ vi.mock('@/layers/entities/config', () => ({
 function Row() {
   return (
     <SidebarDnd displayNames={{ '/a': 'alpha' }} roomTitles={{}}>
-      <Sortable id="ungrouped::/a" data={agentDndData('ungrouped', '/a')}>
+      <Sortable
+        id="ungrouped::agent:/a"
+        data={sidebarDndData('ungrouped', { kind: 'agent', path: '/a' })}
+      >
         {(b) => (
           <div ref={b.setNodeRef} {...b.handleProps} data-testid="row">
             alpha
@@ -95,5 +98,47 @@ describe('SidebarDnd', () => {
     fireEvent.keyDown(nested, { code: 'Enter' });
     fireEvent.keyDown(nested, { code: 'Space' });
     expect(row.getAttribute('aria-pressed')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Node identity + data (rooms-in-groups, DOR-581)
+// ---------------------------------------------------------------------------
+
+describe('sidebar row dnd nodes', () => {
+  const roomRef = { kind: 'room', roomId: 'r1' } as const;
+  const agentRef = { kind: 'agent', path: '/repo/ana' } as const;
+
+  it('keeps an agent and a room apart even when their spellings would collide', () => {
+    // A room whose id happens to read like a path must not answer to the same
+    // dnd id as the agent at that path, or dnd-kit measures the wrong node.
+    const collidingRoom = { kind: 'room', roomId: '/repo/ana' } as const;
+    // Exact strings, not just inequality: the kind discriminator inside
+    // sidebarItemKey is what keeps the namespaces disjoint.
+    expect(sidebarRowDndId('ungrouped', agentRef)).toBe('ungrouped::agent:/repo/ana');
+    expect(sidebarRowDndId('ungrouped', collidingRoom)).toBe('ungrouped::room:/repo/ana');
+  });
+
+  it('names the home container from the section key prefix, for either kind', () => {
+    expect(sidebarDndData('pinned', roomRef)).toEqual({
+      type: 'item',
+      ref: roomRef,
+      container: { kind: 'pinned' },
+    });
+    expect(sidebarDndData('g1', roomRef)).toEqual({
+      type: 'item',
+      ref: roomRef,
+      container: { kind: 'group', groupId: 'g1' },
+    });
+  });
+
+  it('carries the ungrouped section name so a hover announces the list it is over', () => {
+    // "Ungrouped" is three sections now. Without the name the drag layer would
+    // announce "Over Agents." while the cursor sat over Channels.
+    expect(sidebarDndData('ungrouped', roomRef, 'Channels')).toEqual({
+      type: 'item',
+      ref: roomRef,
+      container: { kind: 'ungrouped', section: 'Channels' },
+    });
   });
 });
