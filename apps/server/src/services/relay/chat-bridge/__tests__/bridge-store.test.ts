@@ -205,6 +205,25 @@ describe('BridgeStore', () => {
     });
   });
 
+  describe('setDeliverNotices — the one per-bridge override (spec §6.2, D-6 Q5)', () => {
+    it('flips the seeded value and it sticks', () => {
+      store.createBridge(bridge({ deliverNotices: false }));
+      const updated = store.setDeliverNotices(ROOM_ID, true);
+      expect(updated?.deliverNotices).toBe(true);
+    });
+
+    it('flips it back off', () => {
+      store.createBridge(bridge({ deliverNotices: true }));
+      store.setDeliverNotices(ROOM_ID, false);
+      const cleared = store.setDeliverNotices(ROOM_ID, false);
+      expect(cleared?.deliverNotices).toBe(false);
+    });
+
+    it('is a no-op read on a room with no bridge', () => {
+      expect(store.setDeliverNotices('no-such-room', true)).toBeNull();
+    });
+  });
+
   describe('external refs (spec §6.3 — the only echo-suppression mechanism)', () => {
     it('records an inbound ref with its platform message id', () => {
       store.createBridge(bridge());

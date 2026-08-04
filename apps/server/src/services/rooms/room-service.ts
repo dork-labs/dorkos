@@ -1082,7 +1082,8 @@ export class RoomService {
   }
 
   /**
-   * Patch a room's title, topic, or archived flag.
+   * Patch a room's title, topic, archived flag, or — on a bridged room — its
+   * `deliverNotices` override.
    *
    * **Renaming a channel moves its `#slug` with the title.** A channel's name
    * IS its slug — it is what the sidebar draws, what a person types, and the
@@ -1098,6 +1099,14 @@ export class RoomService {
    * stranded for good, because a slug is only reserved while its channel is
    * live and nothing else in the product un-archives a room.
    *
+   * **`deliverNotices` lives on `room_bridges`, not `rooms`** (chats-as-channels
+   * spec §6.2, D-6 Q5) — a different table from every other field this method
+   * patches — so it is validated and written separately from
+   * {@link RoomStore.updateRoom}'s own columns. Checked FIRST, before any write:
+   * a room with no bridge has no such setting to change, and refusing early
+   * means a caller who sent `{ title, deliverNotices }` for an unbridged room
+   * never sees a half-applied rename.
+   *
    * @param roomId - The room id.
    * @param viewerAuthorId - The caller; must be on the roster.
    * @param patch - The validated update request.
@@ -1105,23 +1114,33 @@ export class RoomService {
    */
   updateRoom(roomId: string, viewerAuthorId: string, patch: UpdateRoomRequest): RoomWithRoster {
     const room = this.requireVisibleRoom(roomId, viewerAuthorId);
+    const { deliverNotices, ...roomPatch } = patch;
+    if (deliverNotices !== undefined && !this.bridges.findBridgeByRoom(roomId)) {
+      throw new RoomError('NOT_A_BRIDGED_ROOM', 'This room is not bridged to an external chat');
+    }
     // Resolved FIRST, because the slug this room is about to have is the one an
     // un-archive has to be judged against — not the one it is leaving behind.
-    const slugPatch = this.renamedSlug(room, patch.title);
+    const slugPatch = this.renamedSlug(room, roomPatch.title);
     const nextSlug = slugPatch.slug ?? room.slug;
     // Un-archiving reclaims a slug the partial unique index released when the
     // room was archived. Somebody may have taken it since — refuse the same way
     // creating it would, rather than letting the raw UNIQUE violation surface
     // as a 500 the caller cannot act on. Renaming in the same patch is the way
     // out: `{ archived: false, title: 'Backend two' }` reclaims a free slug.
-    if (patch.archived === false && room.archived && room.kind === 'channel' && nextSlug) {
+    if (roomPatch.archived === false && room.archived && room.kind === 'channel' && nextSlug) {
       const holder = this.store.findLiveChannelBySlug(nextSlug);
       if (holder && holder.id !== room.id) {
         throw new RoomError('SLUG_TAKEN', `A channel called #${nextSlug} already exists`);
       }
     }
-    const updated = this.store.updateRoom(roomId, { ...patch, ...slugPatch });
+    const updated = this.store.updateRoom(roomId, { ...roomPatch, ...slugPatch });
     if (!updated) throw new RoomError('ROOM_NOT_FOUND', 'No such room');
+    // Written AFTER the room-table update settles, so a slug conflict throws
+    // before this bridge-row write ever runs — the two tables never disagree
+    // about whether this call actually went through.
+    if (deliverNotices !== undefined) {
+      this.bridges.setDeliverNotices(roomId, deliverNotices);
+    }
     eventFanOut.broadcast('room_updated', {
       roomId: updated.id,
       title: updated.title,

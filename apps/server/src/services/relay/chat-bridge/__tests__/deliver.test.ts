@@ -559,5 +559,145 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
       });
       expect(await chDelivery.deliverEntry(chNotice)).toBe('skipped');
     });
+
+    it('A6.6: a halted notice reaches a bridged DM by default and NOT a bridged channel', async () => {
+      const dm = harness.service.createBridgedRoom(bridgeRequest('556'));
+      const dmDelivery = makeDelivery(bindingRow(dm.id, '556'));
+      binding = makeBinding({ canReply: true, canInitiate: true });
+      const dmNotice = harness.service.postNotice(dm.id, {
+        text: 'Everything here was stopped. Nothing was running at the time.',
+        notice: 'halted',
+      });
+      expect(await dmDelivery.deliverEntry(dmNotice)).toBe('delivered');
+
+      const ch = harness.service.createBridgedRoom({
+        ...bridgeRequest('778', true),
+        bindingId: 'binding-ch2',
+      });
+      const chDelivery = makeDelivery(bindingRow(ch.id, '778'));
+      const chNotice = harness.service.postNotice(ch.id, {
+        text: 'Everything here was stopped. Nothing was running at the time.',
+        notice: 'halted',
+      });
+      expect(await chDelivery.deliverEntry(chNotice)).toBe('skipped');
+    });
+
+    it('the one per-bridge override turns delivery ON for a channel: turn_failed and halted both deliver', async () => {
+      const ch = harness.service.createBridgedRoom({
+        ...bridgeRequest('779', true),
+        bindingId: 'binding-ch3',
+      });
+      harness.bridges.setDeliverNotices(ch.id, true);
+      const chDelivery = makeDelivery(bindingRow(ch.id, '779'));
+      binding = makeBinding({ canReply: true, canInitiate: true });
+
+      const turnFailed = harness.service.postNotice(ch.id, {
+        text: 'A turn failed.',
+        notice: 'turn_failed',
+      });
+      expect(await chDelivery.deliverEntry(turnFailed)).toBe('delivered');
+
+      const halted = harness.service.postNotice(ch.id, {
+        text: 'Everything here was stopped. Nothing was running at the time.',
+        notice: 'halted',
+      });
+      expect(await chDelivery.deliverEntry(halted)).toBe('delivered');
+    });
+
+    it('the one per-bridge override turns delivery OFF for a dm: turn_failed and halted both suppress', async () => {
+      const dm = harness.service.createBridgedRoom(bridgeRequest('557'));
+      harness.bridges.setDeliverNotices(dm.id, false);
+      const dmDelivery = makeDelivery(bindingRow(dm.id, '557'));
+      binding = makeBinding({ canReply: true, canInitiate: true });
+
+      const turnFailed = harness.service.postNotice(dm.id, {
+        text: 'A turn failed.',
+        notice: 'turn_failed',
+      });
+      expect(await dmDelivery.deliverEntry(turnFailed)).toBe('skipped');
+
+      const halted = harness.service.postNotice(dm.id, {
+        text: 'Everything here was stopped. Nothing was running at the time.',
+        notice: 'halted',
+      });
+      expect(await dmDelivery.deliverEntry(halted)).toBe('skipped');
+    });
+
+    describe('scope is exactly turn_failed and halted — every other code is refused', () => {
+      // A bridged DM delivers notices by default (§6.2), so every case below
+      // isolates the NOTICE-CODE eligibility test from the deliverNotices gate
+      // itself: each must be 'skipped' even though THIS bridge delivers notices.
+      // One `it` per excluded code — `cascade_stopped`, `budget_reached`,
+      // `agent_busy`, `agent_gone`, `awaiting_approval` — so a future code added
+      // to the wrong set fails a named test, not a shared one.
+      function dmDelivery(chatId: string) {
+        const dm = harness.service.createBridgedRoom(bridgeRequest(chatId));
+        binding = makeBinding({ canReply: true, canInitiate: true });
+        return { dm, delivery: makeDelivery(bindingRow(dm.id, chatId)) };
+      }
+
+      it('cascade_stopped is never delivered', async () => {
+        const { dm, delivery } = dmDelivery('601');
+        const notice = harness.service.postNotice(dm.id, {
+          text: 'Ana stopped replying here — this back-and-forth hit its automatic-reply limit.',
+          notice: 'cascade_stopped',
+        });
+        expect(await delivery.deliverEntry(notice)).toBe('skipped');
+      });
+
+      it('budget_reached is never delivered', async () => {
+        const { dm, delivery } = dmDelivery('602');
+        const notice = harness.service.postNotice(dm.id, {
+          text: 'This room has used up its automatic replies for the hour.',
+          notice: 'budget_reached',
+        });
+        expect(await delivery.deliverEntry(notice)).toBe('skipped');
+      });
+
+      it('agent_busy is never delivered (it deliberately says nothing about where — spec §6.2)', async () => {
+        const { dm, delivery } = dmDelivery('603');
+        const notice = harness.service.postNotice(dm.id, {
+          text: 'Ana was busy and did not pick this up. Send it again in a moment.',
+          notice: 'agent_busy',
+        });
+        expect(await delivery.deliverEntry(notice)).toBe('skipped');
+      });
+
+      it('agent_gone is never delivered (it names an agent the platform person has no relationship with — spec §6.2)', async () => {
+        const { dm, delivery } = dmDelivery('604');
+        const notice = harness.service.postNotice(dm.id, {
+          text: "Ana isn't set up on this machine any more, so it can't answer here.",
+          notice: 'agent_gone',
+        });
+        expect(await delivery.deliverEntry(notice)).toBe('skipped');
+      });
+
+      it('awaiting_approval is never delivered', async () => {
+        const { dm, delivery } = dmDelivery('605');
+        const notice = harness.service.postNotice(dm.id, {
+          text: 'Ana is waiting for you to approve something before it can carry on.',
+          notice: 'awaiting_approval',
+        });
+        expect(await delivery.deliverEntry(notice)).toBe('skipped');
+      });
+    });
+
+    it('turn_failed is re-rendered for the chat, not forwarded verbatim: the delivered text names no session', async () => {
+      const dm = harness.service.createBridgedRoom(bridgeRequest('558'));
+      const dmDelivery = makeDelivery(bindingRow(dm.id, '558'));
+      binding = makeBinding({ canReply: true, canInitiate: true });
+      const ana = harness.authors.resolveAgent(AGENT_PATH, 'Ana');
+      const notice = harness.service.postNotice(dm.id, {
+        text: "Ana ran into a problem and could not answer here. Open Ana's session to see what went wrong.",
+        notice: 'turn_failed',
+        subjectAuthorId: ana.id,
+      });
+      expect(await dmDelivery.deliverEntry(notice)).toBe('delivered');
+      const [, payload] = publish.mock.calls[0] as [string, Record<string, unknown>];
+      expect(payload.content).toBe(
+        "Ana ran into a problem and couldn't answer. Try sending your message again."
+      );
+      expect(payload.content).not.toContain('session');
+    });
   });
 });
