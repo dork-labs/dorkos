@@ -15316,7 +15316,7 @@
           "Mcp"
         ],
         "summary": "Update a managed MCP server",
-        "description": "Change a managed server’s connection and/or enabled state. Changing the connection introduces a new command/endpoint, so it is approved at a card showing the exact command/args/url, exactly like add.",
+        "description": "Change a managed server’s transport and/or enabled state. Changing the transport introduces a new command/endpoint, so it is approved at a card showing the exact command/args/url, exactly like add.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -15423,7 +15423,7 @@
                         ]
                       }
                     ],
-                    "description": "Replacement connection. Omit to leave the connection unchanged."
+                    "description": "Replacement transport. Omit to leave the server’s transport unchanged."
                   },
                   "enabled": {
                     "type": "boolean",
