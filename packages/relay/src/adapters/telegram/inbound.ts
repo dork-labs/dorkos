@@ -580,6 +580,10 @@ export async function handleInboundMessage(
       messageThreadId: message.message_thread_id,
       threadName: extractThreadName(message),
       media,
+      // The bot's own `@`-handle, so a bridged room can thread `@botusername` as
+      // one extra addressing candidate for the bound agent (chats-as-channels
+      // §5.4). `ctx.me` is the same bot identity the group gate reads above.
+      botUsername: ctx.me?.username,
     },
   };
 

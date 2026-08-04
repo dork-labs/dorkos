@@ -235,6 +235,8 @@ export const TelegramPlatformDataSchema = z
     threadName: z.string().optional(),
     /** A non-text message's descriptor (spec §5.5). */
     media: TelegramMediaDescriptorSchema.optional(),
+    /** The bound bot's own `@`-handle, for a bridged room's mention translation (spec §5.4). */
+    botUsername: z.string().optional(),
   })
   .openapi('TelegramPlatformData');
 
