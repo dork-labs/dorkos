@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
+import { useNavigate } from '@tanstack/react-router';
 import { Skeleton } from '@/layers/shared/ui';
 import {
   useUnclaimedChats,
@@ -33,6 +34,7 @@ export function ClaimFeed({ enabled }: { enabled: boolean }) {
   const claim = useClaimUnclaimedChat();
   const ignore = useIgnoreUnclaimedChat();
   const block = useBlockUnclaimedChat();
+  const navigate = useNavigate();
   // A chat can be taken between the card rendering and the decision landing.
   // The refusal names who has it, so the answer is an offer to move it.
   const [conflict, setConflict] = useState<ChatConflict | null>(null);
@@ -64,12 +66,25 @@ export function ClaimFeed({ enabled }: { enabled: boolean }) {
           chat={chat}
           agentOptions={agentOptions}
           isDeciding={isDeciding}
-          onClaim={(agentId) => {
+          onClaim={(agentId, bridge) => {
             const name = agentOptions.find((a) => a.id === agentId)?.name ?? agentId;
             claim.mutate(
-              { id: chat.id, input: { agentId } },
+              { id: chat.id, input: { agentId, bridge } },
               {
-                onSuccess: () => toast.success(`${name} will answer this chat.`),
+                onSuccess: ({ binding, bridgeError }) => {
+                  if (bridgeError) {
+                    // The claim itself stood — the chat is answered, just not
+                    // in a channel yet — so this is a warning, not a failure.
+                    toast.warning(`${name} will answer this chat privately: ${bridgeError}`);
+                    return;
+                  }
+                  if (bridge && binding.roomId) {
+                    toast.success(`${name} will answer this chat in a new channel.`);
+                    void navigate({ to: '/channels', search: { id: binding.roomId } });
+                    return;
+                  }
+                  toast.success(`${name} will answer this chat.`);
+                },
                 onError: (error) => {
                   const found = readChatConflict(error, { id: agentId, name });
                   if (found) setConflict(found);

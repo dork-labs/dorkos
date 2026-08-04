@@ -7,6 +7,12 @@
  * - `POST /api/relay/unclaimed-chats/:id/claim` — create a binding onto an
  *   agent, through the SAME uniqueness-checked `BindingStore.create()` path
  *   Part 2 uses — a race against a manually created binding 409s identically.
+ *   `{ bridge: true }` is the claim card's primary action, "Answer in a
+ *   channel" (chats-as-channels spec §3.1, task 2.1): the SAME
+ *   `BridgeLifecycle.bridge()` path the "Bridge to a channel" action
+ *   (DOR-878) uses, called with the binding this claim just created — there
+ *   is no second create path. Omitted or `false` is "Answer privately",
+ *   today's session-per-chat behaviour, unchanged.
  * - `POST /api/relay/unclaimed-chats/:id/ignore` — mute (idempotent).
  * - `POST /api/relay/unclaimed-chats/:id/block` — drop future traffic
  *   recordless (idempotent).
@@ -19,6 +25,9 @@ import { SessionStrategySchema, ChannelTypeSchema } from '@dorkos/shared/relay-s
 import { PermissionModeSchema } from '@dorkos/shared/schemas';
 import { BindingConflictError, type BindingStore } from '../services/relay/binding-store.js';
 import type { UnclaimedChatStore } from '../services/relay/unclaimed-chat-store.js';
+import type { BridgeLifecycle } from '../services/relay/chat-bridge/index.js';
+import { RoomError } from '../services/rooms/room-errors.js';
+import { bridgeChatTypeForBinding } from './relay-adapters.js';
 
 /** Minimal mesh lookup the claim route needs to validate an agent exists. */
 export interface UnclaimedChatsMeshLike {
@@ -33,6 +42,15 @@ export interface UnclaimedChatsRouterDeps {
   bindingStore: BindingStore;
   /** Optional mesh lookup to validate `agentId` before claiming. */
   meshCore?: UnclaimedChatsMeshLike;
+  /**
+   * The bridge lifecycle coordinator (DOR-878) — required for the claim
+   * card's "Answer in a channel" primary action (spec §3.1, task 2.1). Wired
+   * only when the binding subsystem supports bridging. A claim that asks for
+   * `bridge: true` with no lifecycle wired still claims the chat (today's
+   * "Answer privately" behaviour) and reports that the channel could not be
+   * created, rather than failing the claim.
+   */
+  lifecycle?: BridgeLifecycle;
 }
 
 /** Body for `POST /:id/claim` — the binding fields `claim` cannot derive from the unclaimed row. */
@@ -41,6 +59,8 @@ const ClaimRequestSchema = z.object({
   sessionStrategy: SessionStrategySchema.optional(),
   permissionMode: PermissionModeSchema.optional(),
   label: z.string().optional(),
+  /** See {@link module:routes/unclaimed-chats}'s `POST /:id/claim` doc. */
+  bridge: z.boolean().optional(),
 });
 
 /**
@@ -51,7 +71,7 @@ const ClaimRequestSchema = z.object({
  */
 export function createUnclaimedChatsRouter(deps: UnclaimedChatsRouterDeps): Router {
   const router = Router();
-  const { store, bindingStore, meshCore } = deps;
+  const { store, bindingStore, meshCore, lifecycle } = deps;
 
   router.get('/', (req, res) => {
     const statusParam = req.query.status;
@@ -85,8 +105,9 @@ export function createUnclaimedChatsRouter(deps: UnclaimedChatsRouterDeps): Rout
     // an expected failure path.
     const channelType = ChannelTypeSchema.safeParse(chat.channelType ?? undefined);
 
+    let binding: Awaited<ReturnType<typeof bindingStore.create>>;
     try {
-      const binding = await bindingStore.create({
+      binding = await bindingStore.create({
         adapterId: chat.adapterId,
         agentId: result.data.agentId,
         chatId: chat.chatId,
@@ -102,8 +123,6 @@ export function createUnclaimedChatsRouter(deps: UnclaimedChatsRouterDeps): Rout
         ...(result.data.permissionMode && { permissionMode: result.data.permissionMode }),
         ...(result.data.label && { label: result.data.label }),
       });
-      store.claim(chat.id, result.data.agentId);
-      res.status(201).json({ binding });
     } catch (err) {
       // The exact race the spec calls out: a manually created binding took
       // this chat between the card being shown and the claim being clicked.
@@ -120,7 +139,75 @@ export function createUnclaimedChatsRouter(deps: UnclaimedChatsRouterDeps): Rout
         return;
       }
       res.status(500).json({ error: err instanceof Error ? err.message : 'Claim failed' });
+      return;
     }
+    store.claim(chat.id, result.data.agentId);
+
+    // "Answer privately" (the default): the claim above IS the whole act,
+    // unchanged from before this task.
+    if (!result.data.bridge) {
+      res.status(201).json({ binding });
+      return;
+    }
+
+    // "Answer in a channel" (spec §3.1, task 2.1): claim, binding, and bridge
+    // in one call, through the SAME `BridgeLifecycle.bridge()` path task 1.14
+    // (DOR-878) already uses — there is no second create path to keep
+    // honest. The claim above already stands on its own as "Answer
+    // privately", so a bridge failure below degrades to that rather than
+    // leaving anything half-built: the binding keeps `bridge: 'off'`, and the
+    // reason rides alongside it as `bridgeError` rather than failing the
+    // claim (spec §3.1).
+    if (!lifecycle) {
+      res.status(201).json({
+        binding,
+        bridgeError:
+          'Channels are not available on this install, so this chat was answered privately instead.',
+      });
+      return;
+    }
+
+    const typed = bridgeChatTypeForBinding(binding.platformChatType, binding.channelType);
+    if ('refusal' in typed) {
+      res.status(201).json({ binding, bridgeError: typed.refusal });
+      return;
+    }
+
+    const agentPath = meshCore?.getProjectPath(result.data.agentId);
+    if (!agentPath) {
+      res.status(201).json({
+        binding,
+        bridgeError: `Agent '${result.data.agentId}' not found in mesh registry`,
+      });
+      return;
+    }
+
+    try {
+      await lifecycle.bridge({
+        adapterId: binding.adapterId,
+        chatId: chat.chatId,
+        bindingId: binding.id,
+        agentId: result.data.agentId,
+        chatType: typed.chatType,
+        channelType: typed.channelType,
+        title: binding.label || chat.chatId,
+        agentPath,
+      });
+    } catch (err) {
+      const message =
+        err instanceof RoomError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : 'Bridge failed';
+      res.status(201).json({ binding, bridgeError: message });
+      return;
+    }
+
+    // The lifecycle flipped `bridge`/`roomId` on the binding; read it back so
+    // the response carries the room the person is about to land in.
+    const bridged = bindingStore.getById(binding.id) ?? binding;
+    res.status(201).json({ binding: bridged });
   });
 
   router.post('/:id/ignore', (req, res) => {

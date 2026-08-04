@@ -71,6 +71,7 @@ import {
   BindingResponseSchema,
   UnclaimedChatListResponseSchema,
   ClaimUnclaimedChatRequestSchema,
+  ClaimUnclaimedChatResponseSchema,
 } from '@dorkos/shared/relay-schemas';
 import {
   AgentManifestSchema,
@@ -2832,15 +2833,19 @@ registry.registerPath({
   summary: 'Claim an unclaimed chat onto an agent',
   description:
     'Creates a binding through the same uniqueness-checked path a manual binding create ' +
-    'uses — a race against a manually created binding for the same chat 409s identically.',
+    'uses — a race against a manually created binding for the same chat 409s identically. ' +
+    '`bridge: true` is the claim card\'s primary action, "Answer in a channel": claim, ' +
+    'binding, and bridge in one call through the same lifecycle "Bridge to a channel" uses. ' +
+    'The claim always succeeds when the response is 201; a failed bridge step is reported as ' +
+    '`bridgeError` rather than failing the claim.',
   request: {
     params: z.object({ id: z.string() }),
     body: { content: { 'application/json': { schema: ClaimUnclaimedChatRequestSchema } } },
   },
   responses: {
     201: {
-      description: 'The binding created from this claim',
-      content: { 'application/json': { schema: BindingResponseSchema } },
+      description: 'The binding created from this claim, optionally bridged',
+      content: { 'application/json': { schema: ClaimUnclaimedChatResponseSchema } },
     },
     400: {
       description: 'Unknown agent',

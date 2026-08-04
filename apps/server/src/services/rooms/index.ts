@@ -223,6 +223,37 @@ export function getRoomService(): RoomService {
   return active;
 }
 
+let activeBridges: BridgeStore | null = null;
+let activeAuthors: AuthorRegistry | null = null;
+
+/**
+ * Register the active bridge store and author registry at bootstrap, beside
+ * {@link setRoomService}. These are the two seams a bridged room needs that the
+ * `RoomService` does not expose publicly (the `room_bridges` visibility write
+ * and the operator's own author id), and the test-control seed route reaches
+ * them through the getters below — the same singleton pattern the runtime
+ * registry already uses. Nothing on the production request path reads them.
+ *
+ * @param bridges - The wired bridge store.
+ * @param authors - The wired author registry.
+ */
+export function setRoomInternals(bridges: BridgeStore, authors: AuthorRegistry): void {
+  activeBridges = bridges;
+  activeAuthors = authors;
+}
+
+/** Read the active bridge store (throws if bootstrap has not run). */
+export function getBridgeStore(): BridgeStore {
+  if (!activeBridges) throw new Error('BridgeStore not initialized');
+  return activeBridges;
+}
+
+/** Read the active author registry (throws if bootstrap has not run). */
+export function getRoomAuthors(): AuthorRegistry {
+  if (!activeAuthors) throw new Error('AuthorRegistry not initialized');
+  return activeAuthors;
+}
+
 // The barrel carries only what leaves this domain: the service the routes call,
 // the typed refusals they map onto status codes, and the author shape the
 // caller-resolution helper returns. Everything else — the store, the roster,

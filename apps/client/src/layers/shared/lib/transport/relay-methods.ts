@@ -17,6 +17,7 @@ import type {
   UnclaimedChat,
   UnclaimedChatStatus,
   ClaimUnclaimedChatRequest,
+  ClaimUnclaimedChatResponse,
 } from '@dorkos/shared/relay-schemas';
 import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
 
@@ -270,12 +271,15 @@ export function createRelayMethods(baseUrl: string, getClientId: () => string) {
       );
     },
 
-    claimUnclaimedChat(id: string, input: ClaimUnclaimedChatRequest): Promise<AdapterBinding> {
-      return fetchJSON<{ binding: AdapterBinding }>(
+    claimUnclaimedChat(
+      id: string,
+      input: ClaimUnclaimedChatRequest
+    ): Promise<ClaimUnclaimedChatResponse> {
+      return fetchJSON<ClaimUnclaimedChatResponse>(
         baseUrl,
         `/relay/unclaimed-chats/${encodeURIComponent(id)}/claim`,
         { method: 'POST', body: JSON.stringify(input) }
-      ).then((r) => r.binding);
+      );
     },
 
     ignoreUnclaimedChat(id: string): Promise<void> {

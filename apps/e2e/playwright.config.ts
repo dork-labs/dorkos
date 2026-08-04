@@ -294,6 +294,9 @@ export default defineConfig({
       testIgnore: [
         '**/chat-mock.spec.ts',
         '**/connections/**',
+        // Needs the test-mode server's `/api/test/seed-bridge` seam, so it runs
+        // in `chromium-bridge` below, never against the real cockpit leg.
+        '**/relay/bridged-channel.spec.ts',
         ...(INCLUDE_SITE ? [] : SITE_SPECS),
       ],
       // Skips the specs that need real model credentials — see INCLUDE_INTEGRATION.
@@ -336,6 +339,20 @@ export default defineConfig({
         baseURL: `http://localhost:${MOCK_VITE_PORT}`,
       },
       testMatch: ['**/connections/**/*.spec.ts'],
+    },
+    {
+      // Chats-as-channels cockpit proof — also against the test-mode server,
+      // whose `DORKOS_TEST_RUNTIME` gate is what mounts `/api/test/seed-bridge`.
+      // A separate project rather than a chat-mock suite because it shares none
+      // of chat-mock's scenario/reset choreography: it seeds its own bridged
+      // room and asserts only on that room, so it runs beside the other
+      // test-mode projects without racing them.
+      name: 'chromium-bridge',
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: `http://localhost:${MOCK_VITE_PORT}`,
+      },
+      testMatch: ['**/relay/bridged-channel.spec.ts'],
     },
   ],
 });

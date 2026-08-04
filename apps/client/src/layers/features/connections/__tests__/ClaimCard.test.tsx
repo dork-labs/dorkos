@@ -84,10 +84,11 @@ describe('ClaimCard', () => {
   it('cannot answer until an agent is chosen', () => {
     renderCard(chat());
 
-    expect(screen.getByRole('button', { name: 'Answer' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Answer in a channel' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Answer privately' })).toBeDisabled();
   });
 
-  it('chooses the only agent for you', () => {
+  it("offers 'Answer in a channel' as the primary action, calling onClaim with bridge: true", () => {
     const onClaim = vi.fn();
     render(
       <ClaimCard
@@ -99,10 +100,46 @@ describe('ClaimCard', () => {
       />
     );
 
-    const answer = screen.getByRole('button', { name: 'Answer' });
+    const answer = screen.getByRole('button', { name: 'Answer in a channel' });
     expect(answer).toBeEnabled();
     fireEvent.click(answer);
-    expect(onClaim).toHaveBeenCalledWith('dorkbot');
+    expect(onClaim).toHaveBeenCalledWith('dorkbot', true);
+  });
+
+  it("offers 'Answer privately' as the secondary action, calling onClaim with bridge: false", () => {
+    const onClaim = vi.fn();
+    render(
+      <ClaimCard
+        chat={chat()}
+        agentOptions={[AGENTS[0]!]}
+        onClaim={onClaim}
+        onIgnore={vi.fn()}
+        onBlock={vi.fn()}
+      />
+    );
+
+    const answerPrivately = screen.getByRole('button', { name: 'Answer privately' });
+    expect(answerPrivately).toBeEnabled();
+    fireEvent.click(answerPrivately);
+    expect(onClaim).toHaveBeenCalledWith('dorkbot', false);
+  });
+
+  it('a group chat keeps its single Join action, unaffected by the primary/secondary split', () => {
+    const onClaim = vi.fn();
+    render(
+      <ClaimCard
+        chat={chat({ chatKind: 'group', senderName: 'Ana', chatTitle: 'Release train' })}
+        agentOptions={[AGENTS[0]!]}
+        onClaim={onClaim}
+        onIgnore={vi.fn()}
+        onBlock={vi.fn()}
+      />
+    );
+
+    expect(screen.queryByRole('button', { name: 'Answer in a channel' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Answer privately' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Join' }));
+    expect(onClaim).toHaveBeenCalledWith('dorkbot', false);
   });
 
   it('offers ignore and block without needing an agent first', () => {

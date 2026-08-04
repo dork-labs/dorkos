@@ -157,7 +157,14 @@ describe('BindingRouter → the bridge (chats-as-channels §5.1)', () => {
     expect(mockAgentManager.createSession).not.toHaveBeenCalled();
   });
 
-  it('an UNbridged binding on the same router still dispatches to a session (no regression)', async () => {
+  it('A12.1: an UNbridged binding on the same router still dispatches to a session, byte-identically to before the bridge existed', async () => {
+    // A12.1 is a suite-level promise — "with no bridge enabled anywhere, the
+    // full existing relay suite passes unchanged" — and this is its discrete
+    // pin: on the SAME router that can route a bridge, a `bridge: 'off'` binding
+    // never reaches `ingest` and takes the classic session-dispatch path exactly
+    // as it did before this feature. The whole pre-existing relay/binding-router
+    // suite continuing green is the rest of the criterion; this test is what a
+    // future edit that leaks bridge behaviour into the unbridged path trips.
     vi.mocked(mockBindingStore.resolve!).mockReturnValue({
       ...bridgedBinding(),
       id: 'bind-classic',
@@ -167,7 +174,8 @@ describe('BindingRouter → the bridge (chats-as-channels §5.1)', () => {
 
     await capturedHandler!(inboundEnvelope());
 
-    // The classic path: a session is created and the message republished.
+    // The classic path: the bridge is never consulted, a session is created, and
+    // the message is republished to a `relay.agent.*` subject — no new behaviour.
     expect(bridgeIngest.ingest).not.toHaveBeenCalled();
     expect(mockAgentManager.createSession).toHaveBeenCalledTimes(1);
     expect(mockRelayCore.publish).toHaveBeenCalledTimes(1);

@@ -186,6 +186,26 @@ export class RoomsPage {
     return this.roomHeader.locator('[data-slot="room-avatar"]');
   }
 
+  /**
+   * The open bridged channel's visibility badge in the masthead — "sees
+   * mentions only" or "sees everything", read off the bridge row's platform-
+   * sourced privacy mode (chats-as-channels §8). Absent on a DM and on any
+   * unbridged room, so its presence is itself the assertion that this is a
+   * bridged channel.
+   */
+  get visibilityBadge(): Locator {
+    return this.page.getByTestId('bridge-visibility-badge');
+  }
+
+  /**
+   * Every external-origin mark on the open room — the "· Telegram" glyph and
+   * label drawn beside a message (or roster row) from someone outside this
+   * machine (chats-as-channels §4.3). A message from a local author has none.
+   */
+  get originMarks(): Locator {
+    return this.page.getByTestId('origin-mark');
+  }
+
   /** Everyone on the open room's roster, as the masthead draws them. */
   get memberList(): Locator {
     return this.page.locator('[data-slot="room-member-list"]');

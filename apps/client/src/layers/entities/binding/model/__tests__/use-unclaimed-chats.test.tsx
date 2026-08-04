@@ -105,7 +105,7 @@ describe('unclaimed-chat decisions', () => {
   it('claim passes the agent through and returns the new binding', async () => {
     const binding = { id: 'b-1', adapterId: 'telegram-1', agentId: 'dorkbot' };
     const transport = createMockTransport({
-      claimUnclaimedChat: vi.fn().mockResolvedValue(binding),
+      claimUnclaimedChat: vi.fn().mockResolvedValue({ binding }),
     });
 
     const { result } = renderHook(() => useClaimUnclaimedChat(), {
@@ -116,7 +116,54 @@ describe('unclaimed-chat decisions', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(transport.claimUnclaimedChat).toHaveBeenCalledWith('uc-1', { agentId: 'dorkbot' });
-    expect(result.current.data).toEqual(binding);
+    expect(result.current.data).toEqual({ binding });
+  });
+
+  it("passes bridge: true through for 'Answer in a channel'", async () => {
+    const binding = {
+      id: 'b-1',
+      adapterId: 'telegram-1',
+      agentId: 'dorkbot',
+      bridge: 'room',
+      roomId: 'room-1',
+    };
+    const transport = createMockTransport({
+      claimUnclaimedChat: vi.fn().mockResolvedValue({ binding }),
+    });
+
+    const { result } = renderHook(() => useClaimUnclaimedChat(), {
+      wrapper: createWrapper(transport),
+    });
+
+    result.current.mutate({ id: 'uc-1', input: { agentId: 'dorkbot', bridge: true } });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(transport.claimUnclaimedChat).toHaveBeenCalledWith('uc-1', {
+      agentId: 'dorkbot',
+      bridge: true,
+    });
+    expect(result.current.data).toEqual({ binding });
+  });
+
+  it('resolves with a bridgeError instead of rejecting when the bridge step fails', async () => {
+    const binding = { id: 'b-1', adapterId: 'telegram-1', agentId: 'dorkbot', bridge: 'off' };
+    const transport = createMockTransport({
+      claimUnclaimedChat: vi.fn().mockResolvedValue({
+        binding,
+        bridgeError: 'This is a broadcast channel, not a two-way conversation',
+      }),
+    });
+
+    const { result } = renderHook(() => useClaimUnclaimedChat(), {
+      wrapper: createWrapper(transport),
+    });
+
+    result.current.mutate({ id: 'uc-1', input: { agentId: 'dorkbot', bridge: true } });
+
+    // The claim itself is a success — the chat was answered (privately, as a
+    // fallback), never left unclaimed by a bridge failure.
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toMatchObject({ binding, bridgeError: expect.any(String) });
   });
 
   it('surfaces a CHAT_ALREADY_BOUND refusal instead of swallowing it', async () => {

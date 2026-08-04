@@ -778,6 +778,14 @@ export const ClaimUnclaimedChatRequestSchema = z
     sessionStrategy: SessionStrategySchema.optional(),
     permissionMode: PermissionModeSchema.optional(),
     label: z.string().optional(),
+    /**
+     * The claim card's primary/secondary split (chats-as-channels spec §3.1,
+     * D-1 Move 2). `true` is "Answer in a channel" — claim, bind, and bridge
+     * atomically through the same path the "Bridge to a channel" action uses
+     * (DOR-878), landing the person in a room. Omitted or `false` is "Answer
+     * privately" — today's session-per-chat behaviour, no room.
+     */
+    bridge: z.boolean().optional(),
   })
   .openapi('ClaimUnclaimedChatRequest');
 
@@ -795,6 +803,24 @@ export const BindingResponseSchema = z
     binding: AdapterBindingSchema,
   })
   .openapi('BindingResponse');
+
+/**
+ * Response of `POST /api/relay/unclaimed-chats/:id/claim`. The claim and the
+ * binding always succeed together — `binding` is always present. When
+ * "Answer in a channel" was requested and the bridge step could not complete,
+ * the claim still stands (the chat is answered privately, `binding.bridge`
+ * stays `'off'`) and `bridgeError` names why, so nothing is silently
+ * half-built (chats-as-channels spec §3.1, task 2.1).
+ */
+export const ClaimUnclaimedChatResponseSchema = z
+  .object({
+    binding: AdapterBindingSchema,
+    bridgeError: z.string().optional(),
+  })
+  .openapi('ClaimUnclaimedChatResponse');
+
+/** Response of a claim call. See {@link ClaimUnclaimedChatResponseSchema}. */
+export type ClaimUnclaimedChatResponse = z.infer<typeof ClaimUnclaimedChatResponseSchema>;
 
 // === Observed Chats ===
 
