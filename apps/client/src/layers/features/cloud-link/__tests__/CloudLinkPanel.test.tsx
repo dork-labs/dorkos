@@ -40,8 +40,10 @@ describe('CloudLinkPanel', () => {
   it('renders with local auth disabled (no AuthGuard / session dependency)', async () => {
     const transport = createMockTransport();
     renderPanel(transport);
-    // The section and its entry point render off the transport alone.
-    expect(screen.getByRole('heading', { name: /dorkos account/i })).toBeInTheDocument();
+    // The section and its entry point render off the transport alone. The
+    // panel does not title itself — the Settings dialog draws that heading
+    // (DOR-918) — so the explainer is what identifies the section here.
+    expect(screen.getByText(/link this instance to a dorkos account/i)).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: /link this instance/i })).toBeInTheDocument();
   });
 

@@ -1,7 +1,6 @@
 import {
   FieldCard,
   FieldCardContent,
-  NavigationLayoutPanelHeader,
   Select,
   SelectContent,
   SelectItem,
@@ -11,30 +10,39 @@ import {
 } from '@/layers/shared/ui';
 import { useAppStore, useTheme } from '@/layers/shared/model';
 import { FONT_CONFIGS, type FontFamilyKey } from '@/layers/shared/lib';
+import { ResetToDefaultsButton } from '../ResetToDefaultsButton';
+
+/**
+ * Header action for the Appearance panel. It calls the store's
+ * `resetPreferences`, which puts back more than this panel shows: theme and
+ * typography, but also the Preferences tab's toggles, dismissed promos, and
+ * panel layout state. That breadth predates this button's relocation and is
+ * tracked separately; the wiring here only moved.
+ *
+ * A component rather than an element because the dialog declares its tabs
+ * before any of them mount, and this needs the same stores the panel reads.
+ */
+export function AppearanceResetAction() {
+  const { setTheme } = useTheme();
+  const { resetPreferences } = useAppStore();
+
+  return (
+    <ResetToDefaultsButton
+      onClick={() => {
+        resetPreferences();
+        setTheme('system');
+      }}
+    />
+  );
+}
 
 /** Appearance settings tab — theme, font family, font size. */
 export function AppearanceTab() {
   const { theme, setTheme } = useTheme();
-  const { fontFamily, setFontFamily, fontSize, setFontSize, resetPreferences } = useAppStore();
+  const { fontFamily, setFontFamily, fontSize, setFontSize } = useAppStore();
 
   return (
     <div className="space-y-4">
-      <NavigationLayoutPanelHeader
-        actions={
-          <button
-            onClick={() => {
-              resetPreferences();
-              setTheme('system');
-            }}
-            className="text-muted-foreground hover:text-foreground text-xs transition-colors duration-150"
-          >
-            Reset to defaults
-          </button>
-        }
-      >
-        Appearance
-      </NavigationLayoutPanelHeader>
-
       <FieldCard>
         <FieldCardContent>
           <SettingRow label="Theme" description="Choose your preferred color scheme">

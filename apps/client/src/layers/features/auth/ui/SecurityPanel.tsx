@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { LogOut, ShieldCheck } from 'lucide-react';
+import { LogOut } from 'lucide-react';
 import {
   Button,
   Dialog,
@@ -56,10 +56,8 @@ export function SecurityPanel() {
   return (
     <div className="space-y-4">
       <div className="space-y-1">
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="text-muted-foreground size-4" />
-          <h2 className="text-sm font-semibold">Security</h2>
-        </div>
+        {/* No heading here: the Settings dialog draws the panel's own
+            "Security" header. This is the explainer that sits under it. */}
         <p className="text-muted-foreground text-sm">
           Require an owner login to reach this instance. Exposing DorkOS beyond localhost (a tunnel
           or non-loopback bind) always requires login.

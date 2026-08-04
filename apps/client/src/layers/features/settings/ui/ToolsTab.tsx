@@ -3,12 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRelayEnabled } from '@/layers/entities/relay';
 import { useTasksEnabled } from '@/layers/entities/tasks';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
-import {
-  FieldCard,
-  FieldCardContent,
-  NavigationLayoutPanelHeader,
-  SettingRow,
-} from '@/layers/shared/ui';
+import { FieldCard, FieldCardContent, SettingRow } from '@/layers/shared/ui';
 import { useDeepLinkScroll, useSettingsDeepLink, useTransport } from '@/layers/shared/model';
 import { useAgentContextConfig } from '@/layers/features/agent-settings/model/use-agent-context-config';
 import {
@@ -21,17 +16,31 @@ import { ToolCountBadge } from './tools/ToolCountBadge';
 import { ToolGroupRow } from './tools/ToolGroupRow';
 import { SchedulerSettings } from './tools/SchedulerSettings';
 import { ExternalMcpCard } from './external-mcp/ExternalMcpCard';
+import { ResetToDefaultsButton } from './ResetToDefaultsButton';
 
-/** Inline reset button — kept local; promotion to shared deferred to a later spec. */
-function ResetButton({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className="text-muted-foreground hover:text-foreground text-xs transition-colors duration-150"
-    >
-      Reset to defaults
-    </button>
-  );
+/**
+ * Header action for the Tools panel — turns every tool group back on.
+ *
+ * A component rather than an element because the dialog declares its tabs
+ * before any of them mount, and this needs the transport the panel writes with.
+ */
+export function ToolsResetAction() {
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+
+  const handleReset = useCallback(async () => {
+    await transport.updateConfig({
+      agentContext: {
+        relayTools: true,
+        meshTools: true,
+        adapterTools: true,
+        tasksTools: true,
+      },
+    });
+    queryClient.invalidateQueries({ queryKey: ['config'] });
+  }, [transport, queryClient]);
+
+  return <ResetToDefaultsButton onClick={() => void handleReset()} />;
 }
 
 /**
@@ -104,23 +113,8 @@ export function ToolsTab() {
     [transport, queryClient, scheduler]
   );
 
-  const handleResetTools = useCallback(async () => {
-    await transport.updateConfig({
-      agentContext: {
-        relayTools: true,
-        meshTools: true,
-        adapterTools: true,
-        tasksTools: true,
-      },
-    });
-    queryClient.invalidateQueries({ queryKey: ['config'] });
-  }, [transport, queryClient]);
-
   return (
     <div className="space-y-4">
-      <NavigationLayoutPanelHeader actions={<ResetButton onClick={handleResetTools} />}>
-        Tools
-      </NavigationLayoutPanelHeader>
       <p className="text-muted-foreground text-sm">
         Choose which tool groups your agents are told about by default. Turning a group off leaves
         it out of an agent's instructions, so agents stop reaching for it. It is guidance, not a

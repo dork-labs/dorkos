@@ -12,11 +12,11 @@ import {
 } from 'lucide-react';
 import { TabbedDialog, type TabbedDialogTab } from '@/layers/shared/ui';
 import { useSettingsDeepLink, type SettingsTab } from '@/layers/shared/model';
-import { AppearanceTab } from './tabs/AppearanceTab';
+import { AppearanceResetAction, AppearanceTab } from './tabs/AppearanceTab';
 import { PreferencesTab } from './tabs/PreferencesTab';
 import { RuntimesTab } from './runtimes/RuntimesTab';
 import { ServerTab } from './ServerTab';
-import { ToolsTab } from './ToolsTab';
+import { ToolsResetAction, ToolsTab } from './ToolsTab';
 import { SecurityTab } from './SecurityTab';
 import { CloudAccountTab } from './CloudAccountTab';
 import { PrivacyTab } from './PrivacyTab';
@@ -25,9 +25,22 @@ import { RemoteAccessAction } from './RemoteAccessAction';
 import { TunnelDialog } from './TunnelDialog';
 
 const SETTINGS_TABS: TabbedDialogTab<SettingsTab>[] = [
-  { id: 'appearance', label: 'Appearance', icon: Palette, component: AppearanceTab },
+  {
+    id: 'appearance',
+    label: 'Appearance',
+    icon: Palette,
+    component: AppearanceTab,
+    actions: <AppearanceResetAction />,
+  },
   { id: 'preferences', label: 'Preferences', icon: Settings2, component: PreferencesTab },
-  { id: 'tools', label: 'Tools', icon: Wrench, component: ToolsTab, group: 'Agents & sessions' },
+  {
+    id: 'tools',
+    label: 'Tools',
+    icon: Wrench,
+    component: ToolsTab,
+    actions: <ToolsResetAction />,
+    group: 'Agents & sessions',
+  },
   {
     id: 'runtimes',
     label: 'Runtimes',

@@ -377,13 +377,9 @@ async function shootWorkbench(page: Page, theme: Theme, rec: RunRecorder): Promi
 /** Open Settings → DorkOS account, link, and shoot the pending then linked states. */
 async function shootCloudLink(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
   await page.goto(url('/agents?settings=account'));
-  // The tabpanel holds two "DorkOS account" headings — the navigation panel
-  // title (h3) and CloudLinkPanel's own heading (the only h2) — so pin the
-  // settle wait to heading level 2 to stay strict-safe.
+  // One heading per settings panel since DOR-918: the dialog's own panel title.
   const panel = page.getByRole('tabpanel', { name: 'DorkOS account' });
-  await panel
-    .getByRole('heading', { name: 'DorkOS account', level: 2 })
-    .waitFor({ timeout: WAIT_MS });
+  await panel.getByRole('heading', { name: 'DorkOS account' }).waitFor({ timeout: WAIT_MS });
   await panel.getByRole('button', { name: 'Link this instance' }).click({ timeout: WAIT_MS });
 
   // Pending: the code + the "waiting" status render immediately (optimistic).

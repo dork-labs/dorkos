@@ -1,10 +1,20 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
+// The Security panel carries the standing-permissions block, which subscribes to
+// the global event stream. This suite mounts the dialog without the app shell,
+// so there is no provider — stubbing the subscription keeps the suite about the
+// dialog instead of about the stream (same treatment as `SecurityPanel.test`).
+vi.mock('@/layers/shared/model', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/shared/model')>();
+  return { ...actual, useEventSubscription: vi.fn() };
+});
+
 import { TransportProvider } from '@/layers/shared/model';
+import { TooltipProvider } from '@/layers/shared/ui';
 import { SettingsDialog } from '../ui/SettingsDialog';
 
 // Mock useIsMobile to always return false (desktop dialog)
@@ -105,7 +115,11 @@ function createWrapper(transport?: Transport) {
   const t = transport || createSettingsTransport();
   return ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={queryClient}>
-      <TransportProvider transport={t}>{children}</TransportProvider>
+      <TransportProvider transport={t}>
+        {/* The app mounts one of these at the shell; the Runtimes cards use
+            tooltips and throw without it. */}
+        <TooltipProvider>{children}</TooltipProvider>
+      </TransportProvider>
     </QueryClientProvider>
   );
 }
@@ -266,6 +280,18 @@ describe('SettingsDialog', () => {
     expect(resetBtn?.textContent).toBe('Reset to defaults');
   });
 
+  // The Tools reset rides the tab def's actions slot (DOR-918); nothing else
+  // pins it, so deleting `actions:` from the tools tab would pass silently
+  // without this.
+  it('renders a "Reset to defaults" button in the Tools tab header', () => {
+    render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
+    navigateTo(/tools/i);
+    const heading = screen.getByRole('heading', { name: 'Tools' });
+    const panel = heading.closest('[data-slot="navigation-layout-panel"]')!;
+    const resetBtn = panel.querySelector('button');
+    expect(resetBtn?.textContent).toBe('Reset to defaults');
+  });
+
   // Verifies the Feature suggestions toggle renders in the Preferences tab
   it('renders "Feature suggestions" toggle in Preferences tab', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
@@ -303,5 +329,34 @@ describe('SettingsDialog', () => {
     expect(tasksIdx).toBeGreaterThanOrEqual(0);
     expect(promoIdx).toBeGreaterThan(tasksIdx);
     expect(devToolsIdx).toBeGreaterThan(promoIdx);
+  });
+});
+
+/**
+ * DOR-918 — the panel title belongs to the dialog, and only to the dialog.
+ *
+ * `TabbedDialog` draws a `NavigationLayoutPanelHeader` for every tab, so a tab
+ * component that also draws its own title heading showed the same words twice,
+ * a few pixels apart. The rule is one heading per panel: the dialog's. Section
+ * headings inside a panel ("Background Updates", "Logging") are a different
+ * string and are not what this counts.
+ */
+describe('SettingsDialog — one heading per panel', () => {
+  const PANELS = [
+    { nav: /appearance/i, title: 'Appearance' },
+    { nav: /preferences/i, title: 'Preferences' },
+    { nav: /^tools/i, title: 'Tools' },
+    { nav: /^runtimes/i, title: 'Runtimes' },
+    { nav: /security/i, title: 'Security' },
+    { nav: /privacy & data/i, title: 'Privacy & Data' },
+    { nav: /dorkos account/i, title: 'DorkOS account' },
+    { nav: /^server/i, title: 'Server' },
+  ];
+
+  it.each(PANELS)('shows "$title" exactly once in its panel', ({ nav, title }) => {
+    render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
+    navigateTo(nav);
+    const panel = screen.getByRole('tabpanel');
+    expect(within(panel).getAllByRole('heading', { name: title })).toHaveLength(1);
   });
 });

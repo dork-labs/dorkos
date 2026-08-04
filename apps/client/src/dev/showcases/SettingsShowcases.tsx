@@ -20,10 +20,13 @@ import {
   ResponsiveDialogTitle,
 } from '@/layers/shared/ui';
 import { SettingsDialog } from '@/layers/features/settings';
-import { AppearanceTab } from '@/layers/features/settings/ui/tabs/AppearanceTab';
+import {
+  AppearanceResetAction,
+  AppearanceTab,
+} from '@/layers/features/settings/ui/tabs/AppearanceTab';
 import { PreferencesTab } from '@/layers/features/settings/ui/tabs/PreferencesTab';
 import { ServerTab } from '@/layers/features/settings/ui/ServerTab';
-import { ToolsTab } from '@/layers/features/settings/ui/ToolsTab';
+import { ToolsResetAction, ToolsTab } from '@/layers/features/settings/ui/ToolsTab';
 import { AdvancedTab } from '@/layers/features/settings/ui/AdvancedTab';
 import { ClaudeAccountsSection, ExecutionExceptionsStrip } from '@/layers/features/settings';
 import {
@@ -174,14 +177,14 @@ function IndividualTabsSection() {
     >
       <ShowcaseLabel>Appearance Tab</ShowcaseLabel>
       <ShowcaseDemo>
-        <TabShell value="appearance">
+        <TabShell value="appearance" title="Appearance" actions={<AppearanceResetAction />}>
           <AppearanceTab />
         </TabShell>
       </ShowcaseDemo>
 
       <ShowcaseLabel>Preferences Tab</ShowcaseLabel>
       <ShowcaseDemo>
-        <TabShell value="preferences">
+        <TabShell value="preferences" title="Preferences">
           <PreferencesTab />
         </TabShell>
       </ShowcaseDemo>
@@ -189,7 +192,7 @@ function IndividualTabsSection() {
       <ShowcaseLabel>Server Tab</ShowcaseLabel>
       <ShowcaseDemo>
         <MockedQueryProvider>
-          <TabShell value="server">
+          <TabShell value="server" title="Server">
             <ServerTab />
           </TabShell>
         </MockedQueryProvider>
@@ -198,7 +201,7 @@ function IndividualTabsSection() {
       <ShowcaseLabel>Tools Tab</ShowcaseLabel>
       <ShowcaseDemo>
         <MockedQueryProvider>
-          <TabShell value="tools">
+          <TabShell value="tools" title="Tools" actions={<ToolsResetAction />}>
             <ToolsTab />
           </TabShell>
         </MockedQueryProvider>
@@ -206,7 +209,7 @@ function IndividualTabsSection() {
 
       <ShowcaseLabel>Advanced Tab</ShowcaseLabel>
       <ShowcaseDemo>
-        <TabShell value="advanced">
+        <TabShell value="advanced" title="Advanced">
           <AdvancedTab />
         </TabShell>
       </ShowcaseDemo>
@@ -288,7 +291,7 @@ function LoadingEmptyStatesSection() {
     >
       <ShowcaseLabel>Server Tab — Empty (no config)</ShowcaseLabel>
       <ShowcaseDemo>
-        <TabShell value="server">
+        <TabShell value="server" title="Server">
           <ServerTab />
         </TabShell>
       </ShowcaseDemo>

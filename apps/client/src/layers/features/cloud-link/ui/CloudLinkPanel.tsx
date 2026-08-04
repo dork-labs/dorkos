@@ -44,10 +44,8 @@ export function CloudLinkPanel() {
   return (
     <div className="space-y-4">
       <div className="space-y-1">
-        <div className="flex items-center gap-2">
-          <Link2 className="text-muted-foreground size-4" />
-          <h2 className="text-sm font-semibold">DorkOS account</h2>
-        </div>
+        {/* No heading here: the Settings dialog draws the panel's own
+            "DorkOS account" header. This is the explainer that sits under it. */}
         <p className="text-muted-foreground text-sm">
           Link this instance to a DorkOS account to reach it from dorkos.ai and receive updates.
           Linking is independent of local login.

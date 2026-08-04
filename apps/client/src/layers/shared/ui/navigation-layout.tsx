@@ -599,12 +599,15 @@ function NavigationLayoutPanel({
   value: panelValue,
   className,
 }: NavigationLayoutPanelProps) {
-  const { value, isMobile } = useNavigationLayout();
+  const { value, isMobile, activeLabel } = useNavigationLayout();
   if (value !== panelValue) return null;
 
   if (isMobile) {
     return (
-      <div data-slot="navigation-layout-panel" className={className}>
+      // The drill-in panel renders no heading of its own (the title lives in
+      // the drawer's back button), so this label is the one name assistive
+      // tech gets for the region (DOR-918 review).
+      <div data-slot="navigation-layout-panel" aria-label={activeLabel} className={className}>
         {children}
       </div>
     );
