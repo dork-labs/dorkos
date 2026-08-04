@@ -14,7 +14,7 @@ const HEADING_WORDS = ['Welcome', 'to', 'DorkOS'];
 const PREVIEW_ITEMS = [
   { icon: Plus, label: 'Create agents' },
   { icon: Clock, label: 'Schedule tasks' },
-  { icon: Radio, label: 'Connect integrations' },
+  { icon: Radio, label: 'Connect services' },
 ] as const;
 
 /**

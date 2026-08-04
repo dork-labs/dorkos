@@ -351,7 +351,7 @@ describe('IntegrationsTab', () => {
     it('State A: shows relay-off message and CTA when relay is disabled', () => {
       mockUseRelayEnabled.mockReturnValue(false);
       const view = renderTab();
-      expect(view.getByText('The Relay message bus is off')).toBeInTheDocument();
+      expect(view.getByText('Messaging is off')).toBeInTheDocument();
       expect(view.getByRole('button', { name: 'Open Messaging settings' })).toBeInTheDocument();
     });
 
@@ -370,14 +370,14 @@ describe('IntegrationsTab', () => {
     it('State B: shows no-adapters message when relay is on but catalog is empty', () => {
       mockUseExternalAdapterCatalog.mockReturnValue({ data: [] });
       const view = renderTab();
-      expect(view.getByText('No integrations available')).toBeInTheDocument();
-      expect(view.getByRole('button', { name: 'Add an integration' })).toBeInTheDocument();
+      expect(view.getByText('No connections available')).toBeInTheDocument();
+      expect(view.getByRole('button', { name: 'Add a connection' })).toBeInTheDocument();
     });
 
     it('State B: the CTA lands on the Connections page, messaging region', async () => {
       mockUseExternalAdapterCatalog.mockReturnValue({ data: [] });
       const view = renderTab();
-      fireEvent.click(view.getByRole('button', { name: 'Add an integration' }));
+      fireEvent.click(view.getByRole('button', { name: 'Add a connection' }));
       await waitFor(() => expect(readPathname()).toBe('/connections'));
       expect(readConnectionsRegion()).toBe('messaging');
     });
@@ -412,7 +412,7 @@ describe('IntegrationsTab', () => {
         const view = renderTabWithoutRouter();
 
         expect(() =>
-          fireEvent.click(view.getByRole('button', { name: 'Add an integration' }))
+          fireEvent.click(view.getByRole('button', { name: 'Add a connection' }))
         ).not.toThrow();
 
         expect(useAppStore.getState().settingsOpen).toBe(false);
@@ -423,7 +423,7 @@ describe('IntegrationsTab', () => {
       // Default beforeEach: relay enabled, one catalog entry, no bindings.
       const view = renderTab();
       expect(view.getByText('Let this agent reach the outside world')).toBeInTheDocument();
-      expect(view.getByText('Add Integration')).toBeInTheDocument();
+      expect(view.getByText('Add connection')).toBeInTheDocument();
     });
   });
 
@@ -481,24 +481,24 @@ describe('IntegrationsTab', () => {
   });
 
   describe('IntegrationPicker integration', () => {
-    it('renders the Add Integration button in State C (no bindings)', () => {
+    it('renders the Add connection button in State C (no bindings)', () => {
       // Default beforeEach: relay enabled, one catalog entry, no bindings → State C.
       const view = renderTab();
-      expect(view.getByText('Add Integration')).toBeInTheDocument();
+      expect(view.getByText('Add connection')).toBeInTheDocument();
     });
 
-    it('renders the Add Integration button in State D (bindings exist)', () => {
+    it('renders the Add connection button in State D (bindings exist)', () => {
       mockUseBindings.mockReturnValue({
         data: [makeBinding({ id: 'b-1', adapterId: 'telegram-1' })],
       });
       const view = renderTab();
-      expect(view.getByText('Add Integration')).toBeInTheDocument();
+      expect(view.getByText('Add connection')).toBeInTheDocument();
     });
 
     it('does not render IntegrationPicker in State A (relay off) — shows messaging CTA instead', () => {
       mockUseRelayEnabled.mockReturnValue(false);
       const view = renderTab();
-      expect(view.queryByText('Add Integration')).not.toBeInTheDocument();
+      expect(view.queryByText('Add connection')).not.toBeInTheDocument();
       expect(view.getByRole('button', { name: 'Open Messaging settings' })).toBeInTheDocument();
     });
   });
@@ -646,7 +646,7 @@ describe('IntegrationsTab', () => {
       });
 
       await waitFor(() => {
-        expect(mockToastSuccess).toHaveBeenCalledWith('Integration paused');
+        expect(mockToastSuccess).toHaveBeenCalledWith('Connection paused');
       });
     });
 
@@ -672,7 +672,7 @@ describe('IntegrationsTab', () => {
       });
 
       await waitFor(() => {
-        expect(mockToastSuccess).toHaveBeenCalledWith('Integration resumed');
+        expect(mockToastSuccess).toHaveBeenCalledWith('Connection resumed');
       });
     });
   });
@@ -819,7 +819,7 @@ describe('IntegrationsTab', () => {
       const view = renderTab();
 
       // Open the picker popover
-      fireEvent.click(view.getByText('Add Integration'));
+      fireEvent.click(view.getByText('Add connection'));
       // Click the available-to-setup item (renders via portal)
       fireEvent.click(screen.getByText('Webhook'));
 
@@ -853,7 +853,7 @@ describe('IntegrationsTab', () => {
       const view = renderTab();
 
       // Open the picker and trigger setup
-      fireEvent.click(view.getByText('Add Integration'));
+      fireEvent.click(view.getByText('Add connection'));
       fireEvent.click(screen.getByText('Webhook'));
 
       // The wizard opens inline; Settings was never deep-linked.

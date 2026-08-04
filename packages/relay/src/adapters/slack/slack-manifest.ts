@@ -203,7 +203,7 @@ export const SLACK_MANIFEST: AdapterManifest = {
       label: 'Respond Mode',
       type: 'select',
       required: false,
-      description: 'When should the bot respond in channels?',
+      description: 'When should the bot respond in Slack channels?',
       section: 'Access Control',
       options: [
         {
@@ -219,7 +219,7 @@ export const SLACK_MANIFEST: AdapterManifest = {
         {
           label: 'Always',
           value: 'always',
-          description: 'Respond to every message in every channel.',
+          description: 'Respond to every message in every Slack channel.',
         },
       ],
       displayAs: 'radio-cards',
@@ -280,11 +280,11 @@ export const SLACK_MANIFEST: AdapterManifest = {
     },
     {
       key: 'channelOverrides',
-      label: 'Channel Overrides',
+      label: 'Slack channel settings',
       type: 'textarea',
       valueShape: 'json-object',
       required: false,
-      description: 'Per-channel settings as JSON.',
+      description: 'Per-channel settings for this Slack workspace, as JSON.',
       placeholder: '{"C01ABC": {"respondMode": "always"}, "C02DEF": {"enabled": false}}',
       section: 'Access Control',
     },

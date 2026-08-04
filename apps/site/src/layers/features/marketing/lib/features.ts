@@ -602,7 +602,7 @@ export const features: Feature[] = [
     name: 'Relay Messaging',
     product: 'relay',
     category: 'messaging',
-    tagline: 'Your agents can message you, and each other, on any channel',
+    tagline: 'Your agents can message you, and each other, wherever you already chat',
     description:
       'Relay connects your agents to you and to each other. It routes messages to Telegram, Slack, and more, so no agent is working in silence.',
     status: 'ga',
@@ -611,8 +611,8 @@ export const features: Feature[] = [
       'Agents can message you, or message each other',
       'If an agent is offline, the message waits and delivers later',
       'See every message that was sent, and when',
-      'Add new channels through plugins, not just Telegram and Slack',
-      'Point specific agents at specific channels',
+      'Add new platforms through plugins, not just Telegram and Slack',
+      'Point specific agents at specific chats',
     ],
     moment:
       "Your deploy finishes while you're away from your desk. A Telegram message arrives with the result, and you answer its one question from the couch.",
@@ -747,7 +747,7 @@ export const features: Feature[] = [
     status: 'ga',
     benefits: [
       'A map of every agent you run',
-      'See which channel connects to which agent, and watch messages pulse along the wire as they arrive',
+      'See which platform connects to which agent, and watch messages pulse along the wire as they arrive',
       'Agents group by project, so a big team stays readable',
       'Click any agent to see its details and settings',
       'Slows down or turns off animation if your device asks for it',

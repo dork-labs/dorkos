@@ -82,7 +82,7 @@ type AgentWithConventions = AgentManifest & {
  * Config tab for the Agent Hub panel.
  *
  * Renders agent metadata (description, runtime, directory, capabilities) at
- * the top, followed by collapsible accordion sections for Integrations and
+ * the top, followed by collapsible accordion sections for Connections and
  * Advanced settings. Tools & MCP moved to the Toolkit tab. Personality
  * editing lives in the hero popover.
  */
@@ -263,8 +263,8 @@ export function ConfigTab() {
         </div>
       </div>
 
-      {/* Section 2: Integrations */}
-      <AccordionSection title="Integrations" icon={Radio}>
+      {/* Section 2: Connections */}
+      <AccordionSection title="Connections" icon={Radio}>
         <AgentIntegrationsTab agent={agent} />
       </AccordionSection>
 

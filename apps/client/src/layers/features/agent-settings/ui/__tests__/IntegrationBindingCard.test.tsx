@@ -225,10 +225,10 @@ describe('IntegrationBindingCard', () => {
       const { view } = renderCard({ integrationName: 'Telegram' });
       await user.click(view.getByRole('button', { name: 'Actions' }));
       fireEvent.click(screen.getByRole('menuitem', { name: 'Remove' }));
-      expect(screen.getByText('Remove integration binding')).toBeInTheDocument();
+      expect(screen.getByText('Remove connection')).toBeInTheDocument();
       expect(
         screen.getByText(
-          /Remove the binding to Telegram\? The agent will no longer receive messages from this integration./
+          /Remove the connection to Telegram\? The agent will no longer receive messages from it./
         )
       ).toBeInTheDocument();
     });
