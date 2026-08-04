@@ -10,7 +10,12 @@ import { feedbackSubmission } from '@/db/feedback-schema';
 import { MarketingChrome } from '@/layers/features/marketing';
 import { feedbackStatusLabel } from '@/lib/feedback/status-labels';
 
-export const runtime = 'edge';
+// nodejs, not edge: this page renders MarketingChrome, whose transitive imports
+// use Node-only modules (node:child_process/fs/path) that the Edge Runtime
+// cannot load — declaring edge here fails the whole site build. The API routes
+// (/api/feedback/[id], /mine) stay edge because they import only the
+// edge-compatible neon-http db client.
+export const runtime = 'nodejs';
 
 export const metadata: Metadata = {
   title: 'Report status — DorkOS',
