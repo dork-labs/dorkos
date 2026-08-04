@@ -27,6 +27,13 @@ import {
 } from './binding-router.js';
 import type { AdapterMeshCoreLike } from './adapter-manager.js';
 import type { UnclaimedChat, UnclaimedChatStore } from './unclaimed-chat-store.js';
+import {
+  ChatBridge,
+  BridgeLifecycle,
+  type BridgeStore,
+  type BridgeRoomOps,
+  type IngestRoomOps,
+} from './chat-bridge/index.js';
 
 /** Dependencies required to initialize the binding subsystem. */
 export interface BindingSubsystemDeps {
@@ -56,6 +63,21 @@ export interface BindingSubsystemDeps {
   onUnclaimedChat?: (chat: UnclaimedChat) => void;
   /** Fired at most once per rate-limit window when broadcasts were capped. */
   onUnclaimedChatBurst?: (burst: UnclaimedChatBurst) => void;
+  /**
+   * The rooms service, for the inbound chat bridge (chats-as-channels §5). The
+   * real `RoomService` satisfies both structural seams the bridge needs. Present
+   * only once the rooms subsystem is wired; without it, bridged bindings cannot
+   * be routed and `bridge: 'room'` never resolves in the router.
+   */
+  roomService?: BridgeRoomOps & IngestRoomOps;
+  /** The bridge identity store — the same instance the rooms service writes through. */
+  roomBridges?: BridgeStore;
+  /**
+   * The install owner's author id, read per call (an install becomes owned
+   * partway through its life). The bridge acts as the operator for its
+   * lifecycle writes (§3.5, §10.9).
+   */
+  operatorAuthorId?: () => string;
 }
 
 /**
@@ -200,6 +222,39 @@ export class BindingSubsystem {
         },
       };
 
+      // Wired here, and never optional in the server: a refusal the person
+      // never hears about is indistinguishable from an agent thinking. Shared
+      // between the router's refusals and the bridge's broken-bridge notices, so
+      // both damp against one `(binding, chat, reason)` window.
+      const chatNotice = createChatNoticeSender({
+        publish: (subject, payload, options) => deps.relayCore.publish(subject, payload, options),
+        resolveTarget: makeChatNoticeTargetResolver(bindingStore),
+        logger,
+      });
+
+      // The inbound chat bridge (chats-as-channels §5). Built here — the one
+      // place `bindingStore` and `chatNotice` already exist — from the rooms
+      // deps the composition root threaded in. `BridgeLifecycle` is constructed
+      // for the first time outside a test here; `ingest` calls its §10.9
+      // archived-out-of-band recovery seam. Absent when the rooms subsystem is
+      // not wired (some unit tests), and the router then refuses a bridged
+      // binding rather than routing it as an unbridged one.
+      const bridgeIngest =
+        deps.roomService && deps.roomBridges && deps.operatorAuthorId
+          ? new ChatBridge({
+              rooms: deps.roomService,
+              bridges: deps.roomBridges,
+              lifecycle: new BridgeLifecycle({
+                rooms: deps.roomService,
+                bridges: deps.roomBridges,
+                bindings: bindingStore,
+                chatNotice,
+                operatorAuthorId: deps.operatorAuthorId,
+              }),
+              chatNotice,
+            })
+          : undefined;
+
       subsystem.bindingRouter = new BindingRouter({
         bindingStore,
         relayCore: deps.relayCore,
@@ -218,13 +273,8 @@ export class BindingSubsystem {
         unclaimedChats: deps.unclaimedChats,
         onUnclaimedChat: deps.onUnclaimedChat,
         onUnclaimedChatBurst: deps.onUnclaimedChatBurst,
-        // Wired here, and never optional in the server: a refusal the person
-        // never hears about is indistinguishable from an agent thinking.
-        chatNotice: createChatNoticeSender({
-          publish: (subject, payload, options) => deps.relayCore.publish(subject, payload, options),
-          resolveTarget: makeChatNoticeTargetResolver(bindingStore),
-          logger,
-        }),
+        chatNotice,
+        bridgeIngest,
       });
       await subsystem.bindingRouter.init();
       logger.info('[BindingSubsystem] BindingRouter initialized');

@@ -16,7 +16,12 @@ import {
   applyAndWatchConfiguredDefaultRuntime,
   registerOptionalRuntime,
 } from './services/core/runtime-registry.js';
-import { initAuth, seedLegacyMcpApiKey, resolveMcpLocalToken } from './services/core/auth/index.js';
+import {
+  initAuth,
+  seedLegacyMcpApiKey,
+  resolveMcpLocalToken,
+  readOwnerAccount,
+} from './services/core/auth/index.js';
 import {
   canExpose,
   checkA2aExposure,
@@ -776,9 +781,19 @@ async function start() {
     service: roomService,
     store: roomStore,
     authors: roomAuthors,
+    bridges: roomBridges,
   } = createRoomSubsystem({ db });
   setRoomService(roomService);
   logger.info('[Rooms] RoomService registered');
+
+  // The install owner's author id, resolved per call (an install becomes owned
+  // partway through its life, so a value captured at boot would go stale). The
+  // inbound chat bridge acts as this author for its lifecycle writes
+  // (chats-as-channels §3.5, §10.9).
+  const resolveOperatorAuthorId = (): string => {
+    const owner = readOwnerAccount();
+    return owner ? roomAuthors.bindOwner(owner.id).id : roomAuthors.localHuman().id;
+  };
 
   // A room's memory is its `room_sessions` binding, and the id in it moves: the
   // room mints a placeholder before the first turn and Claude Code renames the
@@ -1034,6 +1049,12 @@ async function start() {
         // stores) because it belongs to the relay/binding domain, not
         // connectors — it just happens to share the same `db`.
         unclaimedChats: new UnclaimedChatStore(db),
+        // The rooms seams the inbound chat bridge writes through
+        // (chats-as-channels §5). Threaded to the binding subsystem, which
+        // builds the bridge where `bindingStore` and `chatNotice` already exist.
+        roomService,
+        roomBridges,
+        operatorAuthorId: resolveOperatorAuthorId,
       });
       await adapterManager.initialize();
       relayCore.setAdapterContextBuilder(adapterManager.buildContext.bind(adapterManager));

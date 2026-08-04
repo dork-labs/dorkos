@@ -21,6 +21,7 @@ import type {
 } from '@dorkos/relay';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import { BindingRouter } from '../binding-router.js';
+import type { ChatBridgeIngest, IngestResult } from '../chat-bridge/index.js';
 import { BindingStore } from '../binding-store.js';
 import { createInitiateConsentGate } from '../initiate-consent.js';
 import { makeChatNoticeTargetResolver } from '../binding-subsystem.js';
@@ -78,6 +79,7 @@ let bindingStore: BindingStore;
 let router: BindingRouter;
 let registry: RecordingRegistry;
 let createSession: ReturnType<typeof vi.fn<() => Promise<{ id: string }>>>;
+let bridgeIngest: ChatBridgeIngest & { ingest: ReturnType<typeof vi.fn> };
 let spans: Array<Record<string, unknown>>;
 let bindingId: string;
 let knownAgents: Set<string>;
@@ -128,6 +130,13 @@ beforeEach(async () => {
   );
 
   createSession = vi.fn(async () => ({ id: 'session-1' }));
+  // The inbound chat bridge, as the router sees it: a `bridge: 'room'` binding
+  // routes here (chats-as-channels §5.1) instead of to session dispatch.
+  bridgeIngest = {
+    ingest: vi.fn(
+      async (): Promise<IngestResult> => ({ status: 'ingested', entryId: 'e1', joined: false })
+    ),
+  };
 
   const meshCore = {
     getProjectPath: (agentId: string) => (knownAgents.has(agentId) ? PROJECT_PATH : undefined),
@@ -144,6 +153,7 @@ beforeEach(async () => {
       publish: (subject, payload, options) => relay.publish(subject, payload, options),
       resolveTarget: makeChatNoticeTargetResolver(bindingStore),
     }),
+    bridgeIngest,
   });
   await router.init();
 });
@@ -301,17 +311,18 @@ describe('the interim empty-content gate (DOR-866)', () => {
     expect(spanFor(PLATFORM_SUBJECT)!.status).not.toBe('delivered');
   });
 
-  it('does NOT drop the same message once the binding is bridged — 1.6 inherits the unfiltered envelope', async () => {
+  it('does NOT drop the same message once the binding is bridged — the bridge inherits the unfiltered envelope', async () => {
     await bindingStore.update(bindingId, { bridge: 'room', chatId: '12345' });
 
     await sendCaptionlessMedia();
 
-    // Bridged bindings still route through the classic dispatch path today —
-    // ChatBridge.ingest (task 1.6) has not landed — so "not gated" is
-    // observed as the message reaching the agent, same as any routed
-    // message.
-    await vi.waitFor(() => expect(registry.dispatches).toHaveLength(1));
-    expect(createSession).toHaveBeenCalledTimes(1);
+    // The empty-content gate lets a bridged binding through (DOR-866), and
+    // ChatBridge.ingest (DOR-870) now consumes exactly this envelope — the
+    // terminal branch that builds a media placeholder server-side. It never
+    // touches session dispatch.
+    await vi.waitFor(() => expect(bridgeIngest.ingest).toHaveBeenCalledTimes(1));
+    expect(createSession).not.toHaveBeenCalled();
+    expect(registry.dispatches).toHaveLength(0);
   });
 
   it('still runs a real turn for non-empty content on the same unbridged binding', async () => {
