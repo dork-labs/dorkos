@@ -244,6 +244,16 @@ export class BindingSubsystem {
    * when its adapter reconnects.
    */
   bridgeCatchUp: BridgeCatchUp | undefined;
+  /**
+   * The bridge lifecycle coordinator (chats-as-channels §3.5), when the rooms
+   * subsystem is wired. The cockpit's "Bridge to a channel" action (DOR-878)
+   * reaches it through {@link AdapterManager.getBridgeLifecycle} to turn a
+   * binding's bridge on and off — the first production caller of
+   * `BridgeLifecycle.bridge`. Absent (with the whole bridge stack) when rooms
+   * are not wired, and the PATCH route then falls back to a plain field write,
+   * which is inert because a bridged binding is never routed without `bridgeIngest`.
+   */
+  private bridgeLifecycle: BridgeLifecycle | undefined;
 
   private constructor(bindingStore: BindingStore, agentSessionStore: AgentSessionStore) {
     this.bindingStore = bindingStore;
@@ -351,6 +361,9 @@ export class BindingSubsystem {
           operatorAuthorId: deps.operatorAuthorId,
           adopter,
         });
+        // Held for the cockpit's bridge action (DOR-878), which reaches it via
+        // the adapter manager. The same coordinator the ingest/delivery halves use.
+        self.bridgeLifecycle = bridgeLifecycle;
         bridgeIngest = new ChatBridge({
           rooms: deps.roomService,
           bridges: deps.roomBridges,
@@ -476,6 +489,15 @@ export class BindingSubsystem {
   /** Get the BindingRouter, or undefined if initialization did not reach that step. */
   getBindingRouter(): BindingRouter | undefined {
     return this.bindingRouter;
+  }
+
+  /**
+   * Get the bridge lifecycle coordinator, or undefined when the rooms subsystem
+   * is not wired. The cockpit's "Bridge to a channel" action (DOR-878) calls
+   * {@link BridgeLifecycle.bridge}/`unbridge` through it.
+   */
+  getBridgeLifecycle(): BridgeLifecycle | undefined {
+    return this.bridgeLifecycle;
   }
 
   /** Shut down the BindingRouter, AgentSessionStore, and BindingStore. Idempotent. */
