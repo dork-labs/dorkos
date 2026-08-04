@@ -218,6 +218,29 @@ describe('sendFeedback — durable payload shape', () => {
     expect(body).not.toHaveProperty('reporterName');
   });
 
+  it('truncates an over-cap name and drops an over-cap email so identity never 400s the durable write', async () => {
+    // The durable route is .strict() with a 128-char name cap and a 254-char
+    // email cap; an over-cap value would reject the WHOLE write and silently
+    // lose the feedback. Names truncate safely; an over-cap email is dropped
+    // (a sliced address is worse than none) rather than sent.
+    const fetchImpl = makeFetch('ok');
+    await sendFeedback(
+      baseOptions({
+        submission: { kind: 'bug', message: 'crash on save' },
+        identity: {
+          userId: 'user_1',
+          email: `${'a'.repeat(260)}@example.com`,
+          name: 'x'.repeat(200),
+        },
+        fetchImpl,
+      })
+    );
+
+    const body = durableBody(fetchImpl);
+    expect(body.reporterName).toBe('x'.repeat(128));
+    expect(body).not.toHaveProperty('reporterEmail');
+  });
+
   it('renders diagnostics to text and includes it when present', async () => {
     const fetchImpl = makeFetch('ok');
     await sendFeedback(

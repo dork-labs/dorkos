@@ -86,6 +86,18 @@ const DURABLE_DIAGNOSTICS_MAX_LEN = 8000;
  */
 const DURABLE_TRANSCRIPT_MAX_LEN = 8000;
 
+/**
+ * Caps on the server-resolved reporter identity sent to the durable route,
+ * matching that route's `.strict()` schema (`MAX_REPORTER_NAME_LEN` 128 and
+ * `.email().max(254)`). These are DB-sourced, Better-Auth-validated values that
+ * almost never exceed their caps — but the durable route is strict, so an
+ * over-cap value would 400 the whole write and silently lose the feedback. The
+ * name truncates safely; an over-cap email is dropped rather than truncated
+ * (a sliced address is worse than none) so identity never sinks the write.
+ */
+const DURABLE_REPORTER_NAME_MAX_LEN = 128;
+const DURABLE_REPORTER_EMAIL_MAX_LEN = 254;
+
 /** The server-resolved identity of an authenticated feedback submitter. */
 export type FeedbackIdentity = NonNullable<FeedbackEventContext['identity']>;
 
@@ -257,8 +269,12 @@ function buildDurablePayload(
     message: submission.message,
     surface: 'cockpit',
     ...(submission.contact ? { contact: submission.contact } : {}),
-    ...(identity?.email ? { reporterEmail: identity.email } : {}),
-    ...(identity?.name ? { reporterName: identity.name } : {}),
+    ...(identity?.email && identity.email.length <= DURABLE_REPORTER_EMAIL_MAX_LEN
+      ? { reporterEmail: identity.email }
+      : {}),
+    ...(identity?.name
+      ? { reporterName: identity.name.slice(0, DURABLE_REPORTER_NAME_MAX_LEN) }
+      : {}),
     ...(submission.route ? { route: submission.route } : {}),
     ...(diagnostics ? { diagnostics } : {}),
     ...(transcriptExcerpt ? { transcriptExcerpt, hasTranscript: true } : {}),
