@@ -61,6 +61,12 @@ function invalidateFeed(queryClient: ReturnType<typeof useQueryClient>) {
  * Set the agent that answers an unclaimed chat, creating the binding that
  * routes it. Rejects with `CHAT_ALREADY_BOUND` when another binding took the
  * chat in the meantime — the same refusal any binding create would give.
+ *
+ * `input.bridge: true` is "Answer in a channel" — the claim, the binding, and
+ * the bridge happen in one call, and the resolved binding's `roomId` is where
+ * to land the person. The claim always resolves even when the bridge step
+ * cannot complete; a `bridgeError` on the result names why, rather than the
+ * mutation rejecting over a chat that was, in fact, answered.
  */
 export function useClaimUnclaimedChat() {
   const transport = useTransport();
