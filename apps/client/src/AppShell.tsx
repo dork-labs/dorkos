@@ -44,6 +44,7 @@ import { renderRuntimeConnect } from '@/layers/features/runtime-connect';
 import {
   SessionHeader,
   DashboardHeader,
+  ChannelsHeader,
   AgentsHeader,
   ActivityHeader,
   TasksHeader,
@@ -159,16 +160,22 @@ function useSidebarSlot(): SidebarSlot {
  * Returns the header content component keyed to the current route.
  *
  * All routes use a page-specific header with consistent `PageHeader` layout.
- * The session route includes a breadcrumb with the agent name.
+ * The session route includes a breadcrumb with the agent name; the channels
+ * route names the open room rather than falling through to the dashboard's
+ * (DOR-587).
  */
 function useHeaderSlot({
   agentName,
   origin,
   originLabel,
+  roomTitle,
 }: {
   agentName: string | undefined;
   origin: SessionOrigin | undefined;
   originLabel: string | undefined;
+  /** The open room's spoken name on `/channels`, resolved once by the shell
+   * (`useRoomDocumentTitle`) — see {@link ChannelsHeader}. */
+  roomTitle: string | null;
 }): HeaderSlot {
   const { pathname, searchStr } = useRouterState({
     select: (s) => ({ pathname: s.location.pathname, searchStr: s.location.searchStr }),
@@ -198,6 +205,12 @@ function useHeaderSlot({
       return {
         key: 'marketplace-sources',
         content: <MarketplaceSourcesHeader />,
+        borderStyle: undefined,
+      };
+    case '/channels':
+      return {
+        key: 'channels',
+        content: <ChannelsHeader roomTitle={roomTitle} />,
         borderStyle: undefined,
       };
     case '/session':
@@ -357,6 +370,7 @@ export function AppShell() {
     agentName: currentAgent ? getAgentDisplayName(currentAgent) : undefined,
     origin: activeSessionOrigin,
     originLabel: activeSessionOriginLabel,
+    roomTitle,
   });
 
   // Eligible global banners, ranked and rendered one-at-a-time by AppBannerSlot

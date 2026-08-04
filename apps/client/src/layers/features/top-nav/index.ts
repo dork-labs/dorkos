@@ -7,6 +7,7 @@ export { CommandPaletteTrigger } from './ui/CommandPaletteTrigger';
 export { PageHeader } from './ui/PageHeader';
 export { SessionHeader } from './ui/SessionHeader';
 export { DashboardHeader } from './ui/DashboardHeader';
+export { ChannelsHeader } from './ui/ChannelsHeader';
 export { AgentsHeader } from './ui/AgentsHeader';
 export { ActivityHeader } from './ui/ActivityHeader';
 export { TasksHeader } from './ui/TasksHeader';

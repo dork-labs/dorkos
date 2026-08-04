@@ -18,7 +18,13 @@ interface PageHeaderProps {
 export function PageHeader({ title, children, actions }: PageHeaderProps) {
   return (
     <>
-      <span className="text-sm font-medium">{title}</span>
+      {/* min-w-0 + truncate: ChannelsHeader feeds this a user-controlled room
+          title (up to 200 chars, or longer from a bridged Slack/Telegram room),
+          and an untruncated title blows the 36px header open on a phone. The
+          title attribute keeps the full name reachable, as RoomTitle does. */}
+      <span className="min-w-0 truncate text-sm font-medium" title={title}>
+        {title}
+      </span>
       {children ? (
         <div className="ml-3 flex min-w-0 flex-1 items-center">{children}</div>
       ) : (

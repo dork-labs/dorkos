@@ -60,6 +60,10 @@ describe('fallbackTabLabel', () => {
     expect(fallbackTabLabel(parseTabHref('/'))).toBe('Dashboard');
     expect(fallbackTabLabel(parseTabHref('/agents'))).toBe('Agents');
     expect(fallbackTabLabel(parseTabHref('/activity'))).toBe('Activity');
+    // Before this, a channel or DM tab fell through to the unknown-route label
+    // ("DorkOS") — the same class of defect DOR-587 fixes for the header, one
+    // surface over.
+    expect(fallbackTabLabel(parseTabHref('/channels?id=room_1'))).toBe('Channels');
     expect(fallbackTabLabel(parseTabHref('/tasks'))).toBe('Tasks');
     expect(fallbackTabLabel(parseTabHref('/workspaces'))).toBe('Workspaces');
     expect(fallbackTabLabel(parseTabHref('/marketplace'))).toBe('Marketplace');

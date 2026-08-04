@@ -11,6 +11,10 @@ import { BANNER_PRIORITY, type BannerDescriptor } from '@/layers/widgets/app-ban
 // ── Route-aware mock: control the pathname returned by useRouterState ──
 
 let mockPathname = '/';
+// The shell reads `?id=` both to name the open room in the document title
+// (`useRoomDocumentTitle`) and, since DOR-587, in the channels header
+// (`ChannelsHeader`). Defaults to no room open; individual tests set it.
+let mockSearch: Record<string, unknown> = {};
 
 vi.mock('@tanstack/react-router', () => ({
   useRouterState: ({
@@ -35,9 +39,7 @@ vi.mock('@tanstack/react-router', () => ({
   Outlet: () => <div data-testid="outlet">outlet</div>,
   useNavigate: () => vi.fn(),
   useLocation: () => ({ pathname: mockPathname }),
-  // The shell reads `?id=` to name the open room in the document title
-  // (`useRoomDocumentTitle`). No route under test carries one.
-  useSearch: () => ({}),
+  useSearch: () => mockSearch,
 }));
 
 // ── Mock child components with identifiable test markers ──
@@ -56,6 +58,9 @@ vi.mock('@/layers/features/session-list', () => ({
 vi.mock('@/layers/features/top-nav', () => ({
   SessionHeader: () => <div data-testid="session-header">Session</div>,
   DashboardHeader: () => <div data-testid="dashboard-header">Dashboard</div>,
+  ChannelsHeader: ({ roomTitle }: { roomTitle: string | null }) => (
+    <div data-testid="channels-header">{roomTitle ?? 'Channels'}</div>
+  ),
   MarketplaceHeader: () => <div data-testid="marketplace-header">Marketplace</div>,
   MarketplaceSourcesHeader: () => <div data-testid="marketplace-sources-header">Sources</div>,
   AgentsHeader: () => <div data-testid="agents-header">Agents</div>,
@@ -65,6 +70,7 @@ vi.mock('@/layers/features/top-nav', () => ({
 
 vi.mock('@/layers/widgets/app-layout', () => ({
   DialogHost: () => null,
+  FeedbackDialogHost: () => null,
 }));
 
 vi.mock('@/layers/features/tours', () => ({
@@ -201,11 +207,20 @@ vi.mock('@/layers/widgets/pulse', async (importOriginal) => {
 // The shell also keeps the room list live for the browser tab's unread badge
 // (`useRoomDocumentTitle` -> `useRoomListStream`) — another event-stream
 // subscription, no-op'd here for the same reason.
+//
+// `useRoom` is overridden too, so the "names the open room" header test below
+// can hand the shell a resolved room without a real transport round trip.
+// Every other test leaves `mockOpenRoom` `null`, so `useRoom` degrades to "no
+// room selected" — the same shape the real hook answers with a disabled query.
+let mockOpenRoom: { kind: 'channel' | 'dm'; slug: string | null; title: string } | null = null;
 vi.mock('@/layers/entities/room', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/entities/room')>();
   return {
     ...actual,
     useRoomListStream: () => {},
+    useRoom: (roomId: string | null) => ({
+      data: roomId !== null ? (mockOpenRoom ?? undefined) : undefined,
+    }),
   };
 });
 
@@ -342,6 +357,8 @@ describe('AppShell slot integration', () => {
   afterEach(() => {
     cleanup();
     leaveDesktopShell();
+    mockSearch = {};
+    mockOpenRoom = null;
   });
 
   describe('sidebar slots', () => {
@@ -504,6 +521,33 @@ describe('AppShell slot integration', () => {
       renderAppShell();
       expect(screen.getByTestId('session-header')).toBeInTheDocument();
       expect(screen.queryByTestId('dashboard-header')).not.toBeInTheDocument();
+    });
+
+    // DOR-587: /channels had no case in the route switch, so it fell through
+    // to `default` and rendered DashboardHeader — every channel and every DM
+    // read "Dashboard" in the chrome above it.
+    it('renders ChannelsHeader at /channels, not the dashboard header', () => {
+      mockPathname = '/channels';
+      renderAppShell();
+      expect(screen.getByTestId('channels-header')).toBeInTheDocument();
+      expect(screen.queryByTestId('dashboard-header')).not.toBeInTheDocument();
+    });
+
+    it("names the open room in the channels header, not the route's generic name", () => {
+      mockPathname = '/channels';
+      mockSearch = { id: 'room_1' };
+      mockOpenRoom = { kind: 'channel', slug: 'general', title: 'general' };
+      renderAppShell();
+      expect(screen.getByTestId('channels-header')).toHaveTextContent('#general');
+    });
+
+    it('hands a null roomTitle through to ChannelsHeader when no room is open', () => {
+      // The mock above reimplements the fallback, so this test pins only the
+      // shell's null-threading; the real `?? 'Channels'` fallback is pinned in
+      // ChannelsHeader.test.tsx against the real component.
+      mockPathname = '/channels';
+      renderAppShell();
+      expect(screen.getByTestId('channels-header')).toHaveTextContent('Channels');
     });
   });
 
