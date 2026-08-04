@@ -44,7 +44,11 @@ import { logRefusal, type Refusal } from '../observability/refusals.js';
 import type { BindingStore } from './binding-store.js';
 import type { AdapterMeshCoreLike } from './adapter-manager.js';
 import { parseHumanSubject } from './human-subject.js';
-import { extractPlatformUserId, extractSenderName } from './platform-identity.js';
+import {
+  extractPlatformChatType,
+  extractPlatformUserId,
+  extractSenderName,
+} from './platform-identity.js';
 import type { UnclaimedChat, UnclaimedChatStore } from './unclaimed-chat-store.js';
 import type { ChatBridgeIngest } from './chat-bridge/index.js';
 
@@ -878,6 +882,10 @@ export class BindingRouter {
       chatId,
       channelType,
       chatKind: channelType === 'group' ? 'group' : 'dm',
+      // The RAW platform type, kept alongside the folded `chatKind` so a
+      // broadcast stays distinguishable from a group all the way to the binding
+      // a claim creates (DOR-907, spec §3.3).
+      platformChatType: extractPlatformChatType(envelope.payload),
       senderName,
       chatTitle,
       senderId: extractPlatformUserId(envelope.payload),

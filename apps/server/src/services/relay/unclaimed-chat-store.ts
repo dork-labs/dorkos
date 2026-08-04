@@ -19,6 +19,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { unclaimedChats, eq, and, asc, count, type Db } from '@dorkos/db';
+import type { PlatformChatType } from '@dorkos/shared/relay-schemas';
 import { logger } from '../../lib/logger.js';
 
 /** Lifecycle status of one unclaimed-chat row. */
@@ -41,6 +42,13 @@ export interface UnclaimedChat {
   chatId: string;
   channelType: string | null;
   chatKind: UnclaimedChatKind;
+  /**
+   * The RAW platform chat type (`platformData.chatType`), when the adapter
+   * reported one — kept distinct from {@link chatKind} so a broadcast `channel`
+   * is not folded into `group`. Null for an adapter that reports none (Slack)
+   * or a row written before this column existed (DOR-907).
+   */
+  platformChatType: PlatformChatType | null;
   senderName: string | null;
   senderId: string | null;
   /** Group/channel display title, when the adapter's payload already carried one. Null for a DM. */
@@ -77,6 +85,8 @@ export interface UnclaimedChatSighting {
   chatId: string;
   channelType?: string | undefined;
   chatKind: UnclaimedChatKind;
+  /** The raw platform chat type (`platformData.chatType`), when the adapter reported one. */
+  platformChatType?: PlatformChatType | undefined;
   senderName?: string | undefined;
   senderId?: string | undefined;
   /** Group/channel display title, when the adapter's own payload carried one. */
@@ -154,6 +164,7 @@ export class UnclaimedChatStore {
       chatId: sighting.chatId,
       channelType: sighting.channelType ?? null,
       chatKind: sighting.chatKind,
+      platformChatType: sighting.platformChatType ?? null,
       senderName: truncateDisplayName(sighting.senderName) ?? null,
       senderId: sighting.senderId ?? null,
       chatTitle: truncateDisplayName(sighting.chatTitle) ?? null,
@@ -272,6 +283,7 @@ function toDomain(row: {
   chatId: string;
   channelType: string | null;
   chatKind: string;
+  platformChatType: string | null;
   senderName: string | null;
   senderId: string | null;
   chatTitle: string | null;
@@ -285,6 +297,7 @@ function toDomain(row: {
   return {
     ...row,
     chatKind: row.chatKind as UnclaimedChatKind,
+    platformChatType: row.platformChatType as PlatformChatType | null,
     status: row.status as UnclaimedChatStatus,
   };
 }
