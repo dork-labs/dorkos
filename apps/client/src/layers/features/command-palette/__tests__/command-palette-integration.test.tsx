@@ -89,6 +89,12 @@ vi.mock('@/layers/shared/model', () => ({
   },
   useTheme: () => ({ theme: mockTheme, setTheme: mockSetTheme }),
   useReportIssue: () => vi.fn(),
+  // `usePaletteActions` reads the feedback dialog's store, so the palette does
+  // not render at all without it (DOR-902).
+  useFeedbackDialogStore: (selector?: (s: Record<string, unknown>) => unknown) => {
+    const state = { openFeedback: vi.fn() };
+    return selector ? selector(state) : state;
+  },
   useIsMobile: () => false,
   useNow: () => Date.now(),
   // URL deep-link hooks — during the dual-signal era we forward open/close
