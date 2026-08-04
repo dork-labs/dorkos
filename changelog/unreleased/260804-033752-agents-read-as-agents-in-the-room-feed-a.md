@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(client): agents read as agents in the room feed and session chat'
+  - 'fix(client): hollow badge assertions, var()-color agent contrast, doc/null-safety nits'
 ---
 
 ### Added
