@@ -123,6 +123,7 @@ testControlRouter.post('/seed-agent', async (_req, res) => {
     personaEnabled: false,
     isSystem: false,
     enabledToolGroups: {},
+    mcpServers: [],
   };
   const agentDir = e2eAgentDir();
   await writeManifest(agentDir, manifest);

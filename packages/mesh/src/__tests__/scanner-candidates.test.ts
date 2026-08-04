@@ -54,6 +54,7 @@ function makeManifest(id: string): AgentManifest {
     registeredBy: 'test',
     personaEnabled: true,
     enabledToolGroups: {},
+    mcpServers: [],
   };
 }
 

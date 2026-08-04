@@ -4298,6 +4298,13 @@
           },
           "enabledToolGroups": {
             "$ref": "#/components/schemas/EnabledToolGroups"
+          },
+          "mcpServers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ManagedMcpServer"
+            },
+            "default": []
           }
         },
         "required": [
@@ -4407,6 +4414,124 @@
         "default": {},
         "description": "Per-domain tool groups. undefined = inherit global default. Off means the agent is not told about the group, not that the tools are blocked. Binding tools follow adapter toggle. Trace tools follow relay toggle."
       },
+      "ManagedMcpServer": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-zA-Z0-9_-]+$"
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": false
+          },
+          "connection": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "transport": {
+                    "type": "string",
+                    "enum": [
+                      "stdio"
+                    ]
+                  },
+                  "command": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "args": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "default": []
+                  },
+                  "env": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "default": {}
+                  }
+                },
+                "required": [
+                  "transport",
+                  "command"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "transport": {
+                    "type": "string",
+                    "enum": [
+                      "http"
+                    ]
+                  },
+                  "url": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "headers": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "default": {}
+                  }
+                },
+                "required": [
+                  "transport",
+                  "url"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "transport": {
+                    "type": "string",
+                    "enum": [
+                      "sse"
+                    ]
+                  },
+                  "url": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "headers": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "default": {}
+                  }
+                },
+                "required": [
+                  "transport",
+                  "url"
+                ]
+              }
+            ]
+          },
+          "addedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "addedBy": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "name",
+          "connection",
+          "addedAt",
+          "addedBy"
+        ]
+      },
       "RegisterAgentRequest": {
         "type": "object",
         "properties": {
@@ -4514,6 +4639,13 @@
               },
               "enabledToolGroups": {
                 "$ref": "#/components/schemas/EnabledToolGroups"
+              },
+              "mcpServers": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ManagedMcpServer"
+                },
+                "default": []
               }
             }
           },
@@ -14991,6 +15123,547 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{agentId}/mcp-servers": {
+      "get": {
+        "tags": [
+          "Mcp"
+        ],
+        "summary": "List an agent’s managed MCP servers",
+        "description": "List the MCP servers DorkOS manages for an agent, each with its transport, enabled state, and audit record. A free read — use it before add/update/remove to see what is already configured.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The id of the agent whose managed MCP servers this acts on."
+            },
+            "required": true,
+            "description": "The id of the agent whose managed MCP servers this acts on.",
+            "name": "agentId",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List an agent’s managed MCP servers result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ManagedMcpServer"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Mcp"
+        ],
+        "summary": "Add a managed MCP server to an agent",
+        "description": "Add an MCP server to an agent and enable it. This introduces a command (stdio) or remote endpoint (http/sse) that will run in the agent’s environment, so a person approves it first at a card showing the exact command/args/url. Rejects the reserved name \"dorkos\" and any name the agent already uses.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "agentId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The id of the agent whose managed MCP servers this acts on."
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[a-zA-Z0-9_-]+$",
+                    "description": "The managed server name, unique within the agent."
+                  },
+                  "connection": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "transport": {
+                            "type": "string",
+                            "enum": [
+                              "stdio"
+                            ]
+                          },
+                          "command": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "args": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "default": []
+                          },
+                          "env": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "string"
+                            },
+                            "default": {}
+                          }
+                        },
+                        "required": [
+                          "transport",
+                          "command"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "transport": {
+                            "type": "string",
+                            "enum": [
+                              "http"
+                            ]
+                          },
+                          "url": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "headers": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "string"
+                            },
+                            "default": {}
+                          }
+                        },
+                        "required": [
+                          "transport",
+                          "url"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "transport": {
+                            "type": "string",
+                            "enum": [
+                              "sse"
+                            ]
+                          },
+                          "url": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "headers": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "string"
+                            },
+                            "default": {}
+                          }
+                        },
+                        "required": [
+                          "transport",
+                          "url"
+                        ]
+                      }
+                    ],
+                    "description": "How to reach the server (stdio/http/sse)."
+                  },
+                  "enabled": {
+                    "type": "boolean",
+                    "description": "Whether the server is enabled on add. Defaults to enabled (spec §4)."
+                  }
+                },
+                "required": [
+                  "agentId",
+                  "name",
+                  "connection"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Add a managed MCP server to an agent result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ManagedMcpServer"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{agentId}/mcp-servers/{name}": {
+      "patch": {
+        "tags": [
+          "Mcp"
+        ],
+        "summary": "Update a managed MCP server",
+        "description": "Change a managed server’s transport and/or enabled state. Changing the transport introduces a new command/endpoint, so it is approved at a card showing the exact command/args/url, exactly like add.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "agentId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The id of the agent whose managed MCP servers this acts on."
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[a-zA-Z0-9_-]+$",
+                    "description": "The managed server name, unique within the agent."
+                  },
+                  "connection": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "transport": {
+                            "type": "string",
+                            "enum": [
+                              "stdio"
+                            ]
+                          },
+                          "command": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "args": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "default": []
+                          },
+                          "env": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "string"
+                            },
+                            "default": {}
+                          }
+                        },
+                        "required": [
+                          "transport",
+                          "command"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "transport": {
+                            "type": "string",
+                            "enum": [
+                              "http"
+                            ]
+                          },
+                          "url": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "headers": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "string"
+                            },
+                            "default": {}
+                          }
+                        },
+                        "required": [
+                          "transport",
+                          "url"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "transport": {
+                            "type": "string",
+                            "enum": [
+                              "sse"
+                            ]
+                          },
+                          "url": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "headers": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "string"
+                            },
+                            "default": {}
+                          }
+                        },
+                        "required": [
+                          "transport",
+                          "url"
+                        ]
+                      }
+                    ],
+                    "description": "Replacement transport. Omit to leave the server’s transport unchanged."
+                  },
+                  "enabled": {
+                    "type": "boolean",
+                    "description": "New enabled state. Omit to leave it unchanged."
+                  }
+                },
+                "required": [
+                  "agentId",
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Update a managed MCP server result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ManagedMcpServer"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Mcp"
+        ],
+        "summary": "Remove a managed MCP server",
+        "description": "Remove a managed server from an agent. Reversible by adding it again (which re-prompts for approval).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The id of the agent whose managed MCP servers this acts on."
+            },
+            "required": true,
+            "description": "The id of the agent whose managed MCP servers this acts on.",
+            "name": "agentId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[a-zA-Z0-9_-]+$",
+              "description": "The managed server name, unique within the agent."
+            },
+            "required": true,
+            "description": "The managed server name, unique within the agent.",
+            "name": "name",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Remove a managed MCP server result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ManagedMcpServer"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{agentId}/mcp-servers/{name}/enable": {
+      "post": {
+        "tags": [
+          "Mcp"
+        ],
+        "summary": "Enable a managed MCP server",
+        "description": "Enable a managed server so it is injected into the agent’s next session. No new command is introduced (it was approved at add), so no approval is needed.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "agentId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The id of the agent whose managed MCP servers this acts on."
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[a-zA-Z0-9_-]+$",
+                    "description": "The managed server name, unique within the agent."
+                  }
+                },
+                "required": [
+                  "agentId",
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Enable a managed MCP server result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ManagedMcpServer"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{agentId}/mcp-servers/{name}/disable": {
+      "post": {
+        "tags": [
+          "Mcp"
+        ],
+        "summary": "Disable a managed MCP server",
+        "description": "Disable a managed server, removing it from future session injection while keeping its already-approved configuration on the manifest.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "agentId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The id of the agent whose managed MCP servers this acts on."
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[a-zA-Z0-9_-]+$",
+                    "description": "The managed server name, unique within the agent."
+                  }
+                },
+                "required": [
+                  "agentId",
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Disable a managed MCP server result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ManagedMcpServer"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{agentId}/mcp-servers/{name}/test": {
+      "post": {
+        "tags": [
+          "Mcp"
+        ],
+        "summary": "Test a managed MCP server",
+        "description": "Probe whether a managed server is reachable and how many tools it exposes. Safe by construction: it only ever connects to an already-approved entry, so it cannot run an arbitrary command and bypass add’s gate. A failure is reported in-band.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "agentId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The id of the agent whose managed MCP servers this acts on."
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[a-zA-Z0-9_-]+$",
+                    "description": "The managed server name, unique within the agent."
+                  }
+                },
+                "required": [
+                  "agentId",
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Test a managed MCP server result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "description": "Whether the server connected and listed its tools."
+                    },
+                    "toolCount": {
+                      "type": "number",
+                      "description": "How many tools it exposes, when reachable."
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "The failure reason, when unreachable."
+                    }
+                  },
+                  "required": [
+                    "ok"
+                  ]
+                }
               }
             }
           }

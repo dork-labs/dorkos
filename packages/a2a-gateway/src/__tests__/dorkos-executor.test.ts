@@ -25,6 +25,7 @@ function makeAgent(overrides: Partial<AgentRegistryEntry> = {}): AgentRegistryEn
     projectPath: '/projects/test',
     scanRoot: '/projects',
     enabledToolGroups: {},
+    mcpServers: [],
     ...overrides,
   };
 }

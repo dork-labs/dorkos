@@ -29,6 +29,7 @@ function makeEntry(overrides: Partial<AgentRegistryEntry> = {}): AgentRegistryEn
     behavior: { responseMode: 'always' },
     personaEnabled: true,
     enabledToolGroups: {},
+    mcpServers: [],
     registeredAt: new Date().toISOString(),
     registeredBy: 'user',
     projectPath: '/home/user/projects/backend',

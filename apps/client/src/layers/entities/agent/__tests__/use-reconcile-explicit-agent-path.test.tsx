@@ -35,6 +35,7 @@ function agentAt(id: string): AgentManifest {
     registeredBy: 'test',
     personaEnabled: true,
     enabledToolGroups: {},
+    mcpServers: [],
   };
 }
 

@@ -303,6 +303,17 @@ export class MeshCore {
     return agentMgmt.listWithPaths(this.agentDeps);
   }
 
+  /**
+   * The agent registry backing this core — the SQLite-derived cache of every
+   * registered agent (ADR-0043), whose entries carry `projectPath`. Exposed so a
+   * caller needing the agent-id → workspace-path resolution (the
+   * `AgentWorkspaceLocator` shape) shares this one instance rather than
+   * duplicating a registry.
+   */
+  get agentRegistry(): AgentRegistry {
+    return this.agentDeps.registry;
+  }
+
   /** Get an agent manifest by ULID. */
   get(agentId: string): AgentManifest | undefined {
     return agentMgmt.get(this.agentDeps, agentId);

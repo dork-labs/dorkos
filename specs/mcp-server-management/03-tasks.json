@@ -1,0 +1,66 @@
+{
+  "spec": "specs/mcp-server-management/02-specification.md",
+  "slug": "mcp-server-management",
+  "generatedAt": "2026-08-03T23:35:00.000Z",
+  "mode": "full",
+  "lastDecomposeDate": null,
+  "delivery": "single-pr",
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "Backend foundation — schema + store",
+      "subject": "[mcp-server-management] [P1] Managed MCP server schema on AgentManifest + marketplace guard",
+      "description": "Add ManagedMcpServerSchema + McpServerTransportSchema (stdio/http/sse discriminated union) and the mcpServers array field to AgentManifestSchema in packages/shared/src/mesh-schemas.ts (after enabledToolGroups, default []). Do NOT add it to AgentManifestUpdateSchema. Do NOT apply .catch() (a bad entry must fail loudly). Reuse the McpAppServerConnection union shape so toSdkMcpServerConfig converts it. Set enabled default false (safe-defaults). Reject mcpServers in packaged manifests in the marketplace validator (packages/marketplace). Tests: schema valid/invalid, manifest writeManifest->readManifest round-trip preserves mcpServers, marketplace validator rejects a packaged manifest declaring mcpServers.",
+      "acceptance": "Schema + type exported; agent-creator defaults mcpServers: []; marketplace validator rejects the field; unit tests green."
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "Backend foundation — schema + store",
+      "subject": "[mcp-server-management] [P1] AgentMcpServerService (CRUD + injectable + fingerprint + test)",
+      "description": "New runtime-neutral service (apps/server/src/services/mesh/agent-mcp-server-service.ts): CRUD over AgentManifest.mcpServers via readManifest/writeManifest keyed by agent id (resolve agent -> workspace path via AgentRegistry). injectableServersForCwd(cwd): read manifest at cwd, return Record<string,McpAppServerConnection> of enabled entries only, [] for a manifest-less cwd, cached by manifest mtime. add/update reject reserved name 'dorkos' and duplicate names. test(agentId,name): transiently connect/spawn the stored server and report ok/toolCount/error. Tests over a real temp dir (not a mock): CRUD writes through to file; injectable returns only enabled; disable removes from injection; reserved/duplicate rejected.",
+      "acceptance": "Service methods implemented + unit-tested against a real temp manifest; injectableServersForCwd correct."
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "Backend surface — capability domain + injection",
+      "subject": "[mcp-server-management] [P2] mcp.* capability domain + registry wiring + HTTP surfaces",
+      "description": "New domain apps/server/src/services/mesh/mcp-capabilities.ts following connector-capabilities.ts: module-augment CapabilityDeps with mcpDeps; requireMcpDeps helper; mcpDomain (name 'mcp') with verbs list(observe)/add(destructive)/update(destructive)/remove(act)/enable(act)/disable(act)/test(act). add/update carry approvalDisplayFields for connection.transport/command/args/url. surfaces.http per spec table (GET/POST/PATCH/DELETE /api/agents/:agentId/mcp-servers[...]). Register gated in composeDorkOsCapabilityRegistry and unconditionally in composeCapabilityRegistryForDocs (dorkos-registry.ts). Wire mcpDeps at startup (index.ts). Tests: mcp.add returns ApprovalRequiredPayload without approval and writes the entry after approval (prove the gate can fail); mcp.list is observe/free; approval card carries the command fields.",
+      "acceptance": "dorkos call mcp.* works; tier gate enforced; HTTP routes projected; tests green including the negative approval path."
+    },
+    {
+      "id": "2.2",
+      "phase": 2,
+      "phaseName": "Backend surface — capability domain + injection",
+      "subject": "[mcp-server-management] [P2] Inject managed servers into the claude-code session factory",
+      "description": "In apps/server/src/index.ts setMcpServerFactory closure, add a spread of ...toSdkMcpServers(agentMcpService.injectableServersForCwd(session.cwd)) BEFORE connectors, with the dorkos server spread LAST so it always wins. Only wire under the existing claude-code guard. Tests with FakeAgentRuntime + a manifest with one enabled + one disabled server: factory output includes only the enabled server and dorkos unshadowed; a reserved-name collision cannot displace dorkos.",
+      "acceptance": "Enabled managed servers reach the SDK options inline; disabled ones do not; dorkos never shadowed; tests green."
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "Client — transport + UI",
+      "subject": "[mcp-server-management] [P3] Transport methods for MCP server management",
+      "description": "Add MCP management methods to the Transport interface (packages/shared/src/transport.ts) and both implementations (HttpTransport, DirectTransport): list/add/update/remove/enable/disable/test, mapped to the §7 routes. Destructive verbs surface the capability ApprovalRequiredPayload to the caller. No raw fetch in the client. Unit-test the Http mapping.",
+      "acceptance": "Transport methods present in interface + both impls; client never calls fetch directly."
+    },
+    {
+      "id": "3.2",
+      "phase": 3,
+      "phaseName": "Client — transport + UI",
+      "subject": "[mcp-server-management] [P3] Agent Hub Toolkit: managed MCP server management UI",
+      "description": "New useAgentMcpServers(agentId) hook (entities/agent) over mcp.list. Extend agent-settings/ui/ToolsTab.tsx MCP roster into: managed servers (status dot joined with useMcpConfig live status by name, tool count, enable/disable Switch, Test, Remove); an Add form (stdio command/args/env; http/sse url/headers) -> mcp.add -> approval flow; discovered (.mcp.json/live) servers read-only labeled 'discovered'. Gate the Add affordance on the runtime supportsMcp capability with an inline explanation when false. Design bar: loading/empty/error states, keyboard-reachable + focus-visible, theme tokens only (reuse MCP_STATUS_COLORS). FSD: barrel imports only. Tests with mock Transport: managed rows render + join status; Add disabled when supportsMcp false; empty/error states.",
+      "acceptance": "Full add/remove/enable/disable/test/status UI in Agent Hub; honest degradation; client tests green."
+    },
+    {
+      "id": "4.1",
+      "phase": 4,
+      "phaseName": "Wrap",
+      "subject": "[mcp-server-management] [P4] Changelog fragment",
+      "description": "Add a changelog/unreleased/<id>-mcp-server-management.md fragment (Keep-a-Changelog headings; writing-for-humans voice) describing, in user terms, that you can now add and manage an agent's MCP servers from DorkOS with live status and an approval step. Mention it is Claude Code for now.",
+      "acceptance": "Fragment present; passes the changelog gate."
+    }
+  ]
+}

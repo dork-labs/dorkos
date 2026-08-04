@@ -33,6 +33,7 @@ import { readOnlyCarveOutToolNames } from '../capabilities/index.js';
 import { operatorDomain } from '../operator/operator-capabilities.js';
 import { marketplaceDomain } from '../../marketplace-mcp/marketplace-capabilities.js';
 import { connectorDomain } from '../../connectors/connector-capabilities.js';
+import { mcpDomain } from '../../mesh/mcp-capabilities.js';
 import { capabilitiesDomain } from '../self-description/capabilities-domain.js';
 
 /**
@@ -109,6 +110,7 @@ export const READ_ONLY_MCP_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
     ...operatorDomain.capabilities,
     ...marketplaceDomain.capabilities,
     ...connectorDomain.capabilities,
+    ...mcpDomain.capabilities,
     ...capabilitiesDomain.capabilities,
   ]),
 ]);

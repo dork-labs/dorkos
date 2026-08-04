@@ -74,7 +74,10 @@ import type {
   CrossNamespaceRule,
   TransportScanEvent,
   TransportScanOptions,
+  ManagedMcpServer,
+  McpServerTransport,
 } from './mesh-schemas.js';
+import type { CapabilityTier } from './capabilities.js';
 import type { RuntimeCapabilities, SystemRequirements } from './agent-runtime.js';
 import type { UnattendedAutonomyState } from './permission-semantics.js';
 import type { RuntimeCommandIntentId } from './command-intents.js';
@@ -184,6 +187,90 @@ export interface McpServerEntry {
 /** Response shape for the `GET /api/mcp-config` endpoint. */
 export interface McpConfigResponse {
   servers: McpServerEntry[];
+}
+
+/**
+ * The `202 approval_required` body a destructive capability returns when a
+ * person must approve before it runs (spec `mcp-server-management` §7, spec
+ * `agent-trust` §3.2). Carries the id a person decides and the one-time token
+ * to present on the retry — the operator grants their own approval
+ * (`grantApproval`) then retries with `approvalToken`.
+ *
+ * Structurally the wire contract the server's `ApprovalRequiredPayload`
+ * produces; typed here so the client Transport surface can carry it without
+ * importing server internals.
+ */
+export interface CapabilityApprovalRequired {
+  /** Discriminator. Always `approval_required`. */
+  status: 'approval_required';
+  /** The capability that did NOT run. */
+  capabilityId: string;
+  /** Its human-facing title, as the operator's card shows it. */
+  capabilityTitle: string;
+  /** Its permission tier, from the registry. */
+  tier: CapabilityTier;
+  /** The approval a person will decide. Safe to show or log. */
+  approvalId: string;
+  /** The one-time token to present on the retry. Inert until someone grants it. */
+  approvalToken: string;
+  /** When the token stops being honored. ISO 8601 UTC. */
+  expiresAt: string;
+  /** Why the call is not running yet. */
+  reason: string;
+  /** One plain sentence a person can act on. */
+  message: string;
+  /** How to retry once approved. */
+  retry: {
+    /** Whether the token rides an MCP argument or an HTTP header. */
+    channel: string;
+    /** The exact argument or header name to put the token in. */
+    field: string;
+    /** Step-by-step retry instructions. */
+    instructions: string;
+  };
+}
+
+/** Input for {@link Transport.addAgentMcpServer}. */
+export interface AddAgentMcpServerInput {
+  /** ULID of the agent that will own the server. */
+  agentId: string;
+  /** Server name (unique per agent; alphanumeric, dashes, underscores). */
+  name: string;
+  /** How to reach the server (stdio/http/sse). */
+  connection: McpServerTransport;
+  /** Whether to enable it immediately. Defaults server-side to true on add. */
+  enabled?: boolean;
+}
+
+/** Input for {@link Transport.updateAgentMcpServer}. */
+export interface UpdateAgentMcpServerInput {
+  /** ULID of the agent that owns the server. */
+  agentId: string;
+  /** Name of the existing server to update. */
+  name: string;
+  /** New connection. Omit to leave it unchanged; changing it re-prompts approval. */
+  connection?: McpServerTransport;
+  /** New enabled state. Omit to leave it unchanged. */
+  enabled?: boolean;
+}
+
+/**
+ * Result of a destructive managed-MCP mutation ({@link Transport.addAgentMcpServer},
+ * {@link Transport.updateAgentMcpServer}): either the write ran and the updated
+ * list came back, or it is parked waiting on a person's approval.
+ */
+export type AgentMcpMutationResult =
+  | { status: 'ok'; servers: ManagedMcpServer[] }
+  | { status: 'approval_required'; approval: CapabilityApprovalRequired };
+
+/** Result of probing a managed MCP server ({@link Transport.testAgentMcpServer}). */
+export interface AgentMcpTestResult {
+  /** Whether the server connected and listed its tools. */
+  ok: boolean;
+  /** How many tools it exposes, when reachable. */
+  toolCount?: number;
+  /** The failure reason, when unreachable. */
+  error?: string;
 }
 
 /** A lifecycle event recorded for an adapter instance. */
@@ -1343,6 +1430,82 @@ export interface Transport extends RoomTransport {
    *   (e.g. a Codex session must not inherit a Claude session's cwd cache).
    */
   getMcpConfig(projectPath: string, opts?: { runtime?: string }): Promise<McpConfigResponse>;
+
+  // --- Managed MCP servers (per-agent; DOR-891, spec `mcp-server-management`) ---
+
+  /**
+   * List an agent's DorkOS-managed MCP servers (the `mcp.list` capability).
+   * Config only — join with {@link getMcpConfig} live status by `name` for the
+   * connection state and tool count.
+   *
+   * @param agentId - ULID of the agent whose managed servers to read.
+   */
+  listAgentMcpServers(agentId: string): Promise<ManagedMcpServer[]>;
+
+  /**
+   * Add a managed MCP server to an agent (the destructive `mcp.add` capability).
+   *
+   * Destructive: the first call returns `{ status: 'approval_required' }` with
+   * the command/args/url a person must confirm. Grant it with
+   * {@link grantApproval} and call again with the returned `approvalToken` in
+   * `opts` to complete the write.
+   *
+   * @param input - Agent id, server name, connection, and optional enabled flag.
+   * @param opts - Carries `approvalToken` on the confirming retry.
+   */
+  addAgentMcpServer(
+    input: AddAgentMcpServerInput,
+    opts?: { approvalToken?: string }
+  ): Promise<AgentMcpMutationResult>;
+
+  /**
+   * Update a managed MCP server (the destructive `mcp.update` capability).
+   * Changing `connection` re-prompts approval; the retry carries `approvalToken`.
+   *
+   * @param input - Agent id, server name, and the fields to change.
+   * @param opts - Carries `approvalToken` on the confirming retry.
+   */
+  updateAgentMcpServer(
+    input: UpdateAgentMcpServerInput,
+    opts?: { approvalToken?: string }
+  ): Promise<AgentMcpMutationResult>;
+
+  /**
+   * Remove a managed MCP server (the `mcp.remove` capability). Reversible by
+   * re-adding, so it is not approval-gated.
+   *
+   * @param agentId - ULID of the owning agent.
+   * @param name - Name of the server to remove.
+   */
+  removeAgentMcpServer(agentId: string, name: string): Promise<ManagedMcpServer[]>;
+
+  /**
+   * Enable a managed MCP server (the `mcp.enable` capability). No new command is
+   * introduced — it was approved at add — so this is not approval-gated.
+   *
+   * @param agentId - ULID of the owning agent.
+   * @param name - Name of the server to enable.
+   */
+  enableAgentMcpServer(agentId: string, name: string): Promise<ManagedMcpServer[]>;
+
+  /**
+   * Disable a managed MCP server (the `mcp.disable` capability), withholding it
+   * from injection without removing its config.
+   *
+   * @param agentId - ULID of the owning agent.
+   * @param name - Name of the server to disable.
+   */
+  disableAgentMcpServer(agentId: string, name: string): Promise<ManagedMcpServer[]>;
+
+  /**
+   * Probe an existing managed MCP server (the `mcp.test` capability): whether it
+   * connects and how many tools it exposes. Safe by construction — only ever an
+   * already-approved entry.
+   *
+   * @param agentId - ULID of the owning agent.
+   * @param name - Name of the server to probe.
+   */
+  testAgentMcpServer(agentId: string, name: string): Promise<AgentMcpTestResult>;
 
   /**
    * Obtain a Claude-specific plugin sub-transport for a session.

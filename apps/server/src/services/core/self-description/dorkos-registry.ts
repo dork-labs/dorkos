@@ -30,6 +30,7 @@ import {
 import { operatorDomain } from '../operator/operator-capabilities.js';
 import { marketplaceDomain } from '../../marketplace-mcp/marketplace-capabilities.js';
 import { connectorDomain } from '../../connectors/connector-capabilities.js';
+import { mcpDomain } from '../../mesh/mcp-capabilities.js';
 import { capabilitiesDomain } from './capabilities-domain.js';
 
 /**
@@ -38,8 +39,9 @@ import { capabilitiesDomain } from './capabilities-domain.js';
  *
  * @param deps - The boot-time dependency bag. `operatorDeps` includes the
  *   operator domain; `marketplaceDeps` the marketplace domain; `connectorDeps`
- *   the connector domain; the self-description domain is always included. The
- *   composed registry is written back onto `deps.registry`.
+ *   the connector domain; `mcpDeps` the MCP-server-management domain; the
+ *   self-description domain is always included. The composed registry is written
+ *   back onto `deps.registry`.
  * @param onInvocation - Optional observer called after every invocation. Boot
  *   passes the Activity attribution observer so an identified agent's calls are
  *   recorded in the feed (spec `agent-trust` §3.1); omitted in unit tests.
@@ -53,6 +55,7 @@ export function composeDorkOsCapabilityRegistry(
   if (deps.operatorDeps) domains.push(operatorDomain);
   if (deps.marketplaceDeps) domains.push(marketplaceDomain);
   if (deps.connectorDeps) domains.push(connectorDomain);
+  if (deps.mcpDeps) domains.push(mcpDomain);
   domains.push(capabilitiesDomain);
 
   const registry = composeRegistry(domains, deps, onInvocation);
@@ -83,6 +86,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     operatorDomain,
     marketplaceDomain,
     connectorDomain,
+    mcpDomain,
     capabilitiesDomain,
   ];
   const deps: CapabilityDeps = {
@@ -90,6 +94,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     operatorDeps: {} as CapabilityDeps['operatorDeps'],
     marketplaceDeps: {} as CapabilityDeps['marketplaceDeps'],
     connectorDeps: {} as CapabilityDeps['connectorDeps'],
+    mcpDeps: {} as CapabilityDeps['mcpDeps'],
   };
   return composeRegistry(domains, deps);
 }

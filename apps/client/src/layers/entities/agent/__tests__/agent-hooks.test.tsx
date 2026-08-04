@@ -40,6 +40,7 @@ const mockAgent: AgentManifest = {
   registeredBy: 'test',
   personaEnabled: true,
   enabledToolGroups: {},
+  mcpServers: [],
 };
 
 // ---------------------------------------------------------------------------

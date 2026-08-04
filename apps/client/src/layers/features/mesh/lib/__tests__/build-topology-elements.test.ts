@@ -22,6 +22,7 @@ const baseAgent = {
   registeredBy: 'test',
   personaEnabled: true,
   enabledToolGroups: {},
+  mcpServers: [],
   relayAdapters: [],
   relaySubject: null,
   taskCount: 0,

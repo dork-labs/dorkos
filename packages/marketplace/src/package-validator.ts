@@ -20,7 +20,11 @@ import path from 'node:path';
 import { z } from 'zod';
 import { scanSkillDirectory } from '@dorkos/skills/scanner';
 import { validateSkillStructure } from '@dorkos/skills/validator';
-import { CLAUDE_PLUGIN_MANIFEST_PATH, PACKAGE_MANIFEST_PATH } from './constants.js';
+import {
+  AGENT_MANIFEST_PATH,
+  CLAUDE_PLUGIN_MANIFEST_PATH,
+  PACKAGE_MANIFEST_PATH,
+} from './constants.js';
 import {
   MarketplacePackageManifestSchema,
   type MarketplacePackageManifest,
@@ -226,8 +230,76 @@ export async function validatePackage(packagePath: string): Promise<ValidatePack
     });
   }
 
+  // 7. A packaged agent may not ship auto-injectable MCP servers. A shipped
+  //    `.dork/agent.json` that declares a non-empty `mcpServers` would connect
+  //    an arbitrary command the moment the agent runs a session, bypassing the
+  //    gated `mcp.add` approval that governs every legitimate managed server
+  //    (ADR 260803-233420, guarantee 3). Servers are added post-install through
+  //    that gate, never carried by the package.
+  await checkPackagedMcpServers(packagePath, issues);
+
   const hasErrors = issues.some((i) => i.level === 'error');
   return { ok: !hasErrors, issues, manifest };
+}
+
+/**
+ * Reject a package that ships an agent identity manifest (`.dork/agent.json`)
+ * declaring one or more managed MCP servers.
+ *
+ * This is the marketplace half of the managed-MCP trust model (ADR
+ * 260803-233420, guarantee 3): a person adds servers post-install through the
+ * gated `mcp.add` capability, so a package must never carry them. The check is
+ * structural rather than schema-typed on purpose — `@dorkos/shared` is a
+ * dev-only dependency of this package (keeping the validator browser-safe), and
+ * the guard only needs to know whether `mcpServers` is a present, non-empty
+ * array, not to fully parse the agent manifest. A missing or unreadable
+ * `.dork/agent.json` is not this check's concern (the normal case is that the
+ * installer scaffolds it), so it is skipped silently.
+ *
+ * This structural check is a fast, friendly rejection at publish/install time,
+ * not the whole defense: a differently-shaped smuggle (e.g. `mcpServers` as an
+ * object) slips this guard but is then rejected by `AgentManifestSchema` at
+ * load — the agent fails to parse, is hidden from the registry, and injects
+ * nothing. `injectableServersForCwd` is the final backstop.
+ *
+ * @param packagePath - Absolute path to the package root directory.
+ * @param issues - Mutable issue list to append a finding to.
+ * @internal
+ */
+async function checkPackagedMcpServers(
+  packagePath: string,
+  issues: ValidationIssue[]
+): Promise<void> {
+  const agentManifestPath = path.join(packagePath, AGENT_MANIFEST_PATH);
+
+  let content: string;
+  try {
+    content = await fs.readFile(agentManifestPath, 'utf-8');
+  } catch {
+    return; // No shipped agent.json — nothing to guard.
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    // Malformed JSON is a divergent state, but not this guard's job — the
+    // install pipeline scaffolds a fresh manifest anyway. Say nothing.
+    return;
+  }
+
+  if (parsed === null || typeof parsed !== 'object') return;
+  const mcpServers = (parsed as Record<string, unknown>).mcpServers;
+  if (Array.isArray(mcpServers) && mcpServers.length > 0) {
+    issues.push({
+      level: 'error',
+      code: 'PACKAGED_MCP_SERVERS_FORBIDDEN',
+      message:
+        'A packaged agent may not ship MCP servers in .dork/agent.json — add them ' +
+        'after install through the gated mcp.add capability (ADR 260803-233420).',
+      path: AGENT_MANIFEST_PATH,
+    });
+  }
 }
 
 /**

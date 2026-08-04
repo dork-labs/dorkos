@@ -99,6 +99,7 @@ function makeAgent(
     registeredAt: new Date().toISOString(),
     registeredBy: 'test',
     enabledToolGroups: {},
+    mcpServers: [],
     personaEnabled: true,
     projectPath: overrides.projectPath ?? '/projects/test',
     healthStatus: overrides.healthStatus ?? ('unreachable' as const),

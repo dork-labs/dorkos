@@ -71,6 +71,7 @@ const mockAgent = {
   registeredBy: 'test',
   personaEnabled: true,
   enabledToolGroups: {},
+  mcpServers: [],
 };
 
 // Radix Select drives itself with pointer capture and scrolls the highlighted

@@ -163,6 +163,7 @@ const baseAgent: AgentManifest = {
   registeredBy: 'test',
   personaEnabled: true,
   enabledToolGroups: {},
+  mcpServers: [],
 };
 
 function makeBinding(overrides: Partial<AdapterBinding> = {}): AdapterBinding {

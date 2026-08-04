@@ -78,6 +78,8 @@ const { registerCapabilitiesAsMcpTools } =
 const { READ_ONLY_MCP_TOOL_NAMES } = await import('../../external-mcp/tool-security.js');
 import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
 import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mcp-tools.js';
+import { AgentRegistry } from '@dorkos/mesh';
+import { AgentMcpServerService } from '../../../mesh/agent-mcp-server-service.js';
 
 /** A tmp path that need not exist — the fakes never touch real disk. */
 const SANDBOX_CWD = path.join(os.tmpdir(), 'capability-conformance-sandbox');
@@ -183,11 +185,20 @@ const connectorDeps = {
   flowBindings: new ConnectorFlowBindings(),
 };
 
+// The MCP-server-management domain. The locator returns undefined (no agent), so
+// the observe/act verbs answer with a structured AGENT_NOT_FOUND rather than
+// touching disk; the destructive verbs are refused by the gate before the handler.
+const mcpDeps = {
+  service: new AgentMcpServerService({ agents: { get: () => undefined } }),
+  agents: new AgentRegistry(createTestDb()),
+};
+
 const registry = composeDorkOsCapabilityRegistry({
   logger: noopLogger,
   operatorDeps,
   marketplaceDeps,
   connectorDeps,
+  mcpDeps,
 });
 
 /** Tool names the real in-session adapter registers for the capability surface. */
@@ -401,6 +412,21 @@ capabilityConformance(registry, {
     // Destructive: refused by the gate before the handler runs (asserted above).
     'connector.attach_account': { accountId: 'conformance-account', sessionId: 'conformance' },
     'connector.detach_account': { accountId: 'conformance-account', sessionId: 'conformance' },
+    // Every mcp verb needs a PARSEABLE fixture: the destructive writes so the gate
+    // (not a ZodError) refuses them, and the observe/act verbs so they reach the
+    // handler and answer with a structured AGENT_NOT_FOUND (the locator has no
+    // agent). All are keyed by agent id (spec §5).
+    'mcp.list': { agentId: 'conformance-agent' },
+    'mcp.add': {
+      agentId: 'conformance-agent',
+      name: 'conformance-srv',
+      connection: { transport: 'stdio', command: 'node', args: [], env: {} },
+    },
+    'mcp.update': { agentId: 'conformance-agent', name: 'conformance-srv', enabled: false },
+    'mcp.remove': { agentId: 'conformance-agent', name: 'conformance-srv' },
+    'mcp.enable': { agentId: 'conformance-agent', name: 'conformance-srv' },
+    'mcp.disable': { agentId: 'conformance-agent', name: 'conformance-srv' },
+    'mcp.test': { agentId: 'conformance-agent', name: 'conformance-srv' },
   },
 });
 

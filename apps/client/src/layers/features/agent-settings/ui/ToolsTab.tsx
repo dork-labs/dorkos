@@ -13,12 +13,11 @@ import {
 } from '@/layers/shared/ui';
 import type { AgentManifest, EnabledToolGroups } from '@dorkos/shared/mesh-schemas';
 import { toolNamesForDomain, type ToolDomainKey } from '@dorkos/shared/mcp-tool-groups';
-import { cn } from '@/layers/shared/lib';
 import { useRelayEnabled } from '@/layers/entities/relay';
 import { useTasksEnabled } from '@/layers/entities/tasks';
-import { useMcpConfig } from '@/layers/entities/agent';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
 import { useAgentContextConfig } from '../model/use-agent-context-config';
+import { AgentMcpServers } from './AgentMcpServers';
 
 type GlobalConfigKey = 'tasksTools' | 'relayTools' | 'meshTools' | 'adapterTools';
 
@@ -143,19 +142,6 @@ function ToolGroupRow({
 // ToolsTab — per-agent tool groups and safety limits.
 // ---------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------
-// MCP status indicator colors for the tool/MCP roster (formerly mirrored by the
-// retired session-sidebar ConnectionsView; this is now the canonical home).
-// ---------------------------------------------------------------------------
-
-const MCP_STATUS_COLORS: Partial<Record<string, string>> = {
-  connected: 'bg-green-500',
-  failed: 'bg-red-500',
-  'needs-auth': 'bg-amber-500',
-  pending: 'bg-amber-500',
-  disabled: 'bg-muted-foreground/20',
-};
-
 interface ToolsTabProps {
   agent: AgentManifest;
   projectPath: string;
@@ -170,7 +156,6 @@ export function ToolsTab({ agent, projectPath, onUpdate }: ToolsTabProps) {
   const relayEnabled = useRelayEnabled();
   const tasksEnabled = useTasksEnabled();
   const { config: globalConfig } = useAgentContextConfig();
-  const { data: mcpConfig } = useMcpConfig(projectPath, agent.runtime);
 
   // DorkOS's own tool groups (Scheduling/Messaging/Discovery/Integrations) are
   // injected as an MCP server. A runtime that can't consume MCP (e.g. Codex,
@@ -279,30 +264,7 @@ export function ToolsTab({ agent, projectPath, onUpdate }: ToolsTabProps) {
         </FieldCard>
       )}
 
-      {/* MCP Servers */}
-      {mcpConfig && mcpConfig.servers.length > 0 && (
-        <>
-          <h3 className="text-sm font-semibold">MCP Servers</h3>
-          <FieldCard>
-            <FieldCardContent>
-              {mcpConfig.servers.map((server) => (
-                <div key={server.name} className="flex items-center gap-2 py-0.5">
-                  <span
-                    className={cn(
-                      'size-2 shrink-0 rounded-full',
-                      MCP_STATUS_COLORS[server.status ?? ''] ?? 'bg-muted-foreground/40'
-                    )}
-                  />
-                  <span className="min-w-0 truncate text-sm">{server.name}</span>
-                  <span className="text-muted-foreground/50 ml-auto shrink-0 text-xs">
-                    {server.type}
-                  </span>
-                </div>
-              ))}
-            </FieldCardContent>
-          </FieldCard>
-        </>
-      )}
+      <AgentMcpServers agent={agent} projectPath={projectPath} />
     </div>
   );
 }

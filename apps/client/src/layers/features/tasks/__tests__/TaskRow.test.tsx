@@ -261,6 +261,7 @@ describe('ScheduleRow', () => {
         registeredAt: new Date().toISOString(),
         registeredBy: 'test',
         enabledToolGroups: {},
+        mcpServers: [],
         personaEnabled: true,
         isSystem: false,
       };

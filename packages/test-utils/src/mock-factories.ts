@@ -121,6 +121,7 @@ const mockAgent: AgentManifest = {
   personaEnabled: true,
   isSystem: false,
   enabledToolGroups: {},
+  mcpServers: [],
 };
 
 /**
@@ -644,6 +645,16 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     getAgentConnectors: vi.fn().mockResolvedValue([]),
     attachAgentConnector: vi.fn(),
     detachAgentConnector: vi.fn().mockResolvedValue(undefined),
+    // Managed per-agent MCP servers (spec `mcp-server-management`, DOR-891).
+    // The list reads honest-empty; the writes must be stated by a test that
+    // exercises them (an add can resolve to `{ status: 'approval_required' }`).
+    listAgentMcpServers: vi.fn().mockResolvedValue([]),
+    addAgentMcpServer: vi.fn(),
+    updateAgentMcpServer: vi.fn(),
+    removeAgentMcpServer: vi.fn().mockResolvedValue([]),
+    enableAgentMcpServer: vi.fn().mockResolvedValue([]),
+    disableAgentMcpServer: vi.fn().mockResolvedValue([]),
+    testAgentMcpServer: vi.fn().mockResolvedValue({ ok: true, toolCount: 0 }),
     // The claim feed (connection-scoping spec §Part 3) — same rule: the list
     // reads honest-empty, the three decisions must be stated by the test.
     listUnclaimedChats: vi.fn().mockResolvedValue([]),

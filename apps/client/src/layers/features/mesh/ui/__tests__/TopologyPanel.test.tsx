@@ -28,6 +28,7 @@ function makeAgent(overrides: Partial<TopologyAgent> = {}): TopologyAgent {
     registeredBy: 'test',
     personaEnabled: true,
     enabledToolGroups: {},
+    mcpServers: [],
     healthStatus: 'stale',
     relayAdapters: [],
     relaySubject: null,
