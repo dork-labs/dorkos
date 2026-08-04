@@ -21,10 +21,16 @@ import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
  *   `session_status`.
  * - `supportsResume: true` — sessions live in OpenCode's durable store and
  *   are re-listable/promptable across DorkOS and sidecar restarts.
- * - `supportsMcp: false` — DorkOS cannot inject its MCP tool server into the
- *   sidecar; user-configured OpenCode MCP servers still surface as tool parts.
- * - `supportsManagedMcpServers: false` — DorkOS cannot yet inject an agent's
- *   own managed MCP servers into an OpenCode session (DOR-893).
+ * - `supportsMcp: false` — DorkOS does not inject its own in-process `dorkos`
+ *   tool server into OpenCode. User-configured OpenCode MCP servers are SURFACED
+ *   read-only via {@link OpenCodeRuntime.getMcpStatus} (DOR-893), which reads the
+ *   sidecar's `GET /mcp`. Distinct from managed servers below.
+ * - `supportsManagedMcpServers: true` — DorkOS registers an agent's ENABLED
+ *   managed MCP servers into the live sidecar per turn via `client.mcp.add`
+ *   (DOR-893). The sidecar's add/connect/disconnect mutate only its in-memory
+ *   per-directory registry (no `opencode.json` write, verified against the pin —
+ *   NOTES.md §6), so injection is ephemeral, exactly like claude's inline
+ *   servers. `sse` is withheld — OpenCode has no SSE transport (mirrors codex).
  * - `supportsQuestionPrompt: false` — no AskUserQuestion-equivalent surface
  *   on the v1 API.
  * - `supportsPlugins: false` — OpenCode plugins are its own ecosystem, not
@@ -40,7 +46,7 @@ export const OPENCODE_CAPABILITIES: RuntimeCapabilities = {
   supportsCostTracking: true,
   supportsResume: true,
   supportsMcp: false,
-  supportsManagedMcpServers: false,
+  supportsManagedMcpServers: true,
   supportsQuestionPrompt: false,
   supportsPlugins: false,
   nativeContext: [],
