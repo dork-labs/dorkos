@@ -297,10 +297,26 @@ export function RoomEntryRow({
     () => withMentionTags(entry.body.text, entry.mentionSpans),
     [entry.body.text, entry.mentionSpans]
   );
-  // The `mention` tag's renderer, closed over the roster it resolves against.
-  // Built even for a body with no mentions in it — cheap, and it keeps this
-  // row from having to know in advance whether `markdown` contains any.
-  const mentionComponents = useMemo(() => buildMentionComponents(authors), [authors]);
+  // Which author ids the SERVER actually spanned for this entry — the
+  // whitelist `buildMentionComponents` gates on. `markdown` only ever splices
+  // a `<mention>` tag for one of these, but Streamdown cannot tell a spliced
+  // tag from one somebody typed literally in their message: both parse as the
+  // same element once `mention` is an allowed tag. Without this set, a body
+  // containing `<mention author_id="<a real roster id>">fake</mention>` would
+  // resolve and render exactly like a real mention — this is what keeps it
+  // inert instead.
+  const spannedIds = useMemo(
+    () => new Set(entry.mentionSpans?.map((span) => span.authorId) ?? []),
+    [entry.mentionSpans]
+  );
+  // The `mention` tag's renderer, closed over the roster it resolves against
+  // and the spans that authorize it. Built even for a body with no mentions
+  // in it — cheap, and it keeps this row from having to know in advance
+  // whether `markdown` contains any.
+  const mentionComponents = useMemo(
+    () => buildMentionComponents(authors, spannedIds),
+    [authors, spannedIds]
+  );
   const domId = useId();
   const headerId = `${domId}-author`;
   const contentId = `${domId}-content`;

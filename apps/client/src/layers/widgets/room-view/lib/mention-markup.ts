@@ -69,6 +69,11 @@ export function withMentionTags(
     const before = result.slice(0, offset);
     const handle = result.slice(offset, offset + length);
     const after = result.slice(offset + length);
+    // `authorId` is not escaped into the attribute — it is trusted, not
+    // sanitized. It comes from the SERVER's own `mentionSpans` (a ULID,
+    // `AuthorRefSchema.id`), never from anything a room member typed, so it
+    // cannot contain a `"` to break out of the attribute. Splicing user text
+    // in here would need escaping; this does not, because it never does.
     result = `${before}<${MENTION_TAG} ${MENTION_AUTHOR_ATTR}="${authorId}">${handle}</${MENTION_TAG}>${after}`;
   }
   return result;

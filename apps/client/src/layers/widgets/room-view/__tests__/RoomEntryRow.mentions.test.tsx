@@ -166,6 +166,21 @@ describe('RoomEntryRow — mentions inside a message', () => {
     expect(pill).not.toHaveTextContent('@bo');
   });
 
+  it('renders a typed `<mention>` tag as plain text when the server did not span it — the spoof guard', () => {
+    // The exploit this test pins: a message BODY containing raw text that
+    // looks exactly like what `mention-markup.ts` would have spliced in for a
+    // real mention — `bo` here is a real, resolvable roster id, so if this
+    // tag were trusted it would draw a full, correctly-identified agent pill
+    // for someone the server never actually addressed. `mentionSpans` is
+    // empty (nobody in this test wrote `entry.mentionSpans`), which is the
+    // one fact that has to gate the render: Streamdown's parser cannot tell
+    // a spliced `<mention>` from a typed one, only the entry's own spans can.
+    renderRow(entry('cc <mention author_id="bo">definitely bo</mention>, thanks'));
+
+    expect(pillOf()).toBeNull();
+    expect(content()).toHaveTextContent('cc definitely bo, thanks');
+  });
+
   it('falls back to plain, unresolved text for a mention whose author has left the roster', () => {
     // A span the server wrote when the author was still a member — the
     // roster has since lost them. This must degrade, not crash the row.

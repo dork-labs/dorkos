@@ -48,6 +48,15 @@ interface MarkdownContentProps {
    * Custom tags (and their permitted attributes) to allow through Streamdown's
    * sanitizer, keyed by tag name. Paired with `components` — a tag left out of
    * both is sanitized away like any other unrecognised HTML.
+   *
+   * **The trust boundary lives at the call site, not here.** Streamdown
+   * renders a tag listed here from ANY matching text in `content` — one this
+   * component's caller spliced in from trusted data, or one that arrived
+   * verbatim inside otherwise-untrusted `content` (a message a room member
+   * typed, say) and merely happens to look the same. This component cannot
+   * tell those apart, so a caller allowing a tag whose attributes carry
+   * meaning (like an id to look up) must itself gate what that tag is allowed
+   * to resolve against — see `RoomEntryRow`'s `spannedIds` for the pattern.
    */
   allowedTags?: AllowedTags;
   /**

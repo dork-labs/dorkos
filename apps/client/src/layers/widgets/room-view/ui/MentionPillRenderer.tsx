@@ -3,6 +3,10 @@
  * `mention-markup.ts` spliced into a room entry's body — resolves the id
  * against the room's roster and draws a {@link MentionPill}.
  *
+ * {@link buildMentionComponents} is the actual `components.mention` entry;
+ * it only ever hands this component an id the entry's own `mentionSpans`
+ * named — see its own doc for why that gate exists.
+ *
  * @module widgets/room-view/ui/MentionPillRenderer
  */
 import type { ReactNode } from 'react';
@@ -41,6 +45,11 @@ function handleLabel(children: ReactNode): string {
  * this cannot resolve degrades to plain text rather than taking the message
  * around it down with it.
  *
+ * Only ever invoked by {@link buildMentionComponents} for an `authorId` the
+ * entry's own `mentionSpans` named — this component trusts that already
+ * happened and does not re-check it, so it is not safe to call directly with
+ * an arbitrary id from elsewhere.
+ *
  * Click is deferred (no profile route exists yet), so the pill renders with
  * `interactive` left at its default `false` — hover-only.
  */
@@ -78,19 +87,46 @@ export function MentionPillRenderer({ authors, authorId, children }: MentionPill
 
 /**
  * Build the Streamdown `components` map that wires its `mention` tag to
- * {@link MentionPillRenderer}, closing over the room's roster.
+ * {@link MentionPillRenderer}, closing over the room's roster and — the part
+ * that keeps this safe — the ids the SERVER actually spanned for this entry.
+ *
+ * **Why the whitelist, not just `allowedTags`.** Streamdown parses a
+ * `<mention author_id="...">` the same way whether `mention-markup.ts`
+ * spliced it in or somebody simply typed it into their message — the tag
+ * grammar cannot tell the two apart, only where a span record says a real
+ * `@handle` occurrence was. Without this gate, a body containing
+ * `<mention author_id="<any live roster id>">fake</mention>` would resolve
+ * and draw a full, correctly-identified pill for someone the server never
+ * actually addressed here. `spannedIds` is that record; `authorId` not in it
+ * means "not a real mention in this entry", and the tag renders as its own
+ * literal text — never a pill, not even the unresolved-fallback one, which
+ * would still dress typed text up with a leading `@` it did not earn.
  *
  * A plain function rather than a hook: the only state involved is `authors`
- * itself, so the caller memoizes on that (`RoomEntryRow` already does, via
- * `useMemo`) instead of this module owning a second copy of that decision.
+ * and `spannedIds`, so the caller memoizes on those (`RoomEntryRow` already
+ * does, via `useMemo`) instead of this module owning a second copy of that
+ * decision.
  *
  * @param authors - The room's roster, keyed by author id.
+ * @param spannedIds - Author ids `entry.mentionSpans` actually names for this
+ *   entry — the only ids a `<mention>` tag may resolve against.
  */
-export function buildMentionComponents(authors: ReadonlyMap<string, RosterAuthor>): Components {
+export function buildMentionComponents(
+  authors: ReadonlyMap<string, RosterAuthor>,
+  spannedIds: ReadonlySet<string>
+): Components {
   return {
     mention: (props: Record<string, unknown>) => {
       const authorIdValue = props[MENTION_AUTHOR_ATTR];
       const authorId = typeof authorIdValue === 'string' ? authorIdValue : undefined;
+
+      if (!authorId || !spannedIds.has(authorId)) {
+        // Not a mention the server actually made here — typed, forged, or
+        // otherwise unaccounted for. Render exactly the literal text the tag
+        // wrapped, same as if `mention` were never an allowed tag at all.
+        return <>{props.children as ReactNode}</>;
+      }
+
       return (
         <MentionPillRenderer authors={authors} authorId={authorId}>
           {props.children as ReactNode}
