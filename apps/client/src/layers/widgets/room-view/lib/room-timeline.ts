@@ -59,7 +59,7 @@ export function toMessageAuthor(
     displayName: author?.displayName ?? 'Unknown',
     emoji: author?.emoji,
     color: author?.color ?? authorColor(authorId),
-    isExternal: typeof author?.origin === 'object',
+    isExternal: typeof author?.origin === 'object' && author?.origin !== null,
   };
 }
 

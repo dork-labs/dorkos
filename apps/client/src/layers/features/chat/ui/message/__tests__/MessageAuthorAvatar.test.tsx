@@ -41,7 +41,10 @@ describe('MessageAuthorAvatar', () => {
       // Default IdentityAvatar size is `sm`, whose square radius is `rounded-lg`.
       expect(disc).toHaveClass('rounded-lg');
       expect(disc).not.toHaveClass('rounded-full');
-      expect(badgeOf(container)?.querySelector('.lucide-bot')).not.toBeNull();
+
+      const badge = badgeOf(container);
+      expect(badge).not.toBeNull();
+      expect(badge!.querySelector('.lucide-bot')).not.toBeNull();
     });
 
     it('draws a local person as a tinted circle with no badge', () => {
@@ -62,7 +65,10 @@ describe('MessageAuthorAvatar', () => {
       const { container } = render(<MessageAuthorAvatar author={EXTERNAL_HUMAN} />);
 
       expect(discOf(container)).toHaveClass('rounded-full');
-      expect(badgeOf(container)?.querySelector('.lucide-send')).not.toBeNull();
+
+      const badge = badgeOf(container);
+      expect(badge).not.toBeNull();
+      expect(badge!.querySelector('.lucide-send')).not.toBeNull();
     });
   });
 
@@ -81,6 +87,28 @@ describe('MessageAuthorAvatar', () => {
       probe.style.backgroundColor = 'color-mix(in oklch, #7c3aed 18%, transparent)';
 
       expect(discOf(container).style.backgroundColor).toBe(probe.style.backgroundColor);
+    });
+
+    it('falls back to tint for a runtime-brand agent — readableForeground cannot parse a var() token', () => {
+      // The session-chat runtime-fallback case (`resolveMessageAuthor`'s
+      // `runtime` branch: no agent, no stored color) resolves `color` to the
+      // runtime's accent, a theme token like `var(--color-orange-500)`.
+      // `readableForeground` only parses hex/rgb()/hsl(), so a `fill` disc
+      // here would always compute a near-white foreground no matter how light
+      // that token actually renders — `tint` sidesteps the problem entirely.
+      const { container } = render(
+        <MessageAuthorAvatar author={{ ...AGENT, runtime: 'claude-code' }} />
+      );
+      const disc = discOf(container);
+      const probe = document.createElement('span');
+      probe.style.backgroundColor = 'color-mix(in oklch, var(--color-orange-500) 18%, transparent)';
+
+      expect(disc.style.backgroundColor).toBe(probe.style.backgroundColor);
+      // Tint sets no explicit foreground — the near-white bug this guards
+      // against would have shown up here as a computed `oklch(0.97 0 0)`.
+      expect(disc.style.color).toBe('');
+      // Still the agent shape — only the fill/tint choice changes.
+      expect(disc).toHaveClass('rounded-lg');
     });
 
     it('falls back to a hashed fill for the common case: an agent with no stored colour', () => {

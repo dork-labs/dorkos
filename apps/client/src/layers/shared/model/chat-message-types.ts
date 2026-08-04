@@ -58,8 +58,9 @@ export interface MessageAuthor {
   runtime?: string;
   /**
    * True when this identity is posting from outside this machine — a bridged
-   * chat platform rather than a person or agent local to this install. Absent
-   * (never `true`) for `agent`/`system`, which are always local.
+   * chat platform rather than a person or agent local to this install.
+   * Falsy — present and `false`, or absent — for `agent`/`system`, which are
+   * always local; never `true` for either.
    */
   isExternal?: boolean;
 }

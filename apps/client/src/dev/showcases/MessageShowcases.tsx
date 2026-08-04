@@ -45,6 +45,19 @@ const AGENT_AUTHOR_UNBRANDED: MessageAuthor = {
   id: 'lifeos',
   displayName: 'LifeOS',
 };
+/**
+ * Session chat's other common case: no agent for the session, so
+ * `resolveMessageAuthor` falls back to the runtime's own brand — its color is
+ * a theme token (`var(--color-orange-500)`), not a concrete color, which is
+ * why this one draws tinted rather than filled (`readableForeground` cannot
+ * read a `var()` token — see `MessageAuthorAvatar`'s own doc).
+ */
+const AGENT_AUTHOR_RUNTIME_BRAND: MessageAuthor = {
+  kind: 'agent',
+  id: 'runtime:claude-code',
+  displayName: 'Claude Code',
+  runtime: 'claude-code',
+};
 /** A person bridged into the room from outside this machine — the Send badge's one case. */
 const EXTERNAL_HUMAN_AUTHOR: MessageAuthor = {
   kind: 'human',
@@ -321,7 +334,7 @@ export function MessageShowcases() {
 
       <PlaygroundSection
         title="MessageAuthorAvatar"
-        description="Shape and fill are the colourblind-safe signal for who is speaking, in both the room feed and session chat (spec composer-identity-components, direction C): an agent draws as a filled square with a small Bot badge; a person stays a tinted circle, gaining a Send badge only when they are bridged in from outside this machine. The unbranded agent below is the common case, not the exception — its fallback letter still has to read against whatever the id hashes to."
+        description="Shape and fill are the colourblind-safe signal for who is speaking, in both the room feed and session chat (spec composer-identity-components, direction C): an agent draws as a filled square with a small Bot badge; a person stays a tinted circle, gaining a Send badge only when they are bridged in from outside this machine. The unbranded agent below is the common case, not the exception — its fallback letter still has to read against whatever the id hashes to. The runtime-brand agent stays square but draws TINTED rather than filled: its colour is a theme token, which the fill variant's contrast pass cannot parse, so it falls back to the same tint every person uses."
       >
         <ShowcaseLabel>Agent — stored emoji and colour</ShowcaseLabel>
         <ShowcaseDemo>
@@ -331,6 +344,11 @@ export function MessageShowcases() {
         <ShowcaseLabel>Agent — no stored emoji or colour (the common case)</ShowcaseLabel>
         <ShowcaseDemo>
           <MessageAuthorAvatar author={AGENT_AUTHOR_UNBRANDED} />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Agent — runtime brand fallback, no agent for the session</ShowcaseLabel>
+        <ShowcaseDemo>
+          <MessageAuthorAvatar author={AGENT_AUTHOR_RUNTIME_BRAND} />
         </ShowcaseDemo>
 
         <ShowcaseLabel>Person — on this machine</ShowcaseLabel>
