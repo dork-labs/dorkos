@@ -13,11 +13,13 @@ import { RoomsPage } from '../../pages/RoomsPage.js';
  * server-side by `chat-bridge/__tests__/integration.test.ts`. Here the bridge is
  * seeded through `POST /api/test/seed-bridge` (the same fake, one layer up), and
  * this spec drives only the half a browser can observe: the rendered channel and
- * a cockpit post. Because a visibility badge exists only on a bridged *channel*
- * (a DM has none, §8/A8.2) and origin marks need a real external-author entry,
- * neither is producible by the DM-only "Bridge to a channel" action without a
- * live bot — so the seed stands in for the group-bridge path (DOR-907) the
- * cockpit action does not yet cover.
+ * a cockpit post. A visibility badge exists only on a bridged *channel* (a DM
+ * has none, §8/A8.2) and origin marks need a real external-author entry —
+ * neither of which a live cockpit bridge can produce here without a live bot
+ * feeding it a `getMe` privacy mode and a stranger's message. So even with the
+ * cockpit group-bridge action shipped (DOR-907), the seed is what lets a browser
+ * see a populated bridged channel; the bridge action itself is covered by
+ * `BindingBridgeSection` and the lifecycle route tests.
  *
  * Runs in the `chromium-bridge` project (the test-mode server's Vite client),
  * because `/api/test/*` is only mounted under `DORKOS_TEST_RUNTIME`.
