@@ -4,7 +4,7 @@
  * resume.
  *
  * It replaces the fetch-based SSE connection this file's tests used to describe
- * (ADR 260804-030000). The reason is a browser limit rather than a protocol
+ * (ADR 260805-041016). The reason is a browser limit rather than a protocol
  * preference: HTTP/1.1 allows about six sockets per origin **per browser
  * profile**, and an SSE stream holds one for as long as it is open. A cockpit
  * window parks two of them (the global stream plus the open session's), so the
@@ -30,6 +30,7 @@
 import type { ConnectionState } from '@dorkos/shared/types';
 import {
   decodeStreamFrame,
+  statusFromCloseCode,
   STREAM_HEARTBEAT_EVENT,
   STREAM_RESUME_PARAM,
 } from '@dorkos/shared/stream-socket';
@@ -38,6 +39,40 @@ import { SSE_RESILIENCE } from '../constants';
 
 /** `WebSocket.readyState` for an open connection. */
 const WS_OPEN = 1;
+
+/**
+ * Statuses where reconnecting cannot help, so the stream stops and says why.
+ *
+ * The server states these as an application close code, because a browser
+ * cannot read the status of a failed handshake. Retrying them produces the
+ * worst failure shape there is: a page that renders, requests that work, and a
+ * stream that is silently refused — which is exactly how a too-narrow origin
+ * allowlist read as "the whole app is broken".
+ */
+const REFUSALS_NOT_WORTH_RETRYING: ReadonlySet<number> = new Set([400, 401, 403, 404]);
+
+/** The server refused this stream, and said with what status. */
+export class StreamRefusedError extends Error {
+  /** The HTTP status the refusal carried. */
+  readonly status: number;
+
+  /**
+   * @param status - The status decoded from the WebSocket close code.
+   * @param reason - The close frame's reason, when the server sent one.
+   */
+  constructor(status: number, reason?: string) {
+    super(
+      `The server refused this stream with ${status}` +
+        (reason ? `: ${reason}` : '') +
+        (status === 403
+          ? ' — this usually means the address you are reaching DorkOS on is not trusted. ' +
+            'List it in DORKOS_TRUSTED_HOSTS (or DORKOS_CORS_ORIGIN) and restart.'
+          : '')
+    );
+    this.name = 'StreamRefusedError';
+    this.status = status;
+  }
+}
 
 /** Configuration for a {@link WSConnection}. */
 export interface StreamConnectionOptions {
@@ -185,9 +220,27 @@ export class WSConnection {
       this.options.onError(new Error('Stream socket error'));
     };
 
-    socket.onclose = (): void => {
+    socket.onclose = (event: CloseEvent): void => {
       if (socket !== this.socket) return;
       this.socket = null;
+      const status = statusFromCloseCode(event.code);
+
+      // A refusal the server could state. Say so, loudly and once, rather than
+      // retrying five times into a `disconnected` that names no cause — which is
+      // what turned a too-narrow origin allowlist into "the app is broken":
+      // the page rendered, requests worked, the turn ran, and the stream was
+      // being refused with nothing on screen or in the console saying it.
+      if (status !== null && REFUSALS_NOT_WORTH_RETRYING.has(status)) {
+        console.error(
+          `[WSConnection] the server refused this stream with ${status} — retrying cannot help`,
+          { url: this.url, reason: event.reason || '(no reason given)' }
+        );
+        this.options.onError(new StreamRefusedError(status, event.reason));
+        this.clearTimers();
+        this.setState('disconnected');
+        return;
+      }
+
       this.handleConnectionError();
     };
   }

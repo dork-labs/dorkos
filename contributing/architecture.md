@@ -6,7 +6,7 @@
 
 The DorkOS uses a hexagonal (ports & adapters) architecture centered on a **Transport** abstraction layer. This enables the same React client to run in two modes:
 
-1. **Standalone web** -- Express server + HTTP/SSE via `HttpTransport`
+1. **Standalone web** -- Express server + HTTP via `HttpTransport`, with the durable streams over WebSocket (ADR 260805-041016)
 2. **Obsidian plugin** -- In-process services via `DirectTransport`, no server needed
 
 ## Core Abstraction: Transport Interface
@@ -160,11 +160,11 @@ DirectTransport({ runtime, transcriptReader, commandRegistry, vaultRoot: repoRoo
 
 ### HttpTransport (`apps/client/src/layers/shared/lib/transport/http-transport.ts`)
 
-Communicates with the Express server over HTTP and SSE:
+Communicates with the Express server over HTTP, with the durable streams on WebSockets:
 
 - Standard `fetch()` for CRUD operations
 - `postMessage` POSTs the trigger and parses the `202 { sessionId }` body
-- `subscribeSession`/`subscribeSessionList` consume the durable SSE streams (`GET /sessions/:id/events`, `GET /events`), validating frames against `@dorkos/shared/session-stream`
+- `subscribeSession`/`subscribeSessionList` consume the durable streams (`GET /sessions/:id/events`, `GET /events`) over WebSocket, validating frames against `@dorkos/shared/session-stream`
 - `uploadFiles` uses XHR with `FormData` for progress tracking
 - Constructor takes `baseUrl` (defaults to `/api`)
 
@@ -194,7 +194,7 @@ Calls service instances directly in the same process:
 
 Optional local login (Better Auth) rides the same seam without changing the Transport interface:
 
-- **HttpTransport** sends `credentials: 'include'` on every fetch path (the central `fetchJSON` in `shared/lib/transport/http-client.ts`, plus the streaming fetches in `sse-connection.ts` and `session-stream-methods.ts`). The Better Auth session cookie rides the browser cookie jar, so the constructor needs no token wiring. When a gated request returns `401 { code: 'AUTH_REQUIRED' }`, the client's auth-required signal flips and `AuthGuard` (`features/auth`) renders the `LoginScreen`. Machine callers may instead send `Authorization: Bearer <api-key>`.
+- **HttpTransport** sends `credentials: 'include'` on every fetch path (the central `fetchJSON` in `shared/lib/transport/http-client.ts`, plus `ws-connection.ts` and `session-stream-methods.ts`, whose sockets carry the cookie on the handshake). The Better Auth session cookie rides the browser cookie jar, so the constructor needs no token wiring. When a gated request returns `401 { code: 'AUTH_REQUIRED' }`, the client's auth-required signal flips and `AuthGuard` (`features/auth`) renders the `LoginScreen`. Machine callers may instead send `Authorization: Bearer <api-key>`.
 - **DirectTransport** (Obsidian embedded mode) stays **unauthenticated** — it calls service instances in-process with no HTTP boundary to gate, and the embedded shell never mounts `AuthGuard`. Progressive disclosure means no user concept appears there.
 
 Server-side, the single `sessionGate` middleware enforces this for `/api/*` and `/mcp` only when `config.auth.enabled` is true; otherwise it is a zero-overhead pass-through. See `contributing/authentication.md` for the full auth architecture.
@@ -203,7 +203,7 @@ Server-side, the single `sessionGate` middleware enforces this for `/api/*` and 
 
 ### Standalone Web (HttpTransport)
 
-`POST /api/sessions/:id/messages` is trigger-only (ADR-0264): it returns `202 { sessionId }` (the canonical id) and the turn runs detached server-side. ALL turn delivery — and cross-client sync — rides the durable per-session SSE stream `GET /api/sessions/:id/events` (snapshot → gap-free replay via `Last-Event-ID` → live `SessionEvent`s with monotonic `seq`), owned client-side by `StreamManager` (`shared/lib/transport/stream-manager.ts`).
+`POST /api/sessions/:id/messages` is trigger-only (ADR-0264): it returns `202 { sessionId }` (the canonical id) and the turn runs detached server-side. ALL turn delivery — and cross-client sync — rides the durable per-session stream `GET /api/sessions/:id/events` (snapshot → gap-free replay via `Last-Event-ID` → live `SessionEvent`s with monotonic `seq`), owned client-side by `StreamManager` (`shared/lib/transport/stream-manager.ts`).
 
 ```
 User input -> ChatPanel -> useChatSession.handleSubmit()
@@ -211,12 +211,12 @@ User input -> ChatPanel -> useChatSession.handleSubmit()
   -> turn runs detached; runtime StreamEvents feed the per-session projector (monotonic seq)
 
 Delivery (always, for every subscribed client):
-  -> GET /api/sessions/:id/events (durable SSE: snapshot -> replay -> live)
+  -> GET /api/sessions/:id/events (durable stream: snapshot -> replay -> live)
     -> StreamManager validates SessionEvent frames -> session stream store applies them
       -> React state updates -> UI re-render
 
 Session list (sidebar/liveness):
-  -> GET /api/events (global SSE) -> session_upserted / session_removed / session_status
+  -> GET /api/events (global stream) -> session_upserted / session_removed / session_status
 ```
 
 See [Agent UI Control](#agent-ui-control) for the bidirectional UI-command pattern.
@@ -273,7 +273,7 @@ Agents can observe and control the DorkOS client UI through a bidirectional patt
 
 **Client → Agent** (UI state awareness): The client captures a `UiState` snapshot (canvas, panels, sidebar, active agent) and passes it via `postMessage(id, content, cwd, { uiState })`. The server forwards this to the SDK as context injection, giving the agent situational awareness of what the user sees.
 
-**Agent → Client** (UI commands): The agent calls the `control_ui` MCP tool, which validates a `UiCommand` via `UiCommandSchema` and emits a `ui_command` stream event to the SSE stream. The client dispatches this via `executeUiCommand()` (`layers/shared/lib/ui-action-dispatcher.ts`), a pure side-effect dispatcher that mutates the Zustand store.
+**Agent → Client** (UI commands): The agent calls the `control_ui` MCP tool, which validates a `UiCommand` via `UiCommandSchema` and emits a `ui_command` stream event to the durable stream. The client dispatches this via `executeUiCommand()` (`layers/shared/lib/ui-action-dispatcher.ts`), a pure side-effect dispatcher that mutates the Zustand store.
 
 A companion `get_ui_state` MCP tool lets agents query the current UI state without sending a message.
 
@@ -298,7 +298,7 @@ A companion `get_ui_state` MCP tool lets agents query the current UI state witho
 - `UiState` — client snapshot (canvas, panels, sidebar, agent) passed to the agent
 - `UiCanvasContent` — discriminated union (`url` | `markdown` | `json`) for canvas payloads
 - `UiCommand` — discriminated union on `action` (14 variants)
-- `UiCommandEvent` — SSE event wrapper (`{ type: 'ui_command', command }`)
+- `UiCommandEvent` — stream event wrapper (`{ type: 'ui_command', command }`)
 
 All types defined in `packages/shared/src/schemas.ts`, re-exported from `packages/shared/src/types.ts`.
 
@@ -637,7 +637,7 @@ apps/
       lib/
         direct-transport.ts -- In-process adapter (Obsidian plugin)
         transport/
-          http-transport.ts -- HTTP/SSE adapter
+          http-transport.ts -- HTTP adapter
           relay-methods.ts  -- createRelayMethods() factory
           pulse-methods.ts  -- createTasksMethods() factory
           mesh-methods.ts   -- createMeshMethods() factory

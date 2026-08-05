@@ -23,7 +23,7 @@ import type { SessionEvent, SessionSnapshot, SessionStatus } from '@dorkos/share
 // Stub the shared StreamManager so attach/connect never opens a real fetch in
 // jsdom; the binding stays real (wires listeners) but we drive the store
 // directly to simulate `/events`. Preserve the module's other transport exports
-// (HttpTransport, SSEConnection) so `@/layers/shared/lib` re-exports still load.
+// (HttpTransport, WSConnection) so `@/layers/shared/lib` re-exports still load.
 vi.mock('@/layers/shared/lib/transport', async () => {
   const actual = await vi.importActual<Record<string, unknown>>('@/layers/shared/lib/transport');
   return {

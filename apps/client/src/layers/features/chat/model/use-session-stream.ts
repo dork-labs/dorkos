@@ -11,7 +11,7 @@
  * 2. Attaches the active session's durable stream BEFORE relying on live events,
  *    so the cold `snapshot` frame hydrates the store and no `turn_start` is
  *    missed (reconnect + `Last-Event-ID` gap replay are handled by the
- *    StreamManager/SSEConnection).
+ *    StreamManager/WSConnection).
  * 3. Opens the global session-list stream (idempotent).
  *
  * The store retains per-session state across switches, so detaching the active

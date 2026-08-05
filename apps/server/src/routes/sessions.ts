@@ -931,7 +931,7 @@ router.post('/:id/interrupt', async (req, res) => {
 //
 // The SAME path is also served over a WebSocket, by `session-events-socket.ts`
 // through the upgrade router, and that is what the cockpit connects to (ADR
-// 260804-030000). This SSE route stays because it is the public integration
+// 260805-041016). This SSE route stays because it is the public integration
 // contract (`docs/integrations/sse-protocol.mdx`). Both share their sequencing
 // — see `services/session/session-stream-delivery.ts`.
 router.get('/:id/events', sessionEventsHandler);

@@ -723,7 +723,7 @@ const sidebarOpen = useAppStore((state) => state.sidebarOpen);
 
 ### Duplicate SSE connections or provider remounts
 
-**Cause**: Creating long-lived singletons (QueryClient, Transport, Router, SSEConnection) inside a React component. StrictMode double-mounts will recreate them on every render cycle, and in the case of `createAppRouter(queryClient)`, it remounts the entire provider tree — including `EventStreamProvider` — producing duplicate SSE connections.
+**Cause**: Creating long-lived singletons (QueryClient, Transport, Router, the stream connection) inside a React component. StrictMode double-mounts will recreate them on every render cycle, and in the case of `createAppRouter(queryClient)`, it remounts the entire provider tree — including `EventStreamProvider` — producing duplicate stream connections.
 
 **Fix**: Create singletons at module scope in `main.tsx`:
 
@@ -746,7 +746,7 @@ function Root() {
 }
 ```
 
-General pattern: any object that should live for the entire app lifetime (QueryClient, Transport, Router, SSEConnection) belongs at module scope, not inside a React component.
+General pattern: any object that should live for the entire app lifetime (QueryClient, Transport, Router, the stream connection) belongs at module scope, not inside a React component.
 
 ### "Cannot use store outside React components"
 

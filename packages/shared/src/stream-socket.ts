@@ -1,5 +1,5 @@
 /**
- * The wire contract for DorkOS's durable event streams (ADR 260804-030000).
+ * The wire contract for DorkOS's durable event streams (ADR 260805-041016).
  *
  * All three durable streams — a session's events, the global broadcast stream,
  * and a room's events — ride WebSockets rather than Server-Sent Events. The

@@ -27,7 +27,7 @@
  *   `${baseUrl}/sessions/:id/events` and `${baseUrl}/events`. `main.tsx` calls
  *   {@link StreamManager.useHttpSource} with the same resolved origin as
  *   `HttpTransport`, so the packaged Electron renderer (file:// + localhost API)
- *   reaches the streams too. They were SSE until ADR 260804-030000: an SSE
+ *   reaches the streams too. They were SSE until ADR 260805-041016: an SSE
  *   stream holds one of a browser's ~6 sockets per origin for as long as it is
  *   open, so a window parking two of them meant the THIRD cockpit window took
  *   the last socket and everything after it — including the fourth window's own

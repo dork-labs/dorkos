@@ -13,7 +13,6 @@ import { getRoomService, RoomError } from '../services/rooms/index.js';
 import { deliverRoomStream } from '../services/core/streams/room-stream-delivery.js';
 import { resolveCaller } from './room-caller.js';
 import { DurableStreamSocket } from '../services/core/streams/stream-socket.js';
-import { authorizeStreamUpgrade } from '../services/core/streams/stream-upgrade-auth.js';
 import type { UpgradeDecision, UpgradeRoute } from '../services/core/streams/upgrade-router.js';
 import { parseResumeCursor } from '../lib/stream-cursor.js';
 import { logger } from '../lib/logger.js';
@@ -25,8 +24,10 @@ const ROOM_EVENTS_PATH = /^\/api\/rooms\/([^/]+)\/events$/;
 export const roomEventsRoute: UpgradeRoute = {
   name: 'room-events',
   pattern: ROOM_EVENTS_PATH,
+  // The router runs the credential gate before this is called.
+  credential: 'required',
 
-  async authorize({ url, headers, match }): Promise<UpgradeDecision> {
+  authorize({ url, match, locals }): UpgradeDecision {
     const roomId = decodeURIComponent(match[1]!);
 
     // Refusals go out as a close frame rather than a failed handshake, because
@@ -41,9 +42,6 @@ export const roomEventsRoute: UpgradeRoute = {
       deliver: 'close-frame',
     });
 
-    const auth = await authorizeStreamUpgrade(headers);
-    if (!auth.ok) return refuse(auth.status, auth.message);
-
     let viewerAuthorId: string;
     let service: ReturnType<typeof getRoomService>;
     try {
@@ -51,7 +49,7 @@ export const roomEventsRoute: UpgradeRoute = {
       // The identity `sessionGate` and `resolveAgentIdentity` would have put on
       // `res.locals` was resolved by `authorizeStreamUpgrade` instead, because
       // neither middleware runs for an upgrade.
-      viewerAuthorId = resolveCaller({ locals: auth.locals }).id;
+      viewerAuthorId = resolveCaller({ locals }).id;
       // Refuse BEFORE any frame is sent. `getRoom` is membership-scoped, so this
       // refuses an unknown room and a room the caller is not in identically —
       // subscribing to somebody else's DM by id is the same leak as reading it.

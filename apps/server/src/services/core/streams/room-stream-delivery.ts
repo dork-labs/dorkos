@@ -14,7 +14,7 @@
  * cursor" fallback, because there is no window — an unservable cursor can only
  * come from a stale epoch, which `parseResumeCursor` already rejects.
  *
- * @module services/rooms/room-stream-delivery
+ * @module services/core/streams/room-stream-delivery
  */
 import type { RoomEntry, RoomEvent } from '@dorkos/shared/room-schemas';
 import type { DurableStreamSink } from './durable-stream-sink.js';

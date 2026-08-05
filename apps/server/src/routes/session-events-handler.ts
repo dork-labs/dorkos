@@ -6,7 +6,7 @@
  * reads its sibling `/api/events` for the tray count. The cockpit itself moved
  * to the WebSocket at the same path (`session-events-socket.ts`) because an SSE
  * stream holds one of a browser's ~6 sockets per origin and three windows spent
- * all six (ADR 260804-030000). Both are first-class; neither is a fallback.
+ * all six (ADR 260805-041016). Both are first-class; neither is a fallback.
  *
  * The two share everything that matters: this file resolves the same
  * {@link SessionStreamPlan} the socket route resolves and hands it to the same

@@ -10,8 +10,27 @@ vi.mock('../../tunnel-manager.js', () => ({
   },
 }));
 
+vi.mock('../../config-manager.js', () => ({
+  configManager: { get: vi.fn(() => ({ enabled: false })) },
+}));
+
+vi.mock('../stream-upgrade-auth.js', () => ({
+  authorizeStreamUpgrade: vi.fn(),
+}));
+
+// `env` is validated once at import, so a late `process.env` write would not
+// reach `DORKOS_TRUSTED_HOSTS` — the tests set it through the module instead.
+vi.mock('../../../../env.js', () => ({
+  env: { DORKOS_TRUSTED_HOSTS: undefined, DORKOS_PUBLIC_URL: undefined, DORKOS_PORT: 4242 },
+}));
+
 import { attachUpgradeRouter, type UpgradeRoute } from '../upgrade-router.js';
+import { authorizeStreamUpgrade } from '../stream-upgrade-auth.js';
 import { resolveTrustedOrigins } from '../../../../lib/trusted-origins.js';
+import { env } from '../../../../env.js';
+
+const gate = vi.mocked(authorizeStreamUpgrade);
+const mutableEnv = env as { DORKOS_TRUSTED_HOSTS?: string; DORKOS_PUBLIC_URL?: string };
 
 /**
  * Upgrade-router tests.
@@ -104,6 +123,7 @@ function attempt(path: string, headers: Record<string, string> = {}): Promise<At
 const acceptingRoute: UpgradeRoute = {
   name: 'accepting',
   pattern: /^\/api\/accept$/,
+  credential: 'bearer-of-id',
   authorize: () => ({ ok: true, open: (ws) => ws.send('hello') }),
 };
 
@@ -111,6 +131,7 @@ const acceptingRoute: UpgradeRoute = {
 const handshakeRefusalRoute: UpgradeRoute = {
   name: 'handshake-refusal',
   pattern: /^\/api\/refuse-handshake$/,
+  credential: 'bearer-of-id',
   authorize: () => ({ ok: false, status: 404, message: 'Not Found' }),
 };
 
@@ -118,11 +139,24 @@ const handshakeRefusalRoute: UpgradeRoute = {
 const closeFrameRefusalRoute: UpgradeRoute = {
   name: 'close-frame-refusal',
   pattern: /^\/api\/refuse-close$/,
+  credential: 'bearer-of-id',
   authorize: () => ({ ok: false, status: 401, message: 'Unauthorized', deliver: 'close-frame' }),
+};
+
+/** A credential-gated route, the posture all three durable streams declare. */
+const gatedRoute: UpgradeRoute = {
+  name: 'gated',
+  pattern: /^\/api\/gated$/,
+  credential: 'required',
+  authorize: ({ locals }) => ({
+    ok: true,
+    open: (ws) => ws.send(JSON.stringify(locals)),
+  }),
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  gate.mockResolvedValue({ ok: true, locals: {} });
 });
 
 afterEach(async () => {
@@ -173,7 +207,9 @@ describe('attachUpgradeRouter', () => {
     // attaches that host's cookies. `Origin` is the only thing separating a
     // cockpit tab from a hostile page that rebound onto this port.
     const authorize = vi.fn(() => ({ ok: true as const, open: () => {} }));
-    await listen([{ name: 'guarded', pattern: /^\/api\/accept$/, authorize }]);
+    await listen([
+      { name: 'guarded', pattern: /^\/api\/accept$/, credential: 'bearer-of-id', authorize },
+    ]);
 
     const result = await attempt('/api/accept', { origin: 'http://evil.example' });
 
@@ -190,6 +226,7 @@ describe('attachUpgradeRouter', () => {
     const terminalish: UpgradeRoute = {
       name: 'terminal',
       pattern: /^\/api\/terminal\/([^/]+)\/socket$/,
+      credential: 'bearer-of-id',
       authorize: () => ({ ok: true, open: (ws) => ws.send('pty') }),
     };
     await listen([terminalish]);
@@ -231,6 +268,7 @@ describe('attachUpgradeRouter', () => {
       {
         name: 'exploding',
         pattern: /^\/api\/boom$/,
+        credential: 'bearer-of-id',
         authorize: () => {
           throw new Error('authorize exploded');
         },
@@ -247,12 +285,116 @@ describe('attachUpgradeRouter', () => {
     const second = vi.fn(() => ({ ok: true as const, open: () => {} }));
     await listen([
       acceptingRoute,
-      { name: 'shadowed', pattern: /^\/api\/accept$/, authorize: second },
+      {
+        name: 'shadowed',
+        pattern: /^\/api\/accept$/,
+        credential: 'bearer-of-id',
+        authorize: second,
+      },
     ]);
 
     const result = await attempt('/api/accept');
 
     expect(result.firstFrame).toBe('hello');
     expect(second).not.toHaveBeenCalled();
+  });
+
+  describe("the credential gate is the ROUTER's job, not each route's", () => {
+    // It lives here because when each route called it, deleting all three calls
+    // left the whole server suite green: the gate was tested, its WIRING was
+    // not — and the wiring is the part an exploit uses.
+
+    it('runs the gate for a `required` route and hands it the resolved identity', async () => {
+      gate.mockResolvedValue({
+        ok: true,
+        locals: { user: { userId: 'user-1', credential: 'cookie' } },
+      });
+      await listen([gatedRoute]);
+
+      const result = await attempt('/api/gated');
+
+      expect(gate).toHaveBeenCalledTimes(1);
+      expect(result.opened).toBe(true);
+      expect(JSON.parse(result.firstFrame!), 'the route acts as whoever the gate resolved').toEqual(
+        { user: { userId: 'user-1', credential: 'cookie' } }
+      );
+    });
+
+    it('REFUSES a `required` route when the gate says no, without consulting it', async () => {
+      gate.mockResolvedValue({ ok: false, status: 401, message: 'Unauthorized' });
+      const authorize = vi.fn(() => ({ ok: true as const, open: () => {} }));
+      await listen([
+        { name: 'gated', pattern: /^\/api\/gated$/, credential: 'required', authorize },
+      ]);
+
+      const result = await attempt('/api/gated');
+
+      expect(authorize, 'the route never ran').not.toHaveBeenCalled();
+      // Over a close frame, because a browser cannot read a failed handshake.
+      expect(result.closeCode).toBe(STREAM_CLOSE_CODE_BASE + 401);
+    });
+
+    it('does NOT run the gate for a `bearer-of-id` route', async () => {
+      // The terminal authenticates by holding an unguessable id; gating it again
+      // would change a shipped contract (ADR 260708-185521).
+      await listen([acceptingRoute]);
+
+      await attempt('/api/accept');
+
+      expect(gate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('origin policy beyond loopback', () => {
+    // The first version of this guard was `resolveTrustedOrigins().includes()`,
+    // which is loopback + tunnel only. Every non-loopback deployment 403'd on
+    // every socket while HTTP kept working — and the cockpit showed nothing,
+    // because a browser cannot read a failed handshake. These pin the branches
+    // that fix it.
+
+    it('accepts an Origin that matches the request Host it was reached on', async () => {
+      // The reverse-proxy / LAN-IP / https case: the operator lists the host in
+      // DORKOS_TRUSTED_HOSTS (as the proxy docs already say), and same-origin
+      // then covers every scheme and port without enumerating them.
+      mutableEnv.DORKOS_TRUSTED_HOSTS = 'dorkos.example.com';
+      try {
+        await listen([acceptingRoute]);
+        const result = await attempt('/api/accept', {
+          origin: 'https://dorkos.example.com',
+          host: 'dorkos.example.com',
+        });
+        expect(result.opened).toBe(true);
+      } finally {
+        mutableEnv.DORKOS_TRUSTED_HOSTS = undefined;
+      }
+    });
+
+    it('accepts an Origin the operator listed in DORKOS_CORS_ORIGIN', async () => {
+      // The HTTP path already honours this; a socket refusing what a request
+      // accepts is the inconsistency that made the outage silent.
+      process.env.DORKOS_CORS_ORIGIN = 'https://cockpit.example.com,https://other.example';
+      try {
+        await listen([acceptingRoute]);
+        const result = await attempt('/api/accept', { origin: 'https://cockpit.example.com' });
+        expect(result.opened).toBe(true);
+      } finally {
+        delete process.env.DORKOS_CORS_ORIGIN;
+      }
+    });
+
+    it('still REFUSES a rebound Origin whose Host this instance does not answer to', async () => {
+      // The DNS-rebinding case the same-origin branch would otherwise admit:
+      // evil.com resolves to 127.0.0.1, so Origin and Host agree — and the host
+      // allowlist is what rejects it, exactly as `hostGuard` does for requests.
+      await listen([acceptingRoute]);
+
+      const result = await attempt('/api/accept', {
+        origin: 'http://evil.example',
+        host: 'evil.example',
+      });
+
+      expect(result.httpStatus).toBe(403);
+      expect(result.opened).toBe(false);
+    });
   });
 });

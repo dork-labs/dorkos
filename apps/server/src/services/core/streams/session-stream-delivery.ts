@@ -14,7 +14,7 @@
  * exists: the cursor arithmetic and the cold-connect race are the parts worth
  * getting right once.
  *
- * @module services/session/session-stream-delivery
+ * @module services/core/streams/session-stream-delivery
  */
 import type { AgentRuntime, SessionOpts } from '@dorkos/shared/agent-runtime';
 import { StaleResumeCursorError } from '@dorkos/shared/session-stream';

@@ -7,7 +7,7 @@
  * connection per resource, which is why one window needs one of these however
  * many features it is showing.
  *
- * It moved off SSE with the other two durable streams (ADR 260804-030000). This
+ * It moved off SSE with the other two durable streams (ADR 260805-041016). This
  * one mattered most: every window opens it unconditionally, so it was two of
  * the six sockets a three-window cockpit spent before it stopped responding.
  *
@@ -17,7 +17,6 @@ import type { WebSocket } from 'ws';
 import { encodeStreamFrame } from '@dorkos/shared/stream-socket';
 import { eventFanOut, type FanOutClient } from '../services/core/event-fan-out.js';
 import { DurableStreamSocket } from '../services/core/streams/stream-socket.js';
-import { authorizeStreamUpgrade } from '../services/core/streams/stream-upgrade-auth.js';
 import type { UpgradeDecision, UpgradeRoute } from '../services/core/streams/upgrade-router.js';
 
 /** Matches `/api/events` — the whole path, no captures. */
@@ -50,8 +49,10 @@ function fanOutClient(ws: WebSocket): FanOutClient {
 export const globalEventsRoute: UpgradeRoute = {
   name: 'global-events',
   pattern: EVENTS_PATH,
+  // The router runs the credential gate before this is called.
+  credential: 'required',
 
-  async authorize({ headers }): Promise<UpgradeDecision> {
+  authorize(): UpgradeDecision {
     // Refusals go out as a close frame rather than a failed handshake: a
     // browser cannot read the status of a failed one, and "you are signed out"
     // has to be distinguishable from "the server is briefly down".
@@ -61,9 +62,6 @@ export const globalEventsRoute: UpgradeRoute = {
       message,
       deliver: 'close-frame',
     });
-
-    const auth = await authorizeStreamUpgrade(headers);
-    if (!auth.ok) return refuse(auth.status, auth.message);
 
     if (!eventFanOut.hasCapacity()) return refuse(503, 'Service Unavailable');
 

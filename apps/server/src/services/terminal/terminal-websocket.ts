@@ -12,7 +12,7 @@ import type { TerminalManager, TerminalSink } from './terminal-manager.js';
  * frames.
  *
  * It was the server's only WebSocket consumer until the durable event streams
- * moved onto sockets too (ADR 260804-030000), and it owned the lone
+ * moved onto sockets too (ADR 260805-041016), and it owned the lone
  * `server.on('upgrade')` listener — which destroyed every upgrade it did not
  * recognize, so a second listener beside it could never have worked. It is now
  * one route among several behind `services/core/streams/upgrade-router.ts`.
@@ -71,6 +71,11 @@ export function terminalUpgradeRoute(manager: TerminalManager): UpgradeRoute {
   return {
     name: 'terminal',
     pattern: TERMINAL_SOCKET_PATH,
+    // Bearer-of-unguessable-id (ADR 260708-185521), checked below: the id is
+    // minted only by the auth-gated `POST /api/terminal`. Deliberately NOT
+    // `required` — a terminal socket is opened by a client that already holds
+    // that id, and gating it a second time would change a shipped contract.
+    credential: 'bearer-of-id',
     authorize({ url }) {
       const decision = authorizeTerminalUpgrade({ url: url.pathname, headers: {} }, manager);
       if (!decision.ok) return { ok: false, status: 404, message: 'Not Found' };

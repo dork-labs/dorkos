@@ -1,10 +1,10 @@
 /**
- * In-process stream pumps — the embedded-mode counterpart of `SSEConnection`.
+ * In-process stream pumps — the embedded-mode counterpart of `WSConnection`.
  *
  * In embedded mode (Obsidian's `DirectTransport`) there is no HTTP server, so
  * the StreamManager cannot open SSE connections. These pumps adapt the
  * Transport seam's async iterables (`getSessionSnapshot` + `subscribeSession`,
- * `subscribeSessionList`) onto the same `SSEConnectionLike` lifecycle and
+ * `subscribeSessionList`) onto the same `DurableStreamConnection` lifecycle and
  * handler maps the StreamManager already speaks, so every consumer downstream
  * of the manager (binding → stores → UI) is source-agnostic.
  *

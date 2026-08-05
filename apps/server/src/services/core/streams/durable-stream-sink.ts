@@ -2,7 +2,7 @@
  * The seam between a durable stream's SEQUENCING and its DELIVERY.
  *
  * DorkOS serves each durable stream over two protocols, and that is deliberate
- * rather than transitional (ADR 260804-030000):
+ * rather than transitional (ADR 260805-041016):
  *
  * - **WebSocket**, which the cockpit uses. An SSE stream holds one of a
  *   browser's ~6 sockets per origin for as long as it is open, so three cockpit
@@ -20,7 +20,7 @@
  * response, a socket sink writes JSON frames. A bug fixed in the sequencing is
  * fixed for both by construction.
  *
- * @module services/core/durable-stream-sink
+ * @module services/core/streams/durable-stream-sink
  */
 import { once } from 'node:events';
 import type { Response } from 'express';

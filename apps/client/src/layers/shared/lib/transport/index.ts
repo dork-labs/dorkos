@@ -13,7 +13,12 @@ export {
   UPLOAD_UNREADABLE_MESSAGE,
 } from './upload-contract';
 export { RoomStreamHttpError, isFatalStreamError } from './room-methods';
-export { WSConnection, toStreamSocketUrl, type StreamConnectionOptions } from './ws-connection';
+export {
+  WSConnection,
+  StreamRefusedError,
+  toStreamSocketUrl,
+  type StreamConnectionOptions,
+} from './ws-connection';
 export {
   streamSocketFrames,
   type StreamSocketClosed,

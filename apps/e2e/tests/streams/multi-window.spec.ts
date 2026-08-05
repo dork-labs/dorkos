@@ -180,11 +180,17 @@ test.describe('several cockpit windows', () => {
       // at most a room's).
       const perPage = await Promise.all(pages.map(openStreams));
       const total = perPage.reduce((sum, list) => sum + list.length, 0);
+      // The exact number is knowable, so assert it rather than a floor that
+      // trap 4 would sail through: every window holds the global stream AND its
+      // session's, so four windows hold eight. A guard of `>= WINDOW_COUNT`
+      // would pass on windows that opened only the global stream — which is
+      // precisely the vacuous shape this exists to catch.
       expect(
         total,
-        `no durable stream connected in any window (${JSON.stringify(perPage)}) — ` +
-          'the probe below would prove nothing'
-      ).toBeGreaterThanOrEqual(WINDOW_COUNT);
+        `expected ${WINDOW_COUNT * 2} durable streams (the global one plus a session ` +
+          `stream per window); saw ${JSON.stringify(perPage)}. Fewer means the windows ` +
+          'never attached a session stream, and the probe below would prove nothing.'
+      ).toBeGreaterThanOrEqual(WINDOW_COUNT * 2);
       expect(
         total,
         `each window should hold a small, bounded number of streams; saw ${JSON.stringify(perPage)}`

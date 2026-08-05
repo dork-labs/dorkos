@@ -2362,7 +2362,7 @@ async function start() {
   const server = app.listen(PORT, host, () => {
     logger.info(`[DorkOS] server running on http://${host}:${PORT}`);
 
-    // One upgrade listener for the whole server (ADR 260804-030000): the three
+    // One upgrade listener for the whole server (ADR 260805-041016): the three
     // durable event streams plus the embedded terminal's byte channel. A second
     // `server.on('upgrade')` listener beside this one would not work — every
     // listener sees every upgrade, and any that does not recognize a path

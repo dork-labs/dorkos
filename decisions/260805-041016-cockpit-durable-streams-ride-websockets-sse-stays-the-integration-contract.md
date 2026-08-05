@@ -57,8 +57,20 @@ Both protocols are first-class; neither is a fallback, and the client never choo
 
 An upgrade never enters Express, so **no middleware runs for it** — not the CORS policy, not the host guard, and critically not `sessionGate`. Moving the streams onto sockets without saying so explicitly would have silently un-gated all three on an install with login enabled: same URL, same data, no credential. Two things are therefore re-applied by hand:
 
-- **The origin allowlist**, in the router, for _every_ upgrade. WebSocket handshakes are not CORS-protected: any page can open a socket to any host its user can reach, and the browser attaches that host's cookies. `Origin` is the only thing separating a cockpit tab from a page that DNS-rebound onto the port. This also _widens_ the guard — it used to live inside the terminal's own decision and now covers the terminal and the streams alike, from one place.
-- **The credential gate**, in `stream-upgrade-auth.ts`, through the same `verifyRequestAuth` the HTTP gate and the MCP middleware use, plus the same additive `X-DorkOS-Agent` resolution. One credential path, not two, because a second implementation is how the socket gate and the request gate drift apart unnoticed. Both are pinned by tests that were confirmed to go red when the guard is removed.
+- **The origin policy**, in the router, for _every_ upgrade. WebSocket handshakes are not CORS-protected: any page can open a socket to any host its user can reach, and the browser attaches that host's cookies. `Origin` is the only thing separating a cockpit tab from a page that DNS-rebound onto the port. This also _widens_ the guard — it used to live inside the terminal's own decision and now covers the terminal and the streams alike, from one place.
+- **The credential gate**, through the same `verifyRequestAuth` the HTTP gate and the MCP middleware use, plus the same additive `X-DorkOS-Agent` resolution. One credential path, not two, because a second implementation is how the socket gate and the request gate drift apart unnoticed. It runs in the **router**, keyed off `UpgradeRoute.credential`, rather than inside each route: when the three routes called it themselves, deleting all three calls left the entire server suite green — the gate was tested, its wiring was not, and the wiring is the part an exploit uses.
+
+Both are pinned by tests confirmed to go red when the guard is removed.
+
+### The origin policy is not an allowlist, and that took two tries
+
+The first version was `resolveTrustedOrigins().includes(origin)` — loopback plus the live tunnel. It broke every non-loopback deployment, in the worst possible shape: HTTP kept working, the SPA rendered, the turn ran, the reply landed in the transcript on disk, and the browser never showed it.
+
+The trap is that **a browser sends `Origin` on every WebSocket handshake, including a same-origin one**, whereas the same-origin `fetch` that carried the SSE streams sent none. So the check was inert for the durable streams before they became sockets, and decisive after. Nothing about the check changed; what changed was that it started being consulted.
+
+It now mirrors what the HTTP surface already does, which is CORS **and** `hostGuard` **together**: a statically trusted origin, an origin the operator configured (`DORKOS_CORS_ORIGIN`, `DORKOS_PUBLIC_URL`), or **same-origin with this request's own `Host`** — the branch that covers reverse proxies, LAN addresses and `https://` without enumerating them. That last branch is only sound paired with the host allowlist, because a DNS-rebound page is same-origin to the browser too; `isHostAllowed` is what rejects it, exactly as `hostGuard` does for requests.
+
+And because a browser cannot read a failed handshake, a refused origin is delivered as a close frame carrying `403` and logged server-side, so the cockpit reports "the server refused this stream" instead of retrying five times into a silent `disconnected`.
 
 The terminal keeps refusing at the handshake with an HTTP status, since nothing there needs to tell refusal reasons apart. Its bearer-of-unguessable-id model (ADR 260708-185521) is unchanged.
 
@@ -77,7 +89,8 @@ The terminal keeps refusing at the handshake with an HTTP status, since nothing 
 - Two wire formats to keep in step. The `DurableStreamSink` seam is what bounds the cost — the sequencing is written once — but the two sinks and the two framings are real surface, and a third stream family has to implement both.
 - The refusal path is asymmetric: durable streams refuse over a close frame, the terminal at the handshake. That is a deliberate split (only the streams have a client that must tell the reasons apart), but it is one more thing to know.
 - A rejected caller briefly completes a handshake before being closed, where SSE refused before writing a byte. Nothing is sent on it, and the alternative is a browser that cannot tell "signed out" from "server down".
-- **Dev needed a proxy change.** Vite proxies requests but not upgrades unless told to, so `ws: true` on the `/api` proxy is now load-bearing: without it every durable stream and the embedded terminal are dead in dev while working perfectly in a production build, where there is no proxy in between. This was found only by driving a real browser — the cockpit rendered, the turn ran server-side, and the reply never arrived on screen.
+- **Proxies now need to forward upgrades.** Vite's dev proxy needs `ws: true`; nginx needs `Upgrade`/`Connection` headers, and the config this repo documented actively set `Connection ''`, which is the standard SSE recipe and precisely what blocks an upgrade. Both were found only by driving a real browser — the cockpit rendered, the turn ran server-side, and the reply never arrived on screen. `docs/self-hosting/reverse-proxy.mdx` now carries the working config and names this failure shape.
+- **A same-origin `Origin` check is now load-bearing where none was before.** That is a new way for a deployment to be misconfigured, and its symptom is silence unless the client reports the refusal — which is why it does.
 
 ## Alternatives considered
 

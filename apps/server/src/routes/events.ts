@@ -6,7 +6,7 @@
  * connection per resource.
  *
  * The same path is also served over a WebSocket (`events-socket.ts`), which is
- * what the cockpit connects to (ADR 260804-030000). This SSE route stays as the
+ * what the cockpit connects to (ADR 260805-041016). This SSE route stays as the
  * public integration contract (`docs/integrations/sse-protocol.mdx`) and is what
  * the Electron main process reads for its tray count. Both register with the
  * same {@link eventFanOut}, so one broadcast reaches every reader on either

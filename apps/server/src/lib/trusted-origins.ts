@@ -198,3 +198,105 @@ export function resolveTrustedOrigins(): string[] {
   const origins = getStaticLocalOrigins();
   return tunnelOrigin ? [...origins, tunnelOrigin] : origins;
 }
+
+/** The facts {@link isTrustedUpgradeOrigin} decides on, all resolved by the caller. */
+export interface UpgradeOriginFacts {
+  /** The upgrade's `Origin` header. Absent for every non-browser client. */
+  origin: string | undefined;
+  /** The upgrade's raw `Host` header — what the caller asked for. */
+  hostHeader: string | undefined;
+  /** Whether this instance answers to that `Host` (`isHostAllowed`). */
+  hostAllowed: boolean;
+  /** `DORKOS_CORS_ORIGIN`, the operator's explicit allowlist (or `*`). */
+  configuredOrigins: string | undefined;
+  /** `DORKOS_PUBLIC_URL`, the address the operator publishes. */
+  publicUrl: string | undefined;
+  /**
+   * Whether the surrounding environment owns the network boundary
+   * (`DORKOS_ALLOW_INSECURE_BIND`), or login is on — in which case
+   * origin-scoped auth cookies already turn a rebound origin away, exactly as
+   * `hostGuard` reasons.
+   */
+  hostCheckInert: boolean;
+}
+
+/**
+ * Whether a WebSocket upgrade's `Origin` may be trusted.
+ *
+ * ## Why this is not just `resolveTrustedOrigins().includes(origin)`
+ *
+ * That was the first version, and it broke every non-loopback deployment. The
+ * trap is that a browser sends `Origin` on **every** WebSocket handshake,
+ * including a same-origin one, whereas the same-origin `fetch` that carried the
+ * SSE streams sent none. So this check was inert for the durable streams before
+ * they became sockets and is decisive after — and a loopback-only allowlist
+ * turns into "the SPA renders, REST works, the turn runs, the reply lands on
+ * disk, and the browser never shows it" for anyone behind a reverse proxy, on a
+ * LAN IP, on `https://`, or setting `DORKOS_CORS_ORIGIN`.
+ *
+ * So it mirrors what the HTTP surface already does, which is CORS **and**
+ * `hostGuard` **together** (`app.ts` `buildCors` + `middleware/host-guard.ts`),
+ * and is exactly as strict as those two are jointly:
+ *
+ * 1. **No `Origin`** — a non-browser client (CLI, tests, the desktop shell).
+ *    Passes, like the CORS delegate and `validateMcpOrigin`: a header a browser
+ *    is forced to send truthfully proves nothing by its absence.
+ * 2. **A statically trusted origin** — loopback dev origins, the live tunnel.
+ * 3. **An origin the operator configured** — `DORKOS_CORS_ORIGIN` (including
+ *    `*`) or `DORKOS_PUBLIC_URL`. The HTTP path already honours the first; a
+ *    socket refusing what a request accepts is the inconsistency that made this
+ *    a silent outage rather than an error somebody could read.
+ * 4. **Same-origin with this very request** — the `Origin`'s host equals the
+ *    `Host` this request asked for. This is the branch that covers reverse
+ *    proxies, LAN addresses and `https://` without the operator listing every
+ *    one.
+ *
+ * Branch 4 is only sound **paired with the host allowlist**, which is why
+ * `hostAllowed` is required rather than assumed. A DNS-rebound page at
+ * `evil.com` pointing at 127.0.0.1 is same-origin to the browser and sends
+ * `Host: evil.com` with `Origin: http://evil.com` — branch 4 alone would admit
+ * it. `isHostAllowed` rejects the `Host`, and the pairing is the same one
+ * `hostGuard` provides for requests. When the host check is inert (login on, or
+ * the container escape hatch) branch 4 stands alone, for the same reason
+ * `hostGuard` stands down there: auth cookies are origin-scoped, so a rebound
+ * origin never presents one.
+ *
+ * @param facts - The resolved {@link UpgradeOriginFacts}.
+ */
+export function isTrustedUpgradeOrigin(facts: UpgradeOriginFacts): boolean {
+  const { origin } = facts;
+  if (!origin) return true;
+
+  if (resolveTrustedOrigins().includes(origin)) return true;
+
+  const configured = facts.configuredOrigins?.trim();
+  if (configured === '*') return true;
+  if (
+    configured &&
+    configured
+      .split(',')
+      .map((entry) => entry.trim())
+      .includes(origin)
+  ) {
+    return true;
+  }
+
+  if (facts.publicUrl) {
+    try {
+      if (new URL(facts.publicUrl).origin === origin) return true;
+    } catch {
+      // A malformed DORKOS_PUBLIC_URL trusts nothing extra, rather than throwing
+      // on the upgrade path.
+    }
+  }
+
+  // Same-origin as this request, gated on the host allowlist (see the doc).
+  if (!facts.hostAllowed && !facts.hostCheckInert) return false;
+  const requestedHost = parseHostname(facts.hostHeader);
+  if (!requestedHost) return false;
+  try {
+    return new URL(origin).hostname.toLowerCase() === requestedHost;
+  } catch {
+    return false;
+  }
+}

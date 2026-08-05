@@ -395,7 +395,7 @@ describe('GET /api/sessions/:id/events (durable snapshot → replay → live)', 
     // is IN-MEMORY only, but sessions live on disk as JSONL — a brand-new client
     // id before its first message, or an existing on-disk session not yet loaded
     // this server-process, must both stream rather than 404 (the old gate made
-    // the client SSEConnection retry to "Sync offline"). The snapshot reads
+    // the client stream retry to "Sync offline"). The snapshot reads
     // history from disk (empty for a truly-new id) and the connection stays live.
     fakeRuntime.hasSession.mockReturnValue(false);
     fakeRuntime.getSessionSnapshot.mockResolvedValue(baseSnapshot());

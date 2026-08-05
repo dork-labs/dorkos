@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   encodeStreamFrame,
+  STREAM_CLOSE_CODE_BASE,
   STREAM_HEARTBEAT_EVENT,
   STREAM_RESUME_PARAM,
 } from '@dorkos/shared/stream-socket';
 
-import { WSConnection, toStreamSocketUrl } from '../ws-connection';
+import { WSConnection, StreamRefusedError, toStreamSocketUrl } from '../ws-connection';
 
 /**
  * WSConnection tests.
@@ -25,7 +26,7 @@ class FakeSocket {
   onopen: (() => void) | null = null;
   onmessage: ((event: MessageEvent<unknown>) => void) | null = null;
   onerror: (() => void) | null = null;
-  onclose: (() => void) | null = null;
+  onclose: ((event: CloseEvent) => void) | null = null;
   closed = false;
 
   constructor(readonly url: string) {
@@ -48,10 +49,16 @@ class FakeSocket {
     this.onmessage?.({ data: encodeStreamFrame(frame) } as MessageEvent<unknown>);
   }
 
-  /** Drive the socket dropping. */
+  /** Drive the socket dropping the way a lost connection does (no close frame). */
   drop(): void {
     this.readyState = 3;
-    this.onclose?.();
+    this.onclose?.({ code: 1006, reason: '' } as CloseEvent);
+  }
+
+  /** Drive the server refusing this stream with an application close code. */
+  refuse(status: number, reason = ''): void {
+    this.readyState = 3;
+    this.onclose?.({ code: STREAM_CLOSE_CODE_BASE + status, reason } as CloseEvent);
   }
 }
 
@@ -248,6 +255,49 @@ describe('WSConnection', () => {
     expect(warn).toHaveBeenCalled();
     expect(handler, 'the stream carried on').toHaveBeenCalledWith({ ok: true });
     warn.mockRestore();
+    conn.destroy();
+  });
+
+  it('STOPS and says why when the server refuses the stream', async () => {
+    // The failure shape this prevents: a too-narrow origin allowlist refused
+    // every stream, and because a browser cannot read a failed handshake the
+    // cockpit just retried five times into a silent `disconnected`. The page
+    // rendered, requests worked, the turn ran, and nothing said the stream was
+    // being turned away.
+    const onError = vi.fn();
+    const onStateChange = vi.fn();
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const conn = new WSConnection(TEST_URL, { eventHandlers: {}, onError, onStateChange });
+    conn.connect();
+    latest().open();
+    const opened = FakeSocket.instances.length;
+
+    latest().refuse(403, 'Origin not trusted');
+    vi.advanceTimersByTime(120_000);
+
+    expect(FakeSocket.instances.length, 'retrying a refusal cannot help').toBe(opened);
+    expect(onStateChange).toHaveBeenCalledWith('disconnected', expect.any(Number));
+    const reported = onError.mock.calls.at(-1)?.[0] as StreamRefusedError;
+    expect(reported).toBeInstanceOf(StreamRefusedError);
+    expect(reported.status).toBe(403);
+    expect(reported.message, 'a 403 names the setting that fixes it').toMatch(
+      /DORKOS_TRUSTED_HOSTS/
+    );
+    expect(errors, 'and it is visible in the console').toHaveBeenCalled();
+    errors.mockRestore();
+    conn.destroy();
+  });
+
+  it('still RETRIES an ordinary drop, which is not a refusal', async () => {
+    const conn = new WSConnection(TEST_URL, { eventHandlers: {} });
+    conn.connect();
+    latest().open();
+    const opened = FakeSocket.instances.length;
+
+    latest().drop();
+    vi.advanceTimersByTime(60_000);
+
+    expect(FakeSocket.instances.length).toBeGreaterThan(opened);
     conn.destroy();
   });
 });

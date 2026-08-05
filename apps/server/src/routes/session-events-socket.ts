@@ -6,7 +6,7 @@
  * hand it to {@link deliverSessionStream}. Only the sink differs, and only
  * because of a browser limit — an SSE stream holds one of a browser's ~6 sockets
  * per origin for as long as it is open, so three cockpit windows spent all six
- * and every later request queued forever (ADR 260804-030000).
+ * and every later request queued forever (ADR 260805-041016).
  *
  * Two mechanics differ from SSE, both because a browser `WebSocket` constructor
  * takes a URL and nothing else:
@@ -27,7 +27,6 @@ import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { resolveSettingsKey } from '../services/session/index.js';
 import { deliverSessionStream } from '../services/core/streams/session-stream-delivery.js';
 import { DurableStreamSocket } from '../services/core/streams/stream-socket.js';
-import { authorizeStreamUpgrade } from '../services/core/streams/stream-upgrade-auth.js';
 import type { UpgradeDecision, UpgradeRoute } from '../services/core/streams/upgrade-router.js';
 import { validateBoundaryOrDorkHome, BoundaryError } from '../lib/boundary.js';
 import { parseSessionId } from '../lib/route-utils.js';
@@ -55,8 +54,10 @@ const SESSION_EVENTS_PATH = /^\/api\/sessions\/([^/]+)\/events$/;
 export const sessionEventsRoute: UpgradeRoute = {
   name: 'session-events',
   pattern: SESSION_EVENTS_PATH,
+  // The router runs the credential gate before this is called.
+  credential: 'required',
 
-  async authorize({ url, headers, match }): Promise<UpgradeDecision> {
+  async authorize({ url, match }): Promise<UpgradeDecision> {
     // Refusals go out as a close frame rather than a failed handshake: a
     // browser cannot read the status of a failed one, and a signed-out cockpit
     // has to be able to tell "not yours to read" from "server briefly down".
@@ -69,9 +70,6 @@ export const sessionEventsRoute: UpgradeRoute = {
 
     const sessionId = parseSessionId(decodeURIComponent(match[1]!));
     if (!sessionId) return refuse(400, 'Invalid session ID');
-
-    const auth = await authorizeStreamUpgrade(headers);
-    if (!auth.ok) return refuse(auth.status, auth.message);
 
     const cwd = url.searchParams.get('cwd') || vaultRoot;
     // Agent-home session cwds ({dorkHome}/agents/*) must stream under a narrow
