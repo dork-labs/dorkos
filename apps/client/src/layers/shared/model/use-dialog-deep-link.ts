@@ -102,9 +102,10 @@ const LEGACY_SETTINGS_TAB_MAP: Record<string, SettingsTab | SettingsRouteTarget>
  * Resolve a raw `?settings=` value against a legacy map into a typed target:
  * `null` when there is nothing to resolve (unset or the tabless `open`
  * sentinel), a tab id (migrating retired ids per the map), or a route target
- * for a legacy id that now lives outside the dialog. The map is a parameter
- * so the route branch — dead code against today's production map, which has
- * no route entries — is exercisable directly in tests.
+ * for a legacy id that now lives outside the dialog. The map is a parameter so
+ * the route branch is exercisable in tests against a map of their own choosing;
+ * it stopped being dead code when both messaging ids started pointing at the
+ * Connections page (DOR-857).
  *
  * @internal Exported for testing only.
  */

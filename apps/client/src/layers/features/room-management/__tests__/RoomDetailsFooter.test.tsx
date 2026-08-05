@@ -61,8 +61,11 @@ describe('RoomDetailsFooter', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Bring this room back' }));
 
     await waitFor(() =>
+      // `expect.anything()` covers the shared "Report" action every
+      // mutation-error toast carries; query-client.test.ts owns its content.
       expect(toast.error).toHaveBeenCalledWith(
-        "Couldn't bring that room back — A channel called #backend already exists"
+        "Couldn't bring that room back — A channel called #backend already exists",
+        expect.anything()
       )
     );
     expect(toast.error).toHaveBeenCalledTimes(1);

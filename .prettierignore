@@ -54,3 +54,9 @@ specs/*/03-tasks.json
 # review-failure classifier reports "unknown" instead of crashing or guessing.
 # Formatting it would destroy the only thing it tests.
 scripts/fixtures/review-failure/malformed.json
+
+# Playwright's generated HTML report. Already gitignored (apps/e2e/.gitignore),
+# but Prettier walks the filesystem rather than the index, so after any local
+# browser-test run the repo-wide `pnpm format:check` — the gate the typecheck
+# job also runs — failed on an artifact nobody wrote and nobody can commit.
+apps/e2e/playwright-report/

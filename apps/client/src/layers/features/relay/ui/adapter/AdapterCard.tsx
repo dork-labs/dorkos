@@ -102,6 +102,11 @@ export function AdapterCard({
 
   return (
     <div
+      // Instance-scoped so a browser test can reach one card's actions menu.
+      // Every affordance on this card now lives behind a kebab whose label is
+      // the same on every card, so the card is the only thing left that can
+      // tell them apart. Matches the `provider-card-<type>` convention next door.
+      data-testid={`adapter-card-${instance.id}`}
       className={cn(
         'shadow-soft hover:shadow-elevated rounded-xl border p-5 transition-shadow',
         isBuiltinClaude && 'border-dashed'

@@ -419,7 +419,12 @@ describe('ChannelsPage — a refusal nobody is listening for', () => {
     refuse(new Error('This room is archived'));
 
     await waitFor(() =>
-      expect(toastError).toHaveBeenCalledWith("Couldn't send your message — This room is archived")
+      // `expect.anything()` covers the shared "Report" action every
+      // mutation-error toast carries; query-client.test.ts owns its content.
+      expect(toastError).toHaveBeenCalledWith(
+        "Couldn't send your message — This room is archived",
+        expect.anything()
+      )
     );
     expect(toastError).toHaveBeenCalledTimes(1);
     // The room the reader is standing in is untouched — its composer is not a
@@ -471,7 +476,8 @@ describe('ChannelsPage — a refusal nobody is listening for', () => {
     });
     expect(toastError).toHaveBeenCalledTimes(1);
     expect(toastError).toHaveBeenCalledWith(
-      "Couldn't send your message — Not a member of this room"
+      "Couldn't send your message — Not a member of this room",
+      expect.anything()
     );
   });
 

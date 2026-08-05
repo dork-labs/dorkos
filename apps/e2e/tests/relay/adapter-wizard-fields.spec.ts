@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { BasePage } from '../../pages/BasePage.js';
 
 /**
  * Every setting a real adapter declares must be reachable in the setup wizard.
@@ -14,7 +15,7 @@ import { test, expect, type Page } from '@playwright/test';
 const DESKTOP = { width: 1440, height: 900 };
 const MOBILE = { width: 390, height: 844 };
 
-/** Adapter categories a person manages from the Integrations tab. */
+/** Adapter categories a person manages from the Connections page. */
 const EXTERNAL_CATEGORIES = new Set(['messaging', 'automation']);
 
 /**
@@ -43,21 +44,18 @@ async function fetchCatalog(page: Page): Promise<CatalogEntry[]> {
 }
 
 /**
- * Opens Settings on the Integrations section.
+ * Opens the Messaging region of the Connections page — where the adapters this
+ * spec drives now live.
  *
- * Wide viewports render the sections as tabs the deep link selects directly.
- * Narrow ones render a drill-down list instead, so the section has to be tapped.
+ * Integrations left the Settings dialog and became half of the Connections page
+ * (DOR-857). `?settings=integrations` still resolves, but only as a *redirect*
+ * to this page, so waiting on the Settings dialog after it waits forever. This
+ * goes to the destination directly; `?region=messaging` is the search param the
+ * page reads to scroll the half we want into view.
  */
-async function openIntegrations(page: Page) {
-  await page.goto('/?settings=integrations');
-  await page.waitForSelector('[data-testid="settings-dialog"]');
-
-  const tab = page.getByRole('tab', { name: 'Integrations' });
-  if ((await tab.count()) > 0) {
-    await expect(tab).toHaveAttribute('aria-selected', 'true');
-  } else {
-    await page.getByRole('button', { name: 'Integrations', exact: true }).click();
-  }
+async function openMessagingRegion(page: Page) {
+  await page.goto('/connections?region=messaging');
+  await new BasePage(page).waitForAppReady();
   await expect(page.getByRole('button', { name: 'Add Slack' })).toBeVisible();
 }
 
@@ -67,17 +65,44 @@ function wizard(page: Page) {
 }
 
 /**
+ * Opens Configure on one already-added adapter.
+ *
+ * Every per-adapter action moved behind a kebab menu whose label reads
+ * "Adapter actions" on every card (DOR-857), so there is no longer a
+ * "Configure <name>" button to click and nothing in the menu distinguishes one
+ * card from another. The card's own test id is what picks the right one.
+ *
+ * @param adapterId - The instance id the adapter was created with.
+ */
+async function openConfigure(page: Page, adapterId: string) {
+  const card = page.getByTestId(`adapter-card-${adapterId}`);
+  await expect(card).toBeVisible();
+  await card.getByRole('button', { name: 'Adapter actions' }).click();
+  await page.getByRole('menuitem', { name: 'Configure' }).click();
+}
+
+/**
  * Get past the wizard's first question.
  *
  * Adding a connection asks who answers before it asks for any setting
  * (DOR-857), so every assertion about the configure step has to walk through
- * it. Editing skips the step, and this is a no-op there.
+ * it. The step wears one of two faces depending on how many agents exist: a
+ * picker to choose from, or a line naming the only one there is.
+ *
+ * Both faces arrive with the agent list, so this waits for one of them instead
+ * of branching on a bare `count()`. `count()` does not auto-wait, so a list
+ * that had not resolved yet read as "there is no agent step at all" — this
+ * returned having advanced nothing, and the caller then reported the configure
+ * step as hiding every field the adapter declares. A defect in the wait,
+ * reported as a defect in the wizard.
  */
 async function pastAgentStep(page: Page) {
   const dialog = wizard(page);
   const agentQuestion = dialog.getByLabel('Who should answer?');
   const namedAgent = dialog.getByText(/will answer\.$/);
-  if ((await agentQuestion.count()) === 0 && (await namedAgent.count()) === 0) return;
+  const agentStep = agentQuestion.or(namedAgent).first();
+
+  await expect(agentStep).toBeVisible();
 
   if ((await agentQuestion.count()) > 0) {
     await agentQuestion.click();
@@ -86,6 +111,28 @@ async function pastAgentStep(page: Page) {
   const next = dialog.getByRole('button', { name: 'Continue' });
   await expect(next).toBeEnabled();
   await next.click();
+
+  // Leaving is what the caller is actually waiting for. Without this, labels
+  // can be read off the step this function was supposed to have left behind.
+  await expect(agentStep).toBeHidden();
+}
+
+/**
+ * The name a field presents, with the required marker taken back off.
+ *
+ * A required field's label carries a real asterisk node (DOR-651) rather than
+ * CSS generated content, so the label now reads "Bot Token\n*" and an exact
+ * match against the manifest's `label` misses every required field — reporting
+ * each one as a field the wizard never renders. The marker's own shape is
+ * ConfigFieldInput's business; this sweep only asks whether the field arrived.
+ *
+ * @param raw - The label's rendered text.
+ */
+function fieldName(raw: string): string {
+  return raw
+    .replace(/\s*\*\s*$/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 /**
@@ -98,8 +145,14 @@ async function labelsAcrossSteps(page: Page, stepCount: number): Promise<Set<str
   const seen = new Set<string>();
 
   for (let step = 0; step < Math.max(stepCount, 1); step++) {
+    // A step's fields paint a tick after the previous one leaves. Reading the
+    // instant the transition starts collects an empty step and reports every
+    // field on it as one the wizard never renders — the exact claim this spec
+    // exists to make, arrived at without ever having looked.
+    await expect(dialog.locator('label').first()).toBeVisible();
+
     for (const label of await dialog.locator('label').all()) {
-      const text = (await label.innerText()).trim();
+      const text = fieldName(await label.innerText());
       if (text) seen.add(text);
     }
     if (step === Math.max(stepCount, 1) - 1) break;
@@ -118,7 +171,7 @@ async function labelsAcrossSteps(page: Page, stepCount: number): Promise<Set<str
 test.describe('Adapter setup wizard — every declared field reaches a screen', () => {
   test('the Slack access controls render in the add wizard', async ({ page }) => {
     await page.setViewportSize(DESKTOP);
-    await openIntegrations(page);
+    await openMessagingRegion(page);
 
     await page.getByRole('button', { name: 'Add Slack' }).click();
     const dialog = wizard(page);
@@ -141,7 +194,7 @@ test.describe('Adapter setup wizard — every declared field reaches a screen', 
 
   test('surfacing the DM policy leaves it on its safe default', async ({ page }) => {
     await page.setViewportSize(DESKTOP);
-    await openIntegrations(page);
+    await openMessagingRegion(page);
     await page.getByRole('button', { name: 'Add Slack' }).click();
     await pastAgentStep(page);
 
@@ -180,9 +233,9 @@ test.describe('Adapter setup wizard — every declared field reaches a screen', 
 
     try {
       await page.setViewportSize(DESKTOP);
-      await openIntegrations(page);
+      await openMessagingRegion(page);
 
-      await page.getByRole('button', { name: 'Configure Legacy workspace' }).click();
+      await openConfigure(page, 'slack-legacy-config');
       const dialog = wizard(page);
       await expect(dialog.getByText('Edit Slack')).toBeVisible();
 
@@ -227,8 +280,8 @@ test.describe('Adapter setup wizard — every declared field reaches a screen', 
 
     try {
       await page.setViewportSize(DESKTOP);
-      await openIntegrations(page);
-      await page.getByRole('button', { name: 'Configure Stored values' }).click();
+      await openMessagingRegion(page);
+      await openConfigure(page, 'slack-stored-values');
       const dialog = wizard(page);
 
       // One id per line, not comma-joined; real JSON, not [object Object].
@@ -280,8 +333,8 @@ test.describe('Adapter setup wizard — every declared field reaches a screen', 
 
     try {
       await page.setViewportSize(DESKTOP);
-      await openIntegrations(page);
-      await page.getByRole('button', { name: 'Configure Refused save' }).click();
+      await openMessagingRegion(page);
+      await openConfigure(page, 'slack-refused-save');
       const dialog = wizard(page);
 
       // Break the JSON the way a stray keystroke would.
@@ -308,7 +361,7 @@ test.describe('Adapter setup wizard — every declared field reaches a screen', 
 
   test('the approvers field is reachable by keyboard', async ({ page }) => {
     await page.setViewportSize(DESKTOP);
-    await openIntegrations(page);
+    await openMessagingRegion(page);
     await page.getByRole('button', { name: 'Add Slack' }).click();
     await pastAgentStep(page);
 
@@ -328,7 +381,7 @@ test.describe('Adapter setup wizard — every declared field reaches a screen', 
 
   test('the access controls stay on screen at 390px', async ({ page }) => {
     await page.setViewportSize(MOBILE);
-    await openIntegrations(page);
+    await openMessagingRegion(page);
     await page.getByRole('button', { name: 'Add Slack' }).click();
     await pastAgentStep(page);
 
@@ -352,7 +405,7 @@ test.describe('Adapter setup wizard — every declared field reaches a screen', 
     expect(external.length, 'no external adapters in the catalog').toBeGreaterThan(0);
 
     for (const entry of external) {
-      await openIntegrations(page);
+      await openMessagingRegion(page);
       const add = page.getByRole('button', { name: `Add ${entry.manifest.displayName}` });
       if (!(await add.isVisible().catch(() => false))) continue;
       await add.click();
