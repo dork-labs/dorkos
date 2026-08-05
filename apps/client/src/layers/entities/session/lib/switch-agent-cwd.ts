@@ -1,7 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import { resolveSessionForCwd, notifySessionLookupFailed } from './resolve-session-for-cwd';
-import { beginSessionNavigation } from './session-navigation-intent';
+import { beginSessionNavigation, type CockpitLocation } from './session-navigation-intent';
 
 /**
  * App-store slice {@link switchAgentCwd} reads and writes. A structural subset
@@ -26,11 +26,11 @@ export interface SwitchAgentCwdDeps {
   /** Transport, used to ask the server which session that directory is on. */
   transport: Transport;
   /**
-   * Reads the router's current location, e.g.
-   * `() => router.state.location.href`. A switch whose lookup comes back to a
-   * location that has moved has been overtaken and must not land.
+   * Reads the router's current location, e.g. `() => router.state.location`. A
+   * switch whose lookup comes back to a different destination has been
+   * overtaken and must not land.
    */
-  currentHref: () => string;
+  currentLocation: () => CockpitLocation;
   /**
    * Navigate to the `/session` route with the resolved directory + session.
    * Kept router-agnostic so the caller owns the route target and the function
@@ -65,8 +65,8 @@ export interface SwitchAgentCwdDeps {
  *   navigate callback.
  */
 export async function switchAgentCwd(cwd: string, deps: SwitchAgentCwdDeps): Promise<void> {
-  const { store, queryClient, transport, currentHref, navigate } = deps;
-  const isStillWanted = beginSessionNavigation(currentHref);
+  const { store, queryClient, transport, currentLocation, navigate } = deps;
+  const isStillWanted = beginSessionNavigation(currentLocation);
   // Captured at the gesture, applied after: this is the directory being LEFT,
   // and reading it back after the await would read whatever the cockpit has
   // moved on to.

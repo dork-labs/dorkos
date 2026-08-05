@@ -40,16 +40,25 @@ vi.mock('@/layers/entities/session/model/use-session-search', () => ({
 // Mock useNavigate. Navigating MOVES the location, as it does in the app: what
 // stops an overtaken lookup from landing is the router's own location having
 // changed, so a location that never moves would test nothing.
-let mockHref = 'http://localhost/';
-const mockNavigate = vi.fn(() => {
-  mockHref = `http://localhost/after-${Math.random()}`;
+let mockLocation: { pathname: string; search: Record<string, unknown> } = {
+  pathname: '/session',
+  search: {},
+};
+const mockNavigate = vi.fn((opts: { to?: string; search?: unknown }) => {
+  const next =
+    typeof opts.search === 'function'
+      ? (opts.search as (p: Record<string, unknown>) => Record<string, unknown>)(
+          mockLocation.search
+        )
+      : ((opts.search as Record<string, unknown>) ?? {});
+  mockLocation = { pathname: opts.to ?? mockLocation.pathname, search: next };
 });
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
   useRouter: () => ({
     state: {
       get location() {
-        return { href: mockHref };
+        return mockLocation;
       },
     },
   }),
@@ -84,7 +93,7 @@ describe('useDirectoryState', () => {
     mockStoreDir = null;
     mockSearchDir = undefined;
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    mockHref = 'http://localhost/';
+    mockLocation = { pathname: '/session', search: {} };
     vi.mocked(toast.error).mockReset();
   });
 
@@ -183,17 +192,22 @@ describe('useDirectoryState', () => {
     );
   });
 
-  it('says the lookup failed, moves nothing, and reports it did not open', async () => {
+  it('says the lookup failed, moves nothing, and never reports it opened', async () => {
     // This is the command palette's agent-select path. A failed lookup that
     // quietly minted a session would open a blank chat for an agent that has
-    // work — DOR-928's own symptom — and the palette would then rank that agent
-    // as one you had used.
+    // work — DOR-928's own symptom — and `onOpened` firing anyway would have the
+    // palette rank an agent you never reached.
     mockListSessions.mockRejectedValueOnce(new Error('offline'));
+    const onOpened = vi.fn();
     const { result } = renderHook(() => useDirectoryState());
 
-    const opened = await act(() => result.current[1]('/never/opened'));
+    await act(async () => {
+      result.current[1]('/never/opened', { onOpened });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
 
-    expect(opened).toBe(false);
+    expect(onOpened).not.toHaveBeenCalled();
     expect(toast.error).toHaveBeenCalled();
     expect(mockNavigate).not.toHaveBeenCalled();
     expect(mockSetStoreDir).not.toHaveBeenCalled();
@@ -211,15 +225,15 @@ describe('useDirectoryState', () => {
     );
     const { result } = renderHook(() => useDirectoryState());
 
-    let settled: Promise<boolean>;
     act(() => {
-      settled = result.current[1]('/never/opened');
+      result.current[1]('/never/opened');
     });
     expect(mockSetStoreDir).not.toHaveBeenCalled();
 
     await act(async () => {
       answer({ sessions: [{ id: 'sess-1' }] });
-      await settled;
+      await Promise.resolve();
+      await Promise.resolve();
     });
     expect(mockSetStoreDir).toHaveBeenCalledWith('/never/opened');
   });
@@ -236,22 +250,49 @@ describe('useDirectoryState', () => {
     );
     const { result } = renderHook(() => useDirectoryState());
 
-    let settled: Promise<boolean>;
+    const onOpened = vi.fn();
     act(() => {
-      settled = result.current[1]('/never/opened');
+      result.current[1]('/never/opened', { onOpened });
     });
-    mockHref = 'http://localhost/channels?id=c1'; // somebody opened a channel
+    mockLocation = { pathname: '/channels', search: { id: 'c1' } }; // opened a channel
 
-    let opened!: boolean;
     await act(async () => {
       answer({ sessions: [{ id: 'sess-1' }] });
-      opened = await settled;
+      await Promise.resolve();
+      await Promise.resolve();
     });
 
-    expect(opened).toBe(false);
+    expect(onOpened).not.toHaveBeenCalled();
     expect(mockNavigate).not.toHaveBeenCalled();
     expect(mockSetStoreDir).not.toHaveBeenCalled();
     expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('stays silent about a failure the person has already navigated away from', async () => {
+    // "We left you where you are" is only true if they are still there. An
+    // abandoned lookup that also fails must say nothing at all — checking
+    // overtaken-ness BEFORE the failure branch is what makes that so.
+    let reject!: (reason: Error) => void;
+    mockListSessions.mockReturnValueOnce(
+      new Promise((_resolve, rej) => {
+        reject = rej;
+      })
+    );
+    const { result } = renderHook(() => useDirectoryState());
+
+    act(() => {
+      void result.current[1]('/never/opened');
+    });
+    mockLocation = { pathname: '/channels', search: { id: 'c1' } }; // they moved on
+
+    await act(async () => {
+      reject(new Error('offline'));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
   it('preserveSession: true skips session clearing in embedded', () => {

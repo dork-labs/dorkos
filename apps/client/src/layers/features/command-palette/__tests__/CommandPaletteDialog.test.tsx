@@ -150,10 +150,12 @@ vi.mock('@/layers/shared/model', () => ({
   }),
 }));
 
-// `setDir` answers whether the agent actually opened — frecency and the
-// switch-back target wait on it, so a bare `vi.fn()` returning undefined
-// would not be the contract the palette consumes (DOR-928).
-const mockSetDir = vi.fn(() => Promise.resolve(true));
+// A successful open: `setDir` runs `onOpened` once the agent is really on
+// screen. Frecency and the switch-back target ride that callback, so a mock
+// that ignored it would not be the contract the palette consumes (DOR-928).
+const mockSetDir = vi.fn((_dir: string | null, opts?: { onOpened?: () => void }) => {
+  opts?.onOpened?.();
+});
 vi.mock('@/layers/entities/session', async (importOriginal) => ({
   // Keep the real session resolver — the palette builds its hrefs with it, and
   // faking it would hide whether those hrefs carry a session at all.
@@ -533,9 +535,32 @@ describe('CommandPaletteDialog', () => {
     // Click Open Here
     const openHereItem = screen.getByText('Open Here').closest('[data-slot="command-item"]');
     if (openHereItem) fireEvent.click(openHereItem as Element);
-    expect(mockSetDir).toHaveBeenCalledWith('/projects/current');
+    expect(mockSetDir).toHaveBeenCalledWith('/projects/current', expect.anything());
     // Frecency waits for the agent to actually open (DOR-928): a failed or
     // overtaken lookup must not rank an agent you never reached.
+    await waitFor(() => expect(mockRecordUsage).toHaveBeenCalledWith('agent-3'));
+  });
+
+  it('starts a BRAND-NEW conversation from New Session, not the agent’s latest', async () => {
+    // Red when New Session routes through `setDir`: that resolves the agent's
+    // most recent conversation and resumes it, which is exactly what "Open
+    // Here" two rows above already does — two rows, one behaviour (DOR-928).
+    render(<CommandPaletteDialog />);
+    const item = screen.getAllByText('Worker')[0].closest('[data-slot="command-item"]');
+    if (item) fireEvent.click(item as Element);
+    const newSession = screen.getByText('New Session').closest('[data-slot="command-item"]');
+    if (newSession) fireEvent.click(newSession as Element);
+
+    expect(mockSetDir).not.toHaveBeenCalled();
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: '/session',
+      search: {
+        dir: '/projects/current',
+        session: expect.stringMatching(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+        ),
+      },
+    });
     await waitFor(() => expect(mockRecordUsage).toHaveBeenCalledWith('agent-3'));
   });
 

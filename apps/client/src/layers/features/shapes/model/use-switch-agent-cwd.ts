@@ -27,7 +27,7 @@ export function useSwitchAgentCwd(): (cwd: string) => void {
         store: useAppStore.getState(),
         queryClient,
         transport,
-        currentHref: () => router.state.location.href,
+        currentLocation: () => router.state.location,
         navigate: (search) => void navigate({ to: '/session', search }),
       }),
     [queryClient, transport, router, navigate]

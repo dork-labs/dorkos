@@ -473,7 +473,7 @@ export function DashboardSidebar() {
       // guards against being overtaken: by another agent click, and by any of
       // the app's other navigations, which it notices through the router's own
       // location rather than by asking them to cooperate.
-      const isStillWanted = beginSessionNavigation(() => router.state.location.href);
+      const isStillWanted = beginSessionNavigation(() => router.state.location);
       void resolveSessionForCwd({ queryClient, transport }, agentPath).then((resolved) => {
         // Overtaken first: an abandoned lookup neither moves you nor explains
         // itself — you are somewhere else now, and "we left you where you are"

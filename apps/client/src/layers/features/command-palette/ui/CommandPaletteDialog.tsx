@@ -70,6 +70,7 @@ export function CommandPaletteDialog() {
 
   const {
     handleAgentSelect,
+    startNewSession,
     handleFeatureAction,
     handleQuickAction,
     handleRoomSelect,
@@ -509,7 +510,10 @@ export function CommandPaletteDialog() {
                             : undefined
                         }
                         onNewSession={() => {
-                          void setDir(subMenuAgent.projectPath);
+                          // A NEW conversation, not this agent's latest one —
+                          // otherwise this row and "Open Here" above it do the
+                          // same thing (DOR-928).
+                          startNewSession(subMenuAgent.projectPath);
                           recordUsage(subMenuAgent.id);
                           closePalette();
                         }}

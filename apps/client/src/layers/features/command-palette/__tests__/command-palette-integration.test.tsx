@@ -127,10 +127,12 @@ vi.mock('@/layers/shared/model', () => ({
   }),
 }));
 
-// `setDir` answers whether the agent actually opened — frecency and the
-// switch-back target wait on it, so a bare `vi.fn()` returning undefined
-// would not be the contract the palette consumes (DOR-928).
-const mockSetDir = vi.fn(() => Promise.resolve(true));
+// A successful open: `setDir` runs `onOpened` once the agent is really on
+// screen. Frecency and the switch-back target ride that callback, so a mock
+// that ignored it would not be the contract the palette consumes (DOR-928).
+const mockSetDir = vi.fn((_dir: string | null, opts?: { onOpened?: () => void }) => {
+  opts?.onOpened?.();
+});
 let mockSelectedCwd: string | null = '/projects/current';
 
 vi.mock('@/layers/entities/session', async (importOriginal) => ({
@@ -275,6 +277,26 @@ describe('Command Palette Integration', () => {
 
   // --- Full agent switching flow (two-step: click agent → sub-menu → Open Here) ---
 
+  it('the New Session quick action actually starts one', async () => {
+    // Red when the contribution registers an action the dispatcher has no case
+    // for: the row is offered, clicking it closes the palette, and nothing
+    // whatsoever happens (DOR-928 review).
+    render(<CommandPaletteDialog />);
+    const row = screen.getAllByText('New Session')[0].closest('[data-slot="command-item"]');
+    expect(row).not.toBeNull();
+    fireEvent.click(row as Element);
+
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: '/session',
+      search: {
+        dir: expect.any(String),
+        session: expect.stringMatching(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+        ),
+      },
+    });
+  });
+
   it('clicking an agent navigates to sub-menu; Open Here switches, records frecency, and closes', async () => {
     render(<CommandPaletteDialog />);
 
@@ -291,7 +313,7 @@ describe('Command Palette Integration', () => {
     fireEvent.click(openHereItem as Element);
 
     // Should set directory to the agent's project path
-    expect(mockSetDir).toHaveBeenCalledWith('/projects/auth');
+    expect(mockSetDir).toHaveBeenCalledWith('/projects/auth', expect.anything());
 
     // Should close the palette
     expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);
@@ -320,7 +342,7 @@ describe('Command Palette Integration', () => {
     const openHereItem = screen.getByText('Open Here').closest('[data-slot="command-item"]');
     fireEvent.click(openHereItem as Element);
 
-    expect(mockSetDir).toHaveBeenCalledWith('/projects/current');
+    expect(mockSetDir).toHaveBeenCalledWith('/projects/current', expect.anything());
 
     // Frecency recorded for agent-3
     // Frecency lands only after the agent actually opens (DOR-928), so this
@@ -403,7 +425,7 @@ describe('Command Palette Integration', () => {
     const openHereItem = screen.getByText('Open Here').closest('[data-slot="command-item"]');
     fireEvent.click(openHereItem as Element);
 
-    expect(mockSetDir).toHaveBeenCalledWith('/projects/gateway');
+    expect(mockSetDir).toHaveBeenCalledWith('/projects/gateway', expect.anything());
     expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);
 
     // Frecency lands only after the agent actually opens (DOR-928), so this

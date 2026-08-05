@@ -18,6 +18,8 @@ import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 
 interface PaletteActions {
   handleAgentSelect: (agent: AgentPathEntry) => void;
+  /** Start a brand-new conversation, optionally with a named agent. */
+  startNewSession: (dir?: string) => void;
   handleFeatureAction: (action: string) => void;
   handleQuickAction: (action: string) => void;
   handleRoomSelect: (room: RoomSummary) => void;
@@ -75,14 +77,34 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
       // reached and offer "switch back" to a directory you never left
       // (DOR-928).
       const leaving = selectedCwd;
-      void setDir(agent.projectPath).then((opened) => {
-        if (!opened) return;
-        if (leaving && leaving !== agent.projectPath) setPreviousCwd(leaving);
-        recordUsage(agent.id);
+      setDir(agent.projectPath, {
+        onOpened: () => {
+          if (leaving && leaving !== agent.projectPath) setPreviousCwd(leaving);
+          recordUsage(agent.id);
+        },
       });
       closePalette();
     },
     [recordUsage, setDir, closePalette, selectedCwd, setPreviousCwd]
+  );
+
+  /**
+   * Start a BRAND-NEW conversation, with the agent it belongs to.
+   *
+   * Deliberately not `setDir`: that resolves the agent's most recent
+   * conversation and resumes it, which is what "Open Here" means. A fresh id is
+   * the whole difference between the two rows (DOR-928).
+   *
+   * @param dir - The agent's directory; the active one when omitted.
+   */
+  const startNewSession = useCallback(
+    (dir?: string) => {
+      navigate({
+        to: '/session',
+        search: { dir: dir ?? selectedCwd ?? undefined, session: crypto.randomUUID() },
+      });
+    },
+    [navigate, selectedCwd]
   );
 
   /**
@@ -150,6 +172,9 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
         case 'navigateDashboard':
           navigate({ to: '/' });
           return;
+        case 'newSession':
+          startNewSession();
+          return;
         case 'openDevPlayground':
           // `/dev` mounts outside the router (see `Root` in main.tsx), so the
           // seam classifies it as external and gives it its own window — an
@@ -214,6 +239,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
 
   return {
     handleAgentSelect,
+    startNewSession,
     handleFeatureAction,
     handleQuickAction,
     handleRoomSelect,

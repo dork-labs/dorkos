@@ -59,10 +59,19 @@ function dmWith(id: string, agentPath: string, title: string): RoomSummary {
 // load-bearing: what stops a slow agent lookup from landing on top of a
 // navigation that happened while it was out is the router's own location
 // having moved, so a mock whose location never changes would test nothing.
-let mockHref = 'http://localhost/';
-let navSeq = 0;
-const mockNavigate = vi.fn(() => {
-  mockHref = `http://localhost/after-nav-${++navSeq}`;
+let mockLocation: { pathname: string; search: Record<string, unknown> } = {
+  pathname: '/',
+  search: {},
+};
+const mockNavigate = vi.fn((opts: { to?: string; search?: unknown }) => {
+  const next =
+    typeof opts.search === 'function'
+      ? (opts.search as (p: Record<string, unknown>) => Record<string, unknown>)(
+          mockLocation.search
+        )
+      : ((opts.search as Record<string, unknown>) ?? {});
+  mockLocation = { pathname: opts.to ?? mockLocation.pathname, search: next };
+  mockPathname = mockLocation.pathname;
 });
 let mockPathname = '/';
 vi.mock('@tanstack/react-router', () => ({
@@ -70,7 +79,7 @@ vi.mock('@tanstack/react-router', () => ({
   useRouter: () => ({
     state: {
       get location() {
-        return { href: mockHref, pathname: mockPathname };
+        return mockLocation;
       },
     },
   }),
@@ -353,8 +362,7 @@ describe('DashboardSidebar', () => {
     );
     mockSelectedCwd = null;
     mockPathname = '/';
-    mockHref = 'http://localhost/';
-    navSeq = 0;
+    mockLocation = { pathname: '/', search: {} };
   });
 
   // --- Navigation ---
@@ -453,6 +461,83 @@ describe('DashboardSidebar', () => {
       to: '/session',
       search: { dir: '/projects/beta', session: 'beta-s1' },
     });
+  });
+
+  // The ordering only the counter can save. Both lookups begin at the same
+  // location, so the location cannot tell them apart: whichever ANSWERED first
+  // would win, and here that is the agent clicked first.
+  it('lands on the agent clicked last even when the one clicked first answers first', async () => {
+    const answer = (id: string) => ({
+      sessions: [
+        {
+          id,
+          title: 't',
+          cwd: '/x',
+          createdAt: '2026-03-01T00:00:00.000Z',
+          updatedAt: '2026-03-01T00:00:00.000Z',
+          permissionMode: 'default',
+          runtime: 'claude-code',
+        },
+      ],
+    });
+    mockTransport.listSessions.mockImplementation((cwd?: string) =>
+      cwd === '/projects/alpha'
+        ? Promise.resolve(answer('alpha-s1')) // clicked FIRST, answers FIRST
+        : new Promise((resolve) => setTimeout(() => resolve(answer('beta-s1')), 60))
+    );
+
+    renderWithProviders(<DashboardSidebar />);
+    fireEvent.click(screen.getAllByText('alpha')[0]);
+    fireEvent.click(screen.getAllByText('beta')[0]);
+
+    // Real time, on purpose: the claim includes that alpha never navigates.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: '/session',
+      search: { dir: '/projects/beta', session: 'beta-s1' },
+    });
+  });
+
+  // Opening a dialog rewrites the URL without going anywhere. Treating that as a
+  // navigation cancels the lookup, and the click dies in silence — the failure
+  // mode a person can least easily report.
+  it('still opens the agent when a dialog rewrites the URL mid-lookup', async () => {
+    mockTransport.listSessions.mockImplementation(
+      () =>
+        new Promise((resolve) =>
+          setTimeout(
+            () =>
+              resolve({
+                sessions: [
+                  {
+                    id: 'beta-s1',
+                    title: 't',
+                    cwd: '/projects/beta',
+                    createdAt: '2026-03-01T00:00:00.000Z',
+                    updatedAt: '2026-03-01T00:00:00.000Z',
+                    permissionMode: 'default',
+                    runtime: 'claude-code',
+                  },
+                ],
+              }),
+            60
+          )
+        )
+    );
+
+    renderWithProviders(<DashboardSidebar />);
+    fireEvent.click(screen.getAllByText('beta')[0]);
+    // ⌘, while the lookup is out — `?settings=` goes on, nothing moves.
+    mockLocation = { ...mockLocation, search: { ...mockLocation.search, settings: 'general' } };
+
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith({
+        to: '/session',
+        search: { dir: '/projects/beta', session: 'beta-s1' },
+      })
+    );
   });
 
   // The same race without a double click: a Recent row navigates immediately, so

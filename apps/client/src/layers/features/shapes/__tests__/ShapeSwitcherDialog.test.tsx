@@ -17,14 +17,15 @@ import { ShapeSwitcherDialog } from '../ui/ShapeSwitcherDialog';
 
 const mockNavigate = vi.fn();
 // `useRouter` too: the agent switch reads the router's own location to notice
-// when something else navigated while its lookup was out (DOR-928).
-const mockHref = 'http://localhost/';
+// when something else navigated while its lookup was out (DOR-928). It reads
+// `pathname` and `search`, so the shape has to be the router's, not a stand-in.
+const mockLocation = { pathname: '/session', search: {} };
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
   useRouter: () => ({
     state: {
       get location() {
-        return { href: mockHref };
+        return mockLocation;
       },
     },
   }),

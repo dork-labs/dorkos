@@ -9,6 +9,7 @@ import {
   type DispatcherStore,
 } from '@/layers/shared/lib';
 import { switchAgentCwd, type SwitchAgentCwdStore } from '../lib/switch-agent-cwd';
+import type { CockpitLocation } from '../lib/session-navigation-intent';
 import { sessionKeys } from '../api/query-keys';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -46,7 +47,7 @@ describe('switchAgentCwd', () => {
       store,
       queryClient: new QueryClient(),
       transport: makeTransport(),
-      currentHref: () => 'http://localhost/',
+      currentLocation: () => ({ pathname: '/session', search: {} }),
       navigate,
     });
     expect(store.setSelectedCwd).toHaveBeenCalledWith('/home/user/project');
@@ -58,7 +59,7 @@ describe('switchAgentCwd', () => {
       store,
       queryClient: new QueryClient(),
       transport: makeTransport(),
-      currentHref: () => 'http://localhost/',
+      currentLocation: () => ({ pathname: '/session', search: {} }),
       navigate: vi.fn(),
     });
     expect(store.setPreviousCwd).toHaveBeenCalledWith('/home/user/old');
@@ -70,7 +71,7 @@ describe('switchAgentCwd', () => {
       store,
       queryClient: new QueryClient(),
       transport: makeTransport(),
-      currentHref: () => 'http://localhost/',
+      currentLocation: () => ({ pathname: '/session', search: {} }),
       navigate: vi.fn(),
     });
     expect(store.setPreviousCwd).not.toHaveBeenCalled();
@@ -82,7 +83,7 @@ describe('switchAgentCwd', () => {
       store,
       queryClient: new QueryClient(),
       transport: makeTransport(),
-      currentHref: () => 'http://localhost/',
+      currentLocation: () => ({ pathname: '/session', search: {} }),
       navigate: vi.fn(),
     });
     expect(store.setPreviousCwd).not.toHaveBeenCalled();
@@ -96,7 +97,7 @@ describe('switchAgentCwd', () => {
       store: makeStore(),
       queryClient,
       transport: makeTransport(),
-      currentHref: () => 'http://localhost/',
+      currentLocation: () => ({ pathname: '/session', search: {} }),
       navigate,
     });
     expect(navigate).toHaveBeenCalledWith({ dir: '/home/user/project', session: 'sess-cached' });
@@ -110,7 +111,7 @@ describe('switchAgentCwd', () => {
       store: makeStore(),
       queryClient: new QueryClient(),
       transport: makeTransport([{ id: 'sess-on-server' } as Session]),
-      currentHref: () => 'http://localhost/',
+      currentLocation: () => ({ pathname: '/session', search: {} }),
       navigate,
     });
     expect(navigate).toHaveBeenCalledWith({
@@ -142,7 +143,7 @@ describe('switchAgentCwd', () => {
       store,
       queryClient: new QueryClient(),
       transport,
-      currentHref: () => 'http://localhost/',
+      currentLocation: () => ({ pathname: '/session', search: {} }),
       navigate: () => order.push('navigate'),
     });
 
@@ -163,7 +164,7 @@ describe('switchAgentCwd', () => {
       store,
       queryClient: new QueryClient(),
       transport,
-      currentHref: () => 'http://localhost/',
+      currentLocation: () => ({ pathname: '/session', search: {} }),
       navigate,
     });
 
@@ -177,7 +178,10 @@ describe('switchAgentCwd', () => {
     const store = makeStore();
     const navigate = vi.fn();
     let answer!: (value: { sessions: Session[] }) => void;
-    let href = 'http://localhost/session?dir=/home/user/old';
+    let location: CockpitLocation = {
+      pathname: '/session',
+      search: { dir: '/home/user/old' },
+    };
     const transport = createMockTransport({
       listSessions: vi.fn(
         () =>
@@ -191,10 +195,10 @@ describe('switchAgentCwd', () => {
       store,
       queryClient: new QueryClient(),
       transport,
-      currentHref: () => href,
+      currentLocation: () => location,
       navigate,
     });
-    href = 'http://localhost/channels?id=c1'; // somebody opened a channel
+    location = { pathname: '/channels', search: { id: 'c1' } }; // somebody opened a channel
     answer({ sessions: [{ id: 'sess-1' } as Session] });
     await pending;
 
@@ -208,7 +212,7 @@ describe('switchAgentCwd', () => {
       store: makeStore(),
       queryClient: new QueryClient(),
       transport: makeTransport(),
-      currentHref: () => 'http://localhost/',
+      currentLocation: () => ({ pathname: '/session', search: {} }),
       navigate,
     });
     expect(navigate).toHaveBeenCalledTimes(1);
@@ -238,7 +242,7 @@ describe('executeUiCommand switch_agent → switchAgentCwd (wired path)', () => 
           store,
           queryClient,
           transport: makeTransport(),
-          currentHref: () => 'http://localhost/',
+          currentLocation: () => ({ pathname: '/session', search: {} }),
           navigate,
         }),
     };

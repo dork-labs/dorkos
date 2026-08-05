@@ -3,6 +3,7 @@ covers:
   - 'fix(client): clicking an agent resumes its conversation, not a blank one (DOR-928)'
   - 'fix(client): keep agent switching honest about races and failures (DOR-928)'
   - 'fix(client): make the overtaken-navigation guard a mechanism, not a discipline (DOR-928)'
+  - 'fix(client): New Session starts one, and a dialog no longer kills an agent click (DOR-928)'
 ---
 
 ### Fixed
@@ -17,3 +18,7 @@ covers:
   recent conversation: you stay where you last clicked (DOR-928)
 - If DorkOS cannot reach the server while opening an agent, it now says so and leaves you
   where you are, instead of dropping you into a blank chat (DOR-928)
+- "New Session" in the command palette starts a new conversation again. It had been
+  reopening the agent's most recent one, which is what "Open Here" does (DOR-928)
+- Opening Settings or Tasks right after clicking an agent no longer cancels the click
+  (DOR-928)

@@ -11,6 +11,16 @@ import { beginSessionNavigation } from '../lib/session-navigation-intent';
 /** Options for the directory setter returned by {@link useDirectoryState}. */
 export interface SetDirOptions {
   /**
+   * Runs once the agent is actually on screen, and not at all if the lookup
+   * failed or was overtaken.
+   *
+   * For the work that must not happen speculatively: the command palette
+   * records frecency and the switch-back target here, because ranking an agent
+   * you never reached, or offering to switch back to a directory you never
+   * left, is worse than not recording anything (DOR-928).
+   */
+  onOpened?: () => void;
+  /**
    * When true, skip clearing the active session ID on directory change.
    * Use this when you intend to set a new session immediately after switching
    * directories (e.g. navigating to a Tasks run in a different CWD).
@@ -31,7 +41,7 @@ export interface SetDirOptions {
  */
 export function useDirectoryState(): [
   string | null,
-  (dir: string | null, opts?: SetDirOptions) => Promise<boolean>,
+  (dir: string | null, opts?: SetDirOptions) => void,
 ] {
   const platform = getPlatform();
   const storeDir = useAppStore((s) => s.selectedCwd);
@@ -60,8 +70,8 @@ export function useDirectoryState(): [
         if (dir) {
           setStoreDir(dir);
           if (!opts?.preserveSession) setSessionId(null);
+          opts?.onOpened?.();
         }
-        return Promise.resolve(true);
       },
     ];
   }
@@ -76,9 +86,10 @@ export function useDirectoryState(): [
             to: '/session',
             search: (prev) => ({ ...prev, dir }),
           });
-          return Promise.resolve(true);
+          opts?.onOpened?.();
+          return;
         }
-        const isStillWanted = beginSessionNavigation(() => router.state.location.href);
+        const isStillWanted = beginSessionNavigation(() => router.state.location);
         // Always include a session ID so the URL has ?session=; without it the
         // chat input cannot accept text.
         //
@@ -86,24 +97,24 @@ export function useDirectoryState(): [
         // keyed on (session id, selected cwd), so committing the new directory
         // while the answer is still out pairs it with the OLD session id and
         // reads the wrong project's transcript.
-        return resolveSessionForCwd({ queryClient, transport }, dir).then((resolved) => {
+        void resolveSessionForCwd({ queryClient, transport }, dir).then((resolved) => {
           // Overtaken first: an abandoned switch neither moves you nor explains
           // itself.
-          if (!isStillWanted()) return false;
+          if (!isStillWanted()) return;
           if (resolved === null) {
             notifySessionLookupFailed(dir);
-            return false;
+            return;
           }
           setStoreDir(dir);
           void navigate({ to: '/session', search: { dir, session: resolved.sessionId } });
-          return true;
+          opts?.onOpened?.();
         });
+        return;
       }
       void navigate({
         to: '/session',
         search: (prev) => ({ ...prev, dir: undefined }),
       });
-      return Promise.resolve(true);
     },
   ];
 }

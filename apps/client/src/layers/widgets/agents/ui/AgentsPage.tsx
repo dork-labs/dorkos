@@ -129,7 +129,7 @@ export function AgentsPage() {
                             setActiveRightPanelTab('agent-hub');
                             setRightPanelOpen(true);
                           }}
-                          onOpenChat={(projectPath) => void setDir(projectPath)}
+                          onOpenChat={(projectPath) => setDir(projectPath)}
                           onOpenAdapterCatalog={() => openConnections('messaging')}
                           onGoToDiscovery={() =>
                             navigate({
