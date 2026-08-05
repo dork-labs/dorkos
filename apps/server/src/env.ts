@@ -116,7 +116,25 @@ const serverEnvSchema = z.object({
   // http://{DORKOS_HOST}:{DORKOS_PORT}, which is non-routable when the host
   // is 0.0.0.0; set this when DorkOS sits behind a proxy/tunnel
   // (e.g. https://agents.example.com). Trailing slashes are stripped.
-  DORKOS_PUBLIC_URL: z.string().optional(),
+  // Validated the same way DORKOS_DOCS_BASE_URL is, and for the same reason:
+  // `new URL('dorkos:4242')` SUCCEEDS, reading `dorkos:` as the scheme, and
+  // serializes to the opaque origin `"null"`. Unvalidated, that typo once made
+  // every sandboxed-iframe / `file://` page a trusted origin on the WebSocket
+  // upgrade path (ADR 260805-041016). Nothing reads this as a trust boundary
+  // any more, but a value that cannot be advertised on an agent card is still
+  // worth refusing at boot rather than shipping to a peer.
+  DORKOS_PUBLIC_URL: z
+    .string()
+    .optional()
+    .transform((value, ctx) => {
+      if (value === undefined) return undefined;
+      const normalized = parseDocsBaseUrl(value);
+      if (normalized === null) {
+        ctx.addIssue({ code: 'custom', message: DOCS_BASE_URL_MESSAGE });
+        return z.NEVER;
+      }
+      return normalized;
+    }),
   // A2A rate limits — requests per minute per IP for the JSON-RPC endpoints
   // (default 60) and the card discovery endpoints (default 300).
   DORKOS_A2A_RPC_RATE_LIMIT: z.coerce.number().int().min(1).optional(),

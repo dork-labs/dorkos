@@ -1,7 +1,7 @@
 /**
  * SSE stream helpers — format `StreamEvent` objects as Server-Sent Events wire protocol.
  *
- * @module services/stream-adapter
+ * @module services/core/streams/stream-adapter
  */
 import type { Response } from 'express';
 import type { StreamEvent } from '@dorkos/shared/types';

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { initSSEStream, sendSSEEvent, endSSEStream } from '../stream-adapter.js';
+import { initSSEStream, sendSSEEvent, endSSEStream } from '../streams/stream-adapter.js';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { Response } from 'express';
 

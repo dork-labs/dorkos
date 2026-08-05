@@ -31,8 +31,8 @@ import {
 } from '@dorkos/shared/room-schemas';
 import { getRoomService, RoomError, type RoomErrorCode } from '../services/rooms/index.js';
 import { parseBody } from '../lib/route-utils.js';
-import { resolveCaller } from './room-caller.js';
 import { roomEventsHandler } from './room-events-handler.js';
+import { resolveCaller } from './room-caller.js';
 import { logger } from '../lib/logger.js';
 
 const router = Router();
@@ -355,9 +355,12 @@ router.post('/:id/halt', (req, res) => {
 });
 
 /**
- * GET /:id/events — the durable room stream (snapshot → replay → live). The
- * handler lives in `room-events-handler.ts` so this file stays under the
- * file-size rule.
+ * GET /:id/events — the durable room stream (snapshot → replay → live).
+ *
+ * The same path is also served over a WebSocket (`room-events-socket.ts`),
+ * which is what the cockpit connects to; this SSE route stays as the public
+ * integration contract. Both share their sequencing — see
+ * `services/rooms/room-stream-delivery.ts`.
  */
 router.get('/:id/events', roomEventsHandler);
 

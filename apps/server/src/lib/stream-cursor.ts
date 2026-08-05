@@ -16,7 +16,8 @@
  * 0 with the process, so a cursor minted by a PREVIOUS process is meaningless
  * in this one — comparing bare integers across a restart can silently validate
  * (client cursor ≤ new counter) and then replay the wrong events. The
- * browser/`SSEConnection` echoes the whole id back as `Last-Event-ID`, so a
+ * client echoes the whole id back (as `Last-Event-ID` over SSE, as `?resume=`
+ * over a socket), so a
  * mismatched epoch routes the reconnect to the cold snapshot path instead of a
  * bogus resume.
  *
@@ -32,7 +33,8 @@ export const STREAM_EPOCH = Date.now();
  * Parse the resume cursor from a durable `/events` request.
  *
  * Precedence: `Last-Event-ID` header (auto-sent by the browser EventSource and
- * the fetch-based `SSEConnection` on reconnect) wins over the `?after=` query.
+ * the SSE client on reconnect) and the equivalent `?resume=` query a
+ * WebSocket client sends both win over the plain `?after=` cursor.
  * The id frame format is `<resourceId>-<epoch>-<seq>`; the header resumes only
  * when its epoch matches this process's {@link STREAM_EPOCH} — an id minted by
  * a previous server process (or the legacy `<id>-<seq>` format) falls through

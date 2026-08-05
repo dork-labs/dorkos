@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
-vi.mock('../../env.js', () => ({ env: { DORKOS_PORT: 4242 } }));
+vi.mock('../../env.js', () => ({ env: { DORKOS_PORT: 4242, NODE_ENV: 'development' } }));
 vi.mock('../../services/core/tunnel-manager.js', () => ({
   tunnelManager: { status: { url: null } },
 }));
 
+import { env } from '../../env.js';
 import {
   getStaticLocalOrigins,
   isLocalRequest,
@@ -204,6 +205,23 @@ describe('getStaticLocalOrigins', () => {
       'http://127.0.0.1:4242',
       'http://127.0.0.1:4241',
     ]);
+  });
+
+  it('drops the Vite dev origins in PRODUCTION', () => {
+    // The dev-server origin is a development affordance: in dev the cockpit is
+    // served from a different port than the API. In production the server serves
+    // the SPA itself, so nothing legitimate speaks from that port — but anything
+    // that happened to listen there would be trusted, and since the durable
+    // streams became WebSockets that list gates the embedded terminal too.
+    const mutable = env as { NODE_ENV?: string };
+    const previous = mutable.NODE_ENV;
+    mutable.NODE_ENV = 'production';
+    try {
+      setVitePort('4241');
+      expect(getStaticLocalOrigins()).toEqual(['http://localhost:4242', 'http://127.0.0.1:4242']);
+    } finally {
+      mutable.NODE_ENV = previous;
+    }
   });
 
   it('falls back to the default Vite port when VITE_PORT is unset', () => {

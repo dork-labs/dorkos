@@ -11,7 +11,7 @@
  * 2. Attaches the active session's durable stream BEFORE relying on live events,
  *    so the cold `snapshot` frame hydrates the store and no `turn_start` is
  *    missed (reconnect + `Last-Event-ID` gap replay are handled by the
- *    StreamManager/SSEConnection).
+ *    StreamManager/WSConnection).
  * 3. Opens the global session-list stream (idempotent).
  *
  * The store retains per-session state across switches, so detaching the active
@@ -55,6 +55,23 @@ export function useSessionStream(sessionId: string | null, cwd: string | null): 
     // on the same id+cwd and re-targets on a new one.
     streamManager.attachSession(sessionId, cwd);
   }, [sessionId, cwd]);
+
+  // Release the session stream when the chat view goes away.
+  //
+  // Deliberately its OWN effect with no dependencies, so it runs on unmount
+  // rather than on every re-target: hanging the release off the effect above
+  // would turn each session switch into A→null→B instead of the single A→B
+  // transition `attachSession` is built to emit. The release itself is deferred
+  // a tick and cancelled by any re-attach, which is what keeps a StrictMode or
+  // HMR remount from detaching and immediately re-attaching the same session —
+  // see `StreamManager.releaseSession`.
+  //
+  // Without this the stream leaked: nothing called `detachSession`, so a tab
+  // that navigated from chat to Agents or Settings kept its session stream open
+  // for as long as it stayed open.
+  useEffect(() => {
+    return () => streamManager.releaseSession();
+  }, []);
 
   return useSessionStreamState(sessionId ?? '');
 }

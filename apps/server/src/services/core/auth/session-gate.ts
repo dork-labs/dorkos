@@ -128,18 +128,28 @@ function extractBearerToken(authorization: string | undefined): string | null {
  * invalid/revoked key resolves to `null` (fail closed) so callers can respond
  * with a uniform 401.
  *
- * Shared by {@link sessionGate} and the MCP auth middleware so there is exactly
- * one credential-verification path.
+ * Shared by {@link sessionGate}, the MCP auth middleware, and the WebSocket
+ * upgrade gate so there is exactly one credential-verification path.
+ *
+ * It takes only the HEADERS rather than an Express `Request`, because the third
+ * caller has no request: a WebSocket upgrade arrives on the HTTP server's
+ * `upgrade` event as a bare `IncomingMessage`, having bypassed every piece of
+ * middleware including {@link sessionGate}. Headers are all this ever read, so
+ * narrowing the parameter is what lets the upgrade path reuse this instead of
+ * growing a second, drifting copy of the credential check.
  *
  * Each returning path names the credential it verified, because a caller holding
  * a per-user API key is not the same principal as a person in a browser session
  * and a few writes turn on telling them apart (see {@link RequestUser}).
  *
- * @param req - The incoming Express request (its headers carry the credentials).
+ * @param req - Anything carrying the request's headers — an Express `Request`,
+ *   or the raw `IncomingMessage` of a WebSocket upgrade.
  * @returns The resolved identity and how it was proved, or `null` when
  *   unauthenticated.
  */
-export async function verifyRequestAuth(req: Request): Promise<RequestUser | null> {
+export async function verifyRequestAuth(
+  req: Pick<Request, 'headers'>
+): Promise<RequestUser | null> {
   const auth = getAuth();
   // Auth was never initialized (e.g. a unit test app built without initAuth):
   // nothing can be verified, so treat every request as unauthenticated.

@@ -97,7 +97,7 @@ function cursors(transport: Transport): unknown[] {
 beforeEach(() => {
   useRoomPresenceStore.setState({ rooms: {} });
   // Full-jitter backoff with the die rigged to zero: the retry schedule is
-  // `SSEConnection`'s and is tested there; what matters here is that a retry
+  // `WSConnection`'s and is tested there; what matters here is that a retry
   // happens at all, and from where.
   vi.spyOn(Math, 'random').mockReturnValue(0);
   vi.spyOn(console, 'warn').mockImplementation(() => {});

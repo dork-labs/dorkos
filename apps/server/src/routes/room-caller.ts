@@ -49,10 +49,12 @@ import { getRequestAgentIdentity } from '../middleware/agent-identity.js';
  * is scoped to the caller's membership, could read any room by naming a member
  * of it.
  *
- * @param res - The response holding the resolved agent identity and, when login
- *   is on, the resolved account.
+ * @param res - Anything holding the resolved agent identity and, when login is
+ *   on, the resolved account: an Express `Response`, or the locals a WebSocket
+ *   upgrade resolved for itself (an upgrade runs no middleware, so it fills the
+ *   same two slots by hand — see `services/core/streams/stream-upgrade-auth.ts`).
  */
-export function resolveCaller(res: Response): AuthorRecord {
+export function resolveCaller(res: Pick<Response, 'locals'>): AuthorRecord {
   const registry = getRoomService().authorRegistry;
   const identity = getRequestAgentIdentity(res);
   if (identity) {

@@ -255,7 +255,7 @@ export function useRelayEventStream(enabled: boolean) {
 }
 ```
 
-> **Migration note**: The unified stream replaces raw `new EventSource('/api/tunnel/stream')` and `useSSEConnection('/api/relay/stream')` patterns that each opened a dedicated HTTP connection. Use `useEventSubscription('event_name', handler)` instead for all system-wide events. The per-session durable stream (`GET /api/sessions/:id/events`) is owned by `StreamManager` — do not open ad-hoc per-session SSE connections.
+> **Migration note**: The unified stream replaces raw `new EventSource('/api/tunnel/stream')` and per-endpoint SSE hooks that each opened a dedicated HTTP connection. Use `useEventSubscription('event_name', handler)` instead for all system-wide events. The per-session durable stream (`GET /api/sessions/:id/events`) is owned by `StreamManager` — do not open ad-hoc per-session streams.
 
 ### ETag Caching on Messages
 
@@ -430,7 +430,7 @@ useQuery({ queryKey: ['sessions'], ... }); // Duplicate, easy to drift
 **Cause**: Network interruption or server restart.
 **Fix**: `StreamManager` reconnects the durable session stream automatically; `Last-Event-ID` replays missed events gap-free, and an unservable cursor (e.g., after a server restart) falls back to a fresh snapshot.
 
-For system-wide SSE events (tunnel, relay, extensions), reconnection is handled automatically by the shared `/api/events` connection owned by `StreamManager` — individual consumer hooks do not need to manage reconnection. The underlying `SSEConnection` includes exponential backoff, a heartbeat watchdog, and page visibility optimization (pauses when the tab is hidden, reconnects when it becomes visible).
+For system-wide SSE events (tunnel, relay, extensions), reconnection is handled automatically by the shared `/api/events` connection owned by `StreamManager` — individual consumer hooks do not need to manage reconnection. The underlying `WSConnection` includes exponential backoff, a silence watchdog, and page-visibility release (drops the socket when the tab is hidden, reconnects — resuming from its cursor — when it comes back).
 
 ### Messages endpoint returns 304 but UI is stale
 

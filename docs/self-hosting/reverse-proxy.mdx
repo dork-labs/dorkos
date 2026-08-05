@@ -9,11 +9,16 @@ Want DorkOS to live at `dorkos.example.com` instead of a bare port number, with 
 
 You only need this page if you're self-hosting on your own domain, or running DorkOS alongside other services on the same machine. Just testing on `localhost`? Skip it. Want remote access without setting up a domain at all? See [Tunnel Setup](/docs/self-hosting/tunnel-setup) instead.
 
-DorkOS streams agent output live as it works, using a technique called SSE (Server-Sent Events). Most reverse proxies buffer that stream by default, which turns live output into one big delayed dump at the end. The configs below turn buffering off, so don't skip that part.
+DorkOS streams agent output live as it works. Your proxy has to let that through, and default settings get it wrong in two different ways:
+
+- **Buffering.** Proxies hold a response until they have "enough" of it, which turns live output into one delayed dump at the end.
+- **Upgrades.** The DorkOS app opens its live streams as WebSockets, and most proxies do not forward a WebSocket upgrade unless you tell them to. Get this wrong and the failure is nasty and quiet: the app loads, buttons work, your agent really does run — and nothing it says ever appears on screen.
+
+The configs below handle both. Don't trim them down.
 
 <Callout type="warn">
-  Default proxy settings will break live streaming. It's a one-line fix, not a rabbit hole: the
-  configurations below include the directive you need.
+  Default proxy settings will break live streaming, and the WebSocket half fails silently. Copy the
+  whole config for your proxy rather than just the parts that look relevant.
 </Callout>
 
 ## Proxy Configuration
@@ -21,7 +26,7 @@ DorkOS streams agent output live as it works, using a technique called SSE (Serv
 <Tabs items={["Caddy (Recommended)", "nginx"]}>
 
 <Tab value="Caddy (Recommended)">
-Caddy handles HTTPS certificates automatically and has good SSE support out of the box.
+Caddy handles HTTPS certificates automatically, and forwards WebSocket upgrades on its own — there is nothing to add for that.
 
 ```
 dorkos.example.com {
@@ -31,7 +36,7 @@ dorkos.example.com {
 }
 ```
 
-`flush_interval -1` disables response buffering, which is required for SSE streams.
+`flush_interval -1` disables response buffering, which is what live streaming needs.
 
 </Tab>
 
@@ -52,19 +57,34 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
 
-        # Required for SSE: disable buffering and set long timeouts
+        # Let WebSocket upgrades through — the app's live streams are
+        # WebSockets, and without these two lines they are refused silently.
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+
+        # Live streaming: no buffering, no caching, long timeouts.
         proxy_buffering off;
         proxy_cache off;
         proxy_read_timeout 86400s;
         proxy_send_timeout 86400s;
-
-        proxy_set_header Connection '';
         chunked_transfer_encoding off;
     }
 
 }
 
-````
+# Sends "upgrade" when the request is asking for one, and "close" otherwise.
+
+# Goes at the top level of nginx.conf, outside any `server` block.
+
+map $http_upgrade $connection_upgrade {
+default upgrade;
+'' close;
+}
+
+```
+
+```
+
 </Tab>
 
 </Tabs>
@@ -78,9 +98,13 @@ server {
 DORKOS_TRUSTED_HOSTS=dorkos.example.com
 ```
 
-  Separate several names with commas and leave the port off. Turning on login fixes it the other
-  way: DorkOS then trusts your sign-in instead of the address, and this setting stops mattering.
-  See [Securing Your Instance](/docs/self-hosting/securing-your-instance).
+Separate several names with commas and leave the port off. Turning on login covers most of it the
+other way: DorkOS trusts your sign-in instead of the address for ordinary requests and for live
+streams. **Set this anyway.** The embedded terminal is authorized by holding a hard-to-guess id
+rather than by your sign-in, so it always checks the address — with login on and this unset, the app
+works and the terminal will not open.
+See [Securing Your Instance](/docs/self-hosting/securing-your-instance).
+
 </Callout>
 
 <Callout type="info">
@@ -89,22 +113,53 @@ DORKOS_TRUSTED_HOSTS=dorkos.example.com
   address instead of your real URL wherever it needs to share a link to itself. See
   [Deployment](/docs/self-hosting/deployment) for how to set environment variables.
 
-  If DorkOS itself is running in Docker, `localhost:4242` in the configs above needs to become
-  the container's name (for example `dorkos:4242`) or its address on the Docker network instead.
-  See [Docker](/docs/self-hosting/docker) for a worked example.
+If DorkOS itself is running in Docker, `localhost:4242` in the configs above needs to become
+the container's name (for example `dorkos:4242`) or its address on the Docker network instead.
+See [Docker](/docs/self-hosting/docker) for a worked example.
+
 </Callout>
 
-## Key SSE Settings (nginx)
+## Key streaming settings (nginx)
 
 Most people never touch these once the config above is working. Here's what each line does, if you're curious:
 
-<TypeTable type={{
-  "proxy_buffering off": { type: "directive", description: "Disables response buffering so SSE events are sent immediately" },
-  "proxy_cache off": { type: "directive", description: "Disables caching, SSE streams must never be cached" },
-  "proxy_read_timeout 86400s": { type: "directive", description: "24-hour timeout for long-lived SSE connections" },
-  "Connection ''": { type: "header", description: "Empty connection header prevents premature connection close" },
-  "chunked_transfer_encoding off": { type: "directive", description: "Disables chunked encoding, SSE uses its own framing" },
-}} />
+<TypeTable
+  type={{
+    'Upgrade $http_upgrade': {
+      type: 'header',
+      description:
+        "Passes the client's upgrade request through, so live streams can open as WebSockets",
+    },
+    'Connection $connection_upgrade': {
+      type: 'header',
+      description:
+        "Says 'upgrade' for a WebSocket handshake and 'close' for everything else, driven by the map block",
+    },
+    'proxy_buffering off': {
+      type: 'directive',
+      description: 'Disables response buffering so events are sent immediately',
+    },
+    'proxy_cache off': {
+      type: 'directive',
+      description: 'Disables caching, live streams must never be cached',
+    },
+    'proxy_read_timeout 86400s': {
+      type: 'directive',
+      description: '24-hour timeout for long-lived connections',
+    },
+    'chunked_transfer_encoding off': {
+      type: 'directive',
+      description: 'Disables chunked encoding, the stream uses its own framing',
+    },
+  }}
+/>
+
+<Callout type="warn">
+  **The app loads but no reply ever appears?** Your proxy is not forwarding WebSocket upgrades.
+  Check the two `Upgrade`/`Connection` lines above, including the `map` block. A `403` in the
+  browser console instead means DorkOS does not trust the address you are reaching it on — set
+  `DORKOS_TRUSTED_HOSTS` to your domain, as described above.
+</Callout>
 
 ## Common Issues
 
@@ -116,6 +171,7 @@ Most people never touch these once the config above is working. Here's what each
 **Cause**: Response buffering is enabled in the proxy.
 
 **Fix**: Set `proxy_buffering off` (nginx) or `flush_interval -1` (Caddy).
+
 </Step>
 
 <Step>
@@ -124,6 +180,7 @@ Most people never touch these once the config above is working. Here's what each
 **Cause**: Default proxy timeout is too short for SSE.
 
 **Fix**: Increase `proxy_read_timeout` to at least `3600s`.
+
 </Step>
 
 <Step>
@@ -132,6 +189,7 @@ Most people never touch these once the config above is working. Here's what each
 **Cause**: Upstream timeout is shorter than the Claude response time.
 
 **Fix**: Increase both `proxy_read_timeout` and `proxy_send_timeout`.
+
 </Step>
 
 </Steps>
@@ -141,7 +199,8 @@ Most people never touch these once the config above is working. Here's what each
 <Tabs items={["Caddy (Automatic)", "nginx + certbot"]}>
 
 <Tab value="Caddy (Automatic)">
-Point your domain's DNS to the server and Caddy obtains and renews certificates automatically. The Caddy config above already handles this: no separate step needed.
+  Point your domain's DNS to the server and Caddy obtains and renews certificates automatically. The
+  Caddy config above already handles this: no separate step needed.
 </Tab>
 
 <Tab value="nginx + certbot">

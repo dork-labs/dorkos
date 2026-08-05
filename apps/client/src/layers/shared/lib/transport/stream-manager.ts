@@ -23,10 +23,16 @@
  *    while a PIP'd session is off-route.
  *
  * The streams come from a configurable SOURCE:
- * - **HTTP/SSE** (default): `SSEConnection`s against `${baseUrl}/sessions/:id/events`
- *   and `${baseUrl}/events`. `main.tsx` calls {@link StreamManager.useHttpSource}
- *   with the same resolved origin as `HttpTransport`, so the packaged Electron
- *   renderer (file:// + localhost API) reaches the streams too.
+ * - **WebSocket** (default): {@link WSConnection}s against
+ *   `${baseUrl}/sessions/:id/events` and `${baseUrl}/events`. `main.tsx` calls
+ *   {@link StreamManager.useHttpSource} with the same resolved origin as
+ *   `HttpTransport`, so the packaged Electron renderer (file:// + localhost API)
+ *   reaches the streams too. They were SSE until ADR 260805-041016: an SSE
+ *   stream holds one of a browser's ~6 sockets per origin for as long as it is
+ *   open, so a window parking two of them meant the THIRD cockpit window took
+ *   the last socket and everything after it — including the fourth window's own
+ *   HTML — queued behind streams that never end. The server still serves SSE at
+ *   the same paths for integrations; the cockpit does not use it.
  * - **Transport pump** (embedded/Obsidian): {@link StreamManager.useTransportSource}
  *   iterates the Transport seam in-process (`getSessionSnapshot` +
  *   `subscribeSession`, `subscribeSessionList`) — no network at all.
@@ -55,7 +61,7 @@ import {
   type SessionListEvent,
 } from '@dorkos/shared/session-stream';
 
-import { SSEConnection, type SSEConnectionOptions } from './sse-connection';
+import { WSConnection, type StreamConnectionOptions } from './ws-connection';
 import {
   TransportSessionStreamPump,
   TransportListStreamPump,
@@ -64,12 +70,14 @@ import {
 import { addBreadcrumb } from '../breadcrumbs';
 
 /**
- * Minimal surface of {@link SSEConnection} StreamManager depends on. Defining it
- * as an interface lets tests inject a fake connection (no real network / no fetch
- * mocking) while production uses the real class — this is the testability seam.
+ * Minimal surface of {@link WSConnection} StreamManager depends on. Defining it
+ * as an interface lets tests inject a fake connection (no real network, no
+ * socket mocking) while production uses the real class — this is the
+ * testability seam, and it is what let the streams move from SSE to WebSockets
+ * without StreamManager changing at all.
  */
-export interface SSEConnectionLike {
-  /** Open the SSE connection. */
+export interface DurableStreamConnection {
+  /** Open the connection. */
   connect(): void;
   /** Gracefully abort; can reconnect later via {@link connect}. */
   disconnect(): void;
@@ -77,17 +85,20 @@ export interface SSEConnectionLike {
   destroy(): void;
   /**
    * Close while the tab is hidden and reconnect on visibility (real
-   * {@link SSEConnection} only — in-process pumps and test fakes may omit it).
+   * {@link WSConnection} only — in-process pumps and test fakes may omit it).
    */
   enableVisibilityOptimization?(): void;
 }
 
 /**
  * Factory used to construct a connection. Production passes
- * `(url, opts) => new SSEConnection(url, opts)`; tests inject a fake that records
+ * `(url, opts) => new WSConnection(url, opts)`; tests inject a fake that records
  * handlers and lets the test push frames synchronously.
  */
-export type CreateConnection = (url: string, opts: SSEConnectionOptions) => SSEConnectionLike;
+export type CreateConnection = (
+  url: string,
+  opts: StreamConnectionOptions
+) => DurableStreamConnection;
 
 /** Listeners StreamManager forwards validated frames and state changes to. */
 export interface StreamManagerListeners {
@@ -103,10 +114,10 @@ export interface StreamManagerListeners {
 
 /**
  * Every {@link SessionEvent} `type` discriminant the session stream emits.
- * Frames are registered per-name on the SSE connection, so a name missing here
- * is SILENTLY DROPPED over HTTP (the embedded transport pump bypasses this and
- * masked exactly that bug for `system_status`/`compact_boundary`). Must stay in
- * lockstep with `SessionEventSchema` — the parity test pins the two together.
+ * Frames are dispatched per-name on the connection, so a name missing here is
+ * SILENTLY DROPPED over the network (the embedded transport pump bypasses this
+ * and masked exactly that bug for `system_status`/`compact_boundary`). Must stay
+ * in lockstep with `SessionEventSchema` — the parity test pins the two together.
  */
 const SESSION_EVENT_TYPES = [
   'text_delta',
@@ -137,8 +148,8 @@ const SESSION_EVENT_TYPES = [
  * The {@link SessionListEvent} `type` discriminants the global stream emits.
  *
  * The gate every session-list event the HTTP cockpit receives passes through: a
- * name the server broadcasts but this array omits gets no listener, and
- * `EventSource` drops the frame in silence. Pinned against `SessionListEventSchema`
+ * name the server broadcasts but this array omits gets no listener, and the
+ * frame is dropped in silence. Pinned against `SessionListEventSchema`
  * in `__tests__/stream-manager.test.ts` (DOR-548). A second, independent copy of
  * this allowlist lives in `session-stream-methods.ts` and is pinned there.
  */
@@ -220,7 +231,7 @@ const DEFAULT_BASE_URL = '/api';
 
 /** Where StreamManager sources its streams from (see module doc). */
 type StreamSource =
-  | { kind: 'sse'; baseUrl: string }
+  | { kind: 'socket'; baseUrl: string }
   | { kind: 'transport'; transport: TransportStreams };
 
 /**
@@ -241,28 +252,33 @@ function sessionStreamUrl(
 }
 
 /**
- * Connection-only manager for the two durable SSE streams. Single-consumer:
+ * Connection-only manager for the two durable streams. Single-consumer:
  * {@link setListeners} replaces the listener set (the binding wires the store).
  */
 export class StreamManager {
   private readonly createConnection: CreateConnection;
   private listeners: StreamManagerListeners = {};
-  private source: StreamSource = { kind: 'sse', baseUrl: DEFAULT_BASE_URL };
+  private source: StreamSource = { kind: 'socket', baseUrl: DEFAULT_BASE_URL };
 
-  private sessionConnection: SSEConnectionLike | null = null;
+  private sessionConnection: DurableStreamConnection | null = null;
   private attachedSessionId: string | null = null;
   private attachedCwd: string | null = null;
-  private listConnection: SSEConnectionLike | null = null;
+  private listConnection: DurableStreamConnection | null = null;
 
   // Pinned (PIP) session slot (gen-ui-pip). Keeps a popped-out session live
   // across active-session switches. INVARIANT: when
   // `pinnedSessionId === attachedSessionId` the two slots share the ACTIVE
   // connection and `pinnedConnection` is null (exactly one owner per
-  // SSEConnectionLike). `pinnedConnection` is non-null ONLY while the pinned
+  // DurableStreamConnection). `pinnedConnection` is non-null ONLY while the pinned
   // session differs from the attached one. See {@link pinSession}.
   private pinnedSessionId: string | null = null;
   private pinnedCwd: string | null = null;
-  private pinnedConnection: SSEConnectionLike | null = null;
+  private pinnedConnection: DurableStreamConnection | null = null;
+
+  // A deferred {@link releaseSession}, pending until the next tick so a
+  // StrictMode/HMR unmount-remount does not detach and re-attach the same
+  // session. Cancelled by any re-attach.
+  private pendingRelease: ReturnType<typeof setTimeout> | null = null;
 
   // Generic-event subscribers (CLI-B5): multi-subscriber, looked up live at
   // dispatch time so subscribing before or after connectList() both work.
@@ -302,11 +318,11 @@ export class StreamManager {
    * Construct a StreamManager, optionally with an injected connection factory.
    *
    * @param options - Optional injected connection factory (testability seam).
-   *   Defaults to constructing a real {@link SSEConnection}.
+   *   Defaults to constructing a real {@link WSConnection}.
    */
   constructor(options: { createConnection?: CreateConnection } = {}) {
     this.createConnection =
-      options.createConnection ?? ((url, opts) => new SSEConnection(url, opts));
+      options.createConnection ?? ((url, opts) => new WSConnection(url, opts));
   }
 
   /** Replace the listener set. The binding calls this once to wire the store. */
@@ -459,7 +475,7 @@ export class StreamManager {
   }
 
   /**
-   * Source streams over HTTP/SSE against `baseUrl` (e.g. `/api`, or
+   * Source streams over the network against `baseUrl` (e.g. `/api`, or
    * `http://localhost:4242/api` in packaged Electron where the renderer's
    * origin cannot resolve a relative `/api`). Call before the first
    * attach/connect — switching the source tears down any open streams so
@@ -468,7 +484,7 @@ export class StreamManager {
    * @param baseUrl - Same resolved origin `HttpTransport` is constructed with.
    */
   useHttpSource(baseUrl: string): void {
-    this.setSource({ kind: 'sse', baseUrl });
+    this.setSource({ kind: 'socket', baseUrl });
   }
 
   /**
@@ -488,7 +504,7 @@ export class StreamManager {
     const prev = this.source;
     if (
       prev.kind === source.kind &&
-      (source.kind === 'sse'
+      (source.kind === 'socket'
         ? (prev as { baseUrl: string }).baseUrl === source.baseUrl
         : (prev as { transport: TransportStreams }).transport === source.transport)
     ) {
@@ -548,6 +564,9 @@ export class StreamManager {
    *   {@link sessionStreamUrl}). Omit/null only when no directory is selected.
    */
   attachSession(sessionId: string, cwd?: string | null): void {
+    // The session is wanted again, so a release scheduled by an unmount that
+    // was really a re-mount must not fire. See {@link releaseSession}.
+    this.cancelPendingRelease();
     const nextCwd = cwd ?? null;
     if (
       this.attachedSessionId === sessionId &&
@@ -699,7 +718,7 @@ export class StreamManager {
   }
 
   /** Construct the active-session stream from the configured source. */
-  private openSessionStream(sessionId: string, cwd: string | null): SSEConnectionLike {
+  private openSessionStream(sessionId: string, cwd: string | null): DurableStreamConnection {
     const eventHandlers = this.buildSessionEventHandlers(sessionId);
     const onStateChange = (state: ConnectionState): void => {
       // A bug-report breadcrumb (feedback-pipeline spec Part 1): the durable
@@ -738,12 +757,59 @@ export class StreamManager {
     }
   }
 
-  /** Tear down the active-session durable stream and mark the session detached. */
+  /**
+   * Tear down the active-session durable stream and mark the session detached.
+   *
+   * Honours the pin invariant: when the pinned (PIP) session is the attached one
+   * the two SHARE this connection, so it is handed to the pinned slot rather
+   * than destroyed. Detaching the chat view must never kill a popped-out session
+   * that is still on screen.
+   */
   detachSession(): void {
-    this.closeSessionStream();
+    this.cancelPendingRelease();
+    if (this.attachedSessionId !== null && this.attachedSessionId === this.pinnedSessionId) {
+      this.pinnedConnection = this.sessionConnection;
+      this.pinnedCwd = this.attachedCwd;
+      this.sessionConnection = null;
+    } else {
+      this.closeSessionStream();
+    }
     this.attachedSessionId = null;
     this.attachedCwd = null;
     this.notifyAttachedChange(null);
+  }
+
+  /**
+   * The chat view watching the active session has gone away — detach, unless
+   * something re-attaches first.
+   *
+   * Deferred by a tick on purpose, and that tick is the whole point. React
+   * StrictMode and Vite HMR both unmount and immediately re-mount the same
+   * component, so a detach run straight from an unmount cleanup emits the
+   * A→null→A transition this class works hard to avoid everywhere else
+   * ({@link attachSession}, {@link setSource}) — observers would see the session
+   * drop and come back, and the connection would be torn down and rebuilt for
+   * nothing. {@link attachSession} cancels a pending release, so a real
+   * re-mount simply keeps the stream it already had.
+   *
+   * Without this the stream LEAKED: `useSessionStream` had no cleanup at all and
+   * nothing else called {@link detachSession}, so a tab that navigated from chat
+   * to Agents or Settings held its session stream open for as long as it stayed
+   * open.
+   */
+  releaseSession(): void {
+    if (this.pendingRelease !== null) return;
+    this.pendingRelease = setTimeout(() => {
+      this.pendingRelease = null;
+      this.detachSession();
+    }, 0);
+  }
+
+  /** Cancel a deferred {@link releaseSession}, because the session is wanted again. */
+  private cancelPendingRelease(): void {
+    if (this.pendingRelease === null) return;
+    clearTimeout(this.pendingRelease);
+    this.pendingRelease = null;
   }
 
   /** Open the global session-list stream. Idempotent — repeat calls are no-ops. */
@@ -753,14 +819,15 @@ export class StreamManager {
     this.listConnection = this.openListStream();
     this.listConnection.connect();
     // Hidden tabs release their connection after a grace period and reconnect
-    // on visibility (browser six-connection budget; the historical `/api/events`
-    // behavior). The binding re-baselines list statuses on every reconnect, so
-    // the staleness window a hidden-tab close opens is self-healing.
+    // on visibility. No longer a scarcity measure now the stream is a socket —
+    // it stops a backgrounded window holding a server-side subscription open for
+    // hours. The binding re-baselines list statuses on every reconnect, so the
+    // staleness window a hidden-tab close opens is self-healing.
     this.listConnection.enableVisibilityOptimization?.();
   }
 
   /** Construct the global session-list stream from the configured source. */
-  private openListStream(): SSEConnectionLike {
+  private openListStream(): DurableStreamConnection {
     const eventHandlers = this.buildListEventHandlers();
     const onStateChange = (state: ConnectionState, failedAttempts = 0): void => {
       this.updateListState(state, failedAttempts);

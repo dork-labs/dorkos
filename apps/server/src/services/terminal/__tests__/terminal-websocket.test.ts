@@ -103,14 +103,11 @@ describe('terminal websocket auth + binding', () => {
       expect(decision).toEqual({ ok: true, id });
     });
 
-    it('rejects a valid id from an untrusted Origin (DNS-rebinding guard)', async () => {
-      const id = await manager.create({ cwd: boundary });
-      const decision = authorizeTerminalUpgrade(
-        { url: `/api/terminal/${id}/socket`, headers: { origin: 'http://evil.example' } },
-        manager
-      );
-      expect(decision).toEqual({ ok: false, reason: 'forbidden-origin' });
-    });
+    // The DNS-rebinding Origin guard is no longer decided here: it moved to
+    // `services/core/streams/upgrade-router.ts`, which applies it to EVERY
+    // upgrade rather than only the terminal's. Its test moved with it, and
+    // `upgrade-router.test.ts` proves it still covers this exact path — see
+    // "refuses an untrusted Origin on the terminal path".
   });
 
   describe('bindTerminalSocket', () => {

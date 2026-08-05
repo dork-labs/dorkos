@@ -20,7 +20,7 @@ import type { SessionSnapshot, SessionEvent } from '@dorkos/shared/session-strea
 import { TransportProvider } from '@/layers/shared/model';
 import { useSessionChatStore, useSessionStreamStore } from '@/layers/entities/session';
 import { useChatSession } from '../model/use-chat-session';
-import { MockEventSource, resetUuidCounter } from './chat-session-test-helpers';
+import { resetUuidCounter } from './chat-session-test-helpers';
 
 vi.mock('@/layers/shared/model', async () => {
   const actual = await vi.importActual<Record<string, unknown>>('@/layers/shared/model');
@@ -36,11 +36,6 @@ vi.mock('@/layers/shared/model', async () => {
   return {
     ...actual,
     useAppStore,
-    useSSEConnection: () => ({
-      connectionState: 'connected' as const,
-      failedAttempts: 0,
-      lastEventAt: null,
-    }),
   };
 });
 
@@ -91,7 +86,6 @@ describe('useChatSession — hydration (Phase 3)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetUuidCounter();
-    MockEventSource.instances = [];
     useSessionChatStore.setState({ sessions: {}, sessionAccessOrder: [] });
     useSessionStreamStore.setState({ sessions: {}, sessionAccessOrder: [] });
   });
