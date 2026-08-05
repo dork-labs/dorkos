@@ -6,6 +6,7 @@ import { Plus } from 'lucide-react';
 import { SidebarContent, SidebarGroup, SidebarMenu } from '@/layers/shared/ui';
 import { useAppStore, useTransport, useAgentCreationStore } from '@/layers/shared/model';
 import { toast } from 'sonner';
+import { reportClientError } from '@/layers/shared/lib';
 import {
   disambiguateDisplayNames,
   useExecutionExceptions,
@@ -37,6 +38,7 @@ import {
   useRecentSessions,
   useAgentAttentionMap,
   resolveSessionForCwd,
+  useStartNewSession,
   notifySessionLookupFailed,
   beginSessionNavigation,
   sessionKeys,
@@ -474,17 +476,25 @@ export function DashboardSidebar() {
       // the app's other navigations, which it notices through the router's own
       // location rather than by asking them to cooperate.
       const isStillWanted = beginSessionNavigation(() => router.state.location);
-      void resolveSessionForCwd({ queryClient, transport }, agentPath).then((resolved) => {
-        // Overtaken first: an abandoned lookup neither moves you nor explains
-        // itself — you are somewhere else now, and "we left you where you are"
-        // would be about a place you have left.
-        if (!isStillWanted()) return;
-        if (resolved === null) {
+      void resolveSessionForCwd({ queryClient, transport }, agentPath)
+        .then((resolved) => {
+          // Overtaken first: an abandoned lookup neither moves you nor explains
+          // itself — you are somewhere else now, and "we left you where you are"
+          // would be about a place you have left.
+          if (!isStillWanted()) return;
+          if (resolved === null) {
+            notifySessionLookupFailed(agentPath);
+            return;
+          }
+          navigate({ to: '/session', search: { dir: agentPath, session: resolved.sessionId } });
+        })
+        .catch((error: unknown) => {
+          // The resolver handles its own failures, so a throw here is a defect
+          // in this callback — which would otherwise be an unhandled rejection
+          // and a click that died in silence.
+          reportClientError(transport, error);
           notifySessionLookupFailed(agentPath);
-          return;
-        }
-        navigate({ to: '/session', search: { dir: agentPath, session: resolved.sessionId } });
-      });
+        });
     },
     [navigate, router, queryClient, transport]
   );
@@ -503,15 +513,8 @@ export function DashboardSidebar() {
     [navigate]
   );
 
-  const handleNewSession = useCallback(
-    (dir?: string) => {
-      navigate({
-        to: '/session',
-        search: { dir: dir ?? selectedCwd ?? undefined, session: crypto.randomUUID() },
-      });
-    },
-    [navigate, selectedCwd]
-  );
+  const startNewSession = useStartNewSession();
+  const handleNewSession = useCallback((dir?: string) => startNewSession(dir), [startNewSession]);
 
   const handleToggleExpand = useCallback((path: string) => {
     setExpandedPath((prev) => (prev === path ? null : path));

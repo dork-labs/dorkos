@@ -4,6 +4,7 @@ covers:
   - 'fix(client): keep agent switching honest about races and failures (DOR-928)'
   - 'fix(client): make the overtaken-navigation guard a mechanism, not a discipline (DOR-928)'
   - 'fix(client): New Session starts one, and a dialog no longer kills an agent click (DOR-928)'
+  - 'fix(client): moving between rooms cancels an agent lookup, and New Session works in Obsidian (DOR-928)'
 ---
 
 ### Fixed
@@ -20,5 +21,6 @@ covers:
   where you are, instead of dropping you into a blank chat (DOR-928)
 - "New Session" in the command palette starts a new conversation again. It had been
   reopening the agent's most recent one, which is what "Open Here" does (DOR-928)
-- Opening Settings or Tasks right after clicking an agent no longer cancels the click
-  (DOR-928)
+- Opening Settings or Tasks right after clicking an agent no longer cancels the click. Going
+  somewhere real still does: click an agent, then open a different channel, and you stay in
+  the channel (DOR-928)

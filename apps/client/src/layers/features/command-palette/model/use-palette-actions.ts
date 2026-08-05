@@ -11,7 +11,7 @@ import {
   useFeedbackDialogStore,
 } from '@/layers/shared/model';
 import { openLink } from '@/layers/shared/lib';
-import { useDirectoryState } from '@/layers/entities/session';
+import { useDirectoryState, useStartNewSession } from '@/layers/entities/session';
 import type { RoomSummary } from '@/layers/entities/room';
 import { useAgentFrecency } from './use-agent-frecency';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
@@ -97,15 +97,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
    *
    * @param dir - The agent's directory; the active one when omitted.
    */
-  const startNewSession = useCallback(
-    (dir?: string) => {
-      navigate({
-        to: '/session',
-        search: { dir: dir ?? selectedCwd ?? undefined, session: crypto.randomUUID() },
-      });
-    },
-    [navigate, selectedCwd]
-  );
+  const startNewSession = useStartNewSession();
 
   /**
    * Open a room. A room's identity travels as a `/channels` search param, and

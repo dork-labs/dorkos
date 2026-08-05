@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, fireEvent, cleanup, within, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, within, waitFor, act } from '@testing-library/react';
 import {
   agentAuthorRef,
   type AuthorRef,
@@ -262,6 +262,11 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
     .beginSessionNavigation,
   notifySessionLookupFailed: (await importOriginal<typeof import('@/layers/entities/session')>())
     .notifySessionLookupFailed,
+  // Real too: it routes through `useSafeNavigate`, which resolves to the mocked
+  // `useNavigate` here — so "New session" is exercised end to end rather than
+  // against a stub that cannot be wrong.
+  useStartNewSession: (await importOriginal<typeof import('@/layers/entities/session')>())
+    .useStartNewSession,
   useAgentSessions: () => ({ sessions: [], activeSessionId: null, isLoading: false }),
   useSessionBorderState: () => ({ kind: 'idle', color: 'x', pulse: false, label: 'Idle' }),
   useAgentHottestStatus: () => ({ kind: 'idle', color: 'x', pulse: false, label: 'Idle' }),
@@ -641,6 +646,76 @@ describe('DashboardSidebar', () => {
 
     expect(mockNavigate).toHaveBeenCalledTimes(1);
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/channels', search: { id: 'c1' } });
+  });
+
+  // Moving between rooms is going somewhere, and the guard has to see it. Room
+  // identity lives in `?id=`, which no session URL carries — so a key built from
+  // only the params a SESSION uses collapses every room onto one destination and
+  // reads a room change as standing still.
+  it('does not throw you out of the second channel you opened mid-lookup', async () => {
+    mockRooms.mockReturnValue([channel('c1', 'general'), channel('c2', 'random')]);
+    mockTransport.listSessions.mockImplementation(
+      () =>
+        new Promise((resolve) =>
+          setTimeout(
+            () =>
+              resolve({
+                sessions: [
+                  {
+                    id: 'beta-s1',
+                    title: 't',
+                    cwd: '/projects/beta',
+                    createdAt: '2026-03-01T00:00:00.000Z',
+                    updatedAt: '2026-03-01T00:00:00.000Z',
+                    permissionMode: 'default',
+                    runtime: 'claude-code',
+                  },
+                ],
+              }),
+            60
+          )
+        )
+    );
+
+    renderWithProviders(<DashboardSidebar />);
+    await screen.findByText('#general');
+    fireEvent.click(screen.getByText('#general')); // reading a room
+    fireEvent.click(screen.getAllByText('beta')[0]); // slow agent lookup starts
+    fireEvent.click(screen.getByText('#random')); // and you move rooms
+
+    // Real time, on purpose: the claim is that the lookup never lands.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    expect(mockNavigate).toHaveBeenLastCalledWith({ to: '/channels', search: { id: 'c2' } });
+    expect(mockNavigate).not.toHaveBeenCalledWith({
+      to: '/session',
+      search: { dir: '/projects/beta', session: 'beta-s1' },
+    });
+  });
+
+  // The sidebar keeps its own copy of the overtaken-before-report ordering, and
+  // an untested copy is one that can drift back.
+  it('says nothing when a lookup both fails and was abandoned', async () => {
+    mockRooms.mockReturnValue([channel('c1', 'general')]);
+    let reject!: (reason: Error) => void;
+    mockTransport.listSessions.mockReturnValue(
+      new Promise((_resolve, rej) => {
+        reject = rej;
+      })
+    );
+
+    renderWithProviders(<DashboardSidebar />);
+    await screen.findByText('#general');
+    fireEvent.click(screen.getAllByText('beta')[0]);
+    fireEvent.click(screen.getByText('#general')); // they move on
+
+    await act(async () => {
+      reject(new Error('offline'));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
   // Recovering into a blank chat is recovering into the very symptom this fix

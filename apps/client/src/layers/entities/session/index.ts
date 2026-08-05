@@ -33,7 +33,7 @@ export { selectRenderedStatus } from './lib/select-rendered-status';
 export { useSessionRenderedStatus } from './model/use-session-rendered-status';
 export { sessionDisplayTitle, UNTITLED_SESSION_LABEL } from './lib/session-display-title';
 export { useSessionRuntime } from './model/use-session-runtime';
-export { useSessionId } from './model/use-session-id';
+export { useSessionId, useStartNewSession } from './model/use-session-id';
 export type { SetSessionIdOptions } from './model/use-session-id';
 export { useSessionStatus } from './model/use-session-status';
 export type { SessionStatusData } from './model/use-session-status';
@@ -51,6 +51,7 @@ export { useSessionDetail } from './model/use-session-detail';
 export { useSessionSettingsOverridesStore } from './model/session-settings-overrides';
 export { useDefaultCwd } from './model/use-default-cwd';
 export { useDirectoryState } from './model/use-directory-state';
+
 export type { SetDirOptions } from './model/use-directory-state';
 export { useModels, modelsQueryOptions } from './model/use-models';
 export { useSubagents } from './model/use-subagents';

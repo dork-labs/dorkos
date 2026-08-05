@@ -295,6 +295,39 @@ describe('useDirectoryState', () => {
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
+  it('reports that the agent opened, on the web path', async () => {
+    // Every other `onOpened` case here is a negative. This is the one that says
+    // it fires at all — and the palette's frecency and "switch back" ride it, so
+    // if it stopped firing both would go quiet with nothing failing.
+    mockListSessions.mockResolvedValueOnce({ sessions: [{ id: 'sess-1' }] });
+    const onOpened = vi.fn();
+    const { result } = renderHook(() => useDirectoryState());
+
+    await act(async () => {
+      result.current[1]('/never/opened', { onOpened });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(onOpened).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).toHaveBeenCalled();
+  });
+
+  it('reports that the agent opened, on the embedded path too', () => {
+    // Obsidian has no router, so this branch never awaits anything — and it is
+    // the branch a web-only test would silently skip.
+    mockIsEmbedded = true;
+    const onOpened = vi.fn();
+    const { result } = renderHook(() => useDirectoryState());
+
+    act(() => {
+      result.current[1]('/embedded/path', { onOpened });
+    });
+
+    expect(onOpened).toHaveBeenCalledTimes(1);
+    expect(mockSetStoreDir).toHaveBeenCalledWith('/embedded/path');
+  });
+
   it('preserveSession: true skips session clearing in embedded', () => {
     mockIsEmbedded = true;
     const { result } = renderHook(() => useDirectoryState());

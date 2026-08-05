@@ -82,6 +82,11 @@ vi.mock('@/layers/shared/model', () => ({
       setTasksOpen: mockSetTasksOpen,
       setPickerOpen: mockSetPickerOpen,
       setPreviousCwd: mockSetPreviousCwd,
+      // The real store carries these; "New session" reads the active agent from
+      // here and mints an id into it (DOR-928).
+      selectedCwd: mockSelectedCwd,
+      setSelectedCwd: vi.fn(),
+      setSessionId: vi.fn(),
       globalPaletteInitialSearch: null,
       clearGlobalPaletteInitialSearch: vi.fn(),
     };
@@ -289,7 +294,7 @@ describe('Command Palette Integration', () => {
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/session',
       search: {
-        dir: expect.any(String),
+        dir: '/projects/current', // the agent you are on
         session: expect.stringMatching(
           /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
         ),

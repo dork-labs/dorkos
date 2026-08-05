@@ -6,6 +6,7 @@ import { useAppStore, useTransport } from '@/layers/shared/model';
 import { useSessionSearch } from './use-session-search';
 import { useSessionId } from './use-session-id';
 import { resolveSessionForCwd, notifySessionLookupFailed } from '../lib/resolve-session-for-cwd';
+import { reportClientError } from '@/layers/shared/lib';
 import { beginSessionNavigation } from '../lib/session-navigation-intent';
 
 /** Options for the directory setter returned by {@link useDirectoryState}. */
@@ -97,18 +98,27 @@ export function useDirectoryState(): [
         // keyed on (session id, selected cwd), so committing the new directory
         // while the answer is still out pairs it with the OLD session id and
         // reads the wrong project's transcript.
-        void resolveSessionForCwd({ queryClient, transport }, dir).then((resolved) => {
-          // Overtaken first: an abandoned switch neither moves you nor explains
-          // itself.
-          if (!isStillWanted()) return;
-          if (resolved === null) {
+        // `.catch` at the end, not decoration: `resolveSessionForCwd` handles
+        // its own failures, so anything landing here is a defect in this
+        // callback — and without it that defect is an unhandled rejection and a
+        // click that died in silence.
+        void resolveSessionForCwd({ queryClient, transport }, dir)
+          .then((resolved) => {
+            // Overtaken first: an abandoned switch neither moves you nor
+            // explains itself.
+            if (!isStillWanted()) return;
+            if (resolved === null) {
+              notifySessionLookupFailed(dir);
+              return;
+            }
+            setStoreDir(dir);
+            void navigate({ to: '/session', search: { dir, session: resolved.sessionId } });
+            opts?.onOpened?.();
+          })
+          .catch((error: unknown) => {
+            reportClientError(transport, error);
             notifySessionLookupFailed(dir);
-            return;
-          }
-          setStoreDir(dir);
-          void navigate({ to: '/session', search: { dir, session: resolved.sessionId } });
-          opts?.onOpened?.();
-        });
+          });
         return;
       }
       void navigate({
