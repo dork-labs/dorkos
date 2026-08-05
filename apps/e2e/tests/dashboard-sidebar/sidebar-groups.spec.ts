@@ -2,6 +2,20 @@ import { randomUUID } from 'node:crypto';
 import { test, expect } from '../../fixtures';
 
 /**
+ * The empty-group placeholder, matched as a PATTERN rather than a literal.
+ *
+ * The subject here is "this group has nothing in it", not the exact wording.
+ * The literal `'Drag agents here'` broke when DOR-581 widened the copy to
+ * "Drag agents, channels, or conversations here", and that failure sat on
+ * `main` for days because neither `test` nor `browser-test` is a required
+ * check. A pattern survives the next thing that becomes droppable, while still
+ * asserting the placeholder is the thing on screen.
+ *
+ * Source of truth: `SidebarGroupSection.tsx`, the `items.length === 0` branch.
+ */
+const EMPTY_GROUP_PLACEHOLDER = /Drag .*here/;
+
+/**
  * DOR-329's sidebar-organization spec deferred a committed browser test — its
  * live verification pass was a one-off script run outside the repo, and it
  * caught two real pointer-only bugs jsdom's unit suite could not (one fixed
@@ -62,13 +76,13 @@ test.describe('Dashboard Sidebar — Groups @smoke', () => {
     await dashboardSidebar.createGroup(groupName);
     const group = dashboardSidebar.groupContainer(groupName);
     await expect(group).toBeVisible();
-    await expect(group).toContainText('Drag agents here');
+    await expect(group).toContainText(EMPTY_GROUP_PLACEHOLDER);
 
     await dashboardSidebar.dragAgentIntoGroup(agentName, groupName);
 
     // DOM: the agent row now renders inside the group's own member list.
     await expect(group).toContainText(agentName);
-    await expect(group).not.toContainText('Drag agents here');
+    await expect(group).not.toContainText(EMPTY_GROUP_PLACEHOLDER);
 
     // Server: the drop persisted the whole `ui.sidebar` section (PATCH
     // /api/config), independent of DOM re-render timing.
