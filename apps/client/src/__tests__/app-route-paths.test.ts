@@ -3,12 +3,16 @@
  */
 import { describe, it, expect } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
+import { createMockTransport } from '@dorkos/test-utils';
+import type { Transport } from '@dorkos/shared/transport';
 import { createAppRouter } from '../router';
 import { APP_ROUTE_PATHS } from '@/layers/shared/lib';
 
 /** The paths the real router serves, sorted. */
 function routerPaths(): string[] {
-  return Object.keys(createAppRouter(new QueryClient()).routesByPath).sort();
+  return Object.keys(
+    createAppRouter(new QueryClient(), createMockTransport() as Transport).routesByPath
+  ).sort();
 }
 
 describe('APP_ROUTE_PATHS', () => {

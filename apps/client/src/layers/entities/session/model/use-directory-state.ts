@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { getPlatform } from '@/layers/shared/lib';
-import { useAppStore } from '@/layers/shared/model';
+import { useAppStore, useTransport } from '@/layers/shared/model';
 import { useSessionSearch } from './use-session-search';
 import { useSessionId } from './use-session-id';
 import { resolveSessionForCwd } from '../lib/resolve-session-for-cwd';
@@ -38,6 +38,7 @@ export function useDirectoryState(): [
   const search = useSessionSearch();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const transport = useTransport();
   const [, setSessionId] = useSessionId();
 
   const urlDir = search.dir ?? null;
@@ -75,10 +76,9 @@ export function useDirectoryState(): [
         } else {
           // Always include a session ID so the URL has ?session=; without it the
           // chat input cannot accept text.
-          void navigate({
-            to: '/session',
-            search: { dir, session: resolveSessionForCwd(queryClient, dir) },
-          });
+          void resolveSessionForCwd({ queryClient, transport }, dir).then(({ sessionId }) =>
+            navigate({ to: '/session', search: { dir, session: sessionId } })
+          );
         }
       } else {
         void navigate({

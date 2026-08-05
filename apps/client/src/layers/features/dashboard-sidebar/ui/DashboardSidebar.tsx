@@ -36,6 +36,7 @@ import {
   useRenameSession,
   useRecentSessions,
   useAgentAttentionMap,
+  resolveSessionForCwd,
   sessionKeys,
 } from '@/layers/entities/session';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
@@ -460,14 +461,16 @@ export function DashboardSidebar() {
   // ── Handlers ──
   const handleSelectAgent = useCallback(
     (agentPath: string) => {
-      // Include a session ID so the URL always has ?session=, ensuring ChatPanel's
-      // focus effect fires on every agent switch. Reuse the most-recent cached
-      // session for the target agent, or generate a fresh UUID.
-      const cached = queryClient.getQueryData<Session[]>(sessionKeys.list(agentPath));
-      const sessionId = cached?.[0]?.id ?? crypto.randomUUID();
-      navigate({ to: '/session', search: { dir: agentPath, session: sessionId } });
+      // Clicking an agent resumes its most recent conversation. The lookup goes
+      // through the shared resolver rather than reading this tab's cache
+      // directly: the roster lists every agent, but only the one this window has
+      // opened has a cached session list, so a cache read alone would send you
+      // to an empty chat for every other one (DOR-928).
+      void resolveSessionForCwd({ queryClient, transport }, agentPath).then(({ sessionId }) =>
+        navigate({ to: '/session', search: { dir: agentPath, session: sessionId } })
+      );
     },
-    [navigate, queryClient]
+    [navigate, queryClient, transport]
   );
 
   const handleSessionClick = useCallback(

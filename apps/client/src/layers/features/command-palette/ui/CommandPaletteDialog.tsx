@@ -2,7 +2,7 @@ import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAppStore, useIsMobile } from '@/layers/shared/model';
-import { resolveSessionForCwd } from '@/layers/entities/session';
+import { cachedSessionForCwd } from '@/layers/entities/session';
 import { cn, openLink, supportsNewTab, supportsSeparateWindow } from '@/layers/shared/lib';
 import {
   ResponsiveDialog,
@@ -82,24 +82,31 @@ export function CommandPaletteDialog() {
 
   // Where an agent should open, as a `/session` href.
   //
-  // It names the session up front rather than leaving `?session=` off for the
-  // route loader to fill in. The loader would get there — it declares its
-  // inputs, so it re-runs — but only by redirecting, which costs a second
-  // navigation and a history `REPLACE` the tab reconciler then has to absorb,
-  // and leaves a frame where a new tab is named after an href it is about to
-  // lose. This is the same resolution "Open Here" performs, so all three
-  // actions agree on which session an agent is on.
+  // It names the session up front WHEN THIS WINDOW ALREADY KNOWS IT. The route
+  // loader would get there anyway — it declares its inputs, so it re-runs — but
+  // only by redirecting, which costs a second navigation and a history `REPLACE`
+  // the tab reconciler then has to absorb, and leaves a frame where a new tab is
+  // named after an href it is about to lose. So naming it is worth doing when it
+  // is free.
+  //
+  // When it is not known, `?session=` is left OFF and the loader resolves it on
+  // arrival. An href is a string at render time and this renders for the whole
+  // roster, so the alternative — asking the server per agent, per keystroke —
+  // is not one; and inventing an id here is the bug this all exists to avoid
+  // (DOR-928).
   //
   // It also carries ONLY this agent's directory. Inheriting the current
   // `?session=` would aim the new view at the session you were already reading,
   // under a different project — and the durable stream resolves history from
   // `?cwd=`, so that mismatch reads the wrong project's transcript.
   const agentHref = useCallback(
-    (agent: AgentPathEntry) =>
-      `/session?${new URLSearchParams({
+    (agent: AgentPathEntry) => {
+      const session = cachedSessionForCwd(queryClient, agent.projectPath);
+      return `/session?${new URLSearchParams({
         dir: agent.projectPath,
-        session: resolveSessionForCwd(queryClient, agent.projectPath),
-      }).toString()}`,
+        ...(session ? { session } : {}),
+      }).toString()}`;
+    },
     [queryClient]
   );
 

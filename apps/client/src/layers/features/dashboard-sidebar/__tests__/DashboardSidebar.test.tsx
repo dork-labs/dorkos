@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, within, waitFor } from '@testing-library/react';
 import {
   agentAuthorRef,
   type AuthorRef,
@@ -228,6 +228,10 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
   // The query-key factory is the real one: a stub here would let the sidebar
   // read a cache key nothing in the app writes and never say so (DOR-497).
   sessionKeys: (await importOriginal<typeof import('@/layers/entities/session')>()).sessionKeys,
+  // Real for the same reason: which session a click opens is the behaviour these
+  // cases assert, so a stub would be asserting the stub.
+  resolveSessionForCwd: (await importOriginal<typeof import('@/layers/entities/session')>())
+    .resolveSessionForCwd,
   useAgentSessions: () => ({ sessions: [], activeSessionId: null, isLoading: false }),
   useSessionBorderState: () => ({ kind: 'idle', color: 'x', pulse: false, label: 'Idle' }),
   useAgentHottestStatus: () => ({ kind: 'idle', color: 'x', pulse: false, label: 'Idle' }),
@@ -317,6 +321,8 @@ describe('DashboardSidebar', () => {
     mockRecent.mockReturnValue({ data: { sessions: [], agentActivity: {} }, isLoading: false });
     mockRooms.mockReset();
     mockRooms.mockReturnValue([]);
+    mockTransport.listSessions.mockReset();
+    mockTransport.listSessions.mockResolvedValue({ sessions: [] });
     mockAttentionMap.mockReset();
     mockAttentionMap.mockImplementation((paths: string[]) =>
       Object.fromEntries(paths.map((p) => [p, 'active']))
@@ -338,12 +344,65 @@ describe('DashboardSidebar', () => {
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/agents' });
   });
 
-  it('renders default agent (dorkbot) and navigates on click', () => {
+  it('renders default agent (dorkbot) and navigates on click', async () => {
     renderWithProviders(<DashboardSidebar />);
     fireEvent.click(screen.getAllByText('dorkbot')[0]);
-    expect(mockNavigate).toHaveBeenCalledWith({
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith({
+        to: '/session',
+        search: expect.objectContaining({ dir: '~/.dork/agents/dorkbot' }),
+      })
+    );
+  });
+
+  // The reported bug, as a person meets it: the roster shows every agent from
+  // the moment the cockpit loads, but only the agent this window has actually
+  // opened has ever had its session list fetched. Clicking any other one used to
+  // read that empty cache as "no conversations" and open a new empty chat.
+  it('opens the most recent conversation of an agent this window has never opened', async () => {
+    mockTransport.listSessions.mockImplementation((cwd?: string) =>
+      Promise.resolve({
+        sessions:
+          cwd === '/projects/beta'
+            ? [
+                {
+                  id: 'beta-session-1',
+                  title: 'Ship the thing',
+                  cwd: '/projects/beta',
+                  createdAt: '2026-03-01T00:00:00.000Z',
+                  updatedAt: '2026-03-01T12:00:00.000Z',
+                  permissionMode: 'default',
+                  runtime: 'claude-code',
+                },
+              ]
+            : [],
+      })
+    );
+
+    renderWithProviders(<DashboardSidebar />);
+    fireEvent.click(screen.getAllByText('beta')[0]);
+
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith({
+        to: '/session',
+        search: { dir: '/projects/beta', session: 'beta-session-1' },
+      })
+    );
+  });
+
+  it('starts a new conversation for an agent that has none', async () => {
+    renderWithProviders(<DashboardSidebar />);
+    fireEvent.click(screen.getAllByText('beta')[0]);
+
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalled());
+    expect(mockNavigate.mock.calls[0][0]).toEqual({
       to: '/session',
-      search: expect.objectContaining({ dir: '~/.dork/agents/dorkbot' }),
+      search: {
+        dir: '/projects/beta',
+        session: expect.stringMatching(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+        ),
+      },
     });
   });
 

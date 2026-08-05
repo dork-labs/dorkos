@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 
 // Mock platform
 let mockIsEmbedded = false;
@@ -40,13 +40,26 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
 }));
 
-// Mock useQueryClient (partial mock — preserves QueryClient/QueryCache for barrel imports)
-const mockGetQueryData = vi.fn();
-vi.mock('@tanstack/react-query', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@tanstack/react-query')>()),
-  useQueryClient: () => ({ getQueryData: mockGetQueryData }),
+// The hook resolves which session a directory opens on, which asks the server
+// whenever this window has nothing cached for it (DOR-928).
+const mockListSessions = vi.fn(
+  (): Promise<{ sessions: { id: string }[] }> => Promise.resolve({ sessions: [] })
+);
+vi.mock('@/layers/shared/model/TransportContext', () => ({
+  useTransport: () => ({ listSessions: mockListSessions }),
 }));
 
+// A REAL QueryClient behind `useQueryClient`, not a two-method stub: resolving
+// a directory's session writes through the same caches the app writes, and a
+// stub that throws inside the fetch is indistinguishable from a server that has
+// no sessions — which is the very confusion this hook stopped making.
+let queryClient: import('@tanstack/react-query').QueryClient;
+vi.mock('@tanstack/react-query', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-query')>()),
+  useQueryClient: () => queryClient,
+}));
+
+import { QueryClient } from '@tanstack/react-query';
 import { useDirectoryState } from '../model/use-directory-state';
 
 describe('useDirectoryState', () => {
@@ -55,6 +68,7 @@ describe('useDirectoryState', () => {
     mockIsEmbedded = false;
     mockStoreDir = null;
     mockSearchDir = undefined;
+    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   });
 
   it('returns URL state in standalone mode', () => {
@@ -70,45 +84,51 @@ describe('useDirectoryState', () => {
     expect(result.current[0]).toBe('/embedded/path');
   });
 
-  it('setter calls navigate and updates Zustand in standalone', () => {
+  it('setter calls navigate and updates Zustand in standalone', async () => {
     const { result } = renderHook(() => useDirectoryState());
     act(() => {
       result.current[1]('/new/path');
     });
-    expect(mockNavigate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        to: '/session',
-        search: expect.objectContaining({ dir: '/new/path' }),
-      })
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: '/session',
+          search: expect.objectContaining({ dir: '/new/path' }),
+        })
+      )
     );
     expect(mockSetStoreDir).toHaveBeenCalledWith('/new/path');
   });
 
-  it('setter includes session param in navigate on directory change', () => {
+  it('setter includes session param in navigate on directory change', async () => {
     const { result } = renderHook(() => useDirectoryState());
     act(() => {
       result.current[1]('/any/path');
     });
     // In standalone mode, session ID is included in the navigate call
     // (not cleared separately) to prevent null-session state.
-    expect(mockNavigate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        search: expect.objectContaining({ dir: '/any/path', session: expect.any(String) }),
-      })
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          search: expect.objectContaining({ dir: '/any/path', session: expect.any(String) }),
+        })
+      )
     );
     expect(mockSetSessionId).not.toHaveBeenCalled();
   });
 
-  it('setting null removes ?dir= from URL via navigate', () => {
+  it('setting null removes ?dir= from URL via navigate', async () => {
     mockSearchDir = '/existing/path';
     const { result } = renderHook(() => useDirectoryState());
     act(() => {
       result.current[1](null);
     });
-    expect(mockNavigate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        search: expect.any(Function),
-      })
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          search: expect.any(Function),
+        })
+      )
     );
   });
 
@@ -119,14 +139,31 @@ describe('useDirectoryState', () => {
     expect(result.current[0]).toBe('/default/path');
   });
 
-  it('preserveSession: true skips session clearing in standalone', () => {
+  it('preserveSession: true skips session clearing in standalone', async () => {
     const { result } = renderHook(() => useDirectoryState());
     act(() => {
       result.current[1]('/new/path', { preserveSession: true });
     });
-    expect(mockNavigate).toHaveBeenCalled();
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalled());
     expect(mockSetStoreDir).toHaveBeenCalledWith('/new/path');
     expect(mockSetSessionId).not.toHaveBeenCalled();
+  });
+
+  it('opens the directory’s real session, asking the server when nothing is cached', async () => {
+    // The reported bug at this seam: a directory this window has never
+    // displayed has an empty cache entry, which used to be read as "no
+    // conversations" and opened an empty chat instead (DOR-928).
+    mockListSessions.mockResolvedValueOnce({ sessions: [{ id: 'sess-on-server' }] });
+    const { result } = renderHook(() => useDirectoryState());
+    act(() => {
+      result.current[1]('/never/opened');
+    });
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith({
+        to: '/session',
+        search: { dir: '/never/opened', session: 'sess-on-server' },
+      })
+    );
   });
 
   it('preserveSession: true skips session clearing in embedded', () => {
