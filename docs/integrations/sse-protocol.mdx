@@ -417,9 +417,11 @@ Four differences to know about:
 - **Refusals arrive as a close code, not an HTTP status.** A browser cannot see the status of a
   handshake that failed, so the server accepts the connection and immediately closes it with
   `4000 + status` — `4401` for "sign in", `4403` for "not allowed", `4404` for "no such thing". Read
-  `event.code` in `onclose` and subtract 4000. This is how every refusal of these three streams
-  arrives, for browser and non-browser clients alike: the handshake completes and the socket closes
-  immediately, so do not wait for an HTTP status that will not come.
+  `event.code` in `onclose` and subtract 4000. This is how these three streams refuse a request they
+  understood — a missing credential, an unknown room, a bad id — for browser and non-browser clients
+  alike: the handshake completes and the socket closes immediately, so do not wait for an HTTP status
+  that will not come. Two cases still answer at the handshake instead: an unexpected server-side
+  error is a real `500`, and a path no endpoint claims is closed with no response at all.
 - **Reconnecting is yours to do.** A WebSocket does not retry on its own the way `EventSource` does.
   Reconnect with backoff, and pass `?resume=` so you pick up exactly where you left off.
 

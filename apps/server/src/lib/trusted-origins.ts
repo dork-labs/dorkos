@@ -221,10 +221,18 @@ export interface UpgradeOriginFacts {
    */
   forwardedProto: string | undefined;
   /**
-   * Whether the surrounding environment owns the network boundary
-   * (`DORKOS_ALLOW_INSECURE_BIND`), or login is on — in which case
-   * origin-scoped auth cookies already turn a rebound origin away, exactly as
-   * `hostGuard` reasons.
+   * Whether the host pairing below may stand down.
+   *
+   * True for a CREDENTIAL-GATED route when login is on, and only then: an auth
+   * cookie is origin-scoped, so a rebound origin cannot present one and the
+   * credential gate turns it away before any data moves.
+   *
+   * It deliberately does NOT include `DORKOS_ALLOW_INSECURE_BIND`, even though
+   * `hostGuard` stands down for it. Both Docker targets set that flag, so
+   * honouring it here left the origin unchecked exactly where the shipped image
+   * runs — and on a `bearer-of-id` route (the terminal) that is a shell on the
+   * host for any page that rebinds DNS to the published address. The stated
+   * reason above covers login-on and nothing else, so neither does this.
    */
   hostCheckInert: boolean;
 }
@@ -250,10 +258,23 @@ export interface UpgradeOriginFacts {
  *    Passes, like the CORS delegate and `validateMcpOrigin`: a header a browser
  *    is forced to send truthfully proves nothing by its absence.
  * 2. **A statically trusted origin** — loopback dev origins, the live tunnel.
- * 3. **An origin the operator configured** — `DORKOS_CORS_ORIGIN` (including
- *    `*`) or `DORKOS_PUBLIC_URL`. The HTTP path already honours the first; a
- *    socket refusing what a request accepts is the inconsistency that made this
- *    a silent outage rather than an error somebody could read.
+ * 3. **An origin the operator configured** — `DORKOS_PUBLIC_URL`, or a name in
+ *    `DORKOS_CORS_ORIGIN`. The HTTP path already honours these; a socket
+ *    refusing what a request accepts is the inconsistency that made this a
+ *    silent outage rather than an error somebody could read. An explicit
+ *    `DORKOS_CORS_ORIGIN` list is EXHAUSTIVE here as it is in `buildCors` —
+ *    branch 4 does not run under it.
+ *
+ *    **`DORKOS_CORS_ORIGIN='*'` is deliberately not honoured**, and that is the
+ *    one place this is stricter than CORS rather than equal to it. The wildcard
+ *    is tolerable on HTTP only because a wildcard `Access-Control-Allow-Origin`
+ *    is invalid for credentialed requests, so browsers reject it whatever the
+ *    server says (`app.ts`). A WebSocket handshake has no such backstop:
+ *    cookies attach automatically and there is no ACAO to reject. Honouring it
+ *    would have meant that with login ON plus `*`, the HTTP API stayed closed
+ *    to a cross-origin page while every durable stream and the terminal were
+ *    wide open to it. The wildcard is treated as "no list", so the other
+ *    branches still decide.
  * 4. **Same-origin with this very request** — the `Origin` equals
  *    `<scheme>://<Host>` for the `Host` this request asked for. This is the
  *    branch that covers reverse proxies, LAN addresses and `https://` without
@@ -274,7 +295,21 @@ export interface UpgradeOriginFacts {
  *
  * Comparing the whole origin costs nothing — every intended deployment
  * (reverse-proxied, LAN IP, `https://localhost`) sends an `Origin` that matches
- * its `Host` exactly — and it is what makes this genuinely as strict as CORS.
+ * its `Host` exactly.
+ *
+ * ## The scheme, when no proxy names it
+ *
+ * With `X-Forwarded-Proto` the comparison is pinned to that one scheme. Without
+ * it, BOTH schemes are accepted for the same `Host`. That is exact when `Host`
+ * carries a port, because nothing but the server on that port can hold it. It
+ * is a real (small) widening when `Host` has no port — the reverse-proxy case:
+ * `http://example.com` is port 80 and `https://example.com` is 443, which are
+ * different servers, so a script an attacker controls on the **plaintext**
+ * vhost of that same name would match. The nginx and Caddy configs this repo
+ * ships both set `X-Forwarded-Proto`, which closes it; the residual is a custom
+ * proxy that forwards neither the scheme nor a trusted host. Forging the header
+ * cannot widen anything — supplying it replaces the two-scheme OR with a single
+ * equality.
  *
  * Branch 4 is additionally **paired with the host allowlist**, which is why
  * `hostAllowed` is required rather than assumed. A DNS-rebound page at
@@ -294,18 +329,6 @@ export function isTrustedUpgradeOrigin(facts: UpgradeOriginFacts): boolean {
 
   if (resolveTrustedOrigins().includes(origin)) return true;
 
-  const configured = facts.configuredOrigins?.trim();
-  if (configured === '*') return true;
-  if (
-    configured &&
-    configured
-      .split(',')
-      .map((entry) => entry.trim())
-      .includes(origin)
-  ) {
-    return true;
-  }
-
   if (facts.publicUrl) {
     try {
       if (new URL(facts.publicUrl).origin === origin) return true;
@@ -313,6 +336,18 @@ export function isTrustedUpgradeOrigin(facts: UpgradeOriginFacts): boolean {
       // A malformed DORKOS_PUBLIC_URL trusts nothing extra, rather than throwing
       // on the upgrade path.
     }
+  }
+
+  // An explicit `DORKOS_CORS_ORIGIN` list is exhaustive, exactly as it is in
+  // `buildCors` — which switches to a static allowlist and drops its own
+  // same-origin branch. Split and trimmed the same way, and the wildcard is
+  // treated as no list at all (see the doc).
+  const configured = facts.configuredOrigins;
+  if (configured && configured !== '*') {
+    return configured
+      .split(',')
+      .map((entry) => entry.trim())
+      .includes(origin);
   }
 
   // Same-origin as this request, gated on the host allowlist (see the doc).

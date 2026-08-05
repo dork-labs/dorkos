@@ -121,13 +121,28 @@ export interface UpgradeRoute {
  * allowlist — lives in {@link isTrustedUpgradeOrigin}.
  *
  * @param headers - The upgrade request's headers.
+ * @param credential - The claimed route's posture, which decides whether the
+ *   host pairing may stand down.
  */
-function originIsTrusted(headers: IncomingHttpHeaders): boolean {
-  // Mirrors `hostGuard`: with login on, auth cookies are origin-scoped and a
-  // rebound origin never presents one; the container escape hatch declares that
-  // the surrounding environment owns the boundary.
-  const hostCheckInert =
-    configManager.get('auth')?.enabled === true || env.DORKOS_ALLOW_INSECURE_BIND === true;
+function originIsTrusted(
+  headers: IncomingHttpHeaders,
+  credential: UpgradeRoute['credential']
+): boolean {
+  // The host pairing stands down ONLY for a credential-gated route with login
+  // on, where an origin-scoped auth cookie already turns a rebound origin away.
+  //
+  // NOT for `DORKOS_ALLOW_INSECURE_BIND`, even though `hostGuard` stands down
+  // for it. Both Docker targets set that flag, so honouring it here left the
+  // origin unchecked exactly where the shipped image runs. On the terminal —
+  // which is `bearer-of-id` and never reaches the credential gate — that was a
+  // shell on the host for any page that rebound DNS to the published address,
+  // and it was WIDER than the hard allowlist the terminal enforced before these
+  // streams existed.
+  //
+  // And not for a `bearer-of-id` route under login either: that route skips
+  // `authorizeStreamUpgrade`, so the cookie the exemption reasons about is
+  // never checked and cannot be doing the work the exemption assumes.
+  const hostCheckInert = credential === 'required' && configManager.get('auth')?.enabled === true;
 
   return isTrustedUpgradeOrigin({
     origin: headers.origin,
@@ -199,7 +214,7 @@ export function attachUpgradeRouter(server: Server, routes: readonly UpgradeRout
     void (async () => {
       /** Resolve the decision; every refusal path returns one rather than replying. */
       const decide = async (): Promise<UpgradeDecision> => {
-        if (!originIsTrusted(req.headers)) {
+        if (!originIsTrusted(req.headers, claimed.route.credential)) {
           logger.warn('[ws] refused an upgrade from an untrusted Origin', {
             route: claimed.route.name,
             origin: req.headers.origin,

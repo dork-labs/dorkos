@@ -9,6 +9,7 @@ covers:
   - 'docs(changelog): fold the DOR-927 fragments into one user-facing entry'
   - 'test(e2e): tap the room and global streams as WebSockets, not fetch (DOR-927)'
   - 'refactor(client): drop the now-dead EventSource mock and a stale timeout rationale (DOR-927)'
+  - 'fix(server): the upgrade origin check no longer stands down inside the container (DOR-927)'
 ---
 
 ### Fixed

@@ -21,16 +21,41 @@ vi.mock('../stream-upgrade-auth.js', () => ({
 // `env` is validated once at import, so a late `process.env` write would not
 // reach `DORKOS_TRUSTED_HOSTS` — the tests set it through the module instead.
 vi.mock('../../../../env.js', () => ({
-  env: { DORKOS_TRUSTED_HOSTS: undefined, DORKOS_PUBLIC_URL: undefined, DORKOS_PORT: 4242 },
+  env: {
+    DORKOS_TRUSTED_HOSTS: undefined,
+    DORKOS_PUBLIC_URL: undefined,
+    DORKOS_PORT: 4242,
+    DORKOS_ALLOW_INSECURE_BIND: false,
+  },
 }));
 
 import { attachUpgradeRouter, type UpgradeRoute } from '../upgrade-router.js';
 import { authorizeStreamUpgrade } from '../stream-upgrade-auth.js';
 import { resolveTrustedOrigins } from '../../../../lib/trusted-origins.js';
 import { env } from '../../../../env.js';
+import { configManager } from '../../config-manager.js';
 
 const gate = vi.mocked(authorizeStreamUpgrade);
-const mutableEnv = env as { DORKOS_TRUSTED_HOSTS?: string; DORKOS_PUBLIC_URL?: string };
+const loginEnabled = (enabled: boolean): void => {
+  vi.mocked(configManager.get).mockReturnValue({ enabled } as never);
+};
+const mutableEnv = env as {
+  DORKOS_TRUSTED_HOSTS?: string;
+  DORKOS_PUBLIC_URL?: string;
+  DORKOS_ALLOW_INSECURE_BIND?: boolean;
+};
+
+/** Stand the suite up as the shipped container does: the flag on. */
+const inContainer = (fn: () => Promise<void>): (() => Promise<void>) => {
+  return async () => {
+    mutableEnv.DORKOS_ALLOW_INSECURE_BIND = true;
+    try {
+      await fn();
+    } finally {
+      mutableEnv.DORKOS_ALLOW_INSECURE_BIND = false;
+    }
+  };
+};
 
 /**
  * Upgrade-router tests.
@@ -157,6 +182,7 @@ const gatedRoute: UpgradeRoute = {
 beforeEach(() => {
   vi.clearAllMocks();
   gate.mockResolvedValue({ ok: true, locals: {} });
+  loginEnabled(false);
 });
 
 afterEach(async () => {
@@ -481,6 +507,195 @@ describe('attachUpgradeRouter', () => {
         expect(mismatched.httpStatus, 'the proxy said https; http is not that origin').toBe(403);
       } finally {
         mutableEnv.DORKOS_TRUSTED_HOSTS = undefined;
+      }
+    });
+  });
+
+  describe('the host pairing does not stand down for the container flag', () => {
+    // The most serious thing found in this change. `DORKOS_ALLOW_INSECURE_BIND`
+    // is set by BOTH Dockerfile targets, and it used to make the same-origin
+    // branch inert — so in the shipped image nothing checked the origin at all.
+    //
+    // For the terminal that was a shell on the host: a page that rebinds DNS to
+    // the published address is same-origin to the browser, so CORS never fires;
+    // `hostGuard` is inert under the same flag and `sessionGate` passes through
+    // with login off, so `POST /api/terminal` mints an id, and the upgrade then
+    // attaches to it. It was also WIDER than the hard allowlist the terminal
+    // enforced before these streams existed.
+
+    /** A terminal-shaped route: authorized by holding an unguessable id. */
+    const bearerRoute: UpgradeRoute = {
+      name: 'terminal',
+      pattern: /^\/api\/terminal\/([^/]+)\/socket$/,
+      credential: 'bearer-of-id',
+      authorize: () => ({ ok: true, open: (ws) => ws.send('PTY') }),
+    };
+
+    it(
+      'REFUSES a rebound origin on the TERMINAL in the shipped container, login off',
+      inContainer(async () => {
+        // The exact reported scenario: Docker (which sets the flag), no login, a
+        // page that rebinds DNS to the published address. If this opens, that
+        // page has a shell on the host.
+        loginEnabled(false);
+        await listen([bearerRoute]);
+
+        const result = await attempt('/api/terminal/abc/socket', {
+          origin: 'http://evil.example',
+          host: 'evil.example',
+        });
+
+        expect(result.httpStatus).toBe(403);
+        expect(result.opened, 'no shell for a rebound page').toBe(false);
+      })
+    );
+
+    it(
+      'REFUSES a rebound origin on the TERMINAL in the container even with login ON',
+      inContainer(async () => {
+        // A `bearer-of-id` route skips the credential gate entirely, so the
+        // origin-scoped cookie the exemption reasons about is never checked and
+        // cannot be doing the work the exemption assumes.
+        loginEnabled(true);
+        await listen([bearerRoute]);
+
+        const result = await attempt('/api/terminal/abc/socket', {
+          origin: 'http://evil.example',
+          host: 'evil.example',
+        });
+
+        expect(result.httpStatus).toBe(403);
+      })
+    );
+
+    it(
+      'REFUSES a rebound origin on a durable stream in the container, login off',
+      inContainer(async () => {
+        loginEnabled(false);
+        await listen([gatedRoute]);
+
+        const result = await attempt('/api/gated', {
+          origin: 'http://evil.example',
+          host: 'evil.example',
+        });
+
+        expect(result.closeCode).toBe(STREAM_CLOSE_CODE_BASE + 403);
+      })
+    );
+
+    it(
+      'still serves the container its OWN origin — the flag must not break Docker',
+      inContainer(async () => {
+        // The common shape: `docker run -p 4242:4242`, browsed at localhost.
+        // `isHostAllowed` accepts loopback with no configuration at all, so the
+        // pairing holds without the operator setting anything.
+        loginEnabled(false);
+        await listen([acceptingRoute]);
+
+        const result = await attempt('/api/accept', {
+          origin: 'http://localhost:4242',
+          host: 'localhost:4242',
+        });
+
+        expect(result.opened).toBe(true);
+      })
+    );
+
+    it('stands down ONLY for a credential-gated route with login on', async () => {
+      // The one case the stated reason covers: the cookie is origin-scoped, so
+      // the rebound page cannot present one and the gate turns it away first.
+      loginEnabled(true);
+      await listen([gatedRoute]);
+
+      const result = await attempt('/api/gated', {
+        origin: 'http://evil.example',
+        host: 'evil.example',
+      });
+
+      expect(result.opened, 'the credential gate is what stops this one').toBe(true);
+    });
+  });
+
+  describe('DORKOS_CORS_ORIGIN is honoured no more widely than CORS honours it', () => {
+    it('does NOT honour the wildcard, which has no ACAO backstop on a socket', async () => {
+      // `*` is tolerable on HTTP only because a wildcard ACAO is invalid for
+      // credentialed requests, so browsers reject it whatever the server says.
+      // A handshake has no such backstop: cookies attach automatically.
+      process.env.DORKOS_CORS_ORIGIN = '*';
+      try {
+        await listen([acceptingRoute]);
+
+        const result = await attempt('/api/accept', { origin: 'http://evil.example' });
+
+        expect(result.httpStatus).toBe(403);
+      } finally {
+        delete process.env.DORKOS_CORS_ORIGIN;
+      }
+    });
+
+    it('falls back to the other branches under a wildcard rather than refusing everything', async () => {
+      // Treating `*` as "no list" must not lock the cockpit out of its own
+      // origin — the wildcard is a documented, supported value.
+      process.env.DORKOS_CORS_ORIGIN = '*';
+      try {
+        await listen([acceptingRoute]);
+
+        const result = await attempt('/api/accept', { origin: resolveTrustedOrigins()[0]! });
+
+        expect(result.opened).toBe(true);
+      } finally {
+        delete process.env.DORKOS_CORS_ORIGIN;
+      }
+    });
+
+    it('treats an explicit list as EXHAUSTIVE, with no same-origin fallback', async () => {
+      // `buildCors` switches to a static allowlist and drops its own same-origin
+      // branch; falling through to branch 4 here would be wider than CORS.
+      mutableEnv.DORKOS_TRUSTED_HOSTS = 'dorkos.example.com';
+      process.env.DORKOS_CORS_ORIGIN = 'https://only-this.example';
+      try {
+        await listen([acceptingRoute]);
+
+        const listed = await attempt('/api/accept', { origin: 'https://only-this.example' });
+        expect(listed.opened).toBe(true);
+
+        const sameOrigin = await attempt('/api/accept', {
+          origin: 'https://dorkos.example.com',
+          host: 'dorkos.example.com',
+        });
+        expect(sameOrigin.httpStatus, 'the list is the whole policy').toBe(403);
+      } finally {
+        delete process.env.DORKOS_CORS_ORIGIN;
+        mutableEnv.DORKOS_TRUSTED_HOSTS = undefined;
+      }
+    });
+
+    it('splits and trims exactly as buildCors does', async () => {
+      process.env.DORKOS_CORS_ORIGIN = ' https://a.example , https://b.example ';
+      try {
+        await listen([acceptingRoute]);
+
+        const result = await attempt('/api/accept', { origin: 'https://b.example' });
+
+        expect(result.opened).toBe(true);
+      } finally {
+        delete process.env.DORKOS_CORS_ORIGIN;
+      }
+    });
+
+    it('a padded wildcard denies a stranger, matching HTTP rather than inverting it', async () => {
+      // `buildCors` does not trim before its `=== '*'` check, so `" * "` becomes
+      // a one-entry list that matches nothing. Trimming here would have flipped
+      // deny-everything into allow-everything.
+      process.env.DORKOS_CORS_ORIGIN = ' * ';
+      try {
+        await listen([acceptingRoute]);
+
+        const result = await attempt('/api/accept', { origin: 'http://evil.example' });
+
+        expect(result.httpStatus).toBe(403);
+      } finally {
+        delete process.env.DORKOS_CORS_ORIGIN;
       }
     });
   });

@@ -72,18 +72,19 @@ server {
 
 }
 
-# Sends "upgrade" only when the request is asking for one, and an empty value
+# Sends "upgrade" when the request is asking for one, and "close" otherwise.
 
-# otherwise — the empty value is what keeps plain streaming connections from
-
-# being closed early. Goes at the top level of nginx.conf, outside `server`.
+# Goes at the top level of nginx.conf, outside any `server` block.
 
 map $http_upgrade $connection_upgrade {
 default upgrade;
 '' close;
 }
 
-````
+```
+
+```
+
 </Tab>
 
 </Tabs>
@@ -97,9 +98,10 @@ default upgrade;
 DORKOS_TRUSTED_HOSTS=dorkos.example.com
 ```
 
-  Separate several names with commas and leave the port off. Turning on login fixes it the other
-  way: DorkOS then trusts your sign-in instead of the address, and this setting stops mattering.
-  See [Securing Your Instance](/docs/self-hosting/securing-your-instance).
+Separate several names with commas and leave the port off. Turning on login fixes it the other
+way: DorkOS then trusts your sign-in instead of the address, and this setting stops mattering.
+See [Securing Your Instance](/docs/self-hosting/securing-your-instance).
+
 </Callout>
 
 <Callout type="info">
@@ -108,23 +110,46 @@ DORKOS_TRUSTED_HOSTS=dorkos.example.com
   address instead of your real URL wherever it needs to share a link to itself. See
   [Deployment](/docs/self-hosting/deployment) for how to set environment variables.
 
-  If DorkOS itself is running in Docker, `localhost:4242` in the configs above needs to become
-  the container's name (for example `dorkos:4242`) or its address on the Docker network instead.
-  See [Docker](/docs/self-hosting/docker) for a worked example.
+If DorkOS itself is running in Docker, `localhost:4242` in the configs above needs to become
+the container's name (for example `dorkos:4242`) or its address on the Docker network instead.
+See [Docker](/docs/self-hosting/docker) for a worked example.
+
 </Callout>
 
 ## Key streaming settings (nginx)
 
 Most people never touch these once the config above is working. Here's what each line does, if you're curious:
 
-<TypeTable type={{
-  "Upgrade $http_upgrade": { type: "header", description: "Passes the client's upgrade request through, so live streams can open as WebSockets" },
-  "Connection $connection_upgrade": { type: "header", description: "Says 'upgrade' for a WebSocket handshake and 'close' for everything else, driven by the map block" },
-  "proxy_buffering off": { type: "directive", description: "Disables response buffering so events are sent immediately" },
-  "proxy_cache off": { type: "directive", description: "Disables caching, live streams must never be cached" },
-  "proxy_read_timeout 86400s": { type: "directive", description: "24-hour timeout for long-lived connections" },
-  "chunked_transfer_encoding off": { type: "directive", description: "Disables chunked encoding, the stream uses its own framing" },
-}} />
+<TypeTable
+  type={{
+    'Upgrade $http_upgrade': {
+      type: 'header',
+      description:
+        "Passes the client's upgrade request through, so live streams can open as WebSockets",
+    },
+    'Connection $connection_upgrade': {
+      type: 'header',
+      description:
+        "Says 'upgrade' for a WebSocket handshake and 'close' for everything else, driven by the map block",
+    },
+    'proxy_buffering off': {
+      type: 'directive',
+      description: 'Disables response buffering so events are sent immediately',
+    },
+    'proxy_cache off': {
+      type: 'directive',
+      description: 'Disables caching, live streams must never be cached',
+    },
+    'proxy_read_timeout 86400s': {
+      type: 'directive',
+      description: '24-hour timeout for long-lived connections',
+    },
+    'chunked_transfer_encoding off': {
+      type: 'directive',
+      description: 'Disables chunked encoding, the stream uses its own framing',
+    },
+  }}
+/>
 
 <Callout type="warn">
   **The app loads but no reply ever appears?** Your proxy is not forwarding WebSocket upgrades.
@@ -143,6 +168,7 @@ Most people never touch these once the config above is working. Here's what each
 **Cause**: Response buffering is enabled in the proxy.
 
 **Fix**: Set `proxy_buffering off` (nginx) or `flush_interval -1` (Caddy).
+
 </Step>
 
 <Step>
@@ -151,6 +177,7 @@ Most people never touch these once the config above is working. Here's what each
 **Cause**: Default proxy timeout is too short for SSE.
 
 **Fix**: Increase `proxy_read_timeout` to at least `3600s`.
+
 </Step>
 
 <Step>
@@ -159,6 +186,7 @@ Most people never touch these once the config above is working. Here's what each
 **Cause**: Upstream timeout is shorter than the Claude response time.
 
 **Fix**: Increase both `proxy_read_timeout` and `proxy_send_timeout`.
+
 </Step>
 
 </Steps>
@@ -168,7 +196,8 @@ Most people never touch these once the config above is working. Here's what each
 <Tabs items={["Caddy (Automatic)", "nginx + certbot"]}>
 
 <Tab value="Caddy (Automatic)">
-Point your domain's DNS to the server and Caddy obtains and renews certificates automatically. The Caddy config above already handles this: no separate step needed.
+  Point your domain's DNS to the server and Caddy obtains and renews certificates automatically. The
+  Caddy config above already handles this: no separate step needed.
 </Tab>
 
 <Tab value="nginx + certbot">

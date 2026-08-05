@@ -90,13 +90,19 @@ async function tapStream(page: Page, key: string, pattern: string): Promise<void
           // Deliver onto the SAME socket the app is reading. `dispatchEvent`
           // reaches the `onmessage` handler the transport assigned, so the frame
           // takes the identical path a server frame takes.
-          inject.push = (frame: string) => {
+          const mine = (frame: string) => {
             socket.dispatchEvent(new MessageEvent('message', { data: frame }));
           };
+          inject.push = mine;
           socket.addEventListener(
             'close',
             () => {
-              inject.push = null;
+              // Only clear the slot if it is still OURS. The hook reconnects, and
+              // a close for the old socket can land after the new one has already
+              // claimed the slot — clearing unconditionally would then leave the
+              // tap looking shut over a perfectly live stream, and `pushFrame`
+              // would throw "the stream closed" at a reconnected room.
+              if (inject.push === mine) inject.push = null;
             },
             { once: true }
           );
