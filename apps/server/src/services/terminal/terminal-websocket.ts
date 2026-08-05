@@ -1,19 +1,21 @@
-import type { IncomingMessage, Server } from 'http';
-import { WebSocketServer } from 'ws';
+import type { IncomingMessage } from 'http';
 import { TerminalClientMessageSchema } from '@dorkos/shared/terminal-schemas';
-import { resolveTrustedOrigins } from '../../lib/trusted-origins.js';
+import type { UpgradeRoute } from '../core/streams/upgrade-router.js';
 import { logger } from '../../lib/logger.js';
 import type { TerminalManager, TerminalSink } from './terminal-manager.js';
 
 /**
  * WebSocket wiring for the embedded terminal (spec right-panel-workbench,
- * Chunk E). A PTY needs a bidirectional byte channel, which the JSON-only SSE
- * streams cannot provide — so terminal I/O rides a dedicated WebSocket at
- * `GET /api/terminal/:id/socket`: raw PTY output flows down as binary frames,
- * input/resize control messages flow up as JSON text frames.
+ * Chunk E). A PTY needs a bidirectional byte channel, so terminal I/O rides a
+ * dedicated WebSocket at `GET /api/terminal/:id/socket`: raw PTY output flows
+ * down as binary frames, input/resize control messages flow up as JSON text
+ * frames.
  *
- * This is the server's sole WebSocket upgrade consumer; the handler claims only
- * the terminal path and rejects every other upgrade.
+ * It was the server's only WebSocket consumer until the durable event streams
+ * moved onto sockets too (ADR 260804-030000), and it owned the lone
+ * `server.on('upgrade')` listener — which destroyed every upgrade it did not
+ * recognize, so a second listener beside it could never have worked. It is now
+ * one route among several behind `services/core/streams/upgrade-router.ts`.
  *
  * @module services/terminal/terminal-websocket
  */
@@ -29,25 +31,22 @@ export type TerminalUpgradeDecision =
   | { ok: true; id: string }
   /** Not the terminal socket path — some other upgrade; close silently. */
   | { ok: false; reason: 'not-terminal' }
-  /** Browser Origin not in the trusted allowlist (DNS-rebinding guard); 403. */
-  | { ok: false; reason: 'forbidden-origin' }
   /** No live terminal with this id (unknown/expired); 404. */
   | { ok: false; reason: 'unknown-id' };
 
 /**
  * Decide whether a WebSocket upgrade may attach to a terminal.
  *
- * Security model (ADR 260708-185521):
- * - A terminal id is an unguessable UUID minted only by the auth-gated
- *   `POST /api/terminal`, so the socket authenticates by bearer-of-id — an
- *   upgrade for an unknown id is refused.
- * - WebSocket handshakes are NOT CORS-protected, so a browser Origin (when
- *   present) is checked against {@link resolveTrustedOrigins} — the same
- *   allowlist the CORS policy and `validateMcpOrigin` use — to block
- *   DNS-rebinding / cross-origin attach. Non-browser clients (CLI, tests) send
- *   no Origin and pass through, exactly like the MCP origin middleware.
+ * Security model (ADR 260708-185521): a terminal id is an unguessable UUID
+ * minted only by the auth-gated `POST /api/terminal`, so the socket
+ * authenticates by bearer-of-id — an upgrade for an unknown id is refused.
  *
- * @param req - The upgrade request (reads `url` and the `origin` header).
+ * The cross-origin half of that model has moved: WebSocket handshakes are NOT
+ * CORS-protected, and the `Origin` allowlist that blocks DNS-rebinding attach is
+ * now applied to EVERY upgrade by `services/core/streams/upgrade-router.ts`, so this
+ * no longer checks it itself. Same allowlist, same behaviour, one place.
+ *
+ * @param req - The upgrade request (reads `url`).
  * @param manager - The terminal manager (checks the id exists).
  */
 export function authorizeTerminalUpgrade(
@@ -58,41 +57,29 @@ export function authorizeTerminalUpgrade(
   const match = TERMINAL_SOCKET_PATH.exec(path);
   if (!match) return { ok: false, reason: 'not-terminal' };
 
-  // Origin allowlist — only enforced when a browser sends one (mirrors validateMcpOrigin).
-  const origin = req.headers.origin;
-  if (origin && !resolveTrustedOrigins().includes(origin)) {
-    return { ok: false, reason: 'forbidden-origin' };
-  }
-
   const id = decodeURIComponent(match[1]);
   if (!manager.has(id)) return { ok: false, reason: 'unknown-id' };
   return { ok: true, id };
 }
 
 /**
- * Attach the terminal WebSocket upgrade handler to the HTTP server. It claims
- * only the terminal path; every other upgrade is destroyed.
+ * Build the terminal's upgrade route for the shared router.
  *
- * @param server - The HTTP server to attach the upgrade handler to.
  * @param manager - The terminal manager owning PTY lifecycles.
  */
-export function attachTerminalWebSocket(server: Server, manager: TerminalManager): void {
-  const wss = new WebSocketServer({ noServer: true });
-
-  server.on('upgrade', (req, socket, head) => {
-    const decision = authorizeTerminalUpgrade(req, manager);
-    if (!decision.ok) {
-      // not-terminal: some other upgrade — close silently. forbidden/unknown:
-      // answer with the matching status before destroying so the client learns why.
-      if (decision.reason === 'forbidden-origin') socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
-      else if (decision.reason === 'unknown-id') socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
-      socket.destroy();
-      return;
-    }
-    wss.handleUpgrade(req, socket, head, (ws) =>
-      bindTerminalSocket(ws as unknown as TerminalWebSocket, decision.id, manager)
-    );
-  });
+export function terminalUpgradeRoute(manager: TerminalManager): UpgradeRoute {
+  return {
+    name: 'terminal',
+    pattern: TERMINAL_SOCKET_PATH,
+    authorize({ url }) {
+      const decision = authorizeTerminalUpgrade({ url: url.pathname, headers: {} }, manager);
+      if (!decision.ok) return { ok: false, status: 404, message: 'Not Found' };
+      return {
+        ok: true,
+        open: (ws) => bindTerminalSocket(ws as unknown as TerminalWebSocket, decision.id, manager),
+      };
+    },
+  };
 }
 
 /**

@@ -314,7 +314,7 @@ const LocalUninstallResultSchema = z.object({
 
 const registry = new OpenAPIRegistry();
 
-// `relay_flow` is broadcast on the unified `/api/events` SSE stream, which
+// `relay_flow` is broadcast on the unified `/api/events` WebSocket stream, which
 // (like its `relay_bindings_changed`/`relay_adapters_changed` siblings) has
 // no dedicated REST path to hang a response schema off of. Register it as a
 // standalone component so the metadata-only wire contract is still
@@ -451,22 +451,28 @@ registry.registerPath({
   method: 'get',
   path: '/api/sessions/{id}/events',
   tags: ['Sessions'],
-  summary: 'Durable session stream (snapshot → replay → live)',
+  summary: 'Durable session stream (WebSocket; snapshot → replay → live)',
   description:
-    'Always-on Server-Sent Events stream — the single delivery path for session ' +
-    'state (spec chat-stream-reconnection, ADR-0264/ADR-0266). NO feature flag or ' +
-    '`enableCrossClientSync` gate. On a COLD connect it emits one `snapshot` event ' +
-    '(a SessionSnapshot: completed messages, in-progress turn, status, non-expired ' +
-    'pending interactions, and the resume `cursor`) then goes live, emitting one ' +
-    'SessionEvent per frame. Each LIVE frame is preceded by an `id: <sessionId>-<epoch>-<seq>` ' +
-    'line; the browser echoes it back as `Last-Event-ID` on reconnect. On a RESUME ' +
-    'connect — `Last-Event-ID: <sessionId>-<epoch>-<seq>` header OR `?after=<cursor>` query — ' +
-    'it SKIPS the snapshot and replays only events with `seq` greater than the cursor, ' +
-    'then goes live. A cursor the server cannot serve gap-free (mismatched epoch after ' +
-    'a restart, or one trimmed past the replay buffer) falls back to the cold ' +
-    'snapshot path instead of resuming. A `: keepalive` comment is sent every ~15s and `X-Accel-Buffering: ' +
-    'no` defeats proxy buffering. Collapses DOR-73 Path A (pull) + Path B (re-emit) ' +
-    'into one snapshot+replay mechanism; the single always-on delivery path.',
+    'A **WebSocket** endpoint, not a plain GET: open it with `ws://`/`wss://` at this ' +
+    'path (ADR 260804-030000 moved the durable streams off SSE, because an SSE stream ' +
+    "holds one of a browser's ~6 sockets per origin and three cockpit windows spent " +
+    'all six). It is the single delivery path for session state (spec ' +
+    'chat-stream-reconnection, ADR-0264/ADR-0266); NO feature flag or ' +
+    '`enableCrossClientSync` gate. Every frame is a JSON text frame ' +
+    '`{ "event": string, "data": unknown, "id"?: string }`. On a COLD connect the ' +
+    'first frame is `event: "snapshot"` (a SessionSnapshot: completed messages, ' +
+    'in-progress turn, status, non-expired pending interactions, and the resume ' +
+    '`cursor`), then it goes live with one SessionEvent per frame, each carrying ' +
+    '`id: "<sessionId>-<epoch>-<seq>"`. On a RESUME connect — ' +
+    '`?resume=<sessionId>-<epoch>-<seq>` (the cursor moved from the `Last-Event-ID` ' +
+    'header into the query because a browser `WebSocket` cannot set headers) or ' +
+    '`?after=<cursor>` — it SKIPS the snapshot and replays only events with `seq` ' +
+    'greater than the cursor, then goes live. A cursor the server cannot serve ' +
+    'gap-free (mismatched epoch after a restart, or one trimmed past the replay ' +
+    'buffer) falls back to the cold snapshot path instead of resuming. A ' +
+    '`__heartbeat` frame is sent every ~15s so a client can tell a quiet stream from ' +
+    'a dead one. Refusals (400/401/403/500) arrive as an HTTP status on the ' +
+    'handshake, before any socket opens.',
   request: {
     params: z.object({ id: z.string().uuid() }),
     query: z.object({
@@ -475,23 +481,23 @@ registry.registerPath({
         .string()
         .optional()
         .openapi({ description: 'Resume cursor; replay events with seq greater than this.' }),
-    }),
-    headers: z.object({
-      'Last-Event-ID': z.string().optional().openapi({
+      resume: z.string().optional().openapi({
         description:
-          'Resume token `<sessionId>-<epoch>-<seq>`; replays only the gap. A token from a previous server process (epoch mismatch) or beyond the replay buffer falls back to a cold snapshot.',
+          'Resume token `<sessionId>-<epoch>-<seq>`; replays only the gap. A token from a previous server process (epoch mismatch) or beyond the replay buffer falls back to a cold snapshot. Takes precedence over `after`.',
       }),
     }),
   },
   responses: {
-    200: {
+    101: {
       description:
-        'SSE stream. Cold connect: a `snapshot` event then `id:`-framed SessionEvents. ' +
-        'Resume connect: replayed-then-live `id:`-framed SessionEvents (no snapshot).',
+        'Switching Protocols. Cold connect: a `snapshot` frame then id-carrying ' +
+        'SessionEvent frames. Resume connect: replayed-then-live SessionEvent frames ' +
+        '(no snapshot).',
       content: {
-        'text/event-stream': {
+        'application/json': {
           schema: z.union([SessionSnapshotSchema, SessionEventSchema]).openapi({
-            description: 'A SessionSnapshot (cold connect) followed by SessionEvent frames.',
+            description:
+              'The `data` of each frame: a SessionSnapshot (cold connect) followed by SessionEvents.',
           }),
         },
       },
@@ -3461,9 +3467,9 @@ registry.registerPath({
   method: 'get',
   path: '/api/rooms/{id}/events',
   tags: ['Rooms'],
-  summary: 'Durable room event stream (SSE)',
+  summary: 'Durable room event stream (WebSocket)',
   description:
-    "Snapshot on a cold connect, gap-free replay from `Last-Event-ID`, then live. Event ids are `<roomId>-<epoch>-<seq>`; a cursor from another room or another server process falls back to a cold connect. The `snapshot` frame carries `RoomSnapshot`; every later frame is a `RoomEvent` — a durable `entry`, an ephemeral `signal` that is never replayed, or a `reaction`. A `reaction` frame is durable state and still carries no `id:` line, because the cursor is the highest ENTRY a reader holds and a second number in one header is a cursor clients get wrong: instead each frame carries an entry's WHOLE current reaction set, so one missed frame self-heals on the next. A resume emits one of these for EVERY entry in the trailing window after the replay, empty sets included — that is what corrects a reaction somebody took back while this reader was disconnected, which nothing else on the wire could say. Every entry on every path — the snapshot, the replay, a live `entry` frame — arrives with its own `reactions` attached.",
+    'A **WebSocket** endpoint, not a plain GET (ADR 260804-030000). Every frame is a JSON text frame `{ "event": string, "data": unknown, "id"?: string }`. Snapshot on a cold connect, gap-free replay from `?resume=<roomId>-<epoch>-<seq>`, then live. Frame ids are `<roomId>-<epoch>-<seq>`; a cursor from another room or another server process falls back to a cold connect. The `snapshot` frame carries `RoomSnapshot`; every later frame is a `RoomEvent` — a durable `entry`, an ephemeral `signal` that is never replayed, or a `reaction`. A `reaction` frame is durable state and still carries no `id:` line, because the cursor is the highest ENTRY a reader holds and a second number in one header is a cursor clients get wrong: instead each frame carries an entry\'s WHOLE current reaction set, so one missed frame self-heals on the next. A resume emits one of these for EVERY entry in the trailing window after the replay, empty sets included — that is what corrects a reaction somebody took back while this reader was disconnected, which nothing else on the wire could say. Every entry on every path — the snapshot, the replay, a live `entry` frame — arrives with its own `reactions` attached.',
   request: {
     params: RoomIdParams,
     query: z.object({
@@ -3473,13 +3479,20 @@ registry.registerPath({
         .min(0)
         .optional()
         .describe('Resume cursor; ignored past the end of the log.'),
+      resume: z
+        .string()
+        .optional()
+        .describe(
+          'Resume token `<roomId>-<epoch>-<seq>`. Takes precedence over `after`; a token from another room or another server process falls back to a cold connect.'
+        ),
     }),
   },
   responses: {
-    200: {
-      description: 'SSE stream: a RoomSnapshot frame on a cold connect, then RoomEvent frames',
+    101: {
+      description:
+        'Switching Protocols: a RoomSnapshot frame on a cold connect, then RoomEvent frames',
       content: {
-        'text/event-stream': { schema: z.union([RoomSnapshotSchema, RoomEventSchema]) },
+        'application/json': { schema: z.union([RoomSnapshotSchema, RoomEventSchema]) },
       },
     },
     404: roomNotFound,

@@ -36,7 +36,7 @@ import {
 } from '@dorkos/shared/room-schemas';
 import { SSE_RESILIENCE } from '../constants';
 import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
-import { parseSSEStream } from './sse-parser';
+import { streamSocketFrames, type StreamSocketClosed } from './stream-socket-iterator';
 
 /**
  * A room's event stream answered with an HTTP error rather than a stream.
@@ -218,7 +218,7 @@ export function createRoomMethods(baseUrl: string) {
     },
 
     /**
-     * Subscribe to a room's durable event stream.
+     * Subscribe to a room's durable event stream, over a WebSocket.
      *
      * The leading `snapshot` frame of a cold connect is skipped: the room and
      * its history are hydrated through `getRoom` / `listRoomEntries`, so
@@ -229,83 +229,55 @@ export function createRoomMethods(baseUrl: string) {
      * Malformed frames are dropped with a warning rather than tearing the
      * stream down, matching the session stream's validation semantics.
      *
-     * A silence watchdog runs here rather than in the consuming hook, and it is
-     * the one piece of resilience that has to. The server heartbeats with an
-     * SSE COMMENT (`: keepalive`), and comments are dropped a few lines below —
-     * so above this seam "the socket is dead" and "the room is quiet" look
-     * identical, and rooms are quiet nearly all the time. Down here the
-     * heartbeat is visible: any frame at all resets the timer, and silence past
-     * {@link SSE_RESILIENCE.HEARTBEAT_TIMEOUT_MS} (3x the server's interval)
-     * aborts the connection so the iterable throws. That is what a half-open
-     * socket — a slept laptop's — produces instead of an error, and the caller's
-     * retry loop already knows what to do with a throw.
+     * Two pieces of resilience live down here rather than in the consuming
+     * hook, and both have to. **Silence detection**, because the server's
+     * heartbeat is a frame the layer above never sees — up there a dead socket
+     * and a quiet room look identical, and rooms are quiet nearly all the time.
+     * And **the refusal status**, because a browser cannot read the status of a
+     * failed WebSocket handshake at all: the server therefore refuses with an
+     * application close code, and this is where that becomes the
+     * {@link RoomStreamHttpError} the retry loop reads to tell "briefly
+     * unreachable" from "this room is not yours".
      */
     async *subscribeRoom(
       roomId: string,
       sinceCursor?: number,
       signal?: AbortSignal
     ): AsyncIterable<RoomEvent> {
-      const controller = new AbortController();
-      if (signal) {
-        if (signal.aborted) controller.abort();
-        else signal.addEventListener('abort', () => controller.abort(), { once: true });
+      let closed: StreamSocketClosed = { status: null, silent: false };
+      const qs = buildQueryString({ after: sinceCursor });
+      const frames = streamSocketFrames(`${baseUrl}/rooms/${roomId}/events${qs}`, {
+        signal,
+        onClosed: (result) => (closed = result),
+      });
+
+      for await (const frame of frames) {
+        if (frame.event === 'snapshot') continue;
+        const parsed = RoomEventSchema.safeParse(frame.data);
+        if (!parsed.success) {
+          console.warn('[Transport] dropping malformed room-event frame', {
+            roomId,
+            issues: parsed.error.issues,
+          });
+          continue;
+        }
+        yield parsed.data;
       }
 
-      let wentSilent = false;
-      let watchdog: ReturnType<typeof setTimeout> | undefined;
-      /** Restart the silence countdown. Called for every frame, comments too. */
-      const heard = () => {
-        clearTimeout(watchdog);
-        watchdog = setTimeout(() => {
-          wentSilent = true;
-          controller.abort();
-        }, SSE_RESILIENCE.HEARTBEAT_TIMEOUT_MS);
-      };
-
-      try {
-        // Armed before the fetch: a connect that hangs without answering is as
-        // dead as one that stops mid-stream, and this call has no other timeout.
-        heard();
-        const qs = buildQueryString({ after: sinceCursor });
-        const response = await fetch(`${baseUrl}/rooms/${roomId}/events${qs}`, {
-          headers: { Accept: 'text/event-stream' },
-          credentials: 'include',
-          signal: controller.signal,
-        });
-        if (!response.ok || !response.body) {
-          // Carries the status, because the retry loop above has to tell a
-          // server that is briefly unreachable from one that has answered — a
-          // room that was deleted, or access that was revoked while it was open.
-          // Retrying the first forever is right; retrying the second forever is
-          // a reconnecting notice that will never come true.
-          throw new RoomStreamHttpError(response.status, response.statusText);
-        }
-        for await (const frame of parseSSEStream(response.body.getReader())) {
-          heard();
-          if (frame.comment || frame.type === 'snapshot') continue;
-          const parsed = RoomEventSchema.safeParse(frame.data);
-          if (!parsed.success) {
-            console.warn('[Transport] dropping malformed room-event frame', {
-              roomId,
-              issues: parsed.error.issues,
-            });
-            continue;
-          }
-          yield parsed.data;
-        }
-      } catch (err) {
-        // The abort the watchdog fired surfaces as a generic AbortError, which
-        // reads in a log like a caller who simply left. Say what happened.
-        if (wentSilent) {
-          throw new Error(
-            `Room stream heard nothing for ${SSE_RESILIENCE.HEARTBEAT_TIMEOUT_MS}ms — treating it as dropped`
-          );
-        }
-        throw err;
-      } finally {
-        clearTimeout(watchdog);
-        controller.abort();
+      if (signal?.aborted) return;
+      // The stream ENDED, and how it ended is what the caller's retry loop acts
+      // on. A refusal carries its status; anything else is a drop worth
+      // retrying. Throwing rather than returning is deliberate: a return would
+      // read as "the room is over".
+      if (closed.status !== null) {
+        throw new RoomStreamHttpError(closed.status, 'stream refused');
       }
+      if (closed.silent) {
+        throw new Error(
+          `Room stream heard nothing for ${SSE_RESILIENCE.HEARTBEAT_TIMEOUT_MS}ms — treating it as dropped`
+        );
+      }
+      throw new Error('Room stream closed');
     },
   };
 }

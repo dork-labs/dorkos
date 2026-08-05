@@ -203,7 +203,9 @@ import {
 } from './services/rooms/room-session-convergence.js';
 import { registerLocalCommunity } from './services/communities/index.js';
 import { SearchIndexer } from './services/search/index.js';
-import { TerminalManager, attachTerminalWebSocket } from './services/terminal/index.js';
+import { TerminalManager, terminalUpgradeRoute } from './services/terminal/index.js';
+import { attachUpgradeRouter } from './services/core/streams/upgrade-router.js';
+import { durableStreamRoutes } from './routes/stream-sockets.js';
 import { createTerminalRouter } from './routes/terminal.js';
 import { registerDorkosCommunityTelemetry } from './services/marketplace/telemetry-reporter.js';
 import { registerHeartbeat, type HeartbeatCounts } from './services/core/heartbeat-reporter.js';
@@ -2360,10 +2362,13 @@ async function start() {
   const server = app.listen(PORT, host, () => {
     logger.info(`[DorkOS] server running on http://${host}:${PORT}`);
 
-    // Attach the embedded-terminal WebSocket byte channel once the server is
-    // listening (it is the sole HTTP upgrade consumer).
-    attachTerminalWebSocket(server, terminalManager!);
-    logger.info('[Terminal] WebSocket byte channel attached');
+    // One upgrade listener for the whole server (ADR 260804-030000): the three
+    // durable event streams plus the embedded terminal's byte channel. A second
+    // `server.on('upgrade')` listener beside this one would not work — every
+    // listener sees every upgrade, and any that does not recognize a path
+    // destroys the socket out from under the one that does.
+    attachUpgradeRouter(server, [...durableStreamRoutes, terminalUpgradeRoute(terminalManager!)]);
+    logger.info('[DorkOS] WebSocket upgrade router attached');
 
     // Fire-and-forget: record startup in the activity feed so the dashboard
     // shows when the server was last (re)started.

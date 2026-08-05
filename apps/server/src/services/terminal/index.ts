@@ -8,8 +8,8 @@
 export { TerminalManager, TerminalLimitError } from './terminal-manager.js';
 export type { PtyLike, SpawnPty, SpawnPtyOptions, TerminalSink } from './terminal-manager.js';
 export {
-  attachTerminalWebSocket,
   authorizeTerminalUpgrade,
   bindTerminalSocket,
+  terminalUpgradeRoute,
 } from './terminal-websocket.js';
 export type { TerminalUpgradeDecision } from './terminal-websocket.js';

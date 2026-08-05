@@ -56,6 +56,23 @@ export function useSessionStream(sessionId: string | null, cwd: string | null): 
     streamManager.attachSession(sessionId, cwd);
   }, [sessionId, cwd]);
 
+  // Release the session stream when the chat view goes away.
+  //
+  // Deliberately its OWN effect with no dependencies, so it runs on unmount
+  // rather than on every re-target: hanging the release off the effect above
+  // would turn each session switch into A→null→B instead of the single A→B
+  // transition `attachSession` is built to emit. The release itself is deferred
+  // a tick and cancelled by any re-attach, which is what keeps a StrictMode or
+  // HMR remount from detaching and immediately re-attaching the same session —
+  // see `StreamManager.releaseSession`.
+  //
+  // Without this the stream leaked: nothing called `detachSession`, so a tab
+  // that navigated from chat to Agents or Settings kept its session stream open
+  // for as long as it stayed open.
+  useEffect(() => {
+    return () => streamManager.releaseSession();
+  }, []);
+
   return useSessionStreamState(sessionId ?? '');
 }
 

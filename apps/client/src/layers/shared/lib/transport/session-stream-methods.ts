@@ -2,13 +2,13 @@
  * Session stream Transport methods factory — the HTTP implementations of the
  * snapshot + resumable-event-stream contract (spec chat-stream-reconnection).
  *
- * These are the CONTRACT-LEVEL primitives: single-shot `fetch` + SSE parsing
- * with no reconnection. Resilience for the app's HTTP path (backoff, heartbeat
- * watchdog, `Last-Event-ID` resume, visibility optimization) lives in
- * {@link StreamManager}/`SSEConnection`, which speak SSE directly. These
- * methods exist so the Transport seam is honest and complete — embedded mode
- * (DirectTransport) routes the SAME contract to in-process iteration, and
- * cross-client/integration tests can consume the streams without the manager.
+ * These are the CONTRACT-LEVEL primitives: a single socket per call, no
+ * reconnection. Resilience for the app's own path (backoff, silence watchdog,
+ * cursor resume, visibility release) lives in {@link StreamManager}/
+ * `WSConnection`. These methods exist so the Transport seam is honest and
+ * complete — embedded mode (DirectTransport) routes the SAME contract to
+ * in-process iteration, and cross-client/integration tests can consume the
+ * streams without the manager.
  *
  * @module shared/lib/transport/session-stream-methods
  */
@@ -22,7 +22,7 @@ import {
   type SessionListEvent,
 } from '@dorkos/shared/session-stream';
 import { buildQueryString } from './http-client';
-import { parseSSEStream } from './sse-parser';
+import { streamSocketFrames } from './stream-socket-iterator';
 
 /**
  * The {@link SessionListEvent} discriminants. The unified `/events` stream also
@@ -43,33 +43,6 @@ export const SESSION_LIST_EVENT_TYPES = new Set([
 ]);
 
 /**
- * Open an SSE response for `path`, aborting via a local controller chained to
- * an optional external signal so generator teardown (`finally`) always cancels
- * the underlying connection — a bare reader release would leak the socket.
- */
-async function openSSE(
-  baseUrl: string,
-  path: string,
-  externalSignal?: AbortSignal
-): Promise<{ response: Response; controller: AbortController }> {
-  const controller = new AbortController();
-  if (externalSignal) {
-    if (externalSignal.aborted) controller.abort();
-    else externalSignal.addEventListener('abort', () => controller.abort(), { once: true });
-  }
-  const response = await fetch(`${baseUrl}${path}`, {
-    headers: { Accept: 'text/event-stream' },
-    credentials: 'include',
-    signal: controller.signal,
-  });
-  if (!response.ok || !response.body) {
-    controller.abort();
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-  }
-  return { response, controller };
-}
-
-/**
  * Create the session stream methods bound to a base URL.
  *
  * @param baseUrl - Server base URL (e.g. `/api` or `http://localhost:4242/api`)
@@ -81,24 +54,24 @@ export function createSessionStreamMethods(baseUrl: string) {
      *
      * There is no REST snapshot endpoint — the snapshot is the leading frame of
      * a cold `GET /sessions/:id/events` connect (Design B.3). This opens the
-     * stream just long enough to capture that frame, then aborts.
+     * stream just long enough to capture that frame, then closes it.
      *
-     * Connection budget: that transient connect briefly counts against the
-     * browser's per-origin limit alongside the two durable streams. App code
-     * should not call this over HTTP — the StreamManager's cold connect already
+     * App code should not call this: the StreamManager's cold connect already
      * delivers the snapshot as the leading frame of the durable stream itself.
      * It exists for the embedded pump (in-process, no sockets) and for tests.
      */
     async getSessionSnapshot(sessionId: string, cwd?: string): Promise<SessionSnapshot> {
       const qs = buildQueryString({ cwd });
-      const { response, controller } = await openSSE(baseUrl, `/sessions/${sessionId}/events${qs}`);
+      const controller = new AbortController();
       try {
-        for await (const frame of parseSSEStream(response.body!.getReader())) {
-          if (frame.comment) continue;
-          // The server emits the snapshot as the FIRST data frame on a cold
-          // connect; any other leading frame is a protocol violation.
-          if (frame.type !== 'snapshot') {
-            throw new Error(`expected leading snapshot frame, got "${frame.type}"`);
+        for await (const frame of streamSocketFrames(
+          `${baseUrl}/sessions/${sessionId}/events${qs}`,
+          { signal: controller.signal }
+        )) {
+          // The server emits the snapshot as the FIRST frame on a cold connect;
+          // any other leading frame is a protocol violation.
+          if (frame.event !== 'snapshot') {
+            throw new Error(`expected leading snapshot frame, got "${frame.event}"`);
           }
           return SessionSnapshotSchema.parse(frame.data);
         }
@@ -109,8 +82,8 @@ export function createSessionStreamMethods(baseUrl: string) {
     },
 
     /**
-     * Subscribe to a session's resumable event stream via SSE
-     * (`GET /sessions/:id/events`).
+     * Subscribe to a session's resumable event stream
+     * (`GET /sessions/:id/events`, over a WebSocket).
      *
      * With `sinceCursor` the server replays only events with `seq` greater than
      * the cursor (`?after=`); without it the connect is cold — the server emits
@@ -131,58 +104,46 @@ export function createSessionStreamMethods(baseUrl: string) {
       signal?: AbortSignal
     ): AsyncIterable<SessionEvent> {
       const qs = buildQueryString({ cwd, after: sinceCursor });
-      const { response, controller } = await openSSE(
-        baseUrl,
-        `/sessions/${sessionId}/events${qs}`,
-        signal
-      );
-      try {
-        for await (const frame of parseSSEStream(response.body!.getReader())) {
-          if (frame.comment) continue;
-          if (frame.type === 'snapshot') {
-            if (sinceCursor !== undefined) {
-              throw new StaleResumeCursorError(sessionId, sinceCursor);
-            }
-            continue;
+      for await (const frame of streamSocketFrames(`${baseUrl}/sessions/${sessionId}/events${qs}`, {
+        signal,
+      })) {
+        if (frame.event === 'snapshot') {
+          if (sinceCursor !== undefined) {
+            throw new StaleResumeCursorError(sessionId, sinceCursor);
           }
-          const parsed = SessionEventSchema.safeParse(frame.data);
-          if (!parsed.success) {
-            console.warn('[Transport] dropping malformed session-event frame', {
-              sessionId,
-              issues: parsed.error.issues,
-            });
-            continue;
-          }
-          yield parsed.data;
+          continue;
         }
-      } finally {
-        controller.abort();
+        const parsed = SessionEventSchema.safeParse(frame.data);
+        if (!parsed.success) {
+          console.warn('[Transport] dropping malformed session-event frame', {
+            sessionId,
+            issues: parsed.error.issues,
+          });
+          continue;
+        }
+        yield parsed.data;
       }
     },
 
     /**
-     * Subscribe to the global session-list stream via SSE (`GET /events`).
+     * Subscribe to the global session-list stream (`GET /events`, over a
+     * WebSocket).
      *
      * The unified `/events` fan-out carries other event families too — only the
      * {@link SESSION_LIST_EVENT_TYPES} discriminants are forwarded; everything
      * else is ignored.
      */
     async *subscribeSessionList(): AsyncIterable<SessionListEvent> {
-      const { response, controller } = await openSSE(baseUrl, `/events`);
-      try {
-        for await (const frame of parseSSEStream(response.body!.getReader())) {
-          if (frame.comment || !SESSION_LIST_EVENT_TYPES.has(frame.type)) continue;
-          const parsed = SessionListEventSchema.safeParse(frame.data);
-          if (!parsed.success) {
-            console.warn('[Transport] dropping malformed session-list frame', {
-              issues: parsed.error.issues,
-            });
-            continue;
-          }
-          yield parsed.data;
+      for await (const frame of streamSocketFrames(`${baseUrl}/events`)) {
+        if (!SESSION_LIST_EVENT_TYPES.has(frame.event)) continue;
+        const parsed = SessionListEventSchema.safeParse(frame.data);
+        if (!parsed.success) {
+          console.warn('[Transport] dropping malformed session-list frame', {
+            issues: parsed.error.issues,
+          });
+          continue;
         }
-      } finally {
-        controller.abort();
+        yield parsed.data;
       }
     },
   };

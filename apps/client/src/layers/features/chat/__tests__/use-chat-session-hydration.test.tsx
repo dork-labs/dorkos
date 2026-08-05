@@ -36,11 +36,6 @@ vi.mock('@/layers/shared/model', async () => {
   return {
     ...actual,
     useAppStore,
-    useSSEConnection: () => ({
-      connectionState: 'connected' as const,
-      failedAttempts: 0,
-      lastEventAt: null,
-    }),
   };
 });
 

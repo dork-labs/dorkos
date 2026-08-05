@@ -9,6 +9,7 @@ import {
 } from '@dorkos/shared/session-stream';
 
 import { createSessionStreamMethods, SESSION_LIST_EVENT_TYPES } from '../session-stream-methods';
+import { FakeStreamSocket, installFakeStreamSocket, nthSocket } from './fake-stream-socket';
 
 const STATUS: SessionStatus = {
   contextUsage: null,
@@ -34,23 +35,26 @@ const SNAPSHOT: SessionSnapshot = {
 const TURN_START: SessionEvent = { type: 'turn_start', seq: 8 };
 const LIST_EVENT: SessionListEvent = { type: 'session_removed', sessionId: 'sess-x' };
 
-/** Encode SSE frames into a Response whose body streams them then ends. */
-function sseResponse(frames: string): Response {
-  const body = new ReadableStream<Uint8Array>({
-    start(controller) {
-      controller.enqueue(new TextEncoder().encode(frames));
-      controller.close();
-    },
-  });
-  return new Response(body, {
-    status: 200,
-    headers: { 'Content-Type': 'text/event-stream' },
-  });
-}
+/** One frame the server would send, for {@link script}. */
+type Frame = [event: string, data?: unknown];
 
-/** One SSE frame: `event: <type>` + JSON data + blank-line dispatch. */
-function frame(type: string, data: unknown): string {
-  return `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`;
+/**
+ * Run `consume` against a stream the server drives with `frames`, then ends.
+ *
+ * The consumer starts first and parks on the socket; the script runs once the
+ * socket exists. That is the real ordering — a subscriber is listening before
+ * the server writes — and it is what makes these tests independent of how many
+ * microtasks the iterator happens to take.
+ *
+ * @param frames - What the server sends before closing.
+ * @param consume - The iteration under test.
+ */
+async function script<T>(frames: Frame[], consume: () => Promise<T>): Promise<T> {
+  const running = consume();
+  const socket = await nthSocket();
+  for (const [event, data] of frames) socket.push(event, data);
+  socket.finish();
+  return running;
 }
 
 /**
@@ -92,132 +96,126 @@ function listEventSamples(): Record<string, SessionListEvent> {
 }
 
 describe('createSessionStreamMethods', () => {
-  const fetchMock = vi.fn();
   let warnSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
-    vi.stubGlobal('fetch', fetchMock);
+    installFakeStreamSocket();
     warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
-    fetchMock.mockReset();
     warnSpy.mockRestore();
   });
+
+  /** The URL of the Nth socket opened, with the ws: scheme stripped for clarity. */
+  const openedPath = (index = 0): string =>
+    FakeStreamSocket.instances[index]!.url.replace(/^ws:\/\/[^/]+/, '');
 
   describe('getSessionSnapshot', () => {
     it('captures the leading snapshot frame from a cold /events connect', async () => {
       // Real failure mode: hydration callers get nothing without this — there
-      // is no REST snapshot endpoint; the SSE leading frame IS the snapshot.
-      fetchMock.mockResolvedValue(sseResponse(frame('snapshot', SNAPSHOT)));
+      // is no REST snapshot endpoint; the leading frame IS the snapshot.
       const methods = createSessionStreamMethods('/api');
 
-      const snapshot = await methods.getSessionSnapshot('sess-a', '/proj');
+      const snapshot = await script([['snapshot', SNAPSHOT]], () =>
+        methods.getSessionSnapshot('sess-a', '/proj')
+      );
 
       expect(snapshot).toEqual(SNAPSHOT);
-      const [url, init] = fetchMock.mock.calls[0]!;
-      expect(url).toBe('/api/sessions/sess-a/events?cwd=%2Fproj');
-      expect((init as RequestInit).headers).toMatchObject({ Accept: 'text/event-stream' });
+      expect(openedPath()).toBe('/api/sessions/sess-a/events?cwd=%2Fproj');
     });
 
-    it('skips keepalive comments before the snapshot frame', async () => {
-      fetchMock.mockResolvedValue(sseResponse(`: keepalive\n\n${frame('snapshot', SNAPSHOT)}`));
+    it('throws when the leading frame is not a snapshot (protocol violation)', async () => {
       const methods = createSessionStreamMethods('/api');
 
-      await expect(methods.getSessionSnapshot('sess-a')).resolves.toEqual(SNAPSHOT);
+      await expect(
+        script([['turn_start', TURN_START]], () => methods.getSessionSnapshot('sess-a'))
+      ).rejects.toThrow(/expected leading snapshot frame/);
     });
 
-    it('throws when the leading data frame is not a snapshot (protocol violation)', async () => {
-      fetchMock.mockResolvedValue(sseResponse(frame('turn_start', TURN_START)));
+    it('throws when the stream ends before a snapshot arrives', async () => {
       const methods = createSessionStreamMethods('/api');
 
-      await expect(methods.getSessionSnapshot('sess-a')).rejects.toThrow(
-        /expected leading snapshot frame/
+      await expect(script([], () => methods.getSessionSnapshot('sess-a'))).rejects.toThrow(
+        /ended before a snapshot/
       );
-    });
-
-    it('throws on a non-OK response', async () => {
-      fetchMock.mockResolvedValue(new Response(null, { status: 500, statusText: 'boom' }));
-      const methods = createSessionStreamMethods('/api');
-
-      await expect(methods.getSessionSnapshot('sess-a')).rejects.toThrow('HTTP 500');
     });
   });
 
   describe('subscribeSession', () => {
-    it('yields validated events, skipping the snapshot frame and comments', async () => {
+    it('yields validated events, skipping the snapshot frame', async () => {
       // Real failure mode: a cold connect leads with a snapshot frame — leaking
       // it into the event iteration would corrupt seq-based consumers.
-      fetchMock.mockResolvedValue(
-        sseResponse(
-          `${frame('snapshot', SNAPSHOT)}: keepalive\n\n${frame('turn_start', TURN_START)}`
-        )
-      );
       const methods = createSessionStreamMethods('/api');
 
       const events: SessionEvent[] = [];
-      for await (const event of methods.subscribeSession('sess-a')) events.push(event);
+      await script(
+        [
+          ['snapshot', SNAPSHOT],
+          ['turn_start', TURN_START],
+        ],
+        async () => {
+          for await (const event of methods.subscribeSession('sess-a')) events.push(event);
+        }
+      );
 
       expect(events).toEqual([TURN_START]);
     });
 
     it('passes the resume cursor as ?after= alongside cwd', async () => {
-      fetchMock.mockResolvedValue(sseResponse(''));
       const methods = createSessionStreamMethods('/api');
 
-      for await (const _ of methods.subscribeSession('sess-a', 42, '/proj')) void _;
+      await script([], async () => {
+        for await (const _ of methods.subscribeSession('sess-a', 42, '/proj')) void _;
+      });
 
-      const [url] = fetchMock.mock.calls[0]!;
-      expect(url).toBe('/api/sessions/sess-a/events?cwd=%2Fproj&after=42');
+      expect(openedPath()).toBe('/api/sessions/sess-a/events?cwd=%2Fproj&after=42');
     });
 
     it('throws StaleResumeCursorError when a resume connect falls back to a cold snapshot', async () => {
       // Real failure mode (review finding): the server emits a snapshot on a
       // RESUME connect only when the cursor is unservable — silently skipping
       // it would hide every event between the stale cursor and the fallback.
-      fetchMock.mockResolvedValue(sseResponse(frame('snapshot', SNAPSHOT)));
       const methods = createSessionStreamMethods('/api');
 
-      const iterate = async () => {
-        for await (const _ of methods.subscribeSession('sess-a', 42)) void _;
-      };
-
-      await expect(iterate()).rejects.toThrow(StaleResumeCursorError);
+      await expect(
+        script([['snapshot', SNAPSHOT]], async () => {
+          for await (const _ of methods.subscribeSession('sess-a', 42)) void _;
+        })
+      ).rejects.toThrow(StaleResumeCursorError);
     });
 
-    it('chains an external abort signal into the underlying fetch', async () => {
-      // Real failure mode: a consumer aborting its signal must cancel the SSE
-      // request, or the connection (and its server-side subscription) leaks.
-      const parked = new ReadableStream<Uint8Array>({ start() {} });
-      fetchMock.mockResolvedValue(
-        new Response(parked, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
-      );
+    it('closes the socket when the consumer aborts', async () => {
+      // Real failure mode: a consumer aborting its signal must close the socket,
+      // or the connection (and its server-side subscription) leaks.
       const methods = createSessionStreamMethods('/api');
       const external = new AbortController();
 
       const iterator = methods
         .subscribeSession('sess-a', undefined, undefined, external.signal)
         [Symbol.asyncIterator]();
-      void iterator.next(); // opens the fetch; parks on the never-ending body
-      await vi.waitFor(() => {
-        expect(fetchMock).toHaveBeenCalled();
-      });
+      void iterator.next(); // opens the socket; parks on it
+      const socket = await nthSocket();
 
-      const init = fetchMock.mock.calls[0]![1] as RequestInit;
-      expect(init.signal!.aborted).toBe(false);
+      expect(socket.readyState).not.toBe(3);
       external.abort();
-      expect(init.signal!.aborted).toBe(true);
+      await vi.waitFor(() => expect(socket.readyState).toBe(3));
     });
 
     it('drops a malformed frame with a warning instead of corrupting the stream', async () => {
-      fetchMock.mockResolvedValue(
-        sseResponse(`${frame('text_delta', { bogus: true })}${frame('turn_start', TURN_START)}`)
-      );
       const methods = createSessionStreamMethods('/api');
 
       const events: SessionEvent[] = [];
-      for await (const event of methods.subscribeSession('sess-a')) events.push(event);
+      await script(
+        [
+          ['text_delta', { bogus: true }],
+          ['turn_start', TURN_START],
+        ],
+        async () => {
+          for await (const event of methods.subscribeSession('sess-a')) events.push(event);
+        }
+      );
 
       expect(events).toEqual([TURN_START]);
       expect(warnSpy).toHaveBeenCalledWith(
@@ -231,19 +229,21 @@ describe('createSessionStreamMethods', () => {
     it('does not leak other event families from the unified stream', async () => {
       // Real failure mode: /events is the unified fan-out — sync updates and
       // relay frames must not leak into the session-list contract.
-      fetchMock.mockResolvedValue(
-        sseResponse(
-          `${frame('sync_update', { anything: 1 })}${frame('session_removed', LIST_EVENT)}`
-        )
-      );
       const methods = createSessionStreamMethods('/api');
 
       const events: SessionListEvent[] = [];
-      for await (const event of methods.subscribeSessionList()) events.push(event);
+      await script(
+        [
+          ['sync_update', { anything: 1 }],
+          ['session_removed', LIST_EVENT],
+        ],
+        async () => {
+          for await (const event of methods.subscribeSessionList()) events.push(event);
+        }
+      );
 
       expect(events).toEqual([LIST_EVENT]);
-      const [url] = fetchMock.mock.calls[0]!;
-      expect(url).toBe('/api/events');
+      expect(openedPath()).toBe('/api/events');
     });
 
     it('forwards EVERY SessionListEventSchema discriminant (schema-drift pin)', async () => {
@@ -267,13 +267,15 @@ describe('createSessionStreamMethods', () => {
       // fails HERE with a name rather than silently narrowing the sweep below.
       expect(Object.keys(samples).sort()).toEqual([...discriminants].sort());
 
-      fetchMock.mockResolvedValue(
-        sseResponse(discriminants.map((type) => frame(type, samples[type])).join(''))
-      );
       const methods = createSessionStreamMethods('/api');
 
       const events: SessionListEvent[] = [];
-      for await (const event of methods.subscribeSessionList()) events.push(event);
+      await script(
+        discriminants.map((type): Frame => [type, samples[type]]),
+        async () => {
+          for await (const event of methods.subscribeSessionList()) events.push(event);
+        }
+      );
 
       // Forward, part two: every discriminant survived the allowlist check.
       expect(
@@ -308,16 +310,18 @@ describe('createSessionStreamMethods', () => {
       // exported copy nothing reads would pin nothing. A frame named by the set is
       // forwarded; a frame not named by it is dropped in silence.
       const samples = listEventSamples();
-      fetchMock.mockResolvedValue(
-        sseResponse(
-          `${frame('session_removed', samples['session_removed'])}` +
-            `${frame('not_in_the_set', { type: 'session_removed', sessionId: 'sess-y' })}`
-        )
-      );
       const methods = createSessionStreamMethods('/api');
 
       const events: SessionListEvent[] = [];
-      for await (const event of methods.subscribeSessionList()) events.push(event);
+      await script(
+        [
+          ['session_removed', samples['session_removed']],
+          ['not_in_the_set', { type: 'session_removed', sessionId: 'sess-y' }],
+        ],
+        async () => {
+          for await (const event of methods.subscribeSessionList()) events.push(event);
+        }
+      );
 
       expect(events).toEqual([samples['session_removed']]);
       expect(warnSpy).not.toHaveBeenCalled();
