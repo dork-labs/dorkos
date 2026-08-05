@@ -2,8 +2,11 @@
  * The wire contract for DorkOS's durable event streams (ADR 260805-041016).
  *
  * All three durable streams — a session's events, the global broadcast stream,
- * and a room's events — ride WebSockets rather than Server-Sent Events. The
- * reason is a browser limit, not a protocol preference: HTTP/1.1 allows about
+ * and a room's events — are served over BOTH a WebSocket and Server-Sent
+ * Events, at the same paths. This module is the WebSocket half's wire format;
+ * it is what the DorkOS cockpit speaks, while SSE remains the documented
+ * contract for integrations. The reason the cockpit moved is a browser limit,
+ * not a protocol preference: HTTP/1.1 allows about
  * six sockets per origin **per browser profile**, and an SSE stream holds one
  * for as long as it is open. Three cockpit windows park six streams between
  * them and every subsequent request to that origin — including the next

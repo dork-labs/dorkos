@@ -140,6 +140,11 @@ function originIsTrusted(headers: IncomingHttpHeaders): boolean {
     // eslint-disable-next-line no-restricted-syntax -- DORKOS_CORS_ORIGIN is not in env.ts; read the same way app.ts reads it
     configuredOrigins: process.env.DORKOS_CORS_ORIGIN,
     publicUrl: env.DORKOS_PUBLIC_URL,
+    // The upgrade's equivalent of `trust proxy: 1`, which is what lets
+    // `req.protocol` see through Caddy/ngrok on the HTTP path.
+    forwardedProto: Array.isArray(headers['x-forwarded-proto'])
+      ? headers['x-forwarded-proto'][0]
+      : headers['x-forwarded-proto'],
     hostCheckInert,
   });
 }

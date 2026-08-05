@@ -119,7 +119,7 @@ Most people never touch these once the config above is working. Here's what each
 
 <TypeTable type={{
   "Upgrade $http_upgrade": { type: "header", description: "Passes the client's upgrade request through, so live streams can open as WebSockets" },
-  "Connection $connection_upgrade": { type: "header", description: "Says 'upgrade' for a WebSocket and stays empty otherwise — the empty case is what keeps plain streams from closing early" },
+  "Connection $connection_upgrade": { type: "header", description: "Says 'upgrade' for a WebSocket handshake and 'close' for everything else, driven by the map block" },
   "proxy_buffering off": { type: "directive", description: "Disables response buffering so events are sent immediately" },
   "proxy_cache off": { type: "directive", description: "Disables caching, live streams must never be cached" },
   "proxy_read_timeout 86400s": { type: "directive", description: "24-hour timeout for long-lived connections" },

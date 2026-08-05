@@ -44,7 +44,7 @@ This guide covers state management patterns in DorkOS. Zustand manages complex c
 | URL-synced filter state    | useFilterState + TanStack Router                  | Agent list filters, sort, search — serialized to URL search params   | Shareable, bookmarkable, composable; debounced text inputs via per-key config          |
 | URL-driven dialog state    | `dialogSearchSchema` + deep-link hooks            | `?settings=tools`, `?tasks=open` — open dialogs from any page        | Deep-linkable, works cross-page, merged into every route via `mergeDialogSearch`       |
 | Multi-surface dialog state | Standalone Zustand store                          | `useAgentCreationStore` — open dialog with initial mode              | Triggered from 3+ unrelated surfaces; avoids prop-threading open state                 |
-| Real-time SSE events       | `useEventSubscription` from `EventStreamProvider` | Tunnel status, relay messages, extension reload signals              | Single shared connection, ref-stabilized handlers, module-level singleton              |
+| Real-time broadcast events | `useEventSubscription` from `EventStreamProvider` | Tunnel status, relay messages, extension reload signals              | Single shared connection, ref-stabilized handlers, module-level singleton              |
 
 ## Core Patterns
 
@@ -445,7 +445,7 @@ Note: this store omits `devtools` middleware intentionally — it has only two f
 
 **When to use**: A dialog that (a) is triggered from 3+ unrelated surfaces and (b) needs to carry an initial configuration (like which mode/tab to open to). If the dialog has no initial config, prefer the app store's `PanelsSlice` pattern instead.
 
-### Event Stream (SSE Subscriptions)
+### Event Stream (global broadcast subscriptions)
 
 The `EventStreamProvider` manages a single connection to `/api/events` shared across the entire app. It is a **WebSocket** (ADR 260805-041016) — an SSE stream held one of a browser's ~6 sockets per origin for as long as it was open, and three cockpit windows spent all six. The server still serves SSE at the same path for integrations; the cockpit does not use it. All system-wide real-time events (tunnel status, relay messages, extension reloads) flow through this one connection instead of each consumer opening its own `EventSource`.
 

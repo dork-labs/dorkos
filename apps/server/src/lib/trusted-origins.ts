@@ -212,6 +212,15 @@ export interface UpgradeOriginFacts {
   /** `DORKOS_PUBLIC_URL`, the address the operator publishes. */
   publicUrl: string | undefined;
   /**
+   * `X-Forwarded-Proto`, when a proxy set it — the upgrade's equivalent of the
+   * `trust proxy` that lets `req.protocol` see through Caddy or ngrok.
+   *
+   * Present, it pins the same-origin comparison to ONE scheme. Absent, both are
+   * accepted, because a TLS-terminating proxy that forwards neither the scheme
+   * nor a trusted host would otherwise be unserviceable.
+   */
+  forwardedProto: string | undefined;
+  /**
    * Whether the surrounding environment owns the network boundary
    * (`DORKOS_ALLOW_INSECURE_BIND`), or login is on — in which case
    * origin-scoped auth cookies already turn a rebound origin away, exactly as
@@ -235,8 +244,7 @@ export interface UpgradeOriginFacts {
  * LAN IP, on `https://`, or setting `DORKOS_CORS_ORIGIN`.
  *
  * So it mirrors what the HTTP surface already does, which is CORS **and**
- * `hostGuard` **together** (`app.ts` `buildCors` + `middleware/host-guard.ts`),
- * and is exactly as strict as those two are jointly:
+ * `hostGuard` **together** (`app.ts` `buildCors` + `middleware/host-guard.ts`):
  *
  * 1. **No `Origin`** — a non-browser client (CLI, tests, the desktop shell).
  *    Passes, like the CORS delegate and `validateMcpOrigin`: a header a browser
@@ -246,20 +254,37 @@ export interface UpgradeOriginFacts {
  *    `*`) or `DORKOS_PUBLIC_URL`. The HTTP path already honours the first; a
  *    socket refusing what a request accepts is the inconsistency that made this
  *    a silent outage rather than an error somebody could read.
- * 4. **Same-origin with this very request** — the `Origin`'s host equals the
- *    `Host` this request asked for. This is the branch that covers reverse
- *    proxies, LAN addresses and `https://` without the operator listing every
- *    one.
+ * 4. **Same-origin with this very request** — the `Origin` equals
+ *    `<scheme>://<Host>` for the `Host` this request asked for. This is the
+ *    branch that covers reverse proxies, LAN addresses and `https://` without
+ *    the operator listing every one. It is an EXACT string comparison, matching
+ *    `buildCors`'s `` `${req.protocol}://${host}` ``.
  *
- * Branch 4 is only sound **paired with the host allowlist**, which is why
+ * ## Branch 4 compares the whole origin, and that is the whole point
+ *
+ * An earlier version compared only the HOSTNAME, dropping scheme and port. That
+ * is a hole rather than a shortcut, and a bad one on a default zero-config
+ * install: a page served by ANY other process on this machine —
+ * `localhost:9999` running some project's dev server, a docs preview, a
+ * notebook — sends `Origin: http://localhost:9999` with `Host: localhost:4242`,
+ * whose hostnames are equal. It would have been handed the global stream, which
+ * carries every session's id and cwd, and could then have opened each session's
+ * stream and read the transcripts. Login does not close it either: cookies
+ * ignore port, so `localhost:9999` presents the cockpit's own cookie.
+ *
+ * Comparing the whole origin costs nothing — every intended deployment
+ * (reverse-proxied, LAN IP, `https://localhost`) sends an `Origin` that matches
+ * its `Host` exactly — and it is what makes this genuinely as strict as CORS.
+ *
+ * Branch 4 is additionally **paired with the host allowlist**, which is why
  * `hostAllowed` is required rather than assumed. A DNS-rebound page at
  * `evil.com` pointing at 127.0.0.1 is same-origin to the browser and sends
- * `Host: evil.com` with `Origin: http://evil.com` — branch 4 alone would admit
- * it. `isHostAllowed` rejects the `Host`, and the pairing is the same one
- * `hostGuard` provides for requests. When the host check is inert (login on, or
- * the container escape hatch) branch 4 stands alone, for the same reason
- * `hostGuard` stands down there: auth cookies are origin-scoped, so a rebound
- * origin never presents one.
+ * `Host: evil.com` with `Origin: http://evil.com` — an exact match, which
+ * branch 4 alone would admit. `isHostAllowed` rejects the `Host`, and the
+ * pairing is the same one `hostGuard` provides for requests. When the host
+ * check is inert (login on, or the container escape hatch) branch 4 stands
+ * alone, for the same reason `hostGuard` stands down there: auth cookies are
+ * origin-scoped, so a rebound origin never presents one.
  *
  * @param facts - The resolved {@link UpgradeOriginFacts}.
  */
@@ -292,11 +317,17 @@ export function isTrustedUpgradeOrigin(facts: UpgradeOriginFacts): boolean {
 
   // Same-origin as this request, gated on the host allowlist (see the doc).
   if (!facts.hostAllowed && !facts.hostCheckInert) return false;
-  const requestedHost = parseHostname(facts.hostHeader);
-  if (!requestedHost) return false;
-  try {
-    return new URL(origin).hostname.toLowerCase() === requestedHost;
-  } catch {
-    return false;
-  }
+  const host = facts.hostHeader?.trim().toLowerCase();
+  if (!host) return false;
+  const candidate = origin.trim().toLowerCase();
+  // An exact `<scheme>://<host>` comparison — NOT a hostname match. A browser
+  // sends `Origin` already normalized (lower-cased, no path, no trailing
+  // slash, no credentials), so anything that does not compare equal is not the
+  // page this server served.
+  const proto = facts.forwardedProto?.trim().toLowerCase().split(',')[0]?.trim();
+  if (proto) return candidate === `${proto}://${host}`;
+  // No proxy said which scheme it terminated, so either is accepted for the
+  // SAME host and port. That latitude spans only http-vs-https on one
+  // authority, which is not a boundary a page can cross by choosing a port.
+  return candidate === `http://${host}` || candidate === `https://${host}`;
 }

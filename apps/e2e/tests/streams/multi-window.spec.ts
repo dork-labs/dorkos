@@ -180,11 +180,11 @@ test.describe('several cockpit windows', () => {
       // at most a room's).
       const perPage = await Promise.all(pages.map(openStreams));
       const total = perPage.reduce((sum, list) => sum + list.length, 0);
-      // The exact number is knowable, so assert it rather than a floor that
-      // trap 4 would sail through: every window holds the global stream AND its
-      // session's, so four windows hold eight. A guard of `>= WINDOW_COUNT`
-      // would pass on windows that opened only the global stream — which is
-      // precisely the vacuous shape this exists to catch.
+      // A BAND, whose floor is the number trap 4 would fail to reach: every
+      // window holds the global stream AND its session's, so four windows hold
+      // at least eight. A floor of `>= WINDOW_COUNT` would pass on windows that
+      // opened only the global stream — precisely the vacuous shape this exists
+      // to catch. The ceiling allows a room stream on top.
       expect(
         total,
         `expected ${WINDOW_COUNT * 2} durable streams (the global one plus a session ` +

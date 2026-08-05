@@ -397,4 +397,91 @@ describe('attachUpgradeRouter', () => {
       expect(result.opened).toBe(false);
     });
   });
+
+  describe('same-origin means the WHOLE origin, not just the hostname', () => {
+    // A hostname-only comparison shipped briefly and was a real hole on a
+    // default zero-config install: ANY other process on this machine serving a
+    // page — a project's dev server, a docs preview, a notebook — has the same
+    // hostname as DorkOS and a different port. It would have been handed the
+    // global stream, which carries every session's id and cwd, and could then
+    // have read the transcripts. Login does not close it: cookies ignore port.
+    //
+    // Nothing else in this suite pins the comparison, which is exactly how the
+    // laxness survived. These do.
+
+    it('REFUSES a page served by another process on the same host, different port', async () => {
+      await listen([acceptingRoute]);
+
+      const result = await attempt('/api/accept', {
+        origin: 'http://localhost:9999',
+        host: 'localhost:4242',
+      });
+
+      expect(result.httpStatus, 'a different port is a different origin').toBe(403);
+      expect(result.opened).toBe(false);
+    });
+
+    it('REFUSES a loopback page on another port, by IP', async () => {
+      await listen([acceptingRoute]);
+
+      const result = await attempt('/api/accept', {
+        origin: 'http://127.0.0.1:31337',
+        host: '127.0.0.1:4242',
+      });
+
+      expect(result.httpStatus).toBe(403);
+    });
+
+    it('REFUSES an origin carrying credentials that would fool a hostname parse', async () => {
+      await listen([acceptingRoute]);
+
+      const result = await attempt('/api/accept', {
+        origin: 'http://user:pass@localhost:9999',
+        host: 'localhost:4242',
+      });
+
+      expect(result.httpStatus).toBe(403);
+    });
+
+    it('ACCEPTS the exact origin the request was reached on, port and all', async () => {
+      mutableEnv.DORKOS_TRUSTED_HOSTS = 'dorkos.example.com';
+      try {
+        await listen([acceptingRoute]);
+
+        const result = await attempt('/api/accept', {
+          origin: 'https://dorkos.example.com',
+          host: 'dorkos.example.com',
+        });
+
+        expect(result.opened).toBe(true);
+      } finally {
+        mutableEnv.DORKOS_TRUSTED_HOSTS = undefined;
+      }
+    });
+
+    it('pins the scheme to X-Forwarded-Proto when a proxy sets it', async () => {
+      // The upgrade's equivalent of `trust proxy: 1`. With the proxy naming the
+      // scheme it terminated, the other one stops being accepted.
+      mutableEnv.DORKOS_TRUSTED_HOSTS = 'dorkos.example.com';
+      try {
+        await listen([acceptingRoute]);
+
+        const matching = await attempt('/api/accept', {
+          origin: 'https://dorkos.example.com',
+          host: 'dorkos.example.com',
+          'x-forwarded-proto': 'https',
+        });
+        expect(matching.opened).toBe(true);
+
+        const mismatched = await attempt('/api/accept', {
+          origin: 'http://dorkos.example.com',
+          host: 'dorkos.example.com',
+          'x-forwarded-proto': 'https',
+        });
+        expect(mismatched.httpStatus, 'the proxy said https; http is not that origin').toBe(403);
+      } finally {
+        mutableEnv.DORKOS_TRUSTED_HOSTS = undefined;
+      }
+    });
+  });
 });

@@ -42,9 +42,12 @@ export type TerminalUpgradeDecision =
  * authenticates by bearer-of-id — an upgrade for an unknown id is refused.
  *
  * The cross-origin half of that model has moved: WebSocket handshakes are NOT
- * CORS-protected, and the `Origin` allowlist that blocks DNS-rebinding attach is
- * now applied to EVERY upgrade by `services/core/streams/upgrade-router.ts`, so this
- * no longer checks it itself. Same allowlist, same behaviour, one place.
+ * CORS-protected, and the origin check that blocks DNS-rebinding attach is now
+ * applied to EVERY upgrade by `services/core/streams/upgrade-router.ts`, so this
+ * no longer checks it itself. One place rather than one per route — and a
+ * slightly WIDER policy than the bare allowlist this used to consult, since it
+ * also accepts an `Origin` that exactly matches the `Host` the request was
+ * reached on (gated by the host allowlist). See `isTrustedUpgradeOrigin`.
  *
  * @param req - The upgrade request (reads `url`).
  * @param manager - The terminal manager (checks the id exists).
