@@ -10,6 +10,7 @@ covers:
   - 'test(e2e): tap the room and global streams as WebSockets, not fetch (DOR-927)'
   - 'refactor(client): drop the now-dead EventSource mock and a stale timeout rationale (DOR-927)'
   - 'fix(server): the upgrade origin check no longer stands down inside the container (DOR-927)'
+  - 'fix(server): drop DORKOS_PUBLIC_URL as a trust branch and refuse opaque origins (DOR-927)'
 ---
 
 ### Fixed
@@ -24,3 +25,6 @@ covers:
 - If you reach DorkOS through a reverse proxy, check that it passes WebSocket
   connections through — live output now uses them. The setup pages have working
   config for nginx and Caddy (DOR-927)
+- Running the Docker image and reaching it by a name rather than an IP (`http://dorkos.lan:4242`)?
+  Add `DORKOS_TRUSTED_HOSTS=dorkos.lan`. Without it the page loads and the live updates never
+  arrive — the Docker page explains why (DOR-927)

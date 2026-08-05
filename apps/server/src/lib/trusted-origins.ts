@@ -12,7 +12,7 @@
  *
  * @module lib/trusted-origins
  */
-import { isIPv4 } from 'node:net';
+import { isIP, isIPv4 } from 'node:net';
 import { env } from '../env.js';
 import { tunnelManager } from '../services/core/tunnel-manager.js';
 
@@ -159,6 +159,14 @@ export function isLocalRequest(facts: LocalRequestFacts): boolean {
  */
 export function getStaticLocalOrigins(): string[] {
   const port = String(env.DORKOS_PORT);
+  // The Vite dev-server origin is a DEVELOPMENT affordance: in dev the cockpit
+  // is served from a different port than the API, so it is genuinely
+  // cross-origin. In production the server serves the SPA itself, nothing
+  // legitimate speaks from that port, and anything else that happened to listen
+  // there would be trusted — which on the socket path now includes the terminal.
+  if (env.NODE_ENV === 'production') {
+    return [`http://localhost:${port}`, `http://127.0.0.1:${port}`];
+  }
   // eslint-disable-next-line no-restricted-syntax -- VITE_PORT is a Vite-specific var not in server env.ts
   const vitePort = process.env.VITE_PORT || '4241';
   return [
@@ -207,10 +215,14 @@ export interface UpgradeOriginFacts {
   hostHeader: string | undefined;
   /** Whether this instance answers to that `Host` (`isHostAllowed`). */
   hostAllowed: boolean;
+  /**
+   * `DORKOS_ALLOW_INSECURE_BIND` — the deployment declares it owns its network
+   * boundary. Here it does exactly one thing: it lets an **IP-literal** `Host`
+   * satisfy the pairing. See {@link isTrustedUpgradeOrigin}.
+   */
+  ownsNetworkBoundary: boolean;
   /** `DORKOS_CORS_ORIGIN`, the operator's explicit allowlist (or `*`). */
   configuredOrigins: string | undefined;
-  /** `DORKOS_PUBLIC_URL`, the address the operator publishes. */
-  publicUrl: string | undefined;
   /**
    * `X-Forwarded-Proto`, when a proxy set it — the upgrade's equivalent of the
    * `trust proxy` that lets `req.protocol` see through Caddy or ngrok.
@@ -238,6 +250,32 @@ export interface UpgradeOriginFacts {
 }
 
 /**
+ * Whether a `Host` header names a bare IP address rather than a DNS name.
+ *
+ * This is the one thing `DORKOS_ALLOW_INSECURE_BIND` buys on the upgrade path,
+ * and the reason it is safe to buy: a DNS-rebinding attack works by pointing a
+ * NAME at this machine, so the `Host` it produces is always that name. It can
+ * never be an IP literal, because a browser sends the address bar's authority
+ * and typing an IP involves no DNS at all. So if `Origin` and `Host` are the
+ * same IP literal AND the connection arrived here, the page was served by this
+ * server — the port is part of the comparison, so a different service on the
+ * same address does not match.
+ *
+ * That covers the deployment shape the flag exists for: the shipped container on
+ * a NAS, homelab or VPS, browsed at `http://192.168.1.50:4242`. A NAME-based
+ * address (`http://box.lan:4242`) is not covered and must be listed in
+ * `DORKOS_TRUSTED_HOSTS` — which is what `docs/self-hosting/docker.mdx` now
+ * says, because the alternative is a deployment where the app loads and no
+ * stream ever connects.
+ *
+ * @param hostHeader - The raw `Host` header.
+ */
+function isIpLiteralHost(hostHeader: string | undefined): boolean {
+  const hostname = parseHostname(hostHeader);
+  return hostname !== null && isIP(hostname) !== 0;
+}
+
+/**
  * Whether a WebSocket upgrade's `Origin` may be trusted.
  *
  * ## Why this is not just `resolveTrustedOrigins().includes(origin)`
@@ -254,19 +292,42 @@ export interface UpgradeOriginFacts {
  * So it mirrors what the HTTP surface already does, which is CORS **and**
  * `hostGuard` **together** (`app.ts` `buildCors` + `middleware/host-guard.ts`):
  *
- * 1. **No `Origin`** — a non-browser client (CLI, tests, the desktop shell).
- *    Passes, like the CORS delegate and `validateMcpOrigin`: a header a browser
- *    is forced to send truthfully proves nothing by its absence.
+ * 0. **`Origin: null`** — refused, always, before anything else. That is what a
+ *    browser sends from a sandboxed iframe, a `data:` document or a `file://`
+ *    page: an OPAQUE origin, which is precisely "an origin that should be
+ *    trusted with nothing". It is listed first because it is the value most
+ *    likely to slip through a comparison written for real origins — `URL.origin`
+ *    serializes an unparseable URL to the literal string `"null"`, so any branch
+ *    built from operator config could hand it a match. One did (see below).
+ * 1. **No `Origin` at all** — a non-browser client (CLI, tests, the desktop
+ *    shell). Passes, like the CORS delegate and `validateMcpOrigin`: a header a
+ *    browser is forced to send truthfully proves nothing by its absence. Note
+ *    this is ABSENT, not `null`; the two are opposites here.
  * 2. **A statically trusted origin** — loopback dev origins, the live tunnel.
- * 3. **An origin the operator configured** — `DORKOS_PUBLIC_URL`, or a name in
- *    `DORKOS_CORS_ORIGIN`. The HTTP path already honours these; a socket
- *    refusing what a request accepts is the inconsistency that made this a
- *    silent outage rather than an error somebody could read. An explicit
- *    `DORKOS_CORS_ORIGIN` list is EXHAUSTIVE here as it is in `buildCors` —
- *    branch 4 does not run under it.
+ * 3. **A name in `DORKOS_CORS_ORIGIN`** — the operator's explicit list, which
+ *    the HTTP path already honours; a socket refusing what a request accepts is
+ *    the inconsistency that made this a silent outage rather than an error
+ *    somebody could read. When set, it makes branch 4 unreachable, as it does
+ *    in `buildCors`. It is NOT the whole policy the way `buildCors`'s static
+ *    list is: branch 2 sits above it, so the loopback dev origins and a live
+ *    tunnel still pass. That is deliberate — locking the operator out of
+ *    `localhost` for setting a production allowlist would be an outage, not a
+ *    boundary — but it means "exhaustive" is the wrong word and this is
+ *    marginally wider than CORS in that one respect.
  *
- *    **`DORKOS_CORS_ORIGIN='*'` is deliberately not honoured**, and that is the
- *    one place this is stricter than CORS rather than equal to it. The wildcard
+ *    **`DORKOS_PUBLIC_URL` is deliberately NOT consulted**, and its removal is
+ *    the fourth hole this function has had. It is documented as the address to
+ *    advertise on agent cards, it is unvalidated, and as a trust branch it both
+ *    outranked the operator's explicit `DORKOS_CORS_ORIGIN` list and was never
+ *    paired with `Host`. `DORKOS_PUBLIC_URL=dorkos:4242` — a plausible typo, and
+ *    a shape the reverse-proxy docs sit next to — parses with `dorkos:` as the
+ *    SCHEME and serializes to origin `"null"`, so ANY sandboxed iframe or
+ *    `file://` page that could reach the port was handed the terminal. An
+ *    operator who needs a name has `DORKOS_TRUSTED_HOSTS`, which the proxy docs
+ *    already tell them to set and which feeds the PAIRED branch below.
+ *
+ *    **`DORKOS_CORS_ORIGIN='*'` is deliberately not honoured**, one of the
+ *    places this is stricter than CORS rather than equal to it. The wildcard
  *    is tolerable on HTTP only because a wildcard `Access-Control-Allow-Origin`
  *    is invalid for credentialed requests, so browsers reject it whatever the
  *    server says (`app.ts`). A WebSocket handshake has no such backstop:
@@ -325,21 +386,16 @@ export interface UpgradeOriginFacts {
  */
 export function isTrustedUpgradeOrigin(facts: UpgradeOriginFacts): boolean {
   const { origin } = facts;
-  if (!origin) return true;
+  // ABSENT means a non-browser client and passes; the literal `null` is an
+  // OPAQUE origin (sandboxed iframe, `data:`, `file://`) and is refused outright.
+  // They read alike and mean opposite things.
+  if (origin === undefined) return true;
+  if (origin === '' || origin.trim().toLowerCase() === 'null') return false;
 
   if (resolveTrustedOrigins().includes(origin)) return true;
 
-  if (facts.publicUrl) {
-    try {
-      if (new URL(facts.publicUrl).origin === origin) return true;
-    } catch {
-      // A malformed DORKOS_PUBLIC_URL trusts nothing extra, rather than throwing
-      // on the upgrade path.
-    }
-  }
-
-  // An explicit `DORKOS_CORS_ORIGIN` list is exhaustive, exactly as it is in
-  // `buildCors` — which switches to a static allowlist and drops its own
+  // An explicit `DORKOS_CORS_ORIGIN` list makes branch 4 unreachable, as it does
+  // in `buildCors` — which switches to a static allowlist and drops its own
   // same-origin branch. Split and trimmed the same way, and the wildcard is
   // treated as no list at all (see the doc).
   const configured = facts.configuredOrigins;
@@ -351,7 +407,13 @@ export function isTrustedUpgradeOrigin(facts: UpgradeOriginFacts): boolean {
   }
 
   // Same-origin as this request, gated on the host allowlist (see the doc).
-  if (!facts.hostAllowed && !facts.hostCheckInert) return false;
+  // A deployment that owns its network boundary additionally satisfies the
+  // pairing with an IP-LITERAL Host, which a rebinding attack cannot produce.
+  const pairingHolds =
+    facts.hostAllowed ||
+    facts.hostCheckInert ||
+    (facts.ownsNetworkBoundary && isIpLiteralHost(facts.hostHeader));
+  if (!pairingHolds) return false;
   const host = facts.hostHeader?.trim().toLowerCase();
   if (!host) return false;
   const candidate = origin.trim().toLowerCase();

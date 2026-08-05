@@ -685,8 +685,12 @@ describe('attachUpgradeRouter', () => {
 
     it('a padded wildcard denies a stranger, matching HTTP rather than inverting it', async () => {
       // `buildCors` does not trim before its `=== '*'` check, so `" * "` becomes
-      // a one-entry list that matches nothing. Trimming here would have flipped
-      // deny-everything into allow-everything.
+      // a one-entry list matching the literal `*` — which no real origin is.
+      // The identical typo therefore fails closed on both surfaces. What it
+      // costs is stated in the predicate test beside this one: being a LIST, it
+      // also suppresses the same-origin branch, so it blacks out the cockpit's
+      // own socket while HTTP keeps working. Another invisible-outage typo,
+      // just not a security one.
       process.env.DORKOS_CORS_ORIGIN = ' * ';
       try {
         await listen([acceptingRoute]);
@@ -696,6 +700,211 @@ describe('attachUpgradeRouter', () => {
         expect(result.httpStatus).toBe(403);
       } finally {
         delete process.env.DORKOS_CORS_ORIGIN;
+      }
+    });
+  });
+
+  describe('opaque origins, and the branch that used to trust them', () => {
+    // `Origin: null` is what a browser sends from a sandboxed iframe, a `data:`
+    // document or a `file://` page. It is the value most likely to slip through
+    // a comparison written for real origins, because `URL.origin` serializes an
+    // unparseable URL to the literal string "null" — so a branch built from
+    // operator config can hand it a match. One did: `DORKOS_PUBLIC_URL` was
+    // consulted unvalidated and unpaired, and `DORKOS_PUBLIC_URL=dorkos:4242`
+    // (a plausible typo — `dorkos:` parses as the SCHEME) opened the TERMINAL
+    // to any sandboxed page that could reach the port.
+
+    it('REFUSES Origin: null outright', async () => {
+      await listen([acceptingRoute]);
+
+      const result = await attempt('/api/accept', { origin: 'null' });
+
+      expect(result.httpStatus).toBe(403);
+      expect(result.opened).toBe(false);
+    });
+
+    it('REFUSES Origin: null on the terminal even with DORKOS_PUBLIC_URL set to the typo', async () => {
+      // The exact reported shape. `DORKOS_PUBLIC_URL` is no longer a trust
+      // branch at all, so no value of it can widen anything.
+      mutableEnv.DORKOS_PUBLIC_URL = 'dorkos:4242';
+      try {
+        await listen([
+          {
+            name: 'terminal',
+            pattern: /^\/api\/terminal\/([^/]+)\/socket$/,
+            credential: 'bearer-of-id',
+            authorize: () => ({ ok: true, open: (ws) => ws.send('PTY') }),
+          },
+        ]);
+
+        const result = await attempt('/api/terminal/abc/socket', {
+          origin: 'null',
+          host: 'evil.example',
+        });
+
+        expect(result.httpStatus).toBe(403);
+        expect(result.firstFrame, 'no PTY for an opaque origin').toBeUndefined();
+      } finally {
+        mutableEnv.DORKOS_PUBLIC_URL = undefined;
+      }
+    });
+
+    it('does NOT trust an origin just because DORKOS_PUBLIC_URL names it', async () => {
+      // It outranked the operator's own CORS list and was never paired with
+      // `Host`. An operator who needs a name uses DORKOS_TRUSTED_HOSTS.
+      mutableEnv.DORKOS_PUBLIC_URL = 'https://public.example';
+      try {
+        await listen([acceptingRoute]);
+
+        const result = await attempt('/api/accept', {
+          origin: 'https://public.example',
+          host: 'evil.example',
+        });
+
+        expect(result.httpStatus).toBe(403);
+      } finally {
+        mutableEnv.DORKOS_PUBLIC_URL = undefined;
+      }
+    });
+
+    it('still passes a request with NO Origin — absent and null are opposites', async () => {
+      await listen([acceptingRoute]);
+
+      const result = await attempt('/api/accept');
+
+      expect(result.opened).toBe(true);
+    });
+  });
+
+  describe('the container reaches itself at its LAN address', () => {
+    // The other half of the container decision. `hostGuard` stands down for the
+    // flag, so REST works at any Host — and requiring `isHostAllowed` on the
+    // socket meant a NAS/homelab/VPS running the shipped image had a cockpit
+    // that rendered, ran turns, and never showed a reply. The earlier container
+    // test only exercised `localhost`, the one address that already worked.
+
+    it('ACCEPTS an IP-literal Host under the flag, which rebinding cannot forge', async () => {
+      mutableEnv.DORKOS_ALLOW_INSECURE_BIND = true;
+      try {
+        loginEnabled(false);
+        await listen([acceptingRoute]);
+
+        const result = await attempt('/api/accept', {
+          origin: 'http://192.168.1.50:4242',
+          host: '192.168.1.50:4242',
+        });
+
+        expect(result.opened).toBe(true);
+      } finally {
+        mutableEnv.DORKOS_ALLOW_INSECURE_BIND = false;
+      }
+    });
+
+    it('ACCEPTS the bind-address spelling too', async () => {
+      mutableEnv.DORKOS_ALLOW_INSECURE_BIND = true;
+      try {
+        await listen([acceptingRoute]);
+
+        const result = await attempt('/api/accept', {
+          origin: 'http://0.0.0.0:4242',
+          host: '0.0.0.0:4242',
+        });
+
+        expect(result.opened).toBe(true);
+      } finally {
+        mutableEnv.DORKOS_ALLOW_INSECURE_BIND = false;
+      }
+    });
+
+    it('still REFUSES a NAME under the flag — that is the rebinding case', async () => {
+      mutableEnv.DORKOS_ALLOW_INSECURE_BIND = true;
+      try {
+        await listen([acceptingRoute]);
+
+        const result = await attempt('/api/accept', {
+          origin: 'http://evil.example',
+          host: 'evil.example',
+        });
+
+        expect(result.httpStatus).toBe(403);
+      } finally {
+        mutableEnv.DORKOS_ALLOW_INSECURE_BIND = false;
+      }
+    });
+
+    it('REFUSES an IP-literal Host when the flag is NOT set', async () => {
+      await listen([acceptingRoute]);
+
+      const result = await attempt('/api/accept', {
+        origin: 'http://192.168.1.50:4242',
+        host: '192.168.1.50:4242',
+      });
+
+      expect(result.httpStatus).toBe(403);
+    });
+
+    it('REFUSES a name-based Host on the TERMINAL under the flag', async () => {
+      mutableEnv.DORKOS_ALLOW_INSECURE_BIND = true;
+      try {
+        await listen([
+          {
+            name: 'terminal',
+            pattern: /^\/api\/terminal\/([^/]+)\/socket$/,
+            credential: 'bearer-of-id',
+            authorize: () => ({ ok: true, open: (ws) => ws.send('PTY') }),
+          },
+        ]);
+
+        const result = await attempt('/api/terminal/abc/socket', {
+          origin: 'http://evil.example',
+          host: 'evil.example',
+        });
+
+        expect(result.httpStatus).toBe(403);
+      } finally {
+        mutableEnv.DORKOS_ALLOW_INSECURE_BIND = false;
+      }
+    });
+  });
+
+  describe('the comparison is normalized, and a missing Host fails closed', () => {
+    // Gaps the review's mutation table found: each of these stayed green when
+    // the behaviour was removed, which means nothing was pinning it.
+
+    it('REFUSES when the Host header is missing entirely', async () => {
+      // HTTP/1.1 requires one; a request without it cannot be same-origin with
+      // anything, and "no host" must not read as "any host".
+      mutableEnv.DORKOS_TRUSTED_HOSTS = 'dorkos.example.com';
+      try {
+        await listen([acceptingRoute]);
+
+        // `ws` always sets Host from the URL, so the empty value is forced.
+        const result = await attempt('/api/accept', {
+          origin: 'http://dorkos.example.com',
+          host: '',
+        });
+
+        expect(result.opened).toBe(false);
+      } finally {
+        mutableEnv.DORKOS_TRUSTED_HOSTS = undefined;
+      }
+    });
+
+    it('matches an uppercase Host against a lower-case Origin', async () => {
+      // A browser lower-cases `Origin`; `Host` carries whatever was typed.
+      // Without normalization the legitimate deployment silently 403s.
+      mutableEnv.DORKOS_TRUSTED_HOSTS = 'dorkos.example.com';
+      try {
+        await listen([acceptingRoute]);
+
+        const result = await attempt('/api/accept', {
+          origin: 'https://dorkos.example.com',
+          host: 'DorkOS.Example.COM',
+        });
+
+        expect(result.opened).toBe(true);
+      } finally {
+        mutableEnv.DORKOS_TRUSTED_HOSTS = undefined;
       }
     });
   });

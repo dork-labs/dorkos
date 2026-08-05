@@ -98,8 +98,11 @@ default upgrade;
 DORKOS_TRUSTED_HOSTS=dorkos.example.com
 ```
 
-Separate several names with commas and leave the port off. Turning on login fixes it the other
-way: DorkOS then trusts your sign-in instead of the address, and this setting stops mattering.
+Separate several names with commas and leave the port off. Turning on login covers most of it the
+other way: DorkOS trusts your sign-in instead of the address for ordinary requests and for live
+streams. **Set this anyway.** The embedded terminal is authorized by holding a hard-to-guess id
+rather than by your sign-in, so it always checks the address — with login on and this unset, the app
+works and the terminal will not open.
 See [Securing Your Instance](/docs/self-hosting/securing-your-instance).
 
 </Callout>
