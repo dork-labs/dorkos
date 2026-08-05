@@ -1,6 +1,5 @@
 import { useStartNewSession } from '@/layers/entities/session';
 import { useCallback } from 'react';
-import { useNavigate } from '@tanstack/react-router';
 import { useAppStore } from '@/layers/shared/model';
 import { AgentIdentity } from '@/layers/entities/agent';
 import { useAgentHubStore } from '@/layers/features/agent-hub';
@@ -33,8 +32,6 @@ export function AgentIdentityChip({
   agentPath,
   nameHidden,
 }: AgentIdentityChipProps) {
-  const navigate = useNavigate();
-
   const handleOpenProfile = useCallback(() => {
     if (!agentPath) return;
     useAgentHubStore.getState().openHub(agentPath);

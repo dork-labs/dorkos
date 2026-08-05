@@ -88,15 +88,9 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
     [recordUsage, setDir, closePalette, selectedCwd, setPreviousCwd]
   );
 
-  /**
-   * Start a BRAND-NEW conversation, with the agent it belongs to.
-   *
-   * Deliberately not `setDir`: that resolves the agent's most recent
-   * conversation and resumes it, which is what "Open Here" means. A fresh id is
-   * the whole difference between the two rows (DOR-928).
-   *
-   * @param dir - The agent's directory; the active one when omitted.
-   */
+  // Shared with the sidebar and the chat header's agent chip; carries the
+  // router-less embed branch. See `useStartNewSession` for why it is not
+  // `setDir`.
   const startNewSession = useStartNewSession();
 
   /**
@@ -226,6 +220,11 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
       openConnections,
       openSettings,
       openFeedback,
+      // Load-bearing: it closes over the ACTIVE agent, and the palette is
+      // mounted for the whole life of the app. Omit it and this handler is
+      // built once at boot and keeps whatever agent was selected then, so
+      // "New Session" opens a conversation somewhere you are not (DOR-928).
+      startNewSession,
     ]
   );
 

@@ -117,7 +117,11 @@ export function useDirectoryState(): [
           })
           .catch((error: unknown) => {
             reportClientError(transport, error);
-            notifySessionLookupFailed(dir);
+            // Same ordering as the success path: an abandoned switch does not
+            // explain itself, whatever went wrong. The report above still goes
+            // out — a defect is worth knowing about even when the person has
+            // moved on; it is only the message TO THEM that would be a lie.
+            if (isStillWanted()) notifySessionLookupFailed(dir);
           });
         return;
       }

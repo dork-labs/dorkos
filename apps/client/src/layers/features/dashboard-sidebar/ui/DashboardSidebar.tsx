@@ -491,9 +491,10 @@ export function DashboardSidebar() {
         .catch((error: unknown) => {
           // The resolver handles its own failures, so a throw here is a defect
           // in this callback — which would otherwise be an unhandled rejection
-          // and a click that died in silence.
+          // and a click that died in silence. Reported either way; only the
+          // message to the person waits on them still wanting this.
           reportClientError(transport, error);
-          notifySessionLookupFailed(agentPath);
+          if (isStillWanted()) notifySessionLookupFailed(agentPath);
         });
     },
     [navigate, router, queryClient, transport]

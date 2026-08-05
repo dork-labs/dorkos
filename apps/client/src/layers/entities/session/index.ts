@@ -14,7 +14,7 @@ export {
   SESSION_LOOKUP_FAILED_MESSAGE,
 } from './lib/resolve-session-for-cwd';
 export type { ResolveSessionDeps, ResolvedSession } from './lib/resolve-session-for-cwd';
-export { beginSessionNavigation, sessionDestination } from './lib/session-navigation-intent';
+export { beginSessionNavigation } from './lib/session-navigation-intent';
 export type { CockpitLocation } from './lib/session-navigation-intent';
 export type { SwitchAgentCwdStore, SwitchAgentCwdDeps } from './lib/switch-agent-cwd';
 // Context-health — the one client source for context percent, thresholds, and severity.
