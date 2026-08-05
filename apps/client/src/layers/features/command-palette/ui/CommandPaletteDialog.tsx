@@ -509,7 +509,7 @@ export function CommandPaletteDialog() {
                             : undefined
                         }
                         onNewSession={() => {
-                          setDir(subMenuAgent.projectPath);
+                          void setDir(subMenuAgent.projectPath);
                           recordUsage(subMenuAgent.id);
                           closePalette();
                         }}

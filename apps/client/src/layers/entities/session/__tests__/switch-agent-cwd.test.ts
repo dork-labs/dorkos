@@ -46,6 +46,7 @@ describe('switchAgentCwd', () => {
       store,
       queryClient: new QueryClient(),
       transport: makeTransport(),
+      currentHref: () => 'http://localhost/',
       navigate,
     });
     expect(store.setSelectedCwd).toHaveBeenCalledWith('/home/user/project');
@@ -57,6 +58,7 @@ describe('switchAgentCwd', () => {
       store,
       queryClient: new QueryClient(),
       transport: makeTransport(),
+      currentHref: () => 'http://localhost/',
       navigate: vi.fn(),
     });
     expect(store.setPreviousCwd).toHaveBeenCalledWith('/home/user/old');
@@ -68,6 +70,7 @@ describe('switchAgentCwd', () => {
       store,
       queryClient: new QueryClient(),
       transport: makeTransport(),
+      currentHref: () => 'http://localhost/',
       navigate: vi.fn(),
     });
     expect(store.setPreviousCwd).not.toHaveBeenCalled();
@@ -79,6 +82,7 @@ describe('switchAgentCwd', () => {
       store,
       queryClient: new QueryClient(),
       transport: makeTransport(),
+      currentHref: () => 'http://localhost/',
       navigate: vi.fn(),
     });
     expect(store.setPreviousCwd).not.toHaveBeenCalled();
@@ -92,6 +96,7 @@ describe('switchAgentCwd', () => {
       store: makeStore(),
       queryClient,
       transport: makeTransport(),
+      currentHref: () => 'http://localhost/',
       navigate,
     });
     expect(navigate).toHaveBeenCalledWith({ dir: '/home/user/project', session: 'sess-cached' });
@@ -105,6 +110,7 @@ describe('switchAgentCwd', () => {
       store: makeStore(),
       queryClient: new QueryClient(),
       transport: makeTransport([{ id: 'sess-on-server' } as Session]),
+      currentHref: () => 'http://localhost/',
       navigate,
     });
     expect(navigate).toHaveBeenCalledWith({
@@ -136,6 +142,7 @@ describe('switchAgentCwd', () => {
       store,
       queryClient: new QueryClient(),
       transport,
+      currentHref: () => 'http://localhost/',
       navigate: () => order.push('navigate'),
     });
 
@@ -156,8 +163,40 @@ describe('switchAgentCwd', () => {
       store,
       queryClient: new QueryClient(),
       transport,
+      currentHref: () => 'http://localhost/',
       navigate,
     });
+
+    expect(navigate).not.toHaveBeenCalled();
+    expect(store.setSelectedCwd).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when the cockpit navigated elsewhere while the lookup was out', async () => {
+    // The switch does not have to be told; it reads the router's own location,
+    // so ANY navigation — a channel, a thread, a Recent row — cancels it.
+    const store = makeStore();
+    const navigate = vi.fn();
+    let answer!: (value: { sessions: Session[] }) => void;
+    let href = 'http://localhost/session?dir=/home/user/old';
+    const transport = createMockTransport({
+      listSessions: vi.fn(
+        () =>
+          new Promise<{ sessions: Session[] }>((resolve) => {
+            answer = resolve;
+          })
+      ),
+    }) as Transport;
+
+    const pending = switchAgentCwd('/home/user/project', {
+      store,
+      queryClient: new QueryClient(),
+      transport,
+      currentHref: () => href,
+      navigate,
+    });
+    href = 'http://localhost/channels?id=c1'; // somebody opened a channel
+    answer({ sessions: [{ id: 'sess-1' } as Session] });
+    await pending;
 
     expect(navigate).not.toHaveBeenCalled();
     expect(store.setSelectedCwd).not.toHaveBeenCalled();
@@ -169,6 +208,7 @@ describe('switchAgentCwd', () => {
       store: makeStore(),
       queryClient: new QueryClient(),
       transport: makeTransport(),
+      currentHref: () => 'http://localhost/',
       navigate,
     });
     expect(navigate).toHaveBeenCalledTimes(1);
@@ -194,7 +234,13 @@ describe('executeUiCommand switch_agent → switchAgentCwd (wired path)', () => 
       getStore: () => ({}) as DispatcherStore,
       setTheme: vi.fn(),
       switchAgent: (cwd) =>
-        void switchAgentCwd(cwd, { store, queryClient, transport: makeTransport(), navigate }),
+        void switchAgentCwd(cwd, {
+          store,
+          queryClient,
+          transport: makeTransport(),
+          currentHref: () => 'http://localhost/',
+          navigate,
+        }),
     };
 
     executeUiCommand(ctx, { action: 'switch_agent', cwd: '/home/user/new' }, 'agent');

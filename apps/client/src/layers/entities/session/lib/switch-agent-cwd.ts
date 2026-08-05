@@ -1,7 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import { resolveSessionForCwd, notifySessionLookupFailed } from './resolve-session-for-cwd';
-import { claimSessionNavigation } from './session-navigation-intent';
+import { beginSessionNavigation } from './session-navigation-intent';
 
 /**
  * App-store slice {@link switchAgentCwd} reads and writes. A structural subset
@@ -25,6 +25,12 @@ export interface SwitchAgentCwdDeps {
   queryClient: QueryClient;
   /** Transport, used to ask the server which session that directory is on. */
   transport: Transport;
+  /**
+   * Reads the router's current location, e.g.
+   * `() => router.state.location.href`. A switch whose lookup comes back to a
+   * location that has moved has been overtaken and must not land.
+   */
+  currentHref: () => string;
   /**
    * Navigate to the `/session` route with the resolved directory + session.
    * Kept router-agnostic so the caller owns the route target and the function
@@ -55,22 +61,26 @@ export interface SwitchAgentCwdDeps {
  * the palette's "recent agents" ranking.
  *
  * @param cwd - The target agent's working directory (project path).
- * @param deps - Injected store, query client, transport, and navigate callback.
+ * @param deps - Injected store, query client, transport, location reader, and
+ *   navigate callback.
  */
 export async function switchAgentCwd(cwd: string, deps: SwitchAgentCwdDeps): Promise<void> {
-  const { store, queryClient, transport, navigate } = deps;
-  const isCurrent = claimSessionNavigation();
+  const { store, queryClient, transport, currentHref, navigate } = deps;
+  const isStillWanted = beginSessionNavigation(currentHref);
   // Captured at the gesture, applied after: this is the directory being LEFT,
   // and reading it back after the await would read whatever the cockpit has
   // moved on to.
   const leaving = store.selectedCwd;
 
   const resolved = await resolveSessionForCwd({ queryClient, transport }, cwd);
+  // Overtaken checks FIRST: an abandoned switch has nothing to say. Reporting a
+  // failure the person has already navigated away from would tell them we left
+  // them where they are while they are somewhere else.
+  if (!isStillWanted()) return;
   if (resolved === null) {
     notifySessionLookupFailed(cwd);
     return;
   }
-  if (!isCurrent()) return;
 
   if (leaving && leaving !== cwd) store.setPreviousCwd(leaving);
   store.setSelectedCwd(cwd);

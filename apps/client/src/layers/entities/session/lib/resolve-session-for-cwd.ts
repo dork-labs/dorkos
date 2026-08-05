@@ -40,17 +40,23 @@ import { sessionListQueryOptions } from '../api/session-list-query';
  * they must not drift into describing the same event three ways.
  */
 export const SESSION_LOOKUP_FAILED_MESSAGE =
-  "Couldn't reach the server, so we left you where you are. Try again in a moment.";
+  "Couldn't reach the server to find this agent's latest conversation.";
 
 /**
  * Tell the operator the lookup failed, without moving them.
+ *
+ * The reassurance lives in the description rather than the headline because the
+ * headline is shared with the `/session` loader, where "we left you where you
+ * were" would be a lie — that path has already moved them.
  *
  * @param cwd - The directory that could not be resolved, named so the message
  *   is about something rather than about nothing.
  */
 export function notifySessionLookupFailed(cwd: string | null): void {
   toast.error(SESSION_LOOKUP_FAILED_MESSAGE, {
-    description: cwd ? `Could not open ${cwd}` : undefined,
+    description: cwd
+      ? `Still where you were. Try ${cwd} again in a moment.`
+      : 'Still where you were. Try again in a moment.',
   });
 }
 
@@ -131,8 +137,13 @@ export function cachedSessionForCwd(queryClient: QueryClient, cwd: string | null
  * Ask the server for `cwd`'s sessions, through the shared query options so the
  * answer lands in the cache exactly as `useSessions` would have left it.
  *
- * `fetchQuery` rather than `ensureQueryData`: this is only reached when the
- * cache could not be believed, and `ensureQueryData` answers from that cache.
+ * **`staleTime: 0` is the whole point of this call.** Reaching here means the
+ * cached entry was already judged unbelievable, and every "give me the data"
+ * helper — `ensureQueryData`, and `fetchQuery` on its own — will hand that same
+ * entry straight back while it is still fresh. The app runs a 30-second
+ * `staleTime` (`createQueryClientConfig`), and the global-stream bridge writes
+ * an EMPTY list whenever it removes a directory's last session, so without this
+ * argument clicking that agent reproduces DOR-928 for the next 30 seconds.
  *
  * The failure is REPORTED, not swallowed, and answers `null` rather than an
  * empty list — the two want opposite reactions. An unreachable server means
@@ -141,7 +152,10 @@ export function cachedSessionForCwd(queryClient: QueryClient, cwd: string | null
  */
 async function askServer(deps: ResolveSessionDeps, cwd: string | null): Promise<Session[] | null> {
   try {
-    return await deps.queryClient.fetchQuery(sessionListQueryOptions(deps, cwd));
+    return await deps.queryClient.fetchQuery({
+      ...sessionListQueryOptions(deps, cwd),
+      staleTime: 0,
+    });
   } catch (error) {
     reportClientError(deps.transport, error);
     return null;

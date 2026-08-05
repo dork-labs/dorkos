@@ -325,6 +325,7 @@ const extensionDeps: ExtensionAPIDeps = {
         store: useAppStore.getState(),
         queryClient,
         transport,
+        currentHref: () => router.state.location.href,
         navigate: (search) => void router.navigate({ to: '/session', search }),
       }),
     // Wires the agent's `control_ui apply_layout` command (and the switcher UI's
@@ -343,6 +344,7 @@ const extensionDeps: ExtensionAPIDeps = {
             store: useAppStore.getState(),
             queryClient,
             transport,
+            currentHref: () => router.state.location.href,
             navigate: (search) => void router.navigate({ to: '/session', search }),
           }),
       }),

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef, type ReactNode } from 'react';
-import { useNavigate, useRouterState, useSearch } from '@tanstack/react-router';
+import { useNavigate, useRouter, useRouterState, useSearch } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
 import { Plus } from 'lucide-react';
@@ -38,7 +38,7 @@ import {
   useAgentAttentionMap,
   resolveSessionForCwd,
   notifySessionLookupFailed,
-  claimSessionNavigation,
+  beginSessionNavigation,
   sessionKeys,
 } from '@/layers/entities/session';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
@@ -125,6 +125,7 @@ interface GroupCreationState {
  */
 export function DashboardSidebar() {
   const navigate = useNavigate();
+  const router = useRouter();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const queryClient = useQueryClient();
   const transport = useTransport();
@@ -461,11 +462,6 @@ export function DashboardSidebar() {
   );
 
   // ── Handlers ──
-  // Every handler below claims the navigation before it acts, so the cockpit
-  // always lands where the LAST gesture pointed. Resolving an agent is
-  // asynchronous, and the rows around it are not: without a claim, a slow
-  // lookup landing late would win the URL over the Recent row you clicked
-  // afterwards (DOR-928 review).
   const handleSelectAgent = useCallback(
     (agentPath: string) => {
       // Clicking an agent resumes its most recent conversation. The lookup goes
@@ -473,22 +469,28 @@ export function DashboardSidebar() {
       // directly: the roster lists every agent, but only the one this window has
       // opened has a cached session list, so a cache read alone would send you
       // to an empty chat for every other one (DOR-928).
-      const isCurrent = claimSessionNavigation();
+      // The lookup is asynchronous while every row around it is not, so it
+      // guards against being overtaken: by another agent click, and by any of
+      // the app's other navigations, which it notices through the router's own
+      // location rather than by asking them to cooperate.
+      const isStillWanted = beginSessionNavigation(() => router.state.location.href);
       void resolveSessionForCwd({ queryClient, transport }, agentPath).then((resolved) => {
+        // Overtaken first: an abandoned lookup neither moves you nor explains
+        // itself — you are somewhere else now, and "we left you where you are"
+        // would be about a place you have left.
+        if (!isStillWanted()) return;
         if (resolved === null) {
           notifySessionLookupFailed(agentPath);
           return;
         }
-        if (!isCurrent()) return;
         navigate({ to: '/session', search: { dir: agentPath, session: resolved.sessionId } });
       });
     },
-    [navigate, queryClient, transport]
+    [navigate, router, queryClient, transport]
   );
 
   const handleSessionClick = useCallback(
     (sessionId: string) => {
-      claimSessionNavigation();
       navigate({ to: '/session', search: (prev) => ({ ...prev, session: sessionId }) });
     },
     [navigate]
@@ -496,7 +498,6 @@ export function DashboardSidebar() {
 
   const handleResumeRecentSession = useCallback(
     (session: Session) => {
-      claimSessionNavigation();
       navigate({ to: '/session', search: { dir: session.cwd ?? undefined, session: session.id } });
     },
     [navigate]
@@ -504,7 +505,6 @@ export function DashboardSidebar() {
 
   const handleNewSession = useCallback(
     (dir?: string) => {
-      claimSessionNavigation();
       navigate({
         to: '/session',
         search: { dir: dir ?? selectedCwd ?? undefined, session: crypto.randomUUID() },

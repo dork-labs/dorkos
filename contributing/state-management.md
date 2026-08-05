@@ -723,7 +723,7 @@ const sidebarOpen = useAppStore((state) => state.sidebarOpen);
 
 ### Duplicate SSE connections or provider remounts
 
-**Cause**: Creating long-lived singletons (QueryClient, Transport, Router, SSEConnection) inside a React component. StrictMode double-mounts will recreate them on every render cycle, and in the case of `createAppRouter(queryClient)`, it remounts the entire provider tree — including `EventStreamProvider` — producing duplicate SSE connections.
+**Cause**: Creating long-lived singletons (QueryClient, Transport, Router, SSEConnection) inside a React component. StrictMode double-mounts will recreate them on every render cycle, and in the case of `createAppRouter(queryClient, transport)`, it remounts the entire provider tree — including `EventStreamProvider` — producing duplicate SSE connections.
 
 **Fix**: Create singletons at module scope in `main.tsx`:
 

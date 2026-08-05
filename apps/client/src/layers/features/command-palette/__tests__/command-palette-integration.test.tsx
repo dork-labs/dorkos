@@ -3,7 +3,7 @@
  */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render as rtlRender, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render as rtlRender, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom/vitest';
 import { CommandPaletteDialog } from '../ui/CommandPaletteDialog';
@@ -127,7 +127,10 @@ vi.mock('@/layers/shared/model', () => ({
   }),
 }));
 
-const mockSetDir = vi.fn();
+// `setDir` answers whether the agent actually opened — frecency and the
+// switch-back target wait on it, so a bare `vi.fn()` returning undefined
+// would not be the contract the palette consumes (DOR-928).
+const mockSetDir = vi.fn(() => Promise.resolve(true));
 let mockSelectedCwd: string | null = '/projects/current';
 
 vi.mock('@/layers/entities/session', async (importOriginal) => ({
@@ -272,7 +275,7 @@ describe('Command Palette Integration', () => {
 
   // --- Full agent switching flow (two-step: click agent → sub-menu → Open Here) ---
 
-  it('clicking an agent navigates to sub-menu; Open Here switches, records frecency, and closes', () => {
+  it('clicking an agent navigates to sub-menu; Open Here switches, records frecency, and closes', async () => {
     render(<CommandPaletteDialog />);
 
     // Click on "Auth Service" agent to open sub-menu
@@ -294,6 +297,9 @@ describe('Command Palette Integration', () => {
     expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);
 
     // Should record frecency in localStorage (real hook)
+    // Frecency lands only after the agent actually opens (DOR-928), so this
+    // waits for the write rather than reading straight after the click.
+    await waitFor(() => expect(localStorage.getItem('dorkos:agent-frecency-v2')).not.toBeNull());
     const stored = localStorage.getItem('dorkos:agent-frecency-v2');
     expect(stored).toBeTruthy();
     const entries = JSON.parse(stored!);
@@ -302,7 +308,7 @@ describe('Command Palette Integration', () => {
     );
   });
 
-  it('records frecency correctly for the active agent via Open Here', () => {
+  it('records frecency correctly for the active agent via Open Here', async () => {
     render(<CommandPaletteDialog />);
 
     // Click the active agent (Frontend App, which matches selectedCwd) to open sub-menu
@@ -317,6 +323,9 @@ describe('Command Palette Integration', () => {
     expect(mockSetDir).toHaveBeenCalledWith('/projects/current');
 
     // Frecency recorded for agent-3
+    // Frecency lands only after the agent actually opens (DOR-928), so this
+    // waits for the write rather than reading straight after the click.
+    await waitFor(() => expect(localStorage.getItem('dorkos:agent-frecency-v2')).not.toBeNull());
     const stored = localStorage.getItem('dorkos:agent-frecency-v2');
     const entries = JSON.parse(stored!);
     expect(entries).toEqual(
@@ -324,7 +333,7 @@ describe('Command Palette Integration', () => {
     );
   });
 
-  it('increments frecency count on repeated agent selection via Open Here', () => {
+  it('increments frecency count on repeated agent selection via Open Here', async () => {
     const { unmount } = render(<CommandPaletteDialog />);
 
     // Select Auth Service via sub-menu twice
@@ -341,6 +350,9 @@ describe('Command Palette Integration', () => {
     fireEvent.click(screen.getByText('Open Here').closest('[data-slot="command-item"]') as Element);
     unmount2();
 
+    // Frecency lands only after the agent actually opens (DOR-928), so this
+    // waits for the write rather than reading straight after the click.
+    await waitFor(() => expect(localStorage.getItem('dorkos:agent-frecency-v2')).not.toBeNull());
     const stored = localStorage.getItem('dorkos:agent-frecency-v2');
     const entries = JSON.parse(stored!);
     const authEntry = entries.find((e: { agentId: string }) => e.agentId === 'agent-1');
@@ -373,7 +385,7 @@ describe('Command Palette Integration', () => {
     expect(screen.queryByText('Features')).not.toBeInTheDocument();
   });
 
-  it('selecting an agent from search mode opens sub-menu; Open Here records frecency and sets dir', () => {
+  it('selecting an agent from search mode opens sub-menu; Open Here records frecency and sets dir', async () => {
     render(<CommandPaletteDialog />);
     const input = screen.getByPlaceholderText('Search rooms, agents, commands...');
 
@@ -394,6 +406,9 @@ describe('Command Palette Integration', () => {
     expect(mockSetDir).toHaveBeenCalledWith('/projects/gateway');
     expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);
 
+    // Frecency lands only after the agent actually opens (DOR-928), so this
+    // waits for the write rather than reading straight after the click.
+    await waitFor(() => expect(localStorage.getItem('dorkos:agent-frecency-v2')).not.toBeNull());
     const stored = localStorage.getItem('dorkos:agent-frecency-v2');
     const entries = JSON.parse(stored!);
     expect(entries).toEqual(
@@ -534,7 +549,7 @@ describe('Command Palette Integration', () => {
 
   // --- Frecency persists across re-renders ---
 
-  it('frecency data persists in localStorage across palette close and reopen', () => {
+  it('frecency data persists in localStorage across palette close and reopen', async () => {
     // First render: select an agent via sub-menu Open Here
     const { unmount } = render(<CommandPaletteDialog />);
     const item = screen.getByText('Auth Service').closest('[data-slot="command-item"]');
@@ -543,6 +558,7 @@ describe('Command Palette Integration', () => {
     unmount();
 
     // Verify localStorage has data
+    await waitFor(() => expect(localStorage.getItem('dorkos:agent-frecency-v2')).not.toBeNull());
     const storedBefore = localStorage.getItem('dorkos:agent-frecency-v2');
     expect(storedBefore).toBeTruthy();
 

@@ -3,7 +3,7 @@
  */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render as rtlRender, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render as rtlRender, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { sessionKeys } from '@/layers/entities/session';
 import type { Session } from '@dorkos/shared/types';
@@ -150,7 +150,10 @@ vi.mock('@/layers/shared/model', () => ({
   }),
 }));
 
-const mockSetDir = vi.fn();
+// `setDir` answers whether the agent actually opened — frecency and the
+// switch-back target wait on it, so a bare `vi.fn()` returning undefined
+// would not be the contract the palette consumes (DOR-928).
+const mockSetDir = vi.fn(() => Promise.resolve(true));
 vi.mock('@/layers/entities/session', async (importOriginal) => ({
   // Keep the real session resolver — the palette builds its hrefs with it, and
   // faking it would hide whether those hrefs carry a session at all.
@@ -522,7 +525,7 @@ describe('CommandPaletteDialog', () => {
     openSpy.mockRestore();
   });
 
-  it('calls recordUsage and setDir when Open Here is clicked in sub-menu', () => {
+  it('calls recordUsage and setDir when Open Here is clicked in sub-menu', async () => {
     render(<CommandPaletteDialog />);
     // Click agent to enter sub-menu
     const item = screen.getAllByText('Worker')[0].closest('[data-slot="command-item"]');
@@ -530,8 +533,10 @@ describe('CommandPaletteDialog', () => {
     // Click Open Here
     const openHereItem = screen.getByText('Open Here').closest('[data-slot="command-item"]');
     if (openHereItem) fireEvent.click(openHereItem as Element);
-    expect(mockRecordUsage).toHaveBeenCalledWith('agent-3');
     expect(mockSetDir).toHaveBeenCalledWith('/projects/current');
+    // Frecency waits for the agent to actually open (DOR-928): a failed or
+    // overtaken lookup must not rank an agent you never reached.
+    await waitFor(() => expect(mockRecordUsage).toHaveBeenCalledWith('agent-3'));
   });
 
   it('closes palette after Open Here is clicked in sub-menu', () => {

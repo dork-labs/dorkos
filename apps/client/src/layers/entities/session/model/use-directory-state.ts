@@ -1,12 +1,12 @@
 import { useEffect } from 'react';
-import { useNavigate } from '@tanstack/react-router';
+import { useNavigate, useRouter } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { getPlatform } from '@/layers/shared/lib';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { useSessionSearch } from './use-session-search';
 import { useSessionId } from './use-session-id';
 import { resolveSessionForCwd, notifySessionLookupFailed } from '../lib/resolve-session-for-cwd';
-import { claimSessionNavigation } from '../lib/session-navigation-intent';
+import { beginSessionNavigation } from '../lib/session-navigation-intent';
 
 /** Options for the directory setter returned by {@link useDirectoryState}. */
 export interface SetDirOptions {
@@ -31,13 +31,14 @@ export interface SetDirOptions {
  */
 export function useDirectoryState(): [
   string | null,
-  (dir: string | null, opts?: SetDirOptions) => void,
+  (dir: string | null, opts?: SetDirOptions) => Promise<boolean>,
 ] {
   const platform = getPlatform();
   const storeDir = useAppStore((s) => s.selectedCwd);
   const setStoreDir = useAppStore((s) => s.setSelectedCwd);
   const search = useSessionSearch();
   const navigate = useNavigate();
+  const router = useRouter();
   const queryClient = useQueryClient();
   const transport = useTransport();
   const [, setSessionId] = useSessionId();
@@ -60,6 +61,7 @@ export function useDirectoryState(): [
           setStoreDir(dir);
           if (!opts?.preserveSession) setSessionId(null);
         }
+        return Promise.resolve(true);
       },
     ];
   }
@@ -67,7 +69,6 @@ export function useDirectoryState(): [
   return [
     urlDir ?? storeDir,
     (dir, opts) => {
-      const isCurrent = claimSessionNavigation();
       if (dir) {
         if (opts?.preserveSession) {
           setStoreDir(dir);
@@ -75,30 +76,34 @@ export function useDirectoryState(): [
             to: '/session',
             search: (prev) => ({ ...prev, dir }),
           });
-        } else {
-          // Always include a session ID so the URL has ?session=; without it the
-          // chat input cannot accept text.
-          //
-          // The store is written AFTER the lookup, not before: the chat stream
-          // is keyed on (session id, selected cwd), so committing the new
-          // directory while the answer is still out pairs it with the OLD
-          // session id and reads the wrong project's transcript.
-          void resolveSessionForCwd({ queryClient, transport }, dir).then((resolved) => {
-            if (resolved === null) {
-              notifySessionLookupFailed(dir);
-              return;
-            }
-            if (!isCurrent()) return;
-            setStoreDir(dir);
-            void navigate({ to: '/session', search: { dir, session: resolved.sessionId } });
-          });
+          return Promise.resolve(true);
         }
-      } else {
-        void navigate({
-          to: '/session',
-          search: (prev) => ({ ...prev, dir: undefined }),
+        const isStillWanted = beginSessionNavigation(() => router.state.location.href);
+        // Always include a session ID so the URL has ?session=; without it the
+        // chat input cannot accept text.
+        //
+        // The store is written AFTER the lookup, not before: the chat stream is
+        // keyed on (session id, selected cwd), so committing the new directory
+        // while the answer is still out pairs it with the OLD session id and
+        // reads the wrong project's transcript.
+        return resolveSessionForCwd({ queryClient, transport }, dir).then((resolved) => {
+          // Overtaken first: an abandoned switch neither moves you nor explains
+          // itself.
+          if (!isStillWanted()) return false;
+          if (resolved === null) {
+            notifySessionLookupFailed(dir);
+            return false;
+          }
+          setStoreDir(dir);
+          void navigate({ to: '/session', search: { dir, session: resolved.sessionId } });
+          return true;
         });
       }
+      void navigate({
+        to: '/session',
+        search: (prev) => ({ ...prev, dir: undefined }),
+      });
+      return Promise.resolve(true);
     },
   ];
 }

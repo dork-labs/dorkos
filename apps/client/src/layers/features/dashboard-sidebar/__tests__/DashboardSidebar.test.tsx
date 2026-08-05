@@ -55,10 +55,25 @@ function dmWith(id: string, agentPath: string, title: string): RoomSummary {
 // Mocks
 // ---------------------------------------------------------------------------
 
-const mockNavigate = vi.fn();
+// Navigating MOVES the location here, exactly as it does in the app. That is
+// load-bearing: what stops a slow agent lookup from landing on top of a
+// navigation that happened while it was out is the router's own location
+// having moved, so a mock whose location never changes would test nothing.
+let mockHref = 'http://localhost/';
+let navSeq = 0;
+const mockNavigate = vi.fn(() => {
+  mockHref = `http://localhost/after-nav-${++navSeq}`;
+});
 let mockPathname = '/';
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
+  useRouter: () => ({
+    state: {
+      get location() {
+        return { href: mockHref, pathname: mockPathname };
+      },
+    },
+  }),
   useRouterState: ({ select }: { select: (s: { location: { pathname: string } }) => unknown }) =>
     select({ location: { pathname: mockPathname } }),
   useSearch: () => ({}),
@@ -234,8 +249,8 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
   // would be asserting the stub.
   resolveSessionForCwd: (await importOriginal<typeof import('@/layers/entities/session')>())
     .resolveSessionForCwd,
-  claimSessionNavigation: (await importOriginal<typeof import('@/layers/entities/session')>())
-    .claimSessionNavigation,
+  beginSessionNavigation: (await importOriginal<typeof import('@/layers/entities/session')>())
+    .beginSessionNavigation,
   notifySessionLookupFailed: (await importOriginal<typeof import('@/layers/entities/session')>())
     .notifySessionLookupFailed,
   useAgentSessions: () => ({ sessions: [], activeSessionId: null, isLoading: false }),
@@ -338,6 +353,8 @@ describe('DashboardSidebar', () => {
     );
     mockSelectedCwd = null;
     mockPathname = '/';
+    mockHref = 'http://localhost/';
+    navSeq = 0;
   });
 
   // --- Navigation ---
@@ -427,7 +444,8 @@ describe('DashboardSidebar', () => {
     fireEvent.click(screen.getAllByText('beta')[0]); // fast
 
     await waitFor(() => expect(mockNavigate).toHaveBeenCalled());
-    // Give the slow answer time to land and (wrongly) navigate.
+    // Real time, on purpose: the assertion is that the slow answer never
+    // navigates, and a non-event cannot be awaited (.claude/rules/testing.md).
     await new Promise((resolve) => setTimeout(resolve, 150));
 
     expect(mockNavigate).toHaveBeenCalledTimes(1);
@@ -486,6 +504,7 @@ describe('DashboardSidebar', () => {
     fireEvent.click(screen.getByText('Earlier work')); // arrives immediately
 
     await waitFor(() => expect(mockNavigate).toHaveBeenCalled());
+    // Real time, on purpose — see above.
     await new Promise((resolve) => setTimeout(resolve, 150));
 
     expect(mockNavigate).toHaveBeenCalledTimes(1);
@@ -493,6 +512,50 @@ describe('DashboardSidebar', () => {
       to: '/session',
       search: { dir: '/projects/beta', session: 'recent-1' },
     });
+  });
+
+  // The guard has to hold against navigations it knows nothing about. Opening a
+  // channel is one of ~20 `navigate()` calls across the app that have no reason
+  // to know an agent lookup is in flight, and it must not be possible for one to
+  // land on top of them.
+  it('does not drag you out of a channel you opened while an agent lookup was out', async () => {
+    mockRooms.mockReturnValue([channel('c1', 'general')]);
+    mockTransport.listSessions.mockImplementation(
+      () =>
+        new Promise((resolve) =>
+          setTimeout(
+            () =>
+              resolve({
+                sessions: [
+                  {
+                    id: 'alpha-s1',
+                    title: 't',
+                    cwd: '/projects/alpha',
+                    createdAt: '2026-03-01T00:00:00.000Z',
+                    updatedAt: '2026-03-01T00:00:00.000Z',
+                    permissionMode: 'default',
+                    runtime: 'claude-code',
+                  },
+                ],
+              }),
+            60
+          )
+        )
+    );
+
+    renderWithProviders(<DashboardSidebar />);
+    await screen.findByText('#general');
+    fireEvent.click(screen.getAllByText('alpha')[0]); // slow lookup starts
+    fireEvent.click(screen.getByText('#general')); // arrives immediately
+
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalled());
+    // Real time, on purpose: the claim is that a SECOND navigation never
+    // happens, and you cannot await an event that must not occur
+    // (.claude/rules/testing.md).
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/channels', search: { id: 'c1' } });
   });
 
   // Recovering into a blank chat is recovering into the very symptom this fix
@@ -512,7 +575,7 @@ describe('DashboardSidebar', () => {
     fireEvent.click(screen.getAllByText('beta')[0]);
 
     await waitFor(() => expect(mockNavigate).toHaveBeenCalled());
-    expect(mockNavigate.mock.calls[0][0]).toEqual({
+    expect(mockNavigate).toHaveBeenCalledWith({
       to: '/session',
       search: {
         dir: '/projects/beta',

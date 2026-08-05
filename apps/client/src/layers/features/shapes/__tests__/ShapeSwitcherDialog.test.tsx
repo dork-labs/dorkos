@@ -16,8 +16,18 @@ import { createMockTransport } from '@dorkos/test-utils';
 import { ShapeSwitcherDialog } from '../ui/ShapeSwitcherDialog';
 
 const mockNavigate = vi.fn();
+// `useRouter` too: the agent switch reads the router's own location to notice
+// when something else navigated while its lookup was out (DOR-928).
+const mockHref = 'http://localhost/';
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
+  useRouter: () => ({
+    state: {
+      get location() {
+        return { href: mockHref };
+      },
+    },
+  }),
 }));
 
 // Every toast the switcher can raise has to be observable, or "reported exactly

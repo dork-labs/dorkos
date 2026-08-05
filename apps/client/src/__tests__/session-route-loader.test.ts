@@ -241,6 +241,21 @@ describe('sessionRouteLoader', () => {
     expect(transport.listSessions).toHaveBeenCalledWith('/never/opened');
   });
 
+  it('raises rather than redirecting to a blank chat when it cannot ask', async () => {
+    // There is no "stay put" for a loader: this URL IS where the person asked
+    // to be. Redirecting to a minted id would show a blank chat for an agent
+    // that may have work, which is the defect this path exists to remove — so
+    // the route's error boundary is the honest answer (DOR-928).
+    transport.listSessions = vi.fn().mockRejectedValue(new Error('offline'));
+
+    await expect(
+      sessionRouteLoader({
+        context: { queryClient, transport },
+        deps: { dir: '/my/project', session: undefined, runtime: undefined, prompt: undefined },
+      })
+    ).rejects.toThrow(/could ?n[o']t reach the server/i);
+  });
+
   it('carries the prompt seed onto a genuinely fresh session', async () => {
     // The other half of the seed rule below: a seed is FOR a new conversation,
     // so the branch that starts one must keep it.

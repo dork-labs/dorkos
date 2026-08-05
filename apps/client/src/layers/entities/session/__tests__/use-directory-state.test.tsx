@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { toast } from 'sonner';
 import { renderHook, act, waitFor } from '@testing-library/react';
+
+vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
 // Mock platform
 let mockIsEmbedded = false;
@@ -34,10 +37,22 @@ vi.mock('@/layers/entities/session/model/use-session-search', () => ({
   useSessionSearch: () => ({ dir: mockSearchDir }),
 }));
 
-// Mock useNavigate
-const mockNavigate = vi.fn();
+// Mock useNavigate. Navigating MOVES the location, as it does in the app: what
+// stops an overtaken lookup from landing is the router's own location having
+// changed, so a location that never moves would test nothing.
+let mockHref = 'http://localhost/';
+const mockNavigate = vi.fn(() => {
+  mockHref = `http://localhost/after-${Math.random()}`;
+});
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
+  useRouter: () => ({
+    state: {
+      get location() {
+        return { href: mockHref };
+      },
+    },
+  }),
 }));
 
 // The hook resolves which session a directory opens on, which asks the server
@@ -69,6 +84,8 @@ describe('useDirectoryState', () => {
     mockStoreDir = null;
     mockSearchDir = undefined;
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    mockHref = 'http://localhost/';
+    vi.mocked(toast.error).mockReset();
   });
 
   it('returns URL state in standalone mode', () => {
@@ -164,6 +181,77 @@ describe('useDirectoryState', () => {
         search: { dir: '/never/opened', session: 'sess-on-server' },
       })
     );
+  });
+
+  it('says the lookup failed, moves nothing, and reports it did not open', async () => {
+    // This is the command palette's agent-select path. A failed lookup that
+    // quietly minted a session would open a blank chat for an agent that has
+    // work — DOR-928's own symptom — and the palette would then rank that agent
+    // as one you had used.
+    mockListSessions.mockRejectedValueOnce(new Error('offline'));
+    const { result } = renderHook(() => useDirectoryState());
+
+    const opened = await act(() => result.current[1]('/never/opened'));
+
+    expect(opened).toBe(false);
+    expect(toast.error).toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(mockSetStoreDir).not.toHaveBeenCalled();
+  });
+
+  it('commits the directory only once it knows which conversation to open', async () => {
+    // The chat stream is keyed on (session id, selected cwd). Committing the
+    // new directory while the lookup is still out pairs it with the OLD session
+    // id, and the server resolves a transcript from `?cwd=`.
+    let answer!: (value: { sessions: { id: string }[] }) => void;
+    mockListSessions.mockReturnValueOnce(
+      new Promise((resolve) => {
+        answer = resolve;
+      })
+    );
+    const { result } = renderHook(() => useDirectoryState());
+
+    let settled: Promise<boolean>;
+    act(() => {
+      settled = result.current[1]('/never/opened');
+    });
+    expect(mockSetStoreDir).not.toHaveBeenCalled();
+
+    await act(async () => {
+      answer({ sessions: [{ id: 'sess-1' }] });
+      await settled;
+    });
+    expect(mockSetStoreDir).toHaveBeenCalledWith('/never/opened');
+  });
+
+  it('stays quiet and still when something else navigated while it waited', async () => {
+    // No cooperation required from whatever navigated: the router's location
+    // moved, which is the signal. An abandoned switch must not move you AND
+    // must not explain itself — you are somewhere else now.
+    let answer!: (value: { sessions: { id: string }[] }) => void;
+    mockListSessions.mockReturnValueOnce(
+      new Promise((resolve) => {
+        answer = resolve;
+      })
+    );
+    const { result } = renderHook(() => useDirectoryState());
+
+    let settled: Promise<boolean>;
+    act(() => {
+      settled = result.current[1]('/never/opened');
+    });
+    mockHref = 'http://localhost/channels?id=c1'; // somebody opened a channel
+
+    let opened!: boolean;
+    await act(async () => {
+      answer({ sessions: [{ id: 'sess-1' }] });
+      opened = await settled;
+    });
+
+    expect(opened).toBe(false);
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(mockSetStoreDir).not.toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
   it('preserveSession: true skips session clearing in embedded', () => {

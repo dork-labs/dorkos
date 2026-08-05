@@ -22,6 +22,7 @@ import type { Session } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
+import { createQueryClientConfig } from '@/layers/shared/lib';
 import { TooltipProvider } from '@/layers/shared/ui';
 import {
   useSessions,
@@ -303,6 +304,27 @@ describe('session resolution for an agent this window has never opened', () => {
     });
 
     expect(await resolveSessionForCwd({ queryClient, transport }, OTHER_CWD)).toBeNull();
+  });
+
+  it('re-asks under the app’s real cache policy, not the test default', async () => {
+    // Every other case here builds a bare QueryClient, whose `staleTime` is 0 —
+    // so anything cached counts as stale and gets re-fetched, and the fix looks
+    // right for a reason the app does not share. The app runs `staleTime: 30s`
+    // (`createQueryClientConfig`), and the global-stream bridge writes an EMPTY
+    // list whenever it removes the last session for a directory. Under the real
+    // policy that empty entry is FRESH for the next 30 seconds, so a resolver
+    // that lets freshness decide reproduces DOR-928 exactly.
+    const transport = createMockTransport({
+      listSessions: vi.fn().mockResolvedValue({
+        sessions: [makeSession({ id: 'still-there', cwd: OTHER_CWD })],
+      }),
+    }) as Transport;
+    const queryClient = new QueryClient(createQueryClientConfig());
+    queryClient.setQueryData<Session[]>(sessionKeys.list(OTHER_CWD), []);
+
+    const resolved = await resolveSessionForCwd({ queryClient, transport }, OTHER_CWD);
+
+    expect(resolved).toEqual({ sessionId: 'still-there', isNew: false });
   });
 
   it('re-asks rather than trusting a listing the server has disowned', async () => {

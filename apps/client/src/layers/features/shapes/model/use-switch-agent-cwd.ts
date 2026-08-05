@@ -8,7 +8,7 @@
  */
 import { useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from '@tanstack/react-router';
+import { useNavigate, useRouter } from '@tanstack/react-router';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { switchAgentCwd } from '@/layers/entities/session';
 
@@ -19,6 +19,7 @@ import { switchAgentCwd } from '@/layers/entities/session';
 export function useSwitchAgentCwd(): (cwd: string) => void {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const router = useRouter();
   const transport = useTransport();
   return useCallback(
     (cwd: string) =>
@@ -26,8 +27,9 @@ export function useSwitchAgentCwd(): (cwd: string) => void {
         store: useAppStore.getState(),
         queryClient,
         transport,
+        currentHref: () => router.state.location.href,
         navigate: (search) => void navigate({ to: '/session', search }),
       }),
-    [queryClient, transport, navigate]
+    [queryClient, transport, router, navigate]
   );
 }

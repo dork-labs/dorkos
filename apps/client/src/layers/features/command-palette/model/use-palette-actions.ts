@@ -68,12 +68,18 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
 
   const handleAgentSelect = useCallback(
     (agent: AgentPathEntry) => {
-      // Track previous CWD for 'switch back' suggestions before switching
-      if (selectedCwd && selectedCwd !== agent.projectPath) {
-        setPreviousCwd(selectedCwd);
-      }
-      recordUsage(agent.id);
-      setDir(agent.projectPath);
+      // The palette closes at once — it has done its job either way — but the
+      // switch-back target and the frecency bump wait until the agent actually
+      // opens. `setDir` resolves which conversation that is, which can fail or
+      // be overtaken; recording either up front would rank an agent you never
+      // reached and offer "switch back" to a directory you never left
+      // (DOR-928).
+      const leaving = selectedCwd;
+      void setDir(agent.projectPath).then((opened) => {
+        if (!opened) return;
+        if (leaving && leaving !== agent.projectPath) setPreviousCwd(leaving);
+        recordUsage(agent.id);
+      });
       closePalette();
     },
     [recordUsage, setDir, closePalette, selectedCwd, setPreviousCwd]
