@@ -37,6 +37,8 @@ import {
   useRecentSessions,
   useAgentAttentionMap,
   resolveSessionForCwd,
+  notifySessionLookupFailed,
+  claimSessionNavigation,
   sessionKeys,
 } from '@/layers/entities/session';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
@@ -459,6 +461,11 @@ export function DashboardSidebar() {
   );
 
   // ── Handlers ──
+  // Every handler below claims the navigation before it acts, so the cockpit
+  // always lands where the LAST gesture pointed. Resolving an agent is
+  // asynchronous, and the rows around it are not: without a claim, a slow
+  // lookup landing late would win the URL over the Recent row you clicked
+  // afterwards (DOR-928 review).
   const handleSelectAgent = useCallback(
     (agentPath: string) => {
       // Clicking an agent resumes its most recent conversation. The lookup goes
@@ -466,15 +473,22 @@ export function DashboardSidebar() {
       // directly: the roster lists every agent, but only the one this window has
       // opened has a cached session list, so a cache read alone would send you
       // to an empty chat for every other one (DOR-928).
-      void resolveSessionForCwd({ queryClient, transport }, agentPath).then(({ sessionId }) =>
-        navigate({ to: '/session', search: { dir: agentPath, session: sessionId } })
-      );
+      const isCurrent = claimSessionNavigation();
+      void resolveSessionForCwd({ queryClient, transport }, agentPath).then((resolved) => {
+        if (resolved === null) {
+          notifySessionLookupFailed(agentPath);
+          return;
+        }
+        if (!isCurrent()) return;
+        navigate({ to: '/session', search: { dir: agentPath, session: resolved.sessionId } });
+      });
     },
     [navigate, queryClient, transport]
   );
 
   const handleSessionClick = useCallback(
     (sessionId: string) => {
+      claimSessionNavigation();
       navigate({ to: '/session', search: (prev) => ({ ...prev, session: sessionId }) });
     },
     [navigate]
@@ -482,6 +496,7 @@ export function DashboardSidebar() {
 
   const handleResumeRecentSession = useCallback(
     (session: Session) => {
+      claimSessionNavigation();
       navigate({ to: '/session', search: { dir: session.cwd ?? undefined, session: session.id } });
     },
     [navigate]
@@ -489,6 +504,7 @@ export function DashboardSidebar() {
 
   const handleNewSession = useCallback(
     (dir?: string) => {
+      claimSessionNavigation();
       navigate({
         to: '/session',
         search: { dir: dir ?? selectedCwd ?? undefined, session: crypto.randomUUID() },

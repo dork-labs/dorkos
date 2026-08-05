@@ -24,7 +24,7 @@ import { marketplaceSearchSchema } from '@/layers/features/marketplace';
 import { onboardingStageSearchSchema } from '@/layers/features/onboarding';
 import { mergeDialogSearch } from '@/layers/shared/model/dialog-search-schema';
 import { RouteErrorFallback, NotFoundFallback } from '@/layers/shared/ui';
-import { resolveSessionForCwd } from '@/layers/entities/session';
+import { resolveSessionForCwd, SESSION_LOOKUP_FAILED_MESSAGE } from '@/layers/entities/session';
 import type { Transport } from '@dorkos/shared/transport';
 
 // ── Router context ──────────────────────────────────────────
@@ -217,11 +217,24 @@ export async function sessionRouteLoader({
   // session is brand-new so its composer is pre-filled. It is deliberately NOT
   // propagated onto a resumed session: a seed must never ride an existing
   // conversation (defense-in-depth atop ChatPanel's empty-only guard).
-  const { sessionId, isNew } = await resolveSessionForCwd(context, dir ?? null);
+  const resolved = await resolveSessionForCwd(context, dir ?? null);
+  // The lookup failed. There is no "stay put" for a loader — this URL IS where
+  // the person asked to be — so the honest move is the route's error boundary,
+  // which says something went wrong and offers a retry. Redirecting to a minted
+  // id would instead show a blank chat for an agent that may have work, which
+  // is the defect this whole path exists to remove (DOR-928).
+  if (resolved === null) {
+    throw new Error(SESSION_LOOKUP_FAILED_MESSAGE);
+  }
 
   throw redirect({
     to: '/session',
-    search: { session: sessionId, dir, runtime, prompt: isNew ? deps.prompt : undefined },
+    search: {
+      session: resolved.sessionId,
+      dir,
+      runtime,
+      prompt: resolved.isNew ? deps.prompt : undefined,
+    },
     replace: true,
   });
 }

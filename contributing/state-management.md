@@ -731,7 +731,9 @@ const sidebarOpen = useAppStore((state) => state.sidebarOpen);
 // ✅ Module scope — survives StrictMode and HMR
 const queryClient = new QueryClient({ ... });
 const transport = new HttpTransport();
-const router = createAppRouter(queryClient);
+// The router takes the transport too: the `/session` loader asks the server
+// which conversation a directory opens on before it decides where to send you.
+const router = createAppRouter(queryClient, transport);
 
 function Root() {
   return (

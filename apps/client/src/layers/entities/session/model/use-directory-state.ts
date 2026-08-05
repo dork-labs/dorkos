@@ -5,7 +5,8 @@ import { getPlatform } from '@/layers/shared/lib';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { useSessionSearch } from './use-session-search';
 import { useSessionId } from './use-session-id';
-import { resolveSessionForCwd } from '../lib/resolve-session-for-cwd';
+import { resolveSessionForCwd, notifySessionLookupFailed } from '../lib/resolve-session-for-cwd';
+import { claimSessionNavigation } from '../lib/session-navigation-intent';
 
 /** Options for the directory setter returned by {@link useDirectoryState}. */
 export interface SetDirOptions {
@@ -66,9 +67,10 @@ export function useDirectoryState(): [
   return [
     urlDir ?? storeDir,
     (dir, opts) => {
+      const isCurrent = claimSessionNavigation();
       if (dir) {
-        setStoreDir(dir);
         if (opts?.preserveSession) {
+          setStoreDir(dir);
           void navigate({
             to: '/session',
             search: (prev) => ({ ...prev, dir }),
@@ -76,9 +78,20 @@ export function useDirectoryState(): [
         } else {
           // Always include a session ID so the URL has ?session=; without it the
           // chat input cannot accept text.
-          void resolveSessionForCwd({ queryClient, transport }, dir).then(({ sessionId }) =>
-            navigate({ to: '/session', search: { dir, session: sessionId } })
-          );
+          //
+          // The store is written AFTER the lookup, not before: the chat stream
+          // is keyed on (session id, selected cwd), so committing the new
+          // directory while the answer is still out pairs it with the OLD
+          // session id and reads the wrong project's transcript.
+          void resolveSessionForCwd({ queryClient, transport }, dir).then((resolved) => {
+            if (resolved === null) {
+              notifySessionLookupFailed(dir);
+              return;
+            }
+            if (!isCurrent()) return;
+            setStoreDir(dir);
+            void navigate({ to: '/session', search: { dir, session: resolved.sessionId } });
+          });
         }
       } else {
         void navigate({

@@ -1,6 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
-import { resolveSessionForCwd } from './resolve-session-for-cwd';
+import { resolveSessionForCwd, notifySessionLookupFailed } from './resolve-session-for-cwd';
+import { claimSessionNavigation } from './session-navigation-intent';
 
 /**
  * App-store slice {@link switchAgentCwd} reads and writes. A structural subset
@@ -36,16 +37,18 @@ export interface SwitchAgentCwdDeps {
  * Switch the cockpit's active agent to `cwd`.
  *
  * Mirrors the command palette's agent-select path (`handleAgentSelect` →
- * `setDir`): record the switch-back directory, persist the new working
- * directory, then navigate to `/session` on that directory's most recent
- * session (or a fresh one, when it has none) so the URL always carries
- * `?session=` (a null session id resets the chat input). This is the seam the
- * agent's `control_ui switch_agent` command drives, so it lives as a plain
- * function callable from outside React.
+ * `setDir`): resolve which conversation that directory is on, then record the
+ * switch-back directory, persist the new working directory, and navigate to
+ * `/session` carrying it (a null session id resets the chat input). This is the
+ * seam the agent's `control_ui switch_agent` command drives, so it lives as a
+ * plain function callable from outside React.
  *
- * The store writes happen immediately and the navigation follows the session
- * lookup, so the cockpit records the switch even if the lookup has to wait on
- * the server.
+ * **Nothing is committed until the destination is known.** The chat stream is
+ * keyed on (session id, selected cwd), so writing the new cwd while the lookup
+ * is still out would attach the OLD session id under the NEW directory — and
+ * the server resolves a transcript from `?cwd=`, so that pairing reads the
+ * wrong project. A failed lookup therefore moves nothing at all, and a lookup
+ * overtaken by a later click does nothing either.
  *
  * Frecency is intentionally not recorded here: an agent-issued switch carries
  * only a directory, not the user's explicit agent pick, so it must not reorder
@@ -56,11 +59,20 @@ export interface SwitchAgentCwdDeps {
  */
 export async function switchAgentCwd(cwd: string, deps: SwitchAgentCwdDeps): Promise<void> {
   const { store, queryClient, transport, navigate } = deps;
-  // Track the directory we're leaving so the palette can offer "switch back".
-  if (store.selectedCwd && store.selectedCwd !== cwd) {
-    store.setPreviousCwd(store.selectedCwd);
+  const isCurrent = claimSessionNavigation();
+  // Captured at the gesture, applied after: this is the directory being LEFT,
+  // and reading it back after the await would read whatever the cockpit has
+  // moved on to.
+  const leaving = store.selectedCwd;
+
+  const resolved = await resolveSessionForCwd({ queryClient, transport }, cwd);
+  if (resolved === null) {
+    notifySessionLookupFailed(cwd);
+    return;
   }
+  if (!isCurrent()) return;
+
+  if (leaving && leaving !== cwd) store.setPreviousCwd(leaving);
   store.setSelectedCwd(cwd);
-  const { sessionId } = await resolveSessionForCwd({ queryClient, transport }, cwd);
-  navigate({ dir: cwd, session: sessionId });
+  navigate({ dir: cwd, session: resolved.sessionId });
 }

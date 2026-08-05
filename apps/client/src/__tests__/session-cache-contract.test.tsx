@@ -171,9 +171,10 @@ describe('session list: one writer, many readers', () => {
     const { result } = renderHook(() => useSessions(), { wrapper });
     await waitFor(() => expect(result.current.sessions).toHaveLength(1));
 
-    expect((await resolveSessionForCwd({ queryClient, transport }, CWD)).sessionId).toBe(
-      'listed-1'
-    );
+    expect(await resolveSessionForCwd({ queryClient, transport }, CWD)).toEqual({
+      sessionId: 'listed-1',
+      isNew: false,
+    });
   });
 
   it('an optimistic rename shows up in the list every other surface reads', async () => {
@@ -271,8 +272,8 @@ describe('session resolution for an agent this window has never opened', () => {
 
     const resolved = await resolveSessionForCwd({ queryClient, transport }, OTHER_CWD);
 
-    expect(resolved.isNew).toBe(true);
-    expect(resolved.sessionId).toMatch(
+    expect(resolved?.isNew).toBe(true);
+    expect(resolved?.sessionId).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
     );
     expect(listSessions).toHaveBeenCalledWith(OTHER_CWD);
@@ -292,16 +293,35 @@ describe('session resolution for an agent this window has never opened', () => {
     expect(queryClient.getQueryData<Session[]>(sessionKeys.list(OTHER_CWD))).toHaveLength(1);
   });
 
-  it('falls back to a fresh conversation when the server cannot be reached', async () => {
-    // A failed lookup must not strand the person on a URL with no session: the
-    // composer cannot accept text without one. Minting is the safe answer here.
+  it('answers "I could not find out" when the server cannot be reached', async () => {
+    // Red when: a failed lookup mints a fresh id. That opens a blank chat for an
+    // agent that has work — DOR-928's own symptom, and indistinguishable from
+    // it. "No sessions" and "could not ask" are different answers and only one
+    // of them may start a new conversation.
     const { queryClient, transport } = createHarness(undefined, {
       listSessions: vi.fn().mockRejectedValue(new Error('offline')),
     });
 
+    expect(await resolveSessionForCwd({ queryClient, transport }, OTHER_CWD)).toBeNull();
+  });
+
+  it('re-asks rather than trusting a listing the server has disowned', async () => {
+    // A Claude account switch fires `session_list_invalidated`, which invalidates
+    // every per-directory list. The entries are marked, not dropped, so a
+    // resolver that trusts any cached row resumes an id from the account that is
+    // no longer signed in — and that id 404s.
+    const { queryClient, transport, listSessions } = createPerDirectoryHarness({
+      [OTHER_CWD]: [makeSession({ id: 'new-account-s1', cwd: OTHER_CWD })],
+    });
+    queryClient.setQueryData<Session[]>(sessionKeys.list(OTHER_CWD), [
+      makeSession({ id: 'old-account-s1', cwd: OTHER_CWD }),
+    ]);
+    await queryClient.invalidateQueries({ queryKey: sessionKeys.listRoot });
+
     const resolved = await resolveSessionForCwd({ queryClient, transport }, OTHER_CWD);
 
-    expect(resolved.isNew).toBe(true);
+    expect(resolved?.sessionId).toBe('new-account-s1');
+    expect(listSessions).toHaveBeenCalledWith(OTHER_CWD);
   });
 });
 

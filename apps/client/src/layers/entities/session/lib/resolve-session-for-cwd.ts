@@ -25,6 +25,7 @@
  * @module entities/session/lib/resolve-session-for-cwd
  */
 import type { QueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import type { Transport } from '@dorkos/shared/transport';
 import type { Session } from '@dorkos/shared/types';
 import { reportClientError } from '@/layers/shared/lib';
@@ -32,6 +33,26 @@ import { reportClientError } from '@/layers/shared/lib';
 // avoid a self-referential barrel import within this slice.
 import { sessionKeys } from '../api/query-keys';
 import { sessionListQueryOptions } from '../api/session-list-query';
+
+/**
+ * What every surface says when it could not find out which conversation an
+ * agent is on. One message, in one place, because three surfaces show it and
+ * they must not drift into describing the same event three ways.
+ */
+export const SESSION_LOOKUP_FAILED_MESSAGE =
+  "Couldn't reach the server, so we left you where you are. Try again in a moment.";
+
+/**
+ * Tell the operator the lookup failed, without moving them.
+ *
+ * @param cwd - The directory that could not be resolved, named so the message
+ *   is about something rather than about nothing.
+ */
+export function notifySessionLookupFailed(cwd: string | null): void {
+  toast.error(SESSION_LOOKUP_FAILED_MESSAGE, {
+    description: cwd ? `Could not open ${cwd}` : undefined,
+  });
+}
 
 /** What {@link resolveSessionForCwd} needs: somewhere to look, somewhere to ask. */
 export interface ResolveSessionDeps {
@@ -58,25 +79,30 @@ export interface ResolvedSession {
  * The most recent session for `cwd`, or a freshly minted id when that directory
  * genuinely has none.
  *
- * Answers from cache when the list is already there, and asks the server
- * otherwise — the server's answer is then cached under the same key
+ * Answers from cache when the list is there and still believable, and asks the
+ * server otherwise — the server's answer is then cached under the same key
  * `useSessions` reads, so switching back to that agent is free.
  *
  * A minted id is speculative by design: it becomes real on the first message,
- * and navigation alone never creates a session. A failed lookup mints too — a
- * URL with no session is a dead end for the composer, so a fresh conversation
- * is the safe answer when the server cannot be reached.
+ * and navigation alone never creates a session.
+ *
+ * **`null` means "could not find out", and is not a licence to mint.** If the
+ * lookup fails, the only honest answers are to say so and stay put. Minting
+ * there would open a blank chat for an agent that has work — DOR-928's own
+ * symptom, wearing the fix as a disguise — and typing into it makes it real.
+ * Callers must surface it rather than navigate.
  *
  * @param deps - Query client to read and fill, transport to ask over.
  * @param cwd - The target working directory, or `null` for the default one.
- * @returns The resolved session id and whether it is brand-new.
+ * @returns The resolved session and whether it is brand-new, or `null` when the
+ *   lookup failed.
  */
 export async function resolveSessionForCwd(
   deps: ResolveSessionDeps,
   cwd: string | null
-): Promise<ResolvedSession> {
-  const cached = cachedSessionsForCwd(deps.queryClient, cwd);
-  const sessions = cached.length > 0 ? cached : await fetchSessionList(deps, cwd);
+): Promise<ResolvedSession | null> {
+  const sessions = trustedSessionsForCwd(deps.queryClient, cwd) ?? (await askServer(deps, cwd));
+  if (sessions === null) return null;
   const mostRecent = sessions[0];
   return mostRecent
     ? { sessionId: mostRecent.id, isNew: false }
@@ -98,32 +124,42 @@ export async function resolveSessionForCwd(
  * @returns The most recent known session id, or `null` when none is cached.
  */
 export function cachedSessionForCwd(queryClient: QueryClient, cwd: string | null): string | null {
-  return cachedSessionsForCwd(queryClient, cwd)[0]?.id ?? null;
-}
-
-/** The cached session list for `cwd`, newest-first, or empty when uncached. */
-function cachedSessionsForCwd(queryClient: QueryClient, cwd: string | null): Session[] {
-  return queryClient.getQueryData<Session[]>(sessionKeys.list(cwd)) ?? [];
+  return trustedSessionsForCwd(queryClient, cwd)?.[0]?.id ?? null;
 }
 
 /**
  * Ask the server for `cwd`'s sessions, through the shared query options so the
  * answer lands in the cache exactly as `useSessions` would have left it.
  *
- * A failure answers "none" rather than propagating: the caller's job is to
- * produce a session id, and it can always mint one. But it is REPORTED rather
- * than swallowed, because the two things that land here want opposite
- * reactions. An unreachable server is expected and the fallback is right. A
- * defect in the fetch is not, and it degrades into exactly the behaviour this
- * module exists to prevent — a real conversation abandoned for a blank one,
- * with nothing on screen to say why. The reporter dedupes, so an offline
- * cockpit does not spam it.
+ * `fetchQuery` rather than `ensureQueryData`: this is only reached when the
+ * cache could not be believed, and `ensureQueryData` answers from that cache.
+ *
+ * The failure is REPORTED, not swallowed, and answers `null` rather than an
+ * empty list — the two want opposite reactions. An unreachable server means
+ * "unknown", which callers must surface. An empty list means "no conversations",
+ * which is the one case where starting a new one is right.
  */
-async function fetchSessionList(deps: ResolveSessionDeps, cwd: string | null): Promise<Session[]> {
+async function askServer(deps: ResolveSessionDeps, cwd: string | null): Promise<Session[] | null> {
   try {
-    return await deps.queryClient.ensureQueryData(sessionListQueryOptions(deps, cwd));
+    return await deps.queryClient.fetchQuery(sessionListQueryOptions(deps, cwd));
   } catch (error) {
     reportClientError(deps.transport, error);
-    return [];
+    return null;
   }
+}
+
+/**
+ * The cached session list for `cwd` when it can still be believed, or `null`
+ * when this window has to ask.
+ *
+ * A NON-EMPTY, non-invalidated entry is the only cache hit worth taking. Empty
+ * is the state a never-displayed directory is in, which is the whole bug.
+ * Invalidated is the state a Claude account switch leaves every list in
+ * (`session_list_invalidated` marks them; it does not drop them), so trusting
+ * one there resumes an id belonging to the account that is no longer signed in.
+ */
+function trustedSessionsForCwd(queryClient: QueryClient, cwd: string | null): Session[] | null {
+  const state = queryClient.getQueryState<Session[]>(sessionKeys.list(cwd));
+  if (state === undefined || state.isInvalidated) return null;
+  return state.data && state.data.length > 0 ? state.data : null;
 }

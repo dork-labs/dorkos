@@ -113,6 +113,56 @@ describe('switchAgentCwd', () => {
     });
   });
 
+  it('commits the cwd only once it knows where it is going', async () => {
+    // The chat stream is keyed on (sessionId, selectedCwd). Committing the new
+    // cwd while the lookup is still out attaches the OLD session id under the
+    // NEW directory, and the server resolves history from `?cwd=` — so for the
+    // length of the request the client is asking the wrong project for the
+    // wrong transcript.
+    const store = makeStore({ selectedCwd: '/home/user/old' });
+    const order: string[] = [];
+    store.setSelectedCwd = vi.fn(() => order.push('store'));
+    let answer!: (value: { sessions: Session[] }) => void;
+    const transport = createMockTransport({
+      listSessions: vi.fn(
+        () =>
+          new Promise<{ sessions: Session[] }>((resolve) => {
+            answer = resolve;
+          })
+      ),
+    }) as Transport;
+
+    const pending = switchAgentCwd('/home/user/new', {
+      store,
+      queryClient: new QueryClient(),
+      transport,
+      navigate: () => order.push('navigate'),
+    });
+
+    expect(order).toEqual([]); // nothing committed while the lookup is out
+    answer({ sessions: [{ id: 'sess-1' } as Session] });
+    await pending;
+    expect(order).toEqual(['store', 'navigate']);
+  });
+
+  it('leaves the cockpit where it is when the lookup fails', async () => {
+    const store = makeStore({ selectedCwd: '/home/user/old' });
+    const navigate = vi.fn();
+    const transport = createMockTransport({
+      listSessions: vi.fn().mockRejectedValue(new Error('offline')),
+    }) as Transport;
+
+    await switchAgentCwd('/home/user/new', {
+      store,
+      queryClient: new QueryClient(),
+      transport,
+      navigate,
+    });
+
+    expect(navigate).not.toHaveBeenCalled();
+    expect(store.setSelectedCwd).not.toHaveBeenCalled();
+  });
+
   it('navigates with a fresh session id when none is cached anywhere', async () => {
     const navigate = vi.fn();
     await switchAgentCwd('/home/user/project', {

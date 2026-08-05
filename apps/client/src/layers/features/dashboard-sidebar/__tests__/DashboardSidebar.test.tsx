@@ -8,6 +8,7 @@ import {
   type RoomSummary,
   type ThreadSummary,
 } from '@dorkos/shared/room-schemas';
+import { toast } from 'sonner';
 import { resolveAgentVisual } from '@/layers/shared/lib';
 import { useRoomOpenThreadStore } from '@/layers/entities/room';
 import { DashboardSidebar } from '../ui/DashboardSidebar';
@@ -228,10 +229,15 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
   // The query-key factory is the real one: a stub here would let the sidebar
   // read a cache key nothing in the app writes and never say so (DOR-497).
   sessionKeys: (await importOriginal<typeof import('@/layers/entities/session')>()).sessionKeys,
-  // Real for the same reason: which session a click opens is the behaviour these
-  // cases assert, so a stub would be asserting the stub.
+  // Real for the same reason: which session a click opens — and which of two
+  // competing clicks wins — is the behaviour these cases assert, so a stub
+  // would be asserting the stub.
   resolveSessionForCwd: (await importOriginal<typeof import('@/layers/entities/session')>())
     .resolveSessionForCwd,
+  claimSessionNavigation: (await importOriginal<typeof import('@/layers/entities/session')>())
+    .claimSessionNavigation,
+  notifySessionLookupFailed: (await importOriginal<typeof import('@/layers/entities/session')>())
+    .notifySessionLookupFailed,
   useAgentSessions: () => ({ sessions: [], activeSessionId: null, isLoading: false }),
   useSessionBorderState: () => ({ kind: 'idle', color: 'x', pulse: false, label: 'Idle' }),
   useAgentHottestStatus: () => ({ kind: 'idle', color: 'x', pulse: false, label: 'Idle' }),
@@ -252,6 +258,8 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
 }));
 
 vi.mock('@/layers/features/feature-promos', () => ({ PromoSlot: () => null }));
+
+vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
 // ---------------------------------------------------------------------------
 // Setup
@@ -323,6 +331,7 @@ describe('DashboardSidebar', () => {
     mockRooms.mockReturnValue([]);
     mockTransport.listSessions.mockReset();
     mockTransport.listSessions.mockResolvedValue({ sessions: [] });
+    vi.mocked(toast.error).mockReset();
     mockAttentionMap.mockReset();
     mockAttentionMap.mockImplementation((paths: string[]) =>
       Object.fromEntries(paths.map((p) => [p, 'active']))
@@ -388,6 +397,114 @@ describe('DashboardSidebar', () => {
         search: { dir: '/projects/beta', session: 'beta-session-1' },
       })
     );
+  });
+
+  // Resolution is asynchronous, so two clicks are two races. Whichever REQUEST
+  // finishes last used to win the URL, which is the opposite of what the person
+  // asked for.
+  it('lands on the agent you clicked last, not the one that answered last', async () => {
+    const answer = (id: string) => ({
+      sessions: [
+        {
+          id,
+          title: 't',
+          cwd: '/x',
+          createdAt: '2026-03-01T00:00:00.000Z',
+          updatedAt: '2026-03-01T00:00:00.000Z',
+          permissionMode: 'default',
+          runtime: 'claude-code',
+        },
+      ],
+    });
+    mockTransport.listSessions.mockImplementation((cwd?: string) =>
+      cwd === '/projects/alpha'
+        ? new Promise((resolve) => setTimeout(() => resolve(answer('alpha-s1')), 60))
+        : Promise.resolve(answer('beta-s1'))
+    );
+
+    renderWithProviders(<DashboardSidebar />);
+    fireEvent.click(screen.getAllByText('alpha')[0]); // slow
+    fireEvent.click(screen.getAllByText('beta')[0]); // fast
+
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalled());
+    // Give the slow answer time to land and (wrongly) navigate.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: '/session',
+      search: { dir: '/projects/beta', session: 'beta-s1' },
+    });
+  });
+
+  // The same race without a double click: a Recent row navigates immediately, so
+  // an agent lookup still in flight would yank you off the session you just
+  // opened.
+  it('does not yank you away from a Recent session you opened mid-lookup', async () => {
+    mockRecent.mockReturnValue({
+      data: {
+        sessions: [
+          {
+            id: 'recent-1',
+            title: 'Earlier work',
+            cwd: '/projects/beta',
+            updatedAt: '2026-03-02T00:00:00.000Z',
+            createdAt: '2026-03-01T00:00:00.000Z',
+            runtime: 'claude-code',
+            permissionMode: 'default',
+          },
+        ],
+        agentActivity: {},
+      },
+      isLoading: false,
+    });
+    mockTransport.listSessions.mockImplementation(
+      () =>
+        new Promise((resolve) =>
+          setTimeout(
+            () =>
+              resolve({
+                sessions: [
+                  {
+                    id: 'alpha-s1',
+                    title: 't',
+                    cwd: '/projects/alpha',
+                    createdAt: '2026-03-01T00:00:00.000Z',
+                    updatedAt: '2026-03-01T00:00:00.000Z',
+                    permissionMode: 'default',
+                    runtime: 'claude-code',
+                  },
+                ],
+              }),
+            60
+          )
+        )
+    );
+
+    renderWithProviders(<DashboardSidebar />);
+    fireEvent.click(screen.getAllByText('alpha')[0]); // slow agent lookup starts
+    fireEvent.click(screen.getByText('Earlier work')); // arrives immediately
+
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: '/session',
+      search: { dir: '/projects/beta', session: 'recent-1' },
+    });
+  });
+
+  // Recovering into a blank chat is recovering into the very symptom this fix
+  // exists to remove, and typing into that chat makes it real.
+  it('says the lookup failed and leaves you where you are, rather than opening a blank chat', async () => {
+    mockTransport.listSessions.mockRejectedValue(new Error('offline'));
+
+    renderWithProviders(<DashboardSidebar />);
+    fireEvent.click(screen.getAllByText('beta')[0]);
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
   it('starts a new conversation for an agent that has none', async () => {
