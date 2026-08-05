@@ -44,8 +44,8 @@ import {
   overlayStoredSettings,
 } from '../services/session/index.js';
 import type { ResolveTaskOrigins } from '../services/session/index.js';
-import { sessionEventsHandler } from './session-events-handler.js';
 import { sessionUiActionHandler } from './session-ui-action-handler.js';
+import { sessionEventsHandler } from './session-events-handler.js';
 import { sessionCommandIntentHandler } from './session-command-intent-handler.js';
 import { sessionDevtoolsIngestHandler } from './session-devtools.js';
 import { sessionMcpAppResourceHandler } from './session-mcp-app-resource-handler.js';
@@ -924,14 +924,16 @@ router.post('/:id/interrupt', async (req, res) => {
 //
 // The single delivery path for session state (spec chat-stream-reconnection,
 // Design B.3, ADR-0264/ADR-0266). Always on — NO `enableCrossClientSync` gate,
-// no feature flag. The handler lives in `session-events-handler.ts` so this
-// route file stays under the file-size rule (`.claude/rules/file-size.md`), and
-// the cursor contract it shares with the room stream lives in
-// `lib/stream-cursor.ts`; behavior is identical. Express 5 forwards
-// rejections that escape the handler's own pre-flush guard (e.g. an
-// assertBoundary fs error) to the error middleware natively: pre-flush they
-// get a JSON error response, post-flush Express destroys the socket — the
-// correct SSE failure mode (see the `res.headersSent` guard in error-handler.ts).
+// no feature flag. Express 5 forwards rejections that escape the handler's own
+// pre-flush guard to the error middleware natively: pre-flush they get a JSON
+// error response, post-flush Express destroys the socket — the correct SSE
+// failure mode (see the `res.headersSent` guard in error-handler.ts).
+//
+// The SAME path is also served over a WebSocket, by `session-events-socket.ts`
+// through the upgrade router, and that is what the cockpit connects to (ADR
+// 260805-041016). This SSE route stays because it is the public integration
+// contract (`docs/integrations/sse-protocol.mdx`). Both share their sequencing
+// — see `services/session/session-stream-delivery.ts`.
 router.get('/:id/events', sessionEventsHandler);
 
 export default router;

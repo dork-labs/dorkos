@@ -8,15 +8,19 @@
  * `removeRoomMember` additionally has to survive a `204 No Content`, which is
  * invisible above this seam.
  *
- * `subscribeRoom`'s silence watchdog — it exists at this level precisely
- * because the server's heartbeat is an SSE comment that this method drops, so
- * no consumer above it can tell a dead socket from a quiet room. A test above
- * the seam cannot see the heartbeat either.
+ * `subscribeRoom`'s two pieces of resilience, both of which exist at this level
+ * precisely because nothing above it can see them: the silence watchdog (the
+ * server's heartbeat is consumed here, so above this seam a dead socket and a
+ * quiet room look identical) and the refusal status (a browser cannot read the
+ * status of a failed WebSocket handshake, so the server sends an application
+ * close code and this is where it becomes a `RoomStreamHttpError`).
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { RoomEvent } from '@dorkos/shared/room-schemas';
+import { STREAM_HEARTBEAT_EVENT } from '@dorkos/shared/stream-socket';
 import { SSE_RESILIENCE } from '../../constants';
-import { createRoomMethods } from '../room-methods';
+import { createRoomMethods, RoomStreamHttpError, isFatalStreamError } from '../room-methods';
+import { installFakeStreamSocket, nthSocket } from './fake-stream-socket';
 
 function setup() {
   return createRoomMethods('http://localhost:4242/api');
@@ -115,30 +119,6 @@ describe('room settings and roster writes', () => {
   });
 });
 
-/**
- * A live SSE response whose body is fed by hand, the way a real one is fed by
- * the network — including erroring the body when the request aborts, which is
- * what turns an abort into a thrown iteration rather than a hang.
- */
-function openStream() {
-  let source!: ReadableStreamDefaultController<Uint8Array>;
-  const body = new ReadableStream<Uint8Array>({
-    start(controller) {
-      source = controller;
-    },
-  });
-  const push = (chunk: string) => source.enqueue(new TextEncoder().encode(chunk));
-  const fetchMock = vi.fn((_url: string, init: RequestInit) => {
-    init.signal?.addEventListener(
-      'abort',
-      () => source.error(new DOMException('The operation was aborted.', 'AbortError')),
-      { once: true }
-    );
-    return Promise.resolve({ ok: true, status: 200, body } as unknown as Response);
-  });
-  return { push, fetchMock };
-}
-
 /** Watch a promise without waiting on it (and without an unhandled rejection). */
 function watch(promise: Promise<unknown>): () => 'pending' | 'settled' {
   let state: 'pending' | 'settled' = 'pending';
@@ -149,26 +129,82 @@ function watch(promise: Promise<unknown>): () => 'pending' | 'settled' {
   return () => state;
 }
 
-describe('subscribeRoom silence watchdog', () => {
+/** One room entry, for the delivery cases. */
+const ENTRY_EVENT: RoomEvent = {
+  type: 'entry',
+  seq: 4,
+  entry: {
+    roomId: 'room-1',
+    seq: 4,
+    id: 'entry-4',
+    authorId: 'ana',
+    kind: 'post',
+    body: { text: 'line 4' },
+    mentions: [],
+    sessionId: null,
+    cascadeRoot: 'entry-4',
+    cascadeDepth: 0,
+    parentEntryId: null,
+    threadRootEntryId: null,
+    signature: null,
+    createdAt: '2026-07-26T10:00:00.000Z',
+  },
+};
+
+describe('subscribeRoom over a stream socket', () => {
+  beforeEach(() => {
+    installFakeStreamSocket();
+  });
+
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('opens the room stream at the right path, carrying the resume cursor', async () => {
+    const iterator = setup().subscribeRoom('room-1', 12)[Symbol.asyncIterator]();
+    const pending = iterator.next().catch(() => undefined);
+    const socket = await nthSocket();
+
+    expect(socket.url.replace(/^ws:\/\/[^/]+/, '')).toBe('/api/rooms/room-1/events?after=12');
+
+    socket.finish();
+    await pending;
+  });
+
+  it('delivers a validated entry', async () => {
+    const iterator = setup().subscribeRoom('room-1')[Symbol.asyncIterator]();
+    const next = iterator.next();
+    const socket = await nthSocket();
+
+    socket.push('entry', ENTRY_EVENT);
+
+    expect((await next).value).toEqual(ENTRY_EVENT);
+    socket.finish();
+  });
+
+  it('skips the snapshot frame — the cache already holds that history', async () => {
+    const iterator = setup().subscribeRoom('room-1')[Symbol.asyncIterator]();
+    const next = iterator.next();
+    const socket = await nthSocket();
+
+    socket.push('snapshot', { room: {}, members: [], entries: [], cursor: 3 });
+    socket.push('entry', ENTRY_EVENT);
+
+    expect((await next).value).toEqual(ENTRY_EVENT);
+    socket.finish();
   });
 
   it('gives up on a socket that has gone silent, so the caller can reconnect', async () => {
+    // A half-open socket — a slept laptop's — never closes. The server's
+    // heartbeat is consumed below this seam, so up here silence and a quiet
+    // room look identical; only this level can tell them apart.
     vi.useFakeTimers();
-    const { push, fetchMock } = openStream();
-    vi.stubGlobal('fetch', fetchMock);
-
     const iterator = setup().subscribeRoom('room-1')[Symbol.asyncIterator]();
-    // The rejection handler goes on NOW, before the clock moves: advancing
-    // fake timers runs real macrotasks, so a rejection with nothing attached
-    // yet would surface as an unhandled rejection and fail the file.
+    // The rejection handler goes on NOW, before the clock moves: advancing fake
+    // timers runs real macrotasks, so a rejection with nothing attached yet
+    // would surface as an unhandled rejection and fail the file.
     const failure = iterator.next().catch((err: unknown) => err);
-
-    // Let the fetch resolve and the reader start, then send the server's
-    // connect comment — after which this socket says nothing ever again.
-    await vi.advanceTimersByTimeAsync(0);
-    push(': connected\n\n');
     await vi.advanceTimersByTimeAsync(0);
 
     await vi.advanceTimersByTimeAsync(SSE_RESILIENCE.HEARTBEAT_TIMEOUT_MS + 1);
@@ -177,60 +213,78 @@ describe('subscribeRoom silence watchdog', () => {
     expect(((await failure) as Error).message).toMatch(/heard nothing for 45000ms/);
   });
 
-  it('counts the keepalive comment as a sign of life', async () => {
+  it('counts a heartbeat frame as a sign of life', async () => {
     vi.useFakeTimers();
-    const { push, fetchMock } = openStream();
-    vi.stubGlobal('fetch', fetchMock);
-
     const iterator = setup().subscribeRoom('room-1')[Symbol.asyncIterator]();
-    const next = iterator.next();
-    const outcome = watch(next);
+    const outcome = watch(iterator.next());
     await vi.advanceTimersByTimeAsync(0);
+    const socket = await nthSocket();
 
-    // Three heartbeats at 30s — well past the 45s timeout in total, never
-    // more than 30s apart. A room can be silent for hours and still be alive;
-    // only the SERVER going quiet counts, and only this level can see it.
+    // Three heartbeats at 30s — well past the 45s timeout in total, never more
+    // than 30s apart. A room can be silent for hours and still be alive; only
+    // the SERVER going quiet counts.
     for (let beat = 0; beat < 3; beat += 1) {
       await vi.advanceTimersByTimeAsync(30_000);
-      push(': keepalive\n\n');
+      socket.push(STREAM_HEARTBEAT_EVENT);
       await vi.advanceTimersByTimeAsync(0);
     }
 
     expect(outcome()).toBe('pending');
   });
 
-  it('still delivers entries, and keeps the watchdog fed with them', async () => {
-    vi.useFakeTimers();
-    const { push, fetchMock } = openStream();
-    vi.stubGlobal('fetch', fetchMock);
-
+  it('turns a refusal close code into a FATAL RoomStreamHttpError', async () => {
+    // The distinction the retry loop turns on. A browser cannot read the status
+    // of a failed WebSocket handshake, so the server refuses with an application
+    // close code — and losing that here would make "this room is not yours"
+    // retry forever behind a "reconnecting" notice that never comes true.
     const iterator = setup().subscribeRoom('room-1')[Symbol.asyncIterator]();
-    const next = iterator.next();
-    await vi.advanceTimersByTimeAsync(0);
+    const failure = iterator.next().catch((err: unknown) => err);
+    const socket = await nthSocket();
 
-    const event: RoomEvent = {
-      type: 'entry',
-      seq: 4,
-      entry: {
-        roomId: 'room-1',
-        seq: 4,
-        id: 'entry-4',
-        authorId: 'ana',
-        kind: 'post',
-        body: { text: 'line 4' },
-        mentions: [],
-        sessionId: null,
-        cascadeRoot: 'entry-4',
-        cascadeDepth: 0,
-        parentEntryId: null,
-        threadRootEntryId: null,
-        signature: null,
-        createdAt: '2026-07-26T10:00:00.000Z',
-      },
-    };
-    push(`event: entry\ndata: ${JSON.stringify(event)}\n\n`);
-    await vi.advanceTimersByTimeAsync(0);
+    socket.refuse(404);
 
-    expect((await next).value).toEqual(event);
+    const err = (await failure) as RoomStreamHttpError;
+    expect(err).toBeInstanceOf(RoomStreamHttpError);
+    expect(err.status).toBe(404);
+    expect(isFatalStreamError(err), 'the loop must stop retrying this').toBe(true);
+  });
+
+  it('treats an ordinary drop as RETRYABLE, not fatal', async () => {
+    const iterator = setup().subscribeRoom('room-1')[Symbol.asyncIterator]();
+    const failure = iterator.next().catch((err: unknown) => err);
+    const socket = await nthSocket();
+
+    socket.drop();
+
+    const err = (await failure) as Error;
+    expect(err).toBeInstanceOf(Error);
+    expect(isFatalStreamError(err), 'a dropped socket must keep retrying').toBe(false);
+  });
+
+  it('carries a 401 through as fatal too (signed out mid-stream)', async () => {
+    const iterator = setup().subscribeRoom('room-1')[Symbol.asyncIterator]();
+    const failure = iterator.next().catch((err: unknown) => err);
+    const socket = await nthSocket();
+
+    socket.refuse(401);
+
+    expect(isFatalStreamError(await failure)).toBe(true);
+  });
+
+  it('does not throw when the CALLER aborted — that is not a failure', async () => {
+    const controller = new AbortController();
+    const iterator = setup()
+      .subscribeRoom('room-1', undefined, controller.signal)
+      [Symbol.asyncIterator]();
+    const settled = iterator.next().then(
+      (r) => ({ ok: true as const, r }),
+      (e: unknown) => ({ ok: false as const, e })
+    );
+    await nthSocket();
+
+    controller.abort();
+
+    const outcome = await settled;
+    expect(outcome.ok, 'an abort completes the iteration rather than erroring it').toBe(true);
   });
 });

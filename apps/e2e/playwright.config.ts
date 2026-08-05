@@ -294,6 +294,8 @@ export default defineConfig({
       testIgnore: [
         '**/chat-mock.spec.ts',
         '**/connections/**',
+        // Runs against the test-mode leg in `chromium-streams` below.
+        '**/streams/**',
         // Needs the test-mode server's `/api/test/seed-bridge` seam, so it runs
         // in `chromium-bridge` below, never against the real cockpit leg.
         '**/relay/bridged-channel.spec.ts',
@@ -339,6 +341,23 @@ export default defineConfig({
         baseURL: `http://localhost:${MOCK_VITE_PORT}`,
       },
       testMatch: ['**/connections/**/*.spec.ts'],
+    },
+    {
+      // Multi-window connection-budget guard (DOR-927) — the suite had no
+      // multi-window test at all, which is how a bug that made three windows
+      // freeze the whole app reached users.
+      //
+      // Against the test-mode leg so it spends nothing on a model: it opens
+      // windows and times a plain request, and never drives a turn. A separate
+      // project rather than a chat-mock suite because it shares none of
+      // chat-mock's scenario/reset choreography — it asserts only on its own
+      // pages' sockets, so it runs beside the other test-mode projects.
+      name: 'chromium-streams',
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: `http://localhost:${MOCK_VITE_PORT}`,
+      },
+      testMatch: ['**/streams/*.spec.ts'],
     },
     {
       // Chats-as-channels cockpit proof — also against the test-mode server,

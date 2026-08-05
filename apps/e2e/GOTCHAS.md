@@ -8,6 +8,26 @@ Anti-patterns and hard-won lessons discovered during test creation. Read this be
 - Sidebar session items re-render on SSE updates; grab locators fresh after any navigation that triggers a sync
 - **An agent's streamed words are in the DOM TWICE while the turn is live**: once in the message, and once in the transcript's screen-reader announcer (`[data-testid="transcript-announcer"]`, a `role="log"` region that mirrors each new sentence and empties itself a few seconds later). A bare `page.getByText(/…/)` on assistant text therefore resolves to two elements and fails the strict-mode check. Scope it to where you mean — `page.getByTestId('transcript-feed').getByText(…)` for what the reader sees, the announcer for what a screen reader hears.
 
+## Multi-window / connection-budget tests
+
+Two ways to write a multi-window test so it can **never fail**. Both were live
+traps while `tests/streams/multi-window.spec.ts` was being written, and both
+produce a permanently green test rather than an error:
+
+- **`browser.newContext()` per window.** Separate contexts have separate socket
+  pools, so the per-origin budget is never shared and the test passes against
+  the very bug it exists to catch. Real windows of one browser share a profile.
+  Use **one** `browser.newContext()` and `context.newPage()` per window.
+- **`page.request.get()` or the `request` fixture for the probe.** Both run in
+  **Node**, not in the page, so they bypass the browser's socket pool entirely.
+  The probe has to run inside the browser: `page.evaluate(() => fetch('/api/health'))`.
+
+Two more things that make such a test vacuous without erroring: opening every
+window on the **same** session id (the stream manager attaches one stream for
+all of them, so the budget is never approached), and not asserting that any
+stream actually connected — "everything was fast" proves nothing if the sockets
+never opened. Count them.
+
 ## Timing & Waits
 
 - SSE streaming indicators have three states (`streaming`, `waiting`, `complete`) — always wait for the full lifecycle, not just `visible`

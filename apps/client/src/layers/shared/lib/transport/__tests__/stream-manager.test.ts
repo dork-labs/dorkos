@@ -9,8 +9,8 @@ import {
   type SessionListEvent,
 } from '@dorkos/shared/session-stream';
 
-import { StreamManager, GENERIC_EVENTS, type SSEConnectionLike } from '../stream-manager';
-import type { SSEConnectionOptions } from '../sse-connection';
+import { StreamManager, GENERIC_EVENTS, type DurableStreamConnection } from '../stream-manager';
+import type { StreamConnectionOptions } from '../ws-connection';
 
 // NOTE on the testing-rule's "mock Transport via TransportProvider" wording:
 // StreamManager consumes SSE frames directly (not transport.subscribeSession), so
@@ -19,15 +19,15 @@ import type { SSEConnectionOptions } from '../sse-connection';
 // test push frames synchronously. TransportProvider is not needed for these unit
 // tests.
 
-/** A fake SSEConnection that records its options and lets the test push frames. */
-class FakeConnection implements SSEConnectionLike {
+/** A fake connection that records its options and lets the test push frames. */
+class FakeConnection implements DurableStreamConnection {
   connect = vi.fn();
   disconnect = vi.fn();
   destroy = vi.fn();
   enableVisibilityOptimization = vi.fn();
   constructor(
     readonly url: string,
-    readonly opts: SSEConnectionOptions
+    readonly opts: StreamConnectionOptions
   ) {}
 
   /** Push a frame as the server would deliver it (event name + parsed JSON data). */
@@ -44,7 +44,10 @@ class FakeConnection implements SSEConnectionLike {
 /** Build a StreamManager wired to a factory that records every FakeConnection. */
 function setup() {
   const connections: FakeConnection[] = [];
-  const createConnection = (url: string, opts: SSEConnectionOptions): SSEConnectionLike => {
+  const createConnection = (
+    url: string,
+    opts: StreamConnectionOptions
+  ): DurableStreamConnection => {
     const conn = new FakeConnection(url, opts);
     connections.push(conn);
     return conn;

@@ -1,6 +1,7 @@
 /**
- * Transport implementations — HTTP transport for standalone web clients
- * and SSEConnection for resilient EventSource management.
+ * Transport implementations — HTTP transport for standalone web clients, and
+ * the durable stream sockets (WSConnection + the iterable form) the cockpit's
+ * live streams ride.
  *
  * @module shared/lib/transport
  */
@@ -12,13 +13,23 @@ export {
   UPLOAD_UNREADABLE_MESSAGE,
 } from './upload-contract';
 export { RoomStreamHttpError, isFatalStreamError } from './room-methods';
-export { SSEConnection, type SSEConnectionOptions } from './sse-connection';
+export {
+  WSConnection,
+  StreamRefusedError,
+  toStreamSocketUrl,
+  type StreamConnectionOptions,
+} from './ws-connection';
+export {
+  streamSocketFrames,
+  type StreamSocketClosed,
+  type StreamSocketOptions,
+} from './stream-socket-iterator';
 export {
   StreamManager,
   streamManager,
   GENERIC_EVENTS,
   type GenericEventName,
-  type SSEConnectionLike,
+  type DurableStreamConnection,
   type CreateConnection,
   type StreamManagerListeners,
 } from './stream-manager';

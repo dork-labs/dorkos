@@ -96,11 +96,9 @@ export const DIFF = {
 } as const;
 
 export const SSE = {
-  /** Max SSE clients connected to a single session. */
-  MAX_CLIENTS_PER_SESSION: 10,
-  /** Max total SSE clients across all sessions. */
+  /** Max concurrent readers of the global broadcast stream. */
   MAX_TOTAL_CLIENTS: 500,
-  /** Server keepalive interval for SSE connections (ms). */
+  /** Server keepalive interval for durable streams (ms). */
   HEARTBEAT_INTERVAL_MS: 15_000,
   /**
    * Per-client buffered-bytes ceiling for the broadcast fan-out. A client whose

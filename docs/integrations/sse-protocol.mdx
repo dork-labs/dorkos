@@ -7,7 +7,18 @@ description: Server-Sent Events streaming protocol reference
 
 Read this before building any client that talks to a DorkOS session over HTTP.
 
-DorkOS delivers all real-time state over two durable Server-Sent Events (SSE) streams: a per-session event stream (`GET /api/sessions/:id/events`) that carries everything about one session, and a global stream (`GET /api/events`) that carries session-list changes and system events. Sending a message does not stream anything back. It triggers a turn whose output arrives on the session event stream, a bit like ordering a coffee and getting a text when it's ready.
+DorkOS delivers all real-time state over two durable streams: a per-session event stream (`GET /api/sessions/:id/events`) that carries everything about one session, and a global stream (`GET /api/events`) that carries session-list changes and system events. Sending a message does not stream anything back. It triggers a turn whose output arrives on the session event stream, a bit like ordering a coffee and getting a text when it's ready.
+
+<Callout type="info">
+  **Both streams are also WebSocket endpoints, at the same URLs.** Server-Sent Events is the
+  documented contract for integrations and is not going anywhere — everything on this page keeps
+  working. The DorkOS cockpit itself connects over WebSocket, for a browser-specific reason that
+  probably does not apply to you: a browser allows only about six connections per origin, and an SSE
+  stream holds one open for as long as it lasts, so a few browser windows would use them all up. A
+  script, a server, or a CLI has no such limit. Use SSE unless you are writing something that runs
+  in a browser tab and needs several streams at once — in which case see [WebSocket
+  streams](#websocket-streams) below.
+</Callout>
 
 <Callout type="info">
   When `config.auth.enabled` is on, every `/api/*` route (including these SSE endpoints) requires a
@@ -361,3 +372,59 @@ GET /api/events
     Full interactive API documentation with request and response schemas.
   </Card>
 </Cards>
+
+## WebSocket streams
+
+Every durable stream on this page — `GET /api/events`, `GET /api/sessions/:id/events`, and
+`GET /api/rooms/:id/events` — also answers a WebSocket upgrade **at the same URL**. Same three
+phases, same snapshot, same replay, same ordering guarantees. Only the packaging differs.
+
+Reach for this only if your client runs inside a browser tab and needs several streams open at once.
+Everywhere else, plain SSE is simpler.
+
+```js
+// Same path, ws:// (or wss://) instead of http://
+const socket = new WebSocket(
+  'ws://localhost:4242/api/sessions/' + sessionId + '/events?cwd=' + encodeURIComponent(cwd)
+);
+
+socket.onmessage = (message) => {
+  const frame = JSON.parse(message.data);
+  if (frame.event === '__heartbeat') return; // liveness only, see below
+  handle(frame.event, frame.data);
+  if (frame.id) lastEventId = frame.id; // keep this — it is your resume cursor
+};
+```
+
+Each message is one JSON text frame carrying the same three things an SSE frame carries:
+
+| Field   | Meaning                                                                                                                                    |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `event` | The event name — what `event:` carried.                                                                                                    |
+| `data`  | The payload — what `data:` carried, already parsed.                                                                                        |
+| `id`    | The resume cursor, `<resourceId>-<epoch>-<seq>` — what the `id:` line carried. Present only on frames that occupy a place in the sequence. |
+
+Four differences to know about:
+
+- **Resuming uses a query parameter, not a header.** A browser `WebSocket` takes a URL and nothing
+  else, so send the last `id` you saw as `?resume=<id>` rather than as `Last-Event-ID`. Send the
+  whole id, not just the trailing number — the middle part identifies the server process, and it is
+  what stops a cursor from a restarted server replaying the wrong events.
+- **Heartbeats are frames.** SSE keeps a connection alive with a comment your parser ignores. A
+  WebSocket has no comment, and its built-in ping is invisible to browser JavaScript, so the server
+  sends a frame named `__heartbeat` instead. Treat any frame as proof the stream is alive, and skip
+  that one before handling it.
+- **Refusals arrive as a close code, not an HTTP status.** A browser cannot see the status of a
+  handshake that failed, so the server accepts the connection and immediately closes it with
+  `4000 + status` — `4401` for "sign in", `4403` for "not allowed", `4404` for "no such thing". Read
+  `event.code` in `onclose` and subtract 4000. This is how these three streams refuse a request they
+  understood — a missing credential, an unknown room, a bad id — for browser and non-browser clients
+  alike: the handshake completes and the socket closes immediately, so do not wait for an HTTP status
+  that will not come. Two cases still answer at the handshake instead: an unexpected server-side
+  error is a real `500`, and a path no endpoint claims is closed with no response at all.
+- **Reconnecting is yours to do.** A WebSocket does not retry on its own the way `EventSource` does.
+  Reconnect with backoff, and pass `?resume=` so you pick up exactly where you left off.
+
+If you are behind a reverse proxy or a dev server, make sure it forwards WebSocket upgrades as well
+as ordinary requests — most need to be told explicitly, and the symptom is a stream that connects to
+nothing while every other request works fine.

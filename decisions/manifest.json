@@ -3222,6 +3222,15 @@
       "created": "2026-08-03",
       "specSlug": "runtimes-settings-redesign",
       "extractedFrom": "runtimes-settings-redesign"
+    },
+    {
+      "id": "260805-041016",
+      "slug": "cockpit-durable-streams-ride-websockets-sse-stays-the-integration-contract",
+      "title": "The cockpit's durable streams ride WebSockets; SSE stays as the integration contract",
+      "status": "accepted",
+      "created": "2026-08-05",
+      "specSlug": null,
+      "extractedFrom": null
     }
   ]
 }

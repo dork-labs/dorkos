@@ -26,9 +26,13 @@ import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import { fetchJSON, buildQueryString } from './http-client';
 
 // Interaction requests use a longer timeout (10 min) to match the server-side
-// INTERACTION_TIMEOUT_MS. The default 30s fetchJSON timeout is too aggressive
-// because these requests can be queued by the browser when SSE connections
-// consume the HTTP/1.1 per-origin connection limit (6 in Chrome).
+// INTERACTION_TIMEOUT_MS: an approval or a question waits on a person, and the
+// default 30s fetchJSON timeout would give up on them.
+//
+// It was ALSO justified by the browser queueing these behind durable streams
+// that had eaten the HTTP/1.1 per-origin connection limit. That reason is gone
+// — the streams are WebSockets and do not draw on that pool (ADR
+// 260805-041016) — but the first reason is the real one and still holds.
 const INTERACTION_TIMEOUT_MS = 10 * 60 * 1000;
 
 /**

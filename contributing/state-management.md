@@ -44,7 +44,7 @@ This guide covers state management patterns in DorkOS. Zustand manages complex c
 | URL-synced filter state    | useFilterState + TanStack Router                  | Agent list filters, sort, search — serialized to URL search params   | Shareable, bookmarkable, composable; debounced text inputs via per-key config          |
 | URL-driven dialog state    | `dialogSearchSchema` + deep-link hooks            | `?settings=tools`, `?tasks=open` — open dialogs from any page        | Deep-linkable, works cross-page, merged into every route via `mergeDialogSearch`       |
 | Multi-surface dialog state | Standalone Zustand store                          | `useAgentCreationStore` — open dialog with initial mode              | Triggered from 3+ unrelated surfaces; avoids prop-threading open state                 |
-| Real-time SSE events       | `useEventSubscription` from `EventStreamProvider` | Tunnel status, relay messages, extension reload signals              | Single shared connection, ref-stabilized handlers, module-level singleton              |
+| Real-time broadcast events | `useEventSubscription` from `EventStreamProvider` | Tunnel status, relay messages, extension reload signals              | Single shared connection, ref-stabilized handlers, module-level singleton              |
 
 ## Core Patterns
 
@@ -445,13 +445,13 @@ Note: this store omits `devtools` middleware intentionally — it has only two f
 
 **When to use**: A dialog that (a) is triggered from 3+ unrelated surfaces and (b) needs to carry an initial configuration (like which mode/tab to open to). If the dialog has no initial config, prefer the app store's `PanelsSlice` pattern instead.
 
-### Event Stream (SSE Subscriptions)
+### Event Stream (global broadcast subscriptions)
 
-The `EventStreamProvider` manages a single SSE connection to `/api/events` shared across the entire app. All system-wide real-time events (tunnel status, relay messages, extension reloads) flow through this one connection instead of each consumer opening its own `EventSource`.
+The `EventStreamProvider` manages a single connection to `/api/events` shared across the entire app. It is a **WebSocket** (ADR 260805-041016) — an SSE stream held one of a browser's ~6 sockets per origin for as long as it was open, and three cockpit windows spent all six. The server still serves SSE at the same path for integrations; the cockpit does not use it. All system-wide real-time events (tunnel status, relay messages, extension reloads) flow through this one connection instead of each consumer opening its own `EventSource`.
 
-**Architecture**: The underlying `SSEConnection` is a module-level singleton created outside React, so React StrictMode double-mounts and Vite HMR cycles cannot create duplicate connections. The `import.meta.hot.data` API preserves both the connection instance and the listener map across HMR updates — in production, these guards are tree-shaken.
+**Architecture**: The underlying connection is a module-level singleton created outside React, so React StrictMode double-mounts and Vite HMR cycles cannot create duplicate connections. The `import.meta.hot.data` API preserves both the connection instance and the listener map across HMR updates — in production, these guards are tree-shaken.
 
-**Lazy connect**: The `SSEConnection` constructor is side-effect-free (no `EventSource` creation). The actual `connect()` call is deferred to the first `EventStreamProvider` mount. This avoids `EventSource` failures in test environments that lack a polyfill.
+**Lazy connect**: The `WSConnection` constructor is side-effect-free (no socket is opened). The actual `connect()` call is deferred to the first `EventStreamProvider` mount, which keeps test environments without a `WebSocket` from failing on import.
 
 **Provider**: `EventStreamProvider` is mounted once near the top of the provider tree in `main.tsx`. It wires React state (connection status, failed attempt count) to the singleton's state change callbacks.
 
@@ -478,14 +478,14 @@ useEventSubscription('tunnel_status', (data) => {
 });
 ```
 
-**Note**: The `useSSEConnection` hook still exists for ad-hoc per-endpoint SSE streams, but the durable session streams (`/api/sessions/:id/events`, `/api/events`) are owned by the `StreamManager` singleton — do not open them yourself. Use `useEventSubscription` for system-wide events.
+**Note**: The durable streams (`/api/sessions/:id/events`, `/api/events`, `/api/rooms/:id/events`) are owned by the `StreamManager` singleton — do not open them yourself. Use `useEventSubscription` for system-wide events. There is deliberately no per-endpoint stream hook: every durable stream a window opens costs a connection, and the whole point of ADR 260805-041016 is that they are counted in one place.
 
 **Key files:**
 
-| File                                            | Purpose                                            |
-| ----------------------------------------------- | -------------------------------------------------- |
-| `layers/shared/model/event-stream-context.tsx`  | Singleton connection, provider, subscription hooks |
-| `layers/shared/lib/transport/sse-connection.ts` | `SSEConnection` class (transport layer)            |
+| File                                           | Purpose                                            |
+| ---------------------------------------------- | -------------------------------------------------- |
+| `layers/shared/model/event-stream-context.tsx` | Singleton connection, provider, subscription hooks |
+| `layers/shared/lib/transport/ws-connection.ts` | `WSConnection` class (transport layer)             |
 
 ### URL-Synced Filter State (useFilterState)
 
@@ -723,7 +723,7 @@ const sidebarOpen = useAppStore((state) => state.sidebarOpen);
 
 ### Duplicate SSE connections or provider remounts
 
-**Cause**: Creating long-lived singletons (QueryClient, Transport, Router, SSEConnection) inside a React component. StrictMode double-mounts will recreate them on every render cycle, and in the case of `createAppRouter(queryClient, transport)`, it remounts the entire provider tree — including `EventStreamProvider` — producing duplicate SSE connections.
+**Cause**: Creating long-lived singletons (QueryClient, Transport, Router, the stream connection) inside a React component. StrictMode double-mounts will recreate them on every render cycle, and in the case of `createAppRouter(queryClient, transport)`, it remounts the entire provider tree — including `EventStreamProvider` — producing duplicate stream connections.
 
 **Fix**: Create singletons at module scope in `main.tsx`:
 
@@ -748,7 +748,7 @@ function Root() {
 }
 ```
 
-General pattern: any object that should live for the entire app lifetime (QueryClient, Transport, Router, SSEConnection) belongs at module scope, not inside a React component.
+General pattern: any object that should live for the entire app lifetime (QueryClient, Transport, Router, the stream connection) belongs at module scope, not inside a React component.
 
 ### "Cannot use store outside React components"
 

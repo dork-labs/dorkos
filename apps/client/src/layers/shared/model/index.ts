@@ -75,11 +75,6 @@ export type {
   MessageAuthor,
 } from './chat-message-types';
 export { useTabVisibility } from './use-tab-visibility';
-export {
-  useSSEConnection,
-  type UseSSEConnectionOptions,
-  type UseSSEConnectionReturn,
-} from './use-sse-connection';
 export { useFilterState, type UseFilterStateReturn } from './use-filter-state';
 export { useDebouncedInput } from './use-debounced-input';
 export {

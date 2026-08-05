@@ -208,7 +208,11 @@ test.describe('Rooms — reacting to a message', () => {
     const [entryId] = await roomsApi.entryIds(room.id);
     await roomsApi.react(room.id, entryId!, '👀');
 
-    await page.route(`**/api/rooms/${room.id}/events**`, (route) => route.abort());
+    // The room stream is a WebSocket (ADR 260805-041016), so `page.route` cannot
+    // touch it — that intercepts HTTP requests only, and routing the path had
+    // silently stopped cutting anything. `routeWebSocket` is the equivalent, and
+    // closing without `connectToServer()` is a stream that never opens.
+    await page.routeWebSocket(new RegExp(`/api/rooms/${room.id}/events`), (ws) => ws.close());
 
     await page.goto(`/channels?id=${room.id}`);
     await expect(roomsPage.entries).toHaveCount(1, { timeout: SERVER_ROUND_TRIP_MS });

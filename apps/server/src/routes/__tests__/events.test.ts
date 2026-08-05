@@ -17,6 +17,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 const mockUnsubscribe = vi.fn();
 vi.mock('../../services/core/event-fan-out.js', () => ({
   eventFanOut: {
+    hasCapacity: vi.fn(() => true),
     addClient: vi.fn(() => mockUnsubscribe),
   },
 }));
@@ -99,5 +100,33 @@ describe('GET /api/events (unified SSE stream)', () => {
     await collectConnectedEvent();
 
     expect(eventFanOut.addClient).toHaveBeenCalledTimes(1);
+  });
+
+  it('answers 503 BEFORE the SSE headers when the fan-out is full', async () => {
+    // Ordering is the whole point: writing 200 + `text/event-stream` and then
+    // failing leaves a client parsing an error page as a stream. It has to be a
+    // plain JSON refusal it can read.
+    vi.mocked(eventFanOut.hasCapacity).mockReturnValueOnce(false);
+
+    const { status, headers, body } = await new Promise<{
+      status: number;
+      headers: http.IncomingHttpHeaders;
+      body: string;
+    }>((resolve, reject) => {
+      const req = http.get(`${baseUrl}/api/events`, (res) => {
+        let raw = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk: string) => (raw += chunk));
+        res.on('end', () =>
+          resolve({ status: res.statusCode ?? 0, headers: res.headers, body: raw })
+        );
+      });
+      req.on('error', reject);
+    });
+
+    expect(status).toBe(503);
+    expect(headers['content-type']).toContain('application/json');
+    expect(JSON.parse(body)).toEqual({ error: 'Too many SSE clients' });
+    expect(eventFanOut.addClient).not.toHaveBeenCalled();
   });
 });

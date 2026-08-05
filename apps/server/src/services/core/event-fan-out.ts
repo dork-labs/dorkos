@@ -1,14 +1,58 @@
 /**
- * In-process event fan-out broadcaster for the unified SSE stream.
+ * In-process event fan-out broadcaster for the unified global event stream.
  *
- * Manages a set of connected SSE clients and distributes events to all of them.
- * Uses the SSE spec's `event:` field for type routing — clients filter by event name.
+ * Manages a set of connected clients and distributes events to all of them.
+ * Every event carries a name (`room_created`, `session_status`, …) and clients
+ * filter by it, which is what makes one connection enough for every broadcast
+ * the server produces.
+ *
+ * The stream is served over BOTH a WebSocket (what the cockpit uses) and SSE
+ * (the public integration contract) — see
+ * `services/core/durable-stream-sink.ts` for why. Clients of either kind reach
+ * this through the narrow {@link FanOutClient} port, so a broadcast is written
+ * once and lands on every reader whatever it speaks.
  *
  * @module services/event-fan-out
  */
-import type { Response } from 'express';
+import { encodeStreamFrame } from '@dorkos/shared/stream-socket';
 import { SSE } from '../../config/constants.js';
 import { logger } from '../../lib/logger.js';
+
+/**
+ * One broadcast, pre-rendered for both wire formats.
+ *
+ * Both encodings are computed ONCE per broadcast and handed to every client,
+ * however many are connected on either protocol. That is the property this
+ * whole port exists to protect: a client that serialized for itself would be
+ * invisible until it was expensive.
+ */
+export interface EncodedBroadcast {
+  /** The event name, e.g. `room_created`. */
+  readonly event: string;
+  /** The JSON stream frame — the WebSocket wire format. */
+  readonly json: string;
+  /** The `event:`/`data:` lines — the SSE wire format. */
+  readonly sse: string;
+}
+
+/**
+ * One connected reader of the global stream.
+ *
+ * A port rather than a `ws.WebSocket` or an Express `Response`, because the
+ * stream is served over both — and because this module is depended on by every
+ * service that broadcasts, so it must not depend on either transport. Tests
+ * drive a fan-out with a recording client.
+ */
+export interface FanOutClient {
+  /** Deliver one broadcast, picking the encoding this client's wire needs. */
+  send(broadcast: EncodedBroadcast): void;
+  /** Bytes queued for this client and not yet flushed to its socket. */
+  readonly bufferedBytes: number;
+  /** Whether this client has disconnected. */
+  readonly gone: boolean;
+  /** Drop a client that cannot keep up; it reconnects and re-baselines. */
+  drop(): void;
+}
 
 /**
  * A listener on the in-process half of the global event stream.
@@ -16,7 +60,7 @@ import { logger } from '../../lib/logger.js';
  * Deliberately not exported: the one subscriber passes an inline arrow, and an
  * exported alias nothing imports is a name to keep in sync for no reader.
  *
- * @param eventName - The SSE event name, e.g. `'room_created'`.
+ * @param eventName - The event name, e.g. `'room_created'`.
  * @param data - The LIVE payload object the broadcaster was handed — not a copy
  *   and not its serialization. See {@link EventFanOut.subscribe} for what that
  *   obliges a listener to do.
@@ -24,25 +68,42 @@ import { logger } from '../../lib/logger.js';
 type EventFanOutListener = (eventName: string, data: unknown) => void;
 
 /**
- * In-process event fan-out broadcaster for the unified SSE stream.
+ * In-process event fan-out broadcaster for the unified global event stream.
  *
- * Manages a set of connected SSE clients and distributes events to all of them.
- * Uses the SSE spec's `event:` field for type routing — clients filter by event name.
+ * Manages a set of connected clients and distributes events to all of them.
  */
 class EventFanOut {
-  private clients = new Set<Response>();
+  private clients = new Set<FanOutClient>();
   private listeners = new Set<EventFanOutListener>();
 
-  /** Register an SSE client. Returns an unsubscribe function. */
-  addClient(res: Response): () => void {
+  /**
+   * Whether another client may connect.
+   *
+   * Asked BEFORE the WebSocket handshake so a server at capacity refuses with a
+   * readable `503` instead of opening a socket and closing it — the same
+   * ordering the SSE version kept by registering before it wrote its headers.
+   */
+  hasCapacity(): boolean {
+    return this.clients.size < SSE.MAX_TOTAL_CLIENTS;
+  }
+
+  /**
+   * Register a client. Returns an unsubscribe function.
+   *
+   * Re-checks capacity rather than trusting {@link hasCapacity}: the two are
+   * separated by a handshake, and a full fan-out must stay full.
+   *
+   * @param client - The connected reader.
+   */
+  addClient(client: FanOutClient): () => void {
     if (this.clients.size >= SSE.MAX_TOTAL_CLIENTS) {
       logger.warn(`[EventFanOut] Max clients reached (${SSE.MAX_TOTAL_CLIENTS}), rejecting`);
-      res.status(503).json({ error: 'Too many SSE clients' });
+      client.drop();
       return () => {};
     }
-    this.clients.add(res);
+    this.clients.add(client);
     return () => {
-      this.clients.delete(res);
+      this.clients.delete(client);
     };
   }
 
@@ -50,7 +111,7 @@ class EventFanOut {
    * Observe the same events from inside this process, without an HTTP client.
    *
    * The fan-out has only ever had one kind of consumer — a browser holding a
-   * `GET /api/events` socket — so "broadcast" meant "write to a response". A
+   * `GET /api/events` connection — so "broadcast" meant "write to a client". A
    * server-side reader now needs the same events: the local `CommunityAdapter`
    * learns that a room was created, renamed or archived from here, and polling
    * the room table for a fact this bus already carries would be inventing
@@ -67,7 +128,7 @@ class EventFanOut {
    *    listener that mutated it would silently change what every connected
    *    browser then receives, with nothing between the two to notice.
    * 2. **Do little, and do it fast.** This runs synchronously on the write path
-   *    ahead of every SSE client, so whatever a listener costs is added to the
+   *    ahead of every connected client, so whatever a listener costs is added to the
    *    latency of the broadcast for everyone. Today's one subscriber (the local
    *    community adapter) spends four indexed SQLite reads on a room lifecycle
    *    event — the room, the identity, the membership and the unread count —
@@ -87,15 +148,18 @@ class EventFanOut {
   }
 
   /**
-   * Broadcast an SSE event to all connected clients, and to every in-process
+   * Broadcast an event to every connected client, and to every in-process
    * listener.
    *
-   * Backpressure: a `write()` returning false still buffers in process memory,
-   * so a slow consumer cannot lose frames mid-stream — but one whose buffer
-   * grows past {@link SSE.MAX_BUFFERED_BYTES} is destroyed instead of
-   * accumulating unbounded memory. The client's SSE layer auto-reconnects and
-   * re-baselines, which is the honest recovery for a consumer that can't keep
-   * up with a fan-out that cannot await any single client.
+   * Backpressure: a frame a client cannot take immediately still buffers in
+   * process memory, so a slow consumer cannot lose frames mid-stream — but one
+   * whose buffer grows past {@link SSE.MAX_BUFFERED_BYTES} is dropped instead of
+   * accumulating unbounded memory. The client reconnects and re-baselines, which
+   * is the honest recovery for a consumer that can't keep up with a fan-out that
+   * cannot await any single client.
+   *
+   * The frame is encoded ONCE per wire format and the same strings sent to
+   * every client — see {@link EncodedBroadcast}.
    */
   broadcast(eventName: string, data: unknown): void {
     for (const listener of this.listeners) {
@@ -108,19 +172,24 @@ class EventFanOut {
         });
       }
     }
-    const payload = `event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`;
+    const json = JSON.stringify(data);
+    const broadcast: EncodedBroadcast = {
+      event: eventName,
+      json: encodeStreamFrame({ event: eventName, data }),
+      sse: `event: ${eventName}\ndata: ${json}\n\n`,
+    };
     for (const client of this.clients) {
-      if (client.writableEnded) {
+      if (client.gone) {
         this.clients.delete(client);
         continue;
       }
       try {
-        const canContinue = client.write(payload);
-        if (!canContinue && client.writableLength > SSE.MAX_BUFFERED_BYTES) {
-          logger.warn('[EventFanOut] dropping slow SSE client (buffer over limit)', {
-            bufferedBytes: client.writableLength,
+        client.send(broadcast);
+        if (client.bufferedBytes > SSE.MAX_BUFFERED_BYTES) {
+          logger.warn('[EventFanOut] dropping slow client (buffer over limit)', {
+            bufferedBytes: client.bufferedBytes,
           });
-          client.destroy();
+          client.drop();
           this.clients.delete(client);
         }
       } catch {

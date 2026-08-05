@@ -25,8 +25,8 @@ import runtimesRoutes from './routes/runtimes.js';
 import uploadRoutes from './routes/uploads.js';
 import mcpConfigRoutes from './routes/mcp-config.js';
 import errorRoutes from './routes/errors.js';
-import eventsRouter from './routes/events.js';
 import debugRoutes from './routes/debug.js';
+import eventsRouter from './routes/events.js';
 import { generateOpenAPISpec } from './services/core/openapi-registry.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { hostGuard } from './middleware/host-guard.js';
@@ -184,10 +184,10 @@ export function createApp() {
   app.use('/api/capabilities', capabilitiesRoutes);
   app.use('/api/system', systemRoutes);
   app.use('/api/runtimes', runtimesRoutes);
+  app.use('/api/events', eventsRouter);
   app.use('/api/uploads', uploadRoutes);
   app.use('/api/mcp-config', mcpConfigRoutes);
   app.use('/api/errors', errorRoutes);
-  app.use('/api/events', eventsRouter);
   // Diagnostic reads (`GET /api/debug/*`). Mounted here rather than in
   // `index.ts` — it needs no singleton the composition root has to hand it, only
   // `app.locals.debugDeps`, which `index.ts` sets alongside the deep-health bag.

@@ -18,7 +18,7 @@ import {
   InboxQuerySchema,
   EndpointRegistrationSchema,
 } from '@dorkos/shared/relay-schemas';
-import { initSSEStream } from '../services/core/stream-adapter.js';
+import { initSSEStream } from '../services/core/streams/stream-adapter.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import type { AdapterManager } from '../services/relay/adapter-manager.js';
 import type { TraceStore } from '../services/relay/trace-store.js';

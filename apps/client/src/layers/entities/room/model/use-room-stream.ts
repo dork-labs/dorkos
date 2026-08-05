@@ -9,7 +9,7 @@
  * room resumes from `0`, which the server serves as "replay nothing, go live".
  *
  * A dropped stream is retried here, in the hook, rather than below it. The
- * `SSEConnection` that carries the session stream's resilience speaks HTTP
+ * `WSConnection` that carries the session stream's resilience speaks the wire
  * directly and cannot be reached through the Transport port, so wiring this to
  * it would leave embedded mode (Obsidian's `DirectTransport`, which has no HTTP
  * server) with the only unreliable room stream. The port stays contract-level —
@@ -107,7 +107,7 @@ function cursorFromCache(queryClient: QueryClient, roomId: string): number {
 }
 
 /**
- * Full-jitter exponential backoff, the same curve `SSEConnection` retries on.
+ * Full-jitter exponential backoff, the same curve `WSConnection` retries on.
  *
  * @param failures - Consecutive failed attempts, starting at 1.
  */

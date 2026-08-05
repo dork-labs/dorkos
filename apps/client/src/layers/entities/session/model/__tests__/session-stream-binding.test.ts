@@ -4,10 +4,10 @@ import type { SessionEvent, SessionSnapshot, SessionStatus } from '@dorkos/share
 import {
   StreamManager,
   streamManager,
-  type SSEConnectionLike,
+  type DurableStreamConnection,
   type StreamManagerListeners,
 } from '@/layers/shared/lib/transport';
-import type { SSEConnectionOptions } from '@/layers/shared/lib/transport';
+import type { StreamConnectionOptions } from '@/layers/shared/lib/transport';
 import {
   buildUiStateSnapshot,
   prepareUiStateForSend,
@@ -25,18 +25,18 @@ import { useSessionListStore } from '../session-list-store';
 // path (connection → StreamManager → binding listener → store) with no real
 // network — the injected-fake-connection seam (see stream-manager.test.ts note).
 
-class FakeConnection implements SSEConnectionLike {
+class FakeConnection implements DurableStreamConnection {
   connect = vi.fn();
   disconnect = vi.fn();
   destroy = vi.fn();
   constructor(
     readonly url: string,
-    readonly opts: SSEConnectionOptions
+    readonly opts: StreamConnectionOptions
   ) {}
   push(eventName: string, data: unknown): void {
     this.opts.eventHandlers[eventName]?.(data);
   }
-  emitState(state: Parameters<NonNullable<SSEConnectionOptions['onStateChange']>>[0]): void {
+  emitState(state: Parameters<NonNullable<StreamConnectionOptions['onStateChange']>>[0]): void {
     this.opts.onStateChange?.(state, 0);
   }
 }

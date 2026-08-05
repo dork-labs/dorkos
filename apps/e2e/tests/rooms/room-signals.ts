@@ -13,16 +13,20 @@ import type { Page } from '@playwright/test';
  * every one of its tests. Both routes buy fidelity with flake.
  *
  * So the stream stays real and only the signals are ours. The shim wraps
- * `window.fetch` for the room-events request alone, pipes the server's own bytes
- * through untouched, and lets the test enqueue extra frames into the same
- * stream. Everything downstream of the socket is the shipped code: the SSE
- * parser, the schema validation that drops malformed frames, the store, the
- * hook's timer, the component. What this does NOT prove is that the server
- * publishes — that is pinned server-side, where the claim map is reachable
+ * `window.WebSocket` for the room-events socket alone, leaves the server's own
+ * frames untouched, and lets the test deliver extra ones onto the same socket.
+ * Everything downstream is the shipped code: the frame decoder, the schema
+ * validation that drops malformed frames, the store, the hook's timer, the
+ * component. What this does NOT prove is that the server publishes — that is
+ * pinned server-side, where the claim map is reachable
  * (`room-presence-claims.test.ts`).
  *
- * The transport speaks `fetch` rather than `EventSource`, which is what makes
- * this possible at all (`transport/room-methods.ts`).
+ * It wrapped `window.fetch` until the durable streams became WebSockets (ADR
+ * 260805-041016), which is the sort of thing that breaks a test helper silently:
+ * the tap simply never matched, and the spec failed saying the stream was never
+ * open. Wrapping the constructor and dispatching a `message` event is the
+ * equivalent move — a real socket delivers its `onmessage` through the same
+ * dispatch, so nothing downstream can tell the difference.
  *
  * @module tests/rooms/room-signals
  */
@@ -70,7 +74,7 @@ export async function tapGlobalStream(page: Page): Promise<void> {
   await tapStream(page, '__globalStream', '/api/events(\\?|$)');
 }
 
-/** Wrap `window.fetch` for one stream, exposing a pusher at `window[key]`. */
+/** Wrap `window.WebSocket` for one stream, exposing a pusher at `window[key]`. */
 async function tapStream(page: Page, key: string, pattern: string): Promise<void> {
   await page.addInitScript(
     ([tapKey, urlPattern]) => {
@@ -78,49 +82,36 @@ async function tapStream(page: Page, key: string, pattern: string): Promise<void
       (window as unknown as Record<string, typeof inject>)[tapKey] = inject;
       const matches = new RegExp(urlPattern);
 
-      const passThrough = window.fetch.bind(window);
-      window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url =
-          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-        if (!matches.test(url)) return passThrough(input, init);
-
-        const upstream = await passThrough(input, init);
-        if (!upstream.ok || !upstream.body) return upstream;
-        const body = upstream.body;
-        const encoder = new TextEncoder();
-
-        const merged = new ReadableStream<Uint8Array>({
-          start(controller) {
-            inject.push = (frame: string) => controller.enqueue(encoder.encode(frame));
-            void (async () => {
-              const reader = body.getReader();
-              try {
-                for (;;) {
-                  const { done, value } = await reader.read();
-                  if (done) break;
-                  controller.enqueue(value);
-                }
-              } catch {
-                // The socket ended, which is the caller's business, not ours.
-              }
-              try {
-                controller.close();
-              } catch {
-                // Already closed by an abort on the way out.
-              }
-            })();
-          },
-        });
-
-        // A fresh header set rather than the upstream's: the body handed back has
-        // already been decoded once, so replaying a `content-encoding` would ask
-        // the browser to decode it again.
-        return new Response(merged, {
-          status: upstream.status,
-          statusText: upstream.statusText,
-          headers: { 'content-type': 'text/event-stream' },
-        });
-      };
+      const NativeWebSocket = window.WebSocket;
+      const Wrapped = function (this: unknown, url: string | URL, protocols?: string | string[]) {
+        const socket =
+          protocols === undefined ? new NativeWebSocket(url) : new NativeWebSocket(url, protocols);
+        if (matches.test(String(url))) {
+          // Deliver onto the SAME socket the app is reading. `dispatchEvent`
+          // reaches the `onmessage` handler the transport assigned, so the frame
+          // takes the identical path a server frame takes.
+          const mine = (frame: string) => {
+            socket.dispatchEvent(new MessageEvent('message', { data: frame }));
+          };
+          inject.push = mine;
+          socket.addEventListener(
+            'close',
+            () => {
+              // Only clear the slot if it is still OURS. The hook reconnects, and
+              // a close for the old socket can land after the new one has already
+              // claimed the slot — clearing unconditionally would then leave the
+              // tap looking shut over a perfectly live stream, and `pushFrame`
+              // would throw "the stream closed" at a reconnected room.
+              if (inject.push === mine) inject.push = null;
+            },
+            { once: true }
+          );
+        }
+        return socket;
+      } as unknown as typeof WebSocket;
+      Wrapped.prototype = NativeWebSocket.prototype;
+      Object.assign(Wrapped, NativeWebSocket);
+      window.WebSocket = Wrapped;
     },
     [key, pattern] as [string, string]
   );
@@ -183,8 +174,8 @@ export async function publishWorkingCount(
  *
  * @param page - The page holding the stream.
  * @param key - Which tap to push onto.
- * @param eventName - The SSE `event:` name.
- * @param data - The payload, serialized as the frame's `data:`.
+ * @param eventName - The frame's event name.
+ * @param data - The frame's payload.
  */
 async function pushFrame(page: Page, key: string, eventName: string, data: unknown): Promise<void> {
   await page
@@ -212,6 +203,8 @@ async function pushFrame(page: Page, key: string, eventName: string, data: unkno
       if (!tap?.push) throw new Error('The stream closed before this frame could be sent.');
       tap.push(frame);
     },
-    [key, `event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`] as [string, string]
+    // A JSON stream frame, the WebSocket wire format — the same shape
+    // `encodeStreamFrame` produces server-side.
+    [key, JSON.stringify({ event: eventName, data })] as [string, string]
   );
 }
