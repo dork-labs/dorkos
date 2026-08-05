@@ -139,6 +139,14 @@ export default defineConfig({
       '/api': {
         target: `http://localhost:${process.env.DORKOS_PORT || DEFAULT_PORT}`,
         changeOrigin: true,
+        // Proxy WebSocket upgrades too, not just requests. Without this the dev
+        // server answers `/api/**` upgrades itself — with nothing — so every
+        // durable stream (session, global, room) and the embedded terminal are
+        // dead in dev while working perfectly in a production build, where the
+        // server serves the SPA and the API on one origin and there is no proxy
+        // in between. Found the hard way: the cockpit rendered, the turn ran
+        // server-side, and the reply never arrived on screen.
+        ws: true,
       },
     },
   },

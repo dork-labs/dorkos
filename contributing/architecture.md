@@ -96,7 +96,7 @@ Transport
 
 `postMessage` is trigger-only: it starts the turn and resolves to the canonical session id (ADR-0264). Delivery happens on the durable session event stream — `getSessionSnapshot` hydrates, `subscribeSession(sessionId, sinceCursor)` yields `SessionEvent`s with monotonic `seq` for gap-free resume. An optional `options` bag supports `clientMessageId` for server-echo ID reconciliation and `uiState` for passing a client UI state snapshot to the agent (see [Agent UI Control](#agent-ui-control)). This normalizes both transports:
 
-- **HttpTransport** maps the streams to `GET /api/sessions/:id/events` and `GET /api/events` (SSE)
+- **HttpTransport** maps the streams to `GET /api/sessions/:id/events` and `GET /api/events` (WebSocket; the same paths also serve SSE for integrations — ADR 260805-041016)
 - **DirectTransport** iterates the runtime's async generators in-process
 
 ### File Uploads
