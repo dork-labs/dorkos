@@ -4,6 +4,11 @@
 
 This guide covers the AI-driven browser testing system for DorkOS. The system has two layers: a standard Playwright Test suite for deterministic tests, and an AI orchestration layer for writing, debugging, and maintaining those tests.
 
+> **Verifying against a live instance?** This guide covers the deterministic
+> Playwright suite. For checking a change against a real running DorkOS with
+> real agent turns — and the traps that make such a check pass while proving
+> nothing — see `browser-verification.md`.
+
 ## Quick Start
 
 ```bash
