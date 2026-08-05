@@ -7,6 +7,8 @@ covers:
   - 'docs(api): regenerate the API reference pages for the stream endpoints (DOR-927)'
   - 'fix(server): compare the whole origin on a stream upgrade, not just its hostname (DOR-927)'
   - 'docs(changelog): fold the DOR-927 fragments into one user-facing entry'
+  - 'test(e2e): tap the room and global streams as WebSockets, not fetch (DOR-927)'
+  - 'refactor(client): drop the now-dead EventSource mock and a stale timeout rationale (DOR-927)'
 ---
 
 ### Fixed
