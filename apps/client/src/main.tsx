@@ -236,10 +236,21 @@ function Root() {
   );
 }
 
+// Electron serves the API on a dynamic localhost port (preload bridge); web mode
+// uses the relative /api path. Shared with the auth client so both hit one origin.
+const apiBaseUrl = resolveApiBaseUrl();
+const transport = new HttpTransport(apiBaseUrl);
+// The StreamManager's durable streams must resolve the SAME origin as the
+// transport — in packaged Electron the renderer loads from file://, where a
+// relative `/api` cannot reach the localhost server.
+streamManager.useHttpSource(apiBaseUrl);
+
 // Router at module scope — creating it inside Root() caused StrictMode to
 // remount the entire provider tree (including EventStreamProvider) on every
-// render, producing duplicate SSE connections.
-const router = createAppRouter(queryClient);
+// render, producing duplicate SSE connections. Built after the transport
+// because the `/session` loader asks the server which conversation a directory
+// opens on.
+const router = createAppRouter(queryClient, transport);
 
 // Give the link seam its router. Every internal link in the cockpit — palette
 // actions, promo cards, deep links into the Settings dialog — dispatches
@@ -260,15 +271,6 @@ registerLinkNavigator(({ href, replace }) => void router.navigate({ href, replac
 if (isDesktopShell()) {
   registerTabOpener((href) => openTabAt(router, href));
 }
-
-// Electron serves the API on a dynamic localhost port (preload bridge); web mode
-// uses the relative /api path. Shared with the auth client so both hit one origin.
-const apiBaseUrl = resolveApiBaseUrl();
-const transport = new HttpTransport(apiBaseUrl);
-// The StreamManager's durable streams must resolve the SAME origin as the
-// transport — in packaged Electron the renderer loads from file://, where a
-// relative `/api` cannot reach the localhost server.
-streamManager.useHttpSource(apiBaseUrl);
 
 // Module-level map for extension command handlers registered via registerCommand().
 // Keyed by actionId (`ext:<extId>:<id>`). The command palette dispatches into this map.
@@ -322,6 +324,8 @@ const extensionDeps: ExtensionAPIDeps = {
       switchAgentCwd(cwd, {
         store: useAppStore.getState(),
         queryClient,
+        transport,
+        currentLocation: () => router.state.location,
         navigate: (search) => void router.navigate({ to: '/session', search }),
       }),
     // Wires the agent's `control_ui apply_layout` command (and the switcher UI's
@@ -339,6 +343,8 @@ const extensionDeps: ExtensionAPIDeps = {
           switchAgentCwd(cwd, {
             store: useAppStore.getState(),
             queryClient,
+            transport,
+            currentLocation: () => router.state.location,
             navigate: (search) => void router.navigate({ to: '/session', search }),
           }),
       }),

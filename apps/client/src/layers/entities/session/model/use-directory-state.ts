@@ -1,14 +1,26 @@
 import { useEffect } from 'react';
-import { useNavigate } from '@tanstack/react-router';
+import { useNavigate, useRouter } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { getPlatform } from '@/layers/shared/lib';
-import { useAppStore } from '@/layers/shared/model';
+import { useAppStore, useTransport } from '@/layers/shared/model';
 import { useSessionSearch } from './use-session-search';
 import { useSessionId } from './use-session-id';
-import { resolveSessionForCwd } from '../lib/resolve-session-for-cwd';
+import { resolveSessionForCwd, notifySessionLookupFailed } from '../lib/resolve-session-for-cwd';
+import { reportClientError } from '@/layers/shared/lib';
+import { beginSessionNavigation } from '../lib/session-navigation-intent';
 
 /** Options for the directory setter returned by {@link useDirectoryState}. */
 export interface SetDirOptions {
+  /**
+   * Runs once the agent is actually on screen, and not at all if the lookup
+   * failed or was overtaken.
+   *
+   * For the work that must not happen speculatively: the command palette
+   * records frecency and the switch-back target here, because ranking an agent
+   * you never reached, or offering to switch back to a directory you never
+   * left, is worse than not recording anything (DOR-928).
+   */
+  onOpened?: () => void;
   /**
    * When true, skip clearing the active session ID on directory change.
    * Use this when you intend to set a new session immediately after switching
@@ -37,7 +49,9 @@ export function useDirectoryState(): [
   const setStoreDir = useAppStore((s) => s.setSelectedCwd);
   const search = useSessionSearch();
   const navigate = useNavigate();
+  const router = useRouter();
   const queryClient = useQueryClient();
+  const transport = useTransport();
   const [, setSessionId] = useSessionId();
 
   const urlDir = search.dir ?? null;
@@ -57,6 +71,7 @@ export function useDirectoryState(): [
         if (dir) {
           setStoreDir(dir);
           if (!opts?.preserveSession) setSessionId(null);
+          opts?.onOpened?.();
         }
       },
     ];
@@ -66,26 +81,54 @@ export function useDirectoryState(): [
     urlDir ?? storeDir,
     (dir, opts) => {
       if (dir) {
-        setStoreDir(dir);
         if (opts?.preserveSession) {
+          setStoreDir(dir);
           void navigate({
             to: '/session',
             search: (prev) => ({ ...prev, dir }),
           });
-        } else {
-          // Always include a session ID so the URL has ?session=; without it the
-          // chat input cannot accept text.
-          void navigate({
-            to: '/session',
-            search: { dir, session: resolveSessionForCwd(queryClient, dir) },
-          });
+          opts?.onOpened?.();
+          return;
         }
-      } else {
-        void navigate({
-          to: '/session',
-          search: (prev) => ({ ...prev, dir: undefined }),
-        });
+        const isStillWanted = beginSessionNavigation(() => router.state.location);
+        // Always include a session ID so the URL has ?session=; without it the
+        // chat input cannot accept text.
+        //
+        // The store is written AFTER the lookup, not before: the chat stream is
+        // keyed on (session id, selected cwd), so committing the new directory
+        // while the answer is still out pairs it with the OLD session id and
+        // reads the wrong project's transcript.
+        // `.catch` at the end, not decoration: `resolveSessionForCwd` handles
+        // its own failures, so anything landing here is a defect in this
+        // callback — and without it that defect is an unhandled rejection and a
+        // click that died in silence.
+        void resolveSessionForCwd({ queryClient, transport }, dir)
+          .then((resolved) => {
+            // Overtaken first: an abandoned switch neither moves you nor
+            // explains itself.
+            if (!isStillWanted()) return;
+            if (resolved === null) {
+              notifySessionLookupFailed(dir);
+              return;
+            }
+            setStoreDir(dir);
+            void navigate({ to: '/session', search: { dir, session: resolved.sessionId } });
+            opts?.onOpened?.();
+          })
+          .catch((error: unknown) => {
+            reportClientError(transport, error);
+            // Same ordering as the success path: an abandoned switch does not
+            // explain itself, whatever went wrong. The report above still goes
+            // out — a defect is worth knowing about even when the person has
+            // moved on; it is only the message TO THEM that would be a lie.
+            if (isStillWanted()) notifySessionLookupFailed(dir);
+          });
+        return;
       }
+      void navigate({
+        to: '/session',
+        search: (prev) => ({ ...prev, dir: undefined }),
+      });
     },
   ];
 }

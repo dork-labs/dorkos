@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo, useCallback, useRef, type ReactNode } from 'react';
-import { useNavigate, useRouterState, useSearch } from '@tanstack/react-router';
+import { useNavigate, useRouter, useRouterState, useSearch } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
 import { Plus } from 'lucide-react';
 import { SidebarContent, SidebarGroup, SidebarMenu } from '@/layers/shared/ui';
 import { useAppStore, useTransport, useAgentCreationStore } from '@/layers/shared/model';
 import { toast } from 'sonner';
+import { reportClientError } from '@/layers/shared/lib';
 import {
   disambiguateDisplayNames,
   useExecutionExceptions,
@@ -36,6 +37,10 @@ import {
   useRenameSession,
   useRecentSessions,
   useAgentAttentionMap,
+  resolveSessionForCwd,
+  useStartNewSession,
+  notifySessionLookupFailed,
+  beginSessionNavigation,
   sessionKeys,
 } from '@/layers/entities/session';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
@@ -122,6 +127,7 @@ interface GroupCreationState {
  */
 export function DashboardSidebar() {
   const navigate = useNavigate();
+  const router = useRouter();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const queryClient = useQueryClient();
   const transport = useTransport();
@@ -460,14 +466,38 @@ export function DashboardSidebar() {
   // ── Handlers ──
   const handleSelectAgent = useCallback(
     (agentPath: string) => {
-      // Include a session ID so the URL always has ?session=, ensuring ChatPanel's
-      // focus effect fires on every agent switch. Reuse the most-recent cached
-      // session for the target agent, or generate a fresh UUID.
-      const cached = queryClient.getQueryData<Session[]>(sessionKeys.list(agentPath));
-      const sessionId = cached?.[0]?.id ?? crypto.randomUUID();
-      navigate({ to: '/session', search: { dir: agentPath, session: sessionId } });
+      // Clicking an agent resumes its most recent conversation. The lookup goes
+      // through the shared resolver rather than reading this tab's cache
+      // directly: the roster lists every agent, but only the one this window has
+      // opened has a cached session list, so a cache read alone would send you
+      // to an empty chat for every other one (DOR-928).
+      // The lookup is asynchronous while every row around it is not, so it
+      // guards against being overtaken: by another agent click, and by any of
+      // the app's other navigations, which it notices through the router's own
+      // location rather than by asking them to cooperate.
+      const isStillWanted = beginSessionNavigation(() => router.state.location);
+      void resolveSessionForCwd({ queryClient, transport }, agentPath)
+        .then((resolved) => {
+          // Overtaken first: an abandoned lookup neither moves you nor explains
+          // itself — you are somewhere else now, and "we left you where you are"
+          // would be about a place you have left.
+          if (!isStillWanted()) return;
+          if (resolved === null) {
+            notifySessionLookupFailed(agentPath);
+            return;
+          }
+          navigate({ to: '/session', search: { dir: agentPath, session: resolved.sessionId } });
+        })
+        .catch((error: unknown) => {
+          // The resolver handles its own failures, so a throw here is a defect
+          // in this callback — which would otherwise be an unhandled rejection
+          // and a click that died in silence. Reported either way; only the
+          // message to the person waits on them still wanting this.
+          reportClientError(transport, error);
+          if (isStillWanted()) notifySessionLookupFailed(agentPath);
+        });
     },
-    [navigate, queryClient]
+    [navigate, router, queryClient, transport]
   );
 
   const handleSessionClick = useCallback(
@@ -484,15 +514,8 @@ export function DashboardSidebar() {
     [navigate]
   );
 
-  const handleNewSession = useCallback(
-    (dir?: string) => {
-      navigate({
-        to: '/session',
-        search: { dir: dir ?? selectedCwd ?? undefined, session: crypto.randomUUID() },
-      });
-    },
-    [navigate, selectedCwd]
-  );
+  const startNewSession = useStartNewSession();
+  const handleNewSession = useCallback((dir?: string) => startNewSession(dir), [startNewSession]);
 
   const handleToggleExpand = useCallback((path: string) => {
     setExpandedPath((prev) => (prev === path ? null : path));

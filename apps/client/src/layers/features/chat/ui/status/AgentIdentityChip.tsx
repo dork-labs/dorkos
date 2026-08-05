@@ -1,5 +1,5 @@
+import { useStartNewSession } from '@/layers/entities/session';
 import { useCallback } from 'react';
-import { useNavigate } from '@tanstack/react-router';
 import { useAppStore } from '@/layers/shared/model';
 import { AgentIdentity } from '@/layers/entities/agent';
 import { useAgentHubStore } from '@/layers/features/agent-hub';
@@ -32,8 +32,6 @@ export function AgentIdentityChip({
   agentPath,
   nameHidden,
 }: AgentIdentityChipProps) {
-  const navigate = useNavigate();
-
   const handleOpenProfile = useCallback(() => {
     if (!agentPath) return;
     useAgentHubStore.getState().openHub(agentPath);
@@ -45,12 +43,10 @@ export function AgentIdentityChip({
     useAppStore.getState().openGlobalPaletteWithSearch('@');
   }, []);
 
+  const startNewSession = useStartNewSession();
   const handleNewSession = useCallback(() => {
-    navigate({
-      to: '/session',
-      search: { dir: agentPath ?? undefined, session: crypto.randomUUID() },
-    });
-  }, [navigate, agentPath]);
+    startNewSession(agentPath ?? undefined);
+  }, [startNewSession, agentPath]);
 
   if (!agentName || !agentColor || !agentEmoji) return null;
 

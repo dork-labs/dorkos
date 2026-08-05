@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, within, waitFor, act } from '@testing-library/react';
 import {
   agentAuthorRef,
   type AuthorRef,
   type RoomSummary,
   type ThreadSummary,
 } from '@dorkos/shared/room-schemas';
+import { toast } from 'sonner';
 import { resolveAgentVisual } from '@/layers/shared/lib';
 import { useRoomOpenThreadStore } from '@/layers/entities/room';
 import { DashboardSidebar } from '../ui/DashboardSidebar';
@@ -54,10 +55,34 @@ function dmWith(id: string, agentPath: string, title: string): RoomSummary {
 // Mocks
 // ---------------------------------------------------------------------------
 
-const mockNavigate = vi.fn();
+// Navigating MOVES the location here, exactly as it does in the app. That is
+// load-bearing: what stops a slow agent lookup from landing on top of a
+// navigation that happened while it was out is the router's own location
+// having moved, so a mock whose location never changes would test nothing.
+let mockLocation: { pathname: string; search: Record<string, unknown> } = {
+  pathname: '/',
+  search: {},
+};
+const mockNavigate = vi.fn((opts: { to?: string; search?: unknown }) => {
+  const next =
+    typeof opts.search === 'function'
+      ? (opts.search as (p: Record<string, unknown>) => Record<string, unknown>)(
+          mockLocation.search
+        )
+      : ((opts.search as Record<string, unknown>) ?? {});
+  mockLocation = { pathname: opts.to ?? mockLocation.pathname, search: next };
+  mockPathname = mockLocation.pathname;
+});
 let mockPathname = '/';
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
+  useRouter: () => ({
+    state: {
+      get location() {
+        return mockLocation;
+      },
+    },
+  }),
   useRouterState: ({ select }: { select: (s: { location: { pathname: string } }) => unknown }) =>
     select({ location: { pathname: mockPathname } }),
   useSearch: () => ({}),
@@ -228,6 +253,20 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
   // The query-key factory is the real one: a stub here would let the sidebar
   // read a cache key nothing in the app writes and never say so (DOR-497).
   sessionKeys: (await importOriginal<typeof import('@/layers/entities/session')>()).sessionKeys,
+  // Real for the same reason: which session a click opens — and which of two
+  // competing clicks wins — is the behaviour these cases assert, so a stub
+  // would be asserting the stub.
+  resolveSessionForCwd: (await importOriginal<typeof import('@/layers/entities/session')>())
+    .resolveSessionForCwd,
+  beginSessionNavigation: (await importOriginal<typeof import('@/layers/entities/session')>())
+    .beginSessionNavigation,
+  notifySessionLookupFailed: (await importOriginal<typeof import('@/layers/entities/session')>())
+    .notifySessionLookupFailed,
+  // Real too: it routes through `useSafeNavigate`, which resolves to the mocked
+  // `useNavigate` here — so "New session" is exercised end to end rather than
+  // against a stub that cannot be wrong.
+  useStartNewSession: (await importOriginal<typeof import('@/layers/entities/session')>())
+    .useStartNewSession,
   useAgentSessions: () => ({ sessions: [], activeSessionId: null, isLoading: false }),
   useSessionBorderState: () => ({ kind: 'idle', color: 'x', pulse: false, label: 'Idle' }),
   useAgentHottestStatus: () => ({ kind: 'idle', color: 'x', pulse: false, label: 'Idle' }),
@@ -248,6 +287,8 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
 }));
 
 vi.mock('@/layers/features/feature-promos', () => ({ PromoSlot: () => null }));
+
+vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
 // ---------------------------------------------------------------------------
 // Setup
@@ -317,12 +358,16 @@ describe('DashboardSidebar', () => {
     mockRecent.mockReturnValue({ data: { sessions: [], agentActivity: {} }, isLoading: false });
     mockRooms.mockReset();
     mockRooms.mockReturnValue([]);
+    mockTransport.listSessions.mockReset();
+    mockTransport.listSessions.mockResolvedValue({ sessions: [] });
+    vi.mocked(toast.error).mockReset();
     mockAttentionMap.mockReset();
     mockAttentionMap.mockImplementation((paths: string[]) =>
       Object.fromEntries(paths.map((p) => [p, 'active']))
     );
     mockSelectedCwd = null;
     mockPathname = '/';
+    mockLocation = { pathname: '/', search: {} };
   });
 
   // --- Navigation ---
@@ -338,12 +383,366 @@ describe('DashboardSidebar', () => {
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/agents' });
   });
 
-  it('renders default agent (dorkbot) and navigates on click', () => {
+  it('renders default agent (dorkbot) and navigates on click', async () => {
     renderWithProviders(<DashboardSidebar />);
     fireEvent.click(screen.getAllByText('dorkbot')[0]);
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith({
+        to: '/session',
+        search: expect.objectContaining({ dir: '~/.dork/agents/dorkbot' }),
+      })
+    );
+  });
+
+  // The reported bug, as a person meets it: the roster shows every agent from
+  // the moment the cockpit loads, but only the agent this window has actually
+  // opened has ever had its session list fetched. Clicking any other one used to
+  // read that empty cache as "no conversations" and open a new empty chat.
+  it('opens the most recent conversation of an agent this window has never opened', async () => {
+    mockTransport.listSessions.mockImplementation((cwd?: string) =>
+      Promise.resolve({
+        sessions:
+          cwd === '/projects/beta'
+            ? [
+                {
+                  id: 'beta-session-1',
+                  title: 'Ship the thing',
+                  cwd: '/projects/beta',
+                  createdAt: '2026-03-01T00:00:00.000Z',
+                  updatedAt: '2026-03-01T12:00:00.000Z',
+                  permissionMode: 'default',
+                  runtime: 'claude-code',
+                },
+              ]
+            : [],
+      })
+    );
+
+    renderWithProviders(<DashboardSidebar />);
+    fireEvent.click(screen.getAllByText('beta')[0]);
+
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith({
+        to: '/session',
+        search: { dir: '/projects/beta', session: 'beta-session-1' },
+      })
+    );
+  });
+
+  // Resolution is asynchronous, so two clicks are two races. Whichever REQUEST
+  // finishes last used to win the URL, which is the opposite of what the person
+  // asked for.
+  it('lands on the agent you clicked last, not the one that answered last', async () => {
+    const answer = (id: string) => ({
+      sessions: [
+        {
+          id,
+          title: 't',
+          cwd: '/x',
+          createdAt: '2026-03-01T00:00:00.000Z',
+          updatedAt: '2026-03-01T00:00:00.000Z',
+          permissionMode: 'default',
+          runtime: 'claude-code',
+        },
+      ],
+    });
+    mockTransport.listSessions.mockImplementation((cwd?: string) =>
+      cwd === '/projects/alpha'
+        ? new Promise((resolve) => setTimeout(() => resolve(answer('alpha-s1')), 60))
+        : Promise.resolve(answer('beta-s1'))
+    );
+
+    renderWithProviders(<DashboardSidebar />);
+    fireEvent.click(screen.getAllByText('alpha')[0]); // slow
+    fireEvent.click(screen.getAllByText('beta')[0]); // fast
+
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalled());
+    // Real time, on purpose: the assertion is that the slow answer never
+    // navigates, and a non-event cannot be awaited (.claude/rules/testing.md).
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/session',
-      search: expect.objectContaining({ dir: '~/.dork/agents/dorkbot' }),
+      search: { dir: '/projects/beta', session: 'beta-s1' },
+    });
+  });
+
+  // The ordering only the counter can save. Both lookups begin at the same
+  // location, so the location cannot tell them apart: whichever ANSWERED first
+  // would win, and here that is the agent clicked first.
+  it('lands on the agent clicked last even when the one clicked first answers first', async () => {
+    const answer = (id: string) => ({
+      sessions: [
+        {
+          id,
+          title: 't',
+          cwd: '/x',
+          createdAt: '2026-03-01T00:00:00.000Z',
+          updatedAt: '2026-03-01T00:00:00.000Z',
+          permissionMode: 'default',
+          runtime: 'claude-code',
+        },
+      ],
+    });
+    mockTransport.listSessions.mockImplementation((cwd?: string) =>
+      cwd === '/projects/alpha'
+        ? Promise.resolve(answer('alpha-s1')) // clicked FIRST, answers FIRST
+        : new Promise((resolve) => setTimeout(() => resolve(answer('beta-s1')), 60))
+    );
+
+    renderWithProviders(<DashboardSidebar />);
+    fireEvent.click(screen.getAllByText('alpha')[0]);
+    fireEvent.click(screen.getAllByText('beta')[0]);
+
+    // Real time, on purpose: the claim includes that alpha never navigates.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: '/session',
+      search: { dir: '/projects/beta', session: 'beta-s1' },
+    });
+  });
+
+  // Opening a dialog rewrites the URL without going anywhere. Treating that as a
+  // navigation cancels the lookup, and the click dies in silence — the failure
+  // mode a person can least easily report.
+  it('still opens the agent when a dialog rewrites the URL mid-lookup', async () => {
+    mockTransport.listSessions.mockImplementation(
+      () =>
+        new Promise((resolve) =>
+          setTimeout(
+            () =>
+              resolve({
+                sessions: [
+                  {
+                    id: 'beta-s1',
+                    title: 't',
+                    cwd: '/projects/beta',
+                    createdAt: '2026-03-01T00:00:00.000Z',
+                    updatedAt: '2026-03-01T00:00:00.000Z',
+                    permissionMode: 'default',
+                    runtime: 'claude-code',
+                  },
+                ],
+              }),
+            60
+          )
+        )
+    );
+
+    renderWithProviders(<DashboardSidebar />);
+    fireEvent.click(screen.getAllByText('beta')[0]);
+    // ⌘, while the lookup is out — `?settings=` goes on, nothing moves.
+    mockLocation = { ...mockLocation, search: { ...mockLocation.search, settings: 'general' } };
+
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith({
+        to: '/session',
+        search: { dir: '/projects/beta', session: 'beta-s1' },
+      })
+    );
+  });
+
+  // The same race without a double click: a Recent row navigates immediately, so
+  // an agent lookup still in flight would yank you off the session you just
+  // opened.
+  it('does not yank you away from a Recent session you opened mid-lookup', async () => {
+    mockRecent.mockReturnValue({
+      data: {
+        sessions: [
+          {
+            id: 'recent-1',
+            title: 'Earlier work',
+            cwd: '/projects/beta',
+            updatedAt: '2026-03-02T00:00:00.000Z',
+            createdAt: '2026-03-01T00:00:00.000Z',
+            runtime: 'claude-code',
+            permissionMode: 'default',
+          },
+        ],
+        agentActivity: {},
+      },
+      isLoading: false,
+    });
+    mockTransport.listSessions.mockImplementation(
+      () =>
+        new Promise((resolve) =>
+          setTimeout(
+            () =>
+              resolve({
+                sessions: [
+                  {
+                    id: 'alpha-s1',
+                    title: 't',
+                    cwd: '/projects/alpha',
+                    createdAt: '2026-03-01T00:00:00.000Z',
+                    updatedAt: '2026-03-01T00:00:00.000Z',
+                    permissionMode: 'default',
+                    runtime: 'claude-code',
+                  },
+                ],
+              }),
+            60
+          )
+        )
+    );
+
+    renderWithProviders(<DashboardSidebar />);
+    fireEvent.click(screen.getAllByText('alpha')[0]); // slow agent lookup starts
+    fireEvent.click(screen.getByText('Earlier work')); // arrives immediately
+
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalled());
+    // Real time, on purpose — see above.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: '/session',
+      search: { dir: '/projects/beta', session: 'recent-1' },
+    });
+  });
+
+  // The guard has to hold against navigations it knows nothing about. Opening a
+  // channel is one of ~20 `navigate()` calls across the app that have no reason
+  // to know an agent lookup is in flight, and it must not be possible for one to
+  // land on top of them.
+  it('does not drag you out of a channel you opened while an agent lookup was out', async () => {
+    mockRooms.mockReturnValue([channel('c1', 'general')]);
+    mockTransport.listSessions.mockImplementation(
+      () =>
+        new Promise((resolve) =>
+          setTimeout(
+            () =>
+              resolve({
+                sessions: [
+                  {
+                    id: 'alpha-s1',
+                    title: 't',
+                    cwd: '/projects/alpha',
+                    createdAt: '2026-03-01T00:00:00.000Z',
+                    updatedAt: '2026-03-01T00:00:00.000Z',
+                    permissionMode: 'default',
+                    runtime: 'claude-code',
+                  },
+                ],
+              }),
+            60
+          )
+        )
+    );
+
+    renderWithProviders(<DashboardSidebar />);
+    await screen.findByText('#general');
+    fireEvent.click(screen.getAllByText('alpha')[0]); // slow lookup starts
+    fireEvent.click(screen.getByText('#general')); // arrives immediately
+
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalled());
+    // Real time, on purpose: the claim is that a SECOND navigation never
+    // happens, and you cannot await an event that must not occur
+    // (.claude/rules/testing.md).
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/channels', search: { id: 'c1' } });
+  });
+
+  // Moving between rooms is going somewhere, and the guard has to see it. Room
+  // identity lives in `?id=`, which no session URL carries — so a key built from
+  // only the params a SESSION uses collapses every room onto one destination and
+  // reads a room change as standing still.
+  it('does not throw you out of the second channel you opened mid-lookup', async () => {
+    mockRooms.mockReturnValue([channel('c1', 'general'), channel('c2', 'random')]);
+    mockTransport.listSessions.mockImplementation(
+      () =>
+        new Promise((resolve) =>
+          setTimeout(
+            () =>
+              resolve({
+                sessions: [
+                  {
+                    id: 'beta-s1',
+                    title: 't',
+                    cwd: '/projects/beta',
+                    createdAt: '2026-03-01T00:00:00.000Z',
+                    updatedAt: '2026-03-01T00:00:00.000Z',
+                    permissionMode: 'default',
+                    runtime: 'claude-code',
+                  },
+                ],
+              }),
+            60
+          )
+        )
+    );
+
+    renderWithProviders(<DashboardSidebar />);
+    await screen.findByText('#general');
+    fireEvent.click(screen.getByText('#general')); // reading a room
+    fireEvent.click(screen.getAllByText('beta')[0]); // slow agent lookup starts
+    fireEvent.click(screen.getByText('#random')); // and you move rooms
+
+    // Real time, on purpose: the claim is that the lookup never lands.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    expect(mockNavigate).toHaveBeenLastCalledWith({ to: '/channels', search: { id: 'c2' } });
+    expect(mockNavigate).not.toHaveBeenCalledWith({
+      to: '/session',
+      search: { dir: '/projects/beta', session: 'beta-s1' },
+    });
+  });
+
+  // The sidebar keeps its own copy of the overtaken-before-report ordering, and
+  // an untested copy is one that can drift back.
+  it('says nothing when a lookup both fails and was abandoned', async () => {
+    mockRooms.mockReturnValue([channel('c1', 'general')]);
+    let reject!: (reason: Error) => void;
+    mockTransport.listSessions.mockReturnValue(
+      new Promise((_resolve, rej) => {
+        reject = rej;
+      })
+    );
+
+    renderWithProviders(<DashboardSidebar />);
+    await screen.findByText('#general');
+    fireEvent.click(screen.getAllByText('beta')[0]);
+    fireEvent.click(screen.getByText('#general')); // they move on
+
+    await act(async () => {
+      reject(new Error('offline'));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  // Recovering into a blank chat is recovering into the very symptom this fix
+  // exists to remove, and typing into that chat makes it real.
+  it('says the lookup failed and leaves you where you are, rather than opening a blank chat', async () => {
+    mockTransport.listSessions.mockRejectedValue(new Error('offline'));
+
+    renderWithProviders(<DashboardSidebar />);
+    fireEvent.click(screen.getAllByText('beta')[0]);
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('starts a new conversation for an agent that has none', async () => {
+    renderWithProviders(<DashboardSidebar />);
+    fireEvent.click(screen.getAllByText('beta')[0]);
+
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalled());
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: '/session',
+      search: {
+        dir: '/projects/beta',
+        session: expect.stringMatching(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+        ),
+      },
     });
   });
 

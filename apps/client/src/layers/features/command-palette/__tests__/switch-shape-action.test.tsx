@@ -12,6 +12,7 @@ import { usePaletteActions } from '../model/use-palette-actions';
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }));
 vi.mock('@/layers/entities/session', () => ({
   useDirectoryState: () => ['/projects/current', vi.fn()],
+  useStartNewSession: () => vi.fn(),
 }));
 
 // Keep the real app store (so we can assert its flag) but stub the router-backed

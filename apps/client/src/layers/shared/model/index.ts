@@ -111,6 +111,7 @@ export {
   clearedDialogSearch,
   isDualSignalDialog,
   type DialogDeepLink,
+  DIALOG_SEARCH_PARAM_NAMES,
 } from './use-dialog-deep-link';
 export { useDeepLinkScroll } from './use-deep-link-scroll';
 export { useSafeSearch, useSafeNavigate, useSafePathname, EMBED_PATHNAME } from './use-safe-router';

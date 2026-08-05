@@ -11,13 +11,15 @@ import {
   useFeedbackDialogStore,
 } from '@/layers/shared/model';
 import { openLink } from '@/layers/shared/lib';
-import { useDirectoryState } from '@/layers/entities/session';
+import { useDirectoryState, useStartNewSession } from '@/layers/entities/session';
 import type { RoomSummary } from '@/layers/entities/room';
 import { useAgentFrecency } from './use-agent-frecency';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 
 interface PaletteActions {
   handleAgentSelect: (agent: AgentPathEntry) => void;
+  /** Start a brand-new conversation, optionally with a named agent. */
+  startNewSession: (dir?: string) => void;
   handleFeatureAction: (action: string) => void;
   handleQuickAction: (action: string) => void;
   handleRoomSelect: (room: RoomSummary) => void;
@@ -68,16 +70,28 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
 
   const handleAgentSelect = useCallback(
     (agent: AgentPathEntry) => {
-      // Track previous CWD for 'switch back' suggestions before switching
-      if (selectedCwd && selectedCwd !== agent.projectPath) {
-        setPreviousCwd(selectedCwd);
-      }
-      recordUsage(agent.id);
-      setDir(agent.projectPath);
+      // The palette closes at once — it has done its job either way — but the
+      // switch-back target and the frecency bump wait until the agent actually
+      // opens. `setDir` resolves which conversation that is, which can fail or
+      // be overtaken; recording either up front would rank an agent you never
+      // reached and offer "switch back" to a directory you never left
+      // (DOR-928).
+      const leaving = selectedCwd;
+      setDir(agent.projectPath, {
+        onOpened: () => {
+          if (leaving && leaving !== agent.projectPath) setPreviousCwd(leaving);
+          recordUsage(agent.id);
+        },
+      });
       closePalette();
     },
     [recordUsage, setDir, closePalette, selectedCwd, setPreviousCwd]
   );
+
+  // Shared with the sidebar and the chat header's agent chip; carries the
+  // router-less embed branch. See `useStartNewSession` for why it is not
+  // `setDir`.
+  const startNewSession = useStartNewSession();
 
   /**
    * Open a room. A room's identity travels as a `/channels` search param, and
@@ -144,6 +158,9 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
         case 'navigateDashboard':
           navigate({ to: '/' });
           return;
+        case 'newSession':
+          startNewSession();
+          return;
         case 'openDevPlayground':
           // `/dev` mounts outside the router (see `Root` in main.tsx), so the
           // seam classifies it as external and gives it its own window — an
@@ -203,11 +220,17 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
       openConnections,
       openSettings,
       openFeedback,
+      // Load-bearing: it closes over the ACTIVE agent, and the palette is
+      // mounted for the whole life of the app. Omit it and this handler is
+      // built once at boot and keeps whatever agent was selected then, so
+      // "New Session" opens a conversation somewhere you are not (DOR-928).
+      startNewSession,
     ]
   );
 
   return {
     handleAgentSelect,
+    startNewSession,
     handleFeatureAction,
     handleQuickAction,
     handleRoomSelect,

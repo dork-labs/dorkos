@@ -39,6 +39,18 @@ const DIALOG_SEARCH_PARAMS = {
 export type DualSignalDialog = keyof typeof DIALOG_SEARCH_PARAMS;
 
 /**
+ * Every search param a dual-signal dialog owns, flattened.
+ *
+ * Published because these params share one property that matters outside this
+ * module: they rewrite the URL **without going anywhere**. Anything deciding
+ * whether the cockpit has moved has to read them out first, and it must read
+ * them from here rather than keep its own list — a dialog that grows a param
+ * would otherwise start reading as a navigation (DOR-928).
+ */
+export const DIALOG_SEARCH_PARAM_NAMES: readonly string[] =
+  Object.values(DIALOG_SEARCH_PARAMS).flat();
+
+/**
  * Build the search patch that clears a dual-signal dialog's URL half.
  *
  * Spread into a search updater (`{ ...prev, ...clearedDialogSearch('settings') }`);

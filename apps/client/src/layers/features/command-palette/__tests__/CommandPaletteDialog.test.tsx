@@ -3,8 +3,10 @@
  */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render as rtlRender, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render as rtlRender, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { sessionKeys } from '@/layers/entities/session';
+import type { Session } from '@dorkos/shared/types';
 import '@testing-library/jest-dom/vitest';
 import { CommandPaletteDialog } from '../ui/CommandPaletteDialog';
 import { registerTabOpener } from '@/layers/shared/lib';
@@ -16,8 +18,9 @@ import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
  * cache, so it needs a real client. A fresh one per render keeps each case's
  * cache empty, which is the "no cached sessions yet" branch.
  */
-function render(ui: React.ReactElement) {
+function render(ui: React.ReactElement, seed?: (client: QueryClient) => void) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  seed?.(client);
   return rtlRender(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
 }
 
@@ -147,7 +150,12 @@ vi.mock('@/layers/shared/model', () => ({
   }),
 }));
 
-const mockSetDir = vi.fn();
+// A successful open: `setDir` runs `onOpened` once the agent is really on
+// screen. Frecency and the switch-back target ride that callback, so a mock
+// that ignored it would not be the contract the palette consumes (DOR-928).
+const mockSetDir = vi.fn((_dir: string | null, opts?: { onOpened?: () => void }) => {
+  opts?.onOpened?.();
+});
 vi.mock('@/layers/entities/session', async (importOriginal) => ({
   // Keep the real session resolver — the palette builds its hrefs with it, and
   // faking it would hide whether those hrefs carry a session at all.
@@ -429,16 +437,38 @@ describe('CommandPaletteDialog', () => {
     const target = new URL(opened[0], window.location.origin);
     expect(target.pathname).toBe('/session');
     expect(target.searchParams.get('dir')).toBe('/projects/current');
-    // Names the session up front, so the tab lands on a real session in one
-    // navigation instead of bouncing through the loader's redirect.
-    expect(target.searchParams.get('session')).toBeTruthy();
-    // …and not the session of whatever tab you were already reading.
+    // Nothing is cached for this agent, so the href does NOT guess: it leaves
+    // `?session=` off and lets the loader resolve which conversation that is,
+    // rather than inventing an id and opening an empty chat (DOR-928).
+    expect(target.searchParams.get('session')).toBeNull();
+    // And never the session of whatever tab you were already reading.
     expect(target.searchParams.get('session')).not.toBe('session-in-progress');
     // A tab is not a window.
     expect(openSpy).not.toHaveBeenCalled();
     expect(mockRecordUsage).toHaveBeenCalledWith('agent-3');
 
     openSpy.mockRestore();
+  });
+
+  it('names the agent’s session up front when this window already knows it', () => {
+    // Naming it saves the loader's redirect — a second navigation and a history
+    // REPLACE, plus a frame where the new tab is titled after an href it is
+    // about to lose. Worth doing when it is free, which is exactly when the
+    // session list for that agent is already cached.
+    enterDesktopShell();
+    const opened = captureTabOpens();
+    render(<CommandPaletteDialog />, (client) => {
+      client.setQueryData(sessionKeys.list('/projects/current'), [
+        { id: 'known-session' },
+      ] as Session[]);
+    });
+    const item = screen.getAllByText('Worker')[0].closest('[data-slot="command-item"]');
+    if (item) fireEvent.click(item as Element);
+    const newTabItem = screen.getByText('Open in New Tab').closest('[data-slot="command-item"]');
+    if (newTabItem) fireEvent.click(newTabItem as Element);
+
+    const target = new URL(opened[0], window.location.origin);
+    expect(target.searchParams.get('session')).toBe('known-session');
   });
 
   it('opens a real browser tab from Open in New Tab in the browser', () => {
@@ -490,12 +520,14 @@ describe('CommandPaletteDialog', () => {
     expect(target.origin).toBe(window.location.origin);
     expect(target.pathname).toBe('/session');
     expect(target.searchParams.get('dir')).toBe('/projects/current');
-    expect(target.searchParams.get('session')).toBeTruthy();
+    // Same rule as the tab action: nothing cached for this agent, so the href
+    // leaves `?session=` to the loader rather than inventing one (DOR-928).
+    expect(target.searchParams.get('session')).toBeNull();
 
     openSpy.mockRestore();
   });
 
-  it('calls recordUsage and setDir when Open Here is clicked in sub-menu', () => {
+  it('calls recordUsage and setDir when Open Here is clicked in sub-menu', async () => {
     render(<CommandPaletteDialog />);
     // Click agent to enter sub-menu
     const item = screen.getAllByText('Worker')[0].closest('[data-slot="command-item"]');
@@ -503,8 +535,33 @@ describe('CommandPaletteDialog', () => {
     // Click Open Here
     const openHereItem = screen.getByText('Open Here').closest('[data-slot="command-item"]');
     if (openHereItem) fireEvent.click(openHereItem as Element);
-    expect(mockRecordUsage).toHaveBeenCalledWith('agent-3');
-    expect(mockSetDir).toHaveBeenCalledWith('/projects/current');
+    expect(mockSetDir).toHaveBeenCalledWith('/projects/current', expect.anything());
+    // Frecency waits for the agent to actually open (DOR-928): a failed or
+    // overtaken lookup must not rank an agent you never reached.
+    await waitFor(() => expect(mockRecordUsage).toHaveBeenCalledWith('agent-3'));
+  });
+
+  it('starts a BRAND-NEW conversation from New Session, not the agent’s latest', async () => {
+    // Red when New Session routes through `setDir`: that resolves the agent's
+    // most recent conversation and resumes it, which is exactly what "Open
+    // Here" two rows above already does — two rows, one behaviour (DOR-928).
+    render(<CommandPaletteDialog />);
+    const item = screen.getAllByText('Worker')[0].closest('[data-slot="command-item"]');
+    if (item) fireEvent.click(item as Element);
+    const newSession = screen.getByText('New Session').closest('[data-slot="command-item"]');
+    if (newSession) fireEvent.click(newSession as Element);
+
+    expect(mockSetDir).not.toHaveBeenCalled();
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: '/session',
+      search: {
+        dir: '/projects/current',
+        session: expect.stringMatching(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+        ),
+      },
+    });
+    await waitFor(() => expect(mockRecordUsage).toHaveBeenCalledWith('agent-3'));
   });
 
   it('closes palette after Open Here is clicked in sub-menu', () => {

@@ -24,12 +24,18 @@ import { marketplaceSearchSchema } from '@/layers/features/marketplace';
 import { onboardingStageSearchSchema } from '@/layers/features/onboarding';
 import { mergeDialogSearch } from '@/layers/shared/model/dialog-search-schema';
 import { RouteErrorFallback, NotFoundFallback } from '@/layers/shared/ui';
-import { sessionKeys } from '@/layers/entities/session';
-import type { Session } from '@dorkos/shared/types';
+import { resolveSessionForCwd, SESSION_LOOKUP_FAILED_MESSAGE } from '@/layers/entities/session';
+import type { Transport } from '@dorkos/shared/transport';
 
 // ── Router context ──────────────────────────────────────────
 interface RouterContext {
   queryClient: QueryClient;
+  /**
+   * The app's transport. Loaders that have to ask the server before they can
+   * decide where to send you — `/session` resolving which conversation a
+   * directory opens on — read it from here.
+   */
+  transport: Transport;
 }
 
 // ── Root route (minimal — just Outlet) ──────────────────────
@@ -178,50 +184,57 @@ export function sessionLoaderDeps({ search }: { search: SessionSearch }) {
 export type SessionLoaderDeps = ReturnType<typeof sessionLoaderDeps>;
 
 /**
- * Loader for the /session route. Redirects to the most recent cached session
- * or generates a speculative UUID when no session param is provided.
+ * Loader for the /session route. Redirects to the directory's most recent
+ * session, or to a fresh one when it genuinely has none.
  *
  * Reads its inputs from `deps` rather than re-parsing the URL, so the values it
  * acts on are exactly the ones {@link sessionLoaderDeps} declared — a param
  * read here but missing there would silently stop triggering a re-run.
  *
+ * Resolution goes through the shared `resolveSessionForCwd`, the same answer
+ * every other agent-switch surface uses. The loader used to decide for itself
+ * from this tab's query cache, which meant a directory the window had never
+ * displayed looked exactly like a directory with no conversations (DOR-928).
+ *
  * @internal Exported for testing only.
  */
-export function sessionRouteLoader({
-  context: { queryClient },
+export async function sessionRouteLoader({
+  context,
   deps,
 }: {
-  context: { queryClient: QueryClient };
+  context: RouterContext;
   deps: SessionLoaderDeps;
 }) {
   // Session already specified — nothing to do
   if (deps.session) return;
 
   const { dir, runtime } = deps;
-  // `runtime` is the launch-time runtime selection: it must survive the
-  // auto-select/UUID redirects so the first message can carry it as the
-  // session's runtime hint.
+  // `runtime` is the launch-time runtime selection: it must survive both
+  // redirects below so the first message can carry it as the session's runtime
+  // hint.
   //
-  // `prompt` is the launch-time seed ("Run this with…"), carried ONLY onto the
-  // fresh-UUID branch below so a new session's composer is pre-filled. It is
-  // deliberately NOT propagated onto the auto-select-existing-session redirect:
-  // a seed must never ride an existing session (defense-in-depth atop
-  // ChatPanel's empty-only guard).
-  const sessions = queryClient.getQueryData<Session[]>(sessionKeys.list(dir ?? null));
-
-  if (sessions && sessions.length > 0) {
-    // Auto-select most recent session (no prompt seed — see above)
-    throw redirect({
-      to: '/session',
-      search: { session: sessions[0].id, dir, runtime },
-      replace: true,
-    });
+  // `prompt` is the launch-time seed ("Run this with…"), carried ONLY when the
+  // session is brand-new so its composer is pre-filled. It is deliberately NOT
+  // propagated onto a resumed session: a seed must never ride an existing
+  // conversation (defense-in-depth atop ChatPanel's empty-only guard).
+  const resolved = await resolveSessionForCwd(context, dir ?? null);
+  // The lookup failed. There is no "stay put" for a loader — this URL IS where
+  // the person asked to be — so the honest move is the route's error boundary,
+  // which says something went wrong and offers a retry. Redirecting to a minted
+  // id would instead show a blank chat for an agent that may have work, which
+  // is the defect this whole path exists to remove (DOR-928).
+  if (resolved === null) {
+    throw new Error(SESSION_LOOKUP_FAILED_MESSAGE);
   }
 
-  // No sessions cached — generate a fresh UUID for a new session
   throw redirect({
     to: '/session',
-    search: { session: crypto.randomUUID(), dir, runtime, prompt: deps.prompt },
+    search: {
+      session: resolved.sessionId,
+      dir,
+      runtime,
+      prompt: resolved.isNew ? deps.prompt : undefined,
+    },
     replace: true,
   });
 }
@@ -376,11 +389,12 @@ const routeTree = rootRoute.addChildren([
  * Create a configured TanStack Router instance with the full route tree.
  *
  * @param queryClient - The TanStack Query client to inject as router context
+ * @param transport - The transport loaders reach the server through
  */
-export function createAppRouter(queryClient: QueryClient) {
+export function createAppRouter(queryClient: QueryClient, transport: Transport) {
   return createRouter({
     routeTree,
-    context: { queryClient },
+    context: { queryClient, transport },
     defaultPreload: 'intent',
     defaultErrorComponent: RouteErrorFallback,
     defaultNotFoundComponent: NotFoundFallback,

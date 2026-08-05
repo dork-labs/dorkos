@@ -7,7 +7,15 @@ export { useSessions, useSessionListWarnings, insertOptimisticSession } from './
 export { useAgentSessions } from './model/use-agent-sessions';
 export { selectAgentSessions } from './lib/select-agent-sessions';
 export { switchAgentCwd } from './lib/switch-agent-cwd';
-export { resolveSessionForCwd } from './lib/resolve-session-for-cwd';
+export {
+  resolveSessionForCwd,
+  cachedSessionForCwd,
+  notifySessionLookupFailed,
+  SESSION_LOOKUP_FAILED_MESSAGE,
+} from './lib/resolve-session-for-cwd';
+export type { ResolveSessionDeps, ResolvedSession } from './lib/resolve-session-for-cwd';
+export { beginSessionNavigation } from './lib/session-navigation-intent';
+export type { CockpitLocation } from './lib/session-navigation-intent';
 export type { SwitchAgentCwdStore, SwitchAgentCwdDeps } from './lib/switch-agent-cwd';
 // Context-health — the one client source for context percent, thresholds, and severity.
 export {
@@ -25,7 +33,7 @@ export { selectRenderedStatus } from './lib/select-rendered-status';
 export { useSessionRenderedStatus } from './model/use-session-rendered-status';
 export { sessionDisplayTitle, UNTITLED_SESSION_LABEL } from './lib/session-display-title';
 export { useSessionRuntime } from './model/use-session-runtime';
-export { useSessionId } from './model/use-session-id';
+export { useSessionId, useStartNewSession } from './model/use-session-id';
 export type { SetSessionIdOptions } from './model/use-session-id';
 export { useSessionStatus } from './model/use-session-status';
 export type { SessionStatusData } from './model/use-session-status';
@@ -43,6 +51,7 @@ export { useSessionDetail } from './model/use-session-detail';
 export { useSessionSettingsOverridesStore } from './model/session-settings-overrides';
 export { useDefaultCwd } from './model/use-default-cwd';
 export { useDirectoryState } from './model/use-directory-state';
+
 export type { SetDirOptions } from './model/use-directory-state';
 export { useModels, modelsQueryOptions } from './model/use-models';
 export { useSubagents } from './model/use-subagents';

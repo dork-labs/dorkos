@@ -22,6 +22,7 @@ import type { Session } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
+import { createQueryClientConfig } from '@/layers/shared/lib';
 import { TooltipProvider } from '@/layers/shared/ui';
 import {
   useSessions,
@@ -104,11 +105,20 @@ function createHarness(sessions: Session[] = [makeSession()], overrides: Partial
   return { transport, queryClient, wrapper };
 }
 
-/** Run the `/session` loader and report the session id it redirects to. */
-function loaderRedirectSession(queryClient: QueryClient, dir: string | undefined): string | null {
+/**
+ * Run the `/session` loader and report the session id it redirects to.
+ *
+ * Awaited rather than called bare so it reads the answer the same way whether
+ * the loader redirects synchronously or after asking the server — the shape of
+ * the loader is not what any case here is about.
+ */
+async function loaderRedirectSession(
+  context: { queryClient: QueryClient; transport: Transport },
+  dir: string | undefined
+): Promise<string | null> {
   try {
-    sessionRouteLoader({
-      context: { queryClient },
+    await sessionRouteLoader({
+      context,
       deps: { dir, session: undefined, runtime: undefined, prompt: undefined },
     });
     return null;
@@ -148,21 +158,24 @@ describe('session list: one writer, many readers', () => {
   it('the /session loader auto-selects the session the list query fetched', async () => {
     // Red when: the loader and `useSessions` build the list key differently —
     // the loader finds nothing and mints a random UUID instead.
-    const { queryClient, wrapper } = createHarness();
+    const { queryClient, transport, wrapper } = createHarness();
     const { result } = renderHook(() => useSessions(), { wrapper });
     await waitFor(() => expect(result.current.sessions).toHaveLength(1));
 
-    expect(loaderRedirectSession(queryClient, CWD)).toBe('listed-1');
+    expect(await loaderRedirectSession({ queryClient, transport }, CWD)).toBe('listed-1');
   });
 
   it('a navigation reuses the session the list query fetched', async () => {
     // Red when: `resolveSessionForCwd` and `useSessions` disagree on the key —
     // every agent switch would open a brand-new empty session instead.
-    const { queryClient, wrapper } = createHarness();
+    const { queryClient, transport, wrapper } = createHarness();
     const { result } = renderHook(() => useSessions(), { wrapper });
     await waitFor(() => expect(result.current.sessions).toHaveLength(1));
 
-    expect(resolveSessionForCwd(queryClient, CWD)).toBe('listed-1');
+    expect(await resolveSessionForCwd({ queryClient, transport }, CWD)).toEqual({
+      sessionId: 'listed-1',
+      isNew: false,
+    });
   });
 
   it('an optimistic rename shows up in the list every other surface reads', async () => {
@@ -209,6 +222,128 @@ describe('session list: one writer, many readers', () => {
     await waitFor(() =>
       expect(result.current.list.sessions.map((s) => s.id)).toEqual(['cli-1', 'listed-1'])
     );
+  });
+});
+
+/**
+ * The window has never opened this agent, so nothing has ever filled its
+ * per-directory cache entry. That is the ordinary case — a cockpit only
+ * cold-loads the list for the agent it is pointed at — and it is
+ * indistinguishable from "this agent has no conversations" if the only thing
+ * anyone asks is the cache.
+ */
+describe('session resolution for an agent this window has never opened', () => {
+  const OTHER_CWD = '/projects/web';
+
+  /** A transport whose session list actually depends on which directory is asked for. */
+  function createPerDirectoryHarness(byCwd: Record<string, Session[]>) {
+    const listSessions = vi.fn((cwd?: string) =>
+      Promise.resolve({ sessions: cwd ? (byCwd[cwd] ?? []) : [] })
+    );
+    return { listSessions, ...createHarness(undefined, { listSessions }) };
+  }
+
+  it('resolves the agent’s most recent conversation, not a brand-new one', async () => {
+    // Red when: resolution answers from this window's query cache alone. A cache
+    // MISS is read as "no conversations", so clicking an agent the window has not
+    // already visited opens an empty chat and abandons the real one.
+    const { queryClient, transport } = createPerDirectoryHarness({
+      [OTHER_CWD]: [makeSession({ id: 'web-1', cwd: OTHER_CWD })],
+    });
+
+    const resolved = await resolveSessionForCwd({ queryClient, transport }, OTHER_CWD);
+
+    expect(resolved).toEqual({ sessionId: 'web-1', isNew: false });
+  });
+
+  it('sends the /session loader to that same conversation', async () => {
+    // The other door into the same decision: a bookmark, a pasted link, or any
+    // navigation that names a directory without naming a session.
+    const { queryClient, transport } = createPerDirectoryHarness({
+      [OTHER_CWD]: [makeSession({ id: 'web-1', cwd: OTHER_CWD })],
+    });
+
+    expect(await loaderRedirectSession({ queryClient, transport }, OTHER_CWD)).toBe('web-1');
+  });
+
+  it('still starts a fresh conversation for an agent that genuinely has none', async () => {
+    // The half of the behaviour that must survive the fix: first run has to keep
+    // working, and it is the only case where minting an id is the right answer.
+    const { queryClient, transport, listSessions } = createPerDirectoryHarness({});
+
+    const resolved = await resolveSessionForCwd({ queryClient, transport }, OTHER_CWD);
+
+    expect(resolved?.isNew).toBe(true);
+    expect(resolved?.sessionId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+    );
+    expect(listSessions).toHaveBeenCalledWith(OTHER_CWD);
+  });
+
+  it('asks once and reuses the answer, so switching back is free', async () => {
+    // The answer is cached under the same key `useSessions` reads, so the second
+    // switch costs nothing and the chat paints from what is already there.
+    const { queryClient, transport, listSessions } = createPerDirectoryHarness({
+      [OTHER_CWD]: [makeSession({ id: 'web-1', cwd: OTHER_CWD })],
+    });
+
+    await resolveSessionForCwd({ queryClient, transport }, OTHER_CWD);
+    await resolveSessionForCwd({ queryClient, transport }, OTHER_CWD);
+
+    expect(listSessions).toHaveBeenCalledTimes(1);
+    expect(queryClient.getQueryData<Session[]>(sessionKeys.list(OTHER_CWD))).toHaveLength(1);
+  });
+
+  it('answers "I could not find out" when the server cannot be reached', async () => {
+    // Red when: a failed lookup mints a fresh id. That opens a blank chat for an
+    // agent that has work — DOR-928's own symptom, and indistinguishable from
+    // it. "No sessions" and "could not ask" are different answers and only one
+    // of them may start a new conversation.
+    const { queryClient, transport } = createHarness(undefined, {
+      listSessions: vi.fn().mockRejectedValue(new Error('offline')),
+    });
+
+    expect(await resolveSessionForCwd({ queryClient, transport }, OTHER_CWD)).toBeNull();
+  });
+
+  it('re-asks under the app’s real cache policy, not the test default', async () => {
+    // Every other case here builds a bare QueryClient, whose `staleTime` is 0 —
+    // so anything cached counts as stale and gets re-fetched, and the fix looks
+    // right for a reason the app does not share. The app runs `staleTime: 30s`
+    // (`createQueryClientConfig`), and the global-stream bridge writes an EMPTY
+    // list whenever it removes the last session for a directory. Under the real
+    // policy that empty entry is FRESH for the next 30 seconds, so a resolver
+    // that lets freshness decide reproduces DOR-928 exactly.
+    const transport = createMockTransport({
+      listSessions: vi.fn().mockResolvedValue({
+        sessions: [makeSession({ id: 'still-there', cwd: OTHER_CWD })],
+      }),
+    }) as Transport;
+    const queryClient = new QueryClient(createQueryClientConfig());
+    queryClient.setQueryData<Session[]>(sessionKeys.list(OTHER_CWD), []);
+
+    const resolved = await resolveSessionForCwd({ queryClient, transport }, OTHER_CWD);
+
+    expect(resolved).toEqual({ sessionId: 'still-there', isNew: false });
+  });
+
+  it('re-asks rather than trusting a listing the server has disowned', async () => {
+    // A Claude account switch fires `session_list_invalidated`, which invalidates
+    // every per-directory list. The entries are marked, not dropped, so a
+    // resolver that trusts any cached row resumes an id from the account that is
+    // no longer signed in — and that id 404s.
+    const { queryClient, transport, listSessions } = createPerDirectoryHarness({
+      [OTHER_CWD]: [makeSession({ id: 'new-account-s1', cwd: OTHER_CWD })],
+    });
+    queryClient.setQueryData<Session[]>(sessionKeys.list(OTHER_CWD), [
+      makeSession({ id: 'old-account-s1', cwd: OTHER_CWD }),
+    ]);
+    await queryClient.invalidateQueries({ queryKey: sessionKeys.listRoot });
+
+    const resolved = await resolveSessionForCwd({ queryClient, transport }, OTHER_CWD);
+
+    expect(resolved?.sessionId).toBe('new-account-s1');
+    expect(listSessions).toHaveBeenCalledWith(OTHER_CWD);
   });
 });
 
