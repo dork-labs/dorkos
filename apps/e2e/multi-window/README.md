@@ -53,22 +53,37 @@ count.
 | reloading a window keeps the conversation                      | hydration                                                      |
 | no uncaught errors in any window                               | —                                                              |
 
-## Does it discriminate?
+## Which checks are known to discriminate
 
-Yes, and it was demonstrated rather than asserted. Run against the same live
-instance, twice, with only the client code changing:
+Stated per check, because "the harness discriminates" is not a property a harness
+has — each check either can fail or cannot, and the ones that cannot are the
+defect this repo's `contributing/browser-verification.md` warns about.
+
+**Shown to fail on a genuinely broken build** (API killed, Vite left serving):
+the health probe before and after, "every window accepts a message", "every
+window shows its own reply", "each window showed the agent working", agent
+switching (both), and "reloading a window keeps the conversation".
+
+**Shown red-before/green-after against a real fix** — the same live instance,
+twice, with only the client changing:
 
 ```
-before DOR-928 merged   11/12   FAIL  switching to another agent opens its
-                                      existing conversation — landed on
-                                      2f7d2429 with 0 messages
-after  DOR-928 merged   12/12   PASS  switching to another agent opens its
-                                      existing conversation — landed on
-                                      9ffc3a2f with 2 messages
+before DOR-928 merged   FAIL  switching to another agent opens its existing
+                              conversation — landed with 0 messages
+after  DOR-928 merged   PASS  switching to another agent opens its existing
+                              conversation — landed with 2 messages
 ```
 
-That is the property to preserve if you change these checks. A check that cannot
-fail converts "we did not look" into "we looked and it was fine".
+**Pinned by unit test:** the runtime comparison's role filter and its
+unknown-is-not-agreement rule (`__tests__/assistant-said.test.ts`, both
+mutation-checked).
+
+**Not independently demonstrated:** "every window loads", and
+"no uncaught errors in any window". They are cheap and honest, but nobody has
+made them fail on purpose.
+
+If you add a check, add it to the right list — and if you cannot make it fail,
+that is the finding.
 
 ## Traps this harness already avoids
 
@@ -86,6 +101,17 @@ proves nothing**:
 - **The working indicator is sampled immediately and often.** It is only up
   between submit and turn end — a loop that sleeps first reports "never showed
   it" for a window whose turn was simply fast.
+- **The runtime comparison is asked through the server, not read off disk.**
+  Reconstructing the transcript path means reimplementing the SDK's project-slug
+  (every non-alphanumeric character becomes a dash, plus a hash-truncation branch)
+  and the active-account resolution in front of `CLAUDE_CONFIG_DIR`. An earlier
+  version replaced only `/`, so for any agent path containing a dot — including
+  the default `~/.dork/agents/*` — it resolved to a directory that never existed
+  and returned "no transcript" every time. Its PASS meant nothing.
+- **It retries before reporting disagreement.** The runtime's history lags the
+  stream: the browser paints a reply as tokens arrive, the SDK writes it down
+  slightly later. Asking once produced a false "the browser is showing something
+  the runtime never recorded" in one window of two.
 
 See also `../GOTCHAS.md`, and `contributing/browser-verification.md` for the
 wider set.

@@ -1,13 +1,14 @@
 import { defineConfig } from 'vitest/config';
 
 /**
- * Unit tests for the capture pipeline's pure logic (shot registry, dimension
- * validation, override discovery). The Playwright browser suite runs separately
+ * Unit tests for the pure logic in this package's tsx harnesses — the capture
+ * pipeline (shot registry, dimension validation, override discovery) and the
+ * multi-window check's runtime comparison. The Playwright browser suite runs separately
  * via `pnpm --filter @dorkos/e2e e2e`.
  */
 export default defineConfig({
   test: {
-    include: ['capture/**/__tests__/**/*.test.ts'],
+    include: ['capture/**/__tests__/**/*.test.ts', 'multi-window/**/__tests__/**/*.test.ts'],
     globals: false,
   },
 });

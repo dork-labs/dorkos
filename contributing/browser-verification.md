@@ -28,23 +28,34 @@ SIGKILL over a process group. Read it before hand-rolling process management.
 If you do stand one up by hand:
 
 - **`DORKOS_BOUNDARY` defaults to `$HOME`.** A `DORK_HOME` under `/private/tmp`
-  answers **403** to every path-scoped route (`/api/sessions`, `/api/commands`,
-  `/api/files`, `/api/directory`), which reads like a wall of real bugs.
+  answers **403** on `/api/commands`, `/api/files` and `/api/directory`. The
+  failure is asymmetric, which is more confusing than a uniform wall: the session
+  routes pass `allowDorkHome` to `assertBoundary` (`routes/sessions.ts`,
+  `lib/boundary.ts`), so `/api/sessions` keeps working for agents under that same
+  out-of-bounds `DORK_HOME`.
 - **Give every concurrent instance its own `DORK_HOME`, not just its own port.**
-  The server refuses to boot when another process holds the same data directory,
-  naming the PID — a port clash is the obvious collision, a data-directory clash
-  is the one that surprises you.
-- **Set `VITE_PORT` on the _server_ process too**, not only the client. The
-  trusted-origin list is built from `DORKOS_PORT` and `VITE_PORT`, and since
-  ADR 260805-041016 it gates WebSocket upgrades as well as CORS. Get it wrong and
-  the SPA renders, REST works, turns run, transcripts fill — and the browser shows
-  nothing.
+  The server refuses to boot when another process holds the same data directory
+  and names the PID — a port clash is the obvious collision, a data-directory
+  clash is the one that surprises you. The check is off under `NODE_ENV=test` and
+  behind `DORKOS_SKIP_INSTANCE_LOCK` (`lib/instance-lock.ts`), so it will not save
+  you in the e2e leg.
+- **In development, set `VITE_PORT` on the _server_ process too**, not only the
+  client. The trusted-origin list is built from `DORKOS_PORT` and `VITE_PORT`, and
+  since ADR 260805-041016 it gates WebSocket upgrades as well as CORS. Get it
+  wrong and the SPA renders, REST works, turns run, transcripts fill — and the
+  browser shows nothing. **This does not apply in production:**
+  `getStaticLocalOrigins()` deliberately drops the Vite origin when
+  `NODE_ENV=production`, because the server serves the SPA itself and anything
+  else listening on that port would otherwise be trusted — which on the socket
+  path now includes the terminal.
 - **Copying a `DORK_HOME` between paths carries stale absolute agent paths** in
   its SQLite. Recreate agents via `POST /api/agents` at the new path instead.
 - Dismiss onboarding headlessly with `PATCH /api/config`
-  (`{onboarding:{dismissedAt},profile:{rolePromptDismissedAt}}`), and pin a cheap
-  model with `{runtimes:{claudeCode:{defaultModel:"sonnet"}}}` — new sessions
-  otherwise start on the default, which makes plumbing checks slow and expensive.
+  (`{onboarding:{dismissedAt},profile:{rolePromptDismissedAt}}`) —
+  `apps/e2e/global-setup.ts` already does this idempotently, so call it rather
+  than restating it. Pin a cheap model with
+  `{runtimes:{claudeCode:{defaultModel:"sonnet"}}}`; new sessions otherwise start
+  on the default, which makes plumbing checks slow and expensive.
 
 ## Writing a check that can actually fail
 

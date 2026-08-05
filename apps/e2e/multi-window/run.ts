@@ -1,5 +1,6 @@
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { chromium, type BrowserContext, type Page } from '@playwright/test';
 
@@ -46,16 +47,36 @@ interface Probe {
 }
 
 const args = process.argv.slice(2);
-/** Read a `--flag value` pair, or its default. */
+/**
+ * Read a `--flag value` pair, or its default.
+ *
+ * A flag given with no value is an ERROR rather than a silent fall back to the
+ * default: `--windows` as the last argument used to spend a default six real
+ * agent turns while the operator believed they had asked for something else.
+ */
 const arg = (name: string, fallback: string): string => {
   const i = args.indexOf(`--${name}`);
-  return i >= 0 && args[i + 1] ? args[i + 1] : fallback;
+  if (i < 0) return fallback;
+  const value = args[i + 1];
+  if (!value || value.startsWith('--')) {
+    console.error(`--${name} needs a value`);
+    process.exit(2);
+  }
+  return value;
 };
 
 const BASE = arg('base', 'http://localhost:6241').replace(/\/$/, '');
 const API = arg('api', BASE).replace(/\/$/, '');
-const WINDOWS = Number(arg('windows', '6'));
 const HEADED = args.includes('--headed');
+
+const windowsRaw = arg('windows', '6');
+const WINDOWS = Number(windowsRaw);
+// Validated before a browser opens. The old version accepted anything and then
+// died on `wins[0]` with a TypeError, after paying to launch Chromium.
+if (!Number.isInteger(WINDOWS) || WINDOWS < 1 || WINDOWS > 24) {
+  console.error(`--windows must be a whole number from 1 to 24, got ${JSON.stringify(windowsRaw)}`);
+  process.exit(2);
+}
 
 /** Time a plain API GET issued from INSIDE a window. */
 async function probeHealth(page: Page): Promise<{ ms: number; status: number | string }> {
@@ -98,38 +119,93 @@ async function probe(page: Page): Promise<Probe> {
   }
 }
 
-/** Assistant-only text from the runtime's own transcript for this agent. */
-function transcriptSays(agentDir: string, marker: string): boolean | null {
-  // eslint-disable-next-line no-restricted-syntax -- the e2e package has no env.ts, and this reads the operator's own shell environment to locate the runtime's transcripts
-  const home = process.env.CLAUDE_CONFIG_DIR ?? join(process.env.HOME ?? '', '.claude');
-  const dir = join(home, 'projects', agentDir.replace(/\//g, '-'));
-  if (!existsSync(dir)) return null;
-  for (const file of readdirSync(dir).filter((f) => f.endsWith('.jsonl'))) {
-    const raw = readFileSync(join(dir, file), 'utf8');
-    if (!raw.includes(marker)) continue;
-    for (const line of raw.split('\n').filter(Boolean)) {
-      try {
-        const entry = JSON.parse(line) as { type?: string; message?: { content?: unknown } };
-        // Assistant text only. The user's own message repeats the marker
-        // verbatim ("reply with X"), so scanning every role reports the agent
-        // answered when it never did.
-        if (entry.type !== 'assistant') continue;
-        const content = entry.message?.content;
-        const parts = Array.isArray(content) ? content : [];
-        for (const part of parts as { type?: string; text?: string }[]) {
-          if (part.type === 'text' && part.text?.includes(marker)) return true;
-        }
-      } catch {
-        // A partial line mid-write is expected while a turn streams.
-      }
+/**
+ * Whether the RUNTIME recorded this marker in the agent's reply, asked through
+ * the server rather than read off disk.
+ *
+ * This is the check that catches "the agent answered and the browser never
+ * showed it", so it has to be independent of the browser's stream — and it is:
+ * for claude-code the server derives this history from the SDK's own JSONL.
+ *
+ * It deliberately does NOT reconstruct the transcript path itself. Doing that
+ * means reimplementing the SDK's project-slug (every non-alphanumeric character
+ * becomes a dash, with a hash-truncation branch past a length cap — see
+ * `services/runtimes/claude-code/sessions/project-slug.ts`) AND the active-account
+ * resolution that sits in front of `CLAUDE_CONFIG_DIR`. An earlier version of
+ * this file replaced only `/`, which silently resolved to a directory that never
+ * existed for any agent path containing a dot — including the default
+ * `~/.dork/agents/*` — so the check returned "no transcript" every time and its
+ * PASS meant nothing. Ask the server; it already knows.
+ *
+ * @returns `true`/`false` when the runtime could be asked, `null` when it could
+ *   not — which the caller must treat as "unknown", never as agreement.
+ */
+async function runtimeRecorded(
+  sessionId: string | null,
+  agentDir: string,
+  marker: string
+): Promise<boolean | null> {
+  if (!sessionId) return null;
+  const url = `${API}/api/sessions/${sessionId}/messages?cwd=${encodeURIComponent(agentDir)}`;
+  // The runtime's history lags the stream: the browser paints a reply the moment
+  // the tokens arrive, while this reads what the SDK has written down. Asking
+  // once produces a false "the browser is showing something the runtime never
+  // recorded" — observed live, one window in two. Give it a bounded moment to
+  // catch up, and only then report disagreement.
+  const deadline = Date.now() + 15_000;
+  let last: boolean | null = null;
+  do {
+    let res: Response;
+    try {
+      res = await fetch(url);
+    } catch {
+      return null;
     }
-  }
-  return false;
+    if (!res.ok) return null;
+    last = assistantSaid(await res.json(), marker);
+    if (last === true) return true;
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  } while (Date.now() < deadline);
+  return last;
+}
+
+/**
+ * Whether an `/api/sessions/:id/messages` payload contains the marker in
+ * ASSISTANT text.
+ *
+ * Pure, and exported so it can be pinned: the role filter is the whole point.
+ * The prompt asks the agent to "reply with exactly {marker}", so the user's own
+ * message contains it verbatim — a search across every role reports that the
+ * agent answered when it never did, which is the failure this check exists to
+ * detect.
+ *
+ * @param body - The parsed response body, in either shape the route returns.
+ * @param marker - The string the agent was asked to reply with.
+ * @returns `null` when the payload is not a message list, meaning "unknown".
+ * @internal Exported for testing.
+ */
+export function assistantSaid(body: unknown, marker: string): boolean | null {
+  const messages = Array.isArray(body)
+    ? body
+    : ((body as { messages?: unknown[] } | null)?.messages ?? null);
+  if (!Array.isArray(messages)) return null;
+  return messages.some(
+    (m) =>
+      (m as { role?: string }).role === 'assistant' &&
+      JSON.stringify((m as { content?: unknown }).content ?? '').includes(marker)
+  );
 }
 
 /** Agent directories on disk, which is where the server keeps them (ADR-0043). */
 async function discoverAgents(): Promise<string[]> {
-  const res = await fetch(`${API}/api/config`);
+  let res: Response;
+  try {
+    res = await fetch(`${API}/api/config`);
+  } catch {
+    // Undici's raw `fetch failed` + AggregateError buries the one fact that
+    // matters, which is that nothing is listening.
+    throw new Error(`Could not reach ${API} — start an instance, or pass --api`);
+  }
   if (!res.ok)
     throw new Error(`GET /api/config answered ${res.status} — is ${API} a DorkOS server?`);
   const { dorkHome } = (await res.json()) as { dorkHome?: string };
@@ -263,12 +339,19 @@ async function main(): Promise<void> {
       )
       .join(' ')
   );
+  // Requires every window to have rendered its OWN marker first. Without that
+  // precondition this passes on a set of blank windows, which is precisely the
+  // state a broken build leaves behind.
+  const allRendered = finals.every((p, i) => p.assistantText.includes(`${wins[i].marker}-REPLY`));
   record(
     "no window shows another window's conversation",
-    finals.every((p, i) =>
-      wins.every((w, j) => i === j || !p.assistantText.includes(`${w.marker}-REPLY`))
-    ),
-    'every marker checked against every window'
+    allRendered &&
+      finals.every((p, i) =>
+        wins.every((w, j) => i === j || !p.assistantText.includes(`${w.marker}-REPLY`))
+      ),
+    allRendered
+      ? 'every marker checked against every window'
+      : 'inconclusive — not every window rendered its own reply, so there was nothing to confuse'
   );
   record(
     'each window showed the agent working',
@@ -276,18 +359,22 @@ async function main(): Promise<void> {
     `${sawWorking.size}/${WINDOWS}`
   );
 
-  const disk = wins.map((w) => transcriptSays(w.agentDir, `${w.marker}-REPLY`));
-  const comparable = disk.map((d, i) => ({
-    d,
+  const recorded = await Promise.all(
+    wins.map((w, i) => runtimeRecorded(finals[i].session, w.agentDir, `${w.marker}-REPLY`))
+  );
+  const comparable = recorded.map((r, i) => ({
+    runtime: r,
     screen: finals[i].assistantText.includes(`${wins[i].marker}-REPLY`),
   }));
+  // A window the runtime could not be asked about is UNKNOWN, and unknown is not
+  // agreement — it fails, loudly, rather than certifying nothing.
   record(
-    'the browser matches the runtime transcript',
-    comparable.every(({ d, screen }) => d === null || d === screen),
+    "the browser matches the runtime's own record",
+    comparable.every(({ runtime, screen }) => runtime !== null && runtime === screen),
     comparable
       .map(
-        ({ d, screen }, i) =>
-          `w${i + 1}:${d === null ? 'no-transcript' : `disk=${d}/screen=${screen}`}`
+        ({ runtime, screen }, i) =>
+          `w${i + 1}:${runtime === null ? 'COULD-NOT-ASK' : `runtime=${runtime}/screen=${screen}`}`
       )
       .join(' ')
   );
@@ -300,34 +387,51 @@ async function main(): Promise<void> {
   );
 
   // Switching away and back must land on the conversation you were having.
-  try {
-    const w = wins[0];
-    const mine = (await probe(w.page)).session;
-    const ownName = w.agentDir.split('/').pop() ?? '';
-    const otherName =
-      agents
-        .find((a) => a !== w.agentDir)
-        ?.split('/')
-        .pop() ?? ownName;
-    await agentRow(w.page, otherName).click();
-    await w.page.waitForTimeout(6000);
-    const away = await probe(w.page);
-    await agentRow(w.page, ownName).click();
-    await w.page.waitForTimeout(6000);
-    const back = await probe(w.page);
-    record(
-      'returning to an agent reopens the conversation you were having',
-      back.session === mine && back.assistantText.includes(`${w.marker}-REPLY`),
-      `left ${mine?.slice(0, 8)}, returned to ${back.session?.slice(0, 8)}`
-    );
-    record(
-      'switching to another agent opens its existing conversation',
-      away.messageCount > 0,
-      `landed on ${away.session?.slice(0, 8)} with ${away.messageCount} messages`
-    );
-  } catch (e) {
-    record('agent switching works', false, `threw: ${(e as Error).message.split('\n')[0]}`);
+  //
+  // Both checks are always recorded, pass or fail, so the denominator does not
+  // move between runs — a table that silently shrinks from 12 to 11 hides which
+  // check went missing.
+  const w = wins[0];
+  const ownName = w.agentDir.split('/').pop() ?? '';
+  const otherDir = agents.find((a) => a !== w.agentDir);
+  let backOk = false;
+  let backDetail = 'not attempted';
+  let awayOk = false;
+  let awayDetail = 'not attempted';
+
+  if (!otherDir) {
+    // With one agent there is nothing to switch TO, and clicking your own row
+    // would pass while proving nothing.
+    awayDetail = 'inconclusive — this instance has only one agent';
+    backDetail = awayDetail;
+  } else {
+    try {
+      const mine = (await probe(w.page)).session;
+      const otherName = otherDir.split('/').pop() ?? '';
+      await agentRow(w.page, otherName).click();
+      await w.page.waitForTimeout(6000);
+      const away = await probe(w.page);
+      await agentRow(w.page, ownName).click();
+      await w.page.waitForTimeout(6000);
+      const back = await probe(w.page);
+
+      backOk = back.session === mine && back.assistantText.includes(`${w.marker}-REPLY`);
+      backDetail = `left ${mine?.slice(0, 8)}, returned to ${back.session?.slice(0, 8)}`;
+      // The subject is "its EXISTING conversation", so the landing session must
+      // differ from the one we left. A count alone passes when the switch never
+      // happened at all.
+      awayOk = away.messageCount > 0 && away.session !== mine;
+      awayDetail = `landed on ${away.session?.slice(0, 8)} with ${away.messageCount} messages${
+        away.session === mine ? ' (never left the original session)' : ''
+      }`;
+    } catch (e) {
+      const why = `threw: ${(e as Error).message.split('\n')[0]}`;
+      backDetail = why;
+      awayDetail = why;
+    }
   }
+  record('returning to an agent reopens the conversation you were having', backOk, backDetail);
+  record('switching to another agent opens its existing conversation', awayOk, awayDetail);
 
   try {
     const w = wins[WINDOWS - 1];
@@ -361,4 +465,8 @@ async function main(): Promise<void> {
   process.exit(failed.length === 0 ? 0 : 1);
 }
 
-await main();
+// Only when run as a command. Without this guard, importing `assistantSaid`
+// from a unit test launches a browser and drives a live instance.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await main();
+}
