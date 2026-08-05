@@ -1,6 +1,10 @@
 ---
 covers:
   - 'fix(client): durable streams ride WebSockets so several windows stay responsive (DOR-927)'
+  - 'fix(server): trust the address DorkOS is actually reached on for stream upgrades (DOR-927)'
+  - 'docs(streams): record the WebSocket move and document both stream protocols (DOR-927)'
+  - 'docs(api): regenerate the OpenAPI spec for the WebSocket stream endpoints (DOR-927)'
+  - 'docs(api): regenerate the API reference pages for the stream endpoints (DOR-927)'
 ---
 
 ### Fixed
@@ -9,3 +13,6 @@ covers:
   the whole app stop responding — activity dots froze, replies looked stuck halfway,
   reloads never finished, and a fourth window would not open at all. Those were all one
   problem, and it is fixed (DOR-927)
+- If you reach DorkOS through a reverse proxy, check your proxy passes WebSocket
+  connections through — live output now uses them. The setup pages have the config
+  for nginx and Caddy (DOR-927)
