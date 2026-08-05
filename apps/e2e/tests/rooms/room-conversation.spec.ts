@@ -332,7 +332,17 @@ test.describe('Rooms — posting, switching and staying live @smoke', () => {
 
     // Every attempt to open the room's stream fails from here on. History still
     // loads: only the live subscription is cut.
-    await page.route(`**/api/rooms/${room.id}/events**`, (route) => route.abort());
+    //
+    // The stream is a WebSocket (ADR 260805-041016), so this is `routeWebSocket`
+    // rather than `page.route` — the latter intercepts HTTP only, and had
+    // silently stopped cutting anything. The handler runs in Node and is
+    // consulted per connection attempt, so flipping `streamReachable` below is
+    // how the outage ends; there is no `unrouteWebSocket` to call.
+    let streamReachable = false;
+    await page.routeWebSocket(new RegExp(`/api/rooms/${room.id}/events`), (ws) => {
+      if (streamReachable) ws.connectToServer();
+      else ws.close();
+    });
 
     await page.goto(`/channels?id=${room.id}`);
     await expect(roomsPage.entries).toHaveCount(1, { timeout: SERVER_ROUND_TRIP_MS });
@@ -365,7 +375,7 @@ test.describe('Rooms — posting, switching and staying live @smoke', () => {
     // was open however long anybody waited. The resume is gap-free — the
     // message posted during the outage arrives with it, which is why the retry
     // recomputes its cursor from what the reader already holds.
-    await page.unroute(`**/api/rooms/${room.id}/events**`);
+    streamReachable = true;
     await expect(roomsPage.stalledNotice).toBeHidden({ timeout: 90_000 });
     await expect(roomsPage.entry('said while the stream was down')).toBeVisible({
       timeout: SERVER_ROUND_TRIP_MS,
