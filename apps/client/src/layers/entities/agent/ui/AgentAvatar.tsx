@@ -18,39 +18,56 @@ const HEALTH_RING: Record<AgentHealthStatus, string> = {
 // Component
 // ---------------------------------------------------------------------------
 
-export interface AgentAvatarProps extends VariantProps<typeof identityAvatarVariants> {
+export interface AgentAvatarProps {
   /** CSS color string (HSL or hex override). Used as the avatar background. */
   color: string;
-  /** Single emoji character rendered inside the circle. */
+  /** Single emoji character rendered inside the square. */
   emoji: string;
-  /** Optional health status — adds a colored ring and tasks for active agents. */
+  /** Diameter of the disc — the same four the whole cockpit sizes identities by. */
+  size?: VariantProps<typeof identityAvatarVariants>['size'];
+  /** Optional health status — adds a colored ring, and pulses while the agent is reachable and busy. */
   healthStatus?: AgentHealthStatus;
+  /**
+   * Whether the agent is working right now. Defaults to what its health says
+   * (`active` means reachable and busy); pass it explicitly when the caller
+   * knows better, including `false` to silence the dot.
+   */
+  working?: boolean;
   className?: string;
 }
 
 /**
- * Visual mark for an agent — colored circle with centered emoji.
- * The entity-layer primitive for agent identity display.
+ * Visual mark for an agent — its colour, its emoji, and the two things that
+ * are only true of agents.
  *
- * The circle itself is {@link IdentityAvatar}, the one disc every identity in
- * the cockpit is drawn as. What an agent adds on top is the only thing here
- * that is about agents: a ring for its health, and a pulse while it is working.
+ * The disc itself is {@link IdentityAvatar}, told `kind="agent"`, which is
+ * where square/fill/Bot comes from. **This wrapper takes no `shape` or
+ * `variant`**: a caller that could pass `shape="circle"` is precisely how an
+ * agent ended up drawn as a person in most of the places that draw one, and
+ * twelve call sites reach the convention through this file.
+ *
+ * What stays here is what `shared/` must not learn: a ring keyed on mesh
+ * health, and the translation from "reachable and busy" to the disc's own
+ * kind-agnostic `working` slot.
  */
-export function AgentAvatar({ color, emoji, size, healthStatus, className }: AgentAvatarProps) {
+export function AgentAvatar({
+  color,
+  emoji,
+  size,
+  healthStatus,
+  working,
+  className,
+}: AgentAvatarProps) {
   return (
     <IdentityAvatar
       data-slot="agent-avatar"
       aria-hidden
+      kind="agent"
       color={color}
       emoji={emoji}
       size={size}
+      working={working ?? healthStatus === 'active'}
       className={cn(healthStatus && 'ring-2', healthStatus && HEALTH_RING[healthStatus], className)}
-    >
-      {healthStatus === 'active' && (
-        <span className="absolute -top-px -right-px size-2 rounded-full bg-emerald-500" aria-hidden>
-          <span className="absolute inset-0 animate-ping rounded-full bg-emerald-500 opacity-40 motion-reduce:hidden" />
-        </span>
-      )}
-    </IdentityAvatar>
+    />
   );
 }

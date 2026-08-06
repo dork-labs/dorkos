@@ -5,8 +5,12 @@
  */
 import type * as React from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
+import { ADAPTER_LOGO_MAP } from '@dorkos/icons/adapter-logos';
+import { Bot, Send } from 'lucide-react';
+import type { AuthorKind } from '@dorkos/shared/room-schemas';
 import { readableForeground } from '../lib/readable-foreground';
 import { cn } from '../lib/utils';
+import type { IdentityOrigin } from './identity-origin';
 
 /**
  * How much of the identity's own colour tints the disc in the default
@@ -74,6 +78,37 @@ const identityAvatarVariants = cva(
   }
 );
 
+/** The three decisions a `kind` makes on a caller's behalf. */
+interface KindDefaults {
+  shape: NonNullable<VariantProps<typeof identityAvatarVariants>['shape']>;
+  variant: NonNullable<VariantProps<typeof identityAvatarVariants>['variant']>;
+  badge: React.ReactNode;
+}
+
+/** What an identity with no declared kind draws — the pre-`kind` defaults. */
+const UNDECLARED: KindDefaults = { shape: 'circle', variant: 'tint', badge: undefined };
+
+/**
+ * The design-handoff rules, made code: agent is a filled square wearing the
+ * Bot mark, everyone else is a tinted circle, and a person bridged in from
+ * another platform carries that platform's own brand mark.
+ *
+ * `origin` is only read for a human, because it is only ever true of one: an
+ * agent and the room's own voice are on this machine by construction.
+ */
+function defaultsForKind(
+  kind: AuthorKind | undefined,
+  origin: IdentityOrigin | undefined
+): KindDefaults {
+  if (kind === 'agent') return { shape: 'square', variant: 'fill', badge: <Bot /> };
+  if (kind !== 'human' || typeof origin !== 'object' || origin === null) return UNDECLARED;
+
+  // A platform this build has no logo for still has to read as "not from
+  // here" rather than render nothing at all.
+  const Logo = ADAPTER_LOGO_MAP[origin.platform];
+  return { ...UNDECLARED, badge: Logo ? <Logo /> : <Send /> };
+}
+
 export interface IdentityAvatarProps
   extends React.ComponentProps<'span'>, VariantProps<typeof identityAvatarVariants> {
   /** CSS colour string the disc is tinted from. Any colour space the browser reads. */
@@ -84,7 +119,7 @@ export interface IdentityAvatarProps
   fallback?: React.ReactNode;
   /**
    * A small mark in the disc's bottom-right corner saying what KIND of identity
-   * this is. Omit it and nothing is drawn.
+   * this is. Omit it and `kind` decides; omit both and nothing is drawn.
    *
    * **The convention is: agents get the glyph, people get nothing.** Absence is
    * the signal, the same way it is everywhere else in this cockpit — a badge on
@@ -101,8 +136,51 @@ export interface IdentityAvatarProps
    * 20px disc would be a mis-tap on a touch screen, and it is not a control —
    * and it contributes nothing to the accessibility tree, because the row's own
    * text already names what the member is.
+   *
+   * `null` is the explicit "no badge here", which an agent-only list uses to
+   * keep the shape and drop a column of identical glyphs. It is a decision
+   * the call site can be seen making, unlike omitting the prop.
    */
   badge?: React.ReactNode;
+  /**
+   * What this identity IS. Supplying it derives `shape`, `variant` and
+   * `badge` so a caller cannot draw an agent as a person by forgetting three
+   * props — the failure this component shipped with, in 18 of the 20 places
+   * that draw one.
+   *
+   * | `kind`                          | shape    | variant | badge                            |
+   * | ------------------------------- | -------- | ------- | -------------------------------- |
+   * | `agent`                         | `square` | `fill`  | Bot                              |
+   * | `human`, local or absent origin | `circle` | `tint`  | none — absence is the signal     |
+   * | `human`, bridged origin         | `circle` | `tint`  | the platform's mark, else Send   |
+   * | `system`                        | `circle` | `tint`  | none                             |
+   * | _omitted_                       | `circle` | `tint`  | none                             |
+   *
+   * Explicit props still win: pass `shape`, `variant` or `badge` and the
+   * derivation steps aside for that axis only. Omitting `kind` reproduces the
+   * pre-`kind` defaults exactly, so this is additive and no existing call
+   * site changes meaning.
+   *
+   * The spelling is the repo's own (`AuthorKind`), not a second vocabulary:
+   * "circle is the person shape" is a sentence for docs, never a value on the
+   * wire. A caller holding `author.kind` passes it straight through.
+   */
+  kind?: AuthorKind;
+  /**
+   * Where a human is posting from. Read only to derive the external badge —
+   * an agent and the room's own voice are on this machine by construction.
+   */
+  origin?: IdentityOrigin;
+  /**
+   * Whether this identity is doing something right now — a pulsing dot in the
+   * disc's top-right corner, opposite the badge.
+   *
+   * Kind-agnostic on purpose: an agent mid-turn and a person mid-task are the
+   * same fact to a roster, and both read it at a glance rather than from a
+   * hover. The pulse is what says "right now", so it is the motion, not the
+   * dot, that `motion-reduce` drops.
+   */
+  working?: boolean;
 }
 
 /**
@@ -119,12 +197,16 @@ export interface IdentityAvatarProps
  * fallback glyph is sized relative to the circle's own font size: one rule
  * covers every size rather than a lookup per size per face.
  *
- * **Stays kind-agnostic on purpose.** `shape` (circle/square) and `variant`
- * (tint/fill) are the disc's whole vocabulary for telling one kind of
- * identity from another — the mapping from an actual `kind` (agent, person,
- * external person) to a `{ shape, variant, badge }` triple belongs to the
- * caller, the same way it already does for `badge`. A room importing this
- * component never needs `entities/agent` to draw an agent square.
+ * **Tell it what the identity IS and it draws the rest.** `kind` derives
+ * `shape` (circle/square), `variant` (tint/fill) and `badge` together, because
+ * a caller asked to make those three decisions by hand made them wrong in 18
+ * of the 20 places that draw an agent. Explicit props still win per axis, and
+ * omitting `kind` reproduces the pre-`kind` defaults exactly.
+ *
+ * It stays presentational: it reads a kind, it never fetches or resolves one.
+ * A room importing this component never needs `entities/agent` to draw an
+ * agent square — which is the whole reason the mapping lives here rather than
+ * in the agent entity.
  *
  * Contributes nothing to the accessibility tree on its own — an emoji has a
  * spoken name nobody asked to hear. Give it a sibling label, or an `sr-only`
@@ -139,6 +221,9 @@ function IdentityAvatar({
   emoji,
   fallback,
   badge,
+  kind,
+  origin,
+  working,
   size,
   shape,
   variant,
@@ -147,13 +232,24 @@ function IdentityAvatar({
   children,
   ...props
 }: IdentityAvatarProps) {
-  const isFill = variant === 'fill';
+  // Per axis, not per identity: a caller that wants an agent drawn round
+  // still gets its fill and its badge. `badge` is compared against
+  // `undefined` rather than falsiness, because `null` is a caller saying
+  // "none" and has to survive the derivation.
+  const defaults = defaultsForKind(kind, origin);
+  const drawnShape = shape ?? defaults.shape;
+  const drawnVariant = variant ?? defaults.variant;
+  const drawnBadge = badge === undefined ? defaults.badge : badge;
+  const isFill = drawnVariant === 'fill';
 
   return (
     <span
       data-slot="identity-avatar"
       {...props}
-      className={cn(identityAvatarVariants({ size, shape, variant }), className)}
+      className={cn(
+        identityAvatarVariants({ size, shape: drawnShape, variant: drawnVariant }),
+        className
+      )}
       // The background is a per-identity colour — carried on the record or
       // hashed from an id — that Tailwind cannot know at build time, so this
       // is the one place a colour is written inline rather than as a theme
@@ -180,7 +276,7 @@ function IdentityAvatar({
           {fallback}
         </span>
       )}
-      {badge !== undefined && (
+      {drawnBadge != null && (
         // Sized off the circle's own font size, exactly as the fallback glyph
         // is, so one rule covers all four diameters instead of a lookup per
         // size. `text-[0.62em]` sets the mark; `size-[1.35em]` is 1.35 of THAT
@@ -197,7 +293,23 @@ function IdentityAvatar({
           aria-hidden
           className="bg-background text-muted-foreground pointer-events-none absolute -right-px -bottom-px inline-flex size-[1.35em] items-center justify-center rounded-full text-[0.62em] leading-none [&_svg:not([class*='size-'])]:size-[1em]"
         >
-          {badge}
+          {drawnBadge}
+        </span>
+      )}
+      {working && (
+        // Opposite the badge, so an agent can wear both. The ring is the page
+        // background rather than a border, for the same reason the badge's
+        // plate is: it reads as separate from the disc over any tint, and a
+        // 20px disc has no 4px to spare.
+        <span
+          aria-hidden
+          className="bg-status-success ring-background absolute -top-px -right-px size-2 rounded-full ring-2"
+        >
+          {/* It pulses because the thing it reports is happening RIGHT NOW,
+              and a still dot says the same about a state that ended an hour
+              ago. `motion-reduce:hidden` leaves the dot itself, so the fact
+              survives the preference and only the motion goes. */}
+          <span className="bg-status-success absolute inset-0 animate-ping rounded-full opacity-60 motion-reduce:hidden" />
         </span>
       )}
       {children}

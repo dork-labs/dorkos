@@ -133,9 +133,9 @@ describe('AgentCommandItem', () => {
     );
 
     const item = container.querySelector('[data-slot="command-item"]');
-    // The Check icon from lucide-react renders as SVG inside the item
-    const svgIcon = item?.querySelector('svg');
-    expect(svgIcon).toBeInTheDocument();
+    // The Check icon by name, not "any svg": the row also carries the agent
+    // avatar, whose Bot badge is an svg of its own.
+    expect(item?.querySelector('.lucide-check')).toBeInTheDocument();
   });
 
   it('does not show checkmark when isActive is false', () => {
@@ -144,8 +144,7 @@ describe('AgentCommandItem', () => {
     );
 
     const item = container.querySelector('[data-slot="command-item"]');
-    const svgIcon = item?.querySelector('svg');
-    expect(svgIcon).not.toBeInTheDocument();
+    expect(item?.querySelector('.lucide-check')).not.toBeInTheDocument();
   });
 
   it('calls onSelect when item is selected', () => {

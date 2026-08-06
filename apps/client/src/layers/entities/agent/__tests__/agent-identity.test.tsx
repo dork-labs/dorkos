@@ -14,49 +14,103 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('AgentAvatar', () => {
-  it('renders emoji inside a colored circle', () => {
+  /** The disc this wrapper drew. */
+  const avatarOf = (container: HTMLElement) =>
+    container.querySelector('[data-slot="agent-avatar"]') as HTMLElement;
+
+  it('renders emoji inside a filled square wearing the Bot mark', () => {
+    // Square, filled and badged is what an agent looks like, and this wrapper
+    // is the path 12 surfaces reach it through — none of them says so itself.
+    // The default size is `sm`, whose square radius is `rounded-lg`.
     const { container } = render(<AgentAvatar color="#6366f1" emoji="🔍" />);
-    const avatar = container.querySelector('[data-slot="agent-avatar"]')!;
+    const avatar = avatarOf(container);
+
     expect(avatar).toBeInTheDocument();
     expect(avatar).toHaveTextContent('🔍');
+    expect(avatar).toHaveClass('rounded-lg');
+    expect(avatar).not.toHaveClass('rounded-full');
+    expect(avatar.querySelector('.lucide-bot')).toBeInTheDocument();
   });
 
-  it('applies background color via inline style', () => {
+  it('fills with the agent colour outright rather than tinting the surface behind it', () => {
     const { container } = render(<AgentAvatar color="#6366f1" emoji="🔍" />);
-    const avatar = container.querySelector('[data-slot="agent-avatar"]') as HTMLElement;
-    expect(avatar.style.backgroundColor).toContain('color-mix');
+    const probe = document.createElement('span');
+    probe.style.backgroundColor = '#6366f1';
+
+    expect(avatarOf(container).style.backgroundColor).toBe(probe.style.backgroundColor);
+  });
+
+  it('takes no shape or variant — the convention is unskippable through this path', () => {
+    // A caller that could pass `shape="circle"` is exactly how an agent got
+    // drawn as a person in 18 of the 20 places that draw one. The compile-time
+    // half of this assertion is the `@ts-expect-error`: it fails the build if
+    // the prop ever becomes assignable again. The runtime half proves the
+    // narrowing is not cosmetic — the ignored prop changes nothing.
+    const { container } = render(
+      <AgentAvatar
+        color="#6366f1"
+        emoji="🔍"
+        // @ts-expect-error — `shape` is not part of AgentAvatarProps.
+        shape="circle"
+      />
+    );
+
+    expect(avatarOf(container)).toHaveClass('rounded-lg');
+    expect(avatarOf(container)).not.toHaveClass('rounded-full');
   });
 
   it('renders different sizes via size prop', () => {
     const { container, rerender } = render(<AgentAvatar color="#fff" emoji="🤖" size="xs" />);
-    const getAvatar = () => container.querySelector('[data-slot="agent-avatar"]') as HTMLElement;
 
-    const xsClasses = getAvatar().className;
+    const xsClasses = avatarOf(container).className;
     rerender(<AgentAvatar color="#fff" emoji="🤖" size="lg" />);
-    const lgClasses = getAvatar().className;
+    const lgClasses = avatarOf(container).className;
 
     // Different sizes produce different class lists
     expect(xsClasses).not.toEqual(lgClasses);
   });
 
   it('shows active health tasks indicator', () => {
+    // The dot is the shared `working` slot now, in the theme's own green —
+    // `bg-emerald-500` was a hardcoded colour this component had no business
+    // owning, and the room roster drew the same fact a different way.
     const { container } = render(<AgentAvatar color="#fff" emoji="🤖" healthStatus="active" />);
-    const avatar = container.querySelector('[data-slot="agent-avatar"]')!;
+    const avatar = avatarOf(container);
+
     expect(avatar.className).toContain('ring-2');
     expect(avatar.querySelector('.animate-ping')).toBeInTheDocument();
+    expect(avatar.querySelector('.bg-status-success')).toBeInTheDocument();
+    expect(avatar.querySelector('.bg-emerald-500')).not.toBeInTheDocument();
   });
 
   it('shows health ring without tasks for non-active statuses', () => {
     const { container } = render(<AgentAvatar color="#fff" emoji="🤖" healthStatus="inactive" />);
-    const avatar = container.querySelector('[data-slot="agent-avatar"]')!;
+    const avatar = avatarOf(container);
     expect(avatar.className).toContain('ring-2');
     expect(avatar.querySelector('.animate-ping')).not.toBeInTheDocument();
   });
 
   it('has no health ring when healthStatus is omitted', () => {
     const { container } = render(<AgentAvatar color="#fff" emoji="🤖" />);
-    const avatar = container.querySelector('[data-slot="agent-avatar"]')!;
+    expect(avatarOf(container).className).not.toContain('ring-2');
+  });
+
+  it('pulses for an agent that is working, whatever the mesh thinks of its health', () => {
+    // Health is "can I reach it"; working is "is it doing something". A caller
+    // that knows the second can say so without inventing a health status.
+    const { container } = render(<AgentAvatar color="#fff" emoji="🤖" working />);
+    const avatar = avatarOf(container);
+
+    expect(avatar.querySelector('.bg-status-success')).toBeInTheDocument();
     expect(avatar.className).not.toContain('ring-2');
+  });
+
+  it('lets an explicit working={false} silence the dot a live health status implies', () => {
+    const { container } = render(
+      <AgentAvatar color="#fff" emoji="🤖" healthStatus="active" working={false} />
+    );
+
+    expect(avatarOf(container).querySelector('.bg-status-success')).not.toBeInTheDocument();
   });
 });
 
@@ -80,8 +134,12 @@ describe('AgentIdentity', () => {
 
   it('omits detail element when not provided', () => {
     const { container } = render(<AgentIdentity {...baseProps} />);
-    const identity = container.querySelector('[data-slot="agent-identity"]')!;
-    expect(identity.querySelectorAll('[class*="muted-foreground"]')).toHaveLength(0);
+    // Scoped to the label beside the avatar: the disc has muted-foreground of
+    // its own on the Bot badge's plate, which is not a detail line.
+    const label = container.querySelector(
+      '[data-slot="agent-identity"] [data-slot="agent-avatar"] ~ span'
+    )!;
+    expect(label.querySelectorAll('[class*="muted-foreground"]')).toHaveLength(0);
   });
 
   it('uses inline layout for xs/sm sizes', () => {
