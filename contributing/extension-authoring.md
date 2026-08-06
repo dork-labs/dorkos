@@ -116,7 +116,7 @@ api.registerCommand(id, label, callback, { icon?, shortcut? }): () => void
 api.registerDialog(id, Component): { open: () => void; close: () => void }
 
 // Add a tab to the settings dialog
-api.registerSettingsTab(id, label, Component): () => void
+api.registerSettingsTab(id, label, Component, { group? }): () => void
 ```
 
 `registerComponent` options:
@@ -124,6 +124,7 @@ api.registerSettingsTab(id, label, Component): () => void
 - **`priority?`** — orders the contribution within its slot; lower sorts earlier (leftward in a tab strip). Defaults to a mid value.
 - **`label?`** — the human name shown where the slot has a label or tab (the `right-panel` tab strip, `settings.tabs`, `sidebar.footer`). Defaults to the namespaced id, so set it for any tabbed or labelled slot.
 - **`icon?`** — the tab-strip glyph for slots that render one (today, `right-panel`). It is any component the host renders with a `className` (a `{ className?: string }` component). Omit it and the strip falls back to a default puzzle-piece. Note: extensions can only import `react`, `react-dom`, and `@dorkos/extension-api` at runtime, so you cannot import a `lucide-react` icon here — supply your own inline-SVG component instead.
+- **`group?`** — `settings.tabs` only: names the sidebar section the tab sits under in the Settings dialog (e.g. `'Agents & sessions'`, `'Access & privacy'`). Omit it and the tab lands under "Add-ons", the section reserved for contributed tabs, so a tab written before this field existed still files itself somewhere honest. Same option on `registerSettingsTab`.
 
 ### UI Control
 

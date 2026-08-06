@@ -997,13 +997,13 @@ Loading errors are non-fatal: the failing adapter is skipped with a warning and 
 
 ## Adapter-Agent Bindings
 
-The binding subsystem routes inbound adapter messages to specific Claude Code sessions. It consists of two services: `BindingStore` (persistence) and `BindingRouter` (runtime routing).
+The binding subsystem routes inbound adapter messages to specific Claude Code sessions — **or**, when a binding is bridged (chats-as-channels, spec `chats-as-channels` §5), into a room instead of a session. It consists of two services: `BindingStore` (persistence) and `BindingRouter` (runtime routing).
 
 ### BindingStore
 
 Bindings are persisted in `~/.dork/relay/bindings.json` and hot-reloaded via chokidar when the file changes externally. The store is the source of truth for all routing decisions.
 
-Each binding links one adapter instance to one agent working directory:
+Each binding links one adapter instance to one agent working directory, or — when bridged — to a room:
 
 ```typescript
 interface AdapterBinding {
@@ -1015,13 +1015,17 @@ interface AdapterBinding {
   sessionStrategy: 'per-chat' | 'per-user' | 'stateless';
   permissionMode?: 'default' | 'plan' | 'acceptEdits' | 'dontAsk' | 'bypassPermissions' | 'auto'; // Permission mode for sessions (default: 'acceptEdits')
   canInitiate: boolean; // Whether the adapter can start new conversations (default: false)
-  canReply: boolean; // Whether the adapter can reply to messages (default: true)
+  canReply: boolean; // Whether the adapter can reply to messages (default: true); also the chats-as-channels consent-gate check once bridge: 'room' — see below
   canReceive: boolean; // Whether the adapter can receive inbound messages (default: true)
+  bridge: 'off' | 'room'; // Chats-as-channels feature flag, per binding (default: 'off')
+  roomId: string | null; // The room this binding is bridged to, set iff bridge === 'room'
   label: string; // Human-readable label shown in the UI
   createdAt: string; // ISO 8601 timestamp
   updatedAt: string; // ISO 8601 timestamp
 }
 ```
+
+**A bridged binding (`bridge: 'room'`) does not route to a Claude Code session at all.** `BindingRouter` hands the inbound message to `ChatBridgeIngest` instead, which writes it as a room post and stops — a terminal branch that never touches `sessionStrategy`'s session map (falling through to session resolution would run the turn twice from one message). Any agent turn on a bridged message is chosen by `RoomTriggerDispatcher` off the committed post, not by this router. See `docs/guides/bridged-channels.mdx` for the user-facing setup flow and `packages/shared/src/relay-adapter-schemas.ts` (`AdapterBindingSchema`) for the full field set. `canReply` predates bridging (it was persisted but unenforced), and the bridge's consent gate is the first code path that actually checks it before letting a reply out.
 
 ### Resolution Scoring (Most-Specific-First)
 
@@ -1071,8 +1075,9 @@ Session mappings for `per-chat` and `per-user` strategies are persisted to `~/.d
 1. Parse the inbound subject to extract `platformType` and `chatId` (e.g., `relay.human.telegram.123456` → `telegram`, `123456`)
 2. Resolve platform type to an adapter instance ID via `resolveAdapterInstanceId()`
 3. Call `BindingStore.resolve()` to find the best binding
-4. Resolve or create a session ID based on the binding's `sessionStrategy`
-5. Republish the payload to `relay.agent.{sessionId}` for `ClaudeCodeAdapter` to handle
+4. **If the binding is bridged (`bridge === 'room'`), hand off to `ChatBridgeIngest.ingest()` and stop** — this is the terminal chats-as-channels branch; steps 5-6 below never run for it.
+5. Otherwise, resolve or create a session ID based on the binding's `sessionStrategy`
+6. Republish the payload to `relay.agent.{sessionId}` for `ClaudeCodeAdapter` to handle
 
 Agent responses published back to `relay.human.*` subjects are detected by checking `envelope.from.startsWith('agent:')` and are skipped to prevent routing loops.
 

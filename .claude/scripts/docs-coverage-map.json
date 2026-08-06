@@ -113,6 +113,11 @@
       "patterns": ["apps/e2e/", "playwright.config", "browsertest"]
     },
     {
+      "guide": "browser-verification.md",
+      "description": "Verifying a change against a live instance; traps that make a check pass while proving nothing",
+      "patterns": ["apps/e2e/multi-window/", "browser-verification", "multi-window"]
+    },
+    {
       "guide": "environment-variables.md",
       "description": "env.ts validation pattern, boolFlag helper, complete env var reference",
       "patterns": ["env.ts", "process\\.env", "globalPassThroughEnv"]

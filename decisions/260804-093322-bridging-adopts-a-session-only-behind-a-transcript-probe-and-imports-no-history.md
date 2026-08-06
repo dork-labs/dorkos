@@ -1,7 +1,7 @@
 ---
 id: 260804-093322
 title: Bridging adopts an existing session only behind a transcript probe, and never imports platform history
-status: proposed
+status: accepted
 created: 2026-08-04
 spec: chats-as-channels
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed. Consistent with ADR-0310 (session storage is runtime-owned). To be accepted when the `chats-as-channels` spec reaches `implemented`.
+Accepted. Consistent with ADR-0310 (session storage is runtime-owned). Implemented in the `chats-as-channels` phase 1 series.
 
 ## Context
 

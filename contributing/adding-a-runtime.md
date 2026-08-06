@@ -82,7 +82,7 @@ capability flag.
 
 - **Capabilities** (`getCapabilities`, `getSupportedModels`, `getSupportedSubagents`, `checkDependencies`): see the next two sections.
 - **Lifecycle** (`checkSessionHealth`, `getInternalSessionId`): `getInternalSessionId` is a loaded gun; see [Common Traps](#common-traps).
-- **Optional DI setters** (`setSessionSettings`, `setMeshCore`, `setRelay`, ...): implement `setSessionSettings` so per-session settings (model, permission mode) hydrate from and write through to the durable `session_metadata` store (ADR-0260). The composition root injects `runtimeRegistry` as the port.
+- **Optional DI setters** (`setSessionSettings`, `setMeshCore`, `setRelay`, `setManagedMcpServers`, ...): implement `setSessionSettings` so per-session settings (model, permission mode) hydrate from and write through to the durable `session_metadata` store (ADR-0260). The composition root injects `runtimeRegistry` as the port. If you declare `supportsManagedMcpServers: true`, implement `setManagedMcpServers(resolver: ManagedMcpServerResolver)` too — nothing else enforces that link, so a runtime that declares the capability but skips the setter ships a UI affordance ("Add server" in the Agent Hub Toolkit tab) that silently does nothing. Codex and OpenCode are the worked examples (`setManagedMcpServers` in their runtime files); the composition root wires it via `runtime.setManagedMcpServers?.(agentMcpServerService)`.
 
 ### RuntimeCapabilities
 
@@ -145,7 +145,7 @@ capability flag.
   | `supportsEffort` | `boolean`                  | Whether your backend can be asked for more or less thinking at all. Per-model rungs are a separate, catalog-level fact (`ModelOption.supportsEffort` / `supportedEffortLevels`); both gates apply. OpenCode declares `false` because its prompt body carries no effort field.              |
   | `sections`       | `RuntimeSettingsSection[]` | Ordered bespoke panels your settings card renders, by `kind`. Empty for most runtimes.                                                                                                                                                                                                     |
 
-  Nothing renders these sections yet: the client's renderer registry ships with the settings-tab redesign (phase 2 of spec `runtimes-settings-redesign`), so until it lands, a declared kind is inert and declaring one costs you nothing and gains you nothing. Once the registry is there, a section appears only if the client has a renderer registered for its kind; an unknown kind renders nothing, deliberately, so an older cockpit against a newer server degrades instead of crashing. Declaring a new kind is therefore a two-sided change: the declaration here, and the renderer in the client.
+  The client's renderer registry (`apps/client/src/layers/features/settings/ui/runtimes/section-registry.tsx`) has shipped: a section appears only if the client has a renderer registered for its kind; an unknown kind renders nothing, deliberately, so an older cockpit against a newer server degrades instead of crashing. Declaring a new kind is therefore a two-sided change: the declaration here, and the renderer in the client. Claude Code's `claude-accounts` and OpenCode's `opencode-power-source` are the two registered kinds today.
 
   The declaration carries no dynamic state. Account lists, the current provider, and readiness ride `GET /api/config` and `GET /api/system/requirements`, which refetch; capabilities are cached with `staleTime: Infinity` and would go stale if any of that lived here.
 

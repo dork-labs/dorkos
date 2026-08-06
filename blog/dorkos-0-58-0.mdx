@@ -1,0 +1,140 @@
+---
+title: DorkOS 0.58.0
+description: Connections is now one page, a Telegram or Slack chat can become a channel your agents answer in, and you can hand an agent new tools without leaving the app.
+date: 2026-08-06
+author: DorkOS Team
+category: release
+tags: [release, connections, bridging, mcp]
+---
+
+DorkOS 0.58.0 pulls everything your agents touch on the outside into one place. Connections is now a page: one half for who can reach your agents, one half for the accounts they act under. A Telegram or Slack chat can become a channel your agents read and answer in. You can hand an agent new tools without leaving the app. And a rough edge is gone — several DorkOS windows finally stay responsive at once.
+
+## Highlights
+
+**Connections is one page now**
+
+![The DorkOS cockpit, with agents and their conversations in the left sidebar and a chat open beside them](https://dorkos.ai/product/archive/v0.58.0/cockpit-light.png)
+_The cockpit, where your agents and their conversations live._
+
+Everything that ties your agents to the outside world lives on one page, split into two plain halves: Messaging is who can write to your agents; Accounts is the services they can act under, like Gmail or Slack. A card at the top even shows you anyone trying to reach a bot you have not wired up yet — without ever reading what they wrote.
+
+**Turn a chat into a channel**
+
+You can bridge a Telegram or Slack chat, or a whole group, into a channel your agents read before they answer. Messages land in one shared log you can speak into from the cockpit, everyone joining from outside is clearly marked, and a new [Bridged Channels guide](https://dorkos.ai/docs/guides/bridged-channels) is honest about the trade-offs.
+
+**Manage each agent's tools in the app**
+
+Open an agent's Toolkit tab to add, test, and switch MCP servers on or off — a local command or a remote URL — with no terminal and no config files. DorkOS shows you the exact command before it runs anything, and it works for Claude Code, Codex, and OpenCode agents.
+
+**Several windows stay responsive**
+
+![Four DorkOS sessions running side by side, each showing whether it is working or done](https://dorkos.ai/product/archive/v0.58.0/multi-session-dark.png)
+_Open as many DorkOS windows as you like. [See it in motion.](https://dorkos.ai/features/multi-runtime-cockpit)_
+
+Opening a third or fourth DorkOS window used to make the earlier ones freeze. Live output now rides WebSockets, so every window stays live at once.
+
+## All Changes
+
+### Added
+
+- **Connections is a page now, with two halves.** Messaging is where people and platforms reach your agents. Accounts is the services your agents can act on for you. They sit on one page, one scroll, because they ask two different things of you: who may write to your agents, and what your agents may do under your name.
+- **You can see who is trying to reach a bot nobody set up.** A Telegram or Slack bot can be found by anyone. When a stranger writes to one, DorkOS now shows you a card at the top of the page: who wrote, and how many times. It never shows what they wrote, because it never reads it. Pick an agent to answer, ignore the chat, or block it outright. The bot stays quiet until you decide, and no agent runs, so nothing is spent.
+- **An account you give an agent stays given.** Switch on Gmail for an agent and every session it starts gets Gmail, today and after a restart. A single session can still add or drop an account just for itself.
+- **A fresh install shows you what is possible.** The Accounts half used to be an empty box until you set up a carrier, which made it look broken. It now names the services and tells you the truth about what stands in the way: Gmail and the rest connect through Composio, a one-time setup of about two minutes, and your sign-ins live in Composio's vault rather than on this machine.
+- The getting-started card has a new "Connect a service" row that takes you straight to the Accounts area of the Connections page.
+- Manage an agent's MCP servers right inside DorkOS. Open an agent and go to its Toolkit tab to add a server (a local command or a remote URL), turn it on or off, test the connection, and see at a glance whether it's connected — no terminal and no config files to edit. Before a new server can run, DorkOS shows you the exact command it will start and asks you to approve it. Available for Claude Code agents now.
+- Codex agents can now use managed MCP servers too, the same way Claude Code agents already can. Add one from a Codex agent's Toolkit tab: point it at a local command or a remote URL, turn it on or off, and DorkOS makes it available to the agent on its next turn. Codex doesn't support the third kind of server (a persistent streaming link, SSE), so that option isn't offered when you're adding a server to a Codex agent.
+- You can now add and manage MCP servers for an OpenCode agent right from the Agent Hub, the same way you already can for Claude and Codex agents. DorkOS connects the servers you turn on to the agent at the start of each session, and shows whether each one is working. It also surfaces any MCP servers you set up in OpenCode itself, as a read-only status view (DOR-893).
+- Bring an MCP server DorkOS found in a project's config under DorkOS management in one click. When an agent's Toolkit tab shows a "discovered" server (one read from the project's `.mcp.json`), a Manage button now promotes it to a managed server you can turn on or off, test, and edit here — after the same quick approval step as adding one by hand. Available for Claude Code agents.
+- You can turn a connected Telegram chat into a **channel**. Its messages are set up to land in one shared log your agent reads before it answers, it is set up so you can speak into the chat from the cockpit, and everyone writing in from outside your machine is clearly marked. A new [Bridged Channels](/docs/guides/bridged-channels) guide walks through it and is honest about the trade: bridging lets people you may not know put text in front of your agent, the permission mode is the real bound, and the channel log is your audit trail. (DOR-881)
+- The Bridge to a channel action lives in a messaging connection's settings. The same screen turns bridging back off (after telling you what that archives), lets you choose whether the chat hears about a failed or stopped turn, and says plainly why a chat can't be bridged when it can't, instead of a greyed-out button. (DOR-878)
+- You can now set up a group chat to become a channel, not just a one-to-one. Turning on Bridge to a channel for a group creates a channel where the group's messages land in a shared log your agent reads, and the agent stays quiet until it's mentioned. A broadcast channel still can't be bridged, and now says exactly that ("a broadcast channel, not a two-way conversation") instead of the old catch-all reason. A chat connected before this change carries no record of what kind it is, so it stays a one-to-one-only bridge until a new message comes through. (DOR-907)
+- When someone messages a bot you haven't set up yet, the claim card now offers two ways to answer: "Answer in a channel" sets up a room for that chat in one step, or "Answer privately" keeps it as a single chat, same as before. Choosing an agent still never happens automatically — nothing runs, and nothing is spent, until you decide. If a channel can't be set up (for example, the chat turns out to be a broadcast), the chat is still answered privately and the card says why. (DOR-882)
+- Adding your bot to a Telegram group now shows up right away as its own card on the Connections page, naming who added it and to which group. Pick an agent and choose Join, and that agent answers the group from a new channel. Ignore hides the card without changing anything; Leave actually removes the bot from the group on Telegram, not just from the list. (DOR-883)
+- If the bot gets added to a broadcast channel instead of a group, the card says so and only offers Ignore or Leave. A broadcast channel is one-way, so there is nobody in it for an agent to answer. (DOR-883, DOR-907)
+- A bridged Telegram channel's header now shows whether your agent sees every message there or only the ones that mention it, taken straight from Telegram's own privacy setting for the bot. Tap it to see why, and how to change it on Telegram's side. (DOR-879)
+- Anyone bridged in from Telegram is marked with the platform they're on, next to their name in the room's member list and beside every message they send, so you can always tell a person on your own machine apart from someone joining in from outside it. (DOR-879)
+- In rooms and chats, agents now look different from people at a glance. An agent's avatar is a square with a small robot badge; a person's stays round. Someone posting in from another chat app, like Telegram, gets a small icon too, so you can see where their message came from.
+- @mentions in room messages now show up as colored tags. Hover one to see who it is, agent or person. A mention of someone who has since left the room still shows, just as plain text.
+- Feedback, bug reports, and ideas you send from DorkOS are now trackable. Open "Feedback & requests" from the help menu to see everything this install has sent and where it stands: Received, Triaged, In progress, or Shipped with the version it went out in.
+- Add your email to a report and DorkOS emails you twice: once to confirm it arrived, and again when it ships. Nothing in between, and never anything else.
+- Sending feedback from the cockpit is richer and clearer. The dialog leads with your message, shows who it will be sent as (with a one-click "Send anonymously" that really withholds your name and email), and tucks diagnostics and the recent conversation behind an "Attachments & details" panel. You can open a full preview to see exactly what will be sent before you press Send — nothing leaves your machine until you do, and home paths and secrets are removed first. Bug reports include the recent conversation and a scrubbed slice of server logs so the team can see what led to the problem.
+- New ways to reach feedback: a "Send feedback" command in the command palette, a "Report" button on error toasts, and a "Report this crash" button on the crash screen — each opens the dialog ready to send.
+- Marketplace cards for messaging and service adapters now tell you what they become once installed: a messaging adapter reads "Adds a new way to reach your agents", and a service connector reads "Adds a new service your agents can act on", matching the two halves of the Connections page.
+- After you install one of these, the confirmation gives you a one-tap way in: "Open Messaging" or "Open Accounts" takes you straight to the right part of the Connections page to finish setting it up.
+- Channels and conversations can now go in sidebar groups alongside your agents. Drag one in, reorder it, or use "Move to group" in its right-click menu, and it stays where you put it (DOR-581)
+- Mute a channel or conversation from that same menu to dim it and stop it asking for your attention (DOR-581)
+- Right-click a sidebar section header, or press the "…" beside it, to see what you can do with that whole section. Channels and Direct messages can start a new one, mark everything read, and collapse. Recent can start a session. Agents can add an agent or a group, and finally gives you the sort and show settings that had nowhere to click before. Every header uses the same words for the same actions (DOR-601)
+- A group's own "…" menu can now collapse or expand that group, so every section in the sidebar folds away from the same place (DOR-601)
+
+### Changed
+
+- Everything that links your agents to the outside world now lives under one word: Connections. The session badge, the per-agent settings, the session panel, and the add and edit dialogs all say "Connection" now, instead of the old mix of "Integration", "Connector", and "Adapter".
+- Status messages about your network no longer say "Connection" — a word we're saving for the Connections page. The live-sync indicator now says "Live updates" (or "Offline" when it's down), a lost server link says "Server link lost. Check your network.", a stalled fetch says "Can't reach DorkOS", adapter tests say "Reachable" or "Not reachable" while trying to reach it, and tunnel and install errors name what actually failed instead of saying "Connection" (DOR-855)
+- Setting up Telegram or Slack asks who should answer first. It used to ask last, and let you skip. Skipping left you with a bot that reached nobody and no sign that anything was wrong. The agent and the connection are now saved together, and if the agent cannot be set, nothing is saved at all.
+- A chat that already reaches an agent says so. Pointing it at someone else now asks once — "This chat reaches DorkBot. Move it to security-auditor?" — instead of quietly creating a second route that never fires.
+- Slack asks what you want it for. It can be a place you talk to your agents, or an account they act on as you. Those are different things, so it asks which, and tells you where an account sign-in is kept before you pick.
+- Session strategy is in plain words. "One conversation per chat", "One conversation per person", or "A fresh start every message", each saying what it means.
+- The Slack setup form names Slack directly ("Slack channel settings", "respond in Slack channels?"), so its channels never get confused with your Channels list.
+- When you filter which chats reach an agent, the field reads in plain language: "Chat type", with options like "Direct message" and "Broadcast channel".
+- Old links still work. Anything that used to open the messaging pop-up, including the Settings link, now lands on the messaging half of the Connections page.
+- Cleared up copy that used "agent" for two different things at once. The sidebar's "Add more agents" row that actually opens the Runtimes tab now says "Connect more runtimes"; first-run setup, the Runtimes settings tab, and the status bar now name Claude Code, Codex, and OpenCode (or say "runtime") instead of "agent" there. Background-task labels for helper subagents now say "subagent" instead of "agent" too. Nothing about your fleet of named agents changed (DOR-853)
+- The Settings Runtimes page now shows one card per runtime instead of a single shared form. Each card shows what a new conversation with that runtime will start with, at a glance.
+- You can now set the model and thinking effort for every runtime, not just your default one. Before, only the default runtime's model and effort could be changed at all.
+- Pick your default runtime by clicking Make default on its card.
+- Claude Code's billing accounts and OpenCode's power source now live on their own runtime's card instead of somewhere else in Settings.
+- One shared control, "Where new conversations stop for you," sits below the cards and covers every runtime at once.
+- The Runtimes page now works on your phone: cards expand in place instead of needing a wider screen.
+- The Runtimes page now calls the three trust levels "Asks before acting," "Pauses at big steps," and "Full autonomy," so the words describe what each level actually does.
+- Settings is shorter and grouped. It went from twelve tabs to ten, sorted under plain headings: Agents & sessions, Access & privacy, System, and Add-ons. Appearance and Preferences stay at the top, and Remote Access stays a button at the bottom. The window, and the sidebar button that opens it, are titled "Settings" now, not "App Settings".
+- The default agent moves to the Agents page. It used to be its own Settings tab. Now you open an agent's menu on the Agents page and choose "Set as default" — right next to the "Default" badge that already tells you which one it is.
+- Integrations left Settings for the Connections page. Everything that tab did lives on the Connections page now, and old links to it still land there.
+- The Tools tab names what the tools do. The groups you can switch on and off are Messaging, Agent discovery, Connection management, and Scheduling, instead of the names of the parts under the hood.
+- Settings now opens at nearly the size of your window instead of a small box, so long pages like Runtimes have room to breathe and you scroll less (DOR-917)
+- Choosing where OpenCode gets its models is a shorter read: each choice shows its name and one line, and the extra detail (including the honest trade-off) appears once you pick a path, before you set anything up (DOR-917)
+- The arrow on a runtime card now opens and closes the card when you click it, the way it always looked like it should (DOR-917)
+- The Settings → Tools card that lets outside apps (Claude Code, Cursor, Windsurf) use DorkOS as an MCP server is now named "Connect other apps to DorkOS" — the old "External MCP Server" label didn't say which direction the tools flowed.
+- That card and an agent's Toolkit tab (where you give an agent tools from other MCP servers) now point at each other, so wherever you land you can find the other one.
+- The agent map (Discovery → topology graph) no longer says "Integration" anywhere: the edge label, the "Remove" button, the drag-to-connect hint, and the remove-connection dialog all say "Connection" now, matching the rest of the app.
+- A binding's chat-type badge on the graph now reads in plain language ("Direct message", "Group", "Broadcast channel", "Thread") instead of the raw platform value.
+- The help menu now leads with "Send feedback" and "Report a bug", adds "Feedback & requests", and keeps the GitHub option available but tucked below. Reporting on GitHub is no longer in the command palette.
+- Cmd+K now closes a dialog you opened from the sidebar, not just one you reached by a link. Before, opening the command palette left that window sitting behind it (DOR-839)
+- Rooms can now carry three new status notes for a bridged channel (a message that could not be delivered, a delivery blocked by your reply or start settings, and messages arriving faster than the channel can record them). This widens the set of note types a room may hold. The DorkOS cockpit ships in lockstep and understands them, but an older client pinned to the previous set will fail to read a room that contains one of the new notes until it is updated. This is the one part of the change that is not backward-compatible; everything else is additive. (DOR-881)
+- If you reach DorkOS through a reverse proxy, check that it passes WebSocket connections through — live output now uses them. The setup pages have working config for nginx and Caddy (DOR-927)
+- Running the Docker image and reaching it by a name rather than an IP (`http://dorkos.lan:4242`)? Add `DORKOS_TRUSTED_HOSTS=dorkos.lan`. Without it the page loads and the live updates never arrive — the Docker page explains why (DOR-927)
+
+### Fixed
+
+- Fixed the sidebar session list going empty for a runtime whose permission-mode names sit outside DorkOS's shared list — new sessions and status updates for it were silently dropped instead of shown (DOR-851)
+- Two people could end up messaging the same Telegram or Slack chat and quietly land on two different agents, with no warning either had happened — whoever connected the chat second had no idea their connection was silently going nowhere. Connecting a chat to an agent is now exclusive: trying to connect an already-connected chat tells you which agent already has it, instead of quietly losing the newer connection with no error.
+- Creating a new agent now reliably opens a working chat. The agent's opening turn runs in the new agent's own folder instead of whichever folder you were in a moment before, so its first message is saved where the chat looks for it. Before, the greeting could land in the wrong place: the chat showed "No conversation found" or the conversation seemed to vanish, and the new session sometimes appeared under the agent you had open just before.
+- Clicking an agent in the sidebar now opens the conversation you left off in. Before, it usually opened a blank chat instead, even while the sidebar showed that agent working. You only got the real conversation back if you had already opened that agent in the same browser tab, so a second window or a fresh reload almost always lost it. An agent with no conversations yet still starts a new one (DOR-928)
+- Click two agents quickly and you land on the second one, not whichever one happened to load first. The same holds if you click an agent and then open a channel, a thread, or a recent conversation: you stay where you last clicked (DOR-928)
+- If DorkOS cannot reach the server while opening an agent, it now says so and leaves you where you are, instead of dropping you into a blank chat (DOR-928)
+- "New Session" in the command palette starts a new conversation again, on the agent you are actually on. It had been reopening the agent's most recent conversation, which is what "Open Here" does (DOR-928)
+- Opening Settings or Tasks right after clicking an agent no longer cancels the click. Going somewhere real still does: click an agent, then open a different channel, and you stay in the channel (DOR-928)
+- You can keep several DorkOS windows open at once. Opening a third window used to make the whole app stop responding — activity dots froze, replies looked stuck halfway, reloads never finished, and a fourth window would not open at all. Those were all one problem, and it is fixed (DOR-927)
+- The Send button now greys out whenever it will not send: while your agent is still answering, or in a conversation you can only read. It used to look ready to press and quietly do nothing (DOR-850).
+- The "set up messaging" buttons on an agent's page led nowhere useful. One opened a Settings tab with no messaging controls; the other opened a tab that no longer exists. Both now open the Messaging section of the Connections page.
+- On a phone, the sidebar now closes as soon as you tap a conversation, an agent, or a link, so you land on the thing you picked instead of staring at the sidebar again (DOR-610)
+- "Replay setup" now clears the screen for the setup flow it restarts. If you reached Settings from the "Setup skipped" message, the Settings window used to stay open on top of the welcome screen (DOR-839)
+- Fixed a screen reader announcing "1 more subagents running" for the subagent overflow badge; it now says "1 more subagent running" (DOR-890)
+- Screen readers now get exactly one panel per Settings tab: switching tabs briefly created a hidden second copy of the panel with the same id, which could confuse assistive tech (DOR-693)
+- When you set up Telegram or Slack, required fields (like DM Access or an API key) show a red asterisk next to the label. Screen readers used to read that asterisk out loud as part of the field's name, like "DM Access star". Now they just read the plain field name, and the asterisk still shows for sighted users (DOR-651).
+- Opening a channel or a direct message now shows its name at the top of the screen, instead of always saying "Dashboard" (DOR-587)
+- Workspaces, Connections, and Feedback & requests now show their own name at the top of the page instead of "Dashboard" (DOR-919)
+- Settings panels no longer print their own title twice. Appearance, Preferences, Tools, Security, Privacy & Data, and DorkOS account each showed the same heading a second time just under the first one (DOR-918)
+- When a new message reorders the command palette while it is open, the highlight now stays on the top row until you move it yourself. It used to ride the old row down the list, so Enter opened something other than the row now sitting on top (DOR-699)
+- The keyboard shortcuts panel no longer lists Cmd/Ctrl+Shift+D (Dev Playground) in a production build, where pressing it did nothing (DOR-567).
+- "Move to group" no longer offers smart groups as a destination. Filing an agent into one made the row disappear from the sidebar, because smart groups only show members their rules pick (DOR-581)
+- In Shapes, pressing Escape to back out of "Make your own version" now puts your keyboard focus back on the button you opened it from, so the next Tab carries on from there instead of jumping to the top of the Shape list (DOR-513)
+
+### Security
+
+- Links your agent fetched now clear the same safety check as every other link in DorkOS before a chip can open them (DOR-921)
+
+## Install / Update
+
+```
+npm install -g dorkos@0.58.0
+```

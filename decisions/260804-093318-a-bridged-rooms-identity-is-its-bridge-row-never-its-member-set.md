@@ -1,7 +1,7 @@
 ---
 id: 260804-093318
 title: A bridged room's identity is its bridge row, never its member set
-status: proposed
+status: accepted
 created: 2026-08-04
 spec: chats-as-channels
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed. To be accepted when the `chats-as-channels` spec reaches `implemented`.
+Accepted. Implemented in the `chats-as-channels` phase 1 series.
 
 ## Context
 

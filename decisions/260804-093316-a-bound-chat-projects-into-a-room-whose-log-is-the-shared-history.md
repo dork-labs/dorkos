@@ -1,7 +1,7 @@
 ---
 id: 260804-093316
 title: A bound external chat projects into a room, and the room log is its shared history
-status: proposed
+status: accepted
 created: 2026-08-04
 spec: chats-as-channels
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed. Extends ADR `260726-170125` (a room is a membership-scoped durable stream). To be accepted when the `chats-as-channels` spec reaches `implemented`.
+Accepted. Extends ADR `260726-170125` (a room is a membership-scoped durable stream). Implemented in the `chats-as-channels` phase 1 series.
 
 ## Context
 

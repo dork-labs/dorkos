@@ -1,7 +1,7 @@
 ---
 id: 260804-093320
 title: External authorship is a first-class author origin derived from the stored natural key
-status: proposed
+status: accepted
 created: 2026-08-04
 spec: chats-as-channels
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed. Builds on ADR `260726-170126` (author identity is keyed on the agents directory). To be accepted when the `chats-as-channels` spec reaches `implemented`.
+Accepted. Builds on ADR `260726-170126` (author identity is keyed on the agents directory). Implemented in the `chats-as-channels` phase 1 series.
 
 ## Context
 
