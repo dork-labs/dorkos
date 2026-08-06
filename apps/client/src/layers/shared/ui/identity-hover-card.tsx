@@ -4,11 +4,12 @@
  *
  * @module shared/ui/identity-hover-card
  */
-import type * as React from 'react';
+import * as React from 'react';
 import { Bot, Send } from 'lucide-react';
 import { formatDuration } from '../lib/format-duration';
 import { initialOf } from '../lib/initial-of';
 import { cn } from '../lib/utils';
+import { useLongPress } from '../model';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from './hover-card';
 import { IdentityAvatar } from './identity-avatar';
 import type { IdentityOrigin } from './identity-origin';
@@ -79,13 +80,25 @@ function InfoChip({ className, children }: { className?: string; children: React
  * **soon** — the click is deferred until there is a profile route to send it
  * to.
  *
- * **Touch has no long-press path in this slice.** Radix's `HoverCard` only
- * opens on pointer hover, so on a touch device this card simply never opens
- * — there is no tap-and-hold affordance here yet. The alternative (a
- * `Popover` driven by a manual long-press timer) is real work — its own
- * gesture, its own dismiss behaviour, its own conflict with scroll — and
- * belongs with the slice that actually wires this card onto a touch surface.
- * Scoped out here rather than half-built.
+ * **Opens three ways, one card.** A pointer hovering the trigger opens it
+ * after {@link OPEN_DELAY_MS}, and keyboard focus opens it too, both straight
+ * from Radix's own `HoverCard` wiring. Neither reaches a touch screen: there
+ * is no hover to detect, and Radix's trigger deliberately excludes `touch`
+ * pointers from that same open/close logic so a tap can never masquerade as
+ * a hover. This adds the third path — holding a touch point on the trigger
+ * opens the SAME card through the SAME `<HoverCardContent>`, via
+ * {@link useLongPress} (the room's own long-press gesture, see
+ * `responsive-context-menu.tsx`) driving this component's own controlled
+ * `open` state. One card, three ways in; never a second implementation to
+ * keep in sync.
+ *
+ * A plain, quick tap does nothing on its own — deliberately. The mention
+ * pill this wraps has no click action yet ("View profile" is still
+ * **soon**), and a tap that opened the card would read as a click
+ * affordance the pill does not actually have, one this would then have to
+ * un-teach once a real tap-to-navigate lands. Long-press is also gated to
+ * `pointerType === 'touch'` specifically, so it never doubles up with a
+ * mouse holding the trigger down — hover already opens that case, faster.
  *
  * Presentational: it renders the descriptor it is handed and composes
  * {@link IdentityAvatar}. The caller resolves `identity` from whatever
@@ -103,9 +116,33 @@ function IdentityHoverCard({ identity, children, className }: IdentityHoverCardP
   const avatarColor = color ?? 'hsl(var(--muted-foreground))';
   const isExternal = typeof origin === 'object' && origin !== null;
 
+  // Controlled rather than left to Radix's own internal state: hover and
+  // focus still drive it exactly as before (their handlers call `onOpenChange`,
+  // same as any uncontrolled `HoverCard`), but a touch long-press has no Radix
+  // event to hook — it has to set `open` itself, on the very state Radix reads.
+  const [open, setOpen] = React.useState(false);
+  // Which pointer is currently down on the trigger, read back when the long
+  // press timer fires. A `PointerEvent` isn't available inside the timer
+  // callback itself, so this is captured at `pointerdown` time instead.
+  const isTouchPressRef = React.useRef(false);
+  const longPress = useLongPress({
+    onLongPress: () => {
+      if (isTouchPressRef.current) setOpen(true);
+    },
+  });
+
   return (
-    <HoverCard openDelay={OPEN_DELAY_MS}>
-      <HoverCardTrigger asChild>{children}</HoverCardTrigger>
+    <HoverCard open={open} onOpenChange={setOpen} openDelay={OPEN_DELAY_MS}>
+      <HoverCardTrigger
+        asChild
+        {...longPress}
+        onPointerDown={(event: React.PointerEvent) => {
+          isTouchPressRef.current = event.pointerType === 'touch';
+          longPress.onPointerDown(event);
+        }}
+      >
+        {children}
+      </HoverCardTrigger>
       <HoverCardContent
         data-slot="identity-hover-card"
         align="start"

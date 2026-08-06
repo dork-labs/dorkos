@@ -94,7 +94,7 @@ export function IdentityShowcases() {
 
       <PlaygroundSection
         title="IdentityHoverCard"
-        description="The compact card that opens over an identity: name, @handle subtitle, a couple of fact chips, and a footer pinned under everything for a profile view that doesn't exist yet."
+        description="The compact card that opens over an identity: name, @handle subtitle, a couple of fact chips, and a footer pinned under everything for a profile view that doesn't exist yet. Opens on pointer hover, keyboard focus, or (touch devices only) a long-press on the trigger — a quick tap does nothing, on purpose."
       >
         <ShowcaseLabel>Agent — working, and idle</ShowcaseLabel>
         <ShowcaseDemo>
