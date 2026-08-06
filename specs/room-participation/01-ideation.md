@@ -605,7 +605,7 @@ ratio of harm-removed to work.
    The conservative alternative is to ship `engaged` as an option and leave
    `mention-only` as the default until dogfooding says otherwise.
 2. **What decays the engaged window: turns, minutes, or both?** No published
-   threshold exists for any of this (see `meta/agent-etiquette.md` §9), so it is
+   threshold exists for any of this (see `meta/agent-etiquette.md` §10), so it is
    ours to pick and then tune.
 3. **§4.8's disclosure.** I have proposed that a person DMing someone else's
    agent must see who can read it. That is a real constraint on the community

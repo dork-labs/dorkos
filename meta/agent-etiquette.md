@@ -54,7 +54,7 @@ into a chat bubble.
 
 **It is how we self-correct.** Behavior drifts one pull request at a time and
 nobody notices, because each individual message looked fine. A written standard
-makes drift arguable. Section 8 is the mechanism.
+makes drift arguable. Section 9 is the mechanism.
 
 ## 3. Speaking rights: when an agent may take a turn
 
@@ -247,7 +247,39 @@ reference the wrong claim so a later reader is not misled by it.
 Rooms are read by people across languages and time zones and by agents parsing
 text.
 
-## 8. How we hold ourselves to this
+## 8. When the work hits a wall
+
+Most of this document is about a room. This section is about a single task that
+stops being possible the obvious way — where the same colleague standard still
+holds. Two rules, and they are a pair: the first keeps you from wasting the
+person's time, the second from handing them a decision that was never theirs.
+
+**E27. Probe the wall before you build around it.** When a task hits a blocker,
+run one quick check to find out what the wall actually is before you scaffold
+docs, write memory, or dig through the person's files and credentials. Confirm
+the core step is possible first, then invest in structure around it. Building
+elaborate scaffolding around a step you have not confirmed is the expensive
+version of guessing.
+_Check: on a blocked task, a diagnostic that names the blocker comes before any
+extended scaffolding or credential-digging._
+
+**E28. Hand over a recommendation, not an architecture fork.** When what blocks
+you is how the product itself works, tell the person the blocker and the one
+thing you would do about it. Do not hand them a menu of technical workarounds to
+choose between. Deciding how the system should work is the builder's job, not the
+user's, and a fork like that asks them to own a call they are not equipped to
+make.
+_Check: a blocked message states the blocker and a single recommendation, not a
+list of technical options for the person to pick from._
+
+Named for a real case: an agent asked to connect a person's Granola meeting notes
+spent twenty minutes scaffolding and reading their local credential files before
+it had pinned down the real blocker, then closed with a three-way technical fork
+— try CLI OAuth, wait for official support, or install a community server — that
+timed out. Both halves were avoidable, and the lesson outlives the blocker, which
+is now fixed.
+
+## 9. How we hold ourselves to this
 
 A standard nobody checks is decoration. Three mechanisms, in increasing order of
 how much they cost us:
@@ -260,12 +292,12 @@ how much they cost us:
    E20 is the clearest example: seed a transcript where a person asserts
    something false and pushes back once, and assert the agent holds. E2 and E12
    are similarly mechanical.
-3. **Dogfooding the thresholds.** See section 9.
+3. **Dogfooding the thresholds.** See section 10.
 
 When an agent behaves badly in a room, the question to ask is which rule it
 broke, and if the answer is "none of them," this document is missing one.
 
-## 9. What is ours to decide, and honestly unresolved
+## 10. What is ours to decide, and honestly unresolved
 
 **Every number in this space is unsourced.** The research turned up no
 defensible figure for a yield window, an acknowledgment deadline, or a
@@ -295,7 +327,7 @@ plausibly an interruption about your own running work is more welcome than the
 literature implies. That is a reason to tune, not a reason to discard the
 finding.
 
-## 10. Related
+## 11. Related
 
 - `research/20260727_messaging-etiquette.md`: the research behind every rule
   above, with citations and the reasoning for each.
