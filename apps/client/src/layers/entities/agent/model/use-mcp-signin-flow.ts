@@ -175,6 +175,10 @@ export function useMcpSigninFlow(agentId: string, serverName: string): McpSignin
       return FLOW_POLL_INTERVAL_MS;
     },
     retry: false,
+    // The observer stays enabled once the flow reaches a derived terminal step, so
+    // suppress the refocus refetch — otherwise a window refocus fires one more poll
+    // after connected/failed. Idempotent, but needless.
+    refetchOnWindowFocus: false,
     // Poll results are moments, not cache-worthy data.
     gcTime: 0,
     staleTime: 0,

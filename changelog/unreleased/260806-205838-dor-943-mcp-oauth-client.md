@@ -1,6 +1,7 @@
 ---
 covers:
   - "feat(client): sign in to OAuth MCP servers from the agent's server list (DOR-943)"
+  - 'refactor(client): close review nits on MCP OAuth sign-in (DOR-943)'
 ---
 
 ### Added

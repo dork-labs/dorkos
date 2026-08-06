@@ -374,12 +374,28 @@ describe('AgentMcpServers', () => {
     });
     const { container } = renderComponent(transport);
 
-    // The status carries an accessible name a screen reader reaches, and the
-    // label is visible text — not the old color-only dot.
-    await waitFor(() =>
-      expect(container.querySelector('[aria-label="Status: Needs sign-in"]')).not.toBeNull()
-    );
-    expect(within(container).getByText('Needs sign-in')).toBeVisible();
+    // The status is legible text a screen reader reaches — not the old, label-less
+    // color dot. jest-dom's toBeVisible treats an aria-hidden node as not visible,
+    // so this reddens if the chip regresses to a bare aria-hidden dot.
+    await waitFor(() => expect(within(container).getByText('Needs sign-in')).toBeVisible());
+  });
+
+  it('shows Disabled (and no Sign in) for a disabled server even when live status is needs-auth', async () => {
+    // The `enabled ? live?.status : 'disabled'` fold must win: a turned-off server
+    // is Disabled and offers no sign-in, whatever its last live status was.
+    const disabledServer: ManagedMcpServer = { ...oauthServer, enabled: false };
+    const transport = createMockTransport({
+      listAgentMcpServers: vi.fn().mockResolvedValue([disabledServer]),
+      getMcpConfig: vi.fn().mockResolvedValue({
+        servers: [{ name: 'granola', type: 'http', status: 'needs-auth' }],
+      }),
+    });
+    const { container } = renderComponent(transport);
+
+    await waitFor(() => expect(within(container).getByText('granola')).toBeInTheDocument());
+    expect(within(container).getByText('Disabled')).toBeInTheDocument();
+    expect(within(container).queryByText('Needs sign-in')).not.toBeInTheDocument();
+    expect(within(container).queryByRole('button', { name: 'Sign in' })).not.toBeInTheDocument();
   });
 
   it('shows a Sign in button only when the server needs OAuth sign-in', async () => {

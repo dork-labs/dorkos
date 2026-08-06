@@ -51,8 +51,12 @@ const UNKNOWN_STATUS_META: StatusMeta = {
 
 /**
  * A labeled status chip (dot + text) with a tooltip for a managed or discovered
- * server's live connection state. The text label carries the accessible name;
- * the dot is decorative (`aria-hidden`).
+ * server's live connection state. The visible text label carries the essential
+ * state and its own accessible name (the dot is decorative, `aria-hidden`), so no
+ * redundant `aria-label` is added. The tooltip's fuller sentence is a supplementary
+ * mouse enhancement — the state a keyboard/screen-reader user needs is already in
+ * the label, and making a non-interactive status a focus stop on every row would
+ * add spurious tab stops.
  *
  * @param props.statusKey - The live status a runtime reports, or `undefined`.
  */
@@ -61,7 +65,7 @@ export function StatusChip({ statusKey }: { statusKey: string | undefined }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className="flex shrink-0 items-center gap-1.5" aria-label={`Status: ${meta.label}`}>
+        <span className="flex shrink-0 items-center gap-1.5">
           <span className={cn('size-2 shrink-0 rounded-full', meta.dot)} aria-hidden />
           <span className="text-muted-foreground text-xs">{meta.label}</span>
         </span>
