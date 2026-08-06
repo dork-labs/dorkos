@@ -18,6 +18,8 @@ import type {
   AgentMcpTestResult,
   CapabilityApprovalRequired,
   ImportAgentMcpServerInput,
+  McpSigninPollResult,
+  StartMcpSigninResult,
   UpdateAgentMcpServerInput,
 } from '@dorkos/shared/transport';
 import type { ManagedMcpServer } from '@dorkos/shared/mesh-schemas';
@@ -131,6 +133,18 @@ export function createMcpMethods(baseUrl: string) {
     testAgentMcpServer(agentId: string, name: string): Promise<AgentMcpTestResult> {
       return invokeCapability<AgentMcpTestResult>('mcp.test', { agentId, name }).then(
         (body) => body as AgentMcpTestResult
+      );
+    },
+
+    startMcpSignin(agentId: string, name: string): Promise<StartMcpSigninResult> {
+      return invokeCapability<StartMcpSigninResult>('mcp.signin', { agentId, name }).then(
+        (body) => body as StartMcpSigninResult
+      );
+    },
+
+    pollMcpSignin(flowId: string): Promise<McpSigninPollResult> {
+      return invokeCapability<McpSigninPollResult>('mcp.poll_signin', { flowId }).then(
+        (body) => body as McpSigninPollResult
       );
     },
   };

@@ -289,6 +289,34 @@ export interface AgentMcpTestResult {
   needsAuth?: boolean;
 }
 
+/**
+ * Result of starting an OAuth sign-in for a managed MCP server (the `mcp.signin`
+ * capability, DOR-943). The client shows {@link disclosure} verbatim, then opens
+ * {@link authorizeUrl} in a new tab and polls {@link Transport.pollMcpSignin}
+ * with {@link flowId}. When a live token already existed, {@link alreadyConnected}
+ * is true and {@link authorizeUrl} is absent — no browser step is needed.
+ */
+export interface StartMcpSigninResult {
+  /** The sign-in flow id to pass to {@link Transport.pollMcpSignin}. */
+  flowId: string;
+  /** The sign-in link to open in a new tab; absent when {@link alreadyConnected}. */
+  authorizeUrl?: string;
+  /** True when a live token already existed, so no browser step is needed. */
+  alreadyConnected: boolean;
+  /** The custody disclosure to show verbatim before opening the link. */
+  disclosure: string;
+  /** Ready-to-render markdown carrying the link and disclosure (agent-facing surfaces). */
+  message: string;
+}
+
+/** The pollable status of a managed-MCP sign-in flow (the `mcp.poll_signin` capability). */
+export interface McpSigninPollResult {
+  /** Whether the sign-in is still waiting, finished, or failed. */
+  status: 'pending' | 'connected' | 'failed';
+  /** The failure reason, when {@link status} is `failed`. */
+  error?: string;
+}
+
 /** A lifecycle event recorded for an adapter instance. */
 export interface AdapterEvent {
   id: string;
@@ -1539,6 +1567,27 @@ export interface Transport extends RoomTransport {
    * @param name - Name of the server to probe.
    */
   testAgentMcpServer(agentId: string, name: string): Promise<AgentMcpTestResult>;
+
+  /**
+   * Start an OAuth sign-in for a managed MCP server (the `mcp.signin` capability,
+   * DOR-943). DorkOS owns the whole OAuth lifecycle and injects the resulting
+   * token itself; the client shows the returned custody disclosure, opens the
+   * `authorizeUrl` in a new tab, then polls {@link pollMcpSignin}. `act`-tier —
+   * the server was already approved at add, so no second approval gate.
+   *
+   * @param agentId - ULID of the agent that owns the server.
+   * @param name - Name of the managed (http/sse) server to sign in to.
+   */
+  startMcpSignin(agentId: string, name: string): Promise<StartMcpSigninResult>;
+
+  /**
+   * Check whether a managed-MCP sign-in has completed (the `mcp.poll_signin`
+   * capability, DOR-943). Poll after the person opens the sign-in link; once
+   * `connected`, the server's tools inject on the agent's next turn.
+   *
+   * @param flowId - The flow id from {@link startMcpSignin}.
+   */
+  pollMcpSignin(flowId: string): Promise<McpSigninPollResult>;
 
   /**
    * Obtain a Claude-specific plugin sub-transport for a session.
