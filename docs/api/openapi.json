@@ -4481,6 +4481,12 @@
                       "type": "string"
                     },
                     "default": {}
+                  },
+                  "authKind": {
+                    "type": "string",
+                    "enum": [
+                      "oauth2"
+                    ]
                   }
                 },
                 "required": [
@@ -4507,6 +4513,12 @@
                       "type": "string"
                     },
                     "default": {}
+                  },
+                  "authKind": {
+                    "type": "string",
+                    "enum": [
+                      "oauth2"
+                    ]
                   }
                 },
                 "required": [
@@ -15384,6 +15396,12 @@
                               "type": "string"
                             },
                             "default": {}
+                          },
+                          "authKind": {
+                            "type": "string",
+                            "enum": [
+                              "oauth2"
+                            ]
                           }
                         },
                         "required": [
@@ -15410,6 +15428,12 @@
                               "type": "string"
                             },
                             "default": {}
+                          },
+                          "authKind": {
+                            "type": "string",
+                            "enum": [
+                              "oauth2"
+                            ]
                           }
                         },
                         "required": [
@@ -15581,6 +15605,12 @@
                               "type": "string"
                             },
                             "default": {}
+                          },
+                          "authKind": {
+                            "type": "string",
+                            "enum": [
+                              "oauth2"
+                            ]
                           }
                         },
                         "required": [
@@ -15607,6 +15637,12 @@
                               "type": "string"
                             },
                             "default": {}
+                          },
+                          "authKind": {
+                            "type": "string",
+                            "enum": [
+                              "oauth2"
+                            ]
                           }
                         },
                         "required": [
@@ -15701,7 +15737,7 @@
           "Mcp"
         ],
         "summary": "Enable a managed MCP server",
-        "description": "Enable a managed server so it is injected into the agent’s next session. No new command is introduced (it was approved at add), so no approval is needed.",
+        "description": "Enable a managed server so its tools are injected on the agent’s next turn — no restart, a server enabled mid-conversation is live on the next message. No new command is introduced (it was approved at add), so no approval is needed.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -15752,7 +15788,7 @@
           "Mcp"
         ],
         "summary": "Disable a managed MCP server",
-        "description": "Disable a managed server, removing it from future session injection while keeping its already-approved configuration on the manifest.",
+        "description": "Disable a managed server, removing its tools from the next turn’s injection while keeping its already-approved configuration on the manifest.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -15803,7 +15839,7 @@
           "Mcp"
         ],
         "summary": "Test a managed MCP server",
-        "description": "Probe whether a managed server is reachable and how many tools it exposes. Safe by construction: it only ever connects to an already-approved entry, so it cannot run an arbitrary command and bypass add’s gate. A failure is reported in-band.",
+        "description": "Probe whether a managed server is reachable and how many tools it exposes. Safe by construction: it only ever connects to an already-approved entry, so it cannot run an arbitrary command and bypass add’s gate. A failure is reported in-band; an OAuth server that needs sign-in reports needsAuth so the caller can offer mcp.signin.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -15850,6 +15886,10 @@
                     "error": {
                       "type": "string",
                       "description": "The failure reason, when unreachable."
+                    },
+                    "needsAuth": {
+                      "type": "boolean",
+                      "description": "True when the probe failed with a 401 and the server needs OAuth sign-in."
                     }
                   },
                   "required": [

@@ -156,6 +156,20 @@ export type EnabledToolGroups = z.infer<typeof EnabledToolGroupsSchema>;
  * always fully populated. **Server-only in practice**: a stdio `command`/`env`
  * must never reach the browser client (see `McpAppServerConnection`).
  */
+/**
+ * How a remote (http/sse) managed server authenticates. `'oauth2'` marks a
+ * server whose tokens DorkOS obtains and refreshes for the operator (the
+ * managed-MCP OAuth flow, DOR-938): the access token is injected as an
+ * `Authorization: Bearer` header at session-injection time and never written to
+ * the manifest. Absent means the server needs no DorkOS-held token (either open,
+ * or authenticated by a static header the operator already set). Non-secret — it
+ * is only a hint that a sign-in is expected, so it is safe on disk and on the
+ * wire; the token itself lives in the encrypted `mcp-oauth` store.
+ */
+export const McpServerAuthKindSchema = z.literal('oauth2');
+
+export type McpServerAuthKind = z.infer<typeof McpServerAuthKindSchema>;
+
 export const McpServerTransportSchema = z.discriminatedUnion('transport', [
   z.object({
     transport: z.literal('stdio'),
@@ -167,11 +181,13 @@ export const McpServerTransportSchema = z.discriminatedUnion('transport', [
     transport: z.literal('http'),
     url: z.string().url(),
     headers: z.record(z.string(), z.string()).default({}),
+    authKind: McpServerAuthKindSchema.optional(),
   }),
   z.object({
     transport: z.literal('sse'),
     url: z.string().url(),
     headers: z.record(z.string(), z.string()).default({}),
+    authKind: McpServerAuthKindSchema.optional(),
   }),
 ]);
 

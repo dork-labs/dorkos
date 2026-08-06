@@ -83,6 +83,8 @@ import {
   mergeSessionMcpServers,
 } from './services/runtimes/claude-code/mcp-server-config.js';
 import { AgentMcpServerService } from './services/mesh/agent-mcp-server-service.js';
+import { AgentMcpOAuthService } from './services/mesh/agent-mcp-oauth-service.js';
+import { createMcpOAuthRouter } from './routes/mcp-oauth.js';
 import type { McpCapabilityDeps } from './services/mesh/mcp-capabilities.js';
 import { setRelayEnabled, setRelayInitError } from './services/relay/relay-state.js';
 import { AdapterManager } from './services/relay/adapter-manager.js';
@@ -278,6 +280,7 @@ let adapterManager: AdapterManager | undefined;
 let traceStore: TraceStore | undefined;
 let meshCore: MeshCore | undefined;
 let agentMcpServerService: AgentMcpServerService | undefined;
+let agentMcpOAuthService: AgentMcpOAuthService | undefined;
 let extensionManager: ExtensionManager | undefined;
 let taskFileWatcher: TaskFileWatcher | undefined;
 let taskReconciler: TaskReconciler | undefined;
@@ -290,6 +293,39 @@ let terminalManager: TerminalManager | undefined;
 // shutdownServices() rather than shutdown(), because the admin restart path runs
 // the former and then spawns a successor that must find the directory free.
 let releaseInstanceLock: (() => void) | undefined;
+
+/**
+ * Re-prime the managed-MCP OAuth token cache from disk on boot (DOR-942): for
+ * every registered agent's enabled http/sse servers, hand the OAuth engine the
+ * `(agentId, serverName, serverUrl)` targets so it can load any stored token and
+ * schedule its background refresh. A server with no stored token is skipped by
+ * the engine (stays needs-auth). Best-effort per agent — an unreadable manifest
+ * for one agent never blocks warming the rest.
+ *
+ * @param oauth - The managed-MCP OAuth engine to warm.
+ * @param service - The managed-server service that lists each agent's servers.
+ * @param mesh - The mesh core whose registry enumerates the agents.
+ */
+async function warmMcpOAuthTokens(
+  oauth: AgentMcpOAuthService,
+  service: AgentMcpServerService,
+  mesh: MeshCore
+): Promise<void> {
+  const targets: { agentId: string; serverName: string; serverUrl: string }[] = [];
+  for (const agent of mesh.agentRegistry.list()) {
+    try {
+      const servers = await service.list(agent.id);
+      for (const s of servers) {
+        if (s.enabled && s.connection.transport !== 'stdio') {
+          targets.push({ agentId: agent.id, serverName: s.name, serverUrl: s.connection.url });
+        }
+      }
+    } catch {
+      // Unreadable/absent manifest for one agent: skip it, warm the others.
+    }
+  }
+  await oauth.warm(targets);
+}
 
 async function start() {
   /**
@@ -1432,7 +1468,31 @@ async function start() {
   // owns every read/write of `AgentManifest.mcpServers`. Wired into both the
   // claude-code injection factory below and the `mcp.*` capability domain.
   if (meshCore) {
-    agentMcpServerService = new AgentMcpServerService({ agents: meshCore.agentRegistry, logger });
+    // Managed-MCP OAuth engine (DOR-942): owns the OAuth lifecycle for an agent's
+    // OAuth-protected servers and holds the synchronous access-token cache the
+    // injection path reads. The loopback callback lands on this host, so its
+    // `redirect_uri` is 127.0.0.1 at the listen port.
+    agentMcpOAuthService = new AgentMcpOAuthService({
+      dorkHome,
+      callbackBaseUrl: `http://127.0.0.1:${PORT}`,
+      logger,
+    });
+    agentMcpServerService = new AgentMcpServerService({
+      agents: meshCore.agentRegistry,
+      logger,
+      // The injection path merges `Authorization: Bearer <token>` into http/sse
+      // entries iff this returns a live token — withholds otherwise (needs-auth).
+      tokenProvider: agentMcpOAuthService,
+    });
+    // Re-prime the cache from disk for every enabled OAuth server so a token
+    // survives a restart. Non-blocking: injection withholds until warm completes.
+    warmMcpOAuthTokens(agentMcpOAuthService, agentMcpServerService, meshCore).catch(
+      (err: unknown) => {
+        logger.warn('[mcp-oauth] token warm failed', {
+          reason: err instanceof Error ? err.message : String(err),
+        });
+      }
+    );
     // Inject the resolver into every runtime that folds managed servers in via
     // the DI setter (codex, DOR-892; opencode later, DOR-893). Claude-code uses
     // its own `setMcpServerFactory` seam below and does not implement this, so
@@ -1869,6 +1929,15 @@ async function start() {
     });
   });
 
+  // Managed-MCP OAuth loopback callback (DOR-942) — the `redirect_uri` the
+  // operator's browser lands on after authorizing a server. Mounted BEFORE the
+  // `/api/agents` router so the two-segment `/mcp-oauth/callback` path always
+  // reaches it first; the sign-in itself is driven by the `mcp.signin`/
+  // `mcp.poll_signin` capabilities, not a route.
+  if (agentMcpOAuthService) {
+    app.use('/api/agents/mcp-oauth', createMcpOAuthRouter(agentMcpOAuthService));
+  }
+
   // Always mounted — not behind any feature flag.
   // ADR-0043: pass meshCore (when available) so writes sync to Mesh DB cache.
   app.use('/api/agents', createAgentsRouter(meshCore));
@@ -2255,6 +2324,10 @@ async function start() {
     mcpDeps = {
       service: agentMcpServerService,
       agents: agentRegistry,
+      // The OAuth engine backing `mcp.signin`/`mcp.poll_signin` (DOR-942); the
+      // same instance the injection token provider reads and the callback route
+      // completes into.
+      ...(agentMcpOAuthService && { oauth: agentMcpOAuthService }),
       resolveDiscoveredFallback: (agentId: string, name: string) => {
         const agent = agentRegistry.get(agentId);
         if (!agent) return null;
@@ -2504,6 +2577,8 @@ async function shutdownServices() {
   }
   // Kill any live PTYs so shutdown never leaves an orphaned shell.
   terminalManager?.destroyAll();
+  // Cancel any pending managed-MCP OAuth token refresh timers.
+  agentMcpOAuthService?.shutdown();
   // Flush any buffered usage events so a clean exit doesn't drop the tail of the
   // queue. No-op when the usage reporter never registered (consent off).
   await shutdownUsageReporter();
