@@ -14,9 +14,14 @@ vi.mock('@/layers/entities/session/model/use-session-id', () => ({
   useSessionId: () => [null, vi.fn()] as const,
 }));
 
-// Mock app store (selectedCwd drives the underlying useSessions query)
+// Mock app store. `useAgentSessions` MUST key its own query on the agent's
+// projectPath, never on the window's `selectedCwd` — this ref lets a test point
+// the window somewhere else and prove the hook ignores it (DOR-929).
+const { appStore } = vi.hoisted(() => ({
+  appStore: { selectedCwd: '/test/cwd' as string | null },
+}));
 vi.mock('@/layers/shared/model/app-store', () => ({
-  useAppStore: () => ({ selectedCwd: '/test/cwd' }),
+  useAppStore: () => ({ selectedCwd: appStore.selectedCwd }),
 }));
 
 function makeSession(overrides: Partial<Session> & Pick<Session, 'id'>): Session {
@@ -48,6 +53,34 @@ function createWrapper(transport: Transport) {
 describe('useAgentSessions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    appStore.selectedCwd = '/test/cwd';
+  });
+
+  // The DOR-929 regression, isolated: the window is pointed at one directory and
+  // the agent lives in another. The hook must fetch the AGENT's directory, so an
+  // agent this window has never opened still shows its real conversations. The
+  // old hook borrowed `useSessions()` (hard-keyed on `selectedCwd`) and filtered
+  // that list, so it fetched the window's directory and always came back empty —
+  // this test fails red against it and green only once the query keys on the
+  // agent's own path.
+  it("fetches the agent's own directory, not the window's selected one (DOR-929)", async () => {
+    appStore.selectedCwd = '/window/cwd'; // window is looking at a DIFFERENT agent
+    const agentSession = makeSession({ id: 'agent-session', cwd: '/agent/cwd' });
+    const listSessions = vi.fn((cwd?: string) =>
+      Promise.resolve({ sessions: cwd === '/agent/cwd' ? [agentSession] : [] })
+    );
+    const transport = createMockTransport({ listSessions });
+
+    const { result } = renderHook(() => useAgentSessions('/agent/cwd'), {
+      wrapper: createWrapper(transport),
+    });
+
+    await waitFor(() => {
+      expect(result.current.sessions.map((s) => s.id)).toEqual(['agent-session']);
+    });
+    // The list was fetched for the AGENT's directory, never the window's.
+    expect(listSessions).toHaveBeenCalledWith('/agent/cwd');
+    expect(listSessions).not.toHaveBeenCalledWith('/window/cwd');
   });
 
   it('returns only sessions whose cwd matches the project path, newest first', async () => {
