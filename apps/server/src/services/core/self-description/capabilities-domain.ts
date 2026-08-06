@@ -1,17 +1,17 @@
 /**
  * The self-description domain: one capability, `capabilities.list`, that returns
  * the live catalog of everything the registry exposes (spec `capability-registry`,
- * task 2.3).
+ * task 2.3), narrowed into a bounded page (filter, paginate, compact-by-default;
+ * DOR-940) so a discovery call cannot overflow an agent's context.
  *
- * This domain is special: its single capability's output IS the serialized
- * registry, so it must read the very registry it is composed into. That
- * self-reference is resolved with the late-binding dependency pattern — the
- * registry is written back onto the shared {@link CapabilityDeps} bag by
+ * This domain is special: its capability reads the very registry it is composed
+ * into. That self-reference is resolved with the late-binding dependency pattern —
+ * the registry is written back onto the shared {@link CapabilityDeps} bag by
  * {@link composeDorkOsCapabilityRegistry} immediately after composition, before
  * any request is served. `catalog()` returns plain data (memoized by content
- * hash), so there is no recursion: composing the registry never invokes a
- * capability, and invoking `capabilities.list` only reads already-serialized
- * data.
+ * hash) and {@link projectCatalog} narrows it, so there is no recursion: composing
+ * the registry never invokes a capability, and invoking `capabilities.list` only
+ * reads already-serialized data.
  *
  * It lives OUTSIDE the registry spine (`services/core/capabilities/`) so that
  * spine stays domain-free (it imports no domain); this module, like the operator
@@ -19,12 +19,14 @@
  *
  * @module services/core/self-description/capabilities-domain
  */
-import { z } from 'zod';
-import { CAPABILITY_TIERS } from '@dorkos/shared/capabilities';
-
 import { defineCapability, type CapabilityDomain } from '../capabilities/index.js';
 import type { CapabilityDeps } from '../capabilities/index.js';
 import type { CapabilityRegistry } from '../capabilities/index.js';
+import {
+  listCapabilitiesInputSchema,
+  listCapabilitiesResultSchema,
+  projectCatalog,
+} from './catalog-projection.js';
 
 /**
  * Extend the shared dependency bag with the composed registry itself. Written
@@ -56,66 +58,6 @@ function requireRegistry(deps: CapabilityDeps): CapabilityRegistry {
   }
   return deps.registry;
 }
-
-/**
- * A JSON Schema object as produced by `z.toJSONSchema` — a plain object map. The
- * catalog carries one per capability input and output; the schema is left
- * structural (a record) rather than re-describing the whole JSON Schema meta.
- */
-const jsonSchema = z.record(z.string(), z.unknown());
-
-/** The serialized surfaces of a capability, mirroring `CapabilitySurfaces`. */
-const surfacesSchema = z.object({
-  mcp: z
-    .object({
-      toolName: z.string(),
-      servers: z.array(z.enum(['in-session', 'external'])),
-      readOnlyCarveOut: z.boolean().optional(),
-      annotations: z
-        .object({
-          openWorldHint: z.boolean().optional(),
-          idempotentHint: z.boolean().optional(),
-        })
-        .optional(),
-    })
-    .optional(),
-  cli: z
-    .object({
-      verb: z.string(),
-      subcommand: z.string().optional(),
-    })
-    .optional(),
-  http: z
-    .object({
-      method: z.enum(['get', 'post', 'put', 'patch', 'delete']),
-      path: z.string(),
-    })
-    .optional(),
-});
-
-/** One serialized capability entry in the catalog, mirroring `SerializedCapability`. */
-const serializedCapabilitySchema = z.object({
-  id: z.string(),
-  title: z.string(),
-  description: z.string(),
-  tier: z.enum(CAPABILITY_TIERS),
-  inputSchema: jsonSchema,
-  outputSchema: jsonSchema,
-  surfaces: surfacesSchema,
-});
-
-/**
- * The full self-description catalog, mirroring the `CapabilityCatalog` type in
- * `@dorkos/shared/capabilities`. This is the REAL output contract for
- * `capabilities.list` (not `z.unknown()`): the catalog it returns validates
- * against this shape, and it projects into a precise JSON Schema in the catalog's
- * own `outputSchema`.
- */
-export const capabilityCatalogSchema = z.object({
-  catalogVersion: z.string(),
-  generatedAt: z.string(),
-  capabilities: z.array(serializedCapabilitySchema),
-});
 
 /**
  * The tool families that are NOT on the capability registry, named in the
@@ -196,10 +138,16 @@ export const capabilitiesDomain: CapabilityDomain = {
         'absent here is not a tool that runs unasked: `tasks_delete` and `mesh_unregister` are ' +
         'destructive and stop for a person. A destructive tool advertises an `approvalToken` ' +
         'argument, which is how you can tell one from its own schema. Call this to find out what ' +
-        'is invocable by capability id and at what tier; look at your tool list for the rest.',
+        'is invocable by capability id and at what tier; look at your tool list for the rest. ' +
+        'By default a call returns a compact entry per capability (id, title, tier, and a one line ' +
+        'summary), bounded to a page, so discovery does not flood your context. Pass ' +
+        "`detail:'full'` for the input and output JSON Schema, `domain` to keep one id prefix " +
+        "(for example `domain:'mcp'`), `query` for a case insensitive substring over id, title, and " +
+        'description, and `limit` with `cursor` to page. When a page is capped it says how many were ' +
+        'left out and how to narrow.',
       tier: 'observe',
-      input: z.object({}),
-      output: capabilityCatalogSchema,
+      input: listCapabilitiesInputSchema,
+      output: listCapabilitiesResultSchema,
       surfaces: {
         mcp: {
           toolName: 'list_capabilities',
@@ -209,7 +157,7 @@ export const capabilitiesDomain: CapabilityDomain = {
         },
         http: { method: 'get', path: '/api/capabilities/catalog' },
       },
-      invoke: async (deps) => requireRegistry(deps).catalog(),
+      invoke: async (deps, input) => projectCatalog(requireRegistry(deps).catalog(), input),
     }),
   ],
 };

@@ -19,6 +19,7 @@
 import fs from 'node:fs';
 import { parseArgs } from 'node:util';
 import { ApiError, apiCall } from '../lib/api-client.js';
+import { fetchFullCatalog, type FullCatalog } from '../lib/capability-catalog.js';
 import { printJson } from '../lib/operator-output.js';
 
 /** Help text for `dorkos call` (`--help`), rendered by the `cli.ts` interceptor. */
@@ -52,16 +53,6 @@ export interface CallArgs {
    * same call with this token goes through.
    */
   approvalToken?: string;
-}
-
-/** One capability entry from `GET /api/capabilities/catalog` (id is all we need). */
-interface CatalogEntry {
-  id: string;
-}
-
-/** The catalog payload from `GET /api/capabilities/catalog`. */
-interface Catalog {
-  capabilities: CatalogEntry[];
 }
 
 /**
@@ -152,10 +143,11 @@ export function parseCallArgs(rawArgs: string[]): CallArgs {
  */
 export async function runCall(args: CallArgs): Promise<number> {
   // Validate the id against the live catalog first, so an unknown id fails with
-  // a clear client-side message rather than a bare server 404.
-  let catalog: Catalog;
+  // a clear client-side message rather than a bare server 404. The catalog is
+  // paginated (DOR-940), so fetch every page before deciding an id is unknown.
+  let catalog: FullCatalog;
   try {
-    catalog = await apiCall<Catalog>('GET', '/api/capabilities/catalog');
+    catalog = await fetchFullCatalog();
   } catch (err) {
     console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
     return 1;

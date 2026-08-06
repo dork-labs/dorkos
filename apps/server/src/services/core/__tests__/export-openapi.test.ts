@@ -29,13 +29,26 @@ describe('export-openapi', () => {
     const spec = generateOpenAPISpec();
     const paths = spec.paths ?? {};
 
-    // `capabilities.list` → GET /api/capabilities/catalog, tagged by its domain,
-    // with the precise catalog response schema.
+    // `capabilities.list` → GET /api/capabilities/catalog, tagged by its domain.
+    // Its filter/pagination input projects as query parameters (DOR-940)...
     const catalog = paths['/api/capabilities/catalog']?.get;
     expect(catalog?.tags).toEqual(['Capabilities']);
-    expect(catalog?.responses?.['200']?.content?.['application/json']?.schema).toMatchObject({
-      properties: { catalogVersion: {}, generatedAt: {}, capabilities: {} },
-    });
+    const paramNames = ((catalog?.parameters ?? []) as Array<{ name: string }>).map((p) => p.name);
+    expect(paramNames).toEqual(
+      expect.arrayContaining(['domain', 'query', 'detail', 'limit', 'cursor'])
+    );
+
+    // ...and its response is the paginated result: a oneOf over the compact/full
+    // detail branches, each carrying the page envelope.
+    const schema = catalog?.responses?.['200']?.content?.['application/json']?.schema as
+      | { oneOf?: Array<{ properties?: Record<string, unknown> }> }
+      | undefined;
+    expect(schema?.oneOf).toHaveLength(2);
+    for (const branch of schema?.oneOf ?? []) {
+      expect(branch.properties).toHaveProperty('catalogVersion');
+      expect(branch.properties).toHaveProperty('detail');
+      expect(branch.properties).toHaveProperty('capabilities');
+    }
 
     // The operator domain now appears in /api/docs via `operator.activity_list`
     // → GET /api/activity, projecting its input as query parameters.

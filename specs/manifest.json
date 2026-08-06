@@ -2,6 +2,14 @@
   "version": 1,
   "specs": [
     {
+      "id": "260806-185319",
+      "slug": "list-capabilities-filter",
+      "title": "list_capabilities filtering, pagination, and compact-by-default output",
+      "created": "2026-08-06",
+      "status": "specified",
+      "linearIssue": "DOR-940"
+    },
+    {
       "id": "260803-232451",
       "slug": "mcp-server-management",
       "title": "MCP server management for agents — cross-runtime add/remove/status with a uniform approval gate",

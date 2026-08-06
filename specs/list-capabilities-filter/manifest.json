@@ -1,0 +1,8 @@
+{
+  "id": "260806-185319",
+  "slug": "list-capabilities-filter",
+  "title": "list_capabilities filtering, pagination, and compact-by-default output",
+  "created": "2026-08-06",
+  "status": "specified",
+  "linearIssue": "DOR-940"
+}

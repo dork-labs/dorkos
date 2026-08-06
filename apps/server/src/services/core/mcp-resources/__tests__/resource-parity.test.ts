@@ -77,7 +77,7 @@ describe('dorkos:// resources on the in-session server', () => {
     expect(uris.sort()).toEqual([...DORKOS_RESOURCE_URIS].sort());
   });
 
-  it('serves dorkos://capabilities: the same catalog list_capabilities returns', async () => {
+  it('serves dorkos://capabilities: the full catalog the tool and route project from', async () => {
     const client = await connect(
       createDorkOsToolServer(deps, undefined, undefined, undefined, registry).instance
     );
