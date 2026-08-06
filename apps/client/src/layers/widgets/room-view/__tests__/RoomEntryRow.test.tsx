@@ -282,6 +282,29 @@ describe('RoomEntryRow — the action surface', () => {
     expect(screen.getByRole('button', { name: 'React with thumbsup' })).toHaveFocus();
   });
 
+  it('reads the actions LAST, whatever order the layout draws them in', () => {
+    // Read order is what a screen reader follows, so the toolbar comes after
+    // the message: a row that opened with "Reply in thread, Copy text" would
+    // say what you can DO before saying who spoke or what they said. The
+    // capsule still appears ABOVE the message, because `order-first` moves the
+    // box without moving the reading order — which is exactly why this cannot
+    // be checked by looking at the screen, and has to be pinned here.
+    renderRow();
+    const reach = screen.getByTestId('entry-actions-reach');
+    const rail = screen.getByTestId('entry-actions').parentElement!;
+    const content = document.querySelector('[data-slot="message-content"]')!;
+
+    // The way in for a touch screen reader is announced BEFORE the toolbar it
+    // hands focus to — a control that follows the thing it opens is a control
+    // nobody swiping forwards reaches in time.
+    expect(reach.compareDocumentPosition(rail) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // And both follow the words, with the rail last of everything.
+    expect(content.compareDocumentPosition(reach) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(rail).toBe(rail.parentElement!.lastElementChild);
+    // The visual order is the one that is inverted, and only in CSS.
+    expect(rail.className).toContain('order-first');
+  });
+
   it('carries the whole date on the time it shows', () => {
     // A room scrolled back a week shows nothing but clock times, so "which day
     // was this?" had no answer on the surface, in the markup, or to a screen
@@ -717,5 +740,76 @@ describe('RoomEntryRow — the origin mark beside an entry (chats-as-channels sp
   it('marks nothing for a local author', () => {
     renderWithOrigin('local');
     expect(screen.queryByTestId('origin-mark')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * The row derives `messageItem`'s slots ONCE and hands each one to a different
+ * part of itself as an ordinary string prop — the gutter's class to the gutter,
+ * the toolbar's to the toolbar, and so on. Nothing about a string prop says
+ * which slot it came from, so two of them can be crossed and every other test
+ * in this file still passes: the row renders, the words are there, the buttons
+ * work, and the page is quietly wrong. These are the assertions that notice.
+ *
+ * Each one pins a token no other slot carries, so a swap cannot land on a
+ * lookalike — `text-xs` versus `text-[10px]` is the whole difference between the
+ * timestamp on a group's first line and the one that appears in the gutter on
+ * hover.
+ */
+describe('RoomEntryRow — the layout slot each part is drawn with', () => {
+  /** The row's two columns, in DOM order: the identity gutter, then the body. */
+  function columns(): { gutter: HTMLElement; body: HTMLElement } {
+    const row = screen.getByTestId('room-entry');
+    return { gutter: row.children[0] as HTMLElement, body: row.children[1] as HTMLElement };
+  }
+
+  it('draws the row itself from the root slot', () => {
+    renderRow();
+
+    expect(screen.getByTestId('room-entry')).toHaveClass('rounded-msg');
+  });
+
+  it('draws the identity column from the gutter slot, and the rest from the body slot', () => {
+    // The fixed-width identity column is what makes every author line up; a
+    // body drawn with it would be one avatar wide.
+    renderRow();
+    const { gutter, body } = columns();
+
+    expect(gutter).toHaveClass('w-[var(--msg-gutter-width)]');
+    expect(body).toHaveClass('flex-1');
+    expect(body).not.toHaveClass('w-[var(--msg-gutter-width)]');
+  });
+
+  it('draws the author line and the name in it from their own slots', () => {
+    renderRow();
+    const name = screen.getByText('Ana');
+
+    // `items-baseline` is what sits the name, the origin mark and the time on
+    // one line rather than stacking them.
+    expect(name.parentElement).toHaveClass('items-baseline');
+    expect(name).toHaveClass('font-medium');
+  });
+
+  it('draws each timestamp from the slot for where it sits', () => {
+    // A group start's time sits on the author line; a continuation's sits in
+    // the gutter, smaller and absolutely placed. Crossing the two is invisible
+    // in a snapshot and obvious on a screen.
+    renderRow();
+    expect(document.querySelector('time')).toHaveClass('text-xs');
+
+    cleanup();
+    renderRow(entry(), { grouping: { position: 'middle' } });
+    expect(document.querySelector('time')).toHaveClass('text-[10px]');
+  });
+
+  it('draws the words from the content slot and the toolbar from the actions slot', () => {
+    renderRow();
+
+    // The measure a message's prose is read at.
+    expect(document.querySelector('[data-slot="message-content"]')).toHaveClass(
+      'max-w-[var(--msg-content-max-width)]'
+    );
+    // Opaque, because the capsule is drawn ON TOP of the words it acts on.
+    expect(screen.getByTestId('entry-actions')).toHaveClass('bg-popover');
   });
 });
