@@ -38,6 +38,16 @@ afterEach(async () => {
   for (const dir of tempDirs.splice(0)) await fs.rm(dir, { recursive: true, force: true });
 });
 
+/**
+ * A scheduler that captures but never fires. The background refresh is out of
+ * scope for these flow tests, and letting a real timer fire would race the token
+ * write against the temp-dir teardown; the cache's own suite covers scheduling.
+ */
+const inertScheduler = {
+  set: (): ReturnType<typeof setTimeout> => 0 as unknown as ReturnType<typeof setTimeout>,
+  clear: (): void => {},
+};
+
 /** JSON Response helper. */
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -169,7 +179,7 @@ describe('AgentMcpOAuthService — full sign-in flow', () => {
       dorkHome,
       callbackBaseUrl: CALLBACK_BASE,
       fetchImpl: mockOAuthFetch(pkce),
-      cache: { now: () => 1000 },
+      cache: { scheduler: inertScheduler },
     });
 
     // 1. Start sign-in → a real authorize URL, no token yet.
@@ -233,5 +243,65 @@ describe('AgentMcpOAuthService — full sign-in flow', () => {
     const result = await oauth.handleCallback({ state: 'never-started', code: AUTH_CODE });
     expect(result.connected).toBe(false);
     expect(oauth.getAccessToken(AGENT_ID, SERVER)).toBeUndefined();
+  });
+});
+
+describe('AgentMcpOAuthService.warm — restart staleness (B2)', () => {
+  const TARGET = { agentId: AGENT_ID, serverName: SERVER, serverUrl: SERVER_URL };
+
+  /** Persist a token record directly, stamping the ABSOLUTE `expiresAt` a real save would. */
+  async function seedStoredToken(dorkHome: string, expiresAt: number): Promise<void> {
+    resetKeyCache();
+    const store = new ExtensionSecretStore('mcp-oauth', dorkHome);
+    await store.set(
+      `${AGENT_ID}:${SERVER}:tokens`,
+      JSON.stringify({
+        access_token: 'restored-token',
+        token_type: 'Bearer',
+        // A long RELATIVE lifetime: if warm recomputed expiry from this instead of
+        // the absolute `expiresAt`, an old token would look freshly minted.
+        expires_in: 3600,
+        refresh_token: 'refresh-old',
+        expiresAt,
+      })
+    );
+    resetKeyCache();
+  }
+
+  it('re-warms a token issued long ago as EXPIRED, not freshly minted', async () => {
+    const dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-oauth-home-'));
+    tempDirs.push(dorkHome);
+    // Absolute expiry in the past relative to the cache clock (5000).
+    await seedStoredToken(dorkHome, 1000);
+    const oauth = new AgentMcpOAuthService({
+      dorkHome,
+      callbackBaseUrl: CALLBACK_BASE,
+      fetchImpl: mockOAuthFetch({ challenge: '' }),
+      cache: { now: () => 5000, scheduler: inertScheduler },
+    });
+
+    await oauth.warm([TARGET]);
+
+    // Reverting the B2 fix (toCachedToken recomputing expiry from the relative
+    // `expires_in` at load time instead of trusting the stored absolute `expiresAt`)
+    // makes this token read LIVE ('restored-token') and reddens the assertion —
+    // exactly the stale-bearer-after-restart the sync cache exists to prevent.
+    expect(oauth.getAccessToken(AGENT_ID, SERVER)).toBeUndefined();
+  });
+
+  it('re-warms a still-live token as live (proving warm actually primes)', async () => {
+    const dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-oauth-home-'));
+    tempDirs.push(dorkHome);
+    // Absolute expiry in the future relative to the cache clock (5000).
+    await seedStoredToken(dorkHome, 9_000_000);
+    const oauth = new AgentMcpOAuthService({
+      dorkHome,
+      callbackBaseUrl: CALLBACK_BASE,
+      fetchImpl: mockOAuthFetch({ challenge: '' }),
+      cache: { now: () => 5000, scheduler: inertScheduler },
+    });
+
+    await oauth.warm([TARGET]);
+    expect(oauth.getAccessToken(AGENT_ID, SERVER)).toBe('restored-token');
   });
 });

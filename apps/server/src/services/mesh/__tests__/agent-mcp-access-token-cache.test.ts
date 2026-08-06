@@ -1,7 +1,9 @@
 /**
  * The synchronous access-token cache (DOR-942): the current token is readable
- * without awaiting, an expired token reads as absent (safe default), and the
- * background refresh replaces an about-to-expire token before it lapses.
+ * without awaiting, an expired token reads as absent (safe default), the refresh
+ * is scheduled ahead of expiry, and the background refresh replaces an
+ * about-to-expire token before it lapses. Every cached token carries an ABSOLUTE
+ * expiry, so it is judged the same whether just minted or loaded after a restart.
  *
  * Every assertion is paired with the revert that reddens it (see the inline
  * notes) — a passing test is not evidence on its own (REVIEW.md).
@@ -9,9 +11,12 @@
  * @vitest-environment node
  */
 import { describe, it, expect } from 'vitest';
-import type { OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
 
-import { McpAccessTokenCache, type TimerScheduler } from '../agent-mcp-access-token-cache.js';
+import {
+  McpAccessTokenCache,
+  type CachedToken,
+  type TimerScheduler,
+} from '../agent-mcp-access-token-cache.js';
 
 const AGENT = 'agent-1';
 const SERVER = 'granola';
@@ -22,11 +27,8 @@ function makeClock(start = 0): { now: () => number; set: (t: number) => void } {
   return { now: () => t, set: (next) => (t = next) };
 }
 
-/** A scheduler that captures the scheduled callback + delay instead of using real timers. */
-function makeCapturingScheduler(): {
-  scheduler: TimerScheduler;
-  captured: { delay: number }[];
-} {
+/** A scheduler that captures the scheduled delay instead of using real timers. */
+function makeCapturingScheduler(): { scheduler: TimerScheduler; captured: { delay: number }[] } {
   const captured: { delay: number }[] = [];
   const scheduler: TimerScheduler = {
     set(_fn, delayMs) {
@@ -38,14 +40,9 @@ function makeCapturingScheduler(): {
   return { scheduler, captured };
 }
 
-/** Build an OAuth token set (only the fields the cache reads matter). */
-function tokens(accessToken: string, expiresIn: number, refreshToken = 'refresh-x'): OAuthTokens {
-  return {
-    access_token: accessToken,
-    token_type: 'Bearer',
-    expires_in: expiresIn,
-    refresh_token: refreshToken,
-  };
+/** Build a cached token with an absolute expiry (refresh scheduling off unless asked). */
+function cached(accessToken: string, expiresAt: number, refreshable = false): CachedToken {
+  return { accessToken, expiresAt, refreshable };
 }
 
 describe('McpAccessTokenCache', () => {
@@ -53,10 +50,10 @@ describe('McpAccessTokenCache', () => {
     const clock = makeClock(0);
     const cache = new McpAccessTokenCache({ now: clock.now });
 
-    cache.store(AGENT, SERVER, tokens('token-A', 3600), async () => null);
+    cache.store(AGENT, SERVER, cached('token-A', 3_600_000), async () => null);
 
-    // Reverting `mergeOAuthHeaders`/`getAccessToken` to always return undefined
-    // reddens this — the injection path would then never see a token.
+    // Reverting `getAccessToken` to always return undefined reddens this — the
+    // injection path would then never see a token.
     expect(cache.getAccessToken(AGENT, SERVER)).toBe('token-A');
     // A different (agentId, serverName) is a miss, not a wrong-token hit.
     expect(cache.getAccessToken('other-agent', SERVER)).toBeUndefined();
@@ -67,8 +64,8 @@ describe('McpAccessTokenCache', () => {
     const clock = makeClock(0);
     const cache = new McpAccessTokenCache({ now: clock.now });
 
-    cache.store(AGENT, SERVER, tokens('token-A', 100), async () => null);
-    clock.set(100_001); // one ms past expiry
+    cache.store(AGENT, SERVER, cached('token-A', 100_000), async () => null);
+    clock.set(100_001); // one ms past the absolute expiry
 
     // Reverting the `now() < expiresAt` guard to always-return-the-token reddens
     // this: injection would then attach a stale, expired bearer.
@@ -80,10 +77,10 @@ describe('McpAccessTokenCache', () => {
     const { scheduler, captured } = makeCapturingScheduler();
     const cache = new McpAccessTokenCache({ now: clock.now, scheduler });
 
-    cache.store(AGENT, SERVER, tokens('token-A', 100), async () => null);
+    cache.store(AGENT, SERVER, cached('token-A', 100_000, true), async () => null);
 
-    // 100s lifetime, refreshed 60s early → a 40s delay. Reverting the REFRESH_SKEW
-    // subtraction makes this 100_000 and reddens the assertion.
+    // Absolute expiry 100_000, refreshed 60_000 early → a 40_000 delay. Reverting
+    // the REFRESH_SKEW subtraction makes this 100_000 and reddens the assertion.
     expect(captured).toEqual([{ delay: 40_000 }]);
   });
 
@@ -91,19 +88,18 @@ describe('McpAccessTokenCache', () => {
     const clock = makeClock(0);
     const cache = new McpAccessTokenCache({ now: clock.now });
 
-    // The refresh fires at the skew boundary (t=40_000) and returns token-B.
-    const refresh = async (): Promise<OAuthTokens> => tokens('token-B', 100);
-    cache.store(AGENT, SERVER, tokens('token-A', 100), refresh);
+    // The refresh returns token-B, which lives well past token-A's expiry.
+    const refresh = async (): Promise<CachedToken> => cached('token-B', 140_000);
+    cache.store(AGENT, SERVER, cached('token-A', 100_000), refresh);
     expect(cache.getAccessToken(AGENT, SERVER)).toBe('token-A');
 
     clock.set(40_000);
     const replaced = await cache.refreshNow(AGENT, SERVER);
     expect(replaced).toBe(true);
 
-    // token-B is now live; and it stays live past token-A's original 100s expiry,
-    // proving the replacement (not merely a re-read of A). Reverting the
-    // `this.store(...next...)` line in refreshNow leaves token-A cached and reddens
-    // BOTH the value and the past-expiry assertions.
+    // token-B is now live, and stays live past token-A's 100_000 expiry — proving
+    // the replacement, not a re-read of A. Reverting the `this.store(...next...)`
+    // line in refreshNow leaves token-A cached and reddens both assertions.
     expect(cache.getAccessToken(AGENT, SERVER)).toBe('token-B');
     clock.set(100_001);
     expect(cache.getAccessToken(AGENT, SERVER)).toBe('token-B');
@@ -113,7 +109,7 @@ describe('McpAccessTokenCache', () => {
     const clock = makeClock(0);
     const cache = new McpAccessTokenCache({ now: clock.now });
 
-    cache.store(AGENT, SERVER, tokens('token-A', 100), async () => null);
+    cache.store(AGENT, SERVER, cached('token-A', 100_000), async () => null);
     clock.set(40_000);
     const replaced = await cache.refreshNow(AGENT, SERVER);
 

@@ -29,6 +29,21 @@ import type { McpOAuthFlowStore } from './agent-mcp-oauth-flow-store.js';
 /** The OAuth grant types DorkOS drives: the initial code exchange plus silent refresh. */
 const GRANT_TYPES = ['authorization_code', 'refresh_token'] as const;
 
+/** Milliseconds per second, for converting the relative `expires_in` to an absolute clock. */
+const MS_PER_SECOND = 1000;
+
+/**
+ * A persisted token set augmented with an ABSOLUTE `expiresAt` (epoch ms),
+ * computed from the relative `expires_in` at save time. This is the
+ * restart-staleness fix (DOR-942): `expires_in` alone is meaningless after a
+ * restart — a token issued long ago would look freshly minted — so the absolute
+ * expiry is what the cache trusts on load. Absent `expiresAt` = no lifetime given.
+ */
+export interface StoredMcpTokens extends OAuthTokens {
+  /** Absolute expiry in epoch ms; omitted when the token set carried no `expires_in`. */
+  expiresAt?: number;
+}
+
 /**
  * Typed persistence for one managed server's OAuth material in the encrypted
  * `mcp-oauth` store, keyed `${agentId}:${serverName}:<kind>`. JSON in, JSON out;
@@ -55,14 +70,24 @@ export class McpOAuthSecretStore {
     await this.store.set(key(agentId, serverName, 'client'), JSON.stringify(info));
   }
 
-  /** Read the persisted token set, or `undefined` when never signed in. */
-  async tokens(agentId: string, serverName: string): Promise<OAuthTokens | undefined> {
-    return this.read<OAuthTokens>(key(agentId, serverName, 'tokens'));
+  /** Read the persisted token set (with its absolute expiry), or `undefined` when never signed in. */
+  async tokens(agentId: string, serverName: string): Promise<StoredMcpTokens | undefined> {
+    return this.read<StoredMcpTokens>(key(agentId, serverName, 'tokens'));
   }
 
-  /** Persist a token set (the refresh token stays here, never on the manifest). */
+  /**
+   * Persist a token set (the refresh token stays here, never on the manifest),
+   * stamping an ABSOLUTE `expiresAt` from the relative `expires_in` so a token
+   * loaded after a restart is judged by its real issue time, not the restart time.
+   */
   async saveTokens(agentId: string, serverName: string, tokens: OAuthTokens): Promise<void> {
-    await this.store.set(key(agentId, serverName, 'tokens'), JSON.stringify(tokens));
+    const record: StoredMcpTokens = {
+      ...tokens,
+      ...(tokens.expires_in !== undefined
+        ? { expiresAt: Date.now() + tokens.expires_in * MS_PER_SECOND }
+        : {}),
+    };
+    await this.store.set(key(agentId, serverName, 'tokens'), JSON.stringify(record));
   }
 
   /** Forget everything stored for one server (sign-out / removal). */

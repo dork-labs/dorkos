@@ -395,17 +395,19 @@ export class AgentMcpServerService {
     if (!this.tokenProvider) return base;
     const out: Record<string, McpAppServerConnection> = {};
     for (const [name, connection] of Object.entries(base)) {
-      const token =
-        connection.transport === 'stdio'
-          ? undefined
-          : this.tokenProvider.getAccessToken(agentId, name);
-      out[name] =
-        token && connection.transport !== 'stdio'
-          ? {
-              ...connection,
-              headers: { ...connection.headers, [AUTHORIZATION_HEADER]: `Bearer ${token}` },
-            }
-          : connection;
+      // stdio servers have no remote endpoint and never take a bearer; the early
+      // continue narrows `connection` to http/sse for the single header merge below.
+      if (connection.transport === 'stdio') {
+        out[name] = connection;
+        continue;
+      }
+      const token = this.tokenProvider.getAccessToken(agentId, name);
+      out[name] = token
+        ? {
+            ...connection,
+            headers: { ...connection.headers, [AUTHORIZATION_HEADER]: `Bearer ${token}` },
+          }
+        : connection;
     }
     return out;
   }

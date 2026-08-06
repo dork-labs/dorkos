@@ -24,18 +24,19 @@ import {
   discoverOAuthServerInfo,
   refreshAuthorization,
 } from '@modelcontextprotocol/sdk/client/auth.js';
-import type { OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
 import { ExtensionSecretStore } from '@dorkos/shared/extension-secrets';
 import type { Logger } from '@dorkos/shared/logger';
 
 import {
   McpAccessTokenCache,
+  type CachedToken,
   type McpAccessTokenCacheDeps,
 } from './agent-mcp-access-token-cache.js';
 import { McpOAuthFlowStore, type McpSigninStatus } from './agent-mcp-oauth-flow-store.js';
 import {
   McpOAuthClientProvider,
   McpOAuthSecretStore,
+  type StoredMcpTokens,
   type McpOAuthProviderContext,
 } from './agent-mcp-oauth-provider.js';
 
@@ -194,8 +195,13 @@ export class AgentMcpOAuthService {
       this.flows.markConnected(state);
       return { connected: true };
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Sign-in failed.';
-      this.logger.warn(`[mcp-oauth] callback failed for ${target.serverName}: ${message}`);
+      // Keep the raw detail in the server log; hand the browser + poll a generic
+      // message (the callback lands in the operator's own loopback browser, but
+      // an exchange error can echo request context, so match the non-catch paths).
+      this.logger.warn(
+        `[mcp-oauth] callback failed for ${target.serverName}: ${err instanceof Error ? err.message : String(err)}`
+      );
+      const message = 'Sign-in failed. Please try again.';
       this.flows.markFailed(state, message);
       return { connected: false, error: message };
     }
@@ -229,18 +235,21 @@ export class AgentMcpOAuthService {
     if (tokens) this.primeCache(target, tokens);
   }
 
-  /** Cache a token set and bind its background refresh to this target. */
-  private primeCache(target: McpOAuthTarget, tokens: OAuthTokens): void {
-    this.cache.store(target.agentId, target.serverName, tokens, () => this.refresh(target));
+  /** Cache a stored token set (by its ABSOLUTE expiry) and bind its background refresh. */
+  private primeCache(target: McpOAuthTarget, tokens: StoredMcpTokens): void {
+    this.cache.store(target.agentId, target.serverName, toCachedToken(tokens), () =>
+      this.refresh(target)
+    );
   }
 
   /**
-   * Exchange the stored refresh token for a new access token, persist it, and hand
-   * it back to the cache. Returns `null` (evicting the cached token) when there is
-   * no refresh token, no client registration, or the exchange fails — so a failed
-   * refresh degrades to needs-auth rather than a stale token.
+   * Exchange the stored refresh token for a new access token, persist it (stamping
+   * a fresh absolute expiry), and hand the resulting cached token back. Returns
+   * `null` (evicting the cached token) when there is no refresh token, no client
+   * registration, or the exchange fails — so a failed refresh degrades to
+   * needs-auth rather than a stale token.
    */
-  private async refresh(target: McpOAuthTarget): Promise<OAuthTokens | null> {
+  private async refresh(target: McpOAuthTarget): Promise<CachedToken | null> {
     try {
       const [stored, clientInformation] = await Promise.all([
         this.secrets.tokens(target.agentId, target.serverName),
@@ -256,7 +265,10 @@ export class AgentMcpOAuthService {
         fetchFn: this.fetchImpl,
       });
       await this.secrets.saveTokens(target.agentId, target.serverName, next);
-      return next;
+      // Re-read so the absolute expiry is the one saveTokens just stamped (single
+      // source of that computation), rather than recomputing it here.
+      const persisted = await this.secrets.tokens(target.agentId, target.serverName);
+      return persisted ? toCachedToken(persisted) : null;
     } catch (err) {
       this.logger.warn(
         `[mcp-oauth] refresh failed for ${target.serverName}: ${err instanceof Error ? err.message : String(err)}`
@@ -277,6 +289,22 @@ export class AgentMcpOAuthService {
     };
     return new McpOAuthClientProvider(ctx);
   }
+}
+
+/**
+ * Convert a persisted token set into the cache's {@link CachedToken}, trusting the
+ * ABSOLUTE `expiresAt` stamped at save time — never recomputing from the relative
+ * `expires_in`, which is meaningless after a restart (DOR-942). No stored
+ * `expiresAt` means no declared lifetime, so it never expires on our clock.
+ *
+ * @param stored - The persisted token set.
+ */
+function toCachedToken(stored: StoredMcpTokens): CachedToken {
+  return {
+    accessToken: stored.access_token,
+    expiresAt: stored.expiresAt ?? Number.POSITIVE_INFINITY,
+    refreshable: Boolean(stored.refresh_token),
+  };
 }
 
 /**
