@@ -733,8 +733,8 @@ apps/
         conflict-detector.ts  -- Detects file conflicts before writing begins
         telemetry-hook.ts     -- Install/uninstall/update event telemetry
         installed-metadata.ts -- Reads .dork/manifest.json from installed packages
-        transaction.ts        -- Atomic transaction engine: backup branch, stage, activate,
-                                  or git reset --hard on failure (see ADR-0231)
+        transaction.ts        -- File-scoped transaction engine: stage, move target aside as
+                                  backup, activate, restore backup on failure (see ADR-0304)
         lib/atomic-move.ts    -- Crash-safe directory rename (tmp + rename)
         flows/                -- Per-kind install flows: install-plugin.ts, install-agent.ts,
                                   install-skill-pack.ts, install-adapter.ts, uninstall.ts, update.ts

@@ -12,7 +12,7 @@
  * assigned by the projector (NOT derived from JSONL line numbers), so file- and
  * log-backed runtimes expose a uniform cursor for snapshot-then-replay. The
  * three interaction members preserve the server-authoritative
- * `startedAt`/`remainingMs` countdown fields (ADR-0262).
+ * `startedAt`/`remainingMs` countdown fields (ADR-0264).
  *
  * @module shared/session-stream
  */
@@ -181,7 +181,7 @@ const seqShape = { seq: z.number().int().nonnegative() } as const;
 /**
  * Shared interaction countdown fields preserved on the recoverable interaction
  * events. Both are server-assigned and required so a reconnecting client
- * resumes the countdown at the true offset without resetting it (ADR-0262).
+ * resumes the countdown at the true offset without resetting it (ADR-0264).
  */
 const interactionTimerShape = {
   /** Server timestamp (ms since epoch) when the interaction timer started. */
@@ -239,7 +239,7 @@ export function isBlockingInteractionEvent<T extends { type: string }>(
  * monotonic stream. Each member carries an integer non-negative `seq`. The
  * three interaction members (`approval_required`, `question_prompt`,
  * `elicitation_prompt`) additionally carry the server-assigned
- * `startedAt`/`remainingMs` countdown fields (ADR-0262), reusing the
+ * `startedAt`/`remainingMs` countdown fields (ADR-0264), reusing the
  * `PendingInteractionDTO` field shapes. Tool and turn payloads reuse the
  * existing StreamEvent shapes rather than introducing parallel types.
  *
@@ -601,7 +601,7 @@ export const SessionSnapshotSchema = z
     inProgressTurn: z.array(SessionEventSchema).nullable(),
     /** Server-held status projection. */
     status: SessionStatusSchema,
-    /** Pending interactions awaiting the operator (ADR-0262). */
+    /** Pending interactions awaiting the operator (ADR-0264). */
     pendingInteractions: z.array(PendingInteractionDTOSchema),
     /** Highest `seq` reflected in this snapshot; the resume point for replay. */
     cursor: z.number().int().nonnegative(),

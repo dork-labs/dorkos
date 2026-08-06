@@ -924,7 +924,7 @@ The `ToolApproval` component makes the server-side timeout visible to users via 
 
 ### Recovering Pending Interactions
 
-Pending interactions are **transient server state**. Each lives only in the per-session `pendingInteractions` map alongside a live deferred `canUseTool` promise (see [Deferred Promise Pattern](#deferred-promise-pattern)). They are never written to JSONL, so without recovery the original prompt event — a one-shot `approval_required` / `question_prompt` / `elicitation_prompt` — would be gone the moment a client switches sessions, hard-refreshes, or never had the tab in the foreground. Recovery makes the prompt **re-presentable on (re)entry** without re-running the tool. See ADR-0262.
+Pending interactions are **transient server state**. Each lives only in the per-session `pendingInteractions` map alongside a live deferred `canUseTool` promise (see [Deferred Promise Pattern](#deferred-promise-pattern)). They are never written to JSONL, so without recovery the original prompt event — a one-shot `approval_required` / `question_prompt` / `elicitation_prompt` — would be gone the moment a client switches sessions, hard-refreshes, or never had the tab in the foreground. Recovery makes the prompt **re-presentable on (re)entry** without re-running the tool. See ADR-0264.
 
 **Recovery is snapshot-based.** The durable `GET /api/sessions/:id/events` stream's `snapshot` frame carries `pendingInteractions: PendingInteractionDTO[]` — a cold connect (session switch, refresh, second surface, post-restart reconnect) rebuilds the card from it with no separate pull endpoint or re-emit pass. A resume connect (`Last-Event-ID`) skips the snapshot because the original interaction event is replayed from the gap instead. Live resolution emits `interaction_resolved` so every other subscribed client removes the card immediately.
 
@@ -934,7 +934,7 @@ The snapshot reads the selector `listPendingInteractions(entries, Date.now())` (
 
 **Expiry exclusion.** `listPendingInteractions` drops any interaction whose `remainingMs <= 0` (the 10-minute timeout has already fired and resolved the promise with `{ behavior: 'deny' }`). The snapshot therefore never resurrects a card the server has already let lapse.
 
-**Cross-restart boundary (no durability).** Recovery survives session switch, hard refresh, SSE reconnect, and background→foreground, but **not a server restart**. The `pendingInteractions` map is in-memory only and is the single source of truth; the deferred `canUseTool` promise is a live, non-serializable object that cannot be persisted or recreated. After a restart the query and its blocked tool call are gone, and the fresh snapshot simply carries no pending interactions — the operator must re-send. This accepted loss is the boundary set in ADR-0262; sessions themselves still derive from JSONL.
+**Cross-restart boundary (no durability).** Recovery survives session switch, hard refresh, SSE reconnect, and background→foreground, but **not a server restart**. The `pendingInteractions` map is in-memory only and is the single source of truth; the deferred `canUseTool` promise is a live, non-serializable object that cannot be persisted or recreated. After a restart the query and its blocked tool call are gone, and the fresh snapshot simply carries no pending interactions — the operator must re-send. This accepted loss is the boundary set in ADR-0262 (superseded by ADR-0264); sessions themselves still derive from JSONL.
 
 ### Transport Abstraction
 

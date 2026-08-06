@@ -788,7 +788,7 @@ function buildInProgressMessage(parts: MessagePart[]): ChatMessage | null {
  *
  * @param snapshotMessages - Completed message history from the snapshot.
  * @param inProgressTurn - The in-progress turn's events (empty when idle).
- * @param pendingInteractions - Snapshot's recoverable pending interactions (ADR-0262).
+ * @param pendingInteractions - Snapshot's recoverable pending interactions (ADR-0264).
  * @param optimisticUserMessage - The just-submitted user message, or `null`.
  * @returns The renderable message list.
  */

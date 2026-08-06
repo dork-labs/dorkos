@@ -22,7 +22,7 @@
  * `registerCapabilitiesAsMcpTools`), which call `invoke`, then serialize the
  * plain result into whatever shape their transport needs (MCP `CallToolResult`,
  * an HTTP JSON body, a CLI render). Redaction and other payload semantics that
- * must hold on EVERY surface stay inside `invoke` (ADR 260723-013236); only the
+ * must hold on EVERY surface stay inside `invoke` (ADR 260725-152018); only the
  * envelope shape is the adapter's job.
  *
  * @module services/core/capabilities/capability-definition

@@ -260,7 +260,7 @@ Tailwind's first-party `scrollbar-*` utilities (v4.3+) are the sanctioned surfac
 
 ### Sidebar
 
-Built on **Shadcn Sidebar** (`layers/shared/ui/sidebar.tsx`) with `collapsible="offcanvas"` mode. On the web cockpit the sidebar body is the `DashboardSidebar` agent roster (in `features/dashboard-sidebar/`) on every route — per-session context now lives in the right-panel inspector, not a sidebar drill-in. A registered `sidebar.body` contribution can take over the body for its route (the marketplace facet panel does on `/marketplace`). `SessionSidebar` (in `features/session-list/`) is retained only as the Obsidian plugin's chrome; the tabbed-strip specs below describe that legacy embedded shell.
+Built on **Shadcn Sidebar** (`layers/shared/ui/sidebar.tsx`) with `collapsible="offcanvas"` mode. On the web cockpit the sidebar body is the `DashboardSidebar` agent roster (in `features/dashboard-sidebar/`) on every route — per-session context now lives in the right-panel inspector, not a sidebar drill-in. A registered `sidebar.body` contribution can take over the body for its route (the marketplace facet panel does on `/marketplace`). The Obsidian embed's chrome is `EmbedSidebar` (`features/session-list/`), a single-view roster with no tab strip — the four-tab `SessionSidebar` it replaced was retired (DOR-401); see [Sidebar Tabs](#sidebar-tabs) below.
 
 - **Width**: 320px (20rem) via `--sidebar-width` CSS custom property on `SidebarProvider`
 - **CSS variables**: `--sidebar-*` in `index.css` (subtly distinct from main background — 96% vs 98% light, 6% vs 4% dark)
@@ -269,7 +269,6 @@ Built on **Shadcn Sidebar** (`layers/shared/ui/sidebar.tsx`) with `collapsible="
 - **Toggle**: `Cmd+B` / `Ctrl+B` (Shadcn built-in `SIDEBAR_KEYBOARD_SHORTCUT`)
 - **SidebarRail**: Invisible hover-target strip at sidebar edge for mouse-over toggle
 - **SidebarTrigger**: Toggle button in `SidebarInset` header (outside the sidebar itself)
-- **Tabbed views** (embedded shell only): `SessionSidebar` renders a local four-tab strip switching Overview / Sessions / Schedules / Connections (see [Sidebar Tabs](#sidebar-tabs) below)
 - **Temporal grouping**: Sessions grouped by Today / Yesterday / Previous 7 Days / Previous 30 Days / Older using `SidebarGroup` / `SidebarGroupLabel`
 - **Session items**: `SidebarMenuButton` with relative time + truncated title
 - **Active session**: `isActive` prop on `SidebarMenuButton`
@@ -280,22 +279,7 @@ Built on **Shadcn Sidebar** (`layers/shared/ui/sidebar.tsx`) with `collapsible="
 
 ### Sidebar Tabs
 
-Legacy embedded shell (Obsidian) only. `SessionSidebar` renders a custom tab bar (a local strip internal to the component, not Radix Tabs) switching between Overview, Sessions, Schedules, and Connections views. The web cockpit has no sidebar tab strip — this describes the retained Obsidian chrome.
-
-| Element             | Specification                                     |
-| ------------------- | ------------------------------------------------- |
-| Tab bar height      | Auto (`py-1.5`)                                   |
-| Tab button padding  | `p-2`                                             |
-| Tab icon size       | `--size-icon-sm`                                  |
-| Sliding indicator   | `h-0.5 rounded-full bg-brand`                     |
-| Indicator animation | Spring: stiffness 280, damping 32                 |
-| Schedules badge     | `text-[10px] size-4 bg-green-500` (numeric count) |
-| Connections dot     | `size-1.5 rounded-full` (status indicator)        |
-| Status colors       | green = ok, amber = partial, red = error          |
-
-All three views are mounted simultaneously and use CSS `hidden` toggling to preserve state (scroll position, expanded items) across tab switches. See ADR-0107 for the decision rationale.
-
-ARIA semantics follow the WAI tablist pattern: `role="tablist"` on the container, `role="tab"` on each button with `aria-selected` and `aria-controls`, and `role="tabpanel"` on each view. Arrow keys navigate between tabs via roving tabindex.
+Retired. The four-tab `SessionSidebar` strip this section used to document (Overview / Sessions / Schedules / Connections, switched via a CSS `hidden`-toggle so all three stayed mounted) no longer exists. DOR-401 retired it: the Obsidian embed's chrome is now the single-view `EmbedSidebar` roster (see [Sidebar](#sidebar) above), and the Overview/Schedules/Connections context it carried moved to the right-panel Inspector (Pulse, Agent Profile) or was dropped. ADR-0107, which decided the CSS `hidden`-toggle mechanism, is deprecated as of the 2026-08-06 audit — kept as the archival record of a component that no longer ships.
 
 ### Tooltip
 
