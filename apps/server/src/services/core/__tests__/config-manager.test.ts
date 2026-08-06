@@ -2099,34 +2099,52 @@ describe('CONFIG_MIGRATIONS key invariant (DOR-339 regression guard)', () => {
       // No git available (e.g. a tarball checkout) — fall back to package.json.
     }
 
-    // A key EQUAL to the latest release is fine iff that migration actually
-    // shipped IN that release (users upgrading to it get the key inside
-    // conf's (storedVersion, projectVersion] window). The dangerous case is
-    // authoring a migration under a version that already shipped WITHOUT it —
-    // users already on that version would silently never run it. Distinguish
-    // the two by checking whether the tagged release commit already contains
-    // this key; `git show <tag>:<path>` resolves from the repo root
-    // regardless of the test's cwd.
-    let shippedInRelease = false;
-    if (newest === latestReleased) {
-      try {
-        const atTag = execSync(
-          `git show v${latestReleased}:apps/server/src/services/core/config-manager.ts`,
-          { encoding: 'utf-8', cwd: process.cwd() }
-        );
-        shippedInRelease = atTag.includes(`'${newest}':`);
-      } catch {
-        // Tag or file unreadable (shallow clone) — leave false and let the
-        // strict comparison below decide.
-      }
+    // The newest key K is safe in exactly two cases, and this guard must pass
+    // for both and fail for everything else:
+    //
+    //   1. K > every release — an unreleased migration that will ship next.
+    //      (`semver.gt` below.)
+    //   2. K already shipped in its OWN version's release: the `vK` tag
+    //      contains the `'K':` key. Every user upgrading INTO version K runs
+    //      that key inside conf's (storedVersion, projectVersion] window, so
+    //      it can never be skipped. A release that ships no new migration at
+    //      all lands here too — e.g. newest 0.57.0 while 0.58.0 is out but
+    //      changed nothing in this file: 0.57.0 is behind the latest tag yet
+    //      present in v0.57.0, so it is safe and the guard must stay green.
+    //
+    // The dangerous case — the 0.54.0-style bug this guard exists for — is a
+    // key <= a release whose OWN tag does NOT contain it: authored after that
+    // version shipped, so every user already on it silently never runs it.
+    // That is neither case above, so the guard reddens.
+    //
+    // The question is answered against K's OWN `vK` tag, not the latest
+    // release: whether 0.57.0 shipped is a fact about v0.57.0, not about
+    // whatever tag happens to be newest. Gating this on `newest ===
+    // latestReleased` (the old bug) made the guard over-fire on every release
+    // that shipped no new migration, because it then never checked K's own tag
+    // at all. `git show <tag>:<path>` resolves from the repo root regardless
+    // of the test's cwd; an unreadable tag (shallow clone, or a genuinely
+    // unreleased K whose `vK` tag does not exist yet) leaves this false and
+    // lets the strict `semver.gt` comparison decide.
+    let shippedInOwnRelease = false;
+    try {
+      const atTag = execSync(
+        `git show v${newest}:apps/server/src/services/core/config-manager.ts`,
+        { encoding: 'utf-8', cwd: process.cwd() }
+      );
+      shippedInOwnRelease = atTag.includes(`'${newest}':`);
+    } catch {
+      // Tag or file unreadable (shallow clone, or K is unreleased so no `vK`
+      // tag exists) — leave false and let the strict comparison below decide.
     }
 
     expect(
-      semver.gt(newest, latestReleased) || shippedInRelease,
+      semver.gt(newest, latestReleased) || shippedInOwnRelease,
       `newest migration key "${newest}" must be > the latest released version "${latestReleased}" ` +
-        `(or already present in the v${latestReleased} tag). A key <= an already-released ` +
-        `version that did NOT ship in that release is excluded by conf's (storedVersion, ` +
-        `projectVersion] window and silently never runs for upgrading users`
+        `(unreleased, ships next) or already present in its own v${newest} tag (it shipped in that ` +
+        `release). A key <= an already-released version whose own v${newest} tag does NOT contain ` +
+        `it was authored after that release shipped: conf's (storedVersion, projectVersion] window ` +
+        `excludes it and it silently never runs for upgrading users`
     ).toBe(true);
   });
 });
