@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted
 
+(2026-08-06 audit) The reconnecting→connected invalidation survives unchanged; since 260805-041016 the transition is driven by the WebSocket connection state.
+
 ## Context
 
 DorkOS SSE events serve as cache invalidation signals — they tell the client "something changed, refetch" rather than carrying the actual state. When `SSEConnection` disconnects (tab switch > 30s, network blip, server restart) and later reconnects, any events emitted during the disconnect window are lost. This leaves TanStack Query caches stale until the next refetch cycle, causing the dashboard, sessions, and relay state to show outdated information. Server-side event replay (buffering events with IDs and replaying on reconnect) was considered but rejected — it requires a replay buffer (ring buffer strategy, size policy, per-endpoint decisions) and only covers events with IDs, while cache invalidation covers all state universally.

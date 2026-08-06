@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted
 
+(2026-08-06 audit) The monorepo decision stands; the app roster named here predates the current client/server/site/desktop/obsidian-plugin/e2e layout.
+
 ## Context
 
 The project shipped three independent build targets (React SPA, Express API, Obsidian plugin) from a single `package.json` with 36 flat dependencies. All three builds ran sequentially with no caching. The Obsidian plugin used deep relative imports like `../../server/services/agent-manager` to reach server code, encoding directory structure into business logic. Every `npm install` touched all dependencies regardless of what changed.

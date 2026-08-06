@@ -1,7 +1,7 @@
 pre-commit:
   commands:
     format:
-      glob: '*.{ts,tsx,js,jsx,mjs,json,css,md,mdx,yml,yaml}'
+      glob: '*.{ts,tsx,mts,cts,js,jsx,mjs,cjs,json,css,md,mdx,yml,yaml}'
       run: pnpm exec prettier --write {staged_files}
       stage_fixed: true
     db-migrations:

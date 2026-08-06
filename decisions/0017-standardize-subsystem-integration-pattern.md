@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted
 
+(2026-08-06 audit) Still governing; MCP-tool registration is migrating onto the boot-composed capability registry (capability-definition.ts), which builds on the McpToolDeps pattern rather than replacing it.
+
 ## Context
 
 DorkOS is adding its second major subsystem (Relay) alongside the first (Pulse). Both subsystems need the same cross-cutting concerns: feature flags, conditional route mounting, MCP tool registration with guard functions, config schema extensions, and client-side entity hooks with feature UI. Without a consistent pattern, each subsystem would evolve its own approach to initialization, dependency injection, and lifecycle management, making the codebase harder to navigate and extend.

@@ -3,6 +3,7 @@ id: 260805-041016
 title: The cockpit's durable streams ride WebSockets; SSE stays as the integration contract
 status: accepted
 created: 2026-08-05
+amends: [0264, 0265, 0189, 0190, 0204, 0207]
 spec: null
 superseded-by: null
 ---

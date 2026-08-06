@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted (implemented in spec: core-extensions)
 
+(2026-08-06 audit) Amended in practice: the marketplace core extension now ships canDisable:false ('a toggle would be a no-op lie' until DOR-122); the other core extensions stay disableable, and this ADR's own reserved-flag machinery is what enforces the lock.
+
 ## Context
 
 The prior (documented-but-unimplemented) built-in model claimed bundled extensions were "always enabled" and not user-togglable. The Core Extensions tier must decide whether core extensions can be turned off, including Marketplace which backs the `/marketplace` UI. Reference research showed Obsidian lets users disable every core plugin and VS Code lets users disable every built-in extension; neither locks bundled functionality on. This also aligns with DorkOS's "honest by design" principle — the user sees and controls what runs.

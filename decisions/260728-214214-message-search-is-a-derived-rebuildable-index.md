@@ -4,6 +4,7 @@ title: Message search is a derived, rebuildable index, not a second transcript s
 status: proposed
 created: 2026-07-28
 spec: message-search
+amends: 0310
 superseded-by: null
 ---
 

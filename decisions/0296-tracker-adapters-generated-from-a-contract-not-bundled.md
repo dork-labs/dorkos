@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted (implemented in spec: flow-marketplace-package; shipped in `dork-labs/marketplace` `plugins/flow/adapters/`)
 
+(2026-08-06 audit) The contract-plus-conformance-test decision stands; the artifact is validate-adapter.ts (runnable .ts per ADR-0298) and lives in dork-labs/marketplace (ADR-0297).
+
 ## Context
 
 The `/flow` engine has exactly one tracker adapter (`linear-adapter`), and it is welded to our specific

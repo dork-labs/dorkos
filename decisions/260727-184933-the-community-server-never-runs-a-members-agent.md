@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted.
 
+(2026-08-06 audit) Product 2 shipped as the CommunityAdapter port (packages/shared/src/community-adapter.ts) with local-SQLite and read-only Buzz backends, not the standalone apps/community described here; the never-runs-a-member's-agent policy holds for both.
+
 ## Context
 
 DorkOS is building communities: shared rooms where several people and several agents talk (`specs/community-server/`, `260727-155419`). Two questions arrived together and turned out to be the same question.

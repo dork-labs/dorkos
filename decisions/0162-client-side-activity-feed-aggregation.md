@@ -1,17 +1,17 @@
 ---
 number: 162
 title: Client-Side Activity Feed Aggregation Over Server-Side Event Stream
-status: accepted
+status: superseded
 created: 2026-03-20
 spec: dashboard-content
-superseded-by: null
+superseded-by: 0217
 ---
 
 # 162. Client-Side Activity Feed Aggregation Over Server-Side Event Stream
 
 ## Status
 
-Accepted
+Superseded by [0217](0217-single-table-activity-log.md) (2026-08-06 audit) — a real server-side activity log (activity_events table + /api/activity) replaced client-side derivation.
 
 ## Context
 

@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted (implemented in spec: unified-workflow-system; shipped in `dork-labs/marketplace` `plugins/flow/`)
 
+(2026-08-06 audit) Amended by 0295: autonomy is bring-your-own-scheduler — a DorkOS server is the premium host, not a prerequisite. The fresh-per-issue-run mechanism is unchanged.
+
 ## Context
 
 The poller must spawn a fresh, isolated, resumable session per issue (required by the context strategy and crash-recovery design). The existing autonomous Stop-hook and the /loop tick both keep a single session alive and accumulate context, so neither fits. DorkOS Pulse already provides a contextless croner loop that dispatches a fresh per-run agent session (sessionId = run.id), file-defined as a SKILL.md task.

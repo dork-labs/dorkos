@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted
 
+(2026-08-06 audit) Amended by 260805-041016: the transport is WebSocket now; the 30s hidden-tab grace period survives verbatim in ws-connection.ts (VISIBILITY_GRACE_MS).
+
 ## Context
 
 SSE connections to the DorkOS server consume resources: each connection holds a file watcher (chokidar), a connection slot (max 500), and server memory. Users often have multiple DorkOS tabs open, and background tabs maintain idle SSE connections indefinitely. The `@microsoft/fetch-event-source` library popularized the pattern of closing SSE when tabs are hidden. DorkOS already has a `useTabVisibility` hook and uses it for TanStack Query polling intervals, establishing precedent for visibility-aware behavior.

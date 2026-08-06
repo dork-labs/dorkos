@@ -1,7 +1,7 @@
 ---
 number: 159
 title: Use Server-Rendered URL Params for Feature Catalog Filtering
-status: accepted
+status: deprecated
 created: 2026-03-20
 spec: site-feature-catalog
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Accepted
+Deprecated (2026-08-06 audit) — the features page filters client-side ('use client' FeatureCatalog, ?product= param); static category routes replaced query-param tabs.
 
 ## Context
 

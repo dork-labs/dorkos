@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted
 
+(2026-08-06 audit) llms.txt is now a dynamic route at apps/site/src/app/llms.txt (apps/web became apps/site), and llms-full.txt exists after all; the adoption decision stands.
+
 ## Context
 
 AI assistants are increasingly where developers discover tools. When someone asks "what's a web UI for Claude Code?", the AI needs structured content to cite DorkOS. There is currently no machine-readable entry point for AI agents visiting the site — they must parse HTML marketing pages to understand what DorkOS does. The llms.txt standard (proposed by Jeremy Howard, September 2024) has been adopted by Anthropic, Vercel, Stripe, Cloudflare, and Svelte, with 844,000+ implementors by October 2025.

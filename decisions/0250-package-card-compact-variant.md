@@ -1,7 +1,7 @@
 ---
 number: 250
 title: PackageCard Compact Variant for Template Picker
-status: accepted
+status: deprecated
 created: 2026-04-11
 spec: create-agent-two-step-flow
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Accepted
+Deprecated (2026-08-06 audit) — agent creation renders its own GalleryCard; no cross-feature PackageCard composition remains.
 
 ## Context
 

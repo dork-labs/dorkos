@@ -1,17 +1,17 @@
 ---
 number: 103
 title: Optional API Key Authentication for MCP
-status: accepted
+status: superseded
 created: 2026-03-09
 spec: mcp-server
-superseded-by: null
+superseded-by: 0320
 ---
 
 # 103. Optional API Key Authentication for MCP
 
 ## Status
 
-Accepted
+Superseded by [0320](0320-optional-local-login-required-on-exposure.md) (2026-08-06 audit) — the /mcp auth model was rewritten — per-user Better Auth keys plus a per-instance local token, with MCP_API_KEY as one acceptor among several.
 
 ## Context
 

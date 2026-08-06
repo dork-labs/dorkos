@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted
 
+(2026-08-06 audit) The agent-first pattern holds; the surface is now AgentHub's ConfigTab with IntegrationPicker, and the vocabulary is Connections/Integrations, not Channels.
+
 ## Context
 
 Binding management (connecting agents to channels like Telegram/Slack) was only available in the global Relay Panel — an adapter-centric view. Users had to leave the Agent Dialog, navigate to the Relay Panel, find the right adapter, and create a binding there. This required 3+ context switches per agent. The question was how deep inline binding management should go in the Agent Dialog: full inline editor, create/remove only, or create/remove with edit link.

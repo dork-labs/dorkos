@@ -1,7 +1,7 @@
 ---
 number: 165
 title: Dense List Over Cards for Agent Fleet Display
-status: accepted
+status: deprecated
 created: 2026-03-20
 spec: agents-page
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Accepted
+Deprecated (2026-08-06 audit) — the Agents page now ships AgentFleetTable — the data-table alternative this ADR rejected (DOR-459).
 
 ## Context
 

@@ -1,17 +1,17 @@
 ---
 number: 18
 title: Use Server-Side Subject Filtering for Relay SSE Streams
-status: accepted
+status: superseded
 created: 2026-02-24
 spec: relay-server-client-integration
-superseded-by: null
+superseded-by: 0204
 ---
 
 # 0018. Use Server-Side Subject Filtering for Relay SSE Streams
 
 ## Status
 
-Accepted
+Superseded by [0204](0204-consolidate-sse-connections-into-unified-stream.md) (2026-08-06 audit) — the global /api/events stream inverted this — every event goes to every client, which filters by the event field.
 
 ## Context
 

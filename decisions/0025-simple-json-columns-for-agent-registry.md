@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted
 
+(2026-08-06 audit) The agents table has since dropped manifest_json in favor of structured columns (packages/db/src/schema/mesh.ts); capabilities_json remains; denials became agent_denials.
+
 ## Context
 
 The agent registry needs to persist agent metadata in SQLite. We evaluated two schema approaches: a normalized 5-table design (agents, capabilities, behaviors, budgets, denials) with foreign keys, and a simple 2-table design (agents + denials) with JSON columns for capabilities and manifest data. The expected agent count is 5-50 per user.

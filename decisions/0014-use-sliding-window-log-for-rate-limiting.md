@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted
 
+(2026-08-06 audit) The algorithm stands; the composite (sender, created_at DESC) index this ADR committed to was never added — countSenderInWindow runs unindexed (filed as follow-up).
+
 ## Context
 
 The Relay module needs per-sender rate limiting to prevent message flooding. Four algorithms were evaluated: fixed window counter, token bucket, sliding window log, and sliding window counter (hybrid). The key constraint is that the existing SQLite `messages` table already stores `sender` and `created_at` columns — rate limit state can potentially be derived from this existing data rather than requiring an auxiliary state table.

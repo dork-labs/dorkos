@@ -1,22 +1,27 @@
 ---
 id: 260713-143958
 title: Two-plane, two-tier data collection strategy
-status: superseded
+status: accepted
 created: 2026-07-13
 spec: null
-superseded-by: 260727-182651
+superseded-by: null
+amends: 260711-141639
 ---
 
 # 260713-143958. Two-plane, two-tier data collection strategy
 
 ## Status
 
-**Superseded in part** by [260727-182651](260727-182651-tier-1-telemetry-returns-to-opt-in.md),
+Accepted. **Amended by** [260727-182651](260727-182651-tier-1-telemetry-returns-to-opt-in.md),
 which returns `install`, `heartbeat` and `usage` to opt-in. **Only the "Plane 1, Tier 1 — anonymous,
 opt-out, global" section below is reversed.** Everything else here still stands and is still the
 governing decision: the two-plane split, Tier 2's opt-in rules, the anonymisation bar, the site's
 hybrid cookieless posture, the owned ingest and shared event registry, and all of Plane 2. Read the
 Tier 1 section as history; read the rest as current.
+
+(Status corrected 2026-08-06: this ADR spent three weeks marked `superseded` while 45+ source
+files cited it as governing — the partial replacement is now recorded as an `amends` relation on
+the amending ADR, and this one stays accepted.)
 
 Originally accepted, amending [260711-141639](260711-141639-opt-in-observability-consent.md) (the
 consent namespace, payload-documentation requirement, and no-PII tests stand; the heartbeat and

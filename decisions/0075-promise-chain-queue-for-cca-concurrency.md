@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted
 
+(2026-08-06 audit) The queue generalized into enqueueForSession() on packages/relay/src/adapters/runtime-adapter.ts, shared by all runtime adapters; no standalone ClaudeCodeAdapter remains in apps/server.
+
 ## Context
 
 The Claude Agent SDK throws "Already connected to a transport" if two `query()` calls run

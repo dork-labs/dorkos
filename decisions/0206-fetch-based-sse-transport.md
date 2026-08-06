@@ -1,17 +1,17 @@
 ---
 number: 206
 title: Use fetch() Instead of EventSource for SSE Connections
-status: accepted
+status: superseded
 created: 2026-03-27
 spec: sse-connection-optimization-02-fetch-transport
-superseded-by: null
+superseded-by: 260805-041016
 ---
 
 # 206. Use fetch() Instead of EventSource for SSE Connections
 
 ## Status
 
-Accepted
+Superseded by [260805-041016](260805-041016-cockpit-durable-streams-ride-websockets-sse-stays-the-integration-contract.md) (2026-08-06 audit) — the cockpit's persistent stream is a WebSocket now; SSE remains the external integration contract.
 
 ## Context
 

@@ -3,7 +3,7 @@ id: 260731-211050
 title: A room-driven claude-code turn leaves a sparse record in session_events, never a history
 status: accepted
 created: 2026-07-31
-supersedes: 260710-024641
+amends: [260710-024641, 260726-170125]
 superseded-by: null
 ---
 
@@ -24,6 +24,8 @@ It also corrects one sentence of
 default runtime — never writes to `session_events`." The conclusion that ADR draws from it is
 unaffected, and is the reason this decision is narrow: the room log is still a DorkOS-owned store,
 and these rows are not it.
+
+(2026-08-06 audit) Amended by 260801-035912: 'record' mode now applies to every session for permission-receipt permanence, not only room-triggered turns.
 
 ## Context
 

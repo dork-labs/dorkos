@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted
 
+(2026-08-06 audit) BindingRouter now lives at apps/server/src/services/relay/binding-router.ts and dispatches runtime-neutrally to relay.agent.<runtimeType>.<sessionId>; the central-router pattern stands.
+
 ## Context
 
 DorkOS has a working adapter system (Telegram, Webhooks, plugin-based) and an agent identity system, but no routing layer connects them. Adapters publish to `relay.human.*` subjects but nothing resolves which agent should handle those messages. Three approaches were considered: (1) adapter-side routing where each adapter resolves its own target, (2) relay-core integration baked into the publish pipeline, (3) a central BindingRouter service that intercepts and re-routes messages.

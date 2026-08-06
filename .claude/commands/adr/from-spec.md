@@ -36,8 +36,14 @@ Scan the spec documents for decision signals: technology choices ("we chose X", 
 
 Score = number of criteria met (0-4).
 
-- **Score >= 2** → write the ADR (Step 5)
-- **Score <= 1** → do **not** write it; list it in the Step 6 summary with its score so the judgment is auditable
+- **Criterion 2 (project-wide impact) met AND score >= 2** → write the ADR (Step 5)
+- **Otherwise** → do **not** write it; list it in the Step 6 summary with its score so the judgment is auditable
+
+Criterion 2 is mandatory, not one vote among four: the 2026-08 corpus audit
+(`research/20260806_adr-corpus-health-and-lifecycle.md`) found the sub-2 bar had admitted
+single-surface implementation details (component variants, indicator placement) that rot the
+fastest and are visible from the code anyway. A decision confined to one feature belongs in the
+spec, not the decision log.
 
 ### Step 5: Write the Qualifying ADRs
 
@@ -47,6 +53,12 @@ once per ADR; if two land in the same second, bump the later one to the next sec
 
 Then for each qualifying decision:
 
+0. **Check whether it replaces or amends an existing ADR.** Search `decisions/manifest.json` by
+   title keywords. Full reversal → new ADR gets `supersedes: <old-id>` and the old one flips to
+   `superseded` + `supersededBy`. Partial reversal → new ADR gets `amends: <old-id>` and the old
+   one stays accepted with a Status-section note naming the retired clause (`writing-adrs` →
+   Partial supersession). Undocumented drift — code moving on with no successor record — is the
+   dominant way this corpus has rotted; this step is where it gets prevented.
 1. Draft the ADR using the `decisions/TEMPLATE.md` format with its allocated `<id>`: Context from the spec's research/ideation sections, Decision from its design/recommendation sections, Consequences from its trade-off analysis.
 2. Set the status by shipped-ness: **`accepted`** if the spec has already shipped (spec manifest status `implemented`/`completed`, or the implementing PR is merged — verify with `gh pr list --state merged --search "$ARGUMENTS"` or the spec's `04-implementation.md`); otherwise **`proposed`** (it will progress via `/adr:review` once implemented). Never `draft`.
 3. Set `spec:` frontmatter to `$ARGUMENTS`, write the file at `decisions/<id>-<slug>.md`, and add a manifest entry to `decisions/manifest.json` keyed by `id` (there is no `nextNumber` counter).

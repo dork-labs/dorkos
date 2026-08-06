@@ -4,7 +4,7 @@ title: '"Connections" is the single umbrella for the outside world, and this is 
 status: accepted
 created: 2026-08-04
 spec: language-ia-simplification
-supersedes: '260726-193526 (Integration half only)'
+amends: 260726-193526
 superseded-by: null
 ---
 

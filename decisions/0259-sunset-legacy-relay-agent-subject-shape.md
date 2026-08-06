@@ -1,7 +1,7 @@
 ---
 number: 259
 title: Sunset the Legacy `relay.agent.<sessionId>` Subject Shape
-status: accepted
+status: deprecated
 created: 2026-04-16
 spec: null
 superseded-by: null
@@ -10,6 +10,8 @@ superseded-by: null
 # 0259. Sunset the Legacy `relay.agent.<sessionId>` Subject Shape
 
 ## Status
+
+Deprecated (2026-08-06 audit) — the phased sunset was never executed; commit b99a3e509 deleted the UUID heuristic outright via the closed RUNTIME_TYPES subject grammar.
 
 Accepted — 2026-04-16
 

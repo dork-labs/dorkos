@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted
 
+(2026-08-06 audit) The maildir-as-truth + rebuildable derived index decision stands; the standalone relay index.db was consolidated into @dorkos/db (packages/db/src/schema/relay.ts) via Drizzle.
+
 ## Context
 
 Relay needs both durable message storage and efficient querying (by subject, status, expiry). A single storage system would compromise one concern: pure Maildir lacks query capability, pure SQLite lacks atomic delivery guarantees and file inspectability. DorkOS already uses this dual pattern: JSONL transcript files as truth with programmatic reading on top.

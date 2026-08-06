@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted
 
+(2026-08-06 audit) The domain-folder principle stands, now at 23 domains (originally 4); pulse became tasks; the per-domain barrel index.ts convention was largely abandoned.
+
 ## Context
 
 The `apps/server/src/services/` directory contains 24 service files in a flat structure. The `.claude/rules/server-structure.md` threshold is: < 15 flat OK, 15-20 suggest grouping, 20+ restructure required. Adding adapter-related services would push the count to ~30. Services naturally cluster into domains: session management, Pulse scheduler, Relay messaging, and core infrastructure.

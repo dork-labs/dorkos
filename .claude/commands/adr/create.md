@@ -46,7 +46,12 @@ Search `decisions/` for existing ADRs that might be related or superseded:
 grep -l "[relevant keywords]" decisions/*.md
 ```
 
-If a related ADR is found, ask the user if the new ADR supersedes it.
+If a related ADR is found, ask the user which relation applies:
+
+- **Supersedes** — the new decision fully replaces the old one (old ADR flips to `superseded`)
+- **Amends** — the new decision reverses only part of it (old ADR stays `accepted`; the new one
+  carries `amends: <old-id>` — see `writing-adrs` → Partial supersession)
+- **Related only** — mention it in prose, no formal link
 
 ### Step 4: Write the ADR
 
@@ -65,6 +70,10 @@ Use the template from `decisions/TEMPLATE.md`.
 - `created`: Today's date (YYYY-MM-DD)
 - `spec`: Related spec slug or `null`
 - `superseded-by`: `null` (unless superseding)
+- `amends`: parent id (or list) when partially replacing an ADR that stays accepted; omit otherwise
+
+Operational metadata (`affects` path globs, `lastVerified`) lives **only** in the manifest entry,
+never in frontmatter — audits update it without churning ADR files.
 
 **Content guidelines (invoke `writing-adrs` skill):**
 
@@ -78,13 +87,23 @@ Add a new entry to the `decisions` array in `decisions/manifest.json` with the
 `id`, `slug`, `title`, `status`, and `created`. There is no `nextNumber` counter
 to touch (removed in spec #271); the id is self-allocated.
 
-### Step 6: Update Superseded ADR (if applicable)
+### Step 6: Update the Related ADR (if applicable)
 
-If this ADR supersedes another:
+If this ADR **supersedes** another (full replacement):
 
 1. Update the old ADR's frontmatter: `status: superseded`, `superseded-by: <id>`
 2. Update the old ADR's Status section
-3. Update the old entry in `decisions/manifest.json`
+3. Update the old entry in `decisions/manifest.json` (status + `supersededBy`), and add
+   `supersedes: <old-id>` to the new entry
+
+If this ADR **amends** another (partial replacement):
+
+1. The old ADR **keeps** `status: accepted` — do not touch its frontmatter status
+2. Append to the old ADR's Status section which clause is retired and what still governs
+3. Add `amends: <old-id>` to the new ADR's frontmatter and manifest entry
+
+`node .claude/scripts/adr-drift-check.mjs` afterwards must stay silent — it rejects a
+`supersedes` link at a live ADR and an `amends` link at a dead one.
 
 ### Step 7: Display Summary
 
