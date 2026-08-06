@@ -6,7 +6,10 @@ import type {
   MessageOpts,
   CommandIntentOpts,
   SseResponse,
+  ManagedMcpServerResolver,
+  McpAppServerConnection,
 } from '@dorkos/shared/agent-runtime';
+import type { McpServerEntry } from '@dorkos/shared/transport';
 import type {
   StreamEvent,
   Session,
@@ -56,6 +59,8 @@ export class TestModeRuntime implements AgentRuntime {
 
   private readonly registry: TestModeSessionRegistry;
   private readonly capabilities: RuntimeCapabilities;
+  /** The managed-MCP server resolver, injected at boot; drives {@link getMcpStatus}. */
+  private managedMcp: ManagedMcpServerResolver | undefined;
 
   /**
    * Create a test-mode runtime instance registered under `type`.
@@ -180,6 +185,40 @@ export class TestModeRuntime implements AgentRuntime {
 
   setRelay(_relay: RelayCore): void {
     // No-op: retained to satisfy the AgentRuntime interface.
+  }
+
+  /**
+   * Capture the managed-MCP server resolver so {@link getMcpStatus} can report an
+   * agent's managed servers. Injected at boot into every runtime (index.ts); the
+   * claude-code alias registered under `DORKOS_TEST_RUNTIME_CLAUDE_ALIAS` is the
+   * one the managed-MCP OAuth e2e drives, since its seeded agent declares
+   * `runtime: 'claude-code'`.
+   *
+   * @param resolver - The managed-server resolver from the composition root.
+   */
+  setManagedMcpServers(resolver: ManagedMcpServerResolver): void {
+    this.managedMcp = resolver;
+  }
+
+  /**
+   * @inheritdoc
+   *
+   * TestModeRuntime opens no real MCP connections, so it synthesizes live status
+   * from the injection resolver: an enabled http/sse managed server reports
+   * `connected` once DorkOS injects its `Authorization: Bearer` header (the
+   * operator signed its OAuth flow in) and `needs-auth` until then; stdio is
+   * always `connected`. `null` when no resolver is wired. This is the
+   * deterministic stand-in the managed-MCP OAuth e2e (DOR-952) asserts against.
+   */
+  getMcpStatus(cwd: string): McpServerEntry[] | null {
+    const servers = this.managedMcp?.injectableServersForCwd(cwd);
+    if (!servers) return null;
+    return Object.entries(servers).map(([name, connection]) => ({
+      name,
+      type: connection.transport,
+      status: mcpStatusFor(connection),
+      scope: 'managed',
+    }));
   }
 
   async listSessions(projectDir: string): Promise<Session[]> {
@@ -348,4 +387,25 @@ export class TestModeRuntime implements AgentRuntime {
   subscribeSessionList(_ctx: SessionOpts): AsyncIterable<SessionListEvent> {
     return this.registry.subscribe();
   }
+}
+
+/**
+ * The synthesized MCP status for one injected managed server: http/sse reads
+ * `connected` once a bearer is injected (OAuth signed in) and `needs-auth`
+ * otherwise; stdio needs no token and is always `connected`. See
+ * {@link TestModeRuntime.getMcpStatus}.
+ *
+ * @param connection - The injected connection from the managed-server resolver.
+ */
+function mcpStatusFor(connection: McpAppServerConnection): McpServerEntry['status'] {
+  if (connection.transport === 'stdio') return 'connected';
+  return hasBearerHeader(connection.headers) ? 'connected' : 'needs-auth';
+}
+
+/** Whether a header map carries a non-empty `Authorization: Bearer` (case-insensitive key). */
+function hasBearerHeader(headers: Record<string, string> | undefined): boolean {
+  if (!headers) return false;
+  return Object.entries(headers).some(
+    ([key, value]) => key.toLowerCase() === 'authorization' && value.startsWith('Bearer ')
+  );
 }

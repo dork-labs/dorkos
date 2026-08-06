@@ -206,6 +206,18 @@ const serverEnvSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === 'true'),
+  // Test mode only — registers a THIRD TestModeRuntime instance under the
+  // 'claude-code' type so the managed-MCP OAuth e2e (DOR-952) can seed an agent
+  // whose manifest declares `runtime: 'claude-code'` (the only enum values are
+  // claude-code/codex/opencode — 'test-mode' is not a valid manifest runtime) and
+  // still have `GET /api/mcp-config?runtime=claude-code` resolve a real runtime
+  // instead of 400ing. Same TestModeRuntime class, so it answers `getMcpStatus`
+  // from the managed-server injection resolver. Ignored unless DORKOS_TEST_RUNTIME
+  // is also true.
+  DORKOS_TEST_RUNTIME_CLAUDE_ALIAS: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true'),
   // Q3 contention harness (DOR-500) — read ONLY by the `q3-*` test-mode
   // scenarios (services/runtimes/test-mode/q3-contention-scenarios.ts), which
   // are unreachable unless DORKOS_TEST_RUNTIME is true and a `q3-*` name is

@@ -36,6 +36,7 @@ import { resolveAgentIdentity } from './middleware/agent-identity.js';
 import { getAuth, toNodeHandler, sessionGate } from './services/core/auth/index.js';
 import { resolveTrustedOrigins } from './lib/trusted-origins.js';
 import { testControlRouter } from './routes/test-control.js';
+import { createMockMcpOAuthRouter } from './routes/mock-mcp-oauth-server.js';
 import { env } from './env.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -203,6 +204,11 @@ export function createApp() {
   // only reachable when the env var is set, so production is unaffected.
   if (env.DORKOS_TEST_RUNTIME) {
     app.use('/api/test', testControlRouter);
+    // The mock OAuth-protected MCP server (DOR-952) — mounted at the app ROOT so
+    // it can serve the `/.well-known/*` discovery paths there (RFC 9728/8414),
+    // alongside its `/api/test/mcp-oauth/*` auth + MCP endpoints. Gated the same
+    // way, so none of these paths exist in production.
+    app.use(createMockMcpOAuthRouter());
   }
 
   // OpenAPI spec + interactive docs
