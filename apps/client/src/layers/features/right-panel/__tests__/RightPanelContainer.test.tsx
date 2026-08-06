@@ -646,6 +646,11 @@ describe('RightPanelContainer', () => {
       expect(screen.getByTestId('sheet')).toBeInTheDocument();
       expect(screen.queryByTestId('right-panel')).not.toBeInTheDocument();
       expect(screen.queryByTestId('resize-handle')).not.toBeInTheDocument();
+      // The embed's overlay pane is narrow even on a desktop-width viewport
+      // (mockIsMobile is false here), so the container's own className must
+      // still force full width — pins the caller override this branch relies
+      // on rather than ResponsiveSheetContent's own (desktop) computed width.
+      expect(screen.getByTestId('sheet-content')).toHaveClass('w-full', 'sm:max-w-full');
     });
 
     it('renders nothing when the panel is closed', () => {

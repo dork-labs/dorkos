@@ -18,8 +18,8 @@ import {
 /**
  * Width variants for {@link ResponsiveSheetContent}. Desktop docks the panel
  * at a fixed reading width; a phone (`useIsMobile`, 768px breakpoint) widens
- * it to fill the screen instead, so it never shows a sliver of a
- * desktop-sized panel.
+ * it to fill the screen instead of the base Sheet's `w-3/4` default, which on
+ * a phone would still leave a visible strip of the page down one side.
  */
 const responsiveSheetContentVariants = cva('', {
   variants: {
@@ -37,8 +37,8 @@ const responsiveSheetContentVariants = cva('', {
  * Content panel for a right-side sheet that goes full-screen on a phone.
  *
  * `side` is always `"right"` — this primitive exists for right-side panels
- * only, the third hand-rolled instance of that exact pattern
- * (`RightPanelContainer`, `sidebar.tsx`) that earned the extraction. A
+ * only, generalized from `RightPanelContainer.tsx:205-224`'s hand-rolled
+ * version; the profile drawer (spec §W3.2) is the second consumer. A
  * caller's `className` is applied last, so it can still override the
  * computed width where a fixed width is wanted regardless of viewport.
  */

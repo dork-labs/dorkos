@@ -95,7 +95,7 @@ describe('ResponsiveSheetContent', () => {
 
     const content = screen.getByTestId('sheet-content');
     expect(content.className).toContain('sm:max-w-md');
-    expect(content.className).not.toContain('w-full');
+    expect(content).not.toHaveClass('w-full');
   });
 
   it('carries the mobile full-width class when useIsMobile is true', () => {
@@ -107,7 +107,10 @@ describe('ResponsiveSheetContent', () => {
     );
 
     const content = screen.getByTestId('sheet-content');
-    expect(content.className).toContain('w-full');
+    // toContain would also match the substring inside 'sm:max-w-full' — assert
+    // the standalone 'w-full' token so a mutation that drops it (a phone would
+    // render at 75% width, the base Sheet's w-3/4) is actually caught.
+    expect(content).toHaveClass('w-full');
     expect(content.className).toContain('sm:max-w-full');
   });
 
