@@ -98,7 +98,7 @@ describe('SessionEventSchema', () => {
   });
 
   it('parses an approval_required event retaining startedAt + remainingMs', () => {
-    // Purpose: interaction members must preserve the server-assigned countdown (ADR-0262).
+    // Purpose: interaction members must preserve the server-assigned countdown (ADR-0264).
     const event = {
       seq: 3,
       type: 'approval_required',

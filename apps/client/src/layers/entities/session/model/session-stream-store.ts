@@ -77,7 +77,7 @@ export interface SessionStreamState {
   inProgressTurn: SessionEvent[];
   /** Server-held status projection, or `null` before the first hydration. */
   status: SessionStatus | null;
-  /** Pending interactions awaiting the operator (ADR-0262), keyed by `id`. */
+  /** Pending interactions awaiting the operator (ADR-0264), keyed by `id`. */
   pendingInteractions: PendingInteractionDTO[];
   /** Highest `seq` applied so far; the idempotency/gap-free watermark. */
   lastAppliedSeq: number;

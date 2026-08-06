@@ -14,8 +14,9 @@
  *
  * ## Why there is no `allowedTools` list here any more (DOR-519)
  *
- * ADR-0070 built this feature on the premise that the SDK's `allowedTools` option
- * RESTRICTS which tools a session can call. It never did. It is an auto-approval
+ * ADR-0070 (superseded by ADR-260726-171347) built this feature on the premise
+ * that the SDK's `allowedTools` option RESTRICTS which tools a session can
+ * call. It never did. It is an auto-approval
  * list: "List of tool names that are auto-allowed without prompting for permission.
  * These tools will execute automatically without asking the user for approval"
  * (`sdk.d.ts`). The wording is not new — `@anthropic-ai/claude-agent-sdk` 0.2.58,

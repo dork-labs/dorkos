@@ -189,7 +189,7 @@ Top-of-bubble lifecycle parts (`thinking`, `memory_recall`) share a common contr
 
 There is no separate sync mechanism: the durable `GET /api/sessions/:id/events` stream IS the sync. Every subscribed client receives the same snapshot, replay, and live events — including turns triggered by other clients or by the CLI — so there is no re-fetch loop and no file-watcher events to handle.
 
-**Pending-interaction recovery is snapshot-based.** The `snapshot` frame carries `pendingInteractions` (tool approvals, questions, MCP elicitations) with server-authoritative `startedAt`/`remainingMs`, so a switched-away, refreshed, or backgrounded client rebuilds its prompt cards on connect and the countdown resumes rather than resetting (ADR-0262 countdown semantics). Live resolution on any client emits `interaction_resolved`, removing the card everywhere. See [interactive-tools.md → Recovering Pending Interactions](./interactive-tools.md#recovering-pending-interactions).
+**Pending-interaction recovery is snapshot-based.** The `snapshot` frame carries `pendingInteractions` (tool approvals, questions, MCP elicitations) with server-authoritative `startedAt`/`remainingMs`, so a switched-away, refreshed, or backgrounded client rebuilds its prompt cards on connect and the countdown resumes rather than resetting (ADR-0264 countdown semantics). Live resolution on any client emits `interaction_resolved`, removing the card everywhere. See [interactive-tools.md → Recovering Pending Interactions](./interactive-tools.md#recovering-pending-interactions).
 
 ### Real-Time System Events (Unified SSE Stream)
 

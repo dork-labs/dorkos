@@ -279,7 +279,8 @@
       "slug": "shapes-monetization-guardrails-no-paid-chat-placement",
       "title": "Shapes monetization guardrails: free community shapes, vendor affiliate/placement, no paid placement in chats ever",
       "status": "accepted",
-      "created": "2026-07-17"
+      "created": "2026-07-17",
+      "lastVerified": "2026-08-06"
     },
     {
       "id": "260718-042153",
@@ -509,7 +510,8 @@
       "slug": "resend-broadcasts-over-buttondown-newsletter",
       "title": "Resend Broadcasts over Buttondown for the launch newsletter",
       "status": "accepted",
-      "created": "2026-07-06"
+      "created": "2026-07-06",
+      "lastVerified": "2026-08-06"
     },
     {
       "number": 321,
@@ -627,7 +629,8 @@
       "status": "accepted",
       "extractedFrom": "merge-conflict-prevention",
       "created": "2026-07-03",
-      "specSlug": "merge-conflict-prevention"
+      "specSlug": "merge-conflict-prevention",
+      "lastVerified": "2026-08-06"
     },
     {
       "number": 313,
@@ -1455,7 +1458,8 @@
       "status": "accepted",
       "created": "2026-04-07",
       "extractedFrom": "marketplace-05-claude-code-format-superset",
-      "specSlug": "marketplace-05-claude-code-format-superset"
+      "specSlug": "marketplace-05-claude-code-format-superset",
+      "lastVerified": "2026-08-06"
     },
     {
       "number": 236,
@@ -2477,7 +2481,12 @@
       "status": "accepted",
       "created": "2026-03-11",
       "extractedFrom": "pulse-schedule-templates",
-      "specSlug": "pulse-schedule-templates"
+      "specSlug": "pulse-schedule-templates",
+      "lastVerified": "2026-08-06",
+      "affects": [
+        "apps/client/src/layers/entities/tasks/**",
+        "apps/client/src/layers/features/tasks/**"
+      ]
     },
     {
       "number": 110,

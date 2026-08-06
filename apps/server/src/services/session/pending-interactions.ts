@@ -1,5 +1,5 @@
 /**
- * Runtime-neutral pending-interaction recovery selector (DOR-73 / ADR-0262).
+ * Runtime-neutral pending-interaction recovery selector (DOR-73 / ADR-0264).
  *
  * Maps tracked pending interactions to the discriminated
  * {@link PendingInteractionDTO}s the recovery paths re-present, computing the
