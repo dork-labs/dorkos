@@ -48,7 +48,7 @@ These were the operator's calls, made 2026-07-28. They are recorded with their r
 
 The window ends 10 minutes after the agent was last addressed, **or** after 5 subsequent posts by others in which it was not addressed. Being addressed again resets both. Both numbers are configurable.
 
-**Every threshold in this space is unsourced.** `meta/agent-etiquette.md` §9 says so in as many words: the research turned up no defensible figure for a yield window, an acknowledgment deadline, or a messages-per-hour ceiling. No vendor publishes one and no study establishes one. **These two numbers are ours, picked to be tuned by dogfooding.** This spec states that rather than letting them acquire a fake citation later, and §17 repeats it where a reader tuning them will see it.
+**Every threshold in this space is unsourced.** `meta/agent-etiquette.md` §10 says so in as many words: the research turned up no defensible figure for a yield window, an acknowledgment deadline, or a messages-per-hour ceiling. No vendor publishes one and no study establishes one. **These two numbers are ours, picked to be tuned by dogfooding.** This spec states that rather than letting them acquire a fake citation later, and §17 repeats it where a reader tuning them will see it.
 
 ### 2.3 The DM disclosure is a product commitment
 
@@ -780,7 +780,7 @@ Per phase, above. Four rules that apply across all of them.
 
 **Browser, not jsdom, for RP5 and RP9.** Menu-to-editor focus races and presence rendering are invisible to jsdom, and this repo has shipped two room defects that every test passed and a screenshot caught immediately.
 
-Beyond tests, `meta/agent-etiquette.md` §8 names evals as the second mechanism, and the seedable rules should become cases in `packages/evals`. `E20` (hold a correct position under pressure) is the clearest: seed a transcript where a person asserts something false and pushes back once, and assert the agent holds. `E2` and `E12` are similarly mechanical.
+Beyond tests, `meta/agent-etiquette.md` §9 names evals as the second mechanism, and the seedable rules should become cases in `packages/evals`. `E20` (hold a correct position under pressure) is the clearest: seed a transcript where a person asserts something false and pushes back once, and assert the agent holds. `E2` and `E12` are similarly mechanical.
 
 ---
 
@@ -805,7 +805,7 @@ Two smaller things the ideation did not know, both of which strengthen it:
 
 ## 17. What is honestly uncertain
 
-Two caveats from `meta/agent-etiquette.md` §9 belong here, verbatim in substance, because a reader of this spec is exactly the person who will be tempted to treat a number as settled.
+Two caveats from `meta/agent-etiquette.md` §10 belong here, verbatim in substance, because a reader of this spec is exactly the person who will be tempted to treat a number as settled.
 
 **Every number in this space is unsourced.** The research turned up no defensible figure for a yield window, an acknowledgment deadline, or a messages-per-hour ceiling above which people find an agent annoying. No vendor publishes one and no study establishes one. So we set them by using the product, and we should say so rather than inventing a citation for them later. §13 marks every number this spec adds, and every one of them is ours.
 

@@ -702,7 +702,7 @@ The two ceilings behind the `engaged` response mode, which is what a channel see
 
 The window is **thread-scoped**. Being addressed inside a thread engages an agent in that thread and nowhere else, and being addressed at the channel's top level does not engage it inside every open thread.
 
-Neither number is measured. No vendor publishes a figure for how long a person expects to keep talking to something without naming it again, and no study establishes one (`meta/agent-etiquette.md` §9). These are ours, to be tuned by using the product.
+Neither number is measured. No vendor publishes a figure for how long a person expects to keep talking to something without naming it again, and no study establishes one (`meta/agent-etiquette.md` §10). These are ours, to be tuned by using the product.
 
 Both are **ceilings, not settings**: a room can hold an agent to a shorter window, never a longer one. Set either to `0` and `engaged` behaves exactly like `mention-only`. Operator-only — an agent that could lengthen its own window would be voting itself back into every conversation it was ever addressed in.
 
