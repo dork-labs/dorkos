@@ -29,6 +29,7 @@
 import type { StreamEvent, TerminalReason } from '@dorkos/shared/types';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { RawSessionEvent, SessionStateProjector } from './session-state-projector.js';
+import { CAPABILITY_APPROVAL_HOLD_CAP_MS } from '../core/capabilities/capability-approval-hold.js';
 
 /** A `StreamEvent`'s `data` payload, read defensively as a loose record. */
 type StreamData = Record<string, unknown>;
@@ -375,8 +376,15 @@ function toCapabilityApprovalRequiredEvent(
     // The pending approval passes through structurally — the adapter built it
     // from the approval service, so the projector treats it opaquely.
     approval: data.approval as RawOf<'capability_approval_required'>['approval'],
-    startedAt: Number(data.startedAt ?? Date.now()),
-    capMs: Number(data.capMs ?? 0),
+    // `|| default`, NOT `?? 0`: a malformed `startedAt`/`capMs` must fail toward
+    // KEEPING the stall-pause (a live hold), never toward silently disabling it.
+    // `Number(undefined)` and `Number('typo')` are `NaN`, and `now - NaN < capMs`
+    // is always false — so a `?? 0` (or a bare `Number(...)`) would drop the pause
+    // the instant a typo reached here, and the watchdog would reap the turn while
+    // the person was still deciding. `|| default` catches undefined, NaN, and 0
+    // (never a real value) and substitutes a safe live hold.
+    startedAt: Number(data.startedAt) || Date.now(),
+    capMs: Number(data.capMs) || CAPABILITY_APPROVAL_HOLD_CAP_MS,
   };
 }
 
@@ -386,7 +394,13 @@ function toCapabilityApprovalResolvedEvent(
 ): RawOf<'capability_approval_resolved'> {
   return {
     type: 'capability_approval_resolved',
+    // A missing id fails SAFE in the same direction as the required event: an
+    // empty id matches no tracked hold, so the untrack is a no-op and the hold
+    // self-expires at its cap rather than being dropped early — it never
+    // un-pauses a still-live wait.
     approvalId: String(data.approvalId ?? ''),
+    // A missing outcome degrades to `timeout` — the no-decision word, which is
+    // exactly how a hold that reached here without one should read.
     outcome: (data.outcome as RawOf<'capability_approval_resolved'>['outcome']) ?? 'timeout',
   };
 }

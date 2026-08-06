@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'feat(shared): capability approval hold events and inline card part (DOR-939)'
   - 'feat(server): destructive capability approvals hold in-session and resume on approval (DOR-939)'
   - "feat(client): an agent's held capability approval shows inline in the chat (DOR-939)"
 ---
