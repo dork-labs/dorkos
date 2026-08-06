@@ -30,7 +30,7 @@
  * @module server/services/rooms/author-registry
  */
 import { ulid } from 'ulidx';
-import { agents, authors, roomMembers, eq, and, inArray, isNull, type Db } from '@dorkos/db';
+import { agents, authors, roomMembers, asc, eq, and, inArray, isNull, type Db } from '@dorkos/db';
 import {
   agentAuthorRef,
   type AuthorKind,
@@ -614,6 +614,35 @@ export class AuthorRegistry {
   getById(id: string): AuthorRecord | null {
     const row = this.db.select().from(authors).where(eq(authors.id, id)).get();
     return row ? toRecord(row) : null;
+  }
+
+  /**
+   * Every author this install currently has, oldest first.
+   *
+   * The `retired_at IS NULL` filter is the same one {@link AuthorRegistry.activeRow}
+   * relies on, for the same reason: a directory that has changed hands has a
+   * retired row and a live one, and a listing that did not say so would render
+   * both. A retired author keeps its history forever — it simply stops being
+   * anybody the install can address.
+   *
+   * Ordered by `created_at` so the answer is stable across calls rather than
+   * whatever order SQLite happens to return. **A pure read**: unlike
+   * {@link AuthorRegistry.localHuman} and {@link AuthorRegistry.resolve}, this
+   * mints nothing, which is what lets a read-only surface (`GET /api/team`,
+   * ADR 260806-222535) list people without creating one.
+   *
+   * @param kind - Narrow to one author kind, or omit for all of them.
+   */
+  listActive(kind?: AuthorKind): AuthorRecord[] {
+    const rows = this.db
+      .select()
+      .from(authors)
+      .where(
+        kind ? and(eq(authors.kind, kind), isNull(authors.retiredAt)) : isNull(authors.retiredAt)
+      )
+      .orderBy(asc(authors.createdAt))
+      .all();
+    return rows.map(toRecord);
   }
 
   /**

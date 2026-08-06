@@ -19,6 +19,16 @@ describe('export-openapi', () => {
     expect(paths.some((p) => p.includes('/health'))).toBe(true);
   });
 
+  it('documents the team roster as a read with no write path', () => {
+    const spec = generateOpenAPISpec();
+    const team = spec.paths?.['/api/team'];
+
+    expect(team?.get?.tags).toEqual(['Team']);
+    // The ADR's contract, asserted rather than trusted to the prose: one verb.
+    expect(Object.keys(team ?? {})).toEqual(['get']);
+    expect(team?.get?.description).toContain('warnings');
+  });
+
   it('produces valid JSON output', () => {
     const spec = generateOpenAPISpec();
     const json = JSON.stringify(spec, null, 2);
