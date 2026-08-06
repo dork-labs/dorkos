@@ -79,6 +79,18 @@ const SNAPSHOT: SessionSnapshot = {
 
 const TURN_START_EVENT: SessionEvent = { type: 'turn_start', seq: 1 };
 
+/** A held destructive capability call, exactly as the server pushes it (DOR-939). */
+const HELD_APPROVAL = {
+  approvalId: 'appr-1',
+  capabilityId: 'mcp.add',
+  capabilityTitle: 'Add an MCP server',
+  tier: 'destructive' as const,
+  summary: 'Prober wants to run "Add an MCP server"',
+  hasAgentPath: true,
+  requestedAt: '2026-08-06T00:00:00.000Z',
+  expiresAt: '2026-08-06T02:00:00.000Z',
+};
+
 describe('StreamManager', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -253,10 +265,12 @@ describe('StreamManager', () => {
   });
 
   it('registers a frame handler for EVERY SessionEventSchema discriminant (schema-drift pin)', () => {
-    // Real failure mode: frames are dispatched by SSE event NAME — a discriminant
-    // missing from SESSION_EVENT_TYPES is SILENTLY dropped by the connection
-    // layer over HTTP. 'system_status' and 'compact_boundary' were, for months:
-    // the embedded transport pump bypasses per-name registration and masked it.
+    // Real failure mode: frames are dispatched by event NAME — a discriminant
+    // missing from SESSION_EVENT_TYPES is SILENTLY dropped. Not only over the
+    // network: the socket and the embedded transport pump both look the name up
+    // in the SAME handler map, so a missing name is dropped on every surface
+    // (web, Electron, Obsidian). 'system_status' and 'compact_boundary' were,
+    // for months; 'capability_approval_required'/'_resolved' were too (DOR-963).
     // Zod v4 discriminated unions expose their members via `.options`, each a
     // ZodObject whose `type` shape is a ZodLiteral carrying the discriminant in
     // `.value` — introspecting the schema pins the two lists together.
@@ -379,6 +393,31 @@ describe('StreamManager', () => {
         trigger: 'auto',
         preTokens: 52000,
         postTokens: 8000,
+      } as SessionEvent,
+    ],
+    // The in-session capability hold (DOR-939) and its resolution. Same failure
+    // mode as the four above and the reason DOR-963 exists: the pair shipped
+    // with a server emitter, a store fold, and an inline card — and no entry in
+    // SESSION_EVENT_TYPES, so over the socket the frames never arrived and the
+    // card never appeared. The RESOLVED half matters as much as the required
+    // half: without it a card that did appear would never retire.
+    [
+      'capability_approval_required',
+      {
+        type: 'capability_approval_required',
+        seq: 7,
+        startedAt: 1_000_000,
+        capMs: 45_000,
+        approval: HELD_APPROVAL,
+      } as SessionEvent,
+    ],
+    [
+      'capability_approval_resolved',
+      {
+        type: 'capability_approval_resolved',
+        seq: 8,
+        approvalId: 'appr-1',
+        outcome: 'granted',
       } as SessionEvent,
     ],
   ])('dispatches a %s frame to onSessionEvent (previously dropped over HTTP)', (name, event) => {

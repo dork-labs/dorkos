@@ -4,6 +4,7 @@ covers:
   - 'feat(server): destructive capability approvals hold in-session and resume on approval (DOR-939)'
   - "feat(client): an agent's held capability approval shows inline in the chat (DOR-939)"
   - 'fix(server): capability-hold normalizer fallbacks fail toward keeping the stall-pause + round-trip test (DOR-939)'
+  - 'fix(client): route capability_approval_required events to the inline approval card (DOR-963)'
 ---
 
 ### Added

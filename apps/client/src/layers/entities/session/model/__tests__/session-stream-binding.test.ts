@@ -138,6 +138,51 @@ describe('initSessionStreamBinding', () => {
     expect(useSessionStreamStore.getState().getSession('sess-1').lastAppliedSeq).toBe(1);
   });
 
+  it('dispatches the capability-approval hold pair into the in-progress turn (inline approval card)', () => {
+    // Real failure mode (DOR-963): the in-session capability hold (DOR-939) is
+    // rendered from `inProgressTurn` — `projectInProgressTurn` folds
+    // `capability_approval_required` into an inline `capability_approval` card
+    // and `capability_approval_resolved` retires it. Both halves reach that
+    // array ONLY if StreamManager registers a frame handler under each name;
+    // the socket drops an unregistered name in silence, so a missing entry
+    // means the operator is never asked and the agent's held call just waits
+    // out its cap. This drives the whole path with no network: frame →
+    // StreamManager → binding listener → store.
+    manager.attachSession('sess-1');
+    connections[0]!.push('snapshot', SNAPSHOT);
+
+    const held: SessionEvent = {
+      type: 'capability_approval_required',
+      seq: 1,
+      startedAt: 1_000_000,
+      capMs: 45_000,
+      approval: {
+        approvalId: 'appr-1',
+        capabilityId: 'mcp.add',
+        capabilityTitle: 'Add an MCP server',
+        tier: 'destructive',
+        summary: 'Prober wants to run "Add an MCP server"',
+        hasAgentPath: true,
+        requestedAt: '2026-08-06T00:00:00.000Z',
+        expiresAt: '2026-08-06T02:00:00.000Z',
+      },
+    };
+    connections[0]!.push('capability_approval_required', held);
+    expect(useSessionStreamStore.getState().getSession('sess-1').inProgressTurn).toEqual([held]);
+
+    const resolved: SessionEvent = {
+      type: 'capability_approval_resolved',
+      seq: 2,
+      approvalId: 'appr-1',
+      outcome: 'granted',
+    };
+    connections[0]!.push('capability_approval_resolved', resolved);
+    expect(useSessionStreamStore.getState().getSession('sess-1').inProgressTurn).toEqual([
+      held,
+      resolved,
+    ]);
+  });
+
   it('dispatches a connection-state change into the store', () => {
     manager.attachSession('sess-1');
     connections[0]!.emitState('connected');
