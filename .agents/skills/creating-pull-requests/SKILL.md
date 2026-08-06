@@ -373,9 +373,61 @@ forever too. (DorkOS's `main` today requires `typecheck`, `fragment-present`,
 `no-fragment-under-skip-label`, and `version-outranks-base`, none from a workflow
 with a `paths:` filter. Run the command above rather than trusting this list.)
 
-Note the shape of the three traps together: a **conflicting** PR runs nothing, a
-PR missing a **path-filtered** required check hangs pending, and a **BEHIND** PR is
-green and armed and still cannot merge. All three look like a PR that is fine.
+### Watching an armed PR: watch the checks, not the merge state
+
+The fourth silent stall, and the easiest to inflict on yourself. Once a PR is armed
+you will wait for it, and the obvious poll — "has it merged yet?" — is blind to the
+one outcome you most need to catch:
+
+```bash
+gh pr view <number> --json state --jq .state   # OPEN until MERGED/CLOSED — says NOTHING about a failed check
+```
+
+A required check that **fails** leaves the PR `OPEN` and unmerged, indistinguishable
+from a PR whose checks are still running. A merge-state poll loops until its own
+timeout while the PR sits dead and reports nothing wrong — because from its narrow
+view nothing is: GitHub is fine, the PR is not. Watch the check **conclusions**
+instead:
+
+```bash
+gh pr checks <number>                                   # one bucket per check: pass | fail | pending | skipping
+gh pr view <number> --json statusCheckRollup --jq \
+  '[.statusCheckRollup[] | select(.conclusion=="FAILURE") | .name]'   # the failures, by name
+```
+
+**Separate a required failure from a standing red.** Not every red check blocks the
+merge, and not every red check is yours. `Vercel`'s preview deploy is frequently red
+on `main` itself; a check that fails identically on the last few `main` commits is a
+standing condition, not something this PR broke, and it is not in the required set
+the merge queue gates on. Chasing it burns the attention the actually-blocking check
+needs. Confirm the required set (`…/branches/main/protection`, above), then act only
+on a **required** check that went red on **this** PR.
+
+Watch with a loop that ends on every terminal outcome — a non-`Vercel` check
+failing, or the PR merging — not one that only knows how to notice success (the
+`Monitor` tool is the ergonomic form of this; the shape is what matters):
+
+```bash
+# emits on the first real failure OR the merge; silent while healthy
+for i in $(seq 1 55); do
+  state=$(gh pr view <number> --json state --jq .state)
+  [ "$state" = MERGED ] && { echo MERGED; break; }
+  [ "$state" = CLOSED ] && { echo "CLOSED unmerged"; break; }
+  fails=$(gh pr checks <number> | awk -F'\t' '$2=="fail"{print $1}' | grep -vi '^Vercel')
+  [ -n "$fails" ] && { echo "FAILED: $fails"; break; }
+  sleep 45
+done
+```
+
+On 2026-08-06 the v0.58.0 release PR sat `OPEN` with a red **required** `typecheck`
+(its prettier `--check` step — see the worktree gotcha below), while a
+merge-state-only poll reported nothing and would have run clean to timeout. The fix
+was not a shorter poll interval; it was polling the right field.
+
+Note the shape of the four traps together: a **conflicting** PR runs nothing, a PR
+missing a **path-filtered** required check hangs pending, a **BEHIND** PR is green
+and armed and still cannot merge, and a **failed-check** PR reads exactly like a
+slow one. All four look like a PR that is fine.
 
 ## One-time repo setup
 
@@ -390,6 +442,27 @@ gh label create re-review    --description "Request another automated review pas
 ```
 
 ## Gotchas
+
+- **A commit made in a fresh worktree bypasses lefthook, so its formatting is never
+  auto-applied.** The pre-commit and pre-push hooks shell out to `prettier`, `turbo`,
+  and `dotenv` from `node_modules`, which a just-created worktree does not have — so
+  lefthook either is not on `PATH` ("Can't find lefthook in PATH", hook silently
+  skipped) or runs and dies on the missing binaries. Either way the format the hook
+  would have applied never happens, and CI's `prettier --check` step (inside the
+  required `typecheck` job) then fails on drift you never saw locally. It bites
+  machine-generated JSON most — a regenerated manifest, a written-out coverage map —
+  since hand-written Markdown passes untouched (`proseWrap: preserve`). Before pushing
+  from a worktree that has no `node_modules`, format the changed files with a checkout
+  that does, then re-check:
+
+  ```bash
+  # from the primary checkout (which HAS node_modules), pointing at the worktree's files
+  ./node_modules/.bin/prettier --write <changed-files-under-the-worktree>
+  ```
+
+  If the dead hook also blocks the commit or push itself (it runs `lint`/`test` and
+  fails on the missing `turbo`), pass `--no-verify` — CI runs the real gates on the
+  PR regardless. This is exactly what reddened the v0.58.0 release `typecheck`.
 
 - **Any PR that edits a Claude workflow file gets a green check and no review.**
   The Claude action refuses to start unless the workflow file it is running from
