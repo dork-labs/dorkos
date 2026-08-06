@@ -15,6 +15,10 @@ category: documentation
 
 Move ADRs past the "proposed" stage. ADRs are born `proposed` (or `accepted`, via `/adr:create` and `/adr:from-spec`); this command handles the rest of the lifecycle: proposed → accepted | deprecated | superseded | archived.
 
+This command never re-examines an **accepted** ADR — that is `/adr:audit`'s job (accepted ADRs
+rot silently as the codebase moves on; the audit re-verifies them against code and stamps
+`lastVerified`).
+
 **When to run:**
 
 - After completing a spec implementation
@@ -192,12 +196,9 @@ If the ADR is referenced in rules, guides, or AGENTS.md:
 - If deprecating, update the referencing files to note the deprecation
 - Flag to the user: "ADR-NNNN is referenced in [file] — special handling needed"
 
-The following ADRs are known to be referenced outside `decisions/` and `specs/`:
-
-- **ADR-0005** — `.claude/skills/receiving-code-review/SKILL.md`
-- **ADR-0030** — `contributing/relay-adapters.md`
-- **ADR-0043** — `AGENTS.md`, `.claude/rules/agent-storage.md`
-- **ADR-0107** — `contributing/design-system.md`
+`node .claude/scripts/adr-staleness-scan.mjs` computes citation counts across code, guides, and
+rules — its worklist shows exactly which ADRs are load-bearing before you archive or deprecate
+anything, and its stale-citation report shows which files must be updated afterwards.
 
 ---
 

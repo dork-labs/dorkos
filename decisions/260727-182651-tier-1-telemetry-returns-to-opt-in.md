@@ -5,15 +5,16 @@ status: accepted
 created: 2026-07-27
 spec: null
 superseded-by: null
+amends: 260713-143958
 ---
 
 # 260727-182651. Tier 1 telemetry returns to opt-in
 
 ## Status
 
-Accepted. Supersedes the Tier 1 posture of
-[260713-143958](260713-143958-two-plane-two-tier-data-collection-strategy.md); applies
-[260727-181825](260727-181825-user-safe-defaults.md).
+Accepted. Amends the Tier 1 posture of
+[260713-143958](260713-143958-two-plane-two-tier-data-collection-strategy.md), which stays
+accepted; applies [260727-181825](260727-181825-user-safe-defaults.md).
 
 **Scope of the supersession is narrow and deliberate.** Only the "Plane 1, Tier 1 — anonymous,
 opt-out, global" section of 260713-143958 is reversed. Everything else in that ADR stands

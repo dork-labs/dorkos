@@ -3,7 +3,7 @@ id: 260731-211050
 title: A room-driven claude-code turn leaves a sparse record in session_events, never a history
 status: accepted
 created: 2026-07-31
-supersedes: 260710-024641
+amends: [260710-024641, 260726-170125]
 superseded-by: null
 ---
 

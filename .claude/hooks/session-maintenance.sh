@@ -28,6 +28,17 @@ if [ -f "$MANIFEST" ]; then
   fi
 fi
 
+# --- (b2) Accepted-ADR verification age ---------------------------------------
+# `lastVerified` is stamped per manifest entry by /adr:audit; a missing field
+# counts as never verified. Threshold 25 keeps this quiet under a normal
+# quarterly audit cadence and loud when a backlog accumulates.
+if [ -f "$MANIFEST" ]; then
+  UNVERIFIED=$(node -e "const c=Date.now()-120*86400000;console.log((require('$MANIFEST').decisions||[]).filter(d=>d.status==='accepted'&&(!d.lastVerified||Date.parse(d.lastVerified)<c)).length)" 2>/dev/null || echo 0)
+  if [ "$UNVERIFIED" -ge 25 ] 2>/dev/null; then
+    echo "[Harness] $UNVERIFIED accepted ADRs unverified in 120+ days — run /adr:audit"
+  fi
+fi
+
 # --- (c) Docs staleness -------------------------------------------------------
 # Nag only when the review marker is >21 days old AND commits since then touch
 # areas mapped to a tracked guide/doc (via the shared coverage map). Committed

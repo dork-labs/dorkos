@@ -4,6 +4,7 @@ title: A thread is a relation between entries, not a child room
 status: accepted
 created: 2026-07-28
 spec: rooms
+amends: 260726-170125
 superseded-by: null
 ---
 

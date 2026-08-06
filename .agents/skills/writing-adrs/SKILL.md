@@ -75,7 +75,7 @@ When scanning specs for ADR candidates, look for:
 
 There is no `draft` status: significance is judged **at extraction time**. `/adr:from-spec` applies the significance rubric when extracting — decisions meeting 2+ "When to Write" criteria are written as `proposed` (or `accepted` if the spec already shipped); the rest are never written as files.
 
-### Partial supersession
+### Partial supersession: the `amends` relation
 
 When a new ADR reverses **part** of an older one, the older ADR **stays `accepted`**. There is no `superseded-in-part` status, and inventing one is not the answer: a status is an instruction about whether to rely on the document, and marking a mostly-live ADR terminal tells every future reader to stop reading something they still need.
 
@@ -83,13 +83,13 @@ So:
 
 1. **Parent keeps `status: accepted` and `superseded-by: null`**, in the file and in `decisions/manifest.json`.
 2. **Parent's Status section names exactly what is retired:** quote the clause, list any Consequences bullets that fall with it, then state what still governs. Follow the shape `260726-170125` uses.
-3. **Child links back** with `supersedes: <parent-id>` in its manifest entry, and says in its own Status section which clause it replaces. That field is the only machine-readable link, so it is not optional.
+3. **Child carries `amends: <parent-id>`** in its manifest entry and frontmatter (a list when it amends several parents, e.g. `260731-211050`), and says in its own Status section which clause it replaces. That field is the only machine-readable link, so it is not optional.
 
-Reserve `status: superseded` for a **whole** ADR being replaced (`0224` → `260726-193526`, `0070` → `260726-171347`).
+Reserve `status: superseded` + a `supersedes` link for a **whole** ADR being replaced (`0224` → `260726-193526`, `0070` → `260726-171347`). `adr-drift-check.mjs` enforces the split: a `supersedes` link must point at a `superseded` ADR, and an `amends` link must point at a live one — a violation means either the wrong relation or an unflipped status.
 
-**One older ADR diverges from this rule:** `260713-143958` is a partial supersession that set `status: superseded` anyway. It predates this rule and is deliberately left alone. Do not copy it, and do not "fix" it either.
+The flagship example is `260727-182651`, which `amends` `260713-143958`: the parent spent three weeks mislabeled `superseded` while 45+ source files cited it as governing (corrected 2026-08-06 — the episode that motivated this relation).
 
-### Review Gate
+### Two gates: review and audit
 
 **`/adr:review`** (triggered when a spec is implemented or the proposed backlog grows)
 
@@ -99,6 +99,15 @@ Moves proposed ADRs to their terminal state:
 - **Deprecate** (proposed → deprecated): Codebase diverged from this decision, or context changed
 - **Supersede** (proposed → superseded): A newer ADR replaced this one
 - **Archive** (proposed → archived): Decision is now obvious from reading the code
+
+**`/adr:audit`** (triggered by the SessionStart nag, or quarterly)
+
+Re-verifies **accepted** ADRs against the current codebase — `accepted` is a claim about the
+present, and nothing else re-checks it. Subagents verify each ADR's concrete claims in code;
+outcomes stamp `lastVerified` in the manifest, add amendment notes, or flip statuses. ADR bodies
+stay immutable throughout — history is corrected by new records and status metadata, never by
+rewriting old prose. Signals come from `adr-staleness-scan.mjs` (stale citations, dead paths,
+verification age).
 
 **Acceptance criteria:** A proposed ADR is ready for acceptance when:
 
@@ -126,3 +135,11 @@ ADRs are seeded by the `/flow:specify` stage (when the flow plugin is loaded) or
   which sort before timestamp ids (spec #271)
 - **Manifest**: `decisions/manifest.json` tracks all ADRs (no `nextNumber` counter)
 - **Template**: `decisions/TEMPLATE.md` for the standard format
+- **Relations**: `supersededBy`/`supersedes` (full replacement), `amends` (partial — id or list)
+- **`lastVerified`**: manifest-only date stamped by `/adr:audit`; never lives in frontmatter, so
+  audits don't churn ADR files
+- **`affects`**: optional path globs naming the code a decision governs — backfilled by audits,
+  encouraged on new ADRs
+- **Integrity**: `adr-drift-check.mjs` (SessionStart, silent when clean) validates files ⇄ manifest,
+  links, and relation contradictions; `adr-staleness-scan.mjs` (on demand) finds stale citations,
+  dead paths, and builds the audit worklist
