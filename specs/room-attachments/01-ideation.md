@@ -3,6 +3,7 @@ slug: room-attachments
 number: 260806-215028
 created: 2026-08-06
 status: ideation
+design-session: .dork/visual-companion/81863-1786054606
 ---
 
 # File attachments in rooms
@@ -51,13 +52,13 @@ status: ideation
 
 ## 6) Decisions
 
-No decisions made here — **parked on the /visual-companion design session with the operator.** Open design questions:
+Resolved in the 2026-08-06 /visual-companion session with Dorian — full detail in [design-decisions.md](./design-decisions.md):
 
-| #   | Design question                                                                                                         | What hangs on it                 |
-| --- | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
-| 1   | Composer affordance: chip bar parity with chat, or a room-specific treatment? (Coupled to DOR-946's capability matrix.) | Composer half of the build       |
-| 2   | Timeline rendering: inline image previews vs uniform file chips; grouping when one entry has several files?             | `RoomEntryRow` attachment module |
-| 3   | Do agents receive attachments as paths in their room context automatically, or only on request?                         | Server context-assembly behavior |
-| 4   | Limits and types: max size, count per entry, any type restrictions?                                                     | Upload validation                |
+| #   | Decision            | Choice                                                                                          | Rationale                               |
+| --- | ------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------- |
+| 1   | Composer affordance | Chat's exact attach treatment via the shared compound composer (settled by the parity decision) | One attach affordance everywhere        |
+| 2   | Timeline rendering  | Inline previews when possible; compact chips as the fallback for non-previewable files          | Dorian: "inline previews when possible" |
 
-**Next step:** design session with the operator → record decisions → SPECIFY (schema + migration + access model are spec-level work).
+Open for SPECIFY (recommended, unconfirmed): agents auto-receive attachment paths in room context; size/type limits; room-membership-scoped upload access model.
+
+**Next step:** SPECIFY — entry schema + migration, upload access model, preview pipeline.

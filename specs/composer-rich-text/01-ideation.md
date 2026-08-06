@@ -3,6 +3,7 @@ slug: composer-rich-text
 number: 260806-215029
 created: 2026-08-06
 status: ideation
+design-session: .dork/visual-companion/81863-1786054606
 ---
 
 # Rich text via markdown in the composer (Lexical)
@@ -50,14 +51,13 @@ Architecture is already forked (Lexical). Remaining research is UX-level and bel
 
 ## 6) Decisions
 
-Architecture: locked (above). **UX is deliberately undecided — parked on the /visual-companion design session with the operator.** Open design questions:
+Architecture: locked (above). UX resolved in the 2026-08-06 /visual-companion session with Dorian — full detail in [design-decisions.md](./design-decisions.md):
 
-| #   | Design question                                                                                                                      | What hangs on it            |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------ | --------------------------- |
-| 1   | The editing feel: markdown shortcuts only (Calm Tech, no chrome), or a minimal formatting toolbar (and if so, when it shows)?        | Plugin set + surface chrome |
-| 2   | How do live mentions look while typing — full `MentionPill` styling in-editor, or a quieter highlight that becomes the pill on send? | Editor node design          |
-| 3   | Enter semantics inside block contexts (lists, headings): where does Enter-to-send yield to Enter-for-new-block?                      | Keyboard ladder redesign    |
-| 4   | Paste behavior: pasted rich text converts to markdown, or pastes as plain text?                                                      | Clipboard plugin scope      |
-| 5   | Rollout: which surface gets the flag first (chat vs room), and what graduates it to default?                                         | Phasing plan                |
+| #   | Decision              | Choice                                                                              | Rationale                                    |
+| --- | --------------------- | ----------------------------------------------------------------------------------- | -------------------------------------------- |
+| 1   | Editing feel          | Invisible editor: live markdown shortcuts + keyboard combos, no toolbar of any kind | Calm Tech; composer looks exactly like today |
+| 2   | Mentions while typing | The real identity pill renders live in the editor; atomic on delete; full WYSIWYG   | Matches the sent-message pill exactly        |
 
-**Next step:** design session with the operator → record decisions → SPECIFY. Build order dependency: after `composer-parity` (the shell) and ideally after `room-attachments`.
+Open for SPECIFY (recommended, unconfirmed): paste converts rich text to markdown; Enter-to-send stays global with list-continuation inside lists; flag rollout order (which surface first).
+
+**Next step:** SPECIFY — after `composer-parity` (the shell lands first, the editor swaps in once).

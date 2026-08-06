@@ -3,6 +3,7 @@ slug: composer-parity
 number: 260806-215027
 created: 2026-08-06
 status: ideation
+design-session: .dork/visual-companion/81863-1786054606
 ---
 
 # Composer parity: unify the chat and room composers
@@ -51,13 +52,13 @@ status: ideation
 
 ## 6) Decisions
 
-No decisions made here — **this item is deliberately parked on a /visual-companion design session with the operator.** Open design questions for that session:
+Resolved in the 2026-08-06 /visual-companion session with Dorian — full detail in [design-decisions.md](./design-decisions.md):
 
-| #   | Design question                                                                                                                              | What hangs on it                              |
-| --- | -------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| 1   | The capability matrix: which affordances does each surface expose (attach, queue, suggestions, mentions, slash-commands, interactive panel)? | The shell's slot API; what DOR-947 plugs into |
-| 2   | Where does the attach affordance live in the room composer (parity with chat's chip bar, or something room-specific)?                        | DOR-947's composer half                       |
-| 3   | Do chat and room mentions converge (chat has no roster/autocomplete today — does chat gain `@`)?                                             | Whether `features/mentions` generalizes       |
-| 4   | Chrome details: identical framing/padding/focus ring across surfaces, or per-surface accents?                                                | The visual definition of "feels the same"     |
+| #   | Decision                    | Choice                                                                                                                                | Rationale                                                                 |
+| --- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| 1   | Capability matrix           | Full parity minus session machinery: rooms gain attach + slash commands; queue/suggestions/interactive-panel stay chat/dashboard-only | "As close to full parity as makes sense"; queue etc. are session concepts |
+| 2   | Attach affordance placement | Chat's exact treatment (chip bar + attach action) via the shared components                                                           | Parity by construction                                                    |
+| 3   | Mentions in chat            | Stay room-only for now; can flip later inside the same capability model                                                               | A single-agent session has nobody to disambiguate                         |
+| 4   | Chrome                      | Identical — chat and rooms **literally share the same components**, Compound Components pattern with props for divergence             | Dorian's explicit architecture direction                                  |
 
-**Next step:** hold the /visual-companion session with the operator → record decisions here → SPECIFY.
+**Next step:** SPECIFY — define the compound component API, its FSD home, and the migration order for the three surfaces.
