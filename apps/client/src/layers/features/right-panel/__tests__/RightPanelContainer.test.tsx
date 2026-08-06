@@ -47,23 +47,39 @@ vi.mock('react-resizable-panels', async () => {
 // Mock Sheet + Tooltip components. Sheet stubs enable mobile rendering; Tooltip
 // stubs let the container-owned RightPanelHeader render its tab strip without a
 // TooltipProvider/ResizeObserver in jsdom.
+//
+// The container consumes the ResponsiveSheet* family (DOR-974) rather than
+// Sheet/SheetContent directly, so those names are stubbed identically —
+// same fake components, just registered under both sets of names — keeping
+// every assertion below unchanged.
 vi.mock('@/layers/shared/ui', async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;
   const Passthrough = ({ children }: React.PropsWithChildren) => <>{children}</>;
+  const SheetStub = ({ children, open }: React.PropsWithChildren<{ open?: boolean }>) =>
+    open ? <div data-testid="sheet">{children}</div> : null;
+  const SheetContentStub = ({
+    children,
+    className,
+  }: React.PropsWithChildren<{ className?: string }>) => (
+    <div data-testid="sheet-content" className={className}>
+      {children}
+    </div>
+  );
+  const SheetTitleStub = ({ children }: React.PropsWithChildren) => (
+    <span data-testid="sheet-title">{children}</span>
+  );
   return {
     ...actual,
-    Sheet: ({ children, open }: React.PropsWithChildren<{ open?: boolean }>) =>
-      open ? <div data-testid="sheet">{children}</div> : null,
-    SheetContent: ({ children, className }: React.PropsWithChildren<{ className?: string }>) => (
-      <div data-testid="sheet-content" className={className}>
-        {children}
-      </div>
-    ),
+    Sheet: SheetStub,
+    SheetContent: SheetContentStub,
     SheetHeader: Passthrough,
-    SheetTitle: ({ children }: React.PropsWithChildren) => (
-      <span data-testid="sheet-title">{children}</span>
-    ),
+    SheetTitle: SheetTitleStub,
     SheetDescription: Passthrough,
+    ResponsiveSheet: SheetStub,
+    ResponsiveSheetContent: SheetContentStub,
+    ResponsiveSheetHeader: Passthrough,
+    ResponsiveSheetTitle: SheetTitleStub,
+    ResponsiveSheetDescription: Passthrough,
     Tooltip: Passthrough,
     TooltipTrigger: Passthrough,
     TooltipContent: () => null,

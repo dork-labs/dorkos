@@ -194,6 +194,22 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
     keywords: ['sheet', 'panel', 'slide', 'side', 'drawer', 'left', 'right'],
   },
   {
+    id: 'responsivesheet',
+    title: 'ResponsiveSheet',
+    page: 'components',
+    category: 'Overlays',
+    keywords: [
+      'responsive',
+      'sheet',
+      'panel',
+      'drawer',
+      'mobile',
+      'desktop',
+      'fullscreen',
+      'right',
+    ],
+  },
+  {
     id: 'responsivedialog',
     title: 'ResponsiveDialog',
     page: 'components',

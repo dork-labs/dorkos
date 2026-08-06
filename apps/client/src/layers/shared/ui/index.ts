@@ -177,6 +177,17 @@ export {
   ResponsivePopoverTitle,
   useResponsivePopover,
 } from './responsive-popover';
+export {
+  ResponsiveSheet,
+  ResponsiveSheetTrigger,
+  ResponsiveSheetClose,
+  ResponsiveSheetContent,
+  ResponsiveSheetHeader,
+  ResponsiveSheetFooter,
+  ResponsiveSheetTitle,
+  ResponsiveSheetDescription,
+  responsiveSheetContentVariants,
+} from './responsive-sheet';
 export { ScanLine } from './ScanLine';
 export { ScrollArea, ScrollBar } from './scroll-area';
 export {

@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState, Suspense } from 'react';
 import { Panel, PanelResizeHandle, type ImperativePanelHandle } from 'react-resizable-panels';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/layers/shared/ui';
+import {
+  ResponsiveSheet,
+  ResponsiveSheetContent,
+  ResponsiveSheetHeader,
+  ResponsiveSheetTitle,
+  ResponsiveSheetDescription,
+} from '@/layers/shared/ui';
 import {
   useAppStore,
   useIsMobile,
@@ -199,19 +205,23 @@ export function RightPanelContainer({ pathname, variant = 'resizable' }: RightPa
   if (variant === 'overlay' || isMobile) {
     if (!shouldShow) return null;
     return (
-      <Sheet open onOpenChange={(open) => !open && setRightPanelOpen(false)}>
-        <SheetContent
-          side="right"
+      <ResponsiveSheet open onOpenChange={(open) => !open && setRightPanelOpen(false)}>
+        <ResponsiveSheetContent
           showCloseButton={false}
+          // Always full width here, on both branches that reach this Sheet
+          // (variant='overlay' and mobile): this className is applied after
+          // ResponsiveSheetContent's own computed width, so it wins the
+          // tailwind-merge regardless of what useIsMobile() reports — the
+          // embed's overlay is narrow-paned even on a desktop-width viewport.
           className="bg-sidebar text-sidebar-foreground flex w-full flex-col gap-0 p-0 sm:max-w-full"
         >
-          <SheetHeader className="sr-only">
-            <SheetTitle>Panel</SheetTitle>
-            <SheetDescription>Right panel content.</SheetDescription>
-          </SheetHeader>
+          <ResponsiveSheetHeader className="sr-only">
+            <ResponsiveSheetTitle>Panel</ResponsiveSheetTitle>
+            <ResponsiveSheetDescription>Right panel content.</ResponsiveSheetDescription>
+          </ResponsiveSheetHeader>
           {panelInner}
-        </SheetContent>
-      </Sheet>
+        </ResponsiveSheetContent>
+      </ResponsiveSheet>
     );
   }
 
