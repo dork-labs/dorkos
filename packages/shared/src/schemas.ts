@@ -13,6 +13,7 @@ import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
 // from here). The reference below is wrapped in `z.lazy`, so this cyclic import is
 // resolved at validation time, not module-load time — no initialization hazard.
 import { ClientContextSchema } from './additional-context.js';
+import { PendingApprovalSchema, CapabilityApprovalOutcomeSchema } from './approval-schemas.js';
 import { SidebarPrefsSchema, ShapeUserPrefsSchema, StatusBarPrefsSchema } from './config-schema.js';
 // The effort ladder itself lives in the dependency-free constants module so this
 // file and `config-schema.ts` (which this file already imports) can both build
@@ -189,6 +190,8 @@ export const StreamEventTypeSchema = z
     'elicitation_complete',
     'permission_denied',
     'interaction_cancelled',
+    'capability_approval_required',
+    'capability_approval_resolved',
   ])
   .openapi('StreamEventType');
 
@@ -1425,6 +1428,40 @@ export const InteractionCancelledEventSchema = z
 
 export type InteractionCancelledEvent = z.infer<typeof InteractionCancelledEventSchema>;
 
+/**
+ * An agent-initiated destructive capability call is held in-session, awaiting the
+ * operator's decision (DOR-939). Pushed onto the session event queue by the
+ * in-session capability adapter; the projector tracks it as a pending hold so the
+ * stall watchdog pauses, and the client renders the inline approval card.
+ */
+export const CapabilityApprovalRequiredEventSchema = z
+  .object({
+    /** The pending approval, rendered inline exactly as the dashboard card renders it. */
+    approval: PendingApprovalSchema,
+    /** Server epoch ms when the hold began — bounds the projector's pending-hold expiry. */
+    startedAt: z.number(),
+    /** How long the hold waits before it degrades to the poll payload (the hold cap). */
+    capMs: z.number(),
+  })
+  .openapi('CapabilityApprovalRequiredEvent');
+
+export type CapabilityApprovalRequiredEvent = z.infer<typeof CapabilityApprovalRequiredEventSchema>;
+
+/**
+ * An in-session capability approval hold ended (DOR-939) — retires the inline
+ * card and drops the projector's pending hold.
+ */
+export const CapabilityApprovalResolvedEventSchema = z
+  .object({
+    /** The approval the hold was waiting on. */
+    approvalId: z.string(),
+    /** How it ended. */
+    outcome: CapabilityApprovalOutcomeSchema,
+  })
+  .openapi('CapabilityApprovalResolvedEvent');
+
+export type CapabilityApprovalResolvedEvent = z.infer<typeof CapabilityApprovalResolvedEventSchema>;
+
 export const StreamEventSchema = z
   .object({
     type: StreamEventTypeSchema,
@@ -1461,6 +1498,8 @@ export const StreamEventSchema = z
       ElicitationCompleteEventSchema,
       PermissionDeniedEventSchema,
       InteractionCancelledEventSchema,
+      CapabilityApprovalRequiredEventSchema,
+      CapabilityApprovalResolvedEventSchema,
     ]),
   })
   .openapi('StreamEvent');
@@ -1669,6 +1708,25 @@ export const ElicitationPartSchema = z
 export type ElicitationPart = z.infer<typeof ElicitationPartSchema>;
 
 /**
+ * A message part for an agent-initiated DESTRUCTIVE capability call held
+ * in-session, awaiting the operator's decision (DOR-939). It carries the same
+ * {@link PendingApprovalSchema} the dashboard renders, so the inline card is the
+ * dashboard card in the transcript — approving it resolves the SAME `approvalId`
+ * through the capability decision route, not the SDK `approveTool` path. The
+ * projection drops the part on the matching `capability_approval_resolved`.
+ */
+export const CapabilityApprovalPartSchema = z
+  .object({
+    type: z.literal('capability_approval'),
+    /** The pending approval to render inline, identical to the dashboard card's. */
+    approval: PendingApprovalSchema,
+  })
+  .openapi('CapabilityApprovalPart');
+
+/** Inferred type for {@link CapabilityApprovalPartSchema}. */
+export type CapabilityApprovalPart = z.infer<typeof CapabilityApprovalPartSchema>;
+
+/**
  * A message part representing a memory recall event surfaced by the SDK's
  * memory supervisor. Rendered as a collapsible indicator in the chat timeline.
  */
@@ -1746,6 +1804,7 @@ export const MessagePartSchema = z.discriminatedUnion('type', [
   ThinkingPartSchema,
   ErrorPartSchema,
   ElicitationPartSchema,
+  CapabilityApprovalPartSchema,
   MemoryRecallPartSchema,
   PermissionDeniedPartSchema,
   CompactBoundaryPartSchema,

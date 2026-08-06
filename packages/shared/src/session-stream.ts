@@ -19,6 +19,7 @@
 import { z } from 'zod';
 import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
 
+import { PendingApprovalSchema, CapabilityApprovalOutcomeSchema } from './approval-schemas.js';
 import {
   PermissionModeIdSchema,
   HistoryMessageSchema,
@@ -455,6 +456,40 @@ export const SessionEventSchema = z
        * answered, and it explained nothing.
        */
       reasonGiven: z.boolean().optional(),
+    }),
+    // An agent-initiated DESTRUCTIVE capability call held in-session, awaiting
+    // the operator's decision (DOR-939 / spec approvals-resume-inline). The
+    // same approval a person answers on the dashboard is rendered inline here,
+    // and the SAME `approvalId` resolves both — the inline card calls the
+    // capability decision route (`POST /api/approvals/:id/grant|deny`), never
+    // the SDK `approveTool` path. Deliberately NOT a
+    // `BLOCKING_INTERACTION_EVENT_TYPES` member: it does not ride the
+    // PendingInteractionDTO recovery machinery (the hold is bounded by
+    // `capMs`, and its inline card recovers from the in-progress-turn replay).
+    // The projector tracks it as a pending HOLD so the stall watchdog pauses
+    // and the session lock is not stolen while the person decides.
+    z.object({
+      ...seqShape,
+      type: z.literal('capability_approval_required'),
+      /** Server epoch ms when the hold began — the projector bounds its own expiry on this. */
+      startedAt: z.number(),
+      /** How long the hold waits before it degrades to the poll payload (the hold cap). */
+      capMs: z.number(),
+      /** The pending approval, rendered inline exactly as the dashboard card renders it. */
+      approval: PendingApprovalSchema,
+    }),
+    // The in-session capability hold ended — an operator decision (`granted`/
+    // `denied`) the held call resumed on, or a no-decision path (`expired`/
+    // `timeout`) that degraded it back to the poll payload. Retires the inline
+    // card everywhere and drops the projector's pending hold so the stall
+    // watchdog re-arms for the rest of the turn.
+    z.object({
+      ...seqShape,
+      type: z.literal('capability_approval_resolved'),
+      /** The approval the hold was waiting on. */
+      approvalId: z.string(),
+      /** How it ended. */
+      outcome: CapabilityApprovalOutcomeSchema,
     }),
     // The start of an assistant turn. Carries the user message that triggered
     // it (when the turn was DorkOS-triggered): the POST is trigger-only

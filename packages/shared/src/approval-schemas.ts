@@ -92,6 +92,24 @@ export const APPROVAL_OUTCOMES = ['granted', 'denied', 'expired', 'consumed'] as
 /** How a pending approval ended. */
 export type ApprovalOutcome = (typeof APPROVAL_OUTCOMES)[number];
 
+/**
+ * How an IN-SESSION capability approval hold ended (DOR-939).
+ *
+ * `granted`/`denied` are an operator decision the held call resumed on; `expired`/
+ * `timeout` are the no-decision paths that degrade the held call back to today's
+ * `approval_required` poll payload (`expired`: the token's own window closed;
+ * `timeout`: the hold's own cap elapsed, or its abort signal fired first). It is
+ * a superset of {@link APPROVAL_OUTCOMES}' relevant members, kept distinct
+ * because a hold can end for reasons the token lifecycle has no word for.
+ */
+export const CAPABILITY_APPROVAL_OUTCOMES = ['granted', 'denied', 'expired', 'timeout'] as const;
+
+/** How an in-session capability approval hold ended. */
+export const CapabilityApprovalOutcomeSchema = z.enum(CAPABILITY_APPROVAL_OUTCOMES);
+
+/** How an in-session capability approval hold ended. */
+export type CapabilityApprovalOutcome = (typeof CAPABILITY_APPROVAL_OUTCOMES)[number];
+
 /** Request body of `POST /api/approvals/:id/grant`. */
 export const GrantApprovalBodySchema = z
   .object({
