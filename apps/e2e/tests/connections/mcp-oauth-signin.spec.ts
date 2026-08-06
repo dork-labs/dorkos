@@ -1,51 +1,29 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type APIRequestContext } from '@playwright/test';
+import { McpOAuthSigninPage } from '../../pages/McpOAuthSigninPage.js';
 
 /**
- * Browser proof of the managed-MCP OAuth "Sign in" flow (DOR-943, spec
- * `managed-mcp-oauth` §W1b): add an OAuth-protected http MCP server to an agent,
- * see its row report "needs sign-in", click Sign in, read the custody disclosure,
- * open the sign-in link (auto-approved), and watch the row flip to connected —
- * with the token stored and injected. No real vendor anywhere: everything is the
- * test-mode server plus an in-process mock OAuth-protected MCP server.
+ * Browser proof of the managed-MCP OAuth "Sign in" flow (DOR-943 client half,
+ * DOR-952 e2e; spec `managed-mcp-oauth` §W1b): add an OAuth-protected http MCP
+ * server to an agent, see its row report "needs sign-in", click Sign in, read the
+ * custody disclosure, open the sign-in link (auto-approved through the loopback
+ * callback), and watch the row flip to connected — with the token stored and
+ * injected. No real vendor anywhere: everything is the test-mode server plus an
+ * in-process mock OAuth-protected MCP server (`routes/mock-mcp-oauth-server.ts`).
  *
- * ── SKIPPED: this spec is authored but not yet runnable ─────────────────────
- * The client half (this spec's selectors and assertions) is complete and shipped
- * in DOR-943. Two server-side pieces are NOT built yet, so the flow cannot go
- * green in CI; the suite is `describe.skip` so it reports pending, never a false
- * green (see `.claude/rules/testing.md`, "Assertions that cannot fail").
+ * The two server pieces this exercises (both under the `DORKOS_TEST_RUNTIME` gate):
+ *   1. the mock OAuth-protected MCP server — RFC 9728/8414 discovery, RFC 7591
+ *      DCR, PKCE authorization-code + refresh grants, and a bearer-gated
+ *      streamable-HTTP MCP endpoint that answers `tools/list` only for a token it
+ *      issued; and
+ *   2. `TestModeRuntime.getMcpStatus` — synthesizes `needs-auth`/`connected` from
+ *      the managed-server injection resolver (bearer injected ⟺ connected), which
+ *      `GET /api/mcp-config` serves and `AgentMcpServers` joins by name.
  *
- * Remaining work to un-skip (both under the existing `DORKOS_TEST_RUNTIME` gate):
- *
- *   1. A test-mode-gated mock OAuth-protected MCP server — a server-source Express
- *      sub-router mounted like `apps/server/src/routes/test-control.ts` (there is
- *      no standalone HTTP mock-server fixture today; everything runs in-process).
- *      The service-level engine test already proves the acquisition loop against a
- *      `fetchImpl` seam (`agent-mcp-oauth-service.test.ts`); this needs the same
- *      shape as a REAL HTTP server the operator's browser and the MCP probe client
- *      can reach. It must implement:
- *        - GET /.well-known/oauth-protected-resource       (RFC 9728)
- *        - GET /.well-known/oauth-authorization-server     (RFC 8414: registration,
- *          authorization, token endpoints)
- *        - POST /register                                  (RFC 7591 DCR)
- *        - GET /authorize   → 302 back to the DorkOS loopback callback
- *          (`/api/agents/mcp-oauth/callback`) with ?code=&state=, auto-approving
- *          like `/api/test/connect-approved`
- *        - POST /token      (authorization_code validating PKCE + refresh_token)
- *        - the protected streamable-http MCP endpoint: 401 + `WWW-Authenticate`
- *          until a valid bearer, then a normal `initialize` + `tools/list`.
- *      Plus a `POST /api/test/seed-oauth-mcp-agent` seam that seeds an agent whose
- *      manifest has this server enabled (transport http, `authKind: 'oauth2'`),
- *      returning `{ agentDir }`.
- *
- *   2. `TestModeRuntime.getMcpStatus(cwd)` must report the seeded managed OAuth
- *      server as `needs-auth` when the token cache holds no token for it, and
- *      `connected` once it does — that live status (via `GET /api/mcp-config`,
- *      joined by name in `AgentMcpServers`) is what makes the "Sign in" button
- *      appear and then flip to "Connected". TestModeRuntime implements neither
- *      `getMcpStatus` nor `setManagedMcpServers` today.
- *
- * When both land, delete the `.skip` and wire `seedOAuthMcpAgent` below.
- * ────────────────────────────────────────────────────────────────────────────
+ * The `POST /api/test/probe-mcp-oauth-server` seam dials the server through its
+ * INJECTED connection, which is what makes the mock's bearer gate load-bearing:
+ * before sign-in the injected connection carries no bearer (401 → needs-auth);
+ * after sign-in the injected bearer unlocks `tools/list`, proving the token was
+ * stored and injected.
  */
 
 // eslint-disable-next-line no-restricted-syntax -- E2E test config; no env.ts available
@@ -62,54 +40,73 @@ const SERVER_NAME = 'granola';
  */
 const CUSTODY_FRAGMENT = 'keeps the resulting token encrypted on this computer';
 
-/**
- * Seed an agent whose manifest already has the mock OAuth server enabled, and
- * open its MCP servers section. Returns the agent's row locator.
- *
- * TODO(DOR-943 follow-up): implement `POST /api/test/seed-oauth-mcp-agent` and
- * the navigation to the agent's Tools tab; see the header note.
- */
-async function openManagedServers(_page: Page): Promise<void> {
-  throw new Error(
-    'seed-oauth-mcp-agent + Tools-tab navigation not implemented yet — see the header note.'
-  );
+/** A managed-server probe result from `POST /api/test/probe-mcp-oauth-server`. */
+interface ProbeResult {
+  ok: boolean;
+  toolCount?: number;
+  needsAuth?: boolean;
+  error?: string;
 }
 
-test.describe.skip('MCP OAuth sign-in (managed servers)', () => {
-  test('add → needs sign-in → Sign in → approve → connected with N tools', async ({ page }) => {
-    await openManagedServers(page);
-
-    // The row for the OAuth server reports it needs a sign-in, in plain words.
-    const row = page.getByText(SERVER_NAME);
-    await expect(row).toBeVisible();
-    await expect(page.getByText('Needs sign-in')).toBeVisible();
-
-    // Sign in → the custody disclosure shows BEFORE the link is opened (consent
-    // order = reading order).
-    await page.getByRole('button', { name: 'Sign in' }).click();
-    await expect(page.getByText(new RegExp(CUSTODY_FRAGMENT, 'i'))).toBeVisible();
-
-    // Open the sign-in page — a real click, a real new tab, landing on the mock
-    // server's auto-approving /authorize, which 302s back to the DorkOS callback.
-    const popupPromise = page.waitForEvent('popup');
-    await page
-      .getByRole('link', { name: new RegExp(`Open the sign-in page for ${SERVER_NAME}`, 'i') })
-      .click();
-    const popup = await popupPromise;
-    await popup.close();
-
-    // Polling reaches connected; the row's status flips and the injected token is
-    // now what makes the server's tools reachable.
-    await expect(page.getByText(/Signed in — the server’s tools are available/i)).toBeVisible({
-      timeout: 15_000,
-    });
-    await expect(page.getByText('Connected')).toBeVisible();
-
-    // The token was stored + injected: probing the server now lists its tools
-    // instead of reporting needs-auth (asserted through the same Test control the
-    // UI exposes, once the mock MCP endpoint answers `tools/list` for a bearer).
-    // A follow-up may assert the stored ciphertext through a test seam, mirroring
-    // the service-level `agent-mcp-oauth-service.test.ts` proof.
-    expect(API_URL).toContain(MOCK_PORT);
+/** Probe a managed server through its injected connection (the loopback seam). */
+async function probe(
+  request: APIRequestContext,
+  agentPath: string,
+  name: string
+): Promise<ProbeResult> {
+  const res = await request.post(`${API_URL}/api/test/probe-mcp-oauth-server`, {
+    data: { agentPath, name },
   });
+  expect(res.ok()).toBe(true);
+  return (await res.json()) as ProbeResult;
+}
+
+test('add → needs sign-in → Sign in → approve → connected with N tools', async ({
+  page,
+  request,
+}) => {
+  // Seed an agent whose manifest already has the mock OAuth server enabled.
+  const seed = await request.post(`${API_URL}/api/test/seed-oauth-mcp-agent`);
+  expect(seed.ok()).toBe(true);
+  const { agentDir } = (await seed.json()) as { agentDir: string };
+
+  const mcp = new McpOAuthSigninPage(page);
+  await mcp.open(agentDir);
+
+  // The row for the OAuth server reports it needs a sign-in, in plain words.
+  await expect(mcp.row(SERVER_NAME)).toBeVisible();
+  await expect(mcp.mcpSection.getByText('Needs sign-in')).toBeVisible();
+
+  // The mock's bearer gate is real: probed through its injected connection with
+  // no token yet, it answers 401 → needs-auth (reverting the gate would list
+  // tools here instead, reddening this).
+  const before = await probe(request, agentDir, SERVER_NAME);
+  expect(before, JSON.stringify(before)).toMatchObject({ ok: false, needsAuth: true });
+
+  // Sign in → the custody disclosure shows BEFORE the link is opened (consent
+  // order = reading order).
+  await mcp.signInButton(SERVER_NAME).click();
+  await expect(mcp.mcpSection.getByText(new RegExp(CUSTODY_FRAGMENT, 'i'))).toBeVisible();
+
+  // Open the sign-in page — a real click, a real new tab, landing on the mock
+  // server's auto-approving /authorize, which 302s back to the DorkOS loopback
+  // callback where the code→token exchange completes server-side.
+  const popupPromise = page.waitForEvent('popup');
+  await mcp.openSignInLink(SERVER_NAME).click();
+  const popup = await popupPromise;
+  await popup.waitForLoadState('domcontentloaded');
+  // The callback page rendered → the exchange finished and the token is stored.
+  await expect(popup.getByText(/return to DorkOS/i)).toBeVisible();
+  await popup.close();
+
+  // Polling reaches connected; the row's status flips and the panel confirms it.
+  await expect(mcp.mcpSection.getByText(/available on the next turn/i)).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(mcp.mcpSection.getByText('Connected')).toBeVisible();
+
+  // The token was stored AND injected: probing through the injected connection
+  // now carries the bearer, so the mock lists its two tools.
+  const after = await probe(request, agentDir, SERVER_NAME);
+  expect(after, JSON.stringify(after)).toMatchObject({ ok: true, toolCount: 2 });
 });

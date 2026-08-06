@@ -3,12 +3,16 @@ import path from 'path';
 import { z } from 'zod';
 import { ulid } from 'ulidx';
 import { writeManifest } from '@dorkos/shared/manifest';
-import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
-import { getBoundary } from '../lib/boundary.js';
+import type { AgentManifest, McpServerTransport } from '@dorkos/shared/mesh-schemas';
+import { getBoundary, validateBoundary } from '../lib/boundary.js';
+import { localDialHost } from '../lib/local-dial-host.js';
+import { env } from '../env.js';
 import { scenarioStore } from '../services/runtimes/test-mode/scenario-store.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { getRoomService, getBridgeStore, getRoomAuthors } from '../services/rooms/index.js';
 import { readOwnerAccount } from '../services/core/auth/index.js';
+import { MOCK_MCP_OAUTH_MCP_PATH } from './mock-mcp-oauth-server.js';
+import type { AgentMcpServerService } from '../services/mesh/agent-mcp-server-service.js';
 
 /**
  * Control routes for TestModeRuntime. Only mounted when DORKOS_TEST_RUNTIME=true.
@@ -214,5 +218,151 @@ testControlRouter.post('/seed-bridge', async (req, res) => {
     return res
       .status(500)
       .json({ error: err instanceof Error ? err.message : 'seed-bridge failed' });
+  }
+});
+
+/** Fixture directory for the OAuth-MCP test agent — distinct from `seed-agent`'s. */
+function e2eOAuthAgentDir(): string {
+  return path.join(getBoundary(), 'tmp', 'dorkos-e2e-oauth-agent');
+}
+
+/**
+ * Seed an agent whose manifest has one enabled OAuth-protected managed MCP
+ * server ("granola") pointing at the in-process mock (`mock-mcp-oauth-server.ts`),
+ * and register it into the mesh so `mcp.*` verbs resolve its id. Returns
+ * `{ agentDir, serverUrl }` so the e2e can drive the sign-in flow (DOR-952).
+ *
+ * The manifest declares `runtime: 'claude-code'` — the only enum values are
+ * claude-code/codex/opencode, and the test-mode server registers a claude-code
+ * TestModeRuntime alias (`DORKOS_TEST_RUNTIME_CLAUDE_ALIAS`) so
+ * `GET /api/mcp-config?runtime=claude-code` resolves a real `getMcpStatus`.
+ *
+ * The server URL is loopback (`127.0.0.1`), matching the OAuth callback's
+ * loopback origin, so DorkOS's in-process OAuth client and the mock agree on one
+ * host.
+ */
+testControlRouter.post('/seed-oauth-mcp-agent', async (req, res) => {
+  const port = req.socket.localPort;
+  if (!port) {
+    return res.status(500).json({ error: 'could not resolve the listen port' });
+  }
+  // Dial the server on the SAME host it bound (via `localDialHost`), not a
+  // hardcoded `127.0.0.1`: `DORKOS_HOST=localhost` resolves to `::1` on macOS,
+  // where an explicit IPv4 literal is refused. This is the host DorkOS's own
+  // in-process OAuth client and the operator's browser both reach the mock on.
+  const serverUrl = `http://${localDialHost(env.DORKOS_HOST)}:${port}${MOCK_MCP_OAUTH_MCP_PATH}`;
+  const connection: McpServerTransport = {
+    transport: 'http',
+    url: serverUrl,
+    headers: {},
+    authKind: 'oauth2',
+  };
+  const manifest: AgentManifest = {
+    id: ulid(),
+    name: 'E2E OAuth MCP Agent',
+    description: 'Seeded by test setup — one OAuth-protected managed MCP server',
+    runtime: 'claude-code',
+    capabilities: [],
+    behavior: { responseMode: 'always' },
+    registeredAt: new Date().toISOString(),
+    registeredBy: 'dorkos-e2e',
+    personaEnabled: false,
+    isSystem: false,
+    enabledToolGroups: {},
+    mcpServers: [
+      {
+        name: 'granola',
+        enabled: true,
+        connection,
+        addedAt: new Date().toISOString(),
+        addedBy: 'operator',
+      },
+    ],
+  };
+  const agentDir = e2eOAuthAgentDir();
+  await writeManifest(agentDir, manifest);
+  // Register into the mesh cache so `mcp.list`/`mcp.signin` resolve the agent id
+  // to this path (ADR-0043 file-first write-through), mirroring seed-bridge.
+  const meshCore = req.app.locals.meshCore as
+    | { syncFromDisk(path: string): Promise<unknown> }
+    | undefined;
+  if (meshCore) await meshCore.syncFromDisk(agentDir);
+  res.json({ ok: true, agentDir, serverUrl });
+});
+
+const probeSchema = z.object({
+  /** The seeded agent's directory, from `POST /api/test/seed-oauth-mcp-agent`. */
+  agentPath: z.string().min(1),
+  /** The managed server's name to probe. */
+  name: z.string().min(1),
+});
+
+/**
+ * Probe a managed MCP server through its INJECTED connection — the exact
+ * connection (bearer header and all) the injection path hands a runtime — and
+ * report whether it is reachable and how many tools it lists. This is what makes
+ * the mock's bearer gate load-bearing in the e2e: before sign-in the injected
+ * connection carries no bearer, so the mock answers 401 → `needsAuth`; after
+ * sign-in the injected bearer unlocks `tools/list`, proving the token was stored
+ * and injected (DOR-952).
+ *
+ * The MCP client + probe transport are dynamically imported so this test-only
+ * seam adds nothing to the production module graph (the /reset pattern).
+ */
+testControlRouter.post('/probe-mcp-oauth-server', async (req, res) => {
+  const parsed = probeSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res
+      .status(400)
+      .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
+  }
+  const service = req.app.locals.agentMcpServerService as AgentMcpServerService | undefined;
+  if (!service) {
+    return res.status(500).json({ error: 'agentMcpServerService unavailable' });
+  }
+  // Resolve the path the SAME way `GET /api/mcp-config` does (realpath-canonical),
+  // so the probe reads the identical cwd key the injection resolver caches under.
+  const agentPath = await validateBoundary(parsed.data.agentPath);
+  const servers = service.injectableServersForCwd(agentPath);
+  const injected = servers[parsed.data.name];
+  if (!injected) {
+    return res.json({
+      ok: false,
+      error: 'server is not injectable (no manifest, or disabled)',
+      agentPath,
+      available: Object.keys(servers),
+    });
+  }
+
+  const [{ Client }, probe] = await Promise.all([
+    import('@modelcontextprotocol/sdk/client/index.js'),
+    import('../services/mesh/agent-mcp-probe.js'),
+  ]);
+  const client = new Client(
+    { name: 'dorkos-e2e-oauth-probe', version: '1.0.0' },
+    { capabilities: {} }
+  );
+  // The injected connection is the runtime-neutral McpAppServerConnection shape,
+  // a structural subset of McpServerTransport (it drops the on-disk `authKind`
+  // hint the probe transport never reads) — safe for createProbeTransport.
+  const transport = probe.createProbeTransport(injected as McpServerTransport);
+  try {
+    const tools = await probe.withProbeTimeout(
+      (async () => {
+        await client.connect(transport);
+        return client.listTools();
+      })(),
+      probe.TEST_PROBE_TIMEOUT_MS
+    );
+    return res.json({ ok: true, toolCount: tools.tools.length });
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    return res.json(
+      probe.isUnauthorizedProbeError(err)
+        ? { ok: false, needsAuth: true, error }
+        : { ok: false, error }
+    );
+  } finally {
+    await client.close().catch(() => {});
   }
 });

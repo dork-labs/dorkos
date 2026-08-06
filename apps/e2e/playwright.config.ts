@@ -225,6 +225,12 @@ export default defineConfig({
         {
           DORKOS_TEST_RUNTIME: 'true',
           DORKOS_TEST_RUNTIME_SECONDARY: 'true',
+          // Registers a claude-code-typed TestModeRuntime alias so the managed-MCP
+          // OAuth spec's seeded agent (manifest `runtime: 'claude-code'`) resolves
+          // a real `getMcpStatus` via GET /api/mcp-config (DOR-952). Invisible to
+          // the other test-mode specs — it adds an unused registered runtime and
+          // no spec asserts the registered set is exactly {test-mode, test-mode-b}.
+          DORKOS_TEST_RUNTIME_CLAUDE_ALIAS: 'true',
           DORKOS_PORT: MOCK_PORT,
           VITE_PORT: MOCK_VITE_PORT,
           DORK_HOME: MOCK_DORK_HOME,

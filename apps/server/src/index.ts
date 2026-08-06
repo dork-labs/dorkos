@@ -665,6 +665,16 @@ async function start() {
       runtimeRegistry.register(new TestModeRuntime('test-mode-b'));
       logger.info('[TestMode] Secondary TestModeRuntime registered as test-mode-b');
     }
+    // Optional claude-code-typed alias (DOR-952): a seeded agent's manifest can
+    // only declare a real runtime enum (claude-code/codex/opencode), so the
+    // managed-MCP OAuth e2e needs a runtime registered under 'claude-code' for
+    // `GET /api/mcp-config?runtime=claude-code` to resolve `getMcpStatus` instead
+    // of 400ing. Same TestModeRuntime class; the resolver injection below reaches
+    // it too. Test branch only.
+    if (env.DORKOS_TEST_RUNTIME_CLAUDE_ALIAS) {
+      runtimeRegistry.register(new TestModeRuntime('claude-code'));
+      logger.info('[TestMode] TestModeRuntime alias registered as claude-code (DOR-952)');
+    }
     runtimeRegistry.setDefault('test-mode');
     logger.info('[TestMode] TestModeRuntime registered — no real Claude API calls will be made');
     // Cloud-link transport: fake the network dependency to dorkos.ai only, so
@@ -1474,7 +1484,14 @@ async function start() {
     // `redirect_uri` is 127.0.0.1 at the listen port.
     agentMcpOAuthService = new AgentMcpOAuthService({
       dorkHome,
-      callbackBaseUrl: `http://127.0.0.1:${PORT}`,
+      // The loopback callback is opened by the operator's own browser (the OAuth
+      // provider 302s to it), so its host must be one the browser can actually
+      // dial — the bind host, not a hardcoded `127.0.0.1`. When `DORKOS_HOST` is
+      // `localhost` and resolves to `::1` (macOS), a `127.0.0.1` callback is
+      // refused. `localDialHost` is the same binding-vs-dialing fix the connector
+      // `localOrigin` above already applies (the connections browser spec proved
+      // it matters); the callback route still enforces loopback-only.
+      callbackBaseUrl: `http://${localDialHost(env.DORKOS_HOST)}:${PORT}`,
       logger,
     });
     agentMcpServerService = new AgentMcpServerService({
@@ -1484,6 +1501,12 @@ async function start() {
       // entries iff this returns a live token — withholds otherwise (needs-auth).
       tokenProvider: agentMcpOAuthService,
     });
+    // Expose the resolver to the test-control probe seam (DOR-952), which dials a
+    // managed server through its INJECTED connection to prove the bearer gate.
+    // Test branch only — the seam route is itself mounted only under the gate.
+    if (env.DORKOS_TEST_RUNTIME) {
+      app.locals.agentMcpServerService = agentMcpServerService;
+    }
     // Re-prime the cache from disk for every enabled OAuth server so a token
     // survives a restart. Non-blocking: injection withholds until warm completes.
     warmMcpOAuthTokens(agentMcpOAuthService, agentMcpServerService, meshCore).catch(
