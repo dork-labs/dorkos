@@ -45,6 +45,7 @@ export {
   type TabOpener,
 } from './link-navigation';
 export { initialOf } from './initial-of';
+export { isDynamicImportError } from './dynamic-import-error';
 export {
   claudeAccountName,
   claudeAccountOptions,
