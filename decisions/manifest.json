@@ -3299,7 +3299,11 @@
       "extractedFrom": "relay-advanced-reliability",
       "specSlug": "relay-advanced-reliability",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/relay/src/rate-limiter.ts", "packages/relay/src/sqlite-index.ts"]
+      "affects": [
+        "packages/relay/src/rate-limiter.ts",
+        "packages/relay/src/sqlite-index.ts",
+        "packages/db/src/schema/relay.ts"
+      ]
     },
     {
       "number": 13,
