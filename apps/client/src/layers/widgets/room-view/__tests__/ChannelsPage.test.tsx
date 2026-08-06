@@ -41,6 +41,8 @@ let openRoomId = 'room-1';
 vi.mock('@tanstack/react-router', () => ({
   useSearch: () => ({ id: openRoomId }),
   useNavigate: () => () => {},
+  // `useInPlaceNavigate` (the thread-URL sync) reads the current location.
+  useRouter: () => ({ state: { location: { pathname: '/channels', search: { id: openRoomId } } } }),
 }));
 
 /**

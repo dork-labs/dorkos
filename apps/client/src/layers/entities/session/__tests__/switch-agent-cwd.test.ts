@@ -206,6 +206,52 @@ describe('switchAgentCwd', () => {
     expect(store.setSelectedCwd).not.toHaveBeenCalled();
   });
 
+  it('proceeds when the URL was only rewritten in place while the lookup was out', () => {
+    // The inverse of the test above (DOR-931): opening Settings mid-lookup rewrites
+    // the URL but goes nowhere. The rewrite declares itself by stamping the
+    // destination it hangs off into history state, so the switch is NOT cancelled.
+    const store = makeStore();
+    const navigate = vi.fn();
+    let answer!: (value: { sessions: Session[] }) => void;
+    let location: CockpitLocation = {
+      pathname: '/session',
+      search: { dir: '/home/user/old' },
+    };
+    const transport = createMockTransport({
+      listSessions: vi.fn(
+        () =>
+          new Promise<{ sessions: Session[] }>((resolve) => {
+            answer = resolve;
+          })
+      ),
+    }) as Transport;
+
+    const pending = switchAgentCwd('/home/user/project', {
+      store,
+      queryClient: new QueryClient(),
+      transport,
+      currentLocation: () => location,
+      navigate,
+    });
+    // Settings opened in place: the URL grew `?settings=open`, but the stamped
+    // base is the location the rewrite started from — so the destination is
+    // unchanged as far as the guard is concerned.
+    location = {
+      pathname: '/session',
+      search: { dir: '/home/user/old', settings: 'open' },
+      state: { inPlaceBase: { pathname: '/session', search: { dir: '/home/user/old' } } },
+    };
+    answer({ sessions: [{ id: 'sess-1' } as Session] });
+
+    return pending.then(() => {
+      expect(store.setSelectedCwd).toHaveBeenCalledWith('/home/user/project');
+      expect(navigate).toHaveBeenCalledWith({
+        dir: '/home/user/project',
+        session: 'sess-1',
+      });
+    });
+  });
+
   it('navigates with a fresh session id when none is cached anywhere', async () => {
     const navigate = vi.fn();
     await switchAgentCwd('/home/user/project', {

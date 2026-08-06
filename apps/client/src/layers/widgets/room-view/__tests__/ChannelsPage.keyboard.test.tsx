@@ -28,6 +28,8 @@ vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
 vi.mock('@tanstack/react-router', () => ({
   useSearch: () => ({ id: 'room-1' }),
   useNavigate: () => () => {},
+  // `useInPlaceNavigate` (the thread-URL sync) reads the current location.
+  useRouter: () => ({ state: { location: { pathname: '/channels', search: { id: 'room-1' } } } }),
 }));
 
 const ROOM: RoomWithRoster = {

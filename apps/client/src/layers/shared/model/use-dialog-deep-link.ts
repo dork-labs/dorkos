@@ -12,14 +12,13 @@ import type { UiPanelId } from '@dorkos/shared/types';
 import { useAppStore } from './app-store';
 import type { SettingsTab } from './app-store/app-store-panels';
 import { useSafeSearch, useSafeNavigate } from './use-safe-router';
+import { useInPlaceNavigate } from './use-in-place-navigate';
 
-// Route-agnostic search updater type used internally. We cast to this when
-// calling navigate without a `to:` — these hooks are intentionally generic
-// across routes so TanStack Router can't infer the route-specific search type
-// at compile time. Mirrors the pattern in `use-filter-state.ts`.
-type AnySearchUpdater = (
-  prev: Record<string, string | undefined>
-) => Record<string, string | undefined>;
+// Route-agnostic search updater type used internally. These hooks are
+// intentionally generic across routes so TanStack Router can't infer the
+// route-specific search type at compile time. Mirrors the pattern in
+// `use-filter-state.ts`.
+type AnySearchUpdater = (prev: Record<string, unknown>) => Record<string, unknown>;
 
 /**
  * Every search param a dual-signal dialog owns — the open signal itself plus any
@@ -37,18 +36,6 @@ const DIALOG_SEARCH_PARAMS = {
 
 /** A dialog with both a store open flag and a URL open signal. */
 export type DualSignalDialog = keyof typeof DIALOG_SEARCH_PARAMS;
-
-/**
- * Every search param a dual-signal dialog owns, flattened.
- *
- * Published because these params share one property that matters outside this
- * module: they rewrite the URL **without going anywhere**. Anything deciding
- * whether the cockpit has moved has to read them out first, and it must read
- * them from here rather than keep its own list — a dialog that grows a param
- * would otherwise start reading as a navigation (DOR-928).
- */
-export const DIALOG_SEARCH_PARAM_NAMES: readonly string[] =
-  Object.values(DIALOG_SEARCH_PARAMS).flat();
 
 /**
  * Build the search patch that clears a dual-signal dialog's URL half.
@@ -167,6 +154,7 @@ export interface DialogDeepLink<T extends string> {
 export function useSettingsDeepLink(): DialogDeepLink<SettingsTab> {
   const search = useSafeSearch() as { settings?: string; settingsSection?: string };
   const navigate = useSafeNavigate();
+  const inPlaceNav = useInPlaceNavigate();
   const setSettingsOpen = useAppStore((s) => s.setSettingsOpen);
   const storeOpen = useAppStore((s) => s.settingsOpen);
 
@@ -193,15 +181,15 @@ export function useSettingsDeepLink(): DialogDeepLink<SettingsTab> {
 
   const open = useCallback(
     (tab?: SettingsTab, sectionId?: string) => {
-      if (!navigate) return setSettingsOpen(true);
+      if (!inPlaceNav) return setSettingsOpen(true);
       const updater: AnySearchUpdater = (prev) => ({
         ...prev,
         settings: tab ?? 'open',
         settingsSection: sectionId,
       });
-      navigate({ search: updater as never });
+      inPlaceNav({ search: updater });
     },
-    [navigate, setSettingsOpen]
+    [inPlaceNav, setSettingsOpen]
   );
 
   const close = useCallback(() => {
@@ -213,34 +201,34 @@ export function useSettingsDeepLink(): DialogDeepLink<SettingsTab> {
     // screen (DOR-839). Clearing an already-false flag is a no-op, so owning
     // both costs nothing on the common path.
     setSettingsOpen(false);
-    if (!navigate) return;
+    if (!inPlaceNav) return;
     const updater: AnySearchUpdater = (prev) => ({ ...prev, ...clearedDialogSearch('settings') });
-    navigate({ search: updater as never });
-  }, [navigate, setSettingsOpen]);
+    inPlaceNav({ search: updater });
+  }, [inPlaceNav, setSettingsOpen]);
 
   const setTab = useCallback(
     (tab: SettingsTab) => {
-      if (!navigate) return;
+      if (!inPlaceNav) return;
       const updater: AnySearchUpdater = (prev) => ({
         ...prev,
         settings: tab,
         settingsSection: undefined,
       });
-      navigate({ search: updater as never, replace: true });
+      inPlaceNav({ search: updater, replace: true });
     },
-    [navigate]
+    [inPlaceNav]
   );
 
   const setSection = useCallback(
     (sectionId: string | null) => {
-      if (!navigate) return;
+      if (!inPlaceNav) return;
       const updater: AnySearchUpdater = (prev) => ({
         ...prev,
         settingsSection: sectionId ?? undefined,
       });
-      navigate({ search: updater as never, replace: true });
+      inPlaceNav({ search: updater, replace: true });
     },
-    [navigate]
+    [inPlaceNav]
   );
 
   return { isOpen, activeTab, section, open, close, setTab, setSection };
@@ -293,24 +281,25 @@ export function useOpenConnections(): (region?: 'messaging' | 'accounts') => voi
 function useSimpleDialogDeepLink(paramName: 'tasks'): DialogDeepLink<never> {
   const search = useSafeSearch() as Record<string, string | undefined>;
   const navigate = useSafeNavigate();
+  const inPlaceNav = useInPlaceNavigate();
   const setStoreOpen = useAppStore((s) => s.setTasksOpen);
   const storeOpen = useAppStore((s) => s.tasksOpen);
 
   const isOpen = navigate ? !!search[paramName] : storeOpen;
 
   const open = useCallback(() => {
-    if (!navigate) return setStoreOpen(true);
+    if (!inPlaceNav) return setStoreOpen(true);
     const updater: AnySearchUpdater = (prev) => ({ ...prev, [paramName]: 'open' });
-    navigate({ search: updater as never });
-  }, [navigate, paramName, setStoreOpen]);
+    inPlaceNav({ search: updater });
+  }, [inPlaceNav, paramName, setStoreOpen]);
 
   const close = useCallback(() => {
     // Both halves, for the same reason the Settings close owns both (DOR-839).
     setStoreOpen(false);
-    if (!navigate) return;
+    if (!inPlaceNav) return;
     const updater: AnySearchUpdater = (prev) => ({ ...prev, ...clearedDialogSearch(paramName) });
-    navigate({ search: updater as never });
-  }, [navigate, paramName, setStoreOpen]);
+    inPlaceNav({ search: updater });
+  }, [inPlaceNav, paramName, setStoreOpen]);
 
   return {
     isOpen,
