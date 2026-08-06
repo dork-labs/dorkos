@@ -428,6 +428,11 @@ capabilityConformance(registry, {
     'mcp.enable': { agentId: 'conformance-agent', name: 'conformance-srv' },
     'mcp.disable': { agentId: 'conformance-agent', name: 'conformance-srv' },
     'mcp.test': { agentId: 'conformance-agent', name: 'conformance-srv' },
+    // Sign-in verbs (DOR-942): act-tier, so they reach the handler and answer with
+    // a structured error — the mcpDeps here carry no OAuth engine, so signin fails
+    // as SIGNIN_UNAVAILABLE after the agent lookup, and poll as the same.
+    'mcp.signin': { agentId: 'conformance-agent', name: 'conformance-srv' },
+    'mcp.poll_signin': { flowId: 'conformance-flow' },
   },
 });
 

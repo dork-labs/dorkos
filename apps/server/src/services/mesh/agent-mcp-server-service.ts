@@ -19,10 +19,6 @@
 import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
-import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { readManifest, writeManifest, MANIFEST_DIR, MANIFEST_FILE } from '@dorkos/shared/manifest';
 import { AgentManifestSchema, McpServerTransportSchema } from '@dorkos/shared/mesh-schemas';
 import type { ManagedMcpServer, McpServerTransport } from '@dorkos/shared/mesh-schemas';
@@ -30,12 +26,35 @@ import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
 import type { Logger } from '@dorkos/shared/logger';
 
 import { readMcpJsonServers, resolveMcpJsonConnection } from './mcp-json.js';
+import {
+  createProbeTransport,
+  isUnauthorizedProbeError,
+  withProbeTimeout,
+  TEST_PROBE_TIMEOUT_MS,
+} from './agent-mcp-probe.js';
 
 /** The DorkOS tool server's own name — reserved so a managed server can never shadow it. */
 export const RESERVED_MCP_SERVER_NAME = 'dorkos';
 
-/** Wall-clock cap on the connect + list-tools round trip in {@link AgentMcpServerService.test}. */
-const TEST_PROBE_TIMEOUT_MS = 10_000;
+/** The HTTP header a managed-MCP OAuth access token is injected under. */
+const AUTHORIZATION_HEADER = 'Authorization';
+
+/**
+ * The synchronous access-token lookup the injection path consults for managed-MCP
+ * OAuth (DOR-942). Satisfied structurally by `AgentMcpOAuthService`; kept as a
+ * narrow port so this runtime-neutral service never imports the OAuth engine (or,
+ * through it, the MCP SDK auth module) as a value.
+ */
+export interface McpOAuthTokenProvider {
+  /**
+   * The live bearer access token for `(agentId, serverName)`, or `undefined` when
+   * none is cached — in which case injection withholds the header (needs-auth).
+   *
+   * @param agentId - The owning agent's id.
+   * @param serverName - The managed server's name.
+   */
+  getAccessToken(agentId: string, serverName: string): string | undefined;
+}
 
 /** Typed failure codes so a route/capability layer can map to precise statuses. */
 export type AgentMcpServerErrorCode =
@@ -74,6 +93,19 @@ export interface AgentMcpServerServiceDeps {
   agents: AgentWorkspaceLocator;
   /** Diagnostic sink; defaults to `console`. */
   logger?: Pick<Logger, 'warn'>;
+  /**
+   * Synchronous OAuth access-token lookup for managed-MCP OAuth (DOR-942). When
+   * present, {@link AgentMcpServerService.injectableServersForCwd} merges an
+   * `Authorization: Bearer` header into an http/sse entry whenever a live token
+   * exists for it, and withholds it otherwise. Omitted → no bearer injection.
+   */
+  tokenProvider?: McpOAuthTokenProvider;
+  /**
+   * `fetch` seam for the http/sse reachability probe in
+   * {@link AgentMcpServerService.test} (defaults to the transport's global fetch);
+   * injected by tests to simulate a 401.
+   */
+  probeFetch?: typeof fetch;
 }
 
 /** Arguments for {@link AgentMcpServerService.add}. */
@@ -121,6 +153,9 @@ export interface UpdateManagedServerOptions {
 
 interface InjectionCacheEntry {
   mtimeMs: number;
+  /** The agent id parsed from the manifest — the key half the OAuth token lookup needs. */
+  agentId: string;
+  /** The base enabled-servers map, parsed once per manifest mtime; bearer headers are merged live per read. */
   servers: Record<string, McpAppServerConnection>;
 }
 
@@ -132,12 +167,16 @@ interface InjectionCacheEntry {
 export class AgentMcpServerService {
   private readonly agents: AgentWorkspaceLocator;
   private readonly logger: Pick<Logger, 'warn'>;
+  private readonly tokenProvider: McpOAuthTokenProvider | undefined;
+  private readonly probeFetch: typeof fetch | undefined;
   /** cwd → last-seen manifest mtime + resolved enabled servers, for {@link injectableServersForCwd}. */
   private readonly injectionCache = new Map<string, InjectionCacheEntry>();
 
   constructor(deps: AgentMcpServerServiceDeps) {
     this.agents = deps.agents;
     this.logger = deps.logger ?? console;
+    this.tokenProvider = deps.tokenProvider;
+    this.probeFetch = deps.probeFetch;
   }
 
   /**
@@ -273,7 +312,11 @@ export class AgentMcpServerService {
   }
 
   /**
-   * Enable a managed server so it is injected into the agent's next session.
+   * Enable a managed server so its tools are injected on the agent's next turn.
+   *
+   * Injection recomposes `mcpServers` every turn on the same resumed session (the
+   * claude-code factory runs per query; ADR 260803-233420), so a server enabled
+   * mid-conversation is live on the next message — no restart.
    *
    * @param agentId - The agent's id.
    * @param name - The server to enable.
@@ -284,8 +327,8 @@ export class AgentMcpServerService {
   }
 
   /**
-   * Disable a managed server, removing it from future session injection while
-   * keeping its (already-approved) configuration on the manifest.
+   * Disable a managed server, removing its tools from the next turn's injection
+   * while keeping its (already-approved) configuration on the manifest.
    *
    * @param agentId - The agent's id.
    * @param name - The server to disable.
@@ -304,8 +347,13 @@ export class AgentMcpServerService {
    * directly rather than going through the registry — a non-agent session simply
    * has no manifest and gets `{}`. Runs on every session turn, so it is
    * synchronous (the runtime's MCP factory is sync) and memoized by manifest
-   * mtime: a repeat call with an unchanged file returns the cached map without
+   * mtime: a repeat call with an unchanged file returns the cached parse without
    * touching disk beyond a `stat`.
+   *
+   * The base parse is cached, but the OAuth bearer header is merged **live on
+   * every read** (`mergeOAuthHeaders`), not baked into the cache — a token becomes
+   * available (after sign-in) or is refreshed without the manifest mtime changing,
+   * so caching the header would strand a stale one.
    *
    * @param cwd - The session's working directory (the agent's workspace path).
    * @returns Enabled servers by name, or `{}` when there is no readable manifest.
@@ -322,11 +370,46 @@ export class AgentMcpServerService {
     }
 
     const cached = this.injectionCache.get(cwd);
-    if (cached && cached.mtimeMs === mtimeMs) return cached.servers;
+    const entry =
+      cached && cached.mtimeMs === mtimeMs
+        ? cached
+        : this.readEnabledServersSync(manifestPath, cwd, mtimeMs);
+    if (entry !== cached) this.injectionCache.set(cwd, entry);
+    return this.mergeOAuthHeaders(entry.agentId, entry.servers);
+  }
 
-    const servers = this.readEnabledServersSync(manifestPath, cwd);
-    this.injectionCache.set(cwd, { mtimeMs, servers });
-    return servers;
+  /**
+   * Return a per-read copy of the enabled servers with an `Authorization: Bearer`
+   * header merged into each http/sse entry that has a live cached OAuth token, and
+   * left untouched otherwise. The safe default is withholding: no token → no
+   * header → the server reports needs-auth rather than connecting unauthenticated
+   * (`.claude/rules/safe-defaults.md`). Never mutates the cached base map.
+   *
+   * @param agentId - The owning agent's id (the token lookup's key half).
+   * @param base - The cached, header-free enabled-servers map.
+   */
+  private mergeOAuthHeaders(
+    agentId: string,
+    base: Record<string, McpAppServerConnection>
+  ): Record<string, McpAppServerConnection> {
+    if (!this.tokenProvider) return base;
+    const out: Record<string, McpAppServerConnection> = {};
+    for (const [name, connection] of Object.entries(base)) {
+      // stdio servers have no remote endpoint and never take a bearer; the early
+      // continue narrows `connection` to http/sse for the single header merge below.
+      if (connection.transport === 'stdio') {
+        out[name] = connection;
+        continue;
+      }
+      const token = this.tokenProvider.getAccessToken(agentId, name);
+      out[name] = token
+        ? {
+            ...connection,
+            headers: { ...connection.headers, [AUTHORIZATION_HEADER]: `Bearer ${token}` },
+          }
+        : connection;
+    }
+    return out;
   }
 
   /**
@@ -339,14 +422,18 @@ export class AgentMcpServerService {
    * and always closes — the whole round trip is capped at
    * {@link TEST_PROBE_TIMEOUT_MS}. A failure is returned in-band, never thrown.
    *
+   * A 401 / unauthorized probe is classified as `needsAuth: true` (DOR-942) so the
+   * client can render "Needs sign-in" instead of the raw SDK error; every other
+   * failure keeps its raw message with `needsAuth` absent.
+   *
    * @param agentId - The agent's id.
    * @param name - The existing server to probe.
-   * @returns `{ ok, toolCount? }` on success, `{ ok: false, error }` otherwise.
+   * @returns `{ ok, toolCount? }` on success, `{ ok: false, error, needsAuth? }` otherwise.
    */
   async test(
     agentId: string,
     name: string
-  ): Promise<{ ok: boolean; toolCount?: number; error?: string }> {
+  ): Promise<{ ok: boolean; toolCount?: number; error?: string; needsAuth?: boolean }> {
     const { manifest } = await this.load(agentId);
     const server = manifest.mcpServers.find((s) => s.name === name);
     if (!server) {
@@ -357,9 +444,9 @@ export class AgentMcpServerService {
     }
 
     const client = new Client({ name: 'dorkos-mcp-probe', version: '1.0.0' }, { capabilities: {} });
-    const transport = createProbeTransport(server.connection);
+    const transport = createProbeTransport(server.connection, this.probeFetch);
     try {
-      const tools = await withTimeout(
+      const tools = await withProbeTimeout(
         (async () => {
           await client.connect(transport);
           return client.listTools();
@@ -368,7 +455,10 @@ export class AgentMcpServerService {
       );
       return { ok: true, toolCount: tools.tools.length };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      const error = err instanceof Error ? err.message : String(err);
+      return isUnauthorizedProbeError(err)
+        ? { ok: false, needsAuth: true, error }
+        : { ok: false, error };
     } finally {
       await client.close().catch(() => {});
     }
@@ -451,11 +541,18 @@ export class AgentMcpServerService {
     }
   }
 
-  /** Parse the manifest synchronously and build the enabled-servers map; `{}` on any failure. */
+  /**
+   * Parse the manifest synchronously into a cache entry: the manifest mtime, the
+   * agent id (the token lookup's key half), and the enabled-servers map.
+   * Degrades to an empty map with an empty agent id on any failure, so a bad
+   * manifest injects nothing rather than throwing on the turn path.
+   */
   private readEnabledServersSync(
     manifestPath: string,
-    cwd: string
-  ): Record<string, McpAppServerConnection> {
+    cwd: string,
+    mtimeMs: number
+  ): InjectionCacheEntry {
+    const empty: InjectionCacheEntry = { mtimeMs, agentId: '', servers: {} };
     let parsed: unknown;
     try {
       parsed = JSON.parse(readFileSync(manifestPath, 'utf-8'));
@@ -465,7 +562,7 @@ export class AgentMcpServerService {
           err instanceof Error ? err.message : String(err)
         }`
       );
-      return {};
+      return empty;
     }
 
     const result = AgentManifestSchema.safeParse(parsed);
@@ -475,45 +572,16 @@ export class AgentMcpServerService {
           result.error.issues
         )}`
       );
-      return {};
+      return empty;
     }
 
     const servers: Record<string, McpAppServerConnection> = {};
     for (const server of result.data.mcpServers) {
       if (server.enabled) servers[server.name] = server.connection;
     }
-    return servers;
+    return { mtimeMs, agentId: result.data.id, servers };
   }
 }
 
 /** A fully-parsed manifest — the object form `readManifest` returns when present. */
 type ManagedManifest = NonNullable<Awaited<ReturnType<typeof readManifest>>>;
-
-/** Build a short-lived MCP client transport for a managed server's connection. */
-function createProbeTransport(connection: McpServerTransport): Transport {
-  if (connection.transport === 'stdio') {
-    return new StdioClientTransport({
-      command: connection.command,
-      args: connection.args,
-      env: connection.env,
-    });
-  }
-  if (connection.transport === 'http') {
-    return new StreamableHTTPClientTransport(new URL(connection.url), {
-      requestInit: { headers: connection.headers },
-    });
-  }
-  return new SSEClientTransport(new URL(connection.url), {
-    requestInit: { headers: connection.headers },
-  });
-}
-
-/** Reject a promise if it does not settle within `ms`. */
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(`MCP server probe timed out after ${ms}ms`)), ms)
-    ),
-  ]);
-}

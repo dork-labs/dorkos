@@ -1,0 +1,193 @@
+/**
+ * The synchronous in-memory access-token cache for managed-MCP OAuth (DOR-942).
+ *
+ * The core risk this solves (spec §"The core risk: sync injection vs async
+ * store"): session injection reads managed servers **synchronously**
+ * (`readEnabledServersSync`), but the encrypted token store and token refresh are
+ * **async**. So the current access token has to be readable without awaiting.
+ * This cache holds decrypted access tokens keyed by `(agentId, serverName)`,
+ * warmed on boot/sign-in and **refreshed in the background before expiry**, so the
+ * injection read path stays a plain synchronous map lookup.
+ *
+ * Every cached token carries an **absolute** `expiresAt` (epoch ms), never a
+ * relative lifetime — so a token loaded from disk after a restart is judged by
+ * when it was actually issued, not by when the process came back up (DOR-942, the
+ * restart-staleness fix). A token is returned only while it is live
+ * (`now < expiresAt`); an expired entry reads as absent so injection withholds the
+ * header — the safe default. Background refresh replaces the token ahead of that
+ * boundary; a failed refresh evicts the entry so the row falls back to needs-auth
+ * rather than injecting a stale token.
+ *
+ * @module services/mesh/agent-mcp-access-token-cache
+ */
+
+/** Refresh this many ms before a token's expiry, so injection never races the clock. */
+const REFRESH_SKEW_MS = 60_000;
+
+/** A cache key `(agentId, serverName)` joined by NUL, which no agent id or server name contains. */
+function cacheKey(agentId: string, serverName: string): string {
+  return `${agentId}\0${serverName}`;
+}
+
+/**
+ * A cached access token with an ABSOLUTE expiry — the shape both sign-in/warm and
+ * background refresh hand the cache, so expiry is judged consistently regardless
+ * of when the token was minted.
+ */
+export interface CachedToken {
+  /** The bearer access token. */
+  accessToken: string;
+  /** Absolute expiry (epoch ms); `Number.POSITIVE_INFINITY` = never expires on our clock. */
+  expiresAt: number;
+  /** Whether a background refresh can be scheduled (a refresh token exists). */
+  refreshable: boolean;
+}
+
+/** Injectable timer seam so tests drive scheduling without the platform clock. */
+export interface TimerScheduler {
+  /** Schedule `fn` after `delayMs`; the returned handle can be cleared. */
+  set(fn: () => void, delayMs: number): ReturnType<typeof setTimeout>;
+  /** Cancel a scheduled callback. */
+  clear(handle: ReturnType<typeof setTimeout>): void;
+}
+
+/** Default scheduler: `setTimeout`, unref'd so a pending refresh never holds the process open. */
+const defaultScheduler: TimerScheduler = {
+  set(fn, delayMs) {
+    const handle = setTimeout(fn, delayMs);
+    handle.unref?.();
+    return handle;
+  },
+  clear(handle) {
+    clearTimeout(handle);
+  },
+};
+
+/** One cached, live access token plus the machinery to refresh it before expiry. */
+interface CacheEntry {
+  accessToken: string;
+  expiresAt: number;
+  /** Obtain a fresh cached token, or `null` on failure (which evicts the entry). */
+  refresh: () => Promise<CachedToken | null>;
+  timer?: ReturnType<typeof setTimeout>;
+}
+
+/** Constructor seams for {@link McpAccessTokenCache} (production uses the defaults). */
+export interface McpAccessTokenCacheDeps {
+  /** Epoch-ms clock (defaults to `Date.now`); injected so expiry is testable. */
+  now?: () => number;
+  /** Timer seam (defaults to unref'd `setTimeout`); injected so scheduling is testable. */
+  scheduler?: TimerScheduler;
+}
+
+/**
+ * A process-lifetime cache of live managed-MCP access tokens, read synchronously
+ * at injection time and refreshed in the background before expiry.
+ */
+export class McpAccessTokenCache {
+  private readonly entries = new Map<string, CacheEntry>();
+  private readonly now: () => number;
+  private readonly scheduler: TimerScheduler;
+
+  constructor(deps: McpAccessTokenCacheDeps = {}) {
+    this.now = deps.now ?? Date.now;
+    this.scheduler = deps.scheduler ?? defaultScheduler;
+  }
+
+  /**
+   * The live access token for `(agentId, serverName)`, or `undefined` when none
+   * is cached or the cached one has expired. Synchronous by design — this is the
+   * exact call the injection read path makes.
+   *
+   * @param agentId - The owning agent's id.
+   * @param serverName - The managed server's name.
+   */
+  getAccessToken(agentId: string, serverName: string): string | undefined {
+    const entry = this.entries.get(cacheKey(agentId, serverName));
+    if (!entry) return undefined;
+    return this.now() < entry.expiresAt ? entry.accessToken : undefined;
+  }
+
+  /**
+   * Store a token for `(agentId, serverName)` and (re)schedule its background
+   * refresh from the token's ABSOLUTE `expiresAt`. Replaces any prior entry,
+   * cancelling its pending refresh first.
+   *
+   * @param agentId - The owning agent's id.
+   * @param serverName - The managed server's name.
+   * @param token - The cached token (access token + absolute expiry + refreshability).
+   * @param refresh - Produces the next cached token when the timer fires, or `null` on failure.
+   */
+  store(
+    agentId: string,
+    serverName: string,
+    token: CachedToken,
+    refresh: () => Promise<CachedToken | null>
+  ): void {
+    const key = cacheKey(agentId, serverName);
+    const previous = this.entries.get(key);
+    if (previous?.timer) this.scheduler.clear(previous.timer);
+
+    const entry: CacheEntry = {
+      accessToken: token.accessToken,
+      expiresAt: token.expiresAt,
+      refresh,
+    };
+    this.entries.set(key, entry);
+
+    if (token.expiresAt !== Number.POSITIVE_INFINITY && token.refreshable) {
+      const delay = Math.max(0, token.expiresAt - REFRESH_SKEW_MS - this.now());
+      entry.timer = this.scheduler.set(
+        () => void this.refreshNow(agentId, serverName).catch(() => {}),
+        delay
+      );
+    }
+  }
+
+  /**
+   * Run the refresh for `(agentId, serverName)` now: fetch the next cached token
+   * and either replace the entry (rescheduling) or evict it on failure. Also
+   * invoked by the scheduled timer.
+   *
+   * @param agentId - The owning agent's id.
+   * @param serverName - The managed server's name.
+   * @returns `true` when a fresh token replaced the entry, `false` when it was evicted.
+   * @internal Exercised directly by tests; production also reaches it via the timer.
+   */
+  async refreshNow(agentId: string, serverName: string): Promise<boolean> {
+    const key = cacheKey(agentId, serverName);
+    const entry = this.entries.get(key);
+    if (!entry) return false;
+    const next = await entry.refresh().catch(() => null);
+    // The entry may have been evicted/replaced while awaiting; only act if ours stands.
+    if (this.entries.get(key) !== entry) return this.entries.has(key);
+    if (!next) {
+      this.evict(agentId, serverName);
+      return false;
+    }
+    this.store(agentId, serverName, next, entry.refresh);
+    return true;
+  }
+
+  /**
+   * Drop the cached token for `(agentId, serverName)`, cancelling any pending
+   * refresh. The next injection withholds the header (needs-auth).
+   *
+   * @param agentId - The owning agent's id.
+   * @param serverName - The managed server's name.
+   */
+  evict(agentId: string, serverName: string): void {
+    const key = cacheKey(agentId, serverName);
+    const entry = this.entries.get(key);
+    if (entry?.timer) this.scheduler.clear(entry.timer);
+    this.entries.delete(key);
+  }
+
+  /** Cancel every pending refresh and empty the cache (shutdown). */
+  clear(): void {
+    for (const entry of this.entries.values()) {
+      if (entry.timer) this.scheduler.clear(entry.timer);
+    }
+    this.entries.clear();
+  }
+}

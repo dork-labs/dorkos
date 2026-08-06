@@ -280,6 +280,13 @@ export interface AgentMcpTestResult {
   toolCount?: number;
   /** The failure reason, when unreachable. */
   error?: string;
+  /**
+   * True when the probe failed specifically because the server demands OAuth
+   * sign-in (a 401 / unauthorized response), so the client can render
+   * "Needs sign-in" and offer the sign-in action rather than the raw error
+   * (DOR-942). Absent for reachable servers and for non-auth failures.
+   */
+  needsAuth?: boolean;
 }
 
 /** A lifecycle event recorded for an adapter instance. */

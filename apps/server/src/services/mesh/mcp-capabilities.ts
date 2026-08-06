@@ -35,6 +35,7 @@ import { defineCapability, type CapabilityDomain } from '../core/capabilities/in
 import type { CapabilityDeps, CapabilityHandlerContext } from '../core/capabilities/index.js';
 import { CapabilityToolError } from '../core/capabilities/mcp-envelope.js';
 import { AgentMcpServerError, type AgentMcpServerService } from './agent-mcp-server-service.js';
+import { mcpOAuthCustodyDisclosure, type AgentMcpOAuthService } from './agent-mcp-oauth-service.js';
 
 /** The service bundle the `mcp.*` capabilities read. */
 export interface McpCapabilityDeps {
@@ -42,6 +43,12 @@ export interface McpCapabilityDeps {
   service: AgentMcpServerService;
   /** The mesh agent registry — the same instance the service resolves workspace paths through. */
   agents: AgentRegistry;
+  /**
+   * The managed-MCP OAuth engine backing `mcp.signin`/`mcp.poll_signin` (DOR-942).
+   * Optional so a registry composed without it still exposes the management verbs;
+   * a sign-in call with it absent fails with a clear "sign-in unavailable" error.
+   */
+  oauth?: AgentMcpOAuthService;
   /**
    * Fallback connection resolver for `mcp.import`, used only when the agent's
    * workspace `.mcp.json` cannot resolve the named server. Boot wires it to the
@@ -99,6 +106,62 @@ function rethrowAsCapabilityError(err: unknown): never {
  */
 function resolveAddedBy(context: CapabilityHandlerContext): string {
   return context.identity?.agentPath ?? 'operator';
+}
+
+/**
+ * Resolve the remote URL of a managed server that can take an OAuth sign-in: it
+ * must exist on the agent, and it must be an http/sse (remote) transport — a
+ * stdio server has no OAuth endpoint. Errors are the caller-facing
+ * {@link CapabilityToolError} shape.
+ *
+ * @param service - The managed-server service (resolves the agent + its servers).
+ * @param agentId - The agent whose server is being signed into.
+ * @param name - The managed server's name.
+ * @returns The server's remote URL.
+ */
+async function resolveOAuthServerUrl(
+  service: AgentMcpServerService,
+  agentId: string,
+  name: string
+): Promise<string> {
+  let servers;
+  try {
+    servers = await service.list(agentId);
+  } catch (err) {
+    rethrowAsCapabilityError(err);
+  }
+  const server = servers.find((s) => s.name === name);
+  if (!server) {
+    throw new CapabilityToolError({
+      error: `Agent ${agentId} has no managed MCP server named "${name}".`,
+      code: 'SERVER_NOT_FOUND',
+    });
+  }
+  if (server.connection.transport === 'stdio') {
+    throw new CapabilityToolError({
+      error: `"${name}" is a local (stdio) server, which has no OAuth sign-in.`,
+      code: 'NOT_OAUTH_SERVER',
+    });
+  }
+  return server.connection.url;
+}
+
+/**
+ * Narrow the deps to the OAuth engine, failing with a clear error when a registry
+ * that owns `mcp.signin`/`mcp.poll_signin` was composed without one.
+ *
+ * @param deps - The registry's shared dependency bag.
+ * @returns The managed-MCP OAuth engine.
+ */
+function requireOAuth(deps: CapabilityDeps): AgentMcpOAuthService {
+  const { oauth } = requireMcpDeps(deps);
+  if (!oauth) {
+    throw new CapabilityToolError({
+      error: 'MCP sign-in is not available on this server.',
+      code: 'SIGNIN_UNAVAILABLE',
+    });
+  }
+  return oauth;
 }
 
 /** The `agentId` every verb is keyed by. */
@@ -321,7 +384,8 @@ export const mcpDomain: CapabilityDomain = {
       id: 'mcp.enable',
       title: 'Enable a managed MCP server',
       description:
-        'Enable a managed server so it is injected into the agent’s next session. No new ' +
+        'Enable a managed server so its tools are injected on the agent’s next turn — no ' +
+        'restart, a server enabled mid-conversation is live on the next message. No new ' +
         'command is introduced (it was approved at add), so no approval is needed.',
       tier: 'act',
       input: AgentServerInput,
@@ -347,8 +411,8 @@ export const mcpDomain: CapabilityDomain = {
       id: 'mcp.disable',
       title: 'Disable a managed MCP server',
       description:
-        'Disable a managed server, removing it from future session injection while keeping its ' +
-        'already-approved configuration on the manifest.',
+        'Disable a managed server, removing its tools from the next turn’s injection while ' +
+        'keeping its already-approved configuration on the manifest.',
       tier: 'act',
       input: AgentServerInput,
       output: ManagedServerListOutput,
@@ -375,13 +439,18 @@ export const mcpDomain: CapabilityDomain = {
       description:
         'Probe whether a managed server is reachable and how many tools it exposes. Safe by ' +
         'construction: it only ever connects to an already-approved entry, so it cannot run an ' +
-        'arbitrary command and bypass add’s gate. A failure is reported in-band.',
+        'arbitrary command and bypass add’s gate. A failure is reported in-band; an OAuth ' +
+        'server that needs sign-in reports needsAuth so the caller can offer mcp.signin.',
       tier: 'act',
       input: AgentServerInput,
       output: z.object({
         ok: z.boolean().describe('Whether the server connected and listed its tools.'),
         toolCount: z.number().optional().describe('How many tools it exposes, when reachable.'),
         error: z.string().optional().describe('The failure reason, when unreachable.'),
+        needsAuth: z
+          .boolean()
+          .optional()
+          .describe('True when the probe failed with a 401 and the server needs OAuth sign-in.'),
       }),
       surfaces: {
         mcp: {
@@ -398,6 +467,99 @@ export const mcpDomain: CapabilityDomain = {
         } catch (err) {
           rethrowAsCapabilityError(err);
         }
+      },
+    }),
+    defineCapability({
+      id: 'mcp.signin',
+      title: 'Start OAuth sign-in for a managed MCP server',
+      description:
+        'Begin signing in to an OAuth-protected managed server. Returns markdown with the ' +
+        'sign-in link and the custody disclosure — show BOTH to the user verbatim, then wait ' +
+        'for them to say they have signed in before calling mcp_poll_signin with the returned ' +
+        'flowId. DorkOS obtains and refreshes the token for you; the server’s tools become ' +
+        'callable on the next turn once connected.',
+      // `act`, not `destructive`: the operator already approved this server at
+      // `mcp.add` (a command-diff gate). Sign-in introduces no new command — it
+      // only stores a token for a server that is already trusted — so it needs no
+      // second approval, exactly like connector.start_connect.
+      tier: 'act',
+      input: AgentServerInput,
+      output: z.object({
+        flowId: z.string().describe('The sign-in flow id to pass to mcp_poll_signin.'),
+        authorizeUrl: z
+          .string()
+          .optional()
+          .describe('The sign-in link to open; absent when the server was already connected.'),
+        alreadyConnected: z
+          .boolean()
+          .describe('True when a live token already existed, so no browser step is needed.'),
+        disclosure: z.string().describe('The custody disclosure to show verbatim before the link.'),
+        message: z.string().describe('Ready-to-render markdown carrying the link and disclosure.'),
+      }),
+      surfaces: {
+        mcp: {
+          toolName: 'mcp_signin',
+          servers: ['in-session', 'external'],
+          annotations: { openWorldHint: true },
+        },
+      },
+      invoke: async (deps, input) => {
+        const { service } = requireMcpDeps(deps);
+        const oauth = requireOAuth(deps);
+        const serverUrl = await resolveOAuthServerUrl(service, input.agentId, input.name);
+        const disclosure = mcpOAuthCustodyDisclosure(input.name);
+        let started;
+        try {
+          started = await oauth.startSignin({
+            agentId: input.agentId,
+            serverName: input.name,
+            serverUrl,
+          });
+        } catch (err) {
+          throw new CapabilityToolError({
+            error: err instanceof Error ? err.message : 'Could not start the sign-in.',
+          });
+        }
+        const message = started.alreadyConnected
+          ? `You’re already signed in to ${input.name}. ${disclosure}`
+          : `[Sign in to ${input.name}](${started.authorizeUrl})\n\n${disclosure}\n\n` +
+            `Tell me when you’ve signed in, then I’ll check.`;
+        return {
+          flowId: started.flowId,
+          ...(started.authorizeUrl ? { authorizeUrl: started.authorizeUrl } : {}),
+          alreadyConnected: started.alreadyConnected,
+          disclosure,
+          message,
+        };
+      },
+    }),
+    defineCapability({
+      id: 'mcp.poll_signin',
+      title: 'Check an MCP sign-in flow',
+      description:
+        'Check whether an MCP sign-in the user was sent to complete has finished. Returns ' +
+        'pending, connected, or failed. Call after the user says they have signed in; once ' +
+        'connected, the server’s tools are injected on the next turn.',
+      tier: 'act',
+      input: z.object({
+        flowId: z.string().min(1).describe('The flow id from mcp_signin.'),
+      }),
+      output: z.object({
+        status: z
+          .enum(['pending', 'connected', 'failed'])
+          .describe('Whether the sign-in is still waiting, done, or failed.'),
+        error: z.string().optional().describe('The failure reason, when the status is failed.'),
+      }),
+      surfaces: {
+        mcp: {
+          toolName: 'mcp_poll_signin',
+          servers: ['in-session', 'external'],
+          annotations: { idempotentHint: true, openWorldHint: true },
+        },
+      },
+      invoke: async (deps, input) => {
+        const oauth = requireOAuth(deps);
+        return oauth.pollSignin(input.flowId);
       },
     }),
   ],
