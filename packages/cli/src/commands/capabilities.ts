@@ -14,7 +14,7 @@
  *
  * @module commands/capabilities
  */
-import { apiCall } from '../lib/api-client.js';
+import { fetchFullCatalog } from '../lib/capability-catalog.js';
 import { printError, printJson, renderTable } from '../lib/operator-output.js';
 
 /** Help text for `dorkos capabilities` (`--help`), rendered by the `cli.ts` interceptor. */
@@ -37,21 +37,6 @@ Options:
 Examples:
   dorkos capabilities
   dorkos capabilities --json`;
-
-/** One capability entry as returned by `GET /api/capabilities/catalog`. */
-interface CatalogCapability {
-  id: string;
-  title: string;
-  description: string;
-  tier: string;
-}
-
-/** The catalog payload as returned by `GET /api/capabilities/catalog`. */
-interface Catalog {
-  catalogVersion: string;
-  generatedAt: string;
-  capabilities: CatalogCapability[];
-}
 
 /** Parsed arguments for `dorkos capabilities`. */
 export interface CapabilitiesArgs {
@@ -86,7 +71,7 @@ export function parseCapabilitiesArgs(rawArgs: string[]): CapabilitiesArgs {
  */
 export async function runCapabilities(args: CapabilitiesArgs): Promise<number> {
   try {
-    const catalog = await apiCall<Catalog>('GET', '/api/capabilities/catalog');
+    const catalog = await fetchFullCatalog();
     if (args.json) {
       printJson(catalog);
       return 0;

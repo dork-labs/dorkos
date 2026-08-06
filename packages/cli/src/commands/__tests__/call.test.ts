@@ -79,7 +79,11 @@ describe('runCall', () => {
 
     const code = await runCall({ id: 'test.echo', input: { msg: 'hi' } });
     expect(code).toBe(0);
-    expect(apiCallMock).toHaveBeenNthCalledWith(1, 'GET', '/api/capabilities/catalog');
+    expect(apiCallMock).toHaveBeenNthCalledWith(
+      1,
+      'GET',
+      '/api/capabilities/catalog?detail=full&limit=200'
+    );
     expect(apiCallMock).toHaveBeenNthCalledWith(
       2,
       'POST',

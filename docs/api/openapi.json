@@ -15868,145 +15868,313 @@
           "Capabilities"
         ],
         "summary": "List capabilities",
-        "description": "List the DorkOS capabilities you can invoke by id: the live, versioned catalog of every entry on the capability registry, each with its id, title, description, permission tier (observe/act/destructive), input/output JSON Schema, and the surfaces (MCP tool, CLI verb, HTTP route) it projects onto. Run any of them with `dorkos call <id> [--input '<json>']`. This is NOT the full list of DorkOS tools: the tasks, relay, mesh, binding, trace, extension, devtools, ui tools are registered directly on the MCP server, so they appear in your own tool list rather than in this catalog and cannot be reached by `dorkos call`. They carry a permission tier all the same and answer to the same approval gate, so a tool being absent here is not a tool that runs unasked: `tasks_delete` and `mesh_unregister` are destructive and stop for a person. A destructive tool advertises an `approvalToken` argument, which is how you can tell one from its own schema. Call this to find out what is invocable by capability id and at what tier; look at your tool list for the rest.",
+        "description": "List the DorkOS capabilities you can invoke by id: the live, versioned catalog of every entry on the capability registry, each with its id, title, description, permission tier (observe/act/destructive), input/output JSON Schema, and the surfaces (MCP tool, CLI verb, HTTP route) it projects onto. Run any of them with `dorkos call <id> [--input '<json>']`. This is NOT the full list of DorkOS tools: the tasks, relay, mesh, binding, trace, extension, devtools, ui tools are registered directly on the MCP server, so they appear in your own tool list rather than in this catalog and cannot be reached by `dorkos call`. They carry a permission tier all the same and answer to the same approval gate, so a tool being absent here is not a tool that runs unasked: `tasks_delete` and `mesh_unregister` are destructive and stop for a person. A destructive tool advertises an `approvalToken` argument, which is how you can tell one from its own schema. Call this to find out what is invocable by capability id and at what tier; look at your tool list for the rest. By default a call returns a compact entry per capability (id, title, tier, and a one line summary), bounded to a page, so discovery does not flood your context. Pass `detail:'full'` for the input and output JSON Schema, `domain` to keep one id prefix (for example `domain:'mcp'`), `query` for a case insensitive substring over id, title, and description, and `limit` with `cursor` to page. When a page is capped it says how many were left out and how to narrow.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Return only capabilities in this id domain, e.g. 'mcp' matches every mcp.* id. Case-insensitive, exact domain match."
+            },
+            "required": false,
+            "description": "Return only capabilities in this id domain, e.g. 'mcp' matches every mcp.* id. Case-insensitive, exact domain match.",
+            "name": "domain",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Return only capabilities whose id, title, or description contains this text (case-insensitive substring)."
+            },
+            "required": false,
+            "description": "Return only capabilities whose id, title, or description contains this text (case-insensitive substring).",
+            "name": "query",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "compact",
+                "full"
+              ],
+              "description": "'compact' returns id, title, tier, and a one-line summary; 'full' adds the model-facing description and the input and output JSON Schemas. Defaults to compact, or to full when a domain or query filter is set."
+            },
+            "required": false,
+            "description": "'compact' returns id, title, tier, and a one-line summary; 'full' adds the model-facing description and the input and output JSON Schemas. Defaults to compact, or to full when a domain or query filter is set.",
+            "name": "detail",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "description": "Maximum entries to return in this page (1 to 200, default 50). When more match, the response carries a nextCursor."
+            },
+            "required": false,
+            "description": "Maximum entries to return in this page (1 to 200, default 50). When more match, the response carries a nextCursor.",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Opaque token from a previous response’s nextCursor. Omit for the first page."
+            },
+            "required": false,
+            "description": "Opaque token from a previous response’s nextCursor. Omit for the first page.",
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
         "responses": {
           "200": {
             "description": "List capabilities result",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "catalogVersion": {
-                      "type": "string"
-                    },
-                    "generatedAt": {
-                      "type": "string"
-                    },
-                    "capabilities": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "id": {
-                            "type": "string"
-                          },
-                          "title": {
-                            "type": "string"
-                          },
-                          "description": {
-                            "type": "string"
-                          },
-                          "tier": {
-                            "type": "string",
-                            "enum": [
-                              "observe",
-                              "act",
-                              "destructive"
-                            ]
-                          },
-                          "inputSchema": {
-                            "type": "object",
-                            "additionalProperties": {}
-                          },
-                          "outputSchema": {
-                            "type": "object",
-                            "additionalProperties": {}
-                          },
-                          "surfaces": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "catalogVersion": {
+                          "type": "string"
+                        },
+                        "generatedAt": {
+                          "type": "string"
+                        },
+                        "total": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "returned": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "offset": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "nextCursor": {
+                          "type": "string"
+                        },
+                        "guidance": {
+                          "type": "string"
+                        },
+                        "detail": {
+                          "type": "string",
+                          "enum": [
+                            "compact"
+                          ]
+                        },
+                        "capabilities": {
+                          "type": "array",
+                          "items": {
                             "type": "object",
                             "properties": {
-                              "mcp": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "title": {
+                                "type": "string"
+                              },
+                              "tier": {
+                                "type": "string",
+                                "enum": [
+                                  "observe",
+                                  "act",
+                                  "destructive"
+                                ]
+                              },
+                              "summary": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "title",
+                              "tier",
+                              "summary"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "catalogVersion",
+                        "generatedAt",
+                        "total",
+                        "returned",
+                        "offset",
+                        "detail",
+                        "capabilities"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "catalogVersion": {
+                          "type": "string"
+                        },
+                        "generatedAt": {
+                          "type": "string"
+                        },
+                        "total": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "returned": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "offset": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "nextCursor": {
+                          "type": "string"
+                        },
+                        "guidance": {
+                          "type": "string"
+                        },
+                        "detail": {
+                          "type": "string",
+                          "enum": [
+                            "full"
+                          ]
+                        },
+                        "capabilities": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "title": {
+                                "type": "string"
+                              },
+                              "description": {
+                                "type": "string"
+                              },
+                              "tier": {
+                                "type": "string",
+                                "enum": [
+                                  "observe",
+                                  "act",
+                                  "destructive"
+                                ]
+                              },
+                              "inputSchema": {
+                                "type": "object",
+                                "additionalProperties": {}
+                              },
+                              "outputSchema": {
+                                "type": "object",
+                                "additionalProperties": {}
+                              },
+                              "surfaces": {
                                 "type": "object",
                                 "properties": {
-                                  "toolName": {
-                                    "type": "string"
-                                  },
-                                  "servers": {
-                                    "type": "array",
-                                    "items": {
-                                      "type": "string",
-                                      "enum": [
-                                        "in-session",
-                                        "external"
-                                      ]
-                                    }
-                                  },
-                                  "readOnlyCarveOut": {
-                                    "type": "boolean"
-                                  },
-                                  "annotations": {
+                                  "mcp": {
                                     "type": "object",
                                     "properties": {
-                                      "openWorldHint": {
+                                      "toolName": {
+                                        "type": "string"
+                                      },
+                                      "servers": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "enum": [
+                                            "in-session",
+                                            "external"
+                                          ]
+                                        }
+                                      },
+                                      "readOnlyCarveOut": {
                                         "type": "boolean"
                                       },
-                                      "idempotentHint": {
-                                        "type": "boolean"
+                                      "annotations": {
+                                        "type": "object",
+                                        "properties": {
+                                          "openWorldHint": {
+                                            "type": "boolean"
+                                          },
+                                          "idempotentHint": {
+                                            "type": "boolean"
+                                          }
+                                        }
                                       }
-                                    }
-                                  }
-                                },
-                                "required": [
-                                  "toolName",
-                                  "servers"
-                                ]
-                              },
-                              "cli": {
-                                "type": "object",
-                                "properties": {
-                                  "verb": {
-                                    "type": "string"
-                                  },
-                                  "subcommand": {
-                                    "type": "string"
-                                  }
-                                },
-                                "required": [
-                                  "verb"
-                                ]
-                              },
-                              "http": {
-                                "type": "object",
-                                "properties": {
-                                  "method": {
-                                    "type": "string",
-                                    "enum": [
-                                      "get",
-                                      "post",
-                                      "put",
-                                      "patch",
-                                      "delete"
+                                    },
+                                    "required": [
+                                      "toolName",
+                                      "servers"
                                     ]
                                   },
-                                  "path": {
-                                    "type": "string"
+                                  "cli": {
+                                    "type": "object",
+                                    "properties": {
+                                      "verb": {
+                                        "type": "string"
+                                      },
+                                      "subcommand": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "verb"
+                                    ]
+                                  },
+                                  "http": {
+                                    "type": "object",
+                                    "properties": {
+                                      "method": {
+                                        "type": "string",
+                                        "enum": [
+                                          "get",
+                                          "post",
+                                          "put",
+                                          "patch",
+                                          "delete"
+                                        ]
+                                      },
+                                      "path": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "method",
+                                      "path"
+                                    ]
                                   }
-                                },
-                                "required": [
-                                  "method",
-                                  "path"
-                                ]
+                                }
                               }
-                            }
+                            },
+                            "required": [
+                              "id",
+                              "title",
+                              "description",
+                              "tier",
+                              "inputSchema",
+                              "outputSchema",
+                              "surfaces"
+                            ]
                           }
-                        },
-                        "required": [
-                          "id",
-                          "title",
-                          "description",
-                          "tier",
-                          "inputSchema",
-                          "outputSchema",
-                          "surfaces"
-                        ]
-                      }
+                        }
+                      },
+                      "required": [
+                        "catalogVersion",
+                        "generatedAt",
+                        "total",
+                        "returned",
+                        "offset",
+                        "detail",
+                        "capabilities"
+                      ]
                     }
-                  },
-                  "required": [
-                    "catalogVersion",
-                    "generatedAt",
-                    "capabilities"
                   ]
                 }
               }

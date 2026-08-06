@@ -66,7 +66,10 @@ describe('runCapabilities', () => {
   it('GETs the catalog and renders a table', async () => {
     apiCallMock.mockResolvedValue(CATALOG);
     expect(await runCapabilities({ json: false })).toBe(0);
-    expect(apiCallMock).toHaveBeenCalledWith('GET', '/api/capabilities/catalog');
+    expect(apiCallMock).toHaveBeenCalledWith(
+      'GET',
+      '/api/capabilities/catalog?detail=full&limit=200'
+    );
   });
 
   it('--json writes only the raw catalog to stdout', async () => {

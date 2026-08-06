@@ -25,11 +25,12 @@ import { operatorDomain } from '../../operator/operator-capabilities.js';
 import { marketplaceDomain } from '../../../marketplace-mcp/marketplace-capabilities.js';
 import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
 import type { MarketplaceMcpDeps } from '../../../marketplace-mcp/marketplace-mcp-tools.js';
+import { capabilitiesDomain, UNREGISTERED_TOOL_FAMILIES } from '../capabilities-domain.js';
 import {
-  capabilitiesDomain,
   capabilityCatalogSchema,
-  UNREGISTERED_TOOL_FAMILIES,
-} from '../capabilities-domain.js';
+  DEFAULT_CAPABILITY_LIMIT,
+  type ListCapabilitiesResult,
+} from '../catalog-projection.js';
 import { composeDorkOsCapabilityRegistry } from '../dorkos-registry.js';
 
 const stubOperatorDeps = {} as McpToolDeps;
@@ -80,6 +81,88 @@ describe('composeDorkOsCapabilityRegistry', () => {
     const catalog = registry.catalog();
     expect(() => capabilityCatalogSchema.parse(catalog)).not.toThrow();
     expect(catalog.catalogVersion).toMatch(/^[0-9a-f]{12}$/);
+  });
+});
+
+/**
+ * DOR-940: `list_capabilities` filters, paginates, and compacts by default so a
+ * discovery call cannot dump the whole schema catalog into an agent's context.
+ *
+ * These run through `registry.invoke('capabilities.list', ...)` — the real
+ * handler path the MCP tool and `dorkos call` both take — so reverting the
+ * handler back to `requireRegistry(deps).catalog()` reddens every one: the raw
+ * catalog has no `detail`/`total`, ignores `limit`/`domain`, and carries the
+ * heavy `inputSchema` on every entry. Counts are derived from the live catalog,
+ * never hard-coded, so they stay exact as domains are added.
+ */
+describe('list_capabilities filtering + pagination (DOR-940)', () => {
+  const registry = composeDorkOsCapabilityRegistry({
+    logger: noopLogger,
+    operatorDeps: stubOperatorDeps,
+    marketplaceDeps: stubMarketplaceDeps,
+  });
+  const allIds = registry.catalog().capabilities.map((c) => c.id);
+  const invoke = (input: unknown) =>
+    registry.invoke('capabilities.list', input) as Promise<ListCapabilitiesResult>;
+
+  it('a no-argument call returns the whole catalog once, compact and bounded', async () => {
+    const res = await invoke({});
+    expect(res.detail).toBe('compact');
+    expect(res.total).toBe(allIds.length);
+    expect(res.returned).toBe(Math.min(DEFAULT_CAPABILITY_LIMIT, allIds.length));
+    expect(res.capabilities).toHaveLength(res.returned);
+    // Compact entries carry a one-line summary and DROP the heavy schemas and
+    // full description that made the raw catalog overflow the token budget.
+    for (const entry of res.capabilities) {
+      expect(entry).toHaveProperty('summary');
+      expect(entry).not.toHaveProperty('inputSchema');
+      expect(entry).not.toHaveProperty('description');
+    }
+  });
+
+  it('domain:"marketplace" returns exactly the marketplace.* capabilities, at full detail', async () => {
+    const expected = allIds.filter((id) => id.startsWith('marketplace.')).sort();
+    expect(expected.length).toBeGreaterThan(0);
+    expect(expected.length).toBeLessThan(allIds.length); // a real filter, not the whole set
+
+    const res = await invoke({ domain: 'marketplace' });
+    expect(res.total).toBe(expected.length);
+    expect(res.returned).toBe(expected.length);
+    expect(res.capabilities.map((c) => c.id).sort()).toEqual(expected);
+    // A filter narrows detail to full, so the schemas are back for the few matches.
+    expect(res.detail).toBe('full');
+    for (const entry of res.capabilities) expect(entry).toHaveProperty('inputSchema');
+  });
+
+  it('an explicit detail:"compact" wins even when a filter is set', async () => {
+    const res = await invoke({ domain: 'marketplace', detail: 'compact' });
+    expect(res.detail).toBe('compact');
+    for (const entry of res.capabilities) expect(entry).not.toHaveProperty('inputSchema');
+  });
+
+  it('paging with a small limit reaches every capability, id-sorted, no duplicates', async () => {
+    const pageSize = 2;
+    const collected: string[] = [];
+    let cursor: string | undefined;
+    // Bound the loop well above the page count so a stuck cursor fails loudly.
+    for (let i = 0; i < allIds.length + 5; i += 1) {
+      const page = await invoke({ limit: pageSize, ...(cursor ? { cursor } : {}) });
+      expect(page.returned).toBeLessThanOrEqual(pageSize);
+      collected.push(...page.capabilities.map((c) => c.id));
+      if (!page.nextCursor) break;
+      cursor = page.nextCursor;
+    }
+    expect(collected).toEqual([...allIds].sort());
+    expect(new Set(collected).size).toBe(collected.length);
+  });
+
+  it('a capped page states how many were omitted and how to page on', async () => {
+    const page = await invoke({ limit: 2 });
+    expect(page.returned).toBe(2);
+    expect(page.total).toBe(allIds.length);
+    expect(page.nextCursor).toBeTruthy();
+    expect(page.guidance).toContain(String(allIds.length));
+    expect(page.guidance).toContain('cursor');
   });
 });
 

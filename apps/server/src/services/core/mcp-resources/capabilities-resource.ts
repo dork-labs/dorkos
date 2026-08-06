@@ -4,13 +4,15 @@
  * and the in-session `dorkos` tool server alike (see `index.ts` in this
  * directory).
  *
- * The resource returns the live self-description catalog: the same
- * {@link CapabilityRegistry.catalog} payload the `list_capabilities` tool and the
- * `GET /api/capabilities/catalog` route serve — every capability with its id,
+ * The resource returns the live self-description catalog: the FULL
+ * {@link CapabilityRegistry.catalog} payload — every capability with its id,
  * title, description, tier, input/output JSON Schema, and surfaces, plus a
- * content-hash `catalogVersion` an agent can cache on. Exposing it as a resource
- * (not just a tool) lets an MCP client pin it into context without spending a
- * tool call.
+ * content-hash `catalogVersion` an agent can cache on. The `list_capabilities`
+ * tool and the `GET /api/capabilities/catalog` route now PROJECT that catalog
+ * (filter, paginate, compact-by-default; DOR-940) so a discovery call cannot
+ * flood an agent's context; the resource deliberately pins the whole thing, which
+ * is what a resource is for — an MCP client pins it into context once without
+ * spending a tool call.
  *
  * @module services/core/mcp-resources/capabilities-resource
  */
