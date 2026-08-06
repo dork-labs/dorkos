@@ -31,6 +31,7 @@ import {
 import type { ChatMessage } from '../chat-types';
 import { deriveFromParts } from './stream-event-helpers';
 import { mapHistoryMessage } from './stream-history-helpers';
+import { foldCapabilityApproval, foldCapabilityApprovalResolved } from './capability-approval-fold';
 
 /** Stable id for the synthesized trailing in-progress assistant bubble. */
 const IN_PROGRESS_ASSISTANT_ID = '__in_progress_turn__';
@@ -711,6 +712,12 @@ export function projectInProgressTurn(events: SessionEvent[]): MessagePart[] {
         break;
       case 'elicitation_prompt':
         foldElicitation(parts, event);
+        break;
+      case 'capability_approval_required':
+        foldCapabilityApproval(parts, event);
+        break;
+      case 'capability_approval_resolved':
+        foldCapabilityApprovalResolved(parts, event);
         break;
       case 'interaction_resolved':
         foldInteractionResolved(parts, event);

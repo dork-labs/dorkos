@@ -208,6 +208,12 @@ const TURN_EVENT_TYPES: ReadonlySet<SessionEvent['type']> = new Set([
   // (compaction start→done) and the projection's failed-compaction row. The
   // bubble projection produces a part only for a `failed` phase (DOR-110).
   'operation_progress',
+  // An in-session capability approval hold and its resolution (DOR-939) ride the
+  // turn so the inline approval card folds into the bubble and retires on the
+  // resolution. They do NOT enter `pendingInteractions` — the hold has no
+  // recovery DTO; its card recovers from the in-progress-turn replay.
+  'capability_approval_required',
+  'capability_approval_resolved',
 ]);
 
 interface SessionStreamStoreState {
