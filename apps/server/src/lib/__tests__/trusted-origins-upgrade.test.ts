@@ -32,6 +32,9 @@ function facts(overrides: Partial<UpgradeOriginFacts> = {}): UpgradeOriginFacts 
     hostAllowed: true,
     configuredOrigins: undefined,
     forwardedProto: undefined,
+    // A plain socket, which is what the server always binds — TLS is terminated
+    // upstream, so `req.socket.encrypted` is falsy in production too.
+    connectionEncrypted: false,
     hostCheckInert: false,
     ownsNetworkBoundary: false,
     ...overrides,
@@ -99,16 +102,18 @@ describe('isTrustedUpgradeOrigin', () => {
 
   describe('the same-origin comparison', () => {
     it('accepts an exact match on host and port', () => {
+      // Plain socket, no proxy: the default scheme is `http`, so an `http` origin
+      // on the matching host and port is the same origin.
       expect(
         isTrustedUpgradeOrigin(
-          facts({ origin: 'https://box.example:8443', hostHeader: 'box.example:8443' })
+          facts({ origin: 'http://box.example:8443', hostHeader: 'box.example:8443' })
         )
       ).toBe(true);
     });
 
     it('normalizes case on both sides', () => {
       expect(
-        isTrustedUpgradeOrigin(facts({ origin: 'https://box.example', hostHeader: 'Box.Example' }))
+        isTrustedUpgradeOrigin(facts({ origin: 'http://box.example', hostHeader: 'Box.Example' }))
       ).toBe(true);
     });
 
@@ -120,11 +125,64 @@ describe('isTrustedUpgradeOrigin', () => {
       ).toBe(false);
     });
 
-    it('pins the scheme when a proxy names it, and accepts either when none does', () => {
+    it('pins the scheme to X-Forwarded-Proto when a proxy names it', () => {
+      const base = { hostHeader: 'box.example' } as const;
+      // The proxy says https; only the https origin on that host matches.
+      expect(
+        isTrustedUpgradeOrigin(
+          facts({ ...base, origin: 'https://box.example', forwardedProto: 'https' })
+        )
+      ).toBe(true);
+      expect(
+        isTrustedUpgradeOrigin(
+          facts({ ...base, origin: 'http://box.example', forwardedProto: 'https' })
+        )
+      ).toBe(false);
+      // The proxy says http; now it is the http origin that matches.
+      expect(
+        isTrustedUpgradeOrigin(
+          facts({ ...base, origin: 'http://box.example', forwardedProto: 'http' })
+        )
+      ).toBe(true);
+      expect(
+        isTrustedUpgradeOrigin(
+          facts({ ...base, origin: 'https://box.example', forwardedProto: 'http' })
+        )
+      ).toBe(false);
+    });
+
+    it('defaults the scheme to the connection’s own when no proxy names it', () => {
+      // No `X-Forwarded-Proto`, so the scheme falls back to this connection's
+      // encryption instead of accepting both. This closes DOR-932: on a bare
+      // host the two schemes are different servers, so accepting either widened
+      // the reverse-proxy case. The server always binds plain HTTP.
       const base = { origin: 'http://box.example', hostHeader: 'box.example' } as const;
+      // Plain socket (the production default): only http is this origin.
       expect(isTrustedUpgradeOrigin(facts(base))).toBe(true);
-      expect(isTrustedUpgradeOrigin(facts({ ...base, forwardedProto: 'https' }))).toBe(false);
-      expect(isTrustedUpgradeOrigin(facts({ ...base, forwardedProto: 'http' }))).toBe(true);
+      expect(
+        isTrustedUpgradeOrigin(facts({ ...base, origin: 'https://box.example' })),
+        'https is a different server; a plaintext page must not open a secure stream'
+      ).toBe(false);
+      // A TLS socket (not reachable in this server, but the fact is honoured):
+      // the default flips to https.
+      expect(
+        isTrustedUpgradeOrigin(
+          facts({
+            origin: 'https://box.example',
+            hostHeader: 'box.example',
+            connectionEncrypted: true,
+          })
+        )
+      ).toBe(true);
+      expect(
+        isTrustedUpgradeOrigin(
+          facts({
+            origin: 'http://box.example',
+            hostHeader: 'box.example',
+            connectionEncrypted: true,
+          })
+        )
+      ).toBe(false);
     });
 
     it('does not run at all when the host is not allowed', () => {

@@ -227,11 +227,21 @@ export interface UpgradeOriginFacts {
    * `X-Forwarded-Proto`, when a proxy set it — the upgrade's equivalent of the
    * `trust proxy` that lets `req.protocol` see through Caddy or ngrok.
    *
-   * Present, it pins the same-origin comparison to ONE scheme. Absent, both are
-   * accepted, because a TLS-terminating proxy that forwards neither the scheme
-   * nor a trusted host would otherwise be unserviceable.
+   * Present, it pins the same-origin comparison to ONE scheme. Absent, the
+   * comparison falls back to {@link connectionEncrypted} — this connection's own
+   * encryption — rather than accepting both.
    */
   forwardedProto: string | undefined;
+  /**
+   * Whether the socket this upgrade arrived on is TLS-encrypted
+   * (`req.socket.encrypted`). Consulted only when no `X-Forwarded-Proto` names
+   * the scheme: it defaults the same-origin comparison to this connection's own
+   * encryption — `https` when the socket is TLS, `http` otherwise — instead of
+   * accepting both schemes. The server never terminates TLS itself (TLS is
+   * always terminated by an upstream proxy), so in practice this is `false` and
+   * the default is `http`, matching what `buildCors` pins on the HTTP path.
+   */
+  connectionEncrypted: boolean;
   /**
    * Whether the host pairing below may stand down.
    *
@@ -361,16 +371,20 @@ function isIpLiteralHost(hostHeader: string | undefined): boolean {
  * ## The scheme, when no proxy names it
  *
  * With `X-Forwarded-Proto` the comparison is pinned to that one scheme. Without
- * it, BOTH schemes are accepted for the same `Host`. That is exact when `Host`
- * carries a port, because nothing but the server on that port can hold it. It
- * is a real (small) widening when `Host` has no port — the reverse-proxy case:
- * `http://example.com` is port 80 and `https://example.com` is 443, which are
- * different servers, so a script an attacker controls on the **plaintext**
- * vhost of that same name would match. The nginx and Caddy configs this repo
- * ships both set `X-Forwarded-Proto`, which closes it; the residual is a custom
- * proxy that forwards neither the scheme nor a trusted host. Forging the header
- * cannot widen anything — supplying it replaces the two-scheme OR with a single
- * equality.
+ * it, the scheme defaults to this connection's OWN encryption — `https` when the
+ * socket is TLS, `http` otherwise — the same single scheme `buildCors` pins on
+ * the HTTP path, where `req.protocol` is the forwarded scheme when a proxy names
+ * one and `http` otherwise. Because the server never terminates TLS itself
+ * (`index.ts` binds plain HTTP; a proxy always terminates upstream), a bare
+ * socket resolves to `http`, so only `http://<host>` is accepted. That closes
+ * the widening an accept-either fallback would leave open: `http://example.com`
+ * is port 80 and `https://example.com` is 443, which are different servers, so
+ * accepting both would let a script on the **plaintext** vhost of that name
+ * match a secure cockpit of the same name. The nginx and Caddy configs this repo
+ * ships both set `X-Forwarded-Proto`, so the scheme is pinned there; a custom
+ * proxy that forwards neither the scheme nor a trusted host now resolves to
+ * `http`, fail-closed. Forging the header cannot widen anything — supplying it
+ * only replaces the connection default with a single equality.
  *
  * Branch 4 is additionally **paired with the host allowlist**, which is why
  * `hostAllowed` is required rather than assumed. A DNS-rebound page at
@@ -421,10 +435,15 @@ export function isTrustedUpgradeOrigin(facts: UpgradeOriginFacts): boolean {
   // sends `Origin` already normalized (lower-cased, no path, no trailing
   // slash, no credentials), so anything that does not compare equal is not the
   // page this server served.
-  const proto = facts.forwardedProto?.trim().toLowerCase().split(',')[0]?.trim();
-  if (proto) return candidate === `${proto}://${host}`;
-  // No proxy said which scheme it terminated, so either is accepted for the
-  // SAME host and port. That latitude spans only http-vs-https on one
-  // authority, which is not a boundary a page can cross by choosing a port.
-  return candidate === `http://${host}` || candidate === `https://${host}`;
+  // The scheme, pinned. A proxy that named it (`X-Forwarded-Proto`) wins;
+  // otherwise default to this connection's own encryption — `http` for the plain
+  // socket the server always binds, since TLS is terminated upstream. That is
+  // the scheme `buildCors` pins on the HTTP path, and it is a single equality,
+  // not the accept-either that once widened the reverse-proxy case: `http://` and
+  // `https://` on one name are different servers, so accepting both let a page on
+  // the plaintext vhost of that name match a secure cockpit.
+  const proto =
+    facts.forwardedProto?.trim().toLowerCase().split(',')[0]?.trim() ??
+    (facts.connectionEncrypted ? 'https' : 'http');
+  return candidate === `${proto}://${host}`;
 }

@@ -381,13 +381,15 @@ describe('attachUpgradeRouter', () => {
     it('accepts an Origin that matches the request Host it was reached on', async () => {
       // The reverse-proxy / LAN-IP / https case: the operator lists the host in
       // DORKOS_TRUSTED_HOSTS (as the proxy docs already say), and same-origin
-      // then covers every scheme and port without enumerating them.
+      // then covers the port without enumerating it. A TLS-terminating proxy
+      // sets `X-Forwarded-Proto`, which pins the scheme to what the browser saw.
       mutableEnv.DORKOS_TRUSTED_HOSTS = 'dorkos.example.com';
       try {
         await listen([acceptingRoute]);
         const result = await attempt('/api/accept', {
           origin: 'https://dorkos.example.com',
           host: 'dorkos.example.com',
+          'x-forwarded-proto': 'https',
         });
         expect(result.opened).toBe(true);
       } finally {
@@ -474,9 +476,11 @@ describe('attachUpgradeRouter', () => {
       try {
         await listen([acceptingRoute]);
 
+        // The proxy terminated TLS and names the scheme it served the browser.
         const result = await attempt('/api/accept', {
           origin: 'https://dorkos.example.com',
           host: 'dorkos.example.com',
+          'x-forwarded-proto': 'https',
         });
 
         expect(result.opened).toBe(true);
@@ -505,6 +509,31 @@ describe('attachUpgradeRouter', () => {
           'x-forwarded-proto': 'https',
         });
         expect(mismatched.httpStatus, 'the proxy said https; http is not that origin').toBe(403);
+      } finally {
+        mutableEnv.DORKOS_TRUSTED_HOSTS = undefined;
+      }
+    });
+
+    it('defaults to the connection scheme when no proxy names one (DOR-932)', async () => {
+      // The server binds plain HTTP, so the socket is unencrypted and the scheme
+      // defaults to `http`. Without this, an accept-either fallback let an
+      // `https` origin — a different server on the same name — open the stream a
+      // plaintext page never should. Same single scheme `buildCors` pins.
+      mutableEnv.DORKOS_TRUSTED_HOSTS = 'dorkos.example.com';
+      try {
+        await listen([acceptingRoute]);
+
+        const plaintext = await attempt('/api/accept', {
+          origin: 'http://dorkos.example.com',
+          host: 'dorkos.example.com',
+        });
+        expect(plaintext.opened, 'the plain scheme the socket actually served').toBe(true);
+
+        const secure = await attempt('/api/accept', {
+          origin: 'https://dorkos.example.com',
+          host: 'dorkos.example.com',
+        });
+        expect(secure.httpStatus, 'https on a plaintext socket is a different origin').toBe(403);
       } finally {
         mutableEnv.DORKOS_TRUSTED_HOSTS = undefined;
       }
@@ -900,6 +929,7 @@ describe('attachUpgradeRouter', () => {
         const result = await attempt('/api/accept', {
           origin: 'https://dorkos.example.com',
           host: 'DorkOS.Example.COM',
+          'x-forwarded-proto': 'https',
         });
 
         expect(result.opened).toBe(true);

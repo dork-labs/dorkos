@@ -18,6 +18,7 @@
  */
 import type { IncomingHttpHeaders, IncomingMessage, Server } from 'node:http';
 import type { Duplex } from 'node:stream';
+import type { TLSSocket } from 'node:tls';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { STREAM_CLOSE_CODE_BASE } from '@dorkos/shared/stream-socket';
 import {
@@ -120,14 +121,12 @@ export interface UpgradeRoute {
  * DNS-rebound onto this port. The policy itself — and why it is not a bare
  * allowlist — lives in {@link isTrustedUpgradeOrigin}.
  *
- * @param headers - The upgrade request's headers.
+ * @param req - The upgrade request, for its headers and its socket's encryption.
  * @param credential - The claimed route's posture, which decides whether the
  *   host pairing may stand down.
  */
-function originIsTrusted(
-  headers: IncomingHttpHeaders,
-  credential: UpgradeRoute['credential']
-): boolean {
+function originIsTrusted(req: IncomingMessage, credential: UpgradeRoute['credential']): boolean {
+  const headers = req.headers;
   // The host pairing stands down ONLY for a credential-gated route with login
   // on, where an origin-scoped auth cookie already turns a rebound origin away.
   //
@@ -164,6 +163,11 @@ function originIsTrusted(
     forwardedProto: Array.isArray(headers['x-forwarded-proto'])
       ? headers['x-forwarded-proto'][0]
       : headers['x-forwarded-proto'],
+    // When no proxy names the scheme, the same-origin comparison defaults to
+    // the connection's own encryption. The server binds plain HTTP (TLS is
+    // terminated upstream), so this is always falsy in practice and the default
+    // resolves to `http` — matching what `buildCors` pins on the HTTP path.
+    connectionEncrypted: Boolean((req.socket as TLSSocket).encrypted),
     hostCheckInert,
   });
 }
@@ -218,7 +222,7 @@ export function attachUpgradeRouter(server: Server, routes: readonly UpgradeRout
     void (async () => {
       /** Resolve the decision; every refusal path returns one rather than replying. */
       const decide = async (): Promise<UpgradeDecision> => {
-        if (!originIsTrusted(req.headers, claimed.route.credential)) {
+        if (!originIsTrusted(req, claimed.route.credential)) {
           logger.warn('[ws] refused an upgrade from an untrusted Origin', {
             route: claimed.route.name,
             origin: req.headers.origin,
