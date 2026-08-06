@@ -138,8 +138,8 @@ ADRs are seeded by the `/flow:specify` stage (when the flow plugin is loaded) or
 - **Relations**: `supersededBy`/`supersedes` (full replacement), `amends` (partial — id or list)
 - **`lastVerified`**: manifest-only date stamped by `/adr:audit`; never lives in frontmatter, so
   audits don't churn ADR files
-- **`affects`**: optional path globs naming the code a decision governs — backfilled by audits,
-  encouraged on new ADRs
+- **`affects`**: optional path globs naming the code a decision governs — manifest-only, like
+  `lastVerified`; backfilled by audits
 - **Integrity**: `adr-drift-check.mjs` (SessionStart, silent when clean) validates files ⇄ manifest,
   links, and relation contradictions; `adr-staleness-scan.mjs` (on demand) finds stale citations,
   dead paths, and builds the audit worklist

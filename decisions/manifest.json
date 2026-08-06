@@ -111,7 +111,8 @@
       "slug": "a-permission-decision-is-recorded-for-every-session",
       "title": "A permission decision is recorded for every session, and overlaid back onto runtime-owned history",
       "status": "accepted",
-      "created": "2026-08-01"
+      "created": "2026-08-01",
+      "amends": "260731-211050"
     },
     {
       "id": "260801-003051",

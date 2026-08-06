@@ -1,7 +1,8 @@
 /**
  * Hand-authored declarations for adr-staleness-scan.mjs so `scripts/__tests__/`
  * (strict, NodeNext) can import the scanner without an implicit `any`.
- * Keep in sync with the runtime exports — the pin suite exercises every one.
+ * Keep in sync with the runtime exports (1:1, whether or not the pin suite
+ * imports a given one).
  */
 import type { ManifestDecision } from './adr-drift-check.mjs';
 
@@ -36,7 +37,7 @@ export interface ScanResult {
 }
 
 export declare const CITATION_RE: RegExp;
-export declare function walkFiles(root: string, out?: string[]): string[];
+export declare function walkFiles(root: string, out?: string[], seenDirs?: Set<string>): string[];
 export declare function findStaleCitations(
   files: string[],
   statusByKey: Map<string, string>,

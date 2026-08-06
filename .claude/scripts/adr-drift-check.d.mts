@@ -1,7 +1,8 @@
 /**
  * Hand-authored declarations for adr-drift-check.mjs so `scripts/__tests__/`
  * (strict, NodeNext) can import the checker without an implicit `any`.
- * Keep in sync with the runtime exports — the pin suite exercises every one.
+ * Keep in sync with the runtime exports (1:1, whether or not the pin suite
+ * imports a given one).
  */
 
 /** One entry in `decisions/manifest.json` → `decisions[]`. */
@@ -23,7 +24,11 @@ export interface ManifestDecision {
 
 export interface LinkIssue {
   key: string;
-  kind: 'superseded-without-link' | 'dangling' | 'supersedes-live-target' | 'amends-terminal-target';
+  kind:
+    | 'superseded-without-link'
+    | 'dangling'
+    | 'supersedes-live-target'
+    | 'amends-terminal-target';
   field?: string;
   target?: string;
   targetStatus?: string;
@@ -43,5 +48,6 @@ export declare const FILE_RE: RegExp;
 export declare function keyOf(entry: Pick<ManifestDecision, 'id' | 'number'>): string;
 export declare function normalizeKey(value: unknown): string | null;
 export declare function readFrontmatter(text: string): Record<string, string>;
+export declare function relationKeys(value: unknown): string[];
 export declare function findDrift(decisionsDir: string): DriftFindings;
 export declare function formatReport(findings: DriftFindings): string[];

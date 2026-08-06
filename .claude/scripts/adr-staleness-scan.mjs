@@ -23,7 +23,7 @@
  *   node .claude/scripts/adr-staleness-scan.mjs --json      # worklist for /adr:audit
  *   node .claude/scripts/adr-staleness-scan.mjs --max-age-days=90
  */
-import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, statSync, realpathSync } from 'node:fs';
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { keyOf, normalizeKey } from './adr-drift-check.mjs';
@@ -73,8 +73,12 @@ const SCAN_EXTS = new Set(['.ts', '.tsx', '.js', '.mjs', '.md', '.mdx', '.sh']);
 /** The checkers' own pin suite must contain fake/stale citations as fixtures. */
 const SKIP_FILES = new Set(['adr-corpus-checks.test.ts']);
 
-/** Recursively collect scannable files under a root, skipping generated dirs. */
-export function walkFiles(root, out = []) {
+/**
+ * Recursively collect scannable files under a root, skipping generated dirs.
+ * Directories dedupe by realpath so symlinked trees (all of `.claude/skills`)
+ * are read once and a link cycle cannot hang the scan.
+ */
+export function walkFiles(root, out = [], seenDirs = new Set()) {
   if (!existsSync(root)) return out;
   const stat = statSync(root);
   if (stat.isFile()) {
@@ -82,9 +86,12 @@ export function walkFiles(root, out = []) {
     if (SCAN_EXTS.has(ext)) out.push(root);
     return out;
   }
+  const real = realpathSync(root);
+  if (seenDirs.has(real)) return out;
+  seenDirs.add(real);
   for (const name of readdirSync(root)) {
     if (SKIP_DIRS.has(name) || SKIP_FILES.has(name)) continue;
-    walkFiles(join(root, name), out);
+    walkFiles(join(root, name), out, seenDirs);
   }
   return out;
 }
@@ -225,7 +232,8 @@ export function scan(repoRoot, { maxAgeDays = 120, now = Date.now() } = {}) {
   }
 
   const worklist = buildWorklist(entries, citationCounts, deadPathsByKey, maxAgeDays, now);
-  return { staleCitations, deadPathsByKey, worklist, acceptedCount: statusByKey.size };
+  const acceptedCount = entries.filter((d) => d.status === 'accepted').length;
+  return { staleCitations, deadPathsByKey, worklist, acceptedCount };
 }
 
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
@@ -234,6 +242,10 @@ if (isMain) {
   const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
   const maxAgeFlag = process.argv.find((a) => a.startsWith('--max-age-days='));
   const maxAgeDays = maxAgeFlag ? Number(maxAgeFlag.split('=')[1]) : 120;
+  if (!Number.isFinite(maxAgeDays) || maxAgeDays <= 0) {
+    console.error(`invalid --max-age-days: ${maxAgeFlag}`);
+    process.exit(1);
+  }
   const { staleCitations, deadPathsByKey, worklist } = scan(repoRoot, { maxAgeDays });
 
   if (process.argv.includes('--json')) {

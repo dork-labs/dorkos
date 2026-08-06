@@ -5,8 +5,8 @@ status: proposed | accepted | deprecated | superseded | archived
 created: YYYY-MM-DD
 spec: [slug or null]
 superseded-by: [id or null]
-amends: [id, list of ids, or null — parent ADRs this decision partially replaces; they stay accepted]
-affects: [optional list of path globs this decision governs, e.g. ['apps/server/src/services/relay/**']]
+amends:
+  [id, list of ids, or null — parent ADRs this decision partially replaces; they stay accepted]
 ---
 
 # [id]. [Title]

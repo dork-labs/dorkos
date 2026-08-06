@@ -71,7 +71,9 @@ Use the template from `decisions/TEMPLATE.md`.
 - `spec`: Related spec slug or `null`
 - `superseded-by`: `null` (unless superseding)
 - `amends`: parent id (or list) when partially replacing an ADR that stays accepted; omit otherwise
-- `affects`: optional path globs this decision governs (helps audits and PR-time surfacing)
+
+Operational metadata (`affects` path globs, `lastVerified`) lives **only** in the manifest entry,
+never in frontmatter — audits update it without churning ADR files.
 
 **Content guidelines (invoke `writing-adrs` skill):**
 

@@ -3,7 +3,7 @@ id: 260801-035912
 title: A permission decision is recorded for every session, and overlaid back onto runtime-owned history
 status: accepted
 created: 2026-08-01
-supersedes: 260731-211050
+amends: 260731-211050
 superseded-by: null
 ---
 

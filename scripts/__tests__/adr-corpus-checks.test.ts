@@ -196,6 +196,66 @@ describe('findDrift — integrity violations', () => {
     ]);
   });
 
+  it('flags a frontmatter supersedes/amends relation absent from the manifest', () => {
+    const dir = makeCorpus(
+      [
+        accepted(1, 'parent'),
+        { id: '260801-035912', slug: 'widener', status: 'accepted', created: '2026-08-01' },
+      ],
+      {
+        '260801-035912-widener.md':
+          '---\nstatus: accepted\nsupersedes: 0001\nsuperseded-by: null\n---\n',
+      }
+    );
+    expect(findDrift(dir).frontmatterDrift).toContainEqual({
+      key: '260801-035912',
+      field: 'supersedes',
+      file: '0001',
+      manifest: 'absent',
+    });
+  });
+
+  it('accepts frontmatter relations the manifest mirrors, including inline lists and annotations', () => {
+    const dir = makeCorpus(
+      [
+        accepted(1, 'parent-a'),
+        accepted(2, 'parent-b'),
+        {
+          id: '260701-010101',
+          slug: 'multi',
+          status: 'accepted',
+          created: '2026-07-01',
+          amends: [1, 2],
+        },
+      ],
+      {
+        '260701-010101-multi.md':
+          '---\nstatus: accepted\namends: [0001, 0002 (one clause only)]\nsuperseded-by: null\n---\n',
+      }
+    );
+    expect(findDrift(dir).frontmatterDrift).toEqual([]);
+  });
+
+  it('parses CRLF frontmatter identically to LF', () => {
+    const dir = makeCorpus([accepted(7, 'windows')], {
+      '0007-windows.md': '---\r\nstatus: deprecated\r\nsuperseded-by: null\r\n---\r\n',
+    });
+    expect(findDrift(dir).frontmatterDrift).toContainEqual({
+      key: '0007',
+      field: 'status',
+      file: 'deprecated',
+      manifest: 'accepted',
+    });
+  });
+
+  it('names the other node in a two-node cycle', () => {
+    const dir = makeCorpus([
+      { number: 1, slug: 'a', status: 'superseded', created: '2026-03-01', supersededBy: 2 },
+      { number: 2, slug: 'b', status: 'superseded', created: '2026-03-02', supersededBy: 1 },
+    ]);
+    expect(findDrift(dir).cycles).toContainEqual({ key: '0001', via: '0002' });
+  });
+
   it('flags a frontmatter superseded-by the manifest never recorded', () => {
     const dir = makeCorpus(
       [

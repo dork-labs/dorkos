@@ -54,17 +54,39 @@ export function normalizeKey(value) {
 
 /**
  * Parse the leading `---` frontmatter block into a flat map of scalar fields.
- * Good enough for ADR frontmatter (no nesting, no lists across lines).
+ * Good enough for ADR frontmatter (no nesting, no lists across lines); CRLF
+ * files parse the same as LF ones.
  */
 export function readFrontmatter(text) {
-  const match = /^---\n([\s\S]*?)\n---/.exec(text);
+  const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
   if (!match) return {};
   const fields = {};
-  for (const line of match[1].split('\n')) {
+  for (const line of match[1].split(/\r?\n/)) {
     const m = /^([\w-]+):\s*(.*)$/.exec(line);
     if (m) fields[m[1]] = m[2].trim();
   }
   return fields;
+}
+
+/**
+ * Normalize a relation value — scalar, `[a, b]` inline list, or manifest
+ * array — into a sorted list of keys. Annotations after the id (e.g.
+ * `'260726-193526 (Integration half only)'`) reduce to the id.
+ */
+export function relationKeys(value) {
+  if (value == null) return [];
+  const parts = Array.isArray(value)
+    ? value
+    : String(value)
+        .replace(/^\[|\]$/g, '')
+        .split(',');
+  return parts
+    .map((part) => {
+      const m = /(\d{6}-\d{6}|\d{1,4})/.exec(String(part));
+      return m ? normalizeKey(m[1]) : null;
+    })
+    .filter(Boolean)
+    .sort();
 }
 
 /**
@@ -118,6 +140,20 @@ export function findDrift(decisionsDir) {
         manifest: manifestLink ?? 'null',
       });
     }
+    // Frontmatter relations must be a subset of the manifest's — the manifest
+    // is the machine-readable index, so a frontmatter-only `supersedes`/`amends`
+    // is invisible to every consumer (how a live contradiction hid pre-2026-08).
+    // The reverse direction stays legal: legacy entries carry manifest-only links.
+    for (const field of ['supersedes', 'amends']) {
+      const fmKeys = relationKeys(fm[field]);
+      if (fmKeys.length === 0) continue;
+      const manifestKeys = new Set(relationKeys(entry[field]));
+      for (const target of fmKeys) {
+        if (!manifestKeys.has(target)) {
+          frontmatterDrift.push({ key, field, file: target, manifest: 'absent' });
+        }
+      }
+    }
   }
 
   const missingFiles = entries.filter((d) => !fileKeys.has(keyOf(d)));
@@ -157,13 +193,15 @@ export function findDrift(decisionsDir) {
   for (const entry of entries) {
     const start = keyOf(entry);
     const seen = new Set([start]);
+    let previous = start;
     let current = normalizeKey(entry.supersededBy);
     while (current && byKey.has(current)) {
       if (seen.has(current)) {
-        cycles.push({ key: start, via: current });
+        cycles.push({ key: start, via: previous });
         break;
       }
       seen.add(current);
+      previous = current;
       current = normalizeKey(byKey.get(current).supersededBy);
     }
   }
@@ -240,7 +278,9 @@ if (isMain) {
     try {
       lines = formatReport(findDrift(decisionsDir));
     } catch {
-      // A malformed manifest is its own problem; don't crash the hook.
+      // Total corruption must not be the one state both integrity tools stay
+      // silent about — one line, still exit 0 so the hook never blocks.
+      lines = ['[ADR Drift] decisions/manifest.json is unreadable (JSON parse failed)'];
     }
     if (lines.length > 0) console.log(lines.join('\n'));
   }
