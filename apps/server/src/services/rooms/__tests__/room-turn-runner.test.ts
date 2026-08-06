@@ -398,27 +398,42 @@ describe('createSessionRoomTurnRunner', () => {
   it('hands back an answer that outran the wait instead of dropping it', async () => {
     // The turn is still open when the runner returns, so `run` cannot resolve
     // before the deadline and the assertion below cannot race it.
-    let finishTurn = (): void => undefined;
-    turnBehaviour = (opts) => {
-      const { sessionId, projector } = opts;
-      openTurn(opts);
-      finishTurn = () => {
-        projector.ingest({ type: 'text_delta', text: 'green' });
-        projector.ingest({ type: 'turn_end' });
+    //
+    // Fake timers, deliberately (DOR-933): under real timers a 5ms
+    // `setTimeout` can fire a hair under 5ms of wall clock, and
+    // `Date.now()` — millisecond-quantized — rounds that down to 4,
+    // flaking the exact-value assertion below. Fake timers make `Date.now()`
+    // advance in lockstep with the timer queue, so `waitedMs` is exactly the
+    // configured wait.
+    vi.useFakeTimers();
+    try {
+      let finishTurn = (): void => undefined;
+      turnBehaviour = (opts) => {
+        const { sessionId, projector } = opts;
+        openTurn(opts);
+        finishTurn = () => {
+          projector.ingest({ type: 'text_delta', text: 'green' });
+          projector.ingest({ type: 'turn_end' });
+        };
+        return { accepted: true, canonicalId: sessionId };
       };
-      return { accepted: true, canonicalId: sessionId };
-    };
 
-    const result = await createSessionRoomTurnRunner({ waitMs: () => 5 }).run(request());
-    expect(result.text).toBeNull();
-    expect(result.unanswered).toBeUndefined();
-    expect(result.late).toBeDefined();
+      const running = createSessionRoomTurnRunner({ waitMs: () => 5 }).run(request());
+      await vi.advanceTimersByTimeAsync(1);
+      await vi.advanceTimersByTimeAsync(4);
+      const result = await running;
+      expect(result.text).toBeNull();
+      expect(result.unanswered).toBeUndefined();
+      expect(result.late).toBeDefined();
 
-    finishTurn();
-    const late = await result.late;
-    expect(late?.text).toBe('green');
-    expect(late?.unanswered).toBeUndefined();
-    expect(late?.waitedMs).toBeGreaterThanOrEqual(5);
+      finishTurn();
+      const late = await result.late;
+      expect(late?.text).toBe('green');
+      expect(late?.unanswered).toBeUndefined();
+      expect(late?.waitedMs).toBe(5);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('never posts the half of an answer it had when the wait ran out', async () => {
