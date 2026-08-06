@@ -207,6 +207,15 @@ jobs:
       - name: Seeded-pack scoping fixtures
         run: bash scripts/test-seeded-pack-changed.sh
 
+      # check-dir-size.sh is the pre-commit dir-size guard (lefthook's
+      # `dir-size` job). Its blocking growth tier and its non-blocking,
+      # repo-wide census tier (DOR-930) both fail quietly: a matcher that
+      # stops selecting a directory does not crash, it just never mentions
+      # that directory again. Hermetic (throwaway git repos in a temp dir),
+      # so it never reads this repo's real directories or thresholds.
+      - name: Dir-size guard fixtures
+        run: bash scripts/test-check-dir-size.sh
+
   # The TypeScript under scripts/ belongs to no pnpm workspace, so `pnpm verify`'s
   # affected-only turbo run resolves a scripts-only change to 0 affected packages
   # and covers none of it. Without this job the Q3 harness — its overlap and work
