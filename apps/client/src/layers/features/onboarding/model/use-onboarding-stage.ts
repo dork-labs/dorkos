@@ -11,7 +11,8 @@
  * @module features/onboarding/model/use-onboarding-stage
  */
 import { useCallback, useEffect, useRef } from 'react';
-import { useNavigate, useRouter, useSearch } from '@tanstack/react-router';
+import { useRouter, useSearch } from '@tanstack/react-router';
+import { useInPlaceNavigate } from '@/layers/shared/model';
 import { isOnboardingStage, type OnboardingStage } from './onboarding-stage';
 
 /** Route-agnostic search updater — the overlay may sit over any route. */
@@ -41,7 +42,7 @@ export interface OnboardingStageNav {
  * Read and drive the onboarding stage through the `?onboarding=` search param.
  */
 export function useOnboardingStage(): OnboardingStageNav {
-  const navigate = useNavigate();
+  const inPlaceNavigate = useInPlaceNavigate();
   const router = useRouter();
   const raw = (useSearch({ strict: false }) as { onboarding?: unknown }).onboarding;
   const stage: OnboardingStage = isOnboardingStage(raw) ? raw : 'welcome';
@@ -57,17 +58,22 @@ export function useOnboardingStage(): OnboardingStageNav {
   useEffect(() => {
     if (isOnboardingStage(raw)) return;
     const updater: OnboardingSearchUpdater = (prev) => ({ ...prev, onboarding: 'welcome' });
-    navigate({ search: updater as never, replace: true });
+    // The overlay rides above whatever route is active, so anchoring its stage
+    // is an in-place rewrite, not a departure (DOR-931). `null` only in the
+    // router-less embed, which never runs onboarding.
+    inPlaceNavigate?.({ search: updater, replace: true });
   }, []);
 
   const goToStage = useCallback(
     (next: OnboardingStage) => {
       const updater: OnboardingSearchUpdater = (prev) => ({ ...prev, onboarding: next });
-      // replace:false (the default) so browser back/forward walk the stages.
+      // replace:false (the default) so browser back/forward walk the stages —
+      // still in-place (the overlay sits over the active route, not a new
+      // destination), so the push carries the in-place stamp too.
       pushedSinceMount.current = true;
-      navigate({ search: updater as never });
+      inPlaceNavigate?.({ search: updater });
     },
-    [navigate]
+    [inPlaceNavigate]
   );
 
   const goBack = useCallback(
@@ -78,11 +84,12 @@ export function useOnboardingStage(): OnboardingStageNav {
         return;
       }
       // Refresh/deep-link landing: no in-app entry to pop, so push `fallback`
-      // instead of popping out of the app entirely.
+      // instead of popping out of the app entirely. In-place, like every stage
+      // step.
       const updater: OnboardingSearchUpdater = (prev) => ({ ...prev, onboarding: fallback });
-      navigate({ search: updater as never });
+      inPlaceNavigate?.({ search: updater });
     },
-    [router, navigate]
+    [router, inPlaceNavigate]
   );
 
   return { stage, goToStage, goBack };
@@ -121,11 +128,12 @@ export interface ClearOnboardingStageInput {
  */
 export function useClearOnboardingStageWhenDone(input: ClearOnboardingStageInput): void {
   const { done, overlayVisible } = input;
-  const navigate = useNavigate();
+  const inPlaceNavigate = useInPlaceNavigate();
   const raw = (useSearch({ strict: false }) as { onboarding?: unknown }).onboarding;
   useEffect(() => {
     if (!raw || !done || overlayVisible) return;
     const updater: OnboardingSearchUpdater = (prev) => ({ ...prev, onboarding: undefined });
-    navigate({ search: updater as never, replace: true });
-  }, [raw, done, overlayVisible, navigate]);
+    // Stripping the finished overlay's param is in-place — nothing moves (DOR-931).
+    inPlaceNavigate?.({ search: updater, replace: true });
+  }, [raw, done, overlayVisible, inPlaceNavigate]);
 }

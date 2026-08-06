@@ -59,7 +59,11 @@ function dmWith(id: string, agentPath: string, title: string): RoomSummary {
 // load-bearing: what stops a slow agent lookup from landing on top of a
 // navigation that happened while it was out is the router's own location
 // having moved, so a mock whose location never changes would test nothing.
-let mockLocation: { pathname: string; search: Record<string, unknown> } = {
+let mockLocation: {
+  pathname: string;
+  search: Record<string, unknown>;
+  state?: { inPlaceBase?: { pathname: string; search: Record<string, unknown> } };
+} = {
   pathname: '/',
   search: {},
 };
@@ -534,8 +538,14 @@ describe('DashboardSidebar', () => {
 
     renderWithProviders(<DashboardSidebar />);
     fireEvent.click(screen.getAllByText('beta')[0]);
-    // ⌘, while the lookup is out — `?settings=` goes on, nothing moves.
-    mockLocation = { ...mockLocation, search: { ...mockLocation.search, settings: 'general' } };
+    // ⌘, while the lookup is out — `?settings=` goes on, nothing moves. The dialog
+    // declares the rewrite in place, stamping the destination it hangs off, so the
+    // guard reads the click as still wanted rather than a departure (DOR-931).
+    mockLocation = {
+      pathname: mockLocation.pathname,
+      search: { ...mockLocation.search, settings: 'general' },
+      state: { inPlaceBase: { pathname: mockLocation.pathname, search: mockLocation.search } },
+    };
 
     await waitFor(() =>
       expect(mockNavigate).toHaveBeenCalledWith({

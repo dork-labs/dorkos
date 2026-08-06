@@ -34,9 +34,7 @@
  * @module features/status/model/use-runtime-chip
  */
 import { useCallback, useEffect } from 'react';
-import { useNavigate } from '@tanstack/react-router';
-import { getPlatform } from '@/layers/shared/lib';
-import { useAppStore } from '@/layers/shared/model';
+import { useAppStore, useInPlaceNavigate } from '@/layers/shared/model';
 import { useSessions } from '@/layers/entities/session';
 import { useRuntimeCapabilities } from '@/layers/entities/runtime';
 
@@ -142,22 +140,22 @@ export function useRuntimeChip(sessionId: string): RuntimeChipState {
     setPendingRuntime(null);
   }, [sessionId, setPendingRuntime]);
 
-  const navigate = useNavigate();
+  const inPlaceNavigate = useInPlaceNavigate();
   const onChangeRuntime = useCallback(
     (type: string) => {
       // Write the shared store first so every consumer re-renders on the same
       // value this tick; the URL write below is the durable/hint channel the
-      // first send reads. Embedded mode has no router — the store alone drives
-      // the chip there.
+      // first send reads. The chip rewrites `?runtime=` on the session already on
+      // screen, so it goes in place — a lookup in flight must not read it as a
+      // departure (DOR-931). `null` in embedded mode, which has no router — the
+      // store alone drives the chip there.
       setPendingRuntime(type);
-      if (!getPlatform().isEmbedded) {
-        void navigate({
-          search: (prev: Record<string, unknown>) => ({ ...prev, runtime: type }) as never,
-          replace: true,
-        });
-      }
+      inPlaceNavigate?.({
+        search: (prev: Record<string, unknown>) => ({ ...prev, runtime: type }),
+        replace: true,
+      });
     },
-    [navigate, setPendingRuntime]
+    [inPlaceNavigate, setPendingRuntime]
   );
 
   return { ...resolved, onChangeRuntime };

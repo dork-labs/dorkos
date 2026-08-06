@@ -4,7 +4,7 @@
  * @module widgets/room-view/model/use-thread-url-sync
  */
 import { useEffect, useRef } from 'react';
-import { useNavigate } from '@tanstack/react-router';
+import { useInPlaceNavigate } from '@/layers/shared/model';
 import { replyRootFor, useRoomOpenThreadStore, type RoomEntry } from '@/layers/entities/room';
 
 /** What the page knows that the open thread and the URL have to agree with. */
@@ -66,7 +66,7 @@ export function useThreadUrlSync({
   entries,
   historyLoaded,
 }: ThreadUrlSync): void {
-  const navigate = useNavigate();
+  const inPlaceNavigate = useInPlaceNavigate();
 
   // Which room has already been seeded, so the URL is read once on the way in
   // and never again — otherwise closing the panel would immediately re-open it
@@ -106,7 +106,11 @@ export function useThreadUrlSync({
     }
 
     if (openThreadId === urlThreadId) return;
-    void navigate({
+    // Mirroring the open thread into `?thread=` is reading, not navigating, so it
+    // goes through the in-place navigator: a lookup in flight when the thread
+    // panel syncs its URL must not read as a departure (DOR-931). `null` only in
+    // the router-less embed, which never mounts this routed room view.
+    inPlaceNavigate?.({
       to: '/channels',
       search: (prev: Record<string, unknown>) => ({ ...prev, thread: openThreadId }),
       replace: true,
@@ -116,5 +120,5 @@ export function useThreadUrlSync({
     // cannot happen until it does. Without them the effect never re-ran on the
     // load that made the answer knowable, so a link naming a reply stayed
     // unresolved exactly when it mattered.
-  }, [roomId, openThreadId, urlThreadId, entries, historyLoaded, navigate]);
+  }, [roomId, openThreadId, urlThreadId, entries, historyLoaded, inPlaceNavigate]);
 }
