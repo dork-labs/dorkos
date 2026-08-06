@@ -1484,7 +1484,14 @@ async function start() {
     // `redirect_uri` is 127.0.0.1 at the listen port.
     agentMcpOAuthService = new AgentMcpOAuthService({
       dorkHome,
-      callbackBaseUrl: `http://127.0.0.1:${PORT}`,
+      // The loopback callback is opened by the operator's own browser (the OAuth
+      // provider 302s to it), so its host must be one the browser can actually
+      // dial — the bind host, not a hardcoded `127.0.0.1`. When `DORKOS_HOST` is
+      // `localhost` and resolves to `::1` (macOS), a `127.0.0.1` callback is
+      // refused. `localDialHost` is the same binding-vs-dialing fix the connector
+      // `localOrigin` above already applies (the connections browser spec proved
+      // it matters); the callback route still enforces loopback-only.
+      callbackBaseUrl: `http://${localDialHost(env.DORKOS_HOST)}:${PORT}`,
       logger,
     });
     agentMcpServerService = new AgentMcpServerService({

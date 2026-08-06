@@ -5,6 +5,8 @@ import { ulid } from 'ulidx';
 import { writeManifest } from '@dorkos/shared/manifest';
 import type { AgentManifest, McpServerTransport } from '@dorkos/shared/mesh-schemas';
 import { getBoundary, validateBoundary } from '../lib/boundary.js';
+import { localDialHost } from '../lib/local-dial-host.js';
+import { env } from '../env.js';
 import { scenarioStore } from '../services/runtimes/test-mode/scenario-store.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { getRoomService, getBridgeStore, getRoomAuthors } from '../services/rooms/index.js';
@@ -244,7 +246,11 @@ testControlRouter.post('/seed-oauth-mcp-agent', async (req, res) => {
   if (!port) {
     return res.status(500).json({ error: 'could not resolve the listen port' });
   }
-  const serverUrl = `http://127.0.0.1:${port}${MOCK_MCP_OAUTH_MCP_PATH}`;
+  // Dial the server on the SAME host it bound (via `localDialHost`), not a
+  // hardcoded `127.0.0.1`: `DORKOS_HOST=localhost` resolves to `::1` on macOS,
+  // where an explicit IPv4 literal is refused. This is the host DorkOS's own
+  // in-process OAuth client and the operator's browser both reach the mock on.
+  const serverUrl = `http://${localDialHost(env.DORKOS_HOST)}:${port}${MOCK_MCP_OAUTH_MCP_PATH}`;
   const connection: McpServerTransport = {
     transport: 'http',
     url: serverUrl,
