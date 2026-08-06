@@ -119,3 +119,33 @@ describe('testAgentMcpServer', () => {
     expect(result).toEqual({ ok: true, toolCount: 3 });
   });
 });
+
+describe('startMcpSignin', () => {
+  it('invokes mcp.signin with the agent id and name and returns the sign-in result', async () => {
+    const signin = {
+      flowId: 'flow-1',
+      authorizeUrl: 'https://auth.example/authorize',
+      alreadyConnected: false,
+      disclosure: 'DorkOS keeps the token on this computer.',
+      message: 'link',
+    };
+    stubFetch(signin);
+    const result = await setup().startMcpSignin('agent-1', 'granola');
+    const [url, init] = lastCall();
+    expect(url).toBe('http://localhost:4242/api/capabilities/mcp.signin/invoke');
+    expect(init.method).toBe('POST');
+    expect(init.body).toBe(JSON.stringify({ agentId: 'agent-1', name: 'granola' }));
+    expect(result).toEqual(signin);
+  });
+});
+
+describe('pollMcpSignin', () => {
+  it('invokes mcp.poll_signin with just the flow id and returns the status', async () => {
+    stubFetch({ status: 'connected' });
+    const result = await setup().pollMcpSignin('flow-1');
+    const [url, init] = lastCall();
+    expect(url).toBe('http://localhost:4242/api/capabilities/mcp.poll_signin/invoke');
+    expect(init.body).toBe(JSON.stringify({ flowId: 'flow-1' }));
+    expect(result).toEqual({ status: 'connected' });
+  });
+});

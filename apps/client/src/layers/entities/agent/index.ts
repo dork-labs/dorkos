@@ -28,6 +28,8 @@ export {
   useDisableAgentMcpServer,
   useTestAgentMcpServer,
 } from './model/use-agent-mcp-mutations';
+export { useMcpSigninFlow } from './model/use-mcp-signin-flow';
+export type { McpSigninFlow, McpSigninFlowState, McpSigninStep } from './model/use-mcp-signin-flow';
 
 // Lib — nebula theme utilities
 export { useNebulaAlpha, useIsDark } from './lib/nebula-theme';

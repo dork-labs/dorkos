@@ -18,6 +18,8 @@ import type {
   UpdateAgentMcpServerInput,
   AgentMcpMutationResult,
   AgentMcpTestResult,
+  StartMcpSigninResult,
+  McpSigninPollResult,
 } from '@dorkos/shared/transport';
 import type { RecentSessionsResponse } from '@dorkos/shared/types';
 import type { UnattendedAutonomyState } from '@dorkos/shared/permission-semantics';
@@ -1020,6 +1022,14 @@ export const mcpManagementStubs = {
   },
 
   async testAgentMcpServer(_agentId: string, _name: string): Promise<AgentMcpTestResult> {
+    throw new Error(EMBEDDED_MCP_NOTICE);
+  },
+
+  async startMcpSignin(_agentId: string, _name: string): Promise<StartMcpSigninResult> {
+    throw new Error(EMBEDDED_MCP_NOTICE);
+  },
+
+  async pollMcpSignin(_flowId: string): Promise<McpSigninPollResult> {
     throw new Error(EMBEDDED_MCP_NOTICE);
   },
 };

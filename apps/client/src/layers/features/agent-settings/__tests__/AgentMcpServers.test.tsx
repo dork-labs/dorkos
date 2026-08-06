@@ -51,6 +51,19 @@ const managedServer: ManagedMcpServer = {
   addedBy: 'operator',
 };
 
+const oauthServer: ManagedMcpServer = {
+  name: 'granola',
+  enabled: true,
+  connection: {
+    transport: 'http',
+    url: 'https://mcp.granola.ai/mcp',
+    headers: {},
+    authKind: 'oauth2',
+  },
+  addedAt: '2026-01-01T00:00:00.000Z',
+  addedBy: 'operator',
+};
+
 function renderComponent(transport: Transport) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
@@ -350,5 +363,141 @@ describe('AgentMcpServers', () => {
       name: 'filesystem',
       connection: { transport: 'stdio', command: 'npx' },
     });
+  });
+
+  it('labels the live status legibly instead of a bare, aria-hidden color dot', async () => {
+    const transport = createMockTransport({
+      listAgentMcpServers: vi.fn().mockResolvedValue([oauthServer]),
+      getMcpConfig: vi.fn().mockResolvedValue({
+        servers: [{ name: 'granola', type: 'http', status: 'needs-auth' }],
+      }),
+    });
+    const { container } = renderComponent(transport);
+
+    // The status is legible text a screen reader reaches — not the old, label-less
+    // color dot. jest-dom's toBeVisible treats an aria-hidden node as not visible,
+    // so this reddens if the chip regresses to a bare aria-hidden dot.
+    await waitFor(() => expect(within(container).getByText('Needs sign-in')).toBeVisible());
+  });
+
+  it('shows Disabled (and no Sign in) for a disabled server even when live status is needs-auth', async () => {
+    // The `enabled ? live?.status : 'disabled'` fold must win: a turned-off server
+    // is Disabled and offers no sign-in, whatever its last live status was.
+    const disabledServer: ManagedMcpServer = { ...oauthServer, enabled: false };
+    const transport = createMockTransport({
+      listAgentMcpServers: vi.fn().mockResolvedValue([disabledServer]),
+      getMcpConfig: vi.fn().mockResolvedValue({
+        servers: [{ name: 'granola', type: 'http', status: 'needs-auth' }],
+      }),
+    });
+    const { container } = renderComponent(transport);
+
+    await waitFor(() => expect(within(container).getByText('granola')).toBeInTheDocument());
+    expect(within(container).getByText('Disabled')).toBeInTheDocument();
+    expect(within(container).queryByText('Needs sign-in')).not.toBeInTheDocument();
+    expect(within(container).queryByRole('button', { name: 'Sign in' })).not.toBeInTheDocument();
+  });
+
+  it('shows a Sign in button only when the server needs OAuth sign-in', async () => {
+    const transport = createMockTransport({
+      listAgentMcpServers: vi.fn().mockResolvedValue([oauthServer]),
+      getMcpConfig: vi.fn().mockResolvedValue({
+        servers: [{ name: 'granola', type: 'http', status: 'needs-auth' }],
+      }),
+    });
+    const { container } = renderComponent(transport);
+
+    await waitFor(() =>
+      expect(within(container).getByRole('button', { name: 'Sign in' })).toBeInTheDocument()
+    );
+  });
+
+  it('hides the Sign in button when the server is connected', async () => {
+    const transport = createMockTransport({
+      listAgentMcpServers: vi.fn().mockResolvedValue([oauthServer]),
+      getMcpConfig: vi.fn().mockResolvedValue({
+        servers: [{ name: 'granola', type: 'http', status: 'connected' }],
+      }),
+    });
+    const { container } = renderComponent(transport);
+
+    await waitFor(() => expect(within(container).getByText('granola')).toBeInTheDocument());
+    expect(within(container).queryByRole('button', { name: 'Sign in' })).not.toBeInTheDocument();
+  });
+
+  it('renders a friendly sign-in nudge, not the raw 401, when Test reports needsAuth', async () => {
+    const rawError =
+      'Streamable HTTP error: POST https://mcp.granola.ai/mcp {"jsonrpc":"2.0","error":{"code":-32001,"message":"Unauthorized"}}';
+    const transport = createMockTransport({
+      listAgentMcpServers: vi.fn().mockResolvedValue([oauthServer]),
+      getMcpConfig: vi.fn().mockResolvedValue({
+        servers: [{ name: 'granola', type: 'http', status: 'needs-auth' }],
+      }),
+      testAgentMcpServer: vi
+        .fn()
+        .mockResolvedValue({ ok: false, needsAuth: true, error: rawError }),
+    });
+    const { container } = renderComponent(transport);
+
+    await waitFor(() => expect(within(container).getByText('granola')).toBeInTheDocument());
+    fireEvent.click(within(container).getByRole('button', { name: 'Test' }));
+
+    await waitFor(() =>
+      expect(within(container).getByText('Needs sign-in — click Sign in.')).toBeInTheDocument()
+    );
+    // The raw "Unauthorized" string never reaches the user.
+    expect(within(container).queryByText(/Unauthorized/)).not.toBeInTheDocument();
+  });
+
+  it('drives the sign-in flow: Sign in → disclosure-before-link → open → connected', async () => {
+    const startMcpSignin = vi.fn().mockResolvedValue({
+      flowId: 'flow-1',
+      authorizeUrl: 'https://auth.example/authorize?x=1',
+      alreadyConnected: false,
+      disclosure: 'DorkOS keeps the resulting token encrypted on this computer.',
+      message: 'sign-in link',
+    });
+    // The poll (fired when the flow enters waiting) reports connected at once.
+    const pollMcpSignin = vi.fn().mockResolvedValue({ status: 'connected' });
+    // Live status starts needs-auth, then reads connected after invalidation.
+    const getMcpConfig = vi
+      .fn()
+      .mockResolvedValueOnce({ servers: [{ name: 'granola', type: 'http', status: 'needs-auth' }] })
+      .mockResolvedValue({ servers: [{ name: 'granola', type: 'http', status: 'connected' }] });
+    const transport = createMockTransport({
+      listAgentMcpServers: vi.fn().mockResolvedValue([oauthServer]),
+      getMcpConfig,
+      startMcpSignin,
+      pollMcpSignin,
+    });
+    const { container } = renderComponent(transport);
+
+    await waitFor(() =>
+      expect(within(container).getByRole('button', { name: 'Sign in' })).toBeInTheDocument()
+    );
+    fireEvent.click(within(container).getByRole('button', { name: 'Sign in' }));
+
+    // Disclosure-before-URL: the custody sentence shows, and the link exists but
+    // has not been followed — no poll yet.
+    await waitFor(() =>
+      expect(
+        within(container).getByText(/DorkOS keeps the resulting token encrypted/i)
+      ).toBeInTheDocument()
+    );
+    expect(startMcpSignin).toHaveBeenCalledWith(agent.id, 'granola');
+    expect(pollMcpSignin).not.toHaveBeenCalled();
+    const link = within(container).getByRole('link', {
+      name: /Open the sign-in page for granola/i,
+    });
+    expect(link).toHaveAttribute('href', 'https://auth.example/authorize?x=1');
+
+    // Open the link → waiting → poll connected → success copy.
+    fireEvent.click(link);
+    await waitFor(() =>
+      expect(
+        within(container).getByText(/Signed in — the server’s tools are available/i)
+      ).toBeInTheDocument()
+    );
+    expect(pollMcpSignin).toHaveBeenCalledWith('flow-1');
   });
 });

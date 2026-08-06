@@ -755,6 +755,11 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     enableAgentMcpServer: vi.fn().mockResolvedValue([]),
     disableAgentMcpServer: vi.fn().mockResolvedValue([]),
     testAgentMcpServer: vi.fn().mockResolvedValue({ ok: true, toolCount: 0 }),
+    // Managed-MCP OAuth sign-in (DOR-943). A test that exercises the flow must
+    // state both halves: `startMcpSignin` returns the link + disclosure, and
+    // `pollMcpSignin` walks pending → connected.
+    startMcpSignin: vi.fn(),
+    pollMcpSignin: vi.fn().mockResolvedValue({ status: 'pending' }),
     // The claim feed (connection-scoping spec §Part 3) — same rule: the list
     // reads honest-empty, the three decisions must be stated by the test.
     listUnclaimedChats: vi.fn().mockResolvedValue([]),

@@ -1,7 +1,6 @@
 import { useCallback, useState } from 'react';
-import { Loader2, ShieldAlert, Sparkles, Trash2 } from 'lucide-react';
-import { Badge, Button, FieldCard, FieldCardContent, Skeleton, Switch } from '@/layers/shared/ui';
-import { cn } from '@/layers/shared/lib';
+import { Loader2, ShieldAlert, Sparkles } from 'lucide-react';
+import { Badge, Button, FieldCard, FieldCardContent, Skeleton } from '@/layers/shared/ui';
 import { useSettingsDeepLink } from '@/layers/shared/model';
 import {
   useAgentMcpServers,
@@ -13,13 +12,15 @@ import {
   useTestAgentMcpServer,
 } from '@/layers/entities/agent';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
-import type { AgentManifest, AgentRuntime, ManagedMcpServer } from '@dorkos/shared/mesh-schemas';
+import type { AgentManifest, AgentRuntime } from '@dorkos/shared/mesh-schemas';
 import type {
   AgentMcpTestResult,
   CapabilityApprovalRequired,
   McpServerEntry,
 } from '@dorkos/shared/transport';
 import { AddMcpServerForm, TRANSPORTS, type TransportKind } from './AddMcpServerForm';
+import { StatusChip } from './McpStatusChip';
+import { ManagedServerRow } from './ManagedServerRow';
 
 /**
  * Transport kinds each runtime can actually run a managed server over.
@@ -36,101 +37,6 @@ const SUPPORTED_TRANSPORTS_BY_RUNTIME: Partial<Record<AgentRuntime, readonly Tra
 /** Transport kinds the Add form should offer for a given agent runtime. */
 function supportedTransportsFor(runtime: AgentRuntime): readonly TransportKind[] {
   return SUPPORTED_TRANSPORTS_BY_RUNTIME[runtime] ?? TRANSPORTS;
-}
-
-// MCP status indicator colors, keyed by the live status a runtime reports.
-const MCP_STATUS_COLORS: Partial<Record<string, string>> = {
-  connected: 'bg-green-500',
-  failed: 'bg-red-500',
-  'needs-auth': 'bg-amber-500',
-  pending: 'bg-amber-500',
-  disabled: 'bg-muted-foreground/20',
-};
-
-/** A colored status dot for a server's live connection state. */
-function StatusDot({ statusKey }: { statusKey: string | undefined }) {
-  return (
-    <span
-      className={cn(
-        'size-2 shrink-0 rounded-full',
-        MCP_STATUS_COLORS[statusKey ?? ''] ?? 'bg-muted-foreground/40'
-      )}
-      aria-hidden
-    />
-  );
-}
-
-interface ManagedServerRowProps {
-  server: ManagedMcpServer;
-  live: McpServerEntry | undefined;
-  testResult: AgentMcpTestResult | undefined;
-  testing: boolean;
-  busy: boolean;
-  onToggle: (name: string, enabled: boolean) => void;
-  onTest: (name: string) => void;
-  onRemove: (name: string) => void;
-}
-
-/** One managed (editable) server: status, name, transport, enable switch, Test, Remove. */
-function ManagedServerRow({
-  server,
-  live,
-  testResult,
-  testing,
-  busy,
-  onToggle,
-  onTest,
-  onRemove,
-}: ManagedServerRowProps) {
-  const statusKey = server.enabled ? live?.status : 'disabled';
-  return (
-    <div className="flex flex-col gap-1 py-1.5">
-      <div className="flex items-center gap-2">
-        <StatusDot statusKey={statusKey} />
-        <span className="min-w-0 truncate text-sm">{server.name}</span>
-        <span className="text-muted-foreground/50 text-xs">{server.connection.transport}</span>
-        <div className="ml-auto flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => onTest(server.name)}
-            disabled={testing || busy}
-            className="focus-visible:ring-2"
-          >
-            {testing ? <Loader2 className="size-3 animate-spin" /> : 'Test'}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => onRemove(server.name)}
-            disabled={busy}
-            aria-label={`Remove ${server.name}`}
-            className="focus-visible:ring-2"
-          >
-            <Trash2 className="size-3.5" />
-          </Button>
-          <Switch
-            checked={server.enabled}
-            onCheckedChange={(next) => onToggle(server.name, next)}
-            disabled={busy}
-            aria-label={`Enable ${server.name}`}
-          />
-        </div>
-      </div>
-      {testResult && (
-        <p
-          className={cn(
-            'pl-4 text-xs',
-            testResult.ok ? 'text-muted-foreground' : 'text-destructive'
-          )}
-        >
-          {testResult.ok
-            ? `Connected — ${testResult.toolCount ?? 0} tool${testResult.toolCount === 1 ? '' : 's'}.`
-            : `Failed — ${testResult.error ?? 'could not connect.'}`}
-        </p>
-      )}
-    </div>
-  );
 }
 
 interface DiscoveredServerRowProps {
@@ -225,7 +131,7 @@ function DiscoveredServerRow({ entry, agentId, agentLabel, canImport }: Discover
   return (
     <div className="flex flex-col gap-1 py-1.5">
       <div className="flex items-center gap-2">
-        <StatusDot statusKey={entry.status} />
+        <StatusChip statusKey={entry.status} />
         <span className="min-w-0 truncate text-sm">{entry.name}</span>
         <span className="text-muted-foreground/50 text-xs">{entry.type}</span>
         <Badge variant="outline" className="text-muted-foreground ml-auto text-xs font-normal">
@@ -406,6 +312,7 @@ export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
               <ManagedServerRow
                 key={server.name}
                 server={server}
+                agentId={agent.id}
                 live={liveByName.get(server.name)}
                 testResult={testResults[server.name]}
                 testing={testingName === server.name}
