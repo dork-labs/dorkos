@@ -939,22 +939,22 @@ export function usePermissionPreview(name: string | null) {
 
 ## Agent Entity: useMcpConfig
 
-Fetches MCP server entries from `.mcp.json` in a given project directory. Returns `{ servers: McpServerEntry[] }`. Disabled when `projectPath` is null (e.g., no active working directory). Uses 30-second stale time.
+Fetches MCP server entries from `.mcp.json` (or a runtime's equivalent) in a given project directory, optionally scoped to one runtime. Returns `{ servers: McpServerEntry[] }`. Disabled when `projectPath` is null (e.g., no active working directory). Uses 30-second stale time.
 
 ```typescript
 // apps/client/src/layers/entities/agent/model/use-mcp-config.ts
-export function useMcpConfig(projectPath: string | null) {
+export function useMcpConfig(projectPath: string | null, runtime?: string | null) {
   const transport = useTransport();
   return useQuery<McpConfigResponse>({
-    queryKey: ['mcp-config', projectPath],
-    queryFn: () => transport.getMcpConfig(projectPath!),
+    queryKey: ['mcp-config', projectPath, runtime ?? null],
+    queryFn: () => transport.getMcpConfig(projectPath!, { runtime: runtime ?? undefined }),
     enabled: !!projectPath,
     staleTime: 30_000,
   });
 }
 ```
 
-Used by `ConnectionsView` to show MCP servers in the connections sidebar panel.
+The optional `runtime` param scopes the list to the runtime that owns the agent, so a Codex agent sees its own servers rather than the default runtime's, and keys the cache so switching runtime refetches instead of serving a stale list. Used by `AgentMcpServers` (`layers/features/agent-settings/`) — the managed-MCP-server UI behind the Agent Hub's Toolkit tab — alongside the sibling `useAgentMcpServers` hook, which layers live per-server status (connected/error/pending) onto this entry list by server `name`.
 
 ## References
 

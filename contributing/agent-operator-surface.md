@@ -15,7 +15,7 @@ CLI operator verbs (`dorkos agent`, `task`, `activity`, `version`) remain the ru
 
 ### The catalog is a subset, and every doc about it has to say so
 
-The registry carries **15** capabilities today: 6 operator, 8 marketplace, and `capabilities.list`. Alongside them, roughly 40 tools per MCP server (the `UNREGISTERED_TOOL_FAMILIES` in `self-description/capabilities-domain.ts`: tasks, relay, mesh, binding, trace, extension, devtools, UI, plus the hand-registered `create_agent`) have no registry entry. They appear in an agent's tool list and are unreachable by `dorkos call`.
+The registry carries **30** capabilities today: 6 operator, 8 marketplace, 7 connector, 8 MCP-server-management (`mcp.*`, spec `mcp-server-management`), and `capabilities.list`. Alongside them, roughly 40 tools per MCP server (the `UNREGISTERED_TOOL_FAMILIES` in `self-description/capabilities-domain.ts`: tasks, relay, mesh, binding, trace, extension, devtools, UI, plus the hand-registered `create_agent`) have no registry entry. They appear in an agent's tool list and are unreachable by `dorkos call`.
 
 **Absent from the catalog is not the same as untiered, and conflating the two is a documented defect.** Since DOR-468 all **47** hand-registered tools carry a tier in `core/mcp-tool-tiers.ts`, enforced by the same `enforceCapabilityTier` the registry calls (`core/mcp-tool-gate.ts`), and `gatedActionForMcpTool` throws at server-build time for a tool that declares none. So the honest split is two facts, not one: what the CATALOG lists (by-id, `dorkos call`-reachable), and what carries a TIER (everything). Keep them separate whenever you reword this.
 

@@ -1,7 +1,7 @@
 ---
 id: 260803-233420
 title: Managed MCP server trust model — gated writes, marketplace rejection, absence withholds
-status: proposed
+status: accepted
 created: 2026-08-03
 spec: mcp-server-management
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
