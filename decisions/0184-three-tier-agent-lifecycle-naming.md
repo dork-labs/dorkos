@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted
 
+(2026-08-06 audit) The layered create/register concept holds, but the initAgent() rename was never carried out; the config-write tier has no distinctly-named function.
+
 ## Context
 
 The codebase has overlapping names for different agent operations. The current `transport.createAgent()` only writes config to an existing directory (like `git init`), but the name implies full creation. A new full-pipeline operation needs to coexist alongside the existing init behavior. Clear naming prevents confusion as the agent lifecycle grows more complex.

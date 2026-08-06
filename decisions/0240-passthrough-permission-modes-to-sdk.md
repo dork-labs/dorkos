@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted
 
+(2026-08-06 audit) The passthrough is now wrapped in resolveEffectivePermissionMode(), which coerces 'auto' to 'default' for models without support; the no-allowlist decision stands.
+
 ## Context
 
 The `message-sender.ts` had a hardcoded 3-value allowlist that silently fell back to `default` for any permission mode not in `['bypassPermissions', 'plan', 'acceptEdits']`. This meant that adding new modes to the schema (e.g., `dontAsk`, `auto`) would be silently dropped at query time. The Zod schema already validates all values at the API boundary, making the redundant allowlist a maintenance bottleneck.

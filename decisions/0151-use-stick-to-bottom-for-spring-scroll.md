@@ -1,7 +1,7 @@
 ---
 number: 151
 title: Replace Custom Scroll Logic with use-stick-to-bottom for Spring-Based Streaming Scroll
-status: accepted
+status: deprecated
 created: 2026-03-20
 spec: chat-streaming-motion
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Accepted
+Deprecated (2026-08-06 audit) — use-stick-to-bottom was retired for a native TanStack Virtual end-anchor (DOR-163, commit 9d71b5a2e).
 
 ## Context
 

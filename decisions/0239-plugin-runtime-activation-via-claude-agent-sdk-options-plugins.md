@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted (marketplace-05 implementation landed)
 
+(2026-08-06 audit) plugin-activation.ts moved to claude-code/messaging/; the SDK-options activation decision stands.
+
 ## Context
 
 A Claude Code plugin includes five component types: skills, commands, agents, hooks, and MCP servers. Each has its own runtime semantics — skills are autonomously invoked by the model, commands are `/slash` entry points, agents are subagent definitions, hooks respond to lifecycle events (PreToolUse, PostToolUse, SessionStart, etc.), and MCP servers are external tool integrations. Reimplementing this runtime inside DorkOS would have doubled the scope of marketplace-05 and introduced a permanent divergence risk from CC's actual runtime semantics.

@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted
 
+(2026-08-06 audit) Scope narrowed by ADR-0310: SDK JSONL is the source of truth for the claude-code runtime only; other runtimes own their own storage.
+
 ## Context
 
 The Claude Agent SDK stores all session data in JSONL files at `~/.claude/projects/{slug}/{sessionId}.jsonl`. These append-only transcripts contain every message, tool call, and approval. The system needed to decide whether to maintain a separate session store (database, in-memory cache) or derive all session state from the SDK's existing files. Users also interact with sessions from the CLI, and those sessions need to be visible in the web UI.

@@ -1,7 +1,7 @@
 ---
 number: 107
 title: Use CSS Hidden Toggle for Sidebar View Persistence
-status: accepted
+status: deprecated
 created: 2026-03-10
 spec: sidebar-tabbed-views
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Accepted
+Deprecated (2026-08-06 audit) — the tabbed SessionSidebar it governed was retired; EmbedSidebar is the current-architecture replacement, with the tabs moved to the right-panel Inspector or dropped.
 
 ## Context
 

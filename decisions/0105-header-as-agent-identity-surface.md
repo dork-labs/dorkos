@@ -1,7 +1,7 @@
 ---
 number: 105
 title: Header as Agent Identity Surface
-status: accepted
+status: deprecated
 created: 2026-03-10
 spec: update-top-nav
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Accepted
+Deprecated (2026-08-06 audit) — the top-nav header is a plain breadcrumb now; agent identity lives in entities/agent's AgentIdentity/AgentAvatar and the chat status chip.
 
 ## Context
 

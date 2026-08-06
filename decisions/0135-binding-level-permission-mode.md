@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted
 
+(2026-08-06 audit) Amended by 260727-181825 (DOR-604): the default became 'default' rather than 'acceptEdits'; pre-existing bindings were carried forward at the old value (safe-defaults.ts). RuntimeCapabilities renamed supportedPermissionModes → permissionModes.
+
 ## Context
 
 When messages arrive via external adapters (Slack, Telegram), agent sessions are created without a configured permission mode. Claude Code's "default" mode causes tools to be auto-denied in headless contexts, meaning agents silently skip tool usage rather than completing work. The permission mode could be configured at four levels: binding (per adapter-agent pair), adapter (per adapter instance), agent/runtime (per agent), or per-message.

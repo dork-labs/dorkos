@@ -1,17 +1,17 @@
 ---
 id: 260723-013233
 title: CLI-first agent actuation, hand-registered tools until the Capability Registry
-status: accepted
+status: superseded
 created: 2026-07-23
 spec: agents-as-operators
-superseded-by: null
+superseded-by: 260723-050219
 ---
 
 # 260723-013233. CLI-first agent actuation, hand-registered tools until the Capability Registry
 
 ## Status
 
-Accepted
+Superseded by [260723-050219](260723-050219-one-boot-composed-registry-generates-every-agent-surface.md) (2026-08-06 audit) — hand-registered descriptor tables were replaced by the boot-composed capability registry.
 
 ## Context
 

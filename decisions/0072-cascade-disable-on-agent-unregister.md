@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted
 
+(2026-08-06 audit) Mechanism intact under the Pulse→Tasks rename: TaskStore.disableTasksByAgentId() in apps/server/src/services/tasks/task-store.ts.
+
 ## Context
 
 Agent-first scheduling links Pulse schedules to agents by `agentId`. When an agent is unregistered from Mesh, its linked schedules become orphaned — the agent ID no longer resolves to a project path. Three options were considered: (1) graceful fallback to stored CWD, (2) fail with error per-run, (3) auto-disable the schedule and record an error.

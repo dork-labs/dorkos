@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted
 
+(2026-08-06 audit) The instant-advance pattern holds; steps are now gallery|naming|arrival (wizard-types.ts), import leaves the dialog, and the tab vocabulary is gone.
+
 ## Context
 
 The Create Agent dialog was initially built as a three-tab layout (New Agent, From Template, Import) using Radix Tabs. After hands-on usage, the tab pattern introduced a DRY violation (170+ lines of duplicated Name/Directory form fields across tabs) and required users to mentally map tabs to creation paths. The Radix Tabs semantic model (parallel content panels) conflicts with the sequential intent of agent creation (choose method, then configure).

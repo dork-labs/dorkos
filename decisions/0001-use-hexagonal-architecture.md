@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted
 
+(2026-08-06 audit) Still governing; the Transport interface has grown far past the 9 methods described here — see ADR-0258's capability-gated sub-interfaces.
+
 ## Context
 
 DorkOS needs to run as both a standalone web app (React SPA + Express server) and an embedded Obsidian plugin. The Obsidian plugin runs inside Electron and cannot make HTTP requests to localhost, so the client needs a communication layer that works in both environments without duplicating the React UI or business logic.

@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted — 2026-06-11 (implemented by spec: chat-stream-reconnection; updated post-implementation to record the decision as built)
 
+(2026-08-06 audit) Amended by 260805-041016: the cockpit consumes this stream over WebSocket now; the 3-event schema and SessionListBroadcaster are unchanged.
+
 ## Context
 
 The sidebar agent/session list polled REST every 5s, and the status bar (context usage, cost, cache, model, todo counts) was computed from in-memory state that was `null` until the next live event — both drifted and were stale immediately after a hard refresh. Opening one SSE connection per session for liveness would exhaust the HTTP/1.1 6-connection budget. Sessions driven outside DorkOS (e.g. the Claude Code CLI) were only discovered on the next poll tick.

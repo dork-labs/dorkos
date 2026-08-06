@@ -25,6 +25,8 @@ default runtime — never writes to `session_events`." The conclusion that ADR d
 unaffected, and is the reason this decision is narrow: the room log is still a DorkOS-owned store,
 and these rows are not it.
 
+(2026-08-06 audit) Amended by 260801-035912: 'record' mode now applies to every session for permission-receipt permanence, not only room-triggered turns.
+
 ## Context
 
 A room triggers an agent turn and then nobody watches it. Everywhere else in DorkOS a person is

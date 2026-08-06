@@ -3,6 +3,7 @@ id: 260727-181825
 title: Defaults, fallbacks and recovery land on the option that protects the user
 status: accepted
 created: 2026-07-27
+amends: 0135
 spec: null
 superseded-by: null
 ---

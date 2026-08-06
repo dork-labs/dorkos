@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted
 
+(2026-08-06 audit) Amended by 260805-041016: SSEConnection became WSConnection (ws-connection.ts); the resilience contract — state machine, backoff, heartbeat watchdog, visibility release — is preserved unchanged.
+
 ## Context
 
 DorkOS uses SSE for three critical real-time features: POST chat streaming, GET session sync, and GET relay event stream. Each has different resilience characteristics — relay has basic connection tracking, session sync has none, and POST streaming has no retry. This creates duplicate patterns, inconsistent behavior, and gaps where connections can silently fail. Research into production SSE patterns (Slack, Linear, Figma) shows that a shared resilience primitive with exponential backoff, heartbeat watchdog, and page visibility optimization is the industry standard.

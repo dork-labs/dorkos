@@ -1,7 +1,7 @@
 ---
 number: 132
 title: Two-Tab Information Architecture for Relay Panel
-status: accepted
+status: deprecated
 created: 2026-03-15
 spec: relay-panel-redesign
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Accepted
+Deprecated (2026-08-06 audit) — the two-tab Relay panel was replaced entirely by the single-page ConnectionsPage in widgets/connections ('Deliberately not tabs'), with Activity folded into a collapsible history section.
 
 ## Context
 

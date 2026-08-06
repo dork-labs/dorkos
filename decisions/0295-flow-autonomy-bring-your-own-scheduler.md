@@ -3,6 +3,7 @@ number: 295
 title: /flow autonomy is bring-your-own-scheduler (pluggable scheduler)
 status: accepted
 created: 2026-06-26
+amends: 0277
 spec: flow-marketplace-package
 superseded-by: null
 ---

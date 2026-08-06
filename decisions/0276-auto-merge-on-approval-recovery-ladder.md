@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted (implemented in spec: unified-workflow-system; shipped in `dork-labs/marketplace` `plugins/flow/`)
 
+(2026-08-06 audit) The on-approval ladder shipped in the flow plugin behind autonomous mode (disabled in v1); the in-repo arming mechanism is merge-tail.yml's periodic should-arm-automerge.sh (ADR 260728-112203).
+
 ## Context
 
 Human approval authorizes one specific state — this diff, green, cleanly mergeable — but that exact state can go stale (base moved, CI flaked, a fix touched logic) before the merge actually runs.

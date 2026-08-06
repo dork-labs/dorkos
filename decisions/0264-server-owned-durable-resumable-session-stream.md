@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted — 2026-06-11 (implemented by spec: chat-stream-reconnection; updated post-implementation to record the decision as built)
 
+(2026-08-06 audit) Amended by 260805-041016: the cockpit now rides WebSockets; SSE remains the public integration contract. The snapshot → gap-free replay → live contract is unchanged.
+
 ## Context
 
 Live token streaming was bound to the lifecycle of the `POST /api/sessions/:id/messages` request, so a hard refresh or second window mid-turn had nothing to reattach to. The only reconnection stream (`GET /:id/stream`) was gated behind an off-by-default toggle and carried only `sync_update`/pending re-emits — not the in-flight turn. There was no gap-free way to hydrate current state and continue streaming. This generalizes the DOR-73 / ADR-0262 pending-interaction recovery to all event classes.
