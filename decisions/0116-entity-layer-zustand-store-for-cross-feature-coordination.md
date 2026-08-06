@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted
 
+(2026-08-06 audit) Pattern confirmed current under renamed identifiers after the Pulse→Tasks rebrand: usePulsePresetDialog/entities/pulse/openWithPreset became useTaskTemplateDialog/entities/tasks/openWithTemplate (entities/tasks/model/use-task-template-dialog.ts), still written by features/session-list and read by features/tasks.
+
 ## Context
 
 Feature-Sliced Design (FSD) prohibits cross-feature imports. When two features in the same application need to coordinate — one triggering an action in the other (e.g., `features/session-list` telling `features/pulse` to open a dialog with pre-populated data) — the standard FSD resolution is to lift the shared state to a layer that both features can legally import.
