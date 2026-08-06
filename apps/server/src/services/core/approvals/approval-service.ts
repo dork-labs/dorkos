@@ -43,8 +43,13 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { ulid } from 'ulidx';
 import { and, asc, eq, isNull, lt, approvals, type Db } from '@dorkos/db';
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
-import { APPROVAL_SUMMARY_MAX_LENGTH, type PendingApproval } from '@dorkos/shared/approval-schemas';
+import {
+  APPROVAL_SUMMARY_MAX_LENGTH,
+  type ApprovalOutcome,
+  type PendingApproval,
+} from '@dorkos/shared/approval-schemas';
 import { broadcastApprovalPending, broadcastApprovalResolved } from './approval-events.js';
+import { eventFanOut } from '../event-fan-out.js';
 import { redactSecretsInText, renderRequesterLabel } from './approval-summary.js';
 
 /**
@@ -212,6 +217,44 @@ export type ApprovalConsumeResult =
   | { outcome: 'consumed'; approvalId: string }
   | { outcome: 'unknown' }
   | { outcome: 'mismatched'; approvalId: string };
+
+/**
+ * How a hold on {@link ApprovalService.awaitDecision} ended.
+ *
+ * `granted`/`denied` are an operator decision the caller can resume on; `expired`
+ * and `timeout` are the no-decision paths that must degrade a held call back to
+ * today's `approval_required` poll payload (`expired`: the token's own window
+ * closed; `timeout`: the hold's own cap elapsed or its abort signal fired first).
+ */
+export type ApprovalDecisionOutcome = 'granted' | 'denied' | 'expired' | 'timeout';
+
+/** Options for {@link ApprovalService.awaitDecision}. */
+export interface AwaitDecisionOptions {
+  /** Longest the hold waits before it resolves `timeout`. Required — a hold with no cap could outlive the tool call it blocks. */
+  timeoutMs: number;
+  /** Abort the wait (the SDK aborted the held tool call); resolves `timeout`. */
+  signal?: AbortSignal;
+}
+
+/**
+ * Translate a broadcast {@link ApprovalOutcome} into the caller-facing hold
+ * outcome. `consumed` — the token was spent elsewhere while the hold waited —
+ * degrades to `expired`: there is nothing left for the caller to resume on, so it
+ * falls back to the poll payload exactly as a real expiry would.
+ */
+function toDecisionOutcome(outcome: ApprovalOutcome | undefined): ApprovalDecisionOutcome {
+  switch (outcome) {
+    case 'granted':
+      return 'granted';
+    case 'denied':
+      return 'denied';
+    case 'expired':
+    case 'consumed':
+      return 'expired';
+    default:
+      return 'timeout';
+  }
+}
 
 /** Hash a token exactly as it is stored: SHA-256, lowercase hex. */
 function hashToken(token: string): string {
@@ -401,6 +444,84 @@ export class ApprovalService {
   }
 
   /**
+   * Wait for an operator to decide a pending approval, so an in-session caller
+   * can HOLD its tool call and resume on the answer instead of returning a poll
+   * payload and asking the model to retry (DOR-939).
+   *
+   * Resolves on the first of: the operator's decision (`approval_resolved` on the
+   * global fan-out, which `grant`/`deny`/`consume` all emit), the token's own
+   * expiry, the hold's `timeoutMs` cap, or an abort. It NEVER rejects — every
+   * ending is a value the caller degrades on, because the guiding invariant is
+   * that a held destructive call is never worse than the poll flow it replaces.
+   *
+   * The subscription is attached BEFORE the current state is read, so a decision
+   * that lands in the gap between the two is delivered rather than missed. The
+   * cap timer is `unref`'d so a hold can never keep the process alive.
+   *
+   * @param approvalId - The pending approval to wait on.
+   * @param options - The hold cap and an optional abort signal.
+   * @returns How the wait ended.
+   */
+  awaitDecision(
+    approvalId: string,
+    options: AwaitDecisionOptions
+  ): Promise<ApprovalDecisionOutcome> {
+    return new Promise<ApprovalDecisionOutcome>((resolve) => {
+      let done = false;
+      const finish = (outcome: ApprovalDecisionOutcome): void => {
+        if (done) return;
+        done = true;
+        unsubscribe();
+        clearTimeout(timer);
+        options.signal?.removeEventListener('abort', onAbort);
+        resolve(outcome);
+      };
+
+      const unsubscribe = eventFanOut.subscribe((eventName, data) => {
+        if (eventName !== 'approval_resolved') return;
+        const payload = data as { approvalId?: string; outcome?: ApprovalOutcome };
+        if (payload.approvalId !== approvalId) return;
+        finish(toDecisionOutcome(payload.outcome));
+      });
+
+      const onAbort = (): void => finish('timeout');
+      const timer = setTimeout(() => finish('timeout'), options.timeoutMs);
+      // Never let a pending hold hold the event loop open.
+      timer.unref?.();
+
+      if (options.signal) {
+        if (options.signal.aborted) {
+          finish('timeout');
+          return;
+        }
+        options.signal.addEventListener('abort', onAbort, { once: true });
+      }
+
+      // Close the subscribe→read race: a decision recorded before the listener
+      // attached would broadcast to nobody, so read the row once and settle
+      // immediately if it is already decided or spent.
+      const settled = this.settledOutcome(approvalId);
+      if (settled) finish(settled);
+    });
+  }
+
+  /**
+   * The already-final outcome of an approval, or `undefined` when it is still
+   * pending. Used to close the subscribe race in {@link awaitDecision}; expiry is
+   * evaluated here so a stale row settles a hold rather than stranding it.
+   *
+   * @param approvalId - The approval to read.
+   */
+  private settledOutcome(approvalId: string): ApprovalDecisionOutcome | undefined {
+    const row = this.db.select().from(approvals).where(eq(approvals.id, approvalId)).get();
+    if (!row) return undefined;
+    if (this.isExpired(row)) return 'expired';
+    if (row.state === 'granted') return 'granted';
+    if (row.state === 'denied') return 'denied';
+    return undefined;
+  }
+
+  /**
    * Every approval still waiting on a person, oldest first. Expired rows are
    * excluded — a card nobody can act on any more is noise, not information.
    *
@@ -414,6 +535,23 @@ export class ApprovalService {
       .orderBy(asc(approvals.createdAt))
       .all();
     return rows.filter((row) => !this.isExpired(row)).map(toPendingApproval);
+  }
+
+  /**
+   * The cockpit-facing card for one approval, or `undefined` when no such row
+   * exists. Never includes token material.
+   *
+   * The in-session hold renders this exact card inline (DOR-939), so the same
+   * request a person answers on the dashboard is the one they answer in the
+   * transcript. Unlike {@link listPending} this does not filter on state or
+   * expiry — the hold reads it immediately after {@link request}, and a caller
+   * that wants only live rows already has {@link listPending}.
+   *
+   * @param approvalId - ULID of the approval to read.
+   */
+  getPending(approvalId: string): PendingApproval | undefined {
+    const row = this.db.select().from(approvals).where(eq(approvals.id, approvalId)).get();
+    return row ? toPendingApproval(row) : undefined;
   }
 
   /**

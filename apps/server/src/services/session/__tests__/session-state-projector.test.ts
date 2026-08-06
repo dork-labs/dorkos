@@ -212,6 +212,71 @@ describe('SessionStateProjector', () => {
     expect(p.hasPendingInteractions()).toBe(false);
   });
 
+  // DOR-939: an in-session capability hold parks the turn on a person the same
+  // way an approval does, so it must pause the stall watchdog and hold the lock —
+  // but it rides a SEPARATE set (no recovery DTO), so these pin that
+  // `hasPendingInteractions` reads it too, and that it self-expires when stranded.
+  const HELD_APPROVAL = {
+    approvalId: 'appr-1',
+    capabilityId: 'mcp.add',
+    capabilityTitle: 'Add an MCP server',
+    tier: 'destructive' as const,
+    summary: 'Prober wants to run "Add an MCP server"',
+    hasAgentPath: true,
+    requestedAt: new Date(1_000_000).toISOString(),
+    expiresAt: new Date(1_000_000 + 7_200_000).toISOString(),
+  };
+  const HOLD_CAP_MS = 45_000;
+
+  it('pauses the stall watchdog while a capability call is held, then un-pauses on resolution', () => {
+    const p = new SessionStateProjector('s1');
+    p.ingest({ type: 'turn_start' });
+    p.ingest({
+      type: 'capability_approval_required',
+      approval: HELD_APPROVAL,
+      startedAt: Date.now(),
+      capMs: HOLD_CAP_MS,
+    } as RawSessionEvent);
+    // The turn is legitimately parked on a person — the watchdog stays paused and
+    // the lock is not stealable, exactly as for the three interaction kinds.
+    expect(p.hasPendingInteractions()).toBe(true);
+    expect(p.getStatus().lifecycle).toBe('blocked');
+
+    p.ingest({
+      type: 'capability_approval_resolved',
+      approvalId: 'appr-1',
+      outcome: 'granted',
+    } as RawSessionEvent);
+    // Resolved MID-turn (the held tool call resumes), so it settles back to
+    // streaming — not idle — and the watchdog re-arms for the rest of the turn.
+    expect(p.hasPendingInteractions()).toBe(false);
+    expect(p.getStatus().lifecycle).toBe('streaming');
+  });
+
+  it('stops pausing once a STRANDED capability hold passes its cap', () => {
+    // The turn threw with a hold outstanding, so no resolution ever arrives. The
+    // hold must not pin the watchdog forever — it self-expires at its own cap,
+    // the same immortality guard the interaction set carries.
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    const p = new SessionStateProjector('s1');
+    p.ingest({
+      type: 'capability_approval_required',
+      approval: HELD_APPROVAL,
+      startedAt: Date.now(),
+      capMs: HOLD_CAP_MS,
+    } as RawSessionEvent);
+    expect(p.hasPendingInteractions()).toBe(true);
+
+    // One tick short of the cap: still a live wait.
+    vi.setSystemTime(1_000_000 + HOLD_CAP_MS - 1);
+    expect(p.hasPendingInteractions()).toBe(true);
+
+    // At the cap the hold is stale — nobody is waiting any more, whatever the map holds.
+    vi.setSystemTime(1_000_000 + HOLD_CAP_MS);
+    expect(p.hasPendingInteractions()).toBe(false);
+  });
+
   it('does not treat an interrupted turn as still waiting on a person', () => {
     // markInterrupted leaves `interactions` populated by design, so the raw-size
     // read made every interrupted turn look permanently blocked — a turn the

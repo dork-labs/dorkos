@@ -24,6 +24,7 @@ import { CompactBoundaryRow } from './CompactBoundaryRow';
 import { CompactPendingRow, CollapsibleCard } from '../primitives';
 import { TouchChipStrip } from '../chips';
 import { McpAppBlock } from '@/layers/features/mcp-apps';
+import { ApprovalCard } from '@/layers/features/approvals';
 
 /**
  * Derive the MCP server name from a namespaced MCP tool name
@@ -364,6 +365,18 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
           postTokens={part.postTokens}
           failed={part.failed}
           error={part.error}
+        />
+      );
+    }
+    if (part.type === 'capability_approval') {
+      // An agent's held destructive capability call (DOR-939). The same card a
+      // person answers on the dashboard, rendered inline — approving it resolves
+      // the same approval through the capability decision route, and the agent's
+      // held call resumes in this turn.
+      return (
+        <ApprovalCard
+          key={`capability-approval-${part.approval.approvalId}`}
+          approval={part.approval}
         />
       );
     }

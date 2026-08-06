@@ -238,6 +238,22 @@ export class SessionStateProjector {
   /** Live interactions keyed by id; mirrors the DOR-73 pendingInteractions map. */
   private readonly interactions = new Map<string, TrackedInteraction>();
 
+  /**
+   * Live in-session capability approval HOLDS keyed by approval id (DOR-939).
+   *
+   * Deliberately separate from {@link interactions}: a capability hold does not
+   * ride the PendingInteractionDTO recovery machinery — its inline card recovers
+   * from the in-progress-turn replay, and it is bounded by the hold cap rather
+   * than the 10-minute interaction timeout. It exists so
+   * {@link hasPendingInteractions} reports the turn as legitimately parked while a
+   * person decides, which is what pauses the stall watchdog and holds the session
+   * lock (the same guarantee the three interaction kinds get, without their
+   * durable-recovery surface). Each entry carries its own cap so a stranded hold —
+   * a turn that threw with a hold outstanding — self-expires rather than pausing
+   * the watchdog forever.
+   */
+  private readonly capabilityHolds = new Map<string, { startedAt: number; capMs: number }>();
+
   /** Running subagents by taskId; size feeds `runningSubagentCount`. */
   private readonly runningSubagents = new Set<string>();
 
@@ -443,6 +459,15 @@ export class SessionStateProjector {
       case 'elicitation_prompt':
         this.trackInteraction(event);
         break;
+      // An in-session capability hold (DOR-939): tracked as a pending hold so the
+      // stall watchdog pauses and the lock is not stolen, then dropped when the
+      // person decides. NOT a `trackInteraction` — see {@link capabilityHolds}.
+      case 'capability_approval_required':
+        this.trackCapabilityHold(event);
+        break;
+      case 'capability_approval_resolved':
+        this.untrackCapabilityHold(event.approvalId);
+        break;
       case 'interaction_resolved':
         // Backfill WHICH interaction this was and WHEN it began, before
         // dropping the only record of either. `project()` runs before the event
@@ -486,8 +511,40 @@ export class SessionStateProjector {
    */
   private untrackInteraction(interactionId: string): void {
     this.interactions.delete(interactionId);
-    if (this.interactions.size === 0 && this.status.lifecycle === 'blocked') {
-      this.status.lifecycle = this.inProgressTurn !== null ? 'streaming' : 'idle';
+    this.settleBlockedLifecycle();
+  }
+
+  /** Track a capability hold (DOR-939) and flip the session to `blocked`. */
+  private trackCapabilityHold(
+    event: Extract<SessionEvent, { type: 'capability_approval_required' }>
+  ): void {
+    this.capabilityHolds.set(event.approval.approvalId, {
+      startedAt: event.startedAt,
+      capMs: event.capMs,
+    });
+    this.status.lifecycle = 'blocked';
+  }
+
+  /**
+   * Drop a resolved capability hold and settle the lifecycle back from `blocked`.
+   * The hold resolves MID-turn (the held tool call resumes), so it settles to
+   * `streaming` while the turn keeps producing, not `idle`.
+   */
+  private untrackCapabilityHold(approvalId: string): void {
+    this.capabilityHolds.delete(approvalId);
+    this.settleBlockedLifecycle();
+  }
+
+  /**
+   * Settle the lifecycle out of `blocked` once nothing — no interaction, no
+   * capability hold — remains pending. Runs via {@link project}, so the same fold
+   * applies on live ingest and any replay.
+   */
+  private settleBlockedLifecycle(): void {
+    if (this.interactions.size === 0 && this.capabilityHolds.size === 0) {
+      if (this.status.lifecycle === 'blocked') {
+        this.status.lifecycle = this.inProgressTurn !== null ? 'streaming' : 'idle';
+      }
     }
   }
 
@@ -680,7 +737,25 @@ export class SessionStateProjector {
    * @param now - Server epoch ms to evaluate expiry against (injected for tests).
    */
   hasPendingInteractions(now = Date.now()): boolean {
-    return listPendingInteractions(this.interactions, now).length > 0;
+    if (listPendingInteractions(this.interactions, now).length > 0) return true;
+    // A capability hold (DOR-939) parks the turn on a person the same way, so it
+    // pauses the watchdog too — bounded by its own cap so a stranded hold cannot
+    // pause it forever, mirroring the interaction set's expiry.
+    return this.hasLiveCapabilityHold(now);
+  }
+
+  /**
+   * Whether any in-session capability hold is still within its cap. A hold past
+   * its cap is treated as gone: the held tool call has, or is about to, degrade to
+   * the poll payload, so it must stop pausing the watchdog.
+   *
+   * @param now - Server epoch ms to evaluate each hold's cap against.
+   */
+  private hasLiveCapabilityHold(now: number): boolean {
+    for (const { startedAt, capMs } of this.capabilityHolds.values()) {
+      if (now - startedAt < capMs) return true;
+    }
+    return false;
   }
 
   /** A copy of the held status projection. */

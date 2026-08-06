@@ -794,3 +794,93 @@ describe('feedProjector', () => {
     expect(snapshot.inProgressTurn).toBeNull();
   });
 });
+
+describe('capability approval hold round-trip (DOR-939)', () => {
+  // The ONLY code carrying approval/startedAt/capMs/approvalId across the
+  // emitted-StreamEvent ({type,data:{...}}) -> RawSessionEvent bridge is
+  // toCapabilityApprovalRequiredEvent / toCapabilityApprovalResolvedEvent. Neither
+  // the hold test (asserts the PUSHED StreamEvent shape) nor the projector test
+  // (ingests an already-normalized event) crosses it. A typo there
+  // (`data.capMs` -> `data.capMS`) would fall back to the safe default and still
+  // pass both suites while silently losing the hold's REAL cap. These feed the
+  // EMITTED shape through and assert the values survive AND the projector pauses.
+  const HELD_APPROVAL = {
+    approvalId: 'appr-1',
+    capabilityId: 'mcp.add',
+    capabilityTitle: 'Add an MCP server',
+    tier: 'destructive' as const,
+    summary: 'Prober wants to run "Add an MCP server"',
+    hasAgentPath: true,
+    requestedAt: '2026-08-06T00:00:00.000Z',
+    expiresAt: '2026-08-06T02:00:00.000Z',
+  };
+  // Distinct from CAPABILITY_APPROVAL_HOLD_CAP_MS (45_000) so a typo that falls
+  // back to the default is CAUGHT by the value assertion, not masked by it.
+  const EMITTED_CAP_MS = 30_000;
+  const EMITTED_STARTED_AT = 1_234_000;
+
+  it('carries approval/startedAt/capMs across the normalizer, then pauses the projector', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(EMITTED_STARTED_AT);
+    try {
+      const raw = toRawSessionEvent({
+        type: 'capability_approval_required',
+        data: { approval: HELD_APPROVAL, startedAt: EMITTED_STARTED_AT, capMs: EMITTED_CAP_MS },
+      } as unknown as StreamEvent);
+
+      // The bridge preserved every field the projector's pause math depends on.
+      expect(raw).toEqual({
+        type: 'capability_approval_required',
+        approval: HELD_APPROVAL,
+        startedAt: EMITTED_STARTED_AT,
+        capMs: EMITTED_CAP_MS,
+      });
+
+      // …and the normalized event actually pauses the watchdog when ingested.
+      const projector = new SessionStateProjector('s1');
+      projector.ingest(raw as RawSessionEvent);
+      expect(projector.hasPendingInteractions()).toBe(true);
+      // One tick short of the EMITTED cap (not the 45s default): still a live wait.
+      vi.setSystemTime(EMITTED_STARTED_AT + EMITTED_CAP_MS - 1);
+      expect(projector.hasPendingInteractions()).toBe(true);
+      // At the emitted cap the hold is stale. (A capMs typo would fall back to the
+      // default and read true here; the value assertion above is what catches it.)
+      vi.setSystemTime(EMITTED_STARTED_AT + EMITTED_CAP_MS);
+      expect(projector.hasPendingInteractions()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('carries approvalId across the normalizer so the resolution untracks the hold', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(EMITTED_STARTED_AT);
+    try {
+      const projector = new SessionStateProjector('s1');
+      projector.ingest(
+        toRawSessionEvent({
+          type: 'capability_approval_required',
+          data: { approval: HELD_APPROVAL, startedAt: EMITTED_STARTED_AT, capMs: EMITTED_CAP_MS },
+        } as unknown as StreamEvent) as RawSessionEvent
+      );
+      expect(projector.hasPendingInteractions()).toBe(true);
+
+      const resolved = toRawSessionEvent({
+        type: 'capability_approval_resolved',
+        data: { approvalId: 'appr-1', outcome: 'granted' },
+      } as unknown as StreamEvent);
+      expect(resolved).toEqual({
+        type: 'capability_approval_resolved',
+        approvalId: 'appr-1',
+        outcome: 'granted',
+      });
+
+      // The approvalId survived the bridge, so the resolution found and dropped the
+      // hold — the watchdog is armed again well before the cap would have expired.
+      projector.ingest(resolved as RawSessionEvent);
+      expect(projector.hasPendingInteractions()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

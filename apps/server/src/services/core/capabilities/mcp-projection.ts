@@ -35,7 +35,12 @@ import {
   APPROVAL_TOKEN_ARGUMENT,
   CapabilityGateRefusal,
   splitApprovalToken,
+  type ApprovalRequiredPayload,
 } from './tier-enforcement.js';
+import {
+  awaitCapabilityApproval,
+  type CapabilityApprovalHold,
+} from './capability-approval-hold.js';
 
 /**
  * The capabilities the given MCP server advertises, in registration order —
@@ -182,13 +187,19 @@ function textResult(payload: unknown, isError = false): CallToolResult {
  * @param context - Optional request-scoped context (the calling agent's
  *   identity, resolved from the `X-DorkOS-Agent` header or the session's working
  *   directory). Omitting it invokes unattributed, exactly as before.
+ * @param hold - Optional in-session hold seam (DOR-939). When present and a FRESH
+ *   destructive ask is gated (`reason: 'no_approval'`), the call is held inline
+ *   awaiting the operator's decision and resumes on a grant, returning the real
+ *   result in the same turn. Omitted on every sessionless surface (external
+ *   `/mcp`, HTTP), which keep the unchanged token/poll flow.
  * @returns The MCP text-content result.
  */
 export async function invokeCapabilityAsMcpResult(
   registry: CapabilityRegistry,
   id: string,
   args: unknown,
-  context?: CapabilityInvocationContext
+  context?: CapabilityInvocationContext,
+  hold?: CapabilityApprovalHold
 ): Promise<CallToolResult> {
   const capability = registry.get(id);
   // Only a destructive tool advertises `approvalToken`, so only a destructive
@@ -200,30 +211,88 @@ export async function invokeCapabilityAsMcpResult(
       : { approvalToken: undefined, input: args };
 
   try {
-    // Build the context field by field rather than spreading the caller's object.
-    // The in-session resolver hands out ONE memoized context per session, so
-    // spreading it would forward whatever a shared object happened to carry into
-    // a call it has nothing to do with. Only the adapter's own facts may reach the
-    // registry — and note what is absent: an MCP adapter never mints a trusted
-    // marker, because everything arriving here arrived over the wire.
-    const data = await registry.invoke(id, input, {
-      ...(context?.identity ? { identity: context.identity } : {}),
-      ...(context?.sessionId ? { sessionId: context.sessionId } : {}),
-      ...(approvalToken ? { approvalToken } : {}),
-      retryChannel: 'mcp-argument',
-    });
-    return textResult(data);
+    return textResult(await invokeThroughRegistry(registry, id, input, context, approvalToken));
   } catch (err) {
-    // A gated or refused call returns the gate's structured payload as an
-    // ordinary result (not `isError`): needing an approval is a step in a
-    // protocol, not a failure, which is exactly how the marketplace's
-    // `requires_confirmation` result has always behaved.
     if (err instanceof CapabilityGateRefusal) {
-      return textResult(err.decision.payload);
+      const decision = err.decision;
+      // In-session hold: a FRESH destructive ask (nothing presented yet) can wait
+      // for the operator and resume on a grant, instead of returning the poll
+      // payload immediately. Every other refusal — a ceiling denial, an
+      // awaiting-decision echo of an already-presented token, a deny — returns its
+      // payload exactly as before, and so does this one on any sessionless surface
+      // (no `hold`).
+      if (
+        hold &&
+        decision.outcome === 'approval_required' &&
+        decision.payload.reason === 'no_approval'
+      ) {
+        return holdAndResume(registry, id, input, context, decision.payload, hold);
+      }
+      // A gated or refused call returns the gate's structured payload as an
+      // ordinary result (not `isError`): needing an approval is a step in a
+      // protocol, not a failure, which is exactly how the marketplace's
+      // `requires_confirmation` result has always behaved.
+      return textResult(decision.payload);
     }
     if (err instanceof CapabilityToolError) {
       return textResult(err.payload, true);
     }
+    throw err;
+  }
+}
+
+/**
+ * Invoke a capability through the registry on the MCP retry channel, carrying any
+ * approval token the caller (or a resume) presented.
+ *
+ * Built field by field rather than spreading the caller's context object: the
+ * in-session resolver hands out ONE memoized context per session, so spreading it
+ * would forward whatever a shared object happened to carry into a call it has
+ * nothing to do with. Only the adapter's own facts reach the registry — and note
+ * what is absent: an MCP adapter never mints a trusted marker, because everything
+ * arriving here arrived over the wire.
+ */
+function invokeThroughRegistry(
+  registry: CapabilityRegistry,
+  id: string,
+  input: unknown,
+  context: CapabilityInvocationContext | undefined,
+  approvalToken: string | undefined
+): Promise<unknown> {
+  return registry.invoke(id, input, {
+    ...(context?.identity ? { identity: context.identity } : {}),
+    ...(context?.sessionId ? { sessionId: context.sessionId } : {}),
+    ...(approvalToken ? { approvalToken } : {}),
+    retryChannel: 'mcp-argument',
+  });
+}
+
+/**
+ * Hold a fresh destructive ask inline until the operator decides, then resume.
+ *
+ * On `granted`/`denied` the call is re-invoked with the granted token: the gate
+ * consumes it and returns the REAL result on a grant, or throws a
+ * {@link CapabilityGateRefusal} carrying the `denied` payload on a refusal. On any
+ * no-decision ending (`timeout` past the cap, `expired`) the held call degrades to
+ * the EXACT `approval_required` payload today's poll flow returns — never worse.
+ */
+async function holdAndResume(
+  registry: CapabilityRegistry,
+  id: string,
+  input: unknown,
+  context: CapabilityInvocationContext | undefined,
+  payload: ApprovalRequiredPayload,
+  hold: CapabilityApprovalHold
+): Promise<CallToolResult> {
+  const outcome = await awaitCapabilityApproval(hold, payload);
+  if (outcome !== 'granted' && outcome !== 'denied') return textResult(payload);
+  try {
+    return textResult(
+      await invokeThroughRegistry(registry, id, input, context, payload.approvalToken)
+    );
+  } catch (err) {
+    if (err instanceof CapabilityGateRefusal) return textResult(err.decision.payload);
+    if (err instanceof CapabilityToolError) return textResult(err.payload, true);
     throw err;
   }
 }

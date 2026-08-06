@@ -29,6 +29,7 @@
 import type { StreamEvent, TerminalReason } from '@dorkos/shared/types';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { RawSessionEvent, SessionStateProjector } from './session-state-projector.js';
+import { CAPABILITY_APPROVAL_HOLD_CAP_MS } from '../core/capabilities/capability-approval-hold.js';
 
 /** A `StreamEvent`'s `data` payload, read defensively as a loose record. */
 type StreamData = Record<string, unknown>;
@@ -97,6 +98,15 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
       return toQuestionEvent(data);
     case 'elicitation_prompt':
       return toElicitationEvent(data);
+
+    // An in-session destructive capability call held awaiting the operator's
+    // decision, and its resolution (DOR-939). The projector tracks the required
+    // event as a pending HOLD (pausing the stall watchdog); the resolved event
+    // drops it and retires the inline card.
+    case 'capability_approval_required':
+      return toCapabilityApprovalRequiredEvent(data);
+    case 'capability_approval_resolved':
+      return toCapabilityApprovalResolvedEvent(data);
 
     case 'session_status':
       return toStatusChange(data);
@@ -354,6 +364,44 @@ function toQuestionEvent(data: StreamData): RawOf<'question_prompt'> {
     remainingMs: Number(data.remainingMs ?? data.timeoutMs ?? 0),
     // QuestionItem[] passes through structurally; the projector treats it opaquely.
     questions: (data.questions as RawOf<'question_prompt'>['questions']) ?? [],
+  };
+}
+
+/** Map a `capability_approval_required` StreamEvent to its session-stream member. */
+function toCapabilityApprovalRequiredEvent(
+  data: StreamData
+): RawOf<'capability_approval_required'> {
+  return {
+    type: 'capability_approval_required',
+    // The pending approval passes through structurally — the adapter built it
+    // from the approval service, so the projector treats it opaquely.
+    approval: data.approval as RawOf<'capability_approval_required'>['approval'],
+    // `|| default`, NOT `?? 0`: a malformed `startedAt`/`capMs` must fail toward
+    // KEEPING the stall-pause (a live hold), never toward silently disabling it.
+    // `Number(undefined)` and `Number('typo')` are `NaN`, and `now - NaN < capMs`
+    // is always false — so a `?? 0` (or a bare `Number(...)`) would drop the pause
+    // the instant a typo reached here, and the watchdog would reap the turn while
+    // the person was still deciding. `|| default` catches undefined, NaN, and 0
+    // (never a real value) and substitutes a safe live hold.
+    startedAt: Number(data.startedAt) || Date.now(),
+    capMs: Number(data.capMs) || CAPABILITY_APPROVAL_HOLD_CAP_MS,
+  };
+}
+
+/** Map a `capability_approval_resolved` StreamEvent to its session-stream member. */
+function toCapabilityApprovalResolvedEvent(
+  data: StreamData
+): RawOf<'capability_approval_resolved'> {
+  return {
+    type: 'capability_approval_resolved',
+    // A missing id fails SAFE in the same direction as the required event: an
+    // empty id matches no tracked hold, so the untrack is a no-op and the hold
+    // self-expires at its cap rather than being dropped early — it never
+    // un-pauses a still-live wait.
+    approvalId: String(data.approvalId ?? ''),
+    // A missing outcome degrades to `timeout` — the no-decision word, which is
+    // exactly how a hold that reached here without one should read.
+    outcome: (data.outcome as RawOf<'capability_approval_resolved'>['outcome']) ?? 'timeout',
   };
 }
 

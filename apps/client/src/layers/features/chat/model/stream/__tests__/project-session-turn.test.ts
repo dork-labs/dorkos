@@ -1086,4 +1086,53 @@ describe('projectInProgressTurn — approval receipts', () => {
       (projectInProgressTurn(replayed)[0] as { approvalOutcome?: string }).approvalOutcome
     ).toBe('allowed');
   });
+
+  // DOR-939: an agent's held destructive capability call surfaces inline as the
+  // same approval card the dashboard shows, and retires when the hold resolves.
+  const HELD_APPROVAL = {
+    approvalId: 'appr-1',
+    capabilityId: 'mcp.add',
+    capabilityTitle: 'Add an MCP server',
+    tier: 'destructive' as const,
+    summary: 'Prober wants to run "Add an MCP server"',
+    hasAgentPath: true,
+    requestedAt: '2026-08-06T00:00:00.000Z',
+    expiresAt: '2026-08-06T02:00:00.000Z',
+  };
+
+  it('projects a capability_approval_required event to an inline approval card', () => {
+    const events: SessionEvent[] = [
+      { seq: 1, type: 'text_delta', text: 'Adding the server…' },
+      {
+        seq: 2,
+        type: 'capability_approval_required',
+        approval: HELD_APPROVAL,
+        startedAt: 1_000_000,
+        capMs: 45_000,
+      },
+    ];
+    const parts = projectInProgressTurn(events);
+    // The inline card carries the SAME PendingApproval the dashboard renders, so
+    // approving it resolves the same approvalId through the capability route.
+    expect(parts).toEqual([
+      { type: 'text', text: 'Adding the server…' },
+      { type: 'capability_approval', approval: HELD_APPROVAL },
+    ]);
+  });
+
+  it('retires the inline capability card on its capability_approval_resolved event', () => {
+    const events: SessionEvent[] = [
+      {
+        seq: 1,
+        type: 'capability_approval_required',
+        approval: HELD_APPROVAL,
+        startedAt: 1_000_000,
+        capMs: 45_000,
+      },
+      { seq: 2, type: 'capability_approval_resolved', approvalId: 'appr-1', outcome: 'granted' },
+    ];
+    // The hold ended, so the card disappears from the transcript — exactly as the
+    // dashboard card retires on approval_resolved.
+    expect(projectInProgressTurn(events).some((p) => p.type === 'capability_approval')).toBe(false);
+  });
 });

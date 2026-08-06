@@ -1511,6 +1511,9 @@ async function start() {
       defaultCwd: env.DORKOS_DEFAULT_CWD ?? process.cwd(),
       runtimeRegistry,
       activityService,
+      // The approval primitive the in-session hold (DOR-939) waits on, so a fresh
+      // destructive capability call holds inline and resumes on the operator's yes.
+      approvals: approvalService,
       ...(taskStore && { taskStore }),
       ...(relayCore && { relayCore }),
       ...(adapterManager && { adapterManager }),

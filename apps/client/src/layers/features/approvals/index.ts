@@ -19,6 +19,10 @@
  */
 export { PendingApprovalsSection } from './ui/PendingApprovalsSection';
 export { ApprovalList } from './ui/ApprovalList';
+// The single approval card, exported so the chat transcript can render an
+// agent's held destructive capability call inline (DOR-939) — the same card a
+// person answers on the dashboard, resolving the same approval.
+export { ApprovalCard } from './ui/ApprovalCard';
 export { ApprovalsUnavailable } from './ui/ApprovalsUnavailable';
 export { usePendingApprovals } from './model/use-pending-approvals';
 export { StandingPermissionList } from './ui/StandingPermissionList';
