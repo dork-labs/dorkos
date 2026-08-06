@@ -17,6 +17,22 @@ import type { IdentityOrigin } from './identity-origin';
 /** How long the pointer has to sit on a trigger before the card opens. Radix's own default (700ms) reads as sluggish for something this small; this favours a quick glance. */
 const OPEN_DELAY_MS = 300;
 
+/**
+ * Every open `IdentityHoverCard` instance's own close function, app-wide.
+ *
+ * Ordinarily this coordination is Radix's own job for free: each
+ * `HoverCardContent` is a `DismissableLayer`, and ANY outside `pointerdown`
+ * — including one that lands on a different card's trigger — reaches every
+ * open layer's own document-level listener and closes it. Touch's gesture
+ * priority (below) breaks exactly that: `stopPropagation` on a touch/pen
+ * trigger press keeps the event from ever reaching `document`, so a second
+ * card opened by touch can no longer rely on Radix noticing the first one is
+ * still open. This closes that specific gap — opening a card closes every
+ * other one this module knows about first — without reintroducing the
+ * drawer race `stopPropagation` exists to prevent.
+ */
+const openCardCloseFns = new Set<() => void>();
+
 /** What an agent identity adds to the card: how it runs, and whether it is working right now. */
 export interface IdentityHoverCardAgentInfo {
   /** The runtime this agent runs on, e.g. `'Claude Code'`. Omitted chips are simply not drawn. */
@@ -53,7 +69,10 @@ export interface IdentityHoverCardDescriptor {
 export interface IdentityHoverCardProps {
   /** The identity this card describes. */
   identity: IdentityHoverCardDescriptor;
-  /** The element that opens the card on hover — wrapped in `asChild`, so it keeps its own tag. */
+  /**
+   * The element that opens the card — on pointer hover, keyboard focus, or a
+   * touch/pen long-press. Wrapped in `asChild`, so it keeps its own tag.
+   */
   children: React.ReactNode;
   /** Extra classes for the popover content. */
   className?: string;
@@ -82,23 +101,37 @@ function InfoChip({ className, children }: { className?: string; children: React
  *
  * **Opens three ways, one card.** A pointer hovering the trigger opens it
  * after {@link OPEN_DELAY_MS}, and keyboard focus opens it too, both straight
- * from Radix's own `HoverCard` wiring. Neither reaches a touch screen: there
- * is no hover to detect, and Radix's trigger deliberately excludes `touch`
- * pointers from that same open/close logic so a tap can never masquerade as
- * a hover. This adds the third path — holding a touch point on the trigger
- * opens the SAME card through the SAME `<HoverCardContent>`, via
- * {@link useLongPress} (the room's own long-press gesture, see
- * `responsive-context-menu.tsx`) driving this component's own controlled
- * `open` state. One card, three ways in; never a second implementation to
- * keep in sync.
+ * from Radix's own `HoverCard` wiring. Neither reaches a touch or pen input:
+ * there is no hover to detect, and Radix's trigger deliberately excludes
+ * `touch` pointers from that same open/close logic so a tap can never
+ * masquerade as a hover. This adds the third path — holding a touch or pen
+ * point on the trigger opens the SAME card through the SAME
+ * `<HoverCardContent>`, via {@link useLongPress} (the room's own long-press
+ * gesture, see `responsive-context-menu.tsx`) driving this component's own
+ * controlled `open` state. One card, three ways in; never a second
+ * implementation to keep in sync.
  *
  * A plain, quick tap does nothing on its own — deliberately. The mention
  * pill this wraps has no click action yet ("View profile" is still
  * **soon**), and a tap that opened the card would read as a click
  * affordance the pill does not actually have, one this would then have to
  * un-teach once a real tap-to-navigate lands. Long-press is also gated to
- * `pointerType === 'touch'` specifically, so it never doubles up with a
- * mouse holding the trigger down — hover already opens that case, faster.
+ * `pointerType === 'touch' || 'pen'` specifically, so it never doubles up
+ * with a mouse holding the trigger down — hover already opens that case,
+ * faster.
+ *
+ * **Gesture priority: the trigger wins over anything it sits inside.** A
+ * mention pill in a room message lives inside `EntryActionMenu`, which arms
+ * its OWN long-press on the whole row (touch screens open a message-actions
+ * drawer the same way). Both gestures start from the identical `pointerdown`
+ * — without help, holding a pill would race both timers and could open the
+ * drawer AND this card at once. So a touch/pen `pointerdown` on the trigger
+ * calls `stopPropagation`, before the row's own long-press ever arms; the
+ * most specific target under the finger wins, and the row's drawer still
+ * opens normally for a hold that starts anywhere else on the message. A
+ * mouse pointerdown never stops propagating here — there is no competing
+ * gesture on a mouse (the row's long-press only exists for touch), and this
+ * must not touch desktop right-click/context behaviour.
  *
  * Presentational: it renders the descriptor it is handed and composes
  * {@link IdentityAvatar}. The caller resolves `identity` from whatever
@@ -120,14 +153,38 @@ function IdentityHoverCard({ identity, children, className }: IdentityHoverCardP
   // focus still drive it exactly as before (their handlers call `onOpenChange`,
   // same as any uncontrolled `HoverCard`), but a touch long-press has no Radix
   // event to hook — it has to set `open` itself, on the very state Radix reads.
-  const [open, setOpen] = React.useState(false);
+  const [open, setOpenState] = React.useState(false);
+  // Stable across renders (empty deps) — this identity is what the effect
+  // below uses as the `openCardCloseFns` Set key.
+  const close = React.useCallback(() => setOpenState(false), []);
+  const setOpen = React.useCallback((next: boolean) => {
+    if (next) {
+      // Close every other open card FIRST — including one closed this way,
+      // which flips ITS OWN `open` to false and (via the effect below) drops
+      // itself from the set on its own next render. Ordering matters: this
+      // runs before `close` is added for the card opening now, so a card
+      // never closes itself.
+      for (const closeOther of openCardCloseFns) closeOther();
+    }
+    setOpenState(next);
+  }, []);
+  React.useEffect(() => {
+    if (!open) return;
+    openCardCloseFns.add(close);
+    // Covers every way `open` goes back to `false` — this card's own
+    // dismiss, another card's `setOpen(true)` calling `close` above, or
+    // unmounting outright (e.g. scrolled out of a virtualized room feed).
+    return () => {
+      openCardCloseFns.delete(close);
+    };
+  }, [open, close]);
   // Which pointer is currently down on the trigger, read back when the long
   // press timer fires. A `PointerEvent` isn't available inside the timer
   // callback itself, so this is captured at `pointerdown` time instead.
-  const isTouchPressRef = React.useRef(false);
+  const isTouchLikePressRef = React.useRef(false);
   const longPress = useLongPress({
     onLongPress: () => {
-      if (isTouchPressRef.current) setOpen(true);
+      if (isTouchLikePressRef.current) setOpen(true);
     },
   });
 
@@ -137,7 +194,17 @@ function IdentityHoverCard({ identity, children, className }: IdentityHoverCardP
         asChild
         {...longPress}
         onPointerDown={(event: React.PointerEvent) => {
-          isTouchPressRef.current = event.pointerType === 'touch';
+          const isTouchLike = event.pointerType === 'touch' || event.pointerType === 'pen';
+          isTouchLikePressRef.current = isTouchLike;
+          if (isTouchLike) {
+            // The trigger is the most specific target under the finger —
+            // stop here, before this bubbles to a message row's own
+            // long-press (`EntryActionMenu`'s mobile drawer). Never done for
+            // a mouse: nothing upstream arms a competing gesture from a
+            // mouse pointerdown, and desktop right-click/context behaviour
+            // must see every event exactly as it did before this existed.
+            event.stopPropagation();
+          }
           longPress.onPointerDown(event);
         }}
       >
