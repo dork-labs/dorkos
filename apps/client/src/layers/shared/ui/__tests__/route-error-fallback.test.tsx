@@ -69,6 +69,46 @@ describe('RouteErrorFallback', () => {
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/' });
   });
 
+  it('renders a "Reload app" affordance and reloads for a dynamic-import error', async () => {
+    const reload = vi.fn();
+    const originalLocation = window.location;
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...originalLocation, reload },
+    });
+
+    try {
+      const user = userEvent.setup();
+      render(
+        <RouteErrorFallback
+          {...makeErrorProps({
+            message:
+              'Failed to fetch dynamically imported module: https://app/assets/index-abc123.js',
+          })}
+        />
+      );
+
+      const reloadButton = screen.getByRole('button', { name: /reload app/i });
+      expect(reloadButton).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
+
+      await user.click(reloadButton);
+      expect(reload).toHaveBeenCalledOnce();
+      expect(mockInvalidate).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(window, 'location', {
+        configurable: true,
+        value: originalLocation,
+      });
+    }
+  });
+
+  it('renders "Retry" and not "Reload app" for a non-dynamic-import error', () => {
+    render(<RouteErrorFallback {...makeErrorProps({ message: 'Test failure' })} />);
+    expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /reload app/i })).not.toBeInTheDocument();
+  });
+
   it('shows stack trace in dev mode', () => {
     // Vitest runs with import.meta.env.DEV = true by default
     render(

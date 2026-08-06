@@ -1,19 +1,7 @@
 import { Component, Fragment, type ErrorInfo, type ReactElement, type ReactNode } from 'react';
 import { RotateCw } from 'lucide-react';
 import { Button } from '@/layers/shared/ui';
-
-/**
- * A caught error whose message matches a rejected `React.lazy` dynamic import —
- * the shape a stale viewer chunk takes after the app was rebuilt or redeployed
- * while a tab stayed open. Reloading fetches the current chunk hashes.
- */
-const DYNAMIC_IMPORT_ERROR =
-  /dynamically imported module|Loading chunk|Importing a module script failed|ChunkLoadError/i;
-
-/** Whether a caught error looks like a failed dynamic import of a viewer chunk. */
-function isDynamicImportError(error: Error): boolean {
-  return DYNAMIC_IMPORT_ERROR.test(error.message);
-}
+import { isDynamicImportError } from '@/layers/shared/lib';
 
 /** The in-tab message shown when a document's viewer fails to render. */
 function CanvasErrorFallback({
