@@ -98,6 +98,15 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
     case 'elicitation_prompt':
       return toElicitationEvent(data);
 
+    // An in-session destructive capability call held awaiting the operator's
+    // decision, and its resolution (DOR-939). The projector tracks the required
+    // event as a pending HOLD (pausing the stall watchdog); the resolved event
+    // drops it and retires the inline card.
+    case 'capability_approval_required':
+      return toCapabilityApprovalRequiredEvent(data);
+    case 'capability_approval_resolved':
+      return toCapabilityApprovalResolvedEvent(data);
+
     case 'session_status':
       return toStatusChange(data);
 
@@ -354,6 +363,31 @@ function toQuestionEvent(data: StreamData): RawOf<'question_prompt'> {
     remainingMs: Number(data.remainingMs ?? data.timeoutMs ?? 0),
     // QuestionItem[] passes through structurally; the projector treats it opaquely.
     questions: (data.questions as RawOf<'question_prompt'>['questions']) ?? [],
+  };
+}
+
+/** Map a `capability_approval_required` StreamEvent to its session-stream member. */
+function toCapabilityApprovalRequiredEvent(
+  data: StreamData
+): RawOf<'capability_approval_required'> {
+  return {
+    type: 'capability_approval_required',
+    // The pending approval passes through structurally — the adapter built it
+    // from the approval service, so the projector treats it opaquely.
+    approval: data.approval as RawOf<'capability_approval_required'>['approval'],
+    startedAt: Number(data.startedAt ?? Date.now()),
+    capMs: Number(data.capMs ?? 0),
+  };
+}
+
+/** Map a `capability_approval_resolved` StreamEvent to its session-stream member. */
+function toCapabilityApprovalResolvedEvent(
+  data: StreamData
+): RawOf<'capability_approval_resolved'> {
+  return {
+    type: 'capability_approval_resolved',
+    approvalId: String(data.approvalId ?? ''),
+    outcome: (data.outcome as RawOf<'capability_approval_resolved'>['outcome']) ?? 'timeout',
   };
 }
 

@@ -19,6 +19,8 @@ export {
   MIN_APPROVAL_TTL_MS,
   type ApprovalConsumeResult,
   type ApprovalDecisionFailure,
+  type ApprovalDecisionOutcome,
+  type AwaitDecisionOptions,
   type ApprovalTicket,
 } from './approval-service.js';
 export {

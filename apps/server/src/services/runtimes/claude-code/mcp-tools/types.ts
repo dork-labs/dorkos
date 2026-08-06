@@ -10,6 +10,7 @@ import type { MeshCore } from '@dorkos/mesh';
 import type { ExtensionManager } from '../../../extensions/extension-manager.js';
 import type { RuntimeRegistry } from '../../../core/runtime-registry.js';
 import type { ActivityService } from '../../../activity/activity-service.js';
+import type { ApprovalService } from '../../../core/approvals/index.js';
 
 /**
  * Explicit dependency interface for MCP tool handlers.
@@ -57,6 +58,15 @@ export interface McpToolDeps {
    * so hermetic tool-deps fixtures that don't exercise activity need not stub it.
    */
   activityService?: ActivityService;
+  /**
+   * Optional {@link ApprovalService} — the approval primitive the in-session hold
+   * (DOR-939) waits on, so a fresh destructive capability call can hold inline
+   * and resume on the operator's decision instead of returning a poll payload.
+   * Always populated in production (constructed at boot beside the tier gate);
+   * optional here so hermetic fixtures and the external `/mcp` surface — which is
+   * sessionless and never holds — need not stub it.
+   */
+  approvals?: ApprovalService;
 }
 
 /** Helper to return a JSON content block for MCP tool responses. */

@@ -228,6 +228,11 @@ export function createDorkOsToolServer(
     if (!invokingSessionId) return base;
     return { ...(base ?? {}), sessionId: invokingSessionId };
   };
+  // The in-session hold seam (DOR-939): only with BOTH a live session (an event
+  // queue to render the inline card into) and the approval primitive can a fresh
+  // destructive call hold inline and resume. Absent either — the introspection
+  // stub, a hermetic test — capabilities keep the token/poll flow untouched.
+  const hold = session && deps.approvals ? { session, approvals: deps.approvals } : undefined;
   const server = createSdkMcpServer({
     name: 'dorkos',
     version: '1.0.0',
@@ -237,7 +242,7 @@ export function createDorkOsToolServer(
         ...(sessionId ? { sessionId } : {}),
         resolveContext,
       }),
-      ...capabilityMcpTools(capabilityRegistry, 'in-session', resolveCapabilityContext),
+      ...capabilityMcpTools(capabilityRegistry, 'in-session', resolveCapabilityContext, hold),
     ],
   });
 
