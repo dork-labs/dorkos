@@ -212,6 +212,38 @@ describe('ProfileDrawer — what `isSelf` gates', () => {
   });
 });
 
+describe('ProfileDrawer — a row with nothing to say', () => {
+  // The state the playground's rich fixture hides and a real install serves
+  // constantly: a person carries no project, no namespace and no registration
+  // date, and only your own row carries an email. An unconditional scroll
+  // region turns that into ~700px of framed blank down the whole panel.
+  it('draws no body at all when the identity has no facts', () => {
+    const { baseElement } = render(<ProfileDrawer member={miguel} open onOpenChange={() => {}} />);
+
+    expect(screen.getByText('Miguel Ferreira-Santos')).toBeInTheDocument();
+    expect(baseElement.querySelector('[data-slot="profile-facts"]')).toBeNull();
+  });
+
+  it('draws no hairline under the header when nothing follows it', () => {
+    const { baseElement } = render(<ProfileDrawer member={miguel} open onOpenChange={() => {}} />);
+
+    const header = baseElement.querySelector('[data-slot="sheet-header"]');
+    expect(header).not.toBeNull();
+    expect(header!.className).not.toContain('border-b');
+  });
+
+  it('still draws the body — and its rule — the moment there is one fact', () => {
+    const { baseElement } = render(
+      <ProfileDrawer member={operator} open onOpenChange={() => {}} />
+    );
+
+    expect(baseElement.querySelector('[data-slot="profile-facts"]')).not.toBeNull();
+    expect(baseElement.querySelector('[data-slot="sheet-header"]')!.className).toContain(
+      'border-b'
+    );
+  });
+});
+
 describe('ProfileDrawer — an identity with no handle', () => {
   it('says nothing rather than an empty @', () => {
     const { baseElement } = render(

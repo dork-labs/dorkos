@@ -8,7 +8,6 @@
  *
  * @module features/profile/ui/ProfileDrawer
  */
-import type { ReactNode } from 'react';
 import type { TeamAgentFacts, TeamMember } from '@dorkos/shared/team-schemas';
 import {
   Badge,
@@ -21,7 +20,7 @@ import {
   ResponsiveSheetHeader,
   ResponsiveSheetTitle,
 } from '@/layers/shared/ui';
-import { resolveIdentityFace } from '@/layers/shared/lib';
+import { cn, resolveIdentityFace } from '@/layers/shared/lib';
 import { formatRuntimeIdentity } from '@/layers/entities/runtime';
 import { platformLabel } from '@/layers/entities/room';
 import { teamMemberLabel } from '@/layers/entities/team';
@@ -64,13 +63,36 @@ function formatDate(iso: string): string | null {
 }
 
 /** One fact about the identity — a label and its value, never a control. */
-function Fact({ label, children }: { label: string; children: ReactNode }) {
+function Fact({ label, value }: { label: string; value: string }) {
   return (
     <div className="grid gap-0.5 py-2 sm:grid-cols-[7rem_1fr] sm:gap-3 sm:py-1.5">
       <dt className="text-muted-foreground text-xs">{label}</dt>
-      <dd className="text-foreground text-xs break-words">{children}</dd>
+      <dd className="text-foreground text-xs break-words">{value}</dd>
     </div>
   );
+}
+
+/**
+ * The facts this identity actually has, in reading order.
+ *
+ * Built as a list rather than rendered inline so the drawer can ask whether
+ * there is a body at all. Most rows have none: on a real install a person
+ * carries no project, no namespace and no registration date, and only your own
+ * row carries an email — so an unconditional scroll region is a framed void
+ * running the height of the panel for nearly every person on the roster.
+ */
+function factsFor(member: TeamMember): { label: string; value: string }[] {
+  const facts: { label: string; value: string }[] = [];
+  const registered = member.agent ? formatDate(member.agent.registeredAt) : null;
+  if (member.agent?.projectPath) facts.push({ label: 'Project', value: member.agent.projectPath });
+  if (member.agent?.namespace) facts.push({ label: 'Namespace', value: member.agent.namespace });
+  if (registered) facts.push({ label: 'Joined', value: registered });
+  // Only ever on your own row — the server sends it for nobody else, and this
+  // refuses it anyway so that stays true.
+  if (member.isSelf && member.person?.email) {
+    facts.push({ label: 'Email', value: member.person.email });
+  }
+  return facts;
 }
 
 export interface ProfileDrawerProps {
@@ -136,7 +158,7 @@ export function ProfileDrawer({
   const agent = member.agent;
   const person = member.person;
   const projectPath = agent?.projectPath;
-  const registered = agent ? formatDate(agent.registeredAt) : null;
+  const facts = factsFor(member);
 
   return (
     <ResponsiveSheet open={open} onOpenChange={onOpenChange}>
@@ -145,7 +167,9 @@ export function ProfileDrawer({
         data-member-id={member.id}
         className="flex flex-col gap-0 p-0"
       >
-        <ResponsiveSheetHeader className="gap-3 border-b p-4">
+        {/* The rule under the header belongs to the body it separates — with no
+            facts to draw, a hairline would fence off nothing. */}
+        <ResponsiveSheetHeader className={cn('gap-3 p-4', facts.length > 0 && 'border-b')}>
           <div className="flex items-start gap-3">
             <IdentityAvatar
               size="lg"
@@ -198,16 +222,15 @@ export function ProfileDrawer({
           </div>
         </ResponsiveSheetHeader>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">
-          <dl className="divide-border divide-y">
-            {projectPath && <Fact label="Project">{projectPath}</Fact>}
-            {agent?.namespace && <Fact label="Namespace">{agent.namespace}</Fact>}
-            {registered && <Fact label="Joined">{registered}</Fact>}
-            {/* Only ever on your own row — the server sends it for nobody else,
-                and this refuses it anyway so that stays true. */}
-            {member.isSelf && person?.email && <Fact label="Email">{person.email}</Fact>}
-          </dl>
-        </div>
+        {facts.length > 0 && (
+          <div data-slot="profile-facts" className="min-h-0 flex-1 overflow-y-auto p-4">
+            <dl className="divide-border divide-y">
+              {facts.map((fact) => (
+                <Fact key={fact.label} label={fact.label} value={fact.value} />
+              ))}
+            </dl>
+          </div>
+        )}
 
         <ResponsiveSheetFooter className="flex-row gap-2 border-t p-4 empty:hidden">
           {projectPath && onOpenSession && (

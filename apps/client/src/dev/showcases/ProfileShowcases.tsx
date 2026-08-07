@@ -48,7 +48,7 @@ export function ProfileShowcases() {
   return (
     <PlaygroundSection
       title="Profile Drawer"
-      description="One panel for any identity — a person or an agent, the same component either way. An agent says how it runs, how recently it was heard from (in words, never a live dot) and who it belongs to; a person says their role and where they are. Your own row is the only one carrying an email and an Edit button."
+      description="One panel for any identity — a person or an agent, the same component either way. An agent says how it runs, how recently it was heard from (in words, never a live dot) and who it belongs to; a person says their role and where they are. Your own row is the only one carrying an email and an Edit button. Two things this fixture is richer than a real install: it gives one agent a project path, which nothing production serves fills yet, so 'Open a session' is drawn here and not there; and a person with no facts at all (Miguel, below) is the common case — that drawer is deliberately header-only, with no empty body under it."
     >
       <ShowcaseLabel>Agent, someone bridged in, and your own row</ShowcaseLabel>
       <ShowcaseDemo>

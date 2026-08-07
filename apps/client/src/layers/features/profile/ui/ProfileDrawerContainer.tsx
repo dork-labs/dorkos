@@ -7,7 +7,7 @@
  *
  * @module features/profile/ui/ProfileDrawerContainer
  */
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useProfileDeepLink, useSafeNavigate, useSettingsDeepLink } from '@/layers/shared/model';
 import { findTeamOwner, useTeamRoster } from '@/layers/entities/team';
 import { ProfileDrawer } from './ProfileDrawer';
@@ -31,18 +31,32 @@ export interface ProfileDrawerContainerProps {
 /**
  * Resolve `?profile=<id>` against the roster and draw that identity.
  *
- * The roster read is gated on `open`, so a route that never opens a profile
- * never asks the server for one.
+ * The roster read is gated on a profile actually being open on somebody, so a
+ * route that never opens one never asks the server for it — and neither does a
+ * store flag left true with no subject behind it.
  *
- * An id the roster does not hold draws nothing rather than an empty panel —
- * a hand-typed or long-shared link to an identity that has since left the
- * install has nothing honest to say about it.
+ * **Three ways to have no member, and they are not the same thing.** While the
+ * read is in flight this draws nothing and waits. A read that *succeeded* and
+ * does not hold the id means the identity is gone, so the link is cleared
+ * rather than left riding the URL forever. A read that *failed* means we could
+ * not look, which is not the same as "they are gone", so the link survives to
+ * be retried.
  */
 export function ProfileDrawerContainer({ open, onOpenChange }: ProfileDrawerContainerProps) {
-  const { memberId } = useProfileDeepLink();
-  const { data } = useTeamRoster({ enabled: open });
+  const { memberId, close } = useProfileDeepLink();
+  const roster = useTeamRoster({ enabled: open && memberId !== null });
   const navigate = useSafeNavigate();
   const { open: openSettings } = useSettingsDeepLink();
+
+  const data = roster.data;
+  const member = data?.members.find((row) => row.id === memberId);
+
+  // Self-heal a stale link. In an effect rather than at render because closing
+  // navigates, and only on a settled, successful read — see the doc above.
+  const isMissing = open && memberId !== null && roster.isSuccess && member === undefined;
+  useEffect(() => {
+    if (isMissing) close();
+  }, [isMissing, close]);
 
   const handleOpenSession = useCallback(
     (projectPath: string) => {
@@ -60,7 +74,6 @@ export function ProfileDrawerContainer({ open, onOpenChange }: ProfileDrawerCont
     openSettings(PROFILE_SETTINGS_TAB);
   }, [openSettings]);
 
-  const member = data?.members.find((row) => row.id === memberId);
   if (!member) return null;
 
   return (
