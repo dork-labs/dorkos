@@ -1,0 +1,108 @@
+/**
+ * Who the person at the keyboard is, for a surface that has no "you" framing.
+ *
+ * **The room path and the roster path diverge on purpose, and this module is
+ * the divergence.** `author-registry.ts` mints the operator's author row with
+ * `displayName = 'You'` and `bindOwner` deliberately never rewrites it: the
+ * column is a render cache with one value per author, so writing the account
+ * name there would relabel every message that person had ever written,
+ * retroactively. `'You'` is the right word from the operator's own seat in a
+ * room. A roster is not that seat — it lists everyone, so the operator's row
+ * has to carry their real name and let a small "you" chip do the job the
+ * literal used to.
+ *
+ * So the precedence below **never starts from `authors.display_name`**. It asks
+ * the account first, the profile the user filled in second, and only then falls
+ * back to the stored render cache — which on most installs is the literal
+ * itself, which is why reaching it is the last resort rather than the first
+ * answer.
+ *
+ * Nothing here writes. `LOCAL_HUMAN_DISPLAY_NAME` and `bindOwner` are untouched
+ * (spec `identity-consistency` §W2.2, ADR 260806-222535).
+ *
+ * @module server/services/identity/operator-profile
+ */
+import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
+
+/**
+ * The name a roster falls back to when this install knows nothing else about
+ * the person reading it.
+ *
+ * Deliberately the same word `author-registry.ts` stores, and deliberately NOT
+ * imported from it: these are two independent decisions that happen to agree,
+ * and coupling them would mean changing one changes the other silently.
+ */
+export const OPERATOR_FALLBACK_DISPLAY_NAME = 'You';
+
+/** The operator, as a roster row renders them. */
+export interface OperatorProfile {
+  /** Their real name where this install knows one, the fallback where it does not. */
+  displayName: string;
+  /** Their address — carried on the self row and nowhere else. */
+  email?: string;
+}
+
+/** The local account that owns this install, reduced to what a roster reads. */
+export interface OperatorAccount {
+  /**
+   * The Better Auth user id. Carried because it is also what decides WHICH
+   * author row is the operator (`isOwnerRecord`), so a roster that reads the
+   * account once has everything it needs and never asks twice.
+   */
+  id: string;
+  name: string | null;
+  email: string | null;
+}
+
+/** Where an operator's name can come from, in no particular order. */
+export interface OperatorProfileSources {
+  /** `findOwnerAccount()` plus its address, or `null` when nobody has registered. */
+  account: () => OperatorAccount | null;
+  /** `config.profile.displayName` — "what the user likes to be called". */
+  configDisplayName: () => string | null;
+}
+
+/** The first source with something in it, ignoring blanks. */
+function firstNamed(...candidates: (string | null | undefined)[]): string | null {
+  for (const candidate of candidates) {
+    const trimmed = candidate?.trim();
+    if (trimmed) return trimmed;
+  }
+  return null;
+}
+
+/**
+ * Resolve the operator's roster identity.
+ *
+ * Precedence, highest first: the owner account's name, then
+ * `config.profile.displayName`, then the stored author record's display name,
+ * then {@link OPERATOR_FALLBACK_DISPLAY_NAME}.
+ *
+ * The config value is passed through `sanitizeIdentity` and the account name is
+ * not, which is not an oversight: `config.profile.displayName` is
+ * agent-writable (a `config_patch` can set it mid-conversation), so it gets the
+ * same label treatment every other agent-writable profile value gets before it
+ * reaches a line DorkOS drew. The account name is operator-authored at signup
+ * through Better Auth and is already what a room roster renders.
+ *
+ * @param sources - Where the name may come from.
+ * @param authorDisplayName - The operator's stored author `displayName`, or
+ *   `null` when the roster could not read the `authors` table. Third in
+ *   precedence, never first.
+ */
+export function resolveOperatorProfile(
+  sources: OperatorProfileSources,
+  authorDisplayName: string | null
+): OperatorProfile {
+  const account = sources.account();
+  const configured = sources.configDisplayName();
+  const displayName =
+    firstNamed(
+      account?.name,
+      configured ? sanitizeIdentity(configured) : null,
+      authorDisplayName
+    ) ?? OPERATOR_FALLBACK_DISPLAY_NAME;
+
+  const email = account?.email?.trim();
+  return { displayName, ...(email ? { email } : {}) };
+}

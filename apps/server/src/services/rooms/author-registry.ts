@@ -30,7 +30,7 @@
  * @module server/services/rooms/author-registry
  */
 import { ulid } from 'ulidx';
-import { agents, authors, roomMembers, eq, and, inArray, isNull, type Db } from '@dorkos/db';
+import { agents, authors, roomMembers, asc, eq, and, inArray, isNull, type Db } from '@dorkos/db';
 import {
   agentAuthorRef,
   type AuthorKind,
@@ -141,6 +141,38 @@ export function toAuthorRef(record: AuthorRecord, mentionHandle?: string): Autho
     ...(record.kind === 'agent' ? { agentRef: agentAuthorRef(record.naturalKey) } : {}),
     ...(mentionHandle ? { mentionHandle } : {}),
   };
+}
+
+/**
+ * Whether an already-loaded author is the owner of this install.
+ *
+ * The record form of {@link AuthorRegistry.isOwner} — the same rule, expressed
+ * over a row a caller is already holding. The method delegates here, so there is
+ * one implementation and it cannot drift.
+ *
+ * Two modes, one meaning:
+ *
+ * - **No owner account** (`ownerUserId` is `null`): the `'local'` sentinel is
+ *   the owner. This is what keeps a single-user install identical — with no
+ *   accounts there is nobody else it could be.
+ * - **An owner account exists:** the author bound to `user:<ownerUserId>` is the
+ *   owner, and nobody else is. Not another human, not an agent, not the system
+ *   author.
+ *
+ * A caller that has just listed the roster must use THIS and not the method: the
+ * method re-reads each row by id, which is one query per person against the table
+ * the list already came from.
+ *
+ * @param record - The author to weigh.
+ * @param ownerUserId - The owner account's user id, or `null` when the install
+ *   has no accounts.
+ */
+export function isOwnerRecord(record: AuthorRecord, ownerUserId: string | null): boolean {
+  if (record.kind !== 'human') return false;
+  return (
+    record.naturalKey ===
+    (ownerUserId === null ? LOCAL_HUMAN_NATURAL_KEY : accountNaturalKey(ownerUserId))
+  );
 }
 
 /** What resolving an author needs: its kind, its stable key, and a label. */
@@ -589,11 +621,7 @@ export class AuthorRegistry {
    */
   isOwner(authorId: string, ownerUserId: string | null): boolean {
     const author = this.getById(authorId);
-    if (!author || author.kind !== 'human') return false;
-    return (
-      author.naturalKey ===
-      (ownerUserId === null ? LOCAL_HUMAN_NATURAL_KEY : accountNaturalKey(ownerUserId))
-    );
+    return author ? isOwnerRecord(author, ownerUserId) : false;
   }
 
   /** The system author — who a `notice` entry is written by. */
@@ -614,6 +642,35 @@ export class AuthorRegistry {
   getById(id: string): AuthorRecord | null {
     const row = this.db.select().from(authors).where(eq(authors.id, id)).get();
     return row ? toRecord(row) : null;
+  }
+
+  /**
+   * Every author this install currently has, oldest first.
+   *
+   * The `retired_at IS NULL` filter is the same one {@link AuthorRegistry.activeRow}
+   * relies on, for the same reason: a directory that has changed hands has a
+   * retired row and a live one, and a listing that did not say so would render
+   * both. A retired author keeps its history forever — it simply stops being
+   * anybody the install can address.
+   *
+   * Ordered by `created_at` so the answer is stable across calls rather than
+   * whatever order SQLite happens to return. **A pure read**: unlike
+   * {@link AuthorRegistry.localHuman} and {@link AuthorRegistry.resolve}, this
+   * mints nothing, which is what lets a read-only surface (`GET /api/team`,
+   * ADR 260806-222535) list people without creating one.
+   *
+   * @param kind - Narrow to one author kind, or omit for all of them.
+   */
+  listActive(kind?: AuthorKind): AuthorRecord[] {
+    const rows = this.db
+      .select()
+      .from(authors)
+      .where(
+        kind ? and(eq(authors.kind, kind), isNull(authors.retiredAt)) : isNull(authors.retiredAt)
+      )
+      .orderBy(asc(authors.createdAt))
+      .all();
+    return rows.map(toRecord);
   }
 
   /**

@@ -209,6 +209,10 @@
       "types": "./src/room-schemas.ts",
       "default": "./dist/room-schemas.js"
     },
+    "./team-schemas": {
+      "types": "./src/team-schemas.ts",
+      "default": "./dist/team-schemas.js"
+    },
     "./health-schemas": {
       "types": "./src/health-schemas.ts",
       "default": "./dist/health-schemas.js"
