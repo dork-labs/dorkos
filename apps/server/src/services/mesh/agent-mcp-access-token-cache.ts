@@ -24,6 +24,15 @@
 /** Refresh this many ms before a token's expiry, so injection never races the clock. */
 const REFRESH_SKEW_MS = 60_000;
 
+/**
+ * How often to refresh a refreshable token whose issuer declared no lifetime.
+ * `expires_in` is optional in RFC 6749, and a token with no declared expiry is
+ * not a token that lives forever — it is a token whose expiry we cannot see. An
+ * hour is short enough that a rotated-out token is replaced soon after it lapses,
+ * and long enough not to hammer the issuer.
+ */
+const UNDECLARED_LIFETIME_REFRESH_MS = 60 * 60_000;
+
 /** A cache key `(agentId, serverName)` joined by NUL, which no agent id or server name contains. */
 function cacheKey(agentId: string, serverName: string): string {
   return `${agentId}\0${serverName}`;
@@ -41,6 +50,12 @@ export interface CachedToken {
   expiresAt: number;
   /** Whether a background refresh can be scheduled (a refresh token exists). */
   refreshable: boolean;
+  /**
+   * The MCP server URL this token was minted for. Reads must present the same
+   * URL or the token is withheld — see {@link McpAccessTokenCache.getAccessToken}.
+   * `undefined` for a token stored before the binding existed, which never matches.
+   */
+  serverUrl: string | undefined;
 }
 
 /** Injectable timer seam so tests drive scheduling without the platform clock. */
@@ -67,6 +82,8 @@ const defaultScheduler: TimerScheduler = {
 interface CacheEntry {
   accessToken: string;
   expiresAt: number;
+  /** The server URL the token was minted for; a read presenting a different one is refused. */
+  serverUrl: string | undefined;
   /** Obtain a fresh cached token, or `null` on failure (which evicts the entry). */
   refresh: () => Promise<CachedToken | null>;
   timer?: ReturnType<typeof setTimeout>;
@@ -95,16 +112,27 @@ export class McpAccessTokenCache {
   }
 
   /**
-   * The live access token for `(agentId, serverName)`, or `undefined` when none
-   * is cached or the cached one has expired. Synchronous by design — this is the
-   * exact call the injection read path makes.
+   * The live access token for `(agentId, serverName)` at `serverUrl`, or
+   * `undefined` when none is cached, the cached one has expired, or it was minted
+   * for a different URL. Synchronous by design — this is the exact call the
+   * injection read path makes.
+   *
+   * The URL check is the re-pointed-server guard (DOR-986): a managed server can
+   * be removed and re-added, or updated, under the same name at a different URL,
+   * and the key alone cannot tell those apart. A mismatch evicts the entry rather
+   * than just withholding it, so the stale token stops being refreshed too.
    *
    * @param agentId - The owning agent's id.
    * @param serverName - The managed server's name.
+   * @param serverUrl - The URL the caller is about to send the token to.
    */
-  getAccessToken(agentId: string, serverName: string): string | undefined {
+  getAccessToken(agentId: string, serverName: string, serverUrl: string): string | undefined {
     const entry = this.entries.get(cacheKey(agentId, serverName));
     if (!entry) return undefined;
+    if (entry.serverUrl !== serverUrl) {
+      this.evict(agentId, serverName);
+      return undefined;
+    }
     return this.now() < entry.expiresAt ? entry.accessToken : undefined;
   }
 
@@ -131,17 +159,22 @@ export class McpAccessTokenCache {
     const entry: CacheEntry = {
       accessToken: token.accessToken,
       expiresAt: token.expiresAt,
+      serverUrl: token.serverUrl,
       refresh,
     };
     this.entries.set(key, entry);
 
-    if (token.expiresAt !== Number.POSITIVE_INFINITY && token.refreshable) {
-      const delay = Math.max(0, token.expiresAt - REFRESH_SKEW_MS - this.now());
-      entry.timer = this.scheduler.set(
-        () => void this.refreshNow(agentId, serverName).catch(() => {}),
-        delay
-      );
-    }
+    if (!token.refreshable) return;
+    // A declared expiry sets the deadline; without one there is no deadline to
+    // aim at, so fall back to a conservative period rather than never refreshing.
+    const delay =
+      token.expiresAt === Number.POSITIVE_INFINITY
+        ? UNDECLARED_LIFETIME_REFRESH_MS
+        : Math.max(0, token.expiresAt - REFRESH_SKEW_MS - this.now());
+    entry.timer = this.scheduler.set(
+      () => void this.refreshNow(agentId, serverName).catch(() => {}),
+      delay
+    );
   }
 
   /**
@@ -181,6 +214,23 @@ export class McpAccessTokenCache {
     const entry = this.entries.get(key);
     if (entry?.timer) this.scheduler.clear(entry.timer);
     this.entries.delete(key);
+  }
+
+  /**
+   * Drop every cached token belonging to one agent, cancelling their pending
+   * refreshes — the deleted-agent cascade, which cannot name the agent's servers
+   * because its manifest is already gone by then.
+   *
+   * @param agentId - The agent whose cached tokens are being dropped.
+   */
+  evictAgent(agentId: string): void {
+    const prefix = `${agentId}\0`;
+    for (const key of [...this.entries.keys()]) {
+      if (!key.startsWith(prefix)) continue;
+      const entry = this.entries.get(key);
+      if (entry?.timer) this.scheduler.clear(entry.timer);
+      this.entries.delete(key);
+    }
   }
 
   /** Cancel every pending refresh and empty the cache (shutdown). */

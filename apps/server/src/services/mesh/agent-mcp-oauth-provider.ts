@@ -42,6 +42,15 @@ const MS_PER_SECOND = 1000;
 export interface StoredMcpTokens extends OAuthTokens {
   /** Absolute expiry in epoch ms; omitted when the token set carried no `expires_in`. */
   expiresAt?: number;
+  /**
+   * The MCP server URL this token set was minted for (DOR-986). A managed server
+   * keeps its name across a URL change, so the `(agentId, serverName)` key alone
+   * cannot tell "the token for this server" from "the token for whatever used to
+   * live under this name" — the bound URL is what makes that distinguishable, and
+   * a mismatch means the token is withheld. Absent on records written before the
+   * binding existed, which read as unbound and are re-minted on next sign-in.
+   */
+  serverUrl?: string;
 }
 
 /**
@@ -78,22 +87,58 @@ export class McpOAuthSecretStore {
   /**
    * Persist a token set (the refresh token stays here, never on the manifest),
    * stamping an ABSOLUTE `expiresAt` from the relative `expires_in` so a token
-   * loaded after a restart is judged by its real issue time, not the restart time.
+   * loaded after a restart is judged by its real issue time, not the restart time,
+   * and binding it to the server URL it was minted for (DOR-986).
+   *
+   * @param agentId - The owning agent's id.
+   * @param serverName - The managed server's name.
+   * @param tokens - The token set the OAuth server just issued.
+   * @param serverUrl - The MCP server URL the token authorizes against.
    */
-  async saveTokens(agentId: string, serverName: string, tokens: OAuthTokens): Promise<void> {
+  async saveTokens(
+    agentId: string,
+    serverName: string,
+    tokens: OAuthTokens,
+    serverUrl: string
+  ): Promise<void> {
     const record: StoredMcpTokens = {
       ...tokens,
       ...(tokens.expires_in !== undefined
         ? { expiresAt: Date.now() + tokens.expires_in * MS_PER_SECOND }
         : {}),
+      serverUrl,
     };
     await this.store.set(key(agentId, serverName, 'tokens'), JSON.stringify(record));
   }
 
+  /** Forget the stored token set for one server, keeping its DCR registration. */
+  async clearTokens(agentId: string, serverName: string): Promise<void> {
+    await this.store.delete(key(agentId, serverName, 'tokens'));
+  }
+
+  /** Forget the DCR client registration for one server (a stale `redirect_uri`, say). */
+  async clearClientInformation(agentId: string, serverName: string): Promise<void> {
+    await this.store.delete(key(agentId, serverName, 'client'));
+  }
+
   /** Forget everything stored for one server (sign-out / removal). */
   async clear(agentId: string, serverName: string): Promise<void> {
-    await this.store.delete(key(agentId, serverName, 'client'));
-    await this.store.delete(key(agentId, serverName, 'tokens'));
+    await this.clearClientInformation(agentId, serverName);
+    await this.clearTokens(agentId, serverName);
+  }
+
+  /**
+   * Forget every server's OAuth material for one agent — the deleted-agent
+   * cascade. Keys are namespaced by agent id, so this is a prefix sweep; nothing
+   * is decrypted along the way.
+   *
+   * @param agentId - The agent whose stored OAuth material is being dropped.
+   */
+  async forgetAgent(agentId: string): Promise<void> {
+    const prefix = `${agentId}:`;
+    for (const storeKey of await this.store.keys()) {
+      if (storeKey.startsWith(prefix)) await this.store.delete(storeKey);
+    }
   }
 
   private async read<T>(storeKey: string): Promise<T | undefined> {
@@ -116,6 +161,8 @@ function key(agentId: string, serverName: string, kind: 'client' | 'tokens'): st
 export interface McpOAuthProviderContext {
   agentId: string;
   serverName: string;
+  /** The MCP server URL being authorized — stored alongside the token set (DOR-986). */
+  serverUrl: string;
   /** The opaque OAuth `state` for this sign-in, and the flow-store key. */
   state: string;
   /** The fixed loopback callback URL (`redirect_uri`), same for authorize and exchange. */
@@ -163,7 +210,37 @@ export class McpOAuthClientProvider implements OAuthClientProvider {
   }
 
   saveTokens(tokens: OAuthTokens): Promise<void> {
-    return this.ctx.secrets.saveTokens(this.ctx.agentId, this.ctx.serverName, tokens);
+    return this.ctx.secrets.saveTokens(
+      this.ctx.agentId,
+      this.ctx.serverName,
+      tokens,
+      this.ctx.serverUrl
+    );
+  }
+
+  /**
+   * Drop credentials the OAuth server just told us are no longer good, so the
+   * SDK's `auth()` retry can start clean instead of replaying them.
+   *
+   * This method is why a revoked grant is recoverable at all (DOR-986). `auth()`
+   * catches an `invalid_grant` from a refresh, calls this with `'tokens'`, and
+   * retries; without an implementation the retry replays the same dead refresh
+   * token and throws again, so `mcp.signin` can never produce a fresh sign-in
+   * link and the server is stuck. `'client'`/`'all'` cover the sibling case of a
+   * stale dynamic registration (an `invalid_client` after the callback URL moved).
+   *
+   * @param scope - Which credentials the SDK wants forgotten.
+   */
+  async invalidateCredentials(
+    scope: 'all' | 'client' | 'tokens' | 'verifier' | 'discovery'
+  ): Promise<void> {
+    const { agentId, serverName, state, secrets, flows } = this.ctx;
+    if (scope === 'tokens' || scope === 'all') await secrets.clearTokens(agentId, serverName);
+    if (scope === 'client' || scope === 'all')
+      await secrets.clearClientInformation(agentId, serverName);
+    if (scope === 'verifier' || scope === 'all') flows.clearVerifier(state);
+    // 'discovery' has nothing to forget: this provider implements no
+    // `saveDiscoveryState`, so the SDK re-discovers on every `auth()` anyway.
   }
 
   redirectToAuthorization(authorizationUrl: URL): void {
