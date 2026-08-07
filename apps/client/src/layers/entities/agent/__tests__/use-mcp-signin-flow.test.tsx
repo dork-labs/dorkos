@@ -453,6 +453,29 @@ describe('useMcpSigninFlow — flow ownership', () => {
     expect(transport.startMcpSignin).not.toHaveBeenCalled();
   });
 
+  it('refreshes the managed roster when it adopts a pushed card', async () => {
+    // The server only pushes a card when a server's sign-in state has changed —
+    // and the sharpest case is a sign-in revoked mid-session, where the roster is
+    // still holding "Connected" from before (DOR-981). Without this, an open
+    // settings panel keeps saying so for the rest of its stale window.
+    const transport = createMockTransport();
+    const { queryClient, wrapper } = createWrapper(transport);
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const { result } = renderHook(() => useMcpSigninFlow(AGENT_ID, SERVER), { wrapper });
+    act(() =>
+      result.current.adopt({
+        flowId: 'flow-revoked',
+        authorizeUrl: startResult.authorizeUrl!,
+        disclosure: startResult.disclosure,
+      })
+    );
+
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ['agents', 'mcp-servers', AGENT_ID],
+    });
+  });
+
   it('re-adopting the same flow does not knock a waiting sign-in back', async () => {
     const transport = createMockTransport();
     const { result } = renderHook(() => useMcpSigninFlow(AGENT_ID, SERVER), {

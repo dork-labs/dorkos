@@ -86,6 +86,7 @@ import {
 import { AgentMcpServerService } from './services/mesh/agent-mcp-server-service.js';
 import { AgentMcpOAuthService } from './services/mesh/agent-mcp-oauth-service.js';
 import { resumeAfterMcpSignin } from './services/mesh/mcp-signin-resume.js';
+import { createMcpRevocationWatch } from './services/mesh/mcp-revocation.js';
 import { createMcpOAuthRouter } from './routes/mcp-oauth.js';
 import type { McpCapabilityDeps } from './services/mesh/mcp-capabilities.js';
 import { setRelayEnabled, setRelayInitError } from './services/relay/relay-state.js';
@@ -1533,6 +1534,20 @@ async function start() {
     // Test branch only — the seam route is itself mounted only under the gate.
     if (env.DORKOS_TEST_RUNTIME) {
       app.locals.agentMcpServerService = agentMcpServerService;
+    }
+    // A managed server that refuses the token DorkOS injected flips its row back
+    // to needs-auth and draws the sign-in card in the conversation the person hit
+    // it in (DOR-981). Wired only for claude-code, because its per-turn MCP status
+    // snapshot is the only place a runtime tells DorkOS a bearer was rejected;
+    // the other runtimes report no such thing yet, so nothing is claimed for them.
+    if (claudeRuntime) {
+      claudeRuntime.setMcpAuthEvidence(
+        createMcpRevocationWatch({
+          oauth: agentMcpOAuthService,
+          servers: agentMcpServerService,
+          logger,
+        })
+      );
     }
     // Deleting an agent takes its MCP sign-ins with it (DOR-986): stored tokens,
     // dynamic client registrations, cached bearers and their refresh timers. The

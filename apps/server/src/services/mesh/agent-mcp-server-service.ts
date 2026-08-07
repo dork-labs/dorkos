@@ -547,6 +547,52 @@ export class AgentMcpServerService {
    * @returns Enabled servers by name, or `{}` when there is no readable manifest.
    */
   injectableServersForCwd(cwd: string): Record<string, McpAppServerConnection> {
+    const entry = this.injectionEntryFor(cwd);
+    if (!entry) return {};
+    return this.mergeOAuthHeaders(entry.agentId, entry.servers);
+  }
+
+  /**
+   * Resolve one server NAME, seen at a session's working directory, back to the
+   * OAuth target it belongs to — or `undefined` when DorkOS manages no sign-in
+   * for it (DOR-981).
+   *
+   * The runtimes report MCP trouble by name and cwd, which is all a subprocess
+   * knows; every credential decision needs `(agentId, serverName, serverUrl)`.
+   * This is the one translation between them, and it also enforces which servers
+   * a sign-in may ever be offered for:
+   *
+   * - **stdio** has no remote endpoint and takes no bearer.
+   * - **An entry carrying its OWN `Authorization` header** is a credential the
+   *   operator pasted in. Its 401 is their token to fix, not a DorkOS OAuth
+   *   sign-in to launch — the same carve-out {@link deriveAuthStatus} and
+   *   {@link probeForOAuth} make, made a third time because this is a third
+   *   surface that could otherwise put a Sign in button on a row that needs none.
+   *
+   * Synchronous and mtime-memoized, sharing {@link injectableServersForCwd}'s
+   * cache: it answers the same question off the same parse.
+   *
+   * @param cwd - The session's working directory (the agent's workspace path).
+   * @param serverName - The managed server's name as the runtime reported it.
+   */
+  oauthTargetForCwd(
+    cwd: string,
+    serverName: string
+  ): { agentId: string; serverName: string; serverUrl: string } | undefined {
+    const entry = this.injectionEntryFor(cwd);
+    if (!entry?.agentId) return undefined;
+    const connection = entry.servers[serverName];
+    if (!connection || connection.transport === 'stdio') return undefined;
+    if (hasOwnAuthorizationHeader(connection.headers)) return undefined;
+    return { agentId: entry.agentId, serverName, serverUrl: connection.url };
+  }
+
+  /**
+   * The mtime-memoized parse of the manifest at `cwd`, or `undefined` when there
+   * is no readable one. Shared by every cwd-keyed reader so they cannot disagree
+   * about which enabled servers a directory has.
+   */
+  private injectionEntryFor(cwd: string): InjectionCacheEntry | undefined {
     const manifestPath = path.join(cwd, MANIFEST_DIR, MANIFEST_FILE);
 
     let mtimeMs: number;
@@ -554,7 +600,7 @@ export class AgentMcpServerService {
       mtimeMs = statSync(manifestPath).mtimeMs;
     } catch {
       this.injectionCache.delete(cwd);
-      return {};
+      return undefined;
     }
 
     const cached = this.injectionCache.get(cwd);
@@ -563,7 +609,7 @@ export class AgentMcpServerService {
         ? cached
         : this.readEnabledServersSync(manifestPath, cwd, mtimeMs);
     if (entry !== cached) this.injectionCache.set(cwd, entry);
-    return this.mergeOAuthHeaders(entry.agentId, entry.servers);
+    return entry;
   }
 
   /**

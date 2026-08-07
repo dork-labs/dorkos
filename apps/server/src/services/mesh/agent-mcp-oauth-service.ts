@@ -88,6 +88,16 @@ export interface AgentMcpOAuthServiceDeps {
   logger?: Pick<Logger, 'warn'>;
   /** `fetch` seam for the OAuth network calls (defaults to global `fetch`). */
   fetchImpl?: FetchFn;
+  /**
+   * Per-request ceiling for every OAuth HTTP call, in ms (defaults to
+   * {@link OAUTH_REQUEST_TIMEOUT_MS}).
+   *
+   * A seam like {@link sleep} and {@link cache}, and for the same reason: the
+   * ceiling is what stops a hung token endpoint from holding a target's lock
+   * forever, and a bound nothing can exercise end-to-end is a bound nobody has
+   * checked. Thirty real seconds is not a thing a test can wait for.
+   */
+  requestTimeoutMs?: number;
   /** Clock/timer seams forwarded to the access-token cache (tests only). */
   cache?: McpAccessTokenCacheDeps;
   /** Delay seam for the refresh backoff (tests only); defaults to a real timer. */
@@ -183,7 +193,10 @@ export class AgentMcpOAuthService {
     // Bounded at the seam, so every OAuth request — sign-in, callback exchange,
     // background refresh — inherits the ceiling that keeps a hung token endpoint
     // from wedging a target's lock.
-    this.fetchImpl = withRequestTimeout(deps.fetchImpl ?? fetch);
+    this.fetchImpl =
+      deps.requestTimeoutMs === undefined
+        ? withRequestTimeout(deps.fetchImpl ?? fetch)
+        : withRequestTimeout(deps.fetchImpl ?? fetch, deps.requestTimeoutMs);
   }
 
   /**
@@ -213,17 +226,21 @@ export class AgentMcpOAuthService {
    * never present the same refresh token to a rotating issuer at once.
    *
    * @param target - The agent, server, and server URL to authorize.
+   * @param options - The session that asked for this sign-in, when one did
+   *   (DOR-1004), and the directory it runs in (DOR-981) — both recorded on the
+   *   flow so the resume can find them after a restart.
    * @throws {Error} When `auth()` neither authorizes nor yields an authorize URL.
    */
   async startSignin(
     target: McpOAuthTarget,
-    options?: { originSessionId?: string }
+    options?: { originSessionId?: string; originCwd?: string }
   ): Promise<StartSigninResult> {
     return this.refresher.exclusive(targetKey(target), async () => {
       const state = randomBytes(16).toString('hex');
       this.flows.start(state, {
         ...target,
         ...(options?.originSessionId ? { originSessionId: options.originSessionId } : {}),
+        ...(options?.originCwd ? { originCwd: options.originCwd } : {}),
       });
       try {
         const connected = await this.authorize(target, state);
@@ -304,6 +321,25 @@ export class AgentMcpOAuthService {
     if (!target) return status;
     const toolCount = toolCountFrom(await probeTarget(this.probe, target, this.logger));
     return toolCount === undefined ? status : { ...status, toolCount };
+  }
+
+  /**
+   * The sign-in link already waiting for a target, or `undefined` (DOR-981).
+   *
+   * Exists so a caller reacting to a REFUSED token can re-use a live flow
+   * instead of minting a second one. A server that 401s once in a turn usually
+   * 401s several times, and one card per refusal would stack dead links above
+   * the working one.
+   *
+   * @param agentId - The owning agent's id.
+   * @param serverName - The managed server's name.
+   */
+  liveSigninFor(
+    agentId: string,
+    serverName: string
+  ): { flowId: string; authorizeUrl: string } | undefined {
+    const flow = this.flows.liveFor(agentId, serverName);
+    return flow ? { flowId: flow.flowId, authorizeUrl: flow.authorizeUrl } : undefined;
   }
 
   /**
@@ -418,6 +454,10 @@ export class AgentMcpOAuthService {
         serverName: target.serverName,
         sessionId: flow.originSessionId,
         flowId: state,
+        // Captured when the sign-in started, so the resume knows WHERE to run
+        // even after a restart has taken the session's projector with it
+        // (DOR-981). Absent for a flow started before this existed.
+        ...(flow.originCwd ? { originCwd: flow.originCwd } : {}),
         ...(toolCount === undefined ? {} : { toolCount }),
       });
     } catch (err) {
@@ -434,15 +474,26 @@ export class AgentMcpOAuthService {
    * each token's background refresh. A target with no stored token is skipped
    * (stays needs-auth until the operator signs in).
    *
+   * Runs under each target's own lock, like every other caller of
+   * {@link primeFromStore}. Boot is quiet enough that nothing can be racing yet,
+   * so the lock buys no safety today — it buys the INVARIANT: "every caller of
+   * `primeFromStore` holds this target's lock" is now true by construction rather
+   * than by an argument about when boot happens, which is what
+   * {@link forgetServerUnlocked} depends on and what a later caller of `warm`
+   * would otherwise quietly break (DOR-986 re-review). Deadlock-free because
+   * `warm`'s callers hold no lock: boot calls it, and so does the test suite.
+   *
    * @param targets - The enabled OAuth-capable managed servers across all agents.
    */
   async warm(targets: McpOAuthTarget[]): Promise<void> {
     for (const target of targets) {
-      await this.primeFromStore(target).catch((err: unknown) => {
-        this.logger.warn(
-          `[mcp-oauth] warm failed for ${target.serverName}: ${err instanceof Error ? err.message : String(err)}`
-        );
-      });
+      await this.refresher
+        .exclusive(targetKey(target), () => this.primeFromStore(target))
+        .catch((err: unknown) => {
+          this.logger.warn(
+            `[mcp-oauth] warm failed for ${target.serverName}: ${err instanceof Error ? err.message : String(err)}`
+          );
+        });
     }
   }
 
@@ -469,10 +520,17 @@ export class AgentMcpOAuthService {
   }
 
   /**
-   * The body of {@link forgetServer} without taking the lock. Only for callers
-   * that already hold it, or that run before any refresh could exist for the
-   * target — taking it again from inside would wait on the operation that is
-   * currently holding it, which never completes.
+   * The body of {@link forgetServer} without taking the lock. ONLY for callers
+   * that already hold it — taking it again from inside would wait on the
+   * operation currently holding it, which never completes.
+   *
+   * That precondition used to be a comment on each call site. It is now
+   * structural: every path that reaches here goes through
+   * {@link primeFromStore} or {@link authorize}, and every caller of THOSE runs
+   * inside `refresher.exclusive` for this target ({@link startSignin},
+   * {@link handleCallback}, {@link warm}). Adding a caller that does not is the
+   * one way to reintroduce the hazard, and the lock it must take is now the same
+   * lock every sibling takes rather than a special case for boot.
    */
   private async forgetServerUnlocked(agentId: string, serverName: string): Promise<void> {
     this.cache.evict(agentId, serverName);
@@ -518,10 +576,9 @@ export class AgentMcpOAuthService {
    * deleted rather than primed: it authorizes a server this name no longer points
    * at, so it can only ever be sent to the wrong place.
    *
-   * Deletes through the UNLOCKED path deliberately. Every caller either already
-   * holds the target's lock (sign-in, callback) or runs before any refresh for it
-   * can exist (`warm`, which primes the cache the timers hang off), so taking the
-   * lock here would be a self-deadlock in the first case and pointless in the second.
+   * Deletes through the UNLOCKED path deliberately: every caller — sign-in, the
+   * callback, `warm` — already holds this target's lock, so taking it here would
+   * be a self-deadlock.
    */
   private async primeFromStore(target: McpOAuthTarget): Promise<boolean> {
     const tokens = await this.secrets.tokens(target.agentId, target.serverName);

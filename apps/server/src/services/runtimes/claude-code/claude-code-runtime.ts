@@ -62,6 +62,8 @@ import {
   overlayApprovalReceipts,
   peekProjector,
 } from '../../session/index.js';
+import { authRefusedServers } from '../../mesh/mcp-revocation.js';
+import type { McpAuthEvidencePort } from '../../mesh/mcp-revocation.js';
 import { editBaselineStore } from '../../diff/index.js';
 import type { SessionStateProjector } from '../../session/index.js';
 
@@ -97,6 +99,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   private sessionConnectors:
     | import('../../connectors/session-exposure.js').SessionConnectorService
     | null = null;
+  private mcpAuthEvidence: McpAuthEvidencePort | undefined;
   private bindingRouter: import('../../relay/binding-router.js').BindingRouter | undefined;
   private bindingStore: import('../../relay/binding-store.js').BindingStore | undefined;
   private adapterManager: import('../../relay/adapter-manager.js').AdapterManager | undefined;
@@ -184,6 +187,21 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     sessionConnectors: import('../../connectors/session-exposure.js').SessionConnectorService
   ): void {
     this.sessionConnectors = sessionConnectors;
+  }
+
+  /**
+   * Inject the port that reacts to a managed MCP server refusing its credentials
+   * mid-session (DOR-981).
+   *
+   * The SDK reports each MCP server's connection status once per turn, and
+   * `needs-auth` there is the one place DorkOS ever learns that the bearer it
+   * injected was rejected — the subprocess is what dials the server, so it is the
+   * only thing that sees the 401. Everything the answer implies (evict, refresh,
+   * draw a sign-in card) is somebody else's business, hence a port: this runtime
+   * reports and forgets.
+   */
+  setMcpAuthEvidence(port: McpAuthEvidencePort | undefined): void {
+    this.mcpAuthEvidence = port;
   }
 
   /**
@@ -323,6 +341,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // Resolve the selected model's capabilities once: thinking config + whether it
     // supports auto permission mode (undefined when the model isn't cached yet).
     const modelCapability = this.cache.resolveModelCapability(session.model);
+    const cacheCallbacks = this.cache.buildSendCallbacks(cwdKey);
 
     yield* executeSdkQuery(
       sessionId,
@@ -337,7 +356,18 @@ export class ClaudeCodeRuntime implements AgentRuntime {
         bindingStore: this.bindingStore,
         adapterManager: this.adapterManager,
         mcpServerFactory: this.mcpServerFactory,
-        ...this.cache.buildSendCallbacks(cwdKey),
+        ...cacheCallbacks,
+        // Composed over the cache's own handler rather than replacing it: the
+        // per-turn status snapshot is one observation with two readers — the
+        // cache, which answers "what is connected?", and the revocation watch,
+        // which acts on the single status that means "the token you sent me was
+        // refused" (DOR-981). The session id is read when the snapshot ARRIVES,
+        // not now, so a session that was assigned its canonical id mid-turn
+        // reports the id its projector is keyed by.
+        onMcpStatusReceived: (servers) => {
+          cacheCallbacks.onMcpStatusReceived?.(servers);
+          this.reportMcpAuthFailures(session.sdkSessionId || sessionId, cwdKey, servers);
+        },
         // `sessionId` is the id THIS turn was asked with, which is only a hint:
         // after the session's first rename it is an alias, not the key the
         // store holds it under. The store resolves the real key itself.
@@ -1050,6 +1080,20 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   /** @inheritdoc */
   getMcpServerConfig(cwd: string, serverName: string): McpAppServerConnection | null {
     return this.cache.getMcpServerConfig(cwd, serverName);
+  }
+
+  /**
+   * Forward the servers this turn's status snapshot reports as having refused our
+   * credentials (DOR-981). Which status that is belongs to the mesh —
+   * {@link authRefusedServers} — because it is a fact about tokens, not about
+   * this SDK. Silent when nothing was refused, so the port is only woken by news.
+   */
+  private reportMcpAuthFailures(sessionId: string, cwd: string, servers: McpServerEntry[]): void {
+    const port = this.mcpAuthEvidence;
+    if (!port) return;
+    const serverNames = authRefusedServers(servers);
+    if (serverNames.length === 0) return;
+    port({ sessionId, cwd, serverNames });
   }
 
   /** @inheritdoc */
