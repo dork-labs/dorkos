@@ -34,6 +34,35 @@ const MAX_REFRESH_ATTEMPTS = 3;
 /** Backoff before the second attempt; doubled for each attempt after that. */
 const REFRESH_BACKOFF_BASE_MS = 1000;
 
+/**
+ * How long any single OAuth HTTP request may take before it is aborted.
+ *
+ * This is what keeps a hung server from being worse than a down one. Every token
+ * operation for a target runs under that target's lock, so a token endpoint that
+ * accepts the connection and then never answers would hold the lock forever and
+ * wedge every later sign-in and refresh for that server behind it. Thirty seconds
+ * is far longer than any healthy OAuth round trip and still bounded.
+ */
+export const OAUTH_REQUEST_TIMEOUT_MS = 30_000;
+
+/**
+ * Wrap a `fetch` so every request it makes is abandoned after `timeoutMs`.
+ * A caller-supplied signal still applies — whichever fires first wins.
+ *
+ * @param fetchImpl - The underlying fetch.
+ * @param timeoutMs - The per-request ceiling; defaults to {@link OAUTH_REQUEST_TIMEOUT_MS}.
+ */
+export function withRequestTimeout(
+  fetchImpl: typeof fetch,
+  timeoutMs: number = OAUTH_REQUEST_TIMEOUT_MS
+): typeof fetch {
+  return (input, init) => {
+    const timeout = AbortSignal.timeout(timeoutMs);
+    const signal = init?.signal ? AbortSignal.any([init.signal, timeout]) : timeout;
+    return fetchImpl(input, { ...init, signal });
+  };
+}
+
 /** What one refresh attempt concluded — the input to "retry, or give up?". */
 export type RefreshAttemptOutcome =
   /** A fresh token was obtained and persisted. */

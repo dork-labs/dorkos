@@ -45,6 +45,7 @@ import {
   McpTokenRefresher,
   attemptTokenRefresh,
   toCachedToken,
+  withRequestTimeout,
 } from './agent-mcp-token-refresher.js';
 
 /** The dedicated encrypted store id for managed-MCP OAuth material (tokens + DCR client info). */
@@ -92,9 +93,18 @@ export interface StartSigninResult {
   alreadyConnected: boolean;
 }
 
-/** `(agentId, serverName)` joined by NUL, which neither part can contain. */
+/**
+ * The per-target lock key: `(agentId, serverName)` joined by NUL, which neither
+ * part can contain. Every operation that reads-then-writes one server's token
+ * store serializes on this.
+ */
+function lockKey(agentId: string, serverName: string): string {
+  return `${agentId}\0${serverName}`;
+}
+
+/** {@link lockKey} for a whole target. */
 function targetKey(target: McpOAuthTarget): string {
-  return `${target.agentId}\0${target.serverName}`;
+  return lockKey(target.agentId, target.serverName);
 }
 
 /**
@@ -121,7 +131,10 @@ export class AgentMcpOAuthService {
       ...(deps.sleep ? { sleep: deps.sleep } : {}),
     });
     this.redirectUri = new URL(MCP_OAUTH_CALLBACK_PATH, deps.callbackBaseUrl).toString();
-    this.fetchImpl = deps.fetchImpl ?? fetch;
+    // Bounded at the seam, so every OAuth request — sign-in, callback exchange,
+    // background refresh — inherits the ceiling that keeps a hung token endpoint
+    // from wedging a target's lock.
+    this.fetchImpl = withRequestTimeout(deps.fetchImpl ?? fetch);
   }
 
   /**
@@ -229,6 +242,13 @@ export class AgentMcpOAuthService {
     }
 
     return this.refresher.exclusive(targetKey(target), async () => {
+      // Re-checked INSIDE the lock, and the check above is only a fast path. Two
+      // callbacks can both pass an unlocked check while the first exchange is
+      // still on the wire — a browser reload during those hundreds of
+      // milliseconds is exactly how this happens. The second would then run the
+      // exchange against a spent one-shot verifier, throw, and `markFailed` over
+      // a flow that is already connected (DOR-986).
+      if (this.flows.status(state).status === 'connected') return { connected: true };
       try {
         const provider = this.providerFor(target, state);
         await auth(provider, {
@@ -283,10 +303,28 @@ export class AgentMcpOAuthService {
    * minted for a specific server, so it must not survive being re-pointed at a
    * different one.
    *
+   * Serialized on the target's own lock, like every other writer of its token
+   * store. Without that, a refresh already on the wire finishes after the delete
+   * and writes a brand-new access + refresh token back to disk for a server the
+   * operator just removed — cache clean, disk dirty, and nothing ever sweeps it
+   * (DOR-986).
+   *
    * @param agentId - The owning agent's id.
    * @param serverName - The managed server's name.
    */
   async forgetServer(agentId: string, serverName: string): Promise<void> {
+    await this.refresher.exclusive(lockKey(agentId, serverName), () =>
+      this.forgetServerUnlocked(agentId, serverName)
+    );
+  }
+
+  /**
+   * The body of {@link forgetServer} without taking the lock. Only for callers
+   * that already hold it, or that run before any refresh could exist for the
+   * target — taking it again from inside would wait on the operation that is
+   * currently holding it, which never completes.
+   */
+  private async forgetServerUnlocked(agentId: string, serverName: string): Promise<void> {
     this.cache.evict(agentId, serverName);
     await this.secrets.clear(agentId, serverName);
   }
@@ -295,14 +333,17 @@ export class AgentMcpOAuthService {
    * Forget every OAuth credential belonging to one agent — the deleted-agent
    * cascade, so an agent's tokens do not outlive the agent.
    *
-   * Keyed by agent id alone, because by the time an agent is unregistered its
-   * manifest is already gone and nothing can name the servers it used to have.
+   * The agent's manifest is already gone by the time it is unregistered, so the
+   * servers it used to have are recovered from the store's own key namespace —
+   * and each one is then forgotten under its own lock, for the same reason
+   * {@link forgetServer} takes one.
    *
    * @param agentId - The agent being deleted.
    */
   async forgetAgent(agentId: string): Promise<void> {
     this.cache.evictAgent(agentId);
-    await this.secrets.forgetAgent(agentId);
+    const serverNames = await this.secrets.serverNames(agentId);
+    await Promise.all(serverNames.map((name) => this.forgetServer(agentId, name)));
   }
 
   /**
@@ -326,6 +367,11 @@ export class AgentMcpOAuthService {
    * token was primed. A stored set bound to a different URL than the target's is
    * deleted rather than primed: it authorizes a server this name no longer points
    * at, so it can only ever be sent to the wrong place.
+   *
+   * Deletes through the UNLOCKED path deliberately. Every caller either already
+   * holds the target's lock (sign-in, callback) or runs before any refresh for it
+   * can exist (`warm`, which primes the cache the timers hang off), so taking the
+   * lock here would be a self-deadlock in the first case and pointless in the second.
    */
   private async primeFromStore(target: McpOAuthTarget): Promise<boolean> {
     const tokens = await this.secrets.tokens(target.agentId, target.serverName);
@@ -334,7 +380,7 @@ export class AgentMcpOAuthService {
       this.logger.warn(
         `[mcp-oauth] dropping the stored token for ${target.serverName}: it was issued for a different URL`
       );
-      await this.forgetServer(target.agentId, target.serverName);
+      await this.forgetServerUnlocked(target.agentId, target.serverName);
       return false;
     }
     this.primeCache(target, tokens);

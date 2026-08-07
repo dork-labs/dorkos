@@ -178,8 +178,8 @@ describe('McpOAuthClientProvider.invalidateCredentials — recovering from a rev
   });
 });
 
-describe('McpOAuthSecretStore.forgetAgent', () => {
-  it('sweeps one agent’s keys and leaves every other agent’s alone', async () => {
+describe('McpOAuthSecretStore.serverNames', () => {
+  it('recovers one agent’s server names from the key namespace, and only that agent’s', async () => {
     const { secrets } = await makeProvider();
     await secrets.saveTokens(
       AGENT_ID,
@@ -187,6 +187,8 @@ describe('McpOAuthSecretStore.forgetAgent', () => {
       { access_token: 'a', token_type: 'Bearer' },
       SERVER_URL
     );
+    // Client info only, no token: still a server the deleted-agent cascade must
+    // forget, so the name has to come back from either kind of key.
     await secrets.saveClientInformation(AGENT_ID, 'other', {
       client_id: 'c1',
       redirect_uris: [CALLBACK],
@@ -198,12 +200,12 @@ describe('McpOAuthSecretStore.forgetAgent', () => {
       SERVER_URL
     );
 
-    await secrets.forgetAgent(AGENT_ID);
-
-    // Reverting forgetAgent to a no-op leaves a deleted agent's tokens on disk.
-    expect(await secrets.tokens(AGENT_ID, SERVER)).toBeUndefined();
-    expect(await secrets.clientInformation(AGENT_ID, 'other')).toBeUndefined();
-    // The discriminator against a prefix bug that wipes the whole store.
-    expect((await secrets.tokens('agent-2', SERVER))?.access_token).toBe('b');
+    // This listing is the ONLY record of what an unregistered agent had — its
+    // manifest is already gone. Returning nothing here means the cascade forgets
+    // nothing and the tokens outlive the agent.
+    expect((await secrets.serverNames(AGENT_ID)).sort()).toEqual(['granola', 'other']);
+    // The discriminator against a prefix bug that claims every agent's servers.
+    expect(await secrets.serverNames('agent-2')).toEqual([SERVER]);
+    expect(await secrets.serverNames('never-seen')).toEqual([]);
   });
 });

@@ -558,19 +558,31 @@ describe('AgentMcpOAuthService — signing in again after the grant was revoked 
   });
 });
 
+/** A promise and its resolver — for gating on a real event instead of a sleep. */
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>((r) => (resolve = r));
+  return { promise, resolve };
+}
+
 describe('AgentMcpOAuthService — concurrent sign-in and refresh (DOR-986)', () => {
   it('never has two token requests for one server in flight at once', async () => {
     const seen: URLSearchParams[] = [];
     const trace: string[] = [];
-    let release!: () => void;
-    const firstCallHeld = new Promise<void>((resolve) => (release = resolve));
+    // Gated on the refresh actually reaching the token endpoint — not on a timer,
+    // which would only ever be a guess about how far the other call had got.
+    const refreshInside = deferred();
+    const held = deferred();
 
     const { oauth, dorkHome } = await makeService(
       refreshMock({
         seen,
-        trace: (event) => trace.push(event),
+        trace: (event) => {
+          trace.push(event);
+          if (event === 'token:enter' && trace.length === 1) refreshInside.resolve();
+        },
         respond: async (call) => {
-          if (call === 1) await firstCallHeld;
+          if (call === 1) await held.promise;
           return json({
             access_token: `access-${call + 1}`,
             token_type: 'Bearer',
@@ -585,10 +597,10 @@ describe('AgentMcpOAuthService — concurrent sign-in and refresh (DOR-986)', ()
 
     const refreshing = oauth.refreshNow(REFRESH_TARGET);
     const signingIn = oauth.startSignin(REFRESH_TARGET);
-    // Let the held refresh finish only after the sign-in has had every chance to
-    // start its own token request.
-    await new Promise((resolve) => setTimeout(resolve, 5));
-    release();
+    // The refresh is now provably inside the token endpoint, and the sign-in has
+    // been running long enough to have made its own request if nothing stopped it.
+    await refreshInside.promise;
+    held.resolve();
     await Promise.all([refreshing, signingIn]);
 
     // Removing the shared lock interleaves these as
@@ -597,9 +609,111 @@ describe('AgentMcpOAuthService — concurrent sign-in and refresh (DOR-986)', ()
     // issuer treats as a replay and answers by revoking the whole grant family.
     expect(trace).toEqual(['token:enter', 'token:exit', 'token:enter', 'token:exit']);
   });
+
+  it('holds a server removal until the refresh already on the wire has finished', async () => {
+    const seen: URLSearchParams[] = [];
+    const refreshInside = deferred();
+    const held = deferred();
+    const { oauth, dorkHome } = await makeService(
+      refreshMock({
+        seen,
+        trace: (event) => {
+          if (event === 'token:enter') refreshInside.resolve();
+        },
+        respond: async () => {
+          await held.promise;
+          return json({
+            access_token: 'refreshed-after-removal',
+            token_type: 'Bearer',
+            expires_in: 3600,
+            refresh_token: 'refresh-2',
+          });
+        },
+      })
+    );
+    await seedSignedIn(dorkHome);
+    await oauth.warm([REFRESH_TARGET]);
+
+    const refreshing = oauth.refreshNow(REFRESH_TARGET);
+    await refreshInside.promise;
+    const forgetting = oauth.forgetServer(AGENT_ID, SERVER);
+
+    // A synchronous probe, no waiting involved: evicting the cached token is
+    // `forgetServer`'s first act, so if it were not serialized it would already
+    // have happened by now — and its disk delete would then land BEFORE the
+    // in-flight refresh writes a brand-new access + refresh token back for a
+    // server the operator just removed. Dropping the `exclusive` wrapper reddens
+    // this line.
+    expect(oauth.getAccessToken(AGENT_ID, SERVER, SERVER_URL)).toBe('access-1');
+
+    held.resolve();
+    await Promise.all([refreshing, forgetting]);
+
+    expect(oauth.getAccessToken(AGENT_ID, SERVER, SERVER_URL)).toBeUndefined();
+    resetKeyCache();
+    const store = new ExtensionSecretStore('mcp-oauth', dorkHome);
+    // The consequence that matters: nothing survives on disk. The refresh really
+    // did complete (it is what the removal waited for), so this is not the
+    // trivially-clean case.
+    expect(seen).toHaveLength(1);
+    expect(await store.get(`${AGENT_ID}:${SERVER}:tokens`)).toBeNull();
+    expect(await store.get(`${AGENT_ID}:${SERVER}:client`)).toBeNull();
+  });
 });
 
 describe('AgentMcpOAuthService.handleCallback — a reloaded callback page (DOR-986)', () => {
+  it('keeps a connected flow connected when the callback is replayed CONCURRENTLY', async () => {
+    const pkce = { challenge: '' };
+    const dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-oauth-home-'));
+    tempDirs.push(dorkHome);
+    const exchangeInside = deferred();
+    const held = deferred();
+    let tokenCalls = 0;
+    const inner = mockOAuthFetch(pkce);
+    // Holds the FIRST code→token exchange open, which is the real-world window:
+    // the exchange is a network round trip, and a browser reload lands inside it.
+    const gated: typeof fetch = async (input, init) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if ((init?.method ?? 'GET') === 'POST' && url.endsWith('/token')) {
+        tokenCalls += 1;
+        if (tokenCalls === 1) {
+          exchangeInside.resolve();
+          await held.promise;
+        }
+      }
+      return inner(input, init);
+    };
+
+    const oauth = new AgentMcpOAuthService({
+      dorkHome,
+      callbackBaseUrl: CALLBACK_BASE,
+      fetchImpl: gated,
+      cache: { scheduler: inertScheduler },
+      logger: { warn: () => {} },
+    });
+    const started = await oauth.startSignin(REFRESH_TARGET);
+    pkce.challenge = new URL(started.authorizeUrl!).searchParams.get('code_challenge') ?? '';
+
+    const first = oauth.handleCallback({ state: started.flowId, code: AUTH_CODE });
+    await exchangeInside.promise;
+    // The reload. Its already-connected check runs synchronously, right now, while
+    // the first exchange is still on the wire and the flow is still `pending` — so
+    // an early return placed only OUTSIDE the lock cannot catch it. The second
+    // call then runs the exchange with a spent one-shot verifier, throws, and
+    // `markFailed` overwrites `connected`.
+    const second = oauth.handleCallback({ state: started.flowId, code: AUTH_CODE });
+    held.resolve();
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+
+    expect(firstResult).toEqual({ connected: true });
+    // Moving the inner re-check back outside the `exclusive` block reddens this.
+    expect(secondResult).toEqual({ connected: true });
+    // What the operator actually sees: the poll must not say the sign-in failed
+    // while its token is live and injecting.
+    expect(oauth.pollSignin(started.flowId).status).toBe('connected');
+    expect(oauth.getAccessToken(AGENT_ID, SERVER, SERVER_URL)).toBe('access-1');
+  });
+
   it('keeps a connected flow connected when the callback is replayed', async () => {
     const pkce = { challenge: '' };
     const dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-oauth-home-'));

@@ -9,7 +9,12 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 
-import { McpTokenRefresher, type RefreshAttemptOutcome } from '../agent-mcp-token-refresher.js';
+import {
+  McpTokenRefresher,
+  withRequestTimeout,
+  OAUTH_REQUEST_TIMEOUT_MS,
+  type RefreshAttemptOutcome,
+} from '../agent-mcp-token-refresher.js';
 import type { CachedToken } from '../agent-mcp-access-token-cache.js';
 
 const KEY = 'agent-1\0granola';
@@ -113,6 +118,41 @@ describe('McpTokenRefresher — one refresh at a time', () => {
     // Chaining with a bare `.then(run)` would reject this one too, wedging the
     // key: every later sign-in and refresh for the server would fail forever.
     expect(await after).toBe('ran');
+  });
+});
+
+describe('withRequestTimeout', () => {
+  it('abandons a request the server accepts but never answers', async () => {
+    // A token endpoint that hangs is worse than one that is down: every operation
+    // for that server queues behind the one holding its lock, so an unbounded
+    // request wedges sign-in and refresh for as long as the socket stays open.
+    const hanging: typeof fetch = (_input, init) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+      });
+
+    // Removing the signal from `withRequestTimeout` leaves this promise pending
+    // and the test times out — which is the wedge, reproduced.
+    await expect(withRequestTimeout(hanging, 5)('https://mcp.test.local/token')).rejects.toThrow(
+      'aborted'
+    );
+  });
+
+  it('leaves a caller’s own signal working', async () => {
+    const controller = new AbortController();
+    const hanging: typeof fetch = (_input, init) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+      });
+
+    // The discriminator against replacing the caller's signal outright: the
+    // timeout is a ceiling added to whatever the caller already asked for.
+    const inFlight = withRequestTimeout(hanging, OAUTH_REQUEST_TIMEOUT_MS)(
+      'https://mcp.test.local/token',
+      { signal: controller.signal }
+    );
+    controller.abort();
+    await expect(inFlight).rejects.toThrow('aborted');
   });
 });
 

@@ -128,17 +128,25 @@ export class McpOAuthSecretStore {
   }
 
   /**
-   * Forget every server's OAuth material for one agent — the deleted-agent
-   * cascade. Keys are namespaced by agent id, so this is a prefix sweep; nothing
-   * is decrypted along the way.
+   * Every server name this agent has OAuth material for, recovered from the key
+   * namespace. This is how the deleted-agent cascade knows what to forget: by
+   * the time an agent is unregistered its manifest is gone, so the store's own
+   * keys are the only remaining record. Nothing is decrypted along the way.
    *
-   * @param agentId - The agent whose stored OAuth material is being dropped.
+   * @param agentId - The agent whose stored servers are being listed.
    */
-  async forgetAgent(agentId: string): Promise<void> {
+  async serverNames(agentId: string): Promise<string[]> {
     const prefix = `${agentId}:`;
+    const names = new Set<string>();
     for (const storeKey of await this.store.keys()) {
-      if (storeKey.startsWith(prefix)) await this.store.delete(storeKey);
+      if (!storeKey.startsWith(prefix)) continue;
+      // `<agentId>:<serverName>:<kind>` — split off the kind from the right, so a
+      // server name is read whole even though it sits between two delimiters.
+      const rest = storeKey.slice(prefix.length);
+      const kindAt = rest.lastIndexOf(':');
+      if (kindAt > 0) names.add(rest.slice(0, kindAt));
     }
+    return [...names];
   }
 
   private async read<T>(storeKey: string): Promise<T | undefined> {
