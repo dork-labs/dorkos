@@ -23,6 +23,7 @@ import { AgentManifestSchema, McpServerTransportSchema } from '@dorkos/shared/me
 import type {
   ManagedMcpServer,
   ManagedMcpServerView,
+  McpClientOrigin,
   McpServerAuthStatus,
   McpServerTransport,
 } from '@dorkos/shared/mesh-schemas';
@@ -68,6 +69,21 @@ export interface McpOAuthTokenProvider {
    * @param serverName - The managed server's name.
    */
   forgetServer(agentId: string, serverName: string): Promise<void>;
+
+  /**
+   * Where the OAuth client identity DorkOS would sign in with came from — the
+   * provider registering DorkOS automatically, or app credentials the operator
+   * supplied for a provider that will not (DOR-982). `undefined` when DorkOS
+   * holds no client identity for the server.
+   *
+   * Optional so a port satisfied for injection alone still type-checks; the
+   * listing simply reports no origin when it is absent. It names the identity —
+   * it never exposes it.
+   *
+   * @param agentId - The owning agent's id.
+   * @param serverName - The managed server's name.
+   */
+  clientOrigin?(agentId: string, serverName: string): Promise<McpClientOrigin | undefined>;
 }
 
 /** Typed failure codes so a route/capability layer can map to precise statuses. */
@@ -208,10 +224,45 @@ export class AgentMcpServerService {
    */
   async list(agentId: string): Promise<ManagedMcpServerView[]> {
     const { manifest } = await this.load(agentId);
-    return manifest.mcpServers.map((server) => {
-      const authStatus = this.deriveAuthStatus(agentId, server);
-      return authStatus ? { ...server, authStatus } : server;
-    });
+    return Promise.all(
+      manifest.mcpServers.map(async (server) => {
+        const authStatus = this.deriveAuthStatus(agentId, server);
+        const authClientOrigin = await this.readClientOrigin(agentId, server);
+        return {
+          ...server,
+          ...(authStatus ? { authStatus } : {}),
+          ...(authClientOrigin ? { authClientOrigin } : {}),
+        };
+      })
+    );
+  }
+
+  /**
+   * Which OAuth client identity DorkOS holds for a server, when it holds one
+   * (DOR-982) — the fact behind the Details row's "using your own app
+   * credentials".
+   *
+   * Skipped outright for a stdio server, which has no OAuth at all, so the
+   * common case costs nothing. Failure is swallowed to `undefined`: a listing
+   * must not break because one encrypted record could not be read, and a missing
+   * origin only costs the row a qualifier.
+   */
+  private async readClientOrigin(
+    agentId: string,
+    server: ManagedMcpServer
+  ): Promise<McpClientOrigin | undefined> {
+    if (server.connection.transport === 'stdio') return undefined;
+    if (!this.tokenProvider?.clientOrigin) return undefined;
+    try {
+      return await this.tokenProvider.clientOrigin(agentId, server.name);
+    } catch (err) {
+      this.logger.warn(
+        `[mcp] could not read the sign-in client for "${server.name}": ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      );
+      return undefined;
+    }
   }
 
   /**

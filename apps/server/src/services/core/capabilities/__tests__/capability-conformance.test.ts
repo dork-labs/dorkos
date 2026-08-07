@@ -433,6 +433,11 @@ capabilityConformance(registry, {
     // as SIGNIN_UNAVAILABLE after the agent lookup, and poll as the same.
     'mcp.signin': { agentId: 'conformance-agent', name: 'conformance-srv' },
     'mcp.poll_signin': { flowId: 'conformance-flow' },
+    'mcp.set_client': {
+      agentId: 'conformance-agent',
+      name: 'conformance-srv',
+      clientId: 'conformance-client',
+    },
   },
 });
 

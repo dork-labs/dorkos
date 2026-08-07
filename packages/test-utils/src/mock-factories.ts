@@ -772,6 +772,10 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       message: 'sign-in link',
     }),
     pollMcpSignin: vi.fn().mockResolvedValue({ status: 'connected' }),
+    // Storing operator-supplied app credentials (DOR-982) resolves by default:
+    // the interesting half is what the flow does AFTER the save, and a test that
+    // cares about the save failing states that itself.
+    setMcpClientCredentials: vi.fn().mockResolvedValue(undefined),
     // The claim feed (connection-scoping spec §Part 3) — same rule: the list
     // reads honest-empty, the three decisions must be stated by the test.
     listUnclaimedChats: vi.fn().mockResolvedValue([]),

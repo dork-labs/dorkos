@@ -311,6 +311,47 @@ export interface StartMcpSigninResult {
   message: string;
 }
 
+/**
+ * Why a managed-MCP sign-in could not even be STARTED (DOR-982) — the `code` on
+ * the error payload `mcp.signin` rejects with, so every surface can say the same
+ * plain sentence instead of relaying an OAuth stack trace.
+ *
+ * - `SIGNIN_NO_APP_REGISTRATION` — the provider will not let DorkOS register
+ *   itself automatically. This is the one a person can fix: they can paste app
+ *   credentials from the provider's developer settings
+ *   ({@link Transport.setMcpClientCredentials}) and sign in again.
+ * - `SIGNIN_NO_SIGNIN_SUPPORT` — the server publishes no OAuth details DorkOS
+ *   can work from, so there is no sign-in to start.
+ * - `SIGNIN_UNREACHABLE` — everything else: the server could not be reached, or
+ *   it answered in a way DorkOS could not use.
+ *
+ * The raw error is carried alongside as `detail`, for the Details disclosure —
+ * it is never the headline.
+ */
+export const MCP_SIGNIN_FAILURE_CODES = [
+  'SIGNIN_NO_APP_REGISTRATION',
+  'SIGNIN_NO_SIGNIN_SUPPORT',
+  'SIGNIN_UNREACHABLE',
+] as const;
+
+/** See {@link MCP_SIGNIN_FAILURE_CODES}. */
+export type McpSigninFailureCode = (typeof MCP_SIGNIN_FAILURE_CODES)[number];
+
+/**
+ * The app credentials an operator got from a provider that does not support
+ * automatic client registration (DOR-982).
+ *
+ * Both values are secrets in the same sense a token is: they are stored
+ * encrypted on this computer, never written to the manifest, never logged, and
+ * never handed back out — no read side exists for them at all.
+ */
+export interface McpClientCredentials {
+  /** The client id (sometimes "app id") the provider issued. */
+  clientId: string;
+  /** The client secret, when the provider issued one. Many public clients have none. */
+  clientSecret?: string;
+}
+
 /** The pollable status of a managed-MCP sign-in flow (the `mcp.poll_signin` capability). */
 export interface McpSigninPollResult {
   /** Whether the sign-in is still waiting, finished, or failed. */
@@ -1602,6 +1643,25 @@ export interface Transport extends RoomTransport {
    * @param flowId - The flow id from {@link startMcpSignin}.
    */
   pollMcpSignin(flowId: string): Promise<McpSigninPollResult>;
+
+  /**
+   * Store app credentials the operator got from a provider that will not let
+   * DorkOS register itself (the `mcp.set_client` capability, DOR-982), then let
+   * {@link startMcpSignin} run exactly as it always does — it picks the stored
+   * client up and skips the automatic-registration step entirely.
+   *
+   * Replacing the client identity invalidates anything issued to the old one, so
+   * this forgets the server's stored sign-in as part of saving.
+   *
+   * @param agentId - ULID of the agent that owns the server.
+   * @param name - Name of the managed (http/sse) server the credentials are for.
+   * @param credentials - The client id, and the client secret when there is one.
+   */
+  setMcpClientCredentials(
+    agentId: string,
+    name: string,
+    credentials: McpClientCredentials
+  ): Promise<void>;
 
   /**
    * Obtain a Claude-specific plugin sub-transport for a session.
