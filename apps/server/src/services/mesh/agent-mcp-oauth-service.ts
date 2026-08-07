@@ -142,8 +142,10 @@ export class AgentMcpOAuthService {
    * Begin a sign-in for a target: mint a flow, drive the SDK `auth()` orchestrator
    * (discovery → DCR → PKCE authorize URL), and return the link for the operator
    * to open. When a live token already exists, `auth()` refreshes it silently and
-   * this reports `alreadyConnected` with no link. A failure leaves the flow marked
-   * `failed`, never stranded as `pending`.
+   * this reports `alreadyConnected` with no link. A failure drops the flow it
+   * minted rather than parking it as `pending`: no link ever reached the operator,
+   * so nothing can legitimately poll it, and a claimable `state` is one a stray
+   * callback could still redeem.
    *
    * Serialized against the background refresh for the same target, so the two can
    * never present the same refresh token to a rotating issuer at once.
@@ -203,6 +205,10 @@ export class AgentMcpOAuthService {
    * it is written before the code is exchanged. No token is stored, which is what
    * decides whether the server is usable.
    *
+   * Serialized against the background refresh for the same target, so a refresh
+   * that started on the OLD refresh token cannot land after this exchange and
+   * overwrite the grant the operator just approved.
+   *
    * @param args - The `state`, `code`, and optional `error` from the callback query.
    */
   async handleCallback(args: {
@@ -222,33 +228,35 @@ export class AgentMcpOAuthService {
       return { connected: false, error: message };
     }
 
-    try {
-      const provider = this.providerFor(target, state);
-      await auth(provider, {
-        serverUrl: target.serverUrl,
-        authorizationCode: code,
-        fetchFn: this.fetchImpl,
-      });
-      // The exchange is only real if a token actually landed: `auth()` reports
-      // success, but the cache is what injection reads, so that is what we check.
-      if (!(await this.primeFromStore(target))) {
-        const message = 'The server did not complete the sign-in. Please try again.';
+    return this.refresher.exclusive(targetKey(target), async () => {
+      try {
+        const provider = this.providerFor(target, state);
+        await auth(provider, {
+          serverUrl: target.serverUrl,
+          authorizationCode: code,
+          fetchFn: this.fetchImpl,
+        });
+        // The exchange is only real if a token actually landed: `auth()` reports
+        // success, but the cache is what injection reads, so that is what we check.
+        if (!(await this.primeFromStore(target))) {
+          const message = 'The server did not complete the sign-in. Please try again.';
+          this.flows.markFailed(state, message);
+          return { connected: false, error: message };
+        }
+        this.flows.markConnected(state);
+        return { connected: true };
+      } catch (err) {
+        // Keep the raw detail in the server log; hand the browser + poll a generic
+        // message (the callback lands in the operator's own loopback browser, but
+        // an exchange error can echo request context, so match the non-catch paths).
+        this.logger.warn(
+          `[mcp-oauth] callback failed for ${target.serverName}: ${err instanceof Error ? err.message : String(err)}`
+        );
+        const message = 'Sign-in failed. Please try again.';
         this.flows.markFailed(state, message);
         return { connected: false, error: message };
       }
-      this.flows.markConnected(state);
-      return { connected: true };
-    } catch (err) {
-      // Keep the raw detail in the server log; hand the browser + poll a generic
-      // message (the callback lands in the operator's own loopback browser, but
-      // an exchange error can echo request context, so match the non-catch paths).
-      this.logger.warn(
-        `[mcp-oauth] callback failed for ${target.serverName}: ${err instanceof Error ? err.message : String(err)}`
-      );
-      const message = 'Sign-in failed. Please try again.';
-      this.flows.markFailed(state, message);
-      return { connected: false, error: message };
-    }
+    });
   }
 
   /**
