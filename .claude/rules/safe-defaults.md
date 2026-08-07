@@ -34,9 +34,10 @@ Adding a field to `UserConfigSchema` means doing all three of these, or the buil
   `PROTECTIVE_CARRYOVERS` in `safe-defaults/protected-state.ts` so a config wipe cannot reverse
   their choice.
 
-Migrations compose into the **existing** next-unreleased version key, never a new one — keying to a
-version that does not ship the code means the migration never runs. See
-`contributing/configuration.md`.
+A migration goes under a **new key strictly greater than the newest `v*` tag**, and never onto a key
+that has already shipped — `conf` runs a key only in `(storedVersion, projectVersion]`, so a body
+added to a released key never runs for anybody already past it. Enforced by the guard in
+`apps/server/src/services/core/__tests__/migration-safety.ts`. See `contributing/configuration.md`.
 
 ## Testing
 

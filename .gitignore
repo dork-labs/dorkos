@@ -30,6 +30,9 @@ dist-obsidian/
 # Test & coverage
 coverage/
 test-results/
+# Agent fixtures the e2e seed routes write under the boundary root
+# (`tmp/dorkos-e2e-agent`, `tmp/dorkos-e2e-oauth-agent` in routes/test-control.ts)
+tmp/
 
 # Capture media library — raw recordings are heavy and regenerable; only the
 # layout README is committed (see apps/e2e/capture/library/README.md)

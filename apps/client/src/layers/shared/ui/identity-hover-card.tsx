@@ -29,6 +29,17 @@ export interface IdentityHoverCardAgentInfo {
     /** How long it has been working, in milliseconds. */
     forMs: number;
   };
+  /**
+   * The person this agent belongs to, when the roster knows one — owner
+   * attribution (spec `identity-consistency` W1.6), resolved by the caller
+   * from `TeamMember.ownerId` and rendered as a fourth chip. `handle: null`
+   * falls back to the display name rather than rendering a bare `@`, the
+   * same honesty rule `AuthorRef.handle` already carries everywhere else.
+   */
+  managedBy?: {
+    displayName: string;
+    handle: string | null;
+  };
 }
 
 /** The identity a hover card describes — everything it needs and nothing it has to fetch. */
@@ -217,6 +228,12 @@ function IdentityHoverCard({ identity, children, className }: IdentityHoverCardP
           )}
           {kind === 'human' && (
             <InfoChip>{isExternal ? origin.platform : 'On this machine'}</InfoChip>
+          )}
+          {kind === 'agent' && agent?.managedBy && (
+            <InfoChip>
+              Managed by{' '}
+              {agent.managedBy.handle ? `@${agent.managedBy.handle}` : agent.managedBy.displayName}
+            </InfoChip>
           )}
         </div>
 

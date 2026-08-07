@@ -11,7 +11,7 @@ import { scenarioStore } from '../services/runtimes/test-mode/scenario-store.js'
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { getRoomService, getBridgeStore, getRoomAuthors } from '../services/rooms/index.js';
 import { readOwnerAccount } from '../services/core/auth/index.js';
-import { MOCK_MCP_OAUTH_MCP_PATH } from './mock-mcp-oauth-server.js';
+import { MOCK_MCP_OAUTH_MCP_PATH, resetMockMcpOAuthState } from './mock-mcp-oauth-server.js';
 import type { AgentMcpServerService } from '../services/mesh/agent-mcp-server-service.js';
 
 /**
@@ -47,6 +47,10 @@ testControlRouter.post('/scenario', (req, res) => {
 
 testControlRouter.post('/reset', async (_req, res) => {
   scenarioStore.reset();
+  // Codes, DCR clients, and tokens the mock OAuth server minted. Without this a
+  // bearer issued by one spec stays valid for the next, and "this server needs a
+  // sign-in" passes or fails depending on what ran before it.
+  resetMockMcpOAuthState();
   // Dynamic import keeps TestModeRuntime out of production module graphs:
   // app.ts mounts this router conditionally but imports it statically, so a
   // static class import here would defeat the index.ts env-var gating. The
@@ -237,9 +241,10 @@ function e2eOAuthAgentDir(): string {
  * TestModeRuntime alias (`DORKOS_TEST_RUNTIME_CLAUDE_ALIAS`) so
  * `GET /api/mcp-config?runtime=claude-code` resolves a real `getMcpStatus`.
  *
- * The server URL is loopback (`127.0.0.1`), matching the OAuth callback's
- * loopback origin, so DorkOS's in-process OAuth client and the mock agree on one
- * host.
+ * The server URL names whatever loopback host the server actually bound
+ * (`localDialHost(env.DORKOS_HOST)` — `localhost` resolves to `::1` on macOS,
+ * where an explicit `127.0.0.1` is refused), matching the OAuth callback's own
+ * origin so DorkOS's in-process OAuth client and the mock agree on one host.
  */
 testControlRouter.post('/seed-oauth-mcp-agent', async (req, res) => {
   const port = req.socket.localPort;

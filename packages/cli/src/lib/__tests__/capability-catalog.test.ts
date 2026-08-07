@@ -68,4 +68,19 @@ describe('fetchFullCatalog', () => {
     expect(apiCallMock).toHaveBeenCalledTimes(1);
     expect(apiCallMock).toHaveBeenNthCalledWith(1, 'GET', FIRST_PAGE);
   });
+
+  // A server that never stops handing out cursors means the two sides disagree.
+  // Returning what was collected so far would hand `dorkos call` a catalog that
+  // is missing entries, which it reports as "unknown capability" for an id that
+  // is perfectly valid — a wrong answer stated confidently.
+  it('throws instead of returning a truncated catalog when the page ceiling is hit', async () => {
+    apiCallMock.mockResolvedValue({
+      catalogVersion: 'v1',
+      generatedAt: 'T',
+      nextCursor: 'NEVER_ENDS',
+      capabilities: [cap('a.one')],
+    });
+
+    await expect(fetchFullCatalog()).rejects.toThrow(/paging exceeded/i);
+  });
 });

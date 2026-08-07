@@ -14,11 +14,13 @@ export interface RequestingAgentProps {
 /**
  * The mark and name of whoever asked for approval.
  *
- * Same visual language as an author in the message list: a letter avatar tinted
- * with a color hashed from the requester's own identity, so one agent always
- * reads as the same color everywhere in the cockpit. An unattributed request —
- * a person on the CLI, an external MCP client with no agent token — says so
- * plainly rather than inventing an agent.
+ * Same visual language as an author in the message list: a letter avatar
+ * hashed from the requester's own identity, so one agent always reads as the
+ * same color everywhere in the cockpit. `kind="agent"` draws the square,
+ * filled, Bot-badged disc every other agent surface draws — a requester is
+ * always an agent, never a person (spec `identity-consistency` W1.3). An
+ * unattributed request — a person on the CLI, an external MCP client with no
+ * agent token — says so plainly rather than inventing an agent.
  */
 export function RequestingAgent({ requestedBy, className }: RequestingAgentProps) {
   if (!requestedBy) {
@@ -39,6 +41,7 @@ export function RequestingAgent({ requestedBy, className }: RequestingAgentProps
         size="xs"
         color={hashToHslColor(requestedBy)}
         fallback={initialOf(label)}
+        kind="agent"
       />
       <span className="text-muted-foreground min-w-0 truncate text-xs">{label}</span>
     </span>

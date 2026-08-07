@@ -14,7 +14,8 @@ import type { MessageAuthor } from '@/layers/shared/model';
  *
  * Exported for `RoomEntryRow`, which reads the same map to resolve a
  * `<mention>` tag against the roster — a mention pill draws from exactly the
- * fields this type carries (kind, name, color, emoji, origin).
+ * fields this type carries (kind, name, color, emoji, origin, and the
+ * `agentRef` its hover card looks the agent's runtime up by).
  */
 export type RosterAuthor = AuthorRef & { origin: AuthorOrigin };
 

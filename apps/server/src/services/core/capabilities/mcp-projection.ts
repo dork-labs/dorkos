@@ -34,6 +34,7 @@ import { CapabilityToolError } from './mcp-envelope.js';
 import {
   APPROVAL_TOKEN_ARGUMENT,
   CapabilityGateRefusal,
+  isFreshApprovalAsk,
   splitApprovalToken,
   type ApprovalRequiredPayload,
 } from './tier-enforcement.js';
@@ -187,11 +188,11 @@ function textResult(payload: unknown, isError = false): CallToolResult {
  * @param context - Optional request-scoped context (the calling agent's
  *   identity, resolved from the `X-DorkOS-Agent` header or the session's working
  *   directory). Omitting it invokes unattributed, exactly as before.
- * @param hold - Optional in-session hold seam (DOR-939). When present and a FRESH
- *   destructive ask is gated (`reason: 'no_approval'`), the call is held inline
- *   awaiting the operator's decision and resumes on a grant, returning the real
- *   result in the same turn. Omitted on every sessionless surface (external
- *   `/mcp`, HTTP), which keep the unchanged token/poll flow.
+ * @param hold - Optional in-session hold seam (DOR-939). When present and the
+ *   refusal carries a FRESH approval ({@link isFreshApprovalAsk}), the call is
+ *   held inline awaiting the operator's decision and resumes on a grant,
+ *   returning the real result in the same turn. Omitted on every sessionless
+ *   surface (external `/mcp`, HTTP), which keep the unchanged token/poll flow.
  * @returns The MCP text-content result.
  */
 export async function invokeCapabilityAsMcpResult(
@@ -215,16 +216,19 @@ export async function invokeCapabilityAsMcpResult(
   } catch (err) {
     if (err instanceof CapabilityGateRefusal) {
       const decision = err.decision;
-      // In-session hold: a FRESH destructive ask (nothing presented yet) can wait
-      // for the operator and resume on a grant, instead of returning the poll
-      // payload immediately. Every other refusal — a ceiling denial, an
-      // awaiting-decision echo of an already-presented token, a deny — returns its
-      // payload exactly as before, and so does this one on any sessionless surface
-      // (no `hold`).
+      // In-session hold: a refusal carrying a FRESH approval — one the gate just
+      // minted, that nobody has seen — can wait for the operator and resume on a
+      // grant, instead of returning the poll payload immediately. That is every
+      // ask, not only the first: a token that expired, was already spent, named
+      // another action, or matches nothing gets a brand-new approval too
+      // (DOR-987). Every other refusal — a ceiling denial, the
+      // `awaiting_decision` echo of an approval already on screen, a deny —
+      // returns its payload exactly as before, and so does this one on any
+      // sessionless surface (no `hold`).
       if (
         hold &&
         decision.outcome === 'approval_required' &&
-        decision.payload.reason === 'no_approval'
+        isFreshApprovalAsk(decision.payload)
       ) {
         return holdAndResume(registry, id, input, context, decision.payload, hold);
       }

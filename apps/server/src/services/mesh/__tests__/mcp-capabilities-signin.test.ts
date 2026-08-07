@@ -17,7 +17,7 @@ import { createHash } from 'node:crypto';
 import { noopLogger } from '@dorkos/shared/logger';
 import { AgentRegistry } from '@dorkos/mesh';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { writeManifest } from '@dorkos/shared/manifest';
+import { readManifest, writeManifest } from '@dorkos/shared/manifest';
 import type { AgentManifest, McpServerTransport } from '@dorkos/shared/mesh-schemas';
 
 import { mcpDomain } from '../mcp-capabilities.js';
@@ -113,6 +113,7 @@ afterEach(async () => {
 async function setup(connection: McpServerTransport): Promise<{
   deps: CapabilityDeps;
   pkce: { challenge: string };
+  projectPath: string;
 }> {
   const projectPath = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-signin-'));
   tempDirs.push(projectPath);
@@ -152,7 +153,7 @@ async function setup(connection: McpServerTransport): Promise<{
     logger: noopLogger,
     mcpDeps: { service, agents: new AgentRegistry(createTestDb()), oauth },
   };
-  return { deps, pkce };
+  return { deps, pkce, projectPath };
 }
 
 const HTTP_SERVER: McpServerTransport = { transport: 'http', url: SERVER_URL, headers: {} };
@@ -191,6 +192,22 @@ describe('mcp.signin / mcp.poll_signin', () => {
       {} as never
     );
     expect(poll).toEqual({ status: 'connected' });
+  });
+
+  it('records authKind: oauth2 on the entry once the provider accepts the sign-in (DOR-985)', async () => {
+    // The seeded server carries NO authKind — the state every server added
+    // before DorkOS knew to ask is in, and the reason the row never offered a
+    // sign-in after a restart.
+    const { deps, projectPath } = await setup(HTTP_SERVER);
+
+    await capability('mcp.signin').invoke(deps, { agentId: AGENT_ID, name: SERVER }, {} as never);
+
+    // Reaching a real authorize URL means the provider's OAuth discovery
+    // answered. Dropping the `learnOAuthAuthKind` call from the handler leaves
+    // this undefined and reddens.
+    const manifest = await readManifest(projectPath);
+    const connection = manifest?.mcpServers[0]?.connection;
+    expect(connection?.transport === 'http' ? connection.authKind : undefined).toBe('oauth2');
   });
 
   it('rejects sign-in for a local (stdio) server', async () => {

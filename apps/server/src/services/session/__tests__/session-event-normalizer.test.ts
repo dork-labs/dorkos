@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { RawSessionEvent } from '../index.js';
 import { toRawSessionEvent, feedProjector } from '../session-event-normalizer.js';
-import { SessionStateProjector } from '../index.js';
+import { SessionStateProjector, CAPABILITY_HOLD_PAUSE_GRACE_MS } from '../index.js';
 
 describe('toRawSessionEvent', () => {
   // Each StreamEvent kind maps to the right session-stream union member (or null).
@@ -814,8 +814,8 @@ describe('capability approval hold round-trip (DOR-939)', () => {
     requestedAt: '2026-08-06T00:00:00.000Z',
     expiresAt: '2026-08-06T02:00:00.000Z',
   };
-  // Distinct from CAPABILITY_APPROVAL_HOLD_CAP_MS (45_000) so a typo that falls
-  // back to the default is CAUGHT by the value assertion, not masked by it.
+  // Distinct from CAPABILITY_APPROVAL_HOLD_CAP_MS so a typo that falls back to
+  // the default is CAUGHT by the value assertion, not masked by it.
   const EMITTED_CAP_MS = 30_000;
   const EMITTED_STARTED_AT = 1_234_000;
 
@@ -840,12 +840,13 @@ describe('capability approval hold round-trip (DOR-939)', () => {
       const projector = new SessionStateProjector('s1');
       projector.ingest(raw as RawSessionEvent);
       expect(projector.hasPendingInteractions()).toBe(true);
-      // One tick short of the EMITTED cap (not the 45s default): still a live wait.
+      // One tick short of the EMITTED cap (not the default): still a live wait.
       vi.setSystemTime(EMITTED_STARTED_AT + EMITTED_CAP_MS - 1);
       expect(projector.hasPendingInteractions()).toBe(true);
-      // At the emitted cap the hold is stale. (A capMs typo would fall back to the
-      // default and read true here; the value assertion above is what catches it.)
-      vi.setSystemTime(EMITTED_STARTED_AT + EMITTED_CAP_MS);
+      // Past the emitted cap AND its stall-pause grace, the hold is stale. (A
+      // capMs typo would fall back to the much larger default and read true here;
+      // the value assertion above is what catches it.)
+      vi.setSystemTime(EMITTED_STARTED_AT + EMITTED_CAP_MS + CAPABILITY_HOLD_PAUSE_GRACE_MS);
       expect(projector.hasPendingInteractions()).toBe(false);
     } finally {
       vi.useRealTimers();

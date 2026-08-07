@@ -755,11 +755,19 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     enableAgentMcpServer: vi.fn().mockResolvedValue([]),
     disableAgentMcpServer: vi.fn().mockResolvedValue([]),
     testAgentMcpServer: vi.fn().mockResolvedValue({ ok: true, toolCount: 0 }),
-    // Managed-MCP OAuth sign-in (DOR-943). A test that exercises the flow must
-    // state both halves: `startMcpSignin` returns the link + disclosure, and
-    // `pollMcpSignin` walks pending → connected.
-    startMcpSignin: vi.fn(),
-    pollMcpSignin: vi.fn().mockResolvedValue({ status: 'pending' }),
+    // Managed-MCP OAuth sign-in (DOR-943). Both defaults resolve, and the poll's
+    // default is TERMINAL: a `pending` default would leave any test that reaches
+    // the flow without stating its own poll spinning on a 2s interval forever,
+    // and a bare `vi.fn()` start resolves `undefined`, which the flow reads
+    // fields off. A test that exercises the flow states both halves anyway.
+    startMcpSignin: vi.fn().mockResolvedValue({
+      flowId: 'mock-flow',
+      authorizeUrl: 'https://auth.example/authorize',
+      alreadyConnected: false,
+      disclosure: 'DorkOS keeps the resulting token encrypted on this computer.',
+      message: 'sign-in link',
+    }),
+    pollMcpSignin: vi.fn().mockResolvedValue({ status: 'connected' }),
     // The claim feed (connection-scoping spec §Part 3) — same rule: the list
     // reads honest-empty, the three decisions must be stated by the test.
     listUnclaimedChats: vi.fn().mockResolvedValue([]),
