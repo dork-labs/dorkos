@@ -4,7 +4,6 @@
 
 12 tasks across 3 phases. Dependencies are hard ordering; `parallelWith` marks tasks that may run concurrently.
 
-
 ## Phase 1 — Extract the features/composer slice
 
 ### Task 1.1: Move the composer core files into a new features/composer slice
@@ -14,26 +13,27 @@
 
 Create the FSD feature slice `apps/client/src/layers/features/composer/` and MOVE (git mv, no copies, no re-export shims) these files out of `apps/client/src/layers/features/chat/ui/input/`:
 
-| From | To |
-| --- | --- |
-| `chat/ui/input/ChatInput.tsx` (407 lines) | `composer/ui/ComposerInput.tsx` |
-| `chat/ui/input/FileChipBar.tsx` (144 lines) | `composer/ui/ComposerAttachments.tsx` |
-| `chat/ui/input/ClearArmedHint.tsx` (49 lines) | `composer/ui/ClearArmedHint.tsx` |
-| `chat/ui/input/InputActionButton.tsx` (308 lines) | `composer/ui/InputActionButton.tsx` |
-| `chat/ui/input/use-input-keyboard.ts` (406 lines) | `composer/ui/use-input-keyboard.ts` |
-| `chat/ui/input/use-textarea-resize.ts` (69 lines) | `composer/ui/use-textarea-resize.ts` |
+| From                                              | To                                    |
+| ------------------------------------------------- | ------------------------------------- |
+| `chat/ui/input/ChatInput.tsx` (407 lines)         | `composer/ui/ComposerInput.tsx`       |
+| `chat/ui/input/FileChipBar.tsx` (144 lines)       | `composer/ui/ComposerAttachments.tsx` |
+| `chat/ui/input/ClearArmedHint.tsx` (49 lines)     | `composer/ui/ClearArmedHint.tsx`      |
+| `chat/ui/input/InputActionButton.tsx` (308 lines) | `composer/ui/InputActionButton.tsx`   |
+| `chat/ui/input/use-input-keyboard.ts` (406 lines) | `composer/ui/use-input-keyboard.ts`   |
+| `chat/ui/input/use-textarea-resize.ts` (69 lines) | `composer/ui/use-textarea-resize.ts`  |
 
 `chat/ui/input/use-drag-and-paste.ts` (35 lines) deliberately does NOT move in phase 1. Its only consumer today is `ChatInputContainer` (line 37), which is still chat-owned until phase 2; moving it now would force either a barrel export of an internal hook or a cross-feature internal-path import, both of which the FSD rule forbids. It moves in task 2.1 alongside `ComposerRoot`, which becomes its only consumer.
 
 And MOVE these test files out of `apps/client/src/layers/features/chat/__tests__/`:
 
-| From | To |
-| --- | --- |
-| `chat/__tests__/ChatInput.test.tsx` (1835 lines) | `composer/__tests__/ComposerInput.test.tsx` |
-| `chat/__tests__/FileChipBar.test.tsx` (247 lines) | `composer/__tests__/ComposerAttachments.test.tsx` |
+| From                                                          | To                                                     |
+| ------------------------------------------------------------- | ------------------------------------------------------ |
+| `chat/__tests__/ChatInput.test.tsx` (1835 lines)              | `composer/__tests__/ComposerInput.test.tsx`            |
+| `chat/__tests__/FileChipBar.test.tsx` (247 lines)             | `composer/__tests__/ComposerAttachments.test.tsx`      |
 | `chat/__tests__/InputActionButton-dimmed.test.tsx` (99 lines) | `composer/__tests__/InputActionButton-dimmed.test.tsx` |
 
 Renames inside the moved files, and NOTHING else:
+
 - `ChatInput.tsx`: the exported component `ChatInput` becomes `ComposerInput`; the exported interface `ChatInputHandle` becomes `ComposerInputHandle`; the local props interface `ChatInputProps` becomes `ComposerInputProps`; the `forwardRef(function ChatInput(...))` inner function name becomes `ComposerInput`. Its three relative imports (`./use-input-keyboard`, `./use-textarea-resize`, `./InputActionButton`) still resolve because those files move alongside it. Its `@/layers/shared/lib` (`cn`) and `@/layers/shared/model` (`useIsTouchOnly`) imports are unchanged and remain FSD-legal (features may import shared).
 - `FileChipBar.tsx`: the exported component `FileChipBar` becomes `ComposerAttachments`. Its props (`files`, `onRemove`, `onRetry`, `onCancel`) and its rendered markup are unchanged.
 - `use-input-keyboard.ts` MOVES WITHOUT A SINGLE EDIT. It is the keyboard ladder (Enter/Shift+Enter/Escape/Escape-Escape arming, palette Enter fall-through, queue navigation, upload cancel) and its existing tests are the only regression net for it. If a diff of this file is anything other than 0 changed lines, stop and revisit.
@@ -52,6 +52,7 @@ Acceptance: the seven source files and three test files exist at their new paths
 Create `apps/client/src/layers/features/composer/index.ts` as the slice's ONLY public surface.
 
 Exports exactly:
+
 ```ts
 export const Composer = {
   Input: ComposerInput,
@@ -61,6 +62,7 @@ export const Composer = {
 };
 export type { ComposerInputHandle } from './ui/ComposerInput';
 ```
+
 `Root` is deliberately absent in phase 1 and is added to the same object in task 2.1 — do not stub it.
 
 Deliberately NOT exported (they stay internal to the slice, which is what keeps the cross-feature model-import rule in `.claude/rules/fsd-layers.md` satisfied — consumers may only ever import components and types from this barrel): `InputActionButton`, `useInputKeyboard`, `useTextareaResize`, `useDragAndPaste`. If any consumer needs one of these, that is a design error, not a reason to widen the barrel.
@@ -77,6 +79,7 @@ The file carries a module-level TSDoc (`@module features/composer`) as required 
  * | Prompt suggestions             | yes  | no (session)     | yes          |
  * | Interactive input panel        | yes  | no (session)     | yes          |
 ```
+
 The prose around it must state the doctrine: composition IS the capability declaration — a surface has attach because it renders `Composer.Attachments` and passes `onAttach`/`onFilesDropped`, never because a config object says so. "reserved" means the slot exists and is intentionally unwired: room attach lands in DOR-947, room slash commands are deferred to a follow-up ticket (a room has no single cwd, session, or runtime, so `transport.getCommands` has nothing to key on).
 
 Every export in the slice needs TSDoc (`eslint-plugin-jsdoc` is an error-level gate): `ComposerInput`, `ComposerInputHandle`, `ComposerAttachments`, `ClearArmedHint` already carry theirs from the move — verify the renamed identifiers are still described accurately (e.g. `ChatInputHandle`'s TSDoc references `{@link ChatInputHandle.focus}`, which must become `{@link ComposerInputHandle.focus}`).
@@ -93,6 +96,7 @@ Repoint every import of the moved symbols. `features/chat` keeps NO re-export sh
 Delete from `apps/client/src/layers/features/chat/index.ts` (lines 21 and 22-28 today): `export { ChatInput, type ChatInputHandle } from './ui/input/ChatInput';` and `export { ClearArmedHint } from './ui/input/ClearArmedHint';` together with the block comment above `ClearArmedHint`. Everything else in that barrel stays.
 
 Source consumers (all paths under `apps/client/src/`):
+
 1. `layers/features/chat/ui/input/ChatInputContainer.tsx` — lines 5-6 (`./ChatInput`, `type ChatInputHandle`), line 18 (`./FileChipBar`), line 20 (`./ClearArmedHint`). Replace those three with `import { Composer, type ComposerInputHandle } from '@/layers/features/composer';` and use `<Composer.Input>`, `<Composer.Attachments>`, `<Composer.ClearArmedHint />` at the JSX sites. Line 37's `import { useDragAndPaste } from './use-drag-and-paste'` is UNCHANGED in phase 1 — that hook stays in `features/chat/ui/input/` until task 2.1 moves it into `ComposerRoot`, so nothing here needs a temporary barrel export.
 2. `layers/features/chat/ui/ChatPanel.tsx` line 27 — `import type { ChatInputHandle } from './input/ChatInput'` becomes `import type { ComposerInputHandle } from '@/layers/features/composer'`; the `useRef<ChatInputHandle>(null)` at line 71 becomes `useRef<ComposerInputHandle>(null)`.
 3. `layers/features/chat/model/use-chat-queue.ts` line 12 — `import type { ChatInputHandle } from '../ui/input/ChatInput'` becomes the barrel type import. This is a model file importing a TYPE from a sibling feature's barrel; a type-only import carries no runtime coupling and is legal, but if lint objects, hoist the ref type to a local `interface { focus(): void }` rather than widening any barrel.
@@ -103,6 +107,7 @@ Source consumers (all paths under `apps/client/src/`):
 8. `src/dev/sections/chat-sections.ts` — the registry entries at ~line 246 (`id: 'chatinput'`, `title: 'ChatInput'`) and the `filechipbar` entry below it: retitle to `Composer.Input` / `Composer.Attachments`, keep the `id` values stable so deep links survive, and add `composer` to both entries' `keywords` arrays.
 
 Test mocks that name the moved symbols (each `vi.mock` factory must move to the composer barrel and export `Composer` as an object, not a bare `ChatInput`):
+
 - `layers/features/chat/__tests__/ChatInputContainer.test.tsx` — imports `ChatInput` from `../ui/input/ChatInput` at line 91 and reads `vi.mocked(ChatInput).mock.calls.at(-1)![0]` in `lastChatInputProps()`. Repoint to a `vi.mock('@/layers/features/composer', ...)` factory whose `Composer.Input` is the mocked component, and read the recorded props off that same mock fn.
 - `layers/features/chat/__tests__/upload-wedge-recovery.test.tsx` (line 77 imports the container; check its mock factory for `ChatInput`).
 - `layers/features/chat/__tests__/use-chat-queue.test.ts` line 21 — type-only import, repoint to the barrel type.
@@ -120,6 +125,7 @@ Acceptance: `grep -rn "ChatInputHandle\|FileChipBar\|from '.*features/chat'" app
 - **Depends on:** 1.3 · **Parallel with:** —
 
 The phase-1 gate. Run and record, from the worktree root:
+
 1. `pnpm --filter @dorkos/client typecheck` — green.
 2. `pnpm --filter @dorkos/client lint` — green, including `no-restricted-imports` (FSD) and `jsdoc` on the new slice.
 3. `pnpm vitest run apps/client/src/layers/features/composer` — the three moved test files pass. Then the surfaces that mock them: `pnpm vitest run apps/client/src/layers/features/chat/__tests__/ChatInputContainer.test.tsx`, `.../chat/__tests__/upload-wedge-recovery.test.tsx`, `.../onboarding/__tests__/OnboardingConversation.test.tsx`, `.../onboarding/__tests__/onboarding-skip.test.tsx`, `.../widgets/dashboard/__tests__/DashboardComposerSection.test.tsx`, `apps/client/src/dev/__tests__/PlaygroundSearch.test.tsx`.
@@ -127,6 +133,7 @@ The phase-1 gate. Run and record, from the worktree root:
 5. Full client suite once: `pnpm test -- --run --filter @dorkos/client`. Never use a bare `pnpm vitest run` for a full run — it skips the per-package env turbo sets up and has falsely failed tests in dev.
 
 Dead-path proofs, all of which must return nothing:
+
 - `grep -rn "ui/input/ChatInput\|ui/input/FileChipBar\|ui/input/ClearArmedHint\|ui/input/InputActionButton\|ui/input/use-input-keyboard\|ui/input/use-textarea-resize" apps/client/src` (note `use-drag-and-paste` is deliberately absent from this list — it is still chat-owned until task 2.1)
 - `grep -n "ChatInput\|ClearArmedHint" apps/client/src/layers/features/chat/index.ts` (the barrel must no longer name either).
 - `git diff --stat <base> -- apps/client/src/layers/features/composer/ui/use-input-keyboard.ts` shows 0 changed lines (the keyboard ladder moved untouched).
@@ -134,7 +141,6 @@ Dead-path proofs, all of which must return nothing:
 DOM proof: no diff harness is needed for phase 1 because nothing was rewrapped — the evidence is that the 1835-line `ComposerInput.test.tsx` and the 247-line `ComposerAttachments.test.tsx` pass with only import/identifier lines changed. Record the diff of those two test files in the phase-1 commit message so a reviewer can confirm no assertion moved.
 
 Acceptance: every command above green, every grep empty, and `pnpm knip` reports no new unused export from the composer barrel.
-
 
 ## Phase 2 — Introduce Composer.Root and Composer.OverlayLane
 
@@ -146,6 +152,7 @@ Acceptance: every command above green, every grep empty, and `pnpm knip` reports
 Create `apps/client/src/layers/features/composer/ui/ComposerRoot.tsx` and move `use-drag-and-paste.ts` from `apps/client/src/layers/features/chat/ui/input/` into `apps/client/src/layers/features/composer/ui/` (ComposerRoot is its only consumer; it stays internal to the slice and is NOT exported from the barrel).
 
 Props:
+
 ```ts
 interface ComposerRootProps {
   children: React.ReactNode;
@@ -162,6 +169,7 @@ interface ComposerRootProps {
 The card chrome is chat's current one, verbatim: `bg-surface relative m-2 rounded-xl border p-2`, merged with the caller's `className` via `cn()` from `@/layers/shared/lib` (caller class last so it can override). `relative` is load-bearing — `Composer.OverlayLane` anchors to it with `bottom-full`.
 
 Structure Root renders, in this exact order:
+
 1. `<input {...getInputProps()} />` — only when `onFilesDropped` is given.
 2. `<AnimatePresence>` drop overlay — only when `onFilesDropped` is given. Copied verbatim from `ChatInputContainer.tsx` lines 222-234: `motion.div` with `initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:0.15}}`, `className="bg-primary/10 border-primary absolute inset-0 z-10 flex items-center justify-center rounded-xl border-2 border-dashed"`, containing `<p className="text-primary text-sm font-medium">Drop files to attach</p>`.
 3. `{children}`.
@@ -187,11 +195,13 @@ interface ComposerOverlayLaneProps {
   className?: string;
 }
 ```
+
 It renders a single `div` with `cn('absolute right-0 bottom-full left-0 mb-2', className)` and nothing else — no `AnimatePresence` of its own, no stacking logic. Stacking order IS child order, and the TSDoc must say so, because both hosts rely on it: palettes first, `Composer.ClearArmedHint` last, so the armed-clear pill sits below an open palette rather than over it.
 
 The TSDoc must also record why the lane exists at all rather than anchoring the hint inside the text field: measured in a browser, an in-field anchor lands the hint squarely across the bottom queue row's Send-now and Remove buttons — the one way out of a queue the flush pump cannot drain. The lane costs the resting composer no pixels and moves nothing when it appears.
 
 Existing call sites this replaces (do not migrate them here — 2.3 and 3.1 do):
+
 - `apps/client/src/layers/features/chat/ui/input/ChatInputContainer.tsx` line 270: `<div className="absolute right-0 bottom-full left-0 mb-2">` — identical, so chat's DOM is unchanged by adopting it.
 - `apps/client/src/layers/widgets/room-view/ui/RoomComposer.tsx` line 235: `<div className="absolute right-3 bottom-full left-3 mb-2">` — the `right-3 left-3` inset existed because the room's own wrapper was `p-3`; once the room sits inside `Composer.Root`'s `p-2`, `right-0 left-0` is the correct alignment and the inset difference disappears. That is an intended phase-3 delta, recorded there.
 
@@ -207,6 +217,7 @@ Tests: add `apps/client/src/layers/features/composer/__tests__/ComposerOverlayLa
 Rewrite the shell of `apps/client/src/layers/features/chat/ui/input/ChatInputContainer.tsx` (currently 408 lines) so the chrome, dropzone, and lane markup leave it and it becomes pure chat orchestration.
 
 Remove from the container:
+
 - the `useDragAndPaste` call (lines 182-184) and its import (line 37) — the hook now lives inside `Composer.Root`.
 - the outer `<div {...getRootProps()} onPaste={handlePaste} className="chat-input-container bg-surface relative m-2 rounded-xl border p-2">` (lines 209-213) and its closing tag.
 - the `<input {...getInputProps()} />` at line 214.
@@ -216,6 +227,7 @@ Remove from the container:
 Replace with `<Composer.Root className="chat-input-container" onFilesDropped={onFilesSelected}>` as the outer element, and `<Composer.OverlayLane>` around the palette block. `onFilesSelected` comes from the existing `fileUpload` prop destructure at line 124 — it is the same callback the paperclip button already receives via `onAttach`, so drag, paste, and click all still land in one place.
 
 Everything else stays put and in the same order inside Root's children:
+
 1. the `ScanLine` `AnimatePresence` (lines 216-220) — now passed as Root's first child, exactly as the spec requires. It keeps `color={agentVisual.color} isTextStreaming={isTextStreaming} edge="top"`.
 2. the `AnimatePresence mode="wait"` interactive-panel swap (line 236) with both branches untouched.
 3. inside the `key="normal"` branch: `<Composer.OverlayLane>` containing the `AnimatePresence` with `CommandPalette` and `FilePalette` then `{clearArmed && <Composer.ClearArmedHint />}`; then `Composer.Attachments` (guarded by `pendingFiles.length > 0`); then the `QueuePanel` `AnimatePresence`; then `BackgroundTaskBar`; then `Composer.Input` with ALL 30 of its current props unchanged; then `ChatStatusSection`.
@@ -236,11 +248,13 @@ Add `apps/client/src/layers/features/chat/__tests__/ChatInputContainer-dom-parit
 Method: render the container under a fixed prop fixture, serialize `container.innerHTML` (or a normalized walk of the subtree), and compare against a checked-in snapshot captured from the pre-migration component. Capture the baseline BEFORE task 2.3 lands (run the harness on the parent commit and commit the snapshot file), so the snapshot is real evidence and not a post-hoc recording of whatever the new code happens to emit. A snapshot written after the change proves nothing.
 
 Normalization the comparison MUST apply, and nothing beyond it:
+
 - `class` attributes compare as token SETS, not strings. `cn()` composition legitimately reorders tokens (Root emits its base classes then the caller's `chat-input-container`, where the old markup led with it) without changing a single rendered pixel. Any token added or removed is a real failure.
 - `framer-motion`/`motion` generated `style` transform values and any `id`/`aria-*` values derived from `useId` are placeholder-substituted.
-Everything else — element names, nesting, order, `data-testid`, `role`, `aria-label`, `placeholder`, `disabled` — compares literally.
+  Everything else — element names, nesting, order, `data-testid`, `role`, `aria-label`, `placeholder`, `disabled` — compares literally.
 
 States to diff, each its own case:
+
 1. Idle: no pending files, empty queue, no interaction, not streaming, not dragging.
 2. Streaming with a 2-item queue (exercises ScanLine, QueuePanel, and the queue-aware placeholder).
 3. Two pending files, one in `failed` state (exercises `Composer.Attachments` and the `canSubmit={!hasFailedUpload}` gate).
@@ -269,7 +283,6 @@ Proof: add `apps/client/src/layers/widgets/dashboard/__tests__/DashboardComposer
 The existing `DashboardComposerSection.test.tsx` mocks the composer barrel; its `Composer` mock object must gain a `Root` key that renders `<div>{children}</div>` or the wrap will silently render nothing. Its assertions (the "Getting your agent ready…" line, the navigate call, the birth-record shape) must pass unmodified.
 
 Run `pnpm vitest run apps/client/src/layers/widgets/dashboard/__tests__/` and `pnpm --filter @dorkos/client typecheck`.
-
 
 ## Phase 3 — Migrate rooms onto the shared composer
 
@@ -304,6 +317,7 @@ Rooms are the one surface whose DOM legitimately changes, so the proof is a diff
 Update `apps/client/src/layers/widgets/room-view/__tests__/RoomComposer.test.tsx`: every behavioral assertion (draft persistence across remount, thread vs room draft keys never sharing text, the mention picker opening on `@` and inserting the handle with the caret landing after it, the empty-picker `role="status"` announcement, Escape dismissing the picker, double-Escape clearing with the `clear-armed-hint` testid appearing, `canSubmit={false}` and the archived-room reason line, Enter posting via `usePostToRoom` / `useReplyInThread` with a minted `clientId`, the second-Enter-in-one-tick guard) must pass with NO change to what it asserts. Only chrome-level DOM assertions change — anything that asserted `border-t`, `p-3`, or the `right-3 left-3` lane offsets.
 
 Add a chrome-delta assertion block that states the intended change positively rather than deleting the old one:
+
 - the composer's root element carries `bg-surface`, `rounded-xl`, `border`, `p-2`, `m-2`, `relative`;
 - it carries neither `border-t` nor `p-3`;
 - the overlay lane carries `absolute right-0 bottom-full left-0 mb-2`;
@@ -324,6 +338,7 @@ Also run the room-view widget's other suites (`cd apps/client && pnpm vitest run
 Final pass across everything the move touches outside the three composers.
 
 Docs:
+
 - `contributing/design-system.md` — find the composer section and update it to name ONE family living at `apps/client/src/layers/features/composer/`, listing `Composer.Root` / `.Input` / `.OverlayLane` / `.Attachments` / `.ClearArmedHint` and stating that a surface declares its capabilities by which parts it composes. Replace any reference to `features/chat/ui/input/ChatInput` or `FileChipBar`. If the section does not name the old paths, leave it alone rather than padding it.
 - Dev playground: per the `maintaining-dev-playground` skill, `apps/client/src/dev/showcases/InputShowcases.tsx` already renders the composer. Add a `Composer.Root` showcase demonstrating the card chrome with and without attach wiring, and register it in `apps/client/src/dev/sections/chat-sections.ts` with `page: 'chat'`, `category: 'Input'`, and keywords including `composer`, `card`, `dropzone`.
 - Changelog fragment: create `changelog/unreleased/<id>-composer-parity.md` with an id from `.claude/scripts/id.ts`. It is user-facing prose, so it follows the `writing-for-humans` bar — plain enough for a smart 9th grader who does not code. Say what a person sees: the message box in rooms now looks and feels like the one in chat. Do NOT claim room file attachments or slash commands work — neither ships here.
@@ -331,6 +346,7 @@ Docs:
 E2E (the behavior-preservation gate at browser level): run the existing Playwright specs in `apps/e2e` that type into a composer — chat send, room post, mention flow, queue flow. They run UNMODIFIED. A spec that needs editing means behavior moved, not that the spec is stale.
 
 Full-repo gate, in order:
+
 1. `pnpm --filter @dorkos/client typecheck`
 2. `pnpm --filter @dorkos/client lint`
 3. `pnpm test -- --run` (never a bare `pnpm vitest run` for a full run — it skips the per-package env turbo sets up and has falsely failed tests in dev)
@@ -340,4 +356,3 @@ Full-repo gate, in order:
 Final dead-path sweep, all empty: `grep -rn "ChatInput\b" apps/client/src` returns only `ChatInputContainer` (chat's orchestrator, which keeps its name); `apps/client/src/layers/features/chat/index.ts` names neither `ChatInput` nor `ClearArmedHint`; no file under `apps/client/src/layers/features/chat/ui/input/` is named `ChatInput.tsx`, `FileChipBar.tsx`, `ClearArmedHint.tsx`, `InputActionButton.tsx`, `use-input-keyboard.ts`, `use-textarea-resize.ts`, or `use-drag-and-paste.ts`.
 
 Before any PR opens, put the branch through an independent adversarial review against `REVIEW.md`.
-
