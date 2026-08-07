@@ -77,15 +77,30 @@ const BROADCAST_RESERVATIONS = ['everyone', 'here', 'channel'] as const;
  * Never throws: a boot that cannot backfill a handle is an install where some
  * authors are un-addressable, which is a degraded room and not a broken server.
  *
+ * **The two halves fail separately, and that is the point.** One `try` around
+ * both would let a seeding failure — a locked database, a `dorkos` somehow
+ * already held — silently cancel the backfill that had not run yet, so an
+ * install would lose every agent's address to a problem with one reserved word.
+ * They are independent repairs of independent state; each degrades to a warning
+ * naming what it lost, and the other still runs. The ORDER still matters, so
+ * seeding goes first: a reservation taken after a backfill has derived past it
+ * is a reservation that failed open.
+ *
  * @param db - The database.
  * @param registry - The author registry, for its mint and claim paths.
  */
 export function ensureHandles(db: Db, registry: AuthorRegistry): void {
   try {
     seedReservations(registry);
+  } catch (err) {
+    logger.warn('[rooms] could not seed the reserved handles', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+  try {
     backfillHandles(db, registry);
   } catch (err) {
-    logger.warn('[rooms] could not seed or backfill handles', {
+    logger.warn('[rooms] could not backfill author handles', {
       error: err instanceof Error ? err.message : String(err),
     });
   }
@@ -113,8 +128,15 @@ function seedReservations(registry: AuthorRegistry): void {
  * The local human is deliberately skipped: there is no honest string to derive
  * from. `'You'` is the defect this feature exists to remove, the OS username is
  * personal data, and `'Someone'` is a placeholder for a state that should not
- * arise. Where there is nothing honest, the right answer is to ask, which the
- * cockpit does the first time a room is opened.
+ * arise. Where there is nothing honest, the right answer is to ask rather than
+ * to invent.
+ *
+ * **Nothing asks yet.** The write path exists — `PATCH
+ * /api/rooms/authors/:id/handle` — and the surface that puts the question in
+ * front of somebody ships with the profile work (DOR-979). Until then the
+ * operator simply has no handle, which every reader already renders honestly:
+ * the picker shows them disabled, and the roster an agent is handed names them
+ * without an `@`.
  *
  * @param db - The database.
  * @param registry - The author registry.

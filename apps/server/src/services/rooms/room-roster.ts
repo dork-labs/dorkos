@@ -14,6 +14,7 @@ import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { AuthorRef, Room, RoomMember, RoomRosterEntry } from '@dorkos/shared/room-schemas';
 import {
   addressableHandles,
+  isLiveAuthor,
   rosterMentionCandidates,
   type RosterCandidates,
 } from './handles/author-handles.js';
@@ -197,6 +198,14 @@ export class RoomRoster {
    * Every id asked for comes back with an entry, so an empty array means "that
    * room has nobody in it" and a missing key means "you did not ask about it".
    *
+   * **The liveness question is asked here too**, even though nothing on this
+   * path opens a picker. `AuthorRef.handle` promises that `null` means "cannot
+   * be addressed", and an author whose agent is gone still carries a handle on
+   * its row while answering to nothing — so handing the raw column out here
+   * would make one projection of the same field disagree with the other two.
+   * That is the second-derivation failure this whole area exists to prevent, and
+   * a promise the schema makes is not one a bulk path gets to opt out of.
+   *
    * @param roomIds - The rooms to read.
    */
   authorsIn(roomIds: readonly string[]): Map<string, AuthorRef[]> {
@@ -206,9 +215,15 @@ export class RoomRoster {
     const authors = this.authors.getMany(members.map((m) => m.authorId));
     for (const member of members) {
       const author = authors.get(member.authorId);
-      byRoom
-        .get(member.roomId)
-        ?.push(author ? toAuthorRef(author) : unknownMember(member.authorId).author);
+      if (!author) {
+        byRoom.get(member.roomId)?.push(unknownMember(member.authorId).author);
+        continue;
+      }
+      // Per author rather than per room: liveness is a property of the author's
+      // directory, not of the room it is being listed in, so one lookup answers
+      // for every room it appears in.
+      const addressable = isLiveAuthor(author, this.agents) ? undefined : null;
+      byRoom.get(member.roomId)?.push(toAuthorRef(author, addressable));
     }
     return byRoom;
   }

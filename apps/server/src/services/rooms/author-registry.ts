@@ -43,7 +43,7 @@ import {
   sql,
   type Db,
 } from '@dorkos/db';
-import { deriveHandle } from '@dorkos/shared/handle';
+import { deriveHandle, deriveQualifiedHandle } from '@dorkos/shared/handle';
 import {
   agentAuthorRef,
   type AuthorKind,
@@ -479,6 +479,23 @@ export class AuthorRegistry {
       };
     }
 
+    return this.mintRow(input, occupantId);
+  }
+
+  /**
+   * Write the row for a `(kind, naturalKey)` nobody has resolved before, and
+   * return whatever settled — this row, or a concurrent writer's.
+   *
+   * The half of {@link AuthorRegistry.upsert} that creates rather than
+   * refreshes. Split out because the two share nothing but their inputs, and
+   * because everything subtle about minting an author — the handle derivation,
+   * and the two unique indexes that have to be told apart — reads better with
+   * the refresh branch out of the way.
+   *
+   * @param input - The author's kind, stable key, and current display name.
+   * @param occupantId - The manifest ULID to stamp, or `null` for a non-agent.
+   */
+  private mintRow(input: ResolveAuthorInput, occupantId: string | null): AuthorRecord {
     const id = ulid();
     const row = {
       id,
@@ -548,8 +565,10 @@ export class AuthorRegistry {
    * **The local human gets nothing.** The only string there is to derive from is
    * `'You'`, which is the placeholder this feature exists to remove, and the OS
    * username is personal data this repo is careful with elsewhere. Where there
-   * is no honest string, the right answer is to ask — which the cockpit does the
-   * first time a room is opened — not to invent one.
+   * is no honest string, the right answer is to ask rather than to invent — and
+   * until the surface that asks ships (DOR-979), the operator's handle is simply
+   * null, which every reader renders as "cannot be addressed" already.
+   * {@link AuthorRegistry.setHandle} is the write path waiting for it.
    *
    * **Somebody on another platform DOES derive**, from the name they chose
    * there. They are never going to be asked: nothing in DorkOS can prompt a
@@ -571,7 +590,17 @@ export class AuthorRegistry {
       );
     }
     if (input.kind === 'human' && isExternalNaturalKey(input.naturalKey)) {
-      return deriveHandle(input.displayName, this.handles.spokenFor(claimant)) ?? null;
+      const taken = this.handles.spokenFor(claimant);
+      const { platform, platformUserId } = externalKeyParts(input.naturalKey);
+      return (
+        deriveQualifiedHandle(input.displayName, platform, taken) ??
+        // A name written entirely outside the charset — Cyrillic, CJK, emoji —
+        // is an ordinary thing for a person to have. The platform's own id is
+        // opaque, distinct per person, and already the fallback the display-name
+        // path takes when a name sanitizes to nothing.
+        deriveQualifiedHandle(platformUserId, platform, taken) ??
+        null
+      );
     }
     return null;
   }
@@ -648,6 +677,21 @@ export class AuthorRegistry {
    * active author at all. (It self-heals — the next resolve finds none and mints
    * — but the transaction means the window does not exist.)
    *
+   * **The handle release is INSIDE that transaction, and it has to be.** The
+   * retired row gives up the address it answered to — a retired author stops
+   * claiming handles, and while it holds one, `authors_handle_unique` refuses
+   * the successor. Done outside, a crash between the release and the insert
+   * would leave the directory with no active author AND its handle tombstoned to
+   * a row nobody resolves, which the next resolve cannot self-heal: the mint
+   * would derive a suffixed handle and the original would sit reserved forever.
+   * So the release is spelled out here rather than delegated to
+   * {@link AuthorHandleStore.release}, which opens a transaction of its own.
+   *
+   * Released rather than deleted, so the tombstone still records who had it —
+   * and the successor at this same directory is inside that author's lineage, so
+   * it takes the name straight back. Re-initializing your own agent in place must
+   * not burn its handle forever.
+   *
    * @param existing - The row being retired.
    * @param input - What the new row is minted from.
    * @param occupantId - The manifest ULID the fresh row is stamped with.
@@ -658,16 +702,11 @@ export class AuthorRegistry {
     occupantId: string
   ): AuthorRecord {
     const now = new Date().toISOString();
-    // **The retired row gives its handle up first, and the order matters.** A
-    // retired author "stops claiming handles": it keeps its id, its history and
-    // its memberships forever, but the address it answered to is no longer its
-    // to hold, and while it holds one the unique index would refuse the
-    // successor. Released rather than deleted, so the tombstone still records
-    // who had it — and the successor at this same directory is inside that
-    // author's lineage, so it can take the name straight back. Re-initializing
-    // your own agent in place must not burn its handle forever.
-    this.handles.release(toRecord(existing));
     const id = ulid();
+    // Derived BEFORE the release and unaffected by it: `spokenFor` already
+    // excludes the claimant's own lineage, and the row being retired is in it —
+    // so the successor sees the same free namespace either way, and the two
+    // steps can share one transaction rather than having to be ordered.
     const fresh = {
       id,
       kind: input.kind,
@@ -686,16 +725,42 @@ export class AuthorRegistry {
       .where(eq(roomMembers.authorId, existing.id))
       .all()
       .map((row) => row.roomId);
+    // Read outside the transaction because it names the rows this one is about
+    // to change: the retired author, and any earlier generation at the same
+    // directory. `fresh` is not in it yet and does not need to be — nothing it
+    // could own has been written.
+    const lineage = [
+      ...this.handles.lineageOf({
+        id: existing.id,
+        kind: input.kind,
+        naturalKey: input.naturalKey,
+      }),
+    ];
 
     this.db.transaction((tx) => {
-      tx.update(authors).set({ retiredAt: now }).where(eq(authors.id, existing.id)).run();
+      if (existing.handle !== null) {
+        tx.insert(handleTombstones)
+          .values({ handle: existing.handle, authorId: existing.id, releasedAt: now })
+          .onConflictDoNothing()
+          .run();
+      }
+      tx.update(authors)
+        .set({ retiredAt: now, handle: null })
+        .where(eq(authors.id, existing.id))
+        .run();
       tx.insert(authors).values(fresh).run();
-      // The tombstone the release just wrote is the fresh row's own lineage's,
-      // so clearing it keeps "a tombstone means somebody may still want this
-      // back" true rather than leaving a row that refuses nobody.
+      // Scoped by author id, exactly as `AuthorHandleStore.set` scopes its own
+      // reclaim: only a tombstone this lineage wrote is this lineage's to clear.
+      // An unscoped delete would silently drop somebody else's reservation the
+      // day two of them ever shared a handle.
       if (fresh.handle !== null) {
         tx.delete(handleTombstones)
-          .where(sql`lower(${handleTombstones.handle}) = ${fresh.handle}`)
+          .where(
+            and(
+              sql`lower(${handleTombstones.handle}) = ${fresh.handle}`,
+              inArray(handleTombstones.authorId, lineage)
+            )
+          )
           .run();
       }
     });
@@ -706,6 +771,12 @@ export class AuthorRegistry {
       manifestId: occupantId,
       previousManifestId: existing.mintedForManifestId,
       displayName: input.displayName,
+      // Both addresses, because this is the one event that moves one: the
+      // previous occupant's is now a tombstone, and somebody reading the log to
+      // work out why `@bella-codebase` stopped reaching what they expected needs
+      // to see the pair rather than infer it.
+      handle: fresh.handle,
+      previousHandle: existing.handle,
       roomsLeftBehind: abandoned.length,
       roomIds: abandoned,
     });
@@ -1067,8 +1138,38 @@ export function isExternalNaturalKey(naturalKey: string): boolean {
  */
 export function authorOrigin(naturalKey: string): AuthorOrigin {
   if (!isExternalNaturalKey(naturalKey)) return 'local';
-  const platform = naturalKey.slice(EXTERNAL_KEY_PREFIX.length).split(KEY_SEPARATOR)[0];
-  return { platform: platform.length > 0 ? platform : 'unknown' };
+  return { platform: externalKeyParts(naturalKey).platform };
+}
+
+/**
+ * The platform and the platform's own user id, read back off a stored external
+ * key.
+ *
+ * **One parse, two readers.** {@link authorOrigin} needs the platform to draw a
+ * trust boundary, and the handle derivation needs both — the platform to qualify
+ * the namespace, and the user id as the fallback when somebody's name spells
+ * nothing the grammar can hold. Two parses of one key shape is how they come to
+ * disagree about where a person is.
+ *
+ * `platformUserId` is everything after the second separator, joined back
+ * together, because a platform's ids may contain one; the two segments before it
+ * are checked at mint time and cannot.
+ *
+ * A malformed key — the prefix with no platform behind it, which
+ * {@link externalNaturalKey} cannot produce — reports `'unknown'` rather than an
+ * empty string. Losing the platform name costs a label; a caller that read the
+ * empty string as "no qualifier" would derive an unqualified handle, which is
+ * the squat the qualifier exists to prevent.
+ *
+ * @param naturalKey - An external author's stored natural key.
+ */
+function externalKeyParts(naturalKey: string): { platform: string; platformUserId: string } {
+  const segments = naturalKey.slice(EXTERNAL_KEY_PREFIX.length).split(KEY_SEPARATOR);
+  const platform = segments[0] ?? '';
+  return {
+    platform: platform.length > 0 ? platform : 'unknown',
+    platformUserId: segments.slice(2).join(KEY_SEPARATOR),
+  };
 }
 
 /**

@@ -57,6 +57,11 @@ export class AuthorHandleStore {
   spokenFor(claimant: HandleClaimant | null): Set<string> {
     const lineage = claimant ? this.lineageOf(claimant) : new Set<string>();
     const taken = new Set<string>();
+    // Both tables are scanned whole, on purpose. Derivation needs the SET to
+    // walk a counter against — "is `ana-2` free?" cannot be answered one indexed
+    // lookup at a time without a query per attempt — and `authors` holds one row
+    // per entity that has actually been in a room, bounded above by the agent
+    // roster. A few dozen rows on the path that runs once per author, ever.
     for (const row of this.db
       .select({ handle: authors.handle, id: authors.id })
       .from(authors)
@@ -228,7 +233,7 @@ export class AuthorHandleStore {
    *
    * @param claimant - Who is claiming.
    */
-  private lineageOf(claimant: HandleClaimant): Set<string> {
+  lineageOf(claimant: HandleClaimant): Set<string> {
     const rows = this.db
       .select({ id: authors.id })
       .from(authors)

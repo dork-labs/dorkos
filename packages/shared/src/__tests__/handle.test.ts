@@ -4,6 +4,7 @@ import {
   HANDLE_MIN_LENGTH,
   HANDLE_PATTERN,
   deriveHandle,
+  deriveQualifiedHandle,
   normalizeHandle,
   validateHandle,
 } from '../handle.js';
@@ -104,6 +105,19 @@ describe('normalizeHandle', () => {
 
   it('does not validate — an illegal handle still normalizes', () => {
     expect(normalizeHandle('Ana Bo')).toBe('ana bo');
+  });
+
+  it('drops the sigil a person will type, because that is how a handle is read', () => {
+    expect(normalizeHandle('@ana')).toBe('ana');
+    expect(normalizeHandle('  @Ana  ')).toBe('ana');
+    expect(normalizeHandle('@')).toBeUndefined();
+  });
+
+  it('drops exactly one, so a real mistake is still reported', () => {
+    // `@@ana` is somebody making an error worth telling them about, not a
+    // spelling worth guessing at. It survives to fail the grammar.
+    expect(normalizeHandle('@@ana')).toBe('@ana');
+    expect(validateHandle('@ana').valid).toBe(false);
   });
 });
 
@@ -231,5 +245,78 @@ describe('deriveHandle', () => {
       taken.add(derived!);
     }
     expect(taken.size).toBe(names.length);
+  });
+});
+
+describe('deriveQualifiedHandle', () => {
+  const none = new Set<string>();
+
+  it('puts the name first and the namespace after it', () => {
+    expect(deriveQualifiedHandle('Miguel', 'telegram', none)).toBe('miguel.telegram');
+  });
+
+  it('can never produce a bare name, which is the whole point', () => {
+    // The squat this closes: one message from somebody calling themselves
+    // `Dorian` used to be enough to hold `@dorian` forever.
+    for (const name of ['Dorian', 'ana', 'dorkos', 'everyone']) {
+      const derived = deriveQualifiedHandle(name, 'telegram', none)!;
+      expect(derived).not.toBe(name.toLowerCase());
+      expect(derived.endsWith('.telegram')).toBe(true);
+    }
+  });
+
+  it('reduces the qualifier by the same grammar as everything else', () => {
+    // No table of abbreviations to keep in step with anything.
+    expect(deriveQualifiedHandle('Miguel', 'Telegram', none)).toBe('miguel.telegram');
+    expect(deriveQualifiedHandle('Miguel', 'Google Chat', none)).toBe('miguel.google-chat');
+  });
+
+  it('de-collides after the qualifier, never inside it', () => {
+    expect(deriveQualifiedHandle('Miguel', 'telegram', new Set(['miguel.telegram']))).toBe(
+      'miguel.telegram-2'
+    );
+    expect(
+      deriveQualifiedHandle('Miguel', 'telegram', new Set(['miguel.telegram', 'miguel.telegram-2']))
+    ).toBe('miguel.telegram-3');
+  });
+
+  it('spends the length bound on the NAME and keeps the qualifier whole', () => {
+    // A cut that ate the qualifier would put the result back in the namespace it
+    // is being kept out of — the exact failure this function exists to prevent.
+    const derived = deriveQualifiedHandle('a'.repeat(80), 'telegram', none)!;
+
+    expect(derived).toHaveLength(HANDLE_MAX_LENGTH);
+    expect(derived.endsWith('.telegram')).toBe(true);
+    expect(validateHandle(derived)).toEqual({ valid: true });
+  });
+
+  it('keeps the qualifier whole through de-collision too', () => {
+    const first = deriveQualifiedHandle('a'.repeat(80), 'telegram', none)!;
+    const second = deriveQualifiedHandle('a'.repeat(80), 'telegram', new Set([first]))!;
+
+    expect(second).not.toBe(first);
+    expect(second.endsWith('.telegram-2')).toBe(true);
+    expect(second.length).toBeLessThanOrEqual(HANDLE_MAX_LENGTH);
+    expect(validateHandle(second)).toEqual({ valid: true });
+  });
+
+  it('gives nothing rather than falling back to an unqualified name', () => {
+    // Every one of these could produce a legal BARE handle. Returning one would
+    // reopen the hole, so the honest answer is that this namespace has no room.
+    expect(deriveQualifiedHandle('日本語', 'telegram', none)).toBeUndefined();
+    expect(deriveQualifiedHandle('Miguel', '', none)).toBeUndefined();
+    expect(deriveQualifiedHandle('Miguel', '🙂', none)).toBeUndefined();
+    // A qualifier long enough to leave no room for a name at all.
+    expect(deriveQualifiedHandle('Miguel', 'a'.repeat(31), none)).toBeUndefined();
+  });
+
+  it('always returns something the grammar accepts', () => {
+    for (const name of ['Miguel', 'a'.repeat(80), '144x.co', 'Ana Reyes', '145223', 'a.b']) {
+      for (const qualifier of ['telegram', 'slack', 'Google Chat']) {
+        const derived = deriveQualifiedHandle(name, qualifier, none);
+        if (derived !== undefined)
+          expect(validateHandle(derived), derived).toEqual({ valid: true });
+      }
+    }
   });
 });

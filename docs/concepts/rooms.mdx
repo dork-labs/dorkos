@@ -82,28 +82,36 @@ the members panel: from replying to everything, down to never replying on its ow
 
 ## Handles: the name that reaches someone
 
-Everyone in a room — you, and every agent — has a **handle**: one short name you type after an `@`
-to reach exactly them. `@ana`, `@art-blocks-analytics`, `@dorian`.
+A **handle** is one short name you type after an `@` to reach exactly one agent. `@ana`.
+`@art-blocks-analytics`.
 
-**Your agents already have one.** DorkOS makes it from the name you gave the agent: lowercase, with
-spaces turned into hyphens. If two agents would end up with the same handle, the second one gets a
-number on the end — `@api-server` and `@api-server-2` — so there is never any doubt about who a
-message is for.
+**Your agents already have one.** DorkOS builds it from the name you gave the agent. It lowercases
+the name and turns spaces into hyphens. Two agents that would end up with the same handle get
+different ones: the second becomes `@api-server-2`. So a message can only ever reach one of them.
 
-**Yours is yours to pick.** The first time you open a room, DorkOS asks what you want to be called.
-Until you answer you simply have no handle, and the room says so rather than guessing one for you.
+**You do not have one yet.** DorkOS will not guess a handle for you. It will not use a placeholder,
+and it will not use your computer's login name. Rooms say you have no handle rather than invent an
+address that reaches nobody. The screen for picking your own comes with the profile work. Nothing
+else about a room changes in the meantime.
 
-A handle is lowercase letters, numbers, dots, underscores and hyphens; 2 to 32 characters; and it
-starts and ends with a letter or a number. Nobody can have two handles that differ only by
-capitals, and no two people or agents can share one.
+A handle uses lowercase letters, numbers, dots, underscores and hyphens. It runs from 2 to 32
+characters and starts and ends with a letter or a number. Two handles can never differ only by
+capitals, and no two agents can share one.
 
-**Changing it is safe.** Rename yourself or an agent whenever you like. Every message already sent
-keeps pointing at the right person, because DorkOS worked out who you meant when you sent it — not
-when someone reads it. And the handle you leave behind stays yours: nobody else can claim it, and
-you can take it back whenever you want.
+**Changing a handle is safe.** Rename an agent whenever you like. Every message you already sent
+still reaches the same agent, because DorkOS worked out who you meant when you sent it. The handle
+you leave behind stays yours. Nobody else can claim it, and you can take it back.
 
-A few names are held back so nothing can pretend to be them: `@dorkos` is the room's own voice, and
+**People writing in from Telegram get a handle too.** Theirs always carries the service they came
+from, like `@miguel.telegram`. Somebody on another service can rename themselves anything they like
+and still never take a name your agents answer to.
+
+Four names are held back so nothing can pretend to be them. `@dorkos` is the room's own voice.
 `@everyone`, `@here` and `@channel` are reserved.
+
+**Deleting an agent keeps its handle.** Its old messages are still in the room and still have to say
+who wrote them. So a new agent you build later with the same name gets the numbered form,
+`@api-server-2`, instead of the name the deleted one still holds.
 
 ## What you see while an agent works
 
@@ -135,7 +143,7 @@ browser may have lost the room's live connection, or the agent may genuinely hav
 ## Good to know
 
 - **Mentioning someone.** Type `@` followed by their handle to address just them. It's how you get
-  an answer in a channel, and it's useful in a group DM. A display name is not an address — only a
+  an answer in a channel, and it's useful in a group DM. A display name is not an address: only a
   handle reaches somebody. Get it wrong and DorkOS just treats it as plain text; nothing breaks.
 - **Several replies at once is normal.** Addressing more than one agent and getting more than one
   answer is how rooms are meant to work, not a glitch.

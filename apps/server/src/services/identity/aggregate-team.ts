@@ -243,8 +243,9 @@ function personRow(
     // was minted under.
     displayName: isSelf ? operatorName : record.displayName,
     // Straight off the author row — the same column the room roster, the mention
-    // picker and the resolver all read. `null` until this person is asked for
-    // one, which the cockpit does the first time they open a room.
+    // picker and the resolver all read. `null` until this person chooses one,
+    // and nothing asks them to yet: the surface that does ships with the profile
+    // work (DOR-979). The page renders the absence rather than inventing a name.
     handle: record.handle,
     ...(record.emoji ? { emoji: record.emoji } : {}),
     ...(record.color ? { color: record.color } : {}),

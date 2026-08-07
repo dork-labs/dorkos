@@ -369,6 +369,39 @@ describe('how often the room says an agent is gone', () => {
 
     expect(noticeCodes(harness, dm.id).filter((code) => code === 'agent_gone')).toHaveLength(3);
   });
+
+  it('carries no handle for a ghost on the BULK room list either', () => {
+    // The sidebar's DM counterpart comes off `RoomRoster.authorsIn`, a bulk path
+    // that opens no picker — and `AuthorRef.handle` promises `null` means
+    // "cannot be addressed" everywhere, not only where somebody might click it.
+    // Handing the raw column out here would make one projection of the field
+    // disagree with the other two, which is the second-derivation failure this
+    // whole area exists to prevent.
+    const harness = liveHarness();
+    registerAgent(harness.db, { id: 'ULID_ANA', projectPath: ANA_PATH, name: 'ana' });
+    const dm = harness.service.createRoom(
+      { kind: 'dm', title: 'Ana', members: [], agentPaths: [ANA_PATH] },
+      harness.human
+    );
+    const ana = harness.authors.resolveAgent(ANA_PATH, 'ana');
+    // While it is live, the list carries the address, so the assertion below is
+    // about the ghost and not about the path being empty.
+    const live = harness.service
+      .listRooms(harness.human)
+      .find((room) => room.id === dm.id)!
+      .participants!.find((author) => author.id === ana.id)!;
+    expect(live.handle).toBe('ana');
+
+    harness.db.delete(agents).where(eq(agents.projectPath, ANA_PATH)).run();
+
+    const gone = harness.service
+      .listRooms(harness.human)
+      .find((room) => room.id === dm.id)!
+      .participants!.find((author) => author.id === ana.id)!;
+    expect(gone.handle).toBeNull();
+    // The row still HOLDS it — this is a projection rule, not a data change.
+    expect(harness.authors.getById(ana.id)?.handle).toBe('ana');
+  });
 });
 
 // ---------------------------------------------------------------------------

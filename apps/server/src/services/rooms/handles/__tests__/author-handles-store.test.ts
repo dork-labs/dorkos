@@ -297,6 +297,30 @@ describe('the seeded reservations', () => {
     expect(registry.resolveAgent(ANA_PATH, 'Everyone').handle).toBe('everyone-2');
   });
 
+  it('still backfills when seeding fails, and says what it lost', () => {
+    // One `try` around both halves let a seeding failure cancel a backfill that
+    // had not run yet, so an install would lose every agent's address to a
+    // problem with one reserved word. They repair independent state.
+    registerAgent(db, 'ULID_ANA', ANA_PATH, 'ana');
+    registry.resolveAgent(ANA_PATH, 'Ana');
+    db.update(authors).set({ handle: null }).run();
+    const seedFailure = new Error('the reservations are unreachable');
+    const broken = new Proxy(registry, {
+      get(target, prop, receiver) {
+        if (prop === 'system') {
+          return () => {
+            throw seedFailure;
+          };
+        }
+        return Reflect.get(target, prop, receiver) as unknown;
+      },
+    });
+
+    expect(() => ensureHandles(db, broken)).not.toThrow();
+
+    expect(registry.getById(registry.listActive('agent')[0]!.id)?.handle).toBe('ana');
+  });
+
   it('is idempotent across boots', () => {
     ensureHandles(db, registry);
     const first = registry.system().handle;

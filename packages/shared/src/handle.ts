@@ -83,13 +83,22 @@ const LEADING_SEPARATORS = /^[._-]+/;
 const TRAILING_SEPARATORS = /[._-]+$/;
 
 /**
- * Normalize a candidate handle: trim, lowercase, and treat empty as absent.
+ * Normalize a candidate handle: trim, drop a leading `@`, lowercase, and treat
+ * empty as absent.
  *
  * **`undefined` for an empty result is not a convenience — it is what keeps the
  * partial unique index correct.** Many NULLs coexist under
  * `authors_handle_unique`; many empty strings do not, so the second person to
  * "clear" their handle would collide with the first. Buzz hit this and coerces
  * in its write path for exactly the same reason.
+ *
+ * **The leading `@` goes because a person will type it.** The sigil is how a
+ * handle is written everywhere it is READ — in a room, in a roster, in this
+ * documentation — so a field asking for one gets `@ana` from somebody who has
+ * only ever seen it that way. Refusing that is pedantry about a value with no
+ * ambiguity in it; `@` is not in the charset, so nothing legal is being eaten.
+ * Only ONE is dropped: `@@ana` is somebody making a mistake worth reporting, not
+ * a spelling worth guessing at.
  *
  * Deliberately does NOT validate. Normalizing and judging are two steps because
  * the caller needs to tell "you gave me nothing" from "you gave me something
@@ -99,7 +108,9 @@ const TRAILING_SEPARATORS = /[._-]+$/;
  * @returns The normalized handle, or `undefined` when there was nothing there.
  */
 export function normalizeHandle(raw: string): string | undefined {
-  const normalized = raw.trim().toLowerCase();
+  const trimmed = raw.trim();
+  const bare = trimmed.startsWith('@') ? trimmed.slice(1) : trimmed;
+  const normalized = bare.trim().toLowerCase();
   return normalized.length > 0 ? normalized : undefined;
 }
 
@@ -191,6 +202,56 @@ export function deriveHandle(name: string, taken: ReadonlySet<string>): string |
     // and a long counter). Nothing legal is left to suffix, so stop honestly.
     if (trimmed.length === 0) return undefined;
     const candidate = `${trimmed}${suffix}`;
+    if (!spokenFor.has(candidate)) return candidate;
+  }
+}
+
+/**
+ * Derive a handle in a NAMESPACE of its own: the name, qualified by where it
+ * came from, as `name.qualifier`.
+ *
+ * **The qualifier is a squatting defence, not a label.** Everything local on an
+ * install derives into one flat namespace, and something deriving a BARE name
+ * into it can take a name a local entity would answer to — permanently, because
+ * a handle is written once and a released one is tombstoned. Qualifying removes
+ * the class rather than racing it: a name from one namespace can never equal a
+ * name from another, whoever gets there first.
+ *
+ * **Only the NAME is ever truncated.** A cut that ate the qualifier would put
+ * the caller straight back in the namespace it was being kept out of, so the
+ * length bound is spent on the name and the qualifier is kept whole. The
+ * de-collision counter goes on the very end, after the qualifier, for the same
+ * reason.
+ *
+ * `undefined` rather than a bare fallback when there is nothing usable to build
+ * from — a qualifier that reduces to nothing, or a name with no room left beside
+ * it. Falling back to the unqualified form is exactly the hole this closes.
+ *
+ * @param name - The raw name to derive from.
+ * @param qualifier - Where it came from, e.g. a platform's own name. Reduced by
+ *   the same grammar as everything else, so no caller keeps a table of
+ *   abbreviations in step with anything.
+ * @param taken - Every handle already spoken for, live or tombstoned.
+ */
+export function deriveQualifiedHandle(
+  name: string,
+  qualifier: string,
+  taken: ReadonlySet<string>
+): string | undefined {
+  const suffix = handleStem(qualifier);
+  if (suffix === undefined) return undefined;
+  const stem = handleStem(name);
+  if (stem === undefined) return undefined;
+
+  const qualified = `.${suffix}`;
+  const spokenFor = new Set([...taken].map((entry) => entry.toLowerCase()));
+  for (let counter = 1; ; counter += 1) {
+    const numbered = counter === 1 ? '' : `-${counter}`;
+    const room = HANDLE_MAX_LENGTH - qualified.length - numbered.length;
+    if (room < HANDLE_MIN_LENGTH) return undefined;
+    const trimmed = trimSeparators(stem.slice(0, room));
+    if (trimmed.length === 0) return undefined;
+    const candidate = `${trimmed}${qualified}${numbered}`;
     if (!spokenFor.has(candidate)) return candidate;
   }
 }
