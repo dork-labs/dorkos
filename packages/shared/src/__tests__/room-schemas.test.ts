@@ -273,7 +273,37 @@ describe('AuthorRefSchema', () => {
       handle: null,
     });
     expect(parsed.emoji).toBeUndefined();
+    expect(parsed.imageUrl).toBeUndefined();
     expect(parsed.agentRef).toBeUndefined();
+  });
+
+  it('carries a photo beside the emoji rather than instead of it', () => {
+    // The fourth render-cache field is ADDITIVE: an author with both keeps
+    // both, and the renderer — not the schema — decides which face wins.
+    const parsed = AuthorRefSchema.parse({
+      id: '01JZ',
+      kind: 'human',
+      displayName: 'Dorian',
+      handle: 'dorian',
+      emoji: '🐙',
+      imageUrl: '/api/profile/avatar/01JZ?v=abc123',
+    });
+    expect(parsed.imageUrl).toBe('/api/profile/avatar/01JZ?v=abc123');
+    expect(parsed.emoji).toBe('🐙');
+  });
+
+  it('takes an absolute photo URL, because the store behind it may not be local', () => {
+    // The seam DOR-976 builds returns whatever URL the avatar store hands back.
+    // A schema that only accepted a server-relative path would be the one thing
+    // a synced store could not satisfy without a migration.
+    const parsed = AuthorRefSchema.parse({
+      id: '01JZ',
+      kind: 'human',
+      displayName: 'Dorian',
+      handle: 'dorian',
+      imageUrl: 'https://cdn.example/avatars/01JZ.png',
+    });
+    expect(parsed.imageUrl).toBe('https://cdn.example/avatars/01JZ.png');
   });
 
   it('requires an explicit handle, because absent and null must not mean the same thing', () => {

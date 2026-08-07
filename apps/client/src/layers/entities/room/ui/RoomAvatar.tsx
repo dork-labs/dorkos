@@ -180,6 +180,11 @@ export function RoomAvatar({
       size={size}
       color={counterpart?.color ?? authorColor(counterpart?.id ?? room.id)}
       emoji={counterpart?.emoji}
+      // Only this branch can carry one: `visuals` above is a fleet-resolved
+      // `AgentVisual`, which is emoji and colour and has no photo in it. Here
+      // the counterpart is a full `AuthorRef` off the roster, so whatever the
+      // render cache holds for them reaches the disc.
+      imageUrl={counterpart?.imageUrl}
       fallback={initialOf(counterpart?.displayName ?? room.title)}
       className={className}
     />

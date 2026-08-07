@@ -458,6 +458,17 @@ export const CommunityMemberSchema = z.object({
   /** Render cache. */
   color: z.string().optional(),
   /**
+   * Render cache: this member's photo, when the backend has one for them.
+   *
+   * The fourth field beside `displayName`, `emoji` and `color`, added the same
+   * additive way `responseMode` was — a photo does not replace an emoji, it
+   * sits next to it and the renderer picks. Used exactly as the backend gives
+   * it: a local community returns a server-relative path and a remote one
+   * returns its own absolute URL, so nothing reading this may join a directory
+   * or assume the bytes are on this machine.
+   */
+  imageUrl: z.string().optional(),
+  /**
    * A declared `roles.values[].id`, or `null` when this backend has no roles.
    * The product branches on the descriptor's `administers`/`isOwner`, never on
    * this string.

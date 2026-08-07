@@ -27,7 +27,7 @@ import { RoomMemberRow, type RoomMemberRowProps } from '../ui/RoomMemberRow';
  * colour in the sheet and another in the masthead, because only the sheet can
  * reach the fleet. Closing that is a separate design decision about whether an
  * entity component may accept a fleet-resolved face; it is tracked, and this
- * file will need a fifth case when it lands.
+ * file will need a case of its own when it lands.
  */
 
 /** jsdom has no `matchMedia`, and the row asks for one on every render. */
@@ -65,7 +65,7 @@ function member(
   };
 }
 
-/** One disc's three decisions, in a form the two surfaces can be compared on. */
+/** One disc's four decisions, in a form the two surfaces can be compared on. */
 interface Face {
   /** Round is the person shape, square the agent one. */
   shape: 'circle' | 'square';
@@ -81,6 +81,15 @@ interface Face {
   paint: string;
   /** The face itself: the emoji, or the letter drawn in place of one. */
   glyph: string;
+  /**
+   * The photo's URL, or `'none'` when the disc drew no `<img>` at all.
+   *
+   * A field of its own rather than folded into {@link Face.glyph}, because a
+   * photo REPLACES the glyph: a surface that dropped the photo would fall back
+   * to the emoji, and comparing glyphs alone would then be comparing two discs
+   * that both say `🐙` while only one of them shows a face.
+   */
+  photo: string;
 }
 
 /**
@@ -108,6 +117,7 @@ function faceOf(root: HTMLElement): Face {
     // an `sr-only` name, and reading the whole subtree would compare a glyph on
     // one surface against a glyph plus a name on the other.
     glyph: disc.firstElementChild?.textContent ?? '',
+    photo: disc.querySelector('img')?.getAttribute('src') ?? 'none',
   };
 }
 
@@ -191,6 +201,31 @@ describe('the roster reads the same in the sheet and in the masthead', () => {
     expect(row).toEqual(listFace(bridged));
     expect(row.shape).toBe('circle');
     expect(row.badge).not.toBe('none');
+  });
+
+  it('draws a member who has a photo identically in both', () => {
+    // The fifth case, and the one the other four are blind to: every fixture
+    // above leaves `imageUrl` unset, so deleting either surface's pass-through
+    // left this whole file green. A photo REPLACES the glyph, so a surface that
+    // dropped it falls back to the emoji — two discs that agree on `🐙` while
+    // only one of them shows a face.
+    const PHOTO = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+    const photographed = member({
+      kind: 'human',
+      id: 'author-dorian',
+      displayName: 'Dorian',
+      emoji: '🐙',
+      color: '#0ea5e9',
+      imageUrl: PHOTO,
+    });
+    const row = rowFace(photographed);
+
+    expect(row).toEqual(listFace(photographed));
+    expect(row.photo).toBe(PHOTO);
+    // And the photo really did win: the emoji it would otherwise have drawn is
+    // set on the fixture, so an equal-but-glyphed pair would mean neither
+    // surface drew the photo at all.
+    expect(row.glyph).toBe('');
   });
 
   it('gives a member neither surface could resolve the same colour in both', () => {

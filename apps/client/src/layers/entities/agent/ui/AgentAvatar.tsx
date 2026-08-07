@@ -32,6 +32,15 @@ export interface AgentAvatarProps {
   color: string;
   /** Single emoji character rendered inside the square. */
   emoji: string;
+  /**
+   * A photo for this agent, when it has one — drawn in place of the emoji.
+   *
+   * Nothing fills it today: an agent's identity language is its emoji and its
+   * colour, and the upload surface (DOR-976) is for people only. It is a
+   * pass-through so an agent CAN carry one the day something sets it, without
+   * this file or the disc beneath it changing.
+   */
+  imageUrl?: string;
   /** Diameter of the disc — the same four the whole cockpit sizes identities by. */
   size?: VariantProps<typeof identityAvatarVariants>['size'];
   /** Optional mesh health — adds a coloured ring keyed on when the agent was last seen. */
@@ -74,6 +83,7 @@ export interface AgentAvatarProps {
 export function AgentAvatar({
   color,
   emoji,
+  imageUrl,
   size,
   healthStatus,
   working,
@@ -87,6 +97,7 @@ export function AgentAvatar({
       kind="agent"
       color={color}
       emoji={emoji}
+      imageUrl={imageUrl}
       size={size}
       // `undefined` is not a value here — it is the absence that lets
       // `kind="agent"` supply the Bot glyph. Only `null` suppresses it.

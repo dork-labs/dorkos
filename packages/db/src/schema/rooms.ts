@@ -93,6 +93,23 @@ export const authors = sqliteTable(
     color: text('color'),
 
     /**
+     * Render cache: the URL of the author's photo, or null when they have none.
+     *
+     * The fourth render-cache field beside `display_name`, `emoji` and `color`,
+     * and on exactly their lifecycle — refreshed on resolve, never a key, never
+     * looked up by. A photo is an addition to that triplet, not a replacement:
+     * an author with a photo AND an emoji keeps both, and the renderer decides
+     * which one a given disc shows.
+     *
+     * **Source-agnostic by construction.** The column stores whatever URL the
+     * avatar store handed back — today a server-relative `/api/profile/avatar/…`
+     * from the local store, tomorrow an absolute `https://…` from a synced one —
+     * so nothing that reads this may join a directory or assume the bytes are
+     * on this machine.
+     */
+    imageUrl: text('image_url'),
+
+    /**
      * The manifest ULID of the occupant this row was minted for, or null on a
      * legacy row minted before the stamp existed (which adopts the current
      * occupant the next time it resolves, and never retires on its own).

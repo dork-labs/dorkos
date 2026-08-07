@@ -3,7 +3,7 @@
  *
  * @module shared/ui/identity-avatar
  */
-import type * as React from 'react';
+import * as React from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { ADAPTER_LOGO_MAP } from '@dorkos/icons/adapter-logos';
 import { Bot, Send } from 'lucide-react';
@@ -113,10 +113,24 @@ export interface IdentityAvatarProps
   extends React.ComponentProps<'span'>, VariantProps<typeof identityAvatarVariants> {
   /** CSS colour string the disc is tinted from. Any colour space the browser reads. */
   color: string;
-  /** The identity's own emoji, when it has one — the face this prefers. */
+  /** The identity's own emoji, when it has one. Drawn when there is no photo. */
   emoji?: string;
-  /** Drawn when there is no emoji: usually a letter, sometimes a brand mark. */
+  /** Drawn when there is neither a photo nor an emoji: usually a letter, sometimes a brand mark. */
   fallback?: React.ReactNode;
+  /**
+   * The identity's photo, when it has one — the face this prefers.
+   *
+   * **Source-agnostic.** Whatever URL the caller holds is used as given: a
+   * server-relative `/api/profile/avatar/…` from this machine's own store, or
+   * an absolute `https://…` from a synced one. This component never builds a
+   * path and never assumes the bytes are local.
+   *
+   * Absence is drawn as the emoji, and a URL whose bytes have gone falls back
+   * to the same place. Both are STRUCTURAL: with no photo no `<img>` is
+   * rendered at all, because an `<img>` with an empty `src` paints the
+   * browser's own broken-image icon and no styling un-paints it.
+   */
+  imageUrl?: string;
   /**
    * A small mark in the disc's bottom-right corner saying what KIND of identity
    * this is. Omit it and `kind` decides; omit both and nothing is drawn.
@@ -185,8 +199,16 @@ export interface IdentityAvatarProps
 
 /**
  * A round, colour-tinted mark for one identity — a person, an agent, a room's
- * counterpart. Presentational only: it knows a colour, an optional emoji, and
- * what to draw without one, and nothing about where any of those came from.
+ * counterpart. Presentational only: it knows a colour, an optional photo, an
+ * optional emoji, and what to draw without either — and nothing about where any
+ * of those came from.
+ *
+ * **Three faces, one order: photo, then emoji, then the fallback glyph.** They
+ * are alternatives rather than layers, and the choice is structural: with no
+ * photo there is no `<img>` in the tree at all, so an identity that has never
+ * had one cannot flash the browser's broken-image icon. A photo whose bytes
+ * have gone falls back to the same place, once, and is retried if the URL
+ * changes.
  *
  * This is the single disc the whole cockpit draws. It exists because four
  * surfaces had each hand-rolled the same `color-mix` tint, and one of them —
@@ -220,6 +242,7 @@ function IdentityAvatar({
   color,
   emoji,
   fallback,
+  imageUrl,
   badge,
   kind,
   origin,
@@ -241,6 +264,49 @@ function IdentityAvatar({
   const drawnVariant = variant ?? defaults.variant;
   const drawnBadge = badge === undefined ? defaults.badge : badge;
   const isFill = drawnVariant === 'fill';
+  // The URL that failed, rather than a boolean, so a REPLACED photo is tried
+  // again. A person who uploads a new one after a bad file would otherwise be
+  // stuck on the letter until the page reloaded.
+  const [failedUrl, setFailedUrl] = React.useState<string | null>(null);
+  const drawsPhoto = imageUrl !== undefined && imageUrl !== failedUrl;
+
+  // One face, chosen once: photo, then emoji, then the fallback glyph. A
+  // ladder rather than nested ternaries in the markup, so the precedence is
+  // the thing you read — and so "no photo" means no `<img>` in the tree at
+  // all, which is the only way an absent photo cannot paint a broken-image
+  // icon.
+  let face: React.ReactNode;
+  if (drawsPhoto) {
+    face = (
+      <img
+        src={imageUrl}
+        // Decoration, like every other face this disc draws: the row's own
+        // text names the identity, and "photo of Dorian" spoken before each of
+        // their messages is noise. `alt=""` is what keeps it out of the
+        // accessibility tree rather than announcing a filename.
+        alt=""
+        // The radius is inherited rather than restated, so a photo cannot round
+        // an agent's square back into a person's circle — the shape
+        // distinction is colourblind-safe and must not depend on the face.
+        className="size-full rounded-[inherit] object-cover"
+        // A URL whose bytes have gone — a deleted file, an expired object —
+        // falls back to the face this identity had before it ever had a photo.
+        onError={() => setFailedUrl(imageUrl)}
+      />
+    );
+  } else if (emoji) {
+    face = (
+      <span aria-hidden className="leading-none">
+        {emoji}
+      </span>
+    );
+  } else {
+    face = (
+      <span aria-hidden className="text-[0.8em] leading-none font-medium">
+        {fallback}
+      </span>
+    );
+  }
 
   return (
     <span
@@ -267,15 +333,7 @@ function IdentityAvatar({
         ...style,
       }}
     >
-      {emoji ? (
-        <span aria-hidden className="leading-none">
-          {emoji}
-        </span>
-      ) : (
-        <span aria-hidden className="text-[0.8em] leading-none font-medium">
-          {fallback}
-        </span>
-      )}
+      {face}
       {drawnBadge != null && (
         // Sized off the circle's own font size, exactly as the fallback glyph
         // is, so one rule covers all four diameters instead of a lookup per

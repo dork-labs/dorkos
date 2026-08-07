@@ -38,7 +38,7 @@ export function authorsById(members: readonly RoomRosterEntry[]): Map<string, Ro
 /**
  * The view model the shared message primitives render an author from.
  *
- * `emoji` and `color` are read straight off the roster's own render cache
+ * `emoji`, `color` and `imageUrl` are read straight off the roster's own render cache
  * (`AuthorRef`) rather than re-derived: the roster IS the resolved identity,
  * so there is nothing to guess. Most agents carry neither today, which is why
  * `color` still falls back to a hash of the opaque author id — the common
@@ -63,6 +63,7 @@ export function toMessageAuthor(
     id: authorId,
     displayName: author?.displayName ?? 'Unknown',
     emoji: author?.emoji,
+    imageUrl: author?.imageUrl,
     color: author?.color ?? authorColor(authorId),
     isExternal: typeof author?.origin === 'object' && author?.origin !== null,
   };

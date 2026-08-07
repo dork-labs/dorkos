@@ -28,6 +28,14 @@ export interface IdentityRecord {
   emoji?: string;
   /** Render cache: the colour the server last resolved, when there was one. */
   color?: string;
+  /**
+   * Render cache: the photo the server last resolved, when there was one.
+   *
+   * The fourth cached field, and this resolver decides nothing about it beyond
+   * which source it comes from — a record carrying a photo AND an emoji arrives
+   * with both, and the disc picks between them.
+   */
+  imageUrl?: string;
 }
 
 /**
@@ -43,6 +51,16 @@ export interface IdentityFaceOverride {
   color?: string;
   /** The identity's emoji, as its own source gives it. */
   emoji?: string;
+  /**
+   * The identity's photo, as its own source gives it.
+   *
+   * No production source fills this yet — agents keep emoji and colour, which
+   * is their identity language, and a person's photo lives on their author row
+   * rather than in a manifest. It is here so the ladder has no gap: an override
+   * that carried every other field but this one would silently show a stale
+   * photo beside a fresh colour.
+   */
+  imageUrl?: string;
 }
 
 /** The fragments a caller happens to hold about one identity. */
@@ -65,9 +83,11 @@ export interface IdentityFace {
   kind: AuthorKind;
   /** The colour the disc paints itself with. Never empty. */
   color: string;
-  /** The identity's emoji, when any source had one. */
+  /** The identity's emoji, when any source had one. Drawn when there is no photo. */
   emoji?: string;
-  /** The letter drawn when there is no emoji. */
+  /** The identity's photo, when any source had one — the face the disc prefers. */
+  imageUrl?: string;
+  /** The letter drawn when there is neither a photo nor an emoji. */
   fallback: string;
   /** Where a human is posting from, when the caller knew. */
   origin?: IdentityOrigin;
@@ -99,6 +119,7 @@ export function resolveIdentityFace(input: IdentityFaceInput): IdentityFace {
     kind: record.kind,
     color: override?.color ?? record.color ?? hashToHslColor(record.id),
     emoji: override?.emoji ?? record.emoji,
+    imageUrl: override?.imageUrl ?? record.imageUrl,
     fallback: initialOf(record.displayName),
     origin,
   };

@@ -29,21 +29,19 @@
  * Queueing or retrying would buy a duplicate turn in the common case and a
  * retry storm in the bad one; one log line is the honest cost.
  *
- * ## Known bound: restart recovery is default-directory only
+ * ## Where the working directory comes from (DOR-981)
  *
- * The working directory comes from the session's live projector, which is minted
- * by a client's `/events` connect. If the server restarts (or the session is
- * evicted) while a person is off in their browser, there is no projector left to
- * ask and this falls back to `DEFAULT_CWD` — so a session rooted anywhere else
- * cold-starts against the wrong directory and the storage probe finds nothing to
- * resume. The sign-in itself is unaffected: the token is stored, the row shows
- * connected, and the agent picks the server up on the next turn a person starts.
- * Only the automatic resume is lost, and only across a restart.
+ * The flow itself carries it. It used to come from the session's live projector,
+ * which is minted by a client's `/events` connect — and that is precisely what a
+ * restart or an eviction destroys, while a sign-in routinely outlives both
+ * (a person can spend minutes in a browser). With no projector left to ask, the
+ * resume fell back to `DEFAULT_CWD`, so every session rooted anywhere else
+ * cold-started against the wrong directory and found nothing to resume.
  *
- * Fixing it means persisting the session's cwd somewhere a cold process can read
- * it, which is a session-storage question rather than a sign-in one. Written
- * down here rather than worked around, because a wrong-directory cold start is
- * worse than an honest miss.
+ * So the directory is captured at SIGN-IN START, on the flow record beside
+ * `originSessionId`, and preferred here. The projector is still consulted, as
+ * the fallback for a flow that recorded none — a sessionless start, or one begun
+ * on a surface that does not carry a cwd.
  *
  * @module services/mesh/mcp-signin-resume
  */
@@ -95,6 +93,12 @@ export interface McpSigninConnectedEvent {
   sessionId: string;
   /** The sign-in flow, so its card in that session can be settled into a receipt. */
   flowId: string;
+  /**
+   * The directory that session runs in, captured when the sign-in started
+   * (DOR-981). Preferred over the live projector, which a restart takes with it
+   * — see the module doc.
+   */
+  originCwd?: string;
   /** How many tools the connect probe found, when it answered. */
   toolCount?: number;
 }
@@ -144,10 +148,11 @@ export async function resumeAfterMcpSignin(event: McpSigninConnectedEvent): Prom
     const runtime = await runtimeRegistry.resolveForSession(sessionId);
     // WHERE the turn runs, resolved once and threaded through every hop that
     // takes one — the storage probe, the projector, and the trigger — exactly as
-    // `session-ui-action-handler` threads its request `cwd`. A projector minted
-    // by this session's own `/events` connect knows the real directory; see the
-    // module TSDoc for what happens when there isn't one.
-    const cwd = peekProjector(sessionId)?.cwd ?? DEFAULT_CWD;
+    // `session-ui-action-handler` threads its request `cwd`. The flow's own
+    // recorded directory wins: it survives the restart that empties the projector
+    // registry, which is the case that used to silently resume in the wrong place
+    // (DOR-981).
+    const cwd = event.originCwd ?? peekProjector(sessionId)?.cwd ?? DEFAULT_CWD;
     // The live session map empties on restart and on eviction, while a sign-in
     // outlives both — a person can take minutes in a browser. A stored session
     // cold-starts through `triggerTurn`; one that exists nowhere is gone for

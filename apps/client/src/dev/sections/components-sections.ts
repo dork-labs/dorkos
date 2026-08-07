@@ -279,6 +279,9 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
       'disc',
       'agent',
       'room',
+      'photo',
+      'image',
+      'picture',
     ],
   },
   {
