@@ -637,6 +637,14 @@ export const useSessionStreamStore: SessionStreamStore = create<
             // answer replaces this projection's grace bookkeeping wholesale
             // (DOR-1004). Keeping stale marks would retire a card the server just
             // said is on screen.
+            //
+            // The snapshot carries no grace bookkeeping of its own — the server
+            // holds that privately — so a reconnect DURING a card's grace turn
+            // deliberately re-baselines it and the card gets that turn again. The
+            // skew is bounded at one turn and self-heals on the next `turn_start`,
+            // which is the right trade: the alternative is trusting a mark the
+            // authority never sent, and erasing a live card is worse than showing
+            // a finished one a turn longer.
             session.carriedSigninFlowIds = [];
             session.lastAppliedSeq = snapshot.cursor;
             session.lastEventAt = Date.now();

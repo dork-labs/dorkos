@@ -4,6 +4,7 @@ covers:
   - 'fix: a finished sign-in leaves a receipt, and the client stops owning the resume (DOR-1004)'
   - 'fix: the server brings the agent back when a sign-in lands, not the browser (DOR-1004)'
   - 'fix: the sign-in receipt actually retires, and the resume runs in the right directory (DOR-1004)'
+  - 'fix: the "click Sign in" line goes away once you have signed in (DOR-1004)'
 ---
 
 ### Added
@@ -34,5 +35,7 @@ covers:
   staying green (DOR-1004).
 - A row that is missing a sign-in no longer sits on "Connecting…" forever with nothing to
   press (DOR-1004).
+- After you sign in, the "Needs sign-in — click Sign in." line under a server goes away. It
+  used to stay on screen telling you to press a button that was no longer there (DOR-1004).
 - A sign-in that does not go through now says so in the chat. It tells you the reason the
   other service gave, and offers a Try again button, so you are not left guessing (DOR-1004).

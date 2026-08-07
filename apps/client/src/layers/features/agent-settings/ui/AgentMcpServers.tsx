@@ -12,17 +12,14 @@ import {
   useTestAgentMcpServer,
 } from '@/layers/entities/agent';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
-import type {
-  AgentManifest,
-  AgentRuntime,
-  ManagedMcpServerView,
-} from '@dorkos/shared/mesh-schemas';
+import type { AgentManifest, AgentRuntime } from '@dorkos/shared/mesh-schemas';
 import type {
   AgentMcpTestResult,
   CapabilityApprovalRequired,
   McpServerEntry,
 } from '@dorkos/shared/transport';
 import { AddMcpServerForm, TRANSPORTS, type TransportKind } from './AddMcpServerForm';
+import type { StampedTestResult } from './ManagedServerRow';
 import { McpStatusChip } from './McpStatusChip';
 import { ManagedServerRow } from './ManagedServerRow';
 
@@ -202,43 +199,6 @@ function InboundMcpCrossLink() {
  * and a gated Add affordance. Add is disabled for runtimes that cannot run
  * DorkOS-managed servers (OpenCode today, DOR-893) — the roster still shows.
  */
-/** A probe result plus when it landed, so a newer listing can outrank it. */
-interface StampedTestResult {
-  /** What the probe found. */
-  result: AgentMcpTestResult;
-  /** Client epoch ms the probe answered. */
-  at: number;
-}
-
-/**
- * The probe result a row should still trust, or `undefined` when the listing has
- * since learned better (DOR-985 P3).
- *
- * A successful Test is the strongest evidence a row has — it is the only thing
- * that actually dialled the server, with the bearer — and it rightly beats the
- * listing at the moment it lands. But it is evidence about that moment only. A
- * token can be lost while the panel sits open, and the roster's next read reports
- * `needs-auth`; without this, the row kept the green chip from a probe that had
- * been overtaken, offered no Sign in button, and told the exact lie DOR-985
- * existed to kill.
- *
- * Resolved by WHICH ANSWER IS NEWER, the same rule `resolveStatusKey` applies to
- * its own two sources, so a probe that has just landed still wins.
- *
- * @param stamped - The stored probe result for this server, if any.
- * @param authStatus - The listing's derived sign-in state for the same server.
- * @param rosterUpdatedAt - Client epoch ms the listing last landed.
- */
-function liveTestResult(
-  stamped: StampedTestResult | undefined,
-  authStatus: ManagedMcpServerView['authStatus'],
-  rosterUpdatedAt: number
-): AgentMcpTestResult | undefined {
-  if (!stamped) return undefined;
-  if (authStatus === 'needs-auth' && stamped.at < rosterUpdatedAt) return undefined;
-  return stamped.result;
-}
-
 export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
   const managed = useAgentMcpServers(agent.id);
   const { data: liveConfig } = useMcpConfig(projectPath, agent.runtime);
@@ -251,8 +211,10 @@ export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
   const testServer = useTestAgentMcpServer();
 
   // Probe results, each stamped with when it landed. The stamp is what keeps a
-  // green chip honest: a probe is a fact about one moment, and the listing can
-  // learn a NEWER one (DOR-985 P3) — see `liveTestResult`.
+  // row honest: a probe is a fact about one moment, and both the listing and the
+  // row's own sign-in flow can learn a newer one. The rule that weighs them lives
+  // with the row's other precedence rules (`ManagedServerRow.liveTestResult`),
+  // because it needs a fact only the row has — whether ITS sign-in just landed.
   const [testResults, setTestResults] = useState<Record<string, StampedTestResult>>({});
   const [testingName, setTestingName] = useState<string | null>(null);
   // The most recently added server, so the unattended probe below can tell the
@@ -381,11 +343,8 @@ export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
                 server={server}
                 agentId={agent.id}
                 live={liveByName.get(server.name)}
-                testResult={liveTestResult(
-                  testResults[server.name],
-                  server.authStatus,
-                  managed.dataUpdatedAt
-                )}
+                testResult={testResults[server.name]}
+                rosterUpdatedAt={managed.dataUpdatedAt}
                 testing={testingName === server.name}
                 busy={busy}
                 onToggle={handleToggle}
