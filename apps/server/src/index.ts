@@ -1483,7 +1483,8 @@ async function start() {
     // Managed-MCP OAuth engine (DOR-942): owns the OAuth lifecycle for an agent's
     // OAuth-protected servers and holds the synchronous access-token cache the
     // injection path reads. The loopback callback lands on this host, so its
-    // `redirect_uri` is 127.0.0.1 at the listen port.
+    // `redirect_uri` is the bound loopback host at the listen port — see the
+    // `callbackBaseUrl` note just below for why that is not a literal 127.0.0.1.
     agentMcpOAuthService = new AgentMcpOAuthService({
       dorkHome,
       // The loopback callback is opened by the operator's own browser (the OAuth

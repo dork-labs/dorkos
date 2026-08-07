@@ -74,6 +74,14 @@ export interface OperatingSkill {
  *   removed exactly that hardcoding one layer down, and a literal URL here would
  *   re-introduce it). It also says what to do when the docs do not answer: say so,
  *   and never vouch for a feature the page does not.
+ * - 8: `list_capabilities` is not the CLI's full catalog (DOR-988). Versions 2 to 7
+ *   told agents the tool "returns the same thing" as `dorkos capabilities --json`.
+ *   That stopped being true at DOR-940, which made the tool answer with a bounded,
+ *   compact page. An agent reading the old sentence expects every JSON Schema in
+ *   one response, does not learn that `domain`, `query`, `detail` and `cursor`
+ *   exist, and reads the compact summaries as the whole contract of a capability
+ *   it is about to invoke. The pack now describes what the tool actually returns
+ *   and how to ask for more.
  *
  *   A brand-new skill seeds itself without a bump (`seed.ts` writes any absent
  *   file), so the bump is here for the OTHER half of this change: `operating-dorkos`
@@ -93,7 +101,7 @@ export interface OperatingSkill {
  *   boot is not permission to write into somebody's repository, and a user-initiated
  *   repair for those is DOR-664.
  */
-export const OPERATING_SKILLS_VERSION = 7;
+export const OPERATING_SKILLS_VERSION = 8;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

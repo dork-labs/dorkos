@@ -12,9 +12,11 @@ import { McpOAuthSigninPage } from '../../pages/McpOAuthSigninPage.js';
  *
  * The two server pieces this exercises (both under the `DORKOS_TEST_RUNTIME` gate):
  *   1. the mock OAuth-protected MCP server — RFC 9728/8414 discovery, RFC 7591
- *      DCR, PKCE authorization-code + refresh grants, and a bearer-gated
+ *      DCR, the PKCE authorization-code grant, and a bearer-gated
  *      streamable-HTTP MCP endpoint that answers `tools/list` only for a token it
- *      issued; and
+ *      issued. NOT the refresh grant: this spec finishes in seconds and the
+ *      access token lives an hour, so refresh never fires here. It is covered by
+ *      `routes/__tests__/mock-mcp-oauth-server.test.ts` instead; and
  *   2. `TestModeRuntime.getMcpStatus` — synthesizes `needs-auth`/`connected` from
  *      the managed-server injection resolver (bearer injected ⟺ connected), which
  *      `GET /api/mcp-config` serves and `AgentMcpServers` joins by name.
@@ -75,7 +77,9 @@ test('add → needs sign-in → Sign in → approve → connected with N tools',
 
   // The row for the OAuth server reports it needs a sign-in, in plain words.
   await expect(mcp.row(SERVER_NAME)).toBeVisible();
-  await expect(mcp.mcpSection.getByText('Needs sign-in')).toBeVisible();
+  // Scoped to the row, not the whole section: a status that belonged to some
+  // other server would otherwise satisfy this.
+  await expect(mcp.row(SERVER_NAME).getByText('Needs sign-in')).toBeVisible();
 
   // The mock's bearer gate is real: probed through its injected connection with
   // no token yet, it answers 401 → needs-auth (reverting the gate would list
@@ -103,7 +107,7 @@ test('add → needs sign-in → Sign in → approve → connected with N tools',
   await expect(mcp.mcpSection.getByText(/available on the next turn/i)).toBeVisible({
     timeout: 15_000,
   });
-  await expect(mcp.mcpSection.getByText('Connected')).toBeVisible();
+  await expect(mcp.row(SERVER_NAME).getByText('Connected')).toBeVisible();
 
   // The token was stored AND injected: probing through the injected connection
   // now carries the bearer, so the mock lists its two tools.
