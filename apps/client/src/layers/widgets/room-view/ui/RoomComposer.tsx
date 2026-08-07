@@ -216,7 +216,7 @@ export function RoomComposer({ room, threadRootId, focusOnMount }: RoomComposerP
   };
 
   return (
-    <div className="relative border-t p-3">
+    <Composer.Root>
       {/* Mounted whether or not the picker is open, and empty until it has
           something to say. The picker itself cannot carry this: it arrives with
           its "No one by that name." already in it, which is the classic case
@@ -232,7 +232,7 @@ export function RoomComposer({ room, threadRootId, focusOnMount }: RoomComposerP
       <span role="status" aria-live="polite" aria-atomic="true" className="sr-only">
         {mentions.isOpen && mentions.rows.length === 0 ? 'No one by that name.' : ''}
       </span>
-      <div className="absolute right-3 bottom-full left-3 mb-2">
+      <Composer.OverlayLane>
         <AnimatePresence>
           {mentions.isOpen && (
             <MentionPalette
@@ -246,7 +246,7 @@ export function RoomComposer({ room, threadRootId, focusOnMount }: RoomComposerP
             `ClearArmedHint` sets out: anchored to the field it lands on top of
             whatever is stacked over the composer. */}
         {clearArmed && <Composer.ClearArmedHint />}
-      </div>
+      </Composer.OverlayLane>
       <Composer.Input
         ref={inputRef}
         value={text}
@@ -299,6 +299,6 @@ export function RoomComposer({ room, threadRootId, focusOnMount }: RoomComposerP
             : 'Reply in this thread…'
         }
       />
-    </div>
+    </Composer.Root>
   );
 }

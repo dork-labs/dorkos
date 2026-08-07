@@ -1,21 +1,30 @@
 // @vitest-environment jsdom
 /**
- * The room composer's chrome, serialized — the pre-migration record.
+ * The room composer's chrome, serialized — the one visual change in this spec,
+ * read against the record of what shipped before it.
  *
- * Rooms are the ONE surface whose DOM legitimately changes in this spec, so the
- * proof here is not an empty diff. It is a diff that a person read and agreed
- * to. That only works if the "before" side is a real recording of the composer
- * as it shipped, which is what this file is (spec `composer-parity`, task 3.2).
+ * Rooms are the ONE surface whose DOM legitimately changes here, so the proof
+ * is not an empty diff. It is a diff a person read and agreed to. That only
+ * works because the "before" side is a real recording of the composer as it
+ * shipped: the baselines in `__baselines__/` were captured from the unmigrated
+ * component and committed with it (`247ac851a`), and nothing in this file
+ * re-records them (spec `composer-parity`, task 3.2).
  *
- * The intended delta, in full — everything else must diff empty:
- * - the root's class set swaps `relative border-t p-3` for Root's card chrome
- *   (`bg-surface rounded-xl border p-2 m-2 relative`);
- * - the overlay lane's offsets go from `right-3 left-3` to `right-0 left-0`.
+ * The intended delta, in full — every other node must diff empty:
+ * - the root's class set swaps `border-t p-3` for Root's card chrome
+ *   (`bg-surface rounded-xl border p-2 m-2`; `relative` was already there and
+ *   is unchanged, which is why it appears in neither half of the swap);
+ * - the overlay lane's offsets go from `right-3 left-3` to `right-0 left-0`,
+ *   because the inset the room hand-rolled is now the card's own padding.
  *
- * The chrome the migration replaces is also asserted positively below, in
- * words, so the swap reads as a before/after pair rather than as a deleted
- * assertion. `RoomComposer.test.tsx` keeps every behavioral claim; nothing here
- * duplicates one.
+ * Asserted as a SHAPE — which class tokens left and arrived at which node —
+ * rather than against raw diff text, and paired with the claim that no
+ * non-class difference exists at all. A node added, removed, retagged,
+ * reordered, or reattributed lands in that second bucket and fails.
+ *
+ * The same delta is stated positively, in words, in `RoomComposer.test.tsx`
+ * beside the behavior it must not disturb. That file keeps every behavioral
+ * claim; nothing here duplicates one.
  */
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
@@ -29,7 +38,12 @@ import type { AuthorRef, RoomRosterEntry, RoomWithRoster } from '@dorkos/shared/
 import { useRoomDraftStore } from '@/layers/entities/room';
 import { createQueryClientConfig } from '@/layers/shared/lib';
 import { TransportProvider } from '@/layers/shared/model';
-import { serializeDom, matchDomBaseline, formatDomDiff } from '@/test-helpers/dom-parity';
+import {
+  serializeDom,
+  matchDomBaseline,
+  formatDomDiff,
+  type DomDiffEntry,
+} from '@/test-helpers/dom-parity';
 import { RoomComposer } from '../ui/RoomComposer';
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
@@ -119,54 +133,87 @@ function type(field: HTMLTextAreaElement, text: string) {
   fireEvent.change(field, { target: { value: text } });
 }
 
-describe('RoomComposer — the chrome this migration is allowed to change', () => {
-  it('is a bordered strip today, not a floating card', () => {
-    const { container } = renderComposer();
-    const root = container.firstElementChild!;
+/**
+ * Where the two changed nodes sit, as the differ names them.
+ *
+ * The paths are the differ's own walk notation: it starts at the Testing
+ * Library container (`div`), the composer's card is its only child (`div`), and
+ * the overlay lane is that card's second child among several (`div[1]`), after
+ * the screen-reader announcer.
+ */
+const ROOT_PATH = 'div > div';
+const LANE_PATH = 'div > div > div[1]';
 
-    // The "before" half of the delta, in words. After task 3.1 these flip to
-    // `bg-surface rounded-xl border p-2 m-2 relative`.
-    expect(root.className.split(/\s+/).sort()).toEqual(['border-t', 'p-3', 'relative']);
-    expect(root.className).not.toContain('rounded-xl');
-    expect(root.className).not.toContain('bg-surface');
-    expect(root.className).not.toContain('m-2');
-  });
+/** The room's own strip, gone: what the card chrome replaces. */
+const ROOT_CLASSES_REMOVED = ['border-t', 'p-3'];
 
-  it('insets its overlay lane by 3 today', () => {
-    const { container } = renderComposer();
-    const lane = container.querySelector('.bottom-full')!;
+/**
+ * Root's card chrome, arrived. `relative` is deliberately absent — the room's
+ * strip already carried it, so it is not part of the swap.
+ */
+const ROOT_CLASSES_ADDED = ['bg-surface', 'border', 'm-2', 'p-2', 'rounded-xl'];
 
-    // The "before" half: after 3.1 these become `right-0 left-0`, matching
-    // chat's lane, because the card's own padding now provides the inset.
-    expect(lane.className.split(/\s+/).sort()).toEqual([
-      'absolute',
-      'bottom-full',
-      'left-3',
-      'mb-2',
-      'right-3',
-    ]);
-  });
+/** The lane's hand-rolled inset, gone. */
+const LANE_CLASSES_REMOVED = ['left-3', 'right-3'];
 
-  it('renders no attach affordance — the seam stays unwired until DOR-947', () => {
-    // A negative recorded on purpose: adopting Root must not hand rooms an
-    // upload path as a side effect. Chat's Root mounts a dropzone because chat
-    // passes `onFilesDropped`; rooms pass none.
-    const { container } = renderComposer();
+/** The lane's inset now that the card's `p-2` provides it. */
+const LANE_CLASSES_ADDED = ['left-0', 'right-0'];
 
-    expect(container.querySelector('input[type="file"]')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Attach file' })).toBeNull();
-    expect(container.querySelector('[role="presentation"]')).toBeNull();
-  });
-});
+/** One node's class swap, as the assertions below compare it. */
+interface ClassSwap {
+  path: string;
+  added: string[];
+  removed: string[];
+}
 
-describe('RoomComposer — serialized-DOM parity (pre-migration baselines)', () => {
+/** Which class tokens left and arrived, per node, in the differ's walk order. */
+function classSwaps(diff: readonly DomDiffEntry[]): ClassSwap[] {
+  const byPath = new Map<string, ClassSwap>();
+  for (const entry of diff) {
+    if (entry.kind !== 'class-added' && entry.kind !== 'class-removed') continue;
+    const token = /class token "([^"]+)"/.exec(entry.detail)?.[1];
+    if (token === undefined) throw new Error(`unparseable class diff: ${entry.detail}`);
+    const swap = byPath.get(entry.path) ?? { path: entry.path, added: [], removed: [] };
+    (entry.kind === 'class-added' ? swap.added : swap.removed).push(token);
+    byPath.set(entry.path, swap);
+  }
+  return [...byPath.values()].map((swap) => ({
+    path: swap.path,
+    added: [...swap.added].sort(),
+    removed: [...swap.removed].sort(),
+  }));
+}
+
+/**
+ * The whole reviewed delta, asserted against one state's diff.
+ *
+ * Two claims, in the order they matter. First: nothing that is not a class
+ * moved — no node added, removed, retagged, reordered, or reattributed — and
+ * the failure prints the offending nodes rather than a count. Second: the class
+ * tokens that did move are exactly the two swaps this migration exists for, at
+ * exactly the two nodes it is allowed to touch.
+ */
+function expectIntendedChromeDelta(diff: readonly DomDiffEntry[]) {
+  const notChrome = diff.filter(
+    (entry) => entry.kind !== 'class-added' && entry.kind !== 'class-removed'
+  );
+  expect(formatDomDiff(notChrome)).toBe('');
+
+  expect(classSwaps(diff)).toEqual([
+    { path: ROOT_PATH, added: ROOT_CLASSES_ADDED, removed: ROOT_CLASSES_REMOVED },
+    { path: LANE_PATH, added: LANE_CLASSES_ADDED, removed: LANE_CLASSES_REMOVED },
+  ]);
+}
+
+describe('RoomComposer — serialized-DOM delta against the pre-migration baselines', () => {
   it('idle — the resting composer', () => {
     const { container } = renderComposer();
 
     expect(screen.getByRole('combobox')).toHaveAttribute('aria-label', 'Message #general…');
 
-    const diff = matchDomBaseline(import.meta.url, 'room-composer.idle', serializeDom(container));
-    expect(formatDomDiff(diff)).toBe('');
+    expectIntendedChromeDelta(
+      matchDomBaseline(import.meta.url, 'room-composer.idle', serializeDom(container))
+    );
   });
 
   it('archived — the composer that says why it cannot be used', () => {
@@ -176,12 +223,9 @@ describe('RoomComposer — serialized-DOM parity (pre-migration baselines)', () 
       screen.getByText('This conversation is archived. You can read it, but not add to it.')
     ).toBeInTheDocument();
 
-    const diff = matchDomBaseline(
-      import.meta.url,
-      'room-composer.archived',
-      serializeDom(container)
+    expectIntendedChromeDelta(
+      matchDomBaseline(import.meta.url, 'room-composer.archived', serializeDom(container))
     );
-    expect(formatDomDiff(diff)).toBe('');
   });
 
   it('mention picker open — the lane carrying the palette', () => {
@@ -194,12 +238,9 @@ describe('RoomComposer — serialized-DOM parity (pre-migration baselines)', () 
     const lane = container.querySelector('.bottom-full')!;
     expect(lane.querySelector('[role="listbox"]')).not.toBeNull();
 
-    const diff = matchDomBaseline(
-      import.meta.url,
-      'room-composer.mention-open',
-      serializeDom(container)
+    expectIntendedChromeDelta(
+      matchDomBaseline(import.meta.url, 'room-composer.mention-open', serializeDom(container))
     );
-    expect(formatDomDiff(diff)).toBe('');
   });
 
   it('clear armed — the lane carrying the hint', () => {
@@ -216,11 +257,8 @@ describe('RoomComposer — serialized-DOM parity (pre-migration baselines)', () 
     const lane = container.querySelector('.bottom-full')!;
     expect(lane.contains(screen.getByTestId('clear-armed-hint'))).toBe(true);
 
-    const diff = matchDomBaseline(
-      import.meta.url,
-      'room-composer.clear-armed',
-      serializeDom(container)
+    expectIntendedChromeDelta(
+      matchDomBaseline(import.meta.url, 'room-composer.clear-armed', serializeDom(container))
     );
-    expect(formatDomDiff(diff)).toBe('');
   });
 });
