@@ -147,3 +147,29 @@ describe('TeamRosterResponseSchema', () => {
     expect(TeamRosterResponseSchema.safeParse({}).success).toBe(false);
   });
 });
+
+describe('TeamMemberSchema fact blocks are tied to kind', () => {
+  it('refuses agent facts on a human row', () => {
+    const result = TeamMemberSchema.safeParse({
+      ...MINIMAL_MEMBER,
+      agent: { manifestId: 'dorkbot', isDefault: false, isSystem: true },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('refuses person facts on an agent row', () => {
+    const result = TeamMemberSchema.safeParse({
+      ...MINIMAL_MEMBER,
+      kind: 'agent',
+      person: { role: null },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('refuses either block on a system row', () => {
+    expect(
+      TeamMemberSchema.safeParse({ ...MINIMAL_MEMBER, kind: 'system', person: { role: null } })
+        .success
+    ).toBe(false);
+  });
+});

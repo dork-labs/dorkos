@@ -163,6 +163,25 @@ export const TeamMemberSchema = z
     /** People only. */
     person: TeamPersonFactsSchema.optional(),
   })
+  .superRefine((member, ctx) => {
+    // The fact blocks are structurally tied to `kind`, so a producer bug —
+    // an agent row carrying person facts, a human row carrying agent facts —
+    // fails at parse time instead of relying on the TSDoc staying true.
+    if (member.kind !== 'agent' && member.agent !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['agent'],
+        message: `agent facts are only valid on kind 'agent', got '${member.kind}'`,
+      });
+    }
+    if (member.kind !== 'human' && member.person !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['person'],
+        message: `person facts are only valid on kind 'human', got '${member.kind}'`,
+      });
+    }
+  })
   .openapi('TeamMember');
 
 /** One identity on this install (see {@link TeamMemberSchema}). */
