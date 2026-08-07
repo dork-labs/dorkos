@@ -1,4 +1,5 @@
-import { sqliteTable, text, primaryKey } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, primaryKey, index } from 'drizzle-orm/sqlite-core';
+import { desc } from 'drizzle-orm';
 
 /**
  * Derived SQLite index over Maildir message files.
@@ -28,7 +29,25 @@ export const relayIndex = sqliteTable(
     metadata: text('metadata'),
     createdAt: text('created_at').notNull(),
   },
-  (table) => [primaryKey({ columns: [table.id, table.endpointHash] })]
+  (table) => [
+    primaryKey({ columns: [table.id, table.endpointHash] }),
+    // ADR-0014: the rate limiter's sliding-window log runs
+    // `SELECT COUNT(*) WHERE sender = ? AND created_at > ?` on every publish
+    // (`SqliteIndex.countSenderInWindow`). Equality column first, range column
+    // second — SQLite's planner picks this index for that predicate without
+    // needing to fall back to a full table scan (verified via EXPLAIN QUERY
+    // PLAN: "USING COVERING INDEX").
+    //
+    // `desc()` here is drizzle-orm's generic ORDER BY helper, not a per-column
+    // SQLite index direction builder -- SQLiteColumn has no `.asc()`/`.desc()`
+    // (that's Postgres-only in this drizzle-kit). Wrapping the column makes it
+    // an `SQL` value, which drizzle-kit's SQLite index serializer renders
+    // as a literal index-column expression instead of a bare identifier,
+    // producing `CREATE INDEX ... ("sender", "created_at" desc)` -- valid
+    // SQLite, confirmed against the generated migration. That is what actually
+    // gets this ADR's committed `(sender, created_at DESC)` shape onto disk.
+    index('idx_relay_index_sender_created_at').on(table.sender, desc(table.createdAt)),
+  ]
 );
 
 /**

@@ -281,6 +281,35 @@ export function DataDisplayShowcases() {
         </ShowcaseDemo>
 
         <ShowcaseLabel>
+          Square at every size — the radius steps with the diameter so it never clamps to a circle
+          at xs/sm
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          {/* The compound-variant radius table only earns its keep at xs/sm: a
+              fixed radius sized for `lg` clamps to a full circle on a 20px `xs`
+              disc, erasing the shape distinction exactly where the design calls
+              it dominant. Circle sits alongside square at every size so the
+              difference stays visible, not just present. */}
+          <div className="flex items-end gap-4">
+            {(['xs', 'sm', 'md', 'lg'] as const).map((size) => (
+              <div key={size} className="flex flex-col items-center gap-2">
+                <div className="flex items-end gap-2">
+                  <IdentityAvatar
+                    color="#6366f1"
+                    emoji="🔍"
+                    shape="square"
+                    size={size}
+                    badge={<Bot />}
+                  />
+                  <IdentityAvatar color="#10b981" fallback="P" shape="circle" size={size} />
+                </div>
+                <span className="text-muted-foreground text-[10px]">{size}</span>
+              </div>
+            ))}
+          </div>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
           Fill variant — the solid disc, and the fallback letter picking its own contrast
         </ShowcaseLabel>
         <ShowcaseDemo>

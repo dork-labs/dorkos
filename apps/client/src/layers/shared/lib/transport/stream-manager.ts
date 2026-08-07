@@ -114,10 +114,17 @@ export interface StreamManagerListeners {
 
 /**
  * Every {@link SessionEvent} `type` discriminant the session stream emits.
- * Frames are dispatched per-name on the connection, so a name missing here is
- * SILENTLY DROPPED over the network (the embedded transport pump bypasses this
- * and masked exactly that bug for `system_status`/`compact_boundary`). Must stay
- * in lockstep with `SessionEventSchema` — the parity test pins the two together.
+ *
+ * This is the ONLY allowlist, and EVERY source dispatches per-name off the one
+ * handler map {@link StreamManager.buildSessionEventHandlers} builds: the socket
+ * looks the frame's event name up in it, and the embedded transport pump looks
+ * `event.type` up in that same object. So a name missing here is SILENTLY
+ * DROPPED on every surface — web, Electron AND Obsidian — not just over the
+ * network. `system_status`/`compact_boundary` (and later
+ * `capability_approval_required`/`_resolved`, DOR-963) went missing exactly this
+ * way. Must stay in lockstep with `SessionEventSchema` — the parity test pins
+ * the two together, but it only proves a name is REGISTERED, so behavioral
+ * coverage per event is what proves the frame is actually routed.
  */
 const SESSION_EVENT_TYPES = [
   'text_delta',
@@ -129,6 +136,13 @@ const SESSION_EVENT_TYPES = [
   'question_prompt',
   'elicitation_prompt',
   'interaction_resolved',
+  // The in-session capability hold and its resolution (DOR-939). They ride the
+  // turn rather than `pendingInteractions`: the store pushes both onto
+  // `inProgressTurn`, where `projectInProgressTurn` folds the first into the
+  // inline approval card and the second retires it. Registering ONLY the
+  // required half would strand a card that can never disappear.
+  'capability_approval_required',
+  'capability_approval_resolved',
   'status_change',
   'todo_update',
   'subagent_update',

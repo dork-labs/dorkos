@@ -7,7 +7,7 @@
  * exactly the states that regress unseen: they are rare, so nobody looks.
  *
  * The REAL components, never a copy of their markup — the notice's tone and mark
- * are chosen inside `RoomEntryRow`, and the pending row's two states are chosen
+ * are chosen inside `RoomNoticeRow`, and the pending row's two states are chosen
  * inside `RoomPendingRow`, so a recreation would be the one thing incapable of
  * showing that either choice had drifted.
  *
