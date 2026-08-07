@@ -1712,8 +1712,11 @@ export type ElicitationPart = z.infer<typeof ElicitationPartSchema>;
  * in-session, awaiting the operator's decision (DOR-939). It carries the same
  * {@link PendingApprovalSchema} the dashboard renders, so the inline card is the
  * dashboard card in the transcript — approving it resolves the SAME `approvalId`
- * through the capability decision route, not the SDK `approveTool` path. The
- * projection drops the part on the matching `capability_approval_resolved`.
+ * through the capability decision route, not the SDK `approveTool` path.
+ *
+ * The matching `capability_approval_resolved` ends the part, and how depends on
+ * its outcome: a decision (or an expiry) drops it, while a `timeout` keeps it as
+ * the terminal note below — the one ending where the request outlives the hold.
  */
 export const CapabilityApprovalPartSchema = z
   .object({

@@ -5,6 +5,9 @@ covers:
   - 'fix(server): raise the approval hold cap to ten minutes and hold on every fresh ask (DOR-987)'
   - 'fix(client): keep the inline approval card as a note when the agent stops waiting (DOR-987)'
   - 'docs(server): name the hand-registered tools that still poll for approval (DOR-987)'
+  - 'fix(server): floor an inherited MCP_TOOL_TIMEOUT that would cut approval holds short (DOR-987)'
+  - 'test(server): split the capability-hold latch regression so each fix is pinned alone (DOR-987)'
+  - 'docs: record the resolved MCP tool-call timeout verdict and fix approval-hold doc drift (DOR-987)'
 ---
 
 ### Fixed

@@ -5,9 +5,12 @@
  * MCP server, the call HOLDS awaiting the operator's decision and the server
  * pushes the same `PendingApproval` the dashboard renders onto the session. These
  * folds turn that pair of events into an inline `capability_approval` part and
- * retire it when the hold resolves — so approving it in the transcript resolves
- * the SAME `approvalId` through the capability decision route, and the card
+ * end it when the hold resolves — so approving it in the transcript resolves the
+ * SAME `approvalId` through the capability decision route, and the card
  * disappears exactly as the dashboard card does on `approval_resolved`.
+ *
+ * "End" rather than "retire", because a `timeout` leaves the card behind as a
+ * terminal note instead of removing it — see {@link foldCapabilityApprovalResolved}.
  *
  * @module features/chat/model/stream/capability-approval-fold
  */

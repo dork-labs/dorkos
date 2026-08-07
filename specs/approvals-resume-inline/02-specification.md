@@ -32,6 +32,12 @@ lack this. Add it:
 
 ### GATE — verify FIRST (make-or-break)
 
+**(Superseded — see the execution notes below.** The premise here, that a ~60s
+SDK request timeout bounds an in-process tool call, was checked twice and is
+false; the cap is ten minutes and is a UX choice, not a margin below anything.
+The one instruction that survives is the last sentence: never let a destructive
+call error where it previously returned a clean `approval_required`.)
+
 The in-session `dorkos` server is an in-process `createSdkMcpServer`
 (`mcp-tools/index.ts` ~:231-242). The MCP SDK may enforce a ~60s request timeout
 (`DEFAULT_REQUEST_TIMEOUT_MSEC`) on tool calls. **If a hold exceeds it, the tool

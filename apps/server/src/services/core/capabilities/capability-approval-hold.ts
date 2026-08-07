@@ -22,11 +22,11 @@
  * This cap used to be 45s, justified as staying under the MCP SDK's
  * `DEFAULT_REQUEST_TIMEOUT_MSEC` (60s). That justification was WRONG (DOR-987):
  * the 60s default applies only when a caller passes NO explicit timeout, and the
- * claude binary passes one on every MCP tool call (its default is hours;
- * `MCP_TOOL_TIMEOUT` overrides it). No 60s ceiling governs this hold — and the
- * 45s cap made the feature nearly useless, because the approval window is two
- * hours precisely so someone who stepped away can still answer, and at 46s their
- * "yes" resumed nothing.
+ * claude binary passes one on every MCP tool call — ~27.8h (`1e8` ms) unless
+ * `MCP_TOOL_TIMEOUT` says otherwise, clamped to `[1000, 2^31-1]`. No 60s ceiling
+ * governs this hold — and the 45s cap made the feature nearly useless, because
+ * the approval window is two hours precisely so someone who stepped away can
+ * still answer, and at 46s their "yes" resumed nothing.
  *
  * Ten minutes is therefore a UX and turn-budget decision, not an SDK limit. A
  * held call keeps the session locked and the turn open for as long as it waits,
@@ -37,19 +37,28 @@
  * approve on the dashboard and the agent can still retry with its token — never
  * worse than the flow it replaces.
  *
- * Two consequences of the longer cap, both handled elsewhere and named here so
+ * Three consequences of the longer cap, all handled elsewhere and named here so
  * they are not rediscovered:
  *
  * - The cap now EQUALS `SESSIONS.TURN_STALL_TIMEOUT_MS`, and both clocks start on
  *   the inline card. The projector holds its stall-pause a little past the cap
  *   (`CAPABILITY_HOLD_PAUSE_GRACE_MS`) so the degrading resolution reaches the
  *   stream before the watchdog re-arms.
- * - One contrary signal, unresolved: the SDK documents
- *   `CLAUDE_CODE_STREAM_CLOSE_TIMEOUT` (60s) as the thing to raise "if your SDK
- *   MCP calls will run longer than 60s". It is a stream-CLOSE timeout and the
- *   turn's prompt stream stays open until the turn's `result`, so it should not
- *   arm mid-turn — but if a long hold is ever seen dying at ~60s, that variable
- *   is the first suspect.
+ * - `MCP_TOOL_TIMEOUT` is the one thing that CAN still cut a hold short, because
+ *   the turn's subprocess inherits `process.env` and an operator may have lowered
+ *   it for a flaky external server. DorkOS floors the inherited value at cap +
+ *   grace on the way in (`messaging/mcp-tool-timeout-env.ts`).
+ * - `CLAUDE_CODE_STREAM_CLOSE_TIMEOUT` is NOT a risk, though the SDK's own d.ts
+ *   comment ("if your SDK MCP calls will run longer than 60s, override
+ *   CLAUDE_CODE_STREAM_CLOSE_TIMEOUT") reads like one. That variable does not
+ *   exist anywhere in the shipped SDK or the claude binary — the comment is
+ *   stale. The only stream-close kill is stdin EOF, and this turn's held prompt
+ *   (`createHeldUserPrompt`, closed at the turn's `result`) keeps it disarmed all
+ *   turn. Precedent in the same shape: `relay_send_and_wait` already blocks up to
+ *   600s inside an SDK tool.
+ *
+ * The findings above are pinned to claude-agent-sdk 0.3.177 / claude 2.1.177.
+ * Re-check them on a runtime upgrade rather than assuming they carried over.
  *
  * @module services/core/capabilities/capability-approval-hold
  */

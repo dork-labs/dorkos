@@ -14,6 +14,12 @@ interface CapabilityApprovalTimedOutProps {
  * waiting in Approvals, but answering it no longer resumes anything on its own.
  * Before this, the card simply vanished — deleting the only thing on screen that
  * pointed at a decision the person still owed.
+ *
+ * The note STAYS after a later grant on the dashboard, and that is deliberate: it
+ * is a historical statement about this turn ("the agent stopped waiting here"),
+ * not a live view of the request. Nothing re-emits `capability_approval_resolved`
+ * for an approval decided after its hold ended, so there is nothing to retire it
+ * with — and retiring it would erase the reason the turn ended where it did.
  */
 export function CapabilityApprovalTimedOut({ title }: CapabilityApprovalTimedOutProps) {
   return (
