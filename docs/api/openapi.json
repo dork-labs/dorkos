@@ -5852,15 +5852,19 @@
             "type": "string",
             "description": "Agents only: the stable handle from `agentAuthorRef(agentPath)`. Compare this, never a display name."
           },
-          "mentionHandle": {
-            "type": "string",
-            "description": "What to type after an `@` to address this author, when anything does. A mention picker inserts it verbatim, so the string written is the string the server resolves — and it is resolved against the whole roster, so it reaches THIS author and not another member who happens to answer to the same name. Carried on every resolved roster (`RoomWithRoster`: create, read, update, and the room stream's hydration snapshot), and absent from the bulk room list, which addresses nobody. Absent also means this author cannot be addressed by `@` at all — every name it answers to either contains a space, which the mention pattern cannot span, or belongs to an earlier member. Never assume a display name works: those routinely contain spaces."
+          "handle": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "This author's address: what to type after an `@` to reach them. Globally unique on this install (case-folded), lowercase, 2–32 characters of `[a-z0-9._-]`, starting and ending alphanumeric. A mention picker inserts it verbatim, so the string written is the string the server resolves. `null` means this author cannot be addressed by `@` at all — a person who has not chosen one yet, or an agent whose name spells nothing legal. Never fall back to the display name: that is not an address, it is unrestricted text, and it routinely contains spaces the mention pattern cannot span."
           }
         },
         "required": [
           "id",
           "kind",
-          "displayName"
+          "displayName",
+          "handle"
         ]
       },
       "AuthorKind": {
@@ -6585,6 +6589,19 @@
         },
         "required": [
           "responseMode"
+        ]
+      },
+      "SetAuthorHandleRequest": {
+        "type": "object",
+        "properties": {
+          "handle": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "The new handle, without its `@`. Empty clears it. Refused with INVALID_HANDLE, HANDLE_TAKEN or HANDLE_RESERVED."
+          }
+        },
+        "required": [
+          "handle"
         ]
       },
       "SetReadCursorRequest": {
@@ -15472,6 +15489,87 @@
           },
           "404": {
             "description": "No such room, or not a member of it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/authors/{authorId}/handle": {
+      "patch": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Set or clear an author's handle",
+        "description": "A handle is what somebody types after an `@` to reach exactly one author: lowercase, 2–32 characters of `[a-z0-9._-]`, starting and ending alphanumeric, and unique across this install (case-folded). The server normalizes what it is given, so a client that skipped its own check cannot store something the grammar forbids, and an empty string clears the handle. **Human-initiated only** — an agent presenting `X-DorkOS-Agent` is refused. There is no MCP tool and no capability for this: an agent able to rename itself in a loop would grow the tombstone table a row at a time forever, and removing the mechanism beats throttling it. A released handle stays reserved to the author who gave it up; they may take it back, and nobody else may take it at all.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "authorId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetAuthorHandleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The author, with its handle as stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorRef"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The handle fails the grammar (`INVALID_HANDLE`), or the body is malformed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "An agent caller tried to change a handle (`OPERATOR_ONLY`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No author carries that id (`MEMBER_NOT_FOUND`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The handle is live on another author (`HANDLE_TAKEN`), or reserved to one — a handle they released, or one of the seeded broadcast words `everyone`/`here`/`channel` (`HANDLE_RESERVED`)",
             "content": {
               "application/json": {
                 "schema": {

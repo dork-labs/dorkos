@@ -12,7 +12,7 @@ function agent(displayName: string, responseMode: ResponseMode): RoomRosterEntry
     responseMode,
     joinedAt: '2026-07-26T10:00:00.000Z',
     lastReadSeq: 0,
-    author: { id: `author-${displayName}`, kind: 'agent', displayName },
+    author: { id: `author-${displayName}`, kind: 'agent', displayName, handle: null },
     origin: 'local',
   };
 }
@@ -21,7 +21,7 @@ function agent(displayName: string, responseMode: ResponseMode): RoomRosterEntry
 function person(displayName: string, responseMode: ResponseMode = 'always'): RoomRosterEntry {
   return {
     ...agent(displayName, responseMode),
-    author: { id: `author-${displayName}`, kind: 'human', displayName },
+    author: { id: `author-${displayName}`, kind: 'human', displayName, handle: null },
   };
 }
 

@@ -29,7 +29,7 @@ const AUTHORS = new Map([
       id: 'ana',
       kind: 'agent' as const,
       displayName: 'Ana',
-      mentionHandle: 'ana',
+      handle: 'ana',
       origin: 'local' as const,
     },
   ],
@@ -39,7 +39,7 @@ const AUTHORS = new Map([
       id: 'author-you',
       kind: 'human' as const,
       displayName: 'You',
-      mentionHandle: 'you',
+      handle: 'you',
       origin: 'local' as const,
     },
   ],
@@ -111,7 +111,7 @@ function rowElement(
         id: 'ana',
         kind: 'agent',
         displayName: 'Ana',
-        mentionHandle: 'ana',
+        handle: 'ana',
         origin: 'local',
       }}
       authors={AUTHORS}
@@ -708,7 +708,7 @@ describe('RoomEntryRow — the origin mark beside an entry (chats-as-channels sp
           id: 'ana',
           kind: 'human',
           displayName: 'Miguel',
-          mentionHandle: 'miguel',
+          handle: 'miguel',
           origin,
         }}
         authors={AUTHORS}

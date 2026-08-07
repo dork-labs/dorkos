@@ -112,9 +112,9 @@ describe('paletteRoomKeywords', () => {
       slug: null,
       title: 'Bo and Cid',
       participants: [
-        { id: 'a1', kind: 'agent', displayName: 'Bo' },
-        { id: 'a2', kind: 'agent', displayName: 'Cid' },
-        { id: 'a3', kind: 'agent', displayName: 'Ana' },
+        { id: 'a1', kind: 'agent', displayName: 'Bo', handle: null },
+        { id: 'a2', kind: 'agent', displayName: 'Cid', handle: null },
+        { id: 'a3', kind: 'agent', displayName: 'Ana', handle: null },
       ],
     });
 

@@ -39,8 +39,14 @@ function channel(overrides: Partial<RoomSummary> = {}): RoomSummary {
 /** A one-to-one conversation with the agent living at `agentPath`. */
 function oneToOne(agentPath: string): RoomSummary {
   const participants: AuthorRef[] = [
-    { id: 'me', kind: 'human', displayName: 'You' },
-    { id: 'a-ana', kind: 'agent', displayName: 'Ana', agentRef: agentAuthorRef(agentPath) },
+    { id: 'me', kind: 'human', displayName: 'You', handle: null },
+    {
+      id: 'a-ana',
+      kind: 'agent',
+      displayName: 'Ana',
+      handle: null,
+      agentRef: agentAuthorRef(agentPath),
+    },
   ];
   return channel({
     id: 'dm-1',

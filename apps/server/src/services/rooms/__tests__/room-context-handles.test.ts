@@ -45,26 +45,27 @@ const MAX_AGENT_DEPTH = 2;
 /**
  * Four agents, chosen for what each one does to addressing.
  *
- * - `ana` is ordinary: a slug for a handle, a display name with a space in it.
- * - `art-blocks` is the defect's namesake — `agents.name` with spaces, so no
- *   string reaches it and the block must not pretend one does. (7 of the 40
- *   agents registered on the install this was written against are this shape.)
- * - `shadow` contests `ana`: its own name is untypeable, so the only string it
- *   could be offered is its display name, which is the name `ana` answers to.
- *   Exactly one of the two may be offered `ana`, and the block must print it for
- *   whichever one it actually reaches.
- * - `dotted` is named `ana.` — legal, typeable, and genuinely resolvable, which
- *   is the trap. It is the token `@ana` becomes at the end of an English
- *   sentence, so any line that puts a handle next to punctuation mis-addresses
- *   somebody REAL rather than nobody. That is the difference between a test that
- *   catches this and a test that shrugs at it.
+ * - `ana` is ordinary: a slug for a name, a display name with a space in it.
+ * - `art-blocks` is the defect's namesake — `agents.name` with spaces. Before
+ *   `authors.handle` no string reached it at all and the block had to say so;
+ *   now derivation gives it `art-blocks-analytics`, which is the whole point of
+ *   Phase 2. (7 of the 40 agents registered on the install this was written
+ *   against are this shape.)
+ * - `shadow` contests `ana`: the same `agents.name`, in a different directory.
+ *   The unique index decides it once, at mint, and the loser takes a counter
+ *   suffix — so both are addressable and neither can take the other's mentions.
+ * - `dotted` is named `ana.`, which the handle GRAMMAR cannot spell: a handle
+ *   must end alphanumeric. It derives to a legal handle instead, which is how
+ *   the sentence-ending `@ana.` hazard is removed at the source rather than
+ *   guarded against at every renderer.
  *
- * The reader (`You`) joins as the room's creator.
+ * The reader (`You`) joins as the room's creator, and has no handle until they
+ * are asked for one.
  */
 const AGENTS = agentLookupFor({
   '/agents/ana': { name: 'ana', displayName: 'Ana Reyes' },
   '/agents/art-blocks': { name: 'Art Blocks Analytics', displayName: 'Art Blocks Analytics' },
-  '/agents/shadow': { name: 'Shadow Two Words', displayName: 'ana' },
+  '/agents/shadow': { name: 'ana', displayName: 'Shadow' },
   '/agents/dotted': { name: 'ana.', displayName: 'Dot Trailing' },
 });
 
@@ -315,67 +316,91 @@ describe('every @name in the room-context block reaches the member it names', ()
     await service.triggersIdle();
   });
 
-  it('names a member no string reaches, without inviting a mention of them', async () => {
+  it('gives an agent whose NAME has a space an address that works', async () => {
     const [context] = await openAndSpeak();
     const block = formatRoomContext(context!, { nonce: NONCE });
     const art = context!.members.find((m) => m.displayName === 'Art Blocks Analytics')!;
 
-    // Which agent takes the first turn is a ULID tie-break on an identical
-    // `joinedAt`, so whether this member is reading its own block differs run to
-    // run — and `(you` rather than `(agent` is how that reads. The invariant
-    // does not vary: named, and not addressable.
-    expect(art.handle).toBeNull();
-    expect(block).toContain(
-      `Art Blocks Analytics (${art.isSelf ? 'you' : 'agent'}, cannot be mentioned)`
-    );
-    // The failure this replaces, in the form it shipped in: `@Art Blocks
+    expect(art.handle).toBe('art-blocks-analytics');
+    expect(block).toContain('@art-blocks-analytics');
+    // The failure this removes, in the form it shipped in: `@Art Blocks
     // Analytics`, which the grammar reads as `@Art`, which reaches nobody.
-    expect(block).not.toContain('@Art');
     expect(handlesIn(block)).not.toContain('Art');
-  });
 
-  it('offers a contested name to exactly one member, and prints it for that one', async () => {
-    // Which of the two wins is decided by roster order, and a seeded roster ties
-    // on `joinedAt` so a ULID breaks it — differently on every run. So the
-    // assertion is the invariant rather than a name: whoever loses `ana` is
-    // printed without an `@`, and whoever wins it is who `@ana` reaches.
-    const [context] = await openAndSpeak();
-    const block = formatRoomContext(context!, { nonce: NONCE });
-    const contested = context!.members.filter((member) =>
-      ['Ana Reyes', 'ana'].includes(member.displayName)
-    );
-    expect(contested).toHaveLength(2);
-
-    const offered = contested.filter((member) => member.handle !== null);
-    expect(offered).toHaveLength(1);
-    expect(offered[0]!.handle).toBe('ana');
-    expect(handlesIn(block)).toContain('ana');
-
-    const entry = service.post(room.id, { authorId: harness.human, text: '@ana hi' });
-    expect(entry.mentions).toHaveLength(1);
-    expect(namesById(room).get(entry.mentions[0])).toBe(offered[0]!.displayName);
+    const entry = service.post(room.id, {
+      authorId: harness.human,
+      text: '@art-blocks-analytics hi',
+    });
+    expect(namesById(room).get(entry.mentions[0]!)).toBe('Art Blocks Analytics');
     await service.triggersIdle();
   });
 
-  it('never offers a name that ends in punctuation, however typeable it looks', async () => {
-    // `ana.` passes every test a handle used to have to pass — one word, legal
-    // characters, and `@ana.` really does resolve to it. It is withheld because
-    // that same token is what `ana` gets at the end of a sentence, and the
-    // resolver hands it to whoever owns it exactly.
+  it('names the reader without inviting a mention, because they have no handle yet', async () => {
+    // The one member of this room no string reaches: the person at the keyboard,
+    // whose handle stays null until they are asked. Named, and not addressable —
+    // and printed WITHOUT an `@`, so the model is not invited to type one.
+    const [context] = await openAndSpeak();
+    const block = formatRoomContext(context!, { nonce: NONCE });
+    const you = context!.members.find((m) => m.displayName === 'You')!;
+
+    expect(you.handle).toBeNull();
+    expect(block).toContain('You (person, cannot be mentioned)');
+    expect(handlesIn(block)).not.toContain('You');
+  });
+
+  it('gives two agents with the same name two different addresses', async () => {
+    // Which of the two wins `ana` is decided by mint order, and a seeded roster
+    // ties on `joinedAt` so a ULID breaks it — differently on every run. So the
+    // assertion is the invariant rather than a name: both are addressable, they
+    // are addressable by DIFFERENT strings, and each string reaches its own.
+    //
+    // This is the criterion Buzz fails. It has a case-folded unique handle
+    // column, its mention path never reads it, and it ships a test asserting
+    // `@alice` notifies every Alice.
+    const [context] = await openAndSpeak();
+    const block = formatRoomContext(context!, { nonce: NONCE });
+    const contested = context!.members.filter((member) =>
+      ['Ana Reyes', 'Shadow'].includes(member.displayName)
+    );
+    expect(contested).toHaveLength(2);
+
+    const offered = contested.map((member) => member.handle);
+    expect(offered.every((handle) => handle !== null)).toBe(true);
+    expect(new Set(offered).size).toBe(2);
+    expect(offered.slice().sort()).toEqual(['ana', 'ana-2']);
+    for (const handle of offered) expect(handlesIn(block)).toContain(handle!);
+
+    for (const member of contested) {
+      const entry = service.post(room.id, {
+        authorId: harness.human,
+        text: `@${member.handle} hi`,
+      });
+      expect(entry.mentions).toHaveLength(1);
+      expect(namesById(room).get(entry.mentions[0])).toBe(member.displayName);
+    }
+    await service.triggersIdle();
+  });
+
+  it('cannot hand anybody a name ending in punctuation, because the grammar has none', async () => {
+    // `ana.` passed every test a name used to have to pass — one word, legal
+    // characters, and `@ana.` really did resolve to it, which is what made it a
+    // trap: that same token is what `ana` gets at the end of an English
+    // sentence, and the resolver tries the exact token before shaving. Phase 1
+    // withheld it. The handle grammar removes the class instead, by requiring a
+    // handle to start AND end alphanumeric — so this agent, whose `agents.name`
+    // IS `ana.`, cannot be given it.
     const [context] = await openAndSpeak();
     const block = formatRoomContext(context!, { nonce: NONCE });
     const dotted = context!.members.find((m) => m.displayName === 'Dot Trailing')!;
 
-    expect(dotted.handle).toBeNull();
+    expect(dotted.handle).not.toBeNull();
+    expect(dotted.handle).not.toMatch(/[.\-_]$/);
     expect(handlesIn(block)).not.toContain('ana.');
-    // The residual, stated so nobody mistakes this for a fix of the underlying
-    // shape: `claimNames` claims every roster name whether or not it is ever
-    // advertised, so a person writing `thanks @ana.` in free text still reaches
-    // this member. Only `specs/handles` §1 removes it, by requiring a handle to
-    // end alphanumeric (Phase 2). What this PR can promise is that nothing
-    // DorkOS itself writes puts that string in front of anybody.
+    // And the sentence that used to be stolen now lands where a person means it:
+    // `@ana.` shaves to `ana`, which reaches whoever holds `ana` and nobody else.
     const reached = resolveMentions('thanks @ana.', candidates());
-    expect(namesById(room).get(reached[0]!)).toBe('Dot Trailing');
+    const anaHolder = context!.members.find((m) => m.handle === 'ana')!;
+    expect(namesById(room).get(reached[0]!)).toBe(anaHolder.displayName);
   });
 
   it('names the author of an old message who has left, and offers no handle for them', async () => {

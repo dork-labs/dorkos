@@ -138,8 +138,8 @@ describe('a directory that changes hands starts a fresh author', () => {
 
     const room = harness.service.getRoom(seeded.id, harness.human)!;
     const rowFor = (id: string) => room.members.find((m) => m.author.id === id)!.author;
-    expect(rowFor(ana.id).mentionHandle).toBeUndefined();
-    expect(rowFor(bo.author.id).mentionHandle).toBe('ana');
+    expect(rowFor(ana.id).handle).toBeNull();
+    expect(rowFor(bo.author.id).handle).toBe('ana');
 
     const entry = harness.service.post(room.id, { authorId: harness.human, text: '@ana hi' });
     expect(entry.mentions).toEqual([bo.author.id]);

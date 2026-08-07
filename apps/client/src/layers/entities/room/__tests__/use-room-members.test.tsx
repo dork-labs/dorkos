@@ -35,7 +35,13 @@ function member(authorId: string, responseMode: RoomRosterEntry['responseMode'])
     responseMode,
     joinedAt: '2026-07-26T10:00:00.000Z',
     lastReadSeq: 0,
-    author: { id: authorId, kind: 'agent', displayName: authorId, agentRef: `ref-${authorId}` },
+    author: {
+      id: authorId,
+      kind: 'agent',
+      displayName: authorId,
+      handle: null,
+      agentRef: `ref-${authorId}`,
+    },
     origin: 'local',
   };
 }

@@ -18,13 +18,14 @@ const ANA: AuthorRef = {
   id: 'author-ana',
   kind: 'agent',
   displayName: 'Ana',
+  handle: null,
   emoji: '🐙',
   color: '#7c3aed',
   agentRef: 'deadbeefdeadbeef',
 };
 
 /** The local human: no emoji, no colour — the fallback case. */
-const YOU: AuthorRef = { id: 'author-you', kind: 'human', displayName: 'You' };
+const YOU: AuthorRef = { id: 'author-you', kind: 'human', displayName: 'You', handle: null };
 
 /**
  * The exact inline tint the shared avatar mixes at 18%.
@@ -179,7 +180,7 @@ describe('MemberList', () => {
   it('counts off the members past the fifth', () => {
     renderRoster(
       Array.from({ length: 7 }, (_, i) =>
-        member({ id: `author-${i}`, kind: 'agent', displayName: `Agent ${i}` })
+        member({ id: `author-${i}`, kind: 'agent', displayName: `Agent ${i}`, handle: null })
       )
     );
 
@@ -190,7 +191,7 @@ describe('MemberList', () => {
   describe('the origin mark (chats-as-channels spec §4.3, §9, DOR-879)', () => {
     it('badges an external member so their platform is legible without a hover', () => {
       const miguel: RoomRosterEntry = {
-        ...member({ id: 'author-miguel', kind: 'human', displayName: 'Miguel' }),
+        ...member({ id: 'author-miguel', kind: 'human', displayName: 'Miguel', handle: null }),
         origin: { platform: 'telegram' },
       };
       const { container } = renderRoster([miguel]);
@@ -263,7 +264,7 @@ describe('RoomAvatar', () => {
     const { container: letter } = render(
       <RoomAvatar
         room={{ id: 'dm-3', kind: 'dm', title: 'Bo' }}
-        participants={[YOU, { id: 'author-bo', kind: 'agent', displayName: 'Bo' }]}
+        participants={[YOU, { id: 'author-bo', kind: 'agent', displayName: 'Bo', handle: null }]}
       />
     );
     const letterDisc = letter.querySelector('[data-slot="room-avatar"]') as HTMLElement;

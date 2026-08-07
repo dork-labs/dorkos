@@ -43,9 +43,8 @@ export interface MentionRow {
   /**
    * What gets written after the `@`, or `undefined` when nothing can be. The
    * server resolves the string that lands in the message, so this is the
-   * server's own answer (`AuthorRef.mentionHandle`) rather than a name this
-   * side picked — inserting anything else would post a mention that reaches
-   * nobody.
+   * server's own answer (`AuthorRef.handle`) rather than a name this side
+   * picked — inserting anything else would post a mention that reaches nobody.
    */
   handle?: string;
   emoji?: string;
@@ -63,7 +62,7 @@ export interface MentionRow {
  * is not a participant), the reader themself (`@You` is the top row of every
  * room and means nothing), and anybody the roster lost the author record for.
  *
- * **Ownership is not re-derived here.** `mentionHandle` is already the answer to
+ * **Ownership is not re-derived here.** `handle` is already the answer to
  * "what reaches this member", decided server-side over the same name list and
  * the same order `resolveMentions` uses — including names this side never sees,
  * like a display name an earlier member quietly answers to. A second copy of
@@ -84,7 +83,7 @@ export function buildMentionRows(
   for (const { author } of members) {
     if (author.kind === 'system' || author.id === viewerAuthorId) continue;
 
-    const handle = author.mentionHandle;
+    const handle = author.handle;
     rows.push({
       section: author.kind === 'agent' ? 'agents' : 'people',
       authorId: author.id,
@@ -92,10 +91,10 @@ export function buildMentionRows(
       ...(handle ? { handle } : {}),
       ...(author.emoji ? { emoji: author.emoji } : {}),
       ...(author.color ? { color: author.color } : {}),
-      disabled: handle === undefined,
+      disabled: !handle,
       // Shown rather than filtered out: a member who quietly vanished from the
       // picker is worse than one who is there with a reason.
-      ...(handle === undefined ? { disabledReason: 'No @name' } : {}),
+      ...(handle ? {} : { disabledReason: 'No @name' }),
     });
   }
 

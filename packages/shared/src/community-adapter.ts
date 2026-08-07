@@ -441,6 +441,18 @@ export const CommunityMemberSchema = z.object({
   kind: AuthorKindSchema,
   /** Render cache — what a roster row shows. */
   displayName: z.string().min(1),
+  /**
+   * This member's address in this community: what somebody types after an `@`
+   * to reach them, or `null` when nothing does.
+   *
+   * **Not local-only.** A handle is what makes a mention resolvable at all, and
+   * a backend whose roster cannot say what reaches a member forces every reader
+   * to guess from the display name — which is exactly the failure this field
+   * exists to remove. `null` is the honest answer for a backend whose roster
+   * event carries no handle, and it is a real state for a local member too: a
+   * person who has not chosen one yet has none.
+   */
+  handle: z.string().nullable(),
   /** Render cache. */
   emoji: z.string().optional(),
   /** Render cache. */

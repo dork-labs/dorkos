@@ -11,7 +11,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { authors, eq, type Db } from '@dorkos/db';
+import { agents, authors, eq, type Db } from '@dorkos/db';
 import { AgentRegistry, toManifest } from '@dorkos/mesh';
 import { TeamRosterResponseSchema } from '@dorkos/shared/team-schemas';
 import { AuthorRegistry } from '../../rooms/author-registry.js';
@@ -57,6 +57,7 @@ describe('aggregateTeamRoster', () => {
   function sources(overrides: Partial<TeamRosterSources> = {}): TeamRosterSources {
     return {
       listPeople: () => registry.listActive('human'),
+      listAgentAuthors: () => [],
       listAgents: () => [ANA, DORKBOT],
       account: () => ({ id: OWNER_USER_ID, name: 'Dorian', email: 'dorian@dorkos.ai' }),
       configDisplayName: () => null,
@@ -78,6 +79,80 @@ describe('aggregateTeamRoster', () => {
   it('returns a payload the response schema accepts', async () => {
     const roster = await aggregateTeamRoster(sources());
     expect(TeamRosterResponseSchema.safeParse(roster).success).toBe(true);
+  });
+
+  describe('handles', () => {
+    /**
+     * The mesh cache row the fleet fixture stands for.
+     *
+     * Written only here: it is what stamps an author with the occupancy the
+     * roster joins on, so these tests exercise the registry that ships rather
+     * than a fixture id — and the test that asserts what the mesh STRIPS keeps
+     * a table holding only its own agent.
+     */
+    function registerInMesh(id: string, projectPath: string): void {
+      const now = new Date().toISOString();
+      db.insert(agents)
+        .values({
+          id,
+          name: 'ana',
+          displayName: 'Ana',
+          runtime: 'claude-code',
+          projectPath,
+          registeredAt: now,
+          updatedAt: now,
+        })
+        .run();
+    }
+
+    it('reads a person’s handle straight off their author row', async () => {
+      // Before it is asked for, the operator's handle is null — which the page
+      // renders as "no address yet" rather than inventing `@you`.
+      const before = await aggregateTeamRoster(sources());
+      expect(before.members.find((m) => m.isSelf)?.handle).toBeNull();
+
+      registry.setHandle(ownerAuthorId, 'dorian');
+
+      const after = await aggregateTeamRoster(sources());
+      expect(after.members.find((m) => m.isSelf)?.handle).toBe('dorian');
+    });
+
+    it('joins an agent to its author row on the occupancy stamp', async () => {
+      // An agent's handle lives on its AUTHOR row, minted the first time it is
+      // in a room, and the mesh source carries no directory to join on —
+      // `toManifest()` strips `projectPath` before the fleet reaches here. The
+      // manifest ULID is what both sides do carry.
+      registerInMesh(ANA.id, '/Users/dorian/agents/ana');
+      const anaAuthor = registry.resolveAgent('/Users/dorian/agents/ana', 'Ana');
+      registry.setHandle(anaAuthor.id, 'ana');
+
+      const { members } = await aggregateTeamRoster(
+        sources({ listAgentAuthors: () => registry.listActive('agent') })
+      );
+
+      expect(members.find((m) => m.id === ANA.id)?.handle).toBe('ana');
+      // DorkBot has never been in a room, so it has no author row and no
+      // address — reported honestly rather than guessed from its name.
+      expect(members.find((m) => m.id === DORKBOT.id)?.handle).toBeNull();
+    });
+
+    it('does not inherit an address from a previous occupant of the same directory', async () => {
+      // The generation boundary the author registry already draws: a new agent
+      // registered where an old one lived is a different entity, so it must not
+      // answer to the name people remember.
+      registerInMesh(ANA.id, '/Users/dorian/agents/ana');
+      const previous = registry.resolveAgent('/Users/dorian/agents/ana', 'Ana');
+      registry.setHandle(previous.id, 'ana');
+
+      const { members } = await aggregateTeamRoster(
+        sources({
+          listAgents: () => [{ ...ANA, id: 'agent-ana-reinitialized' }],
+          listAgentAuthors: () => registry.listActive('agent'),
+        })
+      );
+
+      expect(members.find((m) => m.kind === 'agent')?.handle).toBeNull();
+    });
   });
 
   it('puts exactly one person on the roster, and it is the operator', async () => {
@@ -249,6 +324,7 @@ describe('aggregateTeamRoster', () => {
     function freshSources(): TeamRosterSources {
       return {
         listPeople: () => registry.listActive('human'),
+        listAgentAuthors: () => [],
         listAgents: () => [ANA, DORKBOT],
         account: () => null,
         configDisplayName: () => null,

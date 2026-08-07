@@ -215,6 +215,14 @@ export function agentAuthorRef(agentPath: string): string {
  * `displayName`, `emoji` and `color` are all the same thing — a render cache
  * refreshed whenever the author is resolved. None of them is ever the key, and
  * nothing may look an author up by one.
+ *
+ * **`handle` is the exception, and it is the only one.** It IS a key: unique
+ * across this install by index, written once at mint, and the single string that
+ * addresses this author. It replaced `mentionHandle`, which was the same idea
+ * computed per roster because a display name a member quietly answered to could
+ * belong to somebody else. Under a unique handle, ownership is not
+ * roster-relative any more — the author who has it is the author it reaches,
+ * everywhere, with no map (spec `handles` S5).
  */
 export const AuthorRefSchema = z
   .object({
@@ -235,11 +243,11 @@ export const AuthorRefSchema = z
       .describe(
         'Agents only: the stable handle from `agentAuthorRef(agentPath)`. Compare this, never a display name.'
       ),
-    mentionHandle: z
+    handle: z
       .string()
-      .optional()
+      .nullable()
       .describe(
-        "What to type after an `@` to address this author, when anything does. A mention picker inserts it verbatim, so the string written is the string the server resolves — and it is resolved against the whole roster, so it reaches THIS author and not another member who happens to answer to the same name. Carried on every resolved roster (`RoomWithRoster`: create, read, update, and the room stream's hydration snapshot), and absent from the bulk room list, which addresses nobody. Absent also means this author cannot be addressed by `@` at all — every name it answers to either contains a space, which the mention pattern cannot span, or belongs to an earlier member. Never assume a display name works: those routinely contain spaces."
+        "This author's address: what to type after an `@` to reach them. Globally unique on this install (case-folded), lowercase, 2–32 characters of `[a-z0-9._-]`, starting and ending alphanumeric. A mention picker inserts it verbatim, so the string written is the string the server resolves. `null` means this author cannot be addressed by `@` at all — a person who has not chosen one yet, or an agent whose name spells nothing legal. Never fall back to the display name: that is not an address, it is unrestricted text, and it routinely contains spaces the mention pattern cannot span."
       ),
   })
   .openapi('AuthorRef');
@@ -733,6 +741,28 @@ export const UpdateMembershipRequestSchema = z
   .openapi('UpdateMembershipRequest');
 
 export type UpdateMembershipRequest = z.infer<typeof UpdateMembershipRequestSchema>;
+
+/**
+ * Set (or clear) an author's handle.
+ *
+ * **`handle` is the raw string a person typed**, not a pre-validated one: the
+ * server normalizes and judges it, so a client that skipped its own check
+ * cannot store something the grammar forbids. An empty string clears the
+ * handle, tombstoning whatever they had — that is the coercion the partial
+ * unique index depends on, and it lives on the server for the same reason.
+ */
+export const SetAuthorHandleRequestSchema = z
+  .object({
+    handle: z
+      .string()
+      .max(64)
+      .describe(
+        'The new handle, without its `@`. Empty clears it. Refused with INVALID_HANDLE, HANDLE_TAKEN or HANDLE_RESERVED.'
+      ),
+  })
+  .openapi('SetAuthorHandleRequest');
+
+export type SetAuthorHandleRequest = z.infer<typeof SetAuthorHandleRequestSchema>;
 
 export const SetReadCursorRequestSchema = z
   .object({ lastReadSeq: z.number().int().min(0) })

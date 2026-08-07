@@ -12,20 +12,26 @@
  * one: it handed the model `agents.byPath(naturalKey)?.name` unfiltered, so an
  * agent in a room with `Art Blocks Analytics` was told that was its address —
  * a string `MENTION_PATTERN` truncates at the first space, so the message
- * reached nobody — while the picker, reading {@link advertisedHandle}, correctly
- * refused to offer that member at all. Two answers to "who owns this name" can
- * only ever drift into one of them addressing somebody else, and an agent handed
- * a name it cannot be reached by has no way to notice the way a person would
- * (`meta/agent-etiquette.md` E1).
+ * reached nobody — while the picker correctly refused to offer that member at
+ * all. Two answers to "who owns this name" can only ever drift into one of them
+ * addressing somebody else, and an agent handed a name it cannot be reached by
+ * has no way to notice the way a person would (`meta/agent-etiquette.md` E1).
+ *
+ * **What one author answers to is now one string, `authors.handle`, or none**
+ * (spec `handles`). The ownership apparatus this module used to run — a
+ * first-claimant-wins map over every name of every member — is gone with the
+ * display-name addressing path it existed to disambiguate. What is left is the
+ * liveness question, which the column cannot answer on its own: a ghost carries
+ * a handle and no longer answers to it.
  *
  * Pure over what the caller has already read: no store, no query, no clock.
  *
- * @module server/services/rooms/author-handles
+ * @module server/services/rooms/handles/author-handles
  */
 import type { RoomMember } from '@dorkos/shared/room-schemas';
-import type { AuthorRecord } from './author-registry.js';
-import { advertisedHandle, claimNames, type MentionCandidate } from './mentions.js';
-import type { RoomAgentLookup } from './room-errors.js';
+import type { AuthorRecord } from '../author-registry.js';
+import type { MentionCandidate } from '../mentions.js';
+import type { RoomAgentLookup } from '../room-errors.js';
 
 /**
  * Whether an agent author still speaks for the directory it names.
@@ -58,22 +64,26 @@ export function isLiveAuthor(author: AuthorRecord, agents: RoomAgentLookup): boo
 }
 
 /**
- * Every name an author answers to after an `@`, most preferred first: an agent's
- * handle, then whatever it renders as — with the liveness question not asked.
+ * Every name an author answers to after an `@`, most preferred first — which is
+ * now exactly one name, or none.
  *
- * The single definition of "the name this author answers to", read TWICE by
- * {@link rosterMentionCandidates} and meaning the same thing both times: for a
- * live author it is what a name reaches, and for a ghost it is what a name
- * WOULD have reached. Deriving the second from anything but the first is how a
- * person's `@ana` comes to be recognised by one half of the room and not the
- * other.
+ * **The display name is deliberately not in here any more** (spec `handles` S1).
+ * It was, and the whole apparatus that decided which member an ambiguous name
+ * reached — `claimNames` over every name of every member, `advertisedHandle`
+ * picking the first a member could be typed by AND owned — existed only because
+ * display names are neither unique nor typeable. A unique typeable handle
+ * removes both premises. Keeping the fallback would keep a second addressing
+ * mechanism whose entire job is to be worse than the first, and it would
+ * reintroduce the exact failure Buzz ships: `@alice` reaching whichever Alice
+ * the roster happened to order first.
+ *
+ * An empty list means "no string reaches this author", which is the honest
+ * answer and the one a picker already renders.
  *
  * @param author - The stored author.
- * @param agents - The lookup that resolves an agent's handle from its directory.
  */
-function namesAnsweredTo(author: AuthorRecord, agents: RoomAgentLookup): string[] {
-  const handle = author.kind === 'agent' ? agents.byPath(author.naturalKey)?.name : null;
-  return handle ? [handle, author.displayName] : [author.displayName];
+function namesAnsweredTo(author: AuthorRecord): string[] {
+  return author.handle ? [author.handle] : [];
 }
 
 /**
@@ -133,7 +143,7 @@ export function rosterMentionCandidates(
   for (const member of members) {
     const author = authors.get(member.authorId);
     if (!author) continue;
-    const names = namesAnsweredTo(author, agents);
+    const names = namesAnsweredTo(author);
     if (isLiveAuthor(author, agents)) {
       live.push({ authorId: author.id, names });
       continue;
@@ -145,23 +155,25 @@ export function rosterMentionCandidates(
 }
 
 /**
- * The handle each member may be shown: the first name it can be typed by **and**
- * actually owns, decided over the whole roster at once.
+ * The handle each member is reachable by IN THIS ROOM, read off the same
+ * candidate sequence the resolver runs against.
  *
- * Computed for the sequence rather than per member, because ownership is a
- * property of the roster and not of the row. Deriving it one member at a time
- * cannot see a name an earlier member claimed but never advertised, and so
- * silently hands out a handle that addresses somebody else.
+ * A one-line projection, and it earns its existence by being the one place three
+ * surfaces read: the mention picker (`RoomRoster.list`), the roster an agent is
+ * handed (`room-context.ts`), and the resolver every posted message runs through
+ * (`resolveMentions`). Reading `AuthorRecord.handle` directly at each of them
+ * would be three derivations of "what reaches this author", and the third would
+ * be wrong: a ghost still carries a handle on its row and no longer answers to
+ * it, so a picker reading the column would offer a mention that reaches nobody.
  *
- * @param candidates - The whole roster, in the order that decides ties.
+ * @param candidates - The whole roster, in store order.
  * @returns Author id to handle, omitting every member no string reaches. A
  *   missing key is the honest answer, not a lookup that failed.
  */
-export function advertisedHandles(candidates: readonly MentionCandidate[]): Map<string, string> {
-  const claims = claimNames(candidates);
+export function addressableHandles(candidates: readonly MentionCandidate[]): Map<string, string> {
   const handles = new Map<string, string>();
   for (const candidate of candidates) {
-    const handle = advertisedHandle(candidate, claims);
+    const handle = candidate.names[0];
     if (handle) handles.set(candidate.authorId, handle);
   }
   return handles;

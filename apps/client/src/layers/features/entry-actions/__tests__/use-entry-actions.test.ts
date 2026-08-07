@@ -48,7 +48,7 @@ function entry(overrides: Partial<RoomEntry> = {}): RoomEntry {
 }
 
 function author(overrides: Partial<AuthorRef> = {}): AuthorRef {
-  return { id: 'ana', kind: 'agent', displayName: 'Ana', mentionHandle: 'ana', ...overrides };
+  return { id: 'ana', kind: 'agent', displayName: 'Ana', handle: 'ana', ...overrides };
 }
 
 /**
@@ -168,7 +168,7 @@ describe('useEntryActions — the action set', () => {
     // A display name routinely contains spaces, which the mention pattern
     // cannot span — inserting one would address nobody and say nothing about it.
     actionsFor(entry(), {
-      author: author({ displayName: 'Ana Rivera', mentionHandle: 'ana-rivera' }),
+      author: author({ displayName: 'Ana Rivera', handle: 'ana-rivera' }),
     }).current[2]!.run();
 
     expect(useRoomDraftStore.getState().drafts['room-1']).toBe('@ana-rivera ');
@@ -184,7 +184,7 @@ describe('useEntryActions — the action set', () => {
   });
 
   it('does not offer to mention an author no @ can reach', () => {
-    const ids = actionsFor(entry(), { author: author({ mentionHandle: undefined }) }).current.map(
+    const ids = actionsFor(entry(), { author: author({ handle: undefined }) }).current.map(
       (a) => a.id
     );
 

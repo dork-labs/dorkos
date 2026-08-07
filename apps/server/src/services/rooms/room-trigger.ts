@@ -126,7 +126,7 @@ import {
 } from './room-claims.js';
 import type { BridgedRoomFraming } from '../relay/chat-bridge/room-context-framing.js';
 import type { AuthorRegistry } from './author-registry.js';
-import { isLiveAuthor } from './author-handles.js';
+import { isLiveAuthor } from './handles/author-handles.js';
 import { evaluateCascade } from './cascade-guard.js';
 import { engagementFor, type EngagedWindow, type EngagementWindow } from './engagement.js';
 import type { ReactionStore } from './reaction-store.js';
