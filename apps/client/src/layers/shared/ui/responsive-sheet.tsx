@@ -38,7 +38,8 @@ const responsiveSheetContentVariants = cva('', {
  *
  * `side` is always `"right"` — this primitive exists for right-side panels
  * only, generalized from `RightPanelContainer.tsx:205-224`'s hand-rolled
- * version; the profile drawer (spec §W3.2) is the second consumer. A
+ * version; the profile drawer (`specs/identity-consistency/02-specification.md`
+ * §W3.2) is the second consumer. A
  * caller's `className` is applied last, so it can still override the
  * computed width where a fixed width is wanted regardless of viewport.
  */
