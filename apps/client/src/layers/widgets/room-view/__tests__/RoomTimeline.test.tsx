@@ -49,7 +49,14 @@ function member(
     joinedAt: '2026-07-26T09:00:00.000Z',
     lastReadSeq: 0,
     origin: overrides.origin ?? 'local',
-    author: { id, kind, displayName, emoji: overrides.emoji, color: overrides.color },
+    author: {
+      id,
+      kind,
+      displayName,
+      handle: null,
+      emoji: overrides.emoji,
+      color: overrides.color,
+    },
   };
 }
 

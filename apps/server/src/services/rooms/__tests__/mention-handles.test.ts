@@ -8,6 +8,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import type { AuthorRef, RoomWithRoster } from '@dorkos/shared/room-schemas';
+import { HANDLE_PATTERN } from '@dorkos/shared/handle';
 import type { RoomAgent, RoomAgentLookup } from '../room-errors.js';
 import { createRoomHarness, scriptedRunner, type RoomHarness } from './room-test-harness.js';
 
@@ -70,28 +71,58 @@ describe('the roster tells a picker what to insert', () => {
     const harness = createRoomHarness({ agents: lookup });
     const room = channelWith(harness, 'general', ['/agents/mio']);
 
-    expect(memberNamed(room, 'Mio Clicker PM').mentionHandle).toBe('mio-clicker-pm');
+    expect(memberNamed(room, 'Mio Clicker PM').handle).toBe('mio-clicker-pm');
   });
 
-  it('carries no handle at all for an agent no string can address', () => {
-    // `agents.name` is not always a slug — 7 of the 40 agents on the install
-    // this was written against have a space in theirs. There is no string to
-    // offer, and inventing one would invite a message that reaches nobody.
+  it('gives an agent whose NAME has a space a handle anyway — the whole point', () => {
+    // `agents.name` is `z.string().min(1)`, and 7 of the 40 agents on the
+    // install this was written against have a space in theirs. Before handles,
+    // there was no string that reached them at all and the roster said so
+    // honestly. Now derivation gives them one that the grammar guarantees is
+    // typeable.
     const { lookup } = mutableLookup({
       '/agents/ab': { name: 'Art Blocks Analytics', displayName: 'Art Blocks Analytics' },
     });
     const harness = createRoomHarness({ agents: lookup });
     const room = channelWith(harness, 'general', ['/agents/ab']);
+    const ab = memberNamed(room, 'Art Blocks Analytics');
 
-    expect(memberNamed(room, 'Art Blocks Analytics').mentionHandle).toBeUndefined();
+    expect(ab.handle).toBe('art-blocks-analytics');
+    expect(HANDLE_PATTERN.test(ab.handle!)).toBe(true);
+    // And it reaches them, which is the part a slug on its own would not prove.
+    const entry = harness.service.post(room.id, {
+      authorId: harness.human,
+      text: `@${ab.handle} can you look`,
+    });
+    expect(entry.mentions).toEqual([ab.id]);
   });
 
-  it('carries a handle for the person reading, too', () => {
+  it('leaves the person reading with no handle until they are asked for one', () => {
+    // `'You'` is a placeholder, not a name, and deriving `@you` from it would
+    // ship the exact defect this feature removes — as a PERMANENT default, on an
+    // install that may never run an account onboarding at all. Absence is never
+    // consent: the honest answer is null, and the cockpit asks.
     const { lookup } = mutableLookup({ '/agents/ana': { name: 'ana' } });
     const harness = createRoomHarness({ agents: lookup });
     const room = channelWith(harness, 'general', ['/agents/ana']);
 
-    expect(memberNamed(room, 'You').mentionHandle).toBe('You');
+    expect(memberNamed(room, 'You').handle).toBeNull();
+  });
+
+  it('gives the person a handle once they choose one, and it reaches them', () => {
+    const { lookup } = mutableLookup({ '/agents/ana': { name: 'ana' } });
+    const harness = createRoomHarness({ agents: lookup });
+    const room = channelWith(harness, 'general', ['/agents/ana']);
+
+    harness.authors.setHandle(harness.human, 'dorian');
+
+    const asked = harness.service.getRoom(room.id, harness.human)!;
+    expect(memberNamed(asked, 'You').handle).toBe('dorian');
+    const entry = harness.service.post(room.id, {
+      authorId: harness.human,
+      text: 'cc @dorian',
+    });
+    expect(entry.mentions).toEqual([harness.human]);
   });
 });
 
@@ -108,28 +139,35 @@ describe('what the picker inserts is what the server resolves', () => {
     // does, and check it lands on that exact author — not on "somebody".
     const entry = harness.service.post(room.id, {
       authorId: harness.human,
-      text: `@${mio.mentionHandle} can you look`,
+      text: `@${mio.handle} can you look`,
     });
 
     expect(entry.mentions).toEqual([mio.id]);
   });
 
-  it('leaves the display name unresolved, which is the defect the handle removes', () => {
+  it('stops resolving the display name, which is the second addressing path being deleted', () => {
     const { lookup } = mutableLookup({
-      '/agents/mio': { name: 'mio-clicker-pm', displayName: 'Mio Clicker PM' },
+      '/agents/ana': { name: 'ana', displayName: 'Reyes' },
     });
     const harness = createRoomHarness({ agents: lookup });
-    const room = channelWith(harness, 'general', ['/agents/mio']);
+    const room = channelWith(harness, 'general', ['/agents/ana']);
 
-    const entry = harness.service.post(room.id, {
+    // `Reyes` is a perfectly typeable display name and used to be an address.
+    // It is not one any more: a display name is unrestricted text, and keeping
+    // it addressable would keep a second mechanism whose only distinguishing
+    // property is being worse — non-unique, sometimes untypeable, resolving by
+    // roster order.
+    const byDisplayName = harness.service.post(room.id, {
       authorId: harness.human,
-      text: '@Mio Clicker PM can you look',
+      text: '@Reyes can you look',
     });
+    expect(byDisplayName.mentions).toEqual([]);
 
-    // Nobody addressed, and — this is the part that makes it a silent failure —
-    // no error either. The words are stored exactly as typed.
-    expect(entry.mentions).toEqual([]);
-    expect(entry.body.text).toBe('@Mio Clicker PM can you look');
+    const byHandle = harness.service.post(room.id, {
+      authorId: harness.human,
+      text: '@ana can you look',
+    });
+    expect(byHandle.mentions).toEqual([memberNamed(room, 'Reyes').id]);
   });
 
   it('leaves an unresolvable @name as plain text rather than failing the post', () => {
@@ -148,78 +186,59 @@ describe('what the picker inserts is what the server resolves', () => {
   });
 });
 
-describe('a handle is only advertised to the member it reaches', () => {
+describe('two agents cannot be handed the same handle', () => {
   /**
-   * Two agents whose own handles are unusable — a space in each, which is the
-   * shape 7 of the 40 agents on the install this was written against already
-   * have — and whose display names are identical.
+   * Two agents in different directories with the SAME `agents.name` — the shape
+   * that used to be a collision and is now a de-collision.
    *
-   * So the only name either could be offered is `Shared`, and `resolveMentions`
-   * gives it to exactly one of them. Deriving each member's handle in isolation
-   * sees only that member's own names, finds `Shared` typeable for BOTH, and
-   * advertises it twice; one of those two then addresses the other agent. The
-   * wrong agent answers and the intended one stays silent, which from inside
-   * the room is indistinguishable from a broken agent.
-   *
-   * Symmetrical on purpose. Memberships are ordered `(joinedAt, authorId)` and
-   * a seeded roster ties on `joinedAt`, so which agent wins is decided by a
-   * ULID and differs run to run — with an asymmetric fixture the defect hides
-   * on roughly half of them. Here it does not matter which one wins: whoever
-   * loses must be offered nothing.
+   * This is where Buzz fails: it has a case-folded unique handle column, its
+   * mention path never reads it, and it ships a test asserting `@alice` notifies
+   * every Alice. The unique index is what makes that impossible here, and the
+   * counter suffix is what makes the loser still addressable.
    */
-  const collidingAgents = {
-    '/agents/one': { name: 'One Space Name', displayName: 'Shared' },
-    '/agents/two': { name: 'Two Space Name', displayName: 'Shared' },
+  const twins = {
+    '/agents/one': { name: 'api-server', displayName: 'API Server (one)' },
+    '/agents/two': { name: 'api-server', displayName: 'API Server (two)' },
   };
 
-  /** Open the contested channel and hand back its two agent rows. */
-  function contestedRoom() {
-    const { lookup } = mutableLookup(collidingAgents);
+  it('suffixes the second with a decimal counter', () => {
+    const { lookup } = mutableLookup(twins);
     const harness = createRoomHarness({ agents: lookup });
     const room = channelWith(harness, 'general', ['/agents/one', '/agents/two']);
-    return { harness, room, agents: room.members.filter((m) => m.author.kind === 'agent') };
-  }
 
-  it('offers a contested name to exactly one of the members claiming it', () => {
-    const { agents } = contestedRoom();
-    expect(agents).toHaveLength(2);
-
-    const offered = agents.filter((m) => m.author.mentionHandle !== undefined);
-    // One, never two — and never zero, which would be a picker that had quietly
-    // stopped offering anybody.
-    expect(offered).toHaveLength(1);
-    expect(offered[0]!.author.mentionHandle).toBe('Shared');
+    const handles = room.members
+      .filter((m) => m.author.kind === 'agent')
+      .map((m) => m.author.handle);
+    expect(handles).toHaveLength(2);
+    expect(new Set(handles).size).toBe(2);
+    expect(handles.sort()).toEqual(['api-server', 'api-server-2']);
   });
 
   it('never advertises a handle that posts to somebody else', () => {
-    const { harness, room } = contestedRoom();
+    const { lookup } = mutableLookup(twins);
+    const harness = createRoomHarness({ agents: lookup });
+    const room = channelWith(harness, 'general', ['/agents/one', '/agents/two']);
 
     // The invariant, driven through the real write path: take every handle the
     // server advertised, post it, and check it landed on the member it was
     // advertised FOR — not merely on somebody.
-    const advertised = room.members.filter((m) => m.author.mentionHandle !== undefined);
-    for (const member of advertised) {
+    const addressable = room.members.filter((m) => m.author.handle !== null);
+    for (const member of addressable) {
       const entry = harness.service.post(room.id, {
         authorId: harness.human,
-        text: `@${member.author.mentionHandle} hi`,
+        text: `@${member.author.handle} hi`,
       });
       expect(entry.mentions).toEqual([member.author.id]);
     }
 
-    // The reader plus exactly one agent. A roster that offered nothing would
-    // satisfy the loop above without testing anything.
-    expect(advertised).toHaveLength(2);
-    // And no two members were handed the same string to begin with.
-    expect(new Set(advertised.map((m) => m.author.mentionHandle)).size).toBe(2);
+    // Both agents. The reader has no handle yet, so they are not in this set —
+    // and a roster that offered nothing would satisfy the loop vacuously.
+    expect(addressable).toHaveLength(2);
   });
 });
 
 describe('resolution happens once, at write time', () => {
   it('does not re-address a message already sent when the agent is renamed', () => {
-    // Her display name has a space in it, so the handle is the ONLY string that
-    // can address her — which is what makes renaming it observable. With a
-    // one-word display name the author row goes on claiming `@ana` after the
-    // rename, because that row is a render cache refreshed only on re-join.
     const { lookup, rename } = mutableLookup({
       '/agents/ana': { name: 'ana', displayName: 'Ana Reyes' },
     });
@@ -238,20 +257,18 @@ describe('resolution happens once, at write time', () => {
     rename('/agents/ana', 'ana-the-second');
 
     // The message sent today still addresses exactly who it addressed today.
-    // This is the guarantee an edit would otherwise be able to break: because
-    // the resolved ids were stored rather than re-derived, there is no read
-    // path that could re-run resolution over old text and summon somebody.
     const [reread] = harness.service.listEntries(room.id, harness.human, { limit: 10 });
     expect(reread!.id).toBe(sentToday.id);
     expect(reread!.mentions).toEqual([ana.id]);
     expect(reread!.body.text).toBe('@ana please look');
   });
 
-  it('resolves the same sentence differently after a rename, proving the read is not re-run', () => {
-    // Her display name has a space in it, so the handle is the ONLY string that
-    // can address her — which is what makes renaming it observable. With a
-    // one-word display name the author row goes on claiming `@ana` after the
-    // rename, because that row is a render cache refreshed only on re-join.
+  it('keeps the handle a manifest rename would otherwise overwrite (D12)', () => {
+    // **The regression that would silently undo the feature.** `agents` is a
+    // derived cache the mesh reconciler rebuilds from disk every five minutes,
+    // so a handle re-derived on each resolve would follow the manifest —
+    // including back into a name with a space in it. The handle is written once,
+    // at mint, and a rename moves the display name and nothing else.
     const { lookup, rename } = mutableLookup({
       '/agents/ana': { name: 'ana', displayName: 'Ana Reyes' },
     });
@@ -259,23 +276,20 @@ describe('resolution happens once, at write time', () => {
     const room = channelWith(harness, 'general', ['/agents/ana']);
     const ana = memberNamed(room, 'Ana Reyes');
 
-    const before = harness.service.post(room.id, { authorId: harness.human, text: '@ana hi' });
-    rename('/agents/ana', 'ana-the-second');
-    const after = harness.service.post(room.id, { authorId: harness.human, text: '@ana hi' });
+    rename('/agents/ana', 'Ana The Second');
+    // Re-resolving is what the roster read below runs through, and it is the
+    // path that used to refresh every cached field on the row.
+    harness.authors.resolveAgent('/agents/ana', 'Ana The Second');
 
-    // Identical words, two different outcomes — which is only possible because
-    // resolution ran at each WRITE. If the client re-parsed text on read, both
-    // would show the same thing and this pair could not come apart.
-    expect(before.mentions).toEqual([ana.id]);
-    expect(after.mentions).toEqual([]);
+    const after = harness.service.getRoom(room.id, harness.human)!;
+    const anaAfter = after.members.find((m) => m.author.id === ana.id)!.author;
+    expect(anaAfter.handle).toBe('ana');
+    expect(anaAfter.displayName).toBe('Ana The Second');
 
-    // And the new handle works from the roster, exactly as the picker would
-    // read it now.
-    const renamed = harness.service.getRoom(room.id, harness.human)!;
-    expect(memberNamed(renamed, 'Ana Reyes').mentionHandle).toBe('ana-the-second');
+    // And the address still works, which is the user-visible half.
     const addressed = harness.service.post(room.id, {
       authorId: harness.human,
-      text: '@ana-the-second hi',
+      text: '@ana hi',
     });
     expect(addressed.mentions).toEqual([ana.id]);
   });

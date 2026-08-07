@@ -250,23 +250,39 @@ describe('agentAuthorRef', () => {
 });
 
 describe('AuthorRefSchema', () => {
-  it('renders an agent with its emoji, colour and handle', () => {
+  it('renders an agent with its emoji, colour and address', () => {
     const parsed = AuthorRefSchema.parse({
       id: '01JZAUTHOR',
       kind: 'agent',
       displayName: 'Ana',
+      handle: 'ana',
       emoji: '🐙',
       color: '#6366f1',
       agentRef: agentAuthorRef('/agents/ana'),
     });
     expect(parsed.emoji).toBe('🐙');
+    expect(parsed.handle).toBe('ana');
     expect(parsed.agentRef).toBe(agentAuthorRef('/agents/ana'));
   });
 
-  it('leaves every presentation field optional, so a bare author still parses', () => {
-    const parsed = AuthorRefSchema.parse({ id: '01JZ', kind: 'human', displayName: 'You' });
+  it('leaves every PRESENTATION field optional, so a bare author still parses', () => {
+    const parsed = AuthorRefSchema.parse({
+      id: '01JZ',
+      kind: 'human',
+      displayName: 'You',
+      handle: null,
+    });
     expect(parsed.emoji).toBeUndefined();
     expect(parsed.agentRef).toBeUndefined();
+  });
+
+  it('requires an explicit handle, because absent and null must not mean the same thing', () => {
+    // `null` says 'this author cannot be addressed', which is a real state a
+    // reader has to render. A field that could simply be missing would let a
+    // producer forget it and a consumer read the omission as the same answer.
+    expect(() =>
+      AuthorRefSchema.parse({ id: '01JZ', kind: 'human', displayName: 'You' })
+    ).toThrow();
   });
 });
 

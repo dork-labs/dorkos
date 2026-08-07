@@ -51,6 +51,13 @@ test.beforeEach(async ({ request }) => {
   // The agent is created at <boundary>/tmp/dorkos-e2e-agent — the server derives it from the
   // resolved directory boundary, so it is in-bounds whatever DORKOS_BOUNDARY is set to.
   const seedRes = await request.post(`${API_URL}/api/test/seed-agent`);
+  // The seed route refuses when the runtime its manifest declares is registered
+  // here — that would bind every seeded session to it instead of the server
+  // default (DOR-991). Read the refusal out loud; without this the suite fails
+  // later with an undefined agentDir and no hint why.
+  if (!seedRes.ok()) {
+    throw new Error(`seed-agent failed (${seedRes.status()}): ${await seedRes.text()}`);
+  }
   ({ agentDir } = (await seedRes.json()) as { agentDir: string });
 });
 
@@ -329,7 +336,10 @@ test.describe('Runtime UX — multi-runtime test server', () => {
     await expect(statusLine.getByRole('button', { name: 'test-mode-b' })).toHaveCount(0);
   });
 
-  test('session-list rows carry runtime marks naming their owning runtime', async ({ page }) => {
+  test('session-list rows carry runtime marks naming their owning runtime', async ({
+    page,
+    request,
+  }) => {
     // Session on the default runtime.
     const chatPage = new ChatPage(page);
     await chatPage.goto(undefined, { dir: agentDir });
@@ -337,6 +347,17 @@ test.describe('Runtime UX — multi-runtime test server', () => {
     await expect(page.getByText('Echo: Default runtime session')).toBeVisible({
       timeout: 10_000,
     });
+
+    // Assert the BINDING before the mark, so a session that lands on the wrong
+    // runtime says so here instead of surfacing as "0 rows matched" five
+    // seconds later. This is the check that names the DOR-991 cause: the
+    // seeded agent's manifest runtime silently became a registered one, and
+    // every "default runtime" session moved onto it.
+    const defaultSessionId = await chatPage.getSessionId();
+    expect(defaultSessionId).toBeTruthy();
+    const boundTo = await request.get(`${API_URL}/api/sessions/${defaultSessionId}/runtime-type`);
+    expect(boundTo.ok()).toBe(true);
+    expect(await boundTo.json()).toEqual({ runtime: 'test-mode' });
 
     // Second session on the secondary runtime. The id is minted explicitly —
     // without it the loader auto-selects the existing session instead of

@@ -85,6 +85,7 @@ import {
 } from '@dorkos/shared/mesh-schemas';
 import {
   AddRoomMemberRequestSchema,
+  AuthorRefSchema,
   CreateRoomRequestSchema,
   ListRoomEntriesQuerySchema,
   ListRoomsQuerySchema,
@@ -101,6 +102,7 @@ import {
   RoomRosterEntrySchema,
   RoomSnapshotSchema,
   RoomWithRosterSchema,
+  SetAuthorHandleRequestSchema,
   SetReadCursorRequestSchema,
   ToggleReactionRequestSchema,
   ToggleReactionResponseSchema,
@@ -3386,6 +3388,42 @@ registry.registerPath({
     403: roomOperatorOnly,
     404: {
       description: 'No such room, or not a member of it',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/rooms/authors/{authorId}/handle',
+  tags: ['Rooms'],
+  summary: "Set or clear an author's handle",
+  description:
+    'A handle is what somebody types after an `@` to reach exactly one author: lowercase, 2–32 characters of `[a-z0-9._-]`, starting and ending alphanumeric, and unique across this install (case-folded). The server normalizes what it is given, so a client that skipped its own check cannot store something the grammar forbids, and an empty string clears the handle. **Human-initiated only** — an agent presenting `X-DorkOS-Agent` is refused. There is no MCP tool and no capability for this: an agent able to rename itself in a loop would grow the tombstone table a row at a time forever, and removing the mechanism beats throttling it. A released handle stays reserved to the author who gave it up; they may take it back, and nobody else may take it at all.',
+  request: {
+    params: z.object({ authorId: z.string().min(1) }),
+    body: { content: { 'application/json': { schema: SetAuthorHandleRequestSchema } } },
+  },
+  responses: {
+    200: {
+      description: 'The author, with its handle as stored',
+      content: { 'application/json': { schema: AuthorRefSchema } },
+    },
+    400: {
+      description: 'The handle fails the grammar (`INVALID_HANDLE`), or the body is malformed',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description: 'An agent caller tried to change a handle (`OPERATOR_ONLY`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'No author carries that id (`MEMBER_NOT_FOUND`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description:
+        'The handle is live on another author (`HANDLE_TAKEN`), or reserved to one — a handle they released, or one of the seeded broadcast words `everyone`/`here`/`channel` (`HANDLE_RESERVED`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

@@ -188,7 +188,9 @@ const dmWithAna = makeRoom({
   kind: 'dm',
   slug: null,
   title: 'Ana',
-  participants: [{ id: 'author-ana', kind: 'agent', displayName: 'Ana', agentRef: 'ana' }],
+  participants: [
+    { id: 'author-ana', kind: 'agent', displayName: 'Ana', handle: null, agentRef: 'ana' },
+  ],
 });
 
 /** Spoke most recently, and the reader is caught up on it. */

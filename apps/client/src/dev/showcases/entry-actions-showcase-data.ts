@@ -36,7 +36,7 @@ export const BENCH_VIEWER: MessageAuthor = {
 };
 
 /**
- * The agent as the roster holds them — the shape that carries `mentionHandle`
+ * The agent as the roster holds them — the shape that carries `handle`
  * and `origin`. `'local'`: this bench seeds nobody bridged in from another
  * platform.
  */
@@ -45,7 +45,7 @@ export const BENCH_AGENT_REF: AuthorRef & { origin: 'local' } = {
   kind: 'agent',
   displayName: BENCH_AGENT.displayName,
   color: BENCH_AGENT.color,
-  mentionHandle: 'ana',
+  handle: 'ana',
   origin: 'local',
 };
 
@@ -54,7 +54,7 @@ export const BENCH_VIEWER_REF: AuthorRef & { origin: 'local' } = {
   id: BENCH_VIEWER_ID,
   kind: 'human',
   displayName: BENCH_VIEWER.displayName,
-  mentionHandle: 'you',
+  handle: 'you',
   origin: 'local',
 };
 

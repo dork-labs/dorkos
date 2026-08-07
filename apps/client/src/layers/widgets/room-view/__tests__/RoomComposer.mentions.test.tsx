@@ -66,17 +66,17 @@ function member(author: AuthorRef): RoomRosterEntry {
  * person, two agents, the room's own voice, and an agent nothing can address.
  */
 const MEMBERS: RoomRosterEntry[] = [
-  member({ id: 'you', kind: 'human', displayName: 'You', mentionHandle: 'You' }),
-  member({ id: 'priya', kind: 'human', displayName: 'Priya', mentionHandle: 'priya' }),
-  member({ id: 'ana', kind: 'agent', displayName: 'Ana Reyes', mentionHandle: 'ana' }),
+  member({ id: 'you', kind: 'human', displayName: 'You', handle: 'You' }),
+  member({ id: 'priya', kind: 'human', displayName: 'Priya', handle: 'priya' }),
+  member({ id: 'ana', kind: 'agent', displayName: 'Ana Reyes', handle: 'ana' }),
   member({
     id: 'mio',
     kind: 'agent',
     displayName: 'Mio Clicker PM',
-    mentionHandle: 'mio-clicker-pm',
+    handle: 'mio-clicker-pm',
   }),
-  member({ id: 'sys', kind: 'system', displayName: 'DorkOS' }),
-  member({ id: 'ab', kind: 'agent', displayName: 'Art Blocks Analytics' }),
+  member({ id: 'sys', kind: 'system', displayName: 'DorkOS', handle: null }),
+  member({ id: 'ab', kind: 'agent', displayName: 'Art Blocks Analytics', handle: null }),
 ];
 
 function roomWith(overrides: Partial<RoomWithRoster> = {}): RoomWithRoster {

@@ -76,14 +76,14 @@ afterEach(() => {
 
 /** The room's roster — resolved mentions draw their identity from here, and nowhere else. */
 const AUTHORS = new Map<string, RosterAuthor>([
-  ['ana', { id: 'ana', kind: 'human', displayName: 'Ana', mentionHandle: 'ana', origin: 'local' }],
+  ['ana', { id: 'ana', kind: 'human', displayName: 'Ana', handle: 'ana', origin: 'local' }],
   [
     'bo',
     {
       id: 'bo',
       kind: 'agent',
       displayName: 'Bo',
-      mentionHandle: 'bo',
+      handle: 'bo',
       color: '#7c9cf5',
       origin: 'local',
     },

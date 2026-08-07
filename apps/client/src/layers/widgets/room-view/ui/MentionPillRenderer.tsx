@@ -77,7 +77,7 @@ export function MentionPillRenderer({ authors, authorId, children }: MentionPill
       identity={{
         kind: author.kind,
         displayName: author.displayName,
-        handle: author.mentionHandle,
+        handle: author.handle ?? undefined,
         color: author.color,
         emoji: author.emoji,
         origin: author.origin,
@@ -90,7 +90,7 @@ export function MentionPillRenderer({ authors, authorId, children }: MentionPill
       <MentionPill
         kind={author.kind}
         label={author.displayName}
-        handle={author.mentionHandle}
+        handle={author.handle ?? undefined}
         color={author.color}
         origin={author.origin}
         resolved

@@ -120,6 +120,9 @@ export function toCommunityMember(
     memberId: member.authorId,
     kind: member.author.kind,
     displayName: member.author.displayName,
+    // The roster's own answer, which already accounts for a member whose agent
+    // is gone: it carries a handle on its row and no longer answers to it.
+    handle: member.author.handle,
     ...(member.author.emoji ? { emoji: member.author.emoji } : {}),
     ...(member.author.color ? { color: member.author.color } : {}),
     role: null,

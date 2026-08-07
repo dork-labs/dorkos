@@ -15,6 +15,7 @@ import { configManager } from '../core/config-manager.js';
 import { readOwnerAccount } from '../core/auth/index.js';
 import { BridgeStore } from '../relay/chat-bridge/bridge-store.js';
 import { AuthorRegistry } from './author-registry.js';
+import { ensureHandles } from './handles/ensure-handles.js';
 import type { EngagedWindow } from './engagement.js';
 import { ReactionStore } from './reaction-store.js';
 import type { RoomAgentLookup } from './room-errors.js';
@@ -174,7 +175,8 @@ export function createRoomSubsystem(opts: {
 }): RoomSubsystem {
   const store = new RoomStore(opts.db);
   const reactions = new ReactionStore(opts.db);
-  const authors = new AuthorRegistry(opts.db);
+  const agentLookup = opts.agents ?? createAgentLookup(opts.db);
+  const authors = new AuthorRegistry(opts.db, agentLookup);
   const broadcaster = new RoomBroadcaster();
   const bridges = new BridgeStore(opts.db);
   const service = new RoomService({
@@ -183,7 +185,7 @@ export function createRoomSubsystem(opts: {
     authors,
     broadcaster,
     bridges,
-    agents: opts.agents ?? createAgentLookup(opts.db),
+    agents: agentLookup,
     turns:
       opts.turns ??
       createSessionRoomTurnRunner({
@@ -203,6 +205,15 @@ export function createRoomSubsystem(opts: {
     // unbound `'local'` author is still the operator.
     isOwnerAuthor: (authorId) => authors.isOwner(authorId, readOwnerAccount()?.id ?? null),
   });
+  // **Here, not at a boot-time hook, and the difference is the ordering bug the
+  // reservation exists to prevent.** `dorkos` has to be held before ANY author
+  // can be minted — an agent whose manifest name is `DorkOS` that joins a room
+  // first would otherwise take it and leave the room's own voice as `dorkos-2`.
+  // Wiring it into the subsystem's own construction makes that structural: the
+  // registry cannot exist without the reservations existing, on every install
+  // path there is, including the embedded one. The backfill rides along because
+  // it wants the same guarantee — the reservations are taken before it derives.
+  ensureHandles(opts.db, authors);
   return { service, store, authors, broadcaster, bridges };
 }
 
@@ -262,6 +273,6 @@ export function getRoomAuthors(): AuthorRegistry {
 // re-export for every symbol the domain happens to have.
 export { RoomService } from './room-service.js';
 export { RoomError, type RoomErrorCode, type RoomAgentLookup } from './room-errors.js';
-export type { AuthorRecord } from './author-registry.js';
+export { toAuthorRef, type AuthorRecord } from './author-registry.js';
 export type { RoomTurnRunner } from './room-trigger.js';
 export { RoomTurnBudget } from './turn-budget.js';

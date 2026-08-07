@@ -22,14 +22,14 @@ function author(over: Partial<AuthorRef> & { id: string }): { author: AuthorRef 
   };
 }
 
-const YOU = author({ id: 'you', kind: 'human', displayName: 'You', mentionHandle: 'You' });
-const PRIYA = author({ id: 'priya', kind: 'human', displayName: 'Priya', mentionHandle: 'priya' });
-const ANA = author({ id: 'ana', kind: 'agent', displayName: 'Ana Reyes', mentionHandle: 'ana' });
+const YOU = author({ id: 'you', kind: 'human', displayName: 'You', handle: 'You' });
+const PRIYA = author({ id: 'priya', kind: 'human', displayName: 'Priya', handle: 'priya' });
+const ANA = author({ id: 'ana', kind: 'agent', displayName: 'Ana Reyes', handle: 'ana' });
 const MIO = author({
   id: 'mio',
   kind: 'agent',
   displayName: 'Mio Clicker PM',
-  mentionHandle: 'mio-clicker-pm',
+  handle: 'mio-clicker-pm',
 });
 const SYSTEM = author({ id: 'sys', kind: 'system', displayName: 'DorkOS' });
 
@@ -74,7 +74,7 @@ describe('buildMentionRows', () => {
     // is not on the wire — so the server resolves ownership and withholds the
     // handle from the loser. A client re-deriving the rule from what it can see
     // would hand the second row `@Ana` and post to the first.
-    const first = author({ id: 'a1', kind: 'agent', displayName: 'Ana', mentionHandle: 'ana-pm' });
+    const first = author({ id: 'a1', kind: 'agent', displayName: 'Ana', handle: 'ana-pm' });
     const second = author({ id: 'a2', kind: 'agent', displayName: 'Ana' });
     const rows = buildMentionRows([first, second], 'you');
 
@@ -111,12 +111,12 @@ describe('filterMentionRows', () => {
   });
 
   it('ranks an exact handle above one that merely contains the query', () => {
-    const ana = author({ id: 'ana', kind: 'agent', displayName: 'Ana', mentionHandle: 'ana' });
+    const ana = author({ id: 'ana', kind: 'agent', displayName: 'Ana', handle: 'ana' });
     const banana = author({
       id: 'banana',
       kind: 'agent',
       displayName: 'Banana',
-      mentionHandle: 'banana',
+      handle: 'banana',
     });
     // Seeded in the order that would come out wrong if ranking did nothing.
     const rows = filterMentionRows(

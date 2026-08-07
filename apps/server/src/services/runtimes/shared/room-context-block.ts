@@ -200,7 +200,7 @@ function discriminator(value: string): string {
  * The handle to print for an author, or `null` when printing one would lie.
  *
  * The server has already refused to supply a handle that `resolveMentions`
- * would not return for this author (`rooms/author-handles.ts`). What is left is
+ * would not return for this author (`rooms/handles/author-handles.ts`). What is left is
  * the two ways this file could break that on its own, and this function covers
  * one of them: {@link label} caps at 80 characters and collapses whitespace, so
  * a handle longer than the cap would be printed truncated — a string that
@@ -450,10 +450,11 @@ function acknowledgmentLine(ack: RoomContextAcknowledgment): string {
  * BEFORE shaving any trailing punctuation. With a member called `ana.` on the
  * roster, the sentence telling an agent who it is addressed somebody else, and
  * every reader who copied the name out of it reached that somebody else too.
- * `advertisedHandle` now refuses to offer such a name, and this line no longer
- * puts a handle next to punctuation the grammar would swallow — two independent
- * guards, because the failure was silent from both sides. Every other rendered
- * handle is already followed by a space or a bracket.
+ * A member cannot be called `ana.` any more — the handle grammar requires a
+ * handle to start AND end alphanumeric — and this line no longer puts a handle
+ * next to punctuation the grammar would swallow. Two independent guards, because
+ * the failure was silent from both sides. Every other rendered handle is already
+ * followed by a space or a bracket.
  *
  * `here` rather than `in this room`, and that is not a synonym: the line above
  * this one says whether the conversation is a channel or a direct message, and
