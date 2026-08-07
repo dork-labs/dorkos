@@ -17,6 +17,7 @@ import {
   type CachedToken,
   type TimerScheduler,
 } from '../agent-mcp-access-token-cache.js';
+import type { RefreshVerdict } from '../agent-mcp-token-refresher.js';
 
 const AGENT = 'agent-1';
 const SERVER = 'granola';
@@ -43,6 +44,13 @@ function makeCapturingScheduler(): { scheduler: TimerScheduler; captured: { dela
 /** The URL every token in this suite is minted for, unless a case varies it. */
 const URL_A = 'https://mcp.example/mcp';
 
+/**
+ * A refresh that produced no token. `transient` rather than `terminal` because
+ * these tests are about the CACHE, which evicts either way — the distinction only
+ * decides what a caller may do with the STORED credential (DOR-981).
+ */
+const FAILED_REFRESH: RefreshVerdict = { token: null, kind: 'transient' };
+
 /** Build a cached token with an absolute expiry (refresh scheduling off unless asked). */
 function cached(
   accessToken: string,
@@ -58,7 +66,7 @@ describe('McpAccessTokenCache', () => {
     const clock = makeClock(0);
     const cache = new McpAccessTokenCache({ now: clock.now });
 
-    cache.store(AGENT, SERVER, cached('token-A', 3_600_000), async () => null);
+    cache.store(AGENT, SERVER, cached('token-A', 3_600_000), async () => FAILED_REFRESH);
 
     // Reverting `getAccessToken` to always return undefined reddens this — the
     // injection path would then never see a token.
@@ -72,7 +80,7 @@ describe('McpAccessTokenCache', () => {
     const clock = makeClock(0);
     const cache = new McpAccessTokenCache({ now: clock.now });
 
-    cache.store(AGENT, SERVER, cached('token-A', 100_000), async () => null);
+    cache.store(AGENT, SERVER, cached('token-A', 100_000), async () => FAILED_REFRESH);
     clock.set(100_001); // one ms past the absolute expiry
 
     // Reverting the `now() < expiresAt` guard to always-return-the-token reddens
@@ -85,7 +93,7 @@ describe('McpAccessTokenCache', () => {
     const { scheduler, captured } = makeCapturingScheduler();
     const cache = new McpAccessTokenCache({ now: clock.now, scheduler });
 
-    cache.store(AGENT, SERVER, cached('token-A', 100_000, true), async () => null);
+    cache.store(AGENT, SERVER, cached('token-A', 100_000, true), async () => FAILED_REFRESH);
 
     // Absolute expiry 100_000, refreshed 60_000 early → a 40_000 delay. Reverting
     // the REFRESH_SKEW subtraction makes this 100_000 and reddens the assertion.
@@ -97,7 +105,10 @@ describe('McpAccessTokenCache', () => {
     const cache = new McpAccessTokenCache({ now: clock.now });
 
     // The refresh returns token-B, which lives well past token-A's expiry.
-    const refresh = async (): Promise<CachedToken> => cached('token-B', 140_000);
+    const refresh = async (): Promise<RefreshVerdict> => ({
+      token: cached('token-B', 140_000),
+      kind: 'ok',
+    });
     cache.store(AGENT, SERVER, cached('token-A', 100_000), refresh);
     expect(cache.getAccessToken(AGENT, SERVER, URL_A)).toBe('token-A');
 
@@ -117,7 +128,7 @@ describe('McpAccessTokenCache', () => {
     const clock = makeClock(0);
     const cache = new McpAccessTokenCache({ now: clock.now });
 
-    cache.store(AGENT, SERVER, cached('token-A', 100_000), async () => null);
+    cache.store(AGENT, SERVER, cached('token-A', 100_000), async () => FAILED_REFRESH);
     clock.set(40_000);
     const replaced = await cache.refreshNow(AGENT, SERVER);
 
@@ -133,7 +144,7 @@ describe('McpAccessTokenCache — URL binding (DOR-986)', () => {
 
   it('withholds a token when the caller asks for a different server URL', () => {
     const cache = new McpAccessTokenCache({ now: () => 0 });
-    cache.store(AGENT, SERVER, cached('token-A', 100_000), async () => null);
+    cache.store(AGENT, SERVER, cached('token-A', 100_000), async () => FAILED_REFRESH);
 
     // Same (agentId, serverName) — the old key — but the row now points elsewhere.
     // Dropping the `entry.serverUrl !== serverUrl` guard hands the old server's
@@ -141,14 +152,14 @@ describe('McpAccessTokenCache — URL binding (DOR-986)', () => {
     expect(cache.getAccessToken(AGENT, SERVER, URL_B)).toBeUndefined();
     // And it discriminates: the URL it WAS minted for still resolves...
     const fresh = new McpAccessTokenCache({ now: () => 0 });
-    fresh.store(AGENT, SERVER, cached('token-A', 100_000), async () => null);
+    fresh.store(AGENT, SERVER, cached('token-A', 100_000), async () => FAILED_REFRESH);
     expect(fresh.getAccessToken(AGENT, SERVER, URL_A)).toBe('token-A');
   });
 
   it('evicts on a URL mismatch, so the stale token stops being refreshed too', () => {
     const { scheduler, captured } = makeCapturingScheduler();
     const cache = new McpAccessTokenCache({ now: () => 0, scheduler });
-    cache.store(AGENT, SERVER, cached('token-A', 100_000, true), async () => null);
+    cache.store(AGENT, SERVER, cached('token-A', 100_000, true), async () => FAILED_REFRESH);
     expect(captured).toHaveLength(1);
 
     cache.getAccessToken(AGENT, SERVER, URL_B);
@@ -167,7 +178,7 @@ describe('McpAccessTokenCache — URL binding (DOR-986)', () => {
       refreshable: false,
       serverUrl: undefined,
     };
-    cache.store(AGENT, SERVER, unbound, async () => null);
+    cache.store(AGENT, SERVER, unbound, async () => FAILED_REFRESH);
 
     expect(cache.getAccessToken(AGENT, SERVER, URL_A)).toBeUndefined();
   });
@@ -183,7 +194,12 @@ describe('McpAccessTokenCache — tokens with no declared lifetime (DOR-986)', (
     // `if (expiresAt !== INFINITY && refreshable)` guard schedules nothing and
     // reddens this — the token would then never be refreshed for the whole
     // process lifetime.
-    cache.store(AGENT, SERVER, cached('token-A', Number.POSITIVE_INFINITY, true), async () => null);
+    cache.store(
+      AGENT,
+      SERVER,
+      cached('token-A', Number.POSITIVE_INFINITY, true),
+      async () => FAILED_REFRESH
+    );
 
     expect(captured).toEqual([{ delay: 3_600_000 }]);
   });
@@ -199,7 +215,7 @@ describe('McpAccessTokenCache — tokens with no declared lifetime (DOR-986)', (
       AGENT,
       SERVER,
       cached('token-A', Number.POSITIVE_INFINITY, false),
-      async () => null
+      async () => FAILED_REFRESH
     );
 
     expect(captured).toEqual([]);
@@ -210,9 +226,9 @@ describe('McpAccessTokenCache.evictAgent (DOR-986)', () => {
   it('drops every one of an agent’s tokens and their timers, leaving other agents alone', () => {
     const { scheduler, captured } = makeCapturingScheduler();
     const cache = new McpAccessTokenCache({ now: () => 0, scheduler });
-    cache.store(AGENT, SERVER, cached('a1', 100_000, true), async () => null);
-    cache.store(AGENT, 'other-server', cached('a2', 100_000, true), async () => null);
-    cache.store('agent-2', SERVER, cached('b1', 100_000, true), async () => null);
+    cache.store(AGENT, SERVER, cached('a1', 100_000, true), async () => FAILED_REFRESH);
+    cache.store(AGENT, 'other-server', cached('a2', 100_000, true), async () => FAILED_REFRESH);
+    cache.store('agent-2', SERVER, cached('b1', 100_000, true), async () => FAILED_REFRESH);
     expect(captured).toHaveLength(3);
 
     cache.evictAgent(AGENT);

@@ -545,8 +545,15 @@ export const mcpDomain: CapabilityDomain = {
             // back on its own once the token lands (DOR-1004). Set ONLY on the
             // in-session surface — the external `/mcp` server and HTTP leave it
             // absent by construction (`CapabilityInvocationContext.sessionId`), so
-            // a sessionless sign-in records no session and resumes nothing.
-            context.sessionId ? { originSessionId: context.sessionId } : {}
+            // a sessionless sign-in records no session and resumes nothing. Its
+            // directory rides along so the resume still lands in the right place
+            // after a restart (DOR-981).
+            context.sessionId
+              ? {
+                  originSessionId: context.sessionId,
+                  ...(context.cwd ? { originCwd: context.cwd } : {}),
+                }
+              : {}
           );
         } catch (err) {
           throw new CapabilityToolError({
