@@ -885,3 +885,63 @@ describe('capability approval hold round-trip (DOR-939)', () => {
     }
   });
 });
+
+describe('in-conversation MCP sign-in round-trip (DOR-1004)', () => {
+  // The only code carrying the card's fields across the emitted-StreamEvent
+  // ({type,data:{...}}) -> RawSessionEvent bridge is toMcpSigninRequiredEvent /
+  // toMcpSigninResolvedEvent. A typo there (`data.authorizeUrl` ->
+  // `data.authorizeURL`) would put an empty, un-clickable link on the card while
+  // every other suite stayed green.
+  const CARD = {
+    serverName: 'granola',
+    agentId: '01HV7KJZZZ0000000000000000',
+    flowId: 'flow-1',
+    authorizeUrl: 'https://mcp.test.local/authorize?code_challenge=abc',
+    disclosure: 'DorkOS stores the token on this machine.',
+  };
+
+  it('carries every card field across the normalizer', () => {
+    const raw = toRawSessionEvent({
+      type: 'mcp_signin_required',
+      data: CARD,
+    } as unknown as StreamEvent);
+
+    expect(raw).toEqual({ type: 'mcp_signin_required', ...CARD });
+  });
+
+  it('never blocks the session or pauses the stall watchdog', () => {
+    // A sign-in card is not a hold: the tool call already returned and the turn
+    // is free to end. Treating it as pending would park the session on a person
+    // who may be minutes away in a browser, and steal the lock the whole time.
+    const projector = new SessionStateProjector('s1');
+    projector.ingest({ type: 'turn_start' } as RawSessionEvent);
+    projector.ingest(
+      toRawSessionEvent({
+        type: 'mcp_signin_required',
+        data: CARD,
+      } as unknown as StreamEvent) as RawSessionEvent
+    );
+
+    expect(projector.hasPendingInteractions()).toBe(false);
+    expect(projector.getStatus().lifecycle).toBe('streaming');
+  });
+
+  it('degrades a missing outcome to failed, never to connected', () => {
+    // `connected` RETIRES the card. Guessing it on a malformed event would delete
+    // a live sign-in surface out from under someone mid-flow; `failed` leaves a
+    // visible note instead.
+    expect(
+      toRawSessionEvent({
+        type: 'mcp_signin_resolved',
+        data: { flowId: 'flow-1' },
+      } as unknown as StreamEvent)
+    ).toEqual({ type: 'mcp_signin_resolved', flowId: 'flow-1', outcome: 'failed' });
+
+    expect(
+      toRawSessionEvent({
+        type: 'mcp_signin_resolved',
+        data: { flowId: 'flow-1', outcome: 'connected' },
+      } as unknown as StreamEvent)
+    ).toEqual({ type: 'mcp_signin_resolved', flowId: 'flow-1', outcome: 'connected' });
+  });
+});

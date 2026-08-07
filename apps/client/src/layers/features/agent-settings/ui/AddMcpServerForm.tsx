@@ -15,8 +15,13 @@ import {
   Textarea,
 } from '@/layers/shared/ui';
 import { useAddAgentMcpServer } from '@/layers/entities/agent';
-import type { McpServerTransport } from '@dorkos/shared/mesh-schemas';
-import type { AddAgentMcpServerInput, CapabilityApprovalRequired } from '@dorkos/shared/transport';
+import type { ManagedMcpServer, McpServerTransport } from '@dorkos/shared/mesh-schemas';
+import type {
+  AddAgentMcpServerInput,
+  AgentMcpMutationResult,
+  CapabilityApprovalRequired,
+} from '@dorkos/shared/transport';
+import { AddedServerSignin } from './AddedServerSignin';
 
 /** Every transport kind a managed server can use, across all runtimes. */
 export const TRANSPORTS = ['stdio', 'http', 'sse'] as const;
@@ -62,6 +67,35 @@ interface AddMcpServerFormProps {
    * learns it needs signing in without being asked to press Test (DOR-985).
    */
   onAdded: (server: { name: string; transport: TransportKind }) => void;
+  /**
+   * A just-added server a probe has since discovered needs an OAuth sign-in, or
+   * `null`.
+   *
+   * The second of two ways this form learns to offer a sign-in, and the slower
+   * one. `mcp.add` stamps `authKind` when it can tell at write time; when it
+   * cannot, the unattended probe the roster fires a beat later is what finds
+   * out, and this carries that answer back so the person is still offered the
+   * sign-in where they are standing rather than in a row they have to spot.
+   */
+  oauthDetectedFor?: string | null;
+}
+
+/**
+ * Whether the server just written needs an OAuth sign-in, according to the entry
+ * that came back.
+ *
+ * Read from the returned roster rather than assumed from the transport: only the
+ * server knows, and it stamps `authKind` at add time when the provider's OAuth
+ * discovery answered. A roster that carries no such entry (or no hint) says
+ * nothing, and the form resets exactly as it always did.
+ */
+function addedServerNeedsSignin(result: AgentMcpMutationResult, name: string): boolean {
+  if (result.status !== 'ok') return false;
+  const entry = result.servers.find((server: ManagedMcpServer) => server.name === name);
+  const connection = entry?.connection;
+  // Only the remote transports carry the hint; a stdio server has no notion of
+  // signing in, so the narrowing is the check.
+  return connection !== undefined && 'authKind' in connection && connection.authKind === 'oauth2';
 }
 
 /**
@@ -75,6 +109,7 @@ export function AddMcpServerForm({
   agentLabel,
   supportedTransports,
   onAdded,
+  oauthDetectedFor = null,
 }: AddMcpServerFormProps) {
   const addServer = useAddAgentMcpServer();
   const [open, setOpen] = useState(false);
@@ -94,6 +129,13 @@ export function AddMcpServerForm({
   const [headersText, setHeadersText] = useState('');
   const [pending, setPending] = useState<CapabilityApprovalRequired | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The sign-in step, from two sources and one dismissal (DOR-1004). `signinFor`
+  // is what the add itself revealed; `oauthDetectedFor` is what the roster's
+  // later probe revealed. Both are DERIVED into one answer rather than mirrored
+  // into state by an effect, so there is no beat where the form has been told a
+  // sign-in is needed and is not yet showing it.
+  const [signinFor, setSigninFor] = useState<string | null>(null);
+  const [dismissedSignin, setDismissedSignin] = useState<string | null>(null);
 
   const nameValid = NAME_PATTERN.test(name) && name.length <= 64;
   const connectionValid = kind === 'stdio' ? command.trim().length > 0 : url.trim().length > 0;
@@ -138,17 +180,29 @@ export function AddMcpServerForm({
     [onAdded, reset]
   );
 
+  // Report the write, clear the form, and — when the server that landed needs an
+  // OAuth sign-in — flow straight into it instead of leaving the person to find
+  // the new row and press Sign in (DOR-1004).
+  const settleAdded = useCallback(
+    (result: AgentMcpMutationResult, input: AddAgentMcpServerInput) => {
+      const needsSignin = addedServerNeedsSignin(result, input.name);
+      announceAdded(input);
+      if (needsSignin) setSigninFor(input.name);
+    },
+    [announceAdded]
+  );
+
   const submit = useCallback(async () => {
     setError(null);
     const input = buildInput();
     try {
       const result = await addServer.mutateAsync({ input });
       if (result.status === 'approval_required') setPending(result.approval);
-      else announceAdded(input);
+      else settleAdded(result, input);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not add the server.');
     }
-  }, [addServer, buildInput, announceAdded]);
+  }, [addServer, buildInput, settleAdded]);
 
   const confirm = useCallback(async () => {
     if (!pending) return;
@@ -156,17 +210,30 @@ export function AddMcpServerForm({
     const input = buildInput();
     try {
       const result = await addServer.mutateAsync({ input, approval: pending });
-      if (result.status === 'ok') announceAdded(input);
+      if (result.status === 'ok') settleAdded(result, input);
       else setError('The server still needs approval. Try again.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not add the server.');
     }
-  }, [addServer, buildInput, pending, announceAdded]);
+  }, [addServer, buildInput, pending, settleAdded]);
+
+  const activeSignin =
+    signinFor ??
+    (oauthDetectedFor && oauthDetectedFor !== dismissedSignin ? oauthDetectedFor : null);
+
+  const dismissSignin = useCallback(() => {
+    setDismissedSignin(activeSignin);
+    setSigninFor(null);
+  }, [activeSignin]);
 
   const previewCommand = useMemo(
     () => [command.trim(), ...parseArgs(argsText)].filter(Boolean).join(' '),
     [command, argsText]
   );
+
+  if (activeSignin) {
+    return <AddedServerSignin agentId={agentId} serverName={activeSignin} onDone={dismissSignin} />;
+  }
 
   if (!open) {
     return (

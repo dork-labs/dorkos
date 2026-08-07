@@ -41,7 +41,38 @@ import {
 import {
   awaitCapabilityApproval,
   type CapabilityApprovalHold,
+  type CapabilityHoldSession,
 } from './capability-approval-hold.js';
+import { projectInSessionCard } from './in-session-card.js';
+import type { ApprovalService } from '../approvals/index.js';
+
+/**
+ * What the IN-SESSION MCP surface threads through a tool call that the
+ * sessionless surfaces (external `/mcp`, HTTP) have nothing to offer: the live
+ * conversation itself.
+ *
+ * Two things ride it, and they are independent. A destructive ask HOLDS on
+ * `approvals` and resumes on the person's decision; a capability declaring
+ * `inSessionCard` draws a card on `session` and does not wait for anything.
+ *
+ * `approvals` is optional as a TYPE CONVENIENCE, not because a real surface ships
+ * without it: the in-session adapter only builds this seam when the approval
+ * service is wired, so every production caller supplies it. What optionality buys
+ * is a test (or a future card-only surface) that wants a session without standing
+ * up an approval service, and — the reason it is worth the honesty of saying so —
+ * it keeps card-drawing from being silently gated on a service that has nothing
+ * to do with cards.
+ */
+export interface InSessionSurface {
+  /** The live session inline cards and hold cards are pushed onto. */
+  session: CapabilityHoldSession;
+  /** The approval primitive a destructive hold waits on, when one is wired. */
+  approvals?: Pick<ApprovalService, 'awaitDecision' | 'getPending'>;
+  /** The tool call's abort signal — a mid-turn interrupt ends any hold. */
+  signal?: AbortSignal;
+  /** Override the hold cap (tests). */
+  capMs?: number;
+}
 
 /**
  * The capabilities the given MCP server advertises, in registration order —
@@ -188,11 +219,12 @@ function textResult(payload: unknown, isError = false): CallToolResult {
  * @param context - Optional request-scoped context (the calling agent's
  *   identity, resolved from the `X-DorkOS-Agent` header or the session's working
  *   directory). Omitting it invokes unattributed, exactly as before.
- * @param hold - Optional in-session hold seam (DOR-939). When present and the
- *   refusal carries a FRESH approval ({@link isFreshApprovalAsk}), the call is
- *   held inline awaiting the operator's decision and resumes on a grant,
- *   returning the real result in the same turn. Omitted on every sessionless
- *   surface (external `/mcp`, HTTP), which keep the unchanged token/poll flow.
+ * @param surface - Optional in-session seam. Two independent things ride it:
+ *   a FRESH destructive approval ({@link isFreshApprovalAsk}) HOLDS inline and
+ *   resumes on a grant (DOR-939), and a capability declaring `inSessionCard`
+ *   draws its card in the conversation (DOR-1004). Omitted on every sessionless
+ *   surface (external `/mcp`, HTTP), which keep the unchanged token/poll flow
+ *   and the unchanged full payload.
  * @returns The MCP text-content result.
  */
 export async function invokeCapabilityAsMcpResult(
@@ -200,7 +232,7 @@ export async function invokeCapabilityAsMcpResult(
   id: string,
   args: unknown,
   context?: CapabilityInvocationContext,
-  hold?: CapabilityApprovalHold
+  surface?: InSessionSurface
 ): Promise<CallToolResult> {
   const capability = registry.get(id);
   // Only a destructive tool advertises `approvalToken`, so only a destructive
@@ -212,7 +244,15 @@ export async function invokeCapabilityAsMcpResult(
       : { approvalToken: undefined, input: args };
 
   try {
-    return textResult(await invokeThroughRegistry(registry, id, input, context, approvalToken));
+    const plain = await invokeThroughRegistry(registry, id, input, context, approvalToken);
+    // The card is drawn from the SUCCESSFUL result and nothing else: a refusal
+    // or a throw produced no sign-in link, so there is nothing to put on screen.
+    if (surface && capability?.inSessionCard) {
+      return textResult(
+        projectInSessionCard(capability.inSessionCard, surface.session, input, plain)
+      );
+    }
+    return textResult(plain);
   } catch (err) {
     if (err instanceof CapabilityGateRefusal) {
       const decision = err.decision;
@@ -226,10 +266,16 @@ export async function invokeCapabilityAsMcpResult(
       // returns its payload exactly as before, and so does this one on any
       // sessionless surface (no `hold`).
       if (
-        hold &&
+        surface?.approvals &&
         decision.outcome === 'approval_required' &&
         isFreshApprovalAsk(decision.payload)
       ) {
+        const hold: CapabilityApprovalHold = {
+          approvals: surface.approvals,
+          session: surface.session,
+          ...(surface.signal ? { signal: surface.signal } : {}),
+          ...(surface.capMs !== undefined ? { capMs: surface.capMs } : {}),
+        };
         return holdAndResume(registry, id, input, context, decision.payload, hold);
       }
       // A gated or refused call returns the gate's structured payload as an

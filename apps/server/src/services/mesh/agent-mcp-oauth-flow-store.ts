@@ -37,6 +37,14 @@ interface FlowEntry {
   status: McpSigninStatus;
   error?: string;
   createdAt: number;
+  /**
+   * The session this sign-in was asked for in, when it was asked for INSIDE one
+   * (DOR-1004). It is what lets the callback bring that agent back the moment
+   * the token lands. Absent for every sessionless start — the settings panel,
+   * the external `/mcp` server, HTTP — where there is no conversation to resume
+   * and nothing should be triggered.
+   */
+  originSessionId?: string;
 }
 
 /** A started flow's public handle: what `mcp.signin` needs to hand back. */
@@ -47,6 +55,8 @@ export interface StartedFlow {
   agentId: string;
   serverName: string;
   serverUrl: string;
+  /** The session to resume when this connects, when one asked for it (DOR-1004). */
+  originSessionId?: string;
 }
 
 /**
@@ -72,9 +82,18 @@ export class McpOAuthFlowStore {
    * during `auth()`.
    *
    * @param state - The opaque OAuth state that becomes the flow id.
-   * @param target - The agent, server, and server URL the flow authorizes.
+   * @param target - The agent, server, and server URL the flow authorizes, plus
+   *   the session that asked for it when one did (DOR-1004).
    */
-  start(state: string, target: { agentId: string; serverName: string; serverUrl: string }): void {
+  start(
+    state: string,
+    target: {
+      agentId: string;
+      serverName: string;
+      serverUrl: string;
+      originSessionId?: string;
+    }
+  ): void {
     this.prune();
     this.flows.set(state, {
       agentId: target.agentId,
@@ -84,6 +103,7 @@ export class McpOAuthFlowStore {
       authorizeUrl: null,
       status: 'pending',
       createdAt: this.now(),
+      ...(target.originSessionId ? { originSessionId: target.originSessionId } : {}),
     });
   }
 
@@ -97,6 +117,7 @@ export class McpOAuthFlowStore {
       agentId: flow.agentId,
       serverName: flow.serverName,
       serverUrl: flow.serverUrl,
+      ...(flow.originSessionId ? { originSessionId: flow.originSessionId } : {}),
     };
   }
 

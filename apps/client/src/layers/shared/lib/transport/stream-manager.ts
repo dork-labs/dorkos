@@ -143,6 +143,12 @@ const SESSION_EVENT_TYPES = [
   // required half would strand a card that can never disappear.
   'capability_approval_required',
   'capability_approval_resolved',
+  // The in-conversation MCP sign-in card and its resolution (DOR-1004). Same
+  // shape as the pair above — both halves ride the turn — with one extra reason
+  // the required half must never go missing: it is the only thing on screen
+  // carrying the sign-in link, and the agent has been told not to repeat it.
+  'mcp_signin_required',
+  'mcp_signin_resolved',
   'status_change',
   'todo_update',
   'subagent_update',

@@ -24,7 +24,8 @@ beforeAll(() => {
 function renderForm(
   transport: Transport,
   supportedTransports: readonly (typeof TRANSPORTS)[number][],
-  onAdded: (server: { name: string; transport: (typeof TRANSPORTS)[number] }) => void = () => {}
+  onAdded: (server: { name: string; transport: (typeof TRANSPORTS)[number] }) => void = () => {},
+  oauthDetectedFor: string | null = null
 ) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
@@ -40,6 +41,7 @@ function renderForm(
       agentLabel="Test Agent"
       supportedTransports={supportedTransports}
       onAdded={onAdded}
+      oauthDetectedFor={oauthDetectedFor}
     />,
     { wrapper }
   );
@@ -99,6 +101,108 @@ describe('AddMcpServerForm', () => {
     await waitFor(() =>
       expect(onAdded).toHaveBeenCalledWith({ name: 'granola', transport: 'http' })
     );
+  });
+
+  /** Fill in and submit an http server called `granola`. */
+  function addHttpServer(): void {
+    fireEvent.click(screen.getByRole('button', { name: /add server/i }));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'granola' } });
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
+    fireEvent.click(within(screen.getByRole('listbox')).getByRole('option', { name: 'http' }));
+    fireEvent.change(screen.getByLabelText('URL'), {
+      target: { value: 'https://mcp.granola.ai/mcp' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+  }
+
+  /** The roster `mcp.add` returns for a server it could tell needs OAuth. */
+  function oauthRoster() {
+    return [
+      {
+        name: 'granola',
+        enabled: true,
+        connection: {
+          transport: 'http',
+          url: 'https://mcp.granola.ai/mcp',
+          headers: {},
+          authKind: 'oauth2',
+        },
+        addedAt: '2026-08-06T00:00:00.000Z',
+        addedBy: 'operator',
+      },
+    ];
+  }
+
+  it('flows straight into signing in when the added server needs OAuth (DOR-1004)', async () => {
+    // Before this, adding an OAuth server ended with the form closing and the
+    // person having to spot a row telling them to press Sign in. The disclosure
+    // and the link now land where they are already looking.
+    const transport = createMockTransport({
+      addAgentMcpServer: vi.fn().mockResolvedValue({ status: 'ok', servers: oauthRoster() }),
+      startMcpSignin: vi.fn().mockResolvedValue({
+        flowId: 'flow-1',
+        authorizeUrl: 'https://auth.example/authorize',
+        alreadyConnected: false,
+        disclosure: 'DorkOS keeps the resulting token encrypted on this computer.',
+        message: 'link',
+      }),
+    });
+    renderForm(transport, TRANSPORTS);
+
+    addHttpServer();
+
+    await waitFor(() => expect(screen.getByText('Sign in to granola')).toBeInTheDocument());
+    // Consent order: the disclosure is on screen, and the link is under it.
+    expect(
+      await screen.findByText('DorkOS keeps the resulting token encrypted on this computer.')
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open the sign-in page for granola' })).toHaveAttribute(
+      'href',
+      'https://auth.example/authorize'
+    );
+  });
+
+  it('resets as before when the added server needs no sign-in', async () => {
+    const transport = createMockTransport({
+      addAgentMcpServer: vi.fn().mockResolvedValue({
+        status: 'ok',
+        servers: [
+          {
+            name: 'granola',
+            enabled: true,
+            connection: { transport: 'http', url: 'https://mcp.granola.ai/mcp', headers: {} },
+            addedAt: '2026-08-06T00:00:00.000Z',
+            addedBy: 'operator',
+          },
+        ],
+      }),
+    });
+    renderForm(transport, TRANSPORTS);
+
+    addHttpServer();
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /add server/i })).toBeInTheDocument()
+    );
+    expect(screen.queryByText('Sign in to granola')).not.toBeInTheDocument();
+    expect(transport.startMcpSignin).not.toHaveBeenCalled();
+  });
+
+  it('offers the sign-in when a later probe is what discovered it (DOR-1004)', async () => {
+    // The slower of the two routes: `mcp.add` could not tell, and the roster's
+    // unattended probe came back 401 a beat after the form had already settled.
+    const transport = createMockTransport({
+      startMcpSignin: vi.fn().mockResolvedValue({
+        flowId: 'flow-1',
+        authorizeUrl: 'https://auth.example/authorize',
+        alreadyConnected: false,
+        disclosure: 'DorkOS keeps the resulting token encrypted on this computer.',
+        message: 'link',
+      }),
+    });
+    renderForm(transport, TRANSPORTS, () => {}, 'granola');
+
+    expect(await screen.findByText('Sign in to granola')).toBeInTheDocument();
   });
 
   it('reports nothing while the add is still waiting on approval', async () => {

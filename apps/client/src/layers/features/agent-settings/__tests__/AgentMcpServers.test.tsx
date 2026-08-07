@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import type { ReactNode } from 'react';
-import { render, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, fireEvent, waitFor, within, act } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -89,7 +89,10 @@ function renderComponent(transport: Transport) {
       </TransportProvider>
     </QueryClientProvider>
   );
-  return render(<AgentMcpServers agent={agent} projectPath="/projects/test" />, { wrapper });
+  return {
+    ...render(<AgentMcpServers agent={agent} projectPath="/projects/test" />, { wrapper }),
+    queryClient,
+  };
 }
 
 describe('AgentMcpServers', () => {
@@ -559,6 +562,255 @@ describe('AgentMcpServers', () => {
     await waitFor(() =>
       expect(within(container).getByRole('button', { name: /^Sign in/ })).toBeInTheDocument()
     );
+  });
+
+  it('promotes the chip to Connected when Test dials through (DOR-985 P3)', async () => {
+    // Test is the only thing on this row that actually contacted the server, and
+    // since DOR-985 it dials WITH the bearer. An `ok` is therefore a round trip
+    // that provably worked — stronger evidence than any cache, including the
+    // amber "Needs sign-in" the row was showing a moment earlier.
+    const transport = createMockTransport({
+      listAgentMcpServers: vi
+        .fn()
+        .mockResolvedValue([{ ...oauthServer, authStatus: 'needs-auth' } as ManagedMcpServerView]),
+      getMcpConfig: vi.fn().mockResolvedValue({ servers: [] }),
+      testAgentMcpServer: vi.fn().mockResolvedValue({ ok: true, toolCount: 4 }),
+    });
+    const { container } = renderComponent(transport);
+
+    await waitFor(() => expect(within(container).getByText('Needs sign-in')).toBeInTheDocument());
+
+    fireEvent.click(within(container).getByRole('button', { name: 'Test' }));
+
+    await waitFor(() => expect(within(container).getByText('Connected')).toBeInTheDocument());
+    expect(within(container).queryByText('Needs sign-in')).not.toBeInTheDocument();
+  });
+
+  it('clears the "click Sign in" line the moment the sign-in lands (user-reported)', async () => {
+    // The exact sequence a user hit: press Test, read "Needs sign-in — click Sign
+    // in.", sign in successfully… and the line stayed put, telling them to press a
+    // button that was no longer there, under a row that had just gone green.
+    //
+    // The staleness rule was one-sided: it dropped a stale OK probe when the
+    // listing later said needs-auth, but never dropped a stale needs-auth probe
+    // when the sign-in later succeeded. A probe is a fact about one moment in
+    // BOTH directions.
+    const transport = createMockTransport({
+      listAgentMcpServers: vi.fn().mockResolvedValue([oauthServer]),
+      getMcpConfig: vi.fn().mockResolvedValue({
+        servers: [{ name: 'granola', type: 'http', status: 'needs-auth' }],
+      }),
+      testAgentMcpServer: vi.fn().mockResolvedValue({ ok: false, needsAuth: true, error: '401' }),
+      startMcpSignin: vi.fn().mockResolvedValue({
+        flowId: 'flow-1',
+        authorizeUrl: 'https://auth.example/authorize?x=1',
+        alreadyConnected: false,
+        disclosure: 'DorkOS keeps the resulting token encrypted on this computer.',
+        message: 'sign-in link',
+      }),
+      pollMcpSignin: vi.fn().mockResolvedValue({ status: 'connected' }),
+    });
+    const { container } = renderComponent(transport);
+
+    // 1. Test → the nudge appears.
+    await waitFor(() => expect(within(container).getByText('Needs sign-in')).toBeInTheDocument());
+    fireEvent.click(within(container).getByRole('button', { name: 'Test' }));
+    await waitFor(() =>
+      expect(within(container).getByText('Needs sign-in — click Sign in.')).toBeInTheDocument()
+    );
+
+    // 2. Sign in, all the way through.
+    fireEvent.click(within(container).getByRole('button', { name: /^Sign in/ }));
+    const link = await waitFor(() =>
+      within(container).getByRole('link', { name: /Open the sign-in page for granola/i })
+    );
+    fireEvent.click(link);
+
+    // 3. The line is GONE, and the row says so.
+    await waitFor(() =>
+      expect(
+        within(container).queryByText('Needs sign-in — click Sign in.')
+      ).not.toBeInTheDocument()
+    );
+    expect(within(container).getByText('Signed in')).toBeInTheDocument();
+    expect(within(container).queryByRole('button', { name: /^Sign in/ })).not.toBeInTheDocument();
+  });
+
+  it('clears the nudge when ANOTHER tab is what signed in (user-reported, cross-tab)', async () => {
+    // No sign-in flow ran in this row, so `signedInNow` is false throughout. The
+    // listing landing later with `connected` is the only thing that can retire the
+    // nudge here — and it is also what keeps the line gone after the sign-in panel
+    // above is dismissed and `signedInNow` drops back to false.
+    const listing = vi
+      .fn()
+      .mockResolvedValueOnce([{ ...oauthServer, authStatus: 'needs-auth' } as ManagedMcpServerView])
+      .mockResolvedValue([{ ...oauthServer, authStatus: 'connected' } as ManagedMcpServerView]);
+    const transport = createMockTransport({
+      listAgentMcpServers: listing,
+      getMcpConfig: vi.fn().mockResolvedValue({ servers: [] }),
+      testAgentMcpServer: vi.fn().mockResolvedValue({ ok: false, needsAuth: true, error: '401' }),
+    });
+    const { container, queryClient } = renderComponent(transport);
+
+    await waitFor(() => expect(within(container).getByText('Needs sign-in')).toBeInTheDocument());
+    fireEvent.click(within(container).getByRole('button', { name: 'Test' }));
+    await waitFor(() =>
+      expect(within(container).getByText('Needs sign-in — click Sign in.')).toBeInTheDocument()
+    );
+
+    await act(async () => {
+      await queryClient.invalidateQueries();
+    });
+
+    await waitFor(() =>
+      expect(
+        within(container).queryByText('Needs sign-in — click Sign in.')
+      ).not.toBeInTheDocument()
+    );
+    expect(within(container).getByText('Signed in')).toBeInTheDocument();
+    // …and the button goes with the line. A row reading "Signed in" beside a Sign
+    // in button is the same contradiction from the other side, and `offersSignIn`
+    // reads the probe too — so it has to read the SUPERSEDED one, not the raw.
+    expect(within(container).queryByRole('button', { name: /^Sign in/ })).not.toBeInTheDocument();
+  });
+
+  it('leaves an unreachable-server line alone after a sign-in', async () => {
+    // The rule is about AUTH facts. "Couldn't reach this server" is a
+    // reachability fact, and signing in does not disprove it — clearing it would
+    // hide a real problem behind a green chip.
+    const transport = createMockTransport({
+      listAgentMcpServers: vi.fn().mockResolvedValue([oauthServer]),
+      getMcpConfig: vi.fn().mockResolvedValue({
+        servers: [{ name: 'granola', type: 'http', status: 'needs-auth' }],
+      }),
+      testAgentMcpServer: vi.fn().mockResolvedValue({ ok: false, error: 'ECONNREFUSED' }),
+      startMcpSignin: vi.fn().mockResolvedValue({
+        flowId: 'flow-1',
+        authorizeUrl: 'https://auth.example/authorize?x=1',
+        alreadyConnected: false,
+        disclosure: 'DorkOS keeps the resulting token encrypted on this computer.',
+        message: 'sign-in link',
+      }),
+      pollMcpSignin: vi.fn().mockResolvedValue({ status: 'connected' }),
+    });
+    const { container } = renderComponent(transport);
+
+    await waitFor(() =>
+      expect(within(container).getByRole('button', { name: /^Sign in/ })).toBeInTheDocument()
+    );
+    fireEvent.click(within(container).getByRole('button', { name: 'Test' }));
+    await waitFor(() => expect(within(container).getByText(/Couldn’t reach/)).toBeInTheDocument());
+
+    fireEvent.click(within(container).getByRole('button', { name: /^Sign in/ }));
+    const link = await waitFor(() =>
+      within(container).getByRole('link', { name: /Open the sign-in page for granola/i })
+    );
+    fireEvent.click(link);
+
+    await waitFor(() => expect(within(container).getByText('Signed in')).toBeInTheDocument());
+    expect(within(container).getByText(/Couldn’t reach/)).toBeInTheDocument();
+  });
+
+  it('lets the LISTING win a same-millisecond tie with a probe', async () => {
+    // At equal stamps "which is newer" is unknowable, so the tie is broken toward
+    // the safe answer: believing an overtaken OK probe puts a green chip on a
+    // server with no bearer and hides the Sign in button — the DOR-985 lie in a
+    // 1ms window. A strict `<` also made the staleness behaviour depend on
+    // whether two events landed in the same millisecond, which flaked in a real
+    // full-monorepo run. `Date.now` is held at the listing's own `dataUpdatedAt`
+    // while the probe resolves, so the tie is produced deterministically rather
+    // than waited for.
+    const transport = createMockTransport({
+      listAgentMcpServers: vi
+        .fn()
+        .mockResolvedValue([{ ...oauthServer, authStatus: 'needs-auth' } as ManagedMcpServerView]),
+      getMcpConfig: vi.fn().mockResolvedValue({ servers: [] }),
+      testAgentMcpServer: vi.fn().mockResolvedValue({ ok: true, toolCount: 4 }),
+    });
+    const { container, queryClient } = renderComponent(transport);
+
+    await waitFor(() => expect(within(container).getByText('Needs sign-in')).toBeInTheDocument());
+
+    const rosterAt = Math.max(
+      ...queryClient
+        .getQueryCache()
+        .getAll()
+        .map((query) => query.state.dataUpdatedAt)
+    );
+    const now = vi.spyOn(Date, 'now').mockReturnValue(rosterAt);
+    try {
+      fireEvent.click(within(container).getByRole('button', { name: 'Test' }));
+
+      // The probe really did run and answer OK — this is not a test that passes
+      // because nothing happened. Its answer is then discarded wholesale, so
+      // neither its line nor its chip survives: one superseded answer, read by
+      // the chip, the button and the line alike.
+      await waitFor(() =>
+        expect(transport.testAgentMcpServer).toHaveBeenCalledWith(agent.id, 'granola')
+      );
+      await waitFor(() =>
+        expect(within(container).getByRole('button', { name: 'Test' })).toBeEnabled()
+      );
+      expect(within(container).queryByText('Connected — 4 tools.')).not.toBeInTheDocument();
+      expect(within(container).getByText('Needs sign-in')).toBeInTheDocument();
+      expect(within(container).queryByText('Connected')).not.toBeInTheDocument();
+      expect(within(container).getByRole('button', { name: /^Sign in/ })).toBeInTheDocument();
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it('drops a stale OK probe once the listing says the token is gone (DOR-985 P3)', async () => {
+    // The probe pinned the chip green for the life of the panel. Lose the token
+    // while it is open — expiry, a revoke, a refresh that failed — and the row
+    // kept claiming Connected off a probe that had been overtaken, with no Sign in
+    // button: exactly the lie DOR-985 existed to kill, re-introduced by its own
+    // fix. A probe is evidence about one moment; a newer listing outranks it.
+    const listing = vi
+      .fn()
+      .mockResolvedValueOnce([{ ...oauthServer, authStatus: 'connected' } as ManagedMcpServerView])
+      .mockResolvedValue([{ ...oauthServer, authStatus: 'needs-auth' } as ManagedMcpServerView]);
+    const transport = createMockTransport({
+      listAgentMcpServers: listing,
+      getMcpConfig: vi.fn().mockResolvedValue({ servers: [] }),
+      testAgentMcpServer: vi.fn().mockResolvedValue({ ok: true, toolCount: 4 }),
+    });
+    const { container, queryClient } = renderComponent(transport);
+
+    await waitFor(() => expect(within(container).getByText('Signed in')).toBeInTheDocument());
+    fireEvent.click(within(container).getByRole('button', { name: 'Test' }));
+
+    // A fresh OK probe still beats the listing at the moment it lands — that is
+    // the shipped behavior, and it stays.
+    await waitFor(() => expect(within(container).getByText('Connected')).toBeInTheDocument());
+
+    // …then the roster re-reads and reports the token gone. In real life the
+    // sign-in flow's own invalidation triggers this; here it is explicit.
+    await act(async () => {
+      await queryClient.invalidateQueries();
+    });
+
+    await waitFor(() => expect(within(container).getByText('Needs sign-in')).toBeInTheDocument());
+    expect(within(container).queryByText('Connected')).not.toBeInTheDocument();
+    expect(within(container).getByRole('button', { name: /^Sign in/ })).toBeInTheDocument();
+  });
+
+  it('lets a missing token override a stale runtime PENDING too (DOR-985 P3)', async () => {
+    // The same lie as a stale `connected`, told more quietly: a cached
+    // "Connecting…" from a past turn outranking the live, provable fact that
+    // there is no token left the row spinning with nothing to press.
+    const stale: ManagedMcpServerView = { ...oauthServer, authStatus: 'needs-auth' };
+    const transport = createMockTransport({
+      listAgentMcpServers: vi.fn().mockResolvedValue([stale]),
+      getMcpConfig: vi.fn().mockResolvedValue({
+        servers: [{ name: 'granola', type: 'http', status: 'pending' }],
+      }),
+    });
+    const { container } = renderComponent(transport);
+
+    await waitFor(() => expect(within(container).getByText('Needs sign-in')).toBeInTheDocument());
+    expect(within(container).queryByText('Connecting…')).not.toBeInTheDocument();
+    expect(within(container).getByRole('button', { name: /^Sign in/ })).toBeInTheDocument();
   });
 
   it('still shows Failed when the runtime failed, even with a live token', async () => {

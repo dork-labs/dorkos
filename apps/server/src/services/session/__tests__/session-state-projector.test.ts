@@ -1208,3 +1208,151 @@ describe('onProjectorStatusChange (global lifecycle fan-out)', () => {
     disposeProjector('status-5');
   });
 });
+
+describe('in-conversation MCP sign-in card (DOR-1004)', () => {
+  const CARD: RawSessionEvent = {
+    type: 'mcp_signin_required',
+    serverName: 'granola',
+    agentId: '01HV7KJZZZ0000000000000000',
+    flowId: 'flow-1',
+    authorizeUrl: 'https://mcp.test.local/authorize',
+    disclosure: 'DorkOS stores the token on this machine.',
+  };
+
+  /** Push a turn that asks for a sign-in and then ends, as the real flow does. */
+  function signinTurn(p: SessionStateProjector): void {
+    p.ingest({ type: 'turn_start' });
+    p.ingest(CARD);
+    p.ingest({ type: 'text_delta', text: 'Connecting your meeting notes.' });
+    p.ingest({ type: 'turn_end' });
+  }
+
+  it('keeps the card in a cold snapshot after the turn that asked for it ended', async () => {
+    // The whole point of not holding the tool call: the turn ends immediately and
+    // the person walks off to a browser. A tab opened while they are away — the
+    // most likely moment for one to be opened — must still draw the card, and
+    // `inProgressTurn` is null by then.
+    const p = new SessionStateProjector('s1');
+    signinTurn(p);
+
+    const snap = await p.buildSnapshot(async () => []);
+
+    expect(snap.inProgressTurn).toEqual([expect.objectContaining({ type: 'mcp_signin_required' })]);
+    // …and nothing else from the finished turn came back with it.
+    expect(snap.inProgressTurn).toHaveLength(1);
+  });
+
+  it('carries the card without claiming a turn is running', async () => {
+    const p = new SessionStateProjector('s1');
+    signinTurn(p);
+
+    expect(p.getStatus().lifecycle).toBe('idle');
+    expect(p.hasPendingInteractions()).toBe(false);
+    expect(p.peekInProgressTurn()).toBeNull();
+  });
+
+  it('does not duplicate a card that is still inside the live turn', async () => {
+    const p = new SessionStateProjector('s1');
+    p.ingest({ type: 'turn_start' });
+    p.ingest(CARD);
+
+    const snap = await p.buildSnapshot(async () => []);
+
+    expect(snap.inProgressTurn?.filter((e) => e.type === 'mcp_signin_required')).toHaveLength(1);
+    expect(snap.inProgressTurn?.[0].type).toBe('turn_start');
+  });
+
+  it('carries the RECEIPT through the resume turn the sign-in caused', async () => {
+    // The one-turn grace, and the whole reason it exists: signing in triggers a
+    // turn within about a second, and retiring the card on that turn's
+    // `turn_start` erased the payoff before the person had walked back from their
+    // browser. A cold hydrate mid-resume-turn must still show what was connected.
+    const p = new SessionStateProjector('s1');
+    signinTurn(p);
+    p.ingest({ type: 'mcp_signin_resolved', flowId: 'flow-1', outcome: 'connected', toolCount: 7 });
+    p.ingest({ type: 'turn_start' });
+
+    const snap = await p.buildSnapshot(async () => []);
+
+    // The PAIR travels: the card names the server, the resolution says how it
+    // ended. Either alone renders the wrong thing.
+    expect(snap.inProgressTurn?.map((e) => e.type)).toEqual([
+      'turn_start',
+      'mcp_signin_required',
+      'mcp_signin_resolved',
+    ]);
+    expect(snap.inProgressTurn?.find((e) => e.type === 'mcp_signin_resolved')).toMatchObject({
+      outcome: 'connected',
+      toolCount: 7,
+    });
+  });
+
+  it('retires the receipt on the turn AFTER the one it rode through', async () => {
+    const p = new SessionStateProjector('s1');
+    signinTurn(p);
+    p.ingest({ type: 'mcp_signin_resolved', flowId: 'flow-1', outcome: 'connected' });
+    p.ingest({ type: 'turn_start' });
+    p.ingest({ type: 'turn_end' });
+    p.ingest({ type: 'turn_start' });
+
+    const snap = await p.buildSnapshot(async () => []);
+    expect(snap.inProgressTurn?.some((e) => e.type === 'mcp_signin_required')).toBe(false);
+  });
+
+  it('keeps a FAILED sign-in readable on a cold hydrate', async () => {
+    // A person sent to a browser for a sign-in that did not take has to be able
+    // to find that out, and the runtime's own transcript has never heard of it.
+    const p = new SessionStateProjector('s1');
+    signinTurn(p);
+    p.ingest({ type: 'mcp_signin_resolved', flowId: 'flow-1', outcome: 'failed' });
+
+    const snap = await p.buildSnapshot(async () => []);
+    expect(snap.inProgressTurn?.map((e) => e.type)).toEqual([
+      'mcp_signin_required',
+      'mcp_signin_resolved',
+    ]);
+  });
+
+  it('drops an UNRESOLVED card one turn after the conversation moved on', async () => {
+    const p = new SessionStateProjector('s1');
+    signinTurn(p);
+    p.ingest({ type: 'turn_start' });
+    expect((await p.buildSnapshot(async () => [])).inProgressTurn).toHaveLength(2);
+
+    p.ingest({ type: 'turn_end' });
+    p.ingest({ type: 'turn_start' });
+    const snap = await p.buildSnapshot(async () => []);
+    expect(snap.inProgressTurn?.some((e) => e.type === 'mcp_signin_required')).toBe(false);
+  });
+
+  it('gives the receipt its OWN turn of grace, not the card’s leftovers', async () => {
+    // A person who takes their time: the card burns its turn while they are still
+    // in the browser, and the resolution lands after. The client store mirrors
+    // this exactly (`session-stream-store.test.ts`), which is what stops the two
+    // projections disagreeing about what is on screen.
+    const p = new SessionStateProjector('s1');
+    signinTurn(p);
+    p.ingest({ type: 'turn_start' });
+    p.ingest({ type: 'turn_end' });
+    p.ingest({ type: 'mcp_signin_resolved', flowId: 'flow-1', outcome: 'connected' });
+    p.ingest({ type: 'turn_start' });
+
+    const snap = await p.buildSnapshot(async () => []);
+    expect(snap.inProgressTurn?.map((e) => e.type)).toEqual([
+      'turn_start',
+      'mcp_signin_required',
+      'mcp_signin_resolved',
+    ]);
+  });
+
+  it('ignores a resolution for a card it never saw', async () => {
+    // A bare receipt has no server name and no disclosure — it would be a
+    // surprise in the transcript, not a record.
+    const p = new SessionStateProjector('s1');
+    p.ingest({ type: 'turn_start' });
+    p.ingest({ type: 'mcp_signin_resolved', flowId: 'ghost', outcome: 'connected' });
+    p.ingest({ type: 'turn_end' });
+
+    expect((await p.buildSnapshot(async () => [])).inProgressTurn).toBeNull();
+  });
+});

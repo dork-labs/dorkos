@@ -19,6 +19,7 @@ import type {
   McpServerEntry,
 } from '@dorkos/shared/transport';
 import { AddMcpServerForm, TRANSPORTS, type TransportKind } from './AddMcpServerForm';
+import type { StampedTestResult } from './ManagedServerRow';
 import { McpStatusChip } from './McpStatusChip';
 import { ManagedServerRow } from './ManagedServerRow';
 
@@ -209,8 +210,16 @@ export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
   const removeServer = useRemoveAgentMcpServer();
   const testServer = useTestAgentMcpServer();
 
-  const [testResults, setTestResults] = useState<Record<string, AgentMcpTestResult>>({});
+  // Probe results, each stamped with when it landed. The stamp is what keeps a
+  // row honest: a probe is a fact about one moment, and both the listing and the
+  // row's own sign-in flow can learn a newer one. The rule that weighs them lives
+  // with the row's other precedence rules (`ManagedServerRow.liveTestResult`),
+  // because it needs a fact only the row has — whether ITS sign-in just landed.
+  const [testResults, setTestResults] = useState<Record<string, StampedTestResult>>({});
   const [testingName, setTestingName] = useState<string | null>(null);
+  // The most recently added server, so the unattended probe below can tell the
+  // add form whether THAT server turned out to need a sign-in (DOR-1004).
+  const [lastAdded, setLastAdded] = useState<string | null>(null);
 
   const handleToggle = useCallback(
     (name: string, enabled: boolean) => {
@@ -237,7 +246,7 @@ export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
       setTestingName(name);
       try {
         const result = await testServer.mutateAsync({ agentId: agent.id, name });
-        setTestResults((prev) => ({ ...prev, [name]: result }));
+        setTestResults((prev) => ({ ...prev, [name]: { result, at: Date.now() } }));
       } finally {
         setTestingName(null);
       }
@@ -251,6 +260,7 @@ export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
   // (DOR-985). A local stdio server needs no sign-in, so it is left alone.
   const handleAdded = useCallback(
     ({ name, transport }: { name: string; transport: TransportKind }) => {
+      setLastAdded(name);
       // `.catch` because this probe is unattended: nobody clicked it, so nothing
       // is awaiting its rejection, and the mutation's own error surface has
       // already reported the failure. Without it a throwing probe becomes an
@@ -276,6 +286,9 @@ export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
             agentLabel={agent.displayName ?? agent.name}
             supportedTransports={supportedTransportsFor(agent.runtime)}
             onAdded={handleAdded}
+            oauthDetectedFor={
+              lastAdded && testResults[lastAdded]?.result.needsAuth === true ? lastAdded : null
+            }
           />
         )}
       </div>
@@ -331,6 +344,7 @@ export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
                 agentId={agent.id}
                 live={liveByName.get(server.name)}
                 testResult={testResults[server.name]}
+                rosterUpdatedAt={managed.dataUpdatedAt}
                 testing={testingName === server.name}
                 busy={busy}
                 onToggle={handleToggle}

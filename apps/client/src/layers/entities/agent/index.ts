@@ -51,3 +51,4 @@ export { PresetPill } from './ui/PresetPill';
 export type { PresetPillProps, PresetPillColors } from './ui/PresetPill';
 export { TraitSliders } from './ui/TraitSliders';
 export type { TraitSlidersProps } from './ui/TraitSliders';
+export { McpSigninBody } from './ui/McpSigninBody';

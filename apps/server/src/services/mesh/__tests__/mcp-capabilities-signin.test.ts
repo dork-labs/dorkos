@@ -158,6 +158,20 @@ async function setup(connection: McpServerTransport): Promise<{
 
 const HTTP_SERVER: McpServerTransport = { transport: 'http', url: SERVER_URL, headers: {} };
 
+/**
+ * The session a flow recorded at start, read off the engine's own flow store.
+ *
+ * Reached through the private field on purpose: the store IS the durable record
+ * the callback consults minutes later, and asserting on anything the capability
+ * merely returned would prove the id was computed, not that it was kept.
+ */
+function originSessionOf(oauth: unknown, flowId: string): string | undefined {
+  const flows = (
+    oauth as { flows: { target: (id: string) => { originSessionId?: string } | undefined } }
+  ).flows;
+  return flows.target(flowId)?.originSessionId;
+}
+
 describe('mcp.signin / mcp.poll_signin', () => {
   it('starts a sign-in, returns the disclosure verbatim, and reaches connected', async () => {
     const { deps, pkce } = await setup(HTTP_SERVER);
@@ -208,6 +222,58 @@ describe('mcp.signin / mcp.poll_signin', () => {
     const manifest = await readManifest(projectPath);
     const connection = manifest?.mcpServers[0]?.connection;
     expect(connection?.transport === 'http' ? connection.authKind : undefined).toBe('oauth2');
+  });
+
+  it('declares the in-conversation sign-in card, and its resolution (DOR-1004)', () => {
+    // The declaration is the ONLY thing that makes the in-session projection draw
+    // a card for these two — a capability that does not declare it returns its
+    // markdown and nothing appears in the conversation. The seam itself is
+    // covered by `core/capabilities/__tests__/in-session-card.test.ts`.
+    expect(capability('mcp.signin').inSessionCard).toBe('signin');
+    expect(capability('mcp.poll_signin').inSessionCard).toBe('signin_resolved');
+  });
+
+  it('tells the agent to say one line and stop, and never to poll (DOR-1004)', () => {
+    // The card is shown automatically, so an agent that narrates the sign-in,
+    // repeats the link, or sits polling is spending turns on something the person
+    // already watched happen.
+    const description = capability('mcp.signin').description;
+    expect(description).toContain('automatically');
+    expect(description).toContain('ONE short line');
+    expect(description).toContain('do not call mcp_poll_signin');
+    // …but the surfaces with no card must still be told to show both, or an
+    // external `/mcp` caller gets a sign-in with no link in it.
+    expect(description).toContain('no card');
+    expect(description).toContain('verbatim');
+  });
+
+  it('records the invoking session so the agent can be resumed (DOR-1004)', async () => {
+    // The ONLY thing that makes a sign-in resumable, and it is read straight off
+    // the invocation context — which the in-session `dorkos` server sets and the
+    // sessionless surfaces leave absent by construction.
+    const { deps } = await setup(HTTP_SERVER);
+    const oauth = deps.mcpDeps!.oauth!;
+    const started = (await capability('mcp.signin').invoke(
+      deps,
+      { agentId: AGENT_ID, name: SERVER },
+      { sessionId: 'sess-abc' } as never
+    )) as { flowId: string };
+
+    // The flow store is where the id has to land for the callback to find it
+    // later; `mcp-signin-resume.test.ts` drives that callback end-to-end.
+    expect(originSessionOf(oauth, started.flowId)).toBe('sess-abc');
+  });
+
+  it('records NO session for a sessionless surface (DOR-1004)', async () => {
+    const { deps } = await setup(HTTP_SERVER);
+    const oauth = deps.mcpDeps!.oauth!;
+    const started = (await capability('mcp.signin').invoke(
+      deps,
+      { agentId: AGENT_ID, name: SERVER },
+      {} as never
+    )) as { flowId: string };
+
+    expect(originSessionOf(oauth, started.flowId)).toBeUndefined();
   });
 
   it('rejects sign-in for a local (stdio) server', async () => {

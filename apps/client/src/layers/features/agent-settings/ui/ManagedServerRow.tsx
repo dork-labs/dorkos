@@ -60,36 +60,48 @@ function TestResultLine({ result }: { result: AgentMcpTestResult }) {
  * from the last turn while the sign-in state is read live:
  *
  * 1. A turned-off server is `disabled`, whatever anything else says.
- * 2. A sign-in that just completed is `signed-in` immediately — the person
+ * 2. A Test that came back OK is `connected`. Test is the only thing on this row
+ *    that actually dialled the server, and since DOR-985 it dials WITH the
+ *    bearer — so an `ok` is a round trip that provably worked, which beats every
+ *    cached opinion below it. (Its `needsAuth` counterpart already decides the
+ *    Sign in button; this is the same evidence pointed at the chip.)
+ * 3. A sign-in that just completed is `signed-in` immediately — the person
  *    watched it happen and must not see the row claim otherwise.
- * 3. A runtime `failed` wins over both overrides below: that is a reachability
+ * 4. A runtime `failed` wins over both overrides below: that is a reachability
  *    problem, and holding (or lacking) a token says nothing about it.
- * 4. A live token beats a runtime `needs-auth` — the token postdates the turn.
- * 5. NO token beats a runtime `connected` — this is the STRONGER half: with no
- *    token to inject, the next turn provably carries no bearer, so a green chip
- *    would be a lie. Without it, a token that expired after one successful turn
- *    left the row green with no Sign in button, which is DOR-985 all over again.
- * 6. Otherwise the runtime's live status, then the derived sign-in state, and
+ * 5. A live token beats a runtime `needs-auth` — the token postdates the turn.
+ * 6. NO token beats a runtime `connected` OR a runtime `pending` — this is the
+ *    STRONGER half: with no token to inject, the next turn provably carries no
+ *    bearer, so a green chip would be a lie. Without it, a token that expired
+ *    after one successful turn left the row green with no Sign in button, which
+ *    is DOR-985 all over again. `pending` is the same lie told more quietly: a
+ *    cached "connecting…" from a past turn outranking the live, provable fact
+ *    that there is no token leaves the row spinning with nothing to press.
+ * 7. Otherwise the runtime's live status, then the derived sign-in state, and
  *    finally nothing (Unknown) — which is what every row showed before DOR-985,
  *    because the runtime cache is only written during a turn.
  *
  * @param args.enabled - Whether the managed server is switched on.
+ * @param args.testedOk - Whether the most recent Test probe reached the server.
  * @param args.signedInNow - Whether this row's sign-in flow just reached `connected`.
  * @param args.runtimeStatus - The status the runtime reported, if any.
  * @param args.authStatus - The listing's derived sign-in state, if any.
  */
 function resolveStatusKey(args: {
   enabled: boolean;
+  testedOk: boolean;
   signedInNow: boolean;
   runtimeStatus: McpServerEntry['status'];
   authStatus: ManagedMcpServerView['authStatus'];
 }): McpStatusKey | undefined {
-  const { enabled, signedInNow, runtimeStatus, authStatus } = args;
+  const { enabled, testedOk, signedInNow, runtimeStatus, authStatus } = args;
   if (!enabled) return 'disabled';
+  if (testedOk) return 'connected';
   if (signedInNow) return 'signed-in';
   if (runtimeStatus === 'failed') return 'failed';
   if (authStatus === 'connected' && runtimeStatus === 'needs-auth') return 'signed-in';
-  if (authStatus === 'needs-auth' && runtimeStatus === 'connected') return 'needs-auth';
+  if (authStatus === 'needs-auth' && (runtimeStatus === 'connected' || runtimeStatus === 'pending'))
+    return 'needs-auth';
   if (runtimeStatus) return runtimeStatus;
   return authStatus === 'connected' ? 'signed-in' : authStatus;
 }
@@ -121,6 +133,85 @@ function offersSignIn(args: {
   return statusKey === 'needs-auth';
 }
 
+/** A probe result plus when it landed, so newer evidence can outrank it. */
+export interface StampedTestResult {
+  /** What the probe found. */
+  result: AgentMcpTestResult;
+  /** Client epoch ms the probe answered. */
+  at: number;
+}
+
+/**
+ * The probe result a row should still show, or `undefined` once something newer
+ * has contradicted it.
+ *
+ * A Test is the strongest evidence this row has — the only thing here that
+ * actually dialled the server, with the bearer — and it rightly beats every
+ * cached opinion at the moment it lands. But it is evidence about THAT MOMENT,
+ * and the rule has to cut both ways or it tells a stale story in whichever
+ * direction it is one-sided:
+ *
+ * - A probe said OK, then the token was lost while the panel sat open. Keeping
+ *   it left a green chip on a server whose next turn provably carries no bearer,
+ *   and no Sign in button — the exact lie DOR-985 existed to kill.
+ * - A probe said "needs sign-in", then the person SIGNED IN. Keeping it left
+ *   "Needs sign-in — click Sign in." sitting under a row that had just gone
+ *   green, with no such button anywhere. A user hit precisely this: Test, sign
+ *   in, and the instruction stayed put.
+ *
+ * So a probe is superseded by any newer answer that disagrees with it, from
+ * either of the two sources that can know better:
+ *
+ * 1. This row's OWN sign-in flow reaching `connected`. Immediate, and it has to
+ *    be — the person just watched it happen, and the listing has not necessarily
+ *    re-read yet.
+ * 2. A listing that landed AFTER the probe and disagrees with it: `needs-auth`
+ *    against an OK probe, `connected` against a needs-sign-in one. This is the
+ *    durable half, and it is what keeps the line gone after the sign-in panel is
+ *    dismissed and `signedInNow` drops back to false.
+ *
+ * A third case needs no rule: a newer Test simply replaces the stored result.
+ *
+ * The comparison is `<=`, so on a SAME-MILLISECOND tie the listing wins. At equal
+ * stamps "which is newer" is genuinely unknowable, so the tie is broken by which
+ * way it is safe to be wrong: believing an overtaken OK probe puts a green chip
+ * on a server with no bearer and hides the Sign in button, which is the DOR-985
+ * lie in a 1ms window, while believing the listing costs at most one needless
+ * press of Test. It is also what makes the rule deterministic — a strict `<` left
+ * the staleness behaviour depending on whether two events landed in the same
+ * millisecond, which flaked in a real full-monorepo run.
+ *
+ * Nothing else rests on the tie: "a fresh Test beats the listing at the moment it
+ * lands" concerns a probe stamped strictly LATER, and the case where a stale
+ * `needsAuth` probe must lose immediately is a sign-in this row just watched
+ * land, which rule 1 answers with no clock at all.
+ *
+ * A `failed` probe is left alone by both. "Couldn't reach this server" is a
+ * reachability fact, and signing in does not disprove it — the same reason
+ * {@link resolveStatusKey} lets a runtime `failed` outrank every token fact.
+ *
+ * @param args.stamped - The stored probe result for this server, if any.
+ * @param args.signedInNow - Whether this row's sign-in flow just reached `connected`.
+ * @param args.authStatus - The listing's derived sign-in state for the same server.
+ * @param args.rosterUpdatedAt - Client epoch ms the listing last landed.
+ */
+function liveTestResult(args: {
+  stamped: StampedTestResult | undefined;
+  signedInNow: boolean;
+  authStatus: ManagedMcpServerView['authStatus'];
+  rosterUpdatedAt: number;
+}): AgentMcpTestResult | undefined {
+  const { stamped, signedInNow, authStatus, rosterUpdatedAt } = args;
+  if (!stamped) return undefined;
+  const { result } = stamped;
+  if (signedInNow && result.needsAuth === true) return undefined;
+  if (stamped.at <= rosterUpdatedAt) {
+    if (authStatus === 'needs-auth' && result.ok) return undefined;
+    if (authStatus === 'connected' && result.needsAuth === true) return undefined;
+  }
+  return result;
+}
+
 /** Props for {@link ManagedServerRow}. */
 export interface ManagedServerRowProps {
   /** The managed (editable) server this row renders. */
@@ -129,8 +220,10 @@ export interface ManagedServerRowProps {
   agentId: string;
   /** The live status entry joined by name, or `undefined` when the runtime reports none. */
   live: McpServerEntry | undefined;
-  /** The most recent Test probe result for this server, if any. */
-  testResult: AgentMcpTestResult | undefined;
+  /** The most recent Test probe result for this server, stamped with when it landed. */
+  testResult: StampedTestResult | undefined;
+  /** Client epoch ms the managed listing last landed; see {@link liveTestResult}. */
+  rosterUpdatedAt: number;
   /** Whether this row's Test probe is in flight. */
   testing: boolean;
   /** Whether a roster-level mutation is running (disables the row's controls). */
@@ -155,6 +248,7 @@ export function ManagedServerRow({
   agentId,
   live,
   testResult,
+  rosterUpdatedAt,
   testing,
   busy,
   onToggle,
@@ -163,8 +257,17 @@ export function ManagedServerRow({
 }: ManagedServerRowProps) {
   const signin = useMcpSigninFlow(agentId, server.name);
   const signedInNow = signin.state.step === 'connected';
+  // ONE answer to "what does the probe still say", shared by the chip, the Sign
+  // in button and the result line — so they cannot disagree about it.
+  const probe = liveTestResult({
+    stamped: testResult,
+    signedInNow,
+    authStatus: server.authStatus,
+    rosterUpdatedAt,
+  });
   const statusKey = resolveStatusKey({
     enabled: server.enabled,
+    testedOk: probe?.ok === true,
     signedInNow,
     runtimeStatus: live?.status,
     authStatus: server.authStatus,
@@ -173,7 +276,7 @@ export function ManagedServerRow({
   // unmounting the element a person just pressed drops their focus to the body.
   const startingSignIn = signin.state.step === 'starting';
   const showSignIn =
-    offersSignIn({ statusKey, testResult, signedInNow }) &&
+    offersSignIn({ statusKey, testResult: probe, signedInNow }) &&
     (signin.state.step === 'idle' || startingSignIn);
 
   return (
@@ -227,7 +330,7 @@ export function ManagedServerRow({
         </div>
       </div>
       <McpSigninPanel flow={signin} serverName={server.name} />
-      {testResult && <TestResultLine result={testResult} />}
+      {probe && <TestResultLine result={probe} />}
     </div>
   );
 }

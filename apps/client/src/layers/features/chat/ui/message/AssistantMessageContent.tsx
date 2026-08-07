@@ -21,6 +21,7 @@ import { ErrorMessageBlock } from './ErrorMessageBlock';
 import { MemoryRecallBlock } from './MemoryRecallBlock';
 import { PermissionDeniedChip } from './PermissionDeniedChip';
 import { CapabilityApprovalTimedOut } from './CapabilityApprovalTimedOut';
+import { McpSigninCard } from './McpSigninCard';
 import { CompactBoundaryRow } from './CompactBoundaryRow';
 import { CompactPendingRow, CollapsibleCard } from '../primitives';
 import { TouchChipStrip } from '../chips';
@@ -389,6 +390,12 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
           approval={part.approval}
         />
       );
+    }
+    if (part.type === 'mcp_signin') {
+      // An OAuth sign-in the agent asked for (DOR-1004). The link and its custody
+      // disclosure live here, on a card, instead of in the agent's prose — and
+      // the card is what brings the agent back once the sign-in lands.
+      return <McpSigninCard key={`mcp-signin-${part.agentId}-${part.flowId}`} part={part} />;
     }
     // At this point part.type === 'tool_call' — all other variants have been handled above.
     const toolPart = part;

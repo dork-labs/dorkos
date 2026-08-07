@@ -192,6 +192,8 @@ export const StreamEventTypeSchema = z
     'interaction_cancelled',
     'capability_approval_required',
     'capability_approval_resolved',
+    'mcp_signin_required',
+    'mcp_signin_resolved',
   ])
   .openapi('StreamEventType');
 
@@ -1462,6 +1464,102 @@ export const CapabilityApprovalResolvedEventSchema = z
 
 export type CapabilityApprovalResolvedEvent = z.infer<typeof CapabilityApprovalResolvedEventSchema>;
 
+/**
+ * The sign-in link a card renders, restricted to schemes a browser can be sent
+ * to safely (DOR-1004).
+ *
+ * `https` for a real provider, plus `http` for loopback only — an OAuth provider
+ * running on the same machine (a local MCP server, or the in-process mock the
+ * tests drive) is reached over plain HTTP on `localhost`, and nothing leaves the
+ * box. Everything else is refused at the schema: this URL is composed server-side
+ * and rendered as a link a person is being told it is safe to click, so a
+ * `javascript:` or `data:` value reaching a card is not a scenario worth being
+ * one bug away from. Mirrors the posture `WidgetActionSchema` takes on `url`
+ * actions.
+ */
+function isSafeSigninUrl(value: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  if (url.protocol === 'https:') return true;
+  if (url.protocol !== 'http:') return false;
+  return url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]';
+}
+
+/** The sign-in link a card renders; see {@link isSafeSigninUrl}. */
+const SigninUrlSchema = z.string().refine(isSafeSigninUrl, {
+  message: 'Sign-in links must be https, or http on loopback',
+});
+
+/**
+ * How an in-conversation MCP sign-in ended (DOR-1004).
+ *
+ * Two words, because two are all a server can honestly observe: DorkOS itself
+ * performs the token exchange, so it knows the sign-in landed (`connected`) or
+ * that the provider refused it (`failed`). A person closing the browser tab and
+ * never coming back leaves no server-side trace at all, so there is no third
+ * word for it — the card simply stays until the conversation moves on.
+ */
+export const MCP_SIGNIN_OUTCOMES = ['connected', 'failed'] as const;
+
+/** How an in-conversation MCP sign-in ended; see {@link MCP_SIGNIN_OUTCOMES}. */
+export const McpSigninOutcomeSchema = z.enum(MCP_SIGNIN_OUTCOMES);
+
+/** Inferred type for {@link McpSigninOutcomeSchema}. */
+export type McpSigninOutcome = (typeof MCP_SIGNIN_OUTCOMES)[number];
+
+/**
+ * An agent asked a person to sign in to an OAuth-protected managed MCP server,
+ * and the sign-in card belongs in the conversation (DOR-1004).
+ *
+ * Pushed by the in-session capability adapter when `mcp.signin` runs on a
+ * surface that HAS a conversation to draw a card in. Unlike a capability
+ * approval, the tool call does not wait for it: a browser OAuth round trip
+ * routinely outlasts any safe hold, so the call returns, the turn ends, and the
+ * card outlives its turn.
+ */
+export const McpSigninRequiredEventSchema = z
+  .object({
+    /** The managed server being signed in to (unique within the agent). */
+    serverName: z.string(),
+    /** ULID of the agent that owns the server. */
+    agentId: z.string(),
+    /** The sign-in flow this card drives; also what retires it. */
+    flowId: z.string(),
+    /** The sign-in link the card renders, opened only after the disclosure. */
+    authorizeUrl: SigninUrlSchema,
+    /** The custody disclosure, shown ABOVE the link — the consent order. */
+    disclosure: z.string(),
+  })
+  .openapi('McpSigninRequiredEvent');
+
+/** Inferred type for {@link McpSigninRequiredEventSchema}. */
+export type McpSigninRequiredEvent = z.infer<typeof McpSigninRequiredEventSchema>;
+
+/** An in-conversation MCP sign-in reached a terminal state (DOR-1004). */
+export const McpSigninResolvedEventSchema = z
+  .object({
+    /** The sign-in flow that ended. */
+    flowId: z.string(),
+    /** How it ended. */
+    outcome: McpSigninOutcomeSchema,
+    /**
+     * How many tools the server exposes, when the connect probe found out.
+     *
+     * The payoff line on the receipt ("Connected — 7 tools"), and optional
+     * because not every path can answer it. Absent means "we don't know", never
+     * zero.
+     */
+    toolCount: z.number().int().nonnegative().optional(),
+  })
+  .openapi('McpSigninResolvedEvent');
+
+/** Inferred type for {@link McpSigninResolvedEventSchema}. */
+export type McpSigninResolvedEvent = z.infer<typeof McpSigninResolvedEventSchema>;
+
 export const StreamEventSchema = z
   .object({
     type: StreamEventTypeSchema,
@@ -1500,6 +1598,8 @@ export const StreamEventSchema = z
       InteractionCancelledEventSchema,
       CapabilityApprovalRequiredEventSchema,
       CapabilityApprovalResolvedEventSchema,
+      McpSigninRequiredEventSchema,
+      McpSigninResolvedEventSchema,
     ]),
   })
   .openapi('StreamEvent');
@@ -1737,6 +1837,48 @@ export const CapabilityApprovalPartSchema = z
 export type CapabilityApprovalPart = z.infer<typeof CapabilityApprovalPartSchema>;
 
 /**
+ * A message part for an OAuth sign-in an agent asked for mid-conversation
+ * (DOR-1004) — the sign-in link and its custody disclosure, drawn as a card in
+ * the chat instead of pasted into the reply.
+ *
+ * One card per `(agentId, serverName)`: a second `mcp_signin_required` for the
+ * same server updates this part rather than stacking a new one, so a retried
+ * sign-in never leaves a dead link on screen above the live one.
+ *
+ * `outcome` is set by the matching `mcp_signin_resolved`, and turns the card into
+ * a compact terminal RECEIPT — for BOTH endings, which is the point. A connected
+ * sign-in used to retire the part outright, on the reasoning that the agent was
+ * already back at work; that reasoning was wrong. Retiring it erased the payoff
+ * ("Connected — 7 tools") about a second after it appeared, and with it the only
+ * record in the transcript that anything had been authorized at all — a person
+ * coming back from their browser found a conversation that never mentioned the
+ * sign-in. The receipt is what makes the transcript honest about what was
+ * connected, and when.
+ */
+export const McpSigninPartSchema = z
+  .object({
+    type: z.literal('mcp_signin'),
+    /** The managed server being signed in to. */
+    serverName: z.string(),
+    /** ULID of the agent that owns the server. */
+    agentId: z.string(),
+    /** The sign-in flow this card drives. */
+    flowId: z.string(),
+    /** The sign-in link, rendered below the disclosure. */
+    authorizeUrl: SigninUrlSchema,
+    /** The custody disclosure, rendered above the link. */
+    disclosure: z.string(),
+    /** Set once the sign-in ended; the card becomes a terminal receipt. */
+    outcome: McpSigninOutcomeSchema.optional(),
+    /** Tools the server exposes, when the connect probe found out. */
+    toolCount: z.number().int().nonnegative().optional(),
+  })
+  .openapi('McpSigninPart');
+
+/** Inferred type for {@link McpSigninPartSchema}. */
+export type McpSigninPart = z.infer<typeof McpSigninPartSchema>;
+
+/**
  * A message part representing a memory recall event surfaced by the SDK's
  * memory supervisor. Rendered as a collapsible indicator in the chat timeline.
  */
@@ -1815,6 +1957,7 @@ export const MessagePartSchema = z.discriminatedUnion('type', [
   ErrorPartSchema,
   ElicitationPartSchema,
   CapabilityApprovalPartSchema,
+  McpSigninPartSchema,
   MemoryRecallPartSchema,
   PermissionDeniedPartSchema,
   CompactBoundaryPartSchema,

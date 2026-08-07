@@ -490,11 +490,14 @@ export const mcpDomain: CapabilityDomain = {
       id: 'mcp.signin',
       title: 'Start OAuth sign-in for a managed MCP server',
       description:
-        'Begin signing in to an OAuth-protected managed server. Returns markdown with the ' +
-        'sign-in link and the custody disclosure — show BOTH to the user verbatim, then wait ' +
-        'for them to say they have signed in before calling mcp_poll_signin with the returned ' +
-        'flowId. DorkOS obtains and refreshes the token for you; the server’s tools become ' +
-        'callable on the next turn once connected.',
+        'Begin signing in to an OAuth-protected managed server. In a DorkOS conversation the ' +
+        'sign-in card is shown to the user automatically — say ONE short line naming what you ' +
+        'are connecting, then stop. Do not repeat the link or the disclosure, do not ask the ' +
+        'user to tell you when they are done, and do not call mcp_poll_signin: you are brought ' +
+        'back automatically once the sign-in lands, with the server named and its tools ready. ' +
+        'On surfaces with no card the result’s message field carries the link and the custody ' +
+        'disclosure instead — show BOTH verbatim there. DorkOS obtains and refreshes the token ' +
+        'for you either way.',
       // `act`, not `destructive`: the operator already approved this server at
       // `mcp.add` (a command-diff gate). Sign-in introduces no new command — it
       // only stores a token for a server that is already trusted — so it needs no
@@ -520,18 +523,31 @@ export const mcpDomain: CapabilityDomain = {
           annotations: { openWorldHint: true },
         },
       },
-      invoke: async (deps, input) => {
+      // In a conversation the link and the disclosure belong on a card, not in
+      // the agent's prose (DOR-1004). The in-session projection draws it and
+      // rewrites `message` accordingly; every sessionless surface never reaches
+      // that code and keeps the full link-carrying markdown below.
+      inSessionCard: 'signin',
+      invoke: async (deps, input, context) => {
         const { service } = requireMcpDeps(deps);
         const oauth = requireOAuth(deps);
         const serverUrl = await resolveOAuthServerUrl(service, input.agentId, input.name);
         const disclosure = mcpOAuthCustodyDisclosure(input.name);
         let started;
         try {
-          started = await oauth.startSignin({
-            agentId: input.agentId,
-            serverName: input.name,
-            serverUrl,
-          });
+          started = await oauth.startSignin(
+            {
+              agentId: input.agentId,
+              serverName: input.name,
+              serverUrl,
+            },
+            // The invoking session, and the whole reason the agent can be brought
+            // back on its own once the token lands (DOR-1004). Set ONLY on the
+            // in-session surface — the external `/mcp` server and HTTP leave it
+            // absent by construction (`CapabilityInvocationContext.sessionId`), so
+            // a sessionless sign-in records no session and resumes nothing.
+            context.sessionId ? { originSessionId: context.sessionId } : {}
+          );
         } catch (err) {
           throw new CapabilityToolError({
             error: err instanceof Error ? err.message : 'Could not start the sign-in.',
@@ -593,6 +609,10 @@ export const mcpDomain: CapabilityDomain = {
           annotations: { idempotentHint: true, openWorldHint: true },
         },
       },
+      // A terminal answer here retires the conversation's sign-in card, for the
+      // path where the agent — not the person's own browser tab — is what
+      // learns the sign-in landed (DOR-1004).
+      inSessionCard: 'signin_resolved',
       invoke: async (deps, input) => {
         const oauth = requireOAuth(deps);
         return oauth.pollSignin(input.flowId);
