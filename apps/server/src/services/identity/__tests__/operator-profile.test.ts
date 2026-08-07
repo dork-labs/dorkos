@@ -38,8 +38,7 @@ describe('the operator name diverges between a room and the roster', () => {
     const { members } = await aggregateTeamRoster({
       listPeople: () => registry.listActive('human'),
       listAgents: () => [],
-      isOwnerAuthor: (authorId) => registry.isOwner(authorId, OWNER_USER_ID),
-      account: () => ({ name: 'Dorian', email: 'dorian@dorkos.ai' }),
+      account: () => ({ id: OWNER_USER_ID, name: 'Dorian', email: 'dorian@dorkos.ai' }),
       configDisplayName: () => null,
       defaultAgentName: () => null,
     });
@@ -58,7 +57,7 @@ describe('resolveOperatorProfile', () => {
     expect(
       resolveOperatorProfile(
         {
-          account: () => ({ name: 'Dorian', email: null }),
+          account: () => ({ id: 'user-1', name: 'Dorian', email: null }),
           configDisplayName: () => 'Dork',
         },
         'You'
@@ -76,7 +75,10 @@ describe('resolveOperatorProfile', () => {
   it('falls back to the stored author name only when nothing else knows one', () => {
     expect(
       resolveOperatorProfile(
-        { account: () => ({ name: '  ', email: null }), configDisplayName: () => null },
+        {
+          account: () => ({ id: 'user-1', name: '  ', email: null }),
+          configDisplayName: () => null,
+        },
         'Someone'
       ).displayName
     ).toBe('Someone');
@@ -102,7 +104,7 @@ describe('resolveOperatorProfile', () => {
     expect(
       resolveOperatorProfile(
         {
-          account: () => ({ name: 'Dorian', email: 'dorian@dorkos.ai' }),
+          account: () => ({ id: OWNER_USER_ID, name: 'Dorian', email: 'dorian@dorkos.ai' }),
           configDisplayName: () => null,
         },
         null

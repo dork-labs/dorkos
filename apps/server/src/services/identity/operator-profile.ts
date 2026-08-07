@@ -44,6 +44,12 @@ export interface OperatorProfile {
 
 /** The local account that owns this install, reduced to what a roster reads. */
 export interface OperatorAccount {
+  /**
+   * The Better Auth user id. Carried because it is also what decides WHICH
+   * author row is the operator (`isOwnerRecord`), so a roster that reads the
+   * account once has everything it needs and never asks twice.
+   */
+  id: string;
   name: string | null;
   email: string | null;
 }

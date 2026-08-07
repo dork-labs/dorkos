@@ -46,7 +46,7 @@ const FULL_AGENT = {
     runtime: 'claude-code',
     model: 'opus',
     healthStatus: 'active',
-    working: true,
+    recentlyActive: true,
     namespace: 'dorkos',
     projectPath: '/Users/dorian/agents/ana',
     isDefault: false,
@@ -77,7 +77,7 @@ describe('TeamMemberSchema', () => {
   it('parses a full agent row with its owner attribution and facts', () => {
     const parsed = TeamMemberSchema.parse(FULL_AGENT);
     expect(parsed.ownerId).toBe('author-1');
-    expect(parsed.agent?.working).toBe(true);
+    expect(parsed.agent?.recentlyActive).toBe(true);
     expect(parsed.agent?.runtime).toBe('claude-code');
   });
 

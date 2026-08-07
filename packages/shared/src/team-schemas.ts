@@ -46,16 +46,33 @@ export const TeamAgentFactsSchema = z
     /** The model new sessions start on. Absent = inherit the server default. */
     model: z.string().optional(),
     healthStatus: AgentHealthStatusSchema,
-    /** Whether the agent is doing something right now. */
-    working: z.boolean(),
-    /** The project-directory namespace used for cross-agent messaging permissions. */
+    /**
+     * Whether the mesh has heard from this agent within the last hour.
+     *
+     * **Not "doing something right now", and named so it cannot be read that
+     * way.** It restates `healthStatus === 'active'`, and the mesh's `active`
+     * threshold is 60 minutes (`ACTIVE_THRESHOLD_MINUTES`), so an agent that
+     * finished an hour ago is still `recentlyActive`. A renderer that wants a
+     * live-turn dot needs a different source — see the note in
+     * `services/identity/aggregate-team.ts`.
+     */
+    recentlyActive: z.boolean(),
+    /**
+     * The project-directory namespace used for cross-agent messaging permissions.
+     *
+     * Stripped from the mesh's public listing along with `projectPath` (both are
+     * internal registry fields), so nothing production serves today fills it.
+     * Optional rather than dropped so a future source entitled to it can fill it
+     * without a schema change.
+     */
     namespace: z.string().optional(),
     /**
      * Where the agent lives, when the caller is entitled to know.
      *
-     * Absent from the mesh's health listing by design (a room is a shared
+     * Stripped from the mesh's public listing by design (a room is a shared
      * surface and `/Users/dorian/…` is not something to hand every reader of
-     * one), so it is optional here rather than assumed.
+     * one), so — like `namespace` — nothing production serves today fills it.
+     * Optional so a future source entitled to it can, without a schema change.
      */
     projectPath: z.string().optional(),
     /** Whether this is `config.agents.defaultAgent`. */

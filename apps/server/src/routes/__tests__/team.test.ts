@@ -108,13 +108,50 @@ describe('GET /api/team', () => {
     expect(res.body.warnings?.[0]?.source).toBe('agents');
   });
 
-  it('falls back to the stored name when this install has no account', async () => {
+  it('claims nobody as the operator when a bound install loses its account row', async () => {
+    // The defensive case, not the common one: this install HAS been bound to an
+    // account (`bindOwner` ran in setup), and then the account row went missing.
+    // Nothing matches `'local'` any more, so the roster honestly claims no self
+    // rather than promoting whoever happens to be first. The ordinary
+    // no-account install — the `'local'` sentinel, never bound — is covered in
+    // `aggregate-team.test.ts` under "a fresh install that has never had an
+    // account", where `isSelf` IS true.
     const res = await request(app({ ownerAccount: () => null })).get('/api/team');
-    // With no account, `isOwner` reads the `'local'` sentinel — which
-    // `bindOwner` has already taken over — so nobody on this roster is the
-    // operator, and the row keeps the name it was minted under.
+
+    expect(res.status).toBe(200);
     expect(res.body.members[0]?.displayName).toBe('You');
     expect(res.body.members[0]?.isSelf).toBe(false);
+  });
+
+  describe('no read can 500 the roster', () => {
+    // Each of these was a 500 before the degradation envelope covered every
+    // read, not just the two registries. The contract is that a roster which
+    // cannot say your name still lists your agents.
+    const boom = () => {
+      throw new Error('boom');
+    };
+
+    it.each([
+      ['the owner-account lookup', { ownerAccount: boom }, 'operator'],
+      ['the owner-email lookup', { ownerEmail: boom }, 'operator'],
+      ['the profile display name', { configDisplayName: boom }, 'config'],
+      ['the default-agent setting', { defaultAgentName: boom }, 'config'],
+    ])('answers 200 when %s throws', async (_label, override, source) => {
+      const res = await request(app(override as Partial<TeamRouterDeps>)).get('/api/team');
+
+      expect(res.status).toBe(200);
+      // The roster is whole: one person plus both agents.
+      expect(res.body.members).toHaveLength(3);
+      expect(res.body.warnings?.[0]?.source).toBe(source);
+    });
+
+    it('still names the operator when only the email lookup throws', async () => {
+      const res = await request(app({ ownerEmail: boom })).get('/api/team');
+      // The account read failed as a whole, so the name falls to the next rung
+      // rather than to a half-built account object.
+      expect(res.body.members.find((m: { isSelf: boolean }) => m.isSelf)).toBeUndefined();
+      expect(res.body.members[0]?.displayName).toBe('You');
+    });
   });
 
   it('has no write path', async () => {

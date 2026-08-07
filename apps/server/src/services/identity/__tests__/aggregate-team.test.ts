@@ -11,7 +11,8 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
-import type { Db } from '@dorkos/db';
+import { authors, eq, type Db } from '@dorkos/db';
+import { AgentRegistry, toManifest } from '@dorkos/mesh';
 import { TeamRosterResponseSchema } from '@dorkos/shared/team-schemas';
 import { AuthorRegistry } from '../../rooms/author-registry.js';
 import {
@@ -57,8 +58,7 @@ describe('aggregateTeamRoster', () => {
     return {
       listPeople: () => registry.listActive('human'),
       listAgents: () => [ANA, DORKBOT],
-      isOwnerAuthor: (authorId) => registry.isOwner(authorId, OWNER_USER_ID),
-      account: () => ({ name: 'Dorian', email: 'dorian@dorkos.ai' }),
+      account: () => ({ id: OWNER_USER_ID, name: 'Dorian', email: 'dorian@dorkos.ai' }),
       configDisplayName: () => null,
       defaultAgentName: () => 'ana',
       ...overrides,
@@ -96,15 +96,29 @@ describe('aggregateTeamRoster', () => {
     expect(members[0]?.kind).toBe('human');
   });
 
-  it('renders the operator first', async () => {
-    registry.resolveExternal({
+  it('renders the operator first even when they were minted LAST', async () => {
+    // The case that makes the sort load-bearing rather than decorative.
+    // `listActive` orders by `created_at`, and a bridged group that saw traffic
+    // before login was enabled leaves an external person on the table BEFORE the
+    // owner's row exists. Without the sort, the roster opens on a stranger.
+    const priya = registry.resolveExternal({
       platformType: 'telegram',
       instanceId: 'inst-1',
       platformUserId: 'tg-9',
       displayName: 'Priya',
     });
+    db.update(authors)
+      .set({ createdAt: '2020-01-01T00:00:00.000Z' })
+      .where(eq(authors.id, priya.id))
+      .run();
+
+    // The premise, asserted rather than assumed: the table really does hand the
+    // stranger over first, so the sort is the only thing that can fix the order.
+    expect(registry.listActive('human')[0]?.id).toBe(priya.id);
+
     const { members } = await aggregateTeamRoster(sources());
     expect(members[0]?.isSelf).toBe(true);
+    expect(members[0]?.id).toBe(ownerAuthorId);
     expect(members[1]?.displayName).toBe('Priya');
   });
 
@@ -121,15 +135,57 @@ describe('aggregateTeamRoster', () => {
       runtime: 'claude-code',
       model: 'opus',
       healthStatus: 'active',
-      working: true,
+      recentlyActive: true,
       isDefault: true,
       isSystem: false,
     });
   });
 
-  it('reads `working` off the mesh health status rather than assuming it', async () => {
+  it('reads `recentlyActive` off the mesh health status rather than assuming it', async () => {
     const { members } = await aggregateTeamRoster(sources());
-    expect(members.find((m) => m.id === 'agent-dorkbot')?.agent?.working).toBe(false);
+    expect(members.find((m) => m.id === 'agent-dorkbot')?.agent?.recentlyActive).toBe(false);
+  });
+
+  it('carries neither projectPath nor namespace, because production cannot', async () => {
+    // A hand-written fixture can claim any field it likes, so this one does not
+    // write one: a REAL registry entry goes through the REAL `toManifest()` —
+    // the exact strip `meshCore.listWithHealth()` applies — and whatever
+    // survives is what the wire actually has. If the strip ever stops removing
+    // these, this test goes red and the two "nothing production fills this"
+    // comments stop being a claim nobody re-checked.
+    const mesh = new AgentRegistry(db);
+    mesh.upsert({
+      id: 'agent-real',
+      name: 'real',
+      displayName: 'Real',
+      description: '',
+      runtime: 'claude-code',
+      capabilities: [],
+      behavior: { responseMode: 'always' },
+      personaEnabled: true,
+      enabledToolGroups: {},
+      mcpServers: [],
+      registeredAt: '2026-08-01T00:00:00.000Z',
+      registeredBy: 'test',
+      projectPath: '/Users/dorian/agents/real',
+      namespace: 'dorkos',
+      scanRoot: '/Users/dorian/agents',
+    });
+
+    const stripped = mesh.listWithHealth().map((entry) => toManifest(entry));
+    // The premise: the registry itself DOES hold both fields, so their absence
+    // downstream is the strip's doing and not an empty fixture.
+    expect(mesh.listWithHealth()[0]).toMatchObject({
+      projectPath: '/Users/dorian/agents/real',
+      namespace: 'dorkos',
+    });
+
+    const { members } = await aggregateTeamRoster(sources({ listAgents: () => stripped }));
+    const real = members.find((m) => m.id === 'agent-real');
+
+    expect(real?.agent).toBeDefined();
+    expect(real?.agent?.projectPath).toBeUndefined();
+    expect(real?.agent?.namespace).toBeUndefined();
   });
 
   it('attributes every non-system agent to the operator and DorkBot to nobody', async () => {
@@ -177,6 +233,56 @@ describe('aggregateTeamRoster', () => {
     expect(priya?.ownerId).toBeNull();
   });
 
+  describe('a fresh install that has never had an account', () => {
+    // THE most common state this endpoint serves, and the one every other
+    // fixture skips by calling `bindOwner`: nobody has enabled login, so the
+    // only human row is the `'local'` sentinel `localHuman()` minted.
+    let sentinelId: string;
+
+    beforeEach(() => {
+      db = createTestDb();
+      registry = new AuthorRegistry(db);
+      sentinelId = registry.localHuman().id;
+    });
+
+    /** No account anywhere — not in the DB, not in config. */
+    function freshSources(): TeamRosterSources {
+      return {
+        listPeople: () => registry.listActive('human'),
+        listAgents: () => [ANA, DORKBOT],
+        account: () => null,
+        configDisplayName: () => null,
+        defaultAgentName: () => 'ana',
+      };
+    }
+
+    it('still knows the sentinel is you', async () => {
+      const { members } = await aggregateTeamRoster(freshSources());
+      const self = members.find((m) => m.isSelf);
+
+      expect(self?.id).toBe(sentinelId);
+      // Nothing on this install knows a real name yet, so the last rung of the
+      // precedence is reached and the stored literal is the honest answer.
+      expect(self?.displayName).toBe('You');
+      expect(self?.person?.email).toBeUndefined();
+    });
+
+    it('still attributes the agents to that person', async () => {
+      const { members } = await aggregateTeamRoster(freshSources());
+
+      expect(members.find((m) => m.id === 'agent-ana')?.ownerId).toBe(sentinelId);
+      expect(members.find((m) => m.id === 'agent-dorkbot')?.ownerId).toBeNull();
+    });
+
+    it('uses the profile name once the user has set one, without an account', async () => {
+      const { members } = await aggregateTeamRoster({
+        ...freshSources(),
+        configDisplayName: () => 'Dorian',
+      });
+      expect(members.find((m) => m.isSelf)?.displayName).toBe('Dorian');
+    });
+  });
+
   describe('per-source degradation (ADR-0310)', () => {
     it('keeps the people when the mesh read fails', async () => {
       const roster = await aggregateTeamRoster(
@@ -222,6 +328,41 @@ describe('aggregateTeamRoster', () => {
 
       expect(roster.members).toEqual([]);
       expect(roster.warnings?.map((w) => w.source)).toEqual(['authors', 'agents']);
+    });
+
+    it('degrades the operator NAME, not the roster, when the account read fails', async () => {
+      const roster = await aggregateTeamRoster(
+        sources({
+          account: () => {
+            throw new Error('account lookup failed');
+          },
+        })
+      );
+
+      // Every row still there — that is the whole point.
+      expect(roster.members).toHaveLength(3);
+      expect(roster.members.filter((m) => m.kind === 'agent')).toHaveLength(2);
+      expect(roster.warnings).toEqual([{ source: 'operator', message: 'account lookup failed' }]);
+    });
+
+    it('keeps the roster when the config read fails, losing only what config knew', async () => {
+      const roster = await aggregateTeamRoster(
+        sources({
+          configDisplayName: () => {
+            throw new Error('config unreadable');
+          },
+          defaultAgentName: () => {
+            throw new Error('config unreadable');
+          },
+        })
+      );
+
+      expect(roster.members).toHaveLength(3);
+      // The account name still wins the precedence — config was only rung two.
+      expect(roster.members.find((m) => m.isSelf)?.displayName).toBe('Dorian');
+      // ...and the only casualty is the default-agent mark.
+      expect(roster.members.find((m) => m.id === 'agent-ana')?.agent?.isDefault).toBe(false);
+      expect(roster.warnings?.every((w) => w.source === 'config')).toBe(true);
     });
 
     it('degrades a source that exceeds its budget instead of hanging', async () => {

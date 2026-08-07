@@ -28,8 +28,8 @@ export interface TeamMeshReader {
 
 /** What the roster router reads. Every dependency is a reader; none of them writes. */
 export interface TeamRouterDeps {
-  /** The rooms domain's author registry — people, and who the operator is. */
-  authors: Pick<AuthorRegistry, 'listActive' | 'isOwner'>;
+  /** The rooms domain's author registry — the people on this install. */
+  authors: Pick<AuthorRegistry, 'listActive'>;
   /**
    * The mesh registry, when it started. Absent is a degraded roster (a
    * `warnings[]` entry), never a failed request — the person reading the page
@@ -60,26 +60,38 @@ export function createTeamRouter(deps: TeamRouterDeps): Router {
   // well-formed, `warnings` omitted entirely when every source read cleanly.
   router.get('/', async (_req, res) => {
     try {
-      // Resolved per request rather than captured: an install becomes owned
-      // partway through its life (the enable-login flow), so a value read at
-      // boot would leave this endpoint believing forever that nobody owns it.
-      const owner = deps.ownerAccount();
       const mesh = deps.meshCore;
 
+      // Every dependency goes over as a THUNK, and that is the contract rather
+      // than a style: `aggregateTeamRoster` reads each one inside its own
+      // degradation envelope, so a locked database or a corrupt `config.json`
+      // costs exactly what that read knew and the roster still answers 200. Any
+      // value resolved HERE, before the call, would be a 500 again — which is
+      // what five of these were.
+      //
+      // It also gets freshness right for free: an install becomes owned partway
+      // through its life (the enable-login flow), so the account is read per
+      // request and never captured.
       const roster = await aggregateTeamRoster({
         listPeople: () => deps.authors.listActive('human'),
         listAgents: () => {
           if (!mesh) throw new Error('The agent registry is not running.');
           return mesh.listWithHealth();
         },
-        isOwnerAuthor: (authorId) => deps.authors.isOwner(authorId, owner?.id ?? null),
-        account: () => (owner ? { name: owner.name, email: deps.ownerEmail(owner.id) } : null),
+        account: () => {
+          const owner = deps.ownerAccount();
+          if (!owner) return null;
+          return { id: owner.id, name: owner.name, email: deps.ownerEmail(owner.id) };
+        },
         configDisplayName: () => deps.configDisplayName(),
         defaultAgentName: () => deps.defaultAgentName(),
       });
 
       return res.json(roster);
     } catch (err) {
+      // Nothing the roster reads reaches here — every source is caught inside
+      // the aggregation. This is the backstop for the response itself failing,
+      // and it stays, because "unreachable" is a claim about today's code.
       logger.error('[Team] roster read failed', logError(err));
       return sendError(res, 500, 'Failed to read the team roster', 'TEAM_ROSTER_FAILED');
     }

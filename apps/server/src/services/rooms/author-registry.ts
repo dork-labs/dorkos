@@ -143,6 +143,38 @@ export function toAuthorRef(record: AuthorRecord, mentionHandle?: string): Autho
   };
 }
 
+/**
+ * Whether an already-loaded author is the owner of this install.
+ *
+ * The record form of {@link AuthorRegistry.isOwner} — the same rule, expressed
+ * over a row a caller is already holding. The method delegates here, so there is
+ * one implementation and it cannot drift.
+ *
+ * Two modes, one meaning:
+ *
+ * - **No owner account** (`ownerUserId` is `null`): the `'local'` sentinel is
+ *   the owner. This is what keeps a single-user install identical — with no
+ *   accounts there is nobody else it could be.
+ * - **An owner account exists:** the author bound to `user:<ownerUserId>` is the
+ *   owner, and nobody else is. Not another human, not an agent, not the system
+ *   author.
+ *
+ * A caller that has just listed the roster must use THIS and not the method: the
+ * method re-reads each row by id, which is one query per person against the table
+ * the list already came from.
+ *
+ * @param record - The author to weigh.
+ * @param ownerUserId - The owner account's user id, or `null` when the install
+ *   has no accounts.
+ */
+export function isOwnerRecord(record: AuthorRecord, ownerUserId: string | null): boolean {
+  if (record.kind !== 'human') return false;
+  return (
+    record.naturalKey ===
+    (ownerUserId === null ? LOCAL_HUMAN_NATURAL_KEY : accountNaturalKey(ownerUserId))
+  );
+}
+
 /** What resolving an author needs: its kind, its stable key, and a label. */
 export interface ResolveAuthorInput {
   kind: AuthorKind;
@@ -589,11 +621,7 @@ export class AuthorRegistry {
    */
   isOwner(authorId: string, ownerUserId: string | null): boolean {
     const author = this.getById(authorId);
-    if (!author || author.kind !== 'human') return false;
-    return (
-      author.naturalKey ===
-      (ownerUserId === null ? LOCAL_HUMAN_NATURAL_KEY : accountNaturalKey(ownerUserId))
-    );
+    return author ? isOwnerRecord(author, ownerUserId) : false;
   }
 
   /** The system author — who a `notice` entry is written by. */
