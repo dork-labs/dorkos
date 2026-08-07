@@ -9,9 +9,9 @@ const HOLD_MS = 500;
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
-/** The only three fields the hook reads off a pointer event. */
-function pointer(x: number, y: number, button = 0): ReactPointerEvent {
-  return { button, clientX: x, clientY: y } as ReactPointerEvent;
+/** The only fields the hook reads off a pointer event. */
+function pointer(x: number, y: number, button = 0, target?: Element): ReactPointerEvent {
+  return { button, clientX: x, clientY: y, target } as unknown as ReactPointerEvent;
 }
 
 describe('useLongPress', () => {
@@ -78,5 +78,52 @@ describe('useLongPress', () => {
     act(() => void vi.advanceTimersByTime(HOLD_MS));
 
     expect(onLongPress).not.toHaveBeenCalled();
+  });
+
+  describe('yieldToSelector', () => {
+    it('never arms when the press starts on the marked element itself', () => {
+      const onLongPress = vi.fn();
+      const marked = document.createElement('button');
+      marked.setAttribute('data-gesture-priority', '');
+      const { result } = renderHook(() =>
+        useLongPress({ onLongPress, yieldToSelector: '[data-gesture-priority]' })
+      );
+
+      act(() => result.current.onPointerDown(pointer(10, 10, 0, marked)));
+      act(() => void vi.advanceTimersByTime(HOLD_MS));
+
+      expect(onLongPress).not.toHaveBeenCalled();
+    });
+
+    it('never arms when the press starts on a DESCENDANT of the marked element', () => {
+      // A press on the mention pill's own Bot icon, say — the marked node is
+      // an ancestor of the actual event target, not the target itself.
+      const onLongPress = vi.fn();
+      const marked = document.createElement('span');
+      marked.setAttribute('data-gesture-priority', '');
+      const child = document.createElement('b');
+      marked.appendChild(child);
+      const { result } = renderHook(() =>
+        useLongPress({ onLongPress, yieldToSelector: '[data-gesture-priority]' })
+      );
+
+      act(() => result.current.onPointerDown(pointer(10, 10, 0, child)));
+      act(() => void vi.advanceTimersByTime(HOLD_MS));
+
+      expect(onLongPress).not.toHaveBeenCalled();
+    });
+
+    it('still fires for a press elsewhere — yielding is per-press, not a global switch', () => {
+      const onLongPress = vi.fn();
+      const unmarked = document.createElement('div');
+      const { result } = renderHook(() =>
+        useLongPress({ onLongPress, yieldToSelector: '[data-gesture-priority]' })
+      );
+
+      act(() => result.current.onPointerDown(pointer(10, 10, 0, unmarked)));
+      act(() => void vi.advanceTimersByTime(HOLD_MS));
+
+      expect(onLongPress).toHaveBeenCalledTimes(1);
+    });
   });
 });

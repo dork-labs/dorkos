@@ -242,6 +242,10 @@ describe('IdentityHoverCard', () => {
     });
 
     it('keeps only one card open at a time — opening a second closes the first', async () => {
+      // Rides Radix's own cross-instance dismissal, not any bookkeeping of
+      // this component's own: pressing Bo's trigger is an outside `pointerdown`
+      // for Ana's still-open `DismissableLayer`, which closes it the same way
+      // it would close for a press anywhere else outside it.
       render(
         <div>
           <IdentityHoverCard identity={{ kind: 'human', displayName: 'Ana', handle: 'ana' }}>
