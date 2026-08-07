@@ -59,20 +59,20 @@ export class McpOAuthSigninPage {
   }
 
   /**
-   * The managed-server row carrying a given name, anchored structurally to the
-   * row's own container so an assertion cannot match a sibling row.
+   * The card for a given server, anchored to the card's own root so an assertion
+   * cannot match a sibling card. Every card carries `data-mcp-server` with the
+   * RAW name the runtime uses, which is also the one name that survives the
+   * card's plugin-name parsing (DOR-1005).
    *
    * @param name - The managed server's name.
    */
   row(name: string): Locator {
-    return this.mcpSection
-      .getByText(name, { exact: true })
-      .locator('xpath=ancestor::div[.//*[@role="switch"]][1]');
+    return this.mcpSection.locator(`[data-mcp-server="${name}"]`);
   }
 
   /**
-   * The Sign in button on the named server's row. Its accessible name is
-   * `Sign in to <name>` (DOR-985), matching the row's other icon-plus-text
+   * The Sign in button on the named server's card. Its accessible name is
+   * `Sign in to <name>` (DOR-985), matching the card's other icon-plus-text
    * controls, so this anchors on the prefix rather than the visible label.
    */
   signInButton(name: string): Locator {

@@ -1,27 +1,22 @@
-import { useCallback, useState } from 'react';
-import { Loader2, ShieldAlert, Sparkles } from 'lucide-react';
-import { Badge, Button, FieldCard, FieldCardContent, Skeleton } from '@/layers/shared/ui';
+import { useCallback, useRef, useState } from 'react';
+import { Button, FieldCard, FieldCardContent, Skeleton } from '@/layers/shared/ui';
 import { useSettingsDeepLink } from '@/layers/shared/model';
 import {
   useAgentMcpServers,
   useMcpConfig,
   useEnableAgentMcpServer,
   useDisableAgentMcpServer,
-  useImportAgentMcpServer,
   useRemoveAgentMcpServer,
   useTestAgentMcpServer,
 } from '@/layers/entities/agent';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
 import type { AgentManifest, AgentRuntime } from '@dorkos/shared/mesh-schemas';
-import type {
-  AgentMcpTestResult,
-  CapabilityApprovalRequired,
-  McpServerEntry,
-} from '@dorkos/shared/transport';
+import type { McpServerEntry } from '@dorkos/shared/transport';
 import { AddMcpServerForm, TRANSPORTS, type TransportKind } from './AddMcpServerForm';
-import type { StampedTestResult } from './ManagedServerRow';
-import { McpStatusChip } from './McpStatusChip';
-import { ManagedServerRow } from './ManagedServerRow';
+import type { StampedTestResult } from '../lib/mcp-server-state';
+import { initialCardOrder, replayFrozenOrder } from '../lib/mcp-card-order';
+import { ManagedMcpServerCard } from './ManagedMcpServerCard';
+import { DiscoveredMcpServerCard } from './DiscoveredMcpServerCard';
 
 /**
  * Transport kinds each runtime can actually run a managed server over.
@@ -38,129 +33,6 @@ const SUPPORTED_TRANSPORTS_BY_RUNTIME: Partial<Record<AgentRuntime, readonly Tra
 /** Transport kinds the Add form should offer for a given agent runtime. */
 function supportedTransportsFor(runtime: AgentRuntime): readonly TransportKind[] {
   return SUPPORTED_TRANSPORTS_BY_RUNTIME[runtime] ?? TRANSPORTS;
-}
-
-interface DiscoveredServerRowProps {
-  /** The discovered entry from `.mcp.json` / live status. */
-  entry: McpServerEntry;
-  /** The agent the server would be imported into. */
-  agentId: string;
-  /** Display label for the agent, used in the confirm copy. */
-  agentLabel: string;
-  /** Whether the agent's runtime can run DorkOS-managed servers (gates Import). */
-  canImport: boolean;
-}
-
-/**
- * One discovered (read-only) server from `.mcp.json` / live status with no
- * managed match. When the runtime can manage servers, it offers a one-click
- * Import that promotes the server into the managed (editable) store through the
- * same operator-approval flow as Add: `mcp.import` returns `approval_required`
- * first, the operator confirms, and the granted retry writes it — after which
- * the managed list and the discovered roster both refresh and the row moves.
- */
-function DiscoveredServerRow({ entry, agentId, agentLabel, canImport }: DiscoveredServerRowProps) {
-  const importServer = useImportAgentMcpServer();
-  const [pending, setPending] = useState<CapabilityApprovalRequired | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const start = useCallback(async () => {
-    setError(null);
-    try {
-      const result = await importServer.mutateAsync({ input: { agentId, name: entry.name } });
-      if (result.status === 'approval_required') setPending(result.approval);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not import the server.');
-    }
-  }, [importServer, agentId, entry.name]);
-
-  const confirm = useCallback(async () => {
-    if (!pending) return;
-    setError(null);
-    try {
-      const result = await importServer.mutateAsync({
-        input: { agentId, name: entry.name },
-        approval: pending,
-      });
-      // On success the row moves to managed via query invalidation; nothing to
-      // reset here because this component unmounts with the discovered list.
-      if (result.status !== 'ok') setError('The import still needs approval. Try again.');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not import the server.');
-    }
-  }, [importServer, agentId, entry.name, pending]);
-
-  if (pending) {
-    return (
-      <div className="border-border/60 my-1.5 space-y-3 rounded-md border p-3">
-        <div className="flex items-start gap-2">
-          <ShieldAlert className="mt-0.5 size-4 shrink-0 text-amber-500" />
-          <div className="space-y-1">
-            <p className="text-sm font-medium">
-              Manage &ldquo;{entry.name}&rdquo; for {agentLabel}?
-            </p>
-            <p className="text-muted-foreground text-xs">
-              This brings the {entry.type} server from this project&rsquo;s config under DorkOS
-              management, so you can enable, disable, and edit it here.
-            </p>
-          </div>
-        </div>
-        {error && <p className="text-destructive text-xs">{error}</p>}
-        <div className="flex justify-end gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setPending(null)}
-            disabled={importServer.isPending}
-            className="focus-visible:ring-2"
-          >
-            Cancel
-          </Button>
-          <Button
-            size="sm"
-            onClick={confirm}
-            disabled={importServer.isPending}
-            className="focus-visible:ring-2"
-          >
-            {importServer.isPending ? 'Importing…' : 'Confirm & manage'}
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-1 py-1.5">
-      <div className="flex items-center gap-2">
-        <McpStatusChip statusKey={entry.status} />
-        <span className="min-w-0 truncate text-sm">{entry.name}</span>
-        <span className="text-muted-foreground/50 text-xs">{entry.type}</span>
-        <Badge variant="outline" className="text-muted-foreground ml-auto text-xs font-normal">
-          discovered
-        </Badge>
-        {canImport && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={start}
-            disabled={importServer.isPending}
-            aria-label={`Manage ${entry.name}`}
-            className="focus-visible:ring-2"
-          >
-            {importServer.isPending ? (
-              <Loader2 className="size-3 animate-spin" />
-            ) : (
-              <>
-                <Sparkles className="size-3.5" />
-                Manage
-              </>
-            )}
-          </Button>
-        )}
-      </div>
-      {error && <p className="text-destructive pl-4 text-xs">{error}</p>}
-    </div>
-  );
 }
 
 interface AgentMcpServersProps {
@@ -195,13 +67,20 @@ function InboundMcpCrossLink() {
 
 /**
  * The managed MCP servers section of the Agent Hub Toolkit: managed servers
- * (editable, joined with live status by name), discovered servers (read-only),
- * and a gated Add affordance. Add is disabled for runtimes that cannot run
- * DorkOS-managed servers (OpenCode today, DOR-893) — the roster still shows.
+ * (editable, joined with live status by name), servers the runtime loads from
+ * elsewhere, and a gated Add affordance. Add is disabled for runtimes that cannot
+ * run DorkOS-managed servers (OpenCode today, DOR-893) — the roster still shows.
+ *
+ * **The order is sorted once and then frozen** (spec `mcp-server-cards-redesign`
+ * §2.2). Cards that need you are on top when the panel opens; from then on a card
+ * changing state changes its chip, its sentence and its button, never its
+ * position — because a card someone is mid-sign-in on must not move out from
+ * under them. The next mount sorts again.
  */
 export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
   const managed = useAgentMcpServers(agent.id);
-  const { data: liveConfig } = useMcpConfig(projectPath, agent.runtime);
+  const live = useMcpConfig(projectPath, agent.runtime);
+  const liveConfig = live.data;
   const caps = useCapabilitiesForRuntime(agent.runtime);
   const canAdd = caps?.supportsManagedMcpServers ?? true;
 
@@ -211,10 +90,10 @@ export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
   const testServer = useTestAgentMcpServer();
 
   // Probe results, each stamped with when it landed. The stamp is what keeps a
-  // row honest: a probe is a fact about one moment, and both the listing and the
-  // row's own sign-in flow can learn a newer one. The rule that weighs them lives
-  // with the row's other precedence rules (`ManagedServerRow.liveTestResult`),
-  // because it needs a fact only the row has — whether ITS sign-in just landed.
+  // card honest: a probe is a fact about one moment, and both the listing and the
+  // card's own sign-in flow can learn a newer one. The rule that weighs them lives
+  // with the card's other precedence rules (`liveTestResult`), because it needs a
+  // fact only the card has — whether ITS sign-in just landed.
   const [testResults, setTestResults] = useState<Record<string, StampedTestResult>>({});
   const [testingName, setTestingName] = useState<string | null>(null);
   // The most recently added server, so the unattended probe below can tell the
@@ -255,9 +134,9 @@ export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
   );
 
   // A just-added remote server is probed once, unasked. Only the probe knows
-  // whether it wants a sign-in, and until something asks, the row can only say
-  // "Unknown" — so the person would have to guess that Test is the next step
-  // (DOR-985). A local stdio server needs no sign-in, so it is left alone.
+  // whether it wants a sign-in, and until something asks, the card can only say
+  // "Not checked yet" — so the person would have to guess that Test is the next
+  // step (DOR-985). A local stdio server needs no sign-in, so it is left alone.
   const handleAdded = useCallback(
     ({ name, transport }: { name: string; transport: TransportKind }) => {
       setLastAdded(name);
@@ -275,6 +154,73 @@ export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
   const liveByName = new Map((liveConfig?.servers ?? []).map((s) => [s.name, s]));
   const discovered = (liveConfig?.servers ?? []).filter((s) => !managedNames.has(s.name));
   const busy = enableServer.isPending || disableServer.isPending || removeServer.isPending;
+
+  // The freeze itself: the first render where BOTH queries have settled captures
+  // the order, and every render after replays it. A ref, not state — capturing an
+  // order must not itself cause a render, and the value is read during the same
+  // render that writes it. Servers that appear later are APPENDED, never
+  // inserted, so nothing already on screen moves.
+  //
+  // Waiting for both is the whole correctness of the sort, not politeness. The
+  // two sources land independently — the manifest is a file read, the runtime's
+  // status goes through the runtime — and freezing on whichever arrived first
+  // sorted only that half. Managed-first (the likely race) meant no runtime-only
+  // state could ever reach the attention band: a server the runtime reports as
+  // failed was appended AFTER the freeze, below every working card, which is
+  // precisely the card the sort exists to lift.
+  const frozenOrder = useRef<string[] | null>(null);
+  const bothSettled = !managed.isPending && !live.isPending;
+  const byName = new Map<string, { kind: 'managed' | 'discovered'; index: number }>();
+  managedServers.forEach((server, index) => byName.set(server.name, { kind: 'managed', index }));
+  discovered.forEach((entry, index) => byName.set(entry.name, { kind: 'discovered', index }));
+
+  if (frozenOrder.current === null && bothSettled && byName.size > 0) {
+    frozenOrder.current = initialCardOrder({
+      managed: managedServers,
+      live: liveByName,
+      discovered,
+    });
+  }
+  const present = [...managedServers.map((s) => s.name), ...discovered.map((s) => s.name)];
+  const { ordered, added } = replayFrozenOrder({ frozen: frozenOrder.current ?? [], present });
+  if (added.length > 0 && frozenOrder.current !== null) {
+    frozenOrder.current = [...ordered, ...added];
+  }
+  const cardOrder = [...ordered, ...added];
+
+  /** Render one card by name, in whichever kind it currently is. */
+  function renderCard(name: string) {
+    const slot = byName.get(name);
+    if (!slot) return null;
+    if (slot.kind === 'managed') {
+      const server = managedServers[slot.index]!;
+      return (
+        <ManagedMcpServerCard
+          key={server.name}
+          server={server}
+          agentId={agent.id}
+          live={liveByName.get(server.name)}
+          testResult={testResults[server.name]}
+          rosterUpdatedAt={managed.dataUpdatedAt}
+          testing={testingName === server.name}
+          busy={busy}
+          onToggle={handleToggle}
+          onTest={handleTest}
+          onRemove={handleRemove}
+        />
+      );
+    }
+    const entry = discovered[slot.index] as McpServerEntry;
+    return (
+      <DiscoveredMcpServerCard
+        key={entry.name}
+        entry={entry}
+        agentId={agent.id}
+        agentLabel={agent.displayName ?? agent.name}
+        canImport={canAdd}
+      />
+    );
+  }
 
   return (
     <section className="space-y-3" aria-label="MCP servers">
@@ -323,7 +269,7 @@ export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
             </Button>
           </FieldCardContent>
         </FieldCard>
-      ) : managedServers.length === 0 && discovered.length === 0 ? (
+      ) : cardOrder.length === 0 ? (
         <FieldCard>
           <FieldCardContent>
             <p className="text-muted-foreground text-sm">
@@ -336,32 +282,7 @@ export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
         </FieldCard>
       ) : (
         <FieldCard>
-          <FieldCardContent>
-            {managedServers.map((server) => (
-              <ManagedServerRow
-                key={server.name}
-                server={server}
-                agentId={agent.id}
-                live={liveByName.get(server.name)}
-                testResult={testResults[server.name]}
-                rosterUpdatedAt={managed.dataUpdatedAt}
-                testing={testingName === server.name}
-                busy={busy}
-                onToggle={handleToggle}
-                onTest={handleTest}
-                onRemove={handleRemove}
-              />
-            ))}
-            {discovered.map((entry) => (
-              <DiscoveredServerRow
-                key={entry.name}
-                entry={entry}
-                agentId={agent.id}
-                agentLabel={agent.displayName ?? agent.name}
-                canImport={canAdd}
-              />
-            ))}
-          </FieldCardContent>
+          <FieldCardContent>{cardOrder.map(renderCard)}</FieldCardContent>
         </FieldCard>
       )}
     </section>

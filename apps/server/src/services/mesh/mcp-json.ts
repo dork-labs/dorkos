@@ -26,6 +26,14 @@ export interface McpJsonServerSummary {
   name: string;
   /** Its transport kind, defaulting to `stdio` when the entry omits `type`. */
   type: 'stdio' | 'sse' | 'http';
+  /**
+   * Always `'project'`. Everything this module summarizes was read out of the
+   * workspace's own `.mcp.json`, so the scope is not inferred — it is where the
+   * bytes came from. The runtime's live status carries its own scope per entry;
+   * this fallback path had been leaving the field absent, which left the client
+   * with nothing to say about a server it could prove was the project's own.
+   */
+  scope: 'project';
 }
 
 /**
@@ -70,9 +78,10 @@ export async function readMcpJsonServers(cwd: string): Promise<Record<string, un
 }
 
 /**
- * Reduce a raw `mcpServers` map to the `{ name, type }` summaries the read-only
- * discovered roster shows. An entry with no `type` is reported as `stdio`, which
- * is how Claude Code treats a bare command entry.
+ * Reduce a raw `mcpServers` map to the summaries the read-only discovered roster
+ * shows. An entry with no `type` is reported as `stdio`, which is how Claude Code
+ * treats a bare command entry, and every entry is stamped `scope: 'project'` —
+ * see {@link McpJsonServerSummary.scope}.
  *
  * @param servers - The raw `mcpServers` map from {@link readMcpJsonServers}.
  * @returns One summary per declared server.
@@ -81,7 +90,7 @@ export function summarizeMcpJsonServers(servers: Record<string, unknown>): McpJs
   return Object.entries(servers).map(([name, value]) => {
     const parsed = McpJsonEntrySchema.safeParse(value);
     const type = (parsed.success ? parsed.data.type : undefined) ?? 'stdio';
-    return { name, type };
+    return { name, type, scope: 'project' };
   });
 }
 
