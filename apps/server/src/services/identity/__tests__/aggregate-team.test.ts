@@ -141,7 +141,15 @@ describe('aggregateTeamRoster', () => {
       // registered where an old one lived is a different entity, so it must not
       // answer to the name people remember.
       registerInMesh(ANA.id, '/Users/dorian/agents/ana');
-      const previous = registry.resolveAgent('/Users/dorian/agents/ana', 'Ana');
+      const previous = registry.resolve({
+        kind: 'agent',
+        naturalKey: '/Users/dorian/agents/ana',
+        displayName: 'Ana',
+        // The face is inherited by exactly the same join as the address, so it
+        // has to be seeded here or the assertion below passes on an empty row
+        // and proves nothing about the photo.
+        imageUrl: '/api/profile/avatar/ana?v=one',
+      });
       registry.setHandle(previous.id, 'ana');
 
       const { members } = await aggregateTeamRoster(
@@ -151,7 +159,12 @@ describe('aggregateTeamRoster', () => {
         })
       );
 
-      expect(members.find((m) => m.kind === 'agent')?.handle).toBeNull();
+      const successor = members.find((m) => m.kind === 'agent');
+      expect(successor?.handle).toBeNull();
+      // And it does not wear the previous occupant's face either. Both ride the
+      // occupancy stamp, so a join that widened to "any author at this
+      // directory" would hand over the name AND the photo together.
+      expect(successor?.imageUrl).toBeUndefined();
     });
   });
 

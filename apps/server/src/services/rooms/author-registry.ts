@@ -833,7 +833,13 @@ export class AuthorRegistry {
    * @param agentPath - Absolute path to the agent's project directory.
    * @param displayName - The agent's current name, for rendering.
    * @param presentation - Emoji and colour, when the caller knows them. Omitted
-   *   fields leave the stored render cache alone.
+   *   fields leave the stored render cache alone. **`imageUrl` is deliberately
+   *   not here**, though the row carries one: an agent's identity language is
+   *   its emoji and its colour, and no source of agent photos exists (the
+   *   upload surface is for people). A caller that does acquire one goes
+   *   through {@link AuthorRegistry.resolve}, which takes every cached field —
+   *   so this stays a parameter list of things something actually knows,
+   *   rather than one that invites a value nothing can supply.
    */
   resolveAgent(
     agentPath: string,

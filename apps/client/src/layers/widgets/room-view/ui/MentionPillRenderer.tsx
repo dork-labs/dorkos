@@ -80,6 +80,10 @@ export function MentionPillRenderer({ authors, authorId, children }: MentionPill
         handle: author.handle ?? undefined,
         color: author.color,
         emoji: author.emoji,
+        // The card and the message gutter draw the same person, so they read
+        // the same render cache. Omitting this is how a photo would show beside
+        // somebody's message and an emoji inside the card that describes them.
+        imageUrl: author.imageUrl,
         origin: author.origin,
         // The card draws a chip per fact it is handed and nothing at all for
         // one it is not, so an agent whose manifest never resolved reads as
