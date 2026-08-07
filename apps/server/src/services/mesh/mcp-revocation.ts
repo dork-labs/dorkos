@@ -42,24 +42,39 @@
  * because the probe really dials, a just-signed-in grant passes and the watch
  * stands down, and a transport blip is not a refusal.
  *
- * ## Empirical anchor
+ * ## Empirical anchor, and exactly how far it reaches
  *
- * Observed 2026-08-07 against `@anthropic-ai/claude-agent-sdk` **0.3.177**, one
- * real turn, two MCP servers pointed at the same always-401 endpoint. Verbatim
- * from `query.mcpServerStatus()`:
+ * Observed 2026-08-07 against `@anthropic-ai/claude-agent-sdk` **0.3.177**: one
+ * real turn, two MCP servers pointed at the same always-401 endpoint, one
+ * carrying a DorkOS-style bearer and one with no credentials at all. The verbatim
+ * `query.mcpServerStatus()` array is committed at
+ * `__tests__/fixtures/mcp-server-status-401.observed.json` and asserted against
+ * in `mcp-revocation.test.ts`, so the anchor is reproducible from the repo
+ * without spending a turn. The harness that produced it: an `http.createServer`
+ * answering every request `401` with a `WWW-Authenticate: Bearer` header, both
+ * servers declared under `query({ options: { mcpServers } })`, and the resolved
+ * `mcpServerStatus()` promise printed. It is not run by any suite.
  *
- * ```json
- * { "name": "dor981-bearer-…",    "status": "failed",
- *   "error": "Server rejected the configured Authorization header (HTTP 401). Check that the token is valid for this MCP endpoint — OAuth fallback is disabled when headers.Authorization is set." }
- * { "name": "dor981-tokenless-…", "status": "failed", "error": "" }
- * ```
+ * Three things to carry forward, and they are NOT equally well evidenced:
  *
- * Two things to carry forward. The bearer-carrying server reports `failed`, never
- * `needs-auth` — the headline finding. And `errorCode` (`AUTH_HEADER_REJECTED`
- * in the binary) **does not cross the SDK boundary**: it is absent from the
- * observed objects and from `McpServerStatus` in `sdk.d.ts`. Detection therefore
- * cannot key on it, and deliberately keys on nothing the SDK words — see
- * {@link mcpAuthEvidenceFrom}.
+ * 1. **Observed.** The bearer-carrying server reports `failed` with the
+ *    header-rejected error text. That is the headline finding and the reason the
+ *    first version of this module never fired.
+ * 2. **Observed.** `errorCode` (`AUTH_HEADER_REJECTED` in the binary) **does not
+ *    cross the SDK boundary** — absent from the observed objects and from
+ *    `McpServerStatus` in `sdk.d.ts`. Detection cannot key on it, and
+ *    deliberately keys on nothing the SDK words ({@link mcpAuthEvidenceFrom}).
+ * 3. **Binary reading only.** That `needs-auth` is the TOKENLESS case, and that
+ *    its verdict is cached for 15 minutes. The live run did NOT produce a
+ *    `needs-auth`: the tokenless server also came back `failed` (with an empty
+ *    error), because the harness 401'd the dynamic-client-registration request
+ *    too and the CLI took a different branch. So that half rests on reading the
+ *    shipped binary — `Uc8`/`eo7`, TTL `YE3 = 900000`, and the dispatcher's
+ *    "Skipping connection (cached needs-auth)" — not on observation.
+ *
+ * Point 3 is precisely why the probe exists rather than a smarter status filter:
+ * the one claim this module cannot fully verify from outside is also the one it
+ * refuses to act on.
  *
  * ## What it refuses to conclude
  *
@@ -240,10 +255,17 @@ export function createMcpRevocationWatch(deps: McpRevocationDeps): McpAuthEviden
   // report the same server within milliseconds of each other, and each would
   // otherwise probe and mint its own sign-in flow before the other's finished.
   const inFlight = new Set<string>();
-  // The cards THIS module drew, so a target that turns out to be healthy can have
-  // its card retired. Keyed per target, and deliberately not a record of cards
-  // the AGENT asked for: retiring one of those would delete a link the person is
-  // still walking through.
+  // The cards THIS module put on screen, so a target that turns out healthy can
+  // have its card retired rather than left telling someone to sign in to a
+  // server they are already signed in to.
+  //
+  // Note what this does and does not distinguish. It records the flow a card was
+  // drawn ON, which on the two re-use paths is a flow the AGENT minted — so an
+  // agent-initiated sign-in this module adopted CAN be settled here. That is
+  // deliberate and safe: settling only ever happens after a probe has just
+  // proved the server accepts the token DorkOS holds, which makes the link that
+  // card offers moot no matter who minted it. What is never touched is a flow
+  // this module never drew a card for.
   const drawn = new Map<string, DrawnCard>();
 
   const investigate = async (target: McpOAuthTarget, evidence: McpAuthEvidence): Promise<void> => {
@@ -364,9 +386,9 @@ export function createMcpRevocationWatch(deps: McpRevocationDeps): McpAuthEviden
    * Retire a card THIS module drew, once the target turns out to be fine.
    *
    * A card that outlives its problem is worse than no card: it tells someone to
-   * sign in to a server they are already signed in to. Scoped to our own flows on
-   * purpose — settling a sign-in the AGENT asked for would delete a link the
-   * person may be part-way through.
+   * sign in to a server they are already signed in to. The reach is "a card we
+   * put on screen", which includes an agent-minted flow we adopted — see the
+   * {@link drawn} comment for why that is safe.
    */
   const settleDrawnCard = (key: string, outcome: 'connected' | 'failed'): void => {
     const card = drawn.get(key);

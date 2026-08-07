@@ -26,6 +26,10 @@ import { writeManifest } from '@dorkos/shared/manifest';
 import type { AgentManifest, McpServerTransport } from '@dorkos/shared/mesh-schemas';
 
 import type { McpTargetProbeResult } from '../agent-mcp-target-probe.js';
+// Imported rather than read at runtime: this suite shares a process pool with a
+// test that deliberately injects `EMFILE` into `fs`, so a fixture read here is a
+// real source of cross-file flake. The import is resolved at transform time.
+import observedStatus from './fixtures/mcp-server-status-401.observed.json' with { type: 'json' };
 
 const AGENT_ID = '01HV7KJZZZ0000000000000000';
 const SERVER = 'granola';
@@ -523,6 +527,31 @@ describe('one card per server', () => {
 });
 
 describe('reading a turn’s status snapshot', () => {
+  it('catches the bearer-refused server in the ACTUAL observed snapshot', async () => {
+    // The anchor for the whole design, replayed from the recorded output of a
+    // real turn rather than from a hand-written idea of what one looks like.
+    //
+    // Provenance: `fixtures/mcp-server-status-401.observed.json` is the verbatim
+    // `query.mcpServerStatus()` array from one turn against
+    // `@anthropic-ai/claude-agent-sdk` 0.3.177, with two MCP servers pointed at
+    // an always-401 endpoint — one carrying a DorkOS-style bearer, one with no
+    // credentials at all. Unrelated servers from that machine were removed; the
+    // four entries kept are unedited. The harness is described in the module doc
+    // of `mcp-revocation.ts` and is not run by any suite (it spends a real turn).
+    const { mcpAuthEvidenceFrom } = await import('../mcp-revocation.js');
+    const observed: Array<{ name: string; status?: string }> = observedStatus;
+
+    // The bearer-carrying server is `failed`, NOT `needs-auth` — which is why
+    // the first version of this feature never fired. Reverting the filter to
+    // `needs-auth` only drops it and reddens this against real recorded data.
+    expect(observed.find((s) => s.name.startsWith('dor981-bearer'))?.status).toBe('failed');
+    expect(mcpAuthEvidenceFrom(observed)).toContain(
+      observed.find((s) => s.name.startsWith('dor981-bearer'))!.name
+    );
+    // …and the two servers that were merely still connecting are left alone.
+    expect(mcpAuthEvidenceFrom(observed)).not.toContain('shadcn');
+  });
+
   it('looks at every server that did not come up — `failed` above all', async () => {
     const { mcpAuthEvidenceFrom } = await import('../mcp-revocation.js');
 
@@ -592,6 +621,42 @@ describe('the probe is the arbiter, never the report', () => {
     expect(ingested.at(-1)).toEqual({
       type: 'mcp_signin_resolved',
       flowId: cardFlow,
+      outcome: 'connected',
+    });
+  });
+
+  it('settles an AGENT-minted card it adopted, once the server accepts the token', async () => {
+    // The reach of `drawn` in one test. The agent asked for the sign-in, so the
+    // flow is its own; this module only re-drew that card on a later failing
+    // turn. When the probe then proves the server accepts the token DorkOS
+    // holds, the link that card offers is moot whoever minted it — so it is
+    // settled rather than left on screen. What is pinned here is that the
+    // adopted flow IS in reach; the comment on `drawn` explains why that is safe.
+    const { oauth, watch, cwd, provider, ingested, setProbeAnswer, startSignin } =
+      await buildWorld();
+
+    // An agent-initiated sign-in, left pending — no token yet.
+    const agentFlow = await oauth.startSignin(TARGET, { originSessionId: SESSION_ID });
+    expect(agentFlow.authorizeUrl).toBeDefined();
+    startSignin.mockClear();
+
+    // A failing turn re-draws that same flow's card rather than minting one.
+    await watch({ sessionId: SESSION_ID, cwd, serverNames: [SERVER] });
+    expect(startSignin).not.toHaveBeenCalled();
+    expect(ingested).toEqual([
+      expect.objectContaining({ type: 'mcp_signin_required', flowId: agentFlow.flowId }),
+    ]);
+
+    // The person finishes it; the server is healthy from here.
+    provider.challenge = new URL(agentFlow.authorizeUrl!).searchParams.get('code_challenge') ?? '';
+    await oauth.handleCallback({ state: agentFlow.flowId, code: AUTH_CODE });
+    setProbeAnswer({ ok: true, toolCount: 3 });
+
+    await watch({ sessionId: SESSION_ID, cwd, serverNames: [SERVER] });
+
+    expect(ingested.at(-1)).toEqual({
+      type: 'mcp_signin_resolved',
+      flowId: agentFlow.flowId,
       outcome: 'connected',
     });
   });

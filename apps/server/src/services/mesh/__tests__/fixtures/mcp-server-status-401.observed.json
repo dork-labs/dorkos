@@ -1,0 +1,32 @@
+[
+  {
+    "name": "shadcn",
+    "status": "pending",
+    "config": { "type": "stdio", "command": "npx", "args": ["shadcn@latest", "mcp"] },
+    "scope": "project"
+  },
+  {
+    "name": "resend",
+    "status": "pending",
+    "config": { "type": "stdio", "command": "npx", "args": ["-y", "resend-mcp"] },
+    "scope": "project"
+  },
+  {
+    "name": "dor981-bearer-msj1b014",
+    "status": "failed",
+    "error": "Server rejected the configured Authorization header (HTTP 401). Check that the token is valid for this MCP endpoint — OAuth fallback is disabled when headers.Authorization is set.",
+    "config": {
+      "type": "http",
+      "url": "http://127.0.0.1:60565/mcp",
+      "headers": { "Authorization": "Bearer dead-token-xyz" }
+    },
+    "scope": "dynamic"
+  },
+  {
+    "name": "dor981-tokenless-msj1b014",
+    "status": "failed",
+    "error": "",
+    "config": { "type": "http", "url": "http://127.0.0.1:60565/mcp" },
+    "scope": "dynamic"
+  }
+]
