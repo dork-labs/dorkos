@@ -46,25 +46,25 @@ otherwise shell out to the CLI.
 ## Discover, then act
 
 Ask the running instance what it can do rather than guessing. \`dorkos capabilities\`
-prints a table of id, tier, and title (\`--json\` for the raw catalog, which pipes
-into jq); the \`list_capabilities\` tool returns the same thing in-session. Then run
-any entry by id:
+prints id, tier, and title for every capability (\`--json\` pipes the raw catalog into
+jq). In-session, \`list_capabilities\` answers with less: one compact line each, one
+page at a time, so discovery cannot flood your context. Narrow with \`domain\` or
+\`query\`, ask \`detail:'full'\` for the JSON Schemas, page with \`cursor\`, and read the
+\`guidance\` line when a page says it left something out. Then run any entry by id:
 
     dorkos call <capability-id> [--input '<json>'] [--approval <token>]
     dorkos call operator.activity_list --input '{"limit":5}'
 
 \`dorkos call\` is the universal actuation path: most capabilities have no curated
-CLI verb of their own, and it is the only way a Codex or OpenCode session reaches
-them. It prints raw JSON on stdout.
+CLI verb of their own. It prints raw JSON on stdout.
 
 The catalog covers capabilities only. The agent, task, relay, mesh, binding,
 extension, and UI tools are registered straight onto the MCP server: they appear
 in your own tool list, not in the catalog, and \`dorkos call\` cannot reach them.
-They carry a tier all the same and answer to the same gate. Only some have a CLI
-path instead: agent reads map to \`dorkos agent list|show\` and tasks to
-\`dorkos task list|create|trigger|runs\`. Relay, mesh, binding, extension, and UI
-have no CLI verb, so without the MCP tools they are out of reach entirely. Say
-that plainly rather than hunting for a command.
+They carry a tier all the same and answer to the same gate. Some have a CLI verb
+instead (see the list below); relay, mesh, binding, extension, and UI have none, so
+without the MCP tools they are out of reach entirely. Say that plainly rather than
+hunting for a command.
 
 ## Permission tiers
 

@@ -36,6 +36,25 @@ function createWrapper(transport: Transport) {
   return { queryClient, wrapper };
 }
 
+/**
+ * Advance the fake clock and let React settle.
+ *
+ * Two passes on purpose: the poll's promise resolves during the first, and the
+ * query observer's notification only reaches React on the pass after that. One
+ * pass reads the state one render behind and makes every timing assertion here
+ * report the wrong thing.
+ *
+ * @param ms - How far to move the fake clock.
+ */
+async function tick(ms: number): Promise<void> {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(10);
+  });
+}
+
 beforeEach(() => vi.clearAllMocks());
 afterEach(cleanup);
 
@@ -150,6 +169,181 @@ describe('useMcpSigninFlow', () => {
     expect(result.current.state.error).toBe(
       '"granola" is a local (stdio) server, which has no OAuth sign-in.'
     );
+    expect(result.current.state.authorizeUrl).toBeNull();
+  });
+
+  it('stops polling for good once the flow lands connected', async () => {
+    vi.useFakeTimers();
+    try {
+      const transport = createMockTransport();
+      vi.mocked(transport.startMcpSignin).mockResolvedValue(startResult);
+      vi.mocked(transport.pollMcpSignin).mockResolvedValue({ status: 'connected' });
+
+      const { result } = renderHook(() => useMcpSigninFlow(AGENT_ID, SERVER), {
+        wrapper: createWrapper(transport).wrapper,
+      });
+
+      act(() => result.current.start());
+      await tick(0);
+      act(() => result.current.authOpened());
+      await tick(0);
+      expect(result.current.state.step).toBe('connected');
+      expect(transport.pollMcpSignin).toHaveBeenCalledTimes(1);
+
+      // Five poll intervals' worth of time with nothing more asked of the server.
+      // Returning an interval instead of `false` on a terminal status reddens this.
+      await tick(10_000);
+      expect(transport.pollMcpSignin).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps polling through a dropped request rather than calling the sign-in failed', async () => {
+    vi.useFakeTimers();
+    try {
+      const transport = createMockTransport();
+      vi.mocked(transport.startMcpSignin).mockResolvedValue(startResult);
+      vi.mocked(transport.pollMcpSignin)
+        .mockRejectedValueOnce(new Error('Failed to fetch'))
+        .mockResolvedValue({ status: 'connected' });
+
+      const { result } = renderHook(() => useMcpSigninFlow(AGENT_ID, SERVER), {
+        wrapper: createWrapper(transport).wrapper,
+      });
+
+      act(() => result.current.start());
+      await tick(0);
+      act(() => result.current.authOpened());
+      await tick(0);
+
+      // One failed request is a network hiccup, not a failed sign-in — and the
+      // browser's own words never reach the person.
+      expect(result.current.state.step).toBe('waiting');
+      expect(result.current.state.error).toBeNull();
+      expect(result.current.state.retryNotice).toBe('Couldn’t check the sign-in — retrying.');
+
+      // The next attempt, on the backed-off interval, finds the finished sign-in.
+      await tick(4_000);
+      expect(transport.pollMcpSignin).toHaveBeenCalledTimes(2);
+      expect(result.current.state.step).toBe('connected');
+      expect(result.current.state.retryNotice).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('forgives failures that are not consecutive, however many there are', async () => {
+    vi.useFakeTimers();
+    try {
+      const transport = createMockTransport();
+      vi.mocked(transport.startMcpSignin).mockResolvedValue(startResult);
+      // Alternating fail/pending, far past the budget in TOTAL failures. A
+      // lifetime counter kills this sign-in around the third failure; a
+      // consecutive one never trips, because every failure is followed by a
+      // healthy poll that resets it.
+      const poll = vi.mocked(transport.pollMcpSignin);
+      for (let i = 0; i < 6; i++) {
+        poll
+          .mockRejectedValueOnce(new Error('Failed to fetch'))
+          .mockResolvedValueOnce({ status: 'pending' });
+      }
+      poll.mockResolvedValue({ status: 'connected' });
+
+      const { result } = renderHook(() => useMcpSigninFlow(AGENT_ID, SERVER), {
+        wrapper: createWrapper(transport).wrapper,
+      });
+
+      act(() => result.current.start());
+      await tick(0);
+      act(() => result.current.authOpened());
+      await tick(120_000);
+
+      // Well past the five-in-a-row budget in total failures.
+      expect(poll.mock.calls.length).toBeGreaterThan(5);
+      expect(result.current.state.step).toBe('connected');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('clears the retry notice once a check succeeds again', async () => {
+    vi.useFakeTimers();
+    try {
+      const transport = createMockTransport();
+      vi.mocked(transport.startMcpSignin).mockResolvedValue(startResult);
+      vi.mocked(transport.pollMcpSignin)
+        .mockRejectedValueOnce(new Error('Failed to fetch'))
+        .mockResolvedValue({ status: 'pending' });
+
+      const { result } = renderHook(() => useMcpSigninFlow(AGENT_ID, SERVER), {
+        wrapper: createWrapper(transport).wrapper,
+      });
+
+      act(() => result.current.start());
+      await tick(0);
+      act(() => result.current.authOpened());
+      await tick(0);
+      expect(result.current.state.retryNotice).toBe('Couldn’t check the sign-in — retrying.');
+
+      // One healthy poll later the flow is plainly fine again. A cumulative
+      // counter leaves "Couldn’t check the sign-in — retrying." on screen for the
+      // rest of the flow, and the backoff permanently widened.
+      await tick(4_000);
+      expect(result.current.state.retryNotice).toBeNull();
+      expect(result.current.state.step).toBe('waiting');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('gives up with plain copy once the status checks keep failing', async () => {
+    vi.useFakeTimers();
+    try {
+      const transport = createMockTransport();
+      vi.mocked(transport.startMcpSignin).mockResolvedValue(startResult);
+      vi.mocked(transport.pollMcpSignin).mockRejectedValue(new Error('Failed to fetch'));
+
+      const { result } = renderHook(() => useMcpSigninFlow(AGENT_ID, SERVER), {
+        wrapper: createWrapper(transport).wrapper,
+      });
+
+      act(() => result.current.start());
+      await tick(0);
+      act(() => result.current.authOpened());
+      await tick(60_000);
+
+      // Bounded, so a server that is genuinely gone does not poll forever…
+      expect(result.current.state.step).toBe('failed');
+      const attempts = vi.mocked(transport.pollMcpSignin).mock.calls.length;
+      expect(attempts).toBe(5);
+      // …and what a person reads is a sentence, not `Failed to fetch`.
+      expect(result.current.state.error).toBe(
+        'We couldn’t check whether the sign-in finished. Try again in a moment.'
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('fails a start that comes back with neither a live token nor a link', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.startMcpSignin).mockResolvedValue({
+      flowId: 'flow-3',
+      alreadyConnected: false,
+      disclosure: startResult.disclosure,
+      message: 'no link',
+    });
+
+    const { result } = renderHook(() => useMcpSigninFlow(AGENT_ID, SERVER), {
+      wrapper: createWrapper(transport).wrapper,
+    });
+
+    act(() => result.current.start());
+
+    // There is nothing for the person to open, so the flow says so rather than
+    // parking on a disclosure whose link would be a dead `#`.
+    await waitFor(() => expect(result.current.state.step).toBe('failed'));
     expect(result.current.state.authorizeUrl).toBeNull();
   });
 

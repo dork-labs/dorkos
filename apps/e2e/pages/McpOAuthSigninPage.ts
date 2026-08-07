@@ -70,9 +70,18 @@ export class McpOAuthSigninPage {
       .locator('xpath=ancestor::div[.//*[@role="switch"]][1]');
   }
 
-  /** The Sign in button on the named server's row. */
+  /**
+   * The Sign in button on the named server's row. Its accessible name is
+   * `Sign in to <name>` (DOR-985), matching the row's other icon-plus-text
+   * controls, so this anchors on the prefix rather than the visible label.
+   */
   signInButton(name: string): Locator {
-    return this.row(name).getByRole('button', { name: 'Sign in' });
+    return this.row(name).getByRole('button', { name: /^Sign in/ });
+  }
+
+  /** The Dismiss button on the sign-in panel's success state. */
+  dismissSignInPanel(): Locator {
+    return this.mcpSection.getByRole('button', { name: 'Dismiss' });
   }
 
   /** The link that opens the vendor sign-in page for the named server. */

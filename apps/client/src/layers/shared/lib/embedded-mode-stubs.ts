@@ -107,6 +107,7 @@ import type {
   TransportScanOptions,
   TransportScanEvent,
   ManagedMcpServer,
+  ManagedMcpServerView,
 } from '@dorkos/shared/mesh-schemas';
 import type {
   Task,
@@ -984,7 +985,7 @@ const EMBEDDED_MCP_NOTICE =
  * write with {@link EMBEDDED_MCP_NOTICE}.
  */
 export const mcpManagementStubs = {
-  async listAgentMcpServers(_agentId: string): Promise<ManagedMcpServer[]> {
+  async listAgentMcpServers(_agentId: string): Promise<ManagedMcpServerView[]> {
     return [];
   },
 

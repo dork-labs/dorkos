@@ -64,6 +64,20 @@
  * it is checked against. {@link splitApprovalToken} takes it back off before the
  * hash is computed, and the handler never sees it.
  *
+ * ## These tools still POLL — they do not hold in-session
+ *
+ * The registry path can HOLD a destructive call inline while a person decides and
+ * resume it in the same turn (DOR-939, `capabilities/capability-approval-hold.ts`).
+ * This path cannot: a gated call here returns the `approval_required` payload and
+ * the turn ends, so the person approves on the dashboard and then tells the agent
+ * to retry. That applies to both hand-registered destructive tools — `tasks_delete`
+ * and `mesh_unregister`.
+ *
+ * The inconsistency is deliberate and scoped out of DOR-939 rather than missed:
+ * wiring the hold here means threading the live session's event queue into this
+ * choke point, which the external `/mcp` server (the other caller) has no session
+ * for. It is named here so the next person meets a decision instead of a mystery.
+ *
  * ## What a tier does not do
  *
  * It decides whether a call needs a person's approval. It does not constrain what

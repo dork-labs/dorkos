@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient, type Query } from '@tanstack/react-query';
 import type { McpSigninPollResult, StartMcpSigninResult } from '@dorkos/shared/transport';
 import { useTransport } from '@/layers/shared/model';
@@ -6,6 +6,27 @@ import { agentKeys } from '../api/queries';
 
 /** How often a waiting flow polls the server, in milliseconds. */
 const FLOW_POLL_INTERVAL_MS = 2_000;
+
+/**
+ * How many times **in a row** the poll REQUEST may fail before the flow gives up.
+ *
+ * A dropped request is not a failed sign-in: the person may be mid-redirect on a
+ * flaky network while DorkOS has already stored the token. So transport errors
+ * are retried (with a widening gap) and only exhaustion is terminal.
+ *
+ * Consecutive, not cumulative: any successful check zeroes the count. A lifetime
+ * total would kill a perfectly healthy sign-in that happened to hiccup this many
+ * times across its life — alternating failure and success would end it — and
+ * would leave the retry notice on screen forever after one recovered blip.
+ */
+const MAX_POLL_REQUEST_FAILURES = 5;
+
+/** What a person reads while poll requests are failing but the flow is still alive. */
+const POLL_RETRY_NOTICE = 'Couldn’t check the sign-in — retrying.';
+
+/** What a person reads once the poll requests have failed too many times running. */
+const POLL_UNREACHABLE_MESSAGE =
+  'We couldn’t check whether the sign-in finished. Try again in a moment.';
 
 /**
  * The sign-in flow's steps, in order. The one invariant is consent ordering: the
@@ -22,10 +43,10 @@ const FLOW_POLL_INTERVAL_MS = 2_000;
  * - `connected` — terminal; the token is stored and injects on the next turn.
  * - `failed` — terminal; `error` says why.
  */
-export type McpSigninStep = 'idle' | 'starting' | 'disclosure' | 'waiting' | 'connected' | 'failed';
+type McpSigninStep = 'idle' | 'starting' | 'disclosure' | 'waiting' | 'connected' | 'failed';
 
 /** The sign-in flow's observable state. */
-export interface McpSigninFlowState {
+interface McpSigninFlowState {
   /** Where the flow is; see {@link McpSigninStep}. */
   step: McpSigninStep;
   /** The server-composed custody sentence, from `disclosure` on. */
@@ -34,6 +55,11 @@ export interface McpSigninFlowState {
   authorizeUrl: string | null;
   /** Why the flow failed, once `failed`. */
   error: string | null;
+  /**
+   * Set while the flow is still `waiting` but its status checks are failing —
+   * the UI says so plainly instead of showing nothing (or a raw network error).
+   */
+  retryNotice: string | null;
 }
 
 /** What {@link useMcpSigninFlow} hands the UI. */
@@ -83,40 +109,53 @@ const IDLE_STATE: SigninLocalState = {
   flowId: null,
 };
 
-/** The terminal error a waiting poll surfaced, or null while it is pending/healthy. */
+/**
+ * The terminal error a waiting poll surfaced, or null while it is pending/healthy.
+ *
+ * A transport error never contributes its own message: `Failed to fetch` is not
+ * something a person can act on, and it is not even a failed sign-in. Only the
+ * server's own `failed` verdict, or exhausted retries, produce copy here.
+ */
 function pollErrorMessage(
   data: McpSigninPollResult | undefined,
-  error: Error | null
+  requestFailures: number
 ): string | null {
   if (data?.status === 'failed') return data.error ?? 'The sign-in did not complete.';
-  if (error) return error.message;
+  if (requestFailures >= MAX_POLL_REQUEST_FAILURES) return POLL_UNREACHABLE_MESSAGE;
   return null;
 }
 
-/** The effective step: the owned phase, except while `waiting` it reflects the poll. */
+/**
+ * The effective step: the owned phase, except while `waiting` it reflects the poll.
+ *
+ * @param phase - The hook's owned phase.
+ * @param data - The latest poll body, if one has landed.
+ * @param requestFailures - How many poll REQUESTS have failed in a row.
+ */
 function deriveStep(
   phase: SigninPhase,
   data: McpSigninPollResult | undefined,
-  hasError: boolean
+  requestFailures: number
 ): McpSigninStep {
   if (phase !== 'waiting') return phase;
   if (data?.status === 'connected') return 'connected';
-  if (data?.status === 'failed' || hasError) return 'failed';
-  return 'waiting';
+  if (data?.status === 'failed') return 'failed';
+  return requestFailures >= MAX_POLL_REQUEST_FAILURES ? 'failed' : 'waiting';
 }
 
 /**
  * The managed-MCP OAuth sign-in state machine for one `(agent, server)`: start →
  * disclosure-before-URL → poll to a terminal state. On `connected` the managed
- * roster and live MCP status are invalidated so the row flips from `needs-auth`
- * to `connected` without a reload.
+ * roster and live MCP status are invalidated so the row stops saying
+ * `needs-auth` without a reload.
  *
  * State is held per hook instance (one row owns one flow), not in an app-wide
  * store: an operator signs one server in at a time, and — unlike the connector
  * dialog that can be dismissed mid-grant — this surface is inline in the row.
  * If the person navigates away while `waiting`, the browser callback still
- * stores the token server-side (DorkOS owns the exchange), so the next status
- * refresh shows `connected` regardless; the poll is only how the open row learns
+ * stores the token server-side (DorkOS owns the exchange), so nothing is lost;
+ * the row picks the result up on its next read of the managed list, whose
+ * `authStatus` reports the stored token. The poll is only how an open row learns
  * of it sooner.
  *
  * @param agentId - ULID of the agent that owns the server.
@@ -126,6 +165,24 @@ export function useMcpSigninFlow(agentId: string, serverName: string): McpSignin
   const transport = useTransport();
   const queryClient = useQueryClient();
   const [local, setLocal] = useState<SigninLocalState>(IDLE_STATE);
+  // Poll requests that failed IN A ROW. Counted here rather than read off the
+  // query because TanStack has no such number: `fetchFailureCount` is per-fetch
+  // (zeroed when each new fetch starts, so with `retry: false` it never exceeds
+  // one) and `errorUpdateCount` is a lifetime total (which would kill a healthy
+  // flow that hiccupped a few times over its life). Both were tried.
+  //
+  // Held twice, deliberately, and only ever written through {@link recordPollSettle}
+  // so the two cannot diverge: `refetchInterval` runs the instant a poll settles
+  // — before React has re-rendered — so it needs the ref, and reading a ref does
+  // not re-render, so the copy the UI reads has to be state.
+  const failuresRef = useRef(0);
+  const [consecutiveFailures, setConsecutiveFailures] = useState(0);
+
+  /** Record how a poll settled, updating both copies of the run counter. */
+  const recordPollSettle = useCallback((outcome: 'ok' | 'failed') => {
+    failuresRef.current = outcome === 'ok' ? 0 : failuresRef.current + 1;
+    setConsecutiveFailures(failuresRef.current);
+  }, []);
 
   // Refresh the managed roster and every `mcp-config` query (keyed by project
   // path + runtime, which this hook does not know) so the live status re-reads.
@@ -141,9 +198,21 @@ export function useMcpSigninFlow(agentId: string, serverName: string): McpSignin
   });
 
   const start = useCallback(() => {
+    recordPollSettle('ok');
     setLocal({ ...IDLE_STATE, phase: 'starting' });
     startMutation.mutate(undefined, {
       onSuccess: (result: StartMcpSigninResult) => {
+        // A start that is neither already-connected nor carrying a link has
+        // nothing for the person to do; fail it here rather than rendering a
+        // dead link.
+        if (!result.alreadyConnected && !result.authorizeUrl) {
+          setLocal({
+            ...IDLE_STATE,
+            phase: 'failed',
+            startError: 'DorkOS could not build a sign-in link for this server.',
+          });
+          return;
+        }
         setLocal({
           phase: result.alreadyConnected ? 'connected' : 'disclosure',
           disclosure: result.disclosure,
@@ -154,38 +223,62 @@ export function useMcpSigninFlow(agentId: string, serverName: string): McpSignin
       },
       onError: (err) => setLocal({ ...IDLE_STATE, phase: 'failed', startError: err.message }),
     });
-  }, [startMutation]);
+  }, [startMutation, recordPollSettle]);
 
   const authOpened = useCallback(() => {
     setLocal((prev) => (prev.phase === 'disclosure' ? { ...prev, phase: 'waiting' } : prev));
   }, []);
 
-  const reset = useCallback(() => setLocal(IDLE_STATE), []);
+  const reset = useCallback(() => {
+    recordPollSettle('ok');
+    setLocal(IDLE_STATE);
+  }, [recordPollSettle]);
 
-  // Poll only while waiting; `refetchInterval` stops itself once the poll lands a
-  // terminal status (or errors), so a connected/dead flow is never re-polled.
+  // Poll only while waiting. `refetchInterval` is the whole stop condition: an
+  // in-band terminal status ends it outright, and a failing REQUEST only backs
+  // off — a dropped poll is a network hiccup, not a failed sign-in, so giving up
+  // on the first one would report failure for a sign-in that actually worked.
   const poll = useQuery<McpSigninPollResult>({
     queryKey: ['mcp-signin', agentId, serverName, local.flowId ?? ''],
-    queryFn: () => transport.pollMcpSignin(local.flowId ?? ''),
+    // The run counter is kept here, at the settle: incremented when a request
+    // fails, zeroed the moment one succeeds.
+    queryFn: async () => {
+      try {
+        const result = await transport.pollMcpSignin(local.flowId ?? '');
+        recordPollSettle('ok');
+        return result;
+      } catch (err) {
+        recordPollSettle('failed');
+        throw err;
+      }
+    },
     enabled: local.phase === 'waiting' && local.flowId !== null,
     refetchInterval: (query: Query<McpSigninPollResult>) => {
       const status = query.state.data?.status;
       if (status === 'connected' || status === 'failed') return false;
-      if (query.state.status === 'error') return false;
-      return FLOW_POLL_INTERVAL_MS;
+      const failures = failuresRef.current;
+      if (failures === 0) return FLOW_POLL_INTERVAL_MS;
+      if (failures >= MAX_POLL_REQUEST_FAILURES) return false;
+      // Widening gap, so a server that is down for a few seconds is not hammered.
+      return FLOW_POLL_INTERVAL_MS * (failures + 1);
     },
+    // Retries are counted and paced by `refetchInterval` above, not by the
+    // per-fetch retry loop — one place decides how long the flow keeps trying.
     retry: false,
     // The observer stays enabled once the flow reaches a derived terminal step, so
-    // suppress the refocus refetch — otherwise a window refocus fires one more poll
-    // after connected/failed. Idempotent, but needless.
+    // suppress the refetch triggers that would fire one more poll after
+    // connected/failed: a window refocus, and a network reconnect that would
+    // otherwise resurrect a settled flow. Both idempotent, both needless.
     refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     // Poll results are moments, not cache-worthy data.
     gcTime: 0,
     staleTime: 0,
     meta: { suppressErrorToast: true },
   });
 
-  const step = deriveStep(local.phase, poll.data, poll.error !== null);
+  const requestFailures = consecutiveFailures;
+  const step = deriveStep(local.phase, poll.data, requestFailures);
 
   // The one side effect: when the flow reaches `connected`, re-read live status
   // so the row flips. This invalidates queries (a side effect) — it does not
@@ -196,10 +289,17 @@ export function useMcpSigninFlow(agentId: string, serverName: string): McpSignin
   }, [step, invalidateStatus]);
 
   const error =
-    local.phase === 'waiting' ? pollErrorMessage(poll.data, poll.error) : local.startError;
+    local.phase === 'waiting' ? pollErrorMessage(poll.data, requestFailures) : local.startError;
+  const retryNotice = step === 'waiting' && requestFailures > 0 ? POLL_RETRY_NOTICE : null;
 
   return {
-    state: { step, disclosure: local.disclosure, authorizeUrl: local.authorizeUrl, error },
+    state: {
+      step,
+      disclosure: local.disclosure,
+      authorizeUrl: local.authorizeUrl,
+      error,
+      retryNotice,
+    },
     start,
     authOpened,
     reset,

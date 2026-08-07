@@ -22,7 +22,7 @@ import type {
   StartMcpSigninResult,
   UpdateAgentMcpServerInput,
 } from '@dorkos/shared/transport';
-import type { ManagedMcpServer } from '@dorkos/shared/mesh-schemas';
+import type { ManagedMcpServer, ManagedMcpServerView } from '@dorkos/shared/mesh-schemas';
 import { fetchJSON } from './http-client';
 
 /** The header a confirming retry carries its approval token in (matches the server). */
@@ -85,9 +85,9 @@ export function createMcpMethods(baseUrl: string) {
   }
 
   return {
-    listAgentMcpServers(agentId: string): Promise<ManagedMcpServer[]> {
-      return invokeCapability<ManagedMcpServer[]>('mcp.list', { agentId }).then(
-        (body) => body as ManagedMcpServer[]
+    listAgentMcpServers(agentId: string): Promise<ManagedMcpServerView[]> {
+      return invokeCapability<ManagedMcpServerView[]>('mcp.list', { agentId }).then(
+        (body) => body as ManagedMcpServerView[]
       );
     },
 

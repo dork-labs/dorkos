@@ -67,7 +67,65 @@ async function stageInstalledPlugin(opts: {
   manifest: PluginPackageManifest;
   installedFrom?: string;
 }): Promise<string> {
-  const installRoot = path.join(opts.dorkHome, 'plugins', opts.manifest.name);
+  return stagePluginUnder(path.join(opts.dorkHome, 'plugins'), opts);
+}
+
+/**
+ * Stage a project-scoped plugin under `<projectPath>/.dork/plugins/<name>/` —
+ * exactly where `PluginInstallFlow.computeInstallRoot` lands an install that
+ * carried a `projectPath`.
+ */
+async function stageProjectPlugin(opts: {
+  projectPath: string;
+  manifest: PluginPackageManifest;
+  installedFrom?: string;
+}): Promise<string> {
+  return stagePluginUnder(path.join(opts.projectPath, '.dork', 'plugins'), opts);
+}
+
+/**
+ * Stage an installed agent package under `<scopeRoot>/agents/<name>/` — the
+ * root `AgentInstallFlow` lands an agent in, and a different root from the
+ * plugin stagers above, so the two can hold the same package name at once.
+ *
+ * The update flow reads a manifest shallowly (name/version/type, no schema
+ * validation), so this minimal document is exactly what it consumes.
+ */
+async function stageInstalledAgent(opts: {
+  scopeRoot: string;
+  name: string;
+  version: string;
+}): Promise<string> {
+  const installRoot = path.join(opts.scopeRoot, 'agents', opts.name);
+  await mkdir(path.join(installRoot, '.dork'), { recursive: true });
+  await writeFile(
+    path.join(installRoot, '.dork', 'manifest.json'),
+    JSON.stringify(
+      {
+        schemaVersion: 1,
+        name: opts.name,
+        version: opts.version,
+        type: 'agent',
+        description: 'Fixture agent used by update tests.',
+      },
+      null,
+      2
+    ),
+    'utf-8'
+  );
+  return installRoot;
+}
+
+/**
+ * Write a package's `.dork/manifest.json` (plus optional
+ * `.dork/install-metadata.json` sidecar) into `<root>/<name>/`. Shared by the
+ * global and project-scoped stagers so both produce byte-identical layouts.
+ */
+async function stagePluginUnder(
+  root: string,
+  opts: { manifest: PluginPackageManifest; installedFrom?: string }
+): Promise<string> {
+  const installRoot = path.join(root, opts.manifest.name);
   await mkdir(path.join(installRoot, '.dork'), { recursive: true });
   await writeFile(
     path.join(installRoot, '.dork', 'manifest.json'),
@@ -433,5 +491,200 @@ describe('UpdateFlow', () => {
     expect(result.checks[0]?.hasUpdate).toBe(true);
     // Both marketplaces were scanned.
     expect(ctx.fetcher.fetchMarketplaceJson).toHaveBeenCalledTimes(2);
+  });
+
+  describe('project-scoped installs', () => {
+    /** Make a temp directory standing in for a caller's `projectPath`. */
+    async function makeProjectDir(): Promise<string> {
+      const dir = await mkdtemp(path.join(tmpdir(), 'update-flow-project-'));
+      cleanupDirs.push(dir);
+      return dir;
+    }
+
+    it('finds a package installed only in the project when projectPath is supplied', async () => {
+      const marketplaceJson = buildMarketplaceJson([{ name: 'local-plugin', version: '2.0.0' }]);
+      const ctx = await buildDeps({ marketplaceJson });
+      cleanupDirs.push(ctx.dorkHome);
+      const projectPath = await makeProjectDir();
+      await stageProjectPlugin({
+        projectPath,
+        manifest: buildPluginManifest({ name: 'local-plugin', version: '1.0.0' }),
+      });
+
+      const flow = new UpdateFlow(ctx.deps);
+      const result = await flow.run({ name: 'local-plugin', projectPath });
+
+      expect(result.checks).toHaveLength(1);
+      expect(result.checks[0]).toEqual(
+        expect.objectContaining({
+          packageName: 'local-plugin',
+          installedVersion: '1.0.0',
+          latestVersion: '2.0.0',
+          hasUpdate: true,
+        })
+      );
+    });
+
+    it('still throws when the package is in neither scope', async () => {
+      const marketplaceJson = buildMarketplaceJson([{ name: 'anything', version: '1.0.0' }]);
+      const ctx = await buildDeps({ marketplaceJson });
+      cleanupDirs.push(ctx.dorkHome);
+      const projectPath = await makeProjectDir();
+
+      const flow = new UpdateFlow(ctx.deps);
+      await expect(flow.run({ name: 'ghost-plugin', projectPath })).rejects.toBeInstanceOf(
+        PackageNotInstalledForUpdateError
+      );
+    });
+
+    it('finds a global-only package when projectPath is supplied — the project scan adds, never replaces', async () => {
+      const marketplaceJson = buildMarketplaceJson([{ name: 'global-plugin', version: '3.0.0' }]);
+      const ctx = await buildDeps({ marketplaceJson });
+      cleanupDirs.push(ctx.dorkHome);
+      const projectPath = await makeProjectDir();
+      await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name: 'global-plugin', version: '1.0.0' }),
+      });
+
+      const flow = new UpdateFlow(ctx.deps);
+      const result = await flow.run({ name: 'global-plugin', projectPath });
+
+      expect(result.checks).toHaveLength(1);
+      expect(result.checks[0]?.installedVersion).toBe('1.0.0');
+    });
+
+    it('resolves a name installed in both scopes to the project copy when projectPath is supplied', async () => {
+      const marketplaceJson = buildMarketplaceJson([{ name: 'both-plugin', version: '9.0.0' }]);
+      const ctx = await buildDeps({ marketplaceJson });
+      cleanupDirs.push(ctx.dorkHome);
+      const projectPath = await makeProjectDir();
+      await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name: 'both-plugin', version: '1.0.0' }),
+      });
+      const projectRoot = await stageProjectPlugin({
+        projectPath,
+        manifest: buildPluginManifest({ name: 'both-plugin', version: '2.0.0' }),
+      });
+
+      const flow = new UpdateFlow(ctx.deps);
+      const result = await flow.run({ name: 'both-plugin', projectPath });
+
+      expect(result.checks).toHaveLength(1);
+      // The project copy (2.0.0) shadows the global one (1.0.0) for this project.
+      expect(result.checks[0]?.installedVersion).toBe('2.0.0');
+      expect(projectRoot).toContain(path.join('.dork', 'plugins'));
+    });
+
+    it('resolves the same name to the global copy when no projectPath is supplied', async () => {
+      const marketplaceJson = buildMarketplaceJson([{ name: 'both-plugin', version: '9.0.0' }]);
+      const ctx = await buildDeps({ marketplaceJson });
+      cleanupDirs.push(ctx.dorkHome);
+      const projectPath = await makeProjectDir();
+      await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name: 'both-plugin', version: '1.0.0' }),
+      });
+      await stageProjectPlugin({
+        projectPath,
+        manifest: buildPluginManifest({ name: 'both-plugin', version: '2.0.0' }),
+      });
+
+      const flow = new UpdateFlow(ctx.deps);
+      const result = await flow.run({ name: 'both-plugin' });
+
+      expect(result.checks).toHaveLength(1);
+      expect(result.checks[0]?.installedVersion).toBe('1.0.0');
+    });
+
+    it('checks a name installed in both scopes once, so an applied update reinstalls once', async () => {
+      const marketplaceJson = buildMarketplaceJson([{ name: 'both-plugin', version: '9.0.0' }]);
+      const ctx = await buildDeps({ marketplaceJson });
+      cleanupDirs.push(ctx.dorkHome);
+      const projectPath = await makeProjectDir();
+      await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name: 'both-plugin', version: '1.0.0' }),
+      });
+      await stageProjectPlugin({
+        projectPath,
+        manifest: buildPluginManifest({ name: 'both-plugin', version: '2.0.0' }),
+      });
+
+      const flow = new UpdateFlow(ctx.deps);
+      const result = await flow.run({ apply: true, projectPath });
+
+      expect(result.checks).toHaveLength(1);
+      expect(result.checks[0]?.installedVersion).toBe('2.0.0');
+      expect(ctx.installer.update).toHaveBeenCalledTimes(1);
+      expect(ctx.installer.update).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'both-plugin', projectPath })
+      );
+    });
+
+    it('reports both roots when one name is installed as a plugin AND an agent globally', async () => {
+      // `ConflictDetector` lets a same-name package of a different type coexist
+      // in the other root (a non-blocking warning, not an error), so these are
+      // two genuinely different packages. Deduping on the name alone would drop
+      // one of them from update-all — and each resolves its own marketplace.
+      const marketplaceJson = buildMarketplaceJson([{ name: 'twin', version: '9.0.0' }]);
+      const ctx = await buildDeps({ marketplaceJson });
+      cleanupDirs.push(ctx.dorkHome);
+      await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name: 'twin', version: '1.0.0' }),
+      });
+      await stageInstalledAgent({ scopeRoot: ctx.dorkHome, name: 'twin', version: '1.5.0' });
+
+      const flow = new UpdateFlow(ctx.deps);
+      const result = await flow.run({});
+
+      expect(result.checks).toHaveLength(2);
+      expect(result.checks.map((c) => c.installedVersion).sort()).toEqual(['1.0.0', '1.5.0']);
+      expect(result.checks.every((c) => c.packageName === 'twin')).toBe(true);
+    });
+
+    it('shadows only the matching root: project plugin wins, global agent survives', async () => {
+      const marketplaceJson = buildMarketplaceJson([{ name: 'twin', version: '9.0.0' }]);
+      const ctx = await buildDeps({ marketplaceJson });
+      cleanupDirs.push(ctx.dorkHome);
+      const projectPath = await makeProjectDir();
+      await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name: 'twin', version: '1.0.0' }),
+      });
+      await stageInstalledAgent({ scopeRoot: ctx.dorkHome, name: 'twin', version: '1.5.0' });
+      await stageProjectPlugin({
+        projectPath,
+        manifest: buildPluginManifest({ name: 'twin', version: '2.0.0' }),
+      });
+
+      const flow = new UpdateFlow(ctx.deps);
+      const result = await flow.run({ projectPath });
+
+      // The project's plugins/twin shadows the global plugins/twin (1.0.0 is
+      // gone), while the global agents/twin is a different root and survives.
+      expect(result.checks).toHaveLength(2);
+      expect(result.checks.map((c) => c.installedVersion).sort()).toEqual(['1.5.0', '2.0.0']);
+    });
+
+    it('skips an unreadable project manifest, mirroring the global walk', async () => {
+      const marketplaceJson = buildMarketplaceJson([{ name: 'broken-plugin', version: '2.0.0' }]);
+      const ctx = await buildDeps({ marketplaceJson });
+      cleanupDirs.push(ctx.dorkHome);
+      const projectPath = await makeProjectDir();
+      const brokenRoot = path.join(projectPath, '.dork', 'plugins', 'broken-plugin', '.dork');
+      await mkdir(brokenRoot, { recursive: true });
+      await writeFile(path.join(brokenRoot, 'manifest.json'), '{ not json', 'utf-8');
+
+      const flow = new UpdateFlow(ctx.deps);
+      const result = await flow.run({ projectPath });
+
+      expect(result.checks).toHaveLength(0);
+      await expect(flow.run({ name: 'broken-plugin', projectPath })).rejects.toBeInstanceOf(
+        PackageNotInstalledForUpdateError
+      );
+    });
   });
 });

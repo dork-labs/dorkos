@@ -91,6 +91,41 @@ describe('AgentChipPicker faces', () => {
     expect(screen.getByRole('option', { name: 'Ana' })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: '🔍 Ana' })).not.toBeInTheDocument();
   });
+
+  it('draws the square agent silhouette every other agent surface uses, with no Bot badge', () => {
+    // This list used to draw the round, tinted default — the exact silhouette
+    // a person gets — with no `kind` at all. `kind="agent"` fixes the shape;
+    // `badge={null}` is the deliberate, visible opt-out from the glyph `kind`
+    // would otherwise add on every identical row.
+    renderFresh();
+
+    const disc = within(screen.getByRole('option', { name: 'Ana' })).getByText('🔍')
+      .parentElement as HTMLElement;
+
+    expect(disc).toHaveAttribute('data-slot', 'identity-avatar');
+    expect(disc).not.toHaveClass('rounded-full');
+    expect(disc.querySelector('.lucide-bot')).toBeNull();
+  });
+
+  it('tints the unresolved-agent disc rather than filling it solid with currentColor', () => {
+    // `kind="agent"` defaults to `variant="fill"`, which sets BOTH the disc's
+    // background AND the fallback letter's own text colour from `color`.
+    // Filled with the literal string `currentColor`, the letter's colour
+    // resolves to whatever `currentColor` had *already become* — its own
+    // just-written value — so the letter paints itself invisible on its own
+    // background (browser-verified; jsdom cannot see this). The explicit
+    // `variant="tint"` override for the no-visual fallback is what keeps this
+    // disc legible.
+    renderFresh();
+
+    const disc = within(screen.getByRole('option', { name: 'Bo' })).getByText('B')
+      .parentElement as HTMLElement;
+    const tinted = document.createElement('span');
+    tinted.style.backgroundColor = 'color-mix(in oklch, currentColor 18%, transparent)';
+
+    expect(disc.style.backgroundColor).toBe(tinted.style.backgroundColor);
+    expect(disc.style.backgroundColor).not.toBe('currentcolor');
+  });
 });
 
 describe('AgentChipPicker submitDisabled', () => {
