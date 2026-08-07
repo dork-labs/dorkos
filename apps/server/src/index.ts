@@ -88,7 +88,7 @@ import { AgentMcpOAuthService } from './services/mesh/agent-mcp-oauth-service.js
 import { resumeAfterMcpSignin } from './services/mesh/mcp-signin-resume.js';
 import { createMcpRevocationWatch } from './services/mesh/mcp-revocation.js';
 import { createMcpOAuthRouter } from './routes/mcp-oauth.js';
-import type { McpCapabilityDeps } from './services/mesh/mcp-capabilities.js';
+import type { McpCapabilityDeps } from './services/mesh/mcp-capability-deps.js';
 import { setRelayEnabled, setRelayInitError } from './services/relay/relay-state.js';
 import { AdapterManager } from './services/relay/adapter-manager.js';
 import {

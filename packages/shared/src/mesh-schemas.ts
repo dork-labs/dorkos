@@ -234,6 +234,22 @@ export const McpServerAuthStatusSchema = z.enum(['connected', 'needs-auth']);
 export type McpServerAuthStatus = z.infer<typeof McpServerAuthStatusSchema>;
 
 /**
+ * Where the OAuth client identity DorkOS signs in with came from (DOR-982).
+ *
+ * `'dcr'` — DorkOS registered itself with the provider automatically (RFC 7591
+ * dynamic client registration), which is what happens for most servers.
+ * `'manual'` — the operator pasted app credentials they got from the provider,
+ * because that provider does not allow automatic registration.
+ *
+ * It is reported so a card can say WHICH of the two is in play; it changes
+ * nothing about how the sign-in itself works.
+ */
+export const McpClientOriginSchema = z.enum(['dcr', 'manual']);
+
+/** See {@link McpClientOriginSchema}. */
+export type McpClientOrigin = z.infer<typeof McpClientOriginSchema>;
+
+/**
  * A managed server as the LISTING reports it: the stored entry plus
  * {@link McpServerAuthStatusSchema}, derived per request from the live token
  * cache and the entry's `authKind` hint.
@@ -243,9 +259,14 @@ export type McpServerAuthStatus = z.infer<typeof McpServerAuthStatusSchema>;
  * configuration, so it is never written to `.dork/agent.json`. It exists so a
  * freshly-started server can tell an operator that a server needs signing in
  * without waiting for an agent turn to populate the runtime's status cache.
+ *
+ * `authClientOrigin` is decoration for the same reason: it is read from the
+ * encrypted OAuth store, never from the manifest, and it names only WHICH client
+ * identity DorkOS holds — never the credential itself.
  */
 export const ManagedMcpServerViewSchema = ManagedMcpServerSchema.extend({
   authStatus: McpServerAuthStatusSchema.optional(),
+  authClientOrigin: McpClientOriginSchema.optional(),
 }).openapi('ManagedMcpServerView');
 
 /** See {@link ManagedMcpServerViewSchema}. */

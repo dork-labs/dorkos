@@ -18,6 +18,7 @@ import type {
   AgentMcpTestResult,
   CapabilityApprovalRequired,
   ImportAgentMcpServerInput,
+  McpClientCredentials,
   McpSigninPollResult,
   StartMcpSigninResult,
   UpdateAgentMcpServerInput,
@@ -146,6 +147,21 @@ export function createMcpMethods(baseUrl: string) {
       return invokeCapability<McpSigninPollResult>('mcp.poll_signin', { flowId }).then(
         (body) => body as McpSigninPollResult
       );
+    },
+
+    async setMcpClientCredentials(
+      agentId: string,
+      name: string,
+      credentials: McpClientCredentials
+    ): Promise<void> {
+      await invokeCapability('mcp.set_client', {
+        agentId,
+        name,
+        clientId: credentials.clientId,
+        // Omitted rather than sent empty: the capability's input rejects an empty
+        // secret, and "no secret" is the normal case for a public client.
+        ...(credentials.clientSecret ? { clientSecret: credentials.clientSecret } : {}),
+      });
     },
   };
 }
