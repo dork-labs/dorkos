@@ -111,6 +111,15 @@ describe('TeamPage — the roster', () => {
     expect(warden.querySelector('[data-slot="team-member-handle"]')).toHaveTextContent('@warden');
   });
 
+  it('names a platform the way the rest of the cockpit does', async () => {
+    renderPage({ members: MOCK_TEAM_ROSTER });
+    await screen.findByText('Dorian');
+
+    // "On Telegram", not "On telegram" — the wire token goes through the same
+    // resolver every other surface uses.
+    expect(screen.getByText('On Telegram')).toBeInTheDocument();
+  });
+
   it('says an agent was active recently in words, never as a live dot', async () => {
     const { container } = renderPage({ members: MOCK_TEAM_ROSTER });
 
@@ -153,10 +162,11 @@ describe('TeamPage — the filter chips', () => {
     renderPage({ members: MOCK_TEAM_ROSTER });
     await screen.findByText('Dorian');
 
-    // The chip row names both people by handle. On a one-person install these
-    // do not appear at all, which is why the fixture has two.
-    expect(chip('@dorian')).toBeInTheDocument();
-    expect(chip('@miguel.telegram')).toBeInTheDocument();
+    // The chip row shows both people, in their own group — the kind chips
+    // answer a different question and must not be labelled as one set.
+    const people = within(screen.getByRole('group', { name: 'Filter by person' }));
+    expect(people.getByRole('button', { name: /Dorian/ })).toHaveTextContent('@dorian');
+    expect(people.getByRole('button', { name: /Miguel/ })).toHaveTextContent('@miguel.telegram');
   });
 
   it('draws no person chips when there is only one person to choose', async () => {
@@ -164,7 +174,7 @@ describe('TeamPage — the filter chips', () => {
     renderPage({ members: oneOperator });
     await screen.findByText('Dorian');
 
-    expect(screen.queryByRole('button', { name: '@dorian' })).toBeNull();
+    expect(screen.queryByRole('group', { name: 'Filter by person' })).toBeNull();
   });
 });
 
@@ -175,8 +185,15 @@ describe('TeamPage — the owner filter', () => {
     await screen.findByText('Dorian');
 
     // The attribution under the OTHER person's agent, so a page that quietly
-    // filtered to the operator would fail here.
-    await user.click(chip('by @miguel.telegram'));
+    // filtered to the operator would fail here. Scoped to that card: the
+    // person chip carries the same accessible name, and this test is about
+    // the attribution specifically.
+    const card = screen.getByText('Cartographer of the Northern Reaches').closest('article')!;
+    await user.click(
+      within(card).getByRole('button', {
+        name: 'Show only Miguel Ferreira-Santos and their agents',
+      })
+    );
 
     expect(cardNames()).toEqual(['Miguel Ferreira-Santos', 'Cartographer of the Northern Reaches']);
   });
@@ -186,7 +203,10 @@ describe('TeamPage — the owner filter', () => {
     renderPage({ members: MOCK_TEAM_ROSTER });
     await screen.findByText('Dorian');
 
-    await user.click(chip('@miguel.telegram'));
+    // Via the person chip rather than the attribution, so both routes to the
+    // same filter are exercised across this file.
+    const people = within(screen.getByRole('group', { name: 'Filter by person' }));
+    await user.click(people.getByRole('button', { name: /Miguel/ }));
     expect(screen.getByText('Showing @miguel.telegram and their agents')).toBeInTheDocument();
 
     await user.click(chip('Clear'));
@@ -198,11 +218,15 @@ describe('TeamPage — the owner filter', () => {
     await screen.findByText('Dorian');
 
     const warden = screen.getByText('Warden').closest('article')!;
-    expect(within(warden).getByRole('button', { name: 'by @dorian' })).toBeInTheDocument();
+    const attribution = within(warden).getByRole('button', {
+      name: 'Show only Dorian and their agents',
+    });
+    // The label says what it does; the visible text says whose it is.
+    expect(attribution).toHaveTextContent('by @dorian');
 
     // The system agent belongs to the install, not to a person.
     const dorkbot = screen.getByText('DorkBot').closest('article')!;
-    expect(within(dorkbot).queryByRole('button', { name: /^by / })).toBeNull();
+    expect(within(dorkbot).queryByRole('button')).toBeNull();
   });
 });
 
@@ -220,7 +244,7 @@ describe('TeamPage — grouping by manager', () => {
     expect(within(headings[0]!).getByText('@dorian')).toBeInTheDocument();
     expect(within(headings[1]!).getByText('Miguel Ferreira-Santos')).toBeInTheDocument();
     expect(within(headings[1]!).getByText('@miguel.telegram')).toBeInTheDocument();
-    expect(headings[2]!).toHaveTextContent('Belongs to no one');
+    expect(headings[2]!).toHaveTextContent('No owner');
     // Two clusters, so a page that grouped everything under one owner — or
     // under "the operator" — fails here.
     expect(cardNames()).toEqual([
@@ -295,6 +319,35 @@ describe('TeamPage — the empty and degraded states', () => {
       await screen.findByText("Couldn't read your agents — showing who we could.")
     ).toBeInTheDocument();
     expect(cardNames()).toEqual(['Dorian', 'Miguel Ferreira-Santos']);
+  });
+
+  it('does not offer to import projects when the roster could not be read at all', async () => {
+    // What embedded mode returns: no rows, and a warning saying why. Offering
+    // "Bring in existing projects" here would answer a question nobody asked
+    // with a button that cannot help.
+    renderPage({
+      members: [],
+      warnings: [{ source: 'team', message: 'No DorkOS server in embedded mode.' }],
+    });
+
+    expect(
+      await screen.findByText('Your team lives on the DorkOS server, and there is no server here.')
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Bring in existing projects')).toBeNull();
+    // "Nothing matched your filter" would be a lie: no filter is on.
+    expect(screen.getByText('Nobody to show yet.')).toBeInTheDocument();
+  });
+
+  it('names an unknown source without leaking the wire token at the reader', async () => {
+    renderPage({
+      members: MOCK_TEAM_ROSTER,
+      warnings: [{ source: 'community:acme', message: 'timed out' }],
+    });
+
+    expect(await screen.findByText("Some of your team couldn't be loaded.")).toBeInTheDocument();
+    expect(screen.queryByText(/community:acme/)).toBeNull();
+    // The diagnostic message is for a log, not for this page.
+    expect(screen.queryByText(/timed out/)).toBeNull();
   });
 
   it('draws no banner when every source read cleanly', async () => {

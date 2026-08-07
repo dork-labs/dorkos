@@ -9,19 +9,31 @@ import { cn } from '@/layers/shared/lib';
  * answer.
  *
  * Named per source, because "something went wrong" tells nobody whether the
- * missing thing is their agents or their teammates. The technical message the
- * endpoint sends is not shown: it is written for a log, and the person reading
- * this page can see for themselves what is missing.
+ * missing thing is their agents or their teammates.
+ *
+ * **This table is the only owner of that sentence.** A warning's own `message`
+ * is diagnostic — `err.message` from whatever failed, "database is locked" —
+ * and it is never rendered, so no producer has to write two audiences' worth of
+ * prose and no page has to guess which one it received.
  */
 const SOURCE_COPY: Record<string, string> = {
   agents: "Couldn't read your agents — showing who we could.",
   authors: "Couldn't read the people on this install — showing who we could.",
   account: "Couldn't read your account, so your own name may be missing.",
+  team: 'Your team lives on the DorkOS server, and there is no server here.',
 };
 
-/** The line for a source nobody has written copy for yet. */
+/**
+ * The line for a source nobody has written copy for yet.
+ *
+ * Source-agnostic on purpose: `source` is a wire token (`'agents'`,
+ * `'authors'`, a community ref later) written for a log, and dropping one into
+ * a sentence produces "Couldn't read authors", which names an implementation
+ * detail at the person reading the page. The sentence stays true whatever the
+ * token turns out to be, and a source worth naming earns an entry above.
+ */
 function copyFor(source: string): string {
-  return SOURCE_COPY[source] ?? `Couldn't read ${source} — showing who we could.`;
+  return SOURCE_COPY[source] ?? "Some of your team couldn't be loaded.";
 }
 
 export interface TeamRosterWarningsProps {

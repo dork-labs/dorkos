@@ -57,43 +57,48 @@ export function TeamRosterToolbar({
           group toggle squeezed the scroller down to a chip and a half — a
           horizontal scroller nobody can tell is one. */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <div
-          role="group"
-          aria-label="Filter by kind"
-          className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto pb-0.5"
-        >
-          {KIND_CHIPS.map((chip) => (
-            <Button
-              key={chip.value}
-              type="button"
-              size="xs"
-              variant={filters.kind === chip.value ? 'default' : 'outline'}
-              aria-pressed={filters.kind === chip.value}
-              onClick={() => onFiltersChange({ kind: chip.value })}
-              className="shrink-0"
-            >
-              {chip.label}
-            </Button>
-          ))}
-          {/* One chip per person, once there is a choice to make. */}
-          {people.length > 1 &&
-            people.map((person) => (
+        {/* Two groups sharing one scroller, not one group of two kinds: they
+            answer different questions ("what am I looking at" vs "whose"), and
+            a label covering both would name only one of them. */}
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto pb-0.5">
+          <div role="group" aria-label="Filter by kind" className="flex items-center gap-1.5">
+            {KIND_CHIPS.map((chip) => (
               <Button
-                key={person.id}
+                key={chip.value}
                 type="button"
                 size="xs"
-                variant={filters.owner === person.id ? 'default' : 'outline'}
-                aria-pressed={filters.owner === person.id}
-                onClick={() =>
-                  onFiltersChange({
-                    owner: filters.owner === person.id ? undefined : person.id,
-                  })
-                }
-                className="max-w-40 shrink-0 truncate"
+                variant={filters.kind === chip.value ? 'default' : 'outline'}
+                aria-pressed={filters.kind === chip.value}
+                onClick={() => onFiltersChange({ kind: chip.value })}
+                className="shrink-0"
               >
-                {teamMemberLabel(person)}
+                {chip.label}
               </Button>
             ))}
+          </div>
+          {/* One chip per person, once there is a choice to make. */}
+          {people.length > 1 && (
+            <div role="group" aria-label="Filter by person" className="flex items-center gap-1.5">
+              {people.map((person) => (
+                <Button
+                  key={person.id}
+                  type="button"
+                  size="xs"
+                  variant={filters.owner === person.id ? 'default' : 'outline'}
+                  aria-pressed={filters.owner === person.id}
+                  aria-label={`Show only ${person.displayName} and their agents`}
+                  onClick={() =>
+                    onFiltersChange({
+                      owner: filters.owner === person.id ? undefined : person.id,
+                    })
+                  }
+                  className="max-w-40 shrink-0 truncate"
+                >
+                  {teamMemberLabel(person)}
+                </Button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="flex shrink-0 items-center gap-2">

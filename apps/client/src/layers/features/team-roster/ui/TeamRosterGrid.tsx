@@ -53,9 +53,18 @@ function ClusterHeader({
     </>
   );
 
-  return (
-    <h2 className="flex min-w-0 items-center">
-      {onSelectOwner ? (
+  // A heading wrapping a button, which is the WAI-ARIA APG's own shape for a
+  // heading that is also a control (the accordion pattern). Putting
+  // `role="heading"` on the button instead — one announcement rather than two —
+  // is what `jsx-a11y/no-interactive-element-to-noninteractive-role` refuses,
+  // and an ESLint error is not worth trading a standard pattern for.
+  //
+  // The button carries no `aria-label`: the heading takes its name from its
+  // contents, so labelling the button would rename the heading to "Show only
+  // Dorian and their agents", which is worse than the repetition it fixes.
+  if (onSelectOwner) {
+    return (
+      <h2 className="flex min-w-0 items-center">
         <button
           type="button"
           onClick={() => onSelectOwner(owner.id)}
@@ -63,11 +72,11 @@ function ClusterHeader({
         >
           {lockup}
         </button>
-      ) : (
-        <span className="flex min-w-0 items-center gap-2">{lockup}</span>
-      )}
-    </h2>
-  );
+      </h2>
+    );
+  }
+
+  return <h2 className="flex min-w-0 items-center gap-2">{lockup}</h2>;
 }
 
 /**
@@ -112,7 +121,7 @@ export function TeamRosterGrid({
           {group.owner ? (
             <ClusterHeader owner={group.owner} onSelectOwner={onSelectOwner} />
           ) : (
-            <h2 className="text-muted-foreground text-sm font-medium">Belongs to no one</h2>
+            <h2 className="text-muted-foreground text-sm font-medium">No owner</h2>
           )}
           <div className={GRID}>
             {group.members.map((member) => (

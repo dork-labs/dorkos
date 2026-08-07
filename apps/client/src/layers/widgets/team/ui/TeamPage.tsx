@@ -14,19 +14,34 @@ import {
   TeamRosterWarnings,
 } from '@/layers/features/team-roster';
 
-export interface TeamPageProps {
+/** The page driven by something outside it — in practice, the route's search params. */
+interface ControlledTeamPageProps {
   /**
-   * What the roster is filtered by, when something outside owns that state.
+   * What the roster is filtered by.
    *
-   * The route owns it once `/team` exists: the whole search-param object goes
-   * in here (extra params ride along untouched) and {@link TeamPageProps.onFiltersChange}
-   * navigates. Left out, the page keeps the state itself, which is what makes
-   * it renderable in a test and in the playground without a router.
+   * The route owns this once `/team` exists: the whole search-param object goes
+   * in (extra params ride along untouched) and `onFiltersChange` navigates.
    */
-  filters?: TeamRosterFilters;
+  filters: TeamRosterFilters;
   /** Called with a partial update whenever a control changes. */
-  onFiltersChange?: (patch: Partial<TeamRosterFilters>) => void;
+  onFiltersChange: (patch: Partial<TeamRosterFilters>) => void;
 }
+
+/** The page keeping its own filter state — a test, the playground, no router. */
+interface UncontrolledTeamPageProps {
+  filters?: never;
+  onFiltersChange?: never;
+}
+
+/**
+ * Controlled or uncontrolled, and never half of each.
+ *
+ * A union rather than two optional props: passing `filters` without
+ * `onFiltersChange` would read from outside and write to state nothing renders,
+ * so every control would look broken. The compiler refuses that arrangement
+ * instead of the page discovering it at runtime.
+ */
+export type TeamPageProps = ControlledTeamPageProps | UncontrolledTeamPageProps;
 
 /**
  * The Team page: every person and agent on this install, in one roster.
@@ -47,8 +62,12 @@ export function TeamPage({ filters, onFiltersChange }: TeamPageProps) {
   const [ownFilters, setOwnFilters] = useState<TeamRosterFilters>(DEFAULT_TEAM_FILTERS);
   const activeFilters = filters ?? ownFilters;
 
+  // Keyed on `filters`, the same prop the read above is keyed on, so reads and
+  // writes can never disagree about who owns the state. The union makes the
+  // other branch unreachable from TypeScript, and this keeps it unreachable at
+  // runtime for a caller that got there through a cast.
   const patchFilters = (patch: Partial<TeamRosterFilters>) => {
-    if (onFiltersChange) onFiltersChange(patch);
+    if (filters !== undefined) onFiltersChange(patch);
     else setOwnFilters((current) => ({ ...current, ...patch }));
   };
 
@@ -57,6 +76,12 @@ export function TeamPage({ filters, onFiltersChange }: TeamPageProps) {
   const visible = useMemo(() => filterTeamMembers(roster, activeFilters), [roster, activeFilters]);
   const people = useMemo(() => roster.filter((member) => member.kind === 'human'), [roster]);
   const hasAgents = roster.some((member) => member.kind === 'agent');
+  // Whether a control is hiding anyone. "Nothing matched" and "there is nobody
+  // here" are different facts, and one of them is a lie when a filter is on.
+  const isNarrowed =
+    activeFilters.kind !== 'all' ||
+    activeFilters.owner !== undefined ||
+    (activeFilters.q ?? '') !== '';
 
   if (isLoading) {
     return (
@@ -100,10 +125,16 @@ export function TeamPage({ filters, onFiltersChange }: TeamPageProps) {
           onSelectOwner={(ownerId) => patchFilters({ owner: ownerId })}
         />
       ) : (
-        <p className="text-muted-foreground py-8 text-center text-sm">Nobody here matches that.</p>
+        <p className="text-muted-foreground py-8 text-center text-sm">
+          {isNarrowed ? 'Nobody here matches that.' : 'Nobody to show yet.'}
+        </p>
       )}
-      {/* Below the roster, never instead of it. */}
-      {!hasAgents && (
+      {/* Below the roster, never instead of it — and only when there is a
+          roster to be below. A truly empty payload means the roster could not
+          be read (the banner above says so), and inviting someone to import
+          projects would be answering a question they did not ask with a button
+          that cannot help. */}
+      {roster.length > 0 && !hasAgents && (
         <div className="flex justify-center py-6">
           <AgentGhostRows />
         </div>

@@ -1,8 +1,8 @@
 import type { TeamMember } from '@dorkos/shared/team-schemas';
-import { Badge } from '@/layers/shared/ui';
-import { IdentityAvatar } from '@/layers/shared/ui';
+import { Badge, IdentityAvatar } from '@/layers/shared/ui';
 import { cn, resolveIdentityFace } from '@/layers/shared/lib';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
+import { platformLabel } from '@/layers/entities/room';
 import { teamMemberLabel } from '@/layers/entities/team';
 
 /**
@@ -11,6 +11,11 @@ import { teamMemberLabel } from '@/layers/entities/team';
  * An agent runs on something; a person is somewhere. Neither line is invented —
  * a person with no declared role says where they are rather than guessing at a
  * title, which is the honest version of the same sentence.
+ *
+ * Both names go through the same resolvers the rest of the cockpit uses —
+ * `getRuntimeDescriptor` for a runtime, `platformLabel` for a platform — so a
+ * person bridged in reads "On Telegram" here and everywhere else, rather than
+ * the wire token this surface happens to hold.
  */
 function secondaryLine(member: TeamMember): string {
   if (member.agent) {
@@ -18,7 +23,8 @@ function secondaryLine(member: TeamMember): string {
     return member.agent.model ? `${runtime} · ${member.agent.model}` : runtime;
   }
   if (member.person?.role) return member.person.role;
-  return member.origin === 'local' ? 'On this machine' : `On ${member.origin.platform}`;
+  if (member.origin === 'local') return 'On this machine';
+  return `On ${platformLabel(member.origin.platform)}`;
 }
 
 export interface TeamMemberCardProps {
@@ -52,6 +58,12 @@ export interface TeamMemberCardProps {
  * now. The pulsing dot on the disc says "right now", so wiring the two together
  * would put a live signal on an agent that finished forty minutes ago. It is
  * drawn as words instead, where an hour-old fact reads as an hour-old fact.
+ *
+ * **And no health, deliberately.** `agent.healthStatus` is on the payload and is
+ * drawn nowhere here: the difference between `stale` and `inactive` is a fact
+ * about the mesh's last contact, which is what the topology view is for. A
+ * roster answers "who is here", so it shows presence and stops — four states
+ * per card would be a diagnostic panel wearing a roster's clothes.
  *
  * Nothing here branches on there being one person, and `isSelf` only decides
  * whether a chip is drawn (spec §W2.6) — a second person and a remote member
@@ -113,6 +125,10 @@ export function TeamMemberCard({ member, owner, onSelectOwner, className }: Team
           <button
             type="button"
             onClick={() => onSelectOwner(owner.id)}
+            // The visible text names the owner; the label names what pressing
+            // it does, which is the part a screen reader cannot infer from
+            // "by @dorian".
+            aria-label={`Show only ${owner.displayName} and their agents`}
             className="text-muted-foreground hover:text-foreground focus-ring mt-1.5 max-w-full truncate rounded text-xs underline-offset-2 hover:underline"
           >
             by {teamMemberLabel(owner)}

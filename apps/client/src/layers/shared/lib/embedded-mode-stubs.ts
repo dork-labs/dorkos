@@ -1049,17 +1049,17 @@ export const mcpManagementStubs = {
  * the page already knows how to say "a source did not answer", and an empty
  * roster with no explanation is the one thing the surface must never show —
  * it would read as "there is nobody here", which is never true.
+ *
+ * `message` is diagnostic, matching every other warning on this envelope
+ * (`err.message` from whatever failed). The sentence a person reads is keyed
+ * off `source` by the banner that draws it, which is the single owner of that
+ * copy — see `SOURCE_COPY` in `features/team-roster`.
  */
 export const teamStubs = {
   async getTeamRoster(): Promise<TeamRosterResponse> {
     return {
       members: [],
-      warnings: [
-        {
-          source: 'team',
-          message: 'The team roster needs the DorkOS server, which is not running here.',
-        },
-      ],
+      warnings: [{ source: 'team', message: 'No DorkOS server in embedded mode.' }],
     };
   },
 };

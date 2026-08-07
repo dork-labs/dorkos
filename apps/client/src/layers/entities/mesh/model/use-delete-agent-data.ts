@@ -11,6 +11,9 @@ export function useDeleteAgentData() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mesh', 'agents'] });
       queryClient.invalidateQueries({ queryKey: ['mesh', 'topology'] });
+      // A deleted agent has to leave the Team roster too. A raw literal: one
+      // entity may not import a sibling entity's constant.
+      queryClient.invalidateQueries({ queryKey: ['team'] });
     },
   });
 }
