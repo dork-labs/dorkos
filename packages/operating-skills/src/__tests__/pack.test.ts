@@ -142,12 +142,12 @@ describe('the pack teaches the world as it actually is', () => {
     //
     // Be exact about what this floor is, because the sentence here used to
     // oversell it: it is a RATCHET, not a link between a body edit and a bump.
-    // It fails when the constant is lowered past 7 or deleted — which is what a
+    // It fails when the constant is lowered past 8 or deleted — which is what a
     // botched conflict resolution on this line does — and nothing else. Editing
     // a skill body cannot move a constant, so no local assertion can notice that
     // edit shipping without a bump. Tying those two together is the CI guard's
     // job alone.
-    expect(OPERATING_SKILLS_VERSION).toBeGreaterThanOrEqual(7);
+    expect(OPERATING_SKILLS_VERSION).toBeGreaterThanOrEqual(8);
   });
 
   it('keeps every seeded skill out of pack.ts, which the CI guard depends on', () => {
