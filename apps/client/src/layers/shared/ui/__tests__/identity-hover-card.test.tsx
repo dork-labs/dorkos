@@ -109,6 +109,25 @@ describe('IdentityHoverCard', () => {
     expect(screen.getByText(/^Working ·/)).toBeInTheDocument();
   });
 
+  it('pulses the avatar itself while an agent works, and only there', async () => {
+    // The card drew its own dot inside the chip — a third hand-rolled copy of
+    // the same eight lines, and two marks for one fact. It rides
+    // `IdentityAvatar`'s `working` slot now. Red if a second pulse comes back,
+    // and red if the disc stops carrying the one that is left.
+    await openOn({
+      kind: 'agent',
+      displayName: 'Warden',
+      agent: { working: { forMs: 134_000 } },
+    });
+
+    expect(document.querySelectorAll('.animate-ping')).toHaveLength(1);
+    expect(document.querySelector('[data-slot="identity-avatar"] .animate-ping')).not.toBeNull();
+
+    cleanup();
+    await openOn({ kind: 'agent', displayName: 'Warden' });
+    expect(document.querySelector('.animate-ping')).toBeNull();
+  });
+
   it("shows a person's origin chip, and an external platform name for a bridged person", async () => {
     await openOn({ kind: 'human', displayName: 'Priya', origin: { platform: 'Telegram' } });
     expect(screen.getByText('Telegram')).toBeInTheDocument();
@@ -116,6 +135,44 @@ describe('IdentityHoverCard', () => {
     cleanup();
     await openOn({ kind: 'human', displayName: 'Ana', origin: 'local' });
     expect(screen.getByText('On this machine')).toBeInTheDocument();
+  });
+
+  describe('owner attribution — the managed-by chip', () => {
+    it('shows "Managed by @handle" for an agent with an addressable owner', async () => {
+      await openOn({
+        kind: 'agent',
+        displayName: 'Warden',
+        agent: { managedBy: { displayName: 'Dorian', handle: 'dorian' } },
+      });
+
+      expect(screen.getByText('Managed by @dorian')).toBeInTheDocument();
+    });
+
+    it('falls back to the display name rather than a bare "@" when the owner has no handle', async () => {
+      await openOn({
+        kind: 'agent',
+        displayName: 'Warden',
+        agent: { managedBy: { displayName: 'Dorian', handle: null } },
+      });
+
+      expect(screen.getByText('Managed by Dorian')).toBeInTheDocument();
+      expect(screen.queryByText(/^Managed by @/)).not.toBeInTheDocument();
+    });
+
+    it('draws no chip at all when the agent has no known owner', async () => {
+      await openOn({ kind: 'agent', displayName: 'Warden', agent: { runtime: 'Claude Code' } });
+
+      expect(screen.queryByText(/^Managed by/)).not.toBeInTheDocument();
+    });
+
+    it('never shows the chip for a person, even one that happens to carry the field', async () => {
+      // `managedBy` only ever means something on an agent; a human descriptor
+      // has no `agent` field to carry it, so this pins that the chip is gated
+      // on `kind`, not just on the field being present.
+      await openOn({ kind: 'human', displayName: 'Ana', handle: 'ana' });
+
+      expect(screen.queryByText(/^Managed by/)).not.toBeInTheDocument();
+    });
   });
 
   describe('touch', () => {

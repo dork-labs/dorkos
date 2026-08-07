@@ -229,6 +229,17 @@ export function IdentityShowcases() {
           </div>
         </ShowcaseDemo>
 
+        <ShowcaseLabel>
+          Owner attribution — &quot;Managed by @handle&quot;, and by name when the owner has none
+          yet
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <div className="flex flex-wrap gap-3">
+            <Trigger identity={MOCK_IDENTITIES.warden} />
+            <Trigger identity={MOCK_IDENTITIES.scout} />
+          </div>
+        </ShowcaseDemo>
+
         <ShowcaseLabel>Person — local, and bridged from an external platform</ShowcaseLabel>
         <ShowcaseDemo>
           <div className="flex flex-wrap gap-3">

@@ -3,12 +3,10 @@
  *
  * @module entities/room/ui/MemberList
  */
-import { ADAPTER_LOGO_MAP } from '@dorkos/icons/adapter-logos';
-import { Send } from 'lucide-react';
 import type { RoomRosterEntry } from '@dorkos/shared/room-schemas';
-import { cn, initialOf } from '@/layers/shared/lib';
+import { cn, resolveIdentityFace } from '@/layers/shared/lib';
 import { IdentityAvatar, Tooltip, TooltipContent, TooltipTrigger } from '@/layers/shared/ui';
-import { authorColor, platformLabel } from '../lib/room-display';
+import { platformLabel } from '../lib/room-display';
 
 /** How many marks are drawn before the rest collapse into a `+N`. */
 const MAX_VISIBLE = 5;
@@ -43,9 +41,19 @@ export interface MemberListProps {
 /**
  * Overlapping discs, one per member, with the rest counted off at the end.
  *
- * An agent wears the emoji and colour it wears everywhere else in the cockpit;
- * anyone with neither — a person, the room's own voice — gets a letter on a
- * colour hashed from their id.
+ * **Every disc is drawn from the author record and nothing else.** This is an
+ * entity: it is handed a roster, it cannot reach the fleet, and it does not go
+ * looking. So a member wears the emoji and colour the server last cached for
+ * them, and a member with neither wears a letter on a colour hashed from their
+ * id. Shape and corner mark come off `kind`, so an agent here reads as an agent
+ * the same way it does in the member sheet.
+ *
+ * The **colour** is where that stops being true, and deliberately so for now:
+ * the sheet's row can resolve an agent against the fleet and prefer its
+ * manifest colour, and this cannot, so an agent whose manifest colour never
+ * reached its author record shows one colour here and another there. Closing
+ * that means deciding whether an entity component may accept a fleet-resolved
+ * face at all, which is a design question and not this component's to answer.
  *
  * **Two shapes, chosen by whether it is pressable.** Read-only it is a labelled
  * list, each disc a tooltip trigger. Given an `onClick` it is a single button —
@@ -71,27 +79,32 @@ export function MemberList({ members, onClick, label, className }: MemberListPro
    * in from outside this machine, the platform they are on — for a screen
    * reader.
    *
-   * The platform's own brand mark badges the disc for an external member, the
-   * same visual slot `RoomMemberRow` gives an agent's `Bot` glyph — legible at
-   * a glance rather than only on hover, which is what chats-as-channels §9
-   * requires of every origin mark (see `OriginMark`'s own doc for why).
+   * The face comes from the shared resolver and the marks come from the disc's
+   * own `kind`, so this and the member sheet's row draw one member one way. It
+   * used to badge an external person and nothing else while the sheet badged
+   * agents and nothing else, which meant the same agent wore a mark in one half
+   * of the room and none in the other. Neither file decides it now.
    */
   const disc = ({ author, origin }: RoomRosterEntry) => {
     const isExternal = typeof origin === 'object' && origin !== null;
-    const Logo = isExternal ? ADAPTER_LOGO_MAP[origin.platform] : undefined;
     const name = isExternal
       ? `${author.displayName}, from ${platformLabel(origin.platform)}`
       : author.displayName;
+    const face = resolveIdentityFace({ record: author, origin });
     return (
       <IdentityAvatar
         // Named explicitly: the tooltip trigger this stands in for would
         // otherwise stamp its own slot onto the disc.
         data-slot="room-member-avatar"
         size="xs"
-        color={author.color ?? authorColor(author.id)}
-        emoji={author.emoji}
-        fallback={initialOf(author.displayName)}
-        badge={isExternal ? Logo ? <Logo /> : <Send /> : undefined}
+        // The face's fields are listed rather than spread — see the same call
+        // in `RoomMemberRow` for why a spread is not the compile-time check it
+        // looks like.
+        kind={face.kind}
+        color={face.color}
+        emoji={face.emoji}
+        fallback={face.fallback}
+        origin={face.origin}
         // A roster disc is a step larger than the sidebar's, and rings itself in
         // the page background so the overlap still reads as separate people.
         className="border-background size-6 border"

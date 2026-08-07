@@ -3,9 +3,8 @@
  *
  * @module features/chat/ui/message/MessageAuthorAvatar
  */
-import { Bot, Send } from 'lucide-react';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
-import { cn, hashToHslColor, initialOf } from '@/layers/shared/lib';
+import { cn, hashToHslColor, initialOf, type IdentityOrigin } from '@/layers/shared/lib';
 import { IdentityAvatar } from '@/layers/shared/ui';
 import type { MessageAuthor } from '@/layers/shared/model';
 
@@ -27,15 +26,20 @@ export interface MessageAuthorAvatarProps {
  * color is either the author's own or hashed from their id, so a participant
  * always reads as the same color and never changes between renders.
  *
- * **Shape and fill mirror `IdentityHoverCard`'s mapping** (spec
- * `composer-identity-components`, direction C): an agent draws as a filled
- * square carrying a small Bot badge; everyone else stays a tinted circle, with
- * a Send badge added for someone bridged in from outside this machine. Most
- * agents have no stored `color` — the emoji/runtime-brand cases above are the
- * exception — so the filled square usually lands on the same hashed color
- * every other identity falls back to; `IdentityAvatar` itself is what keeps
- * the fallback glyph legible against whatever that hash turns out to be
- * (`readableForeground`), so nothing here has to repeat that work.
+ * **Shape, fill and badge come from `kind`** — the same derivation
+ * `IdentityHoverCard` reads (spec `composer-identity-components`, direction
+ * C; `identity-consistency` W1.3): an agent draws as a filled square carrying
+ * a small Bot badge; everyone else stays a tinted circle, with a Send badge
+ * added for someone bridged in from outside this machine. `MessageAuthor`
+ * only ever knows THAT a sender is bridged, never from which platform, so the
+ * `origin` this passes carries no platform name — `IdentityAvatar`'s own
+ * `ADAPTER_LOGO_MAP[...] ?? <Send />` fallback is what turns that into the
+ * Send badge. Most agents have no stored `color` — the emoji/runtime-brand
+ * cases above are the exception — so the filled square usually lands on the
+ * same hashed color every other identity falls back to; `IdentityAvatar`
+ * itself is what keeps the fallback glyph legible against whatever that hash
+ * turns out to be (`readableForeground`), so nothing here has to repeat that
+ * work.
  *
  * **Fill is skipped for a runtime-brand color.** `readableForeground` only
  * parses hex/`rgb()`/`hsl()`, and a runtime's accent is a theme token
@@ -55,10 +59,16 @@ export function MessageAuthorAvatar({ author, className }: MessageAuthorAvatarPr
   const brand = author.emoji || !author.runtime ? null : getRuntimeDescriptor(author.runtime);
   const BrandMark = brand?.icon;
   const color = brand?.accent ?? author.color ?? hashToHslColor(author.id);
-  const isAgent = author.kind === 'agent';
   // See the fill-skip note above: a `var(...)` token can't be read by
   // `readableForeground`, so it never gets the fill treatment.
   const canFill = !color.trim().startsWith('var(');
+  // `kind` derives shape, fill and badge together. The one axis it can't
+  // decide alone is `variant`: the runtime-brand fill-skip case above steps
+  // an agent back to `tint`; every other identity leaves `kind` to choose.
+  const variant = author.kind === 'agent' && !canFill ? 'tint' : undefined;
+  // No platform name to give it — see the doc above — so an origin object
+  // with none still derives the Send badge without inventing a platform.
+  const origin: IdentityOrigin | undefined = author.isExternal ? { platform: '' } : undefined;
 
   return (
     <IdentityAvatar
@@ -67,9 +77,9 @@ export function MessageAuthorAvatar({ author, className }: MessageAuthorAvatarPr
       color={color}
       emoji={author.emoji}
       fallback={BrandMark ? <BrandMark size={BRAND_MARK_SIZE} /> : initialOf(author.displayName)}
-      shape={isAgent ? 'square' : 'circle'}
-      variant={isAgent && canFill ? 'fill' : 'tint'}
-      badge={isAgent ? <Bot /> : author.isExternal ? <Send /> : undefined}
+      kind={author.kind}
+      origin={origin}
+      variant={variant}
       className={cn('size-[var(--msg-gutter-width)]', className)}
     />
   );

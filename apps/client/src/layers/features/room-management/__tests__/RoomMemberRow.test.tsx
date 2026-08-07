@@ -3,7 +3,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { AuthorRef, RoomRosterEntry } from '@dorkos/shared/room-schemas';
-import type { AgentVisual } from '@/layers/shared/lib';
+import { hashToHslColor, type AgentVisual } from '@/layers/shared/lib';
 import { RoomMemberRow, type RoomMemberRowProps } from '../ui/RoomMemberRow';
 
 /** Put the viewport below or above the 768px breakpoint for one test. */
@@ -83,6 +83,13 @@ function tint(): string {
   return disc().getAttribute('style') ?? '';
 }
 
+/** The same colour, put through jsdom's own parser so the two forms compare. */
+function probeColor(color: string): string {
+  const probe = document.createElement('span');
+  probe.style.backgroundColor = color;
+  return probe.style.backgroundColor;
+}
+
 afterEach(() => {
   cleanup();
   viewport('desktop');
@@ -129,16 +136,19 @@ describe('RoomMemberRow', () => {
       expect(tint()).toContain('rgb(255, 0, 0)');
     });
 
-    it('draws a letter, and never a confident face it invented', () => {
-      // Red if anything ever hashes the author id into a colour here: it would
-      // be perfectly stable, perfectly confident, and match no other surface in
-      // the cockpit. `currentColor` is the row's own text colour, which reads
-      // as a shade of the surface rather than as a colour that means something.
+    it('draws a letter on the same hashed colour the rest of the room uses', () => {
+      // This row used to answer `currentColor` here, on the argument that a
+      // hashed colour would be confident about a face nobody knows. It matches
+      // the roster three inches away, which hashes the same id — so refusing to
+      // hash is what made one member two colours at once (DOR-968).
+      //
+      // Red if the colour stops being THIS hash: a different one is worse than
+      // no colour, because it looks deliberate. And red if an emoji ever
+      // appears: the letter is the honest "we don't know this one's face".
       renderRow({ member: member({ kind: 'agent' }), visual: null });
 
       expect(within(disc()).getByText('A')).toBeInTheDocument();
-      expect(tint()).toContain('currentcolor');
-      expect(tint()).not.toMatch(/hsl|rgb|#[0-9a-f]{3,}/i);
+      expect(tint()).toContain(probeColor(hashToHslColor('author-Ana')));
     });
   });
 
