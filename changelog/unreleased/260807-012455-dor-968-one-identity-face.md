@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(identity): resolve every identity face through one shared function (DOR-968)'
+  - 'refactor(identity): make the face contract explicit and stop overclaiming it (DOR-968)'
 ---
 
 ### Fixed
