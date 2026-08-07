@@ -1,22 +1,41 @@
 // @vitest-environment jsdom
 /**
- * The dashboard hero composer, serialized — the pre-migration record.
+ * The dashboard hero composer, serialized — proof the wrap added a card and
+ * nothing else.
  *
- * Captured from the unmigrated `DashboardComposerSection`, where
- * `<Composer.Input>` sits directly under the `<section>` with no card chrome
- * around it. After task 2.5 wraps it in `<Composer.Root>`, the diff against
- * this baseline must be EXACTLY one added element — the Root `div` — with the
- * previously top-level composer subtree hanging off it unchanged (spec
+ * The baseline in `__baselines__/` was captured from the UNMIGRATED
+ * `DashboardComposerSection` and committed before the wrap (`247ac851a`), when
+ * `<Composer.Input>` sat directly under the `<section>` with no card chrome.
+ * This file now renders the WRAPPED component against it (spec
  * `composer-parity`, task 2.5).
  *
- * The real `ChatInput` renders here, unlike in `DashboardComposerSection.test.tsx`
+ * Unlike chat's parity suite, the expected diff here is NOT empty — a card was
+ * deliberately added. So the claim is made positively instead: the section still
+ * has exactly two children, the second is a `div` carrying exactly Root's chrome
+ * classes, and its serialized subtree is IDENTICAL to the node that used to sit
+ * in that slot. Everything above and beside it is untouched.
+ *
+ * Asserted that way rather than by counting raw diff entries on purpose: the
+ * differ walks children POSITIONALLY, so inserting a wrapper reports as a
+ * cascade of differences at that index — a `tag` change plus everything under
+ * it — not as a tidy "one node added". Counting entries would be reading the
+ * differ's walk order, not the claim.
+ *
+ * The real `ComposerInput` renders here, unlike in `DashboardComposerSection.test.tsx`
  * next door, which stubs the composer barrel down to the callbacks it asserts.
  * A stub would make the baseline a record of the stub — and the whole claim
  * being made is about markup.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
-import { serializeDom, matchDomBaseline, formatDomDiff } from '@/test-helpers/dom-parity';
+import {
+  serializeDom,
+  domBaselinePath,
+  diffDom,
+  formatDomDiff,
+  type SerializedElement,
+} from '@/test-helpers/dom-parity';
+import { readFileSync } from 'node:fs';
 
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }));
 
@@ -46,31 +65,62 @@ afterEach(() => {
   cleanup();
 });
 
-describe('DashboardComposerSection — serialized-DOM parity (pre-migration baseline)', () => {
-  it('records the hero composer as it renders today, with no card chrome around it', () => {
+/** Root's card chrome — the complete class set the added wrapper must carry. */
+const ROOT_CHROME = ['bg-surface', 'relative', 'm-2', 'rounded-xl', 'border', 'p-2'];
+
+/** The committed pre-wrap baseline, as the harness serialized it. */
+function baseline(): SerializedElement {
+  const path = domBaselinePath(import.meta.url, 'dashboard-composer-section');
+  return JSON.parse(readFileSync(path, 'utf8')) as SerializedElement;
+}
+
+/** The `<section>` inside a serialized RTL container. */
+function sectionOf(tree: SerializedElement): SerializedElement {
+  const found = tree.children.find(
+    (child): child is SerializedElement => child.kind === 'element' && child.tag === 'section'
+  );
+  if (!found) throw new Error('no <section> in the serialized tree');
+  return found;
+}
+
+describe('DashboardComposerSection — the wrap added a card and nothing else', () => {
+  it('adds exactly one element: a Root div around the untouched composer subtree', () => {
     const { container } = render(<DashboardComposerSection />);
 
-    // The three things the wrap must leave alone, asserted here so a baseline
-    // that recorded an empty section would be caught before it was committed.
+    // The three things the wrap must leave alone.
     expect(
       screen.getByRole('heading', { name: 'What are we building today?' })
     ).toBeInTheDocument();
     expect(screen.getByRole('combobox')).toHaveAttribute('aria-label', 'Message DorkBot…');
 
-    // Today the composer subtree is a DIRECT child of the section, right after
-    // the heading. That adjacency is exactly what task 2.5's "exactly one added
-    // element" claim is measured against.
-    const section = container.querySelector('section')!;
-    expect(section.children).toHaveLength(2);
-    expect(section.children[0]!.tagName).toBe('H2');
-    expect(section.children[1]!.className).not.toContain('rounded-xl');
+    const before = sectionOf(baseline());
+    const after = sectionOf(serializeDom(container));
 
-    const diff = matchDomBaseline(
-      import.meta.url,
-      'dashboard-composer-section',
-      serializeDom(container)
-    );
-    expect(formatDomDiff(diff)).toBe('');
+    // The section itself is unchanged: same tag, same classes, same attributes,
+    // same child COUNT. A wrap that also moved or added a sibling fails here.
+    expect(after.tag).toBe(before.tag);
+    expect([...after.classes].sort()).toEqual([...before.classes].sort());
+    expect(after.attrs).toEqual(before.attrs);
+    expect(after.children).toHaveLength(before.children.length);
+    expect(before.children).toHaveLength(2);
+
+    // Child 0 — the heading — is untouched, to the byte.
+    expect(after.children[0]).toEqual(before.children[0]);
+
+    // Child 1 was the composer subtree; it is now the Root div.
+    const wrapper = after.children[1] as SerializedElement;
+    const wrapped = before.children[1] as SerializedElement;
+    expect(wrapper.kind).toBe('element');
+    expect(wrapper.tag).toBe('div');
+    expect([...wrapper.classes].sort()).toEqual([...ROOT_CHROME].sort());
+    // Root adds no attributes of its own, and mounts no dropzone here.
+    expect(wrapper.attrs).toEqual({});
+
+    // And the thing it wraps is the OLD subtree, unchanged — this is the whole
+    // claim. `diffDom` compares the two directly, so any drift inside the
+    // composer reads out as a normal diff rather than an equality dump.
+    expect(wrapper.children).toHaveLength(1);
+    expect(formatDomDiff(diffDom(wrapped, wrapper.children[0]!))).toBe('');
   });
 
   it('has no dropzone: the dashboard passes no onAttach, so nothing mounts a file input', () => {

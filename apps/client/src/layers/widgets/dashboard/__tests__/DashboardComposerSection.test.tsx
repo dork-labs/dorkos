@@ -32,6 +32,11 @@ vi.mock('@/layers/entities/config', () => ({
 // about beyond the callbacks: the line that says why a send cannot happen yet.
 vi.mock('@/layers/features/composer', () => ({
   Composer: {
+    // A pass-through card. This file asserts the submit seam and the
+    // agent-not-ready line, never the chrome — but it must forward `children`
+    // or the wrap would render an empty section and every assertion below
+    // would fail for the wrong reason.
+    Root: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
     Input: ({
       value,
       onChange,

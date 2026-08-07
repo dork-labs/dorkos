@@ -54,18 +54,23 @@ export function DashboardComposerSection() {
       <h2 className="text-foreground mb-3 text-lg font-semibold tracking-tight">
         What are we building today?
       </h2>
-      <Composer.Input
-        value={value}
-        onChange={setValue}
-        onSubmit={handleSubmit}
-        isStreaming={false}
-        canSubmit={isDefaultAgentResolved}
-        // Nothing else on this screen explains the greyed Send, and this is very
-        // often the first sentence anyone types into DorkOS: they press Enter
-        // and, without this line, nothing happens for no stated reason.
-        canSubmitReason="Getting your agent ready…"
-        placeholder={`Message ${defaultAgentDisplayName}…`}
-      />
+      {/* No `onFilesDropped`: the dashboard has no upload path today, so no
+          dropzone mounts. The capability matrix's "follows chat" means it
+          inherits the seam when chat's reaches it, not that it wires one now. */}
+      <Composer.Root>
+        <Composer.Input
+          value={value}
+          onChange={setValue}
+          onSubmit={handleSubmit}
+          isStreaming={false}
+          canSubmit={isDefaultAgentResolved}
+          // Nothing else on this screen explains the greyed Send, and this is very
+          // often the first sentence anyone types into DorkOS: they press Enter
+          // and, without this line, nothing happens for no stated reason.
+          canSubmitReason="Getting your agent ready…"
+          placeholder={`Message ${defaultAgentDisplayName}…`}
+        />
+      </Composer.Root>
     </section>
   );
 }
