@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
+import { Wand2 } from 'lucide-react';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -12,21 +13,43 @@ import { Badge } from '@/layers/shared/ui/badge';
 
 const AUTO_COLOR = 'hsl(255, 70%, 55%)';
 const AUTO_EMOJI = '🤖';
+/** Matches `AvatarPickerPopover`'s own burst duration (`showCheckmark`). */
+const JUST_SELECTED_MS = 600;
 
 /**
  * Demo state for one `AvatarColorGrid` + `AvatarEmojiGrid` pair — enough to
  * drive the grids without the real `IdentityTab` / `AvatarPickerPopover`
- * data context they normally sit inside.
+ * data context they normally sit inside. `justSelected` mirrors
+ * `AvatarPickerPopover`'s own `showCheckmark`: a momentary key, not one
+ * bound to the current selection, so the checkmark burst fires once and
+ * clears rather than sitting lit forever on whatever is picked.
  */
 function useAvatarPickerDemoState() {
   const [color, setColor] = useState<string | null>(null);
   const [icon, setIcon] = useState<string | null>(null);
+  const [justSelected, setJustSelected] = useState<string | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showCheckmark = useCallback((key: string) => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setJustSelected(key);
+    timerRef.current = setTimeout(() => setJustSelected(null), JUST_SELECTED_MS);
+  }, []);
+
   return {
     color,
     icon,
+    justSelected,
     activeEmoji: icon ?? AUTO_EMOJI,
-    onSelectColor: setColor,
-    onSelectIcon: (emoji: string) => setIcon(emoji === AUTO_EMOJI ? null : emoji),
+    onSelectColor: (hex: string | null) => {
+      setColor(hex);
+      showCheckmark(hex ?? 'auto');
+    },
+    onSelectIcon: (emoji: string) => {
+      const value = emoji === AUTO_EMOJI ? null : emoji;
+      setIcon(value);
+      showCheckmark(`emoji-${emoji}`);
+    },
   };
 }
 
@@ -184,38 +207,51 @@ export function AgentIdentityShowcases() {
       >
         <ShowcaseLabel>Plain container (the IdentityTab popover)</ShowcaseLabel>
         <ShowcaseDemo>
-          <div className="max-w-xs space-y-4 rounded-md border p-3">
-            <AvatarColorGrid
-              value={plainPicker.color}
-              autoColor={AUTO_COLOR}
-              onSelect={plainPicker.onSelectColor}
-            />
-            <AvatarEmojiGrid
-              value={plainPicker.activeEmoji}
-              autoEmoji={AUTO_EMOJI}
-              hasOverride={plainPicker.icon != null}
-              onSelect={plainPicker.onSelectIcon}
-            />
+          <div className="flex flex-wrap items-start gap-4">
+            <div className="w-auto rounded-md border p-3">
+              <AvatarColorGrid
+                value={plainPicker.color}
+                autoColor={AUTO_COLOR}
+                onSelect={plainPicker.onSelectColor}
+              />
+            </div>
+            <div className="w-64 rounded-md border p-3">
+              <AvatarEmojiGrid
+                value={plainPicker.activeEmoji}
+                autoEmoji={AUTO_EMOJI}
+                hasOverride={plainPicker.icon != null}
+                onSelect={plainPicker.onSelectIcon}
+              />
+            </div>
           </div>
         </ShowcaseDemo>
 
         <ShowcaseLabel>Celebratory container (the AvatarPickerPopover panel)</ShowcaseLabel>
         <ShowcaseDemo>
-          <div className="max-w-xs space-y-4 rounded-md border p-3">
-            <AvatarColorGrid
-              value={celebratoryPicker.color}
-              autoColor={AUTO_COLOR}
-              onSelect={celebratoryPicker.onSelectColor}
-              onHoverChange={() => {}}
-              justSelectedKey={celebratoryPicker.color}
-            />
-            <AvatarEmojiGrid
-              value={celebratoryPicker.activeEmoji}
-              autoEmoji={AUTO_EMOJI}
-              hasOverride={celebratoryPicker.icon != null}
-              onSelect={celebratoryPicker.onSelectIcon}
-              justSelectedKey={celebratoryPicker.icon && `emoji-${celebratoryPicker.icon}`}
-            />
+          <div className="flex flex-wrap items-start gap-4">
+            <div className="w-auto rounded-md border p-3">
+              <AvatarColorGrid
+                value={celebratoryPicker.color}
+                autoColor={AUTO_COLOR}
+                onSelect={celebratoryPicker.onSelectColor}
+                onHoverChange={() => {}}
+                justSelectedKey={celebratoryPicker.justSelected}
+                celebratory
+                autoIcon={<Wand2 className="size-3" />}
+                autoActiveRing="ring-muted-foreground/50 ring-2 ring-offset-2"
+                autoLabel="Select unique auto-generated color"
+              />
+            </div>
+            <div className="w-64 rounded-md border p-3">
+              <AvatarEmojiGrid
+                value={celebratoryPicker.activeEmoji}
+                autoEmoji={AUTO_EMOJI}
+                hasOverride={celebratoryPicker.icon != null}
+                onSelect={celebratoryPicker.onSelectIcon}
+                justSelectedKey={celebratoryPicker.justSelected}
+                celebratory
+              />
+            </div>
           </div>
         </ShowcaseDemo>
       </PlaygroundSection>

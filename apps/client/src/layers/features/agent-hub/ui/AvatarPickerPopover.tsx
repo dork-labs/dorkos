@@ -1,11 +1,16 @@
 import { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X } from 'lucide-react';
+import { X, Wand2 } from 'lucide-react';
 import { hashToHslColor, hashToEmoji } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
 import { AvatarColorGrid, AvatarEmojiGrid } from '@/layers/entities/agent';
 import { useAgentHubContext } from '../model/agent-hub-context';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+
+/** This panel's richer auto-swatch presentation — a solid ring and the Wand2 glyph, in place of `AvatarColorGrid`'s plain-container defaults (a dashed ring and an "A" glyph). */
+const AUTO_SWATCH_ICON = <Wand2 className="size-3" />;
+const AUTO_SWATCH_ACTIVE_RING = 'ring-muted-foreground/50 ring-2 ring-offset-2';
+const AUTO_SWATCH_LABEL = 'Select unique auto-generated color';
 
 const FIRST_CUSTOMIZATION_KEY = 'dorkos:avatar-first-customization';
 
@@ -198,6 +203,10 @@ export function AvatarPickerPanel({ onClose }: AvatarPickerPanelProps) {
             onSelect={handleColorSelect}
             onHoverChange={handleColorHover}
             justSelectedKey={justSelected}
+            celebratory
+            autoIcon={AUTO_SWATCH_ICON}
+            autoActiveRing={AUTO_SWATCH_ACTIVE_RING}
+            autoLabel={AUTO_SWATCH_LABEL}
           />
         </motion.div>
 
@@ -212,6 +221,7 @@ export function AvatarPickerPanel({ onClose }: AvatarPickerPanelProps) {
             hasOverride={hasIconOverride}
             onSelect={handleIconSelect}
             justSelectedKey={justSelected}
+            celebratory
           />
         </motion.div>
       </motion.div>

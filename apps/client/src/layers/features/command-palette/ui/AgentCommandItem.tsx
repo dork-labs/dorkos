@@ -24,20 +24,17 @@ interface AgentCommandItemProps {
 /**
  * Custom CommandItem rendering for agent rows in the global palette.
  *
- * Layout:
- * [colored dot] emoji agent-name          ~/path/to/project    [checkmark if active]
- *                     "Optional description"
+ * The avatar/name/secondary-path/checkmark row itself is
+ * `entities/agent`'s `AgentOptionRow` — this file owns only what is
+ * palette-specific:
  *
- * Color and emoji use agent overrides when present, otherwise fall back to
- * hash-based deterministic values derived from the agent id.
- *
- * When nameIndices is provided, the agent name is rendered with matched
- * characters bolded via HighlightedText.
- *
- * When isSelected is true, a motion.div with layoutId="cmd-palette-selection"
- * renders as an absolutely-positioned background behind the item content.
- * The sliding indicator animates between items during keyboard navigation
- * using motion's shared layout animation system.
+ * - When `nameIndices` is provided, the agent name is rendered with matched
+ *   characters bolded via `HighlightedText`.
+ * - When `isSelected` is true, a `motion.div` with
+ *   `layoutId="cmd-palette-selection"` renders as an absolutely-positioned
+ *   background behind the item content. The sliding indicator animates
+ *   between items during keyboard navigation using motion's shared layout
+ *   animation system.
  */
 export function AgentCommandItem({
   agent,

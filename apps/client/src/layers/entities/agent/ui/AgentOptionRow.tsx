@@ -21,6 +21,7 @@ export interface AgentOptionRowProps {
   trailing?: ReactNode;
   /** True when this row is the current selection — drives the default checkmark. */
   selected?: boolean;
+  /** Merged onto the row's root element, after the built-in layout classes so a caller can override them. */
   className?: string;
 }
 
@@ -47,13 +48,22 @@ export function AgentOptionRow({
   return (
     <div className={cn('flex w-full min-w-0 items-center gap-2', className)}>
       <AgentAvatar color={color} emoji={emoji} size="xs" className="shrink-0" />
-      <span className="min-w-0 flex-1 truncate text-sm font-medium">
+      {/*
+       * `flex-auto` (basis: auto), not `flex-1` (basis: 0%): with a 0%
+       * basis, an unbounded sibling (the path below) can overflow the row
+       * on its own content alone, and the flex shrink algorithm gives a
+       * 0-basis item none of the deficit to absorb — it renders at literal
+       * 0 width, not merely truncated. `flex-auto` seeds this item's basis
+       * from its own (usually short) content, so it takes its proportional
+       * share of any squeeze instead of vanishing first (DOR-970 review).
+       */}
+      <span className="min-w-0 flex-auto truncate text-sm font-medium">
         {name ?? getAgentDisplayName(agent)}
       </span>
       {secondary != null && (
         <span
           data-slot="agent-option-row-secondary"
-          className="text-muted-foreground shrink-0 truncate text-xs"
+          className="text-muted-foreground min-w-0 shrink truncate text-xs"
         >
           {secondary}
         </span>
