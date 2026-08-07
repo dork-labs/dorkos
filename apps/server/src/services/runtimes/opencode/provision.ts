@@ -28,7 +28,7 @@ import { logger, logError } from '../../../lib/logger.js';
  * and the SDK the sidecar talks to never drift. Reversible: a future SDK bump
  * updates this in lockstep.
  */
-export const OPENCODE_PACKAGE_VERSION = '1.17.13';
+export const OPENCODE_PACKAGE_VERSION = '1.18.15';
 
 /** Dork-home-scoped directory the provisioned `opencode-ai` package is installed into. */
 export function resolveOpenCodeProvisionDir(): string {

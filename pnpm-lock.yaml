@@ -361,8 +361,8 @@ importers:
         specifier: ~0.144.1
         version: 0.144.1
       '@opencode-ai/sdk':
-        specifier: ^1.17.13
-        version: 1.17.13
+        specifier: ^1.18.15
+        version: 1.18.15
       '@scalar/express-api-reference':
         specifier: ^0.9.8
         version: 0.9.8
@@ -595,8 +595,8 @@ importers:
         specifier: ~0.144.1
         version: 0.144.1
       '@opencode-ai/sdk':
-        specifier: ^1.17.13
-        version: 1.17.13
+        specifier: ^1.18.15
+        version: 1.18.15
       '@opentelemetry/api':
         specifier: ^1.9.1
         version: 1.9.1
@@ -952,8 +952,8 @@ importers:
         specifier: ~0.144.1
         version: 0.144.1
       '@opencode-ai/sdk':
-        specifier: ^1.17.13
-        version: 1.17.13
+        specifier: ^1.18.15
+        version: 1.18.15
       '@scalar/express-api-reference':
         specifier: ^0.9.8
         version: 0.9.8
@@ -4158,10 +4158,10 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@opencode-ai/sdk@1.17.13':
+  '@opencode-ai/sdk@1.18.15':
     resolution:
       {
-        integrity: sha512-VItOGjMzRQx3zypwmeFLNhCiIx32kxS7FqzIJvVZLfyNGCifs3rfGC9qzNKWcxQo4SjNvAw++v4gWWU6Inv+JQ==,
+        integrity: sha512-8sfo9nGiVwesAZW9Wqkvynyn7w4wYaHx1O9qOHpYL65+Bs2XUpHP3kBbZe58gjQydFgk6I74kUF7sqCiPu2arQ==,
       }
 
   '@opentelemetry/api-logs@0.220.0':
@@ -19321,7 +19321,7 @@ snapshots:
   '@openai/codex@0.144.1-win32-x64':
     optional: true
 
-  '@opencode-ai/sdk@1.17.13':
+  '@opencode-ai/sdk@1.18.15':
     dependencies:
       cross-spawn: 7.0.6
 
@@ -22145,7 +22145,7 @@ snapshots:
       obug: 2.1.1
       std-env: 4.1.0
       tinyrainbow: 3.1.0
-      vitest: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.12.2)(@vitest/coverage-v8@4.1.10)(jsdom@29.0.2(@noble/hashes@2.2.0))(vite@7.3.6(@types/node@24.12.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.9.0))
+      vitest: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.12.2)(@vitest/coverage-v8@4.1.10)(jsdom@29.0.2(@noble/hashes@2.2.0))(vite@6.4.2(@types/node@24.12.2)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.9.0))
 
   '@vitest/expect@4.1.10':
     dependencies:
