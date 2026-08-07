@@ -1909,6 +1909,30 @@ export function backfillDefaultTrustStops(store: {
   });
 }
 
+/**
+ * The `conf` migration chain, keyed by the app version each entry ships in.
+ *
+ * ## Where a new migration goes
+ *
+ * Under a NEW key strictly greater than the newest `v*` tag in the repository
+ * (`git tag -l 'v*' | sort -V | tail -1`). Nothing else is safe, for one reason:
+ * `conf` runs a key only when `storedVersion < key <= projectVersion`. So a key
+ * at or below a version that already shipped is skipped for everybody already on
+ * it — no error, no warning, the backfill simply never happens (DOR-339).
+ *
+ * Two things follow, and both have been got wrong here before:
+ *
+ * - **Never append to a key that has shipped.** The key being present is not the
+ *   point; the BODY is what runs. Appending to an already-tagged composite key
+ *   ships dead code that looks alive (DOR-988).
+ * - **Never edit a shipped migration body.** Everyone who upgraded past it ran
+ *   the old body, and no re-run is coming. Write a new, idempotent entry that
+ *   corrects the state instead.
+ *
+ * Both rules are enforced: `__tests__/migration-safety.ts` compares every key's
+ * source text against the newest release tag, and `config-manager.test.ts` runs
+ * that comparison over the real repository on every CI run.
+ */
 export const CONFIG_MIGRATIONS = {
   '1.0.0': (store: {
     has: (key: string) => boolean;
@@ -2041,18 +2065,16 @@ export const CONFIG_MIGRATIONS = {
     scrubRetiredOnboardingSteps(store);
   },
   // Composite: DOR-452, DOR-501, DOR-516, DOR-522, DOR-525, DOR-526 and DOR-579
-  // all target "the next unreleased version" (0.56.0 is already tagged) and an
-  // object literal cannot repeat a key, so their bodies compose here in
-  // insertion order — the same convention as the 0.45.0/0.46.0/0.48.0/0.55.0
-  // composites above. All seven are independent and idempotent.
-  // /system:release reconciles the key at tag time if the real release differs.
+  // all landed before v0.57.0 was tagged, and an object literal cannot repeat a
+  // key, so their bodies composed here in insertion order — the same convention
+  // as the 0.45.0/0.46.0/0.48.0/0.55.0 composites above. All seven are
+  // independent and idempotent.
   //
-  // Composing rather than opening a 0.58.0 key is not a style choice here.
-  // `conf` only runs a migration when `key > storedVersion && key <=
-  // projectVersion`, so a 0.58.0 body would NOT run on the 0.57.0 release that
-  // carries this schema — and DOR-579 renames a field, so skipping it empties
-  // every group a person has. The rule is "never edit a SHIPPED migration";
-  // extending the next unreleased one is the convention.
+  // THIS KEY HAS SHIPPED. Do not append a body to it. v0.57.0 is tagged, so
+  // every user who upgraded past it already ran what was here at tag time and
+  // will never run anything added now — `conf` only runs a key in
+  // `(storedVersion, projectVersion]`. Open a NEW key above the newest `v*` tag
+  // instead; see the authoring rule on `CONFIG_MIGRATIONS` above.
   '0.57.0': (store: {
     get: (key: string) => unknown;
     has: (key: string) => boolean;
