@@ -1198,13 +1198,23 @@ describe('mcp sign-in card', () => {
     ]);
   });
 
-  it('retires the card when the sign-in connects', () => {
-    // The agent is already resuming by then — the card has nothing left to say.
+  it('turns the card into a receipt when the sign-in connects', () => {
+    // It used to retire the part here, reasoning that the agent was already
+    // resuming. That deleted the payoff about a second after it appeared and left
+    // the transcript with no record that anything had been authorized.
+    const parts = projectInProgressTurn([
+      required(1),
+      { seq: 2, type: 'mcp_signin_resolved', flowId: 'flow-1', outcome: 'connected', toolCount: 7 },
+    ]);
+    expect(parts).toEqual([{ type: 'mcp_signin', ...CARD, outcome: 'connected', toolCount: 7 }]);
+  });
+
+  it('never invents a tool count the resolution did not carry', () => {
     const parts = projectInProgressTurn([
       required(1),
       { seq: 2, type: 'mcp_signin_resolved', flowId: 'flow-1', outcome: 'connected' },
     ]);
-    expect(parts.some((p) => p.type === 'mcp_signin')).toBe(false);
+    expect(parts).toEqual([{ type: 'mcp_signin', ...CARD, outcome: 'connected' }]);
   });
 
   it('keeps the card as a terminal note when the sign-in FAILED', () => {
@@ -1218,16 +1228,35 @@ describe('mcp sign-in card', () => {
     ).toEqual([{ type: 'mcp_signin', ...CARD, outcome: 'failed' }]);
   });
 
-  it('replaces the card when the same server is signed in to again', () => {
+  it('replaces a LIVE card when the same server is signed in to again', () => {
     // A retry mints a NEW flow; the old link is dead the moment it does, so
-    // stacking a second card would offer a choice between a live link and a
-    // broken one — and clears the failed note, because the agent is asking again.
+    // stacking a second live card would offer a choice between a working link and
+    // a broken one.
+    const parts = projectInProgressTurn([
+      required(1),
+      required(2, { flowId: 'flow-2', authorizeUrl: 'https://mcp.test.local/authorize?2' }),
+    ]);
+    expect(parts).toEqual([
+      {
+        type: 'mcp_signin',
+        ...CARD,
+        flowId: 'flow-2',
+        authorizeUrl: 'https://mcp.test.local/authorize?2',
+      },
+    ]);
+  });
+
+  it('keeps a settled receipt beside the retry that follows it', () => {
+    // The receipt is the record of an attempt that really happened; a retry does
+    // not unmake it. Overwriting it was how the failure vanished from the
+    // transcript the moment the agent tried again.
     const parts = projectInProgressTurn([
       required(1),
       { seq: 2, type: 'mcp_signin_resolved', flowId: 'flow-1', outcome: 'failed' },
       required(3, { flowId: 'flow-2', authorizeUrl: 'https://mcp.test.local/authorize?2' }),
     ]);
     expect(parts).toEqual([
+      { type: 'mcp_signin', ...CARD, outcome: 'failed' },
       {
         type: 'mcp_signin',
         ...CARD,
@@ -1246,8 +1275,8 @@ describe('mcp sign-in card', () => {
   });
 
   it('ignores a resolution for a flow that was already replaced', () => {
-    // The abandoned flow's late resolution must not retire the card that took
-    // its place, which is why resolutions match on flow id and cards on server.
+    // The abandoned flow's late resolution must not settle the card that took its
+    // place, which is why resolutions match on flow id and cards on server.
     const parts = projectInProgressTurn([
       required(1),
       required(2, { flowId: 'flow-2' }),

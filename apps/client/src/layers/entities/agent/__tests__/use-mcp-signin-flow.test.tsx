@@ -8,7 +8,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { StartMcpSigninResult, Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
-import { useMcpSigninFlow, resetMcpSigninOwnership } from '../index';
+import { useMcpSigninFlow } from '../index';
 
 const AGENT_ID = '01HZ0000000000000000000001';
 const SERVER = 'granola';
@@ -55,10 +55,7 @@ async function tick(ms: number): Promise<void> {
   });
 }
 
-beforeEach(() => {
-  vi.clearAllMocks();
-  resetMcpSigninOwnership();
-});
+beforeEach(() => vi.clearAllMocks());
 afterEach(cleanup);
 
 describe('useMcpSigninFlow', () => {
@@ -435,26 +432,7 @@ describe('useMcpSigninFlow — flow ownership', () => {
     }
   });
 
-  it('marks the instance that started the flow as its owner, and idle ones not', async () => {
-    const transport = createMockTransport();
-    vi.mocked(transport.startMcpSignin).mockResolvedValue(startResult);
-
-    const { result } = renderHook(() => useMcpSigninFlow(AGENT_ID, SERVER), {
-      wrapper: createWrapper(transport).wrapper,
-    });
-    expect(result.current.isOwner).toBe(false);
-
-    act(() => result.current.start());
-    await waitFor(() => expect(result.current.state.step).toBe('disclosure'));
-    expect(result.current.isOwner).toBe(true);
-
-    act(() => result.current.reset());
-    expect(result.current.isOwner).toBe(false);
-  });
-
-  it('adopts a pushed flow WITHOUT owning it, and without starting one', async () => {
-    // The card the server pushes renders in every open tab. Adopting it must not
-    // confer ownership, or the auto-resume fires once per tab.
+  it('adopts a pushed flow and shows its link, without starting one', async () => {
     const transport = createMockTransport();
 
     const { result } = renderHook(() => useMcpSigninFlow(AGENT_ID, SERVER), {
@@ -471,12 +449,8 @@ describe('useMcpSigninFlow — flow ownership', () => {
 
     expect(result.current.state.step).toBe('disclosure');
     expect(result.current.state.authorizeUrl).toBe(startResult.authorizeUrl);
-    expect(result.current.isOwner).toBe(false);
+    expect(result.current.state.disclosure).toBe(startResult.disclosure);
     expect(transport.startMcpSignin).not.toHaveBeenCalled();
-
-    // Clicking the link in THIS tab is what makes it the owner.
-    act(() => result.current.authOpened());
-    expect(result.current.isOwner).toBe(true);
   });
 
   it('re-adopting the same flow does not knock a waiting sign-in back', async () => {

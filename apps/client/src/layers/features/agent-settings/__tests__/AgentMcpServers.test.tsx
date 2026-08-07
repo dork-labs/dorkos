@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import type { ReactNode } from 'react';
-import { render, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, fireEvent, waitFor, within, act } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -89,7 +89,10 @@ function renderComponent(transport: Transport) {
       </TransportProvider>
     </QueryClientProvider>
   );
-  return render(<AgentMcpServers agent={agent} projectPath="/projects/test" />, { wrapper });
+  return {
+    ...render(<AgentMcpServers agent={agent} projectPath="/projects/test" />, { wrapper }),
+    queryClient,
+  };
 }
 
 describe('AgentMcpServers', () => {
@@ -581,6 +584,41 @@ describe('AgentMcpServers', () => {
 
     await waitFor(() => expect(within(container).getByText('Connected')).toBeInTheDocument());
     expect(within(container).queryByText('Needs sign-in')).not.toBeInTheDocument();
+  });
+
+  it('drops a stale OK probe once the listing says the token is gone (DOR-985 P3)', async () => {
+    // The probe pinned the chip green for the life of the panel. Lose the token
+    // while it is open — expiry, a revoke, a refresh that failed — and the row
+    // kept claiming Connected off a probe that had been overtaken, with no Sign in
+    // button: exactly the lie DOR-985 existed to kill, re-introduced by its own
+    // fix. A probe is evidence about one moment; a newer listing outranks it.
+    const listing = vi
+      .fn()
+      .mockResolvedValueOnce([{ ...oauthServer, authStatus: 'connected' } as ManagedMcpServerView])
+      .mockResolvedValue([{ ...oauthServer, authStatus: 'needs-auth' } as ManagedMcpServerView]);
+    const transport = createMockTransport({
+      listAgentMcpServers: listing,
+      getMcpConfig: vi.fn().mockResolvedValue({ servers: [] }),
+      testAgentMcpServer: vi.fn().mockResolvedValue({ ok: true, toolCount: 4 }),
+    });
+    const { container, queryClient } = renderComponent(transport);
+
+    await waitFor(() => expect(within(container).getByText('Signed in')).toBeInTheDocument());
+    fireEvent.click(within(container).getByRole('button', { name: 'Test' }));
+
+    // A fresh OK probe still beats the listing at the moment it lands — that is
+    // the shipped behavior, and it stays.
+    await waitFor(() => expect(within(container).getByText('Connected')).toBeInTheDocument());
+
+    // …then the roster re-reads and reports the token gone. In real life the
+    // sign-in flow's own invalidation triggers this; here it is explicit.
+    await act(async () => {
+      await queryClient.invalidateQueries();
+    });
+
+    await waitFor(() => expect(within(container).getByText('Needs sign-in')).toBeInTheDocument());
+    expect(within(container).queryByText('Connected')).not.toBeInTheDocument();
+    expect(within(container).getByRole('button', { name: /^Sign in/ })).toBeInTheDocument();
   });
 
   it('lets a missing token override a stale runtime PENDING too (DOR-985 P3)', async () => {

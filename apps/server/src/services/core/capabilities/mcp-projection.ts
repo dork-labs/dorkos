@@ -53,10 +53,15 @@ import type { ApprovalService } from '../approvals/index.js';
  *
  * Two things ride it, and they are independent. A destructive ask HOLDS on
  * `approvals` and resumes on the person's decision; a capability declaring
- * `inSessionCard` draws a card on `session` and does not wait for anything. A
- * surface with a session but no approval service can still draw cards, which is
- * why `approvals` is optional rather than the whole seam being conditional on
- * it.
+ * `inSessionCard` draws a card on `session` and does not wait for anything.
+ *
+ * `approvals` is optional as a TYPE CONVENIENCE, not because a real surface ships
+ * without it: the in-session adapter only builds this seam when the approval
+ * service is wired, so every production caller supplies it. What optionality buys
+ * is a test (or a future card-only surface) that wants a session without standing
+ * up an approval service, and — the reason it is worth the honesty of saying so —
+ * it keeps card-drawing from being silently gated on a service that has nothing
+ * to do with cards.
  */
 export interface InSessionSurface {
   /** The live session inline cards and hold cards are pushed onto. */

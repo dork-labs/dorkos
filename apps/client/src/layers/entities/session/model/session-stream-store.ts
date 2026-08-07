@@ -222,32 +222,56 @@ const TURN_EVENT_TYPES: ReadonlySet<SessionEvent['type']> = new Set([
   'mcp_signin_resolved',
 ]);
 
+/** The two event types that make up a sign-in card and its receipt (DOR-1004). */
+const SIGNIN_CARD_EVENT_TYPES: ReadonlySet<SessionEvent['type']> = new Set([
+  'mcp_signin_required',
+  'mcp_signin_resolved',
+]);
+
 /**
- * The events a cleared turn keeps: sign-in cards nobody has resolved yet
- * (DOR-1004).
+ * The events a cleared turn keeps: a sign-in card, and the resolution that
+ * turned it into a receipt (DOR-1004).
  *
  * Everything else a turn produced is in the reloaded history by the time this
- * runs, which is exactly why the turn is cleared. A sign-in card is not: it was
- * asked for in DorkOS, it is answered minutes later in a browser tab, and the
- * runtime's own transcript has never heard of it. Clearing it with the rest
- * would delete the link a person walked away to use — the single most likely
- * moment for them to come back and look.
+ * runs, which is exactly why the turn is cleared. A sign-in is not: it was asked
+ * for in DorkOS, it is answered minutes later in a browser tab, and the runtime's
+ * own transcript has never heard of it. Clearing it with the rest would delete
+ * the link a person walked away to use — the single most likely moment for them
+ * to come back and look — and, once signed in, the only record in the whole
+ * conversation of what they just authorized.
  *
- * Cards are matched to resolutions by flow id, and both are kept when a card is
- * still open so the fold that renders them sees the same pair it saw live. The
- * next `turn_start` clears them for real, mirroring the server projector.
+ * BOTH halves are kept, unfiltered: the card carries the server name and the
+ * disclosure, the resolution carries how it ended, and the fold needs the pair to
+ * render either state. Grace is spent at `turn_start` ({@link carrySigninCards}),
+ * not here — a history reload is not the conversation moving on.
  *
  * @param events - The settling turn's events.
  * @returns The events to keep, in their original order.
  */
 function retainOpenSigninCards(events: SessionEvent[]): SessionEvent[] {
-  const resolved = new Set<string>();
-  for (const event of events) {
-    if (event.type === 'mcp_signin_resolved') resolved.add(event.flowId);
-  }
-  return events.filter(
-    (event) => event.type === 'mcp_signin_required' && !resolved.has(event.flowId)
-  );
+  return events.filter((event) => SIGNIN_CARD_EVENT_TYPES.has(event.type));
+}
+
+/**
+ * The sign-in events a NEW turn inherits from the one before it (DOR-1004) —
+ * one turn of grace, then gone.
+ *
+ * Signing in triggers a resume turn almost immediately, and clearing the turn on
+ * its `turn_start` erased the receipt about a second after it appeared. So a card
+ * survives exactly one `turn_start` and the next one retires it, which is the
+ * same rule the server projector applies to its own carry.
+ *
+ * The "already carried" mark is the list itself rather than a counter: a turn
+ * that has begun holds its own `turn_start`, so a card sitting beside one has
+ * been through a turn already. That keeps the rule in one pure function with no
+ * extra per-session state to reset, migrate, or forget to clear.
+ *
+ * @param events - The outgoing turn's events.
+ * @returns The events the new turn starts with, before its own `turn_start`.
+ */
+function carrySigninCards(events: SessionEvent[]): SessionEvent[] {
+  if (events.some((event) => event.type === 'turn_start')) return [];
+  return retainOpenSigninCards(events);
 }
 
 interface SessionStreamStoreState {
@@ -445,7 +469,9 @@ function deriveTurnEndLifecycle(
 function projectEvent(session: SessionStreamState, event: SessionEvent): void {
   switch (event.type) {
     case 'turn_start':
-      session.inProgressTurn = [event];
+      // A sign-in card (or its receipt) rides one turn further than the rest of
+      // the turn it belonged to — see `carrySigninCards`.
+      session.inProgressTurn = [...carrySigninCards(session.inProgressTurn), event];
       if (session.status) {
         session.status.lifecycle = 'streaming';
         // A new turn clears the previous failure surface (server-projector parity).

@@ -13,10 +13,12 @@
  * - Cards are keyed by `(agentId, serverName)`, not by flow id. A retried
  *   sign-in mints a new flow for the same server, and stacking a second card
  *   would leave a dead link above the live one.
- * - `connected` retires the card outright, while `failed` keeps it as a terminal
- *   note — the mirror image of the approval pair, because here the good ending
- *   is the one where the agent is already back at work and the bad ending is the
- *   one a person still has to hear about.
+ * - NEITHER ending retires the card. Both convert it into a compact terminal
+ *   receipt, because both are things the transcript should be able to say later:
+ *   what was connected and how many tools it brought, or that a sign-in the
+ *   person was sent away for did not take. An approval card can retire on a
+ *   decision because the decision is recorded elsewhere; a sign-in has no such
+ *   elsewhere.
  *
  * @module features/chat/model/stream/mcp-signin-fold
  */
@@ -26,22 +28,32 @@ import type { SessionEvent } from '@dorkos/shared/session-stream';
 /** The `mcp_signin` member of {@link MessagePart}. */
 type McpSigninPart = Extract<MessagePart, { type: 'mcp_signin' }>;
 
-/** Find the index of the sign-in card for a server, or `-1`. */
-function findSigninIndex(parts: MessagePart[], agentId: string, serverName: string): number {
+/**
+ * Find the index of the LIVE sign-in card for a server, or `-1`.
+ *
+ * Live means unresolved. A receipt for the same server can sit beside a fresh
+ * card once a sign-in is retried — the receipt records what happened, the card is
+ * the new attempt — so "the card for this server" has to mean the one still
+ * asking for something.
+ */
+function findLiveSigninIndex(parts: MessagePart[], agentId: string, serverName: string): number {
   return parts.findIndex(
     (part) =>
-      part.type === 'mcp_signin' && part.agentId === agentId && part.serverName === serverName
+      part.type === 'mcp_signin' &&
+      part.agentId === agentId &&
+      part.serverName === serverName &&
+      part.outcome === undefined
   );
 }
 
 /**
  * Upsert the inline sign-in card for an `mcp_signin_required` event.
  *
- * An existing card for the same server is REPLACED in place: its flow is dead
- * the moment a new one is minted, so keeping both would offer the person a
- * choice between a working link and a broken one. Replacing also clears any
- * terminal note a previous failure left, which is exactly right — the agent is
- * asking again.
+ * A still-LIVE card for the same server is replaced in place: its flow is dead
+ * the moment a new one is minted, so keeping both would offer the person a choice
+ * between a working link and a broken one. A settled receipt is left alone — it
+ * is the record of an attempt that already happened, and a retry does not unmake
+ * it.
  */
 export function foldMcpSignin(
   parts: MessagePart[],
@@ -55,21 +67,24 @@ export function foldMcpSignin(
     authorizeUrl: event.authorizeUrl,
     disclosure: event.disclosure,
   };
-  const index = findSigninIndex(parts, event.agentId, event.serverName);
+  const index = findLiveSigninIndex(parts, event.agentId, event.serverName);
   if (index === -1) parts.push(card);
   else parts[index] = card;
 }
 
 /**
- * End the inline sign-in card on its `mcp_signin_resolved` event.
+ * Turn the inline sign-in card into a terminal receipt on its
+ * `mcp_signin_resolved` event.
  *
- * Matched by FLOW id, so a resolution for an abandoned flow cannot retire the
+ * Matched by FLOW id, so a resolution for an abandoned flow cannot settle the
  * card of the one that replaced it.
  *
- * - `connected` — the sign-in landed and the agent is already resuming, so the
- *   card has nothing left to say and is removed.
- * - `failed` — the card stays as a terminal note. Removing it would leave a
- *   person who was sent to a browser with no sign anything went wrong.
+ * - `connected` — the receipt names the server and, when the connect probe found
+ *   out, how many tools it brought. This used to remove the part, on the
+ *   reasoning that the agent was already resuming; that deleted the payoff about
+ *   a second after it appeared and left no record of what had been authorized.
+ * - `failed` — the receipt says the sign-in did not take, so a person who was
+ *   sent to a browser is not left guessing.
  */
 export function foldMcpSigninResolved(
   parts: MessagePart[],
@@ -79,9 +94,9 @@ export function foldMcpSigninResolved(
     (part) => part.type === 'mcp_signin' && part.flowId === event.flowId
   );
   if (index === -1) return;
-  if (event.outcome === 'connected') {
-    parts.splice(index, 1);
-    return;
-  }
-  (parts[index] as McpSigninPart).outcome = 'failed';
+  const part = parts[index] as McpSigninPart;
+  part.outcome = event.outcome;
+  // Absent stays absent: "we don't know how many tools" is honest, and a receipt
+  // claiming zero is not.
+  if (event.toolCount !== undefined) part.toolCount = event.toolCount;
 }

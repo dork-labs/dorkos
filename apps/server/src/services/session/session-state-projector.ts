@@ -72,6 +72,23 @@ export type RawSessionEvent = Omit<SessionEvent, 'seq'>;
 export const CAPABILITY_HOLD_PAUSE_GRACE_MS = 30_000;
 
 /**
+ * A sign-in card the projector is carrying past its own turn (DOR-1004), plus
+ * how much of its grace it has spent.
+ */
+interface SigninCardEntry {
+  /** The card itself — the link, the disclosure, and who it is for. */
+  required: Extract<SessionEvent, { type: 'mcp_signin_required' }>;
+  /** The resolution that turned it into a receipt, once one has arrived. */
+  resolved?: Extract<SessionEvent, { type: 'mcp_signin_resolved' }>;
+  /**
+   * Whether this entry has already survived a `turn_start`. An unresolved card
+   * and a receipt both get exactly one turn of grace; the second `turn_start`
+   * retires them.
+   */
+  carried: boolean;
+}
+
+/**
  * The partial status payload carried by a `status_change` event: top-level
  * keys are optional and the nested `contextUsage` is itself partial (a delta
  * may carry only `outputTokens`, or only the context/cache totals).
@@ -282,16 +299,23 @@ export class SessionStateProjector {
    * `turn_end` would vanish from every tab opened after the agent stopped
    * talking, which is exactly when a person goes looking for it.
    *
-   * {@link buildSnapshot} therefore re-attaches these to whatever the snapshot's
-   * in-progress turn is, so a cold hydrate mid-sign-in still draws the card. The
-   * bound is the next `turn_start`: the conversation moved on, so the card goes
-   * with it — the same rule the client applies, so the two cannot disagree about
-   * what is on screen.
+   * {@link buildSnapshot} re-attaches these to whatever the snapshot's
+   * in-progress turn is, so a cold hydrate mid-sign-in still draws the card.
+   *
+   * ## The one-turn grace, and why a resolved card is not simply dropped
+   *
+   * The bound is a `turn_start` — the conversation moved on, so the card goes
+   * with it — but a resolved card gets ONE turn of grace first, and that grace is
+   * load-bearing. Signing in triggers a resume turn almost immediately, and
+   * retiring the card on that turn's `turn_start` erased the payoff about a
+   * second after it appeared: a person walking back from their browser found a
+   * transcript with no card, no tool count, and no record that anything had been
+   * authorized. So a resolution converts the card into a terminal RECEIPT, the
+   * receipt survives the turn the sign-in caused, and the turn AFTER that retires
+   * it. The client applies the same rule, so the two cannot disagree about what
+   * is on screen.
    */
-  private readonly openSigninCards = new Map<
-    string,
-    Extract<SessionEvent, { type: 'mcp_signin_required' }>
-  >();
+  private readonly openSigninCards = new Map<string, SigninCardEntry>();
 
   /** Running subagents by taskId; size feeds `runningSubagentCount`. */
   private readonly runningSubagents = new Set<string>();
@@ -457,10 +481,10 @@ export class SessionStateProjector {
     switch (event.type) {
       case 'turn_start':
         this.inProgressTurn = [event];
-        // The conversation moved on, so any sign-in card carried past the last
-        // turn goes with it (DOR-1004) — including the resume turn the finished
-        // sign-in itself triggers.
-        this.openSigninCards.clear();
+        // Spend one turn of grace, then let the conversation move on (DOR-1004).
+        // The turn a finished sign-in triggers is the FIRST one past the receipt,
+        // so this is what keeps the payoff on screen through it.
+        this.ageSigninCards();
         this.ring.markTurnStarted();
         this.status.lifecycle = 'streaming';
         // A new turn clears the previous failure surface.
@@ -521,10 +545,10 @@ export class SessionStateProjector {
       // interaction — nothing is waiting on it, so it neither pauses the stall
       // watchdog nor blocks the lifecycle.
       case 'mcp_signin_required':
-        this.openSigninCards.set(event.flowId, event);
+        this.openSigninCards.set(event.flowId, { required: event, carried: false });
         break;
       case 'mcp_signin_resolved':
-        this.openSigninCards.delete(event.flowId);
+        this.attachSigninResolution(event);
         break;
       case 'interaction_resolved':
         // Backfill WHICH interaction this was and WHEN it began, before
@@ -570,6 +594,38 @@ export class SessionStateProjector {
   private untrackInteraction(interactionId: string): void {
     this.interactions.delete(interactionId);
     this.settleBlockedLifecycle();
+  }
+
+  /**
+   * Turn a carried sign-in card into a terminal receipt (DOR-1004).
+   *
+   * A resolution for a card this projector never saw is dropped rather than
+   * carried on its own: a receipt with no card to attach to has no server name,
+   * no disclosure, and nothing to say. That happens when the card belonged to a
+   * turn old enough to have aged out, in which case the transcript has already
+   * moved on and re-introducing a bare receipt would be a surprise, not a record.
+   *
+   * The grace is RESET here, not carried over: the receipt is a new thing on
+   * screen and gets its own turn, whatever the card before it had already spent.
+   */
+  private attachSigninResolution(
+    event: Extract<SessionEvent, { type: 'mcp_signin_resolved' }>
+  ): void {
+    const entry = this.openSigninCards.get(event.flowId);
+    if (entry === undefined) return;
+    entry.resolved = event;
+    entry.carried = false;
+  }
+
+  /**
+   * Spend one `turn_start` of every carried sign-in card's grace, retiring the
+   * ones that had already spent theirs (DOR-1004).
+   */
+  private ageSigninCards(): void {
+    for (const [flowId, entry] of this.openSigninCards) {
+      if (entry.carried) this.openSigninCards.delete(flowId);
+      else entry.carried = true;
+    }
   }
 
   /** Track a capability hold (DOR-939) and flip the session to `blocked`. */
@@ -920,7 +976,15 @@ export class SessionStateProjector {
    * monotonic for anything that assumes it.
    */
   private snapshotInProgressTurn(): SessionEvent[] | null {
-    const cards = [...this.openSigninCards.values()];
+    const cards: SessionEvent[] = [];
+    for (const entry of this.openSigninCards.values()) {
+      cards.push(entry.required);
+      // The resolution rides along, because a receipt is the PAIR: the card
+      // carries the server name and the disclosure, the resolution carries how it
+      // ended. Sending the card alone would hydrate a cold tab with a live-looking
+      // sign-in link for a sign-in that is already over.
+      if (entry.resolved) cards.push(entry.resolved);
+    }
     if (cards.length === 0) return this.inProgressTurn === null ? null : [...this.inProgressTurn];
     const live = this.inProgressTurn ?? [];
     const liveSeqs = new Set(live.map((event) => event.seq));

@@ -24,27 +24,6 @@ const MAX_POLL_REQUEST_FAILURES = 5;
 /** What a person reads while poll requests are failing but the flow is still alive. */
 const POLL_RETRY_NOTICE = 'Couldn’t check the sign-in — retrying.';
 
-/**
- * Sign-in flows THIS PAGE sent the person to the provider for.
- *
- * Module-level, and that is the whole point (DOR-1004). "Did the person click
- * the link here?" is a fact about this browser tab, not about a React component
- * — and the component does not survive everything a person does. Switching
- * sessions and coming back re-mounts the transcript mid-sign-in, and ownership
- * held on the instance would die with it: the tab that sent the person to the
- * provider would come back, watch the sign-in land, and never bring the agent
- * back, which is the one thing this feature exists to do.
- *
- * Other tabs are still not owners — they never clicked anything — so the set
- * keeps exactly the guarantee it is there for while surviving a re-mount.
- */
-const flowsOpenedHere = new Set<string>();
-
-/** @internal Exported for testing only — flow ids repeat across test cases. */
-export function resetMcpSigninOwnership(): void {
-  flowsOpenedHere.clear();
-}
-
 /** What a person reads once the poll requests have failed too many times running. */
 const POLL_UNREACHABLE_MESSAGE =
   'We couldn’t check whether the sign-in finished. Try again in a moment.';
@@ -122,17 +101,6 @@ export interface McpSigninFlow {
   adopt: (flow: { flowId: string; authorizeUrl: string; disclosure: string }) => void;
   /** Abandon this flow and return to `idle`. */
   reset: () => void;
-  /**
-   * Whether THIS PAGE drove the flow — it started the sign-in, or it is where the
-   * person clicked the link.
-   *
-   * The one thing that may key an action on a sign-in finishing (DOR-1004's
-   * auto-resume). A card hydrated in a second tab renders every state this one
-   * does and must never fire, or one sign-in would resume the agent once per open
-   * tab. Per PAGE rather than per component, so re-mounting the transcript
-   * mid-sign-in does not silently forfeit the resume — see {@link flowsOpenedHere}.
-   */
-  isOwner: boolean;
 }
 
 /**
@@ -330,9 +298,6 @@ export function useMcpSigninFlow(agentId: string, serverName: string): McpSignin
           return;
         }
         resetPollCounter(result.flowId);
-        // Starting a sign-in here is as much an act of ownership as clicking the
-        // link would be — nobody else can be completing a flow this page minted.
-        flowsOpenedHere.add(result.flowId);
         setLocal({
           phase: result.alreadyConnected ? 'connected' : 'disclosure',
           disclosure: result.disclosure,
@@ -368,18 +333,13 @@ export function useMcpSigninFlow(agentId: string, serverName: string): McpSignin
   );
 
   const authOpened = useCallback(() => {
-    if (local.phase !== 'disclosure') return;
-    // Clicking the link is what makes this page the flow's owner: whichever tab
-    // sent the person to the provider is the one that may act on the result.
-    if (local.flowId !== null) flowsOpenedHere.add(local.flowId);
     setLocal((prev) => (prev.phase === 'disclosure' ? { ...prev, phase: 'waiting' } : prev));
-  }, [local.phase, local.flowId]);
+  }, []);
 
   const reset = useCallback(() => {
-    if (local.flowId !== null) flowsOpenedHere.delete(local.flowId);
     resetPollCounter(null);
     setLocal(IDLE_STATE);
-  }, [resetPollCounter, local.flowId]);
+  }, [resetPollCounter]);
 
   // Poll only while waiting. `refetchInterval` is the whole stop condition: an
   // in-band terminal status ends it outright, and a failing REQUEST only backs
@@ -436,8 +396,12 @@ export function useMcpSigninFlow(agentId: string, serverName: string): McpSignin
     if (step === 'connected') invalidateStatus();
   }, [step, invalidateStatus]);
 
-  const error =
-    local.phase === 'waiting' ? pollErrorMessage(poll.data, requestFailures) : local.startError;
+  // Whenever this instance is POLLING — including a watching card that never
+  // clicked anything — the poll's own verdict is the better error. Gating this on
+  // `waiting` meant a watching card that saw the provider refuse the sign-in
+  // rendered the generic "did not complete" fallback while the server's actual
+  // reason sat unread in the poll body.
+  const error = isPolling(local) ? pollErrorMessage(poll.data, requestFailures) : local.startError;
 
   const retryNotice = step === 'waiting' && requestFailures > 0 ? POLL_RETRY_NOTICE : null;
 
@@ -454,6 +418,5 @@ export function useMcpSigninFlow(agentId: string, serverName: string): McpSignin
     adopt,
     authOpened,
     reset,
-    isOwner: local.flowId !== null && flowsOpenedHere.has(local.flowId),
   };
 }

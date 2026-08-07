@@ -227,3 +227,61 @@ describe('AssistantMessageContent — timestamp passthrough', () => {
     expect(card).toHaveAttribute('data-completed-at', '');
   });
 });
+
+// DOR-1004 added the `mcp_signin` branch — the last link in the chain from an
+// agent asking for a sign-in to something a person can click, and the one that
+// the fold tests cannot reach. `McpSigninCard` is stubbed because it drives a
+// real transport-backed flow; what is under test here is that the branch exists,
+// dispatches, and hands the card its part.
+vi.mock('../McpSigninCard', () => ({
+  McpSigninCard: ({ part }: { part: { serverName: string; flowId: string; outcome?: string } }) => (
+    <div data-testid="mcp-signin-card" data-flow-id={part.flowId} data-outcome={part.outcome ?? ''}>
+      {part.serverName}
+    </div>
+  ),
+}));
+
+describe('AssistantMessageContent — inline MCP sign-in (DOR-1004)', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  const CARD = {
+    type: 'mcp_signin' as const,
+    serverName: 'granola',
+    agentId: '01HV7KJZZZ0000000000000000',
+    flowId: 'flow-1',
+    authorizeUrl: 'https://mcp.test.local/authorize',
+    disclosure: 'DorkOS stores the token on this machine.',
+  };
+
+  it('dispatches a live mcp_signin part to the sign-in card', () => {
+    render(<AssistantMessageContent message={makeMessage([CARD])} />);
+
+    const card = screen.getByTestId('mcp-signin-card');
+    expect(card).toHaveTextContent('granola');
+    expect(card).toHaveAttribute('data-flow-id', 'flow-1');
+    expect(card).toHaveAttribute('data-outcome', '');
+  });
+
+  it('dispatches a settled receipt through the same branch', () => {
+    render(
+      <AssistantMessageContent
+        message={makeMessage([{ ...CARD, outcome: 'connected' as const, toolCount: 7 }])}
+      />
+    );
+
+    expect(screen.getByTestId('mcp-signin-card')).toHaveAttribute('data-outcome', 'connected');
+  });
+
+  it('renders a sign-in card beside the turn’s own text', () => {
+    render(
+      <AssistantMessageContent
+        message={makeMessage([{ type: 'text' as const, text: 'Connecting your notes.' }, CARD])}
+      />
+    );
+
+    expect(screen.getByTestId('streaming-text')).toHaveTextContent('Connecting your notes.');
+    expect(screen.getByTestId('mcp-signin-card')).toBeInTheDocument();
+  });
+});

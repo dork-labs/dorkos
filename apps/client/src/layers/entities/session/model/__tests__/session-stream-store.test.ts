@@ -136,7 +136,7 @@ describe('useSessionStreamStore', () => {
     expect(s.inProgressTurn.map((e) => e.type)).toEqual(['mcp_signin_required']);
   });
 
-  it('setHistoryMessages drops a sign-in card the turn already resolved (DOR-1004)', () => {
+  it('setHistoryMessages keeps a RESOLVED card so the receipt survives (DOR-1004)', () => {
     const store = useSessionStreamStore.getState();
     store.applySnapshot(SID, snapshot({ cursor: 0 }));
     store.applyEvent(SID, { type: 'turn_start', seq: 1 });
@@ -159,7 +159,60 @@ describe('useSessionStreamStore', () => {
 
     store.setHistoryMessages(SID, [MESSAGE]);
 
-    expect(useSessionStreamStore.getState().getSession(SID).inProgressTurn).toEqual([]);
+    // Both halves: the card carries the server name, the resolution carries the
+    // outcome, and the fold needs the pair to render the receipt at all.
+    expect(
+      useSessionStreamStore
+        .getState()
+        .getSession(SID)
+        .inProgressTurn.map((e) => e.type)
+    ).toEqual(['mcp_signin_required', 'mcp_signin_resolved']);
+  });
+
+  it('turn_start carries a sign-in receipt exactly one turn further (DOR-1004)', () => {
+    // Signing in triggers a resume turn almost immediately. Clearing the turn on
+    // its turn_start erased the receipt about a second after it appeared — the
+    // person walked back from their browser to a transcript that never mentioned
+    // the sign-in. One turn of grace, then the conversation moves on.
+    const store = useSessionStreamStore.getState();
+    store.applySnapshot(SID, snapshot({ cursor: 0 }));
+    store.applyEvent(SID, { type: 'turn_start', seq: 1 });
+    store.applyEvent(SID, {
+      type: 'mcp_signin_required',
+      seq: 2,
+      serverName: 'granola',
+      agentId: '01HV7KJZZZ0000000000000000',
+      flowId: 'flow-1',
+      authorizeUrl: 'https://mcp.test.local/authorize',
+      disclosure: 'DorkOS stores the token on this machine.',
+    });
+    store.applyEvent(SID, { type: 'turn_end', seq: 3 });
+    store.setHistoryMessages(SID, [MESSAGE]);
+    store.applyEvent(SID, {
+      type: 'mcp_signin_resolved',
+      seq: 4,
+      flowId: 'flow-1',
+      outcome: 'connected',
+    });
+
+    // The resume turn the sign-in caused: the receipt rides through it.
+    store.applyEvent(SID, { type: 'turn_start', seq: 5 });
+    expect(
+      useSessionStreamStore
+        .getState()
+        .getSession(SID)
+        .inProgressTurn.map((e) => e.type)
+    ).toEqual(['mcp_signin_required', 'mcp_signin_resolved', 'turn_start']);
+
+    // The turn after that retires it.
+    store.applyEvent(SID, { type: 'turn_end', seq: 6 });
+    store.applyEvent(SID, { type: 'turn_start', seq: 7 });
+    expect(
+      useSessionStreamStore
+        .getState()
+        .getSession(SID)
+        .inProgressTurn.map((e) => e.type)
+    ).toEqual(['turn_start']);
   });
 
   it('records the fidelity events (thinking/progress/hook/memory) in the turn (task #19)', () => {

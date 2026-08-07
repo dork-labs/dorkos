@@ -28,7 +28,7 @@ export {
   useDisableAgentMcpServer,
   useTestAgentMcpServer,
 } from './model/use-agent-mcp-mutations';
-export { useMcpSigninFlow, resetMcpSigninOwnership } from './model/use-mcp-signin-flow';
+export { useMcpSigninFlow } from './model/use-mcp-signin-flow';
 export type { McpSigninFlow } from './model/use-mcp-signin-flow';
 
 // Lib — nebula theme utilities
