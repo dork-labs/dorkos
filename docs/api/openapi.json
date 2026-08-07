@@ -3713,6 +3713,10 @@
             "type": "string",
             "description": "Model identifier (e.g. claude-opus-4-6)"
           },
+          "resolvedModel": {
+            "type": "string",
+            "description": "Canonical wire model id an alias row resolves to (e.g. sonnet -> claude-sonnet-5). Absent when the row is already a wire id, or when the runtime does not report it."
+          },
           "displayName": {
             "type": "string",
             "description": "Human-readable model name"

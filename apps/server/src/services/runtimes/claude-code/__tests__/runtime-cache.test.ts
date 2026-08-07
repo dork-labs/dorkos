@@ -123,6 +123,19 @@ describe('RuntimeCache', () => {
       });
       expect(option.tier).toBeUndefined();
     });
+
+    it('carries the SDK-reported resolvedModel through to the cached option', () => {
+      // Purpose: dropping this field at the mapper is what would silently re-open
+      // the wire-id lookup gap `getCachedModel` closes below. Removing the
+      // `resolvedModel:` line in `mapSdkModelToModelOption` makes this red.
+      const option = mapSdkModelToModelOption({
+        value: 'sonnet',
+        resolvedModel: 'claude-sonnet-5',
+        displayName: 'Sonnet',
+        description: '',
+      });
+      expect(option.resolvedModel).toBe('claude-sonnet-5');
+    });
   });
 
   // =========================================================================
@@ -165,6 +178,48 @@ describe('RuntimeCache', () => {
       ]);
 
       expect(cache.getCachedModel('claude-sonnet-4-6')).toBeUndefined();
+    });
+
+    it('finds the alias row a persisted wire id expands to, via resolvedModel', () => {
+      // Purpose: the SDK reports capabilities on ALIAS rows only. A session that
+      // persisted the wire id `claude-sonnet-5` matched no row before 0.3.224 and
+      // fell back to SDK defaults. Dropping the `resolvedModel` fallback in
+      // `getCachedModel` makes this red.
+      const callbacks = cache.buildSendCallbacks('/project');
+      callbacks.onModelsReceived!([
+        {
+          value: 'sonnet',
+          resolvedModel: 'claude-sonnet-5',
+          displayName: 'Sonnet',
+          description: 'd',
+          supportsAdaptiveThinking: true,
+        },
+      ]);
+
+      expect(cache.getCachedModel('claude-sonnet-5')).toMatchObject({
+        value: 'sonnet',
+        supportsAdaptiveThinking: true,
+      });
+    });
+
+    it('prefers an exact value match over another row that resolves to it', () => {
+      // Purpose: a row whose own `value` IS the wire id must win, so a real model
+      // row is never shadowed by an alias pointing at it. Reordering the two
+      // lookups in `getCachedModel` makes this red.
+      const callbacks = cache.buildSendCallbacks('/project');
+      callbacks.onModelsReceived!([
+        {
+          value: 'sonnet',
+          resolvedModel: 'claude-sonnet-5',
+          displayName: 'Sonnet alias',
+          description: 'd',
+        },
+        { value: 'claude-sonnet-5', displayName: 'Sonnet 5', description: 'd' },
+      ]);
+
+      expect(cache.getCachedModel('claude-sonnet-5')).toMatchObject({
+        displayName: 'Sonnet 5',
+      });
     });
   });
 
@@ -218,6 +273,27 @@ describe('RuntimeCache', () => {
       // Purpose: borrowing the default's adaptive=true for an unknown/non-adaptive
       // model would risk forcing adaptive thinking and a 400 — stay conservative.
       expect(cache.resolveModelCapability('claude-opus-4-5')).toBeUndefined();
+    });
+
+    it('resolves an explicit wire id to the alias row that expands to it', () => {
+      // Purpose: `haiku` here reports adaptive=false. A session pinned to the wire
+      // id must inherit THAT, not fall through to undefined and then to SDK
+      // defaults which would allow adaptive thinking on a model without it.
+      const callbacks = cache.buildSendCallbacks('/project');
+      callbacks.onModelsReceived!([
+        {
+          value: 'haiku',
+          resolvedModel: 'claude-haiku-5',
+          displayName: 'Haiku',
+          description: 'd',
+          supportsAdaptiveThinking: false,
+        },
+      ]);
+
+      expect(cache.resolveModelCapability('claude-haiku-5')).toMatchObject({
+        value: 'haiku',
+        supportsAdaptiveThinking: false,
+      });
     });
   });
 

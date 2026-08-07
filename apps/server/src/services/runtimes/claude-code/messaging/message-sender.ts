@@ -142,6 +142,14 @@ export function createEditBaselineCapture(
  */
 export interface SdkReportedModel {
   value: string;
+  /**
+   * The canonical wire id this row's `value` resolves to — `sonnet` →
+   * `claude-sonnet-5` (SDK 0.3.224, `ModelInfo.resolvedModel`). Absent on rows
+   * that are already a wire id, and on older SDKs. It is what lets a session
+   * that persisted an explicit wire id find the alias row carrying that model's
+   * capabilities; see {@link RuntimeCache.getCachedModel}.
+   */
+  resolvedModel?: string;
   displayName: string;
   description: string;
   supportsEffort?: boolean;

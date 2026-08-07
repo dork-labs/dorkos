@@ -2982,6 +2982,10 @@ export type ModelTier = z.infer<typeof ModelTierSchema>;
 export const ModelOptionSchema = z
   .object({
     value: z.string().openapi({ description: 'Model identifier (e.g. claude-opus-4-6)' }),
+    resolvedModel: z.string().optional().openapi({
+      description:
+        'Canonical wire model id an alias row resolves to (e.g. sonnet -> claude-sonnet-5). Absent when the row is already a wire id, or when the runtime does not report it.',
+    }),
     displayName: z.string().openapi({ description: 'Human-readable model name' }),
     description: z.string().openapi({ description: 'Short model description' }),
     isDefault: z.boolean().optional().openapi({ description: 'Whether this is the default model' }),
