@@ -81,6 +81,7 @@ vi.mock('@/layers/shared/model', () => {
     useSlotContributions: vi.fn(() => mockDialogContributions),
     useSettingsDeepLink: vi.fn(inertDeepLink),
     useTasksDeepLink: vi.fn(inertDeepLink),
+    useProfileDeepLink: vi.fn(() => ({ ...inertDeepLink(), memberId: null })),
   };
 });
 

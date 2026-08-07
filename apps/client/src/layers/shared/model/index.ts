@@ -107,10 +107,12 @@ export { dialogSearchSchema, mergeDialogSearch, type DialogSearch } from './dial
 export {
   useSettingsDeepLink,
   useTasksDeepLink,
+  useProfileDeepLink,
   useOpenConnections,
   clearedDialogSearch,
   isDualSignalDialog,
   type DialogDeepLink,
+  type ProfileDeepLink,
 } from './use-dialog-deep-link';
 export { useDeepLinkScroll } from './use-deep-link-scroll';
 export { useSafeSearch, useSafeNavigate, useSafePathname, EMBED_PATHNAME } from './use-safe-router';

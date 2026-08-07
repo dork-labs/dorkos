@@ -4,6 +4,7 @@ import {
   useSlotContributions,
   useSettingsDeepLink,
   useTasksDeepLink,
+  useProfileDeepLink,
   type DialogContribution,
 } from '@/layers/shared/model';
 
@@ -29,12 +30,15 @@ function useDialogUrlSignal(urlParam: DialogContribution['urlParam']): {
 } {
   const settings = useSettingsDeepLink();
   const tasks = useTasksDeepLink();
+  const profile = useProfileDeepLink();
 
   switch (urlParam) {
     case 'settings':
       return { isOpen: settings.isOpen, close: settings.close };
     case 'tasks':
       return { isOpen: tasks.isOpen, close: tasks.close };
+    case 'profile':
+      return { isOpen: profile.isOpen, close: profile.close };
     default:
       return { isOpen: false, close: () => {} };
   }
