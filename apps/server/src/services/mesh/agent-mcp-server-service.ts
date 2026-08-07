@@ -45,32 +45,35 @@ export const RESERVED_MCP_SERVER_NAME = 'dorkos';
 const AUTHORIZATION_HEADER = 'Authorization';
 
 /**
- * Whether a stored connection already carries its own `Authorization` header —
- * a credential the operator supplied, which DorkOS neither holds nor refreshes.
- * Compared case-insensitively, because HTTP header names are.
- *
- * @param headers - The entry's stored headers.
- */
-function hasOwnAuthorizationHeader(headers: Record<string, string> | undefined): boolean {
-  const wanted = AUTHORIZATION_HEADER.toLowerCase();
-  return Object.keys(headers ?? {}).some((key) => key.toLowerCase() === wanted);
-}
-
-/**
- * The synchronous access-token lookup the injection path consults for managed-MCP
- * OAuth (DOR-942). Satisfied structurally by `AgentMcpOAuthService`; kept as a
- * narrow port so this runtime-neutral service never imports the OAuth engine (or,
- * through it, the MCP SDK auth module) as a value.
+ * The managed-MCP OAuth port this service talks to (DOR-942): the synchronous
+ * access-token lookup the injection path consults, plus the credential cleanup a
+ * removed or re-pointed server triggers. Satisfied structurally by
+ * `AgentMcpOAuthService`; kept as a narrow port so this runtime-neutral service
+ * never imports the OAuth engine (or, through it, the MCP SDK auth module) as a
+ * value.
  */
 export interface McpOAuthTokenProvider {
   /**
-   * The live bearer access token for `(agentId, serverName)`, or `undefined` when
-   * none is cached — in which case injection withholds the header (needs-auth).
+   * The live bearer access token for `(agentId, serverName)` at `serverUrl`, or
+   * `undefined` when none is cached — in which case injection withholds the header
+   * (needs-auth). The URL is part of the question, not decoration: a token minted
+   * for one server must never be sent to whatever later takes that server's name.
+   *
+   * @param agentId - The owning agent's id.
+   * @param serverName - The managed server's name.
+   * @param serverUrl - The URL the token is about to be sent to.
+   */
+  getAccessToken(agentId: string, serverName: string, serverUrl: string): string | undefined;
+
+  /**
+   * Forget every stored credential for one managed server. Removing a server, or
+   * pointing it at a different URL, has to take the credential with it — otherwise
+   * "you can remove the server anytime" is true of the row and false of the token.
    *
    * @param agentId - The owning agent's id.
    * @param serverName - The managed server's name.
    */
-  getAccessToken(agentId: string, serverName: string): string | undefined;
+  forgetServer(agentId: string, serverName: string): Promise<void>;
 }
 
 /** Typed failure codes so a route/capability layer can map to precise statuses. */
@@ -221,10 +224,13 @@ export class AgentMcpServerService {
    * Whether a managed server has a usable DorkOS-held sign-in right now.
    *
    * A live cached token wins outright — it is the same lookup injection makes,
-   * so "connected" here means the next turn really does carry a bearer. Failing
-   * that, an `authKind: 'oauth2'` entry is one DorkOS knows wants a sign-in it
-   * does not hold, which is `needs-auth`. Anything else (stdio, or a remote
-   * server that has never demanded auth) gets no opinion rather than a guess.
+   * the entry's CURRENT url included (DOR-986), so "connected" here means the
+   * next turn really does carry a bearer to this endpoint. A token left over
+   * from before the server was re-pointed reads as absent, exactly as it does at
+   * injection. Failing that, an `authKind: 'oauth2'` entry is one DorkOS knows
+   * wants a sign-in it does not hold, which is `needs-auth`. Anything else
+   * (stdio, or a remote server that has never demanded auth) gets no opinion
+   * rather than a guess.
    *
    * One exception sits between those: an entry that carries its OWN
    * `Authorization` header. The operator pasted a token in at `add`, so the
@@ -239,10 +245,12 @@ export class AgentMcpServerService {
     agentId: string,
     server: ManagedMcpServer
   ): McpServerAuthStatus | undefined {
-    if (server.connection.transport === 'stdio') return undefined;
-    if (this.tokenProvider?.getAccessToken(agentId, server.name)) return 'connected';
-    if (server.connection.authKind !== 'oauth2') return undefined;
-    return hasOwnAuthorizationHeader(server.connection.headers) ? undefined : 'needs-auth';
+    const { connection } = server;
+    if (connection.transport === 'stdio') return undefined;
+    if (this.tokenProvider?.getAccessToken(agentId, server.name, connection.url))
+      return 'connected';
+    if (connection.authKind !== 'oauth2') return undefined;
+    return hasOwnAuthorizationHeader(connection.headers) ? undefined : 'needs-auth';
   }
 
   /**
@@ -357,6 +365,10 @@ export class AgentMcpServerService {
   /**
    * Update an existing managed server's connection and/or enabled state.
    *
+   * Re-pointing the server at a different endpoint drops its OAuth credentials:
+   * the token was issued by the old server, for the old server, and the operator
+   * has to sign in to the new one (DOR-986).
+   *
    * @param opts - The agent id, target server name, and the fields to change.
    * @returns The updated `mcpServers` list.
    * @throws {AgentMcpServerError} `SERVER_NOT_FOUND` when no entry matches `name`.
@@ -377,11 +389,18 @@ export class AgentMcpServerService {
     };
     const next = manifest.mcpServers.map((s) => (s.name === opts.name ? updated : s));
     await this.persist(projectPath, manifest, next);
+    if (endpointOf(existing.connection) !== endpointOf(updated.connection)) {
+      await this.forgetOAuthCredentials(opts.agentId, opts.name);
+    }
     return next;
   }
 
   /**
-   * Remove a managed server from an agent. Reversible by re-adding.
+   * Remove a managed server from an agent, taking any OAuth credentials it holds
+   * with it — the stored token, the dynamic client registration, and the cached
+   * bearer plus its background refresh. Removing the row while the credential
+   * lived on is what made "you can remove the server anytime" a half-truth
+   * (DOR-986). Reversible by re-adding, which needs a fresh sign-in.
    *
    * @param agentId - The agent's id.
    * @param name - The server to remove.
@@ -398,7 +417,24 @@ export class AgentMcpServerService {
       );
     }
     await this.persist(projectPath, manifest, next);
+    await this.forgetOAuthCredentials(agentId, name);
     return next;
+  }
+
+  /**
+   * Drop a server's OAuth credentials, if an OAuth engine is wired at all. Never
+   * fails the caller: the manifest write already succeeded, so a store hiccup
+   * must not report the removal as failed — it is logged instead.
+   */
+  private async forgetOAuthCredentials(agentId: string, name: string): Promise<void> {
+    if (!this.tokenProvider) return;
+    await this.tokenProvider.forgetServer(agentId, name).catch((err: unknown) => {
+      this.logger.warn(
+        `[agent-mcp] could not clear stored sign-in for "${name}": ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      );
+    });
   }
 
   /**
@@ -475,6 +511,18 @@ export class AgentMcpServerService {
    * header → the server reports needs-auth rather than connecting unauthenticated
    * (`.claude/rules/safe-defaults.md`). Never mutates the cached base map.
    *
+   * The entry's CURRENT url is part of the lookup, so a token minted for the
+   * server this name used to point at is never sent to the one it points at now
+   * (DOR-986).
+   *
+   * KNOWN EXPOSURE (DOR-986): for the codex runtime, the merged header leaves this
+   * process as a `codex exec` config override, which `@openai/codex-sdk`
+   * serializes into the subprocess's argv — so the bearer is visible to anything
+   * on this machine that can list processes. It is bounded (a local, single-user
+   * machine; the token is the operator's own), but it is real, and fixing it means
+   * changing how that SDK carries config, which is out of scope here. The
+   * claude-code and opencode paths do not go through argv.
+   *
    * @param agentId - The owning agent's id (the token lookup's key half).
    * @param base - The cached, header-free enabled-servers map.
    */
@@ -491,25 +539,33 @@ export class AgentMcpServerService {
         out[name] = connection;
         continue;
       }
-      const auth = this.oauthAuthorizationHeader(agentId, name);
-      out[name] = auth
-        ? { ...connection, headers: { ...connection.headers, ...auth } }
-        : connection;
+      const headers = this.oauthHeadersFor(agentId, name, connection.url, connection.headers);
+      out[name] = headers ? { ...connection, headers } : connection;
     }
     return out;
   }
 
   /**
-   * The `Authorization` header a live cached OAuth token contributes for
-   * `(agentId, serverName)`, or `undefined` when there is none.
+   * The headers to send a remote managed server when DorkOS holds a live OAuth
+   * token for it, or `undefined` when it holds none (leave the entry alone).
    *
-   * **The single place the bearer rule lives.** Both paths that talk to a remote
-   * managed server go through it — session injection
-   * ({@link mergeOAuthHeaders}) and the reachability probe ({@link test}) — so
-   * they cannot drift into disagreeing about whether a server is authenticated.
-   * They did once: the probe read the STORED connection and sent no bearer, so a
-   * server the operator had just signed into still answered 401 and the row
-   * co-rendered "Connected" with "Needs sign-in — click Sign in" (DOR-985).
+   * **The single place the bearer rule lives**, and it carries two invariants at
+   * once. Every path that talks to a remote managed server goes through it —
+   * session injection ({@link mergeOAuthHeaders}) and the reachability probe
+   * ({@link test}) — so they cannot drift into disagreeing about whether a server
+   * is authenticated. They did once: the probe read the STORED connection and
+   * sent no bearer, so a server the operator had just signed into still answered
+   * 401 and the row co-rendered "Connected" with "Needs sign-in — click Sign in"
+   * (DOR-985).
+   *
+   * 1. **URL binding (DOR-986).** `serverUrl` is part of the lookup, not
+   *    decoration: a token minted for the server this name used to point at is
+   *    never sent to the one it points at now. The probe is subject to this too —
+   *    it dials a real endpoint, so it must not be the hole the binding leaks
+   *    through.
+   * 2. **One authorization header.** Any declared `Authorization` is dropped
+   *    before the bearer is added, whatever its casing, so the two never ride
+   *    together and leave the server to pick.
    *
    * `undefined` is the safe default: no token → no header → the server reports
    * needs-auth rather than being contacted unauthenticated
@@ -517,29 +573,33 @@ export class AgentMcpServerService {
    *
    * @param agentId - The owning agent's id.
    * @param serverName - The managed server's name.
+   * @param serverUrl - The URL the headers are about to be sent to.
+   * @param headers - The entry's declared headers, if any.
    */
-  private oauthAuthorizationHeader(
+  private oauthHeadersFor(
     agentId: string,
-    serverName: string
+    serverName: string,
+    serverUrl: string,
+    headers: Record<string, string> | undefined
   ): Record<string, string> | undefined {
-    const token = this.tokenProvider?.getAccessToken(agentId, serverName);
-    return token ? { [AUTHORIZATION_HEADER]: `Bearer ${token}` } : undefined;
+    const token = this.tokenProvider?.getAccessToken(agentId, serverName, serverUrl);
+    if (!token) return undefined;
+    return { ...withoutAuthorizationHeader(headers), [AUTHORIZATION_HEADER]: `Bearer ${token}` };
   }
 
   /**
    * The connection the reachability probe should dial: the stored one, plus the
-   * OAuth bearer when DorkOS holds a live token — exactly what a turn would
-   * inject, so Test reports what the agent would actually experience.
+   * OAuth bearer when DorkOS holds a live token for THAT url — exactly what a
+   * turn would inject, so Test reports what the agent would actually experience.
    *
    * @param agentId - The owning agent's id.
    * @param server - The stored managed entry.
    */
   private probeConnection(agentId: string, server: ManagedMcpServer): McpServerTransport {
-    if (server.connection.transport === 'stdio') return server.connection;
-    const auth = this.oauthAuthorizationHeader(agentId, server.name);
-    return auth
-      ? { ...server.connection, headers: { ...server.connection.headers, ...auth } }
-      : server.connection;
+    const { connection } = server;
+    if (connection.transport === 'stdio') return connection;
+    const headers = this.oauthHeadersFor(agentId, server.name, connection.url, connection.headers);
+    return headers ? { ...connection, headers } : connection;
   }
 
   /**
@@ -727,6 +787,55 @@ export class AgentMcpServerService {
     }
     return { mtimeMs, agentId: result.data.id, servers };
   }
+}
+
+/**
+ * The remote endpoint a connection authorizes against, or `null` for stdio (which
+ * has none). Used to decide whether an update re-pointed the server, and so
+ * whether its OAuth credentials still belong to it.
+ *
+ * @param connection - The stored transport.
+ */
+function endpointOf(connection: McpServerTransport): string | null {
+  return connection.transport === 'stdio' ? null : connection.url;
+}
+
+/**
+ * Whether a header name is the authorization header under any casing. HTTP header
+ * names are case-insensitive but a plain object's keys are not, so both readers
+ * below share this one comparison rather than each spelling it out.
+ *
+ * @param name - A header name from a stored entry.
+ */
+function isAuthorizationHeaderName(name: string): boolean {
+  return name.toLowerCase() === AUTHORIZATION_HEADER.toLowerCase();
+}
+
+/**
+ * Drop any existing authorization header, whatever its casing, so merging the
+ * OAuth bearer replaces it instead of sitting beside it: leaving an
+ * `authorization` next to our `Authorization` sends both, and the server picks
+ * one.
+ *
+ * @param headers - The entry's declared headers, if any.
+ */
+function withoutAuthorizationHeader(
+  headers: Record<string, string> | undefined
+): Record<string, string> {
+  if (!headers) return {};
+  return Object.fromEntries(
+    Object.entries(headers).filter(([name]) => !isAuthorizationHeaderName(name))
+  );
+}
+
+/**
+ * Whether a stored connection already carries its own `Authorization` header — a
+ * credential the operator supplied, which DorkOS neither holds nor refreshes.
+ *
+ * @param headers - The entry's stored headers.
+ */
+function hasOwnAuthorizationHeader(headers: Record<string, string> | undefined): boolean {
+  return Object.keys(headers ?? {}).some(isAuthorizationHeaderName);
 }
 
 /** A fully-parsed manifest — the object form `readManifest` returns when present. */

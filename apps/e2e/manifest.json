@@ -461,25 +461,16 @@
       "specFile": "tests/connections/mcp-oauth-signin.spec.ts",
       "feature": "connections",
       "description": "add → needs sign-in → Sign in → approve → connected with N tools",
-      "lastRun": "2026-08-07T02:12:57.019Z",
+      "lastRun": "2026-08-07T09:53:20.277Z",
       "lastStatus": "passed",
-      "runCount": 3,
-      "passCount": 2,
+      "runCount": 4,
+      "passCount": 3,
       "failCount": 1,
       "relatedCode": [],
       "lastModified": ""
     }
   },
   "runHistory": [
-    {
-      "id": "2026-07-03T01-19-18",
-      "timestamp": "2026-07-03T01:19:18.323Z",
-      "total": 8,
-      "passed": 7,
-      "failed": 1,
-      "skipped": 0,
-      "duration": 30092
-    },
     {
       "id": "2026-07-03T01-22-11",
       "timestamp": "2026-07-03T01:22:11.501Z",
@@ -1370,6 +1361,15 @@
       "failed": 0,
       "skipped": 0,
       "duration": 24934
+    },
+    {
+      "id": "2026-08-07T09-53-20",
+      "timestamp": "2026-08-07T09:53:20.277Z",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 49814
     }
   ]
 }

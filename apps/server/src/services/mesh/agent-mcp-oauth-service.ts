@@ -5,31 +5,33 @@
  *
  * Why DorkOS owns it: the Agent SDK's `mcpServers` config is static-headers-only
  * (no `authProvider`), so the subprocess can never run OAuth itself. This service
- * drives the MCP SDK's `auth()`/`refreshAuthorization()` on the acquisition side —
- * discover → dynamic client registration → authorization-code + PKCE → token
- * exchange → refresh — persists the token set encrypted, and keeps the current
- * access token in a **synchronous** in-memory cache ({@link McpAccessTokenCache})
- * that the injection read path can consult without awaiting.
+ * drives the MCP SDK's `auth()` on the acquisition side — discover → dynamic
+ * client registration → authorization-code + PKCE → token exchange → refresh —
+ * persists the token set encrypted, and keeps the current access token in a
+ * **synchronous** in-memory cache ({@link McpAccessTokenCache}) that the injection
+ * read path can consult without awaiting.
+ *
+ * Sign-in and refresh both go through the same `auth()` entry point, so they get
+ * the same behaviour for free: the RFC 8707 `resource` parameter, the negotiated
+ * scope, and the credential-invalidation retry that makes a revoked grant
+ * recoverable. Concurrency between them is arbitrated by {@link McpTokenRefresher}.
  *
  * Two surfaces call in: the `mcp.signin`/`mcp.poll_signin` capabilities
  * ({@link startSignin}, {@link pollSignin}) and the loopback callback route
  * ({@link handleCallback}). Injection calls {@link getAccessToken}. Boot calls
- * {@link warm} to re-prime the cache from disk after a restart.
+ * {@link warm} to re-prime the cache from disk after a restart. Removing a server
+ * or deleting an agent calls {@link forgetServer}/{@link forgetAgent}, which is
+ * what makes "you can remove the server anytime" true of the credential too.
  *
  * @module services/mesh/agent-mcp-oauth-service
  */
 import { randomBytes } from 'node:crypto';
-import {
-  auth,
-  discoverOAuthServerInfo,
-  refreshAuthorization,
-} from '@modelcontextprotocol/sdk/client/auth.js';
+import { auth } from '@modelcontextprotocol/sdk/client/auth.js';
 import { ExtensionSecretStore } from '@dorkos/shared/extension-secrets';
 import type { Logger } from '@dorkos/shared/logger';
 
 import {
   McpAccessTokenCache,
-  type CachedToken,
   type McpAccessTokenCacheDeps,
 } from './agent-mcp-access-token-cache.js';
 import { McpOAuthFlowStore, type McpSigninStatus } from './agent-mcp-oauth-flow-store.js';
@@ -39,6 +41,12 @@ import {
   type StoredMcpTokens,
   type McpOAuthProviderContext,
 } from './agent-mcp-oauth-provider.js';
+import {
+  McpTokenRefresher,
+  attemptTokenRefresh,
+  toCachedToken,
+  withRequestTimeout,
+} from './agent-mcp-token-refresher.js';
 
 /** The dedicated encrypted store id for managed-MCP OAuth material (tokens + DCR client info). */
 const MCP_OAUTH_STORE_ID = 'mcp-oauth';
@@ -71,6 +79,8 @@ export interface AgentMcpOAuthServiceDeps {
   fetchImpl?: FetchFn;
   /** Clock/timer seams forwarded to the access-token cache (tests only). */
   cache?: McpAccessTokenCacheDeps;
+  /** Delay seam for the refresh backoff (tests only); defaults to a real timer. */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 /** The result `mcp.signin` needs: a sign-in link, or a note that the server is already connected. */
@@ -84,6 +94,20 @@ export interface StartSigninResult {
 }
 
 /**
+ * The per-target lock key: `(agentId, serverName)` joined by NUL, which neither
+ * part can contain. Every operation that reads-then-writes one server's token
+ * store serializes on this.
+ */
+function lockKey(agentId: string, serverName: string): string {
+  return `${agentId}\0${serverName}`;
+}
+
+/** {@link lockKey} for a whole target. */
+function targetKey(target: McpOAuthTarget): string {
+  return lockKey(target.agentId, target.serverName);
+}
+
+/**
  * The managed-MCP OAuth engine. One instance per server process; construct after
  * `dorkHome` resolves and the listen port is known.
  */
@@ -91,6 +115,7 @@ export class AgentMcpOAuthService {
   private readonly secrets: McpOAuthSecretStore;
   private readonly flows = new McpOAuthFlowStore();
   private readonly cache: McpAccessTokenCache;
+  private readonly refresher: McpTokenRefresher;
   private readonly redirectUri: string;
   private readonly fetchImpl: FetchFn;
   private readonly logger: Pick<Logger, 'warn'>;
@@ -100,50 +125,74 @@ export class AgentMcpOAuthService {
       new ExtensionSecretStore(MCP_OAUTH_STORE_ID, deps.dorkHome)
     );
     this.cache = new McpAccessTokenCache(deps.cache ?? {});
-    this.redirectUri = new URL(MCP_OAUTH_CALLBACK_PATH, deps.callbackBaseUrl).toString();
-    this.fetchImpl = deps.fetchImpl ?? fetch;
     this.logger = deps.logger ?? console;
+    this.refresher = new McpTokenRefresher({
+      logger: this.logger,
+      ...(deps.sleep ? { sleep: deps.sleep } : {}),
+    });
+    this.redirectUri = new URL(MCP_OAUTH_CALLBACK_PATH, deps.callbackBaseUrl).toString();
+    // Bounded at the seam, so every OAuth request — sign-in, callback exchange,
+    // background refresh — inherits the ceiling that keeps a hung token endpoint
+    // from wedging a target's lock.
+    this.fetchImpl = withRequestTimeout(deps.fetchImpl ?? fetch);
   }
 
   /**
-   * The live access token for `(agentId, serverName)`, or `undefined`. Synchronous
-   * — this is the exact call the injection read path makes to decide whether to
-   * merge the bearer header.
+   * The live access token for `(agentId, serverName)` at `serverUrl`, or
+   * `undefined`. Synchronous — this is the exact call the injection read path
+   * makes to decide whether to merge the bearer header. A token minted for a
+   * different URL is never handed out (DOR-986).
    *
    * @param agentId - The owning agent's id.
    * @param serverName - The managed server's name.
+   * @param serverUrl - The URL the caller is about to send the token to.
    */
-  getAccessToken(agentId: string, serverName: string): string | undefined {
-    return this.cache.getAccessToken(agentId, serverName);
+  getAccessToken(agentId: string, serverName: string, serverUrl: string): string | undefined {
+    return this.cache.getAccessToken(agentId, serverName, serverUrl);
   }
 
   /**
    * Begin a sign-in for a target: mint a flow, drive the SDK `auth()` orchestrator
    * (discovery → DCR → PKCE authorize URL), and return the link for the operator
-   * to open. When a live token already exists, primes the cache and reports
-   * `alreadyConnected` with no link.
+   * to open. When a live token already exists, `auth()` refreshes it silently and
+   * this reports `alreadyConnected` with no link. A failure drops the flow it
+   * minted rather than parking it as `pending`: no link ever reached the operator,
+   * so nothing can legitimately poll it, and a claimable `state` is one a stray
+   * callback could still redeem.
+   *
+   * Serialized against the background refresh for the same target, so the two can
+   * never present the same refresh token to a rotating issuer at once.
    *
    * @param target - The agent, server, and server URL to authorize.
    * @throws {Error} When `auth()` neither authorizes nor yields an authorize URL.
    */
   async startSignin(target: McpOAuthTarget): Promise<StartSigninResult> {
-    const state = randomBytes(16).toString('hex');
-    this.flows.start(state, target);
-    const provider = this.providerFor(target, state);
+    return this.refresher.exclusive(targetKey(target), async () => {
+      const state = randomBytes(16).toString('hex');
+      this.flows.start(state, target);
+      try {
+        const provider = this.providerFor(target, state);
+        const result = await auth(provider, {
+          serverUrl: target.serverUrl,
+          fetchFn: this.fetchImpl,
+        });
+        if (result === 'AUTHORIZED') {
+          await this.primeFromStore(target);
+          this.flows.markConnected(state);
+          return { flowId: state, alreadyConnected: true };
+        }
 
-    const result = await auth(provider, { serverUrl: target.serverUrl, fetchFn: this.fetchImpl });
-    if (result === 'AUTHORIZED') {
-      await this.primeFromStore(target);
-      this.flows.markConnected(state);
-      return { flowId: state, alreadyConnected: true };
-    }
-
-    const authorizeUrl = this.flows.authorizeUrl(state);
-    if (!authorizeUrl) {
-      this.flows.markFailed(state, 'Could not build a sign-in link for this server.');
-      throw new Error('Could not build a sign-in link for this server.');
-    }
-    return { flowId: state, authorizeUrl, alreadyConnected: false };
+        const authorizeUrl = this.flows.authorizeUrl(state);
+        if (!authorizeUrl) throw new Error('Could not build a sign-in link for this server.');
+        return { flowId: state, authorizeUrl, alreadyConnected: false };
+      } catch (err) {
+        // No link ever reached the operator, so this flow can never be polled —
+        // and a `state` left claimable is a `state` a stray callback could still
+        // redeem. Drop it rather than leaving it parked as `pending` for its TTL.
+        this.flows.drop(state);
+        throw err;
+      }
+    });
   }
 
   /**
@@ -158,8 +207,20 @@ export class AgentMcpOAuthService {
   /**
    * Handle the loopback callback: exchange the authorization code for tokens (via
    * the SDK `auth()` code path), prime the cache, and mark the flow connected.
-   * Never throws — returns a status for the browser page. Nothing is stored on
-   * failure.
+   * Never throws — returns a status for the browser page.
+   *
+   * Reloading the callback page is treated as success, not failure: the PKCE
+   * verifier is one-shot, so a second exchange always fails, and letting that
+   * failure overwrite an already-`connected` flow told the operator their
+   * successful sign-in had failed (DOR-986).
+   *
+   * A failed exchange can still leave the dynamic client registration on disk —
+   * it is written before the code is exchanged. No token is stored, which is what
+   * decides whether the server is usable.
+   *
+   * Serialized against the background refresh for the same target, so a refresh
+   * that started on the OLD refresh token cannot land after this exchange and
+   * overwrite the grant the operator just approved.
    *
    * @param args - The `state`, `code`, and optional `error` from the callback query.
    */
@@ -173,38 +234,49 @@ export class AgentMcpOAuthService {
     const target = this.flows.target(state);
     if (!target)
       return { connected: false, error: 'This sign-in link expired. Please start again.' };
+    if (this.flows.status(state).status === 'connected') return { connected: true };
     if (error || !code) {
       const message = 'Sign-in was cancelled.';
       this.flows.markFailed(state, message);
       return { connected: false, error: message };
     }
 
-    try {
-      const provider = this.providerFor(target, state);
-      const result = await auth(provider, {
-        serverUrl: target.serverUrl,
-        authorizationCode: code,
-        fetchFn: this.fetchImpl,
-      });
-      if (result !== 'AUTHORIZED') {
-        const message = 'The server did not complete the sign-in. Please try again.';
+    return this.refresher.exclusive(targetKey(target), async () => {
+      // Re-checked INSIDE the lock, and the check above is only a fast path. Two
+      // callbacks can both pass an unlocked check while the first exchange is
+      // still on the wire — a browser reload during those hundreds of
+      // milliseconds is exactly how this happens. The second would then run the
+      // exchange against a spent one-shot verifier, throw, and `markFailed` over
+      // a flow that is already connected (DOR-986).
+      if (this.flows.status(state).status === 'connected') return { connected: true };
+      try {
+        const provider = this.providerFor(target, state);
+        await auth(provider, {
+          serverUrl: target.serverUrl,
+          authorizationCode: code,
+          fetchFn: this.fetchImpl,
+        });
+        // The exchange is only real if a token actually landed: `auth()` reports
+        // success, but the cache is what injection reads, so that is what we check.
+        if (!(await this.primeFromStore(target))) {
+          const message = 'The server did not complete the sign-in. Please try again.';
+          this.flows.markFailed(state, message);
+          return { connected: false, error: message };
+        }
+        this.flows.markConnected(state);
+        return { connected: true };
+      } catch (err) {
+        // Keep the raw detail in the server log; hand the browser + poll a generic
+        // message (the callback lands in the operator's own loopback browser, but
+        // an exchange error can echo request context, so match the non-catch paths).
+        this.logger.warn(
+          `[mcp-oauth] callback failed for ${target.serverName}: ${err instanceof Error ? err.message : String(err)}`
+        );
+        const message = 'Sign-in failed. Please try again.';
         this.flows.markFailed(state, message);
         return { connected: false, error: message };
       }
-      await this.primeFromStore(target);
-      this.flows.markConnected(state);
-      return { connected: true };
-    } catch (err) {
-      // Keep the raw detail in the server log; hand the browser + poll a generic
-      // message (the callback lands in the operator's own loopback browser, but
-      // an exchange error can echo request context, so match the non-catch paths).
-      this.logger.warn(
-        `[mcp-oauth] callback failed for ${target.serverName}: ${err instanceof Error ? err.message : String(err)}`
-      );
-      const message = 'Sign-in failed. Please try again.';
-      this.flows.markFailed(state, message);
-      return { connected: false, error: message };
-    }
+    });
   }
 
   /**
@@ -224,57 +296,111 @@ export class AgentMcpOAuthService {
     }
   }
 
+  /**
+   * Forget one server's OAuth credentials: delete the stored token set and client
+   * registration, and drop the cached token along with its refresh timer. Called
+   * when a managed server is removed, and when its URL changes — the token was
+   * minted for a specific server, so it must not survive being re-pointed at a
+   * different one.
+   *
+   * Serialized on the target's own lock, like every other writer of its token
+   * store. Without that, a refresh already on the wire finishes after the delete
+   * and writes a brand-new access + refresh token back to disk for a server the
+   * operator just removed — cache clean, disk dirty, and nothing ever sweeps it
+   * (DOR-986).
+   *
+   * @param agentId - The owning agent's id.
+   * @param serverName - The managed server's name.
+   */
+  async forgetServer(agentId: string, serverName: string): Promise<void> {
+    await this.refresher.exclusive(lockKey(agentId, serverName), () =>
+      this.forgetServerUnlocked(agentId, serverName)
+    );
+  }
+
+  /**
+   * The body of {@link forgetServer} without taking the lock. Only for callers
+   * that already hold it, or that run before any refresh could exist for the
+   * target — taking it again from inside would wait on the operation that is
+   * currently holding it, which never completes.
+   */
+  private async forgetServerUnlocked(agentId: string, serverName: string): Promise<void> {
+    this.cache.evict(agentId, serverName);
+    await this.secrets.clear(agentId, serverName);
+  }
+
+  /**
+   * Forget every OAuth credential belonging to one agent — the deleted-agent
+   * cascade, so an agent's tokens do not outlive the agent.
+   *
+   * The agent's manifest is already gone by the time it is unregistered, so the
+   * servers it used to have are recovered from the store's own key namespace —
+   * and each one is then forgotten under its own lock, for the same reason
+   * {@link forgetServer} takes one.
+   *
+   * @param agentId - The agent being deleted.
+   */
+  async forgetAgent(agentId: string): Promise<void> {
+    this.cache.evictAgent(agentId);
+    const serverNames = await this.secrets.serverNames(agentId);
+    await Promise.all(serverNames.map((name) => this.forgetServer(agentId, name)));
+  }
+
+  /**
+   * Run a target's background refresh right now, exactly as its scheduled timer
+   * would, and report whether a fresh token replaced the cached one.
+   *
+   * @param target - The agent, server, and server URL to refresh.
+   * @internal Exercised by tests; production reaches this through the cache timer.
+   */
+  async refreshNow(target: McpOAuthTarget): Promise<boolean> {
+    return this.cache.refreshNow(target.agentId, target.serverName);
+  }
+
   /** Cancel every pending refresh and empty the token cache (shutdown). */
   shutdown(): void {
     this.cache.clear();
   }
 
-  /** Load the stored token set for a target and prime the cache (no-op when absent). */
-  private async primeFromStore(target: McpOAuthTarget): Promise<void> {
+  /**
+   * Load the stored token set for a target and prime the cache. Returns whether a
+   * token was primed. A stored set bound to a different URL than the target's is
+   * deleted rather than primed: it authorizes a server this name no longer points
+   * at, so it can only ever be sent to the wrong place.
+   *
+   * Deletes through the UNLOCKED path deliberately. Every caller either already
+   * holds the target's lock (sign-in, callback) or runs before any refresh for it
+   * can exist (`warm`, which primes the cache the timers hang off), so taking the
+   * lock here would be a self-deadlock in the first case and pointless in the second.
+   */
+  private async primeFromStore(target: McpOAuthTarget): Promise<boolean> {
     const tokens = await this.secrets.tokens(target.agentId, target.serverName);
-    if (tokens) this.primeCache(target, tokens);
+    if (!tokens) return false;
+    if (tokens.serverUrl !== target.serverUrl) {
+      this.logger.warn(
+        `[mcp-oauth] dropping the stored token for ${target.serverName}: it was issued for a different URL`
+      );
+      await this.forgetServerUnlocked(target.agentId, target.serverName);
+      return false;
+    }
+    this.primeCache(target, tokens);
+    return true;
   }
 
   /** Cache a stored token set (by its ABSOLUTE expiry) and bind its background refresh. */
   private primeCache(target: McpOAuthTarget, tokens: StoredMcpTokens): void {
     this.cache.store(target.agentId, target.serverName, toCachedToken(tokens), () =>
-      this.refresh(target)
+      this.refresher.refresh(targetKey(target), () =>
+        attemptTokenRefresh({
+          // A state no flow owns: every flow-store write this provider makes is a
+          // no-op, so a background refresh can never clobber a live sign-in.
+          provider: this.providerFor(target, `refresh:${randomBytes(8).toString('hex')}`),
+          serverUrl: target.serverUrl,
+          fetchImpl: this.fetchImpl,
+          loadTokens: () => this.secrets.tokens(target.agentId, target.serverName),
+        })
+      )
     );
-  }
-
-  /**
-   * Exchange the stored refresh token for a new access token, persist it (stamping
-   * a fresh absolute expiry), and hand the resulting cached token back. Returns
-   * `null` (evicting the cached token) when there is no refresh token, no client
-   * registration, or the exchange fails — so a failed refresh degrades to
-   * needs-auth rather than a stale token.
-   */
-  private async refresh(target: McpOAuthTarget): Promise<CachedToken | null> {
-    try {
-      const [stored, clientInformation] = await Promise.all([
-        this.secrets.tokens(target.agentId, target.serverName),
-        this.secrets.clientInformation(target.agentId, target.serverName),
-      ]);
-      if (!stored?.refresh_token || !clientInformation) return null;
-
-      const info = await discoverOAuthServerInfo(target.serverUrl, { fetchFn: this.fetchImpl });
-      const next = await refreshAuthorization(info.authorizationServerUrl, {
-        ...(info.authorizationServerMetadata ? { metadata: info.authorizationServerMetadata } : {}),
-        clientInformation,
-        refreshToken: stored.refresh_token,
-        fetchFn: this.fetchImpl,
-      });
-      await this.secrets.saveTokens(target.agentId, target.serverName, next);
-      // Re-read so the absolute expiry is the one saveTokens just stamped (single
-      // source of that computation), rather than recomputing it here.
-      const persisted = await this.secrets.tokens(target.agentId, target.serverName);
-      return persisted ? toCachedToken(persisted) : null;
-    } catch (err) {
-      this.logger.warn(
-        `[mcp-oauth] refresh failed for ${target.serverName}: ${err instanceof Error ? err.message : String(err)}`
-      );
-      return null;
-    }
   }
 
   /** Build a provider bound to one target + sign-in state. */
@@ -282,6 +408,7 @@ export class AgentMcpOAuthService {
     const ctx: McpOAuthProviderContext = {
       agentId: target.agentId,
       serverName: target.serverName,
+      serverUrl: target.serverUrl,
       state,
       redirectUri: this.redirectUri,
       secrets: this.secrets,
@@ -289,22 +416,6 @@ export class AgentMcpOAuthService {
     };
     return new McpOAuthClientProvider(ctx);
   }
-}
-
-/**
- * Convert a persisted token set into the cache's {@link CachedToken}, trusting the
- * ABSOLUTE `expiresAt` stamped at save time — never recomputing from the relative
- * `expires_in`, which is meaningless after a restart (DOR-942). No stored
- * `expiresAt` means no declared lifetime, so it never expires on our clock.
- *
- * @param stored - The persisted token set.
- */
-function toCachedToken(stored: StoredMcpTokens): CachedToken {
-  return {
-    accessToken: stored.access_token,
-    expiresAt: stored.expiresAt ?? Number.POSITIVE_INFINITY,
-    refreshable: Boolean(stored.refresh_token),
-  };
 }
 
 /**

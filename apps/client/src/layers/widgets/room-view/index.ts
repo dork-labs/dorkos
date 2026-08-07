@@ -30,3 +30,12 @@ export { RoomThreadReplyRow } from './ui/RoomThreadReplyRow';
  * from here; the timeline and the thread panel mount it themselves.
  */
 export { RoomPendingRow } from './ui/RoomPendingRow';
+/**
+ * Seeds "how each agent runs" for a subtree, exported for the Dev Playground's
+ * identity bench — a mention pill's hover card reads it from context (see
+ * `agent-info-context`), so a benched `RoomEntryRow` needs one above it or its
+ * cards can only ever be shown bare. The routed app mounts
+ * `RoomAgentInfoProvider` instead, which reads the real fleet.
+ */
+export { AgentInfoProvider } from './model/agent-info-context';
+export type { RosterAgentInfo } from './lib/agent-details';
