@@ -95,6 +95,15 @@ function ResponsiveContextMenuTrigger({
   );
 }
 
+/**
+ * The attribute a nested trigger marks itself with to claim gesture priority
+ * over this one. See `useLongPress`'s `yieldToSelector` doc for the full
+ * contract — this is the one selector every `MobileTrigger` yields to, so any
+ * surface nested inside a `ResponsiveContextMenuTrigger` can opt in just by
+ * carrying this attribute on its own long-press's own trigger element.
+ */
+const GESTURE_PRIORITY_SELECTOR = '[data-gesture-priority]';
+
 /** Mobile trigger that opens the drawer on long-press (pointer hold). */
 function MobileTrigger({
   asChild,
@@ -104,7 +113,11 @@ function MobileTrigger({
 }: ResponsiveContextMenuTriggerProps) {
   const { open } = React.useContext(ResponsiveContextMenuContext);
 
-  const longPressHandlers = useLongPress({ onLongPress: open, onPressStateChange });
+  const longPressHandlers = useLongPress({
+    onLongPress: open,
+    onPressStateChange,
+    yieldToSelector: GESTURE_PRIORITY_SELECTOR,
+  });
 
   if (asChild && React.isValidElement(children)) {
     // Spread long-press handlers onto the child element directly
