@@ -2,7 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Loader2, File as FileIcon, AlertCircle } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
-import type { PendingFile } from '../../model/use-file-upload';
+import type { PendingFile } from '../model/pending-file';
 
 /** Check if a File is an image by MIME type. */
 function isImageFile(file: File): boolean {
@@ -12,7 +12,7 @@ function isImageFile(file: File): boolean {
 /** Fallback reason for a failed upload that carried no message. */
 const GENERIC_UPLOAD_ERROR = "This file didn't upload";
 
-interface FileChipBarProps {
+interface ComposerAttachmentsProps {
   files: PendingFile[];
   onRemove: (id: string) => void;
   /** Put a failed file back in line for the next send. Omit to hide the retry. */
@@ -36,7 +36,12 @@ interface FileChipBarProps {
  * row. Removing the row was the honest-looking option and the wrong one: the
  * chip vanished while the bytes kept flowing (DOR-494).
  */
-export function FileChipBar({ files, onRemove, onRetry, onCancel }: FileChipBarProps) {
+export function ComposerAttachments({
+  files,
+  onRemove,
+  onRetry,
+  onCancel,
+}: ComposerAttachmentsProps) {
   // Which images are on the bar, as a value that changes only when they do. The
   // array's identity cannot serve: every upload progress tick rebuilds it
   // (`prev.map(...)` in use-file-upload), so a memo keyed on it minted a fresh

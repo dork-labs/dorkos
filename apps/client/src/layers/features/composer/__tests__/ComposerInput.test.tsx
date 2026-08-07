@@ -2,7 +2,7 @@
 import { createRef, useState } from 'react';
 import { describe, it, expect, vi, afterEach, beforeEach, beforeAll } from 'vitest';
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
-import { ChatInput, type ChatInputHandle } from '../ui/input/ChatInput';
+import { ComposerInput, type ComposerInputHandle } from '../ui/ComposerInput';
 
 /**
  * The emulated device, read per query by the `matchMedia` mock below.
@@ -129,18 +129,18 @@ function stubExecCommandWithInputEvent() {
   return exec;
 }
 
-/** ChatInput wired the way every host wires it: the value prop follows onChange. */
+/** ComposerInput wired the way every host wires it: the value prop follows onChange. */
 function ControlledComposer({
   initialValue,
   onChange,
   ...props
-}: Omit<Parameters<typeof ChatInput>[0], 'value' | 'onChange'> & {
+}: Omit<Parameters<typeof ComposerInput>[0], 'value' | 'onChange'> & {
   initialValue: string;
   onChange?: (value: string) => void;
 }) {
   const [value, setValue] = useState(initialValue);
   return (
-    <ChatInput
+    <ComposerInput
       {...props}
       value={value}
       onChange={(next) => {
@@ -186,8 +186,8 @@ function renderControlled(props: Parameters<typeof ControlledComposer>[0], caret
 }
 
 /** Render the composer and place a collapsed caret at `caret` (default: end of value). */
-function renderWithCaret(props: Parameters<typeof ChatInput>[0], caret?: number) {
-  const view = render(<ChatInput {...props} />);
+function renderWithCaret(props: Parameters<typeof ComposerInput>[0], caret?: number) {
+  const view = render(<ComposerInput {...props} />);
   const textarea = screen.getByRole('combobox') as HTMLTextAreaElement;
   textarea.focus();
   const pos = caret ?? textarea.value.length;
@@ -203,7 +203,7 @@ afterEach(() => {
   cleanup();
 });
 
-describe('ChatInput', () => {
+describe('ComposerInput', () => {
   const defaultProps = {
     value: '',
     onChange: vi.fn(),
@@ -215,51 +215,53 @@ describe('ChatInput', () => {
   const controlledDefaults = { onSubmit: vi.fn(), isStreaming: false };
 
   it('renders textarea with placeholder', () => {
-    render(<ChatInput {...defaultProps} />);
+    render(<ComposerInput {...defaultProps} />);
     expect(screen.getByPlaceholderText(/Send a message/)).toBeDefined();
   });
 
   it('renders custom placeholder when provided', () => {
-    render(<ChatInput {...defaultProps} placeholder="Compose next" />);
+    render(<ComposerInput {...defaultProps} placeholder="Compose next" />);
     expect(screen.getByPlaceholderText('Compose next')).toBeDefined();
   });
 
   it('uses default placeholder when not provided', () => {
-    render(<ChatInput {...defaultProps} />);
+    render(<ComposerInput {...defaultProps} />);
     expect(screen.getByPlaceholderText('Send a message...')).toBeDefined();
   });
 
   it('calls onChange when typing', () => {
     const onChange = vi.fn();
-    render(<ChatInput {...defaultProps} onChange={onChange} />);
+    render(<ComposerInput {...defaultProps} onChange={onChange} />);
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'hello' } });
     expect(onChange).toHaveBeenCalledWith('hello');
   });
 
   it('calls onSubmit on Enter key when value is non-empty', () => {
     const onSubmit = vi.fn();
-    render(<ChatInput {...defaultProps} value="hello" onSubmit={onSubmit} />);
+    render(<ComposerInput {...defaultProps} value="hello" onSubmit={onSubmit} />);
     fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
     expect(onSubmit).toHaveBeenCalled();
   });
 
   it('does not submit on Shift+Enter', () => {
     const onSubmit = vi.fn();
-    render(<ChatInput {...defaultProps} value="hello" onSubmit={onSubmit} />);
+    render(<ComposerInput {...defaultProps} value="hello" onSubmit={onSubmit} />);
     fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter', shiftKey: true });
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
   it('does not submit when value is empty', () => {
     const onSubmit = vi.fn();
-    render(<ChatInput {...defaultProps} value="" onSubmit={onSubmit} />);
+    render(<ComposerInput {...defaultProps} value="" onSubmit={onSubmit} />);
     fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
   it('does not submit when streaming', () => {
     const onSubmit = vi.fn();
-    render(<ChatInput {...defaultProps} value="hello" isStreaming={true} onSubmit={onSubmit} />);
+    render(
+      <ComposerInput {...defaultProps} value="hello" isStreaming={true} onSubmit={onSubmit} />
+    );
     fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
     expect(onSubmit).not.toHaveBeenCalled();
   });
@@ -276,7 +278,7 @@ describe('ChatInput', () => {
     ['while an upload is in flight', { isUploading: true }],
   ])('stays typeable %s', (_label, state) => {
     const onChange = vi.fn();
-    render(<ChatInput {...defaultProps} {...state} onChange={onChange} />);
+    render(<ComposerInput {...defaultProps} {...state} onChange={onChange} />);
     const textarea = screen.getByRole('combobox');
 
     expect(textarea).toBeEnabled();
@@ -286,17 +288,17 @@ describe('ChatInput', () => {
   });
 
   it('shows stop button when streaming (no text)', () => {
-    render(<ChatInput {...defaultProps} isStreaming={true} onStop={vi.fn()} />);
+    render(<ComposerInput {...defaultProps} isStreaming={true} onStop={vi.fn()} />);
     expect(screen.getByLabelText('Stop generating')).toBeDefined();
   });
 
   it('shows send button when not streaming and has text', () => {
-    render(<ChatInput {...defaultProps} value="hello" />);
+    render(<ComposerInput {...defaultProps} value="hello" />);
     expect(screen.getByLabelText('Send message')).toBeDefined();
   });
 
   it('hides send button when value is empty', () => {
-    render(<ChatInput {...defaultProps} value="" />);
+    render(<ComposerInput {...defaultProps} value="" />);
     // No visible button when hidden state — check button is not displayed or is disabled
     // The button is rendered with opacity 0 and pointer-events-none
     const btn = screen.queryByLabelText('Send message');
@@ -305,33 +307,33 @@ describe('ChatInput', () => {
   });
 
   it('shows send button when value is non-empty', () => {
-    render(<ChatInput {...defaultProps} value="hello" />);
+    render(<ComposerInput {...defaultProps} value="hello" />);
     expect(screen.getByLabelText('Send message')).toBeDefined();
   });
 
   it('calls onStop when stop button is clicked', () => {
     const onStop = vi.fn();
-    render(<ChatInput {...defaultProps} isStreaming={true} onStop={onStop} />);
+    render(<ComposerInput {...defaultProps} isStreaming={true} onStop={onStop} />);
     fireEvent.click(screen.getByLabelText('Stop generating'));
     expect(onStop).toHaveBeenCalled();
   });
 
   it('calls onEscape when Escape pressed', () => {
     const onEscape = vi.fn();
-    render(<ChatInput {...defaultProps} onEscape={onEscape} />);
+    render(<ComposerInput {...defaultProps} onEscape={onEscape} />);
     fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
     expect(onEscape).toHaveBeenCalled();
   });
 
   it('paperclip button is NOT disabled during streaming', () => {
     const onAttach = vi.fn();
-    render(<ChatInput {...defaultProps} isStreaming={true} onAttach={onAttach} />);
+    render(<ComposerInput {...defaultProps} isStreaming={true} onAttach={onAttach} />);
     const btn = screen.getByLabelText('Attach file');
     expect(btn).not.toHaveProperty('disabled', true);
   });
 
   it('clear button works during streaming', () => {
-    render(<ChatInput {...defaultProps} value="hello" isStreaming={true} onClear={vi.fn()} />);
+    render(<ComposerInput {...defaultProps} value="hello" isStreaming={true} onClear={vi.fn()} />);
     const btn = screen.getByLabelText('Clear message');
     expect(btn.className).not.toContain('pointer-events-none');
   });
@@ -342,14 +344,14 @@ describe('ChatInput', () => {
 
     it('calls onArrowDown when ArrowDown pressed and palette open', () => {
       const onArrowDown = vi.fn();
-      render(<ChatInput {...defaultProps} {...openPalette} onArrowDown={onArrowDown} />);
+      render(<ComposerInput {...defaultProps} {...openPalette} onArrowDown={onArrowDown} />);
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'ArrowDown' });
       expect(onArrowDown).toHaveBeenCalledOnce();
     });
 
     it('calls onArrowUp when ArrowUp pressed and palette open', () => {
       const onArrowUp = vi.fn();
-      render(<ChatInput {...defaultProps} {...openPalette} onArrowUp={onArrowUp} />);
+      render(<ComposerInput {...defaultProps} {...openPalette} onArrowUp={onArrowUp} />);
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'ArrowUp' });
       expect(onArrowUp).toHaveBeenCalledOnce();
     });
@@ -358,7 +360,7 @@ describe('ChatInput', () => {
       const onCommandSelect = vi.fn();
       const onSubmit = vi.fn();
       render(
-        <ChatInput
+        <ComposerInput
           {...defaultProps}
           value="/daily"
           {...openPalette}
@@ -373,21 +375,25 @@ describe('ChatInput', () => {
 
     it('calls onCommandSelect on Tab when palette open', () => {
       const onCommandSelect = vi.fn();
-      render(<ChatInput {...defaultProps} {...openPalette} onCommandSelect={onCommandSelect} />);
+      render(
+        <ComposerInput {...defaultProps} {...openPalette} onCommandSelect={onCommandSelect} />
+      );
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Tab' });
       expect(onCommandSelect).toHaveBeenCalledOnce();
     });
 
     it('calls onEscape on Escape when palette open', () => {
       const onEscape = vi.fn();
-      render(<ChatInput {...defaultProps} {...openPalette} onEscape={onEscape} />);
+      render(<ComposerInput {...defaultProps} {...openPalette} onEscape={onEscape} />);
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
       expect(onEscape).toHaveBeenCalledOnce();
     });
 
     it('does not call onCommandSelect on Shift+Enter when palette open', () => {
       const onCommandSelect = vi.fn();
-      render(<ChatInput {...defaultProps} {...openPalette} onCommandSelect={onCommandSelect} />);
+      render(
+        <ComposerInput {...defaultProps} {...openPalette} onCommandSelect={onCommandSelect} />
+      );
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter', shiftKey: true });
       expect(onCommandSelect).not.toHaveBeenCalled();
     });
@@ -401,7 +407,7 @@ describe('ChatInput', () => {
       const onSubmit = vi.fn();
       const onCommandSelect = vi.fn();
       render(
-        <ChatInput
+        <ComposerInput
           {...defaultProps}
           value="/zzz"
           isPaletteOpen={true}
@@ -418,7 +424,7 @@ describe('ChatInput', () => {
     it('queues on Enter mid-stream instead of swallowing it', () => {
       const onQueue = vi.fn();
       render(
-        <ChatInput
+        <ComposerInput
           {...defaultProps}
           value="@zzz"
           isStreaming={true}
@@ -435,7 +441,7 @@ describe('ChatInput', () => {
       const onEscape = vi.fn();
       const onClear = vi.fn();
       render(
-        <ChatInput
+        <ComposerInput
           {...defaultProps}
           value="/zzz"
           isPaletteOpen={true}
@@ -455,7 +461,7 @@ describe('ChatInput', () => {
   describe('palette-closed keyboard regression', () => {
     it('does not call onArrowDown when ArrowDown pressed and palette closed', () => {
       const onArrowDown = vi.fn();
-      render(<ChatInput {...defaultProps} isPaletteOpen={false} onArrowDown={onArrowDown} />);
+      render(<ComposerInput {...defaultProps} isPaletteOpen={false} onArrowDown={onArrowDown} />);
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'ArrowDown' });
       expect(onArrowDown).not.toHaveBeenCalled();
     });
@@ -464,7 +470,7 @@ describe('ChatInput', () => {
       const onSubmit = vi.fn();
       const onCommandSelect = vi.fn();
       render(
-        <ChatInput
+        <ComposerInput
           {...defaultProps}
           value="hello"
           isPaletteOpen={false}
@@ -480,28 +486,28 @@ describe('ChatInput', () => {
 
   describe('ARIA attributes', () => {
     it('textarea has combobox role', () => {
-      render(<ChatInput {...defaultProps} />);
+      render(<ComposerInput {...defaultProps} />);
       expect(screen.getByRole('combobox')).toBeDefined();
     });
 
     it('has aria-expanded true when palette open', () => {
-      render(<ChatInput {...defaultProps} isPaletteOpen={true} />);
+      render(<ComposerInput {...defaultProps} isPaletteOpen={true} />);
       expect(screen.getByRole('combobox').getAttribute('aria-expanded')).toBe('true');
     });
 
     it('has aria-expanded false when palette closed', () => {
-      render(<ChatInput {...defaultProps} isPaletteOpen={false} />);
+      render(<ComposerInput {...defaultProps} isPaletteOpen={false} />);
       expect(screen.getByRole('combobox').getAttribute('aria-expanded')).toBe('false');
     });
 
     it('has aria-expanded false by default (no isPaletteOpen)', () => {
-      render(<ChatInput {...defaultProps} />);
+      render(<ComposerInput {...defaultProps} />);
       expect(screen.getByRole('combobox').getAttribute('aria-expanded')).toBe('false');
     });
 
     it('has aria-activedescendant when palette open with activeDescendantId', () => {
       render(
-        <ChatInput {...defaultProps} isPaletteOpen={true} activeDescendantId="command-item-2" />
+        <ComposerInput {...defaultProps} isPaletteOpen={true} activeDescendantId="command-item-2" />
       );
       expect(screen.getByRole('combobox').getAttribute('aria-activedescendant')).toBe(
         'command-item-2'
@@ -510,14 +516,18 @@ describe('ChatInput', () => {
 
     it('does not have aria-activedescendant when palette closed', () => {
       render(
-        <ChatInput {...defaultProps} isPaletteOpen={false} activeDescendantId="command-item-2" />
+        <ComposerInput
+          {...defaultProps}
+          isPaletteOpen={false}
+          activeDescendantId="command-item-2"
+        />
       );
       expect(screen.getByRole('combobox').getAttribute('aria-activedescendant')).toBeNull();
     });
 
     it('has aria-controls pointing to command palette listbox when palette is open', () => {
       render(
-        <ChatInput
+        <ComposerInput
           {...defaultProps}
           isPaletteOpen={true}
           paletteListboxId="command-palette-listbox"
@@ -534,7 +544,7 @@ describe('ChatInput', () => {
       // option to infer the listbox from. Guessing off `activeDescendantId`
       // named `command-palette-listbox` — an element that was never rendered.
       render(
-        <ChatInput
+        <ComposerInput
           {...defaultProps}
           value="@zzz"
           isPaletteOpen={true}
@@ -548,39 +558,41 @@ describe('ChatInput', () => {
     });
 
     it('has no aria-controls when palette is closed', () => {
-      render(<ChatInput {...defaultProps} paletteListboxId="command-palette-listbox" />);
+      render(<ComposerInput {...defaultProps} paletteListboxId="command-palette-listbox" />);
       expect(screen.getByRole('combobox').getAttribute('aria-controls')).toBeNull();
     });
 
     it('has aria-autocomplete set to list', () => {
-      render(<ChatInput {...defaultProps} />);
+      render(<ComposerInput {...defaultProps} />);
       expect(screen.getByRole('combobox').getAttribute('aria-autocomplete')).toBe('list');
     });
   });
 
   describe('clear button', () => {
     it('is visible when text exists', () => {
-      render(<ChatInput {...defaultProps} value="hello" onClear={vi.fn()} />);
+      render(<ComposerInput {...defaultProps} value="hello" onClear={vi.fn()} />);
       expect(screen.getByLabelText('Clear message')).toBeDefined();
       const btn = screen.getByLabelText('Clear message');
       expect(btn.className).not.toContain('pointer-events-none');
     });
 
     it('is hidden when empty', () => {
-      render(<ChatInput {...defaultProps} value="" onClear={vi.fn()} />);
+      render(<ComposerInput {...defaultProps} value="" onClear={vi.fn()} />);
       const btn = screen.getByLabelText('Clear message');
       expect(btn.className).toContain('pointer-events-none');
     });
 
     it('is visible during streaming (clear works while agent responds)', () => {
-      render(<ChatInput {...defaultProps} value="hello" isStreaming={true} onClear={vi.fn()} />);
+      render(
+        <ComposerInput {...defaultProps} value="hello" isStreaming={true} onClear={vi.fn()} />
+      );
       const btn = screen.getByLabelText('Clear message');
       expect(btn.className).not.toContain('pointer-events-none');
     });
 
     it('calls onClear when clicked', () => {
       const onClear = vi.fn();
-      render(<ChatInput {...defaultProps} value="hello" onClear={onClear} />);
+      render(<ComposerInput {...defaultProps} value="hello" onClear={onClear} />);
       fireEvent.click(screen.getByLabelText('Clear message'));
       expect(onClear).toHaveBeenCalledOnce();
     });
@@ -588,7 +600,7 @@ describe('ChatInput', () => {
     // The dashboard and onboarding composers wire no onClear. The X rendered
     // anyway — half opacity, enabled, tab-reachable, onClick undefined.
     it('is not rendered at all when no onClear is wired', () => {
-      render(<ChatInput {...defaultProps} value="hello" />);
+      render(<ComposerInput {...defaultProps} value="hello" />);
       expect(screen.queryByLabelText('Clear message')).toBeNull();
     });
 
@@ -615,7 +627,7 @@ describe('ChatInput', () => {
       const onClear = vi.fn();
       const onEscape = vi.fn();
       render(
-        <ChatInput
+        <ComposerInput
           {...defaultProps}
           value="hello"
           isPaletteOpen={false}
@@ -633,7 +645,7 @@ describe('ChatInput', () => {
       const onClear = vi.fn();
       const onEscape = vi.fn();
       render(
-        <ChatInput
+        <ComposerInput
           {...defaultProps}
           value="hello"
           isPaletteOpen={false}
@@ -683,7 +695,7 @@ describe('ChatInput', () => {
       const onClear = vi.fn();
       const onEscape = vi.fn();
       render(
-        <ChatInput
+        <ComposerInput
           {...defaultProps}
           value="hello"
           isPaletteOpen={false}
@@ -706,7 +718,7 @@ describe('ChatInput', () => {
       const onClear = vi.fn();
       const onEscape = vi.fn();
       render(
-        <ChatInput
+        <ComposerInput
           {...defaultProps}
           value="hello"
           isPaletteOpen={true}
@@ -723,7 +735,7 @@ describe('ChatInput', () => {
       const onClear = vi.fn();
       const onEscape = vi.fn();
       render(
-        <ChatInput
+        <ComposerInput
           {...defaultProps}
           value=""
           isPaletteOpen={false}
@@ -742,14 +754,14 @@ describe('ChatInput', () => {
   describe('blur handling', () => {
     it('calls onEscape on blur when palette is open', () => {
       const onEscape = vi.fn();
-      render(<ChatInput {...defaultProps} isPaletteOpen={true} onEscape={onEscape} />);
+      render(<ComposerInput {...defaultProps} isPaletteOpen={true} onEscape={onEscape} />);
       fireEvent.blur(screen.getByRole('combobox'));
       expect(onEscape).toHaveBeenCalledOnce();
     });
 
     it('does not call onEscape on blur when palette is closed', () => {
       const onEscape = vi.fn();
-      render(<ChatInput {...defaultProps} isPaletteOpen={false} onEscape={onEscape} />);
+      render(<ComposerInput {...defaultProps} isPaletteOpen={false} onEscape={onEscape} />);
       fireEvent.blur(screen.getByRole('combobox'));
       expect(onEscape).not.toHaveBeenCalled();
     });
@@ -758,32 +770,36 @@ describe('ChatInput', () => {
   describe('sessionBusy state', () => {
     it('does not submit on Enter when sessionBusy is true', () => {
       const onSubmit = vi.fn();
-      render(<ChatInput {...defaultProps} value="hello" sessionBusy={true} onSubmit={onSubmit} />);
+      render(
+        <ComposerInput {...defaultProps} value="hello" sessionBusy={true} onSubmit={onSubmit} />
+      );
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
       expect(onSubmit).not.toHaveBeenCalled();
     });
 
     it('disables send button when sessionBusy is true', () => {
-      render(<ChatInput {...defaultProps} value="hello" sessionBusy={true} />);
+      render(<ComposerInput {...defaultProps} value="hello" sessionBusy={true} />);
       const btn = screen.getByLabelText('Send message');
       expect(btn).toHaveProperty('disabled', true);
       expect(btn.className).toContain('pointer-events-none');
     });
 
     it('names the actor and the wait when sessionBusy is true', () => {
-      render(<ChatInput {...defaultProps} sessionBusy={true} />);
+      render(<ComposerInput {...defaultProps} sessionBusy={true} />);
       expect(
         screen.getByText('Your agent is still finishing the last message. Try again in a moment.')
       ).toBeInTheDocument();
     });
 
     it('hides busy message when sessionBusy is false', () => {
-      render(<ChatInput {...defaultProps} sessionBusy={false} />);
+      render(<ComposerInput {...defaultProps} sessionBusy={false} />);
       expect(screen.queryByText(/still finishing/)).toBeNull();
     });
 
     it('hides clear button when sessionBusy is true', () => {
-      render(<ChatInput {...defaultProps} value="hello" sessionBusy={true} onClear={vi.fn()} />);
+      render(
+        <ComposerInput {...defaultProps} value="hello" sessionBusy={true} onClear={vi.fn()} />
+      );
       const btn = screen.getByLabelText('Clear message');
       expect(btn.className).toContain('pointer-events-none');
     });
@@ -791,46 +807,50 @@ describe('ChatInput', () => {
 
   describe('canSubmit state', () => {
     it('disables the send button when canSubmit is false (target not ready)', () => {
-      render(<ChatInput {...defaultProps} value="hello" canSubmit={false} />);
+      render(<ComposerInput {...defaultProps} value="hello" canSubmit={false} />);
       const btn = screen.getByLabelText('Send message');
       expect(btn).toHaveProperty('disabled', true);
       expect(btn.className).toContain('pointer-events-none');
     });
 
     it('keeps the input typeable when canSubmit is false', () => {
-      render(<ChatInput {...defaultProps} canSubmit={false} />);
+      render(<ComposerInput {...defaultProps} canSubmit={false} />);
       expect(screen.getByRole('combobox')).toHaveProperty('disabled', false);
     });
 
     it('does not show a busy message when canSubmit is false', () => {
-      render(<ChatInput {...defaultProps} value="hello" canSubmit={false} />);
+      render(<ComposerInput {...defaultProps} value="hello" canSubmit={false} />);
       expect(screen.queryByText(/still finishing/)).toBeNull();
     });
 
     it('does not call onSubmit when the disabled send button is clicked', () => {
       const onSubmit = vi.fn();
-      render(<ChatInput {...defaultProps} value="hello" canSubmit={false} onSubmit={onSubmit} />);
+      render(
+        <ComposerInput {...defaultProps} value="hello" canSubmit={false} onSubmit={onSubmit} />
+      );
       fireEvent.click(screen.getByLabelText('Send message'));
       expect(onSubmit).not.toHaveBeenCalled();
     });
 
     it('does not submit on Enter when canSubmit is false', () => {
       const onSubmit = vi.fn();
-      render(<ChatInput {...defaultProps} value="hello" canSubmit={false} onSubmit={onSubmit} />);
+      render(
+        <ComposerInput {...defaultProps} value="hello" canSubmit={false} onSubmit={onSubmit} />
+      );
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
       expect(onSubmit).not.toHaveBeenCalled();
     });
 
     it('submits on Enter when canSubmit is true (default)', () => {
       const onSubmit = vi.fn();
-      render(<ChatInput {...defaultProps} value="hello" onSubmit={onSubmit} />);
+      render(<ComposerInput {...defaultProps} value="hello" onSubmit={onSubmit} />);
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
       expect(onSubmit).toHaveBeenCalledOnce();
     });
 
     it('enables the send button by default (canSubmit defaults to true)', () => {
       const onSubmit = vi.fn();
-      render(<ChatInput {...defaultProps} value="hello" onSubmit={onSubmit} />);
+      render(<ComposerInput {...defaultProps} value="hello" onSubmit={onSubmit} />);
       const btn = screen.getByLabelText('Send message');
       expect(btn).toHaveProperty('disabled', false);
       fireEvent.click(btn);
@@ -840,35 +860,40 @@ describe('ChatInput', () => {
 
   describe('queue button states', () => {
     it('send button shows Queue icon during streaming with text', () => {
-      render(<ChatInput {...defaultProps} isStreaming={true} value="text" onQueue={vi.fn()} />);
+      render(<ComposerInput {...defaultProps} isStreaming={true} value="text" onQueue={vi.fn()} />);
       expect(screen.getByLabelText('Queue message')).toBeDefined();
     });
 
     it('send button shows Update icon when editing queue item', () => {
       render(
-        <ChatInput {...defaultProps} editingQueueItem={true} value="text" onSaveEdit={vi.fn()} />
+        <ComposerInput
+          {...defaultProps}
+          editingQueueItem={true}
+          value="text"
+          onSaveEdit={vi.fn()}
+        />
       );
       expect(screen.getByLabelText('Save edit')).toBeDefined();
     });
 
     it('send button shows Stop icon during streaming without text', () => {
-      render(<ChatInput {...defaultProps} isStreaming={true} value="" onStop={vi.fn()} />);
+      render(<ComposerInput {...defaultProps} isStreaming={true} value="" onStop={vi.fn()} />);
       expect(screen.getByLabelText('Stop generating')).toBeDefined();
     });
 
     it('queue badge renders with correct count', () => {
-      render(<ChatInput {...defaultProps} isStreaming={true} value="text" queueDepth={3} />);
+      render(<ComposerInput {...defaultProps} isStreaming={true} value="text" queueDepth={3} />);
       expect(screen.getByText('3')).toBeDefined();
     });
 
     it('queue badge not rendered when queueDepth is 0', () => {
-      render(<ChatInput {...defaultProps} isStreaming={true} value="text" queueDepth={0} />);
+      render(<ComposerInput {...defaultProps} isStreaming={true} value="text" queueDepth={0} />);
       expect(screen.queryByText('0')).toBeNull();
     });
 
     it('editing label names which message is being rewritten', () => {
       render(
-        <ChatInput
+        <ComposerInput
           {...defaultProps}
           editingQueueItem={true}
           editingPosition={2}
@@ -880,14 +905,14 @@ describe('ChatInput', () => {
     });
 
     it('falls back to a bare label when the position is unknown', () => {
-      render(<ChatInput {...defaultProps} editingQueueItem={true} value="text" />);
+      render(<ComposerInput {...defaultProps} editingQueueItem={true} value="text" />);
       expect(screen.getByText('Editing message')).toBeInTheDocument();
     });
 
     it('editing border applied when editingQueueItem is true', () => {
       // `.toBeDefined()` passed on a `null` querySelector — deleting the border
       // left the test green. `null` is defined; only `undefined` is not.
-      const { container } = render(<ChatInput {...defaultProps} editingQueueItem={true} />);
+      const { container } = render(<ComposerInput {...defaultProps} editingQueueItem={true} />);
       expect(container.querySelector('.border-primary\\/40')).not.toBeNull();
     });
   });
@@ -895,7 +920,7 @@ describe('ChatInput', () => {
   describe('Enter key queue-aware behavior', () => {
     it('Enter key queues message during streaming when onQueue provided', () => {
       const onQueue = vi.fn();
-      render(<ChatInput {...defaultProps} isStreaming={true} value="test" onQueue={onQueue} />);
+      render(<ComposerInput {...defaultProps} isStreaming={true} value="test" onQueue={onQueue} />);
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
       expect(onQueue).toHaveBeenCalled();
     });
@@ -903,7 +928,7 @@ describe('ChatInput', () => {
     it('Enter key saves edit when editingQueueItem is true', () => {
       const onSaveEdit = vi.fn();
       render(
-        <ChatInput
+        <ComposerInput
           {...defaultProps}
           editingQueueItem={true}
           value="edited"
@@ -918,7 +943,7 @@ describe('ChatInput', () => {
       const onSaveEdit = vi.fn();
       const onQueue = vi.fn();
       render(
-        <ChatInput
+        <ComposerInput
           {...defaultProps}
           editingQueueItem={true}
           isStreaming={true}
@@ -937,7 +962,7 @@ describe('ChatInput', () => {
     it('Up arrow navigates to queue when queue has items and textarea is empty', () => {
       const onQueueNavigateUp = vi.fn();
       render(
-        <ChatInput
+        <ComposerInput
           {...defaultProps}
           queueHasItems={true}
           value=""
@@ -953,7 +978,7 @@ describe('ChatInput', () => {
       const onQueueNavigateUp = vi.fn();
       const onArrowUp = vi.fn();
       render(
-        <ChatInput
+        <ComposerInput
           {...defaultProps}
           queueHasItems={true}
           isPaletteOpen={true}
@@ -969,7 +994,7 @@ describe('ChatInput', () => {
     it('Up arrow does NOT navigate when queue is empty', () => {
       const onQueueNavigateUp = vi.fn();
       render(
-        <ChatInput
+        <ComposerInput
           {...defaultProps}
           queueHasItems={false}
           value=""
@@ -983,7 +1008,7 @@ describe('ChatInput', () => {
     it('Down arrow does NOT navigate when not editing queue item', () => {
       const onQueueNavigateDown = vi.fn();
       render(
-        <ChatInput
+        <ComposerInput
           {...defaultProps}
           queueHasItems={true}
           editingQueueItem={false}
@@ -998,7 +1023,7 @@ describe('ChatInput', () => {
       const onCancelEdit = vi.fn();
       const onEscape = vi.fn();
       render(
-        <ChatInput
+        <ComposerInput
           {...defaultProps}
           editingQueueItem={true}
           onCancelEdit={onCancelEdit}
@@ -1014,7 +1039,7 @@ describe('ChatInput', () => {
       const onCancelEdit = vi.fn();
       const onEscape = vi.fn();
       render(
-        <ChatInput
+        <ComposerInput
           {...defaultProps}
           editingQueueItem={false}
           onCancelEdit={onCancelEdit}
@@ -1030,14 +1055,14 @@ describe('ChatInput', () => {
   describe('IME composition guard', () => {
     it('does not submit on the Enter that commits an IME candidate', () => {
       const onSubmit = vi.fn();
-      render(<ChatInput {...defaultProps} value="こん" onSubmit={onSubmit} />);
+      render(<ComposerInput {...defaultProps} value="こん" onSubmit={onSubmit} />);
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter', isComposing: true });
       expect(onSubmit).not.toHaveBeenCalled();
     });
 
     it('honours the legacy keyCode 229 signal', () => {
       const onSubmit = vi.fn();
-      render(<ChatInput {...defaultProps} value="こん" onSubmit={onSubmit} />);
+      render(<ComposerInput {...defaultProps} value="こん" onSubmit={onSubmit} />);
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter', keyCode: 229 });
       expect(onSubmit).not.toHaveBeenCalled();
     });
@@ -1046,7 +1071,7 @@ describe('ChatInput', () => {
       const onStop = vi.fn();
       const onEscape = vi.fn();
       render(
-        <ChatInput {...defaultProps} isStreaming={true} onStop={onStop} onEscape={onEscape} />
+        <ComposerInput {...defaultProps} isStreaming={true} onStop={onStop} onEscape={onEscape} />
       );
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape', isComposing: true });
       expect(onStop).not.toHaveBeenCalled();
@@ -1055,7 +1080,7 @@ describe('ChatInput', () => {
 
     it('submits once the composition has ended', () => {
       const onSubmit = vi.fn();
-      render(<ChatInput {...defaultProps} value="こん" onSubmit={onSubmit} />);
+      render(<ComposerInput {...defaultProps} value="こん" onSubmit={onSubmit} />);
       const combobox = screen.getByRole('combobox');
       fireEvent.keyDown(combobox, { key: 'Enter', isComposing: true });
       fireEvent.keyDown(combobox, { key: 'Enter' });
@@ -1256,7 +1281,7 @@ describe('ChatInput', () => {
       const onEscape = vi.fn();
       const onStop = vi.fn();
       render(
-        <ChatInput
+        <ComposerInput
           {...defaultProps}
           value="hello"
           isStreaming={true}
@@ -1275,7 +1300,7 @@ describe('ChatInput', () => {
       const onCancelEdit = vi.fn();
       const onStop = vi.fn();
       render(
-        <ChatInput
+        <ComposerInput
           {...defaultProps}
           value="hello"
           isStreaming={true}
@@ -1293,7 +1318,7 @@ describe('ChatInput', () => {
       const onStop = vi.fn();
       const onClear = vi.fn();
       render(
-        <ChatInput
+        <ComposerInput
           {...defaultProps}
           value="hello"
           isStreaming={true}
@@ -1310,7 +1335,7 @@ describe('ChatInput', () => {
       const onClear = vi.fn();
       const onEscape = vi.fn();
       const { rerender } = render(
-        <ChatInput
+        <ComposerInput
           {...defaultProps}
           value="hello"
           isPaletteOpen={true}
@@ -1320,7 +1345,7 @@ describe('ChatInput', () => {
       );
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
       rerender(
-        <ChatInput
+        <ComposerInput
           {...defaultProps}
           value="hello"
           isPaletteOpen={false}
@@ -1337,12 +1362,12 @@ describe('ChatInput', () => {
       stubExecCommand();
       const onClear = vi.fn();
       const { rerender } = render(
-        <ChatInput {...defaultProps} value="hello" isPaletteOpen={true} onClear={onClear} />
+        <ComposerInput {...defaultProps} value="hello" isPaletteOpen={true} onClear={onClear} />
       );
       const combobox = screen.getByRole('combobox');
       fireEvent.keyDown(combobox, { key: 'Escape' });
       rerender(
-        <ChatInput {...defaultProps} value="hello" isPaletteOpen={false} onClear={onClear} />
+        <ComposerInput {...defaultProps} value="hello" isPaletteOpen={false} onClear={onClear} />
       );
       fireEvent.keyDown(combobox, { key: 'Escape' });
       fireEvent.keyDown(combobox, { key: 'Escape' });
@@ -1352,7 +1377,7 @@ describe('ChatInput', () => {
 
   describe('the armed-to-clear signal', () => {
     /**
-     * ChatInput owns WHEN the double-Escape is armed; ChatInputContainer owns
+     * ComposerInput owns WHEN the double-Escape is armed; ChatInputContainer owns
      * where that reads out (the overlay lane, clear of the queue rows). So the
      * state machine is pinned here and the pill itself in the container's test.
      */
@@ -1371,19 +1396,19 @@ describe('ChatInput', () => {
     });
 
     it('is down until the first Escape raises it', () => {
-      render(<ChatInput {...armable()} />);
+      render(<ComposerInput {...armable()} />);
       expect(isArmed()).toBe(false);
     });
 
     it('goes up on the first bare Escape, which otherwise shows nothing at all', () => {
-      render(<ChatInput {...armable()} />);
+      render(<ComposerInput {...armable()} />);
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
       expect(isArmed()).toBe(true);
     });
 
     it('comes down the moment the window it advertises closes', () => {
       vi.useFakeTimers();
-      render(<ChatInput {...armable()} />);
+      render(<ComposerInput {...armable()} />);
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
       expect(isArmed()).toBe(true);
 
@@ -1401,7 +1426,7 @@ describe('ChatInput', () => {
 
     it('comes down when the second Escape does the clearing', () => {
       const props = armable();
-      render(<ChatInput {...props} />);
+      render(<ComposerInput {...props} />);
       const combobox = screen.getByRole('combobox');
       fireEvent.keyDown(combobox, { key: 'Escape' });
       fireEvent.keyDown(combobox, { key: 'Escape' });
@@ -1410,7 +1435,7 @@ describe('ChatInput', () => {
     });
 
     it('stays down on an empty composer, where a second Escape would clear nothing', () => {
-      render(<ChatInput {...armable()} value="" />);
+      render(<ComposerInput {...armable()} value="" />);
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
       expect(isArmed()).toBe(false);
     });
@@ -1418,13 +1443,13 @@ describe('ChatInput', () => {
     it('stays down when the Escape only dismissed a palette', () => {
       // That Escape deliberately does not arm the clear, so advertising it would
       // promise a keystroke that does nothing.
-      render(<ChatInput {...armable()} isPaletteOpen={true} />);
+      render(<ComposerInput {...armable()} isPaletteOpen={true} />);
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
       expect(isArmed()).toBe(false);
     });
 
     it('stays down while streaming, where Escape stops the turn instead', () => {
-      render(<ChatInput {...armable()} isStreaming={true} onStop={vi.fn()} />);
+      render(<ComposerInput {...armable()} isStreaming={true} onStop={vi.fn()} />);
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
       expect(isArmed()).toBe(false);
     });
@@ -1435,7 +1460,7 @@ describe('ChatInput', () => {
       // draft. A readout that assistive tech is told to ignore would hand
       // sighted people a destructive shortcut and nobody else, so the arm is
       // never raised where the equal alternative is missing.
-      render(<ChatInput {...armable()} onClear={undefined} />);
+      render(<ComposerInput {...armable()} onClear={undefined} />);
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
 
       expect(screen.queryByLabelText('Clear message')).toBeNull();
@@ -1445,7 +1470,7 @@ describe('ChatInput', () => {
     it('stays down while the session is busy, where the clear button is disabled', () => {
       // `showClear` is false, so the button renders disabled and drops out of
       // the tab order — unreachable in the same way, for the same reason.
-      render(<ChatInput {...armable()} sessionBusy={true} />);
+      render(<ComposerInput {...armable()} sessionBusy={true} />);
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
 
       expect(screen.getByLabelText('Clear message')).toBeDisabled();
@@ -1457,12 +1482,12 @@ describe('ChatInput', () => {
       // raised against session A would otherwise still be live against B's
       // draft — one tap, and text nobody armed is gone.
       const props = armable();
-      const { rerender } = render(<ChatInput {...props} contextKey="session-a " />);
+      const { rerender } = render(<ComposerInput {...props} contextKey="session-a " />);
       const combobox = screen.getByRole('combobox');
       fireEvent.keyDown(combobox, { key: 'Escape' });
       expect(isArmed()).toBe(true);
 
-      rerender(<ChatInput {...props} value="B draft" contextKey="session-b " />);
+      rerender(<ComposerInput {...props} value="B draft" contextKey="session-b " />);
       expect(isArmed()).toBe(false);
 
       fireEvent.keyDown(combobox, { key: 'Escape' });
@@ -1477,14 +1502,14 @@ describe('ChatInput', () => {
       // you started. jsdom reports every element as 0×0, so this pins that the
       // spacer exists and is built from the same padding and icon-size tokens
       // the button uses; the measured offset is in the PR's browser evidence.
-      const { rerender } = render(<ChatInput {...defaultProps} value="" />);
+      const { rerender } = render(<ComposerInput {...defaultProps} value="" />);
 
       const spacer = screen.getByTestId('action-slot-spacer');
       expect(screen.queryByLabelText('Send message')).toBeNull();
       expect(spacer.className).toContain('p-1.5');
       expect(spacer.firstElementChild!.className).toContain('size-(--size-icon-sm)');
 
-      rerender(<ChatInput {...defaultProps} value="h" />);
+      rerender(<ComposerInput {...defaultProps} value="h" />);
 
       expect(screen.queryByTestId('action-slot-spacer')).toBeNull();
       const button = screen.getByLabelText('Send message');
@@ -1496,7 +1521,9 @@ describe('ChatInput', () => {
 
   describe('keyboard focus rings', () => {
     it('gives every composer control a visible focus ring', () => {
-      render(<ChatInput {...defaultProps} value="hello" onAttach={vi.fn()} onClear={vi.fn()} />);
+      render(
+        <ComposerInput {...defaultProps} value="hello" onAttach={vi.fn()} onClear={vi.fn()} />
+      );
       for (const name of ['Attach file', 'Clear message', 'Send message']) {
         expect(screen.getByLabelText(name).className).toContain('focus-ring');
       }
@@ -1505,13 +1532,13 @@ describe('ChatInput', () => {
 
   describe('autofocus on mount', () => {
     it('focuses the composer on desktop', () => {
-      render(<ChatInput {...defaultProps} />);
+      render(<ComposerInput {...defaultProps} />);
       expect(document.activeElement).toBe(screen.getByRole('combobox'));
     });
 
     it('does not focus on a touch viewport (no surprise keyboard)', () => {
       device = PHONE;
-      render(<ChatInput {...defaultProps} />);
+      render(<ComposerInput {...defaultProps} />);
       expect(document.activeElement).not.toBe(screen.getByRole('combobox'));
     });
   });
@@ -1521,8 +1548,8 @@ describe('ChatInput', () => {
     // host that focused THROUGH the handle — ChatPanel on session switch, on
     // `?prompt=` seeding — re-opened the same hole, so the rule lives here now.
     it('focuses on desktop', () => {
-      const ref = createRef<ChatInputHandle>();
-      render(<ChatInput {...defaultProps} ref={ref} />);
+      const ref = createRef<ComposerInputHandle>();
+      render(<ComposerInput {...defaultProps} ref={ref} />);
       screen.getByRole('combobox').blur();
       act(() => ref.current!.focusUnlessTouch());
       expect(document.activeElement).toBe(screen.getByRole('combobox'));
@@ -1530,16 +1557,16 @@ describe('ChatInput', () => {
 
     it('is a no-op on a phone', () => {
       device = PHONE;
-      const ref = createRef<ChatInputHandle>();
-      render(<ChatInput {...defaultProps} ref={ref} />);
+      const ref = createRef<ComposerInputHandle>();
+      render(<ComposerInput {...defaultProps} ref={ref} />);
       act(() => ref.current!.focusUnlessTouch());
       expect(document.activeElement).not.toBe(screen.getByRole('combobox'));
     });
 
     it('still focuses on touch through the unguarded focus() — a deliberate tap', () => {
       device = PHONE;
-      const ref = createRef<ChatInputHandle>();
-      render(<ChatInput {...defaultProps} ref={ref} />);
+      const ref = createRef<ComposerInputHandle>();
+      render(<ComposerInput {...defaultProps} ref={ref} />);
       act(() => ref.current!.focus());
       expect(document.activeElement).toBe(screen.getByRole('combobox'));
     });
@@ -1549,8 +1576,8 @@ describe('ChatInput', () => {
     // against, and the same mistake the Enter rule is being fixed for.
     it('focuses a narrow desktop window, which has no software keyboard', () => {
       device = NARROW_DESKTOP;
-      const ref = createRef<ChatInputHandle>();
-      render(<ChatInput {...defaultProps} ref={ref} />);
+      const ref = createRef<ComposerInputHandle>();
+      render(<ComposerInput {...defaultProps} ref={ref} />);
       screen.getByRole('combobox').blur();
       act(() => ref.current!.focusUnlessTouch());
       expect(document.activeElement).toBe(screen.getByRole('combobox'));
@@ -1558,8 +1585,8 @@ describe('ChatInput', () => {
 
     it('focuses a tablet with a trackpad', () => {
       device = TABLET_WITH_TRACKPAD;
-      const ref = createRef<ChatInputHandle>();
-      render(<ChatInput {...defaultProps} ref={ref} />);
+      const ref = createRef<ComposerInputHandle>();
+      render(<ComposerInput {...defaultProps} ref={ref} />);
       screen.getByRole('combobox').blur();
       act(() => ref.current!.focusUnlessTouch());
       expect(document.activeElement).toBe(screen.getByRole('combobox'));
@@ -1606,14 +1633,19 @@ describe('ChatInput', () => {
     // still read "Editing message". Desktop Escape rescued it; a phone has no
     // Escape key, so the only exit was the row's X, which deletes the message.
     it('offers an explicit cancel instead of no button at all', () => {
-      render(<ChatInput {...defaultProps} editingQueueItem={true} value="" />);
+      render(<ComposerInput {...defaultProps} editingQueueItem={true} value="" />);
       expect(screen.getByLabelText('Cancel edit')).toBeDefined();
     });
 
     it('calls onCancelEdit when the cancel button is clicked', () => {
       const onCancelEdit = vi.fn();
       render(
-        <ChatInput {...defaultProps} editingQueueItem={true} value="" onCancelEdit={onCancelEdit} />
+        <ComposerInput
+          {...defaultProps}
+          editingQueueItem={true}
+          value=""
+          onCancelEdit={onCancelEdit}
+        />
       );
       fireEvent.click(screen.getByLabelText('Cancel edit'));
       expect(onCancelEdit).toHaveBeenCalledOnce();
@@ -1623,7 +1655,7 @@ describe('ChatInput', () => {
       device = PHONE;
       const onCancelEdit = vi.fn();
       render(
-        <ChatInput
+        <ComposerInput
           {...defaultProps}
           editingQueueItem={true}
           value="   "
@@ -1635,7 +1667,7 @@ describe('ChatInput', () => {
     });
 
     it('goes back to Save edit as soon as there is text again', () => {
-      render(<ChatInput {...defaultProps} editingQueueItem={true} value="rewritten" />);
+      render(<ComposerInput {...defaultProps} editingQueueItem={true} value="rewritten" />);
       expect(screen.getByLabelText('Save edit')).toBeDefined();
       expect(screen.queryByLabelText('Cancel edit')).toBeNull();
     });
@@ -1644,7 +1676,7 @@ describe('ChatInput', () => {
   describe('attachment upload in flight', () => {
     it('shows the upload rather than a Stop with no turn to stop', () => {
       render(
-        <ChatInput
+        <ComposerInput
           {...defaultProps}
           value="here you go"
           isUploading={true}
@@ -1658,7 +1690,12 @@ describe('ChatInput', () => {
     it('does not submit on Enter — the send is already happening', () => {
       const onSubmit = vi.fn();
       render(
-        <ChatInput {...defaultProps} value="here you go" isUploading={true} onSubmit={onSubmit} />
+        <ComposerInput
+          {...defaultProps}
+          value="here you go"
+          isUploading={true}
+          onSubmit={onSubmit}
+        />
       );
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
       expect(onSubmit).not.toHaveBeenCalled();
@@ -1666,7 +1703,7 @@ describe('ChatInput', () => {
 
     it('still lets a real streaming turn be stopped', () => {
       render(
-        <ChatInput
+        <ComposerInput
           {...defaultProps}
           value=""
           isStreaming={true}
@@ -1681,7 +1718,7 @@ describe('ChatInput', () => {
       it('makes the progress spinner the control that cancels', () => {
         const onCancelUpload = vi.fn();
         render(
-          <ChatInput
+          <ComposerInput
             {...defaultProps}
             value="here you go"
             isUploading={true}
@@ -1698,7 +1735,7 @@ describe('ChatInput', () => {
         const onCancelUpload = vi.fn();
         const onClear = vi.fn();
         render(
-          <ChatInput
+          <ComposerInput
             {...defaultProps}
             value="here you go"
             isUploading={true}
@@ -1718,7 +1755,7 @@ describe('ChatInput', () => {
       // screen and total for anyone who is not.
       it('still announces the upload through a live region', () => {
         render(
-          <ChatInput
+          <ComposerInput
             {...defaultProps}
             value="here you go"
             isUploading={true}
@@ -1734,7 +1771,7 @@ describe('ChatInput', () => {
     // all. The inert spinner it used to get was the wedge in miniature: a
     // control-shaped thing with nothing behind it.
     it('shows no upload control when the host offers no cancel', () => {
-      render(<ChatInput {...defaultProps} value="here you go" isUploading={true} />);
+      render(<ComposerInput {...defaultProps} value="here you go" isUploading={true} />);
       expect(screen.queryByRole('button', { name: /upload/i })).toBeNull();
       expect(screen.queryByRole('status')).toBeNull();
       expect(screen.getByLabelText('Send message')).toBeVisible();
@@ -1748,7 +1785,7 @@ describe('ChatInput', () => {
     it('does not submit again on Enter', () => {
       const onSubmit = vi.fn();
       render(
-        <ChatInput
+        <ComposerInput
           {...defaultProps}
           value="/compact the api bits"
           commandPending
@@ -1762,7 +1799,7 @@ describe('ChatInput', () => {
     it('does not queue again on Enter mid-stream', () => {
       const onQueue = vi.fn();
       render(
-        <ChatInput
+        <ComposerInput
           {...defaultProps}
           value="/compact the api bits"
           isStreaming
@@ -1776,7 +1813,7 @@ describe('ChatInput', () => {
 
     it('shows the dispatch instead of a control that would re-fire it', () => {
       render(
-        <ChatInput {...defaultProps} value="/compact the api bits" isStreaming commandPending />
+        <ComposerInput {...defaultProps} value="/compact the api bits" isStreaming commandPending />
       );
       const status = screen.getByRole('status');
       expect(status).toHaveTextContent('Running command');
@@ -1786,7 +1823,7 @@ describe('ChatInput', () => {
 
     it('leaves the dedicated Stop reachable — a running turn is still stoppable', () => {
       render(
-        <ChatInput
+        <ComposerInput
           {...defaultProps}
           value="/compact the api bits"
           isStreaming
@@ -1801,7 +1838,7 @@ describe('ChatInput', () => {
   describe('canSubmitReason', () => {
     it('says why the send is unavailable instead of failing silently', () => {
       render(
-        <ChatInput
+        <ComposerInput
           {...defaultProps}
           value="build me a blog"
           canSubmit={false}
@@ -1813,14 +1850,18 @@ describe('ChatInput', () => {
 
     it('says nothing once the send target is ready', () => {
       render(
-        <ChatInput {...defaultProps} value="hello" canSubmitReason="Getting your agent ready…" />
+        <ComposerInput
+          {...defaultProps}
+          value="hello"
+          canSubmitReason="Getting your agent ready…"
+        />
       );
       expect(screen.queryByText('Getting your agent ready…')).toBeNull();
     });
 
     it('defers to the busy banner rather than stacking two explanations', () => {
       render(
-        <ChatInput
+        <ComposerInput
           {...defaultProps}
           value="hello"
           sessionBusy={true}

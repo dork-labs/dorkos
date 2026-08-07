@@ -22,11 +22,11 @@ import { Button } from '@/layers/shared/ui';
 import {
   MessageItem,
   TypingDots,
-  ChatInput,
   FirstLight,
   resolveMessageAuthor,
   type MessageAuthorAgent,
 } from '@/layers/features/chat';
+import { Composer } from '@/layers/features/composer';
 import { PersonalityPicker } from '@/layers/features/agent-hub';
 import { useDefaultAgentSession } from '@/layers/entities/config';
 import { useUpdateAgent } from '@/layers/entities/agent';
@@ -372,7 +372,7 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
         <div ref={bottomRef} />
       </div>
 
-      {/* Composer: a disabled stand-in until Beat 3, then the real ChatInput. */}
+      {/* Composer: a disabled stand-in until Beat 3, then the real Composer.Input. */}
       <div className="shrink-0 px-2 pb-3">
         {convo.composerEnabled ? (
           <>
@@ -391,7 +391,7 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
                 </Button>
               ))}
             </div>
-            <ChatInput
+            <Composer.Input
               value={composerValue}
               onChange={setComposerValue}
               onSubmit={handleSubmitFirstMessage}

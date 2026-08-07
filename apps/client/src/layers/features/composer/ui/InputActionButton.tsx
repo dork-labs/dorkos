@@ -41,7 +41,7 @@ interface InputActionButtonProps {
    * One prop rather than an `isUploading` flag beside it, because the pair
    * could express a state this composer must never reach: an upload on screen
    * with nothing to press. A host with no cancel to offer simply does not show
-   * the upload here (see `ChatInput`).
+   * the upload here (see `ComposerInput`).
    */
   onCancelUpload?: () => void;
 }

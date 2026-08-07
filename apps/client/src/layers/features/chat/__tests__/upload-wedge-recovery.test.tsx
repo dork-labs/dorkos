@@ -4,8 +4,8 @@
  *
  * The subject is the whole composer, not the upload hook: the wedge only exists
  * once `isUploading` reaches the action button and the Enter rule, so the real
- * `useFileUpload`, the real `ChatInput`/`InputActionButton` and the real
- * `FileChipBar` are all mounted here. Only the network is faked.
+ * `useFileUpload`, the real `Composer.Input`/`InputActionButton` and the real
+ * `Composer.Attachments` are all mounted here. Only the network is faked.
  *
  * What the fake stands in for is a contract proven separately: the HTTP
  * transport rejects an aborted upload with `UPLOAD_CANCELED_MESSAGE` and a

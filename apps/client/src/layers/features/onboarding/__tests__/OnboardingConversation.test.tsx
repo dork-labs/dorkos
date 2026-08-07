@@ -105,29 +105,34 @@ vi.mock('@/layers/features/chat', () => ({
   resolveMessageAuthor: () => ({ kind: 'agent', id: 'dorkbot', displayName: 'DorkBot' }),
   TypingDots: () => <div data-testid="typing" />,
   FirstLight: () => <div data-testid="first-light" />,
-  ChatInput: ({
-    value,
-    onChange,
-    onSubmit,
-    placeholder,
-  }: {
-    value: string;
-    onChange: (v: string) => void;
-    onSubmit: () => void;
-    placeholder?: string;
-  }) => (
-    <div>
-      <input
-        data-testid="composer"
-        aria-label={placeholder}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      />
-      <button data-testid="send" onClick={onSubmit}>
-        send
-      </button>
-    </div>
-  ),
+}));
+
+vi.mock('@/layers/features/composer', () => ({
+  Composer: {
+    Input: ({
+      value,
+      onChange,
+      onSubmit,
+      placeholder,
+    }: {
+      value: string;
+      onChange: (v: string) => void;
+      onSubmit: () => void;
+      placeholder?: string;
+    }) => (
+      <div>
+        <input
+          data-testid="composer"
+          aria-label={placeholder}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+        />
+        <button data-testid="send" onClick={onSubmit}>
+          send
+        </button>
+      </div>
+    ),
+  },
 }));
 
 vi.mock('@/layers/features/agent-hub', () => ({

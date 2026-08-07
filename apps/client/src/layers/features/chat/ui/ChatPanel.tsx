@@ -24,7 +24,7 @@ import { useAppStore, useAgentBirthRecord, useSlotContributions } from '@/layers
 import { playNotificationSound } from '@/layers/shared/lib';
 import { resolveTransportRetryText } from '../lib/resolve-retry-text';
 import type { MessageListHandle } from './MessageList';
-import type { ChatInputHandle } from './input/ChatInput';
+import type { ComposerInputHandle } from '@/layers/features/composer';
 import { ChatMessageArea } from './ChatMessageArea';
 import { BirthCertificate } from './BirthCertificate';
 import { ChatInputContainer } from './input/ChatInputContainer';
@@ -68,7 +68,7 @@ export function ChatPanel({
   const [, setSessionId] = useSessionId();
   const queryClient = useQueryClient();
   const messageListRef = useRef<MessageListHandle>(null);
-  const chatInputRef = useRef<ChatInputHandle>(null);
+  const chatInputRef = useRef<ComposerInputHandle>(null);
   const taskState = useTaskState(sessionId);
   const celebrations = useCelebrations();
   const enableNotificationSound = useAppStore((s) => s.enableNotificationSound);

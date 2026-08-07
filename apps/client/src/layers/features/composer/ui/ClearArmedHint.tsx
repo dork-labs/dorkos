@@ -15,7 +15,7 @@ import { motion, useReducedMotion } from 'motion/react';
  * was listening to, several times a minute. That is only defensible because the
  * labelled "Clear message" button is the equal alternative, so the composer
  * refuses to raise the arm at all where that button is missing or disabled
- * (`clearReachable` in `ChatInput.tsx`) — otherwise this would hand sighted
+ * (`clearReachable` in `ComposerInput.tsx`) — otherwise this would hand sighted
  * people a destructive shortcut and nobody else.
  *
  * Rendered by `ChatInputContainer` into the overlay lane it shares with the

@@ -86,6 +86,18 @@ function renderComposer(transport: Transport, room: RoomWithRoster = roomWith())
   return screen.getByRole('combobox') as HTMLTextAreaElement;
 }
 
+/**
+ * The composer's outermost element — its card.
+ *
+ * Found by walking down from the mount rather than by querying a class, so the
+ * chrome assertions below are not handed the very thing they are checking.
+ * Testing Library renders into a bare `<div>` appended to `<body>`, and the
+ * composer is that div's only child.
+ */
+function composerCard(): HTMLElement {
+  return document.body.firstElementChild!.firstElementChild as HTMLElement;
+}
+
 /** A post that is still in the air — the state every mid-flight test asserts in. */
 function neverSettles(): Promise<PostToRoomResponse> {
   return new Promise<PostToRoomResponse>(() => {});
@@ -328,7 +340,7 @@ describe('RoomComposer — clearing a draft you can see coming', () => {
   });
 
   it('offers the labelled button the readout is only defensible beside', () => {
-    // The hint is hidden from assistive tech, so `ChatInput` refuses to raise
+    // The hint is hidden from assistive tech, so `Composer.Input` refuses to raise
     // it at all unless a labelled equivalent is reachable — otherwise it hands
     // sighted people a destructive shortcut and nobody else.
     const field = renderComposer(createMockTransport());
@@ -346,5 +358,75 @@ describe('RoomComposer — clearing a draft you can see coming', () => {
     fireEvent.keyDown(field, { key: 'Escape' });
 
     expect(screen.queryByTestId('clear-armed-hint')).not.toBeInTheDocument();
+  });
+});
+
+describe('RoomComposer — the card it now sits in', () => {
+  // The one deliberate visual change in the composer-parity spec, stated
+  // positively rather than as a deleted assertion. The serialized before/after
+  // proof lives in `RoomComposer-chrome-delta.test.tsx`; this block is the
+  // same delta in words, beside the behavior it must not disturb.
+
+  it('is the floating card chat sits in, not a strip ruled off by a border', () => {
+    renderComposer(createMockTransport());
+    const classes = composerCard().className.split(/\s+/);
+
+    expect(classes).toEqual(
+      expect.arrayContaining(['bg-surface', 'rounded-xl', 'border', 'p-2', 'm-2', 'relative'])
+    );
+    // The room's own chrome is deleted, not merged: `border-t` drew the rule
+    // the card replaces, and `p-3` was the padding the lane used to inset for.
+    expect(classes).not.toContain('border-t');
+    expect(classes).not.toContain('p-3');
+  });
+
+  it('aligns its overlay lane to the card, now that the card supplies the inset', () => {
+    renderComposer(createMockTransport());
+    const lane = composerCard().querySelector('.bottom-full')!;
+
+    expect(lane.className.split(/\s+/).sort()).toEqual([
+      'absolute',
+      'bottom-full',
+      'left-0',
+      'mb-2',
+      'right-0',
+    ]);
+  });
+
+  it('takes no files: adopting the shared card did not hand rooms an upload path', () => {
+    // Attach is reserved for DOR-947, and `Composer.Root` mounts a dropzone
+    // only for a surface that passes `onFilesDropped`. Rooms pass none, so
+    // there is no hidden file input, no paperclip, and no drop target — a
+    // negative worth asserting because acquiring one silently would be the
+    // easiest way for this migration to ship a half-built feature.
+    renderComposer(createMockTransport());
+    const card = composerCard();
+
+    expect(card.querySelector('input[type="file"]')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Attach file' })).toBeNull();
+    expect(card.getAttribute('role')).toBeNull();
+    expect(card.querySelector('[role="presentation"]')).toBeNull();
+  });
+
+  it('keeps the mention picker above the clear-armed hint in the lane', () => {
+    // Both can be on screen at once: a bare Escape arms the clear, and typing
+    // `@` inside the arming window opens the picker over a still-armed draft.
+    // Source order is the lane's whole stacking rule, so the hint must stay
+    // last — otherwise the pill lands across the picker a reader is choosing
+    // from.
+    const field = renderComposer(createMockTransport());
+
+    type(field, 'hey');
+    fireEvent.keyDown(field, { key: 'Escape' });
+    type(field, 'hey @');
+    fireEvent.select(field, { target: { selectionStart: 5 } });
+
+    const lane = composerCard().querySelector('.bottom-full')!;
+    const picker = screen.getByRole('listbox');
+    const hint = screen.getByTestId('clear-armed-hint');
+
+    expect(lane.contains(picker)).toBe(true);
+    expect(lane.contains(hint)).toBe(true);
+    expect(picker.compareDocumentPosition(hint) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });

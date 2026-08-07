@@ -1,0 +1,68 @@
+{
+  "kind": "element",
+  "tag": "div",
+  "classes": [],
+  "attrs": {},
+  "children": [
+    {
+      "kind": "element",
+      "tag": "div",
+      "classes": [
+        "bg-surface",
+        "border",
+        "chat-input-container",
+        "m-2",
+        "p-2",
+        "relative",
+        "rounded-xl"
+      ],
+      "attrs": {
+        "role": "presentation"
+      },
+      "children": [
+        {
+          "kind": "element",
+          "tag": "input",
+          "classes": [],
+          "attrs": {
+            "multiple": "",
+            "style": "border: 0px; clip: rect(0px, 0px, 0px, 0px); clip-path: inset(50%); height: 1px; margin: 0px -1px -1px 0px; overflow: hidden; padding: 0px; position: absolute; width: 1px; white-space: nowrap",
+            "tabindex": "-1",
+            "type": "file"
+          },
+          "children": []
+        },
+        {
+          "kind": "element",
+          "tag": "div",
+          "classes": [],
+          "attrs": {},
+          "children": [
+            {
+              "kind": "element",
+              "tag": "div",
+              "classes": [],
+              "attrs": {},
+              "children": [
+                {
+                  "kind": "element",
+                  "tag": "div",
+                  "classes": [],
+                  "attrs": {
+                    "data-testid": "tool-approval"
+                  },
+                  "children": [
+                    {
+                      "kind": "text",
+                      "text": "tc-parity"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

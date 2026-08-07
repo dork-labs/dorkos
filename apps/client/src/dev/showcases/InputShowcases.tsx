@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import { ChatInput } from '@/layers/features/chat/ui/input/ChatInput';
-import { FileChipBar } from '@/layers/features/chat/ui/input/FileChipBar';
+import { Composer } from '@/layers/features/composer';
 import { QueuePanel } from '@/layers/features/chat/ui/input/QueuePanel';
 import { PromptSuggestionChips } from '@/layers/features/chat/ui/input/PromptSuggestionChips';
 import { QuestionPrompt } from '@/layers/features/chat/ui/tools/QuestionPrompt';
@@ -81,7 +80,7 @@ const MULTI_SELECT_QUESTION: QuestionItem[] = [
   },
 ];
 
-function ChatInputDemo({
+function ComposerInputDemo({
   label,
   initialValue = '',
   isStreaming = false,
@@ -98,7 +97,7 @@ function ChatInputDemo({
       <ShowcaseLabel>{label}</ShowcaseLabel>
       <ShowcaseDemo responsive>
         <div className="border-border rounded-xl border">
-          <ChatInput
+          <Composer.Input
             value={value}
             onChange={setValue}
             onSubmit={() => {}}
@@ -111,6 +110,45 @@ function ChatInputDemo({
             onClear={() => setValue('')}
           />
         </div>
+      </ShowcaseDemo>
+    </div>
+  );
+}
+
+/**
+ * The card, with and without attach wiring.
+ *
+ * The two demos differ by exactly one prop, which is the whole point:
+ * `onFilesDropped` IS the attach declaration. Given it, the card mounts a
+ * dropzone, a hidden file input, and the "Drop files to attach" overlay;
+ * omitted, none of that exists — which is why a room composer listens for no
+ * drags at all.
+ */
+function ComposerRootDemo({ label, onFilesDropped }: { label: string; onFilesDropped?: true }) {
+  const [value, setValue] = useState('');
+  const [dropped, setDropped] = useState<string[]>([]);
+
+  return (
+    <div>
+      <ShowcaseLabel>{label}</ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <Composer.Root
+          onFilesDropped={
+            onFilesDropped ? (files) => setDropped(files.map((file) => file.name)) : undefined
+          }
+        >
+          <Composer.Input
+            value={value}
+            onChange={setValue}
+            onSubmit={() => {}}
+            isStreaming={false}
+            onClear={() => setValue('')}
+            placeholder={onFilesDropped ? 'Drop a file on this card…' : 'Message DorkBot…'}
+          />
+        </Composer.Root>
+        {dropped.length > 0 && (
+          <p className="text-muted-foreground px-2 text-xs">Dropped: {dropped.join(', ')}</p>
+        )}
       </ShowcaseDemo>
     </div>
   );
@@ -138,7 +176,7 @@ function PaletteAnchor({
   );
 }
 
-/** Input-related component showcases: ChatInput, FileChipBar, QueuePanel, CommandPalette, FilePalette, PromptSuggestionChips, QuestionPrompt. */
+/** Input-related component showcases: Composer.Input, Composer.Attachments, QueuePanel, CommandPalette, FilePalette, PromptSuggestionChips, QuestionPrompt. */
 export function InputShowcases() {
   const [files, setFiles] = useState(SAMPLE_FILES);
   const [cmdIndex, setCmdIndex] = useState(0);
@@ -146,19 +184,30 @@ export function InputShowcases() {
 
   return (
     <>
-      <PlaygroundSection title="ChatInput" description="Chat text input in different states.">
-        <ChatInputDemo label="Idle" />
-        <ChatInputDemo label="With text" initialValue="Can you help me refactor the auth module?" />
-        <ChatInputDemo label="Streaming (stop button)" isStreaming />
-        <ChatInputDemo label="Streaming with queue" isStreaming queueDepth={2} />
+      <PlaygroundSection
+        title="Composer.Root"
+        description="The card chrome every composer sits in — chat, rooms, and the dashboard. A surface accepts files because it wired onFilesDropped, and for no other reason: drag one onto the second card and the drop overlay appears, drag it onto the first and nothing is listening."
+      >
+        <ComposerRootDemo label="Card only — no attach wiring (rooms today)" />
+        <ComposerRootDemo label="Card with attach wiring (chat)" onFilesDropped />
+      </PlaygroundSection>
+
+      <PlaygroundSection title="Composer.Input" description="Chat text input in different states.">
+        <ComposerInputDemo label="Idle" />
+        <ComposerInputDemo
+          label="With text"
+          initialValue="Can you help me refactor the auth module?"
+        />
+        <ComposerInputDemo label="Streaming (stop button)" isStreaming />
+        <ComposerInputDemo label="Streaming with queue" isStreaming queueDepth={2} />
       </PlaygroundSection>
 
       <PlaygroundSection
-        title="FileChipBar"
+        title="Composer.Attachments"
         description="File chips in various upload states. A failed upload states its reason and offers a retry."
       >
         <ShowcaseDemo>
-          <FileChipBar
+          <Composer.Attachments
             files={files}
             onRemove={(id) => setFiles((prev) => prev.filter((f) => f.id !== id))}
             onRetry={(id) =>
