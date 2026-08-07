@@ -1,12 +1,21 @@
 // @vitest-environment jsdom
 /**
- * Chat's composer, serialized — the pre-migration record.
+ * Chat's composer, serialized — proof the migration moved no markup.
  *
  * Chat is the REFERENCE chrome for the composer family, so its markup is the
- * one thing the migration is not allowed to touch. These baselines were
- * captured from the unmigrated `ChatInputContainer`; after the move to
- * `Composer.Root` / `Composer.OverlayLane` the same five states must serialize
- * to the same trees, with an EMPTY diff (spec `composer-parity`, task 2.4).
+ * one thing the migration is not allowed to touch. The baselines in
+ * `__baselines__/` were captured from the UNMIGRATED `ChatInputContainer` and
+ * committed before the move (`247ac851a`); this file now renders the MIGRATED
+ * container — composing `Composer.Root` and `Composer.OverlayLane` — against
+ * them, and every one of the five states diffs EMPTY (spec `composer-parity`,
+ * task 2.4).
+ *
+ * That is the whole evidentiary weight of this file, and it rests on the
+ * baselines predating the change. Do NOT re-record them: `matchDomBaseline`
+ * refuses to invent a missing baseline for the same reason, and a baseline
+ * recorded after the migration would only assert that the new code equals
+ * itself. If a diff appears here, the migration moved something — fix the
+ * component, not the baseline.
  *
  * What is real here matters as much as what is stubbed. `ChatInput`,
  * `FileChipBar`, `QueuePanel`, `ClearArmedHint` and `react-dropzone` all run for
@@ -78,7 +87,7 @@ import { ChatInputContainer } from '../ui/input/ChatInputContainer';
 import { useSessionStreamStore } from '@/layers/entities/session';
 import { TransportProvider } from '@/layers/shared/model';
 import type { ToolCallState } from '../model/chat-types';
-import type { PendingFile } from '../model/use-file-upload';
+import type { PendingFile } from '@/layers/features/composer';
 
 const SESSION_ID = 'parity-session';
 
@@ -172,7 +181,7 @@ afterEach(() => {
   useSessionStreamStore.getState().clearQueue(SESSION_ID);
 });
 
-describe('ChatInputContainer — serialized-DOM parity (pre-migration baselines)', () => {
+describe('ChatInputContainer — serialized-DOM parity against the pre-migration baselines', () => {
   it('1. idle — nothing pending, nothing queued, nothing streaming', () => {
     const { container } = mount(baseProps());
 

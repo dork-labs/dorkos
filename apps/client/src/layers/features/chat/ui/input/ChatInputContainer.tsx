@@ -31,13 +31,6 @@ import { useRotatingPlaceholder } from '../../model/use-rotating-placeholder';
 import { AnimatedPlaceholder } from './AnimatedPlaceholder';
 import placeholderHints from '../../config/placeholder-hints.json';
 import type { useInputAutocomplete } from '../../model/use-input-autocomplete';
-// TRANSITIONAL (DOR-946 task 2.1 -> 2.3). The hook now lives in the composer
-// slice, where `Composer.Root` is its real consumer. This container still calls
-// it directly because its migration onto `Composer.Root` is task 2.3, which
-// must land after the DOM-parity baselines are captured against the current
-// markup. This import — a non-barrel reach into a sibling feature — disappears
-// in that task, along with every other dropzone line in this file.
-import { useDragAndPaste } from '@/layers/features/composer/ui/use-drag-and-paste';
 import { sessionContextKey } from '../../lib/session-context-key';
 
 interface ChatInputContainerProps {
@@ -182,10 +175,6 @@ export function ChatInputContainer({
     enabled: isIdle && input === '',
   });
 
-  const { getRootProps, getInputProps, isDragActive, handlePaste } = useDragAndPaste({
-    onFilesSelected,
-  });
-
   // The composer owns WHEN the double-Escape is armed (it owns the keyboard);
   // this component owns WHERE that reads out, because the lane it belongs in
   // floats above the queue panel and the attachment chips, which are rendered
@@ -209,30 +198,15 @@ export function ChatInputContainer({
   }, [autocomplete, chatQueue]);
 
   return (
-    <div
-      {...getRootProps()}
-      onPaste={handlePaste}
-      className="chat-input-container bg-surface relative m-2 rounded-xl border p-2"
-    >
-      <input {...getInputProps()} />
-
+    // `chat-input-container` is not decoration: it is the hook for the
+    // safe-area rule in `index.css`, and it rides on the card element itself.
+    // Root never bakes it in — chat passes it, because chat is the only surface
+    // that sits against the bottom of a notched screen.
+    <Composer.Root className="chat-input-container" onFilesDropped={onFilesSelected}>
+      {/* Chat-only, so it arrives as a child rather than living in Root. */}
       <AnimatePresence>
         {isStreaming && (
           <ScanLine color={agentVisual.color} isTextStreaming={isTextStreaming} edge="top" />
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {isDragActive && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
-            className="bg-primary/10 border-primary absolute inset-0 z-10 flex items-center justify-center rounded-xl border-2 border-dashed"
-          >
-            <p className="text-primary text-sm font-medium">Drop files to attach</p>
-          </motion.div>
         )}
       </AnimatePresence>
 
@@ -267,10 +241,9 @@ export function ChatInputContainer({
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
           >
-            {/* The composer's overlay lane: everything transient that floats
-                above the card, stacked bottom-up so nothing lands on the queue
-                rows' controls. */}
-            <div className="absolute right-0 bottom-full left-0 mb-2">
+            {/* Stacking is child order: palettes first, the armed-clear hint
+                last, so the hint never lands on the queue rows' controls. */}
+            <Composer.OverlayLane>
               <AnimatePresence>
                 {autocomplete.commands.show && (
                   <CommandPalette
@@ -288,7 +261,7 @@ export function ChatInputContainer({
                 )}
               </AnimatePresence>
               {clearArmed && <Composer.ClearArmedHint />}
-            </div>
+            </Composer.OverlayLane>
 
             {pendingFiles.length > 0 && (
               <Composer.Attachments
@@ -406,6 +379,6 @@ export function ChatInputContainer({
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </Composer.Root>
   );
 }

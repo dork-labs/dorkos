@@ -11,6 +11,17 @@ vi.mock('@/layers/features/composer', async (importActual) => {
   const actual = await importActual<typeof import('@/layers/features/composer')>();
   return {
     Composer: {
+      // Root is a pass-through: this file asserts what the container puts
+      // INSIDE the card, never the card's own chrome, and a real Root would
+      // mount react-dropzone's document listeners for no assertion's benefit.
+      // A stub that dropped `children` would render an empty composer, so it
+      // forwards them.
+      Root: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+      // OverlayLane stays REAL. The armed-clear test below finds the lane by
+      // its own positioning classes and asserts the hint is inside it — against
+      // a stub it would be asserting on a copy of the lane, which proves
+      // nothing about where the hint actually lands.
+      OverlayLane: actual.Composer.OverlayLane,
       Input: vi.fn(() => <div data-testid="chat-input">Composer.Input</div>),
       Attachments: vi.fn(() => <div data-testid="file-chips">Composer.Attachments</div>),
       ClearArmedHint: actual.Composer.ClearArmedHint,
