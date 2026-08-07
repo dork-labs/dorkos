@@ -32,18 +32,9 @@ const PART: Extract<MessagePart, { type: 'mcp_signin' }> = {
   disclosure: 'DorkOS keeps the resulting token encrypted on this computer.',
 };
 
-/**
- * A `connected` poll body, optionally carrying a tool count.
- *
- * `toolCount` is not on `McpSigninPollResult` yet — it is being added on the
- * server side separately, which is exactly why the flow reads it defensively.
- * The cast is how this test sends the body a running server may already send.
- */
+/** A `connected` poll body, optionally carrying the tool count DOR-1003 added. */
 function connectedPoll(toolCount?: number): McpSigninPollResult {
-  return {
-    status: 'connected',
-    ...(toolCount === undefined ? {} : { toolCount }),
-  } as McpSigninPollResult;
+  return { status: 'connected', ...(toolCount === undefined ? {} : { toolCount }) };
 }
 
 /** Make the poll answer `pending` first and `connected` after. */

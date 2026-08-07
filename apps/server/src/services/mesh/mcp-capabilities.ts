@@ -528,18 +528,26 @@ export const mcpDomain: CapabilityDomain = {
       // rewrites `message` accordingly; every sessionless surface never reaches
       // that code and keeps the full link-carrying markdown below.
       inSessionCard: 'signin',
-      invoke: async (deps, input) => {
+      invoke: async (deps, input, context) => {
         const { service } = requireMcpDeps(deps);
         const oauth = requireOAuth(deps);
         const serverUrl = await resolveOAuthServerUrl(service, input.agentId, input.name);
         const disclosure = mcpOAuthCustodyDisclosure(input.name);
         let started;
         try {
-          started = await oauth.startSignin({
-            agentId: input.agentId,
-            serverName: input.name,
-            serverUrl,
-          });
+          started = await oauth.startSignin(
+            {
+              agentId: input.agentId,
+              serverName: input.name,
+              serverUrl,
+            },
+            // The invoking session, and the whole reason the agent can be brought
+            // back on its own once the token lands (DOR-1004). Set ONLY on the
+            // in-session surface — the external `/mcp` server and HTTP leave it
+            // absent by construction (`CapabilityInvocationContext.sessionId`), so
+            // a sessionless sign-in records no session and resumes nothing.
+            context.sessionId ? { originSessionId: context.sessionId } : {}
+          );
         } catch (err) {
           throw new CapabilityToolError({
             error: err instanceof Error ? err.message : 'Could not start the sign-in.',

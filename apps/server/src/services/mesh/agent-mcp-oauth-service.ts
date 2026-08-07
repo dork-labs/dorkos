@@ -55,6 +55,7 @@ import {
   type McpTargetProbe,
   type McpTargetProbeResult,
 } from './agent-mcp-target-probe.js';
+import type { McpSigninConnectedPort } from './mcp-signin-resume.js';
 
 /** The dedicated encrypted store id for managed-MCP OAuth material (tokens + DCR client info). */
 const MCP_OAUTH_STORE_ID = 'mcp-oauth';
@@ -98,6 +99,18 @@ export interface AgentMcpOAuthServiceDeps {
    * its pre-DOR-1003 behaviour and simply has no opinion on either.
    */
   probe?: McpTargetProbe;
+  /**
+   * Called when a sign-in that BEGAN INSIDE A SESSION connects (DOR-1004), so the
+   * agent that asked for it can be brought back the moment the token lands.
+   *
+   * A port, not a direct call, because this engine has no business knowing what
+   * a session is — and because fire-once then costs nothing to guarantee: the
+   * flow reaches `connected` exactly once, under this target's own lock, so the
+   * port is called exactly once too. Absent → nothing is resumed, which is the
+   * right behaviour for every sessionless start and for tests that only care
+   * about the token exchange.
+   */
+  onSigninConnected?: McpSigninConnectedPort;
 }
 
 /** The result `mcp.signin` needs: a sign-in link, or a note that the server is already connected. */
@@ -152,8 +165,11 @@ export class AgentMcpOAuthService {
   private readonly logger: Pick<Logger, 'warn'>;
   private readonly probe: McpTargetProbe | undefined;
 
+  private readonly onSigninConnected: McpSigninConnectedPort | undefined;
+
   constructor(deps: AgentMcpOAuthServiceDeps) {
     this.probe = deps.probe;
+    this.onSigninConnected = deps.onSigninConnected;
     this.secrets = new McpOAuthSecretStore(
       new ExtensionSecretStore(MCP_OAUTH_STORE_ID, deps.dorkHome)
     );
@@ -199,10 +215,16 @@ export class AgentMcpOAuthService {
    * @param target - The agent, server, and server URL to authorize.
    * @throws {Error} When `auth()` neither authorizes nor yields an authorize URL.
    */
-  async startSignin(target: McpOAuthTarget): Promise<StartSigninResult> {
+  async startSignin(
+    target: McpOAuthTarget,
+    options?: { originSessionId?: string }
+  ): Promise<StartSigninResult> {
     return this.refresher.exclusive(targetKey(target), async () => {
       const state = randomBytes(16).toString('hex');
-      this.flows.start(state, target);
+      this.flows.start(state, {
+        ...target,
+        ...(options?.originSessionId ? { originSessionId: options.originSessionId } : {}),
+      });
       try {
         const connected = await this.authorize(target, state);
         if (connected) return connected;
@@ -349,6 +371,7 @@ export class AgentMcpOAuthService {
           return { connected: false, error: message, serverName };
         }
         this.flows.markConnected(state);
+        await this.announceConnected(state, target);
         return { connected: true, serverName };
       } catch (err) {
         // Keep the raw detail in the server log; hand the browser + poll a generic
@@ -362,6 +385,48 @@ export class AgentMcpOAuthService {
         return { connected: false, error: message, serverName };
       }
     });
+  }
+
+  /**
+   * Tell the session that asked for this sign-in that it landed (DOR-1004).
+   *
+   * Runs INSIDE the target's lock, immediately after the flow transitions to
+   * `connected` — which happens exactly once per flow, so this fires exactly
+   * once too, with no de-duplication to get wrong. A sessionless start recorded
+   * no session and is skipped: the settings panel, the external `/mcp` server and
+   * HTTP have no conversation to bring back.
+   *
+   * The tool count is gathered here, from the same probe `pollSignin` uses, so
+   * the resumed agent's payload can say what the person actually unlocked. It is
+   * a bonus and never a gate: a probe that fails leaves the count absent and the
+   * resume goes ahead, because the sign-in DID succeed and withholding the resume
+   * over a second round trip would be the more damaging lie.
+   *
+   * Never allowed to throw. The caller is a loopback callback the person's
+   * browser is waiting on, and their "you can close this tab" page must not turn
+   * into an error because a turn could not be started.
+   */
+  private async announceConnected(state: string, target: McpOAuthTarget): Promise<void> {
+    const port = this.onSigninConnected;
+    if (!port) return;
+    const flow = this.flows.target(state);
+    if (!flow?.originSessionId) return;
+    try {
+      const toolCount = toolCountFrom(await probeTarget(this.probe, target, this.logger));
+      port({
+        agentId: target.agentId,
+        serverName: target.serverName,
+        sessionId: flow.originSessionId,
+        flowId: state,
+        ...(toolCount === undefined ? {} : { toolCount }),
+      });
+    } catch (err) {
+      this.logger.warn(
+        `[mcp-oauth] could not announce the sign-in for ${target.serverName}: ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      );
+    }
   }
 
   /**

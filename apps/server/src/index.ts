@@ -85,6 +85,7 @@ import {
 } from './services/runtimes/claude-code/mcp-server-config.js';
 import { AgentMcpServerService } from './services/mesh/agent-mcp-server-service.js';
 import { AgentMcpOAuthService } from './services/mesh/agent-mcp-oauth-service.js';
+import { resumeAfterMcpSignin } from './services/mesh/mcp-signin-resume.js';
 import { createMcpOAuthRouter } from './routes/mcp-oauth.js';
 import type { McpCapabilityDeps } from './services/mesh/mcp-capabilities.js';
 import { setRelayEnabled, setRelayInitError } from './services/relay/relay-state.js';
@@ -1507,6 +1508,17 @@ async function start() {
       probe: async (target) => {
         if (!agentMcpServerService) return { ok: false };
         return agentMcpServerService.test(target.agentId, target.serverName);
+      },
+      // Bring the agent back the moment a sign-in it asked for lands (DOR-1004).
+      // Only flows that BEGAN inside a session carry one to resume, so a sign-in
+      // started from the settings panel or the external `/mcp` server triggers
+      // nothing. Detached deliberately: the caller is the loopback callback the
+      // operator's browser is waiting on, and their "you can close this tab" page
+      // must not wait on a model — or turn into an error because a turn could not
+      // start. `resumeAfterMcpSignin` never rejects; the `.catch` is belt to that
+      // brace so a future throw cannot become an unhandled rejection.
+      onSigninConnected: (event) => {
+        void resumeAfterMcpSignin(event).catch(() => {});
       },
     });
     agentMcpServerService = new AgentMcpServerService({
