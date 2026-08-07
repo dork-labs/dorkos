@@ -58,6 +58,16 @@ export class LocalAvatarStore implements AvatarStore {
   private readonly dir: string;
 
   /**
+   * The tail of the in-flight mutation chain for each id, while one is running.
+   *
+   * Keyed by id rather than global: two people replacing their own photos have
+   * nothing to serialize, and one slow write should not queue behind another
+   * identity's. Entries are dropped as soon as they are the tail and settle, so
+   * this holds only ids being written to right now.
+   */
+  private readonly mutations = new Map<string, Promise<unknown>>();
+
+  /**
    * Bind the store to one install's data directory.
    *
    * @param dorkHome - The resolved DorkOS data directory. Required, with no
@@ -68,15 +78,55 @@ export class LocalAvatarStore implements AvatarStore {
   }
 
   /**
-   * Write the photo, replacing whatever this identity had — including a photo in
-   * a different format, whose file this removes rather than leaving beside the
-   * new one for the next read to pick between.
+   * Run a write for one id after every write already queued for that id.
+   *
+   * Two uploads for the same person interleaving is not hypothetical — a double
+   * click sends two — and a bare `Promise.all` of two `put`s could rename one
+   * format in while the other's cleanup was still running, leaving two files or,
+   * worse, none. Serializing per id makes the "exactly one photo" invariant the
+   * TSDoc claims actually true rather than merely likely.
+   *
+   * Reads are deliberately NOT queued behind this: they are safe against either
+   * committed state, and blocking a `GET` behind an upload would make a page
+   * wait on somebody else's write.
+   *
+   * @param id - The identity whose files this write touches.
+   * @param work - The write itself.
+   */
+  private mutate<T>(id: string, work: () => Promise<T>): Promise<T> {
+    // `.then(work, work)` rather than `.then(work)`: a failed write must not
+    // strand every write queued behind it.
+    const result = (this.mutations.get(id) ?? Promise.resolve()).then(work, work);
+    const settled = result.then(
+      () => undefined,
+      () => undefined
+    );
+    this.mutations.set(id, settled);
+    void settled.then(() => {
+      if (this.mutations.get(id) === settled) this.mutations.delete(id);
+    });
+    return result;
+  }
+
+  /**
+   * Write the photo, replacing whatever this identity had — including a photo
+   * stored in a different format, whose file this removes rather than leaving
+   * beside the new one.
    *
    * The write lands via a uniquely-named temp file and a rename, so a reader
-   * never sees a half-written photo and two uploads racing cannot stage over
-   * each other. The old format is dropped BEFORE the rename rather than after,
-   * so an interruption leaves one photo or none — never two files whose order
-   * on disk decides which face this person has.
+   * never sees a half-written photo and two uploads cannot stage over each
+   * other. **The new photo is committed BEFORE the old format is dropped**, so
+   * an interruption leaves the person with a photo rather than with none — the
+   * opposite order destroyed the only copy before the replacement existed. It is
+   * safe because the old file is never what a reader falls back to:
+   * {@link LocalAvatarStore.get} walks {@link CONTENT_TYPE_BY_EXTENSION} in Map
+   * insertion order, which is fixed, so a moment where both files exist resolves
+   * deterministically rather than by whatever the directory happens to list
+   * first.
+   *
+   * Overlapping writes for one id are serialized ({@link LocalAvatarStore.mutate}),
+   * so that moment is the only window in which two files coexist, and it closes
+   * before the next write starts.
    *
    * @param id - The identity id.
    * @param bytes - The validated image.
@@ -85,12 +135,14 @@ export class LocalAvatarStore implements AvatarStore {
   async put(id: string, bytes: Buffer, contentType: AvatarContentType): Promise<{ url: string }> {
     const extension = EXTENSIONS[contentType];
     const file = this.fileFor(id, extension);
-    await mkdir(this.dir, { recursive: true });
-    const staged = `${file}.${randomUUID()}.tmp`;
-    await writeFile(staged, bytes);
-    await this.removeExcept(id, extension);
-    await rename(staged, file);
-    return { url: `/api/profile/avatar/${encodeURIComponent(id)}?v=${hashOf(bytes)}` };
+    return this.mutate(id, async () => {
+      await mkdir(this.dir, { recursive: true });
+      const staged = `${file}.${randomUUID()}.tmp`;
+      await writeFile(staged, bytes);
+      await rename(staged, file);
+      await this.removeExcept(id, extension);
+      return { url: `/api/profile/avatar/${encodeURIComponent(id)}?v=${hashOf(bytes)}` };
+    });
   }
 
   /**
@@ -117,11 +169,14 @@ export class LocalAvatarStore implements AvatarStore {
   /**
    * Remove this identity's photo in every format it could be stored as.
    *
+   * Serialized against writes for the same id, so a delete racing an upload
+   * cannot land between that upload's rename and its cleanup.
+   *
    * @param id - The identity id.
    */
   async delete(id: string): Promise<void> {
     assertSafeId(id);
-    await this.removeExcept(id, null);
+    await this.mutate(id, () => this.removeExcept(id, null));
   }
 
   /** Drop every stored format for `id` except `keep` (all of them when `null`). */
@@ -147,9 +202,15 @@ export class LocalAvatarStore implements AvatarStore {
   }
 }
 
-/** Whether an id is one an avatar may be filed under. */
+/**
+ * Whether an id is one an avatar may be filed under.
+ *
+ * `.` and `..` need no special case: {@link SAFE_ID} requires the first
+ * character to be alphanumeric, so both are already refused — and the
+ * `local-avatar-store` tests pin them either way.
+ */
 function isSafeId(id: string): boolean {
-  return SAFE_ID.test(id) && id !== '.' && id !== '..';
+  return SAFE_ID.test(id);
 }
 
 /** Refuse an id that could be read as a path. */

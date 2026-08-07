@@ -106,6 +106,11 @@ export class InvalidAvatarIdError extends Error {
 
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const JPEG_MAGIC = Buffer.from([0xff, 0xd8, 0xff]);
+/** The two halves of a WebP's RIFF header, as bytes. `RIFF` … `WEBP`. */
+const RIFF_MAGIC = Buffer.from('RIFF', 'latin1');
+const WEBP_MAGIC = Buffer.from('WEBP', 'latin1');
+/** Where the second half sits: after the four-byte tag and the four-byte length. */
+const WEBP_FORM_OFFSET = 8;
 
 /**
  * What these bytes actually are, or `null` when they are not a photo DorkOS
@@ -117,17 +122,26 @@ const JPEG_MAGIC = Buffer.from([0xff, 0xd8, 0xff]);
  * exists to catch. WebP needs both ends of its RIFF header read — `RIFF` alone
  * is also a WAV and an AVI.
  *
+ * **Compare bytes, never decoded text.** This function read the RIFF header with
+ * `toString('ascii')`, which masks bit 7: `D2 C9 C6 C6 … D7 C5 C2 D0` decodes to
+ * `RIFF`/`WEBP`, so an HTML payload wearing those eight high-bit bytes was
+ * accepted, stored, and served back as `image/webp` (found in review). Every
+ * comparison here is now `Buffer.equals` over raw bytes, which no decoder can
+ * launder.
+ *
  * Bytes too short to carry a signature match nothing, with no length guard
  * needed: a truncated buffer's `subarray` is shorter than the magic it is
- * compared against, and a `toString` past its end returns less than it asked
- * for.
+ * compared against, so `equals` is false.
  *
  * @param bytes - The uploaded file, or at least its first twelve bytes.
  */
 export function sniffAvatarContentType(bytes: Buffer): AvatarContentType | null {
   if (bytes.subarray(0, PNG_MAGIC.length).equals(PNG_MAGIC)) return 'image/png';
   if (bytes.subarray(0, JPEG_MAGIC.length).equals(JPEG_MAGIC)) return 'image/jpeg';
-  if (bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP') {
+  if (
+    bytes.subarray(0, RIFF_MAGIC.length).equals(RIFF_MAGIC) &&
+    bytes.subarray(WEBP_FORM_OFFSET, WEBP_FORM_OFFSET + WEBP_MAGIC.length).equals(WEBP_MAGIC)
+  ) {
     return 'image/webp';
   }
   return null;

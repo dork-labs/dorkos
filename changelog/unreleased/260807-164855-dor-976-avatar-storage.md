@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(identity): store profile photos locally behind a sync-ready seam (DOR-976)'
+  - 'fix(identity): close the six gaps review found in the avatar seam (DOR-976)'
 ---
 
 ### Added

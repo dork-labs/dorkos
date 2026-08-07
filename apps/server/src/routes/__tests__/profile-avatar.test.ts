@@ -33,6 +33,18 @@ const PNG = Buffer.from(
 const SVG = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><circle r="1"/></svg>');
 const GIF = Buffer.concat([Buffer.from('GIF89a'), Buffer.alloc(64, 3)]);
 const THREE_MB = Buffer.concat([PNG, Buffer.alloc(3 * 1024 * 1024, 0)]);
+/**
+ * "RIFF"/"WEBP" with bit 7 set on every letter, wrapped around an HTML payload.
+ * `toString('ascii')` masks bit 7, so a text-based sniff reads these as the
+ * literal magic — review uploaded exactly this and had it stored and served back
+ * as `image/webp`.
+ */
+const HIGH_BIT_RIFF = Buffer.concat([
+  Buffer.from([0xd2, 0xc9, 0xc6, 0xc6]),
+  Buffer.from([0x1a, 0x00, 0x00, 0x00]),
+  Buffer.from([0xd7, 0xc5, 0xc2, 0xd0]),
+  Buffer.from('<html><script>alert(1)</script></html>'),
+]);
 
 describe('/api/profile/avatar', () => {
   let db: Db;
@@ -154,6 +166,21 @@ describe('/api/profile/avatar', () => {
       expect(registry.getById(ownerAuthor.id)?.imageUrl).toBeNull();
     });
 
+    it.each([
+      ['accepts', 'exactly 2 MB', 0, 200],
+      ['refuses', 'one byte over 2 MB', 1, 413],
+    ])('%s a photo of %s', async (_verb, _what, over, expected) => {
+      const size = 2 * 1024 * 1024 + over;
+      const image = Buffer.concat([PNG, Buffer.alloc(size - PNG.length, 0)]);
+      expect(image.length).toBe(size);
+
+      const res = await request(app())
+        .post('/api/profile/avatar')
+        .attach('avatar', image, { filename: 'big.png', contentType: 'image/png' });
+
+      expect(res.status).toBe(expected);
+    });
+
     it('refuses an SVG, however it is labelled', async () => {
       const res = await request(app())
         .post('/api/profile/avatar')
@@ -173,11 +200,55 @@ describe('/api/profile/avatar', () => {
       expect(res.body.code).toBe('AVATAR_TYPE_UNSUPPORTED');
     });
 
+    it('refuses HTML wearing high-bit RIFF/WEBP magic, and stores nothing', async () => {
+      const res = await request(app())
+        .post('/api/profile/avatar')
+        .attach('avatar', HIGH_BIT_RIFF, { filename: 'me.webp', contentType: 'image/webp' });
+
+      expect(res.status).toBe(415);
+      expect(res.body.code).toBe('AVATAR_TYPE_UNSUPPORTED');
+      await expect(readdir(path.join(dorkHome, 'avatars'))).rejects.toThrow();
+      expect(registry.getById(ownerAuthor.id)?.imageUrl).toBeNull();
+    });
+
     it('refuses a POST carrying no file at all', async () => {
       const res = await request(app()).post('/api/profile/avatar');
 
       expect(res.status).toBe(400);
       expect(res.body.code).toBe('AVATAR_MISSING');
+    });
+
+    it('never writes the owner’s account record for somebody who is not the owner', async () => {
+      // ADR 260727-184933 D6 keeps this install single-account, so this caller
+      // cannot occur today. `room-caller.ts` still checks rather than assumes,
+      // for the reason that applies here too: if the invariant ever broke,
+      // assuming would let a second person overwrite the OWNER's account photo.
+      const stranger = registry.human('user-999');
+
+      const res = await request(app({ caller: () => stranger }))
+        .post('/api/profile/avatar')
+        .attach('avatar', PNG, { filename: 'me.png' });
+
+      expect(res.status).toBe(200);
+      // Their own roster row updates...
+      expect(registry.getById(stranger.id)?.imageUrl).toBe(res.body.imageUrl);
+      // ...and the owner's account and roster row are untouched.
+      expect(storedAccountImage()).toBeNull();
+      expect(registry.getById(ownerAuthor.id)?.imageUrl).toBeNull();
+    });
+
+    it('never clears the owner’s account record on a stranger’s delete', async () => {
+      await request(app())
+        .post('/api/profile/avatar')
+        .attach('avatar', PNG, { filename: 'me.png' });
+      const ownerImage = storedAccountImage();
+      expect(ownerImage).not.toBeNull();
+
+      const stranger = registry.human('user-999');
+      const res = await request(app({ caller: () => stranger })).delete('/api/profile/avatar');
+
+      expect(res.status).toBe(204);
+      expect(storedAccountImage()).toBe(ownerImage);
     });
 
     it('refuses an agent — a profile photo is the operator’s to set', async () => {

@@ -37,8 +37,12 @@ export interface ProfileRouterDeps {
    * An agent resolves to itself here, which is exactly how it gets refused.
    */
   caller: (res: Pick<Response, 'locals'>) => AuthorRecord;
-  /** The rooms domain's author registry: the render cache every surface reads. */
-  authors: Pick<AuthorRegistry, 'setImageUrl'>;
+  /**
+   * The rooms domain's author registry: the render cache every surface reads,
+   * plus the one question that decides whether the account record is this
+   * author's to write.
+   */
+  authors: Pick<AuthorRegistry, 'setImageUrl' | 'isOwner'>;
   /** The account that owns this install, or `null` when nobody has registered. */
   ownerAccount: () => { id: string } | null;
   /** Write Better Auth's `user.image`, so the account record agrees with the roster. */
@@ -59,7 +63,11 @@ export interface ProfileRouterDeps {
  */
 const uploadAvatar = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: MAX_AVATAR_BYTES, files: 1 },
+  // `+ 1` because busboy refuses a file that REACHES `fileSize`, not one that
+  // exceeds it: measured, `fileSize: MAX_AVATAR_BYTES` turns away a file of
+  // exactly 2 MB, which makes the cap `< 2 MB` while the spec and the error
+  // message both say `≤ 2 MB`. One byte higher is the limit those words mean.
+  limits: { fileSize: MAX_AVATAR_BYTES + 1, files: 1 },
 }).single('avatar');
 
 /** The form field the photo arrives in. */
@@ -84,13 +92,29 @@ export function createProfileRouter(deps: ProfileRouterDeps): Router {
     return caller;
   }
 
-  /** Point both identity records at the same URL — or at nothing. */
+  /**
+   * Point both identity records at the same URL — or at nothing.
+   *
+   * **The account record is written FIRST**, and the order is deliberate. The
+   * two writes are not in one transaction, so a failure between them orphans one
+   * of them; putting the account first means the survivor is the roster row,
+   * which is the surface a person actually looks at. Failing the other way round
+   * would leave a photo on the account nothing displays.
+   *
+   * **`user.image` is only touched when this author IS the owner.** Under ADR
+   * 260727-184933 D6 nobody else can exist locally, but `room-caller.ts`
+   * deliberately checks that invariant instead of assuming it, and the cost of
+   * assuming is higher here: a second human author would otherwise overwrite —
+   * or clear — the OWNER's account photo with their own.
+   */
   function writeImageUrl(authorId: string, imageUrl: string | null): void {
-    deps.authors.setImageUrl(authorId, imageUrl);
     const owner = deps.ownerAccount();
     // No account means no `user` row to keep in step — an install with login off
     // has a roster and no account record, which is a supported state, not a gap.
-    if (owner) deps.setAccountImage(owner.id, imageUrl);
+    if (owner && deps.authors.isOwner(authorId, owner.id)) {
+      deps.setAccountImage(owner.id, imageUrl);
+    }
+    deps.authors.setImageUrl(authorId, imageUrl);
   }
 
   // POST /avatar — replace the operator's photo.
