@@ -8,46 +8,83 @@
  * injecting it. The row went on saying "Connected", the agent's tools went on
  * failing, and nothing anywhere said the two were the same problem.
  *
- * ## The signal, and why this one
+ * ## The runtime's report is a TRIGGER, never a verdict
  *
- * The subprocess that dials the server is the only thing that sees its answer, so
- * the honest question is which of ITS reports means "refused". It reports one per
- * turn: connecting a remote MCP server with a bearer the server rejects yields
- * the status `needs-auth`, distinct from `failed` (which is every other kind of
- * trouble — DNS, a 500, a socket that never opened). Treating `failed` as
- * revocation would throw away a working sign-in every time a network hiccupped,
- * so only `needs-auth` reaches here.
+ * This is the whole design, and it is the correction of a wrong first attempt.
  *
- * That report arrives once per turn, early — the runtime asks for it as the turn
- * starts. So the card lands in the conversation at roughly the moment the agent
- * discovers the tools are gone, which is the whole point: the person is looking
- * at the place the work stopped, and the fix is right there.
+ * The runtime's per-turn MCP status snapshot looks like it answers "was our token
+ * refused?". It does not, for three independent reasons — all three verified
+ * against the shipped claude-code binary and then observed live (see the
+ * empirical anchor below):
+ *
+ * 1. **The status you would reach for is the wrong one.** For an http/sse server
+ *    whose config carries an `Authorization` header — which is EVERY server
+ *    DorkOS injects a bearer into — a 401/403 at connect is reported as
+ *    `failed`, with an error naming the rejected header. `needs-auth` is reserved
+ *    for the TOKENLESS case, where DorkOS holds nothing and correctly says
+ *    nothing. Keying on `needs-auth` therefore never fires for the very bug this
+ *    module exists for.
+ * 2. **A `needs-auth` verdict is CACHED and replayed for 15 minutes.** The CLI
+ *    writes it to `mcp-needs-auth-cache.json` and, while the entry is fresh,
+ *    skips connecting entirely and re-reports `needs-auth` from disk. So the
+ *    snapshot can describe a server that has since been signed into. Acting on
+ *    it would delete the grant the person had just created — repeatedly, for a
+ *    quarter of an hour.
+ * 3. **The snapshot is partial.** It is requested as the turn starts and answers
+ *    whenever it answers; servers still connecting report `pending`. A report is
+ *    a rumour about a moment that has already passed.
+ *
+ * So the report only decides WHETHER TO LOOK. The arbiter is the probe — the same
+ * reachability probe the settings panel's Test button uses, which dials the
+ * server through the connection a turn would use, bearer and all, right now.
+ * Only a probe that comes back refused proceeds. That single choice immunises
+ * this against all three problems above at once: a cached verdict is bypassed
+ * because the probe really dials, a just-signed-in grant passes and the watch
+ * stands down, and a transport blip is not a refusal.
+ *
+ * ## Empirical anchor
+ *
+ * Observed 2026-08-07 against `@anthropic-ai/claude-agent-sdk` **0.3.177**, one
+ * real turn, two MCP servers pointed at the same always-401 endpoint. Verbatim
+ * from `query.mcpServerStatus()`:
+ *
+ * ```json
+ * { "name": "dor981-bearer-…",    "status": "failed",
+ *   "error": "Server rejected the configured Authorization header (HTTP 401). Check that the token is valid for this MCP endpoint — OAuth fallback is disabled when headers.Authorization is set." }
+ * { "name": "dor981-tokenless-…", "status": "failed", "error": "" }
+ * ```
+ *
+ * Two things to carry forward. The bearer-carrying server reports `failed`, never
+ * `needs-auth` — the headline finding. And `errorCode` (`AUTH_HEADER_REJECTED`
+ * in the binary) **does not cross the SDK boundary**: it is absent from the
+ * observed objects and from `McpServerStatus` in `sdk.d.ts`. Detection therefore
+ * cannot key on it, and deliberately keys on nothing the SDK words — see
+ * {@link mcpAuthEvidenceFrom}.
  *
  * ## What it refuses to conclude
- *
- * Evidence of one 401 is not proof a sign-in is dead, and this is deliberately
- * slow to condemn one:
  *
  * - **Nothing held → nothing to say.** A server DorkOS has no token for is one
  *   the person never connected. Its row already reads "Needs sign-in", the agent
  *   can offer a sign-in itself, and an unbidden card would be noise.
- * - **One refresh first.** A refused access token beside a live refresh token is
- *   a blip as often as a revocation. The refresh runs (retried and classified by
- *   {@link McpTokenRefresher} — a transport failure is not a verdict), and only a
- *   refresh the OAuth server itself refuses is taken as one.
- * - **Never for a server carrying its own `Authorization`.** That credential is
- *   the operator's, pasted in at `add`; DorkOS neither holds nor refreshes it, so
- *   its 401 is theirs to fix and no OAuth card belongs on it. Enforced upstream,
- *   in `oauthTargetForCwd`.
+ * - **Probe not refused → stand down**, and retire any card this module drew.
+ *   That covers the healthy case, the unreachable case, and the no-probe-wired
+ *   case: none of them is evidence a credential is dead.
+ * - **One refresh before condemning.** A refused access token beside a live
+ *   refresh token is as often a blip as a revocation.
+ * - **Only the OAuth server's own refusal deletes the stored grant.** A refresh
+ *   that merely ran out of attempts on transport failures drops the CACHED token
+ *   (so the row tells the truth and the next turn retries) and leaves the stored
+ *   one alone for a later refresh or a restart's `warm` to recover.
+ * - **Never for a server carrying its own `Authorization` header.** That
+ *   credential is the operator's, pasted in at `add`; DorkOS neither holds nor
+ *   refreshes it, so its 401 is theirs to fix. Enforced in `oauthTargetForCwd`.
  *
  * ## And what it deliberately does not do
  *
- * It says nothing. No message is put in the agent's mouth — no "your sign-in
- * expired", no apology, no instruction to click. The failure surfaces itself as a
- * card, the agent's own tool result already says what it says, and the agent is
- * left to react or not (`meta/agent-etiquette.md`). One card per server, too:
- * a live sign-in link is re-used rather than replaced, so a burst of refusals
- * cannot stack dead links above the working one.
+ * It says nothing. No message is put in the agent's mouth. The failure surfaces
+ * itself as a card, the agent's own tool result already says what it says, and
+ * the agent is left to react or not (`meta/agent-etiquette.md`). One card per
+ * server, too: a live sign-in link is re-used rather than replaced.
  *
  * @module services/mesh/mcp-revocation
  */
@@ -57,64 +94,70 @@ import type { SessionEvent } from '@dorkos/shared/session-stream';
 import { peekProjector } from '../session/index.js';
 import { mcpOAuthCustodyDisclosure } from './agent-mcp-oauth-service.js';
 import type { McpOAuthTarget, StartSigninResult } from './agent-mcp-oauth-service.js';
+import type { McpCacheRefreshVerdict } from './agent-mcp-access-token-cache.js';
+import { probeTarget, tokenWasRefused, type McpTargetProbe } from './agent-mcp-target-probe.js';
 
 /**
- * The `mcp_signin_required` event as this module produces it — the projector
- * stamps `seq`. A distributed `Extract`, for the reason
- * `mcp-signin-resume.ts` spells out: omitting a key from the whole union
+ * The `mcp_signin_required` / `mcp_signin_resolved` events as this module
+ * produces them — the projector stamps `seq`. Distributed `Extract`s, for the
+ * reason `mcp-signin-resume.ts` spells out: omitting a key from the whole union
  * collapses it to the members' common keys.
  */
 type RawSigninRequired = Omit<Extract<SessionEvent, { type: 'mcp_signin_required' }>, 'seq'>;
+type RawSigninResolved = Omit<Extract<SessionEvent, { type: 'mcp_signin_resolved' }>, 'seq'>;
 
 /**
- * What a turn observed: a session, where it ran, and the managed servers that
- * answered "sign in again" during it.
+ * What a turn observed: a session, where it ran, and the managed servers whose
+ * connection was not healthy during it.
  */
 export interface McpAuthEvidence {
   /** The session the turn ran in — where the card is drawn. */
   sessionId: string;
   /** That session's working directory, which is the agent's workspace. */
   cwd: string;
-  /** The servers the runtime reported as needing a sign-in, by name. */
+  /** The servers worth LOOKING at, by name. Never a verdict; see the module doc. */
   serverNames: string[];
 }
 
 /**
- * The port a runtime calls when a turn saw a managed server refuse its
- * credentials. Injected at boot so no runtime holds an opinion about OAuth, and
- * absent in tests that only care about turns.
+ * The port a runtime calls when a turn saw a managed server fail to connect.
+ * Injected at boot so no runtime holds an opinion about OAuth, and absent in
+ * tests that only care about turns.
  */
 export type McpAuthEvidencePort = (evidence: McpAuthEvidence) => void;
 
 /**
- * The servers in a turn's MCP status snapshot that REFUSED the credentials
- * DorkOS sent — nothing else.
+ * The servers in a turn's MCP status snapshot worth investigating — every one
+ * that did not come up healthy.
  *
- * `needs-auth` is the runtime's own word for a 401 at connect, and it is
- * deliberately the only status read as revocation. `failed` is every other kind
- * of trouble — DNS, a refused socket, a 500 — none of which say anything about a
- * token, and condemning a sign-in on one would sign the person out of a working
- * server every time their network hiccupped. `pending` and `disabled` say even
- * less.
+ * Deliberately coarse, and deliberately independent of anything the SDK words.
+ * `failed` is what a bearer-carrying server reports when its token is refused,
+ * and also what it reports when the host is down; `needs-auth` is the tokenless
+ * refusal. Neither is trusted here, because neither can be: the reason is carried
+ * in a prose `error` string and an `errorCode` the SDK does not surface at all
+ * (both established empirically — see the module doc). Telling them apart is the
+ * probe's job, so this only has to be a net wide enough to catch the real case.
  *
- * Lives here rather than in the runtime that produces the snapshot: which status
- * means "the token is dead" is a fact about credentials, and the runtime's job
- * ends at reporting what it saw.
+ * `pending` and `disabled` are excluded and are not near-misses: `pending` means
+ * the snapshot was taken before that server finished connecting, and `disabled`
+ * means nobody asked it to.
  *
  * @param servers - The runtime's per-turn status entries.
  */
-export function authRefusedServers(
+export function mcpAuthEvidenceFrom(
   servers: ReadonlyArray<{ name: string; status?: string }>
 ): string[] {
-  return servers.filter((server) => server.status === 'needs-auth').map((server) => server.name);
+  return servers
+    .filter((server) => server.status === 'failed' || server.status === 'needs-auth')
+    .map((server) => server.name);
 }
 
 /** The OAuth engine, narrowed to what a revocation needs. Satisfied by `AgentMcpOAuthService`. */
 export interface McpRevocationOAuthPort {
   /** The live token DorkOS holds for a target, or `undefined` — "was this ever connected?". */
   getAccessToken(agentId: string, serverName: string, serverUrl: string): string | undefined;
-  /** Run the target's refresh now; `true` when a fresh token replaced the cached one. */
-  refreshNow(target: McpOAuthTarget): Promise<boolean>;
+  /** Run the target's refresh now, reporting why it ended the way it did. */
+  refreshVerdict(target: McpOAuthTarget): Promise<McpCacheRefreshVerdict>;
   /** Delete the target's stored credentials, so a new sign-in cannot find the dead ones. */
   forgetServer(agentId: string, serverName: string): Promise<void>;
   /** A sign-in link already waiting for this target, if any. */
@@ -146,6 +189,13 @@ export interface McpRevocationDeps {
   oauth: McpRevocationOAuthPort;
   /** The managed-server registry. */
   servers: McpRevocationServerPort;
+  /**
+   * The arbiter: dial the target with the credentials DorkOS holds RIGHT NOW,
+   * exactly as a turn would. The same probe the settings panel's Test button
+   * runs. Absent → nothing is ever condemned, which is the correct posture for a
+   * process that cannot check.
+   */
+  probe?: McpTargetProbe;
   /** Diagnostic sink; defaults to `console`. */
   logger?: Pick<Logger, 'warn' | 'info'>;
   /**
@@ -154,7 +204,7 @@ export interface McpRevocationDeps {
    *
    * A test seam, and a necessary one: this work is deliberately detached from the
    * turn that reported the evidence, so a caller has nothing to await and a test
-   * would otherwise be reduced to guessing how many microtasks a refresh takes.
+   * would otherwise be reduced to guessing how many microtasks a probe takes.
    * Production omits it.
    */
   onSettled?: (serverName: string) => void;
@@ -165,26 +215,40 @@ function targetKey(agentId: string, serverName: string): string {
   return `${agentId}\0${serverName}`;
 }
 
+/** A card this module drew, remembered so it can be retired if the target heals. */
+interface DrawnCard {
+  flowId: string;
+  sessionId: string;
+}
+
 /**
- * Build the port that turns "this server refused us" into an evicted credential
- * and a sign-in card.
+ * Build the port that turns "this server did not come up" into a probe, and only
+ * then — if the probe says the token is refused — into an evicted credential and
+ * a sign-in card.
  *
  * The returned port is fire-and-forget: it is called from a runtime's own
  * per-turn bookkeeping, where a rejected promise would become an unhandled
  * rejection on a turn that has otherwise succeeded. Every way it can fail is a
  * log line.
  *
- * @param deps - The OAuth engine, the managed-server registry, and a log sink.
+ * @param deps - The OAuth engine, the managed-server registry, the probe, and a
+ *   log sink.
  */
 export function createMcpRevocationWatch(deps: McpRevocationDeps): McpAuthEvidencePort {
   const logger = deps.logger ?? console;
   // One investigation per target at a time. Two turns in the same workspace can
-  // report the same dead server within milliseconds of each other, and each
-  // would otherwise mint its own sign-in flow before the other's finished.
+  // report the same server within milliseconds of each other, and each would
+  // otherwise probe and mint its own sign-in flow before the other's finished.
   const inFlight = new Set<string>();
+  // The cards THIS module drew, so a target that turns out to be healthy can have
+  // its card retired. Keyed per target, and deliberately not a record of cards
+  // the AGENT asked for: retiring one of those would delete a link the person is
+  // still walking through.
+  const drawn = new Map<string, DrawnCard>();
 
   const investigate = async (target: McpOAuthTarget, evidence: McpAuthEvidence): Promise<void> => {
     const { agentId, serverName, serverUrl } = target;
+    const key = targetKey(agentId, serverName);
     const live = deps.oauth.liveSigninFor(agentId, serverName);
 
     if (!deps.oauth.getAccessToken(agentId, serverName, serverUrl)) {
@@ -194,26 +258,49 @@ export function createMcpRevocationWatch(deps: McpRevocationDeps): McpAuthEviden
       // needs-auth, the agent can offer a sign-in itself, and an unbidden card
       // would be noise. The exception is a sign-in ALREADY waiting — the person
       // is part-way through one (often the one a previous dead turn drew) and the
-      // server is still refusing. Then the card is re-drawn on the SAME flow,
+      // server is still failing. Then the card is re-drawn on the SAME flow,
       // which keeps a working link on screen instead of letting the projector's
       // grace age it out from under someone mid-browser.
-      if (live) draw(evidence.sessionId, target, live);
+      if (live) draw(evidence.sessionId, target, live, key);
       return;
     }
 
-    // A refused access token beside a live refresh token is as often a blip as a
-    // revocation; a refresh that succeeds says it was one, and the next turn
-    // carries the new token.
-    if (await deps.oauth.refreshNow(target)) {
+    // The arbiter. Everything above this line is a rumour; this dials the server
+    // with the bearer a turn would send and asks it directly.
+    const probed = await probeTarget(deps.probe, target, logger);
+    if (!tokenWasRefused(probed)) {
+      // Healthy, unreachable, or unprobeable — none of which is a dead credential.
+      // If this module had put a card up on earlier evidence, retire it now.
+      settleDrawnCard(key, 'connected');
+      return;
+    }
+
+    // The server refused the token DorkOS holds. Try to replace it before
+    // condemning it: a refused access token beside a live refresh token is as
+    // often a blip as a revocation.
+    const verdict = await deps.oauth.refreshVerdict(target);
+    if (verdict === 'refreshed') {
       logger.info(`[mcp-revocation] refreshed ${serverName} after a refused token`);
+      settleDrawnCard(key, 'connected');
+      return;
+    }
+    if (verdict !== 'terminal') {
+      // The attempt budget ran out on transport failures, or there was no cached
+      // entry left to refresh. The access token is proven dead, so the cache is
+      // already clear and the row tells the truth — but nothing here proves the
+      // GRANT is gone, so the stored credential stays for a later refresh or a
+      // restart's `warm` to recover, and nobody is asked to sign in again yet.
+      logger.info(
+        `[mcp-revocation] ${serverName} could not be refreshed right now — keeping the stored sign-in`
+      );
       return;
     }
 
-    // The verdict. Clear the stored credential as well as the cached one: a
-    // sign-in that could still find the dead token set on disk would report the
-    // server "already connected" and hand the person no link at all.
+    // The OAuth server's own refusal. Clear the stored credential as well as the
+    // cached one: a sign-in that could still find the dead token set on disk
+    // would report the server "already connected" and hand the person no link.
     await deps.oauth.forgetServer(agentId, serverName);
-    // A 401 proves the server is OAuth-protected, which is what makes the row
+    // A refusal proves the server is OAuth-protected, which is what makes the row
     // read "Needs sign-in" rather than fall silent — and an entry added by hand
     // may never have carried the hint. Best-effort: the eviction is the fix, and
     // a failed manifest write must not cost the card.
@@ -228,7 +315,7 @@ export function createMcpRevocationWatch(deps: McpRevocationDeps): McpAuthEviden
     // flow would put a dead link on screen beside the working one.
     const signin = live ?? (await startSignin(target, evidence));
     if (!signin) return;
-    draw(evidence.sessionId, target, signin);
+    draw(evidence.sessionId, target, signin, key);
     logger.info(`[mcp-revocation] ${serverName} needs signing in again — card drawn`);
   };
 
@@ -248,20 +335,49 @@ export function createMcpRevocationWatch(deps: McpRevocationDeps): McpAuthEviden
       : undefined;
   };
 
-  /** Put the sign-in card for a target on a session. */
+  /** Put the sign-in card for a target on a session, and remember that we did. */
   const draw = (
     sessionId: string,
     target: McpOAuthTarget,
-    signin: { flowId: string; authorizeUrl: string }
+    signin: { flowId: string; authorizeUrl: string },
+    key: string
   ): void => {
-    drawCard(sessionId, {
+    const card: RawSigninRequired = {
       type: 'mcp_signin_required',
       agentId: target.agentId,
       serverName: target.serverName,
       flowId: signin.flowId,
       authorizeUrl: signin.authorizeUrl,
       disclosure: mcpOAuthCustodyDisclosure(target.serverName),
-    });
+    };
+    // Ingested into the projector rather than pushed onto a turn's event queue,
+    // because the turn that produced the evidence may already be over by the time
+    // the probe has answered. The projector carries a sign-in card past its own
+    // turn and into later snapshots, so the card reaches a tab opened afterwards
+    // too — and a session nobody is watching simply has no projector, which is a
+    // quiet no-op rather than a failure.
+    peekProjector(sessionId)?.ingest(card);
+    drawn.set(key, { flowId: signin.flowId, sessionId });
+  };
+
+  /**
+   * Retire a card THIS module drew, once the target turns out to be fine.
+   *
+   * A card that outlives its problem is worse than no card: it tells someone to
+   * sign in to a server they are already signed in to. Scoped to our own flows on
+   * purpose — settling a sign-in the AGENT asked for would delete a link the
+   * person may be part-way through.
+   */
+  const settleDrawnCard = (key: string, outcome: 'connected' | 'failed'): void => {
+    const card = drawn.get(key);
+    if (!card) return;
+    drawn.delete(key);
+    const resolved: RawSigninResolved = {
+      type: 'mcp_signin_resolved',
+      flowId: card.flowId,
+      outcome,
+    };
+    peekProjector(card.sessionId)?.ingest(resolved);
   };
 
   return (evidence) => {
@@ -269,8 +385,8 @@ export function createMcpRevocationWatch(deps: McpRevocationDeps): McpAuthEviden
       const target = deps.servers.oauthTargetForCwd(evidence.cwd, serverName);
       const key = target && targetKey(target.agentId, serverName);
       // Nothing DorkOS manages a sign-in for, or an investigation of this very
-      // target already running — a second turn reporting the same dead server
-      // while the first is still deciding what to do about it.
+      // target already running — a second turn reporting the same server while
+      // the first is still deciding what to do about it.
       if (!target || !key || inFlight.has(key)) {
         deps.onSettled?.(serverName);
         continue;
@@ -286,20 +402,6 @@ export function createMcpRevocationWatch(deps: McpRevocationDeps): McpAuthEviden
         });
     }
   };
-}
-
-/**
- * Put the card in the conversation.
- *
- * Ingested into the projector rather than pushed onto a turn's event queue,
- * because the turn that produced the evidence may already be over by the time
- * the refresh has been tried. The projector carries a sign-in card past its own
- * turn and into later snapshots, so the card reaches a tab opened afterwards
- * too — and a session nobody is watching simply has no projector, which is a
- * quiet no-op rather than a failure.
- */
-function drawCard(sessionId: string, event: RawSigninRequired): void {
-  peekProjector(sessionId)?.ingest(event);
 }
 
 /** The readable half of an unknown throw. */

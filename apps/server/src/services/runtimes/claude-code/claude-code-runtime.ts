@@ -62,7 +62,7 @@ import {
   overlayApprovalReceipts,
   peekProjector,
 } from '../../session/index.js';
-import { authRefusedServers } from '../../mesh/mcp-revocation.js';
+import { mcpAuthEvidenceFrom } from '../../mesh/mcp-revocation.js';
 import type { McpAuthEvidencePort } from '../../mesh/mcp-revocation.js';
 import { editBaselineStore } from '../../diff/index.js';
 import type { SessionStateProjector } from '../../session/index.js';
@@ -1083,15 +1083,18 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   }
 
   /**
-   * Forward the servers this turn's status snapshot reports as having refused our
-   * credentials (DOR-981). Which status that is belongs to the mesh —
-   * {@link authRefusedServers} — because it is a fact about tokens, not about
-   * this SDK. Silent when nothing was refused, so the port is only woken by news.
+   * Forward the servers this turn's status snapshot reports as not having come up
+   * (DOR-981) — a trigger to LOOK, never a verdict.
+   *
+   * Which statuses those are belongs to the mesh ({@link mcpAuthEvidenceFrom}),
+   * along with the reasons the report cannot be trusted on its own. This runtime
+   * reports what it saw and forgets. Silent when everything connected, so the
+   * port is only woken by news.
    */
   private reportMcpAuthFailures(sessionId: string, cwd: string, servers: McpServerEntry[]): void {
     const port = this.mcpAuthEvidence;
     if (!port) return;
-    const serverNames = authRefusedServers(servers);
+    const serverNames = mcpAuthEvidenceFrom(servers);
     if (serverNames.length === 0) return;
     port({ sessionId, cwd, serverNames });
   }

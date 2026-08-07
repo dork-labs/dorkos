@@ -25,6 +25,8 @@ import { resetKeyCache } from '@dorkos/shared/extension-secrets';
 import { writeManifest } from '@dorkos/shared/manifest';
 import type { AgentManifest, McpServerTransport } from '@dorkos/shared/mesh-schemas';
 
+import type { McpTargetProbeResult } from '../agent-mcp-target-probe.js';
+
 const AGENT_ID = '01HV7KJZZZ0000000000000000';
 const SERVER = 'granola';
 const ORIGIN = 'https://mcp.test.local';
@@ -70,6 +72,8 @@ interface ProviderState {
   issueRefreshToken: boolean;
   /** Whether a `refresh_token` grant is honoured — flipped to false to revoke. */
   honourRefresh: boolean;
+  /** When true the token endpoint is unreachable rather than refusing — a blip, not a verdict. */
+  refreshOffline: boolean;
   /** Every grant_type the token endpoint was asked for, in order. */
   grants: string[];
 }
@@ -105,6 +109,8 @@ function mockOAuthFetch(state: ProviderState): typeof fetch {
       const grant = form.get('grant_type') ?? '';
       state.grants.push(grant);
       if (grant === 'refresh_token') {
+        // The network is down, which says NOTHING about whether the grant is good.
+        if (state.refreshOffline) throw new TypeError('fetch failed');
         // The revocation itself: the provider stops honouring the grant family.
         if (!state.honourRefresh) return json({ error: 'invalid_grant' }, 400);
         return json({
@@ -183,6 +189,10 @@ async function buildWorld(
     connection?: McpServerTransport;
     projector?: boolean;
     issueRefreshToken?: boolean;
+    /** What the arbiter says. Defaults to "the server refused our token". */
+    probeAnswer?: McpTargetProbeResult;
+    /** Omit the probe entirely — a process that cannot check must not condemn. */
+    noProbe?: boolean;
   } = {}
 ) {
   vi.resetModules();
@@ -205,6 +215,7 @@ async function buildWorld(
     challenge: '',
     issueRefreshToken: options.issueRefreshToken ?? false,
     honourRefresh: true,
+    refreshOffline: false,
     grants: [],
   };
 
@@ -223,9 +234,17 @@ async function buildWorld(
   });
   const startSignin = vi.spyOn(oauth, 'startSignin');
   const settled: string[] = [];
+  // The arbiter, controllable per test. Production wires the real reachability
+  // probe here (`AgentMcpServerService.test`); its own suite covers the dialling.
+  let probeAnswer: McpTargetProbeResult = options.probeAnswer ?? { ok: false, needsAuth: true };
+  const setProbeAnswer = (answer: McpTargetProbeResult): void => {
+    probeAnswer = answer;
+  };
+  const probe = vi.fn(async () => probeAnswer);
   const port = createMcpRevocationWatch({
     oauth,
     servers,
+    ...(options.noProbe ? {} : { probe }),
     logger: { warn: () => {}, info: () => {} },
     onSettled: (serverName) => settled.push(serverName),
   });
@@ -250,7 +269,20 @@ async function buildWorld(
     );
   };
 
-  return { oauth, servers, watch, port, settled, cwd, dorkHome, provider, ingested, startSignin };
+  return {
+    oauth,
+    servers,
+    watch,
+    port,
+    settled,
+    cwd,
+    dorkHome,
+    provider,
+    ingested,
+    startSignin,
+    probe,
+    setProbeAnswer,
+  };
 }
 
 /** Drive a full browser sign-in so the server is genuinely connected. */
@@ -268,14 +300,19 @@ async function signInFully(
 
 describe('a sign-in that dies mid-session', () => {
   it('flips the row back to needs-auth and puts the card where the wall was', async () => {
-    const { oauth, servers, watch, cwd, provider, ingested } = await buildWorld();
+    const { oauth, servers, watch, cwd, provider, ingested, probe } = await buildWorld();
     await signInFully(oauth, provider);
 
     // The state the bug reported: the row says Connected because DorkOS holds a
     // token, and it would go on saying so while every tool call 401'd.
     expect((await servers.list(AGENT_ID))[0]?.authStatus).toBe('connected');
 
+    // The evidence a REAL turn produces for a bearer-carrying server whose token
+    // the server refuses: `mcpAuthEvidenceFrom` distilled a `failed` entry, not a
+    // `needs-auth` one. Keying on `needs-auth` — the first version of this feature
+    // — meant this never fired at all.
     await watch({ sessionId: SESSION_ID, cwd, serverNames: [SERVER] });
+    expect(probe).toHaveBeenCalledTimes(1);
 
     // Half one: the listing tells the truth again, with no Test and no turn.
     expect((await servers.list(AGENT_ID))[0]?.authStatus).toBe('needs-auth');
@@ -293,9 +330,12 @@ describe('a sign-in that dies mid-session', () => {
   });
 
   it('deletes the STORED credential too, so a restart cannot resurrect it', async () => {
-    // Evicting only the in-memory cache leaves the dead token set on disk, and
-    // `warm` re-primes from disk. The row would read "Connected" again the moment
-    // the process restarted — the same lie, one restart later.
+    // The non-refreshable grant: there is no refresh token to try, and the probe
+    // already proved the access token dead, so there is nothing left to recover.
+    //
+    // Evicting only the in-memory cache would leave the dead token set on disk,
+    // and `warm` re-primes from disk — so the row would read "Connected" again
+    // the moment the process restarted. The same lie, one restart later.
     const { oauth, watch, cwd, provider, dorkHome } = await buildWorld();
     await signInFully(oauth, provider);
 
@@ -439,12 +479,18 @@ describe('one card per server', () => {
     expect(ingested).toHaveLength(1);
   });
 
-  it('starts one sign-in when two turns report it in the same breath', async () => {
+  it('investigates once when two turns report it in the same breath', async () => {
     // Two sessions in one workspace, both turns starting together. Neither has
     // finished investigating when the other arrives, so nothing they could look
-    // up — not the token, not the flow store — has been written yet. Only the
-    // in-flight guard stops the second from minting its own flow.
-    const { oauth, port, settled, cwd, provider, ingested, startSignin } = await buildWorld();
+    // up — not the token, not the flow store — has been written yet.
+    //
+    // The PROBE is what this asserts on, because the probe is the first thing an
+    // investigation does and the only cost that is paid before any state has
+    // changed: without the in-flight guard both reports dial the server. (The
+    // second one would then find an already-evicted cache entry and bow out, so
+    // counting sign-ins hides the duplicated work rather than catching it.)
+    const { oauth, port, settled, cwd, provider, ingested, startSignin, probe } =
+      await buildWorld();
     await signInFully(oauth, provider);
     startSignin.mockClear();
 
@@ -452,6 +498,7 @@ describe('one card per server', () => {
     port({ sessionId: 'sess-second', cwd, serverNames: [SERVER] });
     await vi.waitFor(() => expect(settled).toHaveLength(2));
 
+    expect(probe).toHaveBeenCalledTimes(1);
     expect(startSignin).toHaveBeenCalledTimes(1);
     expect(ingested).toHaveLength(1);
   });
@@ -476,22 +523,27 @@ describe('one card per server', () => {
 });
 
 describe('reading a turn’s status snapshot', () => {
-  it('counts only the status that means "your token was refused"', async () => {
-    const { authRefusedServers } = await import('../mcp-revocation.js');
+  it('looks at every server that did not come up — `failed` above all', async () => {
+    const { mcpAuthEvidenceFrom } = await import('../mcp-revocation.js');
 
     expect(
-      authRefusedServers([
-        { name: 'refused', status: 'needs-auth' },
-        // Everything below is trouble of some other kind. Reading any of it as a
-        // revocation would sign the person out of a working server the first time
-        // their network hiccupped.
-        { name: 'broken', status: 'failed' },
+      mcpAuthEvidenceFrom([
+        // THE headline case, and the one the first version of this feature
+        // missed entirely: a server carrying a DorkOS bearer that the server
+        // refuses reports `failed`, never `needs-auth`. Observed live against
+        // SDK 0.3.177 — see the module doc's empirical anchor.
+        { name: 'bearer-refused', status: 'failed' },
+        // The tokenless refusal. Worth looking at too, but never worth trusting:
+        // the CLI replays this one from a 15-minute disk cache.
+        { name: 'tokenless-refused', status: 'needs-auth' },
+        // Not evidence of anything. `pending` means the snapshot was taken
+        // before that server finished connecting; `disabled` means nobody asked.
         { name: 'slow', status: 'pending' },
         { name: 'off', status: 'disabled' },
         { name: 'fine', status: 'connected' },
         { name: 'unreported' },
       ])
-    ).toEqual(['refused']);
+    ).toEqual(['bearer-refused', 'tokenless-refused']);
   });
 });
 
@@ -506,5 +558,126 @@ describe('when there is nobody to show the card to', () => {
 
     expect((await servers.list(AGENT_ID))[0]?.authStatus).toBe('needs-auth');
     expect(oauth.getAccessToken(AGENT_ID, SERVER, SERVER_URL)).toBeUndefined();
+  });
+});
+
+describe('the probe is the arbiter, never the report', () => {
+  it('stands down when the server accepts the token, and retires its own card', async () => {
+    // The reviewer's reproduction, inverted — and the P0 the first version had.
+    //
+    // A person signs in mid-window. The next turn STILL reports the server as not
+    // connected: the snapshot is stale, or the CLI is replaying a `needs-auth`
+    // verdict it cached on disk for fifteen minutes and skipping the connection
+    // entirely. Acting on that report deletes the grant they just created. The
+    // probe dials for real, the server says yes, and nothing is touched — and the
+    // card this module had put up is retired, so it cannot outlive its problem.
+    const { oauth, servers, watch, cwd, provider, ingested, setProbeAnswer } = await buildWorld();
+    await signInFully(oauth, provider);
+
+    await watch({ sessionId: SESSION_ID, cwd, serverNames: [SERVER] });
+    expect(ingested.map((event) => event.type)).toEqual(['mcp_signin_required']);
+    const cardFlow = ingested[0]!.flowId;
+
+    // The person signs in from that card, so a live token exists again…
+    await signInFully(oauth, provider);
+    setProbeAnswer({ ok: true, toolCount: 4 });
+
+    // …and the very next turn still reports the server as failed.
+    await watch({ sessionId: SESSION_ID, cwd, serverNames: [SERVER] });
+
+    expect((await servers.list(AGENT_ID))[0]?.authStatus).toBe('connected');
+    expect(oauth.getAccessToken(AGENT_ID, SERVER, SERVER_URL)).toBeDefined();
+    // The stale card is settled rather than left telling someone to sign in to a
+    // server they are already signed in to.
+    expect(ingested.at(-1)).toEqual({
+      type: 'mcp_signin_resolved',
+      flowId: cardFlow,
+      outcome: 'connected',
+    });
+  });
+
+  it('deletes nothing while a cached needs-auth verdict is being replayed', async () => {
+    // The 15-minute window in full: DorkOS holds a good token, and every turn in
+    // that window reports `needs-auth` from the CLI's own disk cache without ever
+    // dialling the server. Nothing may be deleted, no card may appear, and the
+    // row must keep telling the truth — for every one of those turns.
+    const { oauth, servers, watch, cwd, provider, ingested, startSignin, probe } = await buildWorld(
+      { probeAnswer: { ok: true, toolCount: 9 } }
+    );
+    await signInFully(oauth, provider);
+    startSignin.mockClear();
+    const token = oauth.getAccessToken(AGENT_ID, SERVER, SERVER_URL);
+
+    for (let turn = 0; turn < 3; turn++) {
+      await watch({ sessionId: SESSION_ID, cwd, serverNames: [SERVER] });
+    }
+
+    expect(probe).toHaveBeenCalledTimes(3);
+    expect(oauth.getAccessToken(AGENT_ID, SERVER, SERVER_URL)).toBe(token);
+    expect((await servers.list(AGENT_ID))[0]?.authStatus).toBe('connected');
+    expect(ingested).toEqual([]);
+    expect(startSignin).not.toHaveBeenCalled();
+    // Not one refresh either: a healthy probe ends the investigation outright.
+    expect(provider.grants).not.toContain('refresh_token');
+  });
+
+  it('condemns nothing when no probe is wired — a process that cannot check must not judge', async () => {
+    const { oauth, servers, watch, cwd, provider, ingested } = await buildWorld({ noProbe: true });
+    await signInFully(oauth, provider);
+
+    await watch({ sessionId: SESSION_ID, cwd, serverNames: [SERVER] });
+
+    expect((await servers.list(AGENT_ID))[0]?.authStatus).toBe('connected');
+    expect(ingested).toEqual([]);
+  });
+
+  it('condemns nothing when the server is merely unreachable', async () => {
+    // A probe that failed without a 401 is not a refusal — the host is down, DNS
+    // is broken, the laptop is on a plane. `tokenWasRefused` is deliberately
+    // narrower than "not ok" for exactly this.
+    const { oauth, servers, watch, cwd, provider, ingested } = await buildWorld({
+      probeAnswer: { ok: false },
+    });
+    await signInFully(oauth, provider);
+
+    await watch({ sessionId: SESSION_ID, cwd, serverNames: [SERVER] });
+
+    expect((await servers.list(AGENT_ID))[0]?.authStatus).toBe('connected');
+    expect(ingested).toEqual([]);
+  });
+});
+
+describe('what a failed refresh is allowed to cost', () => {
+  it('keeps the stored grant when the refresh only ran out of attempts', async () => {
+    // The probe proved the ACCESS token is dead, so the cached one goes and the
+    // row tells the truth. But the refresh failed on transport, which proves
+    // nothing about the GRANT — so the stored credential survives, and a restart's
+    // `warm` can still recover it. Deleting here would make a flapping network
+    // indistinguishable from a revocation.
+    const { oauth, servers, watch, cwd, provider, dorkHome, ingested } = await buildWorld({
+      issueRefreshToken: true,
+    });
+    await signInFully(oauth, provider);
+    provider.refreshOffline = true;
+
+    await watch({ sessionId: SESSION_ID, cwd, serverNames: [SERVER] });
+
+    // Cache dropped: the row is honest and the next turn will retry.
+    expect(oauth.getAccessToken(AGENT_ID, SERVER, SERVER_URL)).toBeUndefined();
+    expect((await servers.list(AGENT_ID))[0]?.authStatus).toBe('needs-auth');
+    // No card: nobody is asked to sign in again over a network blip.
+    expect(ingested).toEqual([]);
+
+    // And the grant is still on disk — a restart picks it straight back up.
+    const { AgentMcpOAuthService } = await import('../agent-mcp-oauth-service.js');
+    const afterRestart = new AgentMcpOAuthService({
+      dorkHome,
+      callbackBaseUrl: 'http://127.0.0.1:4242',
+      fetchImpl: mockOAuthFetch(provider),
+      cache: { scheduler: inertScheduler },
+      logger: { warn: () => {} },
+    });
+    await afterRestart.warm([TARGET]);
+    expect(afterRestart.getAccessToken(AGENT_ID, SERVER, SERVER_URL)).toBeDefined();
   });
 });

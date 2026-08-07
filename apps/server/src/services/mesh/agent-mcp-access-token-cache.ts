@@ -20,6 +20,7 @@
  *
  * @module services/mesh/agent-mcp-access-token-cache
  */
+import type { RefreshVerdict } from './agent-mcp-token-refresher.js';
 
 /** Refresh this many ms before a token's expiry, so injection never races the clock. */
 const REFRESH_SKEW_MS = 60_000;
@@ -84,10 +85,19 @@ interface CacheEntry {
   expiresAt: number;
   /** The server URL the token was minted for; a read presenting a different one is refused. */
   serverUrl: string | undefined;
-  /** Obtain a fresh cached token, or `null` on failure (which evicts the entry). */
-  refresh: () => Promise<CachedToken | null>;
+  /** Obtain a fresh cached token, or report why there isn't one (which evicts the entry). */
+  refresh: () => Promise<RefreshVerdict>;
   timer?: ReturnType<typeof setTimeout>;
 }
+
+/**
+ * How a {@link McpAccessTokenCache.refreshVerdict} ended, from the cache's point
+ * of view.
+ *
+ * `absent` is its own answer rather than a failure: there was no entry to
+ * refresh, so nothing was learned about any credential (DOR-981).
+ */
+export type McpCacheRefreshVerdict = 'refreshed' | 'terminal' | 'transient' | 'absent';
 
 /** Constructor seams for {@link McpAccessTokenCache} (production uses the defaults). */
 export interface McpAccessTokenCacheDeps {
@@ -144,13 +154,14 @@ export class McpAccessTokenCache {
    * @param agentId - The owning agent's id.
    * @param serverName - The managed server's name.
    * @param token - The cached token (access token + absolute expiry + refreshability).
-   * @param refresh - Produces the next cached token when the timer fires, or `null` on failure.
+   * @param refresh - Produces the next cached token when the timer fires, or the
+   *   verdict explaining why there isn't one.
    */
   store(
     agentId: string,
     serverName: string,
     token: CachedToken,
-    refresh: () => Promise<CachedToken | null>
+    refresh: () => Promise<RefreshVerdict>
   ): void {
     const key = cacheKey(agentId, serverName);
     const previous = this.entries.get(key);
@@ -188,18 +199,41 @@ export class McpAccessTokenCache {
    * @internal Exercised directly by tests; production also reaches it via the timer.
    */
   async refreshNow(agentId: string, serverName: string): Promise<boolean> {
+    return (await this.refreshVerdict(agentId, serverName)) === 'refreshed';
+  }
+
+  /**
+   * Run the refresh for `(agentId, serverName)` now, and report WHY it ended the
+   * way it did — replacing the entry on success and evicting it otherwise.
+   *
+   * The reason matters to exactly one caller, and matters a great deal to it: a
+   * `terminal` verdict is the OAuth server saying the grant is gone, which
+   * justifies deleting the STORED credential too, while a `transient` one is the
+   * attempt budget running out on transport failures and justifies nothing of the
+   * sort (DOR-981). This cache only ever holds memory, so both evict here; the
+   * difference is what the caller may do next.
+   *
+   * @param agentId - The owning agent's id.
+   * @param serverName - The managed server's name.
+   * @internal Exercised directly by tests; production also reaches it via the timer.
+   */
+  async refreshVerdict(agentId: string, serverName: string): Promise<McpCacheRefreshVerdict> {
     const key = cacheKey(agentId, serverName);
     const entry = this.entries.get(key);
-    if (!entry) return false;
-    const next = await entry.refresh().catch(() => null);
+    if (!entry) return 'absent';
+    const verdict = await entry
+      .refresh()
+      .catch((): RefreshVerdict => ({ token: null, kind: 'transient' }));
     // The entry may have been evicted/replaced while awaiting; only act if ours stands.
-    if (this.entries.get(key) !== entry) return this.entries.has(key);
-    if (!next) {
-      this.evict(agentId, serverName);
-      return false;
+    if (this.entries.get(key) !== entry) {
+      return this.entries.has(key) ? 'refreshed' : 'absent';
     }
-    this.store(agentId, serverName, next, entry.refresh);
-    return true;
+    if (!verdict.token) {
+      this.evict(agentId, serverName);
+      return verdict.kind === 'terminal' ? 'terminal' : 'transient';
+    }
+    this.store(agentId, serverName, verdict.token, entry.refresh);
+    return 'refreshed';
   }
 
   /**

@@ -33,6 +33,7 @@ import type { Logger } from '@dorkos/shared/logger';
 import {
   McpAccessTokenCache,
   type McpAccessTokenCacheDeps,
+  type McpCacheRefreshVerdict,
 } from './agent-mcp-access-token-cache.js';
 import { McpOAuthFlowStore, type McpSigninStatus } from './agent-mcp-oauth-flow-store.js';
 import {
@@ -563,6 +564,19 @@ export class AgentMcpOAuthService {
    */
   async refreshNow(target: McpOAuthTarget): Promise<boolean> {
     return this.cache.refreshNow(target.agentId, target.serverName);
+  }
+
+  /**
+   * The same refresh, reporting WHY it ended rather than just whether it worked.
+   *
+   * The distinction is what stops a flapping network from deleting a good grant:
+   * only `terminal` is the OAuth server's own refusal (DOR-981). See
+   * {@link McpAccessTokenCache.refreshVerdict}.
+   *
+   * @param target - The agent, server, and server URL to refresh.
+   */
+  async refreshVerdict(target: McpOAuthTarget): Promise<McpCacheRefreshVerdict> {
+    return this.cache.refreshVerdict(target.agentId, target.serverName);
   }
 
   /** Cancel every pending refresh and empty the token cache (shutdown). */

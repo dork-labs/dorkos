@@ -61,8 +61,8 @@ describe('McpTokenRefresher — one refresh at a time', () => {
     const second = refresher.refresh(KEY, attempt);
     gate.resolve({ kind: 'ok', token: token('fresh') });
 
-    expect((await first)?.accessToken).toBe('fresh');
-    expect((await second)?.accessToken).toBe('fresh');
+    expect((await first).token?.accessToken).toBe('fresh');
+    expect((await second).token?.accessToken).toBe('fresh');
     // Reverting the in-flight map (calling `attempt` per caller) makes this 2 —
     // two refresh-token presentations a rotating issuer reads as a replay.
     expect(attempt).toHaveBeenCalledTimes(1);
@@ -166,7 +166,9 @@ describe('McpTokenRefresher — when to give up', () => {
       })
     );
 
-    expect(await refresher.refresh(KEY, attempt)).toBeNull();
+    // Exhausted, not refused — and the difference is load-bearing: only a
+    // `terminal` verdict may cost the operator their STORED grant (DOR-981).
+    expect(await refresher.refresh(KEY, attempt)).toEqual({ token: null, kind: 'transient' });
     // Reverting to evict-on-first-failure makes this 1 call and no delays — the
     // boot-while-offline case that killed every OAuth server until a restart.
     expect(attempt).toHaveBeenCalledTimes(3);
@@ -181,7 +183,7 @@ describe('McpTokenRefresher — when to give up', () => {
     ];
     const attempt = vi.fn(async () => outcomes.shift()!);
 
-    expect((await refresher.refresh(KEY, attempt))?.accessToken).toBe('recovered');
+    expect((await refresher.refresh(KEY, attempt)).token?.accessToken).toBe('recovered');
     expect(attempt).toHaveBeenCalledTimes(2);
   });
 
@@ -194,7 +196,7 @@ describe('McpTokenRefresher — when to give up', () => {
       })
     );
 
-    expect(await refresher.refresh(KEY, attempt)).toBeNull();
+    expect(await refresher.refresh(KEY, attempt)).toEqual({ token: null, kind: 'terminal' });
     // The discriminator against retrying everything: treating terminal as
     // transient makes this 3 calls and two pointless waits.
     expect(attempt).toHaveBeenCalledTimes(1);

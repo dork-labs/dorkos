@@ -1538,13 +1538,20 @@ async function start() {
     // A managed server that refuses the token DorkOS injected flips its row back
     // to needs-auth and draws the sign-in card in the conversation the person hit
     // it in (DOR-981). Wired only for claude-code, because its per-turn MCP status
-    // snapshot is the only place a runtime tells DorkOS a bearer was rejected;
+    // snapshot is the only place a runtime tells DorkOS a server did not come up;
     // the other runtimes report no such thing yet, so nothing is claimed for them.
     if (claudeRuntime) {
+      const oauthForRevocation = agentMcpOAuthService;
+      const serversForRevocation = agentMcpServerService;
       claudeRuntime.setMcpAuthEvidence(
         createMcpRevocationWatch({
-          oauth: agentMcpOAuthService,
-          servers: agentMcpServerService,
+          oauth: oauthForRevocation,
+          servers: serversForRevocation,
+          // The SAME probe the sign-in engine and the settings panel's Test button
+          // use: it dials the server through the connection a turn would use,
+          // bearer included. It is the arbiter here — the runtime's report only
+          // decides whether to run it (DOR-981).
+          probe: (target) => serversForRevocation.test(target.agentId, target.serverName),
           logger,
         })
       );
