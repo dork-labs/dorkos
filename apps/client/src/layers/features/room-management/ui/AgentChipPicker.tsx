@@ -429,22 +429,37 @@ export function AgentChipPicker({
                   picker that hashed its own would introduce a second appearance
                   for one agent.
 
-                  No agent badge on these rows, deliberately: everything
-                  offered here is an agent, so a mark on every one would be a
-                  column of identical glyphs. The badge earns its place the day
-                  this list offers people too.
+                  `kind="agent"` keeps the square silhouette every other agent
+                  surface draws; `badge={null}` is the explicit opt-out from
+                  the Bot glyph `kind` would otherwise add — everything offered
+                  here is an agent, so a mark on every one would be a column of
+                  identical glyphs. The badge earns its place the day this list
+                  offers people too.
 
                   An agent whose manifest could not be read gets a letter on a
                   neutral disc instead. `currentColor` is the row's own text
-                  colour, so the disc reads as a shade of the surface rather
-                  than a colour that means something — see
-                  `AgentPickerCandidate.visual` for why the directory is not
-                  hashed into a face here. */}
+                  colour rather than a hash, so an unresolved agent reads as
+                  "no colour recorded" instead of an invented one that would
+                  read as meaningful — see `AgentPickerCandidate.visual` for
+                  why the directory is not hashed into a face here.
+
+                  That neutral disc has to stay `tint`, not `kind="agent"`'s
+                  default `fill`: `fill` sets BOTH `backgroundColor` and the
+                  fallback letter's `color` to values derived from `color`, so
+                  filling with `currentColor` makes the letter's own resolved
+                  foreground the background `currentColor` then resolves
+                  against — the letter paints itself invisible on its own
+                  disc. An explicit visual's colour is a real, opaque value
+                  `fill` handles fine; only the `currentColor` fallback needs
+                  the override back to `tint`. */}
               <IdentityAvatar
                 size="xs"
                 color={candidate.visual?.color ?? 'currentColor'}
                 emoji={candidate.visual?.emoji}
                 fallback={initialOf(candidate.displayName)}
+                kind="agent"
+                variant={candidate.visual ? undefined : 'tint'}
+                badge={null}
               />
               <span className="min-w-0 flex-1">
                 <span className="block truncate">{candidate.displayName}</span>

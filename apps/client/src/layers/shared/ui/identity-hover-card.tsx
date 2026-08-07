@@ -5,7 +5,6 @@
  * @module shared/ui/identity-hover-card
  */
 import * as React from 'react';
-import { Bot, Send } from 'lucide-react';
 import { formatDuration } from '../lib/format-duration';
 import { initialOf } from '../lib/initial-of';
 import { cn } from '../lib/utils';
@@ -29,6 +28,17 @@ export interface IdentityHoverCardAgentInfo {
     room?: string;
     /** How long it has been working, in milliseconds. */
     forMs: number;
+  };
+  /**
+   * The person this agent belongs to, when the roster knows one — owner
+   * attribution (spec `identity-consistency` W1.6), resolved by the caller
+   * from `TeamMember.ownerId` and rendered as a fourth chip. `handle: null`
+   * falls back to the display name rather than rendering a bare `@`, the
+   * same honesty rule `AuthorRef.handle` already carries everywhere else.
+   */
+  managedBy?: {
+    displayName: string;
+    handle: string | null;
   };
 }
 
@@ -188,9 +198,8 @@ function IdentityHoverCard({ identity, children, className }: IdentityHoverCardP
             color={avatarColor}
             emoji={emoji}
             fallback={initialOf(displayName)}
-            shape={kind === 'agent' ? 'square' : 'circle'}
-            variant={kind === 'agent' ? 'fill' : 'tint'}
-            badge={kind === 'agent' ? <Bot /> : isExternal ? <Send /> : undefined}
+            kind={kind}
+            origin={origin}
             size="md"
           />
           <div className="min-w-0">
@@ -218,6 +227,12 @@ function IdentityHoverCard({ identity, children, className }: IdentityHoverCardP
           )}
           {kind === 'human' && (
             <InfoChip>{isExternal ? origin.platform : 'On this machine'}</InfoChip>
+          )}
+          {kind === 'agent' && agent?.managedBy && (
+            <InfoChip>
+              Managed by{' '}
+              {agent.managedBy.handle ? `@${agent.managedBy.handle}` : agent.managedBy.displayName}
+            </InfoChip>
           )}
         </div>
 
