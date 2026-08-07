@@ -152,16 +152,30 @@ export function isLocalRequest(facts: LocalRequestFacts): boolean {
   return isLoopbackPeer(facts.peer) && isLoopbackHostHeader(facts.hostHeader);
 }
 
+/** The Vite dev-server port the cockpit is served from outside production. */
+function viteDevPort(): string {
+  // eslint-disable-next-line no-restricted-syntax -- VITE_PORT is a Vite-specific var not in server env.ts
+  return process.env.VITE_PORT || '4241';
+}
+
 /**
- * The address a person's browser reaches this cockpit at on this machine.
+ * The address a person's browser reaches THE COCKPIT at on this machine — which
+ * is not always the API address, and that difference is the whole reason this
+ * exists.
+ *
+ * In production the server serves the SPA itself, so the cockpit lives at
+ * `DORKOS_PORT`. In development it does not: `express.static` is production-only,
+ * nothing answers `/` on the API port, and the cockpit is on the Vite dev server.
+ * A link built from `DORKOS_PORT` in dev is therefore dead exactly for the people
+ * most likely to click it.
  *
  * The one spelling of "where DorkOS is", so a link back into the app (the OAuth
- * callback landing page) and the always-trusted loopback origin below can never
- * name different ports. Derived from `DORKOS_PORT` — never hardcoded, because
- * dev, production, and a custom port are all normal.
+ * callback landing page) and the always-trusted loopback origins below can never
+ * disagree. Both ports are derived, never hardcoded.
  */
 export function getLocalCockpitOrigin(): string {
-  return `http://localhost:${env.DORKOS_PORT}`;
+  const port = env.NODE_ENV === 'production' ? String(env.DORKOS_PORT) : viteDevPort();
+  return `http://localhost:${port}`;
 }
 
 /**
@@ -179,11 +193,10 @@ export function getStaticLocalOrigins(): string[] {
   if (env.NODE_ENV === 'production') {
     return [getLocalCockpitOrigin(), `http://127.0.0.1:${port}`];
   }
-  // eslint-disable-next-line no-restricted-syntax -- VITE_PORT is a Vite-specific var not in server env.ts
-  const vitePort = process.env.VITE_PORT || '4241';
+  const vitePort = viteDevPort();
   return [
+    `http://localhost:${port}`,
     getLocalCockpitOrigin(),
-    `http://localhost:${vitePort}`,
     `http://127.0.0.1:${port}`,
     `http://127.0.0.1:${vitePort}`,
   ];

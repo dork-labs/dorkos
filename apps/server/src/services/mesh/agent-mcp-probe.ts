@@ -90,9 +90,12 @@ export function isUnauthorizedProbeError(err: unknown): boolean {
 export function withProbeTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
     promise,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(`MCP server probe timed out after ${ms}ms`)), ms)
-    ),
+    new Promise<T>((_, reject) => {
+      // Unreferenced: `Promise.race` cannot cancel the loser, so a probe that
+      // answered quickly would otherwise leave a live ten-second timer behind —
+      // on `add`'s path, once per remote server added, with nobody awaiting it.
+      setTimeout(() => reject(new Error(`MCP server probe timed out after ${ms}ms`)), ms).unref();
+    }),
   ]);
 }
 
@@ -136,8 +139,15 @@ export type ProbeOutcome =
  * operator) and by `add`'s advisory sign-in detection (which only wants to know
  * whether the server answers 401).
  *
- * Never throws: every outcome, timeout included, comes back as a
- * {@link ProbeOutcome}. The whole round trip is capped at `timeoutMs`.
+ * Never throws — structurally, not by luck. **Building** the transport is inside
+ * the `try` too, because `new URL()` on a malformed url throws synchronously and
+ * would otherwise escape past the classifier entirely. Nothing reaches here with
+ * a bad url today (Zod validates it at the schema), but `add`'s advisory probe is
+ * only ever allowed to add a fact, never to fail the add — so that guarantee has
+ * to hold on its own rather than lean on a validator two layers away.
+ *
+ * Every outcome, timeout included, comes back as a {@link ProbeOutcome}, and the
+ * whole round trip is capped at `timeoutMs`.
  *
  * @param connection - The transport to dial, already carrying whatever headers a
  *   turn would send.
@@ -150,11 +160,10 @@ export async function runProbe(
   timeoutMs: number = TEST_PROBE_TIMEOUT_MS
 ): Promise<ProbeOutcome> {
   const client = new Client({ name: 'dorkos-mcp-probe', version: '1.0.0' }, { capabilities: {} });
-  const transport = createProbeTransport(connection, probeFetch);
   try {
     const tools = await withProbeTimeout(
       (async () => {
-        await client.connect(transport);
+        await client.connect(createProbeTransport(connection, probeFetch));
         return client.listTools();
       })(),
       timeoutMs

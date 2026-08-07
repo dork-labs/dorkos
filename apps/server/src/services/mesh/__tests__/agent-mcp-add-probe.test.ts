@@ -10,7 +10,7 @@
  *
  * @vitest-environment node
  */
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -39,8 +39,9 @@ afterEach(async () => {
 });
 
 async function setup(
-  probeFetch: typeof fetch
-): Promise<{ service: AgentMcpServerService; projectPath: string }> {
+  probeFetch: typeof fetch,
+  warnings: string[] = []
+): Promise<{ service: AgentMcpServerService; projectPath: string; warnings: string[] }> {
   const projectPath = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-add-probe-'));
   tempDirs.push(projectPath);
   const manifest: AgentManifest = {
@@ -60,10 +61,14 @@ async function setup(
   await writeManifest(projectPath, manifest);
   const service = new AgentMcpServerService({
     agents: new FakeLocator(projectPath),
-    logger: { warn: () => {} },
+    logger: {
+      warn: (...args: unknown[]) => {
+        warnings.push(args.map(String).join(' '));
+      },
+    },
     probeFetch,
   });
-  return { service, projectPath };
+  return { service, projectPath, warnings };
 }
 
 /** Read the one persisted entry's `authKind` straight off disk. */
@@ -76,6 +81,24 @@ async function persistedAuthKind(service: AgentMcpServerService): Promise<string
 /** A fetch that answers every request with a bare 401, as an OAuth-protected server does. */
 const unauthorizedFetch: typeof fetch = async () =>
   new Response('Unauthorized', { status: 401, headers: { 'WWW-Authenticate': 'Bearer' } });
+
+/** The same 401, but only after `ms` — long enough that `add` gives up waiting for it. */
+function slowUnauthorizedFetch(ms: number): typeof fetch {
+  return (async () => {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+    return new Response('Unauthorized', { status: 401, headers: { 'WWW-Authenticate': 'Bearer' } });
+  }) as typeof fetch;
+}
+
+/** How long a late-probe test waits for the background heal before calling it a failure. */
+const LATE_HEAL_WAIT_MS = 3_500;
+
+/**
+ * Per-test budget for the late-probe cases. Comfortably above
+ * {@link LATE_HEAL_WAIT_MS} so a missing heal fails on the wait (which names the
+ * assertion) rather than on the runner's own 5s default (which does not).
+ */
+const LATE_HEAL_TEST_TIMEOUT_MS = 10_000;
 
 /**
  * A fetch that speaks just enough Streamable HTTP MCP to complete `initialize`
@@ -175,6 +198,29 @@ describe('AgentMcpServerService.add — advisory sign-in probe', () => {
     answer();
   });
 
+  it('never probes a server carrying its own Authorization header', async () => {
+    // The operator pasted a static token in at the card. DorkOS neither holds nor
+    // refreshes it, so it has no opinion about it — the same carve-out `list()`
+    // makes. Probing anyway meant a STALE pasted token 401ed, the entry was
+    // stamped oauth2, and mcp.add told the agent to start an OAuth sign-in the
+    // operator never asked for — while `list()` reported no opinion for that very
+    // row. Two surfaces, one entry, opposite answers.
+    const { service } = await setup(unauthorizedFetch);
+
+    const list = await service.add({
+      agentId: AGENT_ID,
+      name: 'own-token',
+      connection: { transport: 'http', url: SERVER_URL, headers: { authorization: 'Bearer sk-1' } },
+      addedBy: 'operator',
+    });
+
+    const added = list[0]?.connection;
+    expect(added?.transport === 'http' ? added.authKind : undefined).toBeUndefined();
+    expect(await persistedAuthKind(service)).toBeUndefined();
+    // And the two surfaces agree: no opinion here either.
+    expect((await service.list(AGENT_ID))[0]?.authStatus).toBeUndefined();
+  });
+
   it('never probes a stdio server (nothing to sign in to)', async () => {
     const { service, projectPath } = await setup(unauthorizedFetch);
 
@@ -196,4 +242,61 @@ describe('AgentMcpServerService.add — advisory sign-in probe', () => {
     const onDisk = await readManifest(projectPath);
     expect(onDisk?.mcpServers[0]?.connection.transport).toBe('stdio');
   });
+});
+
+describe('AgentMcpServerService.add — the late heal', () => {
+  it(
+    'records authKind after the fact when the 401 arrives past the budget',
+    async () => {
+      const { service } = await setup(slowUnauthorizedFetch(ADD_PROBE_BUDGET_MS + 300));
+
+      const list = await service.add({
+        agentId: AGENT_ID,
+        name: 'slow-oauth',
+        connection: REMOTE,
+        addedBy: 'operator',
+      });
+
+      // The add could not know yet, and said so by saying nothing.
+      const added = list[0]?.connection;
+      expect(added?.transport === 'http' ? added.authKind : undefined).toBeUndefined();
+
+      // But the probe kept running, and the answer still lands on the manifest —
+      // so the row offers a Sign in button a moment later without anyone pressing
+      // Test. Deleting the `learnFromLateProbe` call reddens exactly this.
+      await vi.waitFor(async () => expect(await persistedAuthKind(service)).toBe('oauth2'), {
+        timeout: LATE_HEAL_WAIT_MS,
+        interval: 50,
+      });
+    },
+    LATE_HEAL_TEST_TIMEOUT_MS
+  );
+
+  it(
+    'does not resurrect a server that was removed before the late 401 landed',
+    async () => {
+      const { service, projectPath, warnings } = await setup(
+        slowUnauthorizedFetch(ADD_PROBE_BUDGET_MS + 300)
+      );
+
+      await service.add({
+        agentId: AGENT_ID,
+        name: 'gone',
+        connection: REMOTE,
+        addedBy: 'operator',
+      });
+      expect(await service.remove(AGENT_ID, 'gone')).toEqual([]);
+
+      // Let the probe settle and the heal attempt run against a manifest that no
+      // longer has the entry. `learnOAuthAuthKind` finds nothing and writes
+      // nothing, so a removed server stays removed — a heal that re-added it would
+      // undo an explicit removal, which is the worst kind of background write.
+      await new Promise((resolve) => setTimeout(resolve, ADD_PROBE_BUDGET_MS + 800));
+      expect(await service.list(AGENT_ID)).toEqual([]);
+      expect((await readManifest(projectPath))?.mcpServers).toEqual([]);
+      // Silently, too: this is an expected race, not something to warn about.
+      expect(warnings).toEqual([]);
+    },
+    LATE_HEAL_TEST_TIMEOUT_MS
+  );
 });

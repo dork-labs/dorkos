@@ -3,6 +3,7 @@ covers:
   - 'feat(server): learn an MCP server needs a sign-in the moment it is added (DOR-1003)'
   - 'feat(server): report how many tools a finished MCP sign-in unlocked (DOR-1003)'
   - 'feat(server): name the server on the MCP sign-in return page (DOR-1003)'
+  - 'fix(server): leave a server you supplied your own token for alone (DOR-1003)'
 ---
 
 ### Added
@@ -20,3 +21,7 @@ covers:
 - "You're already signed in" is now checked, not assumed. DorkOS asks the server whether the
   sign-in it saved still works; if the server says no, it clears it and gives you a fresh
   sign-in link instead of telling you everything is fine and failing later (DOR-1003).
+- If you added a server with your own token in the headers, DorkOS leaves it alone. It used to
+  offer to sign you in to a server you had already handled yourself (DOR-1003).
+- The "Back to DorkOS" link after signing in points where DorkOS actually is while you are
+  developing, instead of at an address that answers nothing (DOR-1003).

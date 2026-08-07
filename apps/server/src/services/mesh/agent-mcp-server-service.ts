@@ -333,18 +333,27 @@ export class AgentMcpServerService {
 
   /**
    * Start the advisory "does this want a sign-in?" probe for a connection being
-   * added, or `undefined` when there is nothing to learn: a stdio server has no
-   * OAuth endpoint, and an entry that already declares `authKind: 'oauth2'` is
-   * already saying what the probe would tell us.
+   * added, or `undefined` when there is nothing to learn.
    *
-   * Resolves `true` only on a clean 401. A brand-new entry holds no token yet, so
-   * the bare stored connection is exactly what a turn would dial.
+   * Three connections are left alone. A stdio server has no OAuth endpoint. An
+   * entry that already declares `authKind: 'oauth2'` is already saying what the
+   * probe would tell us. And an entry carrying its OWN `Authorization` header is
+   * a credential the operator pasted in, which DorkOS neither holds nor refreshes
+   * — the same carve-out {@link deriveAuthStatus} makes, and it has to be made
+   * here too or the two surfaces disagree about one row: a stale static token
+   * 401s, the probe stamps `oauth2`, `mcp.add` then tells the agent to launch an
+   * OAuth sign-in the operator never asked for, while `list()` still reports no
+   * opinion for that very entry.
+   *
+   * Resolves `true` only on a clean 401. A brand-new entry holds no DorkOS token
+   * yet, so the bare stored connection is exactly what a turn would dial.
    *
    * @param connection - The connection the caller asked to add.
    */
   private probeForOAuth(connection: McpServerTransport): Promise<boolean> | undefined {
     if (connection.transport === 'stdio') return undefined;
     if (connection.authKind === 'oauth2') return undefined;
+    if (hasOwnAuthorizationHeader(connection.headers)) return undefined;
     return runProbe(connection, this.probeFetch).then((outcome) => outcome.kind === 'unauthorized');
   }
 
