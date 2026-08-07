@@ -38,6 +38,13 @@ export const FEATURES_SECTIONS: PlaygroundSection[] = [
     category: 'Agent',
     keywords: ['agent', 'identity', 'card', 'name', 'avatar', 'detail', 'profile'],
   },
+  {
+    id: 'avatarpickergrid',
+    title: 'AvatarPickerGrid',
+    page: 'features',
+    category: 'Agent',
+    keywords: ['agent', 'avatar', 'color', 'emoji', 'picker', 'grid', 'swatch', 'preset'],
+  },
   // AgentFleetShowcases
   {
     id: 'agentfleettable',

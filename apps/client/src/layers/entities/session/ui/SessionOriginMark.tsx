@@ -3,7 +3,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/layers/shared/ui';
 import type { SessionOrigin } from '@dorkos/shared/types';
 import { getOriginDescriptor } from '../config/origin-descriptors';
 
-interface OriginMarkProps {
+interface SessionOriginMarkProps {
   /** Session's resolved origin. `undefined`/`'user'`/unrecognized all render nothing. */
   origin?: string;
   /** The session's own `originLabel`, when present — takes priority over the descriptor's generic fallback label. */
@@ -31,13 +31,13 @@ interface OriginMarkProps {
  * accessible label; pass `decorative` when a visible label already sits next
  * to it.
  */
-export function OriginMark({
+export function SessionOriginMark({
   origin,
   label,
   size = 12,
   className,
   decorative = false,
-}: OriginMarkProps) {
+}: SessionOriginMarkProps) {
   const descriptor = getOriginDescriptor(origin as SessionOrigin | undefined);
   if (!descriptor) return null;
 

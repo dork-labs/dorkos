@@ -104,7 +104,7 @@ const MOCK_SESSIONS: Session[] = [
   },
 ];
 
-// Origin-varied sessions (session-origin-legibility) — makes OriginMark
+// Origin-varied sessions (session-origin-legibility) — makes SessionOriginMark
 // visually discoverable in the playground alongside the plain-user rows above.
 const CHANNEL_ORIGIN_SESSION: Session = {
   ...MOCK_SESSIONS[0],
