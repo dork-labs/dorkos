@@ -63,14 +63,14 @@ describe('initializeExtensions — right-panel contributions', () => {
     const agentHub = getRightPanelContribution('agent-hub');
     // Selection-honest: with no explicit selection, the ambient startup agent
     // must NOT surface on the dashboard/activity/tasks/workspaces routes.
-    for (const pathname of ['/', '/agents', '/tasks', '/activity', '/workspaces']) {
+    for (const pathname of ['/', '/team', '/tasks', '/activity', '/workspaces']) {
       expect(agentHub?.visibleWhen?.({ pathname, explicitAgentPath: null })).toBe(false);
     }
   });
 
   it('shows the Agent Profile off /session once an agent is explicitly opened', () => {
     const agentHub = getRightPanelContribution('agent-hub');
-    for (const pathname of ['/', '/agents', '/tasks', '/activity', '/workspaces']) {
+    for (const pathname of ['/', '/team', '/tasks', '/activity', '/workspaces']) {
       expect(agentHub?.visibleWhen?.({ pathname, explicitAgentPath: '/repo/a' })).toBe(true);
     }
   });
@@ -89,7 +89,7 @@ describe('initializeExtensions — right-panel contributions', () => {
   it('scopes the Files tab to the session route', () => {
     const files = getRightPanelContribution('files');
     expect(files?.visibleWhen?.({ pathname: '/session' })).toBe(true);
-    for (const pathname of ['/', '/agents', '/tasks', '/marketplace']) {
+    for (const pathname of ['/', '/team', '/tasks', '/marketplace']) {
       expect(files?.visibleWhen?.({ pathname })).toBe(false);
     }
   });
@@ -135,7 +135,7 @@ describe('initializeExtensions — right-panel contributions', () => {
   it('hides the Terminal tab off the session route even when supported', () => {
     const terminal = getRightPanelContribution('terminal');
     const httpTransport = createMockTransport({ supportsTerminal: true });
-    for (const pathname of ['/', '/agents', '/tasks', '/marketplace']) {
+    for (const pathname of ['/', '/team', '/tasks', '/marketplace']) {
       expect(terminal?.visibleWhen?.({ pathname, transport: httpTransport })).toBe(false);
     }
   });

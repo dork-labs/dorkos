@@ -363,9 +363,9 @@ describe('createExtensionAPI', () => {
   it('navigate calls deps.navigate with the correct path', () => {
     const { api } = createExtensionAPI('my-ext', deps);
 
-    api.navigate('/agents');
+    api.navigate('/team');
 
-    expect(deps.navigate).toHaveBeenCalledWith({ to: '/agents' });
+    expect(deps.navigate).toHaveBeenCalledWith({ to: '/team' });
   });
 
   // 9. getState

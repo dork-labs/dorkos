@@ -12,7 +12,7 @@ import { useElectronCloseTab } from './app/use-electron-close-tab';
 import { useRoomDocumentTitle } from './app/use-room-document-title';
 import { TitlebarDragStrip } from './app/TitlebarDragStrip';
 import { SidebarBodyErrorBoundary } from './app/SidebarBodyErrorBoundary';
-import { getAgentDisplayName, cn, isDesktopShell } from '@/layers/shared/lib';
+import { getAgentDisplayName, cn, isDesktopShell, normalizeTeamView } from '@/layers/shared/lib';
 import {
   useSessionId,
   useDefaultCwd,
@@ -45,7 +45,7 @@ import {
   SessionHeader,
   DashboardHeader,
   ChannelsHeader,
-  AgentsHeader,
+  TeamHeader,
   ActivityHeader,
   TasksHeader,
   MarketplaceHeader,
@@ -187,15 +187,15 @@ function useHeaderSlot({
   switch (pathname) {
     case '/':
       return { key: 'dashboard', content: <DashboardHeader />, borderStyle: undefined };
-    case '/agents': {
-      const viewParam = new URLSearchParams(searchStr).get('view');
-      const validViews = ['list', 'topology', 'denied', 'access'] as const;
-      const viewMode = validViews.includes(viewParam as (typeof validViews)[number])
-        ? (viewParam as (typeof validViews)[number])
-        : 'list';
+    case '/team': {
+      // Read straight off the URL rather than through `useSearch`, so the
+      // header keeps rendering during a route exit animation — and normalized
+      // through the same function the route validates with, so the header and
+      // the page can never disagree about which view is showing.
+      const viewMode = normalizeTeamView(new URLSearchParams(searchStr).get('view') ?? undefined);
       return {
-        key: 'agents',
-        content: <AgentsHeader viewMode={viewMode} />,
+        key: 'team',
+        content: <TeamHeader viewMode={viewMode} />,
         borderStyle: undefined,
       };
     }

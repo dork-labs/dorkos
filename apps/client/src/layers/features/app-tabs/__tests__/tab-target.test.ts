@@ -26,8 +26,8 @@ describe('parseTabHref', () => {
   });
 
   it('ignores session params on other routes', () => {
-    expect(parseTabHref('/agents?view=topology&session=abc')).toEqual({
-      pathname: '/agents',
+    expect(parseTabHref('/team?view=topology&session=abc')).toEqual({
+      pathname: '/team',
       sessionId: null,
       dir: null,
     });
@@ -65,7 +65,7 @@ describe('projectName', () => {
 describe('fallbackTabLabel', () => {
   it('names each route the way a person would', () => {
     expect(fallbackTabLabel(parseTabHref('/'))).toBe('Dashboard');
-    expect(fallbackTabLabel(parseTabHref('/agents'))).toBe('Agents');
+    expect(fallbackTabLabel(parseTabHref('/team'))).toBe('Team');
     expect(fallbackTabLabel(parseTabHref('/activity'))).toBe('Activity');
     // Before this, a channel or DM tab fell through to the unknown-route label
     // ("DorkOS") — the same class of defect DOR-587 fixes for the header, one

@@ -17,7 +17,7 @@ import { setPlatformAdapter } from '../platform';
 import { enterDesktopShell, leaveDesktopShell } from '@/test-helpers/desktop-shell';
 
 const ORIGIN = 'http://localhost:4242';
-const FROM = `${ORIGIN}/agents?view=topology`;
+const FROM = `${ORIGIN}/team?view=topology`;
 
 const webPlatform = { isEmbedded: false, openFile: async () => {} };
 const embeddedPlatform = { isEmbedded: true, openFile: async () => {} };
@@ -54,7 +54,7 @@ describe('classifyLink', () => {
   it('treats a hash-only href as internal to the current route', () => {
     expect(classifyLink('#section', FROM)).toMatchObject({
       kind: 'internal',
-      path: '/agents?view=topology#section',
+      path: '/team?view=topology#section',
     });
   });
 
@@ -63,21 +63,21 @@ describe('classifyLink', () => {
     // modifier on wherever you already are, so the route's own params survive.
     expect(classifyLink('?settings=open', FROM)).toMatchObject({
       kind: 'internal',
-      path: '/agents?view=topology&settings=open',
+      path: '/team?view=topology&settings=open',
     });
   });
 
   it('lets a query-only href override a param it names', () => {
     expect(classifyLink('?view=list', FROM)).toMatchObject({
       kind: 'internal',
-      path: '/agents?view=list',
+      path: '/team?view=list',
     });
   });
 
   it('replaces the search when the href carries a path', () => {
-    expect(classifyLink('/agents?view=list', FROM)).toMatchObject({
+    expect(classifyLink('/team?view=list', FROM)).toMatchObject({
       kind: 'internal',
-      path: '/agents?view=list',
+      path: '/team?view=list',
     });
   });
 
@@ -202,7 +202,7 @@ describe('classifyLink', () => {
       kind: 'external',
       url: 'https://dorkos.ai/docs',
     });
-    expect(classifyLink('/agents', from)).toEqual({
+    expect(classifyLink('/team', from)).toEqual({
       kind: 'blocked',
       reason: 'unsupported-scheme',
     });
@@ -443,7 +443,7 @@ describe('link dispatch', () => {
   describe('openExternalLink', () => {
     it('leaves the app even for one of our own routes', () => {
       // The LinkSafetyModal's contract is "this leaves what you are looking
-      // at". A gen-UI widget, MCP App, or elicitation payload naming `/agents`
+      // at". A gen-UI widget, MCP App, or elicitation payload naming `/team`
       // must not navigate the session out from under the reader.
       openExternalLink('/session');
       expect(openSpy).toHaveBeenCalledWith(

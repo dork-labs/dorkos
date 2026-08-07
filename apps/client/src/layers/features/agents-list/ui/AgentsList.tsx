@@ -3,6 +3,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { TopologyAgent } from '@dorkos/shared/mesh-schemas';
 import { useAgentAttentionMap } from '@/layers/entities/session';
+import { findTeamOwner, teamMemberLabel, useTeamRoster } from '@/layers/entities/team';
 import { applySortAndFilter } from '@/layers/shared/lib';
 import { useFilterState, useTransport } from '@/layers/shared/model';
 import { FilterBar } from '@/layers/shared/ui/filter-bar';
@@ -83,6 +84,24 @@ export function AgentsList({ agents, isLoading }: AgentsListProps) {
     staleTime: 30_000,
   });
 
+  // Who each agent belongs to, keyed by the manifest id both sides carry.
+  //
+  // The roster is the one place that knows: the mesh describes a fleet, and
+  // ownership is derived at read time from the `authors` table beside it
+  // (spec §W1.6). Resolved here rather than in a cell so the table is handed a
+  // label, the same way the Team card is.
+  const { data: rosterData } = useTeamRoster();
+  const ownerLabels = useMemo(() => {
+    const members = rosterData?.members ?? [];
+    const labels = new Map<string, string>();
+    for (const member of members) {
+      if (member.kind !== 'agent') continue;
+      const owner = findTeamOwner(member, members);
+      if (owner) labels.set(member.id, teamMemberLabel(owner));
+    }
+    return labels;
+  }, [rosterData]);
+
   // Enrich topology agents with computed fields, then apply attention order
   const tableData: AgentTableRow[] = useMemo(() => {
     const rows = filteredAgents.map((agent) => ({
@@ -92,12 +111,14 @@ export function AgentsList({ agents, isLoading }: AgentsListProps) {
       chatState: (agent.projectPath ? chatStates[agent.projectPath] : undefined) ?? 'fresh',
       isPastOnboardingGrace: isPastOnboardingGrace(agent.registeredAt),
       isDefault: config?.agents?.defaultAgent === agent.name,
+      managedBy: ownerLabels.get(agent.id) ?? null,
     }));
     return isAttentionOrder ? sortAgentsByAttention(rows, filterState.sortDirection) : rows;
   }, [
     filteredAgents,
     chatStates,
     config?.agents?.defaultAgent,
+    ownerLabels,
     isAttentionOrder,
     filterState.sortDirection,
   ]);

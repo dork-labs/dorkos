@@ -57,10 +57,10 @@ describe('SessionHeader', () => {
     expect(screen.getByText('dorkbot')).toBeInTheDocument();
   });
 
-  it('renders Agents link pointing to /agents', () => {
+  it('renders Team link pointing to /team', () => {
     renderWithTooltip(<SessionHeader agentName="dorkbot" />);
-    const link = screen.getByRole('link', { name: 'Agents' });
-    expect(link).toHaveAttribute('href', '/agents');
+    const link = screen.getByRole('link', { name: 'Team' });
+    expect(link).toHaveAttribute('href', '/team');
   });
 
   it('renders Session breadcrumb segment', () => {

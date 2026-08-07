@@ -337,16 +337,22 @@
       "relatedCode": [],
       "lastModified": ""
     },
-    "agents-page": {
-      "specFile": "tests/agents/agents-page.spec.ts",
-      "feature": "agents",
-      "description": "the sidebar reaches the agents page, the Access view renders the cross-project access surface, the Denied view reports having blocked nothing, switches to the topology view, a registered agent is listed",
-      "lastRun": "2026-08-04T15:36:14.821Z",
-      "lastStatus": "passed",
-      "runCount": 1,
-      "passCount": 1,
+    "team-page": {
+      "specFile": "tests/team/team-page.spec.ts",
+      "feature": "team",
+      "description": "the sidebar reaches the Team page, /agents redirects to /team keeping the view, the operator is on the roster drawn as a circle, an agent is drawn as a square with who it belongs to, the Agents chip hides the people, clicking an attribution filters to that owner, Group: manager clusters the roster under a header, a filtered roster survives a reload, the view switch reaches the table and the topology, the Denied view reports having blocked nothing, the Access view renders the cross-project access surface, and on a phone the roster draws one column with no table option",
+      "lastRun": "",
+      "lastStatus": "unknown",
+      "runCount": 0,
+      "passCount": 0,
       "failCount": 0,
-      "relatedCode": [],
+      "relatedCode": [
+        "apps/client/src/router.tsx",
+        "apps/client/src/layers/widgets/team/ui/TeamRoute.tsx",
+        "apps/client/src/layers/widgets/team/ui/TeamPage.tsx",
+        "apps/client/src/layers/features/team-roster/ui/TeamRosterToolbar.tsx",
+        "apps/client/src/layers/features/top-nav/ui/TeamHeader.tsx"
+      ],
       "lastModified": ""
     },
     "status-line-fit": {
