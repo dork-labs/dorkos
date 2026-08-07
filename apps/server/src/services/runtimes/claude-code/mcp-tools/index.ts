@@ -222,11 +222,18 @@ export function createDorkOsToolServer(
   // tool call (the live session's canonical `sdkSessionId` over the trigger id,
   // mirroring the DevTools read-time resolution) so session-scoped capabilities
   // — connector attach/detach — can default to the invoking session.
+  // …and WHERE that session lives, so a capability whose work outlives the
+  // process (a sign-in the person finishes in a browser) can be resumed in the
+  // right directory after a restart (DOR-981).
   const resolveCapabilityContext = async () => {
     const base = await resolveContext();
     const invokingSessionId = session?.sdkSessionId || sessionId;
     if (!invokingSessionId) return base;
-    return { ...(base ?? {}), sessionId: invokingSessionId };
+    return {
+      ...(base ?? {}),
+      sessionId: invokingSessionId,
+      ...(session?.cwd ? { cwd: session.cwd } : {}),
+    };
   };
   // The in-session hold seam (DOR-939): only with BOTH a live session (an event
   // queue to render the inline card into) and the approval primitive can a fresh

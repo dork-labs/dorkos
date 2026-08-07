@@ -123,7 +123,7 @@ async function buildEngine(): Promise<{
 async function signInFully(
   oauth: AgentMcpOAuthService,
   pkce: { challenge: string },
-  options?: { originSessionId?: string }
+  options?: { originSessionId?: string; originCwd?: string }
 ): Promise<string> {
   const started = await oauth.startSignin(TARGET, options);
   pkce.challenge = new URL(started.authorizeUrl!).searchParams.get('code_challenge') ?? '';
@@ -147,6 +147,20 @@ describe('the connected port', () => {
         toolCount: 7,
       },
     ]);
+  });
+
+  it('carries the directory the sign-in started in, for a cold resume', async () => {
+    // Recorded at START, because at CALLBACK time the session's projector may be
+    // gone — a restart during the browser round trip is exactly the case this
+    // exists for (DOR-981).
+    const { oauth, pkce, connected } = await buildEngine();
+
+    await signInFully(oauth, pkce, {
+      originSessionId: SESSION_ID,
+      originCwd: '/projects/somewhere-else',
+    });
+
+    expect(connected[0]?.originCwd).toBe('/projects/somewhere-else');
   });
 
   it('does not fire for a sessionless sign-in', async () => {
@@ -393,6 +407,50 @@ describe('resumeAfterMcpSignin', () => {
 
     expect(warn).toHaveBeenCalledTimes(1);
     expect(info).not.toHaveBeenCalled();
+  });
+
+  it('runs in the FLOW’s directory when the projector is gone (a restart)', async () => {
+    // The case the previous test cannot reach. A sign-in outlives a restart
+    // routinely — a person can spend minutes in a browser — and the projector,
+    // which is what used to answer "where does this session live?", does not.
+    // Falling back to the server default cold-started the resume against the
+    // wrong checkout, silently, for every session rooted anywhere else (DOR-981).
+    vi.resetModules();
+    const FLOW_CWD = '/projects/recorded-at-signin';
+    const triggerTurn = vi.fn().mockResolvedValue({ accepted: true });
+    const getSession = vi.fn(async () => ({ id: SESSION_ID }));
+    vi.doMock('../../../lib/logger.js', () => ({ logger: { warn: vi.fn(), info: vi.fn() } }));
+    vi.doMock('../../core/runtime-registry.js', () => ({
+      runtimeRegistry: {
+        resolveForSession: async () => ({
+          hasSession: () => false,
+          getSession,
+          getCapabilities: () => ({ logBackedHistory: false }),
+          acquireLock: vi.fn(),
+          releaseLock: vi.fn(),
+          sendMessage: vi.fn(),
+          interruptQuery: vi.fn(),
+          getInternalSessionId: vi.fn(),
+        }),
+      },
+    }));
+    const getOrCreateProjector = vi.fn((_id: string, _cwd?: string) => ({ cwd: '' }));
+    vi.doMock('../../session/index.js', () => ({
+      triggerTurn,
+      getOrCreateProjector,
+      // No projector at all — the restart took it with the rest of the map.
+      peekProjector: () => undefined,
+      persistenceModeFor: () => 'record',
+      rekeyProjector: vi.fn(),
+    }));
+    const { resumeAfterMcpSignin } = await import('../mcp-signin-resume.js');
+
+    await resumeAfterMcpSignin({ ...EVENT, originCwd: FLOW_CWD });
+
+    // Every hop that takes a cwd gets the flow's, not `DEFAULT_CWD`.
+    expect(getSession).toHaveBeenCalledWith(FLOW_CWD, SESSION_ID);
+    expect(getOrCreateProjector.mock.calls[0]![1]).toBe(FLOW_CWD);
+    expect(triggerTurn.mock.calls[0]![0].cwd).toBe(FLOW_CWD);
   });
 
   it('does not resume a session that no longer exists anywhere', async () => {
