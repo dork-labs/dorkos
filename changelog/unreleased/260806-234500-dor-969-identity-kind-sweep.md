@@ -2,6 +2,7 @@
 covers:
   - 'feat(client): sweep remaining identity surfaces onto kind, show agent owner (DOR-969)'
   - 'fix(client): stop the unresolved AgentChipPicker disc rendering invisible (DOR-969)'
+  - 'fix(client): derive RequestingAgent kind from hasAgentPath, not requestedBy truthiness'
 ---
 
 ### Changed
