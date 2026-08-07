@@ -208,6 +208,69 @@ describe('AgentMcpServerService.test — 401 classification', () => {
   });
 });
 
+describe('AgentMcpServerService.test — probing with the OAuth bearer (DOR-985)', () => {
+  /** A probe fetch that records the `Authorization` it was called with, then 401s. */
+  function recordingProbeFetch(seen: (string | null)[]): typeof fetch {
+    return async (_input, init) => {
+      seen.push(new Headers(init?.headers).get('authorization'));
+      return new Response('Unauthorized', {
+        status: 401,
+        headers: { 'WWW-Authenticate': 'Bearer' },
+      });
+    };
+  }
+
+  it('sends the live token, so Test dials what a turn would dial', async () => {
+    const projectPath = await setupWorkspaceWith(OAUTH_HTTP);
+    const seen: (string | null)[] = [];
+    const service = new AgentMcpServerService({
+      agents: new FakeLocator(projectPath),
+      tokenProvider: providerWith('live-token'),
+      probeFetch: recordingProbeFetch(seen),
+    });
+
+    await service.test(AGENT_ID, REMOTE);
+
+    // Probing the bare stored connection (the pre-fix behaviour) sends nothing
+    // here, so a server the operator had just signed into answered 401 forever
+    // and the row co-rendered "Connected" with "Needs sign-in — click Sign in".
+    expect(seen[0]).toBe('Bearer live-token');
+  });
+
+  it('withholds the header when no token is held, and still classifies the 401', async () => {
+    const projectPath = await setupWorkspaceWith(OAUTH_HTTP);
+    const seen: (string | null)[] = [];
+    const service = new AgentMcpServerService({
+      agents: new FakeLocator(projectPath),
+      tokenProvider: providerWith(undefined),
+      probeFetch: recordingProbeFetch(seen),
+    });
+
+    const result = await service.test(AGENT_ID, REMOTE);
+
+    // The safe default is unchanged: no token → no header → needs-auth.
+    expect(seen[0]).toBeNull();
+    expect(result).toMatchObject({ ok: false, needsAuth: true });
+  });
+
+  it('never writes the bearer back to the manifest', async () => {
+    const projectPath = await setupWorkspaceWith(OAUTH_HTTP);
+    const service = new AgentMcpServerService({
+      agents: new FakeLocator(projectPath),
+      tokenProvider: providerWith('live-token'),
+      probeFetch: recordingProbeFetch([]),
+    });
+
+    await service.test(AGENT_ID, REMOTE);
+
+    // The merged connection is a per-probe copy. Baking a token into the stored
+    // entry would strand an expired one on disk in plain text.
+    const raw = await fs.readFile(path.join(projectPath, '.dork', 'agent.json'), 'utf-8');
+    expect(raw).not.toContain('live-token');
+    expect(raw).not.toContain('Authorization');
+  });
+});
+
 describe('AgentMcpServerService.list — derived authStatus (DOR-985)', () => {
   it('reports connected when a live token exists, even with no authKind on the entry', async () => {
     const projectPath = await setupWorkspaceWith(PLAIN_HTTP);
@@ -245,6 +308,24 @@ describe('AgentMcpServerService.list — derived authStatus (DOR-985)', () => {
     const [server] = await service.list(AGENT_ID);
     // The negative branch: guessing needs-auth for every tokenless remote server
     // would put a Sign in button on servers that authenticate by static header.
+    expect(server?.authStatus).toBeUndefined();
+  });
+
+  it('has no opinion about an oauth2 entry the operator authenticated by hand', async () => {
+    const projectPath = await setupWorkspaceWith({
+      ...OAUTH_HTTP,
+      headers: { authorization: 'Bearer operator-supplied' },
+    });
+    const service = new AgentMcpServerService({
+      agents: new FakeLocator(projectPath),
+      tokenProvider: providerWith(undefined),
+    });
+
+    const [server] = await service.list(AGENT_ID);
+    // The entry carries its own credential (lower-cased here on purpose — HTTP
+    // header names are case-insensitive), so DorkOS holding no token is not a
+    // problem to nag about. Dropping the guard puts a Sign in button on a server
+    // that does not need one.
     expect(server?.authStatus).toBeUndefined();
   });
 

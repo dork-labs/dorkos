@@ -45,6 +45,18 @@ export const RESERVED_MCP_SERVER_NAME = 'dorkos';
 const AUTHORIZATION_HEADER = 'Authorization';
 
 /**
+ * Whether a stored connection already carries its own `Authorization` header —
+ * a credential the operator supplied, which DorkOS neither holds nor refreshes.
+ * Compared case-insensitively, because HTTP header names are.
+ *
+ * @param headers - The entry's stored headers.
+ */
+function hasOwnAuthorizationHeader(headers: Record<string, string> | undefined): boolean {
+  const wanted = AUTHORIZATION_HEADER.toLowerCase();
+  return Object.keys(headers ?? {}).some((key) => key.toLowerCase() === wanted);
+}
+
+/**
  * The synchronous access-token lookup the injection path consults for managed-MCP
  * OAuth (DOR-942). Satisfied structurally by `AgentMcpOAuthService`; kept as a
  * narrow port so this runtime-neutral service never imports the OAuth engine (or,
@@ -214,6 +226,12 @@ export class AgentMcpServerService {
    * does not hold, which is `needs-auth`. Anything else (stdio, or a remote
    * server that has never demanded auth) gets no opinion rather than a guess.
    *
+   * One exception sits between those: an entry that carries its OWN
+   * `Authorization` header. The operator pasted a token in at `add`, so the
+   * server is authenticated without DorkOS holding anything, and calling it
+   * needs-auth would put a Sign in button on a server that does not need one.
+   * DorkOS has no opinion about a credential it does not manage.
+   *
    * @param agentId - The owning agent's id.
    * @param server - The stored managed entry.
    */
@@ -223,7 +241,8 @@ export class AgentMcpServerService {
   ): McpServerAuthStatus | undefined {
     if (server.connection.transport === 'stdio') return undefined;
     if (this.tokenProvider?.getAccessToken(agentId, server.name)) return 'connected';
-    return server.connection.authKind === 'oauth2' ? 'needs-auth' : undefined;
+    if (server.connection.authKind !== 'oauth2') return undefined;
+    return hasOwnAuthorizationHeader(server.connection.headers) ? undefined : 'needs-auth';
   }
 
   /**
@@ -472,15 +491,55 @@ export class AgentMcpServerService {
         out[name] = connection;
         continue;
       }
-      const token = this.tokenProvider.getAccessToken(agentId, name);
-      out[name] = token
-        ? {
-            ...connection,
-            headers: { ...connection.headers, [AUTHORIZATION_HEADER]: `Bearer ${token}` },
-          }
+      const auth = this.oauthAuthorizationHeader(agentId, name);
+      out[name] = auth
+        ? { ...connection, headers: { ...connection.headers, ...auth } }
         : connection;
     }
     return out;
+  }
+
+  /**
+   * The `Authorization` header a live cached OAuth token contributes for
+   * `(agentId, serverName)`, or `undefined` when there is none.
+   *
+   * **The single place the bearer rule lives.** Both paths that talk to a remote
+   * managed server go through it — session injection
+   * ({@link mergeOAuthHeaders}) and the reachability probe ({@link test}) — so
+   * they cannot drift into disagreeing about whether a server is authenticated.
+   * They did once: the probe read the STORED connection and sent no bearer, so a
+   * server the operator had just signed into still answered 401 and the row
+   * co-rendered "Connected" with "Needs sign-in — click Sign in" (DOR-985).
+   *
+   * `undefined` is the safe default: no token → no header → the server reports
+   * needs-auth rather than being contacted unauthenticated
+   * (`.claude/rules/safe-defaults.md`).
+   *
+   * @param agentId - The owning agent's id.
+   * @param serverName - The managed server's name.
+   */
+  private oauthAuthorizationHeader(
+    agentId: string,
+    serverName: string
+  ): Record<string, string> | undefined {
+    const token = this.tokenProvider?.getAccessToken(agentId, serverName);
+    return token ? { [AUTHORIZATION_HEADER]: `Bearer ${token}` } : undefined;
+  }
+
+  /**
+   * The connection the reachability probe should dial: the stored one, plus the
+   * OAuth bearer when DorkOS holds a live token — exactly what a turn would
+   * inject, so Test reports what the agent would actually experience.
+   *
+   * @param agentId - The owning agent's id.
+   * @param server - The stored managed entry.
+   */
+  private probeConnection(agentId: string, server: ManagedMcpServer): McpServerTransport {
+    if (server.connection.transport === 'stdio') return server.connection;
+    const auth = this.oauthAuthorizationHeader(agentId, server.name);
+    return auth
+      ? { ...server.connection, headers: { ...server.connection.headers, ...auth } }
+      : server.connection;
   }
 
   /**
@@ -492,6 +551,10 @@ export class AgentMcpServerService {
    * bypass `add`'s approval gate), opens a short-lived client, lists tools once,
    * and always closes — the whole round trip is capped at
    * {@link TEST_PROBE_TIMEOUT_MS}. A failure is returned in-band, never thrown.
+   *
+   * It dials the connection a TURN would dial, bearer included
+   * ({@link probeConnection}) — probing the bare stored connection made a
+   * signed-in server report needs-auth forever (DOR-985).
    *
    * A 401 / unauthorized probe is classified as `needsAuth: true` (DOR-942) so the
    * client can render "Needs sign-in" instead of the raw SDK error; every other
@@ -518,7 +581,7 @@ export class AgentMcpServerService {
     }
 
     const client = new Client({ name: 'dorkos-mcp-probe', version: '1.0.0' }, { capabilities: {} });
-    const transport = createProbeTransport(server.connection, this.probeFetch);
+    const transport = createProbeTransport(this.probeConnection(agentId, server), this.probeFetch);
     try {
       const tools = await withProbeTimeout(
         (async () => {

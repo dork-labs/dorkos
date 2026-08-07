@@ -534,8 +534,17 @@ export const mcpDomain: CapabilityDomain = {
         }
         // Getting this far means the provider's OAuth discovery answered, so the
         // server really is OAuth-protected — record it, so the row keeps offering
-        // a sign-in after a restart even before any turn runs (DOR-985).
-        await service.learnOAuthAuthKind(input.agentId, input.name).catch(() => false);
+        // a sign-in after a restart even before any turn runs (DOR-985). The
+        // sign-in itself is what the caller asked for, so a failed write is
+        // reported and shrugged off rather than failing the call.
+        await service.learnOAuthAuthKind(input.agentId, input.name).catch((err: unknown) => {
+          deps.logger.warn(
+            `[mcp.signin] could not record authKind for "${input.name}": ${
+              err instanceof Error ? err.message : String(err)
+            }`
+          );
+          return false;
+        });
         const message = started.alreadyConnected
           ? `You’re already signed in to ${input.name}. ${disclosure}`
           : `[Sign in to ${input.name}](${started.authorizeUrl})\n\n${disclosure}\n\n` +
