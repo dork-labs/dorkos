@@ -352,6 +352,34 @@ export class AuthorRegistry {
   }
 
   /**
+   * Set or clear an author's photo.
+   *
+   * The write path for the fourth render-cache field, and the reason it is a
+   * method rather than an `UPDATE` in a route: `imageUrl` is refreshed on
+   * resolve like `displayName`, so anything that writes it has to write it
+   * where every other reader of the row will see the same value on the next
+   * resolve. A route reaching past this into SQL would be a second lifecycle
+   * for one column.
+   *
+   * **Human-initiated only**, exactly like {@link AuthorRegistry.setHandle}:
+   * the one caller is `POST/DELETE /api/profile/avatar`, which refuses an
+   * agent before it reads a byte. Agents have no photos — their identity
+   * language is an emoji and a colour (spec `identity-consistency` §W3.5).
+   *
+   * @param authorId - Whose photo to set.
+   * @param imageUrl - Whatever URL the avatar store returned, stored verbatim,
+   *   or `null` to clear it. Nothing here builds or inspects a path — the URL
+   *   may be server-relative today and absolute tomorrow.
+   * @returns The author, with its photo as stored.
+   */
+  setImageUrl(authorId: string, imageUrl: string | null): AuthorRecord {
+    const author = this.getById(authorId);
+    if (!author) throw new RoomError('MEMBER_NOT_FOUND', 'No such author');
+    this.db.update(authors).set({ imageUrl }).where(eq(authors.id, authorId)).run();
+    return { ...author, imageUrl };
+  }
+
+  /**
    * Resolve a LOCAL `(kind, naturalKey)` to an author, inserting the row the
    * first time it is seen and refreshing the cached `displayName` after that.
    * See {@link AuthorRegistry.upsert} for what "resolve" does; this adds the one
