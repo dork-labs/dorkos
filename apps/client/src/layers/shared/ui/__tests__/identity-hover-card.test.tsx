@@ -128,6 +128,26 @@ describe('IdentityHoverCard', () => {
     expect(document.querySelector('.animate-ping')).toBeNull();
   });
 
+  it("draws the identity's photo on the card's disc, and the emoji when there is none", async () => {
+    // The descriptor field the one production caller (`MentionPillRenderer`)
+    // fills. Red if the card stops passing it down: the message gutter reads
+    // the same render cache, so a card that dropped the photo would describe
+    // somebody with a different face than the messages beside it.
+    const PHOTO = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+    await openOn({ kind: 'human', displayName: 'Dorian', emoji: '🐙', imageUrl: PHOTO });
+
+    const disc = document.querySelector('[data-slot="identity-avatar"]')!;
+    expect(disc.querySelector('img')).toHaveAttribute('src', PHOTO);
+    expect(disc).not.toHaveTextContent('🐙');
+
+    cleanup();
+    await openOn({ kind: 'human', displayName: 'Dorian', emoji: '🐙' });
+
+    const without = document.querySelector('[data-slot="identity-avatar"]')!;
+    expect(without.querySelector('img')).toBeNull();
+    expect(without).toHaveTextContent('🐙');
+  });
+
   it("shows a person's origin chip, and an external platform name for a bridged person", async () => {
     await openOn({ kind: 'human', displayName: 'Priya', origin: { platform: 'Telegram' } });
     expect(screen.getByText('Telegram')).toBeInTheDocument();

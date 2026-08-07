@@ -9,6 +9,7 @@ import type {
   ErrorPart,
 } from '@dorkos/shared/types';
 import type { SessionDiagnostics } from '@/layers/features/status';
+import type { TeamMember } from '@dorkos/shared/team-schemas';
 import {
   createAssistantMessage,
   createUserMessage,
@@ -796,6 +797,8 @@ export interface MockIdentity {
   handle?: string;
   color?: string;
   emoji?: string;
+  /** A photo, when this identity has one — the face the disc draws over the emoji. */
+  imageUrl?: string;
   origin?: 'local' | { platform: string };
   agent?: {
     runtime?: string;
@@ -807,11 +810,19 @@ export interface MockIdentity {
 }
 
 /**
+ * A 16x16 PNG, inline, so the playground needs no network and no fixture file.
+ * A gradient rather than a face: it has to read as "a photo is here" at 20px.
+ */
+const MOCK_PHOTO =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAACRElEQVR42g3Loa6FIAAA0PdhN9PcLBZnpLlZKM5IY7NQhGBgFJwbM8jYKCSDJDY2C8nEdzxPP38/UAB4a5Bb8EAQBxBGcGHgZ+AWcAqgd7AZID1Yb8ASoH+/qoDqravcVg+s4lCFsbpw5efKLdUpKr1Xm6mkr9a7Yqn6QlNA89ZNbpsHNnFowthcuPFz45bmFI3em8000jfr3bDUfKEroHvrLrfdA7s4dGHsLtz5uXNLd4pO791mOum79e5Y6r4AC4BvDXMLHwjjAMMILwz9DN0CTwH1DjcDpYfrDVmCX+gL6N+6z23/wD4OfRj7C/d+7t3Sn6LXe7+ZXvp+vXuW+i+gAtBbo9yiB6I4oDCiCyM/I7egUyC9o80g6dF6I5bQF6YCpreecjs9cIrDFMbpwpOfJ7dMp5j0Pm1mkn5a74ml6Qu4APzWOLf4gTgOOIz4wtjP2C34FFjveDNYerzemCX8BVIAeWuSW/JAEgcSRnJh4mfiFnIKoneyGSI9WW/CEvkCLYC+Nc0tfSCNAw0jvTD1M3ULPQXVO90MlZ6uN2WJfoEXwN+a55Y/kMeBh5FfmPuZu4Wfguudb4ZLz9ebs8S/IAoQby1yKx4o4iDCKC4s/CzcIk4h9C42I6QX6y1YEl9QBai3VrlVD1RxUGFUF1Z+Vm5Rp1B6V5tR0qv1ViypLxwFHG995PZ44BGHI4zHhQ8/H245TnHo/djMIf2x3gdLxxdsAfatbW7tA20cbBjtha2frVvsKaze7Was9Ha9LUuW/gP2ssBwaAAcBgAAAABJRU5ErkJggg==';
+
+/**
  * The cast the identity showcases draw from: an agent with a live working
- * chip, an agent with none, a local person, a bridged external person, a
- * room's own system voice, and the edge cases the design doc calls out by
- * name — a long name/handle pair, a light fill with no emoji (the case
- * `readableForeground` exists for), and multi-codepoint ZWJ emoji.
+ * chip, an agent with none, a local person, a person carrying a photo, a
+ * bridged external person, a room's own system voice, and the edge cases the
+ * design doc calls out by name — a long name/handle pair, a light fill with no
+ * emoji (the case `readableForeground` exists for), and multi-codepoint ZWJ
+ * emoji.
  */
 export const MOCK_IDENTITIES: Record<string, MockIdentity> = {
   warden: {
@@ -859,6 +870,19 @@ export const MOCK_IDENTITIES: Record<string, MockIdentity> = {
     handle: 'ana',
     origin: 'local',
   },
+  // The photo case. A person, because the upload surface is for people only —
+  // an agent's identity language is its emoji and its colour. The emoji sits
+  // beside the photo on purpose: the disc draws the photo and the emoji is what
+  // it falls back to, which is the precedence this cast member exists to show.
+  photographed: {
+    kind: 'human',
+    displayName: 'Dorian',
+    handle: 'dorian',
+    color: '#0ea5e9',
+    emoji: '🐙',
+    imageUrl: MOCK_PHOTO,
+    origin: 'local',
+  },
   priya: {
     kind: 'human',
     displayName: 'Priya',
@@ -899,3 +923,134 @@ export const MOCK_IDENTITIES: Record<string, MockIdentity> = {
     emoji: '🏴‍☠️',
   },
 };
+
+// ---------------------------------------------------------------------------
+// Team roster (spec `identity-consistency` §W2.2, §W2.6)
+// ---------------------------------------------------------------------------
+
+/**
+ * A roster the product cannot produce yet, which is exactly why it exists.
+ *
+ * Two people, four agents and two owners. The spec's binding rule for the Buzz
+ * future (§W2.6) is that no component may branch on "there is exactly one
+ * person" — a rule that only means anything if something in the repo draws a
+ * second one. This is that something: the playground renders the real Team page
+ * against it, and the page's jsdom tests assert grouping, the owner filter and
+ * the chips against these same rows, so the showcase and the tests cannot drift
+ * into disagreeing about what a two-person install looks like.
+ *
+ * The edge cases the card has to survive ride along rather than living in a
+ * second fixture: a person bridged in from another platform with a qualified
+ * handle, an agent that belongs to nobody (the system one), an agent with no
+ * handle at all, and a name long enough to need truncating.
+ */
+export const MOCK_TEAM_ROSTER: TeamMember[] = [
+  {
+    id: 'person-dorian',
+    kind: 'human',
+    displayName: 'Dorian',
+    handle: 'dorian',
+    color: '#6d5ae0',
+    isSelf: true,
+    ownerId: null,
+    origin: 'local',
+    person: { role: null, email: 'dorian@dorkos.ai' },
+  },
+  {
+    id: 'person-miguel',
+    kind: 'human',
+    displayName: 'Miguel Ferreira-Santos',
+    // Qualified, because two platforms can each hold a `miguel` and the roster
+    // has to be able to say which one this is.
+    handle: 'miguel.telegram',
+    color: '#0ea5e9',
+    isSelf: false,
+    ownerId: null,
+    origin: { platform: 'telegram' },
+    person: { role: null },
+  },
+  {
+    id: 'agent-warden',
+    kind: 'agent',
+    displayName: 'Warden',
+    handle: 'warden',
+    color: '#6d5ae0',
+    emoji: '🛡️',
+    isSelf: false,
+    ownerId: 'person-dorian',
+    origin: 'local',
+    agent: {
+      manifestId: 'agent-warden',
+      runtime: 'claude-code',
+      model: 'opus-4.8',
+      healthStatus: 'active',
+      recentlyActive: true,
+      isDefault: true,
+      isSystem: false,
+      registeredAt: '2026-07-01T09:00:00.000Z',
+    },
+  },
+  {
+    id: 'agent-scout',
+    kind: 'agent',
+    displayName: 'Scout',
+    handle: 'scout',
+    color: '#f59e0b',
+    emoji: '🔭',
+    isSelf: false,
+    ownerId: 'person-dorian',
+    origin: 'local',
+    agent: {
+      manifestId: 'agent-scout',
+      runtime: 'codex',
+      healthStatus: 'stale',
+      recentlyActive: false,
+      isDefault: false,
+      isSystem: false,
+      registeredAt: '2026-07-04T14:20:00.000Z',
+    },
+  },
+  {
+    id: 'agent-cartographer',
+    kind: 'agent',
+    displayName: 'Cartographer of the Northern Reaches',
+    // Never been in a room, so there is nothing to address it by.
+    handle: null,
+    color: '#0ea5e9',
+    emoji: '🗺️',
+    isSelf: false,
+    ownerId: 'person-miguel',
+    origin: 'local',
+    agent: {
+      manifestId: 'agent-cartographer',
+      runtime: 'opencode',
+      model: 'qwen3-coder',
+      healthStatus: 'inactive',
+      recentlyActive: false,
+      isDefault: false,
+      isSystem: false,
+      registeredAt: '2026-07-06T11:05:00.000Z',
+    },
+  },
+  {
+    id: 'agent-dorkbot',
+    kind: 'agent',
+    displayName: 'DorkBot',
+    handle: 'dorkbot',
+    color: '#334155',
+    emoji: '🤖',
+    isSelf: false,
+    // The system agent belongs to the install, not to a person.
+    ownerId: null,
+    origin: 'local',
+    agent: {
+      manifestId: 'agent-dorkbot',
+      runtime: 'claude-code',
+      healthStatus: 'active',
+      recentlyActive: true,
+      isDefault: false,
+      isSystem: true,
+      registeredAt: '2026-06-20T08:00:00.000Z',
+    },
+  },
+];

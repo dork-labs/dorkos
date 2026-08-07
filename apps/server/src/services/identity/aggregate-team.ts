@@ -249,6 +249,7 @@ function personRow(
     handle: record.handle,
     ...(record.emoji ? { emoji: record.emoji } : {}),
     ...(record.color ? { color: record.color } : {}),
+    ...(record.imageUrl ? { imageUrl: record.imageUrl } : {}),
     isSelf,
     // Nothing owns a person.
     ownerId: null,
@@ -267,14 +268,16 @@ function personRow(
  * @param agent - The mesh's view of the agent.
  * @param operatorId - The owner's author id, or `null`.
  * @param defaultAgentName - `config.agents.defaultAgent`, or `null`.
- * @param handle - Its author row's handle, or `null` when it has never been in a
- *   room and so has no author row to carry one.
+ * @param author - Its author row, or `null` when it has never been in a room and
+ *   so has none. Two things live only there: the address it answers to, and any
+ *   photo it has been given. Both ride the SAME row, so they cannot disagree
+ *   about which occupancy generation of a directory they belong to.
  */
 function agentRow(
   agent: TeamAgentSource,
   operatorId: string | null,
   defaultAgentName: string | null,
-  handle: string | null
+  author: AuthorRecord | null
 ): TeamMember {
   const isSystem = agent.isSystem === true;
   const facts: TeamAgentFacts = {
@@ -297,9 +300,12 @@ function agentRow(
     id: agent.id,
     kind: 'agent',
     displayName: agent.displayName ?? agent.name,
-    handle,
+    handle: author?.handle ?? null,
     ...(agent.icon ? { emoji: agent.icon } : {}),
     ...(agent.color ? { color: agent.color } : {}),
+    // The mesh knows an agent's emoji and colour; only its author row knows a
+    // photo, because that is the row an avatar store writes.
+    ...(author?.imageUrl ? { imageUrl: author.imageUrl } : {}),
     isSelf: false,
     // A system agent belongs to the install, not to a person. Every other agent
     // on this machine belongs to the one operator — and when the operator's own
@@ -362,15 +368,17 @@ export async function aggregateTeamRoster(sources: TeamRosterSources): Promise<T
   personRows.sort((a, b) => Number(b.isSelf) - Number(a.isSelf));
 
   // Keyed on the occupancy stamp rather than on the display name, so an agent
-  // registered where a previous one lived does not inherit its address — the
-  // same generation boundary the author registry draws (ADR 260801-003051).
-  const handleByManifestId = new Map(
+  // registered where a previous one lived does not inherit its address or its
+  // face — the same generation boundary the author registry draws
+  // (ADR 260801-003051). The whole row is carried rather than one field off it,
+  // so everything an author row contributes joins the same way and once.
+  const authorByManifestId = new Map(
     agentAuthors.items
-      .filter((record) => record.mintedForManifestId !== null && record.handle !== null)
-      .map((record) => [record.mintedForManifestId!, record.handle!])
+      .filter((record) => record.mintedForManifestId !== null)
+      .map((record) => [record.mintedForManifestId!, record])
   );
   const agentRows = agents.items.map((agent) =>
-    agentRow(agent, self?.id ?? null, defaultAgentName, handleByManifestId.get(agent.id) ?? null)
+    agentRow(agent, self?.id ?? null, defaultAgentName, authorByManifestId.get(agent.id) ?? null)
   );
 
   const members = [...personRows, ...agentRows];

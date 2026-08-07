@@ -18,6 +18,10 @@ export function useRegisterAgent() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mesh', 'agents'] });
       queryClient.invalidateQueries({ queryKey: ['mesh', 'agent-paths'] });
+      // The Team roster reads the same fleet. A raw literal rather than
+      // `TEAM_ROSTER_KEY`: one entity may not import a sibling entity, and
+      // every key in this file is already written this way.
+      queryClient.invalidateQueries({ queryKey: ['team'] });
     },
   });
 }

@@ -109,7 +109,7 @@ import {
   UpdateMembershipRequestSchema,
   UpdateRoomRequestSchema,
 } from '@dorkos/shared/room-schemas';
-import { TeamRosterResponseSchema } from '@dorkos/shared/team-schemas';
+import { ProfileAvatarResponseSchema, TeamRosterResponseSchema } from '@dorkos/shared/team-schemas';
 import { DeepHealthResponseSchema } from '@dorkos/shared/health-schemas';
 import { SessionSnapshotSchema, SessionEventSchema } from '@dorkos/shared/session-stream';
 import {
@@ -3572,6 +3572,103 @@ registry.registerPath({
     },
     500: {
       description: 'The roster itself could not be assembled (not a per-source failure)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+// --- Profile (spec `identity-consistency` §W3.5, ADR 260806-222546) ---
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/profile/avatar',
+  tags: ['Profile'],
+  summary: "Set the operator's profile photo",
+  description:
+    'Multipart upload of a single image in the `avatar` field. The photo replaces whatever was ' +
+    'there, in any format. Three refusals, all before anything is stored: over 2 MB (413), and ' +
+    'anything whose MAGIC BYTES are not PNG, JPEG or WebP (415) — the filename and the ' +
+    '`Content-Type` the client claims are not evidence, since both are written by whoever is ' +
+    'uploading. SVG is therefore refused too, on purpose: it is a script vector, and a profile ' +
+    'photo has no reason to be one. Nothing is re-encoded or resized. Only a person may call ' +
+    'this; an agent presenting an identity token is refused (403). The URL that comes back is ' +
+    'written to BOTH the roster (`authors.image_url`) and the account record (`user.image`), so ' +
+    'the two cannot disagree — and it is opaque: server-relative today, absolute the day a ' +
+    'remote store backs it.',
+  request: {
+    body: {
+      content: {
+        'multipart/form-data': {
+          schema: z.object({
+            avatar: z.string().openapi({ type: 'string', format: 'binary' }),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Stored. The URL to render and to keep.',
+      content: { 'application/json': { schema: ProfileAvatarResponseSchema } },
+    },
+    400: {
+      description: 'No file was attached, or the upload could not be read',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description: 'The caller is an agent — a profile photo is the operator’s to set',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    413: {
+      description: 'Larger than 2 MB, refused while still being read',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    415: {
+      description: 'The bytes are not a PNG, JPEG or WebP',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/profile/avatar',
+  tags: ['Profile'],
+  summary: "Remove the operator's profile photo",
+  description:
+    'Clears the stored file and both identity records. Idempotent: deleting a photo that is ' +
+    'already gone succeeds, because the caller wanted it gone either way.',
+  responses: {
+    204: { description: 'Gone' },
+    403: {
+      description: 'The caller is an agent',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/profile/avatar/{id}',
+  tags: ['Profile'],
+  summary: "Serve an identity's profile photo",
+  description:
+    'Streams the stored image with `X-Content-Type-Options: nosniff`, a strong `ETag` derived ' +
+    'from the content, and `Cache-Control: private, max-age=0, must-revalidate`. The `?v=<hash>` ' +
+    'the stored URL carries is what makes a replaced photo appear at once without turning ' +
+    'caching off; a matching `If-None-Match` answers 304. The id is opaque — one that could be ' +
+    'read as a path is answered 404 rather than followed.',
+  request: { params: z.object({ id: z.string().openapi({ description: 'The identity id' }) }) },
+  responses: {
+    200: {
+      description: 'The image',
+      content: {
+        'image/png': { schema: z.string().openapi({ type: 'string', format: 'binary' }) },
+      },
+    },
+    304: { description: 'The caller already has this exact photo' },
+    404: {
+      description: 'That identity has no photo',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

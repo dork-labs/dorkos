@@ -130,6 +130,7 @@ import type {
   ForkShapeResult,
 } from './marketplace-schemas.js';
 import type { RoomTransport } from './transport-rooms.js';
+import type { TeamRosterResponse } from './team-schemas.js';
 import type { CloudLinkStatus, CloudLinkSummary, StartLinkResult } from './cloud-schemas.js';
 import type { FeedbackListItem, FeedbackSubmission } from './telemetry-events.js';
 import type {
@@ -1852,6 +1853,21 @@ export interface Transport extends RoomTransport {
    * @param grantId - The permission's id, from {@link listStandingPermissions}.
    */
   revokeStandingPermission(grantId: string): Promise<RevokeStandingPermissionResponse>;
+
+  // --- Team roster (spec `identity-consistency` §W2.2, ADR 260806-222535) ---
+
+  /**
+   * Read every identity on this install — the operator first, then everyone
+   * else, then the agents.
+   *
+   * One read-only projection over registries that already exist; it mints
+   * nothing and there is no write counterpart, which is why this is a single
+   * method rather than a domain. A source that could not be read contributes a
+   * `warnings[]` entry and zero rows, so the caller renders a degraded roster
+   * rather than an error page — the person reading the page is still on it.
+   * `warnings` is omitted entirely on a clean read, never `[]`.
+   */
+  getTeamRoster(): Promise<TeamRosterResponse>;
 
   // --- Shapes (DOR-355) ---
 

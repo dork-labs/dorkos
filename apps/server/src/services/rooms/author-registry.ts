@@ -164,6 +164,16 @@ export interface AuthorRecord {
   /** Render cache: identity colour, or `null` when the author has none. */
   color: string | null;
   /**
+   * Render cache: the URL of the author's photo, or `null` when they have none.
+   *
+   * The fourth field on the `display_name`/`emoji`/`color` lifecycle — refreshed
+   * every time the author resolves, because it is a cache and its source is
+   * elsewhere. Deliberately NOT on `handle`'s lifecycle: a handle is a key and
+   * is written once at mint, which is the distinction the two of them sitting
+   * next to each other on this interface most needs to make.
+   */
+  imageUrl: string | null;
+  /**
    * The manifest ULID of the occupant this row was minted for, or `null` on a
    * legacy row and on every non-agent author.
    *
@@ -201,6 +211,7 @@ export function toAuthorRef(record: AuthorRecord, addressable?: string | null): 
     handle: addressable === undefined ? record.handle : addressable,
     ...(record.emoji ? { emoji: record.emoji } : {}),
     ...(record.color ? { color: record.color } : {}),
+    ...(record.imageUrl ? { imageUrl: record.imageUrl } : {}),
     ...(record.kind === 'agent' ? { agentRef: agentAuthorRef(record.naturalKey) } : {}),
   };
 }
@@ -277,6 +288,13 @@ export interface ResolveAuthorInput {
   emoji?: string | null;
   /** Identity colour, on the same lifecycle as {@link ResolveAuthorInput.emoji}. */
   color?: string | null;
+  /**
+   * The author's photo, on the same lifecycle as
+   * {@link ResolveAuthorInput.emoji}: `undefined` leaves whatever is stored
+   * alone, `null` clears it. Whatever URL the avatar store returned, stored as
+   * given — nothing here builds a path.
+   */
+  imageUrl?: string | null;
 }
 
 /**
@@ -331,6 +349,34 @@ export class AuthorRegistry {
     if (!author) throw new RoomError('MEMBER_NOT_FOUND', 'No such author');
     const handle = this.handles.set(author, raw);
     return { ...author, handle };
+  }
+
+  /**
+   * Set or clear an author's photo.
+   *
+   * The write path for the fourth render-cache field, and the reason it is a
+   * method rather than an `UPDATE` in a route: `imageUrl` is refreshed on
+   * resolve like `displayName`, so anything that writes it has to write it
+   * where every other reader of the row will see the same value on the next
+   * resolve. A route reaching past this into SQL would be a second lifecycle
+   * for one column.
+   *
+   * **Human-initiated only**, exactly like {@link AuthorRegistry.setHandle}:
+   * the one caller is `POST/DELETE /api/profile/avatar`, which refuses an
+   * agent before it reads a byte. Agents have no photos — their identity
+   * language is an emoji and a colour (spec `identity-consistency` §W3.5).
+   *
+   * @param authorId - Whose photo to set.
+   * @param imageUrl - Whatever URL the avatar store returned, stored verbatim,
+   *   or `null` to clear it. Nothing here builds or inspects a path — the URL
+   *   may be server-relative today and absolute tomorrow.
+   * @returns The author, with its photo as stored.
+   */
+  setImageUrl(authorId: string, imageUrl: string | null): AuthorRecord {
+    const author = this.getById(authorId);
+    if (!author) throw new RoomError('MEMBER_NOT_FOUND', 'No such author');
+    this.db.update(authors).set({ imageUrl }).where(eq(authors.id, authorId)).run();
+    return { ...author, imageUrl };
   }
 
   /**
@@ -445,6 +491,7 @@ export class AuthorRegistry {
         displayName: input.displayName,
         emoji: input.emoji === undefined ? existing.emoji : input.emoji,
         color: input.color === undefined ? existing.color : input.color,
+        imageUrl: input.imageUrl === undefined ? existing.imageUrl : input.imageUrl,
       };
       // Adoption: a legacy row with no stamp takes the current occupant's id,
       // once, and is thereafter an ordinary stamped row. Only ever a write, so a
@@ -457,6 +504,7 @@ export class AuthorRegistry {
         existing.displayName !== refreshed.displayName ||
         existing.emoji !== refreshed.emoji ||
         existing.color !== refreshed.color ||
+        existing.imageUrl !== refreshed.imageUrl ||
         existing.mintedForManifestId !== mintedForManifestId
       ) {
         this.db
@@ -505,6 +553,7 @@ export class AuthorRegistry {
       handle: this.mintHandle({ id, ...input }),
       emoji: input.emoji ?? null,
       color: input.color ?? null,
+      imageUrl: input.imageUrl ?? null,
       mintedForManifestId: occupantId,
       retiredAt: null,
       createdAt: new Date().toISOString(),
@@ -546,6 +595,7 @@ export class AuthorRegistry {
       handle: settled?.handle ?? row.handle,
       emoji: row.emoji,
       color: row.color,
+      imageUrl: row.imageUrl,
       mintedForManifestId: settled?.mintedForManifestId ?? row.mintedForManifestId,
     };
   }
@@ -715,6 +765,7 @@ export class AuthorRegistry {
       handle: this.mintHandle({ id, ...input }),
       emoji: input.emoji ?? null,
       color: input.color ?? null,
+      imageUrl: input.imageUrl ?? null,
       mintedForManifestId: occupantId,
       retiredAt: null,
       createdAt: now,
@@ -789,6 +840,7 @@ export class AuthorRegistry {
       handle: fresh.handle,
       emoji: fresh.emoji,
       color: fresh.color,
+      imageUrl: fresh.imageUrl,
       mintedForManifestId: occupantId,
     };
   }
@@ -809,7 +861,13 @@ export class AuthorRegistry {
    * @param agentPath - Absolute path to the agent's project directory.
    * @param displayName - The agent's current name, for rendering.
    * @param presentation - Emoji and colour, when the caller knows them. Omitted
-   *   fields leave the stored render cache alone.
+   *   fields leave the stored render cache alone. **`imageUrl` is deliberately
+   *   not here**, though the row carries one: an agent's identity language is
+   *   its emoji and its colour, and no source of agent photos exists (the
+   *   upload surface is for people). A caller that does acquire one goes
+   *   through {@link AuthorRegistry.resolve}, which takes every cached field —
+   *   so this stays a parameter list of things something actually knows,
+   *   rather than one that invites a value nothing can supply.
    */
   resolveAgent(
     agentPath: string,
@@ -1197,6 +1255,7 @@ function toRecord(row: typeof authors.$inferSelect): AuthorRecord {
     handle: row.handle,
     emoji: row.emoji,
     color: row.color,
+    imageUrl: row.imageUrl,
     mintedForManifestId: row.mintedForManifestId,
   };
 }
