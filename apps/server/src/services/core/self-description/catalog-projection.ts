@@ -10,6 +10,15 @@
  * capability (id, title, tier, one-line summary), bounded by a limit, and the
  * caller opts into detail or pages through with a cursor.
  *
+ * What keeps a call small is the DEFAULT, not the limit ceiling. A caller that
+ * asks for `detail:'full'` at the maximum limit still gets everything, because
+ * `dorkos capabilities` and `dorkos call` need the complete set and page for it
+ * deliberately. So the default has to be small on its own: entries are compact
+ * unless the caller says otherwise, and a `domain`/`query` filter only upgrades
+ * the page to full detail when it is selective enough to be worth it
+ * ({@link FULL_DETAIL_THRESHOLD}). A filter that matches most of the catalog —
+ * `query:'a'`, say — is not a request for every schema in the product.
+ *
  * The projection is a PURE function over an already-serialized
  * {@link CapabilityCatalog}, so it is the single source of truth shared by the
  * two agent-facing surfaces that must stay byte-identical: the `capabilities.list`
@@ -20,7 +29,11 @@
  * @module services/core/self-description/catalog-projection
  */
 import { z } from 'zod';
-import { CAPABILITY_TIERS, type CapabilityCatalog } from '@dorkos/shared/capabilities';
+import {
+  CAPABILITY_TIERS,
+  MAX_CAPABILITY_LIMIT,
+  type CapabilityCatalog,
+} from '@dorkos/shared/capabilities';
 
 /**
  * Number of capabilities returned when the caller does not set `limit`. Large
@@ -30,11 +43,25 @@ import { CAPABILITY_TIERS, type CapabilityCatalog } from '@dorkos/shared/capabil
 export const DEFAULT_CAPABILITY_LIMIT = 50;
 
 /**
- * Hard ceiling on `limit`. Bounds the worst case — a `detail:'full'` page — so no
- * single call can re-dump the whole catalog at full schema detail, which is the
- * overflow this feature exists to prevent.
+ * How few matches a `domain` or `query` filter must leave before the projection
+ * expands the page to full detail without being asked.
+ *
+ * A filter is a signal that the caller has something specific in mind, and
+ * handing back the schemas for a handful of entries saves a second round trip.
+ * It is only that signal when it actually narrows: `query:'a'` matches nearly
+ * every capability, and auto-expanding it returned MORE characters than the
+ * unfiltered dump this whole module exists to replace. Above this many matches
+ * the page stays compact and the `guidance` line says how to get the schemas.
+ *
+ * This bounds the number of ENTRIES, not the size of the payload, and the two
+ * come apart: `domain:'capabilities'` matches exactly one capability and expands
+ * to ~6.1K characters — larger than the whole catalog served compact (~6.0K),
+ * because one entry's two JSON Schemas outweigh thirty one-line summaries. That
+ * is the right trade for a caller who narrowed to one thing and is about to call
+ * it, and `guidance` names the compact alternative either way. If a byte budget
+ * is ever wanted instead of a count, this is the constant it replaces.
  */
-export const MAX_CAPABILITY_LIMIT = 200;
+export const FULL_DETAIL_THRESHOLD = 8;
 
 /** Longest a compact entry's one-line summary may be before it is elided. */
 const SUMMARY_MAX_LENGTH = 160;
@@ -91,6 +118,10 @@ export const serializedCapabilitySchema = z.object({
  * `@dorkos/shared/capabilities`. This is what {@link CapabilityRegistry.catalog}
  * returns and what {@link projectCatalog} narrows; it is NOT the shape
  * `capabilities.list` returns any more (that is {@link listCapabilitiesResultSchema}).
+ *
+ * @internal Exported so the domain's tests can validate the registry's raw
+ *   catalog against the shape this module projects from. No runtime surface
+ *   serves it.
  */
 export const capabilityCatalogSchema = z.object({
   catalogVersion: z.string(),
@@ -143,8 +174,9 @@ export const listCapabilitiesInputSchema = z.object({
     .optional()
     .describe(
       "'compact' returns id, title, tier, and a one-line summary; 'full' adds the model-facing " +
-        'description and the input and output JSON Schemas. Defaults to compact, or to full when a ' +
-        'domain or query filter is set.'
+        'description and the input and output JSON Schemas. Defaults to compact, and to full only ' +
+        `when a domain or query filter narrows the catalog to ${FULL_DETAIL_THRESHOLD} matches or ` +
+        'fewer. A broad filter stays compact — ask for full detail explicitly if you want it.'
     ),
   limit: z.coerce
     .number()
@@ -180,9 +212,11 @@ const pageEnvelope = {
   /** Cursor for the next page; present only when more entries remain. */
   nextCursor: z.string().optional(),
   /**
-   * Present only when this page is capped: a one-line, agent-facing note stating
-   * how many matches were left out and how to reach them (narrow with a filter,
-   * or page with the cursor). Never silently truncates.
+   * A one-line, agent-facing note about this page: how many matches were left
+   * out and how to reach them when it is capped, and how to trade detail for
+   * size either way. Present on every capped page, every full-detail page, and
+   * every filtered page that came back compact. Absent only from the plain
+   * no-argument call, which is already the cheapest answer there is.
    */
   guidance: z.string().optional(),
 };
@@ -220,32 +254,49 @@ export class InvalidCursorError extends Error {
    * Build the error, echoing the offending cursor in the message.
    *
    * @param cursor - The offending cursor value, echoed so the caller can see it.
+   * @param remedy - What the caller should do instead, appended to the message.
    */
-  constructor(cursor: string) {
-    super(`Invalid cursor ${JSON.stringify(cursor)}; use the nextCursor from a previous response.`);
+  constructor(cursor: string, remedy = 'use the nextCursor from a previous response') {
+    super(`Invalid cursor ${JSON.stringify(cursor)}; ${remedy}.`);
     this.name = 'InvalidCursorError';
   }
 }
 
-/** Encode a page offset into an opaque cursor token. */
-function encodeCursor(offset: number): string {
-  return Buffer.from(String(offset), 'utf8').toString('base64url');
+/**
+ * Encode a page offset into an opaque cursor token, bound to the catalog it was
+ * minted against so a cursor cannot be replayed across a catalog that changed
+ * underneath it (which would silently skip or repeat entries).
+ */
+function encodeCursor(catalogVersion: string, offset: number): string {
+  return Buffer.from(`${catalogVersion}:${offset}`, 'utf8').toString('base64url');
 }
 
 /**
  * Decode a cursor token back into its page offset.
  *
+ * Validates the decoded text rather than trusting `Number()`, which turns both
+ * `''` and `'  '` into 0 — so before this check any string at all decoded to a
+ * silent "start from the beginning" instead of an error.
+ *
  * @param cursor - The opaque token from a previous response.
+ * @param catalogVersion - The version of the catalog now being paged.
  * @returns The non-negative integer offset it encodes.
- * @throws {@link InvalidCursorError} when the token is not a server-minted offset.
+ * @throws {@link InvalidCursorError} when the token is not a server-minted
+ *   offset, or was minted against a different catalog version.
  */
-function decodeCursor(cursor: string): number {
+function decodeCursor(cursor: string, catalogVersion: string): number {
   const decoded = Buffer.from(cursor, 'base64url').toString('utf8');
-  const offset = Number(decoded);
-  if (!Number.isInteger(offset) || offset < 0) {
-    throw new InvalidCursorError(cursor);
+  const separator = decoded.lastIndexOf(':');
+  if (separator === -1) throw new InvalidCursorError(cursor);
+  const offset = decoded.slice(separator + 1);
+  if (!/^\d+$/.test(offset)) throw new InvalidCursorError(cursor);
+  if (decoded.slice(0, separator) !== catalogVersion) {
+    throw new InvalidCursorError(
+      cursor,
+      'the catalog changed since it was issued, so start paging again without a cursor'
+    );
   }
-  return offset;
+  return Number(offset);
 }
 
 /** The domain segment of a capability id (`mcp.add` -> `mcp`). */
@@ -278,26 +329,52 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-/** Build the one-line "here's what was left out and how to narrow" note. */
+/**
+ * Build the one-line "here's what this page costs you and how to shrink it"
+ * note, or `undefined` for a page that costs nothing to explain.
+ *
+ * Three shapes get a note: a CAPPED page (matches were left out, and the caller
+ * needs the cursor to reach them); a FULL-detail page (every entry carries both
+ * JSON Schemas, which is where a context budget actually goes); and a FILTERED
+ * page that came back compact, because the caller asked something specific and
+ * should be told the schemas are one request away rather than left guessing.
+ *
+ * The one silent case is the plain no-argument call: compact, complete, and
+ * already the cheapest answer there is.
+ *
+ * A zero-match page is answered FIRST and separately. It reaches here reporting
+ * `detail:'full'` — nothing matched, so nothing exceeded the selectivity
+ * threshold — and every sentence below would then be a lie told to an agent that
+ * got an empty array: entries carrying full schemas that do not exist, and an
+ * instruction to narrow a filter that already matches nothing.
+ */
 function buildGuidance(args: {
   total: number;
   shown: number;
   detail: 'compact' | 'full';
   filtered: boolean;
-  nextCursor: string;
-}): string {
-  const remaining = args.total - args.shown;
-  const narrow = args.filtered
-    ? 'Narrow further with a more specific query.'
-    : "Narrow with domain (e.g. domain:'mcp') or a query substring.";
-  const fuller =
+  nextCursor?: string;
+}): string | undefined {
+  if (args.total === 0) {
+    return args.filtered
+      ? 'Nothing matched. Broaden the query, drop the domain filter, or call with no arguments to see everything.'
+      : 'The catalog is empty; no capabilities are registered.';
+  }
+  const silent = args.nextCursor === undefined && args.detail === 'compact' && !args.filtered;
+  if (silent) return undefined;
+  const capped =
+    args.nextCursor === undefined
+      ? ''
+      : `Showing ${args.shown} of ${args.total} capabilities; ${args.total - args.shown} not shown. ` +
+        `Page the rest with cursor:'${args.nextCursor}'. `;
+  const sizing =
     args.detail === 'compact'
-      ? " Each entry is compact; set detail:'full' or add a filter to get descriptions and schemas."
-      : '';
-  return (
-    `Showing ${args.shown} of ${args.total} capabilities; ${remaining} not shown. ` +
-    `Page the rest with cursor:'${args.nextCursor}'. ${narrow}${fuller}`
-  );
+      ? "Each entry is compact; set detail:'full', or narrow until few enough match, for descriptions and schemas."
+      : "Each entry carries its full description and both JSON Schemas; set detail:'compact' for id, title, tier, and a one-line summary instead.";
+  const narrow = args.filtered
+    ? 'Narrow further with a more specific domain or query.'
+    : "Narrow with domain (e.g. domain:'mcp') or a query substring.";
+  return `${capped}${sizing} ${narrow}`;
 }
 
 /**
@@ -307,10 +384,11 @@ function buildGuidance(args: {
  * Matching is AND across the two filters: `domain` keeps ids in that exact domain
  * segment, `query` keeps entries whose id, title, or description contains the text
  * (both case-insensitive). Survivors are sorted by id so pagination is stable, then
- * the `[offset, offset + limit)` window is returned. Detail defaults to compact, or
- * to full when a filter is present, and an explicit `detail` always wins. When the
- * window does not reach the end, `nextCursor` and `guidance` say so — nothing is
- * ever dropped silently.
+ * the `[offset, offset + limit)` window is returned. Detail defaults to compact and
+ * rises to full only when a filter left {@link FULL_DETAIL_THRESHOLD} matches or
+ * fewer; an explicit `detail` always wins. When the window does not reach the end,
+ * `nextCursor` and `guidance` say so — nothing is ever dropped silently — and any
+ * page served at full detail carries `guidance` too, naming the cheaper request.
  *
  * @param catalog - The full serialized catalog from `registry.catalog()`.
  * @param input - The validated filter, detail, and pagination request.
@@ -337,17 +415,21 @@ export function projectCatalog(
   const sorted = [...matches].sort((a, b) => a.id.localeCompare(b.id));
   const total = sorted.length;
 
+  // A filter earns full detail only when it is SELECTIVE. Upgrading on any
+  // filter at all meant `query:'a'` — which matches nearly everything — served
+  // more characters than the unfiltered dump this module replaced, under the
+  // default limit, so with no cursor and no guidance to say so.
   const filtered = domain !== undefined || query !== undefined;
-  const detail = input.detail ?? (filtered ? 'full' : 'compact');
+  const detail = input.detail ?? (filtered && total <= FULL_DETAIL_THRESHOLD ? 'full' : 'compact');
 
-  const offset = input.cursor ? clamp(decodeCursor(input.cursor), 0, total) : 0;
+  const offset = input.cursor
+    ? clamp(decodeCursor(input.cursor, catalog.catalogVersion), 0, total)
+    : 0;
   const page = sorted.slice(offset, offset + input.limit);
   const returned = page.length;
   const end = offset + returned;
-  const nextCursor = end < total ? encodeCursor(end) : undefined;
-  const guidance = nextCursor
-    ? buildGuidance({ total, shown: end, detail, filtered, nextCursor })
-    : undefined;
+  const nextCursor = end < total ? encodeCursor(catalog.catalogVersion, end) : undefined;
+  const guidance = buildGuidance({ total, shown: end, detail, filtered, nextCursor });
 
   const envelope = {
     catalogVersion: catalog.catalogVersion,

@@ -483,6 +483,75 @@ describe('ApprovalService — reporting and card limits', () => {
   });
 });
 
+// DOR-987: `awaitDecision` promises it NEVER rejects, because a held destructive
+// call must never be worse than the poll flow it replaces. Two endings skipped
+// the happy path and had to be pinned: a store read that throws (the settle-race
+// probe ran unguarded inside the promise executor, so its throw rejected the
+// promise AND skipped `finish`, stranding the fan-out listener for the life of
+// the process), and an abort.
+describe('ApprovalService.awaitDecision — never rejects, never leaks its listener', () => {
+  let db: Db;
+  let service: ApprovalService;
+
+  beforeEach(() => {
+    db = createTestDb();
+    service = new ApprovalService(db);
+    vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('degrades to timeout when the approval store throws, and releases the listener', async () => {
+    const ticket = service.request({ ...BINDING, summary: 'Uninstall "sentry-monitor"' });
+    const baseline = eventFanOut.listenerCount;
+    // The settle-race probe reads the row from SQLite; a store that is down (or a
+    // corrupt db file) throws right there, inside the promise executor.
+    vi.spyOn(db, 'select').mockImplementationOnce(() => {
+      throw new Error('SQLITE_IOERR: disk I/O error');
+    });
+
+    // A value, never a rejection — the caller falls back to the poll payload.
+    await expect(service.awaitDecision(ticket.approvalId, { timeoutMs: 60_000 })).resolves.toBe(
+      'timeout'
+    );
+    // …and the subscription is gone, rather than accumulating one dead listener
+    // per held call for the life of the process.
+    expect(eventFanOut.listenerCount).toBe(baseline);
+  });
+
+  it('ends promptly on an abort, and releases the listener', async () => {
+    const ticket = service.request({ ...BINDING, summary: 'Uninstall "sentry-monitor"' });
+    const baseline = eventFanOut.listenerCount;
+    const controller = new AbortController();
+
+    // A cap far beyond the test's patience: only the abort can end this wait, so
+    // a green here cannot be the timer's doing.
+    const waiting = service.awaitDecision(ticket.approvalId, {
+      timeoutMs: 10 * 60_000,
+      signal: controller.signal,
+    });
+    controller.abort();
+
+    await expect(waiting).resolves.toBe('timeout');
+    expect(eventFanOut.listenerCount).toBe(baseline);
+  });
+
+  it('ends on an ALREADY-aborted signal without attaching anything', async () => {
+    const ticket = service.request({ ...BINDING, summary: 'Uninstall "sentry-monitor"' });
+    const baseline = eventFanOut.listenerCount;
+
+    await expect(
+      service.awaitDecision(ticket.approvalId, {
+        timeoutMs: 10 * 60_000,
+        signal: AbortSignal.abort(),
+      })
+    ).resolves.toBe('timeout');
+    expect(eventFanOut.listenerCount).toBe(baseline);
+  });
+});
+
 describe('resolveApprovalTtlMs — the window can be shortened, never lengthened', () => {
   it('takes the default when nothing is configured', () => {
     expect(resolveApprovalTtlMs(undefined)).toBeUndefined();

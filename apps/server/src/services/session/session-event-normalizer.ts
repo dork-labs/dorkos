@@ -401,6 +401,15 @@ function toCapabilityApprovalResolvedEvent(
     approvalId: String(data.approvalId ?? ''),
     // A missing outcome degrades to `timeout` — the no-decision word, which is
     // exactly how a hold that reached here without one should read.
+    //
+    // Unreachable today, and worth keeping honest about what it would cost if it
+    // ever became reachable: the sole emitter (`awaitCapabilityApproval`) always
+    // sets an outcome, and since DOR-987 `timeout` is the one value the client
+    // does NOT retire the card on — it converts it to a permanent terminal note.
+    // So a genuinely missing outcome would leave a card saying "the agent stopped
+    // waiting" on a request that was in fact granted. That is still the right
+    // default (it points at the approvals list rather than silently vanishing),
+    // but a second emitter must set `outcome` rather than lean on this.
     outcome: (data.outcome as RawOf<'capability_approval_resolved'>['outcome']) ?? 'timeout',
   };
 }

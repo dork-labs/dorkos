@@ -52,6 +52,7 @@ import { isRelayEnabled } from '../../../relay/relay-state.js';
 import { isTasksEnabled } from '../../../tasks/task-state.js';
 import { configManager } from '../../../core/config-manager.js';
 import { claudeConfigDirEnv, resolveActiveClaudeRoot } from '../claude-config-dir.js';
+import { mcpToolTimeoutFloorEnv } from './mcp-tool-timeout-env.js';
 import { resolveClaudeCredentialEnv } from '../../../core/credential-env.js';
 import { resolveAgentTokenEnv } from '../../../core/agent-identity/index.js';
 import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
@@ -466,6 +467,11 @@ export async function* executeSdkQuery(
       // eslint-disable-next-line no-restricted-syntax -- full env needed for SDK subprocess inheritance
       ...process.env,
       CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: '1',
+      // An inherited MCP_TOOL_TIMEOUT shorter than the in-session approval hold
+      // would kill every held destructive call mid-wait, with an ERROR where the
+      // poll payload used to be. Floored, never erased — see the module TSDoc for
+      // the tradeoff (DOR-987).
+      ...mcpToolTimeoutFloorEnv(),
       // The account, ALWAYS spelled out (see `claudeConfigDirEnv`) so it is never
       // inherited from `process.env`. That is load-bearing for D8: rename and
       // fork point the in-process SDK at an account by mutating

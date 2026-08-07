@@ -56,6 +56,12 @@ interface AddMcpServerFormProps {
    * dropped at turn time (DOR-892).
    */
   supportedTransports: readonly TransportKind[];
+  /**
+   * Called once the server is actually written, with what was added. Lets the
+   * roster follow up — a remote server is probed straight away, so the operator
+   * learns it needs signing in without being asked to press Test (DOR-985).
+   */
+  onAdded: (server: { name: string; transport: TransportKind }) => void;
 }
 
 /**
@@ -68,6 +74,7 @@ export function AddMcpServerForm({
   agentId,
   agentLabel,
   supportedTransports,
+  onAdded,
 }: AddMcpServerFormProps) {
   const addServer = useAddAgentMcpServer();
   const [open, setOpen] = useState(false);
@@ -122,28 +129,39 @@ export function AddMcpServerForm({
     setHeadersText('');
   }, [supportedTransports]);
 
+  // Report the write BEFORE `reset()` clears the fields it describes.
+  const announceAdded = useCallback(
+    (input: AddAgentMcpServerInput) => {
+      onAdded({ name: input.name, transport: input.connection.transport });
+      reset();
+    },
+    [onAdded, reset]
+  );
+
   const submit = useCallback(async () => {
     setError(null);
+    const input = buildInput();
     try {
-      const result = await addServer.mutateAsync({ input: buildInput() });
+      const result = await addServer.mutateAsync({ input });
       if (result.status === 'approval_required') setPending(result.approval);
-      else reset();
+      else announceAdded(input);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not add the server.');
     }
-  }, [addServer, buildInput, reset]);
+  }, [addServer, buildInput, announceAdded]);
 
   const confirm = useCallback(async () => {
     if (!pending) return;
     setError(null);
+    const input = buildInput();
     try {
-      const result = await addServer.mutateAsync({ input: buildInput(), approval: pending });
-      if (result.status === 'ok') reset();
+      const result = await addServer.mutateAsync({ input, approval: pending });
+      if (result.status === 'ok') announceAdded(input);
       else setError('The server still needs approval. Try again.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not add the server.');
     }
-  }, [addServer, buildInput, pending, reset]);
+  }, [addServer, buildInput, pending, announceAdded]);
 
   const previewCommand = useMemo(
     () => [command.trim(), ...parseArgs(argsText)].filter(Boolean).join(' '),

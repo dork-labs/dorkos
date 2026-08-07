@@ -11,6 +11,8 @@
  *
  * @module lib/capability-catalog
  */
+import { MAX_CAPABILITY_LIMIT } from '@dorkos/shared/capabilities';
+
 import { apiCall } from './api-client.js';
 
 /** One full capability entry as returned by `GET /api/capabilities/catalog?detail=full`. */
@@ -43,8 +45,12 @@ interface CatalogPage {
   capabilities: CatalogCapability[];
 }
 
-/** Page size requested per fetch; matches the server's `MAX_CAPABILITY_LIMIT`. */
-const PAGE_LIMIT = 200;
+/**
+ * Page size requested per fetch. Imported rather than restated: the server
+ * rejects anything above its own ceiling, and a local copy of the number is a
+ * copy that can drift out of agreement with the server it is talking to.
+ */
+const PAGE_LIMIT = MAX_CAPABILITY_LIMIT;
 
 /** Loop ceiling, so a malformed cursor chain can never spin forever. */
 const MAX_PAGES = 10_000;
@@ -55,7 +61,8 @@ const MAX_PAGES = 10_000;
  *
  * @returns The reassembled full catalog.
  * @throws Propagates the underlying {@link apiCall} error when the server is
- *   unreachable or returns a non-2xx status.
+ *   unreachable or returns a non-2xx status, and throws when the page ceiling is
+ *   reached — see below for why that is not a silent stop.
  */
 export async function fetchFullCatalog(): Promise<FullCatalog> {
   const capabilities: CatalogCapability[] = [];
@@ -73,9 +80,17 @@ export async function fetchFullCatalog(): Promise<FullCatalog> {
     capabilities.push(...body.capabilities);
     catalogVersion = body.catalogVersion;
     generatedAt = body.generatedAt;
-    if (!body.nextCursor) break;
+    if (!body.nextCursor) return { catalogVersion, generatedAt, capabilities };
     cursor = body.nextCursor;
   }
 
-  return { catalogVersion, generatedAt, capabilities };
+  // Falling out of the loop means the server still had more to give. Returning
+  // the partial catalog here would be worse than failing: `dorkos call` checks
+  // the id it was handed against this set, so a truncated catalog tells the
+  // person a perfectly valid capability does not exist.
+  throw new Error(
+    `Capability catalog paging exceeded ${MAX_PAGES} pages — the server kept returning a ` +
+      'cursor, so this build of the CLI and the server it is talking to disagree. Upgrade ' +
+      'both to the same version.'
+  );
 }

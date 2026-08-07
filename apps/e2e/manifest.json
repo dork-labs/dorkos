@@ -185,10 +185,10 @@
       "specFile": "tests/connections/marketplace-connectors.spec.ts",
       "feature": "connections",
       "description": "shows the CONNECTOR badge and narrows the grid with the Connectors facet",
-      "lastRun": "2026-08-04T17:53:47.653Z",
+      "lastRun": "2026-08-07T02:12:57.019Z",
       "lastStatus": "passed",
-      "runCount": 11,
-      "passCount": 11,
+      "runCount": 12,
+      "passCount": 12,
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
@@ -197,10 +197,10 @@
       "specFile": "tests/connections/connections.spec.ts",
       "feature": "connections",
       "description": "walks unconfigured → key saved → connect Gmail twice with custody disclosed before every auth step, attaches Gmail (work) to a session, shows it with exposure state, and detaches",
-      "lastRun": "2026-08-04T17:53:47.653Z",
+      "lastRun": "2026-08-07T02:12:57.019Z",
       "lastStatus": "passed",
-      "runCount": 11,
-      "passCount": 8,
+      "runCount": 12,
+      "passCount": 9,
       "failCount": 3,
       "relatedCode": [],
       "lastModified": ""
@@ -456,45 +456,21 @@
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
+    },
+    "mcp-oauth-signin": {
+      "specFile": "tests/connections/mcp-oauth-signin.spec.ts",
+      "feature": "connections",
+      "description": "add → needs sign-in → Sign in → approve → connected with N tools",
+      "lastRun": "2026-08-07T09:53:20.277Z",
+      "lastStatus": "passed",
+      "runCount": 4,
+      "passCount": 3,
+      "failCount": 1,
+      "relatedCode": [],
+      "lastModified": ""
     }
   },
   "runHistory": [
-    {
-      "id": "2026-04-06T21-46-01",
-      "timestamp": "2026-04-06T21:46:01.013Z",
-      "total": 44,
-      "passed": 11,
-      "failed": 5,
-      "skipped": 0,
-      "duration": 193973
-    },
-    {
-      "id": "2026-07-03T01-13-16",
-      "timestamp": "2026-07-03T01:13:16.076Z",
-      "total": 8,
-      "passed": 0,
-      "failed": 8,
-      "skipped": 0,
-      "duration": 44705
-    },
-    {
-      "id": "2026-07-03T01-17-33",
-      "timestamp": "2026-07-03T01:17:33.834Z",
-      "total": 8,
-      "passed": 2,
-      "failed": 6,
-      "skipped": 0,
-      "duration": 20488
-    },
-    {
-      "id": "2026-07-03T01-19-18",
-      "timestamp": "2026-07-03T01:19:18.323Z",
-      "total": 8,
-      "passed": 7,
-      "failed": 1,
-      "skipped": 0,
-      "duration": 30092
-    },
     {
       "id": "2026-07-03T01-22-11",
       "timestamp": "2026-07-03T01:22:11.501Z",
@@ -1358,6 +1334,42 @@
       "failed": 0,
       "skipped": 0,
       "duration": 21389
+    },
+    {
+      "id": "2026-08-07T02-11-50",
+      "timestamp": "2026-08-07T02:11:50.634Z",
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 50779
+    },
+    {
+      "id": "2026-08-07T02-12-24",
+      "timestamp": "2026-08-07T02:12:24.182Z",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 21139
+    },
+    {
+      "id": "2026-08-07T02-12-57",
+      "timestamp": "2026-08-07T02:12:57.019Z",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 24934
+    },
+    {
+      "id": "2026-08-07T09-53-20",
+      "timestamp": "2026-08-07T09:53:20.277Z",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 49814
     }
   ]
 }

@@ -1909,6 +1909,40 @@ export function backfillDefaultTrustStops(store: {
   });
 }
 
+/**
+ * The `conf` migration chain, keyed by the app version each entry ships in.
+ *
+ * ## Where a new migration goes
+ *
+ * Under a NEW key strictly greater than the newest `v*` tag in the repository
+ * (`git tag -l 'v*' | sort -V | tail -1`). Nothing else is safe, for one reason:
+ * `conf` runs a key only when `storedVersion < key <= projectVersion`. So a key
+ * at or below a version that already shipped is skipped for everybody already on
+ * it — no error, no warning, the backfill simply never happens (DOR-339).
+ *
+ * Two things follow, and both have been got wrong here before:
+ *
+ * - **Never append to a key that has shipped.** The key being present is not the
+ *   point; the BODY is what runs. Appending to an already-tagged composite key
+ *   ships dead code that looks alive (DOR-988).
+ * - **Never edit a shipped migration body.** Everyone who upgraded past it ran
+ *   the old body, and no re-run is coming. Write a new, idempotent entry that
+ *   corrects the state instead.
+ *
+ * Both rules are enforced: `__tests__/migration-safety.ts` compares every key's
+ * source text against the newest release tag, and `config-manager.test.ts` runs
+ * that comparison over the real repository on every CI run.
+ *
+ * ## The comparison is byte-identity, so a shipped body's COMMENTS are frozen too
+ *
+ * Deliberate. A rule that skipped comments would need a parser deciding which
+ * lines are code, and "an appended line the parser mis-read as a comment" is the
+ * same class of hole this guard exists to close. The consequence is that a stale
+ * sentence inside a shipped body cannot be corrected in place: `'0.57.0'` still
+ * carries one, pointing at the composition convention this docblock replaced.
+ * Correct that kind of thing HERE, or in the comment directly above the key
+ * (both sit outside every key's slice), not inside the body.
+ */
 export const CONFIG_MIGRATIONS = {
   '1.0.0': (store: {
     has: (key: string) => boolean;
@@ -1925,9 +1959,11 @@ export const CONFIG_MIGRATIONS = {
   // on the upgrade where it lands.
   '0.44.0': backfillExtensionsDisabled,
   // Everything below shipped together in v0.45.0. Each body was authored on a
-  // placeholder "next ascending release" key (0.45.0-0.53.0) while on main;
-  // /system:release reconciled them to the one real release at tag time
-  // (2026-07-09). Order matters: conf runs entries in insertion order, and
+  // placeholder "next ascending release" key (0.45.0-0.53.0) while on main, and
+  // the keys were collapsed onto the one real release when it was tagged
+  // (2026-07-09) — by hand, during that release. Nothing renames a stale key for
+  // you, which is why the placeholder convention is retired (see the rule on
+  // CONFIG_MIGRATIONS above). Order matters: conf runs entries in insertion order, and
   // `backfillWorkbenchTerminalGraceTtl` must follow `backfillWorkbenchDefaults`.
   // Every body is idempotent, so re-running the composite is safe.
   '0.45.0': (store: {
@@ -1959,10 +1995,13 @@ export const CONFIG_MIGRATIONS = {
     // add to a `workbench` block the previous body just created.
     backfillWorkbenchTerminalGraceTtl(store);
   },
-  // Both authored on the next-ascending-release placeholder while on main;
-  // /system:release reconciles the key to the real release at tag time. One
-  // composite body (an object literal can't repeat the key); order is
-  // insertion order and both are idempotent + independent.
+  // Both authored under the RETIRED placeholder convention (see the rule on
+  // CONFIG_MIGRATIONS above): a "next ascending release" key, on the belief that
+  // /system:release would reconcile it at tag time. It does not — it scaffolds a
+  // migration for the release version or confirms one already there, and never
+  // renames an existing key. Shipped and frozen; recorded, not endorsed. One
+  // composite body (an object literal can't repeat the key); order is insertion
+  // order and both are idempotent + independent.
   '0.46.0': (store: {
     get: (key: string) => unknown;
     set: (key: string, value: unknown) => void;
@@ -2010,15 +2049,19 @@ export const CONFIG_MIGRATIONS = {
   '0.50.0': backfillSidebarDefaults,
   // Backfill `ui.shapes` (person-scoped Shape state — active Shape, reverse
   // affinity hints, follow toggle; DOR-355) onto an existing `ui` block.
-  // Additive + idempotent; seeds no active Shape. Keyed to the next unreleased
-  // version (0.51.0 is already tagged); /system:release reconciles the key at
-  // tag time if the real release differs.
+  // Additive + idempotent; seeds no active Shape. Keyed under the RETIRED
+  // placeholder convention (see the rule on CONFIG_MIGRATIONS above), on the
+  // belief that /system:release reconciles a stale key at tag time. It does not.
+  // Shipped and frozen; recorded, not endorsed.
   '0.52.0': backfillShapesDefaults,
-  // Composite: both DOR-339 and DOR-338 targeted "the next unreleased
-  // version" while developed concurrently and landed on the same key
-  // (0.55.0) — a plain object literal can't repeat a key, so their bodies
-  // compose here in insertion order (same convention as the 0.45.0/0.46.0/
-  // 0.48.0 composites above). Each body is independent and idempotent.
+  // Composite: both DOR-339 and DOR-338 targeted "the next unreleased version"
+  // while developed concurrently and landed on the same key (0.55.0) — a plain
+  // object literal can't repeat a key, so their bodies compose here in insertion
+  // order. That composition is a RECORD of the retired convention, not a pattern
+  // to copy: composing into a key is only ever safe while it is unreleased, and
+  // this one shipped. Concurrent work now opens separate keys above the newest
+  // tag (see the rule on CONFIG_MIGRATIONS above). Each body is independent and
+  // idempotent.
   '0.55.0': (store: {
     get: (key: string) => unknown;
     set: (key: string, value: unknown) => void;
@@ -2041,18 +2084,16 @@ export const CONFIG_MIGRATIONS = {
     scrubRetiredOnboardingSteps(store);
   },
   // Composite: DOR-452, DOR-501, DOR-516, DOR-522, DOR-525, DOR-526 and DOR-579
-  // all target "the next unreleased version" (0.56.0 is already tagged) and an
-  // object literal cannot repeat a key, so their bodies compose here in
-  // insertion order — the same convention as the 0.45.0/0.46.0/0.48.0/0.55.0
-  // composites above. All seven are independent and idempotent.
-  // /system:release reconciles the key at tag time if the real release differs.
+  // all landed before v0.57.0 was tagged, and an object literal cannot repeat a
+  // key, so their bodies composed here in insertion order — the same convention
+  // as the 0.45.0/0.46.0/0.48.0/0.55.0 composites above. All seven are
+  // independent and idempotent.
   //
-  // Composing rather than opening a 0.58.0 key is not a style choice here.
-  // `conf` only runs a migration when `key > storedVersion && key <=
-  // projectVersion`, so a 0.58.0 body would NOT run on the 0.57.0 release that
-  // carries this schema — and DOR-579 renames a field, so skipping it empties
-  // every group a person has. The rule is "never edit a SHIPPED migration";
-  // extending the next unreleased one is the convention.
+  // THIS KEY HAS SHIPPED. Do not append a body to it. v0.57.0 is tagged, so
+  // every user who upgraded past it already ran what was here at tag time and
+  // will never run anything added now — `conf` only runs a key in
+  // `(storedVersion, projectVersion]`. Open a NEW key above the newest `v*` tag
+  // instead; see the authoring rule on `CONFIG_MIGRATIONS` above.
   '0.57.0': (store: {
     get: (key: string) => unknown;
     has: (key: string) => boolean;

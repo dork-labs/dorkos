@@ -88,6 +88,8 @@ If this fails, your field is required without a default. Fix before proceeding.
 
 Edit `apps/server/src/services/core/config-manager.ts`. You do **not** need to bump `projectVersion` — it's sourced from `SERVER_VERSION` via `lib/version.ts`, which updates automatically every release. Your only job is to append a new entry to the module-level `CONFIG_MIGRATIONS` constant, keyed to the app version that will ship your change.
 
+**Pick that key as strictly greater than the newest `v*` tag** (`git tag -l 'v*' | sort -V | tail -1`), and never extend a key that has already shipped. `conf` runs a key only in `(storedVersion, projectVersion]`, so a key at or below a released version — or a body appended to one — never runs for anybody already on it. A guard enforces both (`apps/server/src/services/core/__tests__/migration-safety.ts`), so getting this wrong reddens CI rather than shipping silently.
+
 The shape to match:
 
 ```typescript

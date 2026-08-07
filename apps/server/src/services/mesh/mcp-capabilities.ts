@@ -28,7 +28,11 @@
  */
 import { z } from 'zod';
 import type { AgentRegistry } from '@dorkos/mesh';
-import { McpServerTransportSchema, ManagedMcpServerSchema } from '@dorkos/shared/mesh-schemas';
+import {
+  McpServerTransportSchema,
+  ManagedMcpServerSchema,
+  ManagedMcpServerViewSchema,
+} from '@dorkos/shared/mesh-schemas';
 import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
 
 import { defineCapability, type CapabilityDomain } from '../core/capabilities/index.js';
@@ -185,6 +189,13 @@ const AgentServerInput = z.object({ agentId: agentIdField, name: serverNameField
 const ManagedServerListOutput = z.array(ManagedMcpServerSchema);
 
 /**
+ * What `mcp.list` returns: the same entries plus the derived `authStatus`. Only
+ * the read carries it — a mutating verb reports what it wrote, and `authStatus`
+ * is never written.
+ */
+const ManagedServerViewListOutput = z.array(ManagedMcpServerViewSchema);
+
+/**
  * The card an `add`/`update` approval shows: the transport plus whichever
  * connection fields the chosen transport carries, so a person sees the exact
  * command or URL that will run before approving (spec §4 guarantee 2).
@@ -215,11 +226,12 @@ export const mcpDomain: CapabilityDomain = {
       title: 'List an agent’s managed MCP servers',
       description:
         'List the MCP servers DorkOS manages for an agent, each with its transport, enabled ' +
-        'state, and audit record. A free read — use it before add/update/remove to see what is ' +
+        'state, audit record, and — for a remote server — whether DorkOS holds a live sign-in ' +
+        'for it (authStatus). A free read — use it before add/update/remove to see what is ' +
         'already configured.',
       tier: 'observe',
       input: z.object({ agentId: agentIdField }),
-      output: ManagedServerListOutput,
+      output: ManagedServerViewListOutput,
       surfaces: {
         mcp: {
           toolName: 'mcp_list_server',
@@ -520,6 +532,19 @@ export const mcpDomain: CapabilityDomain = {
             error: err instanceof Error ? err.message : 'Could not start the sign-in.',
           });
         }
+        // Getting this far means the provider's OAuth discovery answered, so the
+        // server really is OAuth-protected — record it, so the row keeps offering
+        // a sign-in after a restart even before any turn runs (DOR-985). The
+        // sign-in itself is what the caller asked for, so a failed write is
+        // reported and shrugged off rather than failing the call.
+        await service.learnOAuthAuthKind(input.agentId, input.name).catch((err: unknown) => {
+          deps.logger.warn(
+            `[mcp.signin] could not record authKind for "${input.name}": ${
+              err instanceof Error ? err.message : String(err)
+            }`
+          );
+          return false;
+        });
         const message = started.alreadyConnected
           ? `You’re already signed in to ${input.name}. ${disclosure}`
           : `[Sign in to ${input.name}](${started.authorizeUrl})\n\n${disclosure}\n\n` +

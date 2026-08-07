@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
@@ -23,7 +23,8 @@ beforeAll(() => {
 
 function renderForm(
   transport: Transport,
-  supportedTransports: readonly (typeof TRANSPORTS)[number][]
+  supportedTransports: readonly (typeof TRANSPORTS)[number][],
+  onAdded: (server: { name: string; transport: (typeof TRANSPORTS)[number] }) => void = () => {}
 ) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
@@ -38,6 +39,7 @@ function renderForm(
       agentId="01HZ0000000000000000000001"
       agentLabel="Test Agent"
       supportedTransports={supportedTransports}
+      onAdded={onAdded}
     />,
     { wrapper }
   );
@@ -73,5 +75,51 @@ describe('AddMcpServerForm', () => {
     renderForm(transport, TRANSPORTS);
 
     expect(offeredTransports()).toEqual(['stdio', 'http', 'sse']);
+  });
+
+  it('reports what it added, with the fields still filled in (DOR-985)', async () => {
+    const onAdded = vi.fn();
+    const transport = createMockTransport({
+      addAgentMcpServer: vi.fn().mockResolvedValue({ status: 'ok', servers: [] }),
+    });
+    renderForm(transport, TRANSPORTS, onAdded);
+
+    fireEvent.click(screen.getByRole('button', { name: /add server/i }));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'granola' } });
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
+    fireEvent.click(within(screen.getByRole('listbox')).getByRole('option', { name: 'http' }));
+    fireEvent.change(screen.getByLabelText('URL'), {
+      target: { value: 'https://mcp.granola.ai/mcp' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    // Reporting after `reset()` would hand back an empty name — the form's own
+    // fields are cleared by then, which is why the callback reads the input it
+    // submitted rather than current state.
+    await waitFor(() =>
+      expect(onAdded).toHaveBeenCalledWith({ name: 'granola', transport: 'http' })
+    );
+  });
+
+  it('reports nothing while the add is still waiting on approval', async () => {
+    const onAdded = vi.fn();
+    const transport = createMockTransport({
+      addAgentMcpServer: vi.fn().mockResolvedValue({
+        status: 'approval_required',
+        approval: { status: 'approval_required', approvalId: 'a', approvalToken: 't' },
+      }),
+    });
+    renderForm(transport, TRANSPORTS, onAdded);
+
+    fireEvent.click(screen.getByRole('button', { name: /add server/i }));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'granola' } });
+    fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'npx' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    // Nothing was written yet, so nothing to follow up on.
+    await waitFor(() =>
+      expect(screen.getByText(/Confirm this server for Test Agent/i)).toBeInTheDocument()
+    );
+    expect(onAdded).not.toHaveBeenCalled();
   });
 });

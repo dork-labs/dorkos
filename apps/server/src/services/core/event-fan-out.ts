@@ -148,6 +148,17 @@ class EventFanOut {
   }
 
   /**
+   * How many in-process listeners are attached right now.
+   *
+   * @internal Exported so a test can prove a short-lived subscriber (the
+   *   in-session approval hold) released its listener on every ending, including
+   *   the ones that skip the happy path.
+   */
+  get listenerCount(): number {
+    return this.listeners.size;
+  }
+
+  /**
    * Broadcast an event to every connected client, and to every in-process
    * listener.
    *

@@ -76,7 +76,11 @@ export interface UpdateRequest {
   name?: string;
   /** Apply the update (default: advisory only). */
   apply?: boolean;
-  /** Project path for project-local installs. */
+  /**
+   * Project path for project-local installs. Adds that project's own install
+   * roots to the scan (taking precedence over a global package of the same
+   * name) and scopes any applied reinstall to the project.
+   */
   projectPath?: string;
 }
 
@@ -143,7 +147,7 @@ export class UpdateFlow {
    *   no installed package matches.
    */
   async run(req: UpdateRequest): Promise<UpdateResult> {
-    const installed = await this.listInstalled();
+    const installed = await this.listInstalled(req.projectPath);
     const filtered = this.filterInstalled(installed, req.name);
 
     const checks: UpdateCheckResult[] = [];
@@ -187,21 +191,54 @@ export class UpdateFlow {
   }
 
   /**
-   * Walk every global install root under `dorkHome`
-   * ({@link INSTALL_ROOTS_WITH_TYPE}: `plugins/`, `agents/`, `shapes/`),
-   * reading each `.dork/manifest.json` for the canonical package fields and
-   * `.dork/install-metadata.json` for the provenance fields. Unreadable
-   * manifests are silently skipped so a single malformed install never blocks
-   * the update check.
+   * Walk every install root in scope ({@link INSTALL_ROOTS_WITH_TYPE}:
+   * `plugins/`, `agents/`, `shapes/`), reading each `.dork/manifest.json` for
+   * the canonical package fields and `.dork/install-metadata.json` for the
+   * provenance fields. Unreadable manifests are silently skipped so a single
+   * malformed install never blocks the update check.
    *
+   * Those roots hang off one or two scope roots. `dorkHome` is always walked.
+   * When the caller supplied a `projectPath`, that project's own `.dork/` is
+   * walked FIRST — a project install is where `PluginInstallFlow` and
+   * `AgentInstallFlow` land a scoped install, and it shadows a global package
+   * of the same name for that project. That precedence matches the installed
+   * scanner's merged view, though the coverage does not: the scanner's merged
+   * view walks only a project's `plugins/`, while this walk covers every
+   * project install root. Without it the update flow could not see a
+   * project-scoped package at all and reported it as not installed.
+   *
+   * Results are deduplicated by install-root kind plus package name, first
+   * root wins — so a project's `plugins/foo` shadows the global `plugins/foo`,
+   * while a global `agents/foo` survives as its own entry. Deduping on the
+   * name alone would be wrong: two same-name packages in different roots are
+   * genuinely different packages that {@link ConflictDetector} allows to
+   * coexist, and {@link #checkOne} resolves each one's marketplace
+   * independently.
+   *
+   * @param projectPath - Project directory to also scan, when the request
+   *   carried one.
    * @internal
    */
-  private async listInstalled(): Promise<InstalledPackage[]> {
-    const results: InstalledPackage[] = [];
-    const roots = INSTALL_ROOTS_WITH_TYPE.map(({ dir, representativeType }) => ({
-      dir: path.join(this.deps.dorkHome, dir),
-      inferredType: representativeType,
-    }));
+  private async listInstalled(projectPath?: string): Promise<InstalledPackage[]> {
+    const byRootAndName = new Map<string, InstalledPackage>();
+    // A scope root is the directory the install-root subdirectories hang off:
+    // `dorkHome` IS the global `.dork`, and a project's is `<projectPath>/.dork`
+    // (same derivation as `ConflictDetector.detect`). Shapes are global-only, so
+    // a project's `shapes/` simply never exists and its walk yields nothing.
+    const scopeRoots = projectPath
+      ? [path.join(projectPath, '.dork'), this.deps.dorkHome]
+      : [this.deps.dorkHome];
+    const roots = scopeRoots.flatMap((scopeRoot) =>
+      INSTALL_ROOTS_WITH_TYPE.map(({ dir, representativeType }) => ({
+        // `kind` is the root's scope-relative name (`plugins`/`agents`/
+        // `shapes`) and is what the dedupe keys on. The absolute `dir` must
+        // never be the key: project and global paths always differ, so a
+        // path-keyed dedupe would silently never dedupe anything.
+        kind: dir,
+        dir: path.join(scopeRoot, dir),
+        inferredType: representativeType,
+      }))
+    );
 
     for (const root of roots) {
       const entries = await readDirSafe(root.dir);
@@ -216,8 +253,11 @@ export class UpdateFlow {
         const manifest = await readInstalledManifest(installPath);
         if (!manifest) continue;
         const installMetadata = await readInstallMetadata(installPath);
-        results.push({
-          name: typeof manifest.name === 'string' ? manifest.name : entry.name,
+        const name = typeof manifest.name === 'string' ? manifest.name : entry.name;
+        const key = `${root.kind}:${name}`;
+        if (byRootAndName.has(key)) continue;
+        byRootAndName.set(key, {
+          name,
           version: typeof manifest.version === 'string' ? manifest.version : '0.0.0',
           type: (manifest.type as PackageType | undefined) ?? root.inferredType,
           installPath,
@@ -226,7 +266,7 @@ export class UpdateFlow {
       }
     }
 
-    return results;
+    return [...byRootAndName.values()];
   }
 
   /**

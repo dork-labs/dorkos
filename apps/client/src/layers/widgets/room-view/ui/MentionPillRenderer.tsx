@@ -14,6 +14,7 @@ import type { Components } from 'streamdown';
 import { IdentityHoverCard, MentionPill } from '@/layers/shared/ui';
 import { MENTION_AUTHOR_ATTR } from '../lib/mention-markup';
 import type { RosterAuthor } from '../lib/room-timeline';
+import { useAgentInfo } from '../model/agent-info-context';
 
 interface MentionPillRendererProps {
   /**
@@ -55,6 +56,15 @@ function handleLabel(children: ReactNode): string {
  */
 export function MentionPillRenderer({ authors, authorId, children }: MentionPillRendererProps) {
   const author = authorId ? authors.get(authorId) : undefined;
+  // How this agent runs, if the room's provider could find out. Read from a
+  // context rather than off the roster because Streamdown's top-level memo
+  // comparator (2.5.0) does not include `components`: a rebuilt component map
+  // re-renders nothing below it, so a prop arriving after the pill was drawn
+  // never reaches it and every card in a room opened before the fleet answered
+  // comes up bare. `undefined` for a human, for an agent nothing resolved, and
+  // outside a provider — all one answer, because all three mean the same thing
+  // here: draw no chip.
+  const agent = useAgentInfo(author?.agentRef);
 
   if (!author) {
     // `kind` is ignored on this path — `MentionPill` returns plain text for
@@ -71,6 +81,10 @@ export function MentionPillRenderer({ authors, authorId, children }: MentionPill
         color: author.color,
         emoji: author.emoji,
         origin: author.origin,
+        // The card draws a chip per fact it is handed and nothing at all for
+        // one it is not, so an agent whose manifest never resolved reads as
+        // name and handle alone rather than as an invented runtime.
+        agent,
       }}
     >
       <MentionPill
