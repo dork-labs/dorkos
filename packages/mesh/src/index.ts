@@ -33,6 +33,13 @@ export { ContinueStrategy } from './strategies/continue-strategy.js';
 // Persistence
 export { AgentRegistry } from './agent-registry.js';
 export type { AgentRegistryEntry } from './agent-registry.js';
+
+// The strip every public agent listing goes through — `projectPath`, `namespace`
+// and `scanRoot` never leave this package. Exported so a consumer that has to
+// assert what production ACTUALLY carries can run a real registry entry through
+// the real strip, instead of hand-writing a fixture that quietly claims a field
+// the wire never has (`GET /api/team`, DOR-971).
+export { toManifest } from './mesh-agent-management.js';
 export { DenialList } from './denial-list.js';
 
 // Manifest

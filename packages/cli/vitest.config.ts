@@ -19,6 +19,13 @@ export default defineConfig({
         find: '@dorkos/shared/config-schema',
         replacement: fileURLToPath(new URL('../shared/src/config-schema.ts', import.meta.url)),
       },
+      // Same reasoning for `MAX_CAPABILITY_LIMIT`, which the CLI's catalog pager
+      // and the server's `limit` ceiling both read from one place: read from a
+      // stale dist, a test pinning the request URL pins yesterday's page size.
+      {
+        find: '@dorkos/shared/capabilities',
+        replacement: fileURLToPath(new URL('../shared/src/capabilities.ts', import.meta.url)),
+      },
     ],
   },
   test: {

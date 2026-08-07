@@ -40,9 +40,17 @@ function makeCapturingScheduler(): { scheduler: TimerScheduler; captured: { dela
   return { scheduler, captured };
 }
 
+/** The URL every token in this suite is minted for, unless a case varies it. */
+const URL_A = 'https://mcp.example/mcp';
+
 /** Build a cached token with an absolute expiry (refresh scheduling off unless asked). */
-function cached(accessToken: string, expiresAt: number, refreshable = false): CachedToken {
-  return { accessToken, expiresAt, refreshable };
+function cached(
+  accessToken: string,
+  expiresAt: number,
+  refreshable = false,
+  serverUrl: string | undefined = URL_A
+): CachedToken {
+  return { accessToken, expiresAt, refreshable, serverUrl };
 }
 
 describe('McpAccessTokenCache', () => {
@@ -54,10 +62,10 @@ describe('McpAccessTokenCache', () => {
 
     // Reverting `getAccessToken` to always return undefined reddens this — the
     // injection path would then never see a token.
-    expect(cache.getAccessToken(AGENT, SERVER)).toBe('token-A');
+    expect(cache.getAccessToken(AGENT, SERVER, URL_A)).toBe('token-A');
     // A different (agentId, serverName) is a miss, not a wrong-token hit.
-    expect(cache.getAccessToken('other-agent', SERVER)).toBeUndefined();
-    expect(cache.getAccessToken(AGENT, 'other-server')).toBeUndefined();
+    expect(cache.getAccessToken('other-agent', SERVER, URL_A)).toBeUndefined();
+    expect(cache.getAccessToken(AGENT, 'other-server', URL_A)).toBeUndefined();
   });
 
   it('reads an expired token as absent (withhold — the safe default)', () => {
@@ -69,7 +77,7 @@ describe('McpAccessTokenCache', () => {
 
     // Reverting the `now() < expiresAt` guard to always-return-the-token reddens
     // this: injection would then attach a stale, expired bearer.
-    expect(cache.getAccessToken(AGENT, SERVER)).toBeUndefined();
+    expect(cache.getAccessToken(AGENT, SERVER, URL_A)).toBeUndefined();
   });
 
   it('schedules the refresh before expiry (skewed early), not at it', () => {
@@ -91,7 +99,7 @@ describe('McpAccessTokenCache', () => {
     // The refresh returns token-B, which lives well past token-A's expiry.
     const refresh = async (): Promise<CachedToken> => cached('token-B', 140_000);
     cache.store(AGENT, SERVER, cached('token-A', 100_000), refresh);
-    expect(cache.getAccessToken(AGENT, SERVER)).toBe('token-A');
+    expect(cache.getAccessToken(AGENT, SERVER, URL_A)).toBe('token-A');
 
     clock.set(40_000);
     const replaced = await cache.refreshNow(AGENT, SERVER);
@@ -100,9 +108,9 @@ describe('McpAccessTokenCache', () => {
     // token-B is now live, and stays live past token-A's 100_000 expiry — proving
     // the replacement, not a re-read of A. Reverting the `this.store(...next...)`
     // line in refreshNow leaves token-A cached and reddens both assertions.
-    expect(cache.getAccessToken(AGENT, SERVER)).toBe('token-B');
+    expect(cache.getAccessToken(AGENT, SERVER, URL_A)).toBe('token-B');
     clock.set(100_001);
-    expect(cache.getAccessToken(AGENT, SERVER)).toBe('token-B');
+    expect(cache.getAccessToken(AGENT, SERVER, URL_A)).toBe('token-B');
   });
 
   it('evicts the token when a refresh fails (degrade to needs-auth, never a stale token)', async () => {
@@ -116,6 +124,103 @@ describe('McpAccessTokenCache', () => {
     expect(replaced).toBe(false);
     // Reverting the `evict` on a null refresh would leave token-A readable until
     // its own expiry, injecting a token the server may already have rotated.
-    expect(cache.getAccessToken(AGENT, SERVER)).toBeUndefined();
+    expect(cache.getAccessToken(AGENT, SERVER, URL_A)).toBeUndefined();
+  });
+});
+
+describe('McpAccessTokenCache — URL binding (DOR-986)', () => {
+  const URL_B = 'https://other.example/mcp';
+
+  it('withholds a token when the caller asks for a different server URL', () => {
+    const cache = new McpAccessTokenCache({ now: () => 0 });
+    cache.store(AGENT, SERVER, cached('token-A', 100_000), async () => null);
+
+    // Same (agentId, serverName) — the old key — but the row now points elsewhere.
+    // Dropping the `entry.serverUrl !== serverUrl` guard hands the old server's
+    // bearer to the new one and reddens this.
+    expect(cache.getAccessToken(AGENT, SERVER, URL_B)).toBeUndefined();
+    // And it discriminates: the URL it WAS minted for still resolves...
+    const fresh = new McpAccessTokenCache({ now: () => 0 });
+    fresh.store(AGENT, SERVER, cached('token-A', 100_000), async () => null);
+    expect(fresh.getAccessToken(AGENT, SERVER, URL_A)).toBe('token-A');
+  });
+
+  it('evicts on a URL mismatch, so the stale token stops being refreshed too', () => {
+    const { scheduler, captured } = makeCapturingScheduler();
+    const cache = new McpAccessTokenCache({ now: () => 0, scheduler });
+    cache.store(AGENT, SERVER, cached('token-A', 100_000, true), async () => null);
+    expect(captured).toHaveLength(1);
+
+    cache.getAccessToken(AGENT, SERVER, URL_B);
+
+    // Evicted, not merely withheld: asking again with the ORIGINAL url is now a
+    // miss. Reverting the `evict` call to a bare `return undefined` reddens this.
+    expect(cache.getAccessToken(AGENT, SERVER, URL_A)).toBeUndefined();
+  });
+
+  it('never hands out a token stored without a URL binding at all', () => {
+    const cache = new McpAccessTokenCache({ now: () => 0 });
+    // A record written before the binding existed: no URL at all, so no URL matches.
+    const unbound: CachedToken = {
+      accessToken: 'legacy',
+      expiresAt: 100_000,
+      refreshable: false,
+      serverUrl: undefined,
+    };
+    cache.store(AGENT, SERVER, unbound, async () => null);
+
+    expect(cache.getAccessToken(AGENT, SERVER, URL_A)).toBeUndefined();
+  });
+});
+
+describe('McpAccessTokenCache — tokens with no declared lifetime (DOR-986)', () => {
+  it('schedules a periodic refresh instead of leaving it unrefreshed forever', () => {
+    const { scheduler, captured } = makeCapturingScheduler();
+    const cache = new McpAccessTokenCache({ now: () => 0, scheduler });
+
+    // RFC 6749 makes `expires_in` optional; no expiry reaches the cache as
+    // POSITIVE_INFINITY. Reverting to the old
+    // `if (expiresAt !== INFINITY && refreshable)` guard schedules nothing and
+    // reddens this — the token would then never be refreshed for the whole
+    // process lifetime.
+    cache.store(AGENT, SERVER, cached('token-A', Number.POSITIVE_INFINITY, true), async () => null);
+
+    expect(captured).toEqual([{ delay: 3_600_000 }]);
+  });
+
+  it('still schedules nothing when there is no refresh token to use', () => {
+    const { scheduler, captured } = makeCapturingScheduler();
+    const cache = new McpAccessTokenCache({ now: () => 0, scheduler });
+
+    // The discriminator for the case above: unrefreshable means unschedulable,
+    // whatever the expiry. A periodic refresh with no refresh token would just
+    // fail on a timer forever.
+    cache.store(
+      AGENT,
+      SERVER,
+      cached('token-A', Number.POSITIVE_INFINITY, false),
+      async () => null
+    );
+
+    expect(captured).toEqual([]);
+  });
+});
+
+describe('McpAccessTokenCache.evictAgent (DOR-986)', () => {
+  it('drops every one of an agent’s tokens and their timers, leaving other agents alone', () => {
+    const { scheduler, captured } = makeCapturingScheduler();
+    const cache = new McpAccessTokenCache({ now: () => 0, scheduler });
+    cache.store(AGENT, SERVER, cached('a1', 100_000, true), async () => null);
+    cache.store(AGENT, 'other-server', cached('a2', 100_000, true), async () => null);
+    cache.store('agent-2', SERVER, cached('b1', 100_000, true), async () => null);
+    expect(captured).toHaveLength(3);
+
+    cache.evictAgent(AGENT);
+
+    // Reverting evictAgent to a no-op leaves a deleted agent's bearer live and
+    // refreshing; the third assertion is the discriminator against evicting all.
+    expect(cache.getAccessToken(AGENT, SERVER, URL_A)).toBeUndefined();
+    expect(cache.getAccessToken(AGENT, 'other-server', URL_A)).toBeUndefined();
+    expect(cache.getAccessToken('agent-2', SERVER, URL_A)).toBe('b1');
   });
 });

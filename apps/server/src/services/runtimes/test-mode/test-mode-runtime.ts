@@ -402,10 +402,22 @@ function mcpStatusFor(connection: McpAppServerConnection): McpServerEntry['statu
   return hasBearerHeader(connection.headers) ? 'connected' : 'needs-auth';
 }
 
-/** Whether a header map carries a non-empty `Authorization: Bearer` (case-insensitive key). */
+/**
+ * Whether a header map carries a non-empty `Authorization: Bearer` (case-insensitive key).
+ *
+ * "Non-empty" means the TOKEN, not the header: a bare `'Bearer '` passes
+ * `startsWith` and would otherwise report a server as connected on a header
+ * carrying no credential at all. Not reachable through the injection path today
+ * — the OAuth engine injects a token or no header — but the docblock said
+ * non-empty and the check did not, and the next caller reads the docblock.
+ */
 function hasBearerHeader(headers: Record<string, string> | undefined): boolean {
   if (!headers) return false;
+  const prefix = 'Bearer ';
   return Object.entries(headers).some(
-    ([key, value]) => key.toLowerCase() === 'authorization' && value.startsWith('Bearer ')
+    ([key, value]) =>
+      key.toLowerCase() === 'authorization' &&
+      value.startsWith(prefix) &&
+      value.length > prefix.length
   );
 }

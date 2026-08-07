@@ -318,6 +318,30 @@ describe('ExtensionSecretStore', () => {
     });
   });
 
+  describe('keys', () => {
+    it('lists the stored key names, and forgets them as they are deleted', async () => {
+      const dorkHome = await makeTempDir();
+      const store = new ExtensionSecretStore('test-ext', dorkHome);
+      await store.set('agent-a:server:tokens', 'v1');
+      await store.set('agent-b:server:tokens', 'v2');
+
+      // The listing is what lets a caller delete a whole family of keys — every
+      // secret one agent owns — without knowing each name in advance.
+      expect((await store.keys()).sort()).toEqual([
+        'agent-a:server:tokens',
+        'agent-b:server:tokens',
+      ]);
+
+      await store.delete('agent-a:server:tokens');
+      expect(await store.keys()).toEqual(['agent-b:server:tokens']);
+    });
+
+    it('returns nothing for a store that was never written', async () => {
+      const dorkHome = await makeTempDir();
+      expect(await new ExtensionSecretStore('never-used', dorkHome).keys()).toEqual([]);
+    });
+  });
+
   // DOR-697. Callers construct a store per request, so `set`/`delete` are a
   // read-modify-write over one shared file. Concurrency is the reproduction:
   // sequentially these cannot fail.

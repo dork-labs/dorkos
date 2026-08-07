@@ -21,6 +21,7 @@ import {
   seedLegacyMcpApiKey,
   resolveMcpLocalToken,
   readOwnerAccount,
+  getUserById,
 } from './services/core/auth/index.js';
 import {
   canExpose,
@@ -101,6 +102,7 @@ import { ensureDorkBot } from './services/mesh/ensure-dorkbot.js';
 import { createA2aRouter } from './routes/a2a.js';
 import { buildA2aRateLimiters } from './middleware/a2a-rate-limit.js';
 import { createAgentsRouter } from './routes/agents.js';
+import { createTeamRouter } from './routes/team.js';
 import { createDiscoveryRouter } from './routes/discovery.js';
 import { createTemplateRouter } from './routes/templates.js';
 import { createAdminRouter } from './routes/admin.js';
@@ -1481,7 +1483,8 @@ async function start() {
     // Managed-MCP OAuth engine (DOR-942): owns the OAuth lifecycle for an agent's
     // OAuth-protected servers and holds the synchronous access-token cache the
     // injection path reads. The loopback callback lands on this host, so its
-    // `redirect_uri` is 127.0.0.1 at the listen port.
+    // `redirect_uri` is the bound loopback host at the listen port — see the
+    // `callbackBaseUrl` note just below for why that is not a literal 127.0.0.1.
     agentMcpOAuthService = new AgentMcpOAuthService({
       dorkHome,
       // The loopback callback is opened by the operator's own browser (the OAuth
@@ -1507,6 +1510,18 @@ async function start() {
     if (env.DORKOS_TEST_RUNTIME) {
       app.locals.agentMcpServerService = agentMcpServerService;
     }
+    // Deleting an agent takes its MCP sign-ins with it (DOR-986): stored tokens,
+    // dynamic client registrations, cached bearers and their refresh timers. The
+    // manifest is already gone when this fires, so the sweep is by agent id.
+    const oauthForAgentDeletion = agentMcpOAuthService;
+    meshCore.onUnregister((agentId) => {
+      oauthForAgentDeletion.forgetAgent(agentId).catch((err: unknown) => {
+        logger.warn('[mcp-oauth] could not clear sign-ins for an unregistered agent', {
+          agentId,
+          reason: err instanceof Error ? err.message : String(err),
+        });
+      });
+    });
     // Re-prime the cache from disk for every enabled OAuth server so a token
     // survives a restart. Non-blocking: injection withholds until warm completes.
     warmMcpOAuthTokens(agentMcpOAuthService, agentMcpServerService, meshCore).catch(
@@ -1967,6 +1982,24 @@ async function start() {
   // Always mounted — not behind any feature flag.
   // ADR-0043: pass meshCore (when available) so writes sync to Mesh DB cache.
   app.use('/api/agents', createAgentsRouter(meshCore));
+
+  // The team roster — one READ of every identity on this install (ADR
+  // 260806-222535). Always mounted, and mounted even when the mesh did not
+  // start: the person reading the page is on the roster, so a missing agent
+  // registry is a `warnings[]` entry rather than a dead route.
+  app.use(
+    '/api/team',
+    createTeamRouter({
+      authors: roomAuthors,
+      ...(meshCore && { meshCore }),
+      ownerAccount: () => readOwnerAccount(),
+      ownerEmail: (userId) => getUserById(userId)?.email ?? null,
+      // `config.profile.displayName` is what the user likes to be called — the
+      // second rung of the operator-name precedence, under the account name.
+      configDisplayName: () => configManager.getAll().profile.displayName,
+      defaultAgentName: () => configManager.getAll().agents.defaultAgent,
+    })
+  );
 
   // Template catalog — always available, merges built-in + user templates.
   app.use('/api/templates', createTemplateRouter(dorkHome));

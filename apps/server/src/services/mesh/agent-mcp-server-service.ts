@@ -40,20 +40,35 @@ export const RESERVED_MCP_SERVER_NAME = 'dorkos';
 const AUTHORIZATION_HEADER = 'Authorization';
 
 /**
- * The synchronous access-token lookup the injection path consults for managed-MCP
- * OAuth (DOR-942). Satisfied structurally by `AgentMcpOAuthService`; kept as a
- * narrow port so this runtime-neutral service never imports the OAuth engine (or,
- * through it, the MCP SDK auth module) as a value.
+ * The managed-MCP OAuth port this service talks to (DOR-942): the synchronous
+ * access-token lookup the injection path consults, plus the credential cleanup a
+ * removed or re-pointed server triggers. Satisfied structurally by
+ * `AgentMcpOAuthService`; kept as a narrow port so this runtime-neutral service
+ * never imports the OAuth engine (or, through it, the MCP SDK auth module) as a
+ * value.
  */
 export interface McpOAuthTokenProvider {
   /**
-   * The live bearer access token for `(agentId, serverName)`, or `undefined` when
-   * none is cached — in which case injection withholds the header (needs-auth).
+   * The live bearer access token for `(agentId, serverName)` at `serverUrl`, or
+   * `undefined` when none is cached — in which case injection withholds the header
+   * (needs-auth). The URL is part of the question, not decoration: a token minted
+   * for one server must never be sent to whatever later takes that server's name.
+   *
+   * @param agentId - The owning agent's id.
+   * @param serverName - The managed server's name.
+   * @param serverUrl - The URL the token is about to be sent to.
+   */
+  getAccessToken(agentId: string, serverName: string, serverUrl: string): string | undefined;
+
+  /**
+   * Forget every stored credential for one managed server. Removing a server, or
+   * pointing it at a different URL, has to take the credential with it — otherwise
+   * "you can remove the server anytime" is true of the row and false of the token.
    *
    * @param agentId - The owning agent's id.
    * @param serverName - The managed server's name.
    */
-  getAccessToken(agentId: string, serverName: string): string | undefined;
+  forgetServer(agentId: string, serverName: string): Promise<void>;
 }
 
 /** Typed failure codes so a route/capability layer can map to precise statuses. */
@@ -267,6 +282,10 @@ export class AgentMcpServerService {
   /**
    * Update an existing managed server's connection and/or enabled state.
    *
+   * Re-pointing the server at a different endpoint drops its OAuth credentials:
+   * the token was issued by the old server, for the old server, and the operator
+   * has to sign in to the new one (DOR-986).
+   *
    * @param opts - The agent id, target server name, and the fields to change.
    * @returns The updated `mcpServers` list.
    * @throws {AgentMcpServerError} `SERVER_NOT_FOUND` when no entry matches `name`.
@@ -287,11 +306,18 @@ export class AgentMcpServerService {
     };
     const next = manifest.mcpServers.map((s) => (s.name === opts.name ? updated : s));
     await this.persist(projectPath, manifest, next);
+    if (endpointOf(existing.connection) !== endpointOf(updated.connection)) {
+      await this.forgetOAuthCredentials(opts.agentId, opts.name);
+    }
     return next;
   }
 
   /**
-   * Remove a managed server from an agent. Reversible by re-adding.
+   * Remove a managed server from an agent, taking any OAuth credentials it holds
+   * with it — the stored token, the dynamic client registration, and the cached
+   * bearer plus its background refresh. Removing the row while the credential
+   * lived on is what made "you can remove the server anytime" a half-truth
+   * (DOR-986). Reversible by re-adding, which needs a fresh sign-in.
    *
    * @param agentId - The agent's id.
    * @param name - The server to remove.
@@ -308,7 +334,24 @@ export class AgentMcpServerService {
       );
     }
     await this.persist(projectPath, manifest, next);
+    await this.forgetOAuthCredentials(agentId, name);
     return next;
+  }
+
+  /**
+   * Drop a server's OAuth credentials, if an OAuth engine is wired at all. Never
+   * fails the caller: the manifest write already succeeded, so a store hiccup
+   * must not report the removal as failed — it is logged instead.
+   */
+  private async forgetOAuthCredentials(agentId: string, name: string): Promise<void> {
+    if (!this.tokenProvider) return;
+    await this.tokenProvider.forgetServer(agentId, name).catch((err: unknown) => {
+      this.logger.warn(
+        `[agent-mcp] could not clear stored sign-in for "${name}": ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      );
+    });
   }
 
   /**
@@ -385,6 +428,18 @@ export class AgentMcpServerService {
    * header → the server reports needs-auth rather than connecting unauthenticated
    * (`.claude/rules/safe-defaults.md`). Never mutates the cached base map.
    *
+   * The entry's CURRENT url is part of the lookup, so a token minted for the
+   * server this name used to point at is never sent to the one it points at now
+   * (DOR-986).
+   *
+   * KNOWN EXPOSURE (DOR-986): for the codex runtime, the merged header leaves this
+   * process as a `codex exec` config override, which `@openai/codex-sdk`
+   * serializes into the subprocess's argv — so the bearer is visible to anything
+   * on this machine that can list processes. It is bounded (a local, single-user
+   * machine; the token is the operator's own), but it is real, and fixing it means
+   * changing how that SDK carries config, which is out of scope here. The
+   * claude-code and opencode paths do not go through argv.
+   *
    * @param agentId - The owning agent's id (the token lookup's key half).
    * @param base - The cached, header-free enabled-servers map.
    */
@@ -401,11 +456,14 @@ export class AgentMcpServerService {
         out[name] = connection;
         continue;
       }
-      const token = this.tokenProvider.getAccessToken(agentId, name);
+      const token = this.tokenProvider.getAccessToken(agentId, name, connection.url);
       out[name] = token
         ? {
             ...connection,
-            headers: { ...connection.headers, [AUTHORIZATION_HEADER]: `Bearer ${token}` },
+            headers: {
+              ...withoutAuthorizationHeader(connection.headers),
+              [AUTHORIZATION_HEADER]: `Bearer ${token}`,
+            },
           }
         : connection;
     }
@@ -581,6 +639,36 @@ export class AgentMcpServerService {
     }
     return { mtimeMs, agentId: result.data.id, servers };
   }
+}
+
+/**
+ * The remote endpoint a connection authorizes against, or `null` for stdio (which
+ * has none). Used to decide whether an update re-pointed the server, and so
+ * whether its OAuth credentials still belong to it.
+ *
+ * @param connection - The stored transport.
+ */
+function endpointOf(connection: McpServerTransport): string | null {
+  return connection.transport === 'stdio' ? null : connection.url;
+}
+
+/**
+ * Drop any existing authorization header, whatever its casing, so merging the
+ * OAuth bearer replaces it instead of sitting beside it. HTTP header names are
+ * case-insensitive but a plain object's keys are not: leaving an `authorization`
+ * next to our `Authorization` sends both, and the server picks one.
+ *
+ * @param headers - The entry's declared headers, if any.
+ */
+function withoutAuthorizationHeader(
+  headers: Record<string, string> | undefined
+): Record<string, string> {
+  if (!headers) return {};
+  return Object.fromEntries(
+    Object.entries(headers).filter(
+      ([name]) => name.toLowerCase() !== AUTHORIZATION_HEADER.toLowerCase()
+    )
+  );
 }
 
 /** A fully-parsed manifest — the object form `readManifest` returns when present. */

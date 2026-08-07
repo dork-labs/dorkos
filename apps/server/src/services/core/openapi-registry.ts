@@ -107,6 +107,7 @@ import {
   UpdateMembershipRequestSchema,
   UpdateRoomRequestSchema,
 } from '@dorkos/shared/room-schemas';
+import { TeamRosterResponseSchema } from '@dorkos/shared/team-schemas';
 import { DeepHealthResponseSchema } from '@dorkos/shared/health-schemas';
 import { SessionSnapshotSchema, SessionEventSchema } from '@dorkos/shared/session-stream';
 import {
@@ -3503,6 +3504,38 @@ registry.registerPath({
       },
     },
     404: roomNotFound,
+  },
+});
+
+// --- Team (spec `identity-consistency` §W2.2, ADR 260806-222535) ---
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/team',
+  tags: ['Team'],
+  summary: 'List every identity on this install',
+  description:
+    'One read-only aggregation over the `authors` registry (people) and the mesh cache (agents). ' +
+    'It writes nothing and mints nothing: every id it returns already existed, which is why there ' +
+    'is no POST here (ADR 260806-222535). Exactly one row carries `isSelf: true` — the operator ' +
+    'reading it, under their real name rather than the room-scoped `You` — and `person.email` is ' +
+    'carried on that row and no other. `ownerId` is derived at read time: the operator on every ' +
+    'locally-registered agent, `null` on a system agent and on every person. `agent.recentlyActive` ' +
+    'restates `healthStatus === "active"`, which the mesh defines as "seen within the last hour" — ' +
+    'it is not a live-turn signal. Degradation follows ADR-0310, and covers EVERY read rather than ' +
+    'just the two registries: `authors`, `agents`, `operator` (the account lookup) and `config` each ' +
+    'contribute a `warnings[]` entry on failure while the rest still return, so a roster that cannot ' +
+    'say your name still lists your agents and this endpoint has no 500 path through its sources. ' +
+    '`warnings` is omitted entirely when every source read cleanly — never sent as `[]`.',
+  responses: {
+    200: {
+      description: 'Roster envelope: the operator first, then people, then agents',
+      content: { 'application/json': { schema: TeamRosterResponseSchema } },
+    },
+    500: {
+      description: 'The roster itself could not be assembled (not a per-source failure)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
   },
 });
 

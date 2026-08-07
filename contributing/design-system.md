@@ -356,6 +356,37 @@ Pattern: `Popover` > `PopoverTrigger` > `PopoverContent` > `Command` > `CommandI
 
 ---
 
+## Identity
+
+Every identity in the cockpit — an agent, a person, the room a direct message is with — is drawn as the same disc: `IdentityAvatar` (`shared/ui/identity-avatar.tsx`). It is the only place this convention is implemented, and this section is the only place it is written down.
+
+**Tell it what the identity is, not how to draw it.** Pass `kind` and the disc derives its shape, its fill and its corner mark together:
+
+| `kind`                             | Shape    | Fill   | Badge                                          |
+| ---------------------------------- | -------- | ------ | ---------------------------------------------- |
+| `agent`                            | `square` | `fill` | `Bot`                                          |
+| `human`, on this machine (or none) | `circle` | `tint` | none — absence is the signal                   |
+| `human`, bridged from elsewhere    | `circle` | `tint` | the platform's own mark, else a generic `Send` |
+| `system`                           | `circle` | `tint` | none                                           |
+| _omitted_                          | `circle` | `tint` | none                                           |
+
+Two things make this the shape it is:
+
+- **Square is the agent shape, circle the person shape.** The distinction is carried by silhouette, not colour and not the badge, so it survives colourblindness, a 20px disc, and a row where the badge is switched off. The square's radius steps up with the diameter — a fixed radius that reads well at 48px rounds into a circle at 20px, erasing the distinction exactly where the design leans on it hardest.
+- **Only agents get a badge.** A mark on every row would be a column of identical glyphs saying nothing, and one reading "person" would put the burden of proof on the humans. The exception is a person bridged in from another platform: "someone on this machine wrote this" and "a stranger on the internet wrote this" have to be told apart at a glance.
+
+**`kind` takes the repo's own vocabulary** — `AuthorKind` from `@dorkos/shared/room-schemas`, the same `'human' | 'agent' | 'system'` the wire carries. A caller holding `author.kind` passes it straight through; there is no second spelling to translate into and forget. "Circle is the person shape" is a sentence for docs, never a value in code.
+
+**Explicit props win, one axis at a time.** Pass `shape`, `variant` or `badge` and the derivation steps aside for that axis only — an agent drawn round keeps its fill and its badge. `badge={null}` is the explicit "no badge here", which is what an agent-only list wants: keep the shape, drop the redundant glyph. Omitting `kind` reproduces the pre-`kind` defaults exactly, so the prop is additive.
+
+**`working` is the pulse, and it is kind-agnostic.** A top-right dot in `bg-status-success`, ringed in the page background, opposite the badge. It says the thing is happening _right now_, which is why it pulses; under `prefers-reduced-motion` the dot stays and only the animation goes. An agent mid-turn and a person mid-task are the same fact to a roster, so nothing about the slot is agent-specific.
+
+**Reaching the disc.** `AgentAvatar` (`entities/agent/ui/AgentAvatar.tsx`) is the agent-side wrapper: it hard-passes `kind="agent"` and deliberately accepts no `shape` or `variant`, so the convention cannot be skipped through it. What it adds is what `shared/` must not learn — a ring keyed on mesh health. Room and roster surfaces pass `kind` to `IdentityAvatar` directly; a room must never import the agent entity to draw an agent square.
+
+Live states: `/dev/components#identityavatar`.
+
+---
+
 ## FilterBar (Compound Component)
 
 A composable filter bar system for list surfaces. Built using the compound component pattern (`FilterBar.Search`, `FilterBar.Primary`, etc.) with context-based state sharing. The filter engine (`shared/lib/filter-engine.ts`) is pure TypeScript with no React dependency; the UI components (`shared/ui/filter-bar/`) and the `useFilterState` hook (`shared/model/use-filter-state.ts`) bridge it to React and TanStack Router.
@@ -950,6 +981,8 @@ All three components are exported from `@/layers/shared/ui`.
 | CSS variables & Tailwind | `apps/client/src/index.css`                                      |
 | shadcn config            | `apps/client/components.json`                                    |
 | Component library        | `apps/client/src/layers/shared/ui/`                              |
+| Identity disc            | `apps/client/src/layers/shared/ui/identity-avatar.tsx`           |
+| Agent-side wrapper       | `apps/client/src/layers/entities/agent/ui/AgentAvatar.tsx`       |
 | Table primitives         | `apps/client/src/layers/shared/ui/table.tsx`                     |
 | DataTable                | `apps/client/src/layers/shared/ui/data-table.tsx`                |
 | App crash fallback       | `apps/client/src/layers/shared/ui/app-crash-fallback.tsx`        |
