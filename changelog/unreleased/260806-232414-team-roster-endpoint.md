@@ -2,6 +2,8 @@
 covers:
   - 'feat(team): serve one roster of every identity on this install (DOR-971)'
   - "fix(team): close the review's three contract findings on the roster (DOR-971)"
+  - 'feat(shared): tie TeamMember fact blocks to kind at parse time'
+  - 'docs(api): regenerate API docs for GET /api/team'
 ---
 
 ### Added
