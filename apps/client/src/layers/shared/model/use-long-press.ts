@@ -22,6 +22,22 @@ interface UseLongPressOptions {
    * that only wants the menu never hears about it.
    */
   onPressStateChange?: (state: LongPressState) => void;
+  /**
+   * A CSS selector this press yields to. Checked against the pointerdown's own
+   * `target` (via `closest`) at press-start; a match means some more specific
+   * descendant already owns this gesture, so this press never even starts —
+   * no timer, no `onPressStateChange('pressing')`, nothing to cancel later.
+   *
+   * Opt-in and off by default: only a press SURFACE that sits above a
+   * possibly-nested gesture of its own needs this — `ResponsiveContextMenu`'s
+   * `MobileTrigger` is the one caller, yielding to `[data-gesture-priority]`
+   * so a room message's own long-press (the actions drawer) never races a
+   * mention pill's `IdentityHoverCard` long-press (the identity card) sitting
+   * inside it. The identity card's OWN `useLongPress` call never passes this:
+   * its target IS the marked trigger, and a press yielding to its own trigger
+   * would mean it never opens at all.
+   */
+  yieldToSelector?: string;
 }
 
 interface UseLongPressReturn {
@@ -49,6 +65,7 @@ export function useLongPress({
   onLongPress,
   ms = TIMING.LONG_PRESS_MS,
   onPressStateChange,
+  yieldToSelector,
 }: UseLongPressOptions): UseLongPressReturn {
   const timerRef = useRef<number | null>(null);
   const originRef = useRef<{ x: number; y: number } | null>(null);
@@ -75,6 +92,7 @@ export function useLongPress({
     (e: React.PointerEvent) => {
       // Only fire on primary pointer (left click / single touch)
       if (e.button !== 0) return;
+      if (yieldToSelector && (e.target as Element | null)?.closest?.(yieldToSelector)) return;
       originRef.current = { x: e.clientX, y: e.clientY };
       onPressStateChange?.('pressing');
       timerRef.current = window.setTimeout(() => {
@@ -87,7 +105,7 @@ export function useLongPress({
         onLongPress();
       }, ms);
     },
-    [onLongPress, ms, onPressStateChange]
+    [onLongPress, ms, onPressStateChange, yieldToSelector]
   );
 
   const onPointerMove = useCallback(

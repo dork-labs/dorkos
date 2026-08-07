@@ -4,11 +4,12 @@
  *
  * @module shared/ui/identity-hover-card
  */
-import type * as React from 'react';
+import * as React from 'react';
 import { Bot, Send } from 'lucide-react';
 import { formatDuration } from '../lib/format-duration';
 import { initialOf } from '../lib/initial-of';
 import { cn } from '../lib/utils';
+import { useLongPress } from '../model';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from './hover-card';
 import { IdentityAvatar } from './identity-avatar';
 import type { IdentityOrigin } from './identity-origin';
@@ -52,7 +53,10 @@ export interface IdentityHoverCardDescriptor {
 export interface IdentityHoverCardProps {
   /** The identity this card describes. */
   identity: IdentityHoverCardDescriptor;
-  /** The element that opens the card on hover — wrapped in `asChild`, so it keeps its own tag. */
+  /**
+   * The element that opens the card — on pointer hover, keyboard focus, or a
+   * touch/pen long-press. Wrapped in `asChild`, so it keeps its own tag.
+   */
   children: React.ReactNode;
   /** Extra classes for the popover content. */
   className?: string;
@@ -79,13 +83,46 @@ function InfoChip({ className, children }: { className?: string; children: React
  * **soon** — the click is deferred until there is a profile route to send it
  * to.
  *
- * **Touch has no long-press path in this slice.** Radix's `HoverCard` only
- * opens on pointer hover, so on a touch device this card simply never opens
- * — there is no tap-and-hold affordance here yet. The alternative (a
- * `Popover` driven by a manual long-press timer) is real work — its own
- * gesture, its own dismiss behaviour, its own conflict with scroll — and
- * belongs with the slice that actually wires this card onto a touch surface.
- * Scoped out here rather than half-built.
+ * **Opens three ways, one card.** A pointer hovering the trigger opens it
+ * after {@link OPEN_DELAY_MS}, and keyboard focus opens it too, both straight
+ * from Radix's own `HoverCard` wiring. Neither reaches a touch or pen input:
+ * there is no hover to detect, and Radix's trigger deliberately excludes
+ * `touch` pointers from that same open/close logic so a tap can never
+ * masquerade as a hover. This adds the third path — holding a touch or pen
+ * point on the trigger opens the SAME card through the SAME
+ * `<HoverCardContent>`, via {@link useLongPress} (the room's own long-press
+ * gesture, see `responsive-context-menu.tsx`) driving this component's own
+ * controlled `open` state. One card, three ways in; never a second
+ * implementation to keep in sync.
+ *
+ * A plain, quick tap does nothing on its own — deliberately. The mention
+ * pill this wraps has no click action yet ("View profile" is still
+ * **soon**), and a tap that opened the card would read as a click
+ * affordance the pill does not actually have, one this would then have to
+ * un-teach once a real tap-to-navigate lands. Long-press is also gated to
+ * `pointerType === 'touch' || 'pen'` specifically, so it never doubles up
+ * with a mouse holding the trigger down — hover already opens that case,
+ * faster.
+ *
+ * **Gesture priority: the trigger wins over anything it sits inside, without
+ * severing the event.** A mention pill in a room message lives inside
+ * `EntryActionMenu`, which arms its OWN long-press on the whole row (touch
+ * screens open a message-actions drawer the same way). Both gestures start
+ * from the identical `pointerdown` — without help, holding a pill would race
+ * both timers and could open the drawer AND this card at once. The fix is
+ * NOT `stopPropagation`: that severs the native event before it ever reaches
+ * `document`, which is where every Radix `DismissableLayer` — this card's
+ * own included — listens for "something pressed outside me." A severed press
+ * on one card's trigger can no longer close some OTHER open Radix overlay
+ * (another identity card, an unrelated popover) — a real regression, caught
+ * and reverted. Instead, the trigger marks itself `data-gesture-priority`,
+ * and `ResponsiveContextMenu`'s `MobileTrigger` (`responsive-context-menu.tsx`)
+ * yields to that marker in its OWN long-press's `pointerdown` — never arming
+ * in the first place, rather than being interrupted mid-flight. The native
+ * event keeps flowing to `document` exactly as it always did; only the ROW's
+ * long-press stands down. Mouse pointerdowns are unaffected either way —
+ * there is no competing row gesture for a mouse, and desktop right-click
+ * behaviour never touches this at all.
  *
  * Presentational: it renders the descriptor it is handed and composes
  * {@link IdentityAvatar}. The caller resolves `identity` from whatever
@@ -103,9 +140,43 @@ function IdentityHoverCard({ identity, children, className }: IdentityHoverCardP
   const avatarColor = color ?? 'hsl(var(--muted-foreground))';
   const isExternal = typeof origin === 'object' && origin !== null;
 
+  // Controlled rather than left to Radix's own internal state: hover and
+  // focus still drive it exactly as before (their handlers call `onOpenChange`,
+  // same as any uncontrolled `HoverCard`), but a touch long-press has no Radix
+  // event to hook — it has to set `open` itself, on the very state Radix reads.
+  // Nothing coordinates across instances here: the event keeps flowing to
+  // `document` (see the doc above), so Radix's own `DismissableLayer` closes
+  // this card the normal way the moment a press lands outside it — including
+  // a press on a different card's trigger.
+  const [open, setOpen] = React.useState(false);
+  // Which pointer is currently down on the trigger, read back when the long
+  // press timer fires. A `PointerEvent` isn't available inside the timer
+  // callback itself, so this is captured at `pointerdown` time instead.
+  const isTouchLikePressRef = React.useRef(false);
+  const longPress = useLongPress({
+    onLongPress: () => {
+      if (isTouchLikePressRef.current) setOpen(true);
+    },
+  });
+
   return (
-    <HoverCard openDelay={OPEN_DELAY_MS}>
-      <HoverCardTrigger asChild>{children}</HoverCardTrigger>
+    <HoverCard open={open} onOpenChange={setOpen} openDelay={OPEN_DELAY_MS}>
+      <HoverCardTrigger
+        asChild
+        // Claims gesture priority (see the doc above) — an ancestor
+        // `ResponsiveContextMenu` long-press yields to this marker rather
+        // than racing it. An empty string: this is a presence flag, not a
+        // value anything reads.
+        data-gesture-priority=""
+        {...longPress}
+        onPointerDown={(event: React.PointerEvent) => {
+          isTouchLikePressRef.current =
+            event.pointerType === 'touch' || event.pointerType === 'pen';
+          longPress.onPointerDown(event);
+        }}
+      >
+        {children}
+      </HoverCardTrigger>
       <HoverCardContent
         data-slot="identity-hover-card"
         align="start"
