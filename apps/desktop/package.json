@@ -26,7 +26,7 @@
     "@dorkos/server": "workspace:*",
     "@dorkos/shared": "workspace:*",
     "@ngrok/ngrok": "^1.7.0",
-    "@openai/codex": "0.144.1",
+    "@openai/codex": "0.147.0",
     "@openai/codex-sdk": "~0.147.0",
     "@opencode-ai/sdk": "^1.17.13",
     "@scalar/express-api-reference": "^0.9.8",

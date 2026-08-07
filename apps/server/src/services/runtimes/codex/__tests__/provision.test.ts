@@ -149,4 +149,26 @@ describe('provisionCodex', () => {
 
     expect(CODEX_PACKAGE_VERSION).toBe(pkg.dependencies['@openai/codex']);
   });
+
+  it('keeps the provisioned @openai/codex CLI in lockstep with the @openai/codex-sdk pin', async () => {
+    // The two file-local constants can agree with each other while both drift from
+    // the actual SDK dependency (DOR-1012 review: this happened — CODEX_PACKAGE_VERSION
+    // and the CLI pin matched each other at 0.144.1 while codex-sdk had moved to
+    // 0.147.0). Read the dependency versions straight from package.json, the one
+    // place both pins are declared, so a future SDK-only bump fails this test red.
+    // `@openai/codex` is an exact pin; `@openai/codex-sdk` carries a leading `~` —
+    // strip range operators before comparing the version numbers themselves.
+    const { readFile } =
+      await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+    const pkg = JSON.parse(
+      await readFile(new URL('../../../../../package.json', import.meta.url), 'utf8')
+    ) as { dependencies: Record<string, string> };
+    const stripRange = (version: string): string => version.replace(/^[~^]/, '');
+
+    expect(stripRange(pkg.dependencies['@openai/codex'])).toBe('0.147.0');
+    expect(stripRange(pkg.dependencies['@openai/codex-sdk'])).toBe('0.147.0');
+    expect(stripRange(pkg.dependencies['@openai/codex'])).toBe(
+      stripRange(pkg.dependencies['@openai/codex-sdk'])
+    );
+  });
 });
