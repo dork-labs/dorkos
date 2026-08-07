@@ -335,6 +335,9 @@
                   "$ref": "#/components/schemas/ElicitationPart"
                 },
                 {
+                  "$ref": "#/components/schemas/CapabilityApprovalPart"
+                },
+                {
                   "$ref": "#/components/schemas/MemoryRecallPart"
                 },
                 {
@@ -353,6 +356,7 @@
                   "thinking": "#/components/schemas/ThinkingPart",
                   "error": "#/components/schemas/ErrorPart",
                   "elicitation": "#/components/schemas/ElicitationPart",
+                  "capability_approval": "#/components/schemas/CapabilityApprovalPart",
                   "memory_recall": "#/components/schemas/MemoryRecallPart",
                   "permission_denied": "#/components/schemas/PermissionDeniedPart",
                   "compact_boundary": "#/components/schemas/CompactBoundaryPart"
@@ -882,6 +886,78 @@
           "accept",
           "decline",
           "cancel"
+        ]
+      },
+      "CapabilityApprovalPart": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "capability_approval"
+            ]
+          },
+          "approval": {
+            "$ref": "#/components/schemas/PendingApproval"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "timeout"
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "approval"
+        ]
+      },
+      "PendingApproval": {
+        "type": "object",
+        "properties": {
+          "approvalId": {
+            "type": "string"
+          },
+          "capabilityId": {
+            "type": "string"
+          },
+          "capabilityTitle": {
+            "type": "string"
+          },
+          "tier": {
+            "type": "string",
+            "enum": [
+              "observe",
+              "act",
+              "destructive"
+            ]
+          },
+          "summary": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "requestedBy": {
+            "type": "string"
+          },
+          "hasAgentPath": {
+            "type": "boolean"
+          },
+          "requestedAt": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "approvalId",
+          "capabilityId",
+          "capabilityTitle",
+          "tier",
+          "summary",
+          "hasAgentPath",
+          "requestedAt",
+          "expiresAt"
         ]
       },
       "MemoryRecallPart": {
@@ -1839,6 +1915,70 @@
               "seq",
               "type",
               "id"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "capability_approval_required"
+                ]
+              },
+              "startedAt": {
+                "type": "number"
+              },
+              "capMs": {
+                "type": "number"
+              },
+              "approval": {
+                "$ref": "#/components/schemas/PendingApproval"
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "startedAt",
+              "capMs",
+              "approval"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "capability_approval_resolved"
+                ]
+              },
+              "approvalId": {
+                "type": "string"
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "granted",
+                  "denied",
+                  "expired",
+                  "timeout"
+                ]
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "approvalId",
+              "outcome"
             ]
           },
           {
@@ -5365,54 +5505,6 @@
           "approvals"
         ]
       },
-      "PendingApproval": {
-        "type": "object",
-        "properties": {
-          "approvalId": {
-            "type": "string"
-          },
-          "capabilityId": {
-            "type": "string"
-          },
-          "capabilityTitle": {
-            "type": "string"
-          },
-          "tier": {
-            "type": "string",
-            "enum": [
-              "observe",
-              "act",
-              "destructive"
-            ]
-          },
-          "summary": {
-            "type": "string",
-            "maxLength": 500
-          },
-          "requestedBy": {
-            "type": "string"
-          },
-          "hasAgentPath": {
-            "type": "boolean"
-          },
-          "requestedAt": {
-            "type": "string"
-          },
-          "expiresAt": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "approvalId",
-          "capabilityId",
-          "capabilityTitle",
-          "tier",
-          "summary",
-          "hasAgentPath",
-          "requestedAt",
-          "expiresAt"
-        ]
-      },
       "ApprovalDecisionResponse": {
         "type": "object",
         "properties": {
@@ -7786,6 +7878,70 @@
                         "seq",
                         "type",
                         "id"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "capability_approval_required"
+                          ]
+                        },
+                        "startedAt": {
+                          "type": "number"
+                        },
+                        "capMs": {
+                          "type": "number"
+                        },
+                        "approval": {
+                          "$ref": "#/components/schemas/PendingApproval"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "startedAt",
+                        "capMs",
+                        "approval"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "capability_approval_resolved"
+                          ]
+                        },
+                        "approvalId": {
+                          "type": "string"
+                        },
+                        "outcome": {
+                          "type": "string",
+                          "enum": [
+                            "granted",
+                            "denied",
+                            "expired",
+                            "timeout"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "approvalId",
+                        "outcome"
                       ]
                     },
                     {
