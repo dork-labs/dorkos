@@ -223,3 +223,23 @@ export const TeamRosterResponseSchema = z
 
 /** The `GET /api/team` envelope (see {@link TeamRosterResponseSchema}). */
 export type TeamRosterResponse = z.infer<typeof TeamRosterResponseSchema>;
+
+/**
+ * Response to `POST /api/profile/avatar` — the URL the photo is now served
+ * from (spec `identity-consistency` §W3.5, ADR 260806-222546).
+ *
+ * **Deliberately not a path, and deliberately not parsed.** It is whatever the
+ * avatar store returned: server-relative today (`/api/profile/avatar/<id>?v=…`),
+ * absolute (`https://…`) the day photos live somewhere other than this machine.
+ * Every renderer already treats `imageUrl` as an opaque `src`, which is what
+ * makes that change invisible.
+ */
+export const ProfileAvatarResponseSchema = z
+  .object({
+    /** Where the photo is served from. Store it; never take it apart. */
+    imageUrl: z.string().min(1),
+  })
+  .openapi('ProfileAvatarResponse');
+
+/** The `POST /api/profile/avatar` response (see {@link ProfileAvatarResponseSchema}). */
+export type ProfileAvatarResponse = z.infer<typeof ProfileAvatarResponseSchema>;

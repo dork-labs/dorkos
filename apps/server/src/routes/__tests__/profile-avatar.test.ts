@@ -1,0 +1,237 @@
+/**
+ * `POST/GET/DELETE /api/profile/avatar` over HTTP.
+ *
+ * Three things are being pinned here, and only one of them is "the photo
+ * round-trips". The second is that a hostile upload is refused by what the bytes
+ * ARE rather than by what the request claimed — a `.png` full of GIF, an SVG
+ * that is really a script, a file over the cap. The third is the seam: the last
+ * describe block swaps in a store that answers with an absolute CDN URL and
+ * asserts the roster serves exactly that, with no route, schema or client change.
+ * That block is what makes "sync-ready" a fact rather than a claim.
+ */
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import express from 'express';
+import request from 'supertest';
+import { mkdtemp, rm, readdir } from 'fs/promises';
+import { tmpdir } from 'os';
+import path from 'path';
+import { createTestDb } from '@dorkos/test-utils/db';
+import { user, eq, type Db } from '@dorkos/db';
+import { AuthorRegistry, type AuthorRecord } from '../../services/rooms/author-registry.js';
+import { LocalAvatarStore } from '../../services/identity/local-avatar-store.js';
+import type { AvatarStore } from '../../services/identity/avatar-store.js';
+import { createProfileRouter, type ProfileRouterDeps } from '../profile.js';
+import { createTeamRouter } from '../team.js';
+
+const OWNER_USER_ID = 'user-1';
+
+/** A real 1×1 PNG. */
+const PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64'
+);
+const SVG = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><circle r="1"/></svg>');
+const GIF = Buffer.concat([Buffer.from('GIF89a'), Buffer.alloc(64, 3)]);
+const THREE_MB = Buffer.concat([PNG, Buffer.alloc(3 * 1024 * 1024, 0)]);
+
+describe('/api/profile/avatar', () => {
+  let db: Db;
+  let registry: AuthorRegistry;
+  let dorkHome: string;
+  let store: LocalAvatarStore;
+  let ownerAuthor: AuthorRecord;
+
+  function app(overrides: Partial<ProfileRouterDeps> = {}) {
+    const server = express();
+    server.use(
+      '/api/profile',
+      createProfileRouter({
+        avatars: store,
+        caller: () => ownerAuthor,
+        authors: registry,
+        ownerAccount: () => ({ id: OWNER_USER_ID }),
+        setAccountImage: (userId, imageUrl) =>
+          db.update(user).set({ image: imageUrl }).where(eq(user.id, userId)).run(),
+        ...overrides,
+      })
+    );
+    server.use(
+      '/api/team',
+      createTeamRouter({
+        authors: registry,
+        ownerAccount: () => ({ id: OWNER_USER_ID, name: 'Dorian' }),
+        ownerEmail: () => 'dorian@dorkos.ai',
+        configDisplayName: () => null,
+        defaultAgentName: () => null,
+      })
+    );
+    return server;
+  }
+
+  function storedAccountImage(): string | null | undefined {
+    return db.select({ image: user.image }).from(user).where(eq(user.id, OWNER_USER_ID)).get()
+      ?.image;
+  }
+
+  beforeEach(async () => {
+    db = createTestDb();
+    db.insert(user).values({ id: OWNER_USER_ID, name: 'Dorian', email: 'dorian@dorkos.ai' }).run();
+    registry = new AuthorRegistry(db);
+    ownerAuthor = registry.bindOwner(OWNER_USER_ID);
+    dorkHome = await mkdtemp(path.join(tmpdir(), 'dorkos-profile-'));
+    store = new LocalAvatarStore(dorkHome);
+  });
+
+  afterEach(async () => {
+    await rm(dorkHome, { recursive: true, force: true });
+  });
+
+  describe('the round trip', () => {
+    it('stores the photo, serves it back, and tells both identity records about it', async () => {
+      const posted = await request(app())
+        .post('/api/profile/avatar')
+        .attach('avatar', PNG, { filename: 'me.png', contentType: 'image/png' });
+
+      expect(posted.status).toBe(200);
+      expect(posted.body.imageUrl).toMatch(/^\/api\/profile\/avatar\//);
+      expect(await readdir(path.join(dorkHome, 'avatars'))).toEqual([`${ownerAuthor.id}.png`]);
+
+      // Both identity records hold the SAME url — the account and the roster
+      // cannot disagree about what this person looks like.
+      expect(registry.getById(ownerAuthor.id)?.imageUrl).toBe(posted.body.imageUrl);
+      expect(storedAccountImage()).toBe(posted.body.imageUrl);
+
+      const fetched = await request(app()).get(posted.body.imageUrl);
+      expect(fetched.status).toBe(200);
+      expect(fetched.headers['content-type']).toBe('image/png');
+      expect(fetched.headers['x-content-type-options']).toBe('nosniff');
+      expect(fetched.headers['cache-control']).toBe('private, max-age=0, must-revalidate');
+      expect(fetched.headers.etag).toMatch(/^"[0-9a-f]+"$/);
+      expect(Buffer.from(fetched.body)).toEqual(PNG);
+    });
+
+    it('clears the file and both records on delete', async () => {
+      const posted = await request(app())
+        .post('/api/profile/avatar')
+        .attach('avatar', PNG, { filename: 'me.png' });
+
+      const deleted = await request(app()).delete('/api/profile/avatar');
+      expect(deleted.status).toBe(204);
+
+      expect(await readdir(path.join(dorkHome, 'avatars'))).toEqual([]);
+      expect(registry.getById(ownerAuthor.id)?.imageUrl).toBeNull();
+      expect(storedAccountImage()).toBeNull();
+      expect((await request(app()).get(posted.body.imageUrl)).status).toBe(404);
+    });
+
+    it('answers 304 when the browser already has that exact photo', async () => {
+      const posted = await request(app())
+        .post('/api/profile/avatar')
+        .attach('avatar', PNG, { filename: 'me.png' });
+      const first = await request(app()).get(posted.body.imageUrl);
+
+      const again = await request(app())
+        .get(posted.body.imageUrl)
+        .set('If-None-Match', first.headers.etag);
+
+      expect(again.status).toBe(304);
+    });
+
+    it('answers 404 for an identity with no photo', async () => {
+      expect((await request(app()).get('/api/profile/avatar/nobody')).status).toBe(404);
+    });
+  });
+
+  describe('what it refuses', () => {
+    it('refuses a file over 2 MB before writing a byte of it', async () => {
+      const res = await request(app())
+        .post('/api/profile/avatar')
+        .attach('avatar', THREE_MB, { filename: 'huge.png', contentType: 'image/png' });
+
+      expect(res.status).toBe(413);
+      expect(res.body.code).toBe('AVATAR_TOO_LARGE');
+      await expect(readdir(path.join(dorkHome, 'avatars'))).rejects.toThrow();
+      expect(registry.getById(ownerAuthor.id)?.imageUrl).toBeNull();
+    });
+
+    it('refuses an SVG, however it is labelled', async () => {
+      const res = await request(app())
+        .post('/api/profile/avatar')
+        .attach('avatar', SVG, { filename: 'me.png', contentType: 'image/png' });
+
+      expect(res.status).toBe(415);
+      expect(res.body.code).toBe('AVATAR_TYPE_UNSUPPORTED');
+      expect(registry.getById(ownerAuthor.id)?.imageUrl).toBeNull();
+    });
+
+    it('believes the bytes, not the name: a .png whose content is a GIF is refused', async () => {
+      const res = await request(app())
+        .post('/api/profile/avatar')
+        .attach('avatar', GIF, { filename: 'me.png', contentType: 'image/png' });
+
+      expect(res.status).toBe(415);
+      expect(res.body.code).toBe('AVATAR_TYPE_UNSUPPORTED');
+    });
+
+    it('refuses a POST carrying no file at all', async () => {
+      const res = await request(app()).post('/api/profile/avatar');
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('AVATAR_MISSING');
+    });
+
+    it('refuses an agent — a profile photo is the operator’s to set', async () => {
+      const agent = registry.resolveAgent('/tmp/agent-ana', 'Ana');
+      const res = await request(app({ caller: () => agent }))
+        .post('/api/profile/avatar')
+        .attach('avatar', PNG, { filename: 'me.png' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('OPERATOR_ONLY');
+    });
+
+    it.each(['..%2Fsecret', '..', '%2e%2e%2f%2e%2e%2fetc%2fpasswd'])(
+      'cannot be walked out of the avatar directory with %s',
+      async (id) => {
+        const res = await request(app()).get(`/api/profile/avatar/${id}`);
+        expect(res.status).toBe(404);
+      }
+    );
+  });
+
+  describe('the seam', () => {
+    /**
+     * A store that keeps nothing locally and answers with an absolute URL —
+     * exactly what a cloud-backed implementation would do.
+     */
+    const cdn: AvatarStore = {
+      put: async () => ({ url: 'https://cdn.example/x.png' }),
+      get: async () => null,
+      delete: async () => {},
+    };
+
+    it('serves whatever URL the store returned, absolute host and all', async () => {
+      const posted = await request(app({ avatars: cdn }))
+        .post('/api/profile/avatar')
+        .attach('avatar', PNG, { filename: 'me.png' });
+
+      expect(posted.body.imageUrl).toBe('https://cdn.example/x.png');
+      expect(registry.getById(ownerAuthor.id)?.imageUrl).toBe('https://cdn.example/x.png');
+      expect(storedAccountImage()).toBe('https://cdn.example/x.png');
+      // Nothing was written to this machine: the route never touched a path.
+      await expect(readdir(path.join(dorkHome, 'avatars'))).rejects.toThrow();
+    });
+
+    it('carries that absolute URL to the roster with no route or schema change', async () => {
+      const server = app({ avatars: cdn });
+      await request(server)
+        .post('/api/profile/avatar')
+        .attach('avatar', PNG, { filename: 'me.png' });
+
+      const roster = await request(server).get('/api/team');
+      const self = roster.body.members.find((m: { isSelf: boolean }) => m.isSelf);
+
+      expect(self.imageUrl).toBe('https://cdn.example/x.png');
+    });
+  });
+});

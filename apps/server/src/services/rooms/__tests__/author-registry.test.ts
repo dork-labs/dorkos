@@ -307,3 +307,42 @@ describe('AuthorRegistry — who the owner is', () => {
     expect(registry.isOwner(systemMimic.id, null)).toBe(false);
   });
 });
+
+describe('AuthorRegistry — the photo write path', () => {
+  let db: Db;
+  let registry: AuthorRegistry;
+  let authorId: string;
+
+  beforeEach(() => {
+    db = createTestDb();
+    registry = new AuthorRegistry(db);
+    authorId = registry.localHuman().id;
+  });
+
+  it('stores whatever URL it is handed, verbatim', () => {
+    const absolute = 'https://cdn.example/photo.png?v=abc';
+
+    expect(registry.setImageUrl(authorId, absolute).imageUrl).toBe(absolute);
+    expect(registry.getById(authorId)?.imageUrl).toBe(absolute);
+  });
+
+  it('clears it with null', () => {
+    registry.setImageUrl(authorId, '/api/profile/avatar/x?v=1');
+    registry.setImageUrl(authorId, null);
+
+    expect(registry.getById(authorId)?.imageUrl).toBeNull();
+  });
+
+  it('survives the next resolve — a caller that only knows a name must not wipe it', () => {
+    registry.setImageUrl(authorId, '/api/profile/avatar/x?v=1');
+    registry.localHuman();
+
+    expect(registry.getById(authorId)?.imageUrl).toBe('/api/profile/avatar/x?v=1');
+  });
+
+  it('refuses an author that does not exist', () => {
+    expect(() => registry.setImageUrl('nobody', 'https://cdn.example/x.png')).toThrow(
+      'No such author'
+    );
+  });
+});

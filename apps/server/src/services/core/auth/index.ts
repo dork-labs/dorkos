@@ -229,6 +229,28 @@ export function getUserById(userId: string): { id: string; email: string; name: 
 }
 
 /**
+ * Point an account's `user.image` at a photo, or clear it.
+ *
+ * The write sibling of {@link getUserById}, and the reason it exists at all:
+ * `authors.image_url` is what the roster and every room renderer read, while
+ * `user.image` is what the account record holds. A profile photo has to land in
+ * both or the two records disagree about the same person (spec
+ * `identity-consistency` §W3.5). The one caller is the profile router, which
+ * writes them together.
+ *
+ * A no-op when auth was never initialized — an install with login off has a
+ * roster and no `user` row, which is a supported state rather than a failure.
+ *
+ * @param userId - The Better Auth user id.
+ * @param image - The URL the avatar store returned, stored verbatim, or `null`
+ *   to clear it.
+ */
+export function setUserImage(userId: string, image: string | null): void {
+  if (!activeDb) return;
+  activeDb.update(user).set({ image }).where(eq(user.id, userId)).run();
+}
+
+/**
  * Whether at least one user (owner) account exists in the auth `user` table.
  *
  * Returns `false` when auth was never initialized (no db bound — e.g. a unit
