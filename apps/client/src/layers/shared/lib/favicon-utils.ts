@@ -31,6 +31,25 @@ export const EMOJI_SET = [
   '\u{1F47E}',
 ];
 
+/**
+ * The fixed palette an agent's avatar color picker offers alongside its
+ * auto-derived default. Shared by every color-swatch picker — was
+ * byte-identical duplicated at `IdentityTab.tsx` and `AvatarPickerPopover.tsx`
+ * before this collapsed it to one definition (DOR-970).
+ */
+export const COLOR_PRESETS: { hex: string; name: string }[] = [
+  { hex: '#ef4444', name: 'Red' },
+  { hex: '#f97316', name: 'Orange' },
+  { hex: '#eab308', name: 'Yellow' },
+  { hex: '#22c55e', name: 'Green' },
+  { hex: '#06b6d4', name: 'Cyan' },
+  { hex: '#3b82f6', name: 'Blue' },
+  { hex: '#6366f1', name: 'Indigo' },
+  { hex: '#a855f7', name: 'Purple' },
+  { hex: '#ec4899', name: 'Pink' },
+  { hex: '#78716c', name: 'Stone' },
+];
+
 /** Compute a 32-bit FNV-1a hash of the given string. */
 export function fnv1aHash(str: string): number {
   let hash = 0x811c9dc5;

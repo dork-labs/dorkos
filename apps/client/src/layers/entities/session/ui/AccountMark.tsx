@@ -15,7 +15,7 @@ interface AccountMarkProps {
 /**
  * Which Claude account a session belongs to, as a short name in the row.
  *
- * Text rather than an icon, unlike its `RuntimeMark`/`OriginMark` neighbours:
+ * Text rather than an icon, unlike its `RuntimeMark`/`SessionOriginMark` neighbours:
  * the account IS the name, and no glyph can say "Acme Corp". The full path rides
  * the tooltip so the row stays readable while the exact directory is still one
  * hover away.

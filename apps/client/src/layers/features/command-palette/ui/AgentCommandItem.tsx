@@ -1,8 +1,7 @@
-import { Check } from 'lucide-react';
 import { motion } from 'motion/react';
 import { CommandItem } from '@/layers/shared/ui';
 import { getAgentDisplayName, shortenHomePath } from '@/layers/shared/lib';
-import { AgentAvatar, resolveAgentVisual } from '@/layers/entities/agent';
+import { AgentOptionRow } from '@/layers/entities/agent';
 import { HighlightedText } from './HighlightedText';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 
@@ -47,14 +46,12 @@ export function AgentCommandItem({
   nameIndices,
   isSelected,
 }: AgentCommandItemProps) {
-  const { color, emoji } = resolveAgentVisual(agent);
-
   return (
     <CommandItem
       value={getAgentDisplayName(agent)}
       keywords={[agent.name, agent.projectPath, agent.id]}
       onSelect={() => onSelect()}
-      className="relative flex items-start gap-2 py-2"
+      className="relative py-2"
       forceMount={isActive ? true : undefined}
     >
       {/* Sliding selection background — animates between items via shared layoutId */}
@@ -67,13 +64,11 @@ export function AgentCommandItem({
       )}
 
       {/* Content above the selection indicator */}
-      <div className="relative z-10 flex w-full items-start gap-2">
-        <AgentAvatar color={color} emoji={emoji} size="xs" className="mt-0.5 flex-shrink-0" />
-
-        {/* Agent info */}
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            {nameIndices ? (
+      <div className="relative z-10 w-full">
+        <AgentOptionRow
+          agent={agent}
+          name={
+            nameIndices ? (
               <HighlightedText
                 text={getAgentDisplayName(agent)}
                 indices={nameIndices}
@@ -81,13 +76,11 @@ export function AgentCommandItem({
               />
             ) : (
               <span className="truncate text-sm font-semibold">{getAgentDisplayName(agent)}</span>
-            )}
-            <span className="text-muted-foreground ml-auto flex-shrink-0 text-xs">
-              {shortenHomePath(agent.projectPath)}
-            </span>
-            {isActive && <Check className="text-muted-foreground size-4 flex-shrink-0" />}
-          </div>
-        </div>
+            )
+          }
+          secondary={shortenHomePath(agent.projectPath)}
+          selected={isActive}
+        />
       </div>
     </CommandItem>
   );

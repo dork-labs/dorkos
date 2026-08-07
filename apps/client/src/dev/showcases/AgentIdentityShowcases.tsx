@@ -1,8 +1,34 @@
+import { useState } from 'react';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
-import { AgentAvatar, AgentIdentity } from '@/layers/entities/agent';
+import {
+  AgentAvatar,
+  AgentIdentity,
+  AvatarColorGrid,
+  AvatarEmojiGrid,
+} from '@/layers/entities/agent';
 import { Badge } from '@/layers/shared/ui/badge';
+
+const AUTO_COLOR = 'hsl(255, 70%, 55%)';
+const AUTO_EMOJI = '🤖';
+
+/**
+ * Demo state for one `AvatarColorGrid` + `AvatarEmojiGrid` pair — enough to
+ * drive the grids without the real `IdentityTab` / `AvatarPickerPopover`
+ * data context they normally sit inside.
+ */
+function useAvatarPickerDemoState() {
+  const [color, setColor] = useState<string | null>(null);
+  const [icon, setIcon] = useState<string | null>(null);
+  return {
+    color,
+    icon,
+    activeEmoji: icon ?? AUTO_EMOJI,
+    onSelectColor: setColor,
+    onSelectIcon: (emoji: string) => setIcon(emoji === AUTO_EMOJI ? null : emoji),
+  };
+}
 
 const SAMPLE = {
   color: '#6366f1',
@@ -17,8 +43,11 @@ const AGENTS = [
   { color: '#ef4444', emoji: '🔥', name: 'incident-responder' },
 ] as const;
 
-/** Agent identity primitive showcases: AgentAvatar, AgentIdentity. */
+/** Agent identity primitive showcases: AgentAvatar, AgentIdentity, AvatarPickerGrid. */
 export function AgentIdentityShowcases() {
+  const plainPicker = useAvatarPickerDemoState();
+  const celebratoryPicker = useAvatarPickerDemoState();
+
   return (
     <>
       <PlaygroundSection
@@ -144,6 +173,48 @@ export function AgentIdentityShowcases() {
               name="hsl-color"
               size="sm"
               detail="HSL color input"
+            />
+          </div>
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="AvatarPickerGrid"
+        description="The color-swatch and emoji grids shared by every avatar picker (IdentityTab, AvatarPickerPopover) — collapsed to one implementation in DOR-970. The two containers around it stay different: a plain settings-form popover vs. a celebratory panel with hover preview and a selection burst."
+      >
+        <ShowcaseLabel>Plain container (the IdentityTab popover)</ShowcaseLabel>
+        <ShowcaseDemo>
+          <div className="max-w-xs space-y-4 rounded-md border p-3">
+            <AvatarColorGrid
+              value={plainPicker.color}
+              autoColor={AUTO_COLOR}
+              onSelect={plainPicker.onSelectColor}
+            />
+            <AvatarEmojiGrid
+              value={plainPicker.activeEmoji}
+              autoEmoji={AUTO_EMOJI}
+              hasOverride={plainPicker.icon != null}
+              onSelect={plainPicker.onSelectIcon}
+            />
+          </div>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Celebratory container (the AvatarPickerPopover panel)</ShowcaseLabel>
+        <ShowcaseDemo>
+          <div className="max-w-xs space-y-4 rounded-md border p-3">
+            <AvatarColorGrid
+              value={celebratoryPicker.color}
+              autoColor={AUTO_COLOR}
+              onSelect={celebratoryPicker.onSelectColor}
+              onHoverChange={() => {}}
+              justSelectedKey={celebratoryPicker.color}
+            />
+            <AvatarEmojiGrid
+              value={celebratoryPicker.activeEmoji}
+              autoEmoji={AUTO_EMOJI}
+              hasOverride={celebratoryPicker.icon != null}
+              onSelect={celebratoryPicker.onSelectIcon}
+              justSelectedKey={celebratoryPicker.icon && `emoji-${celebratoryPicker.icon}`}
             />
           </div>
         </ShowcaseDemo>

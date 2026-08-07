@@ -4,7 +4,7 @@
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { TooltipProvider } from '@/layers/shared/ui';
-import { OriginMark } from '../OriginMark';
+import { SessionOriginMark } from '../SessionOriginMark';
 
 // Mock window.matchMedia for useIsMobile hook (used by shared tooltip).
 beforeAll(() => {
@@ -36,52 +36,55 @@ function Wrapper({ children }: { children: React.ReactNode }) {
   return <TooltipProvider>{children}</TooltipProvider>;
 }
 
-describe('OriginMark', () => {
+describe('SessionOriginMark', () => {
   it.each([
     ['agent', 'Agent'],
     ['channel', 'Connection'],
     ['task', 'Scheduled task'],
     ['external', 'External'],
   ] as const)('renders an icon + tooltip for origin=%s with fallback label', (origin, label) => {
-    const { container } = render(<OriginMark origin={origin} />, { wrapper: Wrapper });
+    const { container } = render(<SessionOriginMark origin={origin} />, { wrapper: Wrapper });
     expect(screen.getByLabelText(`Origin: ${label}`)).toBeDefined();
     expect(container.querySelector('svg')).not.toBeNull();
   });
 
   it('prefers a passed label over the descriptor fallback', () => {
-    render(<OriginMark origin="channel" label="Telegram" />, { wrapper: Wrapper });
+    render(<SessionOriginMark origin="channel" label="Telegram" />, { wrapper: Wrapper });
     expect(screen.getByLabelText('Origin: Telegram')).toBeDefined();
     expect(screen.queryByLabelText('Origin: Integration')).toBeNull();
   });
 
   it('renders nothing for origin="user"', () => {
-    render(<OriginMark origin="user" />, { wrapper: Wrapper });
+    render(<SessionOriginMark origin="user" />, { wrapper: Wrapper });
     expect(screen.queryByLabelText(/^Origin:/)).toBeNull();
   });
 
   it('renders nothing when origin is absent', () => {
-    render(<OriginMark />, { wrapper: Wrapper });
+    render(<SessionOriginMark />, { wrapper: Wrapper });
     expect(screen.queryByLabelText(/^Origin:/)).toBeNull();
   });
 
   it('renders nothing for an unrecognized origin string', () => {
-    render(<OriginMark origin="bogus" />, { wrapper: Wrapper });
+    render(<SessionOriginMark origin="bogus" />, { wrapper: Wrapper });
     expect(screen.queryByLabelText(/^Origin:/)).toBeNull();
   });
 
   // --- decorative mode (no duplicate announcement next to a visible label) ---
 
   it('suppresses the accessible label and tooltip when decorative', () => {
-    const { container } = render(<OriginMark origin="channel" label="Telegram" decorative />, {
-      wrapper: Wrapper,
-    });
+    const { container } = render(
+      <SessionOriginMark origin="channel" label="Telegram" decorative />,
+      {
+        wrapper: Wrapper,
+      }
+    );
     expect(screen.queryByLabelText('Origin: Telegram')).toBeNull();
     expect(container.querySelector('[aria-hidden="true"]')).not.toBeNull();
     expect(container.querySelector('svg')).not.toBeNull();
   });
 
   it('still renders the accessible label and tooltip when not decorative (default)', () => {
-    render(<OriginMark origin="channel" label="Telegram" />, { wrapper: Wrapper });
+    render(<SessionOriginMark origin="channel" label="Telegram" />, { wrapper: Wrapper });
     expect(screen.getByLabelText('Origin: Telegram')).toBeDefined();
   });
 });

@@ -45,6 +45,8 @@ export { AgentAvatar } from './ui/AgentAvatar';
 export type { AgentAvatarProps } from './ui/AgentAvatar';
 export { AgentIdentity, agentIdentityVariants } from './ui/AgentIdentity';
 export type { AgentIdentityProps } from './ui/AgentIdentity';
+export { AgentOptionRow } from './ui/AgentOptionRow';
+export { AvatarColorGrid, AvatarEmojiGrid } from './ui/AvatarPickerGrid';
 export { PresetPill } from './ui/PresetPill';
 export type { PresetPillProps, PresetPillColors } from './ui/PresetPill';
 export { TraitSliders } from './ui/TraitSliders';

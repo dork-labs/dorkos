@@ -133,7 +133,7 @@ export { SessionContextGauge } from './ui/SessionContextGauge';
 // Origin — session-origin-legibility: descriptor registry, the row glyph, and the sidebar partition selector.
 export { ORIGIN_DESCRIPTORS, getOriginDescriptor } from './config/origin-descriptors';
 export type { OriginDescriptor } from './config/origin-descriptors';
-export { OriginMark } from './ui/OriginMark';
+export { SessionOriginMark } from './ui/SessionOriginMark';
 export { partitionSessionsByOrigin } from './lib/partition-sessions-by-origin';
 export type { SessionOriginPartition } from './lib/partition-sessions-by-origin';
 export { useSessionOrigin } from './model/use-sessions';
