@@ -230,13 +230,14 @@ export function IdentityShowcases() {
         </ShowcaseDemo>
 
         <ShowcaseLabel>
-          Owner attribution — &quot;Managed by @handle&quot;, and by name when the owner has none
-          yet
+          Owner attribution — &quot;Managed by @handle&quot;, by name when the owner has none yet,
+          and no chip at all when the roster has no owner on file
         </ShowcaseLabel>
         <ShowcaseDemo>
           <div className="flex flex-wrap gap-3">
             <Trigger identity={MOCK_IDENTITIES.warden} />
             <Trigger identity={MOCK_IDENTITIES.scout} />
+            <Trigger identity={MOCK_IDENTITIES.courier} />
           </div>
         </ShowcaseDemo>
 

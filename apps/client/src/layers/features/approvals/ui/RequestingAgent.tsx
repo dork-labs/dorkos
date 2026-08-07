@@ -8,6 +8,19 @@ export interface RequestingAgentProps {
    * carried. Absent when the requester presented no identity.
    */
   requestedBy?: string;
+  /**
+   * Whether DorkOS actually knows WHICH agent asked — the same bit
+   * `ApprovalCard` reads to decide whether to offer a standing grant
+   * (`PendingApproval.hasAgentPath`, `@dorkos/shared/approval-schemas`).
+   *
+   * `requestedBy` is only a display LABEL, and the trap the schema's own
+   * TSDoc names is exactly this component's: the marketplace confirmation
+   * flow sets `requestedBy` on approvals that carry no agent path at all, so
+   * a card can show a label with nothing behind it. Required rather than
+   * optional for the same reason the schema field is — an absent boolean
+   * would default to "agent" by accident, which is the wrong side to fail on.
+   */
+  hasAgentPath: boolean;
   className?: string;
 }
 
@@ -17,12 +30,16 @@ export interface RequestingAgentProps {
  * Same visual language as an author in the message list: a letter avatar
  * hashed from the requester's own identity, so one agent always reads as the
  * same color everywhere in the cockpit. `kind="agent"` draws the square,
- * filled, Bot-badged disc every other agent surface draws — a requester is
- * always an agent, never a person (spec `identity-consistency` W1.3). An
- * unattributed request — a person on the CLI, an external MCP client with no
- * agent token — says so plainly rather than inventing an agent.
+ * filled, Bot-badged disc every other agent surface draws — but only when
+ * `hasAgentPath` confirms there IS one (spec `identity-consistency` W1.3).
+ * A `requestedBy` label with no agent path behind it (the marketplace
+ * confirmation flow) draws the plain, undeclared circle instead: a label
+ * without a path is not evidence of an agent, and drawing one anyway would
+ * put a person's or the system's request under a Bot mark it never earned.
+ * An unattributed request — a person on the CLI, an external MCP client with
+ * no agent token — says so plainly rather than inventing an identity at all.
  */
-export function RequestingAgent({ requestedBy, className }: RequestingAgentProps) {
+export function RequestingAgent({ requestedBy, hasAgentPath, className }: RequestingAgentProps) {
   if (!requestedBy) {
     return (
       <span className={cn('text-muted-foreground text-xs', className)}>
@@ -41,7 +58,7 @@ export function RequestingAgent({ requestedBy, className }: RequestingAgentProps
         size="xs"
         color={hashToHslColor(requestedBy)}
         fallback={initialOf(label)}
-        kind="agent"
+        kind={hasAgentPath ? 'agent' : undefined}
       />
       <span className="text-muted-foreground min-w-0 truncate text-xs">{label}</span>
     </span>
