@@ -1,10 +1,11 @@
-import { CheckCircle2, ExternalLink, Loader2, LogIn, Trash2 } from 'lucide-react';
+import { Loader2, LogIn, Trash2 } from 'lucide-react';
 import { Button, Switch } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
-import { useMcpSigninFlow, type McpSigninFlow } from '@/layers/entities/agent';
-import type { ManagedMcpServer } from '@dorkos/shared/mesh-schemas';
+import { useMcpSigninFlow } from '@/layers/entities/agent';
+import type { ManagedMcpServerView } from '@dorkos/shared/mesh-schemas';
 import type { AgentMcpTestResult, McpServerEntry } from '@dorkos/shared/transport';
-import { StatusChip } from './McpStatusChip';
+import { McpStatusChip, type McpStatusKey } from './McpStatusChip';
+import { McpSigninPanel } from './McpSigninPanel';
 
 /** The tone a test result reads in: a plain report, an actionable sign-in nudge, or an error. */
 type TestResultTone = 'ok' | 'auth' | 'error';
@@ -17,9 +18,10 @@ const TEST_TONE_CLASS: Record<TestResultTone, string> = {
 };
 
 /**
- * Turn a probe result into one line of copy + its tone. A 401 is not a failure a
- * person should read as broken — it means "sign in", so it gets its own tone and
- * a nudge to the Sign in button rather than the raw `Streamable HTTP error … {"message":"Unauthorized"}`.
+ * Turn a probe result into one line of copy + its tone. Neither failure branch
+ * shows the raw transport string: a 401 means "sign in", and anything else is a
+ * plain "couldn't reach it" — the SDK's `Streamable HTTP error … {"message":…}`
+ * is developer detail, kept on the element's `title` for anyone who wants it.
  *
  * @param result - The `mcp.test` probe result.
  */
@@ -31,106 +33,80 @@ function describeTestResult(result: AgentMcpTestResult): { text: string; tone: T
   if (result.needsAuth) {
     return { text: 'Needs sign-in — click Sign in.', tone: 'auth' };
   }
-  return { text: `Failed — ${result.error ?? 'could not connect.'}`, tone: 'error' };
+  return {
+    text: 'Couldn’t reach this server. Check the address and that it is running.',
+    tone: 'error',
+  };
 }
 
 /** The one-line result of the most recent Test, rendered under a managed row. */
 function TestResultLine({ result }: { result: AgentMcpTestResult }) {
   const { text, tone } = describeTestResult(result);
-  return <p className={cn('pl-4 text-xs', TEST_TONE_CLASS[tone])}>{text}</p>;
+  return (
+    <p
+      className={cn('pl-4 text-xs', TEST_TONE_CLASS[tone])}
+      {...(!result.ok && !result.needsAuth && result.error ? { title: result.error } : {})}
+    >
+      {text}
+    </p>
+  );
 }
 
 /**
- * The inline OAuth sign-in surface under a managed row: the server's custody
- * sentence, then the sign-in link (opened only after the disclosure is on
- * screen), a waiting spinner while polling, and a terminal success or error.
- * Reading order is the consent order — the disclosure sits above the link.
+ * The status a row shows, in precedence order.
  *
- * @param props.flow - The sign-in state machine for this server.
- * @param props.serverName - The server's name, for the link's accessible label.
+ * 1. A turned-off server is `disabled`, whatever anything else says.
+ * 2. A sign-in that just completed is `connected` immediately — the person
+ *    watched it happen and must not see the row claim otherwise.
+ * 3. A live token (`authStatus === 'connected'`) beats a runtime `needs-auth`,
+ *    because the runtime's status was captured on an earlier turn and predates
+ *    the token. A runtime `failed` still wins — that is a different problem.
+ * 4. Otherwise the runtime's live status, then the derived sign-in state, and
+ *    finally nothing (Unknown) — which is what every row showed before DOR-985,
+ *    because the runtime cache is only written during a turn.
+ *
+ * @param args.enabled - Whether the managed server is switched on.
+ * @param args.signedInNow - Whether this row's sign-in flow just reached `connected`.
+ * @param args.runtimeStatus - The status the runtime reported, if any.
+ * @param args.authStatus - The listing's derived sign-in state, if any.
  */
-function McpSigninPanel({ flow, serverName }: { flow: McpSigninFlow; serverName: string }) {
-  const { state } = flow;
+function resolveStatusKey(args: {
+  enabled: boolean;
+  signedInNow: boolean;
+  runtimeStatus: McpServerEntry['status'];
+  authStatus: ManagedMcpServerView['authStatus'];
+}): McpStatusKey | undefined {
+  const { enabled, signedInNow, runtimeStatus, authStatus } = args;
+  if (!enabled) return 'disabled';
+  if (signedInNow) return 'connected';
+  if (authStatus === 'connected' && runtimeStatus === 'needs-auth') return 'connected';
+  return runtimeStatus ?? authStatus;
+}
 
-  if (state.step === 'starting') {
-    return (
-      <div className="text-muted-foreground flex items-center gap-2 pl-4 text-xs">
-        <Loader2 className="size-3 animate-spin" aria-hidden />
-        Starting sign-in…
-      </div>
-    );
-  }
-
-  if (state.step === 'disclosure') {
-    return (
-      <div className="space-y-2 pl-4">
-        <p className="bg-muted rounded-md px-3 py-2 text-xs leading-relaxed">{state.disclosure}</p>
-        <Button asChild size="sm" className="gap-1.5 focus-visible:ring-2">
-          <a
-            href={state.authorizeUrl ?? '#'}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={() => flow.authOpened()}
-            aria-label={`Open the sign-in page for ${serverName}`}
-          >
-            Open the sign-in page
-            <ExternalLink className="size-3.5" aria-hidden />
-          </a>
-        </Button>
-      </div>
-    );
-  }
-
-  if (state.step === 'waiting') {
-    return (
-      <div className="text-muted-foreground flex items-center gap-2 pl-4 text-xs">
-        <Loader2 className="size-3 animate-spin" aria-hidden />
-        Waiting for you to finish signing in… You can close the tab when done.
-      </div>
-    );
-  }
-
-  if (state.step === 'connected') {
-    return (
-      <div className="flex items-center gap-2 pl-4 text-xs text-green-600 dark:text-green-500">
-        <CheckCircle2 className="size-3.5" aria-hidden />
-        Signed in — the server’s tools are available on the next turn.
-      </div>
-    );
-  }
-
-  // failed
-  return (
-    <div className="space-y-2 pl-4">
-      <p role="alert" className="text-destructive text-xs leading-relaxed">
-        {state.error ?? 'The sign-in did not complete.'}
-      </p>
-      <div className="flex gap-2">
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => flow.start()}
-          className="focus-visible:ring-2"
-        >
-          Try again
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => flow.reset()}
-          className="focus-visible:ring-2"
-        >
-          Dismiss
-        </Button>
-      </div>
-    </div>
-  );
+/**
+ * Whether the row offers Sign in.
+ *
+ * The probe's own verdict counts, not just the status chip: a fresh server has
+ * no runtime status at all, so Test telling the person "Needs sign-in — click
+ * Sign in" while no such button existed was the whole of DOR-985. A connected or
+ * disabled row never offers it, so a stale probe result cannot resurrect the
+ * button after a successful sign-in.
+ *
+ * @param statusKey - The status the chip is showing.
+ * @param testResult - The most recent probe result for this server, if any.
+ */
+function offersSignIn(
+  statusKey: McpStatusKey | undefined,
+  testResult: AgentMcpTestResult | undefined
+): boolean {
+  if (statusKey === 'disabled' || statusKey === 'connected') return false;
+  return statusKey === 'needs-auth' || testResult?.needsAuth === true;
 }
 
 /** Props for {@link ManagedServerRow}. */
 export interface ManagedServerRowProps {
   /** The managed (editable) server this row renders. */
-  server: ManagedMcpServer;
+  server: ManagedMcpServerView;
   /** The agent that owns the server — needed to drive its OAuth sign-in flow. */
   agentId: string;
   /** The live status entry joined by name, or `undefined` when the runtime reports none. */
@@ -151,9 +127,10 @@ export interface ManagedServerRowProps {
 
 /**
  * One managed (editable) server: labeled status, name, transport, and the action
- * cluster (Sign in when the server needs OAuth, Test, Remove, enable switch). An
- * OAuth server that reports `needs-auth` gets a Sign in button that drives the
- * inline {@link McpSigninPanel}; every other status hides it.
+ * cluster (Sign in when the server needs OAuth, Test, Remove, enable switch). A
+ * server that needs signing in gets a Sign in button driving the inline
+ * {@link McpSigninPanel}; see {@link resolveStatusKey} and `offersSignIn` for
+ * exactly when each appears.
  */
 export function ManagedServerRow({
   server,
@@ -166,24 +143,33 @@ export function ManagedServerRow({
   onTest,
   onRemove,
 }: ManagedServerRowProps) {
-  const statusKey = server.enabled ? live?.status : 'disabled';
   const signin = useMcpSigninFlow(agentId, server.name);
-  // Offer Sign in only for an enabled server the runtime says needs OAuth, and
-  // only while no flow is already in progress (the panel takes over then).
-  const canSignIn = statusKey === 'needs-auth' && signin.state.step === 'idle';
+  const statusKey = resolveStatusKey({
+    enabled: server.enabled,
+    signedInNow: signin.state.step === 'connected',
+    runtimeStatus: live?.status,
+    authStatus: server.authStatus,
+  });
+  // The button stays mounted (disabled) while the start request is on the wire:
+  // unmounting the element a person just pressed drops their focus to the body.
+  const startingSignIn = signin.state.step === 'starting';
+  const showSignIn =
+    offersSignIn(statusKey, testResult) && (signin.state.step === 'idle' || startingSignIn);
+
   return (
     <div className="flex flex-col gap-1 py-1.5">
       <div className="flex items-center gap-2">
-        <StatusChip statusKey={statusKey} />
+        <McpStatusChip statusKey={statusKey} />
         <span className="min-w-0 truncate text-sm">{server.name}</span>
         <span className="text-muted-foreground/50 text-xs">{server.connection.transport}</span>
         <div className="ml-auto flex items-center gap-1">
-          {canSignIn && (
+          {showSignIn && (
             <Button
               variant="outline"
               size="sm"
               onClick={() => signin.start()}
-              disabled={busy}
+              disabled={busy || startingSignIn}
+              aria-label={`Sign in to ${server.name}`}
               className="gap-1.5 focus-visible:ring-2"
             >
               <LogIn className="size-3.5" aria-hidden />
@@ -217,7 +203,7 @@ export function ManagedServerRow({
           />
         </div>
       </div>
-      {signin.state.step !== 'idle' && <McpSigninPanel flow={signin} serverName={server.name} />}
+      <McpSigninPanel flow={signin} serverName={server.name} />
       {testResult && <TestResultLine result={testResult} />}
     </div>
   );

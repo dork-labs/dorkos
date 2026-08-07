@@ -1,5 +1,12 @@
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
+import type { McpServerEntry } from '@dorkos/shared/transport';
+
+/**
+ * Every state a chip can show — the wire contract's own status union, so the two
+ * cannot drift. `undefined` is not a member: a row with no status reads Unknown.
+ */
+export type McpStatusKey = NonNullable<McpServerEntry['status']>;
 
 /** Presentation for one live status: the dot color, a short label, and a tooltip. */
 interface StatusMeta {
@@ -13,8 +20,10 @@ interface StatusMeta {
 
 // Live MCP status presentation, keyed by the status a runtime reports. Before
 // DOR-943 this was a color-only dot with `aria-hidden` and no label — legible to
-// nobody using a screen reader and cryptic to everyone else.
-const MCP_STATUS_META: Partial<Record<string, StatusMeta>> = {
+// nobody using a screen reader and cryptic to everyone else. Typed as a total
+// record so adding a status to the wire contract fails the build here rather
+// than silently rendering "Unknown".
+const MCP_STATUS_META: Record<McpStatusKey, StatusMeta> = {
   connected: {
     label: 'Connected',
     tooltip: 'Connected — this server’s tools are available to the agent.',
@@ -58,10 +67,10 @@ const UNKNOWN_STATUS_META: StatusMeta = {
  * the label, and making a non-interactive status a focus stop on every row would
  * add spurious tab stops.
  *
- * @param props.statusKey - The live status a runtime reports, or `undefined`.
+ * @param props.statusKey - The status to show, or `undefined` for "Unknown".
  */
-export function StatusChip({ statusKey }: { statusKey: string | undefined }) {
-  const meta = MCP_STATUS_META[statusKey ?? ''] ?? UNKNOWN_STATUS_META;
+export function McpStatusChip({ statusKey }: { statusKey: McpStatusKey | undefined }) {
+  const meta = (statusKey && MCP_STATUS_META[statusKey]) || UNKNOWN_STATUS_META;
   return (
     <Tooltip>
       <TooltipTrigger asChild>

@@ -19,7 +19,7 @@ import type {
   McpServerEntry,
 } from '@dorkos/shared/transport';
 import { AddMcpServerForm, TRANSPORTS, type TransportKind } from './AddMcpServerForm';
-import { StatusChip } from './McpStatusChip';
+import { McpStatusChip } from './McpStatusChip';
 import { ManagedServerRow } from './ManagedServerRow';
 
 /**
@@ -131,7 +131,7 @@ function DiscoveredServerRow({ entry, agentId, agentLabel, canImport }: Discover
   return (
     <div className="flex flex-col gap-1 py-1.5">
       <div className="flex items-center gap-2">
-        <StatusChip statusKey={entry.status} />
+        <McpStatusChip statusKey={entry.status} />
         <span className="min-w-0 truncate text-sm">{entry.name}</span>
         <span className="text-muted-foreground/50 text-xs">{entry.type}</span>
         <Badge variant="outline" className="text-muted-foreground ml-auto text-xs font-normal">
@@ -245,6 +245,17 @@ export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
     [agent.id, testServer]
   );
 
+  // A just-added remote server is probed once, unasked. Only the probe knows
+  // whether it wants a sign-in, and until something asks, the row can only say
+  // "Unknown" — so the person would have to guess that Test is the next step
+  // (DOR-985). A local stdio server needs no sign-in, so it is left alone.
+  const handleAdded = useCallback(
+    ({ name, transport }: { name: string; transport: TransportKind }) => {
+      if (transport !== 'stdio') void handleTest(name);
+    },
+    [handleTest]
+  );
+
   const managedServers = managed.data ?? [];
   const managedNames = new Set(managedServers.map((s) => s.name));
   const liveByName = new Map((liveConfig?.servers ?? []).map((s) => [s.name, s]));
@@ -260,6 +271,7 @@ export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
             agentId={agent.id}
             agentLabel={agent.displayName ?? agent.name}
             supportedTransports={supportedTransportsFor(agent.runtime)}
+            onAdded={handleAdded}
           />
         )}
       </div>
