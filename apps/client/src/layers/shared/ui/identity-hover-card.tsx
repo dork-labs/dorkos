@@ -11,7 +11,7 @@ import { cn } from '../lib/utils';
 import { useLongPress } from '../model';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from './hover-card';
 import { IdentityAvatar } from './identity-avatar';
-import type { IdentityOrigin } from './identity-origin';
+import type { IdentityOrigin } from '../lib/identity-origin';
 
 /** How long the pointer has to sit on a trigger before the card opens. Radix's own default (700ms) reads as sluggish for something this small; this favours a quick glance. */
 const OPEN_DELAY_MS = 300;

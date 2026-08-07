@@ -41,9 +41,19 @@ export interface MemberListProps {
 /**
  * Overlapping discs, one per member, with the rest counted off at the end.
  *
- * An agent wears the emoji and colour it wears everywhere else in the cockpit;
- * anyone with neither — a person, the room's own voice — gets a letter on a
- * colour hashed from their id.
+ * **Every disc is drawn from the author record and nothing else.** This is an
+ * entity: it is handed a roster, it cannot reach the fleet, and it does not go
+ * looking. So a member wears the emoji and colour the server last cached for
+ * them, and a member with neither wears a letter on a colour hashed from their
+ * id. Shape and corner mark come off `kind`, so an agent here reads as an agent
+ * the same way it does in the member sheet.
+ *
+ * The **colour** is where that stops being true, and deliberately so for now:
+ * the sheet's row can resolve an agent against the fleet and prefer its
+ * manifest colour, and this cannot, so an agent whose manifest colour never
+ * reached its author record shows one colour here and another there. Closing
+ * that means deciding whether an entity component may accept a fleet-resolved
+ * face at all, which is a design question and not this component's to answer.
  *
  * **Two shapes, chosen by whether it is pressable.** Read-only it is a labelled
  * list, each disc a tooltip trigger. Given an `onClick` it is a single button —
@@ -80,13 +90,21 @@ export function MemberList({ members, onClick, label, className }: MemberListPro
     const name = isExternal
       ? `${author.displayName}, from ${platformLabel(origin.platform)}`
       : author.displayName;
+    const face = resolveIdentityFace({ record: author, origin });
     return (
       <IdentityAvatar
         // Named explicitly: the tooltip trigger this stands in for would
         // otherwise stamp its own slot onto the disc.
         data-slot="room-member-avatar"
         size="xs"
-        {...resolveIdentityFace({ record: author, origin })}
+        // The face's fields are listed rather than spread — see the same call
+        // in `RoomMemberRow` for why a spread is not the compile-time check it
+        // looks like.
+        kind={face.kind}
+        color={face.color}
+        emoji={face.emoji}
+        fallback={face.fallback}
+        origin={face.origin}
         // A roster disc is a step larger than the sidebar's, and rings itself in
         // the page background so the overlap still reads as separate people.
         className="border-background size-6 border"

@@ -4,7 +4,7 @@
  * @module shared/lib/identity-face
  */
 import type { AuthorKind } from '@dorkos/shared/room-schemas';
-import type { IdentityOrigin } from '../ui/identity-origin';
+import type { IdentityOrigin } from './identity-origin';
 import { hashToHslColor } from './favicon-utils';
 import { initialOf } from './initial-of';
 

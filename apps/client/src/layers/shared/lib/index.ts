@@ -169,6 +169,7 @@ export { queryClient, createQueryClientConfig, isStreamOwnedQuery } from './quer
 export { classifyContent, type ContentType } from './classify-content';
 export { resolveAgentVisual } from './resolve-agent-visual';
 export type { AgentVisual, AgentVisualSource } from './resolve-agent-visual';
+export type { IdentityOrigin } from './identity-origin';
 export { resolveIdentityFace } from './identity-face';
 export type {
   IdentityFace,

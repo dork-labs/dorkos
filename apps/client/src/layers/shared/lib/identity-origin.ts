@@ -2,7 +2,12 @@
  * Where a human participant is posting from — shared by every identity
  * surface that draws a platform glyph for a bridged (external) person.
  *
- * @module shared/ui/identity-origin
+ * A type and nothing else, and it lives in `lib` rather than beside the
+ * components that read it: `identity-face.ts` needs it too, and `lib`
+ * reaching into `ui` for a type is the wrong direction for the one dependency
+ * `ui` already has on `lib`.
+ *
+ * @module shared/lib/identity-origin
  */
 
 /**

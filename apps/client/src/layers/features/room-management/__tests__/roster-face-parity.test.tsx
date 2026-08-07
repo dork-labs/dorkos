@@ -19,6 +19,15 @@ import { RoomMemberRow, type RoomMemberRowProps } from '../ui/RoomMemberRow';
  * This file asserts the two agree. It is the acceptance test for the shared
  * resolver, and it fails against every version of this code where each surface
  * decided for itself.
+ *
+ * **What it deliberately cannot see:** every fixture here renders the row with
+ * `visual: null`, so the sheet's fleet override is never exercised and the one
+ * divergence that survives this change is out of frame — an agent whose
+ * manifest colour reached the fleet but not its author record still paints one
+ * colour in the sheet and another in the masthead, because only the sheet can
+ * reach the fleet. Closing that is a separate design decision about whether an
+ * entity component may accept a fleet-resolved face; it is tracked, and this
+ * file will need a fifth case when it lands.
  */
 
 /** jsdom has no `matchMedia`, and the row asks for one on every render. */
@@ -70,6 +79,8 @@ interface Face {
   badge: string;
   /** What the disc painted itself with — the whole declaration, tint or fill. */
   paint: string;
+  /** The face itself: the emoji, or the letter drawn in place of one. */
+  glyph: string;
 }
 
 /**
@@ -93,6 +104,10 @@ function faceOf(root: HTMLElement): Face {
     shape: disc.className.includes('rounded-full') ? 'circle' : 'square',
     badge: mark === null ? 'none' : (mark.getAttribute('class') ?? mark.innerHTML),
     paint: disc.style.backgroundColor,
+    // The FIRST child, not `disc.textContent`: the masthead's disc also carries
+    // an `sr-only` name, and reading the whole subtree would compare a glyph on
+    // one surface against a glyph plus a name on the other.
+    glyph: disc.firstElementChild?.textContent ?? '',
   };
 }
 
@@ -141,12 +156,16 @@ describe('the roster reads the same in the sheet and in the masthead', () => {
     // with `Bot` and the masthead badged only external people, so the same
     // agent wore a mark on one surface and nothing on the other — and both drew
     // it round, which is the person shape.
-    const agent = member({ kind: 'agent', agentRef: 'ref-ana' });
+    // Carries a cached face, so this case exercises the record rung of the
+    // ladder on both surfaces — including the emoji, which is the one thing a
+    // shape-and-badge comparison would otherwise never look at.
+    const agent = member({ kind: 'agent', agentRef: 'ref-ana', emoji: '🐙', color: '#7c3aed' });
     const row = rowFace(agent);
 
     expect(row).toEqual(listFace(agent));
     expect(row.shape).toBe('square');
     expect(row.badge).toContain('lucide-bot');
+    expect(row.glyph).toBe('🐙');
   });
 
   it('draws a person on this machine identically in both, and marks neither', () => {

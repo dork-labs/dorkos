@@ -192,7 +192,16 @@ export function RoomMemberRow({
           cockpit lets them. */}
       <div className="flex min-h-14 items-center gap-3 md:min-h-0">
         <IdentityAvatar
-          {...face}
+          // Named one at a time rather than spread. A spread reads as if the
+          // compiler is checking the two shapes agree, and it is not: extra
+          // props land on the DOM as lowercase attributes with a console
+          // warning, so the day `IdentityFace` grows a field (spec §W3 adds
+          // `imageUrl` next) every roster disc would quietly carry it.
+          kind={face.kind}
+          color={face.color}
+          emoji={face.emoji}
+          fallback={face.fallback}
+          origin={face.origin}
           working={working}
           // 32px under a thumb, 28px under a pointer — the disc is not a
           // control, but it is the thing a finger lands on when aiming at the
@@ -204,6 +213,11 @@ export function RoomMemberRow({
           <p className="flex min-w-0 items-center truncate text-sm font-medium">
             <span className="truncate">{author.displayName}</span>
             {isReader && <span className="text-muted-foreground font-normal">&nbsp;(you)</span>}
+            {/* A bridged person now wears their platform twice — the disc's
+                badge and this labelled mark — and that is the intent, not a
+                leftover: the badge is the glance and this is the one that says
+                which platform in words. The message gutter pairs them the same
+                way. */}
             <OriginMark origin={member.origin} className="ml-1 shrink-0" />
           </p>
           <p className="text-muted-foreground truncate text-xs">
