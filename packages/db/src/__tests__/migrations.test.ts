@@ -364,6 +364,33 @@ describe('Database Migrations', () => {
     expect(index?.sql).toContain('WHERE "thread_root_entry_id" IS NOT NULL');
   });
 
+  it('gives relay_index the sender/created_at index ADR-0014 committed to', () => {
+    // The rate limiter's sliding-window log runs `SELECT COUNT(*) FROM
+    // relay_index WHERE sender = ? AND created_at > ?` on every publish
+    // (`SqliteIndex.countSenderInWindow`). ADR-0014 committed to a composite
+    // `(sender, created_at DESC)` index for that query; asserted off the
+    // migrated database rather than off the schema file, same rationale as
+    // the thread-root index above — the two can disagree and only `db:check`
+    // would notice.
+    const db = createDb(':memory:');
+    runMigrations(db);
+
+    const index = db.$client
+      .prepare("SELECT sql FROM sqlite_master WHERE type='index' AND name = ?")
+      .get('idx_relay_index_sender_created_at') as { sql: string } | undefined;
+    expect(index?.sql).toContain('sender');
+    expect(index?.sql).toMatch(/created_at.*desc/i);
+
+    // The query planner actually picks this index for the exact shape
+    // `countSenderInWindow` runs, rather than falling back to a full scan.
+    const plan = db.$client
+      .prepare(
+        'EXPLAIN QUERY PLAN SELECT COUNT(*) FROM relay_index WHERE sender = ? AND created_at > ?'
+      )
+      .all('relay.sender', '2026-01-01T00:00:00Z') as { detail: string }[];
+    expect(plan.some((row) => row.detail.includes('idx_relay_index_sender_created_at'))).toBe(true);
+  });
+
   it('deleting a pulse_schedules row cascades to its pulse_runs', () => {
     const db = createDb(':memory:');
     runMigrations(db);

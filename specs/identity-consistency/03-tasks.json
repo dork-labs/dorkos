@@ -1,0 +1,426 @@
+{
+  "spec": "specs/identity-consistency/02-specification.md",
+  "slug": "identity-consistency",
+  "generatedAt": "2026-08-06T00:00:00.000Z",
+  "mode": "full",
+  "lastDecomposeDate": null,
+  "delivery": "one-pr-per-task",
+  "prerequisites": [
+    {
+      "id": "W0",
+      "issue": "DOR-676",
+      "title": "Handles — authors.handle, the grammar module, PATCH /api/rooms/authors/:id/handle",
+      "note": "EXISTING issue in another project, specified in specs/handles/02-specification.md Phase 2. It is NOT recreated by this decomposition. Task 2.2 is the first UI-consuming task and depends on it; task 3.6's handle field cannot ship without it. Every other task degrades to handle: null (spec §W0)."
+    }
+  ],
+  "external": [
+    {
+      "issue": "DOR-955",
+      "title": "Square-at-xs/sm identity showcase",
+      "note": "IN PROGRESS in another session. Spec §W4.3's `Identity Sizes` row is therefore NOT built by task 4.1 — that task must render the Identity page around whatever DOR-955 lands and must not create a second sizes showcase."
+    },
+    {
+      "issue": "DOR-954",
+      "title": "Hover-card agent chips",
+      "note": "Complementary, no dependency. Task 3.4 reuses its hover-card chip plumbing when present and ships without it when not."
+    },
+    {
+      "issue": "DOR-949",
+      "title": "Seed agent colours and icons",
+      "note": "Related, separate. This program makes a colourless agent render correctly; it seeds nothing."
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "P1 — One identity language",
+      "subject": "[identity-consistency] [P1] Derive shape, fill and badge from `kind` on IdentityAvatar and narrow AgentAvatar",
+      "description": "Make the square/fill/Bot convention structural instead of opt-in, at the two files that carry every other surface (spec §W1.1, §W1.2).\n\n1. `apps/client/src/layers/shared/ui/identity-avatar.tsx` gains two props: `kind?: AuthorKind` ('human' | 'agent' | 'system', the type imported from `@dorkos/shared/room-schemas` — do NOT invent a 'person' spelling, §W1.1 says why) and `origin?: IdentityOrigin` (already defined at `shared/ui/identity-origin.ts`, read only to derive an external badge). Derivation table, exactly: agent -> shape 'square', variant 'fill', badge `<Bot />`; human with local/absent origin -> circle, tint, no badge; human with `origin: { platform }` -> circle, tint, `ADAPTER_LOGO_MAP[platform] ?? <Send />` (`ADAPTER_LOGO_MAP` from `@dorkos/icons`); system -> circle, tint, no badge; `kind` omitted -> circle, tint, no badge (byte-identical to today, so this is additive and no existing call site changes meaning).\n2. Explicit props win per axis: passing `shape`, `variant` or `badge` steps the derivation aside for that axis only. Change the badge render guard at `identity-avatar.tsx:183` from `badge !== undefined` to `badge != null`, so `badge={null}` is a real opt-out and renders no empty plate.\n3. `IdentityAvatar` gains `working?: boolean` — a top-right pulsing dot mirroring the bottom-right badge slot. Use the `bg-status-success` token (never `bg-emerald-500`, which `.claude/rules/components.md` bans), ring it in `bg-background`, and drop the ping under `motion-reduce:hidden` while keeping the dot. It is deliberately kind-agnostic.\n4. `apps/client/src/layers/entities/agent/ui/AgentAvatar.tsx` stops extending `VariantProps<typeof identityAvatarVariants>` (`:21`) — that extension is exactly how a caller could pass `shape=\"circle\"` and re-break the convention. Its props become `{ color, emoji, size?, healthStatus?, working?, imageUrl?, className? }` and it hard-passes `kind=\"agent\"`. Delete its hand-rolled dot (`:49-53`) in favour of the new `working` prop. The health ring stays exactly where it is (`HEALTH_RING[healthStatus]` merged through `className`, `:47`) — mesh vocabulary must not move into `shared/`.\n5. Do NOT edit the twelve `AgentAvatar` call sites. Verified by grep: every production call site passes only `color`, `emoji`, `size`, `healthStatus`, `className`, so narrowing is source-compatible and all twelve inherit square/fill/Bot from this one edit (spec §W1.2 lists them).\n6. Add the kind matrix to the playground: extend the existing `IdentityAvatar` showcase (`apps/client/src/dev/showcases/IdentityShowcases.tsx`, registered at `dev/sections/components-sections.ts:248-267`) with agent / human-local / human-external / system states. Keep its id, title and `/dev/components#identityavatar` anchor unchanged.\n7. Document the convention once, in `contributing/design-system.md`: a short Identity section carrying the kind -> shape/variant/badge table and pointing at `identity-avatar.tsx` as the implementation.\n\nAcceptance criteria:\n- jsdom test: `<IdentityAvatar kind=\"agent\" />` asserts the square radius class, the solid `backgroundColor` and a `Bot` badge; `human` local asserts circle/tint/no badge; `human` external asserts the platform glyph; `system` asserts circle/tint/no badge.\n- jsdom test: `<IdentityAvatar kind=\"agent\" shape=\"circle\" />` is round, and `badge={null}` renders no plate.\n- jsdom test: the `working` dot renders, uses `status-success`, and the ping is hidden under `motion-reduce`.\n- A `@ts-expect-error` line in the `AgentAvatar` test asserts `shape` is no longer assignable — a compile-time check that cannot silently pass.\n- `apps/client/src/layers/entities/agent/__tests__/agent-identity.test.tsx:18-57` currently asserts `rounded-full` and the emerald dot. Those assertions are the red-before/green-after evidence for this change: UPDATE them to assert the square radius, the fill background and the `status-success` dot. Do not delete them.\n- `grep -rn \"bg-emerald-500\\|animate-ping\" apps/client/src/layers` returns hits only in `identity-avatar.tsx` (`RoomMemberRow`'s copy is removed in task 1.2).\n- `pnpm --filter @dorkos/client typecheck` and `pnpm --filter @dorkos/client lint` pass.",
+      "acceptance": "IdentityAvatar derives shape/variant/badge from `kind` with per-axis explicit overrides; `badge={null}` opts out; `working` dot lives in one place; AgentAvatar's props no longer admit shape/variant and hard-pass kind='agent'; twelve call sites unchanged and all render square/fill/Bot; playground matrix and design-system doc updated; tests above green.",
+      "activeForm": "Deriving identity shape from kind and narrowing AgentAvatar",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "1.4",
+        "2.1",
+        "3.1"
+      ],
+      "files": [
+        "apps/client/src/layers/shared/ui/identity-avatar.tsx",
+        "apps/client/src/layers/entities/agent/ui/AgentAvatar.tsx",
+        "apps/client/src/layers/entities/agent/__tests__/agent-identity.test.tsx",
+        "apps/client/src/dev/showcases/IdentityShowcases.tsx",
+        "contributing/design-system.md"
+      ],
+      "issue": "DOR-967"
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "P1 — One identity language",
+      "subject": "[identity-consistency] [P1] Resolve every identity face through one shared function and fix the room surfaces",
+      "description": "Absorbs DOR-962 (\"one agent, one face\"). `RoomMemberRow` and `MemberList` each hand-roll the same face-resolution ladder one file apart and disagree about the shape/badge decision — the sharpest violation in the audit (spec §W1.4).\n\n1. Add `apps/client/src/layers/shared/lib/identity-face.ts` exporting `IdentityFace { kind: AuthorKind; color: string; emoji?: string; imageUrl?: string; fallback: string; origin?: IdentityOrigin }` and a pure `resolveIdentityFace(input: IdentityFaceInput): IdentityFace`. Precedence, highest first: an explicit `override` (an agent's own manifest colour/icon, which only a feature-layer caller can reach), then the author record's render cache, then a colour hashed from the opaque id plus the first letter of the display name. It takes NO agent types — that is the point: `MemberList` lives in `entities/room` and may not import `entities/agent`, which is exactly why the two implementations diverged. Barrel-export it from `shared/lib/index.ts`.\n2. `apps/client/src/layers/features/room-management/ui/RoomMemberRow.tsx:185-213` — delete the inline ladder, the `badge={isAgent ? <Bot /> : undefined}` decision and the hand-rolled working dot (`:196-213`). It passes the `resolveAgentVisual()` override it already computes into `resolveIdentityFace`, then renders one `IdentityAvatar` with `kind`, `working` and the resolved face.\n3. `apps/client/src/layers/entities/room/ui/MemberList.tsx:86-100` — same replacement, with no override. The badge asymmetry (Bot in one file, external-only in the other) disappears because neither file decides it any more.\n4. `apps/client/src/layers/entities/room/ui/RoomAvatar.tsx:97` — a DM counterpart is always an agent (`room-display.ts:104-108`), so pass `kind=\"agent\"` on both the single and the stacked faces. This also fixes the sidebar room row (`RoomRow.tsx:330,367`), the room header masthead (`RoomHeader.tsx:48`) and the command-palette room row (`RoomCommandItem.tsx:48`), which all render through it.\n5. Playground: add a `RoomAvatar` showcase (channel `#` glyph, single DM face, stacked faces, letter fallback — now kind-aware) to `apps/client/src/dev/showcases/RoomsShowcases.tsx` with its registry entry in `dev/sections/rooms-sections.ts`.\n\nAcceptance criteria:\n- Unit table over `resolveIdentityFace` covering override-wins, cache-wins, hash-fallback, and the empty-display-name edge.\n- jsdom test asserting `RoomMemberRow` and `MemberList` render THE SAME shape and badge for the same member — the regression that made this the sharpest violation. It must fail against today's code.\n- jsdom test: an agent DM face from `RoomAvatar` is square/filled.\n- `grep -rn \"bg-emerald-500\\|animate-ping\" apps/client/src/layers` now returns only `identity-avatar.tsx`.\n- `pnpm vitest run apps/client/src/dev/__tests__/playground-registry.test.ts` green (the new showcase needs its registry entry and a literal title).\n- `pnpm --filter @dorkos/client typecheck` and `lint` pass.",
+      "acceptance": "One pure `resolveIdentityFace` in shared/lib; RoomMemberRow, MemberList and RoomAvatar all render through it; an agent and a human in the same room list have visibly different silhouettes; parity test green.",
+      "activeForm": "Unifying identity face resolution across the room surfaces",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [
+        "1.3",
+        "1.4"
+      ],
+      "files": [
+        "apps/client/src/layers/shared/lib/identity-face.ts",
+        "apps/client/src/layers/shared/lib/index.ts",
+        "apps/client/src/layers/features/room-management/ui/RoomMemberRow.tsx",
+        "apps/client/src/layers/entities/room/ui/MemberList.tsx",
+        "apps/client/src/layers/entities/room/ui/RoomAvatar.tsx",
+        "apps/client/src/dev/showcases/RoomsShowcases.tsx",
+        "apps/client/src/dev/sections/rooms-sections.ts"
+      ],
+      "issue": "DOR-968"
+    },
+    {
+      "id": "1.3",
+      "phase": 1,
+      "phaseName": "P1 — One identity language",
+      "subject": "[identity-consistency] [P1] Move the hand-mapped identity surfaces onto `kind` and show who each agent belongs to",
+      "description": "Finish the 23-row sweep in spec §W1.3 and land the hover card half of owner attribution (§W1.6).\n\n1. `features/chat/ui/message/MessageAuthorAvatar.tsx:64-75` already renders the convention correctly, by hand-mapping a `{shape, variant, badge}` triple. Refactor it to pass `kind` (and `origin`) instead, so there is one derivation and not two. The room chat gutter (`RoomEntryRow.tsx:489`) inherits it.\n2. `shared/ui/identity-hover-card.tsx:115-124` — same refactor, hand-mapped triple to `kind`.\n3. `features/agent-hub/ui/AgentChipPicker.tsx:443-448` — pass `kind=\"agent\"` AND an explicit `badge={null}`. An agent-only list keeps the shape and deliberately drops a column of identical glyphs; `badge={null}` is what makes that decision visible instead of accidental.\n4. `features/approvals/ui/RequestingAgent.tsx:36-42` — pass `kind=\"agent\"`.\n5. Owner attribution on the hover card: `IdentityHoverCardDescriptor` gains `agent.managedBy?: { displayName: string; handle: string | null }`, rendered as a fourth chip in the existing agent chip row (`identity-hover-card.tsx:133-151`) reading `Managed by @handle`. It is presentational and resolved by the caller, consistent with everything else on that descriptor. When `handle` is null, fall back to the display name — never render a bare `@`.\n6. Verify, do not assume, the rest of the 23-row table in §W1.3. Rows marked _via base_ (topology graph, fleet table, command-palette agent row, sidebar agent list, sidebar Recent row, dashboard agent card, chat status-line chip, First Light, Agent Hub hero, agent settings Identity tab, execution-exceptions strip, task scheduler picker) need NO edit — walk each one and record in the PR description that it renders square/fill/Bot.\n\nAcceptance criteria:\n- jsdom tests: the chat gutter renders an agent square/filled/badged and a human circle/tinted/unbadged; an external human renders the platform glyph.\n- jsdom test: the hover card renders `Managed by @handle` for an agent with `managedBy`, renders the display name when `handle` is null, and renders no chip at all when `managedBy` is absent.\n- jsdom tests: `AgentChipPicker` renders square discs with no badge; `RequestingAgent` renders a square badged disc.\n- The playground's `IdentityHoverCard` showcase gains a managed-by state; its id, title and `/dev/components#identityhovercard` anchor are unchanged.\n- `grep -rn 'shape=\"square\"' apps/client/src/layers` returns no hand-mapped triples outside `identity-avatar.tsx` — every square now comes from `kind`.\n- `pnpm --filter @dorkos/client typecheck`, `lint` and the client test suite pass.",
+      "acceptance": "No surface hand-maps a kind to a triple any more; all 23 rows of §W1.3 verified square/fill/Bot for agents; the hover card shows `Managed by @handle` with an honest fallback.",
+      "activeForm": "Sweeping the remaining identity surfaces onto kind",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [
+        "1.2",
+        "1.4"
+      ],
+      "files": [
+        "apps/client/src/layers/features/chat/ui/message/MessageAuthorAvatar.tsx",
+        "apps/client/src/layers/shared/ui/identity-hover-card.tsx",
+        "apps/client/src/layers/features/agent-hub/ui/AgentChipPicker.tsx",
+        "apps/client/src/layers/features/approvals/ui/RequestingAgent.tsx",
+        "apps/client/src/dev/showcases/IdentityShowcases.tsx"
+      ],
+      "issue": "DOR-969"
+    },
+    {
+      "id": "1.4",
+      "phase": 1,
+      "phaseName": "P1 — One identity language",
+      "subject": "[identity-consistency] [P1] Collapse the duplicate agent rows and pickers and end the OriginMark name collision",
+      "description": "Three independent dedupes from spec §W1.5. Each has a named boundary — do not extend any of them past it.\n\n1. Single-select agent row. `features/tasks/ui/AgentPicker.tsx:53` and `features/command-palette/ui/AgentCommandItem.tsx:71` are both `Command`-based rows drawing avatar + name + secondary text off `resolveAgentVisual`. Extract `entities/agent/ui/AgentOptionRow.tsx` with props `{ agent, secondary?, trailing?, selected? }` and consume it from both (both are features, both may import entities). `AgentChipPicker` STAYS SEPARATE — its multi-select keyboard model is genuinely different and merging it would be coincidental-duplication extraction under `.claude/rules/conventions.md`.\n2. `COLOR_PRESETS` is duplicated byte-identically at `features/agent-settings/ui/IdentityTab.tsx:36-47` and `features/agent-hub/ui/AvatarPickerPopover.tsx:12-23`. Move it to `shared/lib/favicon-utils.ts` beside `EMOJI_SET` (which is ALREADY shared and barrel-exported at `shared/lib/index.ts:93` — the audit was wrong about it) and barrel-export it. Then collapse the two swatch/emoji GRIDS into one `entities/agent/ui/AvatarPickerGrid.tsx`. The two CONTAINERS stay: an inline full-width panel with the celebration animation, and two `ResponsivePopover`s, are genuinely different surfaces.\n3. Name collision. `entities/session/ui/OriginMark.tsx:34` (where a session was started) and `entities/room/ui/OriginMark.tsx:46` (a security-relevant \"not from this machine\" mark) share a name and are one autocomplete away from an import bug. Rename the SESSION one to `SessionOriginMark`; the room one keeps its name because it matches the domain word used in `AuthorOrigin` and `identity-origin.ts`. Full rename set: `entities/session/ui/OriginMark.tsx` -> `SessionOriginMark.tsx` with the export renamed; `entities/session/ui/__tests__/OriginMark.test.tsx` -> `SessionOriginMark.test.tsx` with its 5 assertions updated; `entities/session/index.ts:136` barrel export; `entities/session/ui/SessionRowCompact.tsx:13,140`; `entities/session/ui/SessionRowFull.tsx:25,257`; `features/dashboard-sidebar/ui/RecentSessionRow.tsx:8,47`; `features/top-nav/ui/SessionHeader.tsx:4,47`; `features/dashboard-sidebar/__tests__/DashboardSidebar.test.tsx:284` mock key.\n4. Provenance-chip consolidation is explicitly NOT done here. `OriginMark` x2, `AccountMark` and `RuntimeMark` share an interaction shape and nothing else; a generic `Mark` base would be an abstraction over a coincidence (§W1.5 #7, recorded as considered and declined).\n5. Playground: add an `AvatarPickerGrid` showcase rendering the unified grid in both its containers, registered in `dev/sections/`.\n\nAcceptance criteria:\n- `grep -rn \"COLOR_PRESETS\\s*=\" apps/client/src` returns exactly one definition.\n- `grep -rn \"export function OriginMark\" apps/client/src` returns exactly one.\n- jsdom test for `AgentOptionRow` covering selected, secondary and trailing states; the existing `AgentPicker` and `AgentCommandItem` tests still pass unchanged in behaviour.\n- The renamed `SessionOriginMark.test.tsx` passes with its 5 updated assertions.\n- `pnpm knip` reports no new dead exports.\n- `pnpm vitest run apps/client/src/dev/__tests__/playground-registry.test.ts` green.\n- `pnpm --filter @dorkos/client typecheck` and `lint` pass.",
+      "acceptance": "One single-select agent row, one COLOR_PRESETS, one AvatarPickerGrid, one `OriginMark`; AgentChipPicker and the two picker containers deliberately untouched; grep assertions above return exactly one hit each.",
+      "activeForm": "Collapsing the duplicate agent rows, pickers and OriginMark names",
+      "size": "medium",
+      "priority": "medium",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [
+        "1.2",
+        "1.3"
+      ],
+      "files": [
+        "apps/client/src/layers/entities/agent/ui/AgentOptionRow.tsx",
+        "apps/client/src/layers/entities/agent/ui/AvatarPickerGrid.tsx",
+        "apps/client/src/layers/shared/lib/favicon-utils.ts",
+        "apps/client/src/layers/features/tasks/ui/AgentPicker.tsx",
+        "apps/client/src/layers/features/command-palette/ui/AgentCommandItem.tsx",
+        "apps/client/src/layers/features/agent-settings/ui/IdentityTab.tsx",
+        "apps/client/src/layers/features/agent-hub/ui/AvatarPickerPopover.tsx",
+        "apps/client/src/layers/entities/session/ui/SessionOriginMark.tsx",
+        "apps/client/src/layers/entities/session/index.ts"
+      ],
+      "issue": "DOR-970"
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "P2 — The Team page",
+      "subject": "[identity-consistency] [P2] Serve one roster of every identity on this install from GET /api/team",
+      "description": "One read-only aggregation over the identity stores that already exist. It writes nothing, mints nothing and has no POST — that is ADR `260806-222535` (spec §W2.2).\n\n1. `packages/shared/src/team-schemas.ts` (new, plus a `./team-schemas` entry in the `exports` map of `packages/shared/package.json`): `TeamSourceWarningSchema { source: string; message: string }`; `TeamRosterResponseSchema { members: TeamMember[]; warnings?: TeamSourceWarning[] }` where `warnings` is OMITTED entirely on a clean read, never `[]`; `TeamMemberSchema { id, kind (AuthorKindSchema — reused, never forked), displayName, handle: string | null, emoji?, color?, imageUrl?, isSelf: boolean, ownerId: string | null, origin (AuthorOriginSchema), agent?: TeamAgentFacts, person?: TeamPersonFacts }`. `TeamAgentFactsSchema { manifestId, runtime, model?, healthStatus, working, namespace?, projectPath?, isDefault, isSystem, registeredAt }`. `TeamPersonFactsSchema { role: string | null, email?: string }`. `ownerId` is REQUIRED and nullable from the first commit — a schema that lets it be absent is how it becomes optional in practice (§Testing Strategy).\n2. `apps/server/src/services/identity/` — a new service domain justified under `.claude/rules/server-structure.md` because it will hold `aggregate-team.ts`, `operator-profile.ts`, `avatar-store.ts` and `local-avatar-store.ts`: \"who is on this install, and what they look like\". It belongs to neither `rooms/` nor `mesh/` because it reads both.\n3. `aggregate-team.ts` sources: people from `authors` where `retired_at IS NULL` and `kind = 'human'` — `AuthorRegistry` has no list method today (`getById:614` and `getMany:626` are the only reads), so add `listActive(kind?: AuthorKind): AuthorRecord[]` following the existing `activeRow` query shape (`:348`); agents from `meshCore.listWithHealth(...)`, the same read `GET /api/mesh/agents` (`routes/mesh.ts:376-385`) already uses — add no new mesh query.\n4. `operator-profile.ts` resolves the operator's display name by an explicit precedence that NEVER depends on `authors.display_name` first: `findOwnerAccount()?.name` (`services/core/auth/accounts.ts:45-54`) -> `config.profile.displayName` (`UserProfileSchema`) -> the author record's `displayName` -> `'You'`. Do NOT change `LOCAL_HUMAN_DISPLAY_NAME = 'You'` (`author-registry.ts:74`) and do NOT touch `bindOwner` (`:553`). The two contexts diverge on purpose: a room renders `'You'` from the operator's own seat; a roster has no \"you\" framing and renders the real name.\n5. `ownerId`: every non-system agent read from the local mesh gets the operator's roster id. A system agent (`isSystem`, i.e. DorkBot) gets `null` — it belongs to the install, not to a person. Semantically this is `CommunityMemberSchema.ownerMemberId` (`community-adapter.ts:456-464`) spelled in this payload's ids.\n6. `person.email` is returned ONLY on the viewer's own row, enforced in the aggregation, even on a single-user install.\n7. Degradation in the ADR-0310 shape: each source read in its own try/catch with the same 2s timeout constant `aggregate-session-list.ts:25` uses; a failure pushes `{ source, message }` and the other sources still return. A total failure of one source is a degraded roster, never a 500.\n8. `apps/server/src/routes/team.ts`, mounted in `apps/server/src/index.ts` beside the other injected-singleton routers (it needs `meshCore`, the `AuthorRegistry` and the db). Add a `registry.registerPath` entry in `services/core/openapi-registry.ts` whose description cites the degradation contract, matching the `/api/sessions` entry at `:362-384`.\n\nAcceptance criteria:\n- `packages/shared` unit tests: the response schema parses a full row and a minimal row, refuses a row missing `ownerId`, and accepts an absent `warnings` key.\n- Server test: the roster contains exactly one `kind: 'human'` row with `isSelf: true`, one row per registered agent, `ownerId` equal to the operator's id on every non-system agent and `null` on DorkBot, and `warnings` ABSENT on a clean read.\n- Server test: stub the mesh read to throw; the people rows still return with `warnings: [{ source: 'agents', ... }]` and HTTP 200.\n- Server test: with an owner account named `Dorian`, the roster returns `Dorian`, not `You`; and a room roster read in the same test still renders `You`. Both halves, or the divergence is not pinned. This test fails against today's code.\n- Server test: `person.email` is present on the self row and absent on every other row.\n- `/api/docs` lists `GET /api/team`.\n- `pnpm --filter @dorkos/shared build`, `pnpm --filter @dorkos/server typecheck`, `lint` and the server suite pass.",
+      "acceptance": "GET /api/team returns one roster over `authors` + `agents` with per-source warnings, the operator's real name, ownerId on every non-system agent, and email only on the self row; no write path exists.",
+      "activeForm": "Building the team roster aggregation endpoint",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "3.1"
+      ],
+      "files": [
+        "packages/shared/src/team-schemas.ts",
+        "packages/shared/package.json",
+        "apps/server/src/services/identity/aggregate-team.ts",
+        "apps/server/src/services/identity/operator-profile.ts",
+        "apps/server/src/routes/team.ts",
+        "apps/server/src/index.ts",
+        "apps/server/src/services/rooms/author-registry.ts",
+        "apps/server/src/services/core/openapi-registry.ts"
+      ],
+      "issue": "DOR-971"
+    },
+    {
+      "id": "2.2",
+      "phase": 2,
+      "phaseName": "P2 — The Team page",
+      "subject": "[identity-consistency] [P2] Show every person and agent on this install as one card roster at /team",
+      "description": "The roster surface itself — cards, filters, grouping and search (spec §W2.3, §W2.4, §W2.6). Depends on DOR-676 for real handles; ships with `handle: null` rendered honestly (no bare `@`) if DOR-676 has not landed.\n\n1. `apps/client/src/layers/entities/team/` — a new entity slice: `api/` (the transport call), `model/use-team-roster.ts` (TanStack Query keyed `['team']`), and the derived selectors the page needs. `entities/` is correct: the roster is a domain object several features and one widget read, and it must not live in the widget that happens to render it first.\n2. `apps/client/src/layers/widgets/team/ui/TeamPage.tsx` — a widget because it composes several features. Cards, chips, the group toggle and the view switch are feature-layer components under `features/team-roster/`; the identity primitives they use stay in `shared/` and `entities/`.\n3. Cards view (the default): ONE unified grid, operator first, then agents — chosen over a sectioned roster because the shape/badge language does the distinguishing and sections would say the same thing twice. Each card carries the identity disc at `md`, the display name, the `@handle`, a kind-specific second line (agent: `runtime · model`; person: `role` or `On this machine`), a working dot when live, and on an agent a `by @handle` owner attribution rendered as a BUTTON that filters the roster to that owner.\n4. Filter chips `All · People · Agents`, then one chip per person once more than one exists. Chips write `?kind=` / `?owner=` so a filtered roster is a shareable URL. `?group=manager` re-clusters agent cards under a header row per owner (the person's own compact lockup), unowned identities last. `?q=` matches display name and handle case-insensitively over the already-loaded roster — no server round trip; the roster is bounded by the agents on one machine.\n5. Empty and degraded states: reuse `features/agents-list`'s `AgentGhostRows` for the no-agents state, now with the operator's own card above it — the roster is never empty, because the person reading it is on it. When `warnings` is present, show a dismissible inline banner naming the source that failed (\"Couldn't read your agents — showing who we could.\"), written to the `writing-for-humans` bar.\n6. Mobile: one column below `md` (768px, `use-is-mobile.ts:3`); the chip row scrolls horizontally rather than wrapping to three lines.\n7. Two binding rules for the Buzz future (§W2.6), both testable today: NO component may branch on \"there is exactly one person\" — rendering, grouping and filtering read the roster as a list; and NO component may assume `isSelf` for a person — `isSelf` is a flag on one row and \"you\" is a CHIP, not a code path.\n8. Playground: a `Team Card` section rendering operator, agent-with-owner, external person, and long name/handle states.\n\nAcceptance criteria:\n- jsdom tests over `TeamPage`: filter chips, the owner filter, manager grouping, search, the empty state and the warnings banner.\n- The grouping and grid tests run against a fixture with TWO people, four agents and two owners — a shape the product cannot produce yet, which is precisely why the test exists. It must fail against any component that assumes one person.\n- jsdom test: a member with `handle: null` renders no `@` at all, rather than one that reaches nobody.\n- `pnpm vitest run apps/client/src/dev/__tests__/playground-registry.test.ts` green.\n- FSD layer lint clean (`shared <- entities <- features <- widgets`); imports go through barrel `index.ts` files only.\n- `pnpm --filter @dorkos/client typecheck`, `lint` and the client suite pass.",
+      "acceptance": "A card roster renders the operator first and every agent under them, with kind chips, an owner filter, a manager grouping, search, a degraded banner and a one-column mobile layout — all driven by URL params and all correct against a two-person fixture.",
+      "activeForm": "Building the Team roster cards, filters and grouping",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.1",
+        "1.2",
+        "2.1",
+        "DOR-676"
+      ],
+      "parallelWith": [
+        "3.1",
+        "3.2"
+      ],
+      "files": [
+        "apps/client/src/layers/entities/team/",
+        "apps/client/src/layers/features/team-roster/",
+        "apps/client/src/layers/widgets/team/ui/TeamPage.tsx",
+        "apps/client/src/dev/showcases/IdentityShowcases.tsx"
+      ],
+      "issue": "DOR-972"
+    },
+    {
+      "id": "2.3",
+      "phase": 2,
+      "phaseName": "P2 — The Team page",
+      "subject": "[identity-consistency] [P2] Replace /agents with /team everywhere and delete the old fleet page",
+      "description": "The route swap, the table and topology views, and the removal of the page they came from (spec §W2.1, §W2.5).\n\n1. `apps/client/src/router.tsx`: a `/team` route with `validateSearch: zodValidator(teamSearchSchema)` -> `TeamPage`. `teamSearchSchema = mergeDialogSearch(...)` over: `view: 'cards' | 'table' | 'topology' | 'denied' | 'access'` default `'cards'`, where `'list'` is ACCEPTED and normalized to `'table'` via a `z.preprocess` because `/agents?view=list` is a live external address used by the media-capture pipeline (`apps/e2e/capture/surfaces-desktop.ts:48,498`); `kind: 'all' | 'people' | 'agents'` default `'all'`; `owner: string`; `group: 'none' | 'manager'` default `'none'`; `q: string`; `member: string`; `agent: string` (retained, the topology detail-panel selection); `sort` retained from `agentsSearchSchema:128`; `agentFilterSchema.searchValidator` retained.\n2. `/agents` survives as a redirect and NOTHING else: a route with the same `validateSearch` whose `beforeLoad` throws `redirect({ to: '/team', search, replace: true })`. AGENTS.md says a superseded thing is removed, so state the justification in the PR: every in-repo caller is swept in the same change, and what the alias serves is addresses this repo does not control — a bookmark, a docs link, and the Electron shell's persisted tab list, which stores raw pathnames (`app/__tests__/use-electron-close-tab.test.tsx:57-126`). A persisted tab pointing at a dead route is a blank window on next launch.\n3. Sweep the 13 in-repo call sites: `features/mesh/ui/ImportProjectsDialog.tsx:59`; `features/settings/ui/external-mcp/ExternalMcpCard.tsx:201`; `features/feature-promos/ui/dialogs/AgentChatDialog.tsx:12`; `features/dashboard-sidebar/ui/SidebarNavHeader.tsx:53-54`; `features/command-palette/model/use-palette-actions.ts:124,199`; `features/top-nav/ui/AgentsHeader.tsx:35`; `features/dashboard-status/ui/SystemStatusRow.tsx:91`; `widgets/agents/ui/AgentsPage.tsx:123,136,150,161,183`; `AppShell.tsx:190` (`case '/agents'` -> `case '/team'`); `apps/e2e/capture/surfaces-desktop.ts:48,55,379,498,713`; `apps/e2e/tests/agents/agents-page.spec.ts` plus its `apps/e2e/manifest.json:341` entry.\n4. Nav: `SidebarNavHeader.tsx:50-56` — label `Agents` -> `Team`, icon `Users` unchanged (and now literally right), `isActive` on `/team`, `to: '/team'`. `TOUR_ANCHORS.navAgents` KEEPS its key — renaming a tour anchor breaks the persisted tour position for no user gain — and gains a comment saying why.\n5. Table view seeded from `features/agents-list/lib/agent-columns.tsx`. Its `IdentityCell` (`:73-108`) inherits kind-awareness through `AgentAvatar`; the table gains a `Managed by` column; people rows render the columns that apply and blanks where they do not (a person has no runtime). The view switch DROPS the table option below `md` — a 6-column table on a phone is not a view — leaving cards and topology.\n6. `?view=topology` stays, reached from the Team page's view switch. Reuse the topology graph, `AgentNode`, the access/denied states and `AgentGhostRows` from `widgets/agents/` unchanged.\n7. `widgets/agents/ui/AgentsPage.tsx` is DELETED; its topology/denied/access branches move into `TeamPage`. No parallel page survives. `features/agents-list/` keeps `AgentsList`, `AgentGhostRows`, `DeniedView`, `AccessView` and `agent-columns.tsx` — all still used, now by `TeamPage`. `features/top-nav/ui/AgentsHeader.tsx` -> `TeamHeader.tsx`, with the view switch gaining Cards. `features/mesh/ui/AgentHealthDetail.tsx` STAYS as the topology-node detail panel (it is about mesh health, not identity) and is NOT grown into a profile.\n8. Docs: the agents/fleet concept page in `docs/` becomes the Team page — what the roster shows, what the shapes mean (square is an agent, circle is a person), what \"by @someone\" means. Written to the `writing-for-humans` bar. Repoint every `/agents` link in `docs/`. Do NOT rewrite `docs/changelog-archive.mdx` — it is a historical record.\n\nAcceptance criteria:\n- Router test: `/agents?view=list&sort=x` lands on `/team?view=table&sort=x` with `replace: true`; `/agents?view=topology` lands on `/team?view=topology`.\n- `apps/e2e/tests/agents/agents-page.spec.ts` is rewritten as `tests/team/team-page.spec.ts` and re-registered in `apps/e2e/manifest.json`. Desktop coverage: the operator's card renders first with a circle disc; an agent card renders a square filled disc with a `Bot` badge and a `by @handle` line; clicking `Agents` hides the person card; clicking an attribution filters to that owner and the URL carries `?owner=`; `Group: manager` produces one cluster header; the view switch reaches the table and the topology; reloading the filtered URL restores the same view.\n- Mobile e2e at 375px: cards are one column, chips scroll, the table option is absent.\n- `grep -rn \"'/agents'\\|\\\"/agents\\\"\" apps/client/src apps/e2e` returns only the alias route definition and its test.\n- `pnpm knip` reports no orphan left behind by the `AgentsPage` deletion.\n- `pnpm --filter @dorkos/client typecheck`, `lint` and the client suite pass.",
+      "acceptance": "/team is the only fleet surface; /agents is a one-line redirect with a test; every in-repo caller, the nav, the capture pipeline and the docs point at /team; AgentsPage is gone and knip is clean.",
+      "activeForm": "Swapping /agents for /team and retiring the old fleet page",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "2.2"
+      ],
+      "parallelWith": [],
+      "files": [
+        "apps/client/src/router.tsx",
+        "apps/client/src/AppShell.tsx",
+        "apps/client/src/layers/features/dashboard-sidebar/ui/SidebarNavHeader.tsx",
+        "apps/client/src/layers/features/top-nav/ui/TeamHeader.tsx",
+        "apps/client/src/layers/features/agents-list/lib/agent-columns.tsx",
+        "apps/client/src/layers/widgets/agents/ui/AgentsPage.tsx",
+        "apps/e2e/tests/team/team-page.spec.ts",
+        "apps/e2e/manifest.json",
+        "apps/e2e/capture/surfaces-desktop.ts",
+        "docs/"
+      ],
+      "issue": "DOR-973"
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "P3 — Profile & account surfacing",
+      "subject": "[identity-consistency] [P3] Add a ResponsiveSheet primitive for right-side panels that go full-screen on a phone",
+      "description": "There is no desktop-right-drawer / mobile-full-screen primitive in `shared/ui/` today: every `Responsive*` component there pairs a desktop overlay with a BOTTOM vaul drawer (`responsive-dialog.tsx:54`, `responsive-popover.tsx:63`, `responsive-dropdown-menu.tsx:34`, `responsive-context-menu.tsx:33`), and the right-side behaviour is hand-rolled twice already — in `RightPanelContainer.tsx:199-216` and again in `sidebar.tsx:179-201`. This is the third-use extraction the DRY rule asks for (spec §W3.2).\n\n1. Add `apps/client/src/layers/shared/ui/responsive-sheet.tsx` exporting `ResponsiveSheet` / `ResponsiveSheetContent` and the trigger/header/title parts the existing `Responsive*` families expose. Desktop: `<Sheet><SheetContent side=\"right\" className=\"sm:max-w-md\">`. Mobile: `<Sheet><SheetContent side=\"right\" className=\"w-full sm:max-w-full\">`. Switch on `useIsMobile()` (`shared/model/media/use-is-mobile.ts:6`, breakpoint 768 at `:3`) — the same breakpoint everything else in this cockpit turns on. Barrel-export from `shared/ui/index.ts`.\n2. Generalize it FROM `RightPanelContainer.tsx:199-216`, then make `RightPanelContainer` consume it rather than keeping its own copy. `sidebar.tsx:179-201` is left alone — the sidebar sheet has its own state machine and rewriting it is not this task.\n3. Playground: a `ResponsiveSheet` showcase in the Components page rendering the desktop and mobile widths side by side, with its registry entry.\n\nAcceptance criteria:\n- jsdom tests: with `useIsMobile()` false the content carries the `sm:max-w-md` desktop width; with it true the content is full width. Both assert `side=\"right\"`.\n- `RightPanelContainer` renders and dismisses exactly as before — its existing tests pass unchanged.\n- `pnpm vitest run apps/client/src/dev/__tests__/playground-registry.test.ts` green.\n- `pnpm --filter @dorkos/client typecheck` and `lint` pass.",
+      "acceptance": "One ResponsiveSheet primitive in shared/ui, consumed by RightPanelContainer, right-side on desktop and full-screen below 768px, with tests for both branches.",
+      "activeForm": "Extracting the responsive right-side sheet primitive",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": [],
+      "parallelWith": [
+        "1.1",
+        "2.1",
+        "2.2",
+        "3.2"
+      ],
+      "files": [
+        "apps/client/src/layers/shared/ui/responsive-sheet.tsx",
+        "apps/client/src/layers/shared/ui/index.ts",
+        "apps/client/src/layers/widgets/*/ui/RightPanelContainer.tsx",
+        "apps/client/src/dev/showcases/OverlayShowcases.tsx"
+      ],
+      "issue": "DOR-974"
+    },
+    {
+      "id": "3.2",
+      "phase": 3,
+      "phaseName": "P3 — Profile & account surfacing",
+      "subject": "[identity-consistency] [P3] Carry a photo as the fourth render-cache field beside name, emoji and colour",
+      "description": "`displayName` + `emoji` + `color` is the render-cache triplet the whole cockpit speaks. `imageUrl` is a fourth OPTIONAL field beside them — not a replacement and not a new system, the same additive move `responseMode` made on `CommunityMemberSchema`. All 14 touch points from spec §W3.4, enumerated so none is missed:\n\n1. `packages/db/src/schema/rooms.ts` `authors` (`:43-103`) — `imageUrl: text('image_url')` plus a generated migration.\n2. `packages/shared/src/room-schemas.ts` `AuthorRefSchema` (`:219-245`) — `imageUrl: z.string().optional()`, TSDoc'd as a render cache.\n3. `packages/shared/src/community-adapter.ts` `CommunityMemberSchema` (`:435-467`) — `imageUrl` beside `emoji`/`color`.\n4. `packages/shared/src/team-schemas.ts` `TeamMemberSchema` — already present from task 2.1; verify.\n5. `apps/client/src/layers/shared/ui/identity-avatar.tsx` — `imageUrl?: string`; render precedence IMAGE -> EMOJI -> FALLBACK LETTER. The image is `object-cover`, inherits the disc's `shape` radius, and carries `alt=\"\"` because the disc is decorative and the row's own text names the identity.\n6. `shared/ui/identity-hover-card.tsx` `IdentityHoverCardDescriptor` — `imageUrl?`.\n7. `shared/ui/mention-pill.tsx` — NO CHANGE. A pill carries a glyph, not a photo.\n8. `shared/lib/identity-face.ts` (from task 1.2) — `imageUrl` in both input and output.\n9. `features/chat/lib/resolve-message-author.ts:84` — `MessageAuthor.imageUrl?`, passed through to `MessageAuthorAvatar`.\n10. `entities/agent/ui/AgentAvatar.tsx` + `AgentIdentity.tsx` — pass-through.\n11. `entities/room/ui/RoomAvatar.tsx`, `MemberList.tsx` and `features/room-management/ui/RoomMemberRow.tsx` — via the shared resolver, so nothing new to decide.\n12. `apps/server/src/services/rooms/author-registry.ts` — `imageUrl` joins `displayName`/`emoji`/`color` in the refresh-on-resolve set. It is a cache, so it refreshes — unlike `handle`, which the handles spec's D12 forbids refreshing.\n13. `packages/db/src/schema/auth.ts` `user.image` — NO schema change. The column exists and is finally written (by task 3.3).\n14. `apps/client/src/dev/mock-samples.ts` `MockIdentity` (`:792-800`) — `imageUrl?` plus at least one cast member carrying one, as a small inline data URI so the playground needs no network and no fixture file.\n\nThe upload UI is for PEOPLE ONLY (task 3.6). Agents keep emoji + colour, which is their identity language. The field is on the shared cache so an agent could carry one later without a schema change.\n\nAcceptance criteria:\n- jsdom test on `IdentityAvatar`: with `imageUrl` an `<img>` renders and the emoji does not; without it the emoji renders; without both, the letter. Absence must never render a broken image (`260727-181825`, user-safe defaults).\n- Drizzle migration generated and checked in; `pnpm --filter @dorkos/db` checks pass.\n- Schema unit tests: `AuthorRefSchema` and `CommunityMemberSchema` accept a row with and without `imageUrl`.\n- Server test: resolving an author refreshes a changed `imageUrl` but does not touch `handle`.\n- The playground's identity showcases render the photo cast member.\n- `pnpm --filter @dorkos/shared build`, `pnpm --filter @dorkos/server typecheck`, `pnpm --filter @dorkos/client typecheck`, `lint` all pass.",
+      "acceptance": "imageUrl exists on the db row, the three shared schemas, the resolver, every avatar renderer and the mocks; render precedence is image -> emoji -> letter; mention pills deliberately unchanged.",
+      "activeForm": "Adding imageUrl as the fourth render-cache field",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.1",
+        "1.2",
+        "2.1"
+      ],
+      "parallelWith": [
+        "2.2",
+        "3.1"
+      ],
+      "files": [
+        "packages/db/src/schema/rooms.ts",
+        "packages/shared/src/room-schemas.ts",
+        "packages/shared/src/community-adapter.ts",
+        "apps/client/src/layers/shared/ui/identity-avatar.tsx",
+        "apps/client/src/layers/shared/ui/identity-hover-card.tsx",
+        "apps/client/src/layers/shared/lib/identity-face.ts",
+        "apps/client/src/layers/features/chat/lib/resolve-message-author.ts",
+        "apps/server/src/services/rooms/author-registry.ts",
+        "apps/client/src/dev/mock-samples.ts"
+      ],
+      "issue": "DOR-975"
+    },
+    {
+      "id": "3.3",
+      "phase": 3,
+      "phaseName": "P3 — Profile & account surfacing",
+      "subject": "[identity-consistency] [P3] Store profile photos locally behind a seam a cloud backend can implement later",
+      "description": "The seam is the requirement (ideation D5, Dorian explicit). The route depends on an interface, never on the disk (spec §W3.5).\n\n1. `apps/server/src/services/identity/avatar-store.ts` — `interface AvatarStore { put(id, bytes: Buffer, contentType: AvatarContentType): Promise<{ url: string }>; get(id): Promise<{ stream: Readable; contentType: string; etag: string } | null>; delete(id): Promise<void> }`. `put` returns the URL a render cache stores, and that IS the whole seam: today `LocalAvatarStore` returns a server-relative `/api/profile/avatar/<id>?v=<hash>`; a future server- or cloud-backed store returns an absolute `https://...` and not one renderer, schema or component changes. Nothing above this interface may construct a path, join a directory, or assume the bytes are local.\n2. `local-avatar-store.ts` is the only implementation today. It writes `<dorkHome>/avatars/<authorId>.<ext>` where `dorkHome` comes from `resolveDorkHome()` (`apps/server/src/lib/dork-home.ts:15-21`). NEVER `os.homedir()` — banned in `apps/server/src` outside three carve-outs (Hard Rule 3, `.claude/rules/dork-home.md`). This is deliberately NOT the existing upload directory: `UploadHandler.getUploadDir(cwd)` (`services/core/upload-handler.ts:28`) is `{cwd}/.dork/.temp/uploads`, per-project and temporary; an avatar is per-install and permanent.\n3. `POST /api/profile/avatar` in `apps/server/src/routes/profile.ts` — multipart via a DEDICATED multer instance (the one in `routes/uploads.ts:19-67` is cwd-scoped and config-driven and is not reusable here). Rules: <= 2 MB enforced by multer `limits` BEFORE a byte is written (a cap enforced post-write is a disk-fill bug); png/jpeg/webp only, validated by MAGIC BYTES, not by the extension or the `Content-Type` the client claims; SVG refused outright — it is a script vector and `files.ts:109-116` needs a bespoke CSP header to serve one safely, which a profile photo has no reason to need; no re-encoding and no resizing, because that needs `sharp` and this spec adds no dependency. Writes go through the store, then update `authors.image_url` AND Better Auth `user.image` with the same URL, so the account record and the roster cannot disagree.\n4. `DELETE /api/profile/avatar` clears all three.\n5. `GET /api/profile/avatar/:id` modelled on `routes/files.ts:49-135`: `createReadStream(...).pipe(res)`, `Content-Type` from the stored type, `X-Content-Type-Options: nosniff`, a strong `ETag` from the content hash, and `Cache-Control: private, max-age=0, must-revalidate`. The `?v=<hash>` in `imageUrl` is what makes a replaced photo appear immediately without disabling caching.\n6. `registry.registerPath` entries so both routes appear at `/api/docs`.\n\nAcceptance criteria:\n- Roundtrip server test: POST a 1x1 PNG; a file lands under `<dorkHome>/avatars/`; the response `url` round-trips through GET with the right `Content-Type` and `nosniff`; `authors.image_url` and `user.image` both hold it; DELETE clears all three.\n- Negative cases that MUST fail the request: a 3 MB file (413/400), an SVG, and a `.png` whose magic bytes say GIF.\n- Path containment: an `authorId` containing `..` or `/` cannot escape `<dorkHome>/avatars/` — the same containment check `routes/uploads.ts:84-91` makes. Overwrite replaces; delete is idempotent.\n- Seam test: substitute a fake `AvatarStore` returning `https://cdn.example/x.png` and assert the roster's `imageUrl` is that absolute URL with NO route, schema or client change. This is the assertion that makes the sync-ready claim true rather than asserted.\n- `scripts/test-homedir-guard.sh` passes with the new files.\n- `pnpm --filter @dorkos/server typecheck`, `lint` and the server suite pass.",
+      "acceptance": "An AvatarStore interface with a local implementation under <dorkHome>/avatars/; POST/GET/DELETE /api/profile/avatar with magic-byte validation, a 2 MB pre-write cap, no SVG, nosniff and content-hash ETags; the substitution test proves the seam.",
+      "activeForm": "Building the avatar storage seam and profile photo routes",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "3.2"
+      ],
+      "parallelWith": [
+        "3.4"
+      ],
+      "files": [
+        "apps/server/src/services/identity/avatar-store.ts",
+        "apps/server/src/services/identity/local-avatar-store.ts",
+        "apps/server/src/routes/profile.ts",
+        "apps/server/src/index.ts",
+        "apps/server/src/services/core/openapi-registry.ts"
+      ],
+      "issue": "DOR-976"
+    },
+    {
+      "id": "3.4",
+      "phase": 3,
+      "phaseName": "P3 — Profile & account surfacing",
+      "subject": "[identity-consistency] [P3] Open one profile panel for any identity, from a shareable URL",
+      "description": "One component for every kind — the card is the glance, the drawer is the look (spec §W3.2).\n\n1. `apps/client/src/layers/features/profile/ui/ProfileDrawer.tsx` renders any `TeamMember`, built on the `ResponsiveSheet` primitive from task 3.1. Agent: header disc (square/fill/Bot) + display name + `@handle`; chips `runtime · model`, working state, and `managed by @handle`; body project path, namespace, health, registered-at, default/system markers; actions Open a session, Agent settings. Person: header disc (circle/tint) + display name + `@handle`; chips role and origin (`On this machine` or the platform); body joined-at, and email ONLY on your own row; action Edit (own row only), which deep-links to Settings › Profile. Same descriptor family as `IdentityHoverCard` on purpose. One component, both kinds, NO per-kind subclass.\n2. State lives in a URL param so a profile is shareable and the phone's back gesture dismisses it: `shared/model/dialog-search-schema.ts:17-30` `dialogSearchSchema` gains `profile: z.string().optional()`, and a `useProfileDeepLink()` hook follows `use-dialog-deep-link.ts:154-235` exactly — open/close/set, dual-signal with a store flag, and a no-op fallback when there is no router, which is how this keeps working in the Obsidian embed.\n3. Register the drawer as a `DialogContribution` in `widgets/app-layout/model/dialog-contributions.ts` beside Settings, so it mounts once in `DialogHost` (`AppShell.tsx:582`) and is reachable from every route. Keep it behind `DialogHost`'s existing lazy pattern so a route that never opens it never pays for it.\n4. If DOR-954 (hover-card agent chips) has landed, reuse its chip plumbing for the drawer's chip row rather than adding a second one. If it has not, ship the chips locally — there is no dependency in either direction.\n5. Playground: a `Profile Drawer` section rendering agent and person, at desktop and mobile widths.\n\nAcceptance criteria:\n- jsdom tests: an agent member renders a square disc, a runtime chip and a managed-by chip; a person member renders a circle disc, an origin chip, and `Edit` ONLY when `isSelf`; email renders only on the `isSelf` row.\n- jsdom test: `useProfileDeepLink()` opens, closes and round-trips `?profile=<id>`, and no-ops without a router.\n- Browser (desktop): opening a profile puts `?profile=` in the URL, a reload reopens the same drawer, and Edit lands on Settings with the Profile tab active.\n- Browser (mobile, 375px): the drawer is full-screen and the back gesture closes it.\n- `pnpm vitest run apps/client/src/dev/__tests__/playground-registry.test.ts` green.\n- `pnpm --filter @dorkos/client typecheck`, `lint` and the client suite pass.",
+      "acceptance": "One ProfileDrawer renders any TeamMember, mounts once via DialogHost, is driven by ?profile= and is full-screen on a phone; agent and person states covered in jsdom and in the playground.",
+      "activeForm": "Building the profile drawer and its deep link",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "2.2",
+        "3.1",
+        "3.2"
+      ],
+      "parallelWith": [
+        "3.3"
+      ],
+      "files": [
+        "apps/client/src/layers/features/profile/ui/ProfileDrawer.tsx",
+        "apps/client/src/layers/features/profile/model/use-profile-deep-link.ts",
+        "apps/client/src/layers/shared/model/dialog-search-schema.ts",
+        "apps/client/src/layers/widgets/app-layout/model/dialog-contributions.ts",
+        "apps/client/src/dev/showcases/IdentityShowcases.tsx"
+      ],
+      "issue": "DOR-977"
+    },
+    {
+      "id": "3.5",
+      "phase": 3,
+      "phaseName": "P3 — Profile & account surfacing",
+      "subject": "[identity-consistency] [P3] Make every face in the app clickable through to its profile",
+      "description": "Delivers DOR-957 (click-to-profile). The drawer from task 3.4 is the destination that ticket was waiting for (spec §W3.2).\n\n1. `shared/ui/identity-hover-card.tsx` — its footer currently reads `View profile` with a muted `soon` tag (`~:155-160`). Add `onViewProfile?: () => void`; when supplied the footer becomes a real control and the `soon` tag goes. A PROP, not an import, is what keeps the primitive in `shared/` — a `shared/ui` component may not reach a feature.\n2. Wire the callers: `widgets/room-view/ui/MentionPillRenderer.tsx:66` (the only live hover card today), the Team cards (`features/team-roster/`), the sidebar agent list (`features/dashboard-sidebar`), and the chat status-line chip (`AgentIdentityChip`). Each calls `useProfileDeepLink().open(memberId)`.\n3. A click or tap on a mention pill or an identity avatar in a room opens the drawer. On touch this is the answer that replaces the long-press hover card: a tap opens the full version of what the card summarises.\n4. `features/mesh/ui/AgentHealthDetail.tsx`'s \"open profile\" affordance opens the SAME drawer. Do not grow that panel into a second profile surface — there is exactly one.\n5. Touch long-press on the hover card is deliberately NOT built here; it stays on DOR-950, which re-evaluates whether the gesture is still wanted once the drawer ships.\n\nAcceptance criteria:\n- jsdom tests: the hover-card footer renders `soon` and is inert without `onViewProfile`, and is a real control that fires the callback with it.\n- jsdom tests: clicking a mention pill, a Team card, a sidebar agent row and the status-line chip each open the drawer with the right member id.\n- Browser: clicking a face in a room opens the drawer, the URL carries `?profile=`, and a reload reopens it.\n- `grep -rn \"soon\" apps/client/src/layers/shared/ui/identity-hover-card.tsx` returns only the unwired-fallback branch.\n- `pnpm --filter @dorkos/client typecheck`, `lint` and the client suite pass.",
+      "acceptance": "Every identity surface named above opens the one profile drawer; the hover card's `soon` becomes a live control when wired; AgentHealthDetail routes to the same drawer rather than growing its own.",
+      "activeForm": "Wiring click-to-profile across the identity surfaces",
+      "size": "medium",
+      "priority": "medium",
+      "dependencies": [
+        "3.4"
+      ],
+      "parallelWith": [
+        "3.6"
+      ],
+      "files": [
+        "apps/client/src/layers/shared/ui/identity-hover-card.tsx",
+        "apps/client/src/layers/widgets/room-view/ui/MentionPillRenderer.tsx",
+        "apps/client/src/layers/features/team-roster/",
+        "apps/client/src/layers/features/dashboard-sidebar/ui/AgentListItem.tsx",
+        "apps/client/src/layers/features/chat/ui/AgentIdentityChip.tsx",
+        "apps/client/src/layers/features/mesh/ui/AgentHealthDetail.tsx"
+      ],
+      "issue": "DOR-978"
+    },
+    {
+      "id": "3.6",
+      "phase": 3,
+      "phaseName": "P3 — Profile & account surfacing",
+      "subject": "[identity-consistency] [P3] Give the operator an account menu in the chrome and a Profile tab to edit",
+      "description": "The two surfaces where the person at the keyboard is finally a person (spec §W3.1, §W3.3, §W3.6). The handle field needs DOR-676; everything else ships without it.\n\nACCOUNT MENU. There is no user or account element anywhere in the shell today (verified by grep). The sidebar footer is `features/session-list/ui/SidebarFooterBar.tsx:45`: a `DorkLogo` brand link on the left (`:163-170`), a right-hand icon cluster (`:171-290` — the tunnel globe, the extension-contributed `sidebar.footer` buttons, `HelpMenu`), and a version row beneath (`:293-333`). The account button becomes the FIRST item in that right-hand icon cluster, at `:172`, left of the tunnel globe. It is icon-sized — the operator's `IdentityAvatar` at `size=\"sm\"` — so it sits in a row of peers without re-laying-out the footer, and it does not displace the brand link, which is a different affordance. Build it as a `ResponsiveDropdownMenu` (`shared/ui/responsive-dropdown-menu.tsx:34`), which gives the mobile behaviour for free. Contents in order: a header block (avatar, display name, `@handle`); `View profile`, which opens the drawer on the operator's own row; `Settings`, which calls the existing `useSettingsDeepLink().open()` already wired at `SidebarFooterBar.tsx:53`; and `Sign out`, rendered ONLY when a local account exists (`useCurrentUser()` non-null, `features/auth/model/use-auth-session.ts:146-149`) — login is optional and off by default (ADR-0320) and a sign-out button on an install with no account is a control that does nothing.\n\nKNOWN VERIFICATION POINT: on mobile the sidebar is itself a `Sheet` (`shared/ui/sidebar.tsx:179-201`), so this opens a vaul `Drawer` inside a Radix `Dialog` — a composition used nowhere else in the app today. Check it in a real browser at 375px. If it misbehaves, the fallback is `ResponsiveDropdownMenu` forced to its dropdown branch inside the sheet.\n\nSETTINGS › PROFILE. `SETTINGS_TABS` (`features/settings/ui/SettingsDialog.tsx:27-74`) gains `{ id: 'profile', label: 'Profile', icon: UserRound, component: ProfileTab }` as the FIRST entry. Promotion needs nothing else: ungrouped tabs render above the first group header (`shared/ui/tabbed-dialog.tsx:123-131`). `SettingsTab` (`shared/model/app-store/app-store-panels.ts:16-26`) gains `'profile'`, so `?settings=profile` works through the existing deep-link machinery — which is exactly what the drawer's Edit button calls. Form, top to bottom: Photo, writing to `POST /api/profile/avatar` (drop or pick, initials preview, Remove clears it); Display name, writing the operator's author record AND Better Auth `user.name`; `@handle`, writing `PATCH /api/rooms/authors/:id/handle` — THE HANDLES SPEC'S OWN ROUTE, unchanged, with no second write path, which is what keeps that spec's S6 invariant true — and mapping its three typed refusals `HANDLE_TAKEN`, `HANDLE_RESERVED` and `INVALID_HANDLE` to three DIFFERENT messages, because they are three different things to do about it; Email, read-only from the local account, with a line saying login is optional and where to turn it on.\n\nSettings is a `TabbedDialog` over `ResponsiveDialog`, so the whole dialog is already a bottom vaul drawer below 768px (`responsive-dialog.tsx:60-62`). The photo control must be REACHABLE inside it — verified in the browser, not assumed. Settings › Security keeps its login toggle and sign-out and loses nothing; what changes is that identity is no longer only there.\n\nTWO ACCOUNTS, ONE SHOWN. The identity shown everywhere in the cockpit is the LOCAL one. `features/settings/ui/CloudAccountTab.tsx` stays exactly as it is — a device-link flow for analytics linking and update notifications — and the Profile tab neither reads from it, writes to it, nor implies they are the same account. No cloud avatar fetch, no name sync, no reconciliation; that is DOR-605's problem and not conflicting with it is this task's.\n\nAcceptance criteria:\n- jsdom test: `Sign out` renders when `useCurrentUser()` is non-null and is ABSENT when it is null.\n- jsdom tests: the menu header shows the operator's real name and `@handle`; `View profile` opens the drawer on the self row; `Settings` opens the settings dialog.\n- jsdom tests: `ProfileTab` surfaces three DIFFERENT messages for the three handle refusals; the email field is read-only; Remove clears the photo.\n- Browser (desktop): the account menu opens from the sidebar footer and shows name + `@handle`.\n- Browser (mobile, 375px): the account menu opens from INSIDE the sidebar sheet and is dismissible; Settings › Profile's photo control is reachable in the bottom drawer.\n- Playground: an `Account Menu` section rendering the menu open, in both the with-account and without-account states.\n- `pnpm --filter @dorkos/client typecheck`, `lint` and the client suite pass.",
+      "acceptance": "An avatar-anchored account menu in the sidebar footer with a conditional Sign out, and a promoted Settings › Profile tab editing photo, display name and handle through the handles spec's own route; both verified in a real browser at desktop and 375px.",
+      "activeForm": "Building the account menu and the Settings Profile tab",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "3.3",
+        "3.4",
+        "DOR-676"
+      ],
+      "parallelWith": [
+        "3.5"
+      ],
+      "files": [
+        "apps/client/src/layers/features/session-list/ui/SidebarFooterBar.tsx",
+        "apps/client/src/layers/features/profile/ui/AccountMenu.tsx",
+        "apps/client/src/layers/features/settings/ui/SettingsDialog.tsx",
+        "apps/client/src/layers/features/settings/ui/ProfileTab.tsx",
+        "apps/client/src/layers/shared/model/app-store/app-store-panels.ts",
+        "apps/client/src/dev/showcases/IdentityShowcases.tsx"
+      ],
+      "issue": "DOR-979"
+    },
+    {
+      "id": "4.1",
+      "phase": 4,
+      "phaseName": "P4 — Playground Identity page",
+      "subject": "[identity-consistency] [P4] Give identity one Dev Playground page with the gaps closed and the mocks unified",
+      "description": "The last phase on purpose: a playground page that showcases half a convention is a page that has to be rebuilt (spec §W4).\n\nREGISTRATION — SEVEN touch points, not six. The audit lists six; missing the seventh turns the drift test red in CI. (1) `dev/playground-registry.ts:2-22` — `'identity'` in the `Page` union. (2) `dev/sections/identity-sections.ts` — NEW, exporting `IDENTITY_SECTIONS`. (3) `dev/playground-registry.ts:38-56` (named re-export) AND `:59-104` (aliased import + spread into `PLAYGROUND_REGISTRY`). (4) `dev/playground-config.ts` — import plus a `PageConfig` entry (`id: 'identity'`, `group: 'agents'`, `path: 'identity'`, icon, description). (5) `dev/pages/IdentityPage.tsx` — NEW, via `PlaygroundPageLayout`. (6) `dev/DevPlayground.tsx:88-109` — `PAGE_COMPONENTS` entry plus import. (7) `dev/__tests__/playground-registry.test.ts:5-26` and `:51-71` — the union assertion hardcodes all 19 section arrays by name; without `IDENTITY_SECTIONS` there, \"PLAYGROUND_REGISTRY equals the union of all page-level arrays\" fails. Placement is the AGENTS group (ideation D6), beside Subsystems and Rooms.\n\nCROSS-LISTING IS BY RENDERING, NOT BY DOUBLE-REGISTRATION. The registry enforces `id === slugify(title)` and no duplicate ids across the whole registry, so one title holds exactly one entry, pinned to one page and one `/dev/<page>#<anchor>` URL. Therefore: the three `shared/ui` primitives — `IdentityAvatar` (`components-sections.ts:248-267`), `MentionPill` (`:268-287`), `IdentityHoverCard` (`:288-304`) — KEEP `page: 'components'`, their ids, their titles and their existing `/dev/components#...` anchors. `IdentityPage.tsx` imports and RENDERS those same showcase components; the drift check scans FILES (`readRenderedSections()`, `:154-167`, walking `dev/showcases/*.tsx` and `dev/pages/*.tsx`), so a second page rendering an already-registered showcase adds no new rendered title and both drift directions stay green. The Identity page's TOC is still complete because `PageConfig.sections` is COMPOSED: `[...IDENTITY_SECTIONS, ...COMPONENTS_SECTIONS.filter((s) => IDENTITY_PRIMITIVE_IDS.has(s.id))]` — legal because `PLAYGROUND_REGISTRY` is the union of the per-page `*_SECTIONS` arrays, not of `PAGE_CONFIGS[].sections`, and the containment assertion holds because each borrowed entry is in the registry exactly once. The accepted cost, stated rather than discovered: those three sections still group under \"Components\" in Cmd+K and their canonical URL stays `/dev/components#identityavatar`. That is the trade for not breaking a single existing anchor.\n\nSECTIONS THAT GENUINELY MOVE (their entry moves array and its `page` changes, so their anchor changes): `AgentAvatar` and `AgentIdentity`, `features-sections.ts:26-40` -> Identity. They are entity-layer identity components, \"Subsystems\" is not where anyone looks for them, and nothing outside this repo links to a playground anchor. `RoomMemberRow` (`rooms-sections.ts:33-37`), `MessageAuthorAvatar` (`chat-sections.ts:40-59`) and `AgentIdentityChip` (`chat-sections.ts:567-582`) STAY registered where they are and are cross-listed by rendering — each is primarily a room or chat surface.\n\nNEW COVERAGE on the Identity page: `RoomPresenceLine` (the room's live working line) and an `Identity Shape Matrix` (agent x human-local x human-external x system, crossed with image / emoji / letter — the whole convention on one screen). The `RoomAvatar`, `AvatarPickerGrid`, `Account Menu`, `Profile Drawer` and `Team Card` sections are built by tasks 1.2, 1.4, 3.6, 3.4 and 2.2 respectively; this task composes them onto the page, it does not rebuild them.\n\nOUT OF SCOPE — square-at-xs/sm sizes. `Identity Sizes` (every kind at xs/sm/md/lg) is IN PROGRESS as DOR-955 in another session. Do NOT build a second sizes showcase. If DOR-955 has landed, compose its existing section into the Identity page's TOC by id; if it has not, leave the slot out and say so in the PR.\n\nMOCK DATA. `dev/showcases/AgentIdentityShowcases.tsx:7-18` uses its own inline `SAMPLE`/`AGENTS` consts. DELETE them; every identity showcase draws from `MOCK_IDENTITIES` (`dev/mock-samples.ts:809-872`), extended with `imageUrl`, `ownerHandle` and `working` on `MockIdentity` (`:792-800`) and a cast member carrying a photo as a small inline data URI.\n\nTHE `category` CORRECTION. `category` is dead metadata: nothing reads `.category` anywhere (`PlaygroundSearch.tsx:18-25,63-79` groups by `section.page`; `TocSidebar` renders flat). KEEP it — it is in-file documentation on 241 entries and churning them buys no user anything — but stop it lying: correct its TSDoc in `playground-registry.ts` to say it is documentation-only and not a search grouping, and correct `.claude/skills/maintaining-dev-playground/SKILL.md`'s claim that it \"controls search grouping in Cmd+K results\", since that sentence is what would otherwise make the next author build on it. Also add the seventh registration touch point to that skill's checklist. NO new code may branch on `category`.\n\nAcceptance criteria:\n- `pnpm vitest run apps/client/src/dev/__tests__/playground-registry.test.ts` is GREEN, which now transitively proves: `IDENTITY_SECTIONS` is in the union, every new `<PlaygroundSection>` has a literal title and a registry entry, every registry entry has a rendered anchor, no duplicate ids, and every id is `slugify(title)`.\n- `/dev/components#identityavatar`, `#mentionpill` and `#identityhovercard` still resolve.\n- `/dev/identity` renders every section in its TOC, including the three cross-listed ones.\n- Every state in `MOCK_IDENTITIES` renders on the Identity page.\n- `grep -n \"SAMPLE\\|const AGENTS\" apps/client/src/dev/showcases/AgentIdentityShowcases.tsx` returns nothing.\n- `pnpm --filter @dorkos/client typecheck` and `lint` pass.",
+      "acceptance": "One /dev/identity page in the Agents group, registered at all seven touch points with the drift test green; shared/ui primitives cross-listed by rendering with their anchors intact; AgentAvatar and AgentIdentity moved; mocks unified on MOCK_IDENTITIES; the `category` claim corrected in both the registry TSDoc and the playground skill; DOR-955's sizes showcase deliberately not duplicated.",
+      "activeForm": "Building the playground Identity page",
+      "size": "large",
+      "priority": "medium",
+      "dependencies": [
+        "1.1",
+        "1.2",
+        "1.3",
+        "1.4",
+        "2.2",
+        "3.4",
+        "3.6"
+      ],
+      "parallelWith": [],
+      "files": [
+        "apps/client/src/dev/playground-registry.ts",
+        "apps/client/src/dev/playground-config.ts",
+        "apps/client/src/dev/sections/identity-sections.ts",
+        "apps/client/src/dev/pages/IdentityPage.tsx",
+        "apps/client/src/dev/DevPlayground.tsx",
+        "apps/client/src/dev/showcases/AgentIdentityShowcases.tsx",
+        "apps/client/src/dev/mock-samples.ts",
+        "apps/client/src/dev/__tests__/playground-registry.test.ts",
+        ".claude/skills/maintaining-dev-playground/SKILL.md"
+      ],
+      "issue": "DOR-980"
+    }
+  ]
+}

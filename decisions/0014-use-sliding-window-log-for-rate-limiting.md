@@ -13,7 +13,7 @@ superseded-by: null
 
 Accepted
 
-(2026-08-06 audit) The algorithm stands; the composite (sender, created_at DESC) index this ADR committed to was never added — countSenderInWindow runs unindexed (filed as follow-up).
+(2026-08-06 audit) The algorithm stands; the composite (sender, created_at DESC) index this ADR committed to was never added — countSenderInWindow runs unindexed (index added 2026-08-06).
 
 ## Context
 

@@ -3299,7 +3299,11 @@
       "extractedFrom": "relay-advanced-reliability",
       "specSlug": "relay-advanced-reliability",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/relay/src/rate-limiter.ts", "packages/relay/src/sqlite-index.ts"]
+      "affects": [
+        "packages/relay/src/rate-limiter.ts",
+        "packages/relay/src/sqlite-index.ts",
+        "packages/db/src/schema/relay.ts"
+      ]
     },
     {
       "number": 13,
@@ -4244,6 +4248,38 @@
       "affects": ["apps/server/src/services/core/streams/**"],
       "amends": [264, 265, 189, 190, 204, 207],
       "supersedes": 206
+    },
+    {
+      "id": "260806-222535",
+      "slug": "team-roster-is-a-read-surface-over-existing-identity-stores",
+      "title": "The Team roster is a read-surface aggregation over existing identity stores",
+      "status": "draft",
+      "created": "2026-08-06",
+      "specSlug": "identity-consistency"
+    },
+    {
+      "id": "260806-222545",
+      "slug": "identity-kind-drives-shape-fill-and-badge",
+      "title": "Identity kind drives shape, fill and badge in IdentityAvatar",
+      "status": "draft",
+      "created": "2026-08-06",
+      "specSlug": "identity-consistency"
+    },
+    {
+      "id": "260806-222546",
+      "slug": "imageurl-is-the-fourth-render-cache-field-stored-locally",
+      "title": "imageUrl is the fourth render-cache field, stored locally behind a sync-ready seam",
+      "status": "draft",
+      "created": "2026-08-06",
+      "specSlug": "identity-consistency"
+    },
+    {
+      "id": "260806-222547",
+      "slug": "a-profile-is-a-drawer-to-view-and-a-settings-tab-to-edit",
+      "title": "A profile is a drawer to view and a settings tab to edit",
+      "status": "draft",
+      "created": "2026-08-06",
+      "specSlug": "identity-consistency"
     }
   ]
 }
