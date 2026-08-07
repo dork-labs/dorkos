@@ -15,14 +15,39 @@ const NOTHING_KNOWN: ReadonlyMap<string, RosterAgentInfo> = new Map();
 const AgentInfoContext = createContext<ReadonlyMap<string, RosterAgentInfo>>(NOTHING_KNOWN);
 
 /**
+ * Hand a ready-made answer down, without reading anything.
+ *
+ * The dumb half of {@link RoomAgentInfoProvider}, split out so a surface that
+ * already HAS the answer can supply it — the Dev Playground, which benches the
+ * real `RoomEntryRow` against seeded data and has no fleet to read. Keeping it
+ * separate is what stops the fetching provider growing a dev-only escape hatch
+ * that then has to be reasoned about in production.
+ *
+ * @param props.known - How each agent runs, keyed by `agentRef`.
+ * @param props.children - The surface this answers for.
+ */
+export function AgentInfoProvider({
+  known,
+  children,
+}: {
+  known: ReadonlyMap<string, RosterAgentInfo>;
+  children: ReactNode;
+}) {
+  return <AgentInfoContext.Provider value={known}>{children}</AgentInfoContext.Provider>;
+}
+
+/**
  * Read the fleet once for a whole room, and hand the answer down.
  *
  * **A context rather than a prop, because a prop cannot get there.** A mention
- * pill is rendered by Streamdown, which memoises each parsed block of a message
- * and keeps the render it already produced — so a room whose messages were
- * drawn before the fleet answered never redrew its pills, and every card came
- * up bare. Context is the one channel that reaches a consumer inside a bailed
- * out subtree, which is exactly the situation here.
+ * pill is rendered by Streamdown, and Streamdown's own top-level memo
+ * comparator (2.5.0) does not include `components` — it compares `children`,
+ * the plugin arrays, and a dozen display options, and stops. A rebuilt
+ * component map therefore re-renders nothing below it, so a room whose messages
+ * were drawn before the fleet answered never redrew its pills and every card
+ * came up bare. (Its inner per-block memo DOES compare `components`; the outer
+ * bail-out is what the update never gets past.) Context is the one channel that
+ * reaches a consumer inside a bailed-out subtree, and it costs no re-parse.
  *
  * **One query pair per room, never one per pill.** Both reads are the shared
  * cache entries the sidebar and every agent picker already keep warm
@@ -46,8 +71,8 @@ export function RoomAgentInfoProvider({ children }: { children: ReactNode }) {
   const mesh = useMeshAgentPaths();
   const paths = useMemo(() => (mesh.data?.agents ?? []).map((a) => a.projectPath), [mesh.data]);
   const resolved = useResolvedAgents(paths);
-  const value = useMemo(() => agentInfoByRef(paths, resolved.data ?? {}), [paths, resolved.data]);
-  return <AgentInfoContext.Provider value={value}>{children}</AgentInfoContext.Provider>;
+  const known = useMemo(() => agentInfoByRef(paths, resolved.data ?? {}), [paths, resolved.data]);
+  return <AgentInfoProvider known={known}>{children}</AgentInfoProvider>;
 }
 
 /**

@@ -57,12 +57,13 @@ function handleLabel(children: ReactNode): string {
 export function MentionPillRenderer({ authors, authorId, children }: MentionPillRendererProps) {
   const author = authorId ? authors.get(authorId) : undefined;
   // How this agent runs, if the room's provider could find out. Read from a
-  // context rather than off the roster because Streamdown keeps the render it
-  // already produced for a block of a message: a prop arriving after the pill
-  // was first drawn never reaches it, and every card in a room opened before
-  // the fleet answered would come up bare. `undefined` for a human, for an
-  // agent nothing resolved, and outside a provider — all one answer, because
-  // all three mean the same thing here: draw no chip.
+  // context rather than off the roster because Streamdown's top-level memo
+  // comparator (2.5.0) does not include `components`: a rebuilt component map
+  // re-renders nothing below it, so a prop arriving after the pill was drawn
+  // never reaches it and every card in a room opened before the fleet answered
+  // comes up bare. `undefined` for a human, for an agent nothing resolved, and
+  // outside a provider — all one answer, because all three mean the same thing
+  // here: draw no chip.
   const agent = useAgentInfo(author?.agentRef);
 
   if (!author) {

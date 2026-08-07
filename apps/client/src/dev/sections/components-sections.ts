@@ -303,6 +303,24 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
       'origin',
     ],
   },
+  {
+    id: 'a-mention-in-a-real-message',
+    title: 'A mention in a real message',
+    page: 'components',
+    category: 'Data Display',
+    keywords: [
+      'mention',
+      'identity',
+      'hover',
+      'card',
+      'agent',
+      'runtime',
+      'model',
+      'roster',
+      'room',
+      'entry',
+    ],
+  },
   // ChatPrimitivesShowcases
   {
     id: 'collapsiblecard',

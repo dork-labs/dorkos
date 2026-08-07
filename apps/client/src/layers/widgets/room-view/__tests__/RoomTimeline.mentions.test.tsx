@@ -9,10 +9,23 @@
  * manifests, joined on `agentRef`. The claim under test is that the join
  * actually reaches the card — and that an agent the fleet cannot account for
  * gets NO chip rather than a placeholder one.
+ *
+ * **Absence is asserted structurally, on the card's own chip row, never as a
+ * missing string.** "Does not contain 'Claude Code'" is satisfied by any
+ * placeholder that happens to say something else — a seeded `{ runtime:
+ * 'Unknown' }` passed every test in this file when they were written that way.
+ * `chipRow` is what makes the assertion about chips rather than about wording.
  */
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import {
+  render,
+  screen,
+  cleanup,
+  waitFor,
+  waitForElementToBeRemoved,
+  within,
+} from '@testing-library/react';
+import userEvent, { type UserEvent } from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
@@ -40,8 +53,27 @@ beforeAll(() => {
 });
 afterEach(cleanup);
 
-/** Where the agent behind `@bo` lives — the path both sides derive its handle from. */
+/** Where each agent lives — the path both sides derive its handle from. */
 const BO_PATH = '/w/bo';
+const GONE_PATH = '/w/gone';
+
+function agentMember(id: string, displayName: string, path: string): RoomRosterEntry {
+  return {
+    roomId: 'room-1',
+    authorId: id,
+    responseMode: 'always',
+    joinedAt: '2026-08-06T09:00:00.000Z',
+    lastReadSeq: 0,
+    origin: 'local',
+    author: {
+      id,
+      kind: 'agent',
+      displayName,
+      mentionHandle: id,
+      agentRef: agentAuthorRef(path),
+    },
+  };
+}
 
 const MEMBERS: RoomRosterEntry[] = [
   {
@@ -53,25 +85,12 @@ const MEMBERS: RoomRosterEntry[] = [
     origin: 'local',
     author: { id: 'ana', kind: 'human', displayName: 'Ana', mentionHandle: 'ana' },
   },
-  {
-    roomId: 'room-1',
-    authorId: 'bo',
-    responseMode: 'always',
-    joinedAt: '2026-08-06T09:00:00.000Z',
-    lastReadSeq: 0,
-    origin: 'local',
-    author: {
-      id: 'bo',
-      kind: 'agent',
-      displayName: 'Bo',
-      mentionHandle: 'bo',
-      agentRef: agentAuthorRef(BO_PATH),
-    },
-  },
+  agentMember('bo', 'Bo', BO_PATH),
+  agentMember('gone', 'Gone', GONE_PATH),
 ];
 
-/** One message that mentions Bo, spanned by the server exactly as it would be. */
-const TEXT = 'cc @bo';
+/** One message mentioning both agents, spanned by the server exactly as it would be. */
+const TEXT = 'cc @bo and @gone';
 const ENTRY: RoomEntry = {
   roomId: 'room-1',
   seq: 1,
@@ -79,8 +98,11 @@ const ENTRY: RoomEntry = {
   authorId: 'ana',
   kind: 'post',
   body: { text: TEXT },
-  mentions: ['bo'],
-  mentionSpans: [{ offset: TEXT.indexOf('@bo'), length: 3, authorId: 'bo' }],
+  mentions: ['bo', 'gone'],
+  mentionSpans: [
+    { offset: TEXT.indexOf('@bo'), length: '@bo'.length, authorId: 'bo' },
+    { offset: TEXT.indexOf('@gone'), length: '@gone'.length, authorId: 'gone' },
+  ],
   sessionId: null,
   cascadeRoot: 'entry-1',
   cascadeDepth: 0,
@@ -94,7 +116,7 @@ function renderTimeline(overrides: Partial<Transport>) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
   });
-  return render(
+  render(
     <RoomTimeline
       roomId="room-1"
       roomName="general"
@@ -120,21 +142,56 @@ function renderTimeline(overrides: Partial<Transport>) {
   );
 }
 
-/** The mention pill inside the message body — see `RoomEntryRow.mentions.test.tsx` for why it is queried this way. */
-function pill(): HTMLElement {
+/** A resolved mention pill by the name it drew — see `RoomEntryRow.mentions.test.tsx` for why it is queried this way. */
+function pillFor(displayName: string): HTMLElement {
   const content = document.querySelector('[data-slot="message-content"]') as HTMLElement;
-  return content.querySelector('[data-kind]') as HTMLElement;
+  const found = [...content.querySelectorAll<HTMLElement>('[data-kind]')].find(
+    (candidate) => candidate.textContent === displayName
+  );
+  if (!found) throw new Error(`fixture error: no resolved mention pill for "${displayName}"`);
+  return found;
 }
 
-/** Open the card over the mention and wait for it to be there. */
-async function openCard() {
-  const user = userEvent.setup();
-  await user.hover(pill());
+/** The open identity card. */
+function card(): HTMLElement {
+  return document.querySelector('[data-slot="identity-hover-card"]') as HTMLElement;
+}
+
+/**
+ * The card's row of fact chips, found by what it is NOT.
+ *
+ * The card is three stacked rows — the identity header (which holds the
+ * avatar), the chips, and the footer (which holds "View profile") — and only
+ * the outermost carries a `data-slot`. Selecting the chip row by elimination
+ * keeps this test off the card's class names and, more importantly, makes
+ * "no chips" an assertion about the row's CHILDREN rather than about which
+ * words happen to be missing.
+ */
+function chipRow(): HTMLElement {
+  const row = [...card().children].find(
+    (child) =>
+      child.querySelector('[data-slot="identity-avatar"]') === null &&
+      !child.textContent?.includes('View profile')
+  );
+  if (!row) throw new Error('the identity card no longer has a chip row');
+  return row as HTMLElement;
+}
+
+/** Hover a pill and wait for its card. */
+async function openCardOn(user: UserEvent, displayName: string) {
+  await user.hover(pillFor(displayName));
   await screen.findByText('View profile');
+}
+
+/** Close whatever card is open, so the next one can be opened cleanly. */
+async function closeCard(user: UserEvent, displayName: string) {
+  await user.unhover(pillFor(displayName));
+  await waitForElementToBeRemoved(() => screen.queryByText('View profile'));
 }
 
 describe('mention hover card — agent details', () => {
   it('names the runtime and model the fleet holds for the agent mentioned', async () => {
+    const user = userEvent.setup();
     renderTimeline({
       listMeshAgentPaths: vi.fn().mockResolvedValue({ agents: [{ projectPath: BO_PATH }] }),
       resolveAgents: vi
@@ -144,64 +201,79 @@ describe('mention hover card — agent details', () => {
 
     // The pill is drawn from the roster immediately and the fleet answers
     // afterwards, so this deliberately hovers first and then waits: it is the
-    // exact order that used to fail. Streamdown keeps the render it already
-    // produced for a block, so an answer arriving as a PROP never reached the
-    // pill at all and the card stayed bare for as long as the room was open.
-    await screen.findByText('Bo');
-    await openCard();
+    // exact order that used to fail. Streamdown's top-level memo comparator
+    // (2.5.0) does not include `components`, so a rebuilt component map
+    // re-renders nothing below it — an answer arriving as a PROP never reached
+    // the pill at all and the card stayed bare for as long as the room was
+    // open.
+    await openCardOn(user, 'Bo');
 
-    expect(await screen.findByText('Claude Code · opus')).toBeInTheDocument();
+    await waitFor(() => expect(chipRow().children).toHaveLength(1));
+    expect(within(chipRow()).getByText('Claude Code · opus')).toBeInTheDocument();
   });
 
   it('draws the runtime alone for an agent that inherits its runtime default model', async () => {
     // "Inherits the default" is a fact this client does not have — the default
     // is the server's, per runtime — so the model half is left off rather than
-    // guessed at.
+    // guessed at. One chip, and it says only the runtime.
+    const user = userEvent.setup();
     renderTimeline({
       listMeshAgentPaths: vi.fn().mockResolvedValue({ agents: [{ projectPath: BO_PATH }] }),
       resolveAgents: vi.fn().mockResolvedValue({ [BO_PATH]: { runtime: 'codex' } }),
     });
 
-    await screen.findByText('Bo');
-    await openCard();
+    await openCardOn(user, 'Bo');
 
-    expect(await screen.findByText('Codex')).toBeInTheDocument();
-    expect(screen.queryByText(/·/)).not.toBeInTheDocument();
+    await waitFor(() => expect(chipRow().children).toHaveLength(1));
+    expect(within(chipRow()).getByText('Codex')).toBeInTheDocument();
   });
 
-  it('shows the card with no chips at all when the fleet cannot account for the agent', async () => {
-    // The degradation that must never become a placeholder: mesh knows of no
-    // such agent, so nothing is drawn about how it runs — and the card is still
-    // there, still naming who was mentioned.
+  it('draws no chip for an agent the fleet has no manifest for', async () => {
+    // The null-manifest branch, run for real: mesh knows both directories and
+    // `resolveAgents` answers `null` for one of them.
+    //
+    // **Bo is the settle proof.** Asserting an absence against a render that
+    // has not finished is a test that passes for the wrong reason forever, so
+    // the resolved agent's chip is checked FIRST in the same render — once it
+    // is on screen, the fleet has answered for both, and Gone's empty chip row
+    // is a statement rather than a race.
+    const user = userEvent.setup();
     renderTimeline({
-      listMeshAgentPaths: vi.fn().mockResolvedValue({ agents: [] }),
-      resolveAgents: vi.fn().mockResolvedValue({}),
+      listMeshAgentPaths: vi
+        .fn()
+        .mockResolvedValue({ agents: [{ projectPath: BO_PATH }, { projectPath: GONE_PATH }] }),
+      resolveAgents: vi.fn().mockResolvedValue({
+        [BO_PATH]: { runtime: 'claude-code', model: 'opus' },
+        [GONE_PATH]: null,
+      }),
     });
 
-    await screen.findByText('Bo');
-    await openCard();
+    await openCardOn(user, 'Bo');
+    await waitFor(() => expect(within(chipRow()).getByText('Claude Code · opus')).toBeVisible());
+    await closeCard(user, 'Bo');
 
-    const card = document.querySelector('[data-slot="identity-hover-card"]') as HTMLElement;
-    expect(card).toHaveTextContent('@bo');
-    expect(card).not.toHaveTextContent('Claude Code');
-    expect(card).not.toHaveTextContent('Codex');
-    expect(card).not.toHaveTextContent('Unknown');
+    await openCardOn(user, 'Gone');
+    // Structural: no chips at all, whatever a placeholder might have said.
+    expect(chipRow().children).toHaveLength(0);
+    expect(card()).toHaveTextContent('@gone');
   });
 
-  it('leaves the agent undecorated when the manifests could not be read', async () => {
-    // A failed resolve costs the extra line and nothing else — the mention, the
+  it('leaves an agent undecorated when the manifests could not be read', async () => {
+    // A failed resolve costs the extra chip and nothing else — the mention, the
     // name and the handle are all still the roster's, which never needed the
-    // fleet to answer.
+    // fleet to answer. `retry: false` makes the rejection terminal, so once it
+    // has been called and settled there is nothing left to arrive.
+    const resolveAgents = vi.fn().mockRejectedValue(new Error('500'));
+    const user = userEvent.setup();
     renderTimeline({
       listMeshAgentPaths: vi.fn().mockResolvedValue({ agents: [{ projectPath: BO_PATH }] }),
-      resolveAgents: vi.fn().mockRejectedValue(new Error('500')),
+      resolveAgents,
     });
 
-    await screen.findByText('Bo');
-    await openCard();
+    await waitFor(() => expect(resolveAgents).toHaveBeenCalled());
+    await openCardOn(user, 'Bo');
 
-    const card = document.querySelector('[data-slot="identity-hover-card"]') as HTMLElement;
-    expect(card).toHaveTextContent('@bo');
-    expect(card).not.toHaveTextContent('Claude Code');
+    expect(chipRow().children).toHaveLength(0);
+    expect(card()).toHaveTextContent('@bo');
   });
 });
