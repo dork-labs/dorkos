@@ -27,6 +27,7 @@ export type {
 // --- Runtime-neutral session-state projection (ADR-0264) ---
 export {
   SessionStateProjector,
+  CAPABILITY_HOLD_PAUSE_GRACE_MS,
   getOrCreateProjector,
   peekProjector,
   disposeProjector,

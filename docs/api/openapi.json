@@ -899,6 +899,12 @@
           },
           "approval": {
             "$ref": "#/components/schemas/PendingApproval"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "timeout"
+            ]
           }
         },
         "required": [
