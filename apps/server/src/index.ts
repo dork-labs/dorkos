@@ -1509,6 +1509,18 @@ async function start() {
     if (env.DORKOS_TEST_RUNTIME) {
       app.locals.agentMcpServerService = agentMcpServerService;
     }
+    // Deleting an agent takes its MCP sign-ins with it (DOR-986): stored tokens,
+    // dynamic client registrations, cached bearers and their refresh timers. The
+    // manifest is already gone when this fires, so the sweep is by agent id.
+    const oauthForAgentDeletion = agentMcpOAuthService;
+    meshCore.onUnregister((agentId) => {
+      oauthForAgentDeletion.forgetAgent(agentId).catch((err: unknown) => {
+        logger.warn('[mcp-oauth] could not clear sign-ins for an unregistered agent', {
+          agentId,
+          reason: err instanceof Error ? err.message : String(err),
+        });
+      });
+    });
     // Re-prime the cache from disk for every enabled OAuth server so a token
     // survives a restart. Non-blocking: injection withholds until warm completes.
     warmMcpOAuthTokens(agentMcpOAuthService, agentMcpServerService, meshCore).catch(

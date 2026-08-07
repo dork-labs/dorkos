@@ -37,8 +37,10 @@ afterEach(async () => {
   for (const dir of tempDirs.splice(0)) await fs.rm(dir, { recursive: true, force: true });
 });
 
-/** Write a manifest with one enabled http server (and its existing header). */
-async function setupWorkspace(): Promise<string> {
+/** Write a manifest with one enabled http server (and its existing headers). */
+async function setupWorkspace(
+  headers: Record<string, string> = { 'X-Existing': '1' }
+): Promise<string> {
   const projectPath = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-oauth-'));
   tempDirs.push(projectPath);
   const manifest: AgentManifest = {
@@ -59,8 +61,8 @@ async function setupWorkspace(): Promise<string> {
         enabled: true,
         connection: {
           transport: 'http',
-          url: 'https://mcp.example/mcp',
-          headers: { 'X-Existing': '1' },
+          url: REMOTE_URL,
+          headers,
           authKind: 'oauth2',
         },
         addedAt: '2026-08-06T00:00:00.000Z',
@@ -72,11 +74,21 @@ async function setupWorkspace(): Promise<string> {
   return projectPath;
 }
 
-/** A token provider that hands out `token` only for (AGENT_ID, REMOTE). */
-function providerWith(token: string | undefined): McpOAuthTokenProvider {
+/** The URL the manifest fixture declares for the remote server. */
+const REMOTE_URL = 'https://mcp.example/mcp';
+
+/** A token provider that hands out `token` only for (AGENT_ID, REMOTE) at its URL. */
+function providerWith(token: string | undefined): McpOAuthTokenProvider & {
+  forgotten: string[];
+} {
+  const forgotten: string[] = [];
   return {
-    getAccessToken: (agentId, serverName) =>
-      agentId === AGENT_ID && serverName === REMOTE ? token : undefined,
+    forgotten,
+    getAccessToken: (agentId, serverName, serverUrl) =>
+      agentId === AGENT_ID && serverName === REMOTE && serverUrl === REMOTE_URL ? token : undefined,
+    forgetServer: async (agentId, serverName) => {
+      forgotten.push(`${agentId}:${serverName}`);
+    },
   };
 }
 
@@ -113,7 +125,13 @@ describe('AgentMcpServerService — OAuth bearer injection', () => {
     expect(remote?.transport === 'http' ? remote.headers : undefined).toEqual({
       'X-Existing': '1',
     });
-    expect(remote && 'headers' in remote ? 'Authorization' in remote.headers! : false).toBe(false);
+    // Stated as a fact about a header map that must EXIST — the old spelling of
+    // this line was satisfied by `remote` being undefined, so a bug that dropped
+    // the server from injection entirely would have passed it (DOR-986).
+    expect(remote?.transport).toBe('http');
+    const headers = remote?.transport === 'http' ? remote.headers : undefined;
+    expect(headers).toBeDefined();
+    expect(Object.keys(headers!)).not.toContain('Authorization');
   });
 
   it('never injects a bearer with no token provider wired at all', async () => {
@@ -125,6 +143,95 @@ describe('AgentMcpServerService — OAuth bearer injection', () => {
     expect(remote?.transport === 'http' ? remote.headers : undefined).toEqual({
       'X-Existing': '1',
     });
+  });
+});
+
+describe('AgentMcpServerService — bearer injection is bound to the URL (DOR-986)', () => {
+  it('asks for the token under the entry’s CURRENT url, so a re-pointed server gets nothing', async () => {
+    const projectPath = await setupWorkspace();
+    // This provider only answers for the URL the manifest declared. A service that
+    // looks a token up by name alone would still get one here.
+    const service = new AgentMcpServerService({
+      agents: new FakeLocator(projectPath),
+      tokenProvider: {
+        getAccessToken: (_agentId, _name, serverUrl) =>
+          serverUrl === 'https://somewhere-else.example/mcp' ? 'stale-token' : undefined,
+        forgetServer: async () => {},
+      },
+    });
+
+    const remote = service.injectableServersForCwd(projectPath)[REMOTE];
+    // Reverting `getAccessToken(agentId, name, connection.url)` to the two-argument
+    // form makes the provider's URL check unreachable and injects `stale-token`.
+    expect(remote?.transport === 'http' ? remote.headers : undefined).toEqual({
+      'X-Existing': '1',
+    });
+  });
+
+  it('replaces a differently-cased authorization header instead of sending both', async () => {
+    const projectPath = await setupWorkspace({ authorization: 'Bearer manual-old' });
+    const service = new AgentMcpServerService({
+      agents: new FakeLocator(projectPath),
+      tokenProvider: providerWith('live-token'),
+    });
+
+    const remote = service.injectableServersForCwd(projectPath)[REMOTE];
+    const headers = remote?.transport === 'http' ? remote.headers : undefined;
+    // HTTP header names are case-insensitive, object keys are not: without the
+    // case-insensitive strip this map carries BOTH `authorization` and
+    // `Authorization`, and undici sends two — the server picks whichever it likes.
+    expect(headers).toEqual({ Authorization: 'Bearer live-token' });
+  });
+});
+
+describe('AgentMcpServerService — credentials follow the server (DOR-986)', () => {
+  it('clears the stored sign-in when the server is removed', async () => {
+    const projectPath = await setupWorkspace();
+    const tokenProvider = providerWith('live-token');
+    const service = new AgentMcpServerService({
+      agents: new FakeLocator(projectPath),
+      tokenProvider,
+    });
+
+    await service.remove(AGENT_ID, REMOTE);
+
+    // Reverting the `forgetOAuthCredentials` call in `remove` leaves the encrypted
+    // token, the client registration and a live refresh timer behind — the row is
+    // gone from the UI and the credential is not.
+    expect(tokenProvider.forgotten).toEqual([`${AGENT_ID}:${REMOTE}`]);
+  });
+
+  it('clears the stored sign-in when the server is re-pointed at a new url', async () => {
+    const projectPath = await setupWorkspace();
+    const tokenProvider = providerWith('live-token');
+    const service = new AgentMcpServerService({
+      agents: new FakeLocator(projectPath),
+      tokenProvider,
+    });
+
+    await service.update({
+      agentId: AGENT_ID,
+      name: REMOTE,
+      connection: { transport: 'http', url: 'https://elsewhere.example/mcp', headers: {} },
+    });
+
+    expect(tokenProvider.forgotten).toEqual([`${AGENT_ID}:${REMOTE}`]);
+  });
+
+  it('keeps the sign-in when an update leaves the url alone', async () => {
+    const projectPath = await setupWorkspace();
+    const tokenProvider = providerWith('live-token');
+    const service = new AgentMcpServerService({
+      agents: new FakeLocator(projectPath),
+      tokenProvider,
+    });
+
+    await service.disable(AGENT_ID, REMOTE);
+    await service.enable(AGENT_ID, REMOTE);
+
+    // The discriminator: clearing on every update would sign the operator out
+    // every time they toggled a server off and on again.
+    expect(tokenProvider.forgotten).toEqual([]);
   });
 });
 
