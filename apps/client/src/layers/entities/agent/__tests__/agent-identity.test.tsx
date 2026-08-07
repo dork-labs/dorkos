@@ -83,6 +83,24 @@ describe('AgentAvatar', () => {
     expect(avatar.querySelector('.bg-emerald-500')).not.toBeInTheDocument();
   });
 
+  it('rings the disc in the theme status tokens, not raw palette greens', () => {
+    // The ring sits ~2px from the working dot. Two greens that disagree by a
+    // shade read as a rendering bug, not as two facts.
+    const { container } = render(<AgentAvatar color="#fff" emoji="🤖" healthStatus="active" />);
+
+    expect(avatarOf(container).className).toContain('ring-status-success/60');
+    expect(avatarOf(container).className).not.toContain('ring-emerald-500');
+  });
+
+  it('lets a caller drop the badge without being able to touch the silhouette', () => {
+    // The sanctioned opt-out for an agent-only list: keep the square, lose a
+    // column of identical glyphs. `shape` stays unreachable either way.
+    const { container } = render(<AgentAvatar color="#6366f1" emoji="🔍" badge={null} />);
+
+    expect(avatarOf(container).querySelector('.lucide-bot')).not.toBeInTheDocument();
+    expect(avatarOf(container)).toHaveClass('rounded-lg');
+  });
+
   it('shows health ring without tasks for non-active statuses', () => {
     const { container } = render(<AgentAvatar color="#fff" emoji="🤖" healthStatus="inactive" />);
     const avatar = avatarOf(container);
@@ -96,8 +114,10 @@ describe('AgentAvatar', () => {
   });
 
   it('pulses for an agent that is working, whatever the mesh thinks of its health', () => {
-    // Health is "can I reach it"; working is "is it doing something". A caller
-    // that knows the second can say so without inventing a health status.
+    // Health is "when did we last hear from it" (`active` = within the hour);
+    // working is "is it doing something right now". The default maps the first
+    // onto the second because the pre-refactor dot did, but a caller that
+    // actually knows can say so without inventing a health status.
     const { container } = render(<AgentAvatar color="#fff" emoji="🤖" working />);
     const avatar = avatarOf(container);
 
