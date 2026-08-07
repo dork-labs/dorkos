@@ -2,6 +2,7 @@
 covers:
   - 'feat(client): MCP servers become cards that say what is happening and what to do (DOR-1005)'
   - 'fix(client): the card panel stops guessing — about order, about origin, and about what it can undo (DOR-1005)'
+  - 'fix(client): one custody statement, and no Details that open onto nothing (DOR-1005)'
 ---
 
 ### Changed
@@ -24,13 +25,14 @@ covers:
   "Uses your key", "Off". A server nothing has checked yet now says "Not checked yet" instead
   of spinning on "Connecting…" forever. The exact error a broken server gave has moved into
   Details, where you can read it when you want it (DOR-1005).
-- Signing in shows a short, calm note first: your sign-in stays on this computer, you approve
-  it on the other service's own site, DorkOS keeps the key here, the agent never sees it, and
-  removing the server removes the key. There is now a Cancel button if you change your mind
-  (DOR-1005).
-- Every card has a Details section. It says how the server signs in, where it lives — the web
+- Signing in shows a short, calm note first: your sign-in stays on this computer, the key is
+  kept here, and the agent never sees it. It is said once, in one box, whether you are signing
+  in from settings or from a card your agent put in the chat. There is now a Cancel button if
+  you change your mind (DOR-1005).
+- Cards have a Details section. It says how the server signs in, where it lives — the web
   address for a remote one, the command for one on your computer — and, for a broken one, the
-  exact error. It only shows what it actually knows (DOR-1005).
+  exact error. It only shows what it actually knows, and a card with nothing to show does not
+  offer Details at all (DOR-1005).
 - The on/off switch is on every card now, not just some. A server you have turned off is
   dimmed with its switch off, and flipping it back on is all there is to it (DOR-1005).
 - Adding a server the project already had now says what you get — "Manage it here to enable,

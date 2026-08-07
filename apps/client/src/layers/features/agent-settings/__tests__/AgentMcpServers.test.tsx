@@ -264,11 +264,46 @@ describe('AgentMcpServers', () => {
     const { container } = renderComponent(transport);
 
     await waitFor(() => expect(within(container).getByText('my-server')).toBeInTheDocument());
-    // No plugin badge, and no raw-id row — there was nothing to parse, so nothing
-    // was renamed and there is no second name to disclose.
+    // No plugin badge and no second name to disclose — there was nothing to parse,
+    // so nothing was renamed.
     expect(within(container).queryByText('plugin')).not.toBeInTheDocument();
-    fireEvent.click(within(container).getByRole('button', { name: 'Details' }));
     expect(within(container).queryByText('Raw id')).not.toBeInTheDocument();
+  });
+
+  it('offers no Details at all on a card that would have nothing to put in them', async () => {
+    // The exact shape the honest-scope fix creates, and the shape of EVERY card
+    // from a runtime that reports no scope (OpenCode): no scope, no plugin, an
+    // unparsed name, no error. A card DorkOS does not manage has no connection to
+    // describe either, so all three possible rows are absent — and the affordance
+    // used to expand into an empty bordered box with a Collapse control under it.
+    const transport = createMockTransport({
+      listAgentMcpServers: vi.fn().mockResolvedValue([]),
+      getMcpConfig: vi.fn().mockResolvedValue({
+        servers: [{ name: 'my-server', type: 'stdio', status: 'connected' }],
+      }),
+    });
+    const { container } = renderComponent(transport);
+
+    await waitFor(() => expect(within(container).getByText('my-server')).toBeInTheDocument());
+    expect(within(container).queryByRole('button', { name: 'Details' })).not.toBeInTheDocument();
+  });
+
+  it('still offers Details when there IS something to show — a scope, or an error', async () => {
+    // The other half, so the fix above cannot be satisfied by dropping Details
+    // everywhere: a card with any one row keeps the affordance.
+    const transport = createMockTransport({
+      listAgentMcpServers: vi.fn().mockResolvedValue([]),
+      getMcpConfig: vi.fn().mockResolvedValue({
+        servers: [
+          { name: 'scoped', type: 'stdio', status: 'connected', scope: 'project' },
+          { name: 'broken', type: 'stdio', status: 'failed', error: 'ECONNREFUSED' },
+        ],
+      }),
+    });
+    const { container } = renderComponent(transport);
+
+    await waitFor(() => expect(within(container).getByText('scoped')).toBeInTheDocument());
+    expect(within(container).getAllByRole('button', { name: 'Details' })).toHaveLength(2);
   });
 
   it('renders the empty state when there are no managed or discovered servers', async () => {
@@ -1098,14 +1133,28 @@ describe('AgentMcpServers', () => {
       name: /Open the sign-in page for granola/i,
     });
     expect(link).toHaveAttribute('href', 'https://auth.example/authorize?x=1');
+    // ONE custody statement, not two. The trust treatment WRAPS the server's
+    // sentence; it was briefly rendered as a second panel above it, which left two
+    // stacked paragraphs saying nearly the same thing — the duplicate-disclosure
+    // pattern DOR-1004 removed from the agent's prose. The server's sentence
+    // appears exactly once, and it appears INSIDE the panel that carries the
+    // shield heading.
+    expect(
+      within(container).getAllByText(/DorkOS keeps the resulting token encrypted/i)
+    ).toHaveLength(1);
+    const trustHeading = within(container).getByText('Your sign-in stays on this computer.');
+    expect(trustHeading.parentElement).toContainElement(disclosure);
     // Consent ORDER, not mere co-presence: the custody sentence must precede the
     // link in the document, so a person reads what happens to their token before
     // the button that starts it. Swapping the two in the panel reddens this;
     // asserting both are present would not.
     expect(disclosure.compareDocumentPosition(link)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    // And focus is on the disclosure, not lost to the body, now that the button
-    // the person pressed has unmounted.
-    expect(disclosure).toHaveFocus();
+    // And focus is on the custody panel — not lost to the body, now that the button
+    // the person pressed has unmounted. The panel rather than the sentence inside
+    // it, so the focus ring outlines the one box being read; the assertion still
+    // proves the consent text is what focus landed on.
+    expect(document.activeElement).toContainElement(disclosure);
+    expect(document.activeElement).not.toBe(document.body);
 
     // Open the link → waiting → poll connected → success copy.
     fireEvent.click(link);

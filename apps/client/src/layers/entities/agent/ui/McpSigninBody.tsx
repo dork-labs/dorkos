@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { CheckCircle2, ExternalLink, Loader2 } from 'lucide-react';
+import { CheckCircle2, ExternalLink, Loader2, ShieldCheck } from 'lucide-react';
 import { Button } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import type { McpSigninFlow } from '../model/use-mcp-signin-flow';
@@ -44,6 +44,21 @@ function connectedCopy(toolCount: number | null): string {
 }
 
 /**
+ * What the trust panel says when the server sent no disclosure of its own.
+ *
+ * The server always composes one today, so this is the type's tail rather than a
+ * path a person is expected to reach — but a custody panel with a blank second
+ * line would be worse than any wording, so it carries the founder-approved
+ * sentence. It promises only what ships: removing the server is the undo, because
+ * there is no sign-out route yet.
+ *
+ * @param serverName - The provider whose site the person will approve on.
+ */
+function fallbackCustody(serverName: string): string {
+  return `You approve access on ${serverName}'s own site. DorkOS keeps the resulting key here — the agent never sees it, and removing the server removes the key.`;
+}
+
+/**
  * The copy the polite live region announces for the steps that have no control
  * of their own to move focus to. `null` for `idle`, and for the two steps that
  * own their own announcement: `disclosure` (focus moves onto it) and `failed`
@@ -81,6 +96,15 @@ function politeCopy(flow: McpSigninFlow): React.ReactNode {
  * polling, and a terminal success or error. Reading order is the consent order —
  * the disclosure sits above the link.
  *
+ * **The custody statement is made exactly once, here.** The trust treatment — the
+ * shield, the success tint, the bold "stays on this computer" — WRAPS the
+ * server's own sentence rather than sitting above it. It was briefly added above
+ * instead, and the result was two stacked paragraphs saying nearly the same
+ * thing in two different boxes: the duplicate-disclosure pattern DOR-1004
+ * removed from the agent's prose for exactly this reason. Because both surfaces
+ * that can ask for a sign-in render this component, absorbing it here is what
+ * makes "one disclosure" true in the settings card and the chat card alike.
+ *
  * ONE component for both places a person can be asked to sign in — the managed
  * server row in settings, and the card an agent draws in the conversation
  * (DOR-1004) — so the words of a consent disclosure cannot differ depending on
@@ -94,9 +118,13 @@ function politeCopy(flow: McpSigninFlow): React.ReactNode {
  * unhidden) together with its text is not reliably announced. An empty div costs
  * no height, and callers space their lines with margins rather than a gap so the
  * empty region reserves nothing. And when the disclosure arrives, focus moves
- * onto the custody sentence: the control the person pressed may unmount at that
+ * onto the custody panel: the control the person pressed may unmount at that
  * moment, so without this their focus falls to the document body and the consent
- * text they must read first is never reached.
+ * text they must read first is never reached. The panel is the focus target
+ * rather than the sentence inside it, so the focus ring outlines the one box a
+ * person is being asked to read — a ring drawn around the inner paragraph looked
+ * like a second, nested disclosure, which is the very thing this surface exists
+ * to avoid.
  */
 export function McpSigninBody({
   flow,
@@ -106,7 +134,7 @@ export function McpSigninBody({
   connectedActions,
 }: McpSigninBodyProps) {
   const { state } = flow;
-  const disclosureRef = useRef<HTMLParagraphElement>(null);
+  const disclosureRef = useRef<HTMLDivElement>(null);
   const onDisclosure = state.step === 'disclosure';
 
   useEffect(() => {
@@ -121,13 +149,19 @@ export function McpSigninBody({
 
       {onDisclosure && (
         <div className={cn('mt-1 space-y-2', className)}>
-          <p
+          <div
             ref={disclosureRef}
             tabIndex={-1}
-            className="bg-muted rounded-md px-3 py-2 text-xs leading-relaxed focus-visible:ring-2"
+            className="border-status-success-border bg-status-success-bg text-status-success-fg flex items-start gap-2 rounded-md border px-3 py-2 focus-visible:ring-2"
           >
-            {state.disclosure}
-          </p>
+            <ShieldCheck className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <div className="min-w-0 space-y-1">
+              <p className="text-xs font-semibold">Your sign-in stays on this computer.</p>
+              <p className="text-xs leading-relaxed">
+                {state.disclosure ?? fallbackCustody(serverName)}
+              </p>
+            </div>
+          </div>
           {state.authorizeUrl && (
             <Button asChild size="sm" className="gap-1.5 focus-visible:ring-2">
               <a

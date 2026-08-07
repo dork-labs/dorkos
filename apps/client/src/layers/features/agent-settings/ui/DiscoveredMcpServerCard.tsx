@@ -125,6 +125,18 @@ export function DiscoveredMcpServerCard({
 
   const parsed = parseMcpServerName(entry.name);
   const scope = deriveDiscoveredScope(entry, parsed);
+  // Whether Details would have anything in it. A card DorkOS does not manage has
+  // no connection to describe, so only three of the grid's rows can appear here —
+  // and all three can be absent at once. That is not a rare shape: it is exactly
+  // what an unknown scope now produces, and it is EVERY card from a runtime that
+  // reports no scope at all (OpenCode). Without this the card offered "Details"
+  // that expanded into an empty bordered box with a Collapse control under it.
+  // Listed row by row rather than collapsed to `scope !== null`, so adding a row
+  // above forces this to be updated with it.
+  const hasSourceRow = scope !== null;
+  const hasRawIdRow = parsed.rawName !== parsed.displayName;
+  const hasErrorRow = entry.error !== undefined;
+  const hasAnyDetails = hasSourceRow || hasRawIdRow || hasErrorRow;
 
   if (pending) {
     return (
@@ -200,13 +212,15 @@ export function DiscoveredMcpServerCard({
         ) : undefined
       }
       details={
-        <McpServerCardDetails
-          scope={scope}
-          pluginName={parsed.pluginName}
-          rawName={parsed.rawName}
-          displayName={parsed.displayName}
-          error={entry.error}
-        />
+        hasAnyDetails ? (
+          <McpServerCardDetails
+            scope={scope}
+            pluginName={parsed.pluginName}
+            rawName={parsed.rawName}
+            displayName={parsed.displayName}
+            error={entry.error}
+          />
+        ) : undefined
       }
     />
   );

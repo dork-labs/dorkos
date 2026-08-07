@@ -101,7 +101,7 @@ function AttentionStatesSection() {
         </AtPanelWidth>
       </ShowcaseDemo>
 
-      <ShowcaseLabel>Signing in — the trust panel above the custody disclosure</ShowcaseLabel>
+      <ShowcaseLabel>Signing in — one custody statement, in its trust panel</ShowcaseLabel>
       <ShowcaseDemo>
         <AtPanelWidth>
           <McpServerCard
@@ -378,7 +378,7 @@ function ElsewhereStatesSection() {
   return (
     <PlaygroundSection
       title="MCP cards: from somewhere else"
-      description="Servers the runtime loads that DorkOS does not manage. Same anatomy, quieter surface, no switch — and one action: add it to this agent."
+      description="Servers the runtime loads that DorkOS does not manage. Same anatomy, quieter surface, no switch — and one action: add it to this agent. When the runtime will not say where a server came from, the card shows no badge and offers no Details, rather than guessing an origin or opening an empty box."
     >
       <ShowcaseLabel>From this project’s config</ShowcaseLabel>
       <ShowcaseDemo>
@@ -416,6 +416,22 @@ function ElsewhereStatesSection() {
                 displayName="context7"
               />
             }
+          />
+        </AtPanelWidth>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Origin unknown — no badge, and no Details to open</ShowcaseLabel>
+      <ShowcaseDemo>
+        <AtPanelWidth>
+          <McpServerCard
+            displayName="my-server"
+            rawName="my-server"
+            scope={null}
+            pluginName={null}
+            status="connected"
+            sentence="This agent’s runtime loads this server. Add it to manage it here."
+            managed={false}
+            actions={addAction('my-server')}
           />
         </AtPanelWidth>
       </ShowcaseDemo>

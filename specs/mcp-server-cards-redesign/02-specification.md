@@ -145,11 +145,22 @@ sentence:
 person is deciding whether to hand over an account.
 
 **Chosen.** The disclosure step gets a calm, success-tinted panel (theme status
-tokens, never a hardcoded green) with a `ShieldCheck` icon: **"Your sign-in stays on
-this computer."** then _"You approve access on &lt;Provider&gt;'s own site. DorkOS
-keeps the resulting key here — the agent never sees it, and you can sign out anytime."_
-The server-composed disclosure sentence still renders beneath it, verbatim and focused
-— the panel adds reassurance, it does not replace consent copy.
+tokens, never a hardcoded green) with a `ShieldCheck` icon and the bold line **"Your
+sign-in stays on this computer."**
+
+**The panel WRAPS the server's disclosure; it does not sit above it.** The server's
+sentence renders verbatim inside the panel, as the panel's own second line, and the
+panel is the focus target so the focus ring outlines the one box a person is being
+asked to read. The first build put the panel above the existing disclosure box, which
+left two stacked paragraphs saying nearly the same thing in two different boxes — the
+duplicate-disclosure pattern DOR-1004 removed from the agent's prose for exactly this
+reason. When no server sentence arrives, the panel's own copy stands in: "You approve
+access on &lt;Provider&gt;'s own site. DorkOS keeps the resulting key here — the agent
+never sees it, and removing the server removes the key."
+
+Because the treatment lives in `McpSigninBody`, which both the settings card and the
+chat card render, "one custody statement" is true on both surfaces by construction
+rather than by two components agreeing to behave.
 
 ### 2.6 Explicit expand/collapse, not a tappable card body
 
