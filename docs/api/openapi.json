@@ -6986,6 +6986,13 @@
                   "connected",
                   "needs-auth"
                 ]
+              },
+              "authClientOrigin": {
+                "type": "string",
+                "enum": [
+                  "dcr",
+                  "manual"
+                ]
               }
             }
           }
@@ -16725,6 +16732,77 @@
                   },
                   "required": [
                     "ok"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{agentId}/mcp-servers/{name}/client": {
+      "put": {
+        "tags": [
+          "Mcp"
+        ],
+        "summary": "Use your own app credentials for a managed MCP server",
+        "description": "Store the app credentials a person got from a provider that will not let DorkOS register itself, so the next sign-in uses their app. Saving replaces the server’s stored sign-in, so the person signs in again afterwards.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "agentId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The id of the agent whose managed MCP servers this acts on."
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[a-zA-Z0-9_-]+$",
+                    "description": "The managed server name, unique within the agent."
+                  },
+                  "clientId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The client id (sometimes \"app id\") the provider issued."
+                  },
+                  "clientSecret": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The client secret, when the provider issued one."
+                  }
+                },
+                "required": [
+                  "agentId",
+                  "name",
+                  "clientId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Use your own app credentials for a managed MCP server result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "saved": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ],
+                      "description": "The credentials were stored; sign in again to use them."
+                    }
+                  },
+                  "required": [
+                    "saved"
                   ]
                 }
               }
