@@ -14,6 +14,7 @@ import type { CapabilityCatalog, SerializedCapability } from '@dorkos/shared/cap
 
 import {
   DEFAULT_CAPABILITY_LIMIT,
+  FULL_DETAIL_THRESHOLD,
   InvalidCursorError,
   listCapabilitiesInputSchema,
   projectCatalog,
@@ -50,6 +51,13 @@ const synthetic: CapabilityCatalog = {
 const parse = (input: unknown) => listCapabilitiesInputSchema.parse(input);
 const SORTED_IDS = [...synthetic.capabilities.map((c) => c.id)].sort();
 
+/**
+ * Mint a cursor by hand, mirroring the module's `${catalogVersion}:${offset}`
+ * encoding, so a test can hand it an offset the server would never produce.
+ */
+const cursorFor = (version: string, offset: number | string) =>
+  Buffer.from(`${version}:${offset}`, 'utf8').toString('base64url');
+
 describe('projectCatalog — default (no arguments)', () => {
   it('returns every capability, compact, bounded, with no schemas', () => {
     const res = projectCatalog(synthetic, parse({}));
@@ -57,6 +65,8 @@ describe('projectCatalog — default (no arguments)', () => {
     expect(res.total).toBe(6);
     expect(res.returned).toBe(6);
     expect(res.nextCursor).toBeUndefined();
+    // The one page with nothing to explain: compact, complete, unfiltered.
+    expect(res.guidance).toBeUndefined();
     for (const c of res.capabilities) {
       expect(c).toHaveProperty('summary');
       expect(c).not.toHaveProperty('inputSchema');
@@ -90,6 +100,37 @@ describe('projectCatalog — domain filter', () => {
 
   it('matches the whole domain segment, not a prefix (mc does not match mcp)', () => {
     expect(projectCatalog(synthetic, parse({ domain: 'mc' })).total).toBe(0);
+  });
+});
+
+// A zero-match filter passes the selectivity threshold trivially (0 <= 8), so it
+// arrives at the guidance builder looking like the most selective query there is.
+// Left to the general path it described full schemas for entries that do not
+// exist and told the agent to narrow a filter that already matches nothing.
+describe('projectCatalog — nothing matched', () => {
+  it.each([
+    ['a query', { query: 'zzzz-nomatch' }],
+    ['a domain', { domain: 'nosuchdomain' }],
+    ['both together', { domain: 'mcp', query: 'zebra' }],
+  ])('tells the caller to broaden when %s matches nothing', (_label, input) => {
+    const res = projectCatalog(synthetic, parse(input));
+    expect(res.total).toBe(0);
+    expect(res.capabilities).toEqual([]);
+    expect(res.guidance).toBe(
+      'Nothing matched. Broaden the query, drop the domain filter, or call with no arguments to see everything.'
+    );
+    // The two sentences that would be false here: schemas that are not there,
+    // and an instruction to narrow further.
+    expect(res.guidance).not.toMatch(/JSON Schema/i);
+    expect(res.guidance).not.toMatch(/narrow/i);
+  });
+
+  it('says the catalog is empty when there is nothing to match against', () => {
+    const empty = { ...synthetic, capabilities: [] };
+    const res = projectCatalog(empty, parse({}));
+    expect(res.total).toBe(0);
+    expect(res.guidance).toMatch(/catalog is empty/i);
+    expect(res.guidance).not.toMatch(/narrow/i);
   });
 });
 
@@ -142,7 +183,7 @@ describe('projectCatalog — pagination', () => {
   });
 
   it('clamps an out-of-range cursor to an empty tail rather than erroring', () => {
-    const beyond = Buffer.from('999', 'utf8').toString('base64url');
+    const beyond = cursorFor(synthetic.catalogVersion, 999);
     const page = projectCatalog(synthetic, parse({ cursor: beyond }));
     expect(page.returned).toBe(0);
     expect(page.total).toBe(6);
@@ -150,8 +191,58 @@ describe('projectCatalog — pagination', () => {
   });
 
   it('rejects a cursor that does not decode to an offset', () => {
-    const bad = Buffer.from('notanumber', 'utf8').toString('base64url');
+    const bad = cursorFor(synthetic.catalogVersion, 'notanumber');
     expect(() => projectCatalog(synthetic, parse({ cursor: bad }))).toThrow(InvalidCursorError);
+  });
+
+  // `Number('')` is 0, so before the digit check any base64url that decoded to
+  // an empty (or blank) offset was silently served as "start from the top".
+  it.each([
+    ['empty offset', ''],
+    ['blank offset', '  '],
+  ])('rejects a cursor whose offset is %s rather than reading it as 0', (_label, offset) => {
+    const bad = cursorFor(synthetic.catalogVersion, offset);
+    expect(() => projectCatalog(synthetic, parse({ cursor: bad }))).toThrow(InvalidCursorError);
+  });
+
+  it('rejects a cursor with no version binding at all', () => {
+    const bare = Buffer.from('2', 'utf8').toString('base64url');
+    expect(() => projectCatalog(synthetic, parse({ cursor: bare }))).toThrow(InvalidCursorError);
+  });
+
+  it('rejects a cursor minted against a different catalog version', () => {
+    const stale = projectCatalog(synthetic, parse({ limit: 2 })).nextCursor;
+    expect(stale).toBeTruthy();
+    // Same entries, different content hash: the offsets a cursor names are only
+    // meaningful against the catalog that minted it.
+    const rehashed = { ...synthetic, catalogVersion: 'synthetic-v2' };
+    expect(() => projectCatalog(rehashed, parse({ cursor: stale! }))).toThrow(InvalidCursorError);
+    expect(() => projectCatalog(rehashed, parse({ cursor: stale! }))).toThrow(/catalog changed/i);
+    // ...and still works against the catalog it was minted from.
+    expect(projectCatalog(synthetic, parse({ cursor: stale! })).offset).toBe(2);
+  });
+});
+
+describe('projectCatalog — a filter only auto-expands when it is selective', () => {
+  /** A synthetic catalog of `count` entries that ALL match `query:'widget'`. */
+  const broadCatalog = (count: number): CapabilityCatalog => ({
+    catalogVersion: `broad-${count}`,
+    generatedAt: '2026-08-06T00:00:00.000Z',
+    capabilities: Array.from({ length: count }, (_, i) =>
+      entry(`broad.n${String(i).padStart(2, '0')}`, `Widget ${i}`, 'A widget capability.')
+    ),
+  });
+
+  it(`stays compact when a filter leaves more than ${FULL_DETAIL_THRESHOLD} matches`, () => {
+    const res = projectCatalog(broadCatalog(FULL_DETAIL_THRESHOLD + 1), parse({ query: 'widget' }));
+    expect(res.total).toBe(FULL_DETAIL_THRESHOLD + 1);
+    expect(res.detail).toBe('compact');
+  });
+
+  it(`expands to full at exactly ${FULL_DETAIL_THRESHOLD} matches`, () => {
+    const res = projectCatalog(broadCatalog(FULL_DETAIL_THRESHOLD), parse({ query: 'widget' }));
+    expect(res.total).toBe(FULL_DETAIL_THRESHOLD);
+    expect(res.detail).toBe('full');
   });
 });
 
@@ -178,5 +269,50 @@ describe('projectCatalog — over the real composed catalog', () => {
     const res = projectCatalog(docsCatalog, parse({ domain: 'mcp' }));
     expect(res.total).toBe(mcpIds.length);
     expect(res.capabilities.map((c) => c.id).sort()).toEqual(mcpIds);
+  });
+
+  /** Every entry the projection's own filter would keep for `query`. */
+  const matching = (query: string) =>
+    docsCatalog.capabilities.filter((c) =>
+      `${c.id}\n${c.title}\n${c.description}`.toLowerCase().includes(query.toLowerCase())
+    );
+
+  it('a broad query stays compact and small instead of dumping every schema', () => {
+    // Guard the guard: this query has to be genuinely broad on the real catalog,
+    // or the selectivity rule is not what is under test here.
+    expect(matching('server').length).toBeGreaterThan(FULL_DETAIL_THRESHOLD);
+
+    const res = projectCatalog(docsCatalog, parse({ query: 'server' }));
+    expect(res.detail).toBe('compact');
+    // A capped or expensive page always says so; this one names the escape hatch.
+    expect(res.guidance).toBeDefined();
+    expect(res.guidance).toMatch(/detail:'full'/);
+
+    // The bound is derived from the payload this fix exists to stop serving by
+    // default, not guessed: the same query at explicit full detail.
+    const compactChars = JSON.stringify(res).length;
+    const fullChars = JSON.stringify(
+      projectCatalog(docsCatalog, parse({ query: 'server', detail: 'full' }))
+    ).length;
+    expect(compactChars).toBeLessThan(fullChars / 4);
+    // And an absolute ceiling, so a catalog that grows cheap-but-huge is caught too.
+    expect(compactChars).toBeLessThan(20_000);
+  });
+
+  it("honors an explicit detail:'full' on a broad query, and explains its cost", () => {
+    const res = projectCatalog(docsCatalog, parse({ query: 'server', detail: 'full' }));
+    expect(res.detail).toBe('full');
+    for (const c of res.capabilities) expect(c).toHaveProperty('inputSchema');
+    expect(res.guidance).toBeDefined();
+    expect(res.guidance).toMatch(/detail:'compact'/);
+  });
+
+  it('auto-expands a query selective enough to name one capability', () => {
+    const target = docsCatalog.capabilities[0]!;
+    expect(matching(target.id).length).toBeLessThanOrEqual(FULL_DETAIL_THRESHOLD);
+
+    const res = projectCatalog(docsCatalog, parse({ query: target.id }));
+    expect(res.detail).toBe('full');
+    expect(res.capabilities.map((c) => c.id)).toContain(target.id);
   });
 });

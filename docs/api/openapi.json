@@ -899,6 +899,12 @@
           },
           "approval": {
             "$ref": "#/components/schemas/PendingApproval"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "timeout"
+            ]
           }
         },
         "required": [
@@ -16286,10 +16292,10 @@
                 "compact",
                 "full"
               ],
-              "description": "'compact' returns id, title, tier, and a one-line summary; 'full' adds the model-facing description and the input and output JSON Schemas. Defaults to compact, or to full when a domain or query filter is set."
+              "description": "'compact' returns id, title, tier, and a one-line summary; 'full' adds the model-facing description and the input and output JSON Schemas. Defaults to compact, and to full only when a domain or query filter narrows the catalog to 8 matches or fewer. A broad filter stays compact — ask for full detail explicitly if you want it."
             },
             "required": false,
-            "description": "'compact' returns id, title, tier, and a one-line summary; 'full' adds the model-facing description and the input and output JSON Schemas. Defaults to compact, or to full when a domain or query filter is set.",
+            "description": "'compact' returns id, title, tier, and a one-line summary; 'full' adds the model-facing description and the input and output JSON Schemas. Defaults to compact, and to full only when a domain or query filter narrows the catalog to 8 matches or fewer. A broad filter stays compact — ask for full detail explicitly if you want it.",
             "name": "detail",
             "in": "query"
           },

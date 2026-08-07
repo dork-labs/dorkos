@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
+import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
 import type { SessionEvent, SessionListEvent } from '@dorkos/shared/session-stream';
 import { StaleResumeCursorError } from '@dorkos/shared/session-stream';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -319,5 +320,81 @@ describe("scenario 'error' — turn-failure contract (spec additional-agent-runt
       message: 'Simulated error from TestModeRuntime',
       code: 'simulated_error',
     });
+  });
+});
+
+// Purpose: `getMcpStatus` is what the managed-MCP OAuth browser spec reads to
+// decide whether a server row says "Needs sign-in" or "Connected", and it had no
+// unit coverage at all — inverting its bearer check left every suite green. The
+// e2e can only ever see the two states its own fixture produces, so the rule
+// itself is pinned here.
+describe('TestModeRuntime.getMcpStatus', () => {
+  /** A runtime wired to a resolver that returns `servers` for any cwd. */
+  const withServers = (servers: Record<string, McpAppServerConnection>) => {
+    const runtime = new TestModeRuntime();
+    runtime.setManagedMcpServers({ injectableServersForCwd: () => servers });
+    return runtime;
+  };
+
+  /** An injected managed-server connection with the given transport and headers. */
+  const connection = (
+    transport: 'http' | 'sse' | 'stdio',
+    headers: Record<string, string> | undefined
+  ) => ({ transport, url: 'http://localhost:1/mcp', headers }) as McpAppServerConnection;
+
+  const BEARER = { Authorization: 'Bearer tok-123' };
+
+  it.each([
+    { case: 'http with a bearer injected', transport: 'http', headers: BEARER, is: 'connected' },
+    {
+      case: 'http with no headers at all',
+      transport: 'http',
+      headers: undefined,
+      is: 'needs-auth',
+    },
+    { case: 'http with an empty header map', transport: 'http', headers: {}, is: 'needs-auth' },
+    {
+      case: 'http with a non-auth header',
+      transport: 'http',
+      headers: { 'X-Trace': 'yes' },
+      is: 'needs-auth',
+    },
+    // A bare scheme with no token behind it is not a credential.
+    {
+      case: 'http with an empty bearer token',
+      transport: 'http',
+      headers: { Authorization: 'Bearer ' },
+      is: 'needs-auth',
+    },
+    { case: 'sse with a bearer injected', transport: 'sse', headers: BEARER, is: 'connected' },
+    { case: 'sse with no bearer', transport: 'sse', headers: undefined, is: 'needs-auth' },
+    // stdio needs no token; it is connected whatever the headers say.
+    { case: 'stdio with no headers', transport: 'stdio', headers: undefined, is: 'connected' },
+    { case: 'stdio with a bearer anyway', transport: 'stdio', headers: BEARER, is: 'connected' },
+  ] as const)('reports $case as $is', ({ transport, headers, is }) => {
+    const status = withServers({ granola: connection(transport, headers) }).getMcpStatus(
+      '/projects/test'
+    );
+    expect(status).toEqual([{ name: 'granola', type: transport, status: is, scope: 'managed' }]);
+  });
+
+  it('is case-insensitive about the Authorization header name', () => {
+    const servers = { granola: connection('http', { authorization: 'Bearer tok-123' }) };
+    expect(withServers(servers).getMcpStatus('/x')?.[0]?.status).toBe('connected');
+  });
+
+  it('returns null when no managed-server resolver has been wired', () => {
+    expect(new TestModeRuntime().getMcpStatus('/projects/test')).toBeNull();
+  });
+
+  it('maps every managed server, not just the first', () => {
+    const servers = {
+      granola: connection('http', {}),
+      notion: connection('stdio', undefined),
+    };
+    expect(withServers(servers).getMcpStatus('/x')).toEqual([
+      { name: 'granola', type: 'http', status: 'needs-auth', scope: 'managed' },
+      { name: 'notion', type: 'stdio', status: 'connected', scope: 'managed' },
+    ]);
   });
 });

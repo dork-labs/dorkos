@@ -43,6 +43,17 @@ vi.mock('../../tools/QuestionPrompt', () => ({
   QuestionPrompt: () => <div data-testid="question-prompt" />,
 }));
 
+// Mock the approvals feature: ApprovalCard drives real decision mutations and
+// needs the query/transport providers, none of which this file is about. The
+// stub exposes the approval it was handed, which is the link under test.
+vi.mock('@/layers/features/approvals', () => ({
+  ApprovalCard: ({ approval }: { approval: { approvalId: string; capabilityTitle: string } }) => (
+    <div data-testid="approval-card" data-approval-id={approval.approvalId}>
+      {approval.capabilityTitle}
+    </div>
+  ),
+}));
+
 // Mock MessageContext
 vi.mock('../MessageContext', () => ({
   useMessageContext: () => ({
@@ -115,6 +126,60 @@ describe('AssistantMessageContent — compaction & local-command parts (DOR-118)
     render(<AssistantMessageContent message={makeMessage(parts)} />);
     expect(screen.getByTestId('compact-boundary-row')).toBeInTheDocument();
     expect(screen.getByText('Compacted context — 52.0k → 8.0k tokens')).toBeInTheDocument();
+  });
+});
+
+// DOR-963 shipped the projection of an agent's held approval into a
+// `capability_approval` part, and DOR-987 found the render branch that consumes
+// it had no test at all — the last unpinned link in the chain from the held tool
+// call to something a person can click.
+describe('AssistantMessageContent — inline capability approval', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  const HELD_APPROVAL = {
+    approvalId: 'appr-1',
+    capabilityId: 'mcp.add',
+    capabilityTitle: 'Add an MCP server',
+    tier: 'destructive' as const,
+    summary: 'Prober wants to run "Add an MCP server"',
+    hasAgentPath: true,
+    requestedAt: '2026-08-06T00:00:00.000Z',
+    expiresAt: '2026-08-06T02:00:00.000Z',
+  };
+
+  it('renders a live capability_approval part as the same card the dashboard shows', () => {
+    render(
+      <AssistantMessageContent
+        message={makeMessage([{ type: 'capability_approval' as const, approval: HELD_APPROVAL }])}
+      />
+    );
+
+    const card = screen.getByTestId('approval-card');
+    // The SAME approvalId, because answering inline resolves the same request.
+    expect(card).toHaveAttribute('data-approval-id', 'appr-1');
+    expect(screen.queryByTestId('capability-approval-timed-out')).not.toBeInTheDocument();
+  });
+
+  it('renders a TIMED-OUT part as a terminal note instead of an answerable card', () => {
+    render(
+      <AssistantMessageContent
+        message={makeMessage([
+          {
+            type: 'capability_approval' as const,
+            approval: HELD_APPROVAL,
+            outcome: 'timeout' as const,
+          },
+        ])}
+      />
+    );
+
+    // No buttons to press: the agent has stopped waiting, so answering here
+    // would resume nothing. The note says where the request still lives.
+    expect(screen.queryByTestId('approval-card')).not.toBeInTheDocument();
+    expect(screen.getByTestId('capability-approval-timed-out')).toBeInTheDocument();
+    expect(screen.getByText(/still in your Approvals list/)).toBeInTheDocument();
   });
 });
 

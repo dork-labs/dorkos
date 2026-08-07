@@ -14,7 +14,8 @@
  *   poll flow returns — never an error, never worse than before;
  * - the inline card is emitted onto the session and retired on resolution, so the
  *   projector can pause the stall watchdog for the hold and drop it after;
- * - the hold cap sits below the verified MCP request timeout.
+ * - the card carries the real cap, so the projector's pause and the client's
+ *   countdown describe the same wait.
  *
  * The gate, the approval primitive, and the global fan-out are all REAL here (only
  * the clock is faked, and only for the timeout test), because the resume rides the
@@ -44,11 +45,10 @@ import {
 import { invokeCapabilityAsMcpResult } from '../mcp-projection.js';
 import {
   CAPABILITY_APPROVAL_HOLD_CAP_MS,
-  MCP_SDK_REQUEST_TIMEOUT_MS,
   type CapabilityApprovalHold,
 } from '../capability-approval-hold.js';
-import { ApprovalService } from '../../approvals/index.js';
-import { SESSIONS } from '../../../../config/constants.js';
+import { ApprovalService, hashApprovalInput } from '../../approvals/index.js';
+import { APPROVAL_TOKEN_ARGUMENT } from '../tier-enforcement.js';
 import type { AgentIdentity } from '../../agent-identity/index.js';
 
 const AGENT: AgentIdentity = {
@@ -126,12 +126,24 @@ describe('capability approval hold (DOR-939)', () => {
     return { approvals, session, ...overrides };
   }
 
-  it('caps the hold below the verified MCP request timeout', () => {
-    // The knowable number: @modelcontextprotocol/sdk 1.29.0 DEFAULT_REQUEST_TIMEOUT_MSEC.
-    expect(MCP_SDK_REQUEST_TIMEOUT_MS).toBe(60_000);
-    expect(CAPABILITY_APPROVAL_HOLD_CAP_MS).toBeLessThan(MCP_SDK_REQUEST_TIMEOUT_MS);
-    // …and below the 10-minute interaction timeout too, the other ceiling.
-    expect(CAPABILITY_APPROVAL_HOLD_CAP_MS).toBeLessThan(SESSIONS.INTERACTION_TIMEOUT_MS);
+  it('tells the session how long the card is answerable for — the real cap', async () => {
+    // The cap is not decoration: the emitted `capMs` is what the projector bounds
+    // its stall-pause on and what the client counts down, so the card and the
+    // wait it describes cannot drift apart. (The old test here asserted the MCP
+    // SDK's 60s default instead — a number nothing in this path reads, and the
+    // wrong premise for the cap. DOR-987.)
+    const resultP = invokeCapabilityAsMcpResult(
+      registry,
+      'gated.destroy',
+      { name: 'production' },
+      { identity: AGENT },
+      hold()
+    );
+    await vi.waitFor(() => expect(cardData()).toBeDefined());
+    expect(cardData()!.capMs).toBe(CAPABILITY_APPROVAL_HOLD_CAP_MS);
+
+    approvals.grant(cardData()!.approval.approvalId);
+    await resultP;
   });
 
   it('holds, emits the inline card, and resumes on a GRANT with the REAL result', async () => {
@@ -220,6 +232,99 @@ describe('capability approval hold (DOR-939)', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  // DOR-987: the hold fired only on `reason: 'no_approval'`, but tier enforcement
+  // mints a brand-new approval for every token failure too. Those calls produced a
+  // dashboard card, no inline card and no hold — the exact experience the feature
+  // exists to remove, reached by the most ordinary route there is (an agent
+  // retrying with a token that has since expired or been spent).
+  it('holds on a token failure too — an EXPIRED token mints a fresh ask', async () => {
+    // A real expired token: granted, then left past its window. `shouldAdvanceTime`
+    // keeps the fake clock moving with the real one, so the aging is deterministic
+    // AND the hold's own await still settles.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const shortLived = new ApprovalService(createTestDb(), { ttlMs: 60_000 });
+      initCapabilityTierGate({ approvals: shortLived });
+      const stale = shortLived.request({
+        capabilityId: 'gated.destroy',
+        inputHash: hashApprovalInput({ name: 'production' }),
+        summary: 'Prober wants to destroy production',
+      });
+      shortLived.grant(stale.approvalId);
+      await vi.advanceTimersByTimeAsync(60_001);
+      expect(shortLived.getPending(stale.approvalId)?.approvalId).toBe(stale.approvalId);
+
+      const resultP = invokeCapabilityAsMcpResult(
+        registry,
+        'gated.destroy',
+        { name: 'production', [APPROVAL_TOKEN_ARGUMENT]: stale.token },
+        { identity: AGENT },
+        { approvals: shortLived, session }
+      );
+
+      // The retry did NOT end at a dashboard-only card: it held, with an inline
+      // card carrying the NEW approval the gate just minted.
+      await vi.waitFor(() => expect(cardData()).toBeDefined());
+      const card = cardData()!;
+      expect(card.approval.approvalId).not.toBe(stale.approvalId);
+
+      shortLived.grant(card.approval.approvalId);
+      const result = await resultP;
+      expect(payloadOf(result)).toEqual({ deleted: 'production' });
+      expect(resolvedData()).toMatchObject({ outcome: 'granted' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does NOT hold on awaiting_decision — the one reason that echoes an existing ask', async () => {
+    // The token is real and still undecided, so the gate echoes the SAME approval
+    // rather than minting one. Holding here would push a second inline card for a
+    // card the person is already looking at, and park the turn on it.
+    const undecided = approvals.request({
+      capabilityId: 'gated.destroy',
+      inputHash: hashApprovalInput({ name: 'production' }),
+      summary: 'Prober wants to destroy production',
+    });
+
+    const result = await invokeCapabilityAsMcpResult(
+      registry,
+      'gated.destroy',
+      { name: 'production', [APPROVAL_TOKEN_ARGUMENT]: undecided.token },
+      { identity: AGENT },
+      hold()
+    );
+
+    const payload = payloadOf(result);
+    expect(payload.status).toBe('approval_required');
+    expect(payload.reason).toBe('awaiting_decision');
+    expect(payload.approvalId).toBe(undecided.approvalId);
+    // Nothing pushed: no second card, no hold, no resolution.
+    expect(session.eventQueue).toEqual([]);
+    expect(ran).toEqual([]);
+  });
+
+  it('emits NO resolution when the card itself could not be emitted', async () => {
+    // The pending row vanished between the ask and the hold, so there is no card
+    // to render — and therefore nothing to retire. Pushing a resolution anyway
+    // put an event on the transcript for a card nobody ever saw (DOR-987).
+    const cardless = {
+      awaitDecision: approvals.awaitDecision.bind(approvals),
+      getPending: () => undefined,
+    };
+
+    const result = await invokeCapabilityAsMcpResult(
+      registry,
+      'gated.destroy',
+      { name: 'production' },
+      { identity: AGENT },
+      { approvals: cardless, session, capMs: 1 }
+    );
+
+    expect(payloadOf(result).status).toBe('approval_required');
+    expect(session.eventQueue).toEqual([]);
   });
 
   it('leaves the sessionless poll flow byte-identical (no hold seam)', async () => {

@@ -50,6 +50,7 @@ import {
 } from '@dorkos/shared/approval-schemas';
 import { broadcastApprovalPending, broadcastApprovalResolved } from './approval-events.js';
 import { eventFanOut } from '../event-fan-out.js';
+import { logger } from '../../../lib/logger.js';
 import { redactSecretsInText, renderRequesterLabel } from './approval-summary.js';
 
 /**
@@ -453,10 +454,14 @@ export class ApprovalService {
    * expiry, the hold's `timeoutMs` cap, or an abort. It NEVER rejects — every
    * ending is a value the caller degrades on, because the guiding invariant is
    * that a held destructive call is never worse than the poll flow it replaces.
+   * An approval store that throws is one of those endings, not an exception: it
+   * degrades to `timeout` (DOR-987).
    *
    * The subscription is attached BEFORE the current state is read, so a decision
-   * that lands in the gap between the two is delivered rather than missed. The
-   * cap timer is `unref`'d so a hold can never keep the process alive.
+   * that lands in the gap between the two is delivered rather than missed. Every
+   * ending runs through `finish`, which is what releases that subscription — so
+   * nothing between the `subscribe` and the return may throw past it. The cap
+   * timer is `unref`'d so a hold can never keep the process alive.
    *
    * @param approvalId - The pending approval to wait on.
    * @param options - The hold cap and an optional abort signal.
@@ -500,7 +505,24 @@ export class ApprovalService {
       // Close the subscribe→read race: a decision recorded before the listener
       // attached would broadcast to nobody, so read the row once and settle
       // immediately if it is already decided or spent.
-      const settled = this.settledOutcome(approvalId);
+      //
+      // Guarded, because this runs INSIDE the promise executor: an unguarded
+      // throw here rejected the promise this method's contract says never
+      // rejects, and — worse — jumped past `finish`, leaving the fan-out listener
+      // attached for the life of the process (DOR-987). A store that cannot be
+      // read is a store nobody can decide an approval in either, so the honest
+      // ending is the no-decision one: `timeout` degrades the caller to the poll
+      // payload immediately instead of parking a turn on a broken database.
+      let settled: ApprovalDecisionOutcome | undefined;
+      try {
+        settled = this.settledOutcome(approvalId);
+      } catch (err) {
+        logger.error('[approvals] could not read an approval while holding on it', {
+          approvalId,
+          err: err instanceof Error ? err.message : String(err),
+        });
+        settled = 'timeout';
+      }
       if (settled) finish(settled);
     });
   }
