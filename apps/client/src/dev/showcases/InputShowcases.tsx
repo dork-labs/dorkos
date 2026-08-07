@@ -115,6 +115,45 @@ function ComposerInputDemo({
   );
 }
 
+/**
+ * The card, with and without attach wiring.
+ *
+ * The two demos differ by exactly one prop, which is the whole point:
+ * `onFilesDropped` IS the attach declaration. Given it, the card mounts a
+ * dropzone, a hidden file input, and the "Drop files to attach" overlay;
+ * omitted, none of that exists — which is why a room composer listens for no
+ * drags at all.
+ */
+function ComposerRootDemo({ label, onFilesDropped }: { label: string; onFilesDropped?: true }) {
+  const [value, setValue] = useState('');
+  const [dropped, setDropped] = useState<string[]>([]);
+
+  return (
+    <div>
+      <ShowcaseLabel>{label}</ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <Composer.Root
+          onFilesDropped={
+            onFilesDropped ? (files) => setDropped(files.map((file) => file.name)) : undefined
+          }
+        >
+          <Composer.Input
+            value={value}
+            onChange={setValue}
+            onSubmit={() => {}}
+            isStreaming={false}
+            onClear={() => setValue('')}
+            placeholder={onFilesDropped ? 'Drop a file on this card…' : 'Message DorkBot…'}
+          />
+        </Composer.Root>
+        {dropped.length > 0 && (
+          <p className="text-muted-foreground px-2 text-xs">Dropped: {dropped.join(', ')}</p>
+        )}
+      </ShowcaseDemo>
+    </div>
+  );
+}
+
 /** Renders a palette dropdown in normal flow above a fake input anchor. */
 function PaletteAnchor({
   hint,
@@ -145,6 +184,14 @@ export function InputShowcases() {
 
   return (
     <>
+      <PlaygroundSection
+        title="Composer.Root"
+        description="The card chrome every composer sits in — chat, rooms, and the dashboard. A surface accepts files because it wired onFilesDropped, and for no other reason: drag one onto the second card and the drop overlay appears, drag it onto the first and nothing is listening."
+      >
+        <ComposerRootDemo label="Card only — no attach wiring (rooms today)" />
+        <ComposerRootDemo label="Card with attach wiring (chat)" onFilesDropped />
+      </PlaygroundSection>
+
       <PlaygroundSection title="Composer.Input" description="Chat text input in different states.">
         <ComposerInputDemo label="Idle" />
         <ComposerInputDemo

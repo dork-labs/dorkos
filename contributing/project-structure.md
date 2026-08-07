@@ -71,7 +71,7 @@ src/
 │   ├── features/        # Complete user-facing functionality
 │   │   ├── chat/        # ChatPanel, MessageList, streaming, useChatSession
 │   │   │   ├── ui/
-│   │   │   │   ├── input/    # ChatInput, ChatInputContainer, FileChipBar, QueuePanel
+│   │   │   │   ├── input/    # ChatInputContainer, QueuePanel, InteractiveInputPanel, PromptSuggestionChips
 │   │   │   │   ├── message/  # AssistantMessageContent, StreamingText, ThinkingBlock, SubagentBlock
 │   │   │   │   ├── status/   # ChatStatusSection, AgentIdentityChip, ChatStatusStrip, inference themes
 │   │   │   │   ├── tasks/    # TaskListPanel, TaskDetail, AgentRunner, BackgroundTaskBar
@@ -80,6 +80,7 @@ src/
 │   │   │   │   └── stream/   # StreamManager, stream-event-handler, classify-transport-error
 │   │   │   ├── api/
 │   │   │   └── index.ts
+│   │   ├── composer/    # The one message box — Composer.Root/.Input/.OverlayLane/.Attachments/.ClearArmedHint, composed by chat, rooms, and the dashboard
 │   │   ├── command-palette/ # Global Cmd+K palette (Fuse.js search, agent preview, sub-menus)
 │   │   ├── commands/    # Inline slash command palette (chat input)
 │   │   ├── session-list/ # SessionSidebar (Obsidian shell), SessionsView, tabbed views

@@ -11,7 +11,7 @@ The chat UI has four focus states. At any given time, exactly one is active.
 ```
                           user sends message
   IDLE/TYPING  ──────────────────────────────────►  STREAMING
-  (ChatInput focused,                               (ChatInput disabled,
+  (Composer.Input focused,                        (Composer.Input disabled,
    no global shortcuts)                               no shortcuts needed)
        ▲                                                   │
        │                                                   │
@@ -30,7 +30,7 @@ The chat UI has four focus states. At any given time, exactly one is active.
 
 ### State Details
 
-| State                    | ChatInput              | Global Shortcuts                            | Trigger                                                               |
+| State                    | Composer.Input         | Global Shortcuts                            | Trigger                                                               |
 | ------------------------ | ---------------------- | ------------------------------------------- | --------------------------------------------------------------------- |
 | **IDLE/TYPING**          | Enabled, focused       | None                                        | Default state; also entered when streaming ends with no pending tools |
 | **STREAMING**            | Disabled (`isLoading`) | None                                        | User sends a message; `status === 'streaming'`                        |

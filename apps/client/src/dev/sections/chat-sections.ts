@@ -242,6 +242,13 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
   },
   // InputShowcases
   {
+    id: 'composer-root',
+    title: 'Composer.Root',
+    page: 'chat',
+    category: 'Input',
+    keywords: ['composer', 'card', 'dropzone', 'chrome', 'attach', 'drag', 'drop'],
+  },
+  {
     id: 'composer-input',
     title: 'Composer.Input',
     page: 'chat',
