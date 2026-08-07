@@ -80,7 +80,7 @@ describe('AgentMcpOAuthService.startSignin — when the sign-in never gets off t
       connected: false,
       error: 'This sign-in link expired. Please start again.',
     });
-    expect(oauth.pollSignin(MINTED_STATE)).toEqual({
+    expect(await oauth.pollSignin(MINTED_STATE)).toEqual({
       status: 'failed',
       error: 'This sign-in link expired. Please start again.',
     });
