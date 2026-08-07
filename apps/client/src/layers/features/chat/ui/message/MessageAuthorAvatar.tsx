@@ -4,8 +4,8 @@
  * @module features/chat/ui/message/MessageAuthorAvatar
  */
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
-import { cn, hashToHslColor, initialOf } from '@/layers/shared/lib';
-import { IdentityAvatar, type IdentityOrigin } from '@/layers/shared/ui';
+import { cn, hashToHslColor, initialOf, type IdentityOrigin } from '@/layers/shared/lib';
+import { IdentityAvatar } from '@/layers/shared/ui';
 import type { MessageAuthor } from '@/layers/shared/model';
 
 /** Edge length of the runtime brand mark inside the avatar circle, in pixels. */

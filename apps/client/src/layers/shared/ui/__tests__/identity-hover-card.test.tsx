@@ -109,6 +109,25 @@ describe('IdentityHoverCard', () => {
     expect(screen.getByText(/^Working ·/)).toBeInTheDocument();
   });
 
+  it('pulses the avatar itself while an agent works, and only there', async () => {
+    // The card drew its own dot inside the chip — a third hand-rolled copy of
+    // the same eight lines, and two marks for one fact. It rides
+    // `IdentityAvatar`'s `working` slot now. Red if a second pulse comes back,
+    // and red if the disc stops carrying the one that is left.
+    await openOn({
+      kind: 'agent',
+      displayName: 'Warden',
+      agent: { working: { forMs: 134_000 } },
+    });
+
+    expect(document.querySelectorAll('.animate-ping')).toHaveLength(1);
+    expect(document.querySelector('[data-slot="identity-avatar"] .animate-ping')).not.toBeNull();
+
+    cleanup();
+    await openOn({ kind: 'agent', displayName: 'Warden' });
+    expect(document.querySelector('.animate-ping')).toBeNull();
+  });
+
   it("shows a person's origin chip, and an external platform name for a bridged person", async () => {
     await openOn({ kind: 'human', displayName: 'Priya', origin: { platform: 'Telegram' } });
     expect(screen.getByText('Telegram')).toBeInTheDocument();

@@ -17,11 +17,13 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import type { RoomKind, RoomRosterEntry } from '@dorkos/shared/room-schemas';
+import type { AgentVisual } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
 import {
   BridgeVisibilityBadge,
   LoudnessMeter,
   ResponseModeControl,
+  RoomAvatar,
   RoomLoudnessLine,
   type EngagedWindow,
   type LoudnessLevel,
@@ -215,7 +217,7 @@ function RoomMemberRowShowcase() {
       </ShowcaseDemo>
 
       <ShowcaseLabel>
-        An agent the fleet could not name — a letter, never a hashed face
+        An agent the fleet could not name — a letter on the colour the rest of the room hashes it
       </ShowcaseLabel>
       <ShowcaseDemo>
         <MemberRowDemo member={MEMBER.unresolved} />
@@ -245,6 +247,73 @@ function RoomMemberRowShowcase() {
       </ShowcaseLabel>
       <ShowcaseDemo>
         <MemberRowDemo member={MEMBER.miguel} />
+      </ShowcaseDemo>
+    </PlaygroundSection>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// The room's own mark
+// ---------------------------------------------------------------------------
+
+/** One agent's face, as the fleet resolves it for a room this agent is in. */
+const MIO: AgentVisual = { color: '#b48c3c', emoji: '💼' };
+
+/** One mark with a caption underneath, at whatever size it was given. */
+function MarkDemo({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex w-28 flex-col items-center gap-2 text-center">
+      <div className="flex h-12 items-center">{children}</div>
+      <span className="text-muted-foreground text-xs">{label}</span>
+    </div>
+  );
+}
+
+/** Every face a room can wear, and the three sizes it wears them at. */
+function RoomAvatarShowcase() {
+  const MIO_DM = { id: 'room-dm-mio', kind: 'dm', title: 'Mio Clicker PM' } as const;
+  return (
+    <PlaygroundSection
+      title="RoomAvatar"
+      description="What a room looks like before you read its name. A place gets a #; a one-to-one gets the agent it is with — the same filled square with the bot mark that agent wears everywhere else, rather than the round person disc it used to draw. A group stacks up to three faces. A conversation nobody could resolve a face for falls back to a letter, and keeps the agent shape as long as it still knows who the room is with."
+    >
+      <ShowcaseLabel>The four faces, at the sidebar&apos;s size</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="flex flex-wrap items-start gap-6">
+          <MarkDemo label="A channel">
+            <RoomAvatar room={{ id: 'room-general', kind: 'channel', title: 'General' }} />
+          </MarkDemo>
+          <MarkDemo label="A one-to-one">
+            <RoomAvatar room={MIO_DM} visuals={[MIO]} />
+          </MarkDemo>
+          <MarkDemo label="A group of three">
+            <RoomAvatar
+              room={{ id: 'room-dm-group', kind: 'dm', title: 'Mio, Kai and code' }}
+              visuals={[MIO, { color: '#c85a6e', emoji: '🛰' }, { color: '#3ca078', emoji: '🔔' }]}
+            />
+          </MarkDemo>
+          <MarkDemo label="No face to draw">
+            <RoomAvatar
+              room={{ id: 'room-dm-ravi', kind: 'dm', title: 'ravi-bot' }}
+              participants={[MEMBER.unresolved.author]}
+            />
+          </MarkDemo>
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>The same one-to-one at each size — the masthead draws it larger</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="flex flex-wrap items-start gap-6">
+          <MarkDemo label="xs — the sidebar">
+            <RoomAvatar room={MIO_DM} visuals={[MIO]} />
+          </MarkDemo>
+          <MarkDemo label="sm">
+            <RoomAvatar room={MIO_DM} visuals={[MIO]} size="sm" />
+          </MarkDemo>
+          <MarkDemo label="md">
+            <RoomAvatar room={MIO_DM} visuals={[MIO]} size="md" />
+          </MarkDemo>
+        </div>
       </ShowcaseDemo>
     </PlaygroundSection>
   );
@@ -644,6 +713,7 @@ export function RoomsShowcases() {
     <>
       <RoomSheetShowcase />
       <RoomMemberRowShowcase />
+      <RoomAvatarShowcase />
       <BridgeVisibilityBadgeShowcase />
       <ResponseModeControlShowcase />
       <LoudnessMeterShowcase />

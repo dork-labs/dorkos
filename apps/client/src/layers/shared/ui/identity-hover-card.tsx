@@ -11,7 +11,7 @@ import { cn } from '../lib/utils';
 import { useLongPress } from '../model';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from './hover-card';
 import { IdentityAvatar } from './identity-avatar';
-import type { IdentityOrigin } from './identity-origin';
+import type { IdentityOrigin } from '../lib/identity-origin';
 
 /** How long the pointer has to sit on a trigger before the card opens. Radix's own default (700ms) reads as sluggish for something this small; this favours a quick glance. */
 const OPEN_DELAY_MS = 300;
@@ -198,8 +198,12 @@ function IdentityHoverCard({ identity, children, className }: IdentityHoverCardP
             color={avatarColor}
             emoji={emoji}
             fallback={initialOf(displayName)}
+            // Shape, fill and mark all come from the kind now, and the pulsing
+            // dot from `working` — this card used to hand-roll all four, and
+            // its own dot was a third copy of the same eight lines.
             kind={kind}
             origin={origin}
+            working={kind === 'agent' && agent?.working !== undefined}
             size="md"
           />
           <div className="min-w-0">
@@ -215,13 +219,10 @@ function IdentityHoverCard({ identity, children, className }: IdentityHoverCardP
             <InfoChip>{[agent.runtime, agent.model].filter(Boolean).join(' · ')}</InfoChip>
           )}
           {kind === 'agent' && agent?.working && (
+            // The chip says how long; the avatar's own dot says "right now".
+            // The dot used to be drawn twice — once here and once on the disc —
+            // which read as two separate signals for one fact.
             <InfoChip className="bg-status-success-bg text-status-success-fg">
-              <span
-                aria-hidden
-                className="bg-status-success relative inline-flex size-1.5 shrink-0 rounded-full"
-              >
-                <span className="bg-status-success absolute inset-0 animate-ping rounded-full opacity-75 motion-reduce:hidden" />
-              </span>
               Working · {formatDuration(agent.working.forMs)}
             </InfoChip>
           )}

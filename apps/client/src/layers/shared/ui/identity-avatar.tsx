@@ -10,7 +10,7 @@ import { Bot, Send } from 'lucide-react';
 import type { AuthorKind } from '@dorkos/shared/room-schemas';
 import { readableForeground } from '../lib/readable-foreground';
 import { cn } from '../lib/utils';
-import type { IdentityOrigin } from './identity-origin';
+import type { IdentityOrigin } from '../lib/identity-origin';
 
 /**
  * How much of the identity's own colour tints the disc in the default
