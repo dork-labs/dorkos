@@ -144,7 +144,7 @@ describe('AuthorRegistry', () => {
     // The projection is closed, not filtered: the assertion is the WHOLE key
     // set, so a field added to `AuthorRecord` cannot ride onto the wire by
     // being spread into the ref and nobody noticing.
-    expect(Object.keys(ref).sort()).toEqual(['agentRef', 'displayName', 'id', 'kind']);
+    expect(Object.keys(ref).sort()).toEqual(['agentRef', 'displayName', 'handle', 'id', 'kind']);
   });
 
   it('gives an agent a handle derived from its path, not the path', () => {

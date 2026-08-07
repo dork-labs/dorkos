@@ -108,8 +108,10 @@ describe('the room context a trigger derives', () => {
       await say('is the build green?');
 
       const members = contextFor(ana).members;
-      expect(members.map((member) => member.handle).sort()).toEqual(['You', 'ana', 'bo']);
-      expect(members.find((member) => member.handle === 'You')?.isPerson).toBe(true);
+      // The person has no handle until they are asked for one, so they are named
+      // and not addressable — which is the honest state, not a missing value.
+      expect(members.map((member) => member.handle).sort()).toEqual(['ana', 'bo', null]);
+      expect(members.find((member) => member.displayName === 'You')?.isPerson).toBe(true);
       expect(members.find((member) => member.handle === 'ana')?.isPerson).toBe(false);
       expect(members.find((member) => member.handle === 'bo')?.isPerson).toBe(false);
     });

@@ -32,7 +32,7 @@ const ROOM: RoomWithRoster = {
       responseMode: 'engaged',
       joinedAt: '2026-07-30T10:00:00.000Z',
       lastReadSeq: 0,
-      author: { id: 'kai', kind: 'agent', displayName: 'Kai' },
+      author: { id: 'kai', kind: 'agent', displayName: 'Kai', handle: null },
       origin: 'local',
     },
   ],

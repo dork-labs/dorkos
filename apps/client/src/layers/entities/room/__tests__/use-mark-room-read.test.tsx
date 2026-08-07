@@ -57,7 +57,7 @@ function human(
     responseMode: 'always',
     joinedAt: '2026-07-26T09:00:00.000Z',
     lastReadSeq,
-    author: { id, kind: 'human', displayName },
+    author: { id, kind: 'human', displayName, handle: null },
     origin: 'local',
   };
 }
@@ -69,7 +69,7 @@ function agent(): RoomWithRoster['members'][number] {
     responseMode: 'always',
     joinedAt: '2026-07-26T09:00:00.000Z',
     lastReadSeq: 0,
-    author: { id: 'ana', kind: 'agent', displayName: 'Ana' },
+    author: { id: 'ana', kind: 'agent', displayName: 'Ana', handle: null },
     origin: 'local',
   };
 }

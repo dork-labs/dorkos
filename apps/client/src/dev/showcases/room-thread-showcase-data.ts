@@ -31,7 +31,7 @@ export const THREAD_AGENT_ANA: AuthorRef = {
   kind: 'agent',
   displayName: 'Ana',
   color: '#7c9cf5',
-  mentionHandle: 'ana',
+  handle: 'ana',
 };
 
 /** A second agent, so a thread can show more than one voice. */
@@ -40,7 +40,7 @@ export const THREAD_AGENT_KAI: AuthorRef = {
   kind: 'agent',
   displayName: 'Kai',
   color: '#c85a6e',
-  mentionHandle: 'kai',
+  handle: 'kai',
 };
 
 /** The room the panel and reply row are shown against. */

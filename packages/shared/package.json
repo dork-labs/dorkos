@@ -220,6 +220,10 @@
     "./untrusted-text": {
       "types": "./src/untrusted-text.ts",
       "default": "./dist/untrusted-text.js"
+    },
+    "./handle": {
+      "types": "./src/handle.ts",
+      "default": "./dist/handle.js"
     }
   },
   "scripts": {

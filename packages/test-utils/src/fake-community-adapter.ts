@@ -247,6 +247,9 @@ export class FakeCommunityAdapter implements CommunityAdapter {
       memberId: this._identityMemberId,
       kind: 'human',
       displayName: 'You',
+      // The operator's own handle is asked for, not derived, so a fresh install
+      // has none — which is exactly the state a conformance run should exercise.
+      handle: null,
       ownerMemberId: null,
       joinedAt: this._timestamp(),
     });
@@ -531,6 +534,7 @@ export class FakeCommunityAdapter implements CommunityAdapter {
       memberId,
       kind: 'agent',
       displayName: input.displayName,
+      handle: memberId,
       ...(input.emoji ? { emoji: input.emoji } : {}),
       ...(input.color ? { color: input.color } : {}),
       ownerMemberId: this._identityMemberId,

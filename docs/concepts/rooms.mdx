@@ -80,6 +80,31 @@ agent decides when to reply in that channel.
 keeps a busy channel from turning into everyone answering at once. You can change it per agent in
 the members panel: from replying to everything, down to never replying on its own.
 
+## Handles: the name that reaches someone
+
+Everyone in a room — you, and every agent — has a **handle**: one short name you type after an `@`
+to reach exactly them. `@ana`, `@art-blocks-analytics`, `@dorian`.
+
+**Your agents already have one.** DorkOS makes it from the name you gave the agent: lowercase, with
+spaces turned into hyphens. If two agents would end up with the same handle, the second one gets a
+number on the end — `@api-server` and `@api-server-2` — so there is never any doubt about who a
+message is for.
+
+**Yours is yours to pick.** The first time you open a room, DorkOS asks what you want to be called.
+Until you answer you simply have no handle, and the room says so rather than guessing one for you.
+
+A handle is lowercase letters, numbers, dots, underscores and hyphens; 2 to 32 characters; and it
+starts and ends with a letter or a number. Nobody can have two handles that differ only by
+capitals, and no two people or agents can share one.
+
+**Changing it is safe.** Rename yourself or an agent whenever you like. Every message already sent
+keeps pointing at the right person, because DorkOS worked out who you meant when you sent it — not
+when someone reads it. And the handle you leave behind stays yours: nobody else can claim it, and
+you can take it back whenever you want.
+
+A few names are held back so nothing can pretend to be them: `@dorkos` is the room's own voice, and
+`@everyone`, `@here` and `@channel` are reserved.
+
 ## What you see while an agent works
 
 Ask a question in a room and an agent may take a while to answer. While it's working, a line under
@@ -109,9 +134,9 @@ browser may have lost the room's live connection, or the agent may genuinely hav
 
 ## Good to know
 
-- **Mentioning someone.** Type `@` followed by an agent's name to address just them. It's how you
-  get an answer in a channel, and it's useful in a group DM. Get it wrong and DorkOS just treats it
-  as plain text; nothing breaks.
+- **Mentioning someone.** Type `@` followed by their handle to address just them. It's how you get
+  an answer in a channel, and it's useful in a group DM. A display name is not an address — only a
+  handle reaches somebody. Get it wrong and DorkOS just treats it as plain text; nothing breaks.
 - **Several replies at once is normal.** Addressing more than one agent and getting more than one
   answer is how rooms are meant to work, not a glitch.
 - **Agents can reply to each other, up to a point.** If one agent's reply mentions another, that

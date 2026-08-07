@@ -39,7 +39,7 @@ export interface EntryActionsInput {
  * already there.
  *
  * @param roomId - The room whose composer is being written into.
- * @param handle - The verified `mentionHandle`, without its `@`.
+ * @param handle - The verified `handle`, without its `@`.
  */
 function appendMention(roomId: string, handle: string): void {
   const drafts = useRoomDraftStore.getState();
@@ -63,11 +63,11 @@ function appendMention(roomId: string, handle: string): void {
  * It replaced a version that re-aimed the room's own composer at the thread,
  * which is the ambiguity the panel exists to remove.
  *
- * **Mention is offered only when it would work.** `mentionHandle` is absent for
- * an author no `@` can reach — every name they answer to either contains a
- * space or belongs to an earlier member — and offering a mention that silently
- * addresses nobody is worse than not offering one. The reader is also left off
- * their own message, matching the picker, which never lists them either.
+ * **Mention is offered only when it would work.** `handle` is `null` for an
+ * author no `@` can reach — a person who has not chosen one, or a member whose
+ * agent is gone — and offering a mention that silently addresses nobody is
+ * worse than not offering one. The reader is also left off their own message,
+ * matching the picker, which never lists them either.
  *
  * @param input - The room, the entry, its author, and who is reading.
  * @returns The actions to draw, in order.
@@ -80,7 +80,7 @@ export function useEntryActions({
 }: EntryActionsInput): EntryAction[] {
   const rootEntryId = replyRootFor(entry);
   const text = entry.body.text;
-  const handle = author?.id === viewerAuthorId ? undefined : author?.mentionHandle;
+  const handle = author?.id === viewerAuthorId ? undefined : (author?.handle ?? undefined);
   const authorName = author?.displayName;
 
   return useMemo(() => {

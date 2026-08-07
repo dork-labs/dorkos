@@ -116,9 +116,10 @@ vi.mock('@/layers/entities/room', async () => {
  */
 function rosterWithAgent(agentPath: string, displayName = 'Ana'): AuthorRef[] {
   return [
-    { id: 'me', kind: 'human', displayName: 'You' },
+    { id: 'me', kind: 'human', displayName: 'You', handle: null },
     {
       id: `a-${displayName}`,
+      handle: null,
       kind: 'agent',
       displayName,
       emoji: '🐙',

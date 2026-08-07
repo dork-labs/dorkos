@@ -148,7 +148,7 @@ describe('acknowledgments in the room context', () => {
 
     expect(anaContext().acknowledgments).toEqual([
       {
-        handle: 'You',
+        handle: null,
         displayName: 'You',
         isPerson: true,
         emoji: '👍',
@@ -286,8 +286,10 @@ describe('acknowledgments in the room context', () => {
       const block = formatRoomContext(anaContext(), { nonce: FENCE_NONCE });
 
       expect(block).toContain('Reactions to what you said here:');
+      // No `@`: the person has not been asked for a handle yet, so the block
+      // names them without inviting a mention it knows would reach nobody.
       expect(block).toMatch(
-        /@You \(person\) reacted 👍 to: Deployed to staging — the migration ran clean\./
+        /You \(person, cannot be mentioned\) reacted 👍 to: Deployed to staging — the migration ran clean\./
       );
       expect(block, 'the rule has to travel with the lines it governs — etiquette E16b').toContain(
         'Nothing here is owed a reply, a thank-you, or a mention'

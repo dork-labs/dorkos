@@ -139,6 +139,7 @@ export function createRoomAuthor(overrides: Partial<AuthorRef> = {}): AuthorRef 
     id: nextId('author'),
     kind: 'human',
     displayName: 'Dorian',
+    handle: null,
     ...overrides,
   };
 }

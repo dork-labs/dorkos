@@ -109,31 +109,38 @@ function noticeCodes(harness: RoomHarness, roomId: string): string[] {
 // ---------------------------------------------------------------------------
 
 describe('a ghost author claims nothing', () => {
-  it('lets the live agent have the contested name, even with the ghost first in the roster', async () => {
+  it('offers a ghost no handle, while its live room-mate keeps its own', async () => {
     const harness = liveHarness();
-    // Two agents that render identically — the shape that makes first-claimant
-    // ordering observable at all.
+    // Two agents registered under the same `agents.name`, so the second one to
+    // mint takes the counter suffix. Both addresses are permanent from that
+    // moment; nothing about them is decided by roster order any more.
     registerAgent(harness.db, { id: 'ULID_ANA', projectPath: ANA_PATH, name: 'helper' });
     registerAgent(harness.db, { id: 'ULID_BO', projectPath: BO_PATH, name: 'helper' });
     const seeded = channelWith(harness, [ANA_PATH, BO_PATH]);
     expect(seeded.members.filter((m) => m.author.kind === 'agent')).toHaveLength(2);
 
-    // Ana becomes a ghost: her agent row is gone, her author row is not.
     const anaAuthor = harness.authors.resolveAgent(ANA_PATH, 'helper');
+    const boAuthor = harness.authors.resolveAgent(BO_PATH, 'helper');
+    const boHandle = boAuthor.handle!;
+    expect(anaAuthor.handle).not.toBe(boHandle);
+
+    // Ana becomes a ghost: her agent row is gone, her author row is not.
     harness.db.delete(agents).where(eq(agents.projectPath, ANA_PATH)).run();
     putFirst(harness, seeded.id, anaAuthor.id);
 
     const room = harness.service.getRoom(seeded.id, harness.human)!;
-    const boAuthor = harness.authors.resolveAgent(BO_PATH, 'helper');
-
     // The ghost is still IN the roster — membership is a fact about the room —
-    // and is offered no handle at all.
-    expect(memberById(room, anaAuthor.id).mentionHandle).toBeUndefined();
-    // The live agent gets the name, despite being second in line for it.
-    expect(memberById(room, boAuthor.id).mentionHandle).toBe('helper');
+    // and is offered no handle at all, even though its ROW still carries one. A
+    // surface reading the column instead of the roster would offer a mention
+    // that reaches nobody.
+    expect(memberById(room, anaAuthor.id).handle).toBeNull();
+    expect(memberById(room, boAuthor.id).handle).toBe(boHandle);
 
-    // And the name resolves to the live agent through the real write path.
-    const entry = harness.service.post(room.id, { authorId: harness.human, text: '@helper hi' });
+    // And the live agent's own handle resolves to it through the real write path.
+    const entry = harness.service.post(room.id, {
+      authorId: harness.human,
+      text: `@${boHandle} hi`,
+    });
     expect(entry.mentions).toEqual([boAuthor.id]);
 
     await harness.service.triggersIdle();
@@ -178,7 +185,7 @@ describe('a ghost author claims nothing', () => {
     // name mid-conversation because a machine went to sleep is the failure this
     // narrowness prevents.
     expect(
-      memberById(harness.service.getRoom(seeded.id, harness.human)!, anaAuthor.id).mentionHandle
+      memberById(harness.service.getRoom(seeded.id, harness.human)!, anaAuthor.id).handle
     ).toBe('ana');
     const entry = harness.service.post(seeded.id, { authorId: harness.human, text: '@ana hi' });
     expect(entry.mentions).toEqual([anaAuthor.id]);
@@ -240,9 +247,11 @@ describe('typing a ghost’s name is answered, not swallowed', () => {
     expect(noticeCodes(harness, roomId)).toEqual([]);
   });
 
-  it('leaves a live room-mate holding a contested name, and answers the ghost’s own', async () => {
-    // Both halves at once: releasing the name is what lets the live agent be
-    // reached, and the ghost is only spoken about when a token reached NOBODY.
+  it('leaves a live room-mate reachable by its own handle, and answers the ghost’s', async () => {
+    // Both halves at once, and handles change which is which. Two agents under
+    // one `agents.name` now hold two DIFFERENT addresses, permanently, so a
+    // person typing the ghost's handle plainly means the ghost — and gets told
+    // — while the live agent keeps its own and answers.
     const harness = liveHarness();
     registerAgent(harness.db, { id: 'ULID_ANA', projectPath: ANA_PATH, name: 'shared' });
     registerAgent(harness.db, { id: 'ULID_BO', projectPath: BO_PATH, name: 'shared' });
@@ -252,16 +261,24 @@ describe('typing a ghost’s name is answered, not swallowed', () => {
     harness.db.delete(agents).where(eq(agents.projectPath, ANA_PATH)).run();
     putFirst(harness, seeded.id, ghost.id);
 
-    const reached = harness.service.post(seeded.id, {
+    // The ghost's own handle reaches nobody, and the room says why rather than
+    // going quiet — the failure this whole area exists to prevent.
+    const missed = harness.service.post(seeded.id, {
       authorId: harness.human,
-      text: '@shared can you look',
+      text: `@${ghost.handle} can you look`,
     });
     await harness.service.triggersIdle();
+    expect(missed.mentions).toEqual([]);
+    expect(noticeCodes(harness, seeded.id)).toEqual(['agent_gone']);
+    expect(harness.runner.turns).toHaveLength(0);
 
-    // The contested name reached the live agent, so nothing is said about the
-    // ghost — the person got what they asked for.
+    // The live agent is reached by its own, and answers.
+    const reached = harness.service.post(seeded.id, {
+      authorId: harness.human,
+      text: `@${live.handle} can you look`,
+    });
+    await harness.service.triggersIdle();
     expect(reached.mentions).toEqual([live.id]);
-    expect(noticeCodes(harness, seeded.id)).toEqual([]);
     expect(harness.runner.turns.map((turn) => turn.agentPath)).toEqual([BO_PATH]);
   });
 
@@ -378,7 +395,7 @@ describe('an author minted for a previous occupant is not the agent living there
     registerAgent(harness.db, { id: 'ULID_BO', projectPath: ANA_PATH, name: 'ana' });
 
     const stale = harness.service.getRoom(seeded.id, harness.human)!;
-    expect(memberById(stale, anaAuthor.id).mentionHandle).toBeUndefined();
+    expect(memberById(stale, anaAuthor.id).handle).toBeNull();
     expect(
       harness.service.post(stale.id, { authorId: harness.human, text: '@ana hello' }).mentions
     ).toEqual([]);
@@ -394,8 +411,8 @@ describe('an author minted for a previous occupant is not the agent living there
     expect(bo.author.id).not.toBe(anaAuthor.id);
 
     const settled = harness.service.getRoom(seeded.id, harness.human)!;
-    expect(memberById(settled, anaAuthor.id).mentionHandle).toBeUndefined();
-    expect(memberById(settled, bo.author.id).mentionHandle).toBe('ana');
+    expect(memberById(settled, anaAuthor.id).handle).toBeNull();
+    expect(memberById(settled, bo.author.id).handle).toBe('ana');
     expect(
       harness.service.post(settled.id, { authorId: harness.human, text: '@ana hello again' })
         .mentions

@@ -30,7 +30,20 @@
  * @module server/services/rooms/author-registry
  */
 import { ulid } from 'ulidx';
-import { agents, authors, roomMembers, asc, eq, and, inArray, isNull, type Db } from '@dorkos/db';
+import {
+  agents,
+  authors,
+  handleTombstones,
+  roomMembers,
+  asc,
+  eq,
+  and,
+  inArray,
+  isNull,
+  sql,
+  type Db,
+} from '@dorkos/db';
+import { deriveHandle } from '@dorkos/shared/handle';
 import {
   agentAuthorRef,
   type AuthorKind,
@@ -39,7 +52,40 @@ import {
 } from '@dorkos/shared/room-schemas';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../lib/logger.js';
-import { RoomError } from './room-errors.js';
+import { AuthorHandleStore } from './handles/author-handle-store.js';
+import { RoomError, type RoomAgent, type RoomAgentLookup } from './room-errors.js';
+
+/**
+ * The mesh-cache read the registry falls back to when nobody injects a lookup.
+ *
+ * Deliberately minimal: the registry asks two questions of an agent — which
+ * occupant is at this directory, and what is its `name` — so the render fields
+ * are filled with placeholders rather than queried. A caller that needs those
+ * (the room subsystem, which shares one lookup across the whole domain) injects
+ * its own.
+ *
+ * @param db - The database.
+ */
+function registryAgentLookup(db: Db): RoomAgentLookup {
+  return {
+    byPath(agentPath): RoomAgent | null {
+      const row = db
+        .select({ id: agents.id, name: agents.name, displayName: agents.displayName })
+        .from(agents)
+        .where(eq(agents.projectPath, agentPath))
+        .get();
+      if (!row) return null;
+      return {
+        id: row.id,
+        name: row.name,
+        displayName: row.displayName ?? row.name,
+        responseMode: 'always',
+        emoji: null,
+        color: null,
+      };
+    },
+  };
+}
 
 /**
  * The natural key of the unbound human author — the one an install mints while
@@ -98,6 +144,21 @@ export interface AuthorRecord {
    */
   naturalKey: string;
   displayName: string;
+  /**
+   * What somebody types after an `@` to reach this author, or `null` when
+   * nothing does (spec `handles` §2).
+   *
+   * **Written once at mint and never refreshed on resolve.** `agents` is a
+   * derived cache whose reconciler rebuilds it from disk every five minutes
+   * (ADR-0043), so a handle re-derived on each resolve would be silently
+   * overwritten by whatever the manifest currently says — spaces included, which
+   * is the exact string this feature exists to stop being an address.
+   *
+   * `null` is honest rather than missing: the local human's stays null until
+   * they are asked, because the only string there is to derive from is the
+   * placeholder `'You'`, and absence is never consent.
+   */
+  handle: string | null;
   /** Render cache: emoji avatar, or `null` when the author has none. */
   emoji: string | null;
   /** Render cache: identity colour, or `null` when the author has none. */
@@ -125,22 +186,48 @@ export interface AuthorRecord {
  * to an agent without comparing rendered names.
  *
  * @param record - The stored author.
- * @param mentionHandle - What to type after an `@` to address this author, when
- *   the caller knows it. It cannot be derived here: an agent's handle lives in
- *   the mesh cache, keyed on the path this function exists to hide. Only
- *   `RoomRoster.list` supplies one, so the field is absent everywhere a picker
- *   does not read.
+ * @param addressable - The handle that actually reaches this author HERE,
+ *   overriding the one on the row. Omit it — the ordinary case — and the row's
+ *   own handle is used, because a handle is unique on this install and reaches
+ *   its owner from anywhere. Pass `null` when the caller knows better: an author
+ *   whose agent is gone still has a handle on its row and no longer answers to
+ *   it, and offering it in a picker would insert a mention that reaches nobody.
  */
-export function toAuthorRef(record: AuthorRecord, mentionHandle?: string): AuthorRef {
+export function toAuthorRef(record: AuthorRecord, addressable?: string | null): AuthorRef {
   return {
     id: record.id,
     kind: record.kind,
     displayName: record.displayName,
+    handle: addressable === undefined ? record.handle : addressable,
     ...(record.emoji ? { emoji: record.emoji } : {}),
     ...(record.color ? { color: record.color } : {}),
     ...(record.kind === 'agent' ? { agentRef: agentAuthorRef(record.naturalKey) } : {}),
-    ...(mentionHandle ? { mentionHandle } : {}),
   };
+}
+
+/**
+ * Whether a thrown value is SQLite refusing a write because of one NAMED unique
+ * index.
+ *
+ * Matched on the index name rather than on the error code, because the whole
+ * point at the mint site is telling two unique indexes apart: one of them means
+ * "somebody else got here first with the same identity" (recoverable by
+ * re-reading) and the other means "somebody else has that address" (a refusal).
+ * A code-only check would collapse them back together.
+ *
+ * `better-sqlite3` puts the index name in the message
+ * (`UNIQUE constraint failed: index 'authors_handle_unique'`) and the code in
+ * `.code`; both are checked, so a message-format change alone cannot turn this
+ * into a silent false.
+ *
+ * @param err - Whatever was thrown.
+ * @param indexName - The index to ask about.
+ */
+function isUniqueViolation(err: unknown, indexName: string): boolean {
+  if (!(err instanceof Error)) return false;
+  const code = (err as { code?: unknown }).code;
+  if (typeof code === 'string' && !code.startsWith('SQLITE_CONSTRAINT')) return false;
+  return err.message.includes(indexName);
 }
 
 /**
@@ -197,7 +284,54 @@ export interface ResolveAuthorInput {
  * it composes into the room service's own synchronous write path.
  */
 export class AuthorRegistry {
-  constructor(private readonly db: Db) {}
+  /**
+   * Who owns which handle. Composed rather than inherited so the tombstone
+   * table has exactly one reader and writer, and so the registry's own methods
+   * cannot bypass the three refusals it enforces.
+   */
+  readonly handles: AuthorHandleStore;
+
+  /**
+   * What agent occupies a directory right now — the ONE seam the registry reads
+   * an agent through.
+   *
+   * Two things need it and they must not answer separately: which occupancy
+   * generation a row belongs to (`minted_for_manifest_id`) and what a
+   * mint-time handle derives from (`agents.name`). Injected rather than queried
+   * so a caller wiring a different lookup — the room subsystem does — gets the
+   * same answer here as everywhere else, instead of the registry quietly reading
+   * the table behind it.
+   */
+  private readonly agentsAt: RoomAgentLookup;
+
+  constructor(
+    private readonly db: Db,
+    agentLookup?: RoomAgentLookup
+  ) {
+    this.handles = new AuthorHandleStore(db);
+    this.agentsAt = agentLookup ?? registryAgentLookup(db);
+  }
+
+  /**
+   * Set an author's handle, refusing with {@link RoomErrorCode} `HANDLE_TAKEN`,
+   * `HANDLE_RESERVED` or `INVALID_HANDLE`.
+   *
+   * **Human-initiated only.** The one caller is `PATCH
+   * /api/rooms/authors/:id/handle`; there is no MCP tool, no capability, and no
+   * agent-reachable route that reaches it. That is the invariant S6 chose over
+   * a rate limit, and it is a test rather than a tuning parameter.
+   *
+   * @param authorId - Whose handle to set.
+   * @param raw - The new handle. Empty or whitespace clears it, tombstoning
+   *   whatever they had.
+   * @returns The author, with its handle as stored.
+   */
+  setHandle(authorId: string, raw: string): AuthorRecord {
+    const author = this.getById(authorId);
+    if (!author) throw new RoomError('MEMBER_NOT_FOUND', 'No such author');
+    const handle = this.handles.set(author, raw);
+    return { ...author, handle };
+  }
 
   /**
    * Resolve a LOCAL `(kind, naturalKey)` to an author, inserting the row the
@@ -335,36 +469,111 @@ export class AuthorRegistry {
         id: existing.id,
         kind: input.kind,
         naturalKey: input.naturalKey,
+        // NOT refreshed, and this is the line the whole feature hangs on. See
+        // `AuthorRecord.handle`: the mesh reconciler rebuilds `agents` from disk
+        // every five minutes, so re-deriving here would overwrite the address
+        // with whatever the manifest currently says.
+        handle: existing.handle,
         ...refreshed,
         mintedForManifestId,
       };
     }
 
+    const id = ulid();
     const row = {
-      id: ulid(),
+      id,
       kind: input.kind,
       naturalKey: input.naturalKey,
       displayName: input.displayName,
+      handle: this.mintHandle({ id, ...input }),
       emoji: input.emoji ?? null,
       color: input.color ?? null,
       mintedForManifestId: occupantId,
       retiredAt: null,
       createdAt: new Date().toISOString(),
     };
-    // A concurrent resolve of the same natural key would collide on the unique
-    // index; ignoring the conflict and re-reading returns the winner's id
-    // rather than throwing on a read path.
-    this.db.insert(authors).values(row).onConflictDoNothing().run();
+    // **THIS USED TO BE A BARE `onConflictDoNothing()`, AND THAT IS THE TRAP.**
+    // Unqualified, the clause means "on conflict with ANY unique index" — so
+    // once `authors_handle_unique` exists, a handle collision would silently
+    // drop the insert, the re-read below would find nothing, and this would
+    // return a ULID for a row that was never written. Every later
+    // `room_entries.author_id` would then point at a phantom author.
+    //
+    // The obvious fix is a qualified conflict target, and SQLite will not take
+    // one here: `authors_kind_natural_key_unique` is PARTIAL, so the target has
+    // to carry the index predicate — `ON CONFLICT (…) WHERE retired_at IS NULL
+    // DO NOTHING` — and drizzle 0.45 emits its `where` AFTER `do nothing`, where
+    // it means the DO UPDATE filter instead. So the two conflicts are told apart
+    // by NAME, after the fact, which is stricter than a target anyway: a third
+    // unique index added later reaches neither branch and surfaces rather than
+    // being swallowed by a clause that quietly widened to cover it.
+    try {
+      this.db.insert(authors).values(row).run();
+    } catch (err) {
+      // A handle a moment ago free is somebody else's now. A refusal, not a
+      // retry: a caller that asked to mint an author and got a different address
+      // than it derived needs to know.
+      if (isUniqueViolation(err, 'authors_handle_unique')) {
+        throw new RoomError('HANDLE_TAKEN', `@${row.handle} is already somebody else's handle.`);
+      }
+      // A concurrent resolve of the SAME natural key. Re-reading returns the
+      // winner's id rather than throwing on what is, to its caller, a read.
+      if (!isUniqueViolation(err, 'authors_kind_natural_key_unique')) throw err;
+    }
     const settled = this.activeRow(input.kind, input.naturalKey);
     return {
       id: settled?.id ?? row.id,
       kind: input.kind,
       naturalKey: input.naturalKey,
       displayName: input.displayName,
+      handle: settled?.handle ?? row.handle,
       emoji: row.emoji,
       color: row.color,
       mintedForManifestId: settled?.mintedForManifestId ?? row.mintedForManifestId,
     };
+  }
+
+  /**
+   * The handle a freshly-minted row is written with, or `null` when it gets
+   * none.
+   *
+   * Three rules, and each of them is a decision rather than a convenience.
+   *
+   * **An agent derives from `agents.name`, not from its display name.** That is
+   * the string that addresses it today (the roster puts it first), so deriving
+   * from it preserves every working address — where deriving from the display
+   * name would swap a live address for a cosmetic one. The display name is only
+   * reached for when `name` spells nothing legal.
+   *
+   * **The local human gets nothing.** The only string there is to derive from is
+   * `'You'`, which is the placeholder this feature exists to remove, and the OS
+   * username is personal data this repo is careful with elsewhere. Where there
+   * is no honest string, the right answer is to ask — which the cockpit does the
+   * first time a room is opened — not to invent one.
+   *
+   * **Somebody on another platform DOES derive**, from the name they chose
+   * there. They are never going to be asked: nothing in DorkOS can prompt a
+   * person in a Telegram group. Their display name is a real self-chosen name
+   * rather than a placeholder, so deriving from it is honest, and without it a
+   * bridged room would lose the ability to address the people in it at all.
+   *
+   * @param input - The row being minted, with the id it will carry.
+   */
+  private mintHandle(input: ResolveAuthorInput & { id: string }): string | null {
+    const claimant = { id: input.id, kind: input.kind, naturalKey: input.naturalKey };
+    if (input.kind === 'agent') {
+      const taken = this.handles.spokenFor(claimant);
+      const agentName = this.agentNameOf(input.naturalKey);
+      return (
+        (agentName ? deriveHandle(agentName, taken) : undefined) ??
+        deriveHandle(input.displayName, taken) ??
+        null
+      );
+    }
+    if (input.kind === 'human' && isExternalNaturalKey(input.naturalKey)) {
+      return deriveHandle(input.displayName, this.handles.spokenFor(claimant)) ?? null;
+    }
+    return null;
   }
 
   /**
@@ -398,12 +607,27 @@ export class AuthorRegistry {
    * @param agentPath - The agent's project directory.
    */
   private occupantIdAt(agentPath: string): string | null {
-    const row = this.db
-      .select({ id: agents.id })
-      .from(agents)
-      .where(eq(agents.projectPath, agentPath))
-      .get();
-    return row?.id ?? null;
+    return this.agentsAt.byPath(agentPath)?.id ?? null;
+  }
+
+  /**
+   * The `agents.name` of whatever agent is registered at a directory right now,
+   * or `null` when none is. Public because the boot-time backfill derives from
+   * it too, and a second query for the same column is a second answer waiting to
+   * disagree.
+   *
+   * **`name`, deliberately, and not `display_name`.** The roster puts
+   * `agents.name` first when it decides what an `@` reaches, so it is the string
+   * that addresses an agent today, and deriving a handle from it is what
+   * preserves every address that already works. For most agent rows the two
+   * columns differ, so reading the wrong one is the single most likely way to
+   * get derivation wrong: `temp-assetops-aced-iframe` is the working address and
+   * `temp_assetops_aced_iframe` is merely how it renders.
+   *
+   * @param agentPath - The agent's project directory.
+   */
+  agentNameOf(agentPath: string): string | null {
+    return this.agentsAt.byPath(agentPath)?.name ?? null;
   }
 
   /**
@@ -434,11 +658,22 @@ export class AuthorRegistry {
     occupantId: string
   ): AuthorRecord {
     const now = new Date().toISOString();
+    // **The retired row gives its handle up first, and the order matters.** A
+    // retired author "stops claiming handles": it keeps its id, its history and
+    // its memberships forever, but the address it answered to is no longer its
+    // to hold, and while it holds one the unique index would refuse the
+    // successor. Released rather than deleted, so the tombstone still records
+    // who had it — and the successor at this same directory is inside that
+    // author's lineage, so it can take the name straight back. Re-initializing
+    // your own agent in place must not burn its handle forever.
+    this.handles.release(toRecord(existing));
+    const id = ulid();
     const fresh = {
-      id: ulid(),
+      id,
       kind: input.kind,
       naturalKey: input.naturalKey,
       displayName: input.displayName,
+      handle: this.mintHandle({ id, ...input }),
       emoji: input.emoji ?? null,
       color: input.color ?? null,
       mintedForManifestId: occupantId,
@@ -455,6 +690,14 @@ export class AuthorRegistry {
     this.db.transaction((tx) => {
       tx.update(authors).set({ retiredAt: now }).where(eq(authors.id, existing.id)).run();
       tx.insert(authors).values(fresh).run();
+      // The tombstone the release just wrote is the fresh row's own lineage's,
+      // so clearing it keeps "a tombstone means somebody may still want this
+      // back" true rather than leaving a row that refuses nobody.
+      if (fresh.handle !== null) {
+        tx.delete(handleTombstones)
+          .where(sql`lower(${handleTombstones.handle}) = ${fresh.handle}`)
+          .run();
+      }
     });
 
     logger.warn('[rooms] an agent directory changed hands, so its rooms did not carry over', {
@@ -472,6 +715,7 @@ export class AuthorRegistry {
       kind: input.kind,
       naturalKey: input.naturalKey,
       displayName: fresh.displayName,
+      handle: fresh.handle,
       emoji: fresh.emoji,
       color: fresh.color,
       mintedForManifestId: occupantId,
@@ -849,6 +1093,7 @@ function toRecord(row: typeof authors.$inferSelect): AuthorRecord {
     kind: row.kind as AuthorKind,
     naturalKey: row.naturalKey,
     displayName: row.displayName,
+    handle: row.handle,
     emoji: row.emoji,
     color: row.color,
     mintedForManifestId: row.mintedForManifestId,

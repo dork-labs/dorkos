@@ -26,7 +26,7 @@ import {
 } from '../../../rooms/__tests__/room-test-harness.js';
 import type { CreateBridgedRoomRequest } from '../../../rooms/room-service.js';
 import { RoomRoster } from '../../../rooms/room-roster.js';
-import { claimNames } from '../../../rooms/mentions.js';
+import { resolveMentions } from '../../../rooms/mentions.js';
 import {
   ChatBridge,
   BridgeLifecycle,
@@ -320,9 +320,9 @@ describe('ChatBridge.ingest (chats-as-channels §5)', () => {
     expect(harness.runner.turns[0].agentPath).toBe(AGENT_PATH);
 
     // Non-displacement, at the seam the spec names (§5.4). The mechanism is that
-    // the extra name is appended AFTER the agent's own handles, and `claimNames`
-    // is first-claimant-wins — over names within a candidate, and over candidates
-    // in roster order. Two deterministic checks prove both halves.
+    // the extra name is appended AFTER the agent's own handle, and resolution is
+    // first-claimant-wins — over names within a candidate, and over candidates in
+    // roster order. Two deterministic checks prove both halves.
     //
     // (a) The augment lands LAST on the agent's candidate, behind its real
     //     handle, so the agent still advertises and owns `ana`.
@@ -337,16 +337,16 @@ describe('ChatBridge.ingest (chats-as-channels §5)', () => {
       names: ['anabot'],
     });
     const agentCandidate = candidates.live.find((c) => c.authorId === agentAuthor.id);
-    expect(agentCandidate?.names).toEqual(['ana', 'Ana', 'anabot']);
-    expect(claimNames(candidates.live).get('ana')).toBe(agentAuthor.id);
+    expect(agentCandidate?.names).toEqual(['ana', 'anabot']);
+    expect(resolveMentions('@ana', candidates.live)).toEqual([agentAuthor.id]);
 
     // (b) A member EARLIER in the roster who already owns `anabot` keeps it — the
     //     augmented agent, coming after, cannot steal a claimed name.
     const withEarlierRival = [
       { authorId: 'rival', names: ['anabot'] },
-      { authorId: agentAuthor.id, names: ['ana', 'Ana', 'anabot'] },
+      { authorId: agentAuthor.id, names: ['ana', 'anabot'] },
     ];
-    expect(claimNames(withEarlierRival).get('anabot')).toBe('rival');
+    expect(resolveMentions('@anabot', withEarlierRival)).toEqual(['rival']);
   });
 
   it('A5.6: the entry and its external ref are one transaction — a ref failure writes NEITHER', async () => {

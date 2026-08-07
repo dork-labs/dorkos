@@ -42,7 +42,7 @@ import type {
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
 import type { BridgedRoomFraming } from '../relay/chat-bridge/room-context-framing.js';
-import { advertisedHandles, rosterMentionCandidates } from './author-handles.js';
+import { addressableHandles, rosterMentionCandidates } from './handles/author-handles.js';
 import type { EngagementWindow } from './engagement.js';
 import {
   authorOrigin,
@@ -250,12 +250,12 @@ export function buildRoomContext(deps: RoomContextDeps, input: RoomContextInput)
     if (record.kind === 'human') people.add(id);
     if (isExternalNaturalKey(record.naturalKey)) externals.add(id);
   }
-  // The SAME ownership computation the mention picker runs, over the SAME
-  // candidate sequence `resolveMentions` is handed at write time (`RoomService`
-  // → `RoomRoster.mentionCandidates`). Not a second rule that happens to agree:
+  // The SAME projection the mention picker runs, over the SAME candidate
+  // sequence `resolveMentions` is handed at write time (`RoomService` →
+  // `RoomRoster.addressingCandidates`). Not a second rule that happens to agree:
   // the defect this replaced was exactly that, one function returning
   // `agents.name` unfiltered while the picker refused the same string.
-  const handles = advertisedHandles(rosterMentionCandidates(members, records, deps.agents).live);
+  const handles = addressableHandles(rosterMentionCandidates(members, records, deps.agents).live);
 
   const flatten = (entry: RoomEntry): RoomContextEntry => {
     const author = nameOf(entry.authorId);
@@ -282,7 +282,7 @@ export function buildRoomContext(deps: RoomContextDeps, input: RoomContextInput)
   /**
    * The address that reaches an author here, and the name they render under.
    *
-   * **The handle comes from the roster's ownership map and nowhere else**, so an
+   * **The handle comes from the roster's addressable map and nowhere else**, so an
    * author who is not on the roster gets `null` even though a perfectly good
    * name of their own is sitting right there in `records`. That is the point.
    * `removeMember` is a real path and an entry outlives its author's

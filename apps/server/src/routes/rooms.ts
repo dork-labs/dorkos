@@ -24,12 +24,18 @@ import {
   ListThreadsQuerySchema,
   PostThreadReplyRequestSchema,
   PostToRoomRequestSchema,
+  SetAuthorHandleRequestSchema,
   SetReadCursorRequestSchema,
   ToggleReactionRequestSchema,
   UpdateMembershipRequestSchema,
   UpdateRoomRequestSchema,
 } from '@dorkos/shared/room-schemas';
-import { getRoomService, RoomError, type RoomErrorCode } from '../services/rooms/index.js';
+import {
+  getRoomService,
+  RoomError,
+  toAuthorRef,
+  type RoomErrorCode,
+} from '../services/rooms/index.js';
 import { parseBody } from '../lib/route-utils.js';
 import { roomEventsHandler } from './room-events-handler.js';
 import { resolveCaller } from './room-caller.js';
@@ -45,6 +51,9 @@ const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   AGENT_NOT_FOUND: 404,
   SLUG_TAKEN: 409,
   INVALID_SLUG: 400,
+  HANDLE_TAKEN: 409,
+  HANDLE_RESERVED: 409,
+  INVALID_HANDLE: 400,
   NESTED_THREAD: 400,
   ROOM_ARCHIVED: 409,
   OPERATOR_ONLY: 403,
@@ -274,6 +283,36 @@ router.patch('/:id/members/:authorId', (req, res) => {
     );
   } catch (err) {
     sendRoomError(res, err, 'PATCH /:id/members/:authorId');
+  }
+});
+
+/**
+ * PATCH /authors/:authorId/handle — set or clear an author's address.
+ *
+ * **Human-initiated only, and that is an invariant rather than a convention.**
+ * An agent presenting `X-DorkOS-Agent` is refused here, there is no MCP tool for
+ * it, and no capability exposes it. That is the instrument chosen over a rate
+ * limit: an agent that could rename itself in a loop would grow the tombstone
+ * table a row at a time forever, and removing the mechanism beats tuning a
+ * throttle around it.
+ *
+ * Declared before `/:id/…` would be a problem? No — `/authors` cannot be
+ * mistaken for a room id, because a room id is a ULID and this path has a second
+ * segment Express matches literally.
+ */
+router.patch('/authors/:authorId/handle', (req, res) => {
+  const body = parseBody(SetAuthorHandleRequestSchema, req.body, res);
+  if (!body) return;
+  try {
+    const caller = resolveCaller(res);
+    if (caller.kind !== 'human') {
+      throw new RoomError('OPERATOR_ONLY', 'Only a person can change a handle.');
+    }
+    res.json(
+      toAuthorRef(getRoomService().authorRegistry.setHandle(req.params.authorId, body.handle))
+    );
+  } catch (err) {
+    sendRoomError(res, err, 'PATCH /authors/:authorId/handle');
   }
 });
 

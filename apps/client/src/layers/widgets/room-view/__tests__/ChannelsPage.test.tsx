@@ -228,7 +228,7 @@ describe('ChannelsPage members-panel entry points', () => {
           responseMode: 'silent',
           joinedAt: '2026-07-26T09:00:00.000Z',
           lastReadSeq: 0,
-          author: { id: 'author-you', kind: 'human', displayName: 'You' },
+          author: { id: 'author-you', kind: 'human', displayName: 'You', handle: null },
           origin: 'local',
         },
         ...(withAgent
@@ -243,6 +243,7 @@ describe('ChannelsPage members-panel entry points', () => {
                   id: 'author-ana',
                   kind: 'agent' as const,
                   displayName: 'Ana',
+                  handle: 'ana',
                   agentRef: agentAuthorRef('/w/Ana'),
                 },
                 origin: 'local' as const,
@@ -312,7 +313,12 @@ describe('ChannelsPage members-panel entry points', () => {
               responseMode: 'mention-only' as const,
               joinedAt: '2026-07-26T09:00:00.000Z',
               lastReadSeq: 0,
-              author: { id: 'author-ana', kind: 'agent' as const, displayName: 'Ana' },
+              author: {
+                id: 'author-ana',
+                kind: 'agent' as const,
+                displayName: 'Ana',
+                handle: 'ana',
+              },
               origin: 'local' as const,
             },
           ],
@@ -541,7 +547,7 @@ describe('ChannelsPage — whose unread rule is this', () => {
       responseMode: 'always',
       joinedAt: '2026-07-26T09:00:00.000Z',
       lastReadSeq,
-      author: { id, kind: 'human', displayName },
+      author: { id, kind: 'human', displayName, handle: null },
       origin: 'local',
     };
   }
@@ -654,7 +660,7 @@ describe('ChannelsPage — a thread reply still clears the badge', () => {
           responseMode: 'always',
           joinedAt: '2026-07-26T09:00:00.000Z',
           lastReadSeq: 0,
-          author: { id: 'you', kind: 'human', displayName: 'You' },
+          author: { id: 'you', kind: 'human', displayName: 'You', handle: null },
           origin: 'local',
         },
       ],

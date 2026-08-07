@@ -70,6 +70,7 @@ function agentMember(
     lastReadSeq: 0,
     author: {
       id: `author-${displayName}`,
+      handle: null,
       kind: 'agent',
       displayName,
       agentRef: agentAuthorRef(agentPath),
@@ -84,7 +85,7 @@ const HUMAN: RoomRosterEntry = {
   responseMode: 'always',
   joinedAt: '2026-07-26T10:00:00.000Z',
   lastReadSeq: 0,
-  author: { id: 'me', kind: 'human', displayName: 'You' },
+  author: { id: 'me', kind: 'human', displayName: 'You', handle: null },
   origin: 'local',
 };
 

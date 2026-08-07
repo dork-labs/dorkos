@@ -440,8 +440,12 @@ describe('external authors in a bridged room', () => {
       const { roomContext } = await turnAfterStranger();
       const block = formatRoomContext(roomContext, { nonce: NONCE });
 
-      expect(block).toContain('Miguel (person on telegram');
-      expect(block).toContain('Miguel (person, external');
+      // **A stranger DOES derive a handle**, from the name they chose on their
+      // own platform — unlike the operator, who is asked. Nothing in DorkOS can
+      // prompt somebody in a Telegram group, and without a handle a bridged room
+      // would lose the ability to address the people in it at all.
+      expect(block).toContain('@miguel (person on telegram');
+      expect(block).toContain('@miguel (person, external');
     });
 
     it('renders a stranger name in the preamble with no angle bracket or control character (A9.2)', async () => {
