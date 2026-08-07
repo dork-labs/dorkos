@@ -221,6 +221,24 @@ export class McpOAuthFlowStore {
     this.flows.delete(state);
   }
 
+  /**
+   * Forget every flow bound to one target, live or settled (DOR-982).
+   *
+   * Used when the OAuth client identity a target signs in as is replaced: every
+   * authorize URL already handed out names the OLD client, so leaving them
+   * claimable means the operator can click a link that is guaranteed to fail —
+   * or, worse, that a callback still carrying the old `state` completes against
+   * the new identity.
+   *
+   * @param agentId - The owning agent's id.
+   * @param serverName - The managed server's name.
+   */
+  dropFor(agentId: string, serverName: string): void {
+    for (const [state, flow] of this.flows) {
+      if (flow.agentId === agentId && flow.serverName === serverName) this.flows.delete(state);
+    }
+  }
+
   /** Mark a flow connected (the callback stored a token). */
   markConnected(state: string): void {
     const flow = this.flows.get(state);

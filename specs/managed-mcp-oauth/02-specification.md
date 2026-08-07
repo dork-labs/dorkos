@@ -191,6 +191,19 @@ copy; reverting reddens them.
   pre-registered clients; a manual `client_id/secret` fallback is a **follow-up**,
   not W1. The mock + real-Granola check are the two proofs; a matrix of providers
   is out of scope.
+
+  **Half of this closed in DOR-982**, and it is worth being precise about which
+  half. `mcp.set_client` stores operator-supplied client credentials in the same
+  encrypted slot DCR writes to, and the SDK's `auth()` then skips registration
+  entirely (it only registers when `clientInformation()` answers empty), so a
+  provider that **requires a pre-registered client** is now signable-in. A
+  provider that **rejects the loopback `redirect_uri`** is not, and cannot be
+  detected from here: that refusal happens on the provider's own authorize page,
+  in the person's browser, and never reaches the callback. The UI is scoped
+  accordingly — the form offers app credentials and promises nothing about
+  redirect policy. A separate remote/public callback would be the fix for that
+  half, and it remains out of scope.
+
 - **Revocation/expiry-mid-session detection seam.** `refreshAuthorization`
   preserves the old refresh token when none is returned; rotation + 401-after-
   connect should flip the row back to `needs-auth`. Wire the happy path + refresh;
