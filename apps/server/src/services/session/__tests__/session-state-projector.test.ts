@@ -2,6 +2,7 @@ import { getEventListeners } from 'node:events';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   SessionStateProjector,
+  CAPABILITY_HOLD_PAUSE_GRACE_MS,
   getOrCreateProjector,
   peekProjector,
   disposeProjector,
@@ -253,10 +254,10 @@ describe('SessionStateProjector', () => {
     expect(p.getStatus().lifecycle).toBe('streaming');
   });
 
-  it('stops pausing once a STRANDED capability hold passes its cap', () => {
+  it('stops pausing once a STRANDED capability hold passes its cap and its grace', () => {
     // The turn threw with a hold outstanding, so no resolution ever arrives. The
-    // hold must not pin the watchdog forever — it self-expires at its own cap,
-    // the same immortality guard the interaction set carries.
+    // hold must not pin the watchdog forever — it self-expires at its own cap
+    // (plus the grace), the same immortality guard the interaction set carries.
     vi.useFakeTimers();
     vi.setSystemTime(1_000_000);
     const p = new SessionStateProjector('s1');
@@ -272,8 +273,54 @@ describe('SessionStateProjector', () => {
     vi.setSystemTime(1_000_000 + HOLD_CAP_MS - 1);
     expect(p.hasPendingInteractions()).toBe(true);
 
-    // At the cap the hold is stale — nobody is waiting any more, whatever the map holds.
+    // AT the cap the pause is still held: the hold's own degradation fires on the
+    // same millisecond, and its resolution needs to reach the stream before the
+    // watchdog re-arms — see CAPABILITY_HOLD_PAUSE_GRACE_MS.
     vi.setSystemTime(1_000_000 + HOLD_CAP_MS);
+    expect(p.hasPendingInteractions()).toBe(true);
+
+    // Past cap + grace the hold is stale — nobody is waiting any more, whatever
+    // the map still holds.
+    vi.setSystemTime(1_000_000 + HOLD_CAP_MS + CAPABILITY_HOLD_PAUSE_GRACE_MS);
+    expect(p.hasPendingInteractions()).toBe(false);
+  });
+
+  it('does not latch a session in blocked after a turn stranded a capability hold', () => {
+    // The regression DOR-987 found: a turn interrupted with a hold open never
+    // delivers `capability_approval_resolved` (the message-sender drains its
+    // queue only at the top of its loop), so the hold entry strands. Reading the
+    // map's RAW SIZE to settle the lifecycle then pinned every LATER interaction
+    // at `blocked` — the session read "waiting on you" forever.
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    const p = new SessionStateProjector('s1');
+    p.ingest({ type: 'turn_start' });
+    p.ingest({
+      type: 'capability_approval_required',
+      approval: HELD_APPROVAL,
+      startedAt: Date.now(),
+      capMs: HOLD_CAP_MS,
+    } as RawSessionEvent);
+    // The turn ends with the hold still open (operator interrupt / stream throw).
+    p.ingest({ type: 'turn_end' });
+
+    // A LATER turn asks an ordinary question and gets its answer.
+    vi.setSystemTime(1_000_000 + HOLD_CAP_MS * 10);
+    p.ingest({ type: 'turn_start' });
+    p.ingest({
+      type: 'approval_required',
+      id: 'int-1',
+      startedAt: Date.now(),
+      remainingMs: TIMEOUT_MS,
+      toolName: 'Bash',
+      input: '{}',
+      hasSuggestions: false,
+    } as RawSessionEvent);
+    expect(p.getStatus().lifecycle).toBe('blocked');
+    p.ingest({ type: 'interaction_resolved', id: 'int-1' } as RawSessionEvent);
+
+    // Settled back into the live turn, exactly as a session that never held.
+    expect(p.getStatus().lifecycle).toBe('streaming');
     expect(p.hasPendingInteractions()).toBe(false);
   });
 
