@@ -47,6 +47,14 @@ import {
   toCachedToken,
   withRequestTimeout,
 } from './agent-mcp-token-refresher.js';
+import {
+  probeTarget,
+  toolCountFrom,
+  tokenWasRefused,
+  type McpProbeTarget,
+  type McpTargetProbe,
+  type McpTargetProbeResult,
+} from './agent-mcp-target-probe.js';
 
 /** The dedicated encrypted store id for managed-MCP OAuth material (tokens + DCR client info). */
 const MCP_OAUTH_STORE_ID = 'mcp-oauth';
@@ -57,15 +65,17 @@ export const MCP_OAUTH_CALLBACK_PATH = '/api/agents/mcp-oauth/callback';
 /** Injectable `fetch` seam (defaults to global `fetch`); tests pass a mock OAuth provider fetch. */
 export type FetchFn = typeof fetch;
 
-/** One `(agentId, serverName, serverUrl)` OAuth target — a managed server that expects a token. */
-export interface McpOAuthTarget {
-  /** The agent whose manifest owns the server. */
-  agentId: string;
-  /** The managed server's name (unique within the agent). */
-  serverName: string;
-  /** The MCP server URL the OAuth flow authorizes against. */
-  serverUrl: string;
-}
+/**
+ * One `(agentId, serverName, serverUrl)` OAuth target — a managed server that
+ * expects a token. The same shape a probe is asked about, named for this side.
+ */
+export type McpOAuthTarget = McpProbeTarget;
+
+/**
+ * The probe port and its result, re-exported so boot and the sign-in tests reach
+ * them from the engine they configure rather than from a second module.
+ */
+export type { McpTargetProbe, McpTargetProbeResult };
 
 /** Constructor dependencies for {@link AgentMcpOAuthService}. */
 export interface AgentMcpOAuthServiceDeps {
@@ -81,6 +91,13 @@ export interface AgentMcpOAuthServiceDeps {
   cache?: McpAccessTokenCacheDeps;
   /** Delay seam for the refresh backoff (tests only); defaults to a real timer. */
   sleep?: (ms: number) => Promise<void>;
+  /**
+   * Reachability probe for a target (DOR-1003). Present, it makes a connected
+   * sign-in report how many tools it unlocked, and it stops a stored-but-refused
+   * token from being announced as "already connected". Omitted → the engine keeps
+   * its pre-DOR-1003 behaviour and simply has no opinion on either.
+   */
+  probe?: McpTargetProbe;
 }
 
 /** The result `mcp.signin` needs: a sign-in link, or a note that the server is already connected. */
@@ -89,8 +106,22 @@ export interface StartSigninResult {
   flowId: string;
   /** The sign-in link to open, absent when {@link alreadyConnected}. */
   authorizeUrl?: string;
-  /** True when a live token already existed, so no browser step is needed. */
+  /** True when a live token already existed AND the server accepted it, so no browser step is needed. */
   alreadyConnected: boolean;
+}
+
+/** The result `mcp.poll_signin` needs: the flow's status, plus the payoff once it connects. */
+export interface PollSigninResult {
+  /** Whether the sign-in is still waiting, finished, or failed. */
+  status: McpSigninStatus;
+  /** The failure reason, when the status is `failed`. */
+  error?: string;
+  /**
+   * How many tools the server exposes, present only once the sign-in connected
+   * AND the server answered a probe. Absent is not "zero" — it is "not counted",
+   * which is why counting never gates reporting the connection.
+   */
+  toolCount?: number;
 }
 
 /**
@@ -119,8 +150,10 @@ export class AgentMcpOAuthService {
   private readonly redirectUri: string;
   private readonly fetchImpl: FetchFn;
   private readonly logger: Pick<Logger, 'warn'>;
+  private readonly probe: McpTargetProbe | undefined;
 
   constructor(deps: AgentMcpOAuthServiceDeps) {
+    this.probe = deps.probe;
     this.secrets = new McpOAuthSecretStore(
       new ExtensionSecretStore(MCP_OAUTH_STORE_ID, deps.dorkHome)
     );
@@ -154,7 +187,7 @@ export class AgentMcpOAuthService {
   /**
    * Begin a sign-in for a target: mint a flow, drive the SDK `auth()` orchestrator
    * (discovery → DCR → PKCE authorize URL), and return the link for the operator
-   * to open. When a live token already exists, `auth()` refreshes it silently and
+   * to open. When a live token already exists AND the server still accepts it,
    * this reports `alreadyConnected` with no link. A failure drops the flow it
    * minted rather than parking it as `pending`: no link ever reached the operator,
    * so nothing can legitimately poll it, and a claimable `state` is one a stray
@@ -171,16 +204,8 @@ export class AgentMcpOAuthService {
       const state = randomBytes(16).toString('hex');
       this.flows.start(state, target);
       try {
-        const provider = this.providerFor(target, state);
-        const result = await auth(provider, {
-          serverUrl: target.serverUrl,
-          fetchFn: this.fetchImpl,
-        });
-        if (result === 'AUTHORIZED') {
-          await this.primeFromStore(target);
-          this.flows.markConnected(state);
-          return { flowId: state, alreadyConnected: true };
-        }
+        const connected = await this.authorize(target, state);
+        if (connected) return connected;
 
         const authorizeUrl = this.flows.authorizeUrl(state);
         if (!authorizeUrl) throw new Error('Could not build a sign-in link for this server.');
@@ -196,12 +221,67 @@ export class AgentMcpOAuthService {
   }
 
   /**
-   * The pollable status of a sign-in flow (`pending` | `connected` | `failed`).
+   * Drive `auth()` for a flow and, when it reports the target is already
+   * authorized, **prove it before saying so** (DOR-1003).
+   *
+   * `auth()` answering `AUTHORIZED` only means DorkOS found a token set it could
+   * load or silently refresh. It does not mean the server still honours it —
+   * a revoked grant, a rotated client, or a server that has forgotten the session
+   * all look identical from here. Reporting `alreadyConnected` on that evidence
+   * told the operator they were connected and then failed on the next turn, with
+   * no sign-in link anywhere to fix it. So the token is dialled once: if the
+   * server refuses it, the stored credential is dropped (the DOR-986
+   * invalidation seam) and the loop asks for a real sign-in instead.
+   *
+   * With no probe wired the proof step is skipped and `AUTHORIZED` is taken at
+   * face value, exactly as before.
+   *
+   * @returns The already-connected result, or `undefined` when a browser step is
+   *   needed — by which point the authorize URL is captured on the flow.
+   */
+  private async authorize(
+    target: McpOAuthTarget,
+    state: string
+  ): Promise<StartSigninResult | undefined> {
+    // At most two rounds: the first may find a stored token, the second is the
+    // fresh sign-in that replaces it once the first is shown to be dead.
+    for (let round = 0; round < 2; round++) {
+      const result = await auth(this.providerFor(target, state), {
+        serverUrl: target.serverUrl,
+        fetchFn: this.fetchImpl,
+      });
+      if (result !== 'AUTHORIZED') return undefined;
+      await this.primeFromStore(target);
+      if (!tokenWasRefused(await probeTarget(this.probe, target, this.logger))) {
+        this.flows.markConnected(state);
+        return { flowId: state, alreadyConnected: true };
+      }
+      // Held under this target's lock already, so the unlocked body is the right
+      // one — taking the lock again would wait on ourselves.
+      await this.forgetServerUnlocked(target.agentId, target.serverName);
+    }
+    return undefined;
+  }
+
+  /**
+   * The pollable status of a sign-in flow (`pending` | `connected` | `failed`),
+   * carrying the payoff once it connects: how many tools the operator just
+   * unlocked (DOR-1003).
+   *
+   * The count is a bonus, never a gate. A server that connected but would not
+   * answer the follow-up probe still reports `connected` with the count absent —
+   * the sign-in succeeded, and saying otherwise because a second round trip
+   * failed would be a lie in the more damaging direction.
    *
    * @param flowId - The flow id from {@link startSignin}.
    */
-  pollSignin(flowId: string): { status: McpSigninStatus; error?: string } {
-    return this.flows.status(flowId);
+  async pollSignin(flowId: string): Promise<PollSigninResult> {
+    const status = this.flows.status(flowId);
+    if (status.status !== 'connected') return status;
+    const target = this.flows.target(flowId);
+    if (!target) return status;
+    const toolCount = toolCountFrom(await probeTarget(this.probe, target, this.logger));
+    return toolCount === undefined ? status : { ...status, toolCount };
   }
 
   /**
@@ -222,23 +302,28 @@ export class AgentMcpOAuthService {
    * that started on the OLD refresh token cannot land after this exchange and
    * overwrite the grant the operator just approved.
    *
+   * The server's name comes back with the result so the landing page can say
+   * WHICH server the operator just signed in to (DOR-1003) — it is known here and
+   * nowhere else, since the browser only ever carried the opaque `state`.
+   *
    * @param args - The `state`, `code`, and optional `error` from the callback query.
    */
   async handleCallback(args: {
     state?: string;
     code?: string;
     error?: string;
-  }): Promise<{ connected: boolean; error?: string }> {
+  }): Promise<{ connected: boolean; error?: string; serverName?: string }> {
     const { state, code, error } = args;
     if (!state) return { connected: false, error: 'Missing sign-in state. Please start again.' };
     const target = this.flows.target(state);
     if (!target)
       return { connected: false, error: 'This sign-in link expired. Please start again.' };
-    if (this.flows.status(state).status === 'connected') return { connected: true };
+    const serverName = target.serverName;
+    if (this.flows.status(state).status === 'connected') return { connected: true, serverName };
     if (error || !code) {
       const message = 'Sign-in was cancelled.';
       this.flows.markFailed(state, message);
-      return { connected: false, error: message };
+      return { connected: false, error: message, serverName };
     }
 
     return this.refresher.exclusive(targetKey(target), async () => {
@@ -248,7 +333,7 @@ export class AgentMcpOAuthService {
       // milliseconds is exactly how this happens. The second would then run the
       // exchange against a spent one-shot verifier, throw, and `markFailed` over
       // a flow that is already connected (DOR-986).
-      if (this.flows.status(state).status === 'connected') return { connected: true };
+      if (this.flows.status(state).status === 'connected') return { connected: true, serverName };
       try {
         const provider = this.providerFor(target, state);
         await auth(provider, {
@@ -261,10 +346,10 @@ export class AgentMcpOAuthService {
         if (!(await this.primeFromStore(target))) {
           const message = 'The server did not complete the sign-in. Please try again.';
           this.flows.markFailed(state, message);
-          return { connected: false, error: message };
+          return { connected: false, error: message, serverName };
         }
         this.flows.markConnected(state);
-        return { connected: true };
+        return { connected: true, serverName };
       } catch (err) {
         // Keep the raw detail in the server log; hand the browser + poll a generic
         // message (the callback lands in the operator's own loopback browser, but
@@ -274,7 +359,7 @@ export class AgentMcpOAuthService {
         );
         const message = 'Sign-in failed. Please try again.';
         this.flows.markFailed(state, message);
-        return { connected: false, error: message };
+        return { connected: false, error: message, serverName };
       }
     });
   }

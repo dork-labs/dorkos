@@ -257,7 +257,12 @@ export const mcpDomain: CapabilityDomain = {
         'Add an MCP server to an agent and enable it. This introduces a command (stdio) or ' +
         'remote endpoint (http/sse) that will run in the agent’s environment, so a person ' +
         'approves it first at a card showing the exact command/args/url. Rejects the reserved ' +
-        'name "dorkos" and any name the agent already uses.',
+        'name "dorkos" and any name the agent already uses. If the added entry comes back with ' +
+        'connection.authKind "oauth2", the server needs a sign-in: call mcp_signin for it ' +
+        'immediately, in the same turn, rather than asking permission first — the person ' +
+        'already approved this endpoint at the card above, and nothing leaves this machine ' +
+        'until they open the sign-in link. Its tools are live on the next turn once they ' +
+        'finish.',
       tier: 'destructive',
       input: z.object({
         agentId: agentIdField,
@@ -564,7 +569,9 @@ export const mcpDomain: CapabilityDomain = {
       description:
         'Check whether an MCP sign-in the user was sent to complete has finished. Returns ' +
         'pending, connected, or failed. Call after the user says they have signed in; once ' +
-        'connected, the server’s tools are injected on the next turn.',
+        'connected, the server’s tools are injected on the next turn. When it returns a ' +
+        'toolCount, tell the user what they just unlocked — "Connected — 12 tools." — and ' +
+        'say plain "Connected." when no count came back (absent means uncounted, not zero).',
       tier: 'act',
       input: z.object({
         flowId: z.string().min(1).describe('The flow id from mcp_signin.'),
@@ -574,6 +581,10 @@ export const mcpDomain: CapabilityDomain = {
           .enum(['pending', 'connected', 'failed'])
           .describe('Whether the sign-in is still waiting, done, or failed.'),
         error: z.string().optional().describe('The failure reason, when the status is failed.'),
+        toolCount: z
+          .number()
+          .optional()
+          .describe('How many tools the server exposes, counted once the sign-in connected.'),
       }),
       surfaces: {
         mcp: {

@@ -841,6 +841,18 @@ export const MOCK_IDENTITIES: Record<string, MockIdentity> = {
       managedBy: { displayName: 'Priya', handle: null },
     },
   },
+  // No `managedBy` at all — today's honest state for every real card, since
+  // no production caller populates it yet (that lands with the Team page).
+  // Sits beside `warden`/`scout` so the three owner-attribution states —
+  // handle, name-only, and no chip — are visible in the same row.
+  courier: {
+    kind: 'agent',
+    displayName: 'Courier',
+    handle: 'courier',
+    color: '#e11d48',
+    emoji: '📦',
+    agent: { runtime: 'Claude Code', model: 'Sonnet 5' },
+  },
   ana: {
     kind: 'human',
     displayName: 'Ana',

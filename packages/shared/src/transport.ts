@@ -316,6 +316,15 @@ export interface McpSigninPollResult {
   status: 'pending' | 'connected' | 'failed';
   /** The failure reason, when {@link status} is `failed`. */
   error?: string;
+  /**
+   * How many tools the server exposes, counted right after the sign-in landed
+   * (DOR-1003) — the payoff line, "Connected — 12 tools."
+   *
+   * Present only when {@link status} is `connected` AND the server answered the
+   * follow-up probe. Absent never means zero, so read it defensively: a
+   * connection is reported whether or not the count could be taken.
+   */
+  toolCount?: number;
 }
 
 /** A lifecycle event recorded for an adapter instance. */

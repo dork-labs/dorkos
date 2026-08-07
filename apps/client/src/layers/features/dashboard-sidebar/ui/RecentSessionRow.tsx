@@ -5,7 +5,7 @@ import { cn, formatRelativeTime } from '@/layers/shared/lib';
 import { useNow } from '@/layers/shared/model';
 import { SidebarMenuItem } from '@/layers/shared/ui';
 import { useAgentVisual, AgentAvatar } from '@/layers/entities/agent';
-import { sessionDisplayTitle, OriginMark } from '@/layers/entities/session';
+import { sessionDisplayTitle, SessionOriginMark } from '@/layers/entities/session';
 
 interface RecentSessionRowProps {
   /** Session to resume on click. */
@@ -44,7 +44,7 @@ export function RecentSessionRow({ session, agent, displayName, onClick }: Recen
       >
         <AgentAvatar color={visual.color} emoji={visual.emoji} size="xs" />
         <span className="min-w-0 flex-1 truncate">{sessionDisplayTitle(session.title)}</span>
-        <OriginMark
+        <SessionOriginMark
           origin={session.origin}
           label={session.originLabel}
           className="text-muted-foreground/50"

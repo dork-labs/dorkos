@@ -18,7 +18,6 @@
  */
 import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { readManifest, writeManifest, MANIFEST_DIR, MANIFEST_FILE } from '@dorkos/shared/manifest';
 import { AgentManifestSchema, McpServerTransportSchema } from '@dorkos/shared/mesh-schemas';
 import type {
@@ -31,12 +30,7 @@ import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
 import type { Logger } from '@dorkos/shared/logger';
 
 import { readMcpJsonServers, resolveMcpJsonConnection } from './mcp-json.js';
-import {
-  createProbeTransport,
-  isUnauthorizedProbeError,
-  withProbeTimeout,
-  TEST_PROBE_TIMEOUT_MS,
-} from './agent-mcp-probe.js';
+import { runProbe, settledWithin, ADD_PROBE_BUDGET_MS } from './agent-mcp-probe.js';
 
 /** The DorkOS tool server's own name — reserved so a managed server can never shadow it. */
 export const RESERVED_MCP_SERVER_NAME = 'dorkos';
@@ -295,6 +289,24 @@ export class AgentMcpServerService {
    * the DorkOS tool server) and any name already present on the agent. Enables
    * the server by default — an add is an explicit, gated action (spec §4).
    *
+   * ## The advisory sign-in probe (DOR-1003)
+   *
+   * A remote server is dialled once on the way in, purely to answer "does this
+   * need a sign-in?". A clean 401 stamps `authKind: 'oauth2'` on the entry
+   * BEFORE it is persisted, so the very first listing says needs-auth and the
+   * agent can offer the sign-in in the same breath as the add — instead of the
+   * operator adding a server, seeing nothing, and finding out only when a turn
+   * fails.
+   *
+   * It is ADVISORY in both directions. Any other outcome — a 200, a timeout, DNS
+   * that does not resolve — persists exactly what the caller asked for; the probe
+   * can add a fact, never withhold or change the add. And it is bounded by
+   * {@link ADD_PROBE_BUDGET_MS} rather than the full probe timeout, because a
+   * person is waiting on this call: a server that has not answered inside the
+   * budget is persisted unstamped, while the probe keeps running in the
+   * background and heals the entry through {@link learnOAuthAuthKind} if it turns
+   * out to be a 401 after all.
+   *
    * @param opts - The agent id, server name, connection, approver, and optional enabled flag.
    * @returns The updated `mcpServers` list.
    * @throws {AgentMcpServerError} `RESERVED_NAME` or `DUPLICATE_NAME`.
@@ -303,16 +315,66 @@ export class AgentMcpServerService {
     const { projectPath, manifest } = await this.load(opts.agentId);
     this.assertNameAvailable(manifest.mcpServers, opts.name);
 
+    const probe = this.probeForOAuth(opts.connection);
+    const learnedInTime = probe ? await settledWithin(probe, ADD_PROBE_BUDGET_MS, false) : false;
+
     const entry: ManagedMcpServer = {
       name: opts.name,
       enabled: opts.enabled ?? true,
-      connection: opts.connection,
+      connection: learnedInTime ? withOAuthAuthKind(opts.connection) : opts.connection,
       addedAt: new Date().toISOString(),
       addedBy: opts.addedBy,
     };
     const next = [...manifest.mcpServers, entry];
     await this.persist(projectPath, manifest, next);
+    if (probe && !learnedInTime) this.learnFromLateProbe(opts.agentId, opts.name, probe);
     return next;
+  }
+
+  /**
+   * Start the advisory "does this want a sign-in?" probe for a connection being
+   * added, or `undefined` when there is nothing to learn.
+   *
+   * Three connections are left alone. A stdio server has no OAuth endpoint. An
+   * entry that already declares `authKind: 'oauth2'` is already saying what the
+   * probe would tell us. And an entry carrying its OWN `Authorization` header is
+   * a credential the operator pasted in, which DorkOS neither holds nor refreshes
+   * — the same carve-out {@link deriveAuthStatus} makes, and it has to be made
+   * here too or the two surfaces disagree about one row: a stale static token
+   * 401s, the probe stamps `oauth2`, `mcp.add` then tells the agent to launch an
+   * OAuth sign-in the operator never asked for, while `list()` still reports no
+   * opinion for that very entry.
+   *
+   * Resolves `true` only on a clean 401. A brand-new entry holds no DorkOS token
+   * yet, so the bare stored connection is exactly what a turn would dial.
+   *
+   * @param connection - The connection the caller asked to add.
+   */
+  private probeForOAuth(connection: McpServerTransport): Promise<boolean> | undefined {
+    if (connection.transport === 'stdio') return undefined;
+    if (connection.authKind === 'oauth2') return undefined;
+    if (hasOwnAuthorizationHeader(connection.headers)) return undefined;
+    return runProbe(connection, this.probeFetch).then((outcome) => outcome.kind === 'unauthorized');
+  }
+
+  /**
+   * Adopt a probe that came back after {@link add} stopped waiting for it: a late
+   * 401 still heals the entry, one write later than the fast path. Fire-and-forget
+   * by design — the add has already returned, so there is nobody left to report a
+   * failure to, and it is logged instead.
+   */
+  private learnFromLateProbe(agentId: string, name: string, probe: Promise<boolean>): void {
+    void probe
+      .then(async (needsAuth) => {
+        if (needsAuth) await this.learnOAuthAuthKind(agentId, name);
+      })
+      .catch((err: unknown) => {
+        this.logger.warn(
+          `[agent-mcp] could not record authKind for "${name}": ${
+            err instanceof Error ? err.message : String(err)
+          }`
+        );
+      });
   }
 
   /**
@@ -640,34 +702,20 @@ export class AgentMcpServerService {
       );
     }
 
-    const client = new Client({ name: 'dorkos-mcp-probe', version: '1.0.0' }, { capabilities: {} });
-    const transport = createProbeTransport(this.probeConnection(agentId, server), this.probeFetch);
-    try {
-      const tools = await withProbeTimeout(
-        (async () => {
-          await client.connect(transport);
-          return client.listTools();
-        })(),
-        TEST_PROBE_TIMEOUT_MS
+    const outcome = await runProbe(this.probeConnection(agentId, server), this.probeFetch);
+    if (outcome.kind === 'ok') return { ok: true, toolCount: outcome.toolCount };
+    if (outcome.kind === 'failed') return { ok: false, error: outcome.error };
+    // Best-effort: the probe's answer is what the caller asked for, so a failed
+    // manifest write must not turn a useful result into an error.
+    await this.learnOAuthAuthKind(agentId, name).catch((writeErr: unknown) => {
+      this.logger.warn(
+        `[agent-mcp] could not record authKind for "${name}": ${
+          writeErr instanceof Error ? writeErr.message : String(writeErr)
+        }`
       );
-      return { ok: true, toolCount: tools.tools.length };
-    } catch (err) {
-      const error = err instanceof Error ? err.message : String(err);
-      if (!isUnauthorizedProbeError(err)) return { ok: false, error };
-      // Best-effort: the probe's answer is what the caller asked for, so a failed
-      // manifest write must not turn a useful result into an error.
-      await this.learnOAuthAuthKind(agentId, name).catch((writeErr: unknown) => {
-        this.logger.warn(
-          `[agent-mcp] could not record authKind for "${name}": ${
-            writeErr instanceof Error ? writeErr.message : String(writeErr)
-          }`
-        );
-        return false;
-      });
-      return { ok: false, needsAuth: true, error };
-    } finally {
-      await client.close().catch(() => {});
-    }
+      return false;
+    });
+    return { ok: false, needsAuth: true, error: outcome.error };
   }
 
   /**
@@ -798,6 +846,18 @@ export class AgentMcpServerService {
  */
 function endpointOf(connection: McpServerTransport): string | null {
   return connection.transport === 'stdio' ? null : connection.url;
+}
+
+/**
+ * The same connection, declaring that it authenticates with OAuth. A stdio
+ * connection is returned untouched — it has no remote endpoint to authorize
+ * against, so the hint would be meaningless there.
+ *
+ * @param connection - The connection to stamp.
+ */
+function withOAuthAuthKind(connection: McpServerTransport): McpServerTransport {
+  if (connection.transport === 'stdio') return connection;
+  return { ...connection, authKind: 'oauth2' };
 }
 
 /**

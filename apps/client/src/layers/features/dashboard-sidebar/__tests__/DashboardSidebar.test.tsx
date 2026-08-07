@@ -287,7 +287,7 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
   useRecentSessions: () => mockRecent(),
   sessionDisplayTitle: (t: string) => t,
   SessionRow: () => null,
-  OriginMark: () => null,
+  SessionOriginMark: () => null,
   // Stubbed rather than imported: mirrors the real partition (session-origin-legibility)
   // without pulling the real module into this wholesale mock.
   partitionSessionsByOrigin: (sessions: Array<{ origin?: string }>) => ({

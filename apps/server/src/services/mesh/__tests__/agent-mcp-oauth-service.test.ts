@@ -190,7 +190,7 @@ describe('AgentMcpOAuthService — full sign-in flow', () => {
     });
     expect(started.alreadyConnected).toBe(false);
     expect(started.authorizeUrl).toContain(`${ORIGIN}/authorize`);
-    expect(oauth.pollSignin(started.flowId).status).toBe('pending');
+    expect((await oauth.pollSignin(started.flowId)).status).toBe('pending');
     // Token withheld until the flow completes.
     expect(oauth.getAccessToken(AGENT_ID, SERVER, SERVER_URL)).toBeUndefined();
 
@@ -200,8 +200,8 @@ describe('AgentMcpOAuthService — full sign-in flow', () => {
 
     // 2. The browser (auto-approved) redirects to the loopback callback with code+state.
     const cb = await oauth.handleCallback({ state: started.flowId, code: AUTH_CODE });
-    expect(cb).toEqual({ connected: true });
-    expect(oauth.pollSignin(started.flowId).status).toBe('connected');
+    expect(cb).toEqual({ connected: true, serverName: SERVER });
+    expect((await oauth.pollSignin(started.flowId)).status).toBe('connected');
 
     // 3. The access token is now readable SYNCHRONOUSLY (the injection read path).
     expect(oauth.getAccessToken(AGENT_ID, SERVER, SERVER_URL)).toBe('access-1');
@@ -705,12 +705,12 @@ describe('AgentMcpOAuthService.handleCallback — a reloaded callback page (DOR-
     held.resolve();
     const [firstResult, secondResult] = await Promise.all([first, second]);
 
-    expect(firstResult).toEqual({ connected: true });
+    expect(firstResult).toEqual({ connected: true, serverName: SERVER });
     // Moving the inner re-check back outside the `exclusive` block reddens this.
-    expect(secondResult).toEqual({ connected: true });
+    expect(secondResult).toEqual({ connected: true, serverName: SERVER });
     // What the operator actually sees: the poll must not say the sign-in failed
     // while its token is live and injecting.
-    expect(oauth.pollSignin(started.flowId).status).toBe('connected');
+    expect((await oauth.pollSignin(started.flowId)).status).toBe('connected');
     expect(oauth.getAccessToken(AGENT_ID, SERVER, SERVER_URL)).toBe('access-1');
   });
 
@@ -729,6 +729,7 @@ describe('AgentMcpOAuthService.handleCallback — a reloaded callback page (DOR-
     pkce.challenge = new URL(started.authorizeUrl!).searchParams.get('code_challenge') ?? '';
     expect(await oauth.handleCallback({ state: started.flowId, code: AUTH_CODE })).toEqual({
       connected: true,
+      serverName: SERVER,
     });
 
     // The operator hits reload on the "Signed in" page.
@@ -740,8 +741,8 @@ describe('AgentMcpOAuthService.handleCallback — a reloaded callback page (DOR-
     // Without the already-connected early return, the one-shot PKCE verifier is
     // gone, the exchange throws, and `markFailed` overwrites `connected` — so a
     // successful sign-in reported itself as failed while the token still worked.
-    expect(replay).toEqual({ connected: true });
-    expect(oauth.pollSignin(started.flowId).status).toBe('connected');
+    expect(replay).toEqual({ connected: true, serverName: SERVER });
+    expect((await oauth.pollSignin(started.flowId)).status).toBe('connected');
     expect(oauth.getAccessToken(AGENT_ID, SERVER, SERVER_URL)).toBe('access-1');
   });
 });

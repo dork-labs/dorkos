@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Check, ChevronsUpDown } from 'lucide-react';
+import { ChevronsUpDown } from 'lucide-react';
 import {
   Command,
   CommandInput,
@@ -14,7 +14,7 @@ import {
 } from '@/layers/shared/ui';
 import { cn, getAgentDisplayName, shortenHomePath } from '@/layers/shared/lib';
 import { useIsMobile } from '@/layers/shared/model';
-import { AgentAvatar, resolveAgentVisual } from '@/layers/entities/agent';
+import { AgentAvatar, AgentOptionRow, resolveAgentVisual } from '@/layers/entities/agent';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 
 interface AgentPickerProps {
@@ -42,23 +42,19 @@ function AgentCommandList({
       <CommandList className="!max-h-60 !overflow-y-auto">
         <CommandEmpty>No agents found.</CommandEmpty>
         <CommandGroup>
-          {agents.map((agent) => {
-            const visual = resolveAgentVisual(agent);
-            return (
-              <CommandItem
-                key={agent.id}
-                value={`${getAgentDisplayName(agent)} ${agent.name} ${agent.projectPath}`}
-                onSelect={() => onSelect(agent.id)}
-              >
-                <AgentAvatar color={visual.color} emoji={visual.emoji} size="xs" />
-                <span className="truncate font-medium">{getAgentDisplayName(agent)}</span>
-                <span className="text-muted-foreground truncate text-xs">
-                  {shortenHomePath(agent.projectPath)}
-                </span>
-                {agent.id === value && <Check className="ml-auto size-4 shrink-0" />}
-              </CommandItem>
-            );
-          })}
+          {agents.map((agent) => (
+            <CommandItem
+              key={agent.id}
+              value={`${getAgentDisplayName(agent)} ${agent.name} ${agent.projectPath}`}
+              onSelect={() => onSelect(agent.id)}
+            >
+              <AgentOptionRow
+                agent={agent}
+                secondary={shortenHomePath(agent.projectPath)}
+                selected={agent.id === value}
+              />
+            </CommandItem>
+          ))}
         </CommandGroup>
       </CommandList>
     </Command>

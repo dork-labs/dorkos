@@ -104,7 +104,6 @@ export type {
   IdentityHoverCardDescriptor,
   IdentityHoverCardAgentInfo,
 } from './identity-hover-card';
-export type { IdentityOrigin } from './identity-origin';
 export { InlineCode } from './inline-code';
 export { Kbd } from './kbd';
 export { Label } from './label';

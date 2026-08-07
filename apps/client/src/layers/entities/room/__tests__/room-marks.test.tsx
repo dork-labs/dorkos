@@ -40,6 +40,16 @@ function tint(color: string): string {
   return probe.style.backgroundColor;
 }
 
+/**
+ * The same read for a disc that FILLS with its colour rather than tinting —
+ * what an agent's disc does, since `kind` began deriving the variant.
+ */
+function fill(color: string): string {
+  const probe = document.createElement('span');
+  probe.style.backgroundColor = color;
+  return probe.style.backgroundColor;
+}
+
 function member(author: AuthorRef): RoomRosterEntry {
   return {
     roomId: 'room-1',
@@ -69,9 +79,28 @@ describe('MemberList', () => {
     const { container } = renderRoster([member(ANA)]);
 
     const disc = container.querySelector('[data-slot="room-member-avatar"]') as HTMLElement;
-    expect(disc.style.backgroundColor).toBe(tint('#7c3aed'));
+    // An agent's disc is FILLED with its colour, not tinted by it — the roster
+    // used to tint every member alike, which is what let an agent and a person
+    // read as the same kind of thing (DOR-968).
+    expect(disc.style.backgroundColor).toBe(fill('#7c3aed'));
     expect(screen.getByText('🐙')).toBeInTheDocument();
     expect(screen.queryByText('A')).not.toBeInTheDocument();
+  });
+
+  it('gives an agent the agent silhouette, and a person the person one', () => {
+    // The sharpest violation this roster was half of: it drew an agent round
+    // and unmarked while the member sheet drew the same agent with a bot mark.
+    // Both decisions come off `kind` now — see `roster-face-parity.test.tsx`,
+    // which asserts the two surfaces against each other.
+    const { container } = renderRoster([member(ANA), member(YOU)]);
+
+    const [agent, person] = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-slot="room-member-avatar"]')
+    );
+    expect(agent!.className).not.toContain('rounded-full');
+    expect(agent!.querySelector('svg.lucide-bot')).not.toBeNull();
+    expect(person!.className).toContain('rounded-full');
+    expect(person!.querySelector('svg')).toBeNull();
   });
 
   it('falls back to an initial on a hashed colour for an author with neither', () => {
@@ -194,7 +223,53 @@ describe('RoomAvatar', () => {
 
     const disc = container.querySelector('[data-slot="room-avatar"]') as HTMLElement;
     expect(disc.textContent).toBe('🐙');
-    expect(disc.style.backgroundColor).toBe(tint('#7c3aed'));
+    expect(disc.style.backgroundColor).toBe(fill('#7c3aed'));
+  });
+
+  it('draws a DM face as an agent, in every shape the mark takes', () => {
+    // A DM's counterpart is an agent by construction, and this one component
+    // is what the sidebar row, the room masthead and the command palette all
+    // draw — so it read "agent" in its colour and "person" in its shape in
+    // three places at once (DOR-968). Red if any of the three paths goes round
+    // again: the single resolved face, the stack, or the letter fallback that
+    // still knows who it is for.
+    const square = (mark: Element | null) => {
+      expect(mark).not.toBeNull();
+      expect((mark as HTMLElement).className).not.toContain('rounded-full');
+    };
+
+    const { container: single } = render(
+      <RoomAvatar
+        room={{ id: 'dm-1', kind: 'dm', title: 'Ana' }}
+        visuals={[{ color: '#7c3aed', emoji: '🐙' }]}
+      />
+    );
+    const singleDisc = single.querySelector('[data-slot="room-avatar"]') as HTMLElement;
+    square(singleDisc);
+    expect(singleDisc.style.backgroundColor).toBe(fill('#7c3aed'));
+
+    const { container: stacked } = render(
+      <RoomAvatar
+        room={{ id: 'dm-2', kind: 'dm', title: 'Ana and Kai' }}
+        visuals={[
+          { color: '#7c3aed', emoji: '🐙' },
+          { color: '#3ca078', emoji: '🔔' },
+        ]}
+      />
+    );
+    const faces = stacked.querySelectorAll('[data-slot="identity-avatar"]');
+    expect(faces).toHaveLength(2);
+    faces.forEach(square);
+
+    const { container: letter } = render(
+      <RoomAvatar
+        room={{ id: 'dm-3', kind: 'dm', title: 'Bo' }}
+        participants={[YOU, { id: 'author-bo', kind: 'agent', displayName: 'Bo' }]}
+      />
+    );
+    const letterDisc = letter.querySelector('[data-slot="room-avatar"]') as HTMLElement;
+    expect(letterDisc.textContent).toBe('B');
+    square(letterDisc);
   });
 
   it("falls back to the room's own letter when no agent is on the roster", () => {

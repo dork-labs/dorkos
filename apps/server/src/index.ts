@@ -1496,6 +1496,18 @@ async function start() {
       // it matters); the callback route still enforces loopback-only.
       callbackBaseUrl: `http://${localDialHost(env.DORKOS_HOST)}:${PORT}`,
       logger,
+      // Dial the server with the token a sign-in just produced (DOR-1003). It
+      // answers both "how many tools did the operator just unlock?" and "does the
+      // token DorkOS holds actually work?" — the second is what stops a stale
+      // stored grant reporting "already connected". Resolved through the closure
+      // rather than passed by value because the service that probes is
+      // constructed on the next statement, with THIS engine as its token
+      // provider; before then there is nothing to ask, and no opinion is the
+      // right answer.
+      probe: async (target) => {
+        if (!agentMcpServerService) return { ok: false };
+        return agentMcpServerService.test(target.agentId, target.serverName);
+      },
     });
     agentMcpServerService = new AgentMcpServerService({
       agents: meshCore.agentRegistry,
