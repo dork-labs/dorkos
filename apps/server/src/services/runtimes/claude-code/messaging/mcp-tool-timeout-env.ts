@@ -20,9 +20,18 @@
  *   Between "an external tool hangs longer than asked" and "every approval a
  *   person takes a minute to answer fails", the first is the recoverable one.
  * - At or above the floor, it passes through untouched.
- * - Absent, unparseable, or below the CLI's own 1000ms minimum (which the CLI
- *   ignores, falling back to its ~27.8h default), nothing is written — the
+ * - Absent, unparseable, zero or negative, nothing is written — those are the
+ *   values the CLI itself discards, falling back to its ~27.8h default, so the
  *   subprocess keeps exactly what it would have had.
+ *
+ * The gate mirrors the binary's own, which is `> 0` — NOT the `>= 1000` rule the
+ * SDK types document for the per-server `timeout` FIELD. Transplanting that rule
+ * here was a bug (DOR-987 re-review): the env var's small values are not
+ * discarded, they are clamped UP to 1000ms, so `MCP_TOOL_TIMEOUT=500` is a
+ * one-second ceiling on every tool call — the fastest possible way to kill every
+ * hold. Parsing matches for the same reason: the CLI uses `parseInt`, so
+ * `'30000ms'` is 30 seconds to it and `NaN` to `Number()`; reading it any other
+ * way means agreeing with the CLI about nothing.
  *
  * @module services/runtimes/claude-code/messaging/mcp-tool-timeout-env
  */
@@ -32,13 +41,6 @@ import { logger } from '../../../../lib/logger.js';
 
 /** The env var the claude CLI reads as its per-call MCP tool timeout. */
 const MCP_TOOL_TIMEOUT = 'MCP_TOOL_TIMEOUT';
-
-/**
- * Values below this are IGNORED by the CLI (documented on the per-server
- * `timeout` option: "values below 1000ms are ignored"), so they fall through to
- * its own default and cannot shorten a hold.
- */
-const CLI_MIN_TOOL_TIMEOUT_MS = 1_000;
 
 /**
  * The shortest per-call MCP timeout a held approval can survive: the hold's own
@@ -57,14 +59,16 @@ export const MCP_TOOL_TIMEOUT_FLOOR_MS =
  *   or an empty object when there is nothing to correct.
  */
 export function mcpToolTimeoutFloorEnv(
-  // eslint-disable-next-line no-restricted-syntax -- MCP_TOOL_TIMEOUT is the claude CLI's own variable, not a DorkOS config value env.ts models (same rationale as claude-config-dir.ts)
+  // eslint-disable-next-line no-restricted-syntax -- the whole of process.env is what the subprocess inherits; this reads the one variable that inheritance makes dangerous, two lines from the `...process.env` spread it corrects (message-sender.ts)
   env: NodeJS.ProcessEnv = process.env
 ): Record<string, string> {
   const raw = env[MCP_TOOL_TIMEOUT];
   if (raw === undefined) return {};
-  const parsed = Number(raw);
+  // `parseInt`, because that is what the CLI uses: `'30000ms'` is 30 seconds to
+  // it, and reading it as NaN here would leave that hold to die at 30s.
+  const parsed = Number.parseInt(raw, 10);
   if (!Number.isFinite(parsed)) return {};
-  if (parsed < CLI_MIN_TOOL_TIMEOUT_MS || parsed >= MCP_TOOL_TIMEOUT_FLOOR_MS) return {};
+  if (parsed <= 0 || parsed >= MCP_TOOL_TIMEOUT_FLOOR_MS) return {};
   logger.warn(
     '[sendMessage] raising an inherited MCP_TOOL_TIMEOUT that would cut approvals short',
     {

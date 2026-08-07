@@ -123,24 +123,41 @@ describe('executeSdkQuery — inherited MCP_TOOL_TIMEOUT', () => {
   });
 });
 
-describe('mcpToolTimeoutFloorEnv — values the CLI itself ignores', () => {
-  it('leaves a sub-1000ms value alone, because the CLI discards it anyway', () => {
-    // Documented on the per-server `timeout` option: below 1000ms falls through
-    // to MCP_TOOL_TIMEOUT or the default. Rewriting it would silently turn a
-    // value the CLI throws away into one it honors.
-    expect(mcpToolTimeoutFloorEnv({ MCP_TOOL_TIMEOUT: '500' })).toEqual({});
+describe('mcpToolTimeoutFloorEnv — the gate is the CLI’s own, not the config field’s', () => {
+  const FLOORED = { MCP_TOOL_TIMEOUT: String(MCP_TOOL_TIMEOUT_FLOOR_MS) };
+
+  it('raises a SUB-SECOND value, which the CLI clamps up to 1000ms rather than discarding', () => {
+    // The bug the re-review caught. The `>= 1000` rule is documented on the
+    // per-server `timeout` FIELD; the env var's branch is `> 0`, and its clamp
+    // is `Math.max(value, 1000)`. So `500` is not ignored — it is a ONE-SECOND
+    // ceiling on every tool call, which kills a hold before the card renders.
+    expect(mcpToolTimeoutFloorEnv({ MCP_TOOL_TIMEOUT: '500' })).toEqual(FLOORED);
+    expect(mcpToolTimeoutFloorEnv({ MCP_TOOL_TIMEOUT: '999' })).toEqual(FLOORED);
+    expect(mcpToolTimeoutFloorEnv({ MCP_TOOL_TIMEOUT: '1' })).toEqual(FLOORED);
   });
 
-  it('leaves an unparseable value alone', () => {
-    expect(mcpToolTimeoutFloorEnv({ MCP_TOOL_TIMEOUT: 'ten minutes' })).toEqual({});
+  it('reads a unit-suffixed value the way the CLI does', () => {
+    // The CLI parses with `parseInt`, so this is thirty seconds to it. Read as
+    // `Number()` it is NaN, and a hold would quietly die at 30s while the
+    // parser mismatch made it look like there was nothing to correct.
+    expect(mcpToolTimeoutFloorEnv({ MCP_TOOL_TIMEOUT: '30000ms' })).toEqual(FLOORED);
   });
 
-  it('raises a value one tick below the floor', () => {
+  it('leaves alone the values the CLI genuinely falls back to its default on', () => {
+    // Zero and negatives fail the CLI's `> 0` gate, and a value with no leading
+    // digits gives `parseInt` nothing — all three keep the ~27.8h default,
+    // which already clears the hold cap by hours.
+    expect(mcpToolTimeoutFloorEnv({ MCP_TOOL_TIMEOUT: '0' })).toEqual({});
+    expect(mcpToolTimeoutFloorEnv({ MCP_TOOL_TIMEOUT: '-5' })).toEqual({});
+    expect(mcpToolTimeoutFloorEnv({ MCP_TOOL_TIMEOUT: 'abc' })).toEqual({});
+  });
+
+  it('raises a value one tick below the floor, and leaves the floor itself', () => {
     // The boundary, from the side that matters: one millisecond short is still
     // a hold that can die before the person answers.
     expect(
       mcpToolTimeoutFloorEnv({ MCP_TOOL_TIMEOUT: String(MCP_TOOL_TIMEOUT_FLOOR_MS - 1) })
-    ).toEqual({ MCP_TOOL_TIMEOUT: String(MCP_TOOL_TIMEOUT_FLOOR_MS) });
+    ).toEqual(FLOORED);
     expect(mcpToolTimeoutFloorEnv({ MCP_TOOL_TIMEOUT: String(MCP_TOOL_TIMEOUT_FLOOR_MS) })).toEqual(
       {}
     );
