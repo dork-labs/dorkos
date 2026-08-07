@@ -285,12 +285,35 @@ describe('SessionStateProjector', () => {
     expect(p.hasPendingInteractions()).toBe(false);
   });
 
-  it('does not latch a session in blocked after a turn stranded a capability hold', () => {
-    // The regression DOR-987 found: a turn interrupted with a hold open never
-    // delivers `capability_approval_resolved` (the message-sender drains its
-    // queue only at the top of its loop), so the hold entry strands. Reading the
-    // map's RAW SIZE to settle the lifecycle then pinned every LATER interaction
-    // at `blocked` — the session read "waiting on you" forever.
+  // The regression DOR-987 found, in the two shapes it takes: a turn interrupted
+  // with a hold open never delivers `capability_approval_resolved` (the
+  // message-sender drains its event queue only at the top of its loop, never
+  // after a break or a throw), so the entry strands — and settling the lifecycle
+  // off the map's RAW SIZE then pinned every LATER interaction at `blocked`.
+  //
+  // TWO fixes answer it, and each of these pins exactly one. Written apart on
+  // purpose: a single case that ends `streaming` is satisfied by EITHER fix, so
+  // it stayed green when a reviewer reverted either one alone.
+
+  /** Ask a person something and get an answer, on a turn that is already open. */
+  function askAndAnswer(p: SessionStateProjector, id: string): void {
+    p.ingest({
+      type: 'approval_required',
+      id,
+      startedAt: Date.now(),
+      remainingMs: TIMEOUT_MS,
+      toolName: 'Bash',
+      input: '{}',
+      hasSuggestions: false,
+    } as RawSessionEvent);
+    expect(p.getStatus().lifecycle).toBe('blocked');
+    p.ingest({ type: 'interaction_resolved', id } as RawSessionEvent);
+  }
+
+  it('drops a hold its turn ended on, even while the hold is still inside its cap', () => {
+    // Pins `turn_end` clearing the map, and ONLY that: every clock read here is
+    // inside cap + grace, so the time bound still calls this hold live. A held
+    // tool call cannot outlive its turn, so the entry is stranded by definition.
     vi.useFakeTimers();
     vi.setSystemTime(1_000_000);
     const p = new SessionStateProjector('s1');
@@ -301,25 +324,36 @@ describe('SessionStateProjector', () => {
       startedAt: Date.now(),
       capMs: HOLD_CAP_MS,
     } as RawSessionEvent);
-    // The turn ends with the hold still open (operator interrupt / stream throw).
     p.ingest({ type: 'turn_end' });
 
-    // A LATER turn asks an ordinary question and gets its answer.
-    vi.setSystemTime(1_000_000 + HOLD_CAP_MS * 10);
+    // A LATER turn, still well inside the hold's own window.
+    vi.setSystemTime(1_000_000 + HOLD_CAP_MS - 1);
     p.ingest({ type: 'turn_start' });
-    p.ingest({
-      type: 'approval_required',
-      id: 'int-1',
-      startedAt: Date.now(),
-      remainingMs: TIMEOUT_MS,
-      toolName: 'Bash',
-      input: '{}',
-      hasSuggestions: false,
-    } as RawSessionEvent);
-    expect(p.getStatus().lifecycle).toBe('blocked');
-    p.ingest({ type: 'interaction_resolved', id: 'int-1' } as RawSessionEvent);
+    askAndAnswer(p, 'int-1');
 
     // Settled back into the live turn, exactly as a session that never held.
+    expect(p.getStatus().lifecycle).toBe('streaming');
+    expect(p.hasPendingInteractions()).toBe(false);
+  });
+
+  it('stops counting a hold that ran out its cap while the SAME turn kept going', () => {
+    // Pins the time-bounded read, and ONLY that: there is no `turn_end` here, so
+    // nothing ever clears the map. The hold degraded to the poll payload and the
+    // turn carried on — its entry must stop deciding the lifecycle.
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    const p = new SessionStateProjector('s1');
+    p.ingest({ type: 'turn_start' });
+    p.ingest({
+      type: 'capability_approval_required',
+      approval: HELD_APPROVAL,
+      startedAt: Date.now(),
+      capMs: HOLD_CAP_MS,
+    } as RawSessionEvent);
+
+    vi.setSystemTime(1_000_000 + HOLD_CAP_MS + CAPABILITY_HOLD_PAUSE_GRACE_MS);
+    askAndAnswer(p, 'int-1');
+
     expect(p.getStatus().lifecycle).toBe('streaming');
     expect(p.hasPendingInteractions()).toBe(false);
   });
