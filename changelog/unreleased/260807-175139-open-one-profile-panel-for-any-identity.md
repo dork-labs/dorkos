@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(client): open one profile panel for any identity, from a shareable URL'
+  - 'fix(client): draw no profile body when there is nothing to put in it'
 ---
 
 ### Added
