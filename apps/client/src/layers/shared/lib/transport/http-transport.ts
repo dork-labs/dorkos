@@ -25,6 +25,7 @@ import { createFeedbackMethods } from './feedback-methods';
 import { createApprovalMethods } from './approval-methods';
 import { createConnectorMethods } from './connector-methods';
 import { createMcpMethods } from './mcp-methods';
+import { createTeamMethods } from './team-methods';
 
 // ---------------------------------------------------------------------------
 // Declaration merging
@@ -53,7 +54,8 @@ export interface HttpTransport
     ReturnType<typeof createFeedbackMethods>,
     ReturnType<typeof createApprovalMethods>,
     ReturnType<typeof createConnectorMethods>,
-    ReturnType<typeof createMcpMethods> {}
+    ReturnType<typeof createMcpMethods>,
+    ReturnType<typeof createTeamMethods> {}
 
 // ---------------------------------------------------------------------------
 // Class
@@ -85,7 +87,8 @@ export class HttpTransport implements Transport {
       createFeedbackMethods(baseUrl),
       createApprovalMethods(baseUrl),
       createConnectorMethods(baseUrl),
-      createMcpMethods(baseUrl)
+      createMcpMethods(baseUrl),
+      createTeamMethods(baseUrl)
     );
   }
 }

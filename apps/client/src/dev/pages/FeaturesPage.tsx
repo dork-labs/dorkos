@@ -3,6 +3,7 @@ import { FEATURES_SECTIONS } from '../playground-registry';
 import { AgentIdentityShowcases } from '../showcases/AgentIdentityShowcases';
 import { AgentSidebarShowcases } from '../showcases/AgentSidebarShowcases';
 import { AgentFleetShowcases } from '../showcases/AgentFleetShowcases';
+import { TeamShowcases } from '../showcases/TeamShowcases';
 import { RelayShowcases } from '../showcases/RelayShowcases';
 import { AdapterWizardShowcases } from '../showcases/AdapterWizardShowcases';
 import { MeshShowcases } from '../showcases/MeshShowcases';
@@ -23,6 +24,7 @@ export function FeaturesPage() {
     >
       <PersonalityPickerShowcases />
       <AgentIdentityShowcases />
+      <TeamShowcases />
       <AgentSidebarShowcases />
       <AgentFleetShowcases />
       <RelayShowcases />

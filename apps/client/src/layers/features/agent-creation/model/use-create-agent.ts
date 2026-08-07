@@ -16,6 +16,10 @@ export function useCreateAgent() {
       queryClient.invalidateQueries({ queryKey: ['agents'] });
       queryClient.invalidateQueries({ queryKey: ['mesh', 'agents'] });
       queryClient.invalidateQueries({ queryKey: ['mesh', 'agent-paths'] });
+      // The Team roster is a second reader of the same fleet, so an agent
+      // created from it has to appear on it. A raw literal, like every key
+      // above: this is a feature and `entities/team` owns the constant.
+      queryClient.invalidateQueries({ queryKey: ['team'] });
     },
   });
 }
