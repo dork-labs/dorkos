@@ -1959,9 +1959,11 @@ export const CONFIG_MIGRATIONS = {
   // on the upgrade where it lands.
   '0.44.0': backfillExtensionsDisabled,
   // Everything below shipped together in v0.45.0. Each body was authored on a
-  // placeholder "next ascending release" key (0.45.0-0.53.0) while on main;
-  // /system:release reconciled them to the one real release at tag time
-  // (2026-07-09). Order matters: conf runs entries in insertion order, and
+  // placeholder "next ascending release" key (0.45.0-0.53.0) while on main, and
+  // the keys were collapsed onto the one real release when it was tagged
+  // (2026-07-09) — by hand, during that release. Nothing renames a stale key for
+  // you, which is why the placeholder convention is retired (see the rule on
+  // CONFIG_MIGRATIONS above). Order matters: conf runs entries in insertion order, and
   // `backfillWorkbenchTerminalGraceTtl` must follow `backfillWorkbenchDefaults`.
   // Every body is idempotent, so re-running the composite is safe.
   '0.45.0': (store: {
@@ -1993,10 +1995,13 @@ export const CONFIG_MIGRATIONS = {
     // add to a `workbench` block the previous body just created.
     backfillWorkbenchTerminalGraceTtl(store);
   },
-  // Both authored on the next-ascending-release placeholder while on main;
-  // /system:release reconciles the key to the real release at tag time. One
-  // composite body (an object literal can't repeat the key); order is
-  // insertion order and both are idempotent + independent.
+  // Both authored under the RETIRED placeholder convention (see the rule on
+  // CONFIG_MIGRATIONS above): a "next ascending release" key, on the belief that
+  // /system:release would reconcile it at tag time. It does not — it scaffolds a
+  // migration for the release version or confirms one already there, and never
+  // renames an existing key. Shipped and frozen; recorded, not endorsed. One
+  // composite body (an object literal can't repeat the key); order is insertion
+  // order and both are idempotent + independent.
   '0.46.0': (store: {
     get: (key: string) => unknown;
     set: (key: string, value: unknown) => void;
@@ -2044,15 +2049,19 @@ export const CONFIG_MIGRATIONS = {
   '0.50.0': backfillSidebarDefaults,
   // Backfill `ui.shapes` (person-scoped Shape state — active Shape, reverse
   // affinity hints, follow toggle; DOR-355) onto an existing `ui` block.
-  // Additive + idempotent; seeds no active Shape. Keyed to the next unreleased
-  // version (0.51.0 is already tagged); /system:release reconciles the key at
-  // tag time if the real release differs.
+  // Additive + idempotent; seeds no active Shape. Keyed under the RETIRED
+  // placeholder convention (see the rule on CONFIG_MIGRATIONS above), on the
+  // belief that /system:release reconciles a stale key at tag time. It does not.
+  // Shipped and frozen; recorded, not endorsed.
   '0.52.0': backfillShapesDefaults,
-  // Composite: both DOR-339 and DOR-338 targeted "the next unreleased
-  // version" while developed concurrently and landed on the same key
-  // (0.55.0) — a plain object literal can't repeat a key, so their bodies
-  // compose here in insertion order (same convention as the 0.45.0/0.46.0/
-  // 0.48.0 composites above). Each body is independent and idempotent.
+  // Composite: both DOR-339 and DOR-338 targeted "the next unreleased version"
+  // while developed concurrently and landed on the same key (0.55.0) — a plain
+  // object literal can't repeat a key, so their bodies compose here in insertion
+  // order. That composition is a RECORD of the retired convention, not a pattern
+  // to copy: composing into a key is only ever safe while it is unreleased, and
+  // this one shipped. Concurrent work now opens separate keys above the newest
+  // tag (see the rule on CONFIG_MIGRATIONS above). Each body is independent and
+  // idempotent.
   '0.55.0': (store: {
     get: (key: string) => unknown;
     set: (key: string, value: unknown) => void;
