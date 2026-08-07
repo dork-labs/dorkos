@@ -14,7 +14,7 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import type { AgentMcpOAuthService } from '../services/mesh/agent-mcp-oauth-service.js';
-import { isLocalRequest } from '../lib/trusted-origins.js';
+import { getLocalCockpitOrigin, isLocalRequest } from '../lib/trusted-origins.js';
 import { env } from '../env.js';
 
 /** HTTP status for a completed callback vs. any failure (used for the rendered page). */
@@ -40,15 +40,67 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
-/** Minimal HTML for the callback landing (no secret, no external assets). */
-function renderCallbackPage(connected: boolean, error?: string): string {
-  const title = escapeHtml(connected ? 'Signed in' : 'Sign-in failed');
-  const body = escapeHtml(
-    connected
-      ? 'You can close this tab and return to DorkOS.'
-      : (error ?? 'Please return to DorkOS and try again.')
-  );
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="font-family: ui-sans-serif, system-ui, sans-serif; max-width: 32rem; margin: 4rem auto; padding: 0 1.5rem; color: #1a1a1a;"><h1 style="font-size: 1.25rem;">${title}</h1><p style="color: #555;">${body}</p></body></html>`;
+/** What a completed callback shows the operator. */
+interface CallbackPageContent {
+  /** The `<title>`, and the heading when there is no server to name. */
+  title: string;
+  /** The heading — names the server on success, so the tab says what just happened. */
+  heading: string;
+  /** The one sentence under the heading. */
+  body: string;
+  /** The link back into the cockpit, present only on success. */
+  cockpitOrigin?: string;
+}
+
+/**
+ * The copy for a landing, in the operator's terms rather than the protocol's.
+ *
+ * There is deliberately no close button and no `window.close()`: a tab a person
+ * opened themselves cannot be closed by script, so the button would do nothing
+ * and the page would be lying about what it offers. It says "you can close this
+ * tab" and leaves the closing to them, next to a real link back.
+ *
+ * @param connected - Whether the exchange completed.
+ * @param serverName - The server signed into, when the flow was still known.
+ * @param error - The failure reason, when it failed.
+ */
+function callbackPageContent(
+  connected: boolean,
+  serverName?: string,
+  error?: string
+): CallbackPageContent {
+  if (!connected) {
+    return {
+      title: 'Sign-in failed',
+      heading: 'Sign-in failed',
+      body: error ?? 'Please return to DorkOS and try again.',
+    };
+  }
+  return {
+    title: 'Signed in',
+    heading: serverName ? `You’re signed in to ${serverName}.` : 'You’re signed in.',
+    body: 'DorkOS has what it needs. You can close this tab — your agent is picking up where it left off.',
+    cockpitOrigin: getLocalCockpitOrigin(),
+  };
+}
+
+/**
+ * Minimal HTML for the callback landing (no secret, no external assets).
+ *
+ * Every interpolated value goes through {@link escapeHtml}, the server name
+ * included: it is operator-supplied text from the manifest, so it is untrusted
+ * input to this page even though the operator typed it themselves.
+ *
+ * @param connected - Whether the exchange completed.
+ * @param serverName - The server signed into, when known.
+ * @param error - The failure reason, when it failed.
+ */
+function renderCallbackPage(connected: boolean, serverName?: string, error?: string): string {
+  const { title, heading, body, cockpitOrigin } = callbackPageContent(connected, serverName, error);
+  const link = cockpitOrigin
+    ? `<p><a href="${escapeHtml(cockpitOrigin)}" style="color: #2563eb;">Back to DorkOS</a></p>`
+    : '';
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="font-family: ui-sans-serif, system-ui, sans-serif; max-width: 32rem; margin: 4rem auto; padding: 0 1.5rem; color: #1a1a1a;"><h1 style="font-size: 1.25rem;">${escapeHtml(heading)}</h1><p style="color: #555;">${escapeHtml(body)}</p>${link}</body></html>`;
 }
 
 /**
@@ -71,7 +123,7 @@ export function createMcpOAuthRouter(oauth: AgentMcpOAuthService): Router {
     res
       .status(result.connected ? OK : BAD_REQUEST)
       .set('Content-Type', 'text/html; charset=utf-8')
-      .send(renderCallbackPage(result.connected, result.error));
+      .send(renderCallbackPage(result.connected, result.serverName, result.error));
   });
 
   return router;

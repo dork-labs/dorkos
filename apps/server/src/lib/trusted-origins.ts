@@ -153,6 +153,18 @@ export function isLocalRequest(facts: LocalRequestFacts): boolean {
 }
 
 /**
+ * The address a person's browser reaches this cockpit at on this machine.
+ *
+ * The one spelling of "where DorkOS is", so a link back into the app (the OAuth
+ * callback landing page) and the always-trusted loopback origin below can never
+ * name different ports. Derived from `DORKOS_PORT` — never hardcoded, because
+ * dev, production, and a custom port are all normal.
+ */
+export function getLocalCockpitOrigin(): string {
+  return `http://localhost:${env.DORKOS_PORT}`;
+}
+
+/**
  * Static loopback dev origins the server always trusts: `localhost` and
  * `127.0.0.1` on both the API port (`DORKOS_PORT`) and the Vite dev port
  * (`VITE_PORT`, default 4241).
@@ -165,12 +177,12 @@ export function getStaticLocalOrigins(): string[] {
   // legitimate speaks from that port, and anything else that happened to listen
   // there would be trusted — which on the socket path now includes the terminal.
   if (env.NODE_ENV === 'production') {
-    return [`http://localhost:${port}`, `http://127.0.0.1:${port}`];
+    return [getLocalCockpitOrigin(), `http://127.0.0.1:${port}`];
   }
   // eslint-disable-next-line no-restricted-syntax -- VITE_PORT is a Vite-specific var not in server env.ts
   const vitePort = process.env.VITE_PORT || '4241';
   return [
-    `http://localhost:${port}`,
+    getLocalCockpitOrigin(),
     `http://localhost:${vitePort}`,
     `http://127.0.0.1:${port}`,
     `http://127.0.0.1:${vitePort}`,
