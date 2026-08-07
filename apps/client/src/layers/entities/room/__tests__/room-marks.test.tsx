@@ -264,7 +264,7 @@ describe('RoomAvatar', () => {
     const { container: letter } = render(
       <RoomAvatar
         room={{ id: 'dm-3', kind: 'dm', title: 'Bo' }}
-        participants={[YOU, { id: 'author-bo', kind: 'agent', displayName: 'Bo' }]}
+        participants={[YOU, { id: 'author-bo', kind: 'agent', displayName: 'Bo', handle: null }]}
       />
     );
     const letterDisc = letter.querySelector('[data-slot="room-avatar"]') as HTMLElement;
