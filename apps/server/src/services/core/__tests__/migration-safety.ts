@@ -146,7 +146,29 @@ export function checkMigrationSafety(input: MigrationSafetyInput): MigrationSafe
   }
 
   const working = extractMigrationBodies(input.workingSource);
-  const released = extractMigrationBodies(releasedSource);
+
+  // The released side is parsed inside a try, the working side outside it, and
+  // the asymmetry is the point. A throw from the working tree is the author's
+  // own file and their own problem, stated plainly. A throw from a TAGGED file
+  // is history: the table was shaped differently back then, nobody can go and
+  // fix it, and letting `extractMigrationBodies` raise here would blame the
+  // working tree for a restructure that happened releases ago.
+  let released: Record<string, string>;
+  try {
+    released = extractMigrationBodies(releasedSource);
+  } catch (err) {
+    return {
+      ok: false,
+      latestReleased,
+      problems: [
+        `could not parse CONFIG_MIGRATIONS as of v${latestReleased}: the table's shape changed ` +
+          'since that release, so shipped bodies cannot be compared against it. Teach ' +
+          `extractMigrationBodies the older shape, or re-cut the comparison against a tag it can ` +
+          `read (${err instanceof Error ? err.message : String(err)})`,
+      ],
+    };
+  }
+
   const problems: string[] = [];
 
   for (const [key, body] of Object.entries(working)) {

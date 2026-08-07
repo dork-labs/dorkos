@@ -103,6 +103,37 @@ describe('projectCatalog — domain filter', () => {
   });
 });
 
+// A zero-match filter passes the selectivity threshold trivially (0 <= 8), so it
+// arrives at the guidance builder looking like the most selective query there is.
+// Left to the general path it described full schemas for entries that do not
+// exist and told the agent to narrow a filter that already matches nothing.
+describe('projectCatalog — nothing matched', () => {
+  it.each([
+    ['a query', { query: 'zzzz-nomatch' }],
+    ['a domain', { domain: 'nosuchdomain' }],
+    ['both together', { domain: 'mcp', query: 'zebra' }],
+  ])('tells the caller to broaden when %s matches nothing', (_label, input) => {
+    const res = projectCatalog(synthetic, parse(input));
+    expect(res.total).toBe(0);
+    expect(res.capabilities).toEqual([]);
+    expect(res.guidance).toBe(
+      'Nothing matched. Broaden the query, drop the domain filter, or call with no arguments to see everything.'
+    );
+    // The two sentences that would be false here: schemas that are not there,
+    // and an instruction to narrow further.
+    expect(res.guidance).not.toMatch(/JSON Schema/i);
+    expect(res.guidance).not.toMatch(/narrow/i);
+  });
+
+  it('says the catalog is empty when there is nothing to match against', () => {
+    const empty = { ...synthetic, capabilities: [] };
+    const res = projectCatalog(empty, parse({}));
+    expect(res.total).toBe(0);
+    expect(res.guidance).toMatch(/catalog is empty/i);
+    expect(res.guidance).not.toMatch(/narrow/i);
+  });
+});
+
 describe('projectCatalog — query filter (spans id, title, description)', () => {
   it('finds a word that lives only in a description', () => {
     const res = projectCatalog(synthetic, parse({ query: 'zebra' }));

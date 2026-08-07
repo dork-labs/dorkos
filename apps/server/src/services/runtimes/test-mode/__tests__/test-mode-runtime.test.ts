@@ -359,6 +359,13 @@ describe('TestModeRuntime.getMcpStatus', () => {
       headers: { 'X-Trace': 'yes' },
       is: 'needs-auth',
     },
+    // A bare scheme with no token behind it is not a credential.
+    {
+      case: 'http with an empty bearer token',
+      transport: 'http',
+      headers: { Authorization: 'Bearer ' },
+      is: 'needs-auth',
+    },
     { case: 'sse with a bearer injected', transport: 'sse', headers: BEARER, is: 'connected' },
     { case: 'sse with no bearer', transport: 'sse', headers: undefined, is: 'needs-auth' },
     // stdio needs no token; it is connected whatever the headers say.

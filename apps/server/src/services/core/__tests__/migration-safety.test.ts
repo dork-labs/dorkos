@@ -145,6 +145,31 @@ describe('checkMigrationSafety', () => {
     expect(res.problems.join('\n')).toMatch(/fetch-depth: 0/);
   });
 
+  it('blames the RELEASED side, not the working tree, when the tagged file will not parse', () => {
+    // The table was shaped differently in older releases, and nobody can go back
+    // and fix a tag. Raising out of the parser here would report the author's own
+    // file as broken for a restructure that happened releases ago.
+    const res = checkMigrationSafety({
+      workingSource: RELEASED_SOURCE,
+      tags: TAGS,
+      readAtTag: () => 'export const MIGRATIONS_UNDER_AN_OLDER_NAME = {\n} as const;',
+    });
+
+    expect(res.ok).toBe(false);
+    expect(res.problems.join('\n')).toMatch(/as of v0\.58\.0/);
+    expect(res.problems.join('\n')).toMatch(/shape changed since that release/);
+  });
+
+  it('still raises when the WORKING tree is the unparseable one', () => {
+    expect(() =>
+      checkMigrationSafety({
+        workingSource: 'export const RENAMED_ON_THIS_BRANCH = {\n} as const;',
+        tags: TAGS,
+        readAtTag,
+      })
+    ).toThrow(/CONFIG_MIGRATIONS/);
+  });
+
   it('fails loudly when the newest tag exists but its content cannot be read', () => {
     const res = checkMigrationSafety({
       workingSource: RELEASED_SOURCE,

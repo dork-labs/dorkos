@@ -1932,6 +1932,16 @@ export function backfillDefaultTrustStops(store: {
  * Both rules are enforced: `__tests__/migration-safety.ts` compares every key's
  * source text against the newest release tag, and `config-manager.test.ts` runs
  * that comparison over the real repository on every CI run.
+ *
+ * ## The comparison is byte-identity, so a shipped body's COMMENTS are frozen too
+ *
+ * Deliberate. A rule that skipped comments would need a parser deciding which
+ * lines are code, and "an appended line the parser mis-read as a comment" is the
+ * same class of hole this guard exists to close. The consequence is that a stale
+ * sentence inside a shipped body cannot be corrected in place: `'0.57.0'` still
+ * carries one, pointing at the composition convention this docblock replaced.
+ * Correct that kind of thing HERE, or in the comment directly above the key
+ * (both sit outside every key's slice), not inside the body.
  */
 export const CONFIG_MIGRATIONS = {
   '1.0.0': (store: {

@@ -52,6 +52,14 @@ export const DEFAULT_CAPABILITY_LIMIT = 50;
  * every capability, and auto-expanding it returned MORE characters than the
  * unfiltered dump this whole module exists to replace. Above this many matches
  * the page stays compact and the `guidance` line says how to get the schemas.
+ *
+ * This bounds the number of ENTRIES, not the size of the payload, and the two
+ * come apart: `domain:'capabilities'` matches exactly one capability and expands
+ * to ~6.1K characters — larger than the whole catalog served compact (~6.0K),
+ * because one entry's two JSON Schemas outweigh thirty one-line summaries. That
+ * is the right trade for a caller who narrowed to one thing and is about to call
+ * it, and `guidance` names the compact alternative either way. If a byte budget
+ * is ever wanted instead of a count, this is the constant it replaces.
  */
 export const FULL_DETAIL_THRESHOLD = 8;
 
@@ -333,6 +341,12 @@ function clamp(value: number, min: number, max: number): number {
  *
  * The one silent case is the plain no-argument call: compact, complete, and
  * already the cheapest answer there is.
+ *
+ * A zero-match page is answered FIRST and separately. It reaches here reporting
+ * `detail:'full'` — nothing matched, so nothing exceeded the selectivity
+ * threshold — and every sentence below would then be a lie told to an agent that
+ * got an empty array: entries carrying full schemas that do not exist, and an
+ * instruction to narrow a filter that already matches nothing.
  */
 function buildGuidance(args: {
   total: number;
@@ -341,6 +355,11 @@ function buildGuidance(args: {
   filtered: boolean;
   nextCursor?: string;
 }): string | undefined {
+  if (args.total === 0) {
+    return args.filtered
+      ? 'Nothing matched. Broaden the query, drop the domain filter, or call with no arguments to see everything.'
+      : 'The catalog is empty; no capabilities are registered.';
+  }
   const silent = args.nextCursor === undefined && args.detail === 'compact' && !args.filtered;
   if (silent) return undefined;
   const capped =
