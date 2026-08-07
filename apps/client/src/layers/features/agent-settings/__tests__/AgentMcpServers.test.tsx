@@ -24,7 +24,11 @@ import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { createMockTransport } from '@dorkos/test-utils';
-import type { Transport, CapabilityApprovalRequired } from '@dorkos/shared/transport';
+import type {
+  Transport,
+  CapabilityApprovalRequired,
+  McpServerEntry,
+} from '@dorkos/shared/transport';
 import type {
   AgentManifest,
   ManagedMcpServer,
@@ -172,7 +176,7 @@ describe('AgentMcpServers', () => {
     expect(await openTestAction(container, 'filesystem')).toBeInTheDocument();
   });
 
-  it('shows a card for a live server with no managed match, marked by where it came from', async () => {
+  it('shows a card for a live server with no managed match, and claims no origin it cannot prove', async () => {
     const transport = createMockTransport({
       listAgentMcpServers: vi.fn().mockResolvedValue([]),
       getMcpConfig: vi.fn().mockResolvedValue({
@@ -182,14 +186,36 @@ describe('AgentMcpServers', () => {
     const { container } = renderComponent(transport);
 
     await waitFor(() => expect(within(container).getByText('legacy')).toBeInTheDocument());
-    // "computer" replaces the old "discovered": the badge says where the server
-    // came from, in a word a person can act on, rather than naming DorkOS's own
-    // bookkeeping. An entry the runtime reports with no project scope came from
-    // the computer-wide config.
-    expect(within(container).getByText('computer')).toBeInTheDocument();
+    // The old "discovered" badge named DorkOS's own bookkeeping and is gone. What
+    // replaces it is a word about where the server came from — and this entry
+    // carries NO scope, so there is no such word to show. It briefly defaulted to
+    // "computer", which told people a server might well be their project's own
+    // came from their computer-wide config.
     expect(within(container).queryByText('discovered')).not.toBeInTheDocument();
+    expect(within(container).queryByText('computer')).not.toBeInTheDocument();
+    expect(within(container).queryByText('project')).not.toBeInTheDocument();
+    expect(
+      within(container).getByText(
+        'This agent’s runtime loads this server. Add it to manage it here.'
+      )
+    ).toBeInTheDocument();
     // Servers DorkOS does not manage are not editable — no enable switch.
     expect(within(container).queryByLabelText('Enable legacy')).not.toBeInTheDocument();
+  });
+
+  it('badges a user-scoped server as coming from your computer', async () => {
+    const transport = createMockTransport({
+      listAgentMcpServers: vi.fn().mockResolvedValue([]),
+      getMcpConfig: vi.fn().mockResolvedValue({
+        servers: [{ name: 'granola-notes', type: 'stdio', status: 'connected', scope: 'user' }],
+      }),
+    });
+    const { container } = renderComponent(transport);
+
+    await waitFor(() => expect(within(container).getByText('computer')).toBeInTheDocument());
+    expect(
+      within(container).getByText(/From your computer-wide config\. Add it to manage it here\./)
+    ).toBeInTheDocument();
   });
 
   it('badges a project-scoped server as coming from this project', async () => {
@@ -1089,6 +1115,86 @@ describe('AgentMcpServers', () => {
       ).toBeInTheDocument()
     );
     expect(pollMcpSignin).toHaveBeenCalledWith('flow-1');
+  });
+
+  /** A promise a test resolves by hand, so one query can be made to land last. */
+  function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((r) => {
+      resolve = r;
+    });
+    return { promise, resolve };
+  }
+
+  /** The names of the cards on screen, top to bottom. */
+  function cardOrder(container: HTMLElement): (string | null)[] {
+    return [...container.querySelectorAll('[data-mcp-server]')].map((el) =>
+      el.getAttribute('data-mcp-server')
+    );
+  }
+
+  it('waits for the runtime roster before freezing, so a failed server still reaches the top', async () => {
+    // The likely race: the manifest is a file read and lands first, the runtime's
+    // status goes through the runtime and lands second. Freezing on the manifest
+    // alone sorted only the managed servers — and since a runtime FAILURE is
+    // knowable only from the second query, no can't-reach card could ever reach
+    // the attention band. It was appended after the freeze, below every working
+    // card: precisely the card the sort exists to lift.
+    const liveConfig = deferred<{ servers: McpServerEntry[] }>();
+    const transport = createMockTransport({
+      listAgentMcpServers: vi.fn().mockResolvedValue([
+        { ...managedServer, name: 'healthy' },
+        { ...managedServer, name: 'broken' },
+      ]),
+      getMcpConfig: vi.fn().mockReturnValue(liveConfig.promise),
+    });
+    const { container } = renderComponent(transport);
+
+    await waitFor(() => expect(within(container).getByText('healthy')).toBeInTheDocument());
+
+    await act(async () => {
+      liveConfig.resolve({
+        servers: [
+          { name: 'healthy', type: 'stdio', status: 'connected' },
+          { name: 'broken', type: 'stdio', status: 'failed', error: 'ECONNREFUSED' },
+        ],
+      });
+    });
+
+    await waitFor(() => expect(within(container).getByText('Can’t reach')).toBeInTheDocument());
+    expect(cardOrder(container)).toEqual(['broken', 'healthy']);
+  });
+
+  it('waits for the managed listing before freezing, so a managed card is not stranded below', async () => {
+    // The same race the other way round. Freezing on the runtime roster alone
+    // sorted only the servers DorkOS does not manage, and appended every managed
+    // one after them — so a server that needs signing in sat BELOW a working
+    // project server it should have led.
+    const managedList = deferred<ManagedMcpServerView[]>();
+    const transport = createMockTransport({
+      listAgentMcpServers: vi.fn().mockReturnValue(managedList.promise),
+      getMcpConfig: vi.fn().mockResolvedValue({
+        servers: [{ name: 'shadcn', type: 'stdio', status: 'connected', scope: 'project' }],
+      }),
+    });
+    const { container } = renderComponent(transport);
+
+    // The roster must genuinely LAND, and commit, while the listing is still in
+    // flight — otherwise both resolve inside one act(), the component sees a
+    // single already-settled commit, and the test passes against a gate that
+    // freezes on whichever query arrived first. It would then be a check that
+    // cannot fail.
+    await waitFor(() => expect(transport.getMcpConfig).toHaveBeenCalled());
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      managedList.resolve([{ ...oauthServer, authStatus: 'needs-auth' } as ManagedMcpServerView]);
+    });
+
+    await waitFor(() => expect(within(container).getByText('Needs sign-in')).toBeInTheDocument());
+    expect(cardOrder(container)).toEqual(['granola', 'shadcn']);
   });
 
   it('sorts what needs you to the top when the panel opens, then never moves a card again', async () => {

@@ -79,7 +79,8 @@ function InboundMcpCrossLink() {
  */
 export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
   const managed = useAgentMcpServers(agent.id);
-  const { data: liveConfig } = useMcpConfig(projectPath, agent.runtime);
+  const live = useMcpConfig(projectPath, agent.runtime);
+  const liveConfig = live.data;
   const caps = useCapabilitiesForRuntime(agent.runtime);
   const canAdd = caps?.supportsManagedMcpServers ?? true;
 
@@ -154,17 +155,26 @@ export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
   const discovered = (liveConfig?.servers ?? []).filter((s) => !managedNames.has(s.name));
   const busy = enableServer.isPending || disableServer.isPending || removeServer.isPending;
 
-  // The freeze itself: the first render that has servers captures their order,
-  // and every render after replays it. A ref, not state — capturing an order must
-  // not itself cause a render, and the value is read during the same render that
-  // writes it. Servers that appear later are APPENDED, never inserted, so nothing
-  // already on screen moves.
+  // The freeze itself: the first render where BOTH queries have settled captures
+  // the order, and every render after replays it. A ref, not state — capturing an
+  // order must not itself cause a render, and the value is read during the same
+  // render that writes it. Servers that appear later are APPENDED, never
+  // inserted, so nothing already on screen moves.
+  //
+  // Waiting for both is the whole correctness of the sort, not politeness. The
+  // two sources land independently — the manifest is a file read, the runtime's
+  // status goes through the runtime — and freezing on whichever arrived first
+  // sorted only that half. Managed-first (the likely race) meant no runtime-only
+  // state could ever reach the attention band: a server the runtime reports as
+  // failed was appended AFTER the freeze, below every working card, which is
+  // precisely the card the sort exists to lift.
   const frozenOrder = useRef<string[] | null>(null);
+  const bothSettled = !managed.isPending && !live.isPending;
   const byName = new Map<string, { kind: 'managed' | 'discovered'; index: number }>();
   managedServers.forEach((server, index) => byName.set(server.name, { kind: 'managed', index }));
   discovered.forEach((entry, index) => byName.set(entry.name, { kind: 'discovered', index }));
 
-  if (frozenOrder.current === null && byName.size > 0) {
+  if (frozenOrder.current === null && bothSettled && byName.size > 0) {
     frozenOrder.current = initialCardOrder({
       managed: managedServers,
       live: liveByName,

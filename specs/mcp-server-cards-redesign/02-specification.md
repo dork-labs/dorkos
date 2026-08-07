@@ -243,11 +243,27 @@ border.
 | A managed manifest entry                        | `agent`    |
 | A runtime-reported name with a plugin prefix    | `plugin`   |
 | A runtime-reported entry scoped project / local | `project`  |
-| Anything else runtime-reported                  | `computer` |
+| A runtime-reported entry scoped user            | `computer` |
+| Anything else runtime-reported                  | _no badge_ |
 
-The plugin prefix is **parsed, not guessed**: Claude Code's convention is
-`plugin:<plugin-name>` (or `<server>@<plugin>` in some builds), and a parsed name shows
-clean on the card with the raw id kept for Details. The parser lives in a `lib/` helper
+**A scope is shown only when it is known.** An unrecognised or absent scope shows no badge
+at all rather than defaulting to `computer` — the default was a guess printed as a fact,
+and it labelled servers a project declares in its own `.mcp.json` as coming from the
+operator's computer-wide config. Runtimes that report no scope (OpenCode) would have had
+every server mislabelled the same way. Saying nothing is honest, and it is visibly
+different from the four answers that are earned.
+
+The `.mcp.json` fallback path — used when a runtime has no live status yet — stamps
+`scope: 'project'` itself in `summarizeMcpJsonServers`. That is not an inference: the
+summarizer read those bytes out of the workspace's own file, so the scope is provenance.
+
+The plugin prefix is **parsed, not guessed**: Claude Code's confirmed conventions are
+`plugin:<plugin-name>` and the three-part `plugin:<plugin>:<server>`, and a parsed name
+shows clean on the card with the raw id kept for Details. A `<server>@<plugin>` suffix rule
+was written and removed: `@` is legal inside an ordinary server name, so it renamed
+`notion@v2` to `notion` and claimed a "v2 plugin" that does not exist — and because a
+parsed plugin outranks the runtime's own scope, it overrode a real answer with a
+fabricated one. A convention earns a row when a live build is observed writing it. The parser lives in a `lib/` helper
 with its own tests, is written as a list of per-runtime conventions, and **falls through
 to raw display** whenever nothing matches — an unrecognised name is shown exactly as the
 runtime gave it, never mangled. Adding another runtime's convention is adding one entry
@@ -296,6 +312,13 @@ tests adapted to the new DOM and their assertions' meaning preserved:
   which owns `services/mesh/*`. So the overflow menu is built with a `canSignOut`
   capability flag that defaults to `false`, and the entry is hidden. When a route
   lands, the flag flips and the menu item is already wired.
+
+  **The trust panel's copy is held to the same rule.** It says "removing the server
+  removes the key", which is what actually happens — `forgetServer` runs on removal. An
+  earlier draft promised "you can sign out anytime" beside a menu that deliberately has
+  no Sign out in it. **When the sign-out route lands, restore the stronger wording** in
+  `McpSigninPanel`'s trust panel; until then it must not be re-added.
+
 - The Details rows named in §5 as not-yet-available (**DOR-1006**).
 - "Sign in again" is `Sign in` re-run against a server that already has a token; it
   ships, since it needs nothing new.

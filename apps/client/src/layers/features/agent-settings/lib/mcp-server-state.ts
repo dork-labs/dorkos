@@ -43,8 +43,22 @@ const RUNTIME_STATUS_TO_CARD: Record<
 /**
  * Words a runtime uses when the problem is the server's CONFIGURATION rather
  * than its reachability. Matched case-insensitively against the error string.
+ *
+ * Two of these are corrections. `'not found: command'` was written transposed and
+ * could never match anything a shell says — the real string is `command not
+ * found`, with `enoent` beside it for the same failure reported by Node. And a
+ * bare `'invalid'` swept up OAuth's `invalid_grant` / `invalid_token`, which are
+ * EXPIRED SIGN-INS: it sent people to go and fix a config that was never wrong.
+ * The config-flavoured phrases are matched instead, so an auth error stays out.
  */
-const SETUP_PROBLEM_MARKERS = ['validation', 'invalid', 'missing required', 'not found: command'];
+const SETUP_PROBLEM_MARKERS = [
+  'validation',
+  'invalid config',
+  'invalid configuration',
+  'missing required',
+  'command not found',
+  'enoent',
+];
 
 /**
  * Which of the two failure states an error string describes.
@@ -59,6 +73,9 @@ const SETUP_PROBLEM_MARKERS = ['validation', 'invalid', 'missing required', 'not
  * far more likely to be a network or process failure than a config one, and
  * "this server didn't answer" is the safer thing to be wrong about — it sends a
  * person to Try again rather than to hunt for a config mistake that isn't there.
+ * That is also why the markers are narrow: every one of them has to name a
+ * config problem specifically, because the cost of a false "Setup problem" is a
+ * person editing a file that was correct all along.
  *
  * @param error - The runtime's error string, if it gave one.
  */

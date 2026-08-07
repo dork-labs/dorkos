@@ -134,8 +134,8 @@ export interface McpServerCardProps {
   displayName: string;
   /** The raw name, used to anchor the card for tests and page objects. */
   rawName: string;
-  /** Where the server came from. */
-  scope: McpServerScope;
+  /** Where the server came from, or `null` when the runtime would not say. */
+  scope: McpServerScope | null;
   /** The plugin it ships with, when its name says so. */
   pluginName: string | null;
   /** The state the chip shows. */
@@ -152,6 +152,12 @@ export interface McpServerCardProps {
   children?: ReactNode;
   /** The Details body. Absent means the card offers no Details at all. */
   details?: ReactNode;
+  /**
+   * Whether Details starts open. Off everywhere in the product — a panel of
+   * cards that all opened themselves would bury the list — and on in the Dev
+   * Playground, where the point of the demo IS the open state.
+   */
+  defaultDetailsOpen?: boolean;
 }
 
 /**
@@ -175,8 +181,9 @@ export function McpServerCard({
   actions,
   children,
   details,
+  defaultDetailsOpen = false,
 }: McpServerCardProps) {
-  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(defaultDetailsOpen);
   const detailsId = useId();
   const tone: McpCardTone = MCP_STATUS_META[status].tone;
 
@@ -188,7 +195,7 @@ export function McpServerCard({
       <span className={accentVariants({ tone })} aria-hidden />
       <div className="flex items-center gap-2">
         <span className="min-w-0 flex-1 truncate text-sm font-medium">{displayName}</span>
-        <McpScopeBadge scope={scope} pluginName={pluginName} />
+        {scope && <McpScopeBadge scope={scope} pluginName={pluginName} />}
         <McpStatusChip status={status} />
         {toggle}
       </div>

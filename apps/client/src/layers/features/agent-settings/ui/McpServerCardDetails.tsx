@@ -18,7 +18,7 @@ export interface McpToolSummary {
 /** One row of the definition grid. Renders nothing when it has no value. */
 function DetailRow({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="grid grid-cols-[4.5rem_1fr] gap-x-2 gap-y-0.5">
+    <div className="grid grid-cols-[5.5rem_1fr] gap-x-2 gap-y-0.5">
       <span className="text-muted-foreground/70 text-xs">{label}</span>
       <span className="text-muted-foreground text-xs leading-relaxed">{children}</span>
     </div>
@@ -58,14 +58,36 @@ function ToolList({ tools }: { tools: readonly McpToolSummary[] }) {
   );
 }
 
+/**
+ * What the Source row says, or `null` when nothing here can answer it.
+ *
+ * Order matters: a plugin names itself, then a connection DorkOS holds can be
+ * described exactly, and only then does the scope get to speak. A card with no
+ * connection and no scope says nothing rather than inventing an origin.
+ *
+ * @param args.scope - Where the server came from, when known.
+ * @param args.pluginName - The plugin it ships with, when its name says so.
+ * @param args.connection - The managed server's connection, when DorkOS holds one.
+ */
+function describeSource(args: {
+  scope: McpServerScope | null;
+  pluginName: string | null;
+  connection: McpServerTransport | undefined;
+}): string | null {
+  const { scope, pluginName, connection } = args;
+  if (scope === 'plugin' && pluginName) return `Comes with the ${pluginName} plugin`;
+  if (connection) return sourceRowCopy(connection);
+  return scope ? scopeTooltip(scope, pluginName) : null;
+}
+
 /** Props for {@link McpServerCardDetails}. */
 export interface McpServerCardDetailsProps {
   /** The managed server's connection. Absent for a server DorkOS does not manage. */
   connection?: McpServerTransport;
   /** The listing's derived sign-in state, if any. */
   authStatus?: ManagedMcpServerView['authStatus'];
-  /** Where the server came from. */
-  scope: McpServerScope;
+  /** Where the server came from, or `null` when the runtime would not say. */
+  scope: McpServerScope | null;
   /** The plugin it ships with, when its name says so. */
   pluginName: string | null;
   /** The name exactly as the runtime reported it. Shown only when it was parsed. */
@@ -111,12 +133,7 @@ export function McpServerCardDetails({
   alsoUsedBy,
   error,
 }: McpServerCardDetailsProps) {
-  const source =
-    scope === 'plugin' && pluginName
-      ? `Comes with the ${pluginName} plugin`
-      : connection
-        ? sourceRowCopy(connection)
-        : scopeTooltip(scope, pluginName);
+  const source = describeSource({ scope, pluginName, connection });
 
   return (
     <div className="border-border/60 mt-2 space-y-1 border-t pt-2">
@@ -129,7 +146,7 @@ export function McpServerCardDetails({
         </DetailRow>
       )}
 
-      <DetailRow label="Source">{source}</DetailRow>
+      {source && <DetailRow label="Source">{source}</DetailRow>}
 
       {rawName !== displayName && (
         <DetailRow label="Raw id">

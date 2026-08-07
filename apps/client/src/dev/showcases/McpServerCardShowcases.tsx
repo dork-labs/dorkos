@@ -223,6 +223,7 @@ function WorkingStatesSection() {
             managed
             toggle={<EnableSwitch name="linear" on />}
             actions={<OverflowButton name="linear" />}
+            defaultDetailsOpen
             details={
               <McpServerCardDetails
                 connection={{
@@ -292,6 +293,23 @@ function WorkingStatesSection() {
                 <OverflowButton name="internal-api" />
               </>
             }
+          />
+        </AtPanelWidth>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Connecting — said only when a runtime really reports it</ShowcaseLabel>
+      <ShowcaseDemo>
+        <AtPanelWidth>
+          <McpServerCard
+            displayName="notion"
+            rawName="notion"
+            scope="agent"
+            pluginName={null}
+            status="connecting"
+            sentence="Connecting to this server."
+            managed
+            toggle={<EnableSwitch name="notion" on />}
+            actions={<OverflowButton name="notion" />}
           />
         </AtPanelWidth>
       </ShowcaseDemo>

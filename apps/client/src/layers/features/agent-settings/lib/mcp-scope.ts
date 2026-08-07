@@ -55,11 +55,13 @@ interface PluginNameConvention {
 /**
  * The name conventions this surface knows, tried in order.
  *
- * Claude Code is first because it is the default runtime and the only one whose
- * convention is confirmed: it prefixes plugin-provided servers with
- * `plugin:<plugin>` and, in newer builds, suffixes them with `@<plugin>`.
- * Anything that matches nothing here falls through to raw display — see
- * {@link parseMcpServerName}.
+ * Only Claude Code's `plugin:` prefix forms are here, because they are the only
+ * ones OBSERVED. A `<server>@<plugin>` suffix rule was written and removed: `@`
+ * is legal inside an ordinary server name, so it renamed `notion@v2` to `notion`
+ * and claimed a "v2 plugin" that does not exist — a guess dressed as a fact, and
+ * one that also overrode the runtime's own scope. A convention earns a row here
+ * when a live build is seen writing it, never before. Anything that matches
+ * nothing falls through to raw display — see {@link parseMcpServerName}.
  */
 const PLUGIN_NAME_CONVENTIONS: readonly PluginNameConvention[] = [
   {
@@ -71,11 +73,6 @@ const PLUGIN_NAME_CONVENTIONS: readonly PluginNameConvention[] = [
     runtime: 'claude-code',
     pattern: /^plugin:(.+)$/,
     read: (m) => ({ pluginName: m[1]!, displayName: m[1]! }),
-  },
-  {
-    runtime: 'claude-code',
-    pattern: /^(.+)@(.+)$/,
-    read: (m) => ({ displayName: m[1]!, pluginName: m[2]! }),
   },
 ];
 
@@ -103,15 +100,22 @@ export function parseMcpServerName(rawName: string): ParsedMcpServerName {
 }
 
 /**
- * Which scope a runtime-reported (non-managed) server belongs to.
+ * Which scope a runtime-reported (non-managed) server belongs to, or `null` when
+ * the runtime did not say and nothing else can prove it.
  *
  * A parsed plugin name wins outright: a plugin's server is the plugin's wherever
  * the config that loads it happens to live. Otherwise the runtime's own scope
- * decides, and its two project-shaped values (`project` for the checked-in
+ * decides — its two project-shaped values (`project` for the checked-in
  * `.mcp.json`, `local` for the untracked per-project override) both read as "this
- * project" — the distinction is a config-file detail, not something a person
- * acts on here. Everything else, including an absent scope, is the computer-wide
- * config, which is where a server with no project claim must have come from.
+ * project", because the distinction is a config-file detail rather than something
+ * a person acts on here, and `user` is the computer-wide config.
+ *
+ * **An unrecognised or absent scope returns `null`, and the card then shows no
+ * badge at all.** Defaulting it to `computer` was a guess that read as a
+ * statement of fact: it told people a server their own project declares came from
+ * their computer-wide config. Runtimes that report no scope (OpenCode) would have
+ * had every server mislabelled the same way. Saying nothing is the honest answer,
+ * and it is visibly different from the four answers that are earned.
  *
  * @param entry - The runtime's roster entry.
  * @param parsed - The entry's name, already split by {@link parseMcpServerName}.
@@ -119,11 +123,15 @@ export function parseMcpServerName(rawName: string): ParsedMcpServerName {
 export function deriveDiscoveredScope(
   entry: McpServerEntry,
   parsed: ParsedMcpServerName
-): McpServerScope {
+): McpServerScope | null {
   if (parsed.pluginName) return 'plugin';
   if (entry.scope === 'project' || entry.scope === 'local') return 'project';
-  return 'computer';
+  if (entry.scope === 'user') return 'computer';
+  return null;
 }
+
+/** What a card says about an origin the runtime would not name. */
+const UNKNOWN_SCOPE_SENTENCE = 'This agent’s runtime loads this server. Add it to manage it here.';
 
 /**
  * The tooltip for a scope badge, with the plugin named when one is known.
@@ -138,12 +146,13 @@ export function scopeTooltip(scope: McpServerScope, pluginName: string | null): 
 
 /**
  * The card sentence for a server DorkOS does not manage, with the plugin named
- * when one is known.
+ * when one is known and no origin claimed when the scope is unknown.
  *
- * @param scope - The card's scope.
+ * @param scope - The card's scope, or `null` when the runtime did not say.
  * @param pluginName - The plugin the server ships with, when known.
  */
-export function scopeSentence(scope: McpServerScope, pluginName: string | null): string {
+export function scopeSentence(scope: McpServerScope | null, pluginName: string | null): string {
+  if (scope === null) return UNKNOWN_SCOPE_SENTENCE;
   if (scope === 'plugin' && pluginName) {
     return `Comes with the ${pluginName} plugin. Add it to manage it here.`;
   }

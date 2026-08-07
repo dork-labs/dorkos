@@ -112,7 +112,12 @@ export function ManagedMcpServerCard({
 
   const parsed = parseMcpServerName(server.name);
   const toolCount = probe?.ok ? (probe.toolCount ?? null) : signin.state.toolCount;
-  const sentenceStatus = probeAdjustedStatus({ status, probe });
+  // The probe adjustment is suppressed while the sign-in surface is on screen, on
+  // the same reasoning as the primary action: a probe from before the sign-in
+  // started would otherwise print "This server didn't answer" directly above the
+  // consent panel a person is reading, competing with it and describing a moment
+  // that is being superseded as they look at it.
+  const sentenceStatus = signinOnScreen ? status : probeAdjustedStatus({ status, probe });
   const sentence = cardSentence(sentenceStatus, {
     displayName: parsed.displayName,
     toolCount,

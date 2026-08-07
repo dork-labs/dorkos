@@ -43,13 +43,25 @@ function confirmSentence(args: {
   pluginName: string | null;
 }): string {
   const { displayName, scope, pluginName } = args;
-  const origin =
-    scope === 'plugin' && pluginName
-      ? `comes with the ${pluginName} plugin`
-      : scope === 'project'
-        ? 'comes from this project’s own config'
-        : 'comes from your computer-wide config';
+  const origin = confirmOrigin(scope, pluginName);
   return `${displayName} ${origin}. Manage it here to enable, disable, or sign in from DorkOS.`;
+}
+
+/**
+ * The clause naming where a server lives today. An unknown scope says only that
+ * the runtime loads it — the one thing that is certainly true.
+ *
+ * @param scope - Where the server came from, when known.
+ * @param pluginName - The plugin it ships with, when its name says so.
+ */
+function confirmOrigin(
+  scope: ReturnType<typeof deriveDiscoveredScope>,
+  pluginName: string | null
+): string {
+  if (scope === 'plugin' && pluginName) return `comes with the ${pluginName} plugin`;
+  if (scope === 'project') return 'comes from this project’s own config';
+  if (scope === 'computer') return 'comes from your computer-wide config';
+  return 'is loaded by this agent’s runtime';
 }
 
 /** Props for {@link DiscoveredMcpServerCard}. */

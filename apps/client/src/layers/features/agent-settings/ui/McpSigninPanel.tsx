@@ -19,6 +19,12 @@ export interface McpSigninPanelProps {
  * one thing the disclosure's careful wording does not say loudly enough — the
  * key never leaves this computer, and it is reversible.
  *
+ * The reversal it promises is REMOVING THE SERVER, which is the only one that
+ * exists: `forgetServer` runs on removal, and there is no sign-out route yet
+ * (spec `mcp-server-cards-redesign` §7). An earlier draft said "you can sign out
+ * anytime" beside a menu that deliberately has no Sign out in it. Restore the
+ * stronger wording when the route lands, not before.
+ *
  * @param props.serverName - The provider whose site the person will approve on.
  */
 function SignInTrustPanel({ serverName }: { serverName: string }) {
@@ -28,7 +34,7 @@ function SignInTrustPanel({ serverName }: { serverName: string }) {
       <p className="text-xs leading-relaxed">
         <strong className="font-semibold">Your sign-in stays on this computer.</strong> You approve
         access on {serverName}&rsquo;s own site. DorkOS keeps the resulting key here — the agent
-        never sees it, and you can sign out anytime.
+        never sees it, and removing the server removes the key.
       </p>
     </div>
   );
