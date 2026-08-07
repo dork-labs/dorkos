@@ -13,10 +13,11 @@
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { AuthorRef, Room, RoomMember, RoomRosterEntry } from '@dorkos/shared/room-schemas';
 import {
-  advertisedHandles,
+  addressableHandles,
+  isLiveAuthor,
   rosterMentionCandidates,
   type RosterCandidates,
-} from './author-handles.js';
+} from './handles/author-handles.js';
 import {
   authorOrigin,
   toAuthorRef,
@@ -162,27 +163,28 @@ export class RoomRoster {
    * A room's roster with every author resolved — one query for the memberships
    * and one for the authors, not one per member.
    *
-   * This is the projection a mention picker reads, so it is the one that also
-   * carries each member's `mentionHandle`. That costs one mesh lookup per agent
-   * member, which is why it is not done on the bulk room-list path
-   * ({@link RoomRoster.authorsIn}) where nothing addresses anybody.
+   * This is the projection a mention picker reads, so each member's `handle` is
+   * the one that reaches them IN THIS ROOM: an author whose agent is gone still
+   * carries a handle on its row and no longer answers to it, and offering that
+   * in a picker would insert a mention that reaches nobody.
    *
    * @param roomId - The room.
    */
   list(roomId: string): RoomRosterEntry[] {
     const members = this.store.listMembers(roomId);
     const authors = this.authors.getMany(members.map((m) => m.authorId));
-    // Ownership comes from `author-handles.ts`, over the SAME candidate sequence
-    // `mentionCandidates` hands `resolveMentions` — so a handle is advertised to
-    // a member only when that member is the one it would actually reach, and the
-    // roster an agent reads cannot disagree with the roster a picker reads.
-    const handles = advertisedHandles(rosterMentionCandidates(members, authors, this.agents).live);
+    // The addressable set comes from `author-handles.ts`, over the SAME candidate
+    // sequence `addressingCandidates` hands `resolveMentions` — so a handle is
+    // offered only when it would actually reach the member it is offered for,
+    // and the roster an agent reads cannot disagree with the roster a picker
+    // reads.
+    const handles = addressableHandles(rosterMentionCandidates(members, authors, this.agents).live);
     return members.map((member) => {
       const author = authors.get(member.authorId);
       if (!author) return { ...member, ...unknownMember(member.authorId) };
       return {
         ...member,
-        author: toAuthorRef(author, handles.get(member.authorId)),
+        author: toAuthorRef(author, handles.get(member.authorId) ?? null),
         origin: authorOrigin(author.naturalKey),
       };
     });
@@ -196,6 +198,14 @@ export class RoomRoster {
    * Every id asked for comes back with an entry, so an empty array means "that
    * room has nobody in it" and a missing key means "you did not ask about it".
    *
+   * **The liveness question is asked here too**, even though nothing on this
+   * path opens a picker. `AuthorRef.handle` promises that `null` means "cannot
+   * be addressed", and an author whose agent is gone still carries a handle on
+   * its row while answering to nothing — so handing the raw column out here
+   * would make one projection of the same field disagree with the other two.
+   * That is the second-derivation failure this whole area exists to prevent, and
+   * a promise the schema makes is not one a bulk path gets to opt out of.
+   *
    * @param roomIds - The rooms to read.
    */
   authorsIn(roomIds: readonly string[]): Map<string, AuthorRef[]> {
@@ -205,27 +215,33 @@ export class RoomRoster {
     const authors = this.authors.getMany(members.map((m) => m.authorId));
     for (const member of members) {
       const author = authors.get(member.authorId);
-      byRoom
-        .get(member.roomId)
-        ?.push(author ? toAuthorRef(author) : unknownMember(member.authorId).author);
+      if (!author) {
+        byRoom.get(member.roomId)?.push(unknownMember(member.authorId).author);
+        continue;
+      }
+      // Per author rather than per room: liveness is a property of the author's
+      // directory, not of the room it is being listed in, so one lookup answers
+      // for every room it appears in.
+      const addressable = isLiveAuthor(author, this.agents) ? undefined : null;
+      byRoom.get(member.roomId)?.push(toAuthorRef(author, addressable));
     }
     return byRoom;
   }
 
   /**
-   * The names each member answers to for `@` resolution: an agent's handle
-   * first, then whatever it renders as — plus the names a member whose agent is
-   * gone WOULD have answered to, so typing one of those is answered instead of
-   * swallowed (ADR 260801-003051).
+   * The names each member answers to for `@` resolution — their handle, and
+   * nothing else — plus the handle a member whose agent is gone WOULD have
+   * answered to, so typing it is answered instead of swallowed
+   * (ADR 260801-003051).
    *
    * **`augment` is the one platform translation a bridged room needs** (spec
    * §5.4). Telegram addresses a bot as `@botusername`, which is not the agent's
    * DorkOS handle, so `ingest` threads one extra candidate name for the bound
    * agent here — sourced from `getMe().username`, never rewritten into the log.
-   * It is **appended after** that agent's own advertised handles, so
-   * `claimNames`' first-claimant-wins rule keeps the agent's real handle
-   * preferred and, across the roster, means the extra name can never displace a
-   * handle another member already claims (A5.5). Matched on the agent's
+   * It is **appended after** that agent's own handle, so the resolver's
+   * first-claimant-wins rule keeps the agent's real handle preferred and, across
+   * the roster, means the extra name can never displace a handle another member
+   * already claims (A5.5). Matched on the agent's
    * `agentPath` (its author's natural key), so it lands on the bound agent and
    * nobody else; a room with no such agent (a ghost, or the wrong path) is left
    * exactly as it was.
@@ -343,5 +359,5 @@ export class RoomRoster {
  * behaviour riding on it.
  */
 function unknownMember(id: string): Pick<RoomRosterEntry, 'author' | 'origin'> {
-  return { author: { id, kind: 'system', displayName: 'Unknown' }, origin: 'local' };
+  return { author: { id, kind: 'system', displayName: 'Unknown', handle: null }, origin: 'local' };
 }

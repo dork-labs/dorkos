@@ -69,7 +69,7 @@ function agentMember(id: string, displayName: string, path: string): RoomRosterE
       id,
       kind: 'agent',
       displayName,
-      mentionHandle: id,
+      handle: id,
       agentRef: agentAuthorRef(path),
     },
   };
@@ -83,7 +83,7 @@ const MEMBERS: RoomRosterEntry[] = [
     joinedAt: '2026-08-06T09:00:00.000Z',
     lastReadSeq: 0,
     origin: 'local',
-    author: { id: 'ana', kind: 'human', displayName: 'Ana', mentionHandle: 'ana' },
+    author: { id: 'ana', kind: 'human', displayName: 'Ana', handle: 'ana' },
   },
   agentMember('bo', 'Bo', BO_PATH),
   agentMember('gone', 'Gone', GONE_PATH),

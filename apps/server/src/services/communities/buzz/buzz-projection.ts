@@ -166,6 +166,16 @@ export function toCommunityMembers(community: CommunityRef, event: NostrEvent): 
       memberId: tag[1],
       kind: toAuthorKind(role),
       displayName: abbreviate(tag[1]),
+      // **`null`, and it is a gap rather than a decision.** Buzz stores a
+      // case-folded unique `nip05_handle` per user, but the kind-39002 roster
+      // event's `["p", pubkey, relay_url, role]` tags do not carry it, and
+      // neither of Buzz's own `@`-mention resolvers reads the column either —
+      // it ships a test asserting `@alice` notifies every Alice. Reading it
+      // would take a second round trip per member to a kind-0 profile event,
+      // which is the same cost `displayName` declines above. Reported honestly
+      // instead of guessed at from the abbreviated pubkey, which is an
+      // identifier and not an address.
+      handle: null,
       role,
       // Buzz's NIP-OA owner attestation binds an agent key to the human key that
       // vouches for it, but the proof rides the AUTH handshake, not the roster —

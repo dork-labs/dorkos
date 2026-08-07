@@ -74,6 +74,7 @@ export function createTeamRouter(deps: TeamRouterDeps): Router {
       // request and never captured.
       const roster = await aggregateTeamRoster({
         listPeople: () => deps.authors.listActive('human'),
+        listAgentAuthors: () => deps.authors.listActive('agent'),
         listAgents: () => {
           if (!mesh) throw new Error('The agent registry is not running.');
           return mesh.listWithHealth();

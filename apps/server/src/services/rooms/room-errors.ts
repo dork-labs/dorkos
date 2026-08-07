@@ -18,6 +18,26 @@ export type RoomErrorCode =
   | 'AGENT_NOT_FOUND'
   | 'SLUG_TAKEN'
   | 'INVALID_SLUG'
+  /**
+   * A handle somebody asked for is live on another author (spec `handles` §8).
+   *
+   * **Three handle codes, not one**, because they are three different things a
+   * person does about it: pick another, ask whoever had it, or fix the spelling.
+   * Collapsing them would make the message do work the code should. This is the
+   * direct lesson from Buzz, which enforces uniqueness in the index and then
+   * swallows the violation — a user who picks a taken handle is told nothing,
+   * and their profile syncs without it.
+   */
+  | 'HANDLE_TAKEN'
+  /**
+   * A handle somebody asked for is tombstoned to another author, or is one of
+   * the seeded broadcast reservations (`everyone`, `here`, `channel`). A freed
+   * handle stays its original author's forever, and they may take it back
+   * (spec `handles` §3).
+   */
+  | 'HANDLE_RESERVED'
+  /** A handle somebody asked for fails the grammar in `@dorkos/shared/handle`. */
+  | 'INVALID_HANDLE'
   | 'NESTED_THREAD'
   | 'ROOM_ARCHIVED'
   | 'OPERATOR_ONLY'

@@ -85,7 +85,9 @@ const dmWithAna = makeRoom({
   title: 'Ana',
   lastActivityAt: '2026-07-26T08:00:00.000Z',
   unreadCount: 0,
-  participants: [{ id: 'author-ana', kind: 'agent', displayName: 'Ana', agentRef: 'ana' }],
+  participants: [
+    { id: 'author-ana', kind: 'agent', displayName: 'Ana', handle: null, agentRef: 'ana' },
+  ],
 });
 
 /**
@@ -102,7 +104,13 @@ const dmWithQuietPartner = makeRoom({
   lastActivityAt: '2026-07-26T05:00:00.000Z',
   unreadCount: 0,
   participants: [
-    { id: 'author-qp', kind: 'agent', displayName: 'Quiet Partner', agentRef: 'quiet-partner' },
+    {
+      id: 'author-qp',
+      kind: 'agent',
+      displayName: 'Quiet Partner',
+      handle: null,
+      agentRef: 'quiet-partner',
+    },
   ],
 });
 
@@ -129,7 +137,9 @@ const dmWithBo = makeRoom({
   title: 'Bo',
   lastActivityAt: '2026-07-26T04:00:00.000Z',
   unreadCount: 2,
-  participants: [{ id: 'author-bo', kind: 'agent', displayName: 'Bo', agentRef: 'bo' }],
+  participants: [
+    { id: 'author-bo', kind: 'agent', displayName: 'Bo', handle: null, agentRef: 'bo' },
+  ],
 });
 
 const ALL_ROOMS = [urgent, quiet, outsider, dmWithAna, dmWithQuietPartner, dmWithBo];

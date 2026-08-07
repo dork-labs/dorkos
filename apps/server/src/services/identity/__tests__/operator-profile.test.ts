@@ -37,6 +37,7 @@ describe('the operator name diverges between a room and the roster', () => {
 
     const { members } = await aggregateTeamRoster({
       listPeople: () => registry.listActive('human'),
+      listAgentAuthors: () => [],
       listAgents: () => [],
       account: () => ({ id: OWNER_USER_ID, name: 'Dorian', email: 'dorian@dorkos.ai' }),
       configDisplayName: () => null,

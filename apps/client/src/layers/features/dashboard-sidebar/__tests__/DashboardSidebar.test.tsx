@@ -45,8 +45,14 @@ const channel = (id: string, slug: string) => room({ id, kind: 'channel', slug, 
  */
 function dmWith(id: string, agentPath: string, title: string): RoomSummary {
   const participants: AuthorRef[] = [
-    { id: `${id}-you`, kind: 'human', displayName: 'You' },
-    { id: `${id}-agent`, kind: 'agent', displayName: title, agentRef: agentAuthorRef(agentPath) },
+    { id: `${id}-you`, kind: 'human', displayName: 'You', handle: null },
+    {
+      id: `${id}-agent`,
+      kind: 'agent',
+      displayName: title,
+      handle: null,
+      agentRef: agentAuthorRef(agentPath),
+    },
   ];
   return room({ id, kind: 'dm', title, participants });
 }
@@ -1402,14 +1408,21 @@ describe('DashboardSidebar mixed groups (sidebar-groups, DOR-580)', () => {
 
   it('draws a group conversation as a stack of every agent in it', async () => {
     const participants: AuthorRef[] = [
-      { id: 'p-you', kind: 'human', displayName: 'You' },
+      { id: 'p-you', kind: 'human', displayName: 'You', handle: null },
       {
         id: 'p-ana',
         kind: 'agent',
         displayName: 'Ana',
+        handle: null,
         agentRef: agentAuthorRef('/projects/alpha'),
       },
-      { id: 'p-bo', kind: 'agent', displayName: 'Bo', agentRef: agentAuthorRef('/projects/beta') },
+      {
+        id: 'p-bo',
+        kind: 'agent',
+        displayName: 'Bo',
+        handle: null,
+        agentRef: agentAuthorRef('/projects/beta'),
+      },
     ];
     mockRooms.mockReturnValue([room({ id: 'dm1', kind: 'dm', title: 'Ana and Bo', participants })]);
     renderWithProviders(<DashboardSidebar />);

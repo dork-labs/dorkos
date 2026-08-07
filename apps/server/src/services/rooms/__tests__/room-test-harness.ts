@@ -235,7 +235,8 @@ export function createRoomHarness(opts: {
   ownerUserId?: string;
 }): RoomHarness {
   const db = createTestDb();
-  const authors = new AuthorRegistry(db);
+  const agentLookup = typeof opts.agents === 'function' ? opts.agents(db) : opts.agents;
+  const authors = new AuthorRegistry(db, agentLookup);
   const runner = opts.runner ?? scriptedRunner();
   const maxAgentDepth = opts.maxAgentDepth ?? 3;
   const perRoom = opts.maxAutomaticTurnsPerRoomPerHour ?? 1_000;
@@ -253,7 +254,7 @@ export function createRoomHarness(opts: {
     authors,
     broadcaster: new RoomBroadcaster(),
     bridges,
-    agents: typeof opts.agents === 'function' ? opts.agents(db) : opts.agents,
+    agents: agentLookup,
     turns: runner,
     budget: new RoomTurnBudget({ limits: { perRoom: () => perRoom, global: () => global } }),
     maxAgentDepth: () => maxAgentDepth,

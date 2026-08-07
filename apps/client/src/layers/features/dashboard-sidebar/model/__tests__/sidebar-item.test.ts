@@ -38,7 +38,7 @@ function manifest(id: string, overrides: Partial<AgentManifest> = {}): AgentMani
 }
 
 function author(overrides: Partial<AuthorRef> & Pick<AuthorRef, 'id'>): AuthorRef {
-  return { kind: 'agent', displayName: 'Someone', ...overrides };
+  return { kind: 'agent', displayName: 'Someone', handle: null, ...overrides };
 }
 
 function room(overrides: Partial<RoomSummary> & Pick<RoomSummary, 'id' | 'kind'>): RoomSummary {
@@ -150,7 +150,7 @@ describe('roomSidebarItem', () => {
         // those for an agent that has one stored, which is the exact condition
         // that made this mark a letter.
         participants: [
-          author({ id: 'author-you', kind: 'human', displayName: 'You' }),
+          author({ id: 'author-you', kind: 'human', displayName: 'You', handle: null }),
           author({ id: 'author-ana', displayName: 'Ana', agentRef: agentAuthorRef(ANA_PATH) }),
         ],
       })
@@ -166,7 +166,7 @@ describe('roomSidebarItem', () => {
         title: 'Ana and Bo',
         participants: [
           author({ id: 'a-ana', displayName: 'Ana', agentRef: agentAuthorRef(ANA_PATH) }),
-          author({ id: 'a-you', kind: 'human', displayName: 'You' }),
+          author({ id: 'a-you', kind: 'human', displayName: 'You', handle: null }),
           author({ id: 'a-bo', displayName: 'Bo', agentRef: agentAuthorRef(BO_PATH) }),
         ],
       })

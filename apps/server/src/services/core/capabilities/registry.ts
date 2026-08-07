@@ -89,6 +89,16 @@ export interface CapabilityInvocationContext {
    * {@link identity}: informational, never an authorization.
    */
   sessionId?: string;
+  /**
+   * The working directory that session runs in, when the surface has one.
+   *
+   * Set beside {@link sessionId} and by the same surface, for handlers that must
+   * record WHERE a session lives rather than merely which one it is — a sign-in
+   * that outlives the process has to be resumable in the right directory after a
+   * restart has taken the live session with it (DOR-981). Informational, never an
+   * authorization: it says where the caller is, not what it may do.
+   */
+  cwd?: string;
 }
 
 /**
@@ -125,6 +135,13 @@ export interface CapabilityHandlerContext {
    * surfaces, where the caller must name a session explicitly.
    */
   sessionId?: string;
+  /**
+   * That session's working directory, when the surface carries one — for a
+   * handler that must record WHERE the caller is, not merely which session it
+   * is. The managed-MCP sign-in stores it on its flow so a token that lands after
+   * a restart still resumes the agent in the right place (DOR-981).
+   */
+  cwd?: string;
 }
 
 /**
@@ -391,16 +408,14 @@ export function composeRegistry(
 
       // Always a real object, so a handler can read `context.approval` without
       // guarding for an absent context on every call site. The invoking session
-      // id is an adapter fact that rides through on either branch.
+      // id and its directory are adapter facts that ride through on either branch.
+      const surface = {
+        ...(supplied.sessionId ? { sessionId: supplied.sessionId } : {}),
+        ...(supplied.cwd ? { cwd: supplied.cwd } : {}),
+      };
       const invocationContext: CapabilityHandlerContext = supplied.trusted
-        ? {
-            trusted: supplied.trusted,
-            ...(supplied.sessionId ? { sessionId: supplied.sessionId } : {}),
-          }
-        : {
-            ...(supplied.identity ? { identity: supplied.identity } : {}),
-            ...(supplied.sessionId ? { sessionId: supplied.sessionId } : {}),
-          };
+        ? { trusted: supplied.trusted, ...surface }
+        : { ...(supplied.identity ? { identity: supplied.identity } : {}), ...surface };
 
       // The gate. A trusted caller skips it, having already proved it may decide
       // the very approval this gate would ask for.

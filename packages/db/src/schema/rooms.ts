@@ -60,6 +60,26 @@ export const authors = sqliteTable(
     displayName: text('display_name').notNull(),
 
     /**
+     * The author's address: what somebody types after an `@` to reach them
+     * (spec `handles` §2).
+     *
+     * Unlike `display_name`, this IS a key, and it is the only one that reaches
+     * a client. Lowercase by grammar (`@dorkos/shared/handle`), unique by index,
+     * and — unlike everything else on this row except `natural_key` — **written
+     * once at mint and never refreshed on resolve**. `agents` is a derived cache
+     * whose reconciler rebuilds it from disk every five minutes (ADR-0043), so a
+     * handle re-derived on each resolve would be silently overwritten by
+     * whatever the manifest currently says, spaces included.
+     *
+     * Nullable, because the migration needs a legal intermediate state and
+     * because "this author cannot be addressed" is an honest thing for a row to
+     * say — the local human's stays null until they are asked. Never the empty
+     * string: the partial unique index below permits many NULLs and exactly
+     * one `''`, so the write boundary coerces empty to NULL.
+     */
+    handle: text('handle'),
+
+    /**
      * Render cache: the author's emoji avatar (`agents.icon` for an agent), or
      * null when it has none. Same lifecycle as `display_name` — refreshed on
      * resolve, never the key, and never looked up by.
@@ -99,6 +119,69 @@ export const authors = sqliteTable(
     uniqueIndex('authors_kind_natural_key_unique')
       .on(table.kind, table.naturalKey)
       .where(sql`"retired_at" is null`),
+    // `lower(handle)` even though the grammar already forbids uppercase. It is
+    // redundant GIVEN the grammar and it costs nothing, and the redundancy is
+    // the point: the constraint stops depending on every future write path
+    // remembering to normalize. PARTIAL for the same reason
+    // `rooms_channel_slug_unique` is — the predicate is the query. Every handle
+    // lookup asks for a non-null one, and during the backfill window most rows
+    // have none. NULLs coexist under it; two empty strings would not, which is
+    // why the write boundary coerces `''` to NULL.
+    uniqueIndex('authors_handle_unique')
+      .on(sql`lower("handle")`)
+      .where(sql`"handle" is not null`),
+  ]
+);
+
+/**
+ * A handle its author released, reserved to that author forever (spec
+ * `handles` §3).
+ *
+ * **Renaming is already safe; reuse is the vector.** Mentions resolve once at
+ * write time and store author ids, so a rename can never re-address an old
+ * message. What that does not protect is the person who remembers a name:
+ * `@bella-codebase` is released, somebody else claims it, and every message a
+ * person addresses to the name they remember reaches a different entity.
+ *
+ * Three positions exist in the field. GitHub releases — immediately on a rename,
+ * after 90 days on a deletion — and retires only the popular `OWNER/REPO`
+ * combination rather than the login, which is how repojacking got its name and
+ * why four bypasses were documented across 2021–2023. Matrix never frees a
+ * handle, because no MXID rename exists at all: safe, and a bad choice is
+ * permanent. A permanent reservation takes Matrix's safety without Matrix's
+ * price, and it is affordable only because of scale — in a namespace of a few
+ * dozen entities nobody is competing for `@bella-codebase`.
+ *
+ * The original author may always reclaim its own: that is the case that would
+ * otherwise be infuriating, and the one `author_id` exists to answer.
+ *
+ * **Also the reservation table.** `everyone`, `here` and `channel` are seeded
+ * here at boot, owned by the system author, because a model writes `@everyone`
+ * whether or not that is our spelling for a broadcast — and an unreserved
+ * `everyone` is a name an adversarial agent could claim precisely to harvest
+ * broadcast-intent messages. That is not a blocklist: nothing consults a list of
+ * forbidden words at any enforcement point. It is three rows under one index.
+ */
+export const handleTombstones = sqliteTable(
+  'handle_tombstones',
+  {
+    /** The released handle. Lowercase by grammar — and by index, not by comment. */
+    handle: text('handle').notNull(),
+
+    /** Who released it. They, and only they, may take it back. */
+    authorId: text('author_id').notNull(),
+
+    releasedAt: text('released_at').notNull(),
+  },
+  (table) => [
+    // NOT a bare `text().primaryKey()`, and the reason is the argument the
+    // partial index above already makes. A `TEXT PRIMARY KEY` in SQLite is
+    // BINARY-collated, so `Ana` and `ana` would be two distinct tombstones and
+    // "already lowercased" would be enforced by a doc comment rather than by the
+    // database. The two indexes are checked together on every claim, so folding
+    // one and not the other would be incoherent.
+    uniqueIndex('handle_tombstones_handle_unique').on(sql`lower("handle")`),
+    index('idx_handle_tombstones_author').on(table.authorId),
   ]
 );
 

@@ -129,6 +129,20 @@ export interface TeamAgentSource {
 export interface TeamRosterSources {
   /** Active human authors — `authors` where `retired_at IS NULL` and `kind = 'human'`. */
   listPeople: () => AuthorRecord[] | Promise<AuthorRecord[]>;
+  /**
+   * Active AGENT authors, for their handles and nothing else.
+   *
+   * A separate read from {@link TeamRosterSources.listPeople} because it answers
+   * a different question: the roster's agent rows come from the mesh, which
+   * knows a fleet but not an address — an agent's handle lives on its author
+   * row, minted the first time it is in a room. Joined on
+   * `mintedForManifestId`, which is the manifest ULID the mesh row already
+   * carries, so nothing has to reach for a directory path the wire never sees.
+   *
+   * It shares the `authors` source name in a warning, because it is the same
+   * table failing for the same reasons.
+   */
+  listAgentAuthors: () => AuthorRecord[] | Promise<AuthorRecord[]>;
   /** The fleet with health — `meshCore.listWithHealth()`, no new mesh query. */
   listAgents: () => TeamAgentSource[] | Promise<TeamAgentSource[]>;
   /**
@@ -228,9 +242,11 @@ function personRow(
     // carries their real name, everyone else carries the name their author row
     // was minted under.
     displayName: isSelf ? operatorName : record.displayName,
-    // `authors` has no handle column until DOR-676 lands. `null` is the honest
-    // answer and already means "cannot be addressed" everywhere handles render.
-    handle: null,
+    // Straight off the author row — the same column the room roster, the mention
+    // picker and the resolver all read. `null` until this person chooses one,
+    // and nothing asks them to yet: the surface that does ships with the profile
+    // work (DOR-979). The page renders the absence rather than inventing a name.
+    handle: record.handle,
     ...(record.emoji ? { emoji: record.emoji } : {}),
     ...(record.color ? { color: record.color } : {}),
     isSelf,
@@ -245,11 +261,20 @@ function personRow(
   };
 }
 
-/** Project one registered agent onto a roster row. */
+/**
+ * Project one registered agent onto a roster row.
+ *
+ * @param agent - The mesh's view of the agent.
+ * @param operatorId - The owner's author id, or `null`.
+ * @param defaultAgentName - `config.agents.defaultAgent`, or `null`.
+ * @param handle - Its author row's handle, or `null` when it has never been in a
+ *   room and so has no author row to carry one.
+ */
 function agentRow(
   agent: TeamAgentSource,
   operatorId: string | null,
-  defaultAgentName: string | null
+  defaultAgentName: string | null,
+  handle: string | null
 ): TeamMember {
   const isSystem = agent.isSystem === true;
   const facts: TeamAgentFacts = {
@@ -272,7 +297,7 @@ function agentRow(
     id: agent.id,
     kind: 'agent',
     displayName: agent.displayName ?? agent.name,
-    handle: null,
+    handle,
     ...(agent.icon ? { emoji: agent.icon } : {}),
     ...(agent.color ? { color: agent.color } : {}),
     isSelf: false,
@@ -299,14 +324,18 @@ function agentRow(
 export async function aggregateTeamRoster(sources: TeamRosterSources): Promise<TeamRosterResponse> {
   const timeoutMs = sources.timeoutMs ?? TEAM_SOURCE_TIMEOUT_MS;
 
-  const [people, agents] = await Promise.all([
+  const [people, agents, agentAuthors] = await Promise.all([
     readSource(AUTHORS_SOURCE, () => sources.listPeople(), timeoutMs),
     readSource(AGENTS_SOURCE, () => sources.listAgents(), timeoutMs),
+    readSource(AUTHORS_SOURCE, () => sources.listAgentAuthors(), timeoutMs),
   ]);
 
   const warnings: TeamSourceWarning[] = [];
   if (people.warning) warnings.push(people.warning);
   if (agents.warning) warnings.push(agents.warning);
+  // Only when `listPeople` did not already say the same thing about the same
+  // table — one failure, one warning.
+  if (agentAuthors.warning && !people.warning) warnings.push(agentAuthors.warning);
 
   // Every read below is degradable. Losing the account costs the operator's
   // name and their `isSelf` mark; losing the config costs the preferred name
@@ -332,8 +361,16 @@ export async function aggregateTeamRoster(sources: TeamRosterSources): Promise<T
   // because it is one row moving and the rest keep the order `authors` gave them.
   personRows.sort((a, b) => Number(b.isSelf) - Number(a.isSelf));
 
+  // Keyed on the occupancy stamp rather than on the display name, so an agent
+  // registered where a previous one lived does not inherit its address — the
+  // same generation boundary the author registry draws (ADR 260801-003051).
+  const handleByManifestId = new Map(
+    agentAuthors.items
+      .filter((record) => record.mintedForManifestId !== null && record.handle !== null)
+      .map((record) => [record.mintedForManifestId!, record.handle!])
+  );
   const agentRows = agents.items.map((agent) =>
-    agentRow(agent, self?.id ?? null, defaultAgentName)
+    agentRow(agent, self?.id ?? null, defaultAgentName, handleByManifestId.get(agent.id) ?? null)
   );
 
   const members = [...personRows, ...agentRows];

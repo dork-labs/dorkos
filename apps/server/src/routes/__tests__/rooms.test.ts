@@ -366,6 +366,107 @@ describe('/api/rooms', () => {
     });
   });
 
+  describe('PATCH /authors/:authorId/handle', () => {
+    /** The author ids on a room body, in roster order. */
+    function memberIds(room: { id: string }): string[] {
+      return (room as unknown as { members: { authorId: string }[] }).members.map(
+        (member) => member.authorId
+      );
+    }
+
+    /** The operator's own author id, off a room they created. */
+    async function operatorAuthorId(): Promise<string> {
+      const room = await createChannel('Handles');
+      return memberIds(room)[0];
+    }
+
+    it('sets a handle, and gives it back on the author it reaches', async () => {
+      const authorId = await operatorAuthorId();
+
+      const res = await request(app)
+        .patch(`/api/rooms/authors/${authorId}/handle`)
+        .send({ handle: '  Dorian  ' });
+
+      expect(res.status).toBe(200);
+      // Normalized on the server, so a client that skipped its own check cannot
+      // store something the grammar forbids.
+      expect(res.body.handle).toBe('dorian');
+      expect(res.body.id).toBe(authorId);
+    });
+
+    it('400s a spelling the grammar rejects', async () => {
+      const authorId = await operatorAuthorId();
+
+      const res = await request(app)
+        .patch(`/api/rooms/authors/${authorId}/handle`)
+        .send({ handle: 'not a handle' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('INVALID_HANDLE');
+      // The message names the rule that was missed rather than saying "invalid".
+      expect(res.body.error).toMatch(/lowercase letters, numbers, dots/);
+    });
+
+    it('409s a handle live on another author', async () => {
+      const room = await createChannel('Taken');
+      const me = memberIds(room)[0];
+      await request(app).post(`/api/rooms/${room.id}/members`).send({ agentPath: ANA_PATH });
+
+      const res = await request(app)
+        .patch(`/api/rooms/authors/${me}/handle`)
+        .send({ handle: 'ana' });
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('HANDLE_TAKEN');
+    });
+
+    it('409s a handle reserved to somebody else', async () => {
+      const room = await createChannel('Reserved');
+      const me = memberIds(room)[0];
+      await request(app).post(`/api/rooms/${room.id}/members`).send({ agentPath: ANA_PATH });
+      const anaId = (await request(app).get(`/api/rooms/${room.id}`)).body.members.find(
+        (m: { author: { displayName: string } }) => m.author.displayName === 'Ana'
+      ).authorId as string;
+
+      // Ana releases `ana`. It stays hers, forever.
+      await request(app).patch(`/api/rooms/authors/${anaId}/handle`).send({ handle: 'ana-pm' });
+
+      const res = await request(app)
+        .patch(`/api/rooms/authors/${me}/handle`)
+        .send({ handle: 'ana' });
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('HANDLE_RESERVED');
+    });
+
+    it('refuses an AGENT presenting its own identity — handle changes are human-only', async () => {
+      // S6: rate limiting is the wrong instrument, so there is no automated path
+      // at all. An agent that could rename itself in a loop would grow the
+      // tombstone table forever; removing the mechanism beats throttling it.
+      const room = await createChannel('Agents');
+      const me = memberIds(room)[0];
+      const identity = initAgentIdentityService(db);
+      const token = await identity.mint({ agentPath: ANA_PATH, displayName: 'Ana' });
+
+      const res = await request(app)
+        .patch(`/api/rooms/authors/${me}/handle`)
+        .set('X-DorkOS-Agent', token)
+        .send({ handle: 'stolen' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('OPERATOR_ONLY');
+    });
+
+    it('404s an author that does not exist', async () => {
+      const res = await request(app)
+        .patch('/api/rooms/authors/01NOSUCHAUTHOR/handle')
+        .send({ handle: 'nobody' });
+
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('MEMBER_NOT_FOUND');
+    });
+  });
+
   describe('POST /:id/halt', () => {
     it('answers with how many turns it stopped, and writes the room a notice', async () => {
       const room = await createChannel();

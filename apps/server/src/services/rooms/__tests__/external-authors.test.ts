@@ -212,6 +212,87 @@ describe('external authors in a bridged room', () => {
     });
   });
 
+  describe('the handle a stranger derives (§4.1, spec `handles` §4)', () => {
+    /**
+     * **A stranger's handle is qualified by the platform it came from, and that
+     * is a squatting defence rather than a label.**
+     *
+     * Everything else on this install derives into one flat namespace: agents
+     * from `agents.name`, the operator from nothing at all (theirs is unset
+     * until they choose one). An external person deriving a BARE name lands in
+     * that same namespace — so somebody on Telegram who renames themselves
+     * `Dorian` and posts once would take `@dorian` permanently. The operator
+     * could not have it (their row's handle is null by design), the tombstone
+     * makes it unrecoverable, and D12 means nothing re-derives it later.
+     *
+     * Qualifying the stem removes the whole class: an external person can never
+     * derive a name a local entity would be called, because every one of theirs
+     * carries the platform.
+     */
+    it('qualifies the handle with the platform, rather than taking a bare name', () => {
+      const room = service.createBridgedRoom(bridgeRequest());
+      const stranger = service.postExternal(room.id, { identity: miguel(), text: 'hi' });
+
+      expect(stranger.author.handle).toBe('miguel.telegram');
+    });
+
+    it('cannot take a local name, however the stranger renames themselves', () => {
+      // The attack, spelled out: the operator's own handle is unset, so `dorian`
+      // is free — and one message from a stranger calling themselves `Dorian`
+      // used to be enough to hold it forever.
+      const room = service.createBridgedRoom(bridgeRequest());
+      const stranger = service.postExternal(room.id, {
+        identity: miguel({ displayName: 'Dorian' }),
+        text: 'hi',
+      });
+
+      expect(stranger.author.handle).not.toBe('dorian');
+      expect(stranger.author.handle).toBe('dorian.telegram');
+      // And the name is still there for the person it belongs to.
+      expect(authors.setHandle(human, 'dorian').handle).toBe('dorian');
+    });
+
+    it('de-collides inside the platform namespace like anything else', () => {
+      const room = service.createBridgedRoom(bridgeRequest());
+      const first = service.postExternal(room.id, { identity: miguel(), text: 'hi' });
+      const second = service.postExternal(room.id, {
+        identity: miguel({ platformUserId: '999888', displayName: 'Miguel' }),
+        text: 'also hi',
+      });
+
+      expect(second.author.id).not.toBe(first.author.id);
+      expect(first.author.handle).toBe('miguel.telegram');
+      expect(second.author.handle).toBe('miguel.telegram-2');
+    });
+
+    it('falls back to the platform id when the name spells nothing legal', () => {
+      // A name written entirely outside the charset — Cyrillic, CJK, emoji — is
+      // an ordinary thing for a person to have. The platform's own id is opaque,
+      // distinct per person, and already the fallback the display-name path uses.
+      const room = service.createBridgedRoom(bridgeRequest());
+      const stranger = service.postExternal(room.id, {
+        identity: miguel({ displayName: '日本語', platformUserId: '145223' }),
+        text: 'hi',
+      });
+
+      expect(stranger.author.handle).toBe('145223.telegram');
+    });
+
+    it('keeps a qualified handle inside the length bound, without losing the platform', () => {
+      // Truncation runs on the NAME, never on the qualifier: a cut that ate
+      // `.telegram` would put the stranger back in the local namespace, which is
+      // the exact failure the qualifier exists to prevent.
+      const room = service.createBridgedRoom(bridgeRequest());
+      const stranger = service.postExternal(room.id, {
+        identity: miguel({ displayName: 'a'.repeat(80) }),
+        text: 'hi',
+      });
+
+      expect(stranger.author.handle).toHaveLength(32);
+      expect(stranger.author.handle?.endsWith('.telegram')).toBe(true);
+    });
+  });
+
   describe('the reserved prefix (§4.1)', () => {
     it('gives no locally minted author a platform:-prefixed natural key (A4.5)', () => {
       const room = service.createBridgedRoom(bridgeRequest());
@@ -440,8 +521,13 @@ describe('external authors in a bridged room', () => {
       const { roomContext } = await turnAfterStranger();
       const block = formatRoomContext(roomContext, { nonce: NONCE });
 
-      expect(block).toContain('Miguel (person on telegram');
-      expect(block).toContain('Miguel (person, external');
+      // **A stranger DOES derive a handle**, from the name they chose on their
+      // own platform, qualified by the platform it came from. Nothing in DorkOS
+      // can prompt somebody in a Telegram group, and without a handle a bridged
+      // room would lose the ability to address the people in it at all — but a
+      // bare one would let them squat a local name (see the derivation tests).
+      expect(block).toContain('@miguel.telegram (person on telegram');
+      expect(block).toContain('@miguel.telegram (person, external');
     });
 
     it('renders a stranger name in the preamble with no angle bracket or control character (A9.2)', async () => {

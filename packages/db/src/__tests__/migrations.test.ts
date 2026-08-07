@@ -109,6 +109,7 @@ describe('Database Migrations', () => {
       // Derived cache binding a ConnectedAccountId → owning connector provider
       // (connector-gateway spec §Detailed Design 2, migration 0029).
       'connected_accounts',
+      'handle_tombstones',
       'mesh_namespace_rules',
       // The message-search index and its frontier: a derived, rebuildable
       // projection of what was said, never a store (ADR 260728-214214,

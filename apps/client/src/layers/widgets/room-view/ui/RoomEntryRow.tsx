@@ -46,7 +46,7 @@ interface RoomEntryRowProps {
   author: MessageAuthor;
   /**
    * The same author as the ROSTER holds them, or undefined once they have left.
-   * Carries `mentionHandle`, which is the only string that reliably addresses
+   * Carries `handle`, which is the only string that reliably addresses
    * them — a display name routinely contains spaces and reaches nobody — and
    * `origin`, which is what draws the origin mark beside an external author's
    * name (chats-as-channels spec §4.3, §9).

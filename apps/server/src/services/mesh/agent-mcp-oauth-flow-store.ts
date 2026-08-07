@@ -45,6 +45,16 @@ interface FlowEntry {
    * and nothing should be triggered.
    */
   originSessionId?: string;
+  /**
+   * The working directory that session runs in, captured at start (DOR-981).
+   *
+   * Recorded HERE rather than looked up at resume time because the thing that
+   * knows it — the session's live projector — is exactly what a restart destroys,
+   * and a sign-in routinely outlives one: a person can spend minutes in a browser.
+   * Without it a cold resume fell back to the default directory and quietly did
+   * nothing for every session rooted anywhere else.
+   */
+  originCwd?: string;
 }
 
 /** A started flow's public handle: what `mcp.signin` needs to hand back. */
@@ -57,6 +67,20 @@ export interface StartedFlow {
   serverUrl: string;
   /** The session to resume when this connects, when one asked for it (DOR-1004). */
   originSessionId?: string;
+  /** The directory that session runs in, so a cold resume runs in the right place (DOR-981). */
+  originCwd?: string;
+}
+
+/** Project a stored entry onto the public handle both lookups hand back. */
+function toStartedFlow(state: string, flow: FlowEntry): StartedFlow {
+  return {
+    flowId: state,
+    agentId: flow.agentId,
+    serverName: flow.serverName,
+    serverUrl: flow.serverUrl,
+    ...(flow.originSessionId ? { originSessionId: flow.originSessionId } : {}),
+    ...(flow.originCwd ? { originCwd: flow.originCwd } : {}),
+  };
 }
 
 /**
@@ -83,7 +107,8 @@ export class McpOAuthFlowStore {
    *
    * @param state - The opaque OAuth state that becomes the flow id.
    * @param target - The agent, server, and server URL the flow authorizes, plus
-   *   the session that asked for it when one did (DOR-1004).
+   *   the session that asked for it when one did (DOR-1004) and the directory
+   *   that session runs in (DOR-981).
    */
   start(
     state: string,
@@ -92,6 +117,7 @@ export class McpOAuthFlowStore {
       serverName: string;
       serverUrl: string;
       originSessionId?: string;
+      originCwd?: string;
     }
   ): void {
     this.prune();
@@ -104,6 +130,7 @@ export class McpOAuthFlowStore {
       status: 'pending',
       createdAt: this.now(),
       ...(target.originSessionId ? { originSessionId: target.originSessionId } : {}),
+      ...(target.originCwd ? { originCwd: target.originCwd } : {}),
     });
   }
 
@@ -112,13 +139,33 @@ export class McpOAuthFlowStore {
     this.prune();
     const flow = this.flows.get(state);
     if (!flow) return undefined;
-    return {
-      flowId: state,
-      agentId: flow.agentId,
-      serverName: flow.serverName,
-      serverUrl: flow.serverUrl,
-      ...(flow.originSessionId ? { originSessionId: flow.originSessionId } : {}),
-    };
+    return toStartedFlow(state, flow);
+  }
+
+  /**
+   * The live, still-clickable sign-in for a target, or `undefined` (DOR-981).
+   *
+   * "Live" is deliberately narrow: still `pending`, and already carrying an
+   * authorize URL. A flow that has not reached its URL yet has nothing to show
+   * anyone, and a settled one is history. This is what stops a burst of refusals
+   * from one server minting a flow apiece — the second refusal finds the first
+   * flow's link and re-uses it, so the person sees ONE card with ONE working
+   * button.
+   *
+   * @param agentId - The owning agent's id.
+   * @param serverName - The managed server's name.
+   */
+  liveFor(
+    agentId: string,
+    serverName: string
+  ): (StartedFlow & { authorizeUrl: string }) | undefined {
+    this.prune();
+    for (const [state, flow] of this.flows) {
+      if (flow.agentId !== agentId || flow.serverName !== serverName) continue;
+      if (flow.status !== 'pending' || !flow.authorizeUrl) continue;
+      return { ...toStartedFlow(state, flow), authorizeUrl: flow.authorizeUrl };
+    }
+    return undefined;
   }
 
   /** Record the PKCE verifier the SDK generated for this flow. */
