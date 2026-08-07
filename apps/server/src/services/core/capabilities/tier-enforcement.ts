@@ -201,23 +201,68 @@ export const APPROVAL_TOKEN_ARGUMENT = 'approvalToken';
 export const APPROVAL_TOKEN_HEADER = 'x-dorkos-approval';
 
 /**
- * Why a destructive call is not running yet.
+ * Why a destructive call is not running yet, where the answer is "a BRAND-NEW
+ * approval was just minted for it".
+ *
+ * Every member here is a reason `ask()` is called with, and `ask()` records a
+ * fresh request and hands back a fresh token. That is what makes this union the
+ * discriminator for the in-session hold (DOR-987): a caller can only wait on a
+ * decision it just asked for.
  *
  * - `no_approval` — nothing was presented; a request has just been recorded.
- * - `awaiting_decision` — the presented token is real, but nobody has decided.
  * - `expired` — the decision window closed before the token was spent.
  * - `already_used` — the token was already spent; approvals work once.
  * - `wrong_action` — a live token for a DIFFERENT action was presented. The
  *   original approval is left untouched, and a request for THIS action is made.
  * - `unknown_token` — no approval matches the presented token.
  */
-export type ApprovalRequiredReason =
+export type FreshAskReason =
   | 'no_approval'
-  | 'awaiting_decision'
   | 'expired'
   | 'already_used'
   | 'wrong_action'
   | 'unknown_token';
+
+/**
+ * Why a destructive call is not running yet.
+ *
+ * {@link FreshAskReason} plus the one reason that is NOT a fresh ask:
+ * `awaiting_decision` — the presented token is real, but nobody has decided, so
+ * the SAME approval is echoed back rather than a second card stacked on the
+ * operator.
+ */
+export type ApprovalRequiredReason = FreshAskReason | 'awaiting_decision';
+
+/**
+ * The fresh-ask reasons as a lookup, exhaustive by construction: `Record` over
+ * the union means adding a member to {@link FreshAskReason} without adding it
+ * here is a type error, and adding one that is not in the union is too.
+ */
+const FRESH_ASK_REASONS: Record<FreshAskReason, true> = {
+  no_approval: true,
+  expired: true,
+  already_used: true,
+  wrong_action: true,
+  unknown_token: true,
+};
+
+/**
+ * Whether this refusal carries a FRESH approval — one the gate just minted, that
+ * nobody has been shown yet.
+ *
+ * The in-session hold's discriminator (DOR-987). It used to test
+ * `reason === 'no_approval'`, which held only the very first ask and silently
+ * dropped the four token-failure paths (`expired`, `already_used`,
+ * `wrong_action`, `unknown_token`) — each of which mints a brand-new approval
+ * exactly like the first, and each of which therefore produced a dashboard card
+ * with no inline card and no hold.
+ *
+ * @param payload - The gate's `approval_required` payload.
+ * @returns True when the payload's approval was just minted for this call.
+ */
+export function isFreshApprovalAsk(payload: ApprovalRequiredPayload): boolean {
+  return Object.hasOwn(FRESH_ASK_REASONS, payload.reason);
+}
 
 /**
  * The result a gated caller receives instead of the capability's output.
@@ -799,8 +844,15 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
     audit({ action, ...attributed, decision: { outcome: 'denied', payload } });
   };
 
-  /** Record a fresh request for THIS action and tell the caller how to retry. */
-  const ask = (reason: ApprovalRequiredReason): TierEnforcementDecision => {
+  /**
+   * Record a fresh request for THIS action and tell the caller how to retry.
+   *
+   * Typed to {@link FreshAskReason}, not the wider reason union: everything that
+   * reaches here mints a NEW approval, and `isFreshApprovalAsk` promises exactly
+   * that to the in-session hold. `awaiting_decision` echoes an existing approval
+   * and is built inline below, so the compiler now keeps the two apart.
+   */
+  const ask = (reason: FreshAskReason): TierEnforcementDecision => {
     let ticket: ApprovalTicket;
     try {
       ticket = gate!.approvals.request({

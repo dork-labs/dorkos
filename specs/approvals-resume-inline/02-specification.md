@@ -90,8 +90,9 @@ token/poll flow (`retryChannel: 'mcp-argument' | 'http-header'`). A is an
   resumes it and returns the **real** result (assert the real result, not "some
   result"); a **deny** returns denied; a **timeout** returns the exact
   `approval_required` fallback.
-- the hold cap is below the verified MCP request timeout (assert the knowable
-  number).
+- the emitted inline card carries the real hold cap (superseded by DOR-987: this
+  read "the hold cap is below the verified MCP request timeout", which pinned a
+  number nothing in the path reads — see the execution notes below).
 - the session event is emitted and projects to an inline card; approving via the
   card resolves the SAME `approvalId` and retires the dashboard card too.
 - revert-reddens each; and confirm a hold that would exceed the cap degrades to the
@@ -120,15 +121,20 @@ approval row unless the resume proves to need it (note it if you add it).
 Verified against the shipped tree while executing; the spike's file:line claims
 were re-checked and several were off:
 
-- **GATE / MCP timeout.** Confirmed `DEFAULT_REQUEST_TIMEOUT_MSEC = 60000` in the
-  bundled `@modelcontextprotocol/sdk@1.29.0` (`shared/protocol.js`). The SDK-side
-  in-process dispatch (`handleMcpControlRequest` in `claude-agent-sdk@0.3.177`
-  `sdk.mjs`) awaits a bare promise with NO timer, and the whole CLI↔SDK control
-  channel is timerless in the shipped JS — which is how the existing 10-minute
-  `can_use_tool` and MCP `elicitation` holds already ride it. The native CLI's
-  own cap on the `mcp_message` round trip is not readable from the binary, so the
-  hold is capped CONSERVATIVELY at `CAPABILITY_APPROVAL_HOLD_CAP_MS = 45_000`,
-  well below the 60s ceiling, with the poll payload as the fallback past the cap.
+- **CAP / MCP timeout (corrected again in DOR-987).** The SDK-side in-process
+  dispatch (`handleMcpControlRequest` in `claude-agent-sdk@0.3.177` `sdk.mjs`)
+  awaits a bare promise with NO timer, and the whole CLI↔SDK control channel is
+  timerless in the shipped JS — which is how the existing 10-minute
+  `can_use_tool` and MCP `elicitation` holds already ride it. DOR-939 shipped a
+  45s cap on the belief that `DEFAULT_REQUEST_TIMEOUT_MSEC = 60000`
+  (`@modelcontextprotocol/sdk@1.29.0`, `shared/protocol.js`) was a ceiling on the
+  `mcp_message` round trip. **It is not**: that default applies only when a
+  caller passes no explicit timeout, and the claude binary passes one on every
+  MCP tool call (default in the hours; `MCP_TOOL_TIMEOUT` overrides it). A 45s
+  cap also made the feature nearly useless against a two-hour approval window.
+  `CAPABILITY_APPROVAL_HOLD_CAP_MS` is therefore **ten minutes**, chosen as a
+  UX/turn-budget limit (a held call keeps the session locked) rather than an SDK
+  ceiling, with the poll payload as the fallback past the cap.
 - **`stream-manager.ts` / `SESSION_EVENT_TYPES` do not exist.** There is no
   `shared/lib/transport/stream-manager.ts` and no `SESSION_EVENT_TYPES` constant.
   The real seams are `packages/shared/src/session-stream.ts` (`SessionEventSchema`)
