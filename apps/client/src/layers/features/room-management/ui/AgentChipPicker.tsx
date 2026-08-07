@@ -429,22 +429,26 @@ export function AgentChipPicker({
                   picker that hashed its own would introduce a second appearance
                   for one agent.
 
-                  No agent badge on these rows, deliberately: everything
-                  offered here is an agent, so a mark on every one would be a
-                  column of identical glyphs. The badge earns its place the day
-                  this list offers people too.
+                  `kind="agent"` keeps the square silhouette every other agent
+                  surface draws; `badge={null}` is the explicit opt-out from
+                  the Bot glyph `kind` would otherwise add — everything offered
+                  here is an agent, so a mark on every one would be a column of
+                  identical glyphs. The badge earns its place the day this list
+                  offers people too.
 
                   An agent whose manifest could not be read gets a letter on a
                   neutral disc instead. `currentColor` is the row's own text
-                  colour, so the disc reads as a shade of the surface rather
-                  than a colour that means something — see
-                  `AgentPickerCandidate.visual` for why the directory is not
-                  hashed into a face here. */}
+                  colour rather than a hash, so an unresolved agent reads as
+                  "no colour recorded" instead of an invented one that would
+                  read as meaningful — see `AgentPickerCandidate.visual` for
+                  why the directory is not hashed into a face here. */}
               <IdentityAvatar
                 size="xs"
                 color={candidate.visual?.color ?? 'currentColor'}
                 emoji={candidate.visual?.emoji}
                 fallback={initialOf(candidate.displayName)}
+                kind="agent"
+                badge={null}
               />
               <span className="min-w-0 flex-1">
                 <span className="block truncate">{candidate.displayName}</span>

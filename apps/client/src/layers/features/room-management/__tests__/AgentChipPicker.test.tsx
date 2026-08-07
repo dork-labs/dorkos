@@ -91,6 +91,21 @@ describe('AgentChipPicker faces', () => {
     expect(screen.getByRole('option', { name: 'Ana' })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: '🔍 Ana' })).not.toBeInTheDocument();
   });
+
+  it('draws the square agent silhouette every other agent surface uses, with no Bot badge', () => {
+    // This list used to draw the round, tinted default — the exact silhouette
+    // a person gets — with no `kind` at all. `kind="agent"` fixes the shape;
+    // `badge={null}` is the deliberate, visible opt-out from the glyph `kind`
+    // would otherwise add on every identical row.
+    renderFresh();
+
+    const disc = within(screen.getByRole('option', { name: 'Ana' })).getByText('🔍')
+      .parentElement as HTMLElement;
+
+    expect(disc).toHaveAttribute('data-slot', 'identity-avatar');
+    expect(disc).not.toHaveClass('rounded-full');
+    expect(disc.querySelector('.lucide-bot')).toBeNull();
+  });
 });
 
 describe('AgentChipPicker submitDisabled', () => {
