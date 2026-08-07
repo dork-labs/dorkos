@@ -2,6 +2,7 @@
 covers:
   - 'feat: sign-in lands as a card in the chat and the agent resumes on its own (DOR-1004)'
   - 'fix: a finished sign-in leaves a receipt, and the client stops owning the resume (DOR-1004)'
+  - 'fix: the server brings the agent back when a sign-in lands, not the browser (DOR-1004)'
 ---
 
 ### Added
