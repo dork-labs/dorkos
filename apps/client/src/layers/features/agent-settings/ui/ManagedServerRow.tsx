@@ -44,7 +44,7 @@ function TestResultLine({ result }: { result: AgentMcpTestResult }) {
   const { text, tone } = describeTestResult(result);
   return (
     <p
-      className={cn('pl-4 text-xs', TEST_TONE_CLASS[tone])}
+      className={cn('mt-1 pl-4 text-xs', TEST_TONE_CLASS[tone])}
       {...(!result.ok && !result.needsAuth && result.error ? { title: result.error } : {})}
     >
       {text}
@@ -55,13 +55,21 @@ function TestResultLine({ result }: { result: AgentMcpTestResult }) {
 /**
  * The status a row shows, in precedence order.
  *
+ * Two sources disagree here, and the rule is symmetric — whichever knows a
+ * SIGN-IN fact more recently wins, because the runtime's status is a snapshot
+ * from the last turn while the sign-in state is read live:
+ *
  * 1. A turned-off server is `disabled`, whatever anything else says.
- * 2. A sign-in that just completed is `connected` immediately — the person
+ * 2. A sign-in that just completed is `signed-in` immediately — the person
  *    watched it happen and must not see the row claim otherwise.
- * 3. A live token (`authStatus === 'connected'`) beats a runtime `needs-auth`,
- *    because the runtime's status was captured on an earlier turn and predates
- *    the token. A runtime `failed` still wins — that is a different problem.
- * 4. Otherwise the runtime's live status, then the derived sign-in state, and
+ * 3. A runtime `failed` wins over both overrides below: that is a reachability
+ *    problem, and holding (or lacking) a token says nothing about it.
+ * 4. A live token beats a runtime `needs-auth` — the token postdates the turn.
+ * 5. NO token beats a runtime `connected` — this is the STRONGER half: with no
+ *    token to inject, the next turn provably carries no bearer, so a green chip
+ *    would be a lie. Without it, a token that expired after one successful turn
+ *    left the row green with no Sign in button, which is DOR-985 all over again.
+ * 6. Otherwise the runtime's live status, then the derived sign-in state, and
  *    finally nothing (Unknown) — which is what every row showed before DOR-985,
  *    because the runtime cache is only written during a turn.
  *
@@ -78,29 +86,39 @@ function resolveStatusKey(args: {
 }): McpStatusKey | undefined {
   const { enabled, signedInNow, runtimeStatus, authStatus } = args;
   if (!enabled) return 'disabled';
-  if (signedInNow) return 'connected';
-  if (authStatus === 'connected' && runtimeStatus === 'needs-auth') return 'connected';
-  return runtimeStatus ?? authStatus;
+  if (signedInNow) return 'signed-in';
+  if (runtimeStatus === 'failed') return 'failed';
+  if (authStatus === 'connected' && runtimeStatus === 'needs-auth') return 'signed-in';
+  if (authStatus === 'needs-auth' && runtimeStatus === 'connected') return 'needs-auth';
+  if (runtimeStatus) return runtimeStatus;
+  return authStatus === 'connected' ? 'signed-in' : authStatus;
 }
 
 /**
  * Whether the row offers Sign in.
  *
- * The probe's own verdict counts, not just the status chip: a fresh server has
- * no runtime status at all, so Test telling the person "Needs sign-in — click
- * Sign in" while no such button existed was the whole of DOR-985. A connected or
- * disabled row never offers it, so a stale probe result cannot resurrect the
- * button after a successful sign-in.
+ * The probe's own verdict counts, and it counts even against a green chip: Test
+ * is the only thing here that actually contacted the server, so if it came back
+ * 401 the person needs the button no matter what the runtime cached. Telling
+ * them "Needs sign-in — click Sign in" beside no such button was the whole of
+ * DOR-985.
  *
- * @param statusKey - The status the chip is showing.
- * @param testResult - The most recent probe result for this server, if any.
+ * The two things that do silence it: a turned-off server, and a sign-in that
+ * just completed in this very row (whose fresh token postdates any probe).
+ *
+ * @param args.statusKey - The status the chip is showing.
+ * @param args.testResult - The most recent probe result for this server, if any.
+ * @param args.signedInNow - Whether this row's sign-in flow just reached `connected`.
  */
-function offersSignIn(
-  statusKey: McpStatusKey | undefined,
-  testResult: AgentMcpTestResult | undefined
-): boolean {
-  if (statusKey === 'disabled' || statusKey === 'connected') return false;
-  return statusKey === 'needs-auth' || testResult?.needsAuth === true;
+function offersSignIn(args: {
+  statusKey: McpStatusKey | undefined;
+  testResult: AgentMcpTestResult | undefined;
+  signedInNow: boolean;
+}): boolean {
+  const { statusKey, testResult, signedInNow } = args;
+  if (statusKey === 'disabled' || signedInNow) return false;
+  if (testResult?.needsAuth === true) return true;
+  return statusKey === 'needs-auth';
 }
 
 /** Props for {@link ManagedServerRow}. */
@@ -144,9 +162,10 @@ export function ManagedServerRow({
   onRemove,
 }: ManagedServerRowProps) {
   const signin = useMcpSigninFlow(agentId, server.name);
+  const signedInNow = signin.state.step === 'connected';
   const statusKey = resolveStatusKey({
     enabled: server.enabled,
-    signedInNow: signin.state.step === 'connected',
+    signedInNow,
     runtimeStatus: live?.status,
     authStatus: server.authStatus,
   });
@@ -154,10 +173,14 @@ export function ManagedServerRow({
   // unmounting the element a person just pressed drops their focus to the body.
   const startingSignIn = signin.state.step === 'starting';
   const showSignIn =
-    offersSignIn(statusKey, testResult) && (signin.state.step === 'idle' || startingSignIn);
+    offersSignIn({ statusKey, testResult, signedInNow }) &&
+    (signin.state.step === 'idle' || startingSignIn);
 
   return (
-    <div className="flex flex-col gap-1 py-1.5">
+    // No `gap` between the rows here: the sign-in panel's live region is always
+    // mounted (see McpSigninPanel) and a gap would reserve space for it even
+    // while it is empty. The optional lines carry their own top margin instead.
+    <div className="flex flex-col py-1.5">
       <div className="flex items-center gap-2">
         <McpStatusChip statusKey={statusKey} />
         <span className="min-w-0 truncate text-sm">{server.name}</span>

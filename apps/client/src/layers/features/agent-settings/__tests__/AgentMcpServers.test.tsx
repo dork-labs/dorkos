@@ -511,9 +511,54 @@ describe('AgentMcpServers', () => {
     });
     const { container } = renderComponent(transport);
 
-    await waitFor(() => expect(within(container).getByText('Connected')).toBeInTheDocument());
+    // "Signed in", not "Connected": DorkOS holds a token, but the only thing that
+    // ever reached this server said needs-auth, so claiming a live connection
+    // would overstate what is known.
+    await waitFor(() => expect(within(container).getByText('Signed in')).toBeInTheDocument());
     expect(within(container).queryByText('Needs sign-in')).not.toBeInTheDocument();
     expect(within(container).queryByRole('button', { name: /^Sign in/ })).not.toBeInTheDocument();
+  });
+
+  it('lets a missing token override a stale runtime connected (the symmetric half)', async () => {
+    // The expiry path: signed in, one turn ran (runtime cached "connected"), then
+    // the token expired and its refresh failed, so the cache evicted it. Reading
+    // the runtime alone leaves a green chip on a server whose next turn provably
+    // carries no bearer — DOR-985 again, from the other side.
+    const stale: ManagedMcpServerView = { ...oauthServer, authStatus: 'needs-auth' };
+    const transport = createMockTransport({
+      listAgentMcpServers: vi.fn().mockResolvedValue([stale]),
+      getMcpConfig: vi.fn().mockResolvedValue({
+        servers: [{ name: 'granola', type: 'http', status: 'connected' }],
+      }),
+    });
+    const { container } = renderComponent(transport);
+
+    await waitFor(() => expect(within(container).getByText('Needs sign-in')).toBeInTheDocument());
+    expect(within(container).queryByText('Connected')).not.toBeInTheDocument();
+    expect(within(container).getByRole('button', { name: /^Sign in/ })).toBeInTheDocument();
+  });
+
+  it('offers Sign in when Test says needs-auth even while the runtime still says connected', async () => {
+    // Belt to the braces above: whatever the caches say, Test is the only thing
+    // here that actually contacted the server. Its 401 must reach the person as a
+    // button, not just as a sentence telling them to press one that is not there.
+    const transport = createMockTransport({
+      listAgentMcpServers: vi.fn().mockResolvedValue([{ ...oauthServer, authStatus: undefined }]),
+      getMcpConfig: vi.fn().mockResolvedValue({
+        servers: [{ name: 'granola', type: 'http', status: 'connected' }],
+      }),
+      testAgentMcpServer: vi.fn().mockResolvedValue({ ok: false, needsAuth: true, error: 'raw' }),
+    });
+    const { container } = renderComponent(transport);
+
+    await waitFor(() => expect(within(container).getByText('Connected')).toBeInTheDocument());
+    expect(within(container).queryByRole('button', { name: /^Sign in/ })).not.toBeInTheDocument();
+
+    fireEvent.click(within(container).getByRole('button', { name: 'Test' }));
+
+    await waitFor(() =>
+      expect(within(container).getByRole('button', { name: /^Sign in/ })).toBeInTheDocument()
+    );
   });
 
   it('still shows Failed when the runtime failed, even with a live token', async () => {
@@ -532,7 +577,7 @@ describe('AgentMcpServers', () => {
     await waitFor(() => expect(within(container).getByText('Failed')).toBeInTheDocument());
   });
 
-  it('flips the chip to Connected the moment the sign-in lands, without waiting for the runtime', async () => {
+  it('flips the chip to Signed in the moment the sign-in lands, without waiting for the runtime', async () => {
     const transport = createMockTransport({
       listAgentMcpServers: vi
         .fn()
@@ -562,8 +607,9 @@ describe('AgentMcpServers', () => {
     );
     fireEvent.click(link);
 
-    await waitFor(() => expect(within(container).getByText('Connected')).toBeInTheDocument());
+    await waitFor(() => expect(within(container).getByText('Signed in')).toBeInTheDocument());
     expect(within(container).queryByText('Needs sign-in')).not.toBeInTheDocument();
+    expect(within(container).queryByRole('button', { name: /^Sign in/ })).not.toBeInTheDocument();
   });
 
   it('probes a newly added remote server on its own, so the sign-in nudge appears unasked', async () => {

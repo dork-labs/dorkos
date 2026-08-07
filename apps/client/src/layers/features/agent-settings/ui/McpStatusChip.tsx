@@ -3,10 +3,16 @@ import { cn } from '@/layers/shared/lib';
 import type { McpServerEntry } from '@dorkos/shared/transport';
 
 /**
- * Every state a chip can show — the wire contract's own status union, so the two
- * cannot drift. `undefined` is not a member: a row with no status reads Unknown.
+ * Every state a chip can show: the wire contract's own status union — so the two
+ * cannot drift — plus `signed-in`, which no runtime reports.
+ *
+ * `signed-in` exists because holding a token is not the same as having reached
+ * the server. It is what a row knows when DorkOS has a sign-in but nothing has
+ * contacted the server since; calling that "Connected" would claim a round trip
+ * that never happened. `undefined` is not a member: a row with no status at all
+ * reads Unknown.
  */
-export type McpStatusKey = NonNullable<McpServerEntry['status']>;
+export type McpStatusKey = NonNullable<McpServerEntry['status']> | 'signed-in';
 
 /** Presentation for one live status: the dot color, a short label, and a tooltip. */
 interface StatusMeta {
@@ -27,6 +33,11 @@ const MCP_STATUS_META: Record<McpStatusKey, StatusMeta> = {
   connected: {
     label: 'Connected',
     tooltip: 'Connected — this server’s tools are available to the agent.',
+    dot: 'bg-green-500',
+  },
+  'signed-in': {
+    label: 'Signed in',
+    tooltip: 'DorkOS has a sign-in for this server. Use Test to check it responds.',
     dot: 'bg-green-500',
   },
   failed: {

@@ -251,7 +251,11 @@ export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
   // (DOR-985). A local stdio server needs no sign-in, so it is left alone.
   const handleAdded = useCallback(
     ({ name, transport }: { name: string; transport: TransportKind }) => {
-      if (transport !== 'stdio') void handleTest(name);
+      // `.catch` because this probe is unattended: nobody clicked it, so nothing
+      // is awaiting its rejection, and the mutation's own error surface has
+      // already reported the failure. Without it a throwing probe becomes an
+      // unhandled rejection.
+      if (transport !== 'stdio') void handleTest(name).catch(() => {});
     },
     [handleTest]
   );

@@ -79,6 +79,11 @@ export class McpOAuthSigninPage {
     return this.row(name).getByRole('button', { name: /^Sign in/ });
   }
 
+  /** The Dismiss button on the sign-in panel's success state. */
+  dismissSignInPanel(): Locator {
+    return this.mcpSection.getByRole('button', { name: 'Dismiss' });
+  }
+
   /** The link that opens the vendor sign-in page for the named server. */
   openSignInLink(name: string): Locator {
     return this.mcpSection.getByRole('link', {

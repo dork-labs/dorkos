@@ -233,6 +233,70 @@ describe('useMcpSigninFlow', () => {
     }
   });
 
+  it('forgives failures that are not consecutive, however many there are', async () => {
+    vi.useFakeTimers();
+    try {
+      const transport = createMockTransport();
+      vi.mocked(transport.startMcpSignin).mockResolvedValue(startResult);
+      // Alternating fail/pending, far past the budget in TOTAL failures. A
+      // lifetime counter kills this sign-in around the third failure; a
+      // consecutive one never trips, because every failure is followed by a
+      // healthy poll that resets it.
+      const poll = vi.mocked(transport.pollMcpSignin);
+      for (let i = 0; i < 6; i++) {
+        poll
+          .mockRejectedValueOnce(new Error('Failed to fetch'))
+          .mockResolvedValueOnce({ status: 'pending' });
+      }
+      poll.mockResolvedValue({ status: 'connected' });
+
+      const { result } = renderHook(() => useMcpSigninFlow(AGENT_ID, SERVER), {
+        wrapper: createWrapper(transport).wrapper,
+      });
+
+      act(() => result.current.start());
+      await tick(0);
+      act(() => result.current.authOpened());
+      await tick(120_000);
+
+      // Well past the five-in-a-row budget in total failures.
+      expect(poll.mock.calls.length).toBeGreaterThan(5);
+      expect(result.current.state.step).toBe('connected');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('clears the retry notice once a check succeeds again', async () => {
+    vi.useFakeTimers();
+    try {
+      const transport = createMockTransport();
+      vi.mocked(transport.startMcpSignin).mockResolvedValue(startResult);
+      vi.mocked(transport.pollMcpSignin)
+        .mockRejectedValueOnce(new Error('Failed to fetch'))
+        .mockResolvedValue({ status: 'pending' });
+
+      const { result } = renderHook(() => useMcpSigninFlow(AGENT_ID, SERVER), {
+        wrapper: createWrapper(transport).wrapper,
+      });
+
+      act(() => result.current.start());
+      await tick(0);
+      act(() => result.current.authOpened());
+      await tick(0);
+      expect(result.current.state.retryNotice).toBe('Couldn’t check the sign-in — retrying.');
+
+      // One healthy poll later the flow is plainly fine again. A cumulative
+      // counter leaves "Couldn’t check the sign-in — retrying." on screen for the
+      // rest of the flow, and the backoff permanently widened.
+      await tick(4_000);
+      expect(result.current.state.retryNotice).toBeNull();
+      expect(result.current.state.step).toBe('waiting');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('gives up with plain copy once the status checks keep failing', async () => {
     vi.useFakeTimers();
     try {

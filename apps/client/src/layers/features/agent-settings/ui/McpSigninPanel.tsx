@@ -59,12 +59,15 @@ function politeCopy(flow: McpSigninFlow): React.ReactNode {
  * screen), a waiting note while polling, and a terminal success or error.
  * Reading order is the consent order — the disclosure sits above the link.
  *
- * Two accessibility duties beyond layout. The panel is mounted from `idle` on,
- * so its polite live region exists BEFORE any copy lands in it — a live region
- * inserted together with its text is not reliably announced. And when the
- * disclosure arrives, focus moves onto the custody sentence: the button the
- * person pressed unmounts at that moment, so without this their focus falls to
- * the document body and the consent text they must read first is never reached.
+ * Two accessibility duties beyond layout. The live region is rendered from
+ * `idle` on and is never `display: none` — it is empty, not hidden — so it is in
+ * the accessibility tree BEFORE any copy lands in it; a live region inserted (or
+ * unhidden) together with its text is not reliably announced. An empty div costs
+ * no height, and the row deliberately spaces its lines with margins rather than
+ * a gap so the empty region reserves nothing. And when the disclosure arrives,
+ * focus moves onto the custody sentence: the button the person pressed unmounts
+ * at that moment, so without this their focus falls to the document body and the
+ * consent text they must read first is never reached.
  */
 export function McpSigninPanel({ flow, serverName }: McpSigninPanelProps) {
   const { state } = flow;
@@ -76,13 +79,13 @@ export function McpSigninPanel({ flow, serverName }: McpSigninPanelProps) {
   }, [onDisclosure]);
 
   return (
-    <div className="space-y-2 empty:hidden">
-      <div role="status" className="pl-4 empty:hidden">
+    <>
+      <div role="status" className="pl-4 [&:not(:empty)]:mt-1">
         {politeCopy(flow)}
       </div>
 
       {onDisclosure && (
-        <div className="space-y-2 pl-4">
+        <div className="mt-1 space-y-2 pl-4">
           <p
             ref={disclosureRef}
             tabIndex={-1}
@@ -108,7 +111,7 @@ export function McpSigninPanel({ flow, serverName }: McpSigninPanelProps) {
       )}
 
       {state.step === 'failed' && (
-        <div className="space-y-2 pl-4">
+        <div className="mt-1 space-y-2 pl-4">
           <p role="alert" className="text-destructive text-xs leading-relaxed">
             {state.error ?? 'The sign-in did not complete.'}
           </p>
@@ -134,7 +137,7 @@ export function McpSigninPanel({ flow, serverName }: McpSigninPanelProps) {
       )}
 
       {state.step === 'connected' && (
-        <div className="pl-4">
+        <div className="mt-1 pl-4">
           <Button
             variant="ghost"
             size="sm"
@@ -145,6 +148,6 @@ export function McpSigninPanel({ flow, serverName }: McpSigninPanelProps) {
           </Button>
         </div>
       )}
-    </div>
+    </>
   );
 }
