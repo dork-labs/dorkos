@@ -106,6 +106,26 @@ describe('AgentChipPicker faces', () => {
     expect(disc).not.toHaveClass('rounded-full');
     expect(disc.querySelector('.lucide-bot')).toBeNull();
   });
+
+  it('tints the unresolved-agent disc rather than filling it solid with currentColor', () => {
+    // `kind="agent"` defaults to `variant="fill"`, which sets BOTH the disc's
+    // background AND the fallback letter's own text colour from `color`.
+    // Filled with the literal string `currentColor`, the letter's colour
+    // resolves to whatever `currentColor` had *already become* — its own
+    // just-written value — so the letter paints itself invisible on its own
+    // background (browser-verified; jsdom cannot see this). The explicit
+    // `variant="tint"` override for the no-visual fallback is what keeps this
+    // disc legible.
+    renderFresh();
+
+    const disc = within(screen.getByRole('option', { name: 'Bo' })).getByText('B')
+      .parentElement as HTMLElement;
+    const tinted = document.createElement('span');
+    tinted.style.backgroundColor = 'color-mix(in oklch, currentColor 18%, transparent)';
+
+    expect(disc.style.backgroundColor).toBe(tinted.style.backgroundColor);
+    expect(disc.style.backgroundColor).not.toBe('currentcolor');
+  });
 });
 
 describe('AgentChipPicker submitDisabled', () => {
