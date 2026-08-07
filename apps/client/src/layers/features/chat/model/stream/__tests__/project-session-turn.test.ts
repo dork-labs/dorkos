@@ -1169,3 +1169,90 @@ describe('projectInProgressTurn — approval receipts', () => {
     expect(projectInProgressTurn(events).some((p) => p.type === 'capability_approval')).toBe(false);
   });
 });
+
+// DOR-1004: an OAuth sign-in an agent asked for surfaces as a card in the
+// conversation, carrying the link and the custody disclosure so the agent never
+// has to paste them into its reply.
+describe('mcp sign-in card', () => {
+  const CARD = {
+    serverName: 'granola',
+    agentId: '01HV7KJZZZ0000000000000000',
+    flowId: 'flow-1',
+    authorizeUrl: 'https://mcp.test.local/authorize',
+    disclosure: 'DorkOS stores the token on this machine.',
+  };
+
+  /** The `mcp_signin_required` event for a flow, at a given seq. */
+  function required(seq: number, over: Partial<typeof CARD> = {}): SessionEvent {
+    return { seq, type: 'mcp_signin_required', ...CARD, ...over } as SessionEvent;
+  }
+
+  it('projects an mcp_signin_required event to an inline sign-in card', () => {
+    const parts = projectInProgressTurn([
+      { seq: 1, type: 'text_delta', text: 'Connecting your meeting notes.' },
+      required(2),
+    ]);
+    expect(parts).toEqual([
+      { type: 'text', text: 'Connecting your meeting notes.' },
+      { type: 'mcp_signin', ...CARD },
+    ]);
+  });
+
+  it('retires the card when the sign-in connects', () => {
+    // The agent is already resuming by then — the card has nothing left to say.
+    const parts = projectInProgressTurn([
+      required(1),
+      { seq: 2, type: 'mcp_signin_resolved', flowId: 'flow-1', outcome: 'connected' },
+    ]);
+    expect(parts.some((p) => p.type === 'mcp_signin')).toBe(false);
+  });
+
+  it('keeps the card as a terminal note when the sign-in FAILED', () => {
+    // Removing it would leave a person who was sent to a browser with no sign
+    // anything went wrong.
+    expect(
+      projectInProgressTurn([
+        required(1),
+        { seq: 2, type: 'mcp_signin_resolved', flowId: 'flow-1', outcome: 'failed' },
+      ])
+    ).toEqual([{ type: 'mcp_signin', ...CARD, outcome: 'failed' }]);
+  });
+
+  it('replaces the card when the same server is signed in to again', () => {
+    // A retry mints a NEW flow; the old link is dead the moment it does, so
+    // stacking a second card would offer a choice between a live link and a
+    // broken one — and clears the failed note, because the agent is asking again.
+    const parts = projectInProgressTurn([
+      required(1),
+      { seq: 2, type: 'mcp_signin_resolved', flowId: 'flow-1', outcome: 'failed' },
+      required(3, { flowId: 'flow-2', authorizeUrl: 'https://mcp.test.local/authorize?2' }),
+    ]);
+    expect(parts).toEqual([
+      {
+        type: 'mcp_signin',
+        ...CARD,
+        flowId: 'flow-2',
+        authorizeUrl: 'https://mcp.test.local/authorize?2',
+      },
+    ]);
+  });
+
+  it('keeps a second server’s card beside the first', () => {
+    const parts = projectInProgressTurn([required(1), required(2, { serverName: 'linear' })]);
+    expect(parts.map((p) => (p.type === 'mcp_signin' ? p.serverName : p.type))).toEqual([
+      'granola',
+      'linear',
+    ]);
+  });
+
+  it('ignores a resolution for a flow that was already replaced', () => {
+    // The abandoned flow's late resolution must not retire the card that took
+    // its place, which is why resolutions match on flow id and cards on server.
+    const parts = projectInProgressTurn([
+      required(1),
+      required(2, { flowId: 'flow-2' }),
+      { seq: 3, type: 'mcp_signin_resolved', flowId: 'flow-1', outcome: 'connected' },
+    ]);
+    expect(parts).toEqual([{ type: 'mcp_signin', ...CARD, flowId: 'flow-2' }]);
+  });
+});

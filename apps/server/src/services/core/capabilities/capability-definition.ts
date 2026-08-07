@@ -31,6 +31,7 @@ import type { z } from 'zod';
 import type { Logger } from '@dorkos/shared/logger';
 import type { CapabilityTier, CapabilitySurfaces } from '@dorkos/shared/capabilities';
 import type { CapabilityHandlerContext } from './registry.js';
+import type { InSessionCardKind } from './in-session-card.js';
 
 /**
  * The service-dependency bag threaded into every capability's `invoke` at boot,
@@ -126,6 +127,23 @@ export interface CapabilityDefinition<
    * does should never be the one at risk of being cut.
    */
   approvalDisplayFields?: readonly string[];
+  /**
+   * Draw an inline CARD in the conversation this capability was called from
+   * (DOR-1004) — a surface the person acts on, in the chat, instead of a link
+   * pasted into the agent's reply.
+   *
+   * Declarative on purpose: the capability says WHAT belongs on screen and the
+   * in-session MCP projection decides whether there is a screen to put it on
+   * (`in-session-card.ts`). The handler itself never learns which surface it is
+   * running on, so the sessionless surfaces — external `/mcp`, HTTP — keep
+   * returning the full payload for a caller that has no card to look at.
+   *
+   * Unlike the destructive-tier hold, a card does NOT stop the call: it is
+   * pushed, the result is returned, and the turn ends. Anything a card is worth
+   * drawing for (a browser OAuth round trip) outlasts any hold a turn can
+   * afford.
+   */
+  inSessionCard?: InSessionCardKind;
   /**
    * Execute the capability against the injected dependencies, returning PLAIN
    * typed output (see the module-level "result-wrapping seam" note — transport

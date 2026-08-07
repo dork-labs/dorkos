@@ -60,36 +60,48 @@ function TestResultLine({ result }: { result: AgentMcpTestResult }) {
  * from the last turn while the sign-in state is read live:
  *
  * 1. A turned-off server is `disabled`, whatever anything else says.
- * 2. A sign-in that just completed is `signed-in` immediately — the person
+ * 2. A Test that came back OK is `connected`. Test is the only thing on this row
+ *    that actually dialled the server, and since DOR-985 it dials WITH the
+ *    bearer — so an `ok` is a round trip that provably worked, which beats every
+ *    cached opinion below it. (Its `needsAuth` counterpart already decides the
+ *    Sign in button; this is the same evidence pointed at the chip.)
+ * 3. A sign-in that just completed is `signed-in` immediately — the person
  *    watched it happen and must not see the row claim otherwise.
- * 3. A runtime `failed` wins over both overrides below: that is a reachability
+ * 4. A runtime `failed` wins over both overrides below: that is a reachability
  *    problem, and holding (or lacking) a token says nothing about it.
- * 4. A live token beats a runtime `needs-auth` — the token postdates the turn.
- * 5. NO token beats a runtime `connected` — this is the STRONGER half: with no
- *    token to inject, the next turn provably carries no bearer, so a green chip
- *    would be a lie. Without it, a token that expired after one successful turn
- *    left the row green with no Sign in button, which is DOR-985 all over again.
- * 6. Otherwise the runtime's live status, then the derived sign-in state, and
+ * 5. A live token beats a runtime `needs-auth` — the token postdates the turn.
+ * 6. NO token beats a runtime `connected` OR a runtime `pending` — this is the
+ *    STRONGER half: with no token to inject, the next turn provably carries no
+ *    bearer, so a green chip would be a lie. Without it, a token that expired
+ *    after one successful turn left the row green with no Sign in button, which
+ *    is DOR-985 all over again. `pending` is the same lie told more quietly: a
+ *    cached "connecting…" from a past turn outranking the live, provable fact
+ *    that there is no token leaves the row spinning with nothing to press.
+ * 7. Otherwise the runtime's live status, then the derived sign-in state, and
  *    finally nothing (Unknown) — which is what every row showed before DOR-985,
  *    because the runtime cache is only written during a turn.
  *
  * @param args.enabled - Whether the managed server is switched on.
+ * @param args.testedOk - Whether the most recent Test probe reached the server.
  * @param args.signedInNow - Whether this row's sign-in flow just reached `connected`.
  * @param args.runtimeStatus - The status the runtime reported, if any.
  * @param args.authStatus - The listing's derived sign-in state, if any.
  */
 function resolveStatusKey(args: {
   enabled: boolean;
+  testedOk: boolean;
   signedInNow: boolean;
   runtimeStatus: McpServerEntry['status'];
   authStatus: ManagedMcpServerView['authStatus'];
 }): McpStatusKey | undefined {
-  const { enabled, signedInNow, runtimeStatus, authStatus } = args;
+  const { enabled, testedOk, signedInNow, runtimeStatus, authStatus } = args;
   if (!enabled) return 'disabled';
+  if (testedOk) return 'connected';
   if (signedInNow) return 'signed-in';
   if (runtimeStatus === 'failed') return 'failed';
   if (authStatus === 'connected' && runtimeStatus === 'needs-auth') return 'signed-in';
-  if (authStatus === 'needs-auth' && runtimeStatus === 'connected') return 'needs-auth';
+  if (authStatus === 'needs-auth' && (runtimeStatus === 'connected' || runtimeStatus === 'pending'))
+    return 'needs-auth';
   if (runtimeStatus) return runtimeStatus;
   return authStatus === 'connected' ? 'signed-in' : authStatus;
 }
@@ -165,6 +177,7 @@ export function ManagedServerRow({
   const signedInNow = signin.state.step === 'connected';
   const statusKey = resolveStatusKey({
     enabled: server.enabled,
+    testedOk: testResult?.ok === true,
     signedInNow,
     runtimeStatus: live?.status,
     authStatus: server.authStatus,

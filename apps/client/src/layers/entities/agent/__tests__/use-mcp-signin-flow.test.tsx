@@ -8,7 +8,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { StartMcpSigninResult, Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
-import { useMcpSigninFlow } from '../index';
+import { useMcpSigninFlow, resetMcpSigninOwnership } from '../index';
 
 const AGENT_ID = '01HZ0000000000000000000001';
 const SERVER = 'granola';
@@ -55,7 +55,10 @@ async function tick(ms: number): Promise<void> {
   });
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  resetMcpSigninOwnership();
+});
 afterEach(cleanup);
 
 describe('useMcpSigninFlow', () => {
@@ -374,5 +377,124 @@ describe('useMcpSigninFlow', () => {
       disclosure: null,
       error: null,
     });
+  });
+});
+
+describe('useMcpSigninFlow — flow ownership', () => {
+  it('never lets an abandoned flow’s poll settle into its successor’s counter', async () => {
+    vi.useFakeTimers();
+    try {
+      const transport = createMockTransport();
+      vi.mocked(transport.startMcpSignin)
+        .mockResolvedValueOnce(startResult)
+        .mockResolvedValue({ ...startResult, flowId: 'flow-2' });
+      // The first flow's poll is left hanging, then rejected long after the
+      // person has abandoned it and started again. A run counter that does not
+      // know which flow a settle belongs to takes that rejection as evidence
+      // against the NEW flow, and shows "couldn't check the sign-in" on a sign-in
+      // nothing has checked even once.
+      let failFirstPoll: (err: Error) => void = () => {};
+      vi.mocked(transport.pollMcpSignin)
+        .mockImplementationOnce(
+          () =>
+            new Promise((_resolve, reject) => {
+              failFirstPoll = reject;
+            })
+        )
+        .mockResolvedValue({ status: 'pending' });
+
+      const { result } = renderHook(() => useMcpSigninFlow(AGENT_ID, SERVER), {
+        wrapper: createWrapper(transport).wrapper,
+      });
+
+      act(() => result.current.start());
+      await tick(0);
+      act(() => result.current.authOpened());
+      await tick(0);
+      expect(transport.pollMcpSignin).toHaveBeenCalledWith('flow-1');
+
+      // Abandon it and start a fresh one.
+      act(() => result.current.reset());
+      await tick(0);
+      act(() => result.current.start());
+      await tick(0);
+      act(() => result.current.authOpened());
+      await tick(0);
+
+      // Now the corpse of the first flow's request lands.
+      await act(async () => {
+        failFirstPoll(new Error('Failed to fetch'));
+        await vi.advanceTimersByTimeAsync(10);
+      });
+      await tick(0);
+
+      expect(result.current.state.step).toBe('waiting');
+      expect(result.current.state.retryNotice).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('marks the instance that started the flow as its owner, and idle ones not', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.startMcpSignin).mockResolvedValue(startResult);
+
+    const { result } = renderHook(() => useMcpSigninFlow(AGENT_ID, SERVER), {
+      wrapper: createWrapper(transport).wrapper,
+    });
+    expect(result.current.isOwner).toBe(false);
+
+    act(() => result.current.start());
+    await waitFor(() => expect(result.current.state.step).toBe('disclosure'));
+    expect(result.current.isOwner).toBe(true);
+
+    act(() => result.current.reset());
+    expect(result.current.isOwner).toBe(false);
+  });
+
+  it('adopts a pushed flow WITHOUT owning it, and without starting one', async () => {
+    // The card the server pushes renders in every open tab. Adopting it must not
+    // confer ownership, or the auto-resume fires once per tab.
+    const transport = createMockTransport();
+
+    const { result } = renderHook(() => useMcpSigninFlow(AGENT_ID, SERVER), {
+      wrapper: createWrapper(transport).wrapper,
+    });
+
+    act(() =>
+      result.current.adopt({
+        flowId: 'flow-9',
+        authorizeUrl: startResult.authorizeUrl!,
+        disclosure: startResult.disclosure,
+      })
+    );
+
+    expect(result.current.state.step).toBe('disclosure');
+    expect(result.current.state.authorizeUrl).toBe(startResult.authorizeUrl);
+    expect(result.current.isOwner).toBe(false);
+    expect(transport.startMcpSignin).not.toHaveBeenCalled();
+
+    // Clicking the link in THIS tab is what makes it the owner.
+    act(() => result.current.authOpened());
+    expect(result.current.isOwner).toBe(true);
+  });
+
+  it('re-adopting the same flow does not knock a waiting sign-in back', async () => {
+    const transport = createMockTransport();
+    const { result } = renderHook(() => useMcpSigninFlow(AGENT_ID, SERVER), {
+      wrapper: createWrapper(transport).wrapper,
+    });
+    const flow = {
+      flowId: 'flow-9',
+      authorizeUrl: startResult.authorizeUrl!,
+      disclosure: startResult.disclosure,
+    };
+
+    act(() => result.current.adopt(flow));
+    act(() => result.current.authOpened());
+    expect(result.current.state.step).toBe('waiting');
+
+    act(() => result.current.adopt(flow));
+    expect(result.current.state.step).toBe('waiting');
   });
 });

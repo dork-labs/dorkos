@@ -192,6 +192,8 @@ export const StreamEventTypeSchema = z
     'interaction_cancelled',
     'capability_approval_required',
     'capability_approval_resolved',
+    'mcp_signin_required',
+    'mcp_signin_resolved',
   ])
   .openapi('StreamEventType');
 
@@ -1462,6 +1464,64 @@ export const CapabilityApprovalResolvedEventSchema = z
 
 export type CapabilityApprovalResolvedEvent = z.infer<typeof CapabilityApprovalResolvedEventSchema>;
 
+/**
+ * How an in-conversation MCP sign-in ended (DOR-1004).
+ *
+ * Two words, because two are all a server can honestly observe: DorkOS itself
+ * performs the token exchange, so it knows the sign-in landed (`connected`) or
+ * that the provider refused it (`failed`). A person closing the browser tab and
+ * never coming back leaves no server-side trace at all, so there is no third
+ * word for it — the card simply stays until the conversation moves on.
+ */
+export const MCP_SIGNIN_OUTCOMES = ['connected', 'failed'] as const;
+
+/** How an in-conversation MCP sign-in ended; see {@link MCP_SIGNIN_OUTCOMES}. */
+export const McpSigninOutcomeSchema = z.enum(MCP_SIGNIN_OUTCOMES);
+
+/** Inferred type for {@link McpSigninOutcomeSchema}. */
+export type McpSigninOutcome = (typeof MCP_SIGNIN_OUTCOMES)[number];
+
+/**
+ * An agent asked a person to sign in to an OAuth-protected managed MCP server,
+ * and the sign-in card belongs in the conversation (DOR-1004).
+ *
+ * Pushed by the in-session capability adapter when `mcp.signin` runs on a
+ * surface that HAS a conversation to draw a card in. Unlike a capability
+ * approval, the tool call does not wait for it: a browser OAuth round trip
+ * routinely outlasts any safe hold, so the call returns, the turn ends, and the
+ * card outlives its turn.
+ */
+export const McpSigninRequiredEventSchema = z
+  .object({
+    /** The managed server being signed in to (unique within the agent). */
+    serverName: z.string(),
+    /** ULID of the agent that owns the server. */
+    agentId: z.string(),
+    /** The sign-in flow this card drives; also what retires it. */
+    flowId: z.string(),
+    /** The sign-in link the card renders, opened only after the disclosure. */
+    authorizeUrl: z.string(),
+    /** The custody disclosure, shown ABOVE the link — the consent order. */
+    disclosure: z.string(),
+  })
+  .openapi('McpSigninRequiredEvent');
+
+/** Inferred type for {@link McpSigninRequiredEventSchema}. */
+export type McpSigninRequiredEvent = z.infer<typeof McpSigninRequiredEventSchema>;
+
+/** An in-conversation MCP sign-in reached a terminal state (DOR-1004). */
+export const McpSigninResolvedEventSchema = z
+  .object({
+    /** The sign-in flow that ended. */
+    flowId: z.string(),
+    /** How it ended. */
+    outcome: McpSigninOutcomeSchema,
+  })
+  .openapi('McpSigninResolvedEvent');
+
+/** Inferred type for {@link McpSigninResolvedEventSchema}. */
+export type McpSigninResolvedEvent = z.infer<typeof McpSigninResolvedEventSchema>;
+
 export const StreamEventSchema = z
   .object({
     type: StreamEventTypeSchema,
@@ -1500,6 +1560,8 @@ export const StreamEventSchema = z
       InteractionCancelledEventSchema,
       CapabilityApprovalRequiredEventSchema,
       CapabilityApprovalResolvedEventSchema,
+      McpSigninRequiredEventSchema,
+      McpSigninResolvedEventSchema,
     ]),
   })
   .openapi('StreamEvent');
@@ -1737,6 +1799,41 @@ export const CapabilityApprovalPartSchema = z
 export type CapabilityApprovalPart = z.infer<typeof CapabilityApprovalPartSchema>;
 
 /**
+ * A message part for an OAuth sign-in an agent asked for mid-conversation
+ * (DOR-1004) — the sign-in link and its custody disclosure, drawn as a card in
+ * the chat instead of pasted into the reply.
+ *
+ * One card per `(agentId, serverName)`: a second `mcp_signin_required` for the
+ * same server updates this part rather than stacking a new one, so a retried
+ * sign-in never leaves a dead link on screen above the live one.
+ *
+ * `outcome` is set by the matching `mcp_signin_resolved`. A `connected` sign-in
+ * retires the part outright — the agent is already back at work, which is the
+ * whole point — while a `failed` one stays as a terminal note, because a person
+ * whose sign-in did not take needs to be told so.
+ */
+export const McpSigninPartSchema = z
+  .object({
+    type: z.literal('mcp_signin'),
+    /** The managed server being signed in to. */
+    serverName: z.string(),
+    /** ULID of the agent that owns the server. */
+    agentId: z.string(),
+    /** The sign-in flow this card drives. */
+    flowId: z.string(),
+    /** The sign-in link, rendered below the disclosure. */
+    authorizeUrl: z.string(),
+    /** The custody disclosure, rendered above the link. */
+    disclosure: z.string(),
+    /** Set once the sign-in ended badly; the card becomes a terminal note. */
+    outcome: z.literal('failed').optional(),
+  })
+  .openapi('McpSigninPart');
+
+/** Inferred type for {@link McpSigninPartSchema}. */
+export type McpSigninPart = z.infer<typeof McpSigninPartSchema>;
+
+/**
  * A message part representing a memory recall event surfaced by the SDK's
  * memory supervisor. Rendered as a collapsible indicator in the chat timeline.
  */
@@ -1815,6 +1912,7 @@ export const MessagePartSchema = z.discriminatedUnion('type', [
   ErrorPartSchema,
   ElicitationPartSchema,
   CapabilityApprovalPartSchema,
+  McpSigninPartSchema,
   MemoryRecallPartSchema,
   PermissionDeniedPartSchema,
   CompactBoundaryPartSchema,

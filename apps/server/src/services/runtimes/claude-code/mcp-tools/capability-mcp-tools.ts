@@ -24,20 +24,19 @@ import {
   capabilitiesForMcpServer,
   capabilityInputShape,
   invokeCapabilityAsMcpResult,
+  type InSessionSurface,
 } from '../../../core/capabilities/mcp-projection.js';
-import type {
-  CapabilityApprovalHold,
-  CapabilityHoldSession,
-} from '../../../core/capabilities/capability-approval-hold.js';
+import type { CapabilityHoldSession } from '../../../core/capabilities/capability-approval-hold.js';
 import type { ApprovalService } from '../../../core/approvals/index.js';
 
 /**
- * The in-session hold seam (DOR-939): the live session an inline approval card is
- * rendered into, plus the approval primitive the hold waits on. Absent on the
- * external `/mcp` surface and in tests, which then keep the token/poll flow.
+ * The in-session seam: the live session inline cards are rendered into, plus the
+ * approval primitive a destructive hold waits on (DOR-939). Absent on the
+ * external `/mcp` surface and in tests, which then keep the token/poll flow and
+ * draw no cards (DOR-1004).
  */
 export interface InSessionCapabilityHold {
-  /** The live session whose event queue carries the inline card. */
+  /** The live session whose event queue carries the inline cards. */
   session: CapabilityHoldSession;
   /** The approval primitive — reads the card and waits for the decision. */
   approvals: Pick<ApprovalService, 'awaitDecision' | 'getPending'>;
@@ -69,11 +68,13 @@ function abortSignalOf(extra: unknown): AbortSignal | undefined {
  *   `createInSessionContextResolver`); the resolver memoizes, so many tool calls
  *   in one session cost one lookup. Omitted in tests and introspection paths,
  *   which then invoke unattributed exactly as before.
- * @param hold - Optional in-session hold seam (DOR-939). When present, a fresh
- *   destructive ask HOLDS inline awaiting the operator's decision and resumes on a
- *   grant. Omitted on the external `/mcp` surface and in tests, which keep the
- *   token/poll flow. A per-call {@link CapabilityApprovalHold} is assembled from
- *   it plus the SDK abort signal on each invocation.
+ * @param hold - Optional in-session seam (DOR-939, DOR-1004). When present, a
+ *   fresh destructive ask HOLDS inline awaiting the operator's decision and
+ *   resumes on a grant, and a capability declaring `inSessionCard` draws its card
+ *   in the conversation. Omitted on the external `/mcp` surface and in tests,
+ *   which keep the token/poll flow and draw no cards. A per-call
+ *   {@link InSessionSurface} is assembled from it plus the SDK abort signal on
+ *   each invocation.
  * @returns SDK tool definitions to spread into `createSdkMcpServer({ tools })`.
  */
 export function capabilityMcpTools(
@@ -89,7 +90,7 @@ export function capabilityMcpTools(
       capabilityInputShape(capability),
       async (args: Record<string, unknown>, extra: unknown) => {
         const signal = abortSignalOf(extra);
-        const perCall: CapabilityApprovalHold | undefined = hold
+        const perCall: InSessionSurface | undefined = hold
           ? {
               approvals: hold.approvals,
               session: hold.session,

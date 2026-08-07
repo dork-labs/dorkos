@@ -110,6 +110,58 @@ describe('useSessionStreamStore', () => {
     expect(s.inProgressTurn).toEqual([]);
   });
 
+  it('setHistoryMessages keeps an UNRESOLVED sign-in card when it clears the turn (DOR-1004)', () => {
+    // Real failure mode: the sign-in card is asked for in one turn and answered
+    // minutes later in a browser. Everything else the turn produced is in the
+    // reloaded history by now — the card is not, and never will be, so clearing
+    // it deletes the link the person walked away to use.
+    const store = useSessionStreamStore.getState();
+    store.applySnapshot(SID, snapshot({ cursor: 0 }));
+    store.applyEvent(SID, { type: 'turn_start', seq: 1 });
+    store.applyEvent(SID, { type: 'text_delta', seq: 2, text: 'Connecting your meeting notes.' });
+    store.applyEvent(SID, {
+      type: 'mcp_signin_required',
+      seq: 3,
+      serverName: 'granola',
+      agentId: '01HV7KJZZZ0000000000000000',
+      flowId: 'flow-1',
+      authorizeUrl: 'https://mcp.test.local/authorize',
+      disclosure: 'DorkOS stores the token on this machine.',
+    });
+    store.applyEvent(SID, { type: 'turn_end', seq: 4 });
+
+    store.setHistoryMessages(SID, [MESSAGE]);
+
+    const s = useSessionStreamStore.getState().getSession(SID);
+    expect(s.inProgressTurn.map((e) => e.type)).toEqual(['mcp_signin_required']);
+  });
+
+  it('setHistoryMessages drops a sign-in card the turn already resolved (DOR-1004)', () => {
+    const store = useSessionStreamStore.getState();
+    store.applySnapshot(SID, snapshot({ cursor: 0 }));
+    store.applyEvent(SID, { type: 'turn_start', seq: 1 });
+    store.applyEvent(SID, {
+      type: 'mcp_signin_required',
+      seq: 2,
+      serverName: 'granola',
+      agentId: '01HV7KJZZZ0000000000000000',
+      flowId: 'flow-1',
+      authorizeUrl: 'https://mcp.test.local/authorize',
+      disclosure: 'DorkOS stores the token on this machine.',
+    });
+    store.applyEvent(SID, {
+      type: 'mcp_signin_resolved',
+      seq: 3,
+      flowId: 'flow-1',
+      outcome: 'connected',
+    });
+    store.applyEvent(SID, { type: 'turn_end', seq: 4 });
+
+    store.setHistoryMessages(SID, [MESSAGE]);
+
+    expect(useSessionStreamStore.getState().getSession(SID).inProgressTurn).toEqual([]);
+  });
+
   it('records the fidelity events (thinking/progress/hook/memory) in the turn (task #19)', () => {
     // Real failure mode: a fidelity event type missing from TURN_EVENT_TYPES is
     // silently dropped by the store — the live turn renders lean while the

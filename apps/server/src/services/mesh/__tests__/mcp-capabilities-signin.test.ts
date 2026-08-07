@@ -210,6 +210,29 @@ describe('mcp.signin / mcp.poll_signin', () => {
     expect(connection?.transport === 'http' ? connection.authKind : undefined).toBe('oauth2');
   });
 
+  it('declares the in-conversation sign-in card, and its resolution (DOR-1004)', () => {
+    // The declaration is the ONLY thing that makes the in-session projection draw
+    // a card for these two — a capability that does not declare it returns its
+    // markdown and nothing appears in the conversation. The seam itself is
+    // covered by `core/capabilities/__tests__/in-session-card.test.ts`.
+    expect(capability('mcp.signin').inSessionCard).toBe('signin');
+    expect(capability('mcp.poll_signin').inSessionCard).toBe('signin_resolved');
+  });
+
+  it('tells the agent to say one line and stop, and never to poll (DOR-1004)', () => {
+    // The card is shown automatically, so an agent that narrates the sign-in,
+    // repeats the link, or sits polling is spending turns on something the person
+    // already watched happen.
+    const description = capability('mcp.signin').description;
+    expect(description).toContain('automatically');
+    expect(description).toContain('ONE short line');
+    expect(description).toContain('do not call mcp_poll_signin');
+    // …but the surfaces with no card must still be told to show both, or an
+    // external `/mcp` caller gets a sign-in with no link in it.
+    expect(description).toContain('no card');
+    expect(description).toContain('verbatim');
+  });
+
   it('rejects sign-in for a local (stdio) server', async () => {
     const { deps } = await setup({ transport: 'stdio', command: 'x', args: [], env: {} });
     await expect(

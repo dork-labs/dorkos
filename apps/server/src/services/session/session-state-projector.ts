@@ -272,6 +272,27 @@ export class SessionStateProjector {
    */
   private readonly capabilityHolds = new Map<string, { startedAt: number; capMs: number }>();
 
+  /**
+   * Sign-in cards still on screen, keyed by flow id (DOR-1004).
+   *
+   * The one thing in a turn that deliberately OUTLIVES it. Everything else in
+   * `inProgressTurn` is gone at `turn_end`, and rightly so — the turn's real
+   * record is the runtime's own history. But an OAuth sign-in card is asked for
+   * in one turn and answered minutes later in a browser, so a card dropped at
+   * `turn_end` would vanish from every tab opened after the agent stopped
+   * talking, which is exactly when a person goes looking for it.
+   *
+   * {@link buildSnapshot} therefore re-attaches these to whatever the snapshot's
+   * in-progress turn is, so a cold hydrate mid-sign-in still draws the card. The
+   * bound is the next `turn_start`: the conversation moved on, so the card goes
+   * with it — the same rule the client applies, so the two cannot disagree about
+   * what is on screen.
+   */
+  private readonly openSigninCards = new Map<
+    string,
+    Extract<SessionEvent, { type: 'mcp_signin_required' }>
+  >();
+
   /** Running subagents by taskId; size feeds `runningSubagentCount`. */
   private readonly runningSubagents = new Set<string>();
 
@@ -436,6 +457,10 @@ export class SessionStateProjector {
     switch (event.type) {
       case 'turn_start':
         this.inProgressTurn = [event];
+        // The conversation moved on, so any sign-in card carried past the last
+        // turn goes with it (DOR-1004) — including the resume turn the finished
+        // sign-in itself triggers.
+        this.openSigninCards.clear();
         this.ring.markTurnStarted();
         this.status.lifecycle = 'streaming';
         // A new turn clears the previous failure surface.
@@ -490,6 +515,16 @@ export class SessionStateProjector {
         break;
       case 'capability_approval_resolved':
         this.untrackCapabilityHold(event.approvalId);
+        break;
+      // An in-conversation sign-in card (DOR-1004). Tracked so it survives its
+      // own `turn_end` and reaches a cold hydrate; NOT a hold and NOT an
+      // interaction — nothing is waiting on it, so it neither pauses the stall
+      // watchdog nor blocks the lifecycle.
+      case 'mcp_signin_required':
+        this.openSigninCards.set(event.flowId, event);
+        break;
+      case 'mcp_signin_resolved':
+        this.openSigninCards.delete(event.flowId);
         break;
       case 'interaction_resolved':
         // Backfill WHICH interaction this was and WHEN it began, before
@@ -854,17 +889,43 @@ export class SessionStateProjector {
    * loader, the live in-progress turn, the held status, recovery DTOs for
    * pending interactions, and the current cursor as the resume point.
    *
+   * Any open sign-in card (DOR-1004) is re-attached to the in-progress turn,
+   * even when there is no turn in flight — see {@link openSigninCards} for why
+   * that one event outlives its turn. A tab opened while a person is off in
+   * their browser signing in therefore draws the card, which is the only state
+   * in which a person is likely to open one.
+   *
    * @param loadHistory - Supplies completed messages (Claude: JSONL; stateless: EventLog).
    */
   async buildSnapshot(loadHistory: () => Promise<HistoryMessage[]>): Promise<SessionSnapshot> {
     const messages = await loadHistory();
     return {
       messages,
-      inProgressTurn: this.inProgressTurn === null ? null : [...this.inProgressTurn],
+      inProgressTurn: this.snapshotInProgressTurn(),
       status: this.getStatus(),
       pendingInteractions: this.getPendingInteractions(),
       cursor: this.counter,
     };
+  }
+
+  /**
+   * The snapshot's copy of the in-progress turn, with any open sign-in card
+   * re-attached.
+   *
+   * A card already inside the live turn is left where it is rather than
+   * appended twice — the client's fold keys cards by `(agentId, serverName)`
+   * and would collapse a duplicate anyway, but sending one is still a lie about
+   * what the turn contained. Cards are appended in `seq` order after the turn's
+   * own events; the fold is order-insensitive for them, and this keeps the list
+   * monotonic for anything that assumes it.
+   */
+  private snapshotInProgressTurn(): SessionEvent[] | null {
+    const cards = [...this.openSigninCards.values()];
+    if (cards.length === 0) return this.inProgressTurn === null ? null : [...this.inProgressTurn];
+    const live = this.inProgressTurn ?? [];
+    const liveSeqs = new Set(live.map((event) => event.seq));
+    const carried = cards.filter((card) => !liveSeqs.has(card.seq)).sort((a, b) => a.seq - b.seq);
+    return [...live, ...carried];
   }
 
   /**

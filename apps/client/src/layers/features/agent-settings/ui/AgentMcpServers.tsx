@@ -211,6 +211,9 @@ export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
 
   const [testResults, setTestResults] = useState<Record<string, AgentMcpTestResult>>({});
   const [testingName, setTestingName] = useState<string | null>(null);
+  // The most recently added server, so the unattended probe below can tell the
+  // add form whether THAT server turned out to need a sign-in (DOR-1004).
+  const [lastAdded, setLastAdded] = useState<string | null>(null);
 
   const handleToggle = useCallback(
     (name: string, enabled: boolean) => {
@@ -251,6 +254,7 @@ export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
   // (DOR-985). A local stdio server needs no sign-in, so it is left alone.
   const handleAdded = useCallback(
     ({ name, transport }: { name: string; transport: TransportKind }) => {
+      setLastAdded(name);
       // `.catch` because this probe is unattended: nobody clicked it, so nothing
       // is awaiting its rejection, and the mutation's own error surface has
       // already reported the failure. Without it a throwing probe becomes an
@@ -276,6 +280,9 @@ export function AgentMcpServers({ agent, projectPath }: AgentMcpServersProps) {
             agentLabel={agent.displayName ?? agent.name}
             supportedTransports={supportedTransportsFor(agent.runtime)}
             onAdded={handleAdded}
+            oauthDetectedFor={
+              lastAdded && testResults[lastAdded]?.needsAuth === true ? lastAdded : null
+            }
           />
         )}
       </div>

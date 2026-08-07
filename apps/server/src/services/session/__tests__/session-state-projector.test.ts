@@ -1208,3 +1208,78 @@ describe('onProjectorStatusChange (global lifecycle fan-out)', () => {
     disposeProjector('status-5');
   });
 });
+
+describe('in-conversation MCP sign-in card (DOR-1004)', () => {
+  const CARD: RawSessionEvent = {
+    type: 'mcp_signin_required',
+    serverName: 'granola',
+    agentId: '01HV7KJZZZ0000000000000000',
+    flowId: 'flow-1',
+    authorizeUrl: 'https://mcp.test.local/authorize',
+    disclosure: 'DorkOS stores the token on this machine.',
+  };
+
+  /** Push a turn that asks for a sign-in and then ends, as the real flow does. */
+  function signinTurn(p: SessionStateProjector): void {
+    p.ingest({ type: 'turn_start' });
+    p.ingest(CARD);
+    p.ingest({ type: 'text_delta', text: 'Connecting your meeting notes.' });
+    p.ingest({ type: 'turn_end' });
+  }
+
+  it('keeps the card in a cold snapshot after the turn that asked for it ended', async () => {
+    // The whole point of not holding the tool call: the turn ends immediately and
+    // the person walks off to a browser. A tab opened while they are away — the
+    // most likely moment for one to be opened — must still draw the card, and
+    // `inProgressTurn` is null by then.
+    const p = new SessionStateProjector('s1');
+    signinTurn(p);
+
+    const snap = await p.buildSnapshot(async () => []);
+
+    expect(snap.inProgressTurn).toEqual([expect.objectContaining({ type: 'mcp_signin_required' })]);
+    // …and nothing else from the finished turn came back with it.
+    expect(snap.inProgressTurn).toHaveLength(1);
+  });
+
+  it('carries the card without claiming a turn is running', async () => {
+    const p = new SessionStateProjector('s1');
+    signinTurn(p);
+
+    expect(p.getStatus().lifecycle).toBe('idle');
+    expect(p.hasPendingInteractions()).toBe(false);
+    expect(p.peekInProgressTurn()).toBeNull();
+  });
+
+  it('does not duplicate a card that is still inside the live turn', async () => {
+    const p = new SessionStateProjector('s1');
+    p.ingest({ type: 'turn_start' });
+    p.ingest(CARD);
+
+    const snap = await p.buildSnapshot(async () => []);
+
+    expect(snap.inProgressTurn?.filter((e) => e.type === 'mcp_signin_required')).toHaveLength(1);
+    expect(snap.inProgressTurn?.[0].type).toBe('turn_start');
+  });
+
+  it('drops the card once the sign-in resolves', async () => {
+    const p = new SessionStateProjector('s1');
+    p.ingest({ type: 'turn_start' });
+    p.ingest(CARD);
+    p.ingest({ type: 'mcp_signin_resolved', flowId: 'flow-1', outcome: 'connected' });
+    p.ingest({ type: 'turn_end' });
+
+    expect((await p.buildSnapshot(async () => [])).inProgressTurn).toBeNull();
+  });
+
+  it('drops the card when the conversation moves on', async () => {
+    // The resume turn the finished sign-in triggers is itself a `turn_start`, so
+    // the card retires exactly when the agent picks the job back up.
+    const p = new SessionStateProjector('s1');
+    signinTurn(p);
+    p.ingest({ type: 'turn_start' });
+
+    const snap = await p.buildSnapshot(async () => []);
+    expect(snap.inProgressTurn?.some((e) => e.type === 'mcp_signin_required')).toBe(false);
+  });
+});

@@ -42,6 +42,8 @@ import {
   UiCommandEventSchema,
   ErrorEventSchema,
   UsageStatusSchema,
+  McpSigninRequiredEventSchema,
+  McpSigninResolvedEventSchema,
   type ToolApprovalOutcome,
 } from './schemas.js';
 
@@ -490,6 +492,29 @@ export const SessionEventSchema = z
       approvalId: z.string(),
       /** How it ended. */
       outcome: CapabilityApprovalOutcomeSchema,
+    }),
+    // An agent asked a person to sign in to an OAuth-protected managed MCP
+    // server, and the card belongs in the conversation (DOR-1004). Pushed by the
+    // in-session capability adapter when `mcp.signin` runs on a surface that has
+    // a conversation to draw a card in; the sessionless surfaces (external
+    // `/mcp`, HTTP) get no event and keep the full link-carrying message.
+    //
+    // Deliberately NOT a hold, and deliberately NOT tracked as a pending
+    // interaction: a browser OAuth round trip routinely outlasts any safe hold,
+    // so the tool call returns, the turn ends, and the card OUTLIVES its turn —
+    // which is why the projector carries it into later snapshots rather than
+    // letting `turn_end` drop it with the rest of the turn.
+    z.object({
+      ...seqShape,
+      type: z.literal('mcp_signin_required'),
+      ...McpSigninRequiredEventSchema.shape,
+    }),
+    // The in-conversation sign-in reached a terminal state (DOR-1004). Retires
+    // the card on `connected`; leaves it as a terminal note on `failed`.
+    z.object({
+      ...seqShape,
+      type: z.literal('mcp_signin_resolved'),
+      ...McpSigninResolvedEventSchema.shape,
     }),
     // The start of an assistant turn. Carries the user message that triggered
     // it (when the turn was DorkOS-triggered): the POST is trigger-only

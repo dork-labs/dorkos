@@ -561,6 +561,46 @@ describe('AgentMcpServers', () => {
     );
   });
 
+  it('promotes the chip to Connected when Test dials through (DOR-985 P3)', async () => {
+    // Test is the only thing on this row that actually contacted the server, and
+    // since DOR-985 it dials WITH the bearer. An `ok` is therefore a round trip
+    // that provably worked — stronger evidence than any cache, including the
+    // amber "Needs sign-in" the row was showing a moment earlier.
+    const transport = createMockTransport({
+      listAgentMcpServers: vi
+        .fn()
+        .mockResolvedValue([{ ...oauthServer, authStatus: 'needs-auth' } as ManagedMcpServerView]),
+      getMcpConfig: vi.fn().mockResolvedValue({ servers: [] }),
+      testAgentMcpServer: vi.fn().mockResolvedValue({ ok: true, toolCount: 4 }),
+    });
+    const { container } = renderComponent(transport);
+
+    await waitFor(() => expect(within(container).getByText('Needs sign-in')).toBeInTheDocument());
+
+    fireEvent.click(within(container).getByRole('button', { name: 'Test' }));
+
+    await waitFor(() => expect(within(container).getByText('Connected')).toBeInTheDocument());
+    expect(within(container).queryByText('Needs sign-in')).not.toBeInTheDocument();
+  });
+
+  it('lets a missing token override a stale runtime PENDING too (DOR-985 P3)', async () => {
+    // The same lie as a stale `connected`, told more quietly: a cached
+    // "Connecting…" from a past turn outranking the live, provable fact that
+    // there is no token left the row spinning with nothing to press.
+    const stale: ManagedMcpServerView = { ...oauthServer, authStatus: 'needs-auth' };
+    const transport = createMockTransport({
+      listAgentMcpServers: vi.fn().mockResolvedValue([stale]),
+      getMcpConfig: vi.fn().mockResolvedValue({
+        servers: [{ name: 'granola', type: 'http', status: 'pending' }],
+      }),
+    });
+    const { container } = renderComponent(transport);
+
+    await waitFor(() => expect(within(container).getByText('Needs sign-in')).toBeInTheDocument());
+    expect(within(container).queryByText('Connecting…')).not.toBeInTheDocument();
+    expect(within(container).getByRole('button', { name: /^Sign in/ })).toBeInTheDocument();
+  });
+
   it('still shows Failed when the runtime failed, even with a live token', async () => {
     const connected: ManagedMcpServerView = { ...oauthServer, authStatus: 'connected' };
     const transport = createMockTransport({

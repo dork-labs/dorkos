@@ -28,7 +28,7 @@ export {
   useDisableAgentMcpServer,
   useTestAgentMcpServer,
 } from './model/use-agent-mcp-mutations';
-export { useMcpSigninFlow } from './model/use-mcp-signin-flow';
+export { useMcpSigninFlow, resetMcpSigninOwnership } from './model/use-mcp-signin-flow';
 export type { McpSigninFlow } from './model/use-mcp-signin-flow';
 
 // Lib — nebula theme utilities
@@ -49,3 +49,4 @@ export { PresetPill } from './ui/PresetPill';
 export type { PresetPillProps, PresetPillColors } from './ui/PresetPill';
 export { TraitSliders } from './ui/TraitSliders';
 export type { TraitSlidersProps } from './ui/TraitSliders';
+export { McpSigninBody } from './ui/McpSigninBody';

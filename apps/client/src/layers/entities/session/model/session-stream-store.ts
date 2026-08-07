@@ -214,7 +214,41 @@ const TURN_EVENT_TYPES: ReadonlySet<SessionEvent['type']> = new Set([
   // recovery DTO; its card recovers from the in-progress-turn replay.
   'capability_approval_required',
   'capability_approval_resolved',
+  // An in-conversation MCP sign-in card and its resolution (DOR-1004). Ride the
+  // turn like the approval pair, but the card deliberately OUTLIVES the turn —
+  // see `retainOpenSigninCards`, which is what keeps it on screen while a person
+  // is off in their browser.
+  'mcp_signin_required',
+  'mcp_signin_resolved',
 ]);
+
+/**
+ * The events a cleared turn keeps: sign-in cards nobody has resolved yet
+ * (DOR-1004).
+ *
+ * Everything else a turn produced is in the reloaded history by the time this
+ * runs, which is exactly why the turn is cleared. A sign-in card is not: it was
+ * asked for in DorkOS, it is answered minutes later in a browser tab, and the
+ * runtime's own transcript has never heard of it. Clearing it with the rest
+ * would delete the link a person walked away to use — the single most likely
+ * moment for them to come back and look.
+ *
+ * Cards are matched to resolutions by flow id, and both are kept when a card is
+ * still open so the fold that renders them sees the same pair it saw live. The
+ * next `turn_start` clears them for real, mirroring the server projector.
+ *
+ * @param events - The settling turn's events.
+ * @returns The events to keep, in their original order.
+ */
+function retainOpenSigninCards(events: SessionEvent[]): SessionEvent[] {
+  const resolved = new Set<string>();
+  for (const event of events) {
+    if (event.type === 'mcp_signin_resolved') resolved.add(event.flowId);
+  }
+  return events.filter(
+    (event) => event.type === 'mcp_signin_required' && !resolved.has(event.flowId)
+  );
+}
 
 interface SessionStreamStoreState {
   sessions: Record<string, SessionStreamState>;
@@ -679,8 +713,10 @@ export const useSessionStreamStore: SessionStreamStore = create<
             // The reloaded history now carries the just-completed turn, so drop the
             // trailing in-progress bubble to avoid rendering the reply twice —
             // unless the bubble already belongs to a NEWER turn the reload predates.
+            // An unresolved sign-in card survives either way: history has no record
+            // of it and the person is still mid-sign-in (DOR-1004).
             if (!opts?.preserveInProgressTurn) {
-              session.inProgressTurn = [];
+              session.inProgressTurn = retainOpenSigninCards(session.inProgressTurn);
             }
           },
           false,

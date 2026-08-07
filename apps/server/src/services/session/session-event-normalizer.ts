@@ -108,6 +108,11 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
     case 'capability_approval_resolved':
       return toCapabilityApprovalResolvedEvent(data);
 
+    case 'mcp_signin_required':
+      return toMcpSigninRequiredEvent(data);
+    case 'mcp_signin_resolved':
+      return toMcpSigninResolvedEvent(data);
+
     case 'session_status':
       return toStatusChange(data);
 
@@ -411,6 +416,48 @@ function toCapabilityApprovalResolvedEvent(
     // default (it points at the approvals list rather than silently vanishing),
     // but a second emitter must set `outcome` rather than lean on this.
     outcome: (data.outcome as RawOf<'capability_approval_resolved'>['outcome']) ?? 'timeout',
+  };
+}
+
+/**
+ * Map an `mcp_signin_required` StreamEvent to its session-stream member
+ * (DOR-1004).
+ *
+ * Every field is coerced with `String(... ?? '')` and every default fails toward
+ * KEEPING the card on screen, mirroring the approval pair's rule. The one field
+ * that could argue for the opposite is `authorizeUrl` — a card with no link is a
+ * card nobody can act on — but dropping the event here would strand a person who
+ * was just told to sign in with nothing at all, while an empty link renders a
+ * card that plainly shows something went wrong. The emitter validates the link
+ * before pushing (`in-session-card.ts`), so neither is reachable today.
+ */
+function toMcpSigninRequiredEvent(data: StreamData): RawOf<'mcp_signin_required'> {
+  return {
+    type: 'mcp_signin_required',
+    serverName: String(data.serverName ?? ''),
+    agentId: String(data.agentId ?? ''),
+    flowId: String(data.flowId ?? ''),
+    authorizeUrl: String(data.authorizeUrl ?? ''),
+    disclosure: String(data.disclosure ?? ''),
+  };
+}
+
+/**
+ * Map an `mcp_signin_resolved` StreamEvent to its session-stream member
+ * (DOR-1004).
+ *
+ * A missing outcome degrades to `failed`, which is the fail-safe direction here:
+ * `connected` RETIRES the card outright, so guessing it would delete a live
+ * sign-in surface on a malformed event, while `failed` leaves a visible note the
+ * person can act on. A missing `flowId` matches no card and resolves nothing —
+ * the card then stays until the conversation moves on, which is also the safe
+ * side.
+ */
+function toMcpSigninResolvedEvent(data: StreamData): RawOf<'mcp_signin_resolved'> {
+  return {
+    type: 'mcp_signin_resolved',
+    flowId: String(data.flowId ?? ''),
+    outcome: data.outcome === 'connected' ? 'connected' : 'failed',
   };
 }
 
