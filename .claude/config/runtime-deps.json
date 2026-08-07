@@ -32,14 +32,20 @@
         }
       ],
       "sdk_surface_map": {
-        "query()": "message-sender.ts",
-        "SDKMessage": "sdk-event-mapper.ts",
-        "Options": "message-sender.ts, plugin-activation.ts",
+        "query()": "messaging/message-sender.ts",
+        "SDKMessage": "sdk/sdk-event-mapper.ts",
+        "Options": "messaging/message-sender.ts",
         "renameSession()": "claude-code-runtime.ts",
-        "forkSession()": "claude-code-runtime.ts",
-        "McpServerConfig": "context-builder.ts",
-        "getClaudeCliPath()": "sdk-utils.ts"
-      }
+        "forkSession()": "sessions/session-store.ts",
+        "McpServerConfig": "mcp-server-config.ts, claude-code-runtime.ts, messaging/message-sender.ts",
+        "tool(), createSdkMcpServer()": "mcp-tools/*.ts (13 files — the largest SDK surface in the codebase)"
+      },
+      "non_import_couplings": [
+        "sessions/project-slug.ts hand-mirrors the SDK's session-slug hash algorithm (incl. the 200-char cap) with no import — grep/ESLint/surface-map all miss it; re-diff the sdk.mjs hash body on every bump",
+        "plugin-activation.ts hand-mirrors the Options plugin shape without importing it",
+        "sdk-utils.ts resolveClaudeCliPath() resolves the SDK's platform optional-dep packages by name (no SDK import); version-sensitive since the 0.2.113 native-binary split",
+        "services/mesh/mcp-revocation.ts (outside the adapter dir) reasons about SDK-internal MCP connect timing with a fixture-pinned test that passes even when stale — re-observe on every bump"
+      ]
     },
     "@openai/codex-sdk": {
       "short_name": "codex-sdk",
@@ -73,7 +79,7 @@
         }
       ],
       "sdk_surface_map": {
-        "Codex, CodexOptions": "codex-runtime.ts",
+        "Codex, CodexOptions": "codex-runtime.ts, mcp-server-config.ts",
         "ThreadEvent, ThreadItem (+ AgentMessageItem, CommandExecutionItem, FileChangeItem, McpToolCallItem, ReasoningItem, TodoListItem, WebSearchItem)": "event-mapper.ts",
         "ThreadOptions, SandboxMode, ModelReasoningEffort": "turn-input.ts"
       }
@@ -104,10 +110,13 @@
         }
       ],
       "sdk_surface_map": {
-        "createOpencodeClient, OpencodeClient": "server-manager.ts, opencode-runtime.ts",
-        "Event, GlobalEvent, AssistantMessage, Permission, SessionStatus, Todo, ToolPart": "event-mapper.ts, global-event-hub.ts",
+        "createOpencodeClient": "server-manager.ts",
+        "OpencodeClient": "server-manager.ts, opencode-runtime.ts, mcp-manager.ts, mcp-status.ts",
+        "Event, AssistantMessage, Permission, SessionStatus, Todo, ToolPart": "event-mapper.ts (ToolPart also session-mapper.ts)",
+        "GlobalEvent": "global-event-hub.ts",
         "Session, Message, Part": "session-mapper.ts",
-        "ProviderListResponse": "models.ts"
+        "ProviderListResponse": "models.ts, opencode-runtime.ts",
+        "McpStatus, McpLocalConfig, McpRemoteConfig": "mcp-status.ts, mcp-server-config.ts"
       }
     }
   }
