@@ -15,7 +15,7 @@ export interface OriginDescriptor {
   origin: SessionOrigin;
   /** Fallback label shown when the session's own `originLabel` is absent. */
   label: string;
-  /** Icon component. Renders at 12px by default in `OriginMark`; pass `size` to override. */
+  /** Icon component. Renders at 12px by default in `SessionOriginMark`; pass `size` to override. */
   icon: ComponentType<{ size?: number; className?: string }>;
 }
 
@@ -32,7 +32,7 @@ export const ORIGIN_DESCRIPTORS: Partial<Record<SessionOrigin, OriginDescriptor>
 
 /**
  * Resolve the visual identity for a session origin. Returns `undefined` for
- * `'user'` or any unrecognized origin — callers (chiefly OriginMark) treat
+ * `'user'` or any unrecognized origin — callers (chiefly SessionOriginMark) treat
  * `undefined` as "render nothing," matching calm-tech: unmarked means you,
  * marked means automation.
  *

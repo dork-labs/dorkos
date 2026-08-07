@@ -104,7 +104,7 @@
       "files": [
         "apps/client/src/layers/features/chat/ui/message/MessageAuthorAvatar.tsx",
         "apps/client/src/layers/shared/ui/identity-hover-card.tsx",
-        "apps/client/src/layers/features/agent-hub/ui/AgentChipPicker.tsx",
+        "apps/client/src/layers/features/room-management/ui/AgentChipPicker.tsx",
         "apps/client/src/layers/features/approvals/ui/RequestingAgent.tsx",
         "apps/client/src/dev/showcases/IdentityShowcases.tsx"
       ],

@@ -7,6 +7,7 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
 
 import { env } from '../../env.js';
 import {
+  getLocalCockpitOrigin,
   getStaticLocalOrigins,
   isLocalRequest,
   isLoopbackHost,
@@ -219,6 +220,27 @@ describe('getStaticLocalOrigins', () => {
     try {
       setVitePort('4241');
       expect(getStaticLocalOrigins()).toEqual(['http://localhost:4242', 'http://127.0.0.1:4242']);
+    } finally {
+      mutable.NODE_ENV = previous;
+    }
+  });
+
+  it('points the cockpit link at the Vite dev server outside production', () => {
+    // `express.static` is production-only, so in dev NOTHING answers `/` on the
+    // API port. A "Back to DorkOS" link built from DORKOS_PORT would be dead
+    // exactly for the developers most likely to click it.
+    setVitePort('6241');
+    expect(getLocalCockpitOrigin()).toBe('http://localhost:6241');
+  });
+
+  it('points the cockpit link at the API port in PRODUCTION', () => {
+    // There the server serves the SPA itself, and no Vite dev server exists.
+    const mutable = env as { NODE_ENV?: string };
+    const previous = mutable.NODE_ENV;
+    mutable.NODE_ENV = 'production';
+    try {
+      setVitePort('6241');
+      expect(getLocalCockpitOrigin()).toBe('http://localhost:4242');
     } finally {
       mutable.NODE_ENV = previous;
     }

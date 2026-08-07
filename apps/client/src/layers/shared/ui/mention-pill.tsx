@@ -8,7 +8,7 @@ import type * as React from 'react';
 import { cva } from 'class-variance-authority';
 import { Bot, Send } from 'lucide-react';
 import { cn } from '../lib/utils';
-import type { IdentityOrigin } from './identity-origin';
+import type { IdentityOrigin } from '../lib/identity-origin';
 
 /**
  * How much of an agent's own colour tints the pill's background — lighter

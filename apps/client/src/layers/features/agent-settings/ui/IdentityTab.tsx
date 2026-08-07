@@ -2,14 +2,18 @@ import { useState, useCallback, useMemo, type KeyboardEvent } from 'react';
 import { X } from 'lucide-react';
 import {
   cn,
-  EMOJI_SET,
   getAgentDisplayName,
   hashToHslColor,
   hashToEmoji,
   formatRelativeTime,
 } from '@/layers/shared/lib';
 import { useDebouncedInput } from '@/layers/shared/model';
-import { AgentIdentity, resolveAgentVisual } from '@/layers/entities/agent';
+import {
+  AgentIdentity,
+  AvatarColorGrid,
+  AvatarEmojiGrid,
+  resolveAgentVisual,
+} from '@/layers/entities/agent';
 import {
   Badge,
   CollapsibleFieldCard,
@@ -31,20 +35,6 @@ import {
   TooltipContent,
 } from '@/layers/shared/ui';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
-
-/** Maps each color preset to a human-readable name for accessibility. */
-const COLOR_PRESETS: { hex: string; name: string }[] = [
-  { hex: '#ef4444', name: 'Red' },
-  { hex: '#f97316', name: 'Orange' },
-  { hex: '#eab308', name: 'Yellow' },
-  { hex: '#22c55e', name: 'Green' },
-  { hex: '#06b6d4', name: 'Cyan' },
-  { hex: '#3b82f6', name: 'Blue' },
-  { hex: '#6366f1', name: 'Indigo' },
-  { hex: '#a855f7', name: 'Purple' },
-  { hex: '#ec4899', name: 'Pink' },
-  { hex: '#78716c', name: 'Stone' },
-];
 
 interface IdentityTabProps {
   agent: AgentManifest;
@@ -93,8 +83,8 @@ export function IdentityTab({ agent, onUpdate }: IdentityTabProps) {
   });
 
   const handleColorSelect = useCallback(
-    (hex: string | undefined) => {
-      onUpdate({ color: hex });
+    (hex: string | null) => {
+      onUpdate({ color: hex ?? undefined });
       setColorOpen(false);
     },
     [onUpdate]
@@ -290,42 +280,11 @@ export function IdentityTab({ agent, onUpdate }: IdentityTabProps) {
               </ResponsivePopoverTrigger>
               <ResponsivePopoverContent className="w-auto p-3" align="start">
                 <ResponsivePopoverTitle>Choose Color</ResponsivePopoverTitle>
-                <div className="flex flex-wrap items-center gap-2">
-                  {/* Auto-derived color */}
-                  <button
-                    onClick={() => handleColorSelect(undefined)}
-                    className={cn(
-                      'relative size-7 rounded-full transition-all duration-150',
-                      !hasColorOverride
-                        ? 'ring-muted-foreground/50 ring-dashed ring-2 ring-offset-2'
-                        : 'hover:scale-110'
-                    )}
-                    style={{ backgroundColor: autoColor }}
-                    aria-label="Select default color"
-                  >
-                    <span className="bg-background/80 text-foreground absolute inset-0 flex items-center justify-center rounded-full text-[9px] leading-none font-bold">
-                      A
-                    </span>
-                  </button>
-
-                  <div className="bg-border mx-0.5 h-5 w-px" />
-
-                  {/* Presets */}
-                  {COLOR_PRESETS.map((c) => (
-                    <button
-                      key={c.hex}
-                      onClick={() => handleColorSelect(c.hex)}
-                      className={cn(
-                        'size-7 rounded-full transition-all duration-150',
-                        agent.color === c.hex
-                          ? 'ring-foreground ring-2 ring-offset-2'
-                          : 'hover:scale-110'
-                      )}
-                      style={{ backgroundColor: c.hex }}
-                      aria-label={`Select ${c.name}`}
-                    />
-                  ))}
-                </div>
+                <AvatarColorGrid
+                  value={agent.color}
+                  autoColor={autoColor}
+                  onSelect={handleColorSelect}
+                />
               </ResponsivePopoverContent>
             </ResponsivePopover>
           </div>
@@ -347,29 +306,12 @@ export function IdentityTab({ agent, onUpdate }: IdentityTabProps) {
               </ResponsivePopoverTrigger>
               <ResponsivePopoverContent className="w-64 p-3" align="start">
                 <ResponsivePopoverTitle>Choose Icon</ResponsivePopoverTitle>
-                <div className="grid grid-cols-6 gap-1">
-                  {EMOJI_SET.map((emoji) => {
-                    const isActive = emoji === activeEmoji;
-                    const isAutoDefault = emoji === autoEmoji && !hasIconOverride;
-                    return (
-                      <button
-                        key={emoji}
-                        onClick={() => handleIconSelect(emoji)}
-                        className={cn(
-                          'flex size-8 items-center justify-center rounded-md text-base transition-all duration-150',
-                          isActive
-                            ? isAutoDefault
-                              ? 'bg-accent ring-muted-foreground/50 ring-dashed ring-1'
-                              : 'bg-accent ring-foreground ring-1'
-                            : 'hover:bg-accent/50'
-                        )}
-                        aria-label={`Select icon ${emoji}`}
-                      >
-                        {emoji}
-                      </button>
-                    );
-                  })}
-                </div>
+                <AvatarEmojiGrid
+                  value={activeEmoji}
+                  autoEmoji={autoEmoji}
+                  hasOverride={hasIconOverride}
+                  onSelect={handleIconSelect}
+                />
               </ResponsivePopoverContent>
             </ResponsivePopover>
           </div>

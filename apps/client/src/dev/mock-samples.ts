@@ -797,7 +797,13 @@ export interface MockIdentity {
   color?: string;
   emoji?: string;
   origin?: 'local' | { platform: string };
-  agent?: { runtime?: string; model?: string; working?: { forMs: number } };
+  agent?: {
+    runtime?: string;
+    model?: string;
+    working?: { forMs: number };
+    /** Owner attribution (spec `identity-consistency` W1.6) — the hover card's fourth chip. */
+    managedBy?: { displayName: string; handle: string | null };
+  };
 }
 
 /**
@@ -814,7 +820,12 @@ export const MOCK_IDENTITIES: Record<string, MockIdentity> = {
     handle: 'warden',
     color: '#6d5ae0',
     emoji: '🛡️',
-    agent: { runtime: 'Claude Code', model: 'Opus 4.8', working: { forMs: 134_000 } },
+    agent: {
+      runtime: 'Claude Code',
+      model: 'Opus 4.8',
+      working: { forMs: 134_000 },
+      managedBy: { displayName: 'Dorian', handle: 'dorian' },
+    },
   },
   scout: {
     kind: 'agent',
@@ -822,6 +833,24 @@ export const MOCK_IDENTITIES: Record<string, MockIdentity> = {
     handle: 'scout',
     color: '#12a594',
     emoji: '🔭',
+    agent: {
+      runtime: 'Claude Code',
+      model: 'Sonnet 5',
+      // The other managed-by fallback: an owner the roster knows by name but
+      // not yet by handle. Never a bare "@" — the display name stands in.
+      managedBy: { displayName: 'Priya', handle: null },
+    },
+  },
+  // No `managedBy` at all — today's honest state for every real card, since
+  // no production caller populates it yet (that lands with the Team page).
+  // Sits beside `warden`/`scout` so the three owner-attribution states —
+  // handle, name-only, and no chip — are visible in the same row.
+  courier: {
+    kind: 'agent',
+    displayName: 'Courier',
+    handle: 'courier',
+    color: '#e11d48',
+    emoji: '📦',
     agent: { runtime: 'Claude Code', model: 'Sonnet 5' },
   },
   ana: {
