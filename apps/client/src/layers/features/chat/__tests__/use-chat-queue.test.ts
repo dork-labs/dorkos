@@ -18,14 +18,14 @@ import {
   useSessionChatStore,
   useSessionStreamStore,
 } from '@/layers/entities/session';
-import type { ChatInputHandle } from '../ui/input/ChatInput';
+import type { ComposerInputHandle } from '@/layers/features/composer';
 
 const SESSION_ID = 'session-1';
 
 /** Drives the hook with real composer state, the way ChatInputContainer does. */
 function useHarness(status: ChatStatus = 'streaming', onFlush = vi.fn()) {
   const [input, setInput] = useState('');
-  const chatInputRef = useRef<ChatInputHandle | null>(null);
+  const chatInputRef = useRef<ComposerInputHandle | null>(null);
   const queue = useChatQueue({
     input,
     setInput,
@@ -52,7 +52,7 @@ function useStoreBackedHarness(sessionId: string, selectedCwd = '/dir') {
     (value: string) => useSessionChatStore.getState().updateSession(sessionId, { input: value }),
     [sessionId]
   );
-  const chatInputRef = useRef<ChatInputHandle | null>(null);
+  const chatInputRef = useRef<ComposerInputHandle | null>(null);
   const queue = useChatQueue({
     input,
     setInput,
@@ -447,7 +447,7 @@ describe('useChatQueue — a native command cannot reach the queue by the edit d
    */
   function useCommandHarness(ran = true) {
     const [input, setInput] = useState('');
-    const chatInputRef = useRef<ChatInputHandle | null>(null);
+    const chatInputRef = useRef<ComposerInputHandle | null>(null);
     const queue = useChatQueue({
       input,
       setInput,
@@ -550,7 +550,7 @@ describe('useChatQueue — a native command cannot reach the queue by the edit d
       (value: string) => useSessionChatStore.getState().updateSession(SESSION_ID, { input: value }),
       []
     );
-    const chatInputRef = useRef<ChatInputHandle | null>(null);
+    const chatInputRef = useRef<ComposerInputHandle | null>(null);
     const queue = useChatQueue({
       input,
       setInput,

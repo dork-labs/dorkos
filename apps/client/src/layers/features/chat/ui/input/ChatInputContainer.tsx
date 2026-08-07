@@ -2,8 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { RefObject } from 'react';
 import type { SessionStatusEvent } from '@dorkos/shared/types';
-import { ChatInput } from './ChatInput';
-import type { ChatInputHandle } from './ChatInput';
+import { Composer, type ComposerInputHandle } from '@/layers/features/composer';
 import { InteractiveInputPanel } from './InteractiveInputPanel';
 import type {
   FileUploadProps,
@@ -15,9 +14,7 @@ import { BackgroundTaskBar } from '../tasks/BackgroundTaskBar';
 import { useBackgroundTasks } from '../../model/use-background-tasks';
 import { useChatQueue } from '../../model/use-chat-queue';
 import type { NativeCommandResult } from '../../model/native-commands';
-import { FileChipBar } from './FileChipBar';
 import { QueuePanel } from './QueuePanel';
-import { ClearArmedHint } from './ClearArmedHint';
 import { CommandPalette } from '@/layers/features/commands';
 import { FilePalette } from '@/layers/features/files';
 import { ScanLine } from '@/layers/shared/ui';
@@ -38,7 +35,7 @@ import { useDragAndPaste } from './use-drag-and-paste';
 import { sessionContextKey } from '../../lib/session-context-key';
 
 interface ChatInputContainerProps {
-  chatInputRef: RefObject<ChatInputHandle | null>;
+  chatInputRef: RefObject<ComposerInputHandle | null>;
   input: string;
   autocomplete: ReturnType<typeof useInputAutocomplete>;
   handleSubmit: () => void;
@@ -284,11 +281,11 @@ export function ChatInputContainer({
                   />
                 )}
               </AnimatePresence>
-              {clearArmed && <ClearArmedHint />}
+              {clearArmed && <Composer.ClearArmedHint />}
             </div>
 
             {pendingFiles.length > 0 && (
-              <FileChipBar
+              <Composer.Attachments
                 files={pendingFiles}
                 onRemove={onFileRemove}
                 onRetry={onFileRetry}
@@ -325,7 +322,7 @@ export function ChatInputContainer({
             </AnimatePresence>
             <BackgroundTaskBar tasks={backgroundTasks} onStopTask={handleStopTask} />
 
-            <ChatInput
+            <Composer.Input
               ref={chatInputRef}
               value={input}
               onChange={autocomplete.handleInputChange}

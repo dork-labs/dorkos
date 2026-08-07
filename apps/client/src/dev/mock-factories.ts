@@ -11,7 +11,7 @@ import type {
   ToolCallState,
   HookState,
 } from '@/layers/features/chat/model/chat-types';
-import type { PendingFile } from '@/layers/features/chat/model/use-file-upload';
+import type { PendingFile } from '@/layers/features/composer';
 import type { QueueItem } from '@/layers/features/chat/model/use-message-queue';
 import type { AgentPickerCandidate, AgentRoster } from '@/layers/entities/agent';
 import type { TaskItem } from '@dorkos/shared/types';

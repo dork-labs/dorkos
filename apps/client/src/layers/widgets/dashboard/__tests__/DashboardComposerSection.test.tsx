@@ -30,35 +30,37 @@ vi.mock('@/layers/entities/config', () => ({
 
 // Stands in for the real composer, rendering the one thing these tests care
 // about beyond the callbacks: the line that says why a send cannot happen yet.
-vi.mock('@/layers/features/chat', () => ({
-  ChatInput: ({
-    value,
-    onChange,
-    onSubmit,
-    placeholder,
-    canSubmit = true,
-    canSubmitReason,
-  }: {
-    value: string;
-    onChange: (v: string) => void;
-    onSubmit: () => void;
-    placeholder?: string;
-    canSubmit?: boolean;
-    canSubmitReason?: string;
-  }) => (
-    <div>
-      {!canSubmit && canSubmitReason && <p>{canSubmitReason}</p>}
-      <input
-        data-testid="composer"
-        aria-label={placeholder}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      />
-      <button data-testid="send" onClick={onSubmit}>
-        send
-      </button>
-    </div>
-  ),
+vi.mock('@/layers/features/composer', () => ({
+  Composer: {
+    Input: ({
+      value,
+      onChange,
+      onSubmit,
+      placeholder,
+      canSubmit = true,
+      canSubmitReason,
+    }: {
+      value: string;
+      onChange: (v: string) => void;
+      onSubmit: () => void;
+      placeholder?: string;
+      canSubmit?: boolean;
+      canSubmitReason?: string;
+    }) => (
+      <div>
+        {!canSubmit && canSubmitReason && <p>{canSubmitReason}</p>}
+        <input
+          data-testid="composer"
+          aria-label={placeholder}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+        />
+        <button data-testid="send" onClick={onSubmit}>
+          send
+        </button>
+      </div>
+    ),
+  },
 }));
 
 describe('DashboardComposerSection', () => {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence } from 'motion/react';
-import { ChatInput, ClearArmedHint, type ChatInputHandle } from '@/layers/features/chat';
+import { Composer, type ComposerInputHandle } from '@/layers/features/composer';
 import {
   MentionPalette,
   useMentionAutocomplete,
@@ -58,7 +58,7 @@ interface RoomComposerProps {
  * Typing `@` opens the mention picker over this room's roster. It writes the
  * handle the SERVER resolves rather than the name on screen, which is what
  * turns "did that reach anyone?" into something you can see before you send.
- * The composer stays the shared `ChatInput` — it already carries every palette
+ * The composer stays the shared `Composer.Input` — it already carries every palette
  * prop; only the panel above it is new.
  *
  * **One component, two destinations — decided by where it is MOUNTED, not by a
@@ -85,7 +85,7 @@ export function RoomComposer({ room, threadRootId, focusOnMount }: RoomComposerP
   const post = usePostToRoom();
   const reply = useReplyInThread();
   const focusRequest = useComposerFocusRequest(draftKey);
-  const inputRef = useRef<ChatInputHandle>(null);
+  const inputRef = useRef<ComposerInputHandle>(null);
 
   const mentions = useMentionAutocomplete({
     members: room.members,
@@ -147,7 +147,7 @@ export function RoomComposer({ room, threadRootId, focusOnMount }: RoomComposerP
   /**
    * Whether a second Escape would wipe what is in the box.
    *
-   * The wipe is `ChatInput`'s and has always worked here; what was missing is
+   * The wipe is `Composer.Input`'s and has always worked here; what was missing is
    * the half that makes it a shortcut rather than a trap. A reader with a draft
    * in a thread pressed Escape expecting the panel to close — the panel stays,
    * deliberately, because a keystroke aimed at a draft must not also throw away
@@ -155,7 +155,7 @@ export function RoomComposer({ room, threadRootId, focusOnMount }: RoomComposerP
    * had done or what the next one would do. Two taps later the draft was gone.
    *
    * The same readout session chat draws, in the same lane above the box, from
-   * the same state inside the same component. `ChatInput` folds in whether the
+   * the same state inside the same component. `Composer.Input` folds in whether the
    * labelled Clear button is reachable before raising this, which is why the
    * button below is wired at all: the hint is hidden from assistive tech, so
    * without a labelled equivalent it would hand sighted people a destructive
@@ -245,9 +245,9 @@ export function RoomComposer({ room, threadRootId, focusOnMount }: RoomComposerP
         {/* Above the box, in the lane the picker uses, for the reason
             `ClearArmedHint` sets out: anchored to the field it lands on top of
             whatever is stacked over the composer. */}
-        {clearArmed && <ClearArmedHint />}
+        {clearArmed && <Composer.ClearArmedHint />}
       </div>
-      <ChatInput
+      <Composer.Input
         ref={inputRef}
         value={text}
         onChange={(next) => {
@@ -267,7 +267,7 @@ export function RoomComposer({ room, threadRootId, focusOnMount }: RoomComposerP
         onCommandSelect={takeHighlighted}
         onEscape={mentions.dismiss}
         // Wiring this is what puts a labelled "Clear message" button on the
-        // composer — and `ChatInput` refuses to raise the armed readout at all
+        // composer — and `Composer.Input` refuses to raise the armed readout at all
         // without one, because a destructive shortcut that only sighted people
         // are told about is worse than no shortcut.
         onClear={() => {

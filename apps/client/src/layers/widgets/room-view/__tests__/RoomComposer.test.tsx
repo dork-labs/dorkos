@@ -328,7 +328,7 @@ describe('RoomComposer — clearing a draft you can see coming', () => {
   });
 
   it('offers the labelled button the readout is only defensible beside', () => {
-    // The hint is hidden from assistive tech, so `ChatInput` refuses to raise
+    // The hint is hidden from assistive tech, so `Composer.Input` refuses to raise
     // it at all unless a labelled equivalent is reachable — otherwise it hands
     // sighted people a destructive shortcut and nobody else.
     const field = renderComposer(createMockTransport());

@@ -25,7 +25,7 @@ const animateByLabel = new Map<string, Record<string, unknown>>();
 // RENDER-ONLY mock: it records `animate` targets and forwards the display
 // props, but deliberately drops handlers (`onClick`, `type`, gestures). Do not
 // add click/submit assertions to this file against this mock; they would pass
-// with nothing wired. Behavior lives in ChatInput's own tests.
+// with nothing wired. Behavior lives in ComposerInput's own tests.
 vi.mock('motion/react', () => ({
   AnimatePresence: ({ children }: { children: ReactNode }) => children,
   motion: {
@@ -52,7 +52,7 @@ vi.mock('motion/react', () => ({
   },
 }));
 
-const { InputActionButton } = await import('../ui/input/InputActionButton');
+const { InputActionButton } = await import('../ui/InputActionButton');
 
 const baseProps = {
   hasText: true,

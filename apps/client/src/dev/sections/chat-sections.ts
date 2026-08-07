@@ -242,18 +242,18 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
   },
   // InputShowcases
   {
-    id: 'chatinput',
-    title: 'ChatInput',
+    id: 'composer-input',
+    title: 'Composer.Input',
     page: 'chat',
     category: 'Input',
-    keywords: ['input', 'textarea', 'chat', 'send', 'streaming', 'stop', 'queue'],
+    keywords: ['input', 'textarea', 'chat', 'composer', 'send', 'streaming', 'stop', 'queue'],
   },
   {
-    id: 'filechipbar',
-    title: 'FileChipBar',
+    id: 'composer-attachments',
+    title: 'Composer.Attachments',
     page: 'chat',
     category: 'Input',
-    keywords: ['file', 'attachment', 'chip', 'upload', 'remove'],
+    keywords: ['file', 'attachment', 'chip', 'upload', 'remove', 'composer'],
   },
   {
     id: 'queuepanel',

@@ -92,7 +92,7 @@ describe('PlaygroundSearch', () => {
   it('renders sections from the chat page', () => {
     renderSearch();
     expect(screen.getByText('ToolCallCard')).toBeInTheDocument();
-    expect(screen.getByText('ChatInput')).toBeInTheDocument();
+    expect(screen.getByText('Composer.Input')).toBeInTheDocument();
   });
 
   it('calls onSelect with the section when a result is clicked', () => {

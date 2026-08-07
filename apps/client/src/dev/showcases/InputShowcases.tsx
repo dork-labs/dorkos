@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import { ChatInput } from '@/layers/features/chat/ui/input/ChatInput';
-import { FileChipBar } from '@/layers/features/chat/ui/input/FileChipBar';
+import { Composer } from '@/layers/features/composer';
 import { QueuePanel } from '@/layers/features/chat/ui/input/QueuePanel';
 import { PromptSuggestionChips } from '@/layers/features/chat/ui/input/PromptSuggestionChips';
 import { QuestionPrompt } from '@/layers/features/chat/ui/tools/QuestionPrompt';
@@ -81,7 +80,7 @@ const MULTI_SELECT_QUESTION: QuestionItem[] = [
   },
 ];
 
-function ChatInputDemo({
+function ComposerInputDemo({
   label,
   initialValue = '',
   isStreaming = false,
@@ -98,7 +97,7 @@ function ChatInputDemo({
       <ShowcaseLabel>{label}</ShowcaseLabel>
       <ShowcaseDemo responsive>
         <div className="border-border rounded-xl border">
-          <ChatInput
+          <Composer.Input
             value={value}
             onChange={setValue}
             onSubmit={() => {}}
@@ -138,7 +137,7 @@ function PaletteAnchor({
   );
 }
 
-/** Input-related component showcases: ChatInput, FileChipBar, QueuePanel, CommandPalette, FilePalette, PromptSuggestionChips, QuestionPrompt. */
+/** Input-related component showcases: Composer.Input, Composer.Attachments, QueuePanel, CommandPalette, FilePalette, PromptSuggestionChips, QuestionPrompt. */
 export function InputShowcases() {
   const [files, setFiles] = useState(SAMPLE_FILES);
   const [cmdIndex, setCmdIndex] = useState(0);
@@ -146,19 +145,22 @@ export function InputShowcases() {
 
   return (
     <>
-      <PlaygroundSection title="ChatInput" description="Chat text input in different states.">
-        <ChatInputDemo label="Idle" />
-        <ChatInputDemo label="With text" initialValue="Can you help me refactor the auth module?" />
-        <ChatInputDemo label="Streaming (stop button)" isStreaming />
-        <ChatInputDemo label="Streaming with queue" isStreaming queueDepth={2} />
+      <PlaygroundSection title="Composer.Input" description="Chat text input in different states.">
+        <ComposerInputDemo label="Idle" />
+        <ComposerInputDemo
+          label="With text"
+          initialValue="Can you help me refactor the auth module?"
+        />
+        <ComposerInputDemo label="Streaming (stop button)" isStreaming />
+        <ComposerInputDemo label="Streaming with queue" isStreaming queueDepth={2} />
       </PlaygroundSection>
 
       <PlaygroundSection
-        title="FileChipBar"
+        title="Composer.Attachments"
         description="File chips in various upload states. A failed upload states its reason and offers a retry."
       >
         <ShowcaseDemo>
-          <FileChipBar
+          <Composer.Attachments
             files={files}
             onRemove={(id) => setFiles((prev) => prev.filter((f) => f.id !== id))}
             onRetry={(id) =>
