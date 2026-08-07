@@ -20,9 +20,11 @@ export interface MessageAuthorAvatarProps {
 /**
  * An author's visual mark, sized to the identity gutter.
  *
- * Three faces, in order: the agent's emoji when it has one, the runtime's brand
- * mark when the identity fell back to a runtime (spec
- * `multi-participant-message-list`, D3), and otherwise a letter avatar. Every
+ * Four faces, in order: the identity's photo when it has one, its emoji next,
+ * the runtime's brand mark when the identity fell back to a runtime (spec
+ * `multi-participant-message-list`, D3), and otherwise a letter avatar. The
+ * first two are ordered by `IdentityAvatar` itself; this file only decides
+ * what the letter slot holds. Every
  * color is either the author's own or hashed from their id, so a participant
  * always reads as the same color and never changes between renders.
  *
@@ -76,6 +78,7 @@ export function MessageAuthorAvatar({ author, className }: MessageAuthorAvatarPr
       aria-hidden
       color={color}
       emoji={author.emoji}
+      imageUrl={author.imageUrl}
       fallback={BrandMark ? <BrandMark size={BRAND_MARK_SIZE} /> : initialOf(author.displayName)}
       kind={author.kind}
       origin={origin}

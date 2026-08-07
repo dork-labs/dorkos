@@ -54,6 +54,11 @@ export interface IdentityHoverCardDescriptor {
   color?: string;
   /** The identity's own emoji, when it has one. */
   emoji?: string;
+  /**
+   * The identity's photo, when it has one — the face the disc prefers over the
+   * emoji. Used as the caller gives it; this card builds no URLs.
+   */
+  imageUrl?: string;
   /** Where a human participant is posting from. Ignored for `agent`/`system`. */
   origin?: IdentityOrigin;
   /** Runtime, model, and live working state. Ignored for `human`/`system`. */
@@ -140,7 +145,7 @@ function InfoChip({ className, children }: { className?: string; children: React
  * or `AuthorRef` lookup in the slice that wires this on for real.
  */
 function IdentityHoverCard({ identity, children, className }: IdentityHoverCardProps) {
-  const { kind, displayName, handle, color, emoji, origin, agent } = identity;
+  const { kind, displayName, handle, color, emoji, imageUrl, origin, agent } = identity;
   // `IdentityAvatar` mixes this straight into `color-mix()`, and this app's
   // theme tokens store a bare `H S% L%` triple (e.g. `0 0% 9%`) rather than a
   // full `<color>` — an unwrapped `var(--muted-foreground)` here makes the
@@ -197,6 +202,7 @@ function IdentityHoverCard({ identity, children, className }: IdentityHoverCardP
             aria-hidden
             color={avatarColor}
             emoji={emoji}
+            imageUrl={imageUrl}
             fallback={initialOf(displayName)}
             // Shape, fill and mark all come from the kind now, and the pulsing
             // dot from `working` — this card used to hand-roll all four, and

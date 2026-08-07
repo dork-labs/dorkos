@@ -155,6 +155,56 @@ describe('aggregateTeamRoster', () => {
     });
   });
 
+  describe('photos', () => {
+    it("carries a person's photo off their author row, beside their emoji and colour", async () => {
+      const before = await aggregateTeamRoster(sources());
+      expect(before.members.find((m) => m.isSelf)?.imageUrl).toBeUndefined();
+
+      registry.resolve({
+        kind: 'human',
+        naturalKey: `user:${OWNER_USER_ID}`,
+        displayName: 'You',
+        imageUrl: '/api/profile/avatar/me?v=one',
+      });
+
+      const after = await aggregateTeamRoster(sources());
+      expect(after.members.find((m) => m.isSelf)?.imageUrl).toBe('/api/profile/avatar/me?v=one');
+    });
+
+    it("carries an agent's photo off the same author row its handle comes from", async () => {
+      // The join already exists for the address; the photo rides it rather than
+      // taking a second route that could disagree. Agents have no photo today —
+      // their identity language is emoji and colour — and the field is here so
+      // one CAN be given a photo without a schema change.
+      const now = new Date().toISOString();
+      db.insert(agents)
+        .values({
+          id: ANA.id,
+          name: 'ana',
+          displayName: 'Ana',
+          runtime: 'claude-code',
+          projectPath: '/Users/dorian/agents/ana',
+          registeredAt: now,
+          updatedAt: now,
+        })
+        .run();
+      registry.resolve({
+        kind: 'agent',
+        naturalKey: '/Users/dorian/agents/ana',
+        displayName: 'Ana',
+        imageUrl: '/api/profile/avatar/ana?v=one',
+      });
+
+      const { members } = await aggregateTeamRoster(
+        sources({ listAgentAuthors: () => registry.listActive('agent') })
+      );
+
+      expect(members.find((m) => m.id === ANA.id)?.imageUrl).toBe('/api/profile/avatar/ana?v=one');
+      // And an agent with no author row at all still renders, with no photo.
+      expect(members.find((m) => m.id === DORKBOT.id)?.imageUrl).toBeUndefined();
+    });
+  });
+
   it('puts exactly one person on the roster, and it is the operator', async () => {
     const { members } = await aggregateTeamRoster(sources());
     const people = members.filter((m) => m.kind === 'human');

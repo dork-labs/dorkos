@@ -4,6 +4,7 @@ import { Bot, Radio } from 'lucide-react';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
+import { MOCK_IDENTITIES } from '../mock-samples';
 import {
   PathBreadcrumb,
   ScanLine,
@@ -289,6 +290,40 @@ export function DataDisplayShowcases() {
                 size="xs"
                 className="border-background size-6 border"
               />
+            ))}
+          </div>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Three faces, in order — a photo, then an emoji, then a letter</ShowcaseLabel>
+        <ShowcaseDemo>
+          {/* The middle disc carries a photo AND an emoji, which is the case
+              worth seeing: they are alternatives, not layers, and the photo
+              wins. The right-hand pair shows the same identity as a person and
+              as an agent, so the photo can be checked for inheriting the disc's
+              radius rather than rounding a square back into a circle. */}
+          <div className="flex items-end gap-4">
+            {(
+              [
+                { label: 'photo', imageUrl: MOCK_IDENTITIES.photographed.imageUrl },
+                {
+                  label: 'photo + emoji',
+                  imageUrl: MOCK_IDENTITIES.photographed.imageUrl,
+                  emoji: '🐙',
+                },
+                { label: 'emoji', emoji: '🐙' },
+                { label: 'letter' },
+                {
+                  label: 'photo, agent',
+                  imageUrl: MOCK_IDENTITIES.photographed.imageUrl,
+                  kind: 'agent' as const,
+                },
+                { label: 'photo gone', imageUrl: '/this-photo-is-not-there.png', emoji: '🐙' },
+              ] as const
+            ).map(({ label, ...identity }) => (
+              <div key={label} className="flex flex-col items-center gap-2">
+                <IdentityAvatar color="#0ea5e9" fallback="D" size="lg" {...identity} />
+                <span className="text-muted-foreground text-[10px]">{label}</span>
+              </div>
             ))}
           </div>
         </ShowcaseDemo>

@@ -103,6 +103,7 @@ export function MemberList({ members, onClick, label, className }: MemberListPro
         kind={face.kind}
         color={face.color}
         emoji={face.emoji}
+        imageUrl={face.imageUrl}
         fallback={face.fallback}
         origin={face.origin}
         // A roster disc is a step larger than the sidebar's, and rings itself in

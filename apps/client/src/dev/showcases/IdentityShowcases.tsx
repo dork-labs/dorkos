@@ -249,6 +249,14 @@ export function IdentityShowcases() {
           </div>
         </ShowcaseDemo>
 
+        <ShowcaseLabel>
+          Person with a photo — the photo is the face, and the emoji beside it is only what it falls
+          back to
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <Trigger identity={MOCK_IDENTITIES.photographed} />
+        </ShowcaseDemo>
+
         <ShowcaseLabel>System — the room&apos;s own voice, no chips, no handle</ShowcaseLabel>
         <ShowcaseDemo>
           <Trigger identity={MOCK_IDENTITIES.roomNotice} />
