@@ -1,6 +1,6 @@
 ---
 covers:
-  - 'feat(identity): sweep the remaining identity surfaces onto kind and show who each agent belongs to (DOR-969)'
+  - 'feat(client): sweep remaining identity surfaces onto kind, show agent owner (DOR-969)'
 ---
 
 ### Changed
