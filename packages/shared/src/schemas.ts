@@ -1720,6 +1720,13 @@ export const CapabilityApprovalPartSchema = z
     type: z.literal('capability_approval'),
     /** The pending approval to render inline, identical to the dashboard card's. */
     approval: PendingApprovalSchema,
+    /**
+     * Set only when the hold ran out its cap before anyone answered (DOR-987).
+     * The inline card stops being actionable and says where the request still
+     * lives; every other ending retires the part outright, because a granted,
+     * denied or expired request is gone from the approvals list too.
+     */
+    outcome: z.literal('timeout').optional(),
   })
   .openapi('CapabilityApprovalPart');
 

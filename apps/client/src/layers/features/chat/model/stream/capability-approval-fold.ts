@@ -45,9 +45,19 @@ export function foldCapabilityApproval(
 }
 
 /**
- * Retire the inline capability-approval card on its `capability_approval_resolved`
- * event — the hold ended, so the card disappears from the transcript exactly as
- * the dashboard card retires on `approval_resolved`.
+ * End the inline capability-approval card on its `capability_approval_resolved`
+ * event.
+ *
+ * How it ends depends on the outcome (DOR-987), because the two cases are
+ * different for the person reading the transcript:
+ *
+ * - `granted`/`denied`/`expired` — the request is finished, on the dashboard as
+ *   much as here, so the card disappears exactly as the dashboard card retires on
+ *   `approval_resolved`.
+ * - `timeout` — the agent stopped waiting, but the request is still sitting in
+ *   the approvals list. Retiring the card silently would delete the only thing on
+ *   screen pointing at a decision the person still owes, so the card stays as a
+ *   terminal note instead.
  */
 export function foldCapabilityApprovalResolved(
   parts: MessagePart[],
@@ -56,5 +66,11 @@ export function foldCapabilityApprovalResolved(
   const index = parts.findIndex(
     (part) => part.type === 'capability_approval' && part.approval.approvalId === event.approvalId
   );
-  if (index !== -1) parts.splice(index, 1);
+  if (index === -1) return;
+  if (event.outcome !== 'timeout') {
+    parts.splice(index, 1);
+    return;
+  }
+  const part = parts[index] as Extract<MessagePart, { type: 'capability_approval' }>;
+  part.outcome = 'timeout';
 }

@@ -1135,4 +1135,37 @@ describe('projectInProgressTurn — approval receipts', () => {
     // dashboard card retires on approval_resolved.
     expect(projectInProgressTurn(events).some((p) => p.type === 'capability_approval')).toBe(false);
   });
+
+  // DOR-987: a TIMEOUT is the one ending where the request outlives the hold —
+  // it is still sitting in Approvals. Retiring the card the same way as a real
+  // decision deleted the only thing on screen pointing at it.
+  it('keeps the capability card as a terminal note when the hold TIMED OUT', () => {
+    const events: SessionEvent[] = [
+      {
+        seq: 1,
+        type: 'capability_approval_required',
+        approval: HELD_APPROVAL,
+        startedAt: 1_000_000,
+        capMs: 45_000,
+      },
+      { seq: 2, type: 'capability_approval_resolved', approvalId: 'appr-1', outcome: 'timeout' },
+    ];
+    expect(projectInProgressTurn(events)).toEqual([
+      { type: 'capability_approval', approval: HELD_APPROVAL, outcome: 'timeout' },
+    ]);
+  });
+
+  it('retires the capability card on an EXPIRED resolution — nobody can answer it now', () => {
+    const events: SessionEvent[] = [
+      {
+        seq: 1,
+        type: 'capability_approval_required',
+        approval: HELD_APPROVAL,
+        startedAt: 1_000_000,
+        capMs: 45_000,
+      },
+      { seq: 2, type: 'capability_approval_resolved', approvalId: 'appr-1', outcome: 'expired' },
+    ];
+    expect(projectInProgressTurn(events).some((p) => p.type === 'capability_approval')).toBe(false);
+  });
 });
