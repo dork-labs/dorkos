@@ -116,16 +116,50 @@ function e2eAgentDir(): string {
 }
 
 /**
+ * The execution runtime the shared fixture agent's manifest declares.
+ *
+ * `AgentManifest.runtime` is required and its enum has no `test-mode` member,
+ * so this fixture has to name a real harness — and a manifest runtime WINS over
+ * the server default whenever this process registers it
+ * (`resolveRuntimeTypeForNewSession` in `routes/sessions.ts`). Every spec that
+ * starts a session in this agent's directory means "the server default"
+ * (`test-mode`), so the declared value must be a runtime the test-mode server
+ * never registers — then resolution soft-falls back to the default.
+ *
+ * It used to say `claude-code`, which held only for as long as nothing
+ * registered that type here. DOR-952 registered a claude-code-typed
+ * TestModeRuntime alias so the managed-MCP OAuth spec could resolve
+ * `GET /api/mcp-config?runtime=claude-code`, and every seeded session silently
+ * moved onto that alias: session rows started reading "Claude Code" instead of
+ * "Test Mode" and the session-list runtime-mark spec failed on every run
+ * (DOR-991). `codex` is a real runtime this server never registers — and the
+ * guard below turns a future alias for it into a named failure instead of the
+ * same silent re-pointing.
+ */
+const FIXTURE_AGENT_RUNTIME = 'codex';
+
+/**
  * Seed a test agent at a fixed path inside the directory boundary.
  * Overwrites any existing manifest so tests always start with a clean agent.
  * Returns { agentDir } so the test can navigate to /?dir=<agentDir>.
+ *
+ * Refuses when {@link FIXTURE_AGENT_RUNTIME} is registered here — see there.
  */
 testControlRouter.post('/seed-agent', async (_req, res) => {
+  if (runtimeRegistry.has(FIXTURE_AGENT_RUNTIME)) {
+    return res.status(500).json({
+      error:
+        `seed-agent: '${FIXTURE_AGENT_RUNTIME}' is registered on this server, so sessions ` +
+        `seeded from this agent would bind to it instead of the server default ` +
+        `('${runtimeRegistry.getDefaultType()}'). Point FIXTURE_AGENT_RUNTIME at a runtime ` +
+        `this server does not register.`,
+    });
+  }
   const manifest: AgentManifest = {
     id: ulid(),
     name: 'E2E Test Agent',
-    description: 'Seeded by test setup — uses TestModeRuntime',
-    runtime: 'claude-code',
+    description: 'Seeded by test setup — runs on the server default runtime',
+    runtime: FIXTURE_AGENT_RUNTIME,
     capabilities: [],
     behavior: { responseMode: 'always' },
     registeredAt: new Date().toISOString(),
@@ -240,6 +274,9 @@ function e2eOAuthAgentDir(): string {
  * claude-code/codex/opencode, and the test-mode server registers a claude-code
  * TestModeRuntime alias (`DORKOS_TEST_RUNTIME_CLAUDE_ALIAS`) so
  * `GET /api/mcp-config?runtime=claude-code` resolves a real `getMcpStatus`.
+ * That alias is why THIS agent's sessions bind to `claude-code` while the
+ * shared fixture agent's bind to the server default — see
+ * {@link FIXTURE_AGENT_RUNTIME}, which must never name the aliased type.
  *
  * The server URL names whatever loopback host the server actually bound
  * (`localDialHost(env.DORKOS_HOST)` — `localhost` resolves to `::1` on macOS,
