@@ -31,7 +31,13 @@ import { useRotatingPlaceholder } from '../../model/use-rotating-placeholder';
 import { AnimatedPlaceholder } from './AnimatedPlaceholder';
 import placeholderHints from '../../config/placeholder-hints.json';
 import type { useInputAutocomplete } from '../../model/use-input-autocomplete';
-import { useDragAndPaste } from './use-drag-and-paste';
+// TRANSITIONAL (DOR-946 task 2.1 -> 2.3). The hook now lives in the composer
+// slice, where `Composer.Root` is its real consumer. This container still calls
+// it directly because its migration onto `Composer.Root` is task 2.3, which
+// must land after the DOM-parity baselines are captured against the current
+// markup. This import — a non-barrel reach into a sibling feature — disappears
+// in that task, along with every other dropzone line in this file.
+import { useDragAndPaste } from '@/layers/features/composer/ui/use-drag-and-paste';
 import { sessionContextKey } from '../../lib/session-context-key';
 
 interface ChatInputContainerProps {
