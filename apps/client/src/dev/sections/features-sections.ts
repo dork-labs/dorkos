@@ -60,6 +60,24 @@ export const FEATURES_SECTIONS: PlaygroundSection[] = [
     category: 'Agent',
     keywords: ['team', 'card', 'member', 'identity', 'handle', 'owner', 'attribution', 'external'],
   },
+  // ProfileShowcases
+  {
+    id: 'profile-drawer',
+    title: 'Profile Drawer',
+    page: 'features',
+    category: 'Agent',
+    keywords: [
+      'profile',
+      'drawer',
+      'identity',
+      'person',
+      'agent',
+      'handle',
+      'email',
+      'edit',
+      'sheet',
+    ],
+  },
   // AgentFleetShowcases
   {
     id: 'agentfleettable',
