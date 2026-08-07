@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ComponentProps } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { Bot, Radio } from 'lucide-react';
 import { PlaygroundSection } from '../PlaygroundSection';
@@ -24,6 +24,38 @@ const IDENTITIES = [
   { color: '#10b981', name: 'Priya' },
   { color: '#ef4444', name: 'You' },
 ] as const;
+
+/**
+ * One identity per `kind`, including the two a `human` can be — here and
+ * bridged in from somewhere else. Every visible difference below comes from
+ * `kind` and `origin`; no showcase row sets `shape`, `variant` or `badge`.
+ */
+const KIND_MATRIX: {
+  label: string;
+  kind: ComponentProps<typeof IdentityAvatar>['kind'];
+  color: string;
+  emoji?: string;
+  fallback?: string;
+  origin?: ComponentProps<typeof IdentityAvatar>['origin'];
+}[] = [
+  { label: 'agent', kind: 'agent', color: '#6366f1', emoji: '🔍' },
+  { label: 'human · here', kind: 'human', color: '#10b981', fallback: 'P', origin: 'local' },
+  {
+    label: 'human · Telegram',
+    kind: 'human',
+    color: '#0ea5e9',
+    fallback: 'M',
+    origin: { platform: 'telegram' },
+  },
+  {
+    label: 'human · elsewhere',
+    kind: 'human',
+    color: '#a855f7',
+    fallback: 'J',
+    origin: { platform: 'matrix' },
+  },
+  { label: 'system', kind: 'system', color: '#71717a', fallback: 'G' },
+];
 
 const SAMPLE_MARKDOWN = `## Agent Report
 
@@ -261,22 +293,89 @@ export function DataDisplayShowcases() {
           </div>
         </ShowcaseDemo>
 
-        <ShowcaseLabel>
-          Shape — square is the agent shape, circle is the person shape (colourblind-safe)
-        </ShowcaseLabel>
+        <ShowcaseLabel>Kind — one prop decides shape, fill and badge together</ShowcaseLabel>
         <ShowcaseDemo>
-          <div className="flex items-center gap-4">
-            {IDENTITIES.map((identity) => (
-              <IdentityAvatar
-                key={identity.name}
-                color={identity.color}
-                emoji={'emoji' in identity ? identity.emoji : undefined}
-                fallback={identity.name[0]}
-                size="md"
-                shape={'emoji' in identity ? 'square' : 'circle'}
-                badge={'emoji' in identity ? <Bot /> : undefined}
-              />
+          {/* The four kinds as a caller writes them: `kind` and nothing else.
+              Square is the agent shape, circle the person shape — a
+              colourblind-safe distinction that survives without the badge. */}
+          <div className="flex items-end gap-4">
+            {KIND_MATRIX.map(({ label, ...identity }) => (
+              <div key={label} className="flex flex-col items-center gap-2">
+                <IdentityAvatar
+                  color={identity.color}
+                  emoji={identity.emoji}
+                  fallback={identity.fallback}
+                  kind={identity.kind}
+                  origin={identity.origin}
+                  size="md"
+                />
+                <span className="text-muted-foreground text-[10px]">{label}</span>
+              </div>
             ))}
+          </div>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Kind at every size — the badge has to survive a 20px disc</ShowcaseLabel>
+        <ShowcaseDemo>
+          <div className="flex items-end gap-4">
+            {(['xs', 'sm', 'md', 'lg'] as const).map((size) => (
+              <div key={size} className="flex flex-col items-center gap-2">
+                {KIND_MATRIX.map(({ label, ...identity }) => (
+                  <IdentityAvatar
+                    key={label}
+                    color={identity.color}
+                    emoji={identity.emoji}
+                    fallback={identity.fallback}
+                    kind={identity.kind}
+                    origin={identity.origin}
+                    size={size}
+                  />
+                ))}
+                <span className="text-muted-foreground text-[10px]">{size}</span>
+              </div>
+            ))}
+          </div>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Explicit props override the derivation, one axis at a time</ShowcaseLabel>
+        <ShowcaseDemo>
+          <div className="flex items-end gap-4">
+            <div className="flex flex-col items-center gap-2">
+              <IdentityAvatar color="#6366f1" emoji="🔍" kind="agent" size="md" />
+              <span className="text-muted-foreground text-[10px]">kind only</span>
+            </div>
+            <div className="flex flex-col items-center gap-2">
+              <IdentityAvatar color="#6366f1" emoji="🔍" kind="agent" shape="circle" size="md" />
+              <span className="text-muted-foreground text-[10px]">shape=&quot;circle&quot;</span>
+            </div>
+            <div className="flex flex-col items-center gap-2">
+              <IdentityAvatar color="#6366f1" emoji="🔍" kind="agent" variant="tint" size="md" />
+              <span className="text-muted-foreground text-[10px]">variant=&quot;tint&quot;</span>
+            </div>
+            <div className="flex flex-col items-center gap-2">
+              <IdentityAvatar color="#6366f1" emoji="🔍" kind="agent" badge={null} size="md" />
+              <span className="text-muted-foreground text-[10px]">badge={'{null}'}</span>
+            </div>
+          </div>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Working — the pulse says it is happening right now</ShowcaseLabel>
+        <ShowcaseDemo>
+          {/* Kind-agnostic on purpose: an agent mid-turn and a person mid-task
+              are the same fact to a roster. */}
+          <div className="flex items-end gap-4">
+            <div className="flex flex-col items-center gap-2">
+              <IdentityAvatar color="#6366f1" emoji="🔍" kind="agent" working size="md" />
+              <span className="text-muted-foreground text-[10px]">agent, working</span>
+            </div>
+            <div className="flex flex-col items-center gap-2">
+              <IdentityAvatar color="#10b981" fallback="P" kind="human" working size="md" />
+              <span className="text-muted-foreground text-[10px]">person, working</span>
+            </div>
+            <div className="flex flex-col items-center gap-2">
+              <IdentityAvatar color="#6366f1" emoji="🔍" kind="agent" working size="xs" />
+              <span className="text-muted-foreground text-[10px]">xs</span>
+            </div>
           </div>
         </ShowcaseDemo>
 
