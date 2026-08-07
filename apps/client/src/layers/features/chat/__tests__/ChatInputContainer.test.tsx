@@ -7,13 +7,13 @@ import { render, screen, cleanup, act } from '@testing-library/react';
 // `Composer.Attachments` are stand-ins so this file tests the container's
 // orchestration, while `Composer.ClearArmedHint` stays REAL — the armed-clear
 // assertions below read its own testid.
-vi.mock('@/layers/features/composer', async () => {
-  const { ClearArmedHint } = await import('../../composer/ui/ClearArmedHint');
+vi.mock('@/layers/features/composer', async (importActual) => {
+  const actual = await importActual<typeof import('@/layers/features/composer')>();
   return {
     Composer: {
       Input: vi.fn(() => <div data-testid="chat-input">Composer.Input</div>),
       Attachments: vi.fn(() => <div data-testid="file-chips">Composer.Attachments</div>),
-      ClearArmedHint,
+      ClearArmedHint: actual.Composer.ClearArmedHint,
     },
   };
 });

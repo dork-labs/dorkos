@@ -160,9 +160,8 @@ vi.mock('@/layers/shared/model/app-store', () => ({
 // see WHICH focus entry point the panel reaches for.
 const chatInputFocus = vi.fn();
 const chatInputFocusIfDesktop = vi.fn();
-vi.mock('@/layers/features/composer', async () => {
-  const { ComposerAttachments } = await import('../../composer/ui/ComposerAttachments');
-  const { ClearArmedHint } = await import('../../composer/ui/ClearArmedHint');
+vi.mock('@/layers/features/composer', async (importActual) => {
+  const actual = await importActual<typeof import('@/layers/features/composer')>();
   return {
     Composer: {
       Input: React.forwardRef<unknown, Record<string, unknown>>(
@@ -175,8 +174,8 @@ vi.mock('@/layers/features/composer', async () => {
           return <div data-testid="chat-input">Composer.Input</div>;
         }
       ),
-      Attachments: ComposerAttachments,
-      ClearArmedHint,
+      Attachments: actual.Composer.Attachments,
+      ClearArmedHint: actual.Composer.ClearArmedHint,
     },
   };
 });

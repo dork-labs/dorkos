@@ -153,6 +153,26 @@ export interface ComposerInputProps {
   onClearArmedChange?: (armed: boolean) => void;
 }
 
+/**
+ * The composer's text field — the part every surface actually types into.
+ *
+ * Owns the textarea, its growth, the send/stop/queue action button, and the
+ * whole keyboard ladder: Enter and Shift+Enter by device, the double-Escape
+ * clear and its 500ms arming window, palette fall-through, queue navigation,
+ * and upload cancel. That ladder lives in `use-input-keyboard.ts`, and its
+ * tests are its only regression net — read them before changing a key.
+ *
+ * Deliberately controlled and deliberately ignorant of its surroundings. It
+ * takes `value`/`onChange` and reports intent through callbacks; it does not
+ * know what a session is, whether a palette has results, or what happens to a
+ * submitted message. Everything above and around it — the card, the overlay
+ * lane, attachment chips — is the host's to compose from the other parts of
+ * this slice.
+ *
+ * Anything optional is genuinely optional: a host that passes no `onClear`
+ * gets no clear button and no armed-clear signal at all, rather than a
+ * half-opacity control wired to nothing.
+ */
 export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>(
   function ComposerInput(
     {

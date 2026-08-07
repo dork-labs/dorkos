@@ -1,9 +1,3 @@
-import { ComposerRoot } from './ui/ComposerRoot';
-import { ComposerInput } from './ui/ComposerInput';
-import { ComposerOverlayLane } from './ui/ComposerOverlayLane';
-import { ComposerAttachments } from './ui/ComposerAttachments';
-import { ClearArmedHint } from './ui/ClearArmedHint';
-
 /**
  * Composer feature — the one message box every surface composes.
  *
@@ -55,6 +49,19 @@ import { ClearArmedHint } from './ui/ClearArmedHint';
  * needs one of them is a design error, not a reason to widen this barrel.
  *
  * @module features/composer
+ */
+import { ComposerRoot } from './ui/ComposerRoot';
+import { ComposerInput } from './ui/ComposerInput';
+import { ComposerOverlayLane } from './ui/ComposerOverlayLane';
+import { ComposerAttachments } from './ui/ComposerAttachments';
+import { ClearArmedHint } from './ui/ClearArmedHint';
+
+/**
+ * The composer's parts, and the slice's only public surface.
+ *
+ * Compose these; do not reach past them. Which parts a surface renders is that
+ * surface's capability declaration — see this module's documentation for the
+ * matrix and the doctrine behind it.
  */
 export const Composer = {
   Root: ComposerRoot,
