@@ -4,6 +4,8 @@ covers:
   - 'docs(changelog): say what the managed-MCP OAuth fixes mean for people (DOR-986)'
   - 'fix(server): serialize the MCP callback exchange against a background refresh (DOR-986)'
   - 'docs(changelog): fold the MCP callback fragment into the DOR-986 entry (DOR-986)'
+  - 'fix(server): close two concurrency holes in the managed-MCP OAuth engine (DOR-986)'
+  - 'docs(changelog): name the orphan sweep as a reason MCP sign-ins disappear (DOR-986)'
 ---
 
 ### Fixed
@@ -17,6 +19,10 @@ covers:
 - Removing an MCP server now removes the sign-in DorkOS was keeping for it. The server used
   to vanish from your list while the saved sign-in stayed on your computer, quietly renewing
   itself. Deleting an agent clears its sign-ins too (DOR-986).
+- This includes agents DorkOS removes on its own. If an agent's folder stays unreachable for
+  a day — an external drive you never plugged back in, a project folder you deleted — DorkOS
+  drops the agent, and now drops its MCP sign-ins with it. So if a server asks you to sign in
+  again after an agent disappeared, that is why (DOR-986).
 - Pointing an MCP server at a new address now asks you to sign in to that address. Before,
   DorkOS could send the old server's sign-in to the new one (DOR-986).
 - Reloading the "Signed in" page no longer turns a finished sign-in into a failed one
