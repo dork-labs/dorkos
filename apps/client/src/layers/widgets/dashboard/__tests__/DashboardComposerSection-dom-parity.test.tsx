@@ -66,7 +66,7 @@ afterEach(() => {
 });
 
 /** Root's card chrome — the complete class set the added wrapper must carry. */
-const ROOT_CHROME = ['bg-surface', 'relative', 'm-2', 'rounded-xl', 'border', 'p-2'];
+const ROOT_CHROME = ['bg-surface', 'relative', 'm-0', 'rounded-xl', 'border', 'p-2'];
 
 /** The committed pre-wrap baseline, as the harness serialized it. */
 function baseline(): SerializedElement {

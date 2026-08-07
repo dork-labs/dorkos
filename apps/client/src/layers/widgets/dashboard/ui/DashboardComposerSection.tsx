@@ -56,8 +56,15 @@ export function DashboardComposerSection() {
       </h2>
       {/* No `onFilesDropped`: the dashboard has no upload path today, so no
           dropzone mounts. The capability matrix's "follows chat" means it
-          inherits the seam when chat's reaches it, not that it wires one now. */}
-      <Composer.Root>
+          inherits the seam when chat's reaches it, not that it wires one now.
+
+          `m-0` overrides Root's `m-2`, which is chat's margin and wrong here:
+          this page already spaces its sections (`space-y-6` on a padded
+          `max-w-4xl` column), so the extra margin only pushed the card 8px
+          inside the heading above it and every other card beside it. The
+          override is the caller's, not a change to Root — chat is the
+          reference chrome and its default stays put. */}
+      <Composer.Root className="m-0">
         <Composer.Input
           value={value}
           onChange={setValue}

@@ -11,8 +11,8 @@ The chat UI has four focus states. At any given time, exactly one is active.
 ```
                           user sends message
   IDLE/TYPING  ──────────────────────────────────►  STREAMING
-  (Composer.Input focused,                        (Composer.Input disabled,
-   no global shortcuts)                               no shortcuts needed)
+  (Composer.Input focused,                          (Composer.Input disabled,
+   no global shortcuts)                              no shortcuts needed)
        ▲                                                   │
        │                                                   │
        │  tool resolved                  SSE: approval_required

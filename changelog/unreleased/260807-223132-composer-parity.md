@@ -7,6 +7,7 @@ covers:
   - 'refactor(client): the dashboard hero composer adopts Composer.Root (DOR-946)'
   - "fix(client): ChatPanel's barrel mock needs the card and the lane (DOR-946)"
   - "refactor(client): the room composer sits in the same card as chat's (DOR-946)"
+  - 'fix(client): the dashboard hero sits flush with its page grid (DOR-946)'
 ---
 
 ### Changed
