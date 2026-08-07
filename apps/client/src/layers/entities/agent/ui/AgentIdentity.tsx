@@ -56,6 +56,8 @@ export interface AgentIdentityProps extends VariantProps<typeof identityVariants
   color: string;
   /** Single emoji character. */
   emoji: string;
+  /** A photo for this agent, when it has one — forwarded to {@link AgentAvatar}. */
+  imageUrl?: string;
   /** Agent display name. */
   name: string;
   /** Optional secondary content — badges, path, timestamp, etc. */
@@ -86,6 +88,7 @@ export interface AgentIdentityProps extends VariantProps<typeof identityVariants
 export function AgentIdentity({
   color,
   emoji,
+  imageUrl,
   name,
   detail,
   size,
@@ -106,7 +109,13 @@ export function AgentIdentity({
 
   const content = (
     <>
-      <AgentAvatar color={color} emoji={emoji} size={size} healthStatus={healthStatus} />
+      <AgentAvatar
+        color={color}
+        emoji={emoji}
+        imageUrl={imageUrl}
+        size={size}
+        healthStatus={healthStatus}
+      />
       {nameHidden ? <span className="sr-only">{name}</span> : label}
     </>
   );

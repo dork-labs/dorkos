@@ -324,6 +324,12 @@ export function useMcpSigninFlow(agentId: string, serverName: string): McpSignin
       // state synchronously — the card adopts from an effect, and two of those
       // can run before React re-renders.
       if (flowIdRef.current === flow.flowId) return;
+      // A card the server pushed means the server's sign-in state just changed —
+      // most sharply when a working sign-in was revoked mid-session (DOR-981),
+      // where the managed roster is still holding "Connected" from before. Refresh
+      // it now rather than letting an open settings panel keep saying so for the
+      // rest of its stale window.
+      invalidateStatus();
       resetPollCounter(flow.flowId);
       setLocal({
         phase: 'disclosure',

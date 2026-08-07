@@ -125,6 +125,7 @@ export function toCommunityMember(
     handle: member.author.handle,
     ...(member.author.emoji ? { emoji: member.author.emoji } : {}),
     ...(member.author.color ? { color: member.author.color } : {}),
+    ...(member.author.imageUrl ? { imageUrl: member.author.imageUrl } : {}),
     role: null,
     responseMode: member.responseMode,
     ownerMemberId: null,

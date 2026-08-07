@@ -195,11 +195,14 @@ export function RoomMemberRow({
           // Named one at a time rather than spread. A spread reads as if the
           // compiler is checking the two shapes agree, and it is not: extra
           // props land on the DOM as lowercase attributes with a console
-          // warning, so the day `IdentityFace` grows a field (spec §W3 adds
-          // `imageUrl` next) every roster disc would quietly carry it.
+          // warning, so the day `IdentityFace` grows a field every roster disc
+          // would quietly carry it. The cost is that a NEW field has to be
+          // added here by hand — `imageUrl` was, in DOR-975 — and the compiler
+          // cannot remind you, because every one of them is optional.
           kind={face.kind}
           color={face.color}
           emoji={face.emoji}
+          imageUrl={face.imageUrl}
           fallback={face.fallback}
           origin={face.origin}
           working={working}

@@ -779,3 +779,77 @@ describe('AgentMcpOAuthService — forgetting credentials (DOR-986)', () => {
     expect(await store.get(`${AGENT_ID}:${SERVER}:client`)).toBeNull();
   });
 });
+
+describe('AgentMcpOAuthService — the hardening the DOR-986 review asked for', () => {
+  it('warm waits for a refresh already on the wire, like every other writer', async () => {
+    // `warm` used to prime the cache OUTSIDE the target's lock, on the argument
+    // that boot is quiet. That argument is about WHEN warm is called, not about
+    // what it does — and `primeFromStore` can delete credentials, which is the
+    // one thing `forgetServerUnlocked` insists the caller be holding the lock
+    // for. Serializing it turns "every caller holds the lock" from an argument
+    // into a property. Reverting to a bare `primeFromStore` interleaves these.
+    const seen: URLSearchParams[] = [];
+    const refreshInside = deferred();
+    const held = deferred();
+    const order: string[] = [];
+
+    const { oauth, dorkHome } = await makeService(
+      refreshMock({
+        seen,
+        trace: (event) => {
+          if (event === 'token:enter') refreshInside.resolve();
+        },
+        respond: async () => {
+          await held.promise;
+          return json({
+            access_token: 'access-2',
+            token_type: 'Bearer',
+            expires_in: 3600,
+            refresh_token: 'refresh-2',
+          });
+        },
+      })
+    );
+    await seedSignedIn(dorkHome);
+    await oauth.warm([REFRESH_TARGET]);
+
+    const refreshing = oauth.refreshNow(REFRESH_TARGET).then(() => order.push('refresh'));
+    // Provably inside the token endpoint before warm is asked for the same target.
+    await refreshInside.promise;
+    const warming = oauth.warm([REFRESH_TARGET]).then(() => order.push('warm'));
+    // Long enough for an unlocked warm — a disk read — to have finished twice over.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    held.resolve();
+    await Promise.all([refreshing, warming]);
+
+    expect(order).toEqual(['refresh', 'warm']);
+  });
+
+  it('bounds a hanging OAuth request end-to-end, not just in the wrapper', async () => {
+    // The ceiling was only ever unit-tested on `withRequestTimeout` itself, so
+    // dropping the wrapper from the constructor reddened nothing while leaving a
+    // hung token endpoint able to hold a target's lock forever. This drives the
+    // ENGINE: a fetch that answers nothing and only settles when aborted. With
+    // the ceiling wired the sign-in fails fast; without it, it never returns and
+    // this test dies on the runner's own timeout — which is the red.
+    const dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-oauth-home-'));
+    tempDirs.push(dorkHome);
+    const hangingFetch: typeof fetch = (_input, init) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+      });
+    const oauth = new AgentMcpOAuthService({
+      dorkHome,
+      callbackBaseUrl: CALLBACK_BASE,
+      fetchImpl: hangingFetch,
+      cache: { scheduler: inertScheduler },
+      logger: { warn: () => {} },
+      sleep: async () => {},
+      requestTimeoutMs: 25,
+    });
+
+    await expect(oauth.startSignin(REFRESH_TARGET)).rejects.toThrow();
+    // And the lock it held is free again, which is the point of bounding it.
+    await expect(oauth.startSignin(REFRESH_TARGET)).rejects.toThrow();
+  }, 2_000);
+});

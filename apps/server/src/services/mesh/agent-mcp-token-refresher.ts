@@ -76,6 +76,23 @@ export type RefreshAttemptOutcome =
   /** The attempt failed for a reason that may not recur — offline, DNS, 5xx. */
   | { kind: 'transient'; reason: string };
 
+/**
+ * How a whole refresh ended — the token, plus WHY there isn't one.
+ *
+ * The two failure kinds are not interchangeable and must not be collapsed
+ * (DOR-981). `terminal` is the OAuth server's own verdict: the grant is gone,
+ * and the stored credential is worth deleting. `transient` is the attempt budget
+ * running out on transport failures — offline, DNS, a 5xx — which says nothing
+ * about whether the grant is still good, so the stored credential must survive
+ * for a later refresh (or a restart's `warm`) to recover.
+ */
+export interface RefreshVerdict {
+  /** The fresh token, or `null` when none was obtained. */
+  token: CachedToken | null;
+  /** `ok` when a token came back; otherwise why the caller should give up, for now or for good. */
+  kind: RefreshAttemptOutcome['kind'];
+}
+
 /** Constructor seams for {@link McpTokenRefresher} (production uses the defaults). */
 export interface McpTokenRefresherDeps {
   /** Delay seam for the backoff (defaults to `setTimeout`); injected so tests never wait. */
@@ -101,7 +118,7 @@ export class McpTokenRefresher {
   /** The tail of each key's operation chain — everything queued runs after it. */
   private readonly chain = new Map<string, Promise<unknown>>();
   /** In-flight refreshes, so a second caller joins rather than starting its own. */
-  private readonly inFlight = new Map<string, Promise<CachedToken | null>>();
+  private readonly inFlight = new Map<string, Promise<RefreshVerdict>>();
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly logger: Pick<Logger, 'warn'>;
 
@@ -140,9 +157,10 @@ export class McpTokenRefresher {
    *
    * @param key - The target key.
    * @param attempt - Performs one refresh attempt and classifies the result.
-   * @returns The fresh token, or `null` when the caller should drop this target.
+   * @returns The fresh token, or `null` with the reason the caller should stop —
+   *   which decides whether the STORED credential is worth keeping.
    */
-  refresh(key: string, attempt: () => Promise<RefreshAttemptOutcome>): Promise<CachedToken | null> {
+  refresh(key: string, attempt: () => Promise<RefreshAttemptOutcome>): Promise<RefreshVerdict> {
     const joined = this.inFlight.get(key);
     if (joined) return joined;
 
@@ -152,7 +170,7 @@ export class McpTokenRefresher {
     // and the token would be refreshed exactly once per process. `run` is always
     // assigned before the body executes — `exclusive` defers by at least a
     // microtask, and the assignment below is synchronous.
-    const run: Promise<CachedToken | null> = this.exclusive(key, async () => {
+    const run: Promise<RefreshVerdict> = this.exclusive(key, async () => {
       try {
         return await this.attemptWithBackoff(key, attempt);
       } finally {
@@ -167,23 +185,26 @@ export class McpTokenRefresher {
   private async attemptWithBackoff(
     key: string,
     attempt: () => Promise<RefreshAttemptOutcome>
-  ): Promise<CachedToken | null> {
+  ): Promise<RefreshVerdict> {
     for (let tries = 1; tries <= MAX_REFRESH_ATTEMPTS; tries++) {
       const outcome = await attempt();
-      if (outcome.kind === 'ok') return outcome.token;
+      if (outcome.kind === 'ok') return { token: outcome.token, kind: 'ok' };
       if (outcome.kind === 'terminal') {
         this.logger.warn(`[mcp-oauth] refresh gave up for ${key}: ${outcome.reason}`);
-        return null;
+        return { token: null, kind: 'terminal' };
       }
       if (tries === MAX_REFRESH_ATTEMPTS) {
         this.logger.warn(
           `[mcp-oauth] refresh failed for ${key} after ${tries} attempts: ${outcome.reason}`
         );
-        return null;
+        // Exhausted, not refused. The budget ran out on transport failures, so
+        // the grant is unproven rather than gone — the caller drops the CACHED
+        // token and keeps the stored one.
+        return { token: null, kind: 'transient' };
       }
       await this.sleep(REFRESH_BACKOFF_BASE_MS * 2 ** (tries - 1));
     }
-    return null;
+    return { token: null, kind: 'transient' };
   }
 }
 

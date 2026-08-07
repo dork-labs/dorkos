@@ -42,6 +42,8 @@ export interface MessageAuthorAgent {
   emoji?: string;
   /** CSS color for the avatar background. */
   color?: string;
+  /** The agent's photo, when it has one. No production source fills this today. */
+  imageUrl?: string;
 }
 
 /**
@@ -98,8 +100,8 @@ export function resolveMessageAuthor(
   }
 
   if (ctx.agent) {
-    const { id, displayName, emoji, color } = ctx.agent;
-    return { kind: 'agent', id, displayName, emoji, color };
+    const { id, displayName, emoji, color, imageUrl } = ctx.agent;
+    return { kind: 'agent', id, displayName, emoji, color, imageUrl };
   }
 
   const runtime = ctx.runtime?.trim();

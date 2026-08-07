@@ -141,7 +141,15 @@ describe('aggregateTeamRoster', () => {
       // registered where an old one lived is a different entity, so it must not
       // answer to the name people remember.
       registerInMesh(ANA.id, '/Users/dorian/agents/ana');
-      const previous = registry.resolveAgent('/Users/dorian/agents/ana', 'Ana');
+      const previous = registry.resolve({
+        kind: 'agent',
+        naturalKey: '/Users/dorian/agents/ana',
+        displayName: 'Ana',
+        // The face is inherited by exactly the same join as the address, so it
+        // has to be seeded here or the assertion below passes on an empty row
+        // and proves nothing about the photo.
+        imageUrl: '/api/profile/avatar/ana?v=one',
+      });
       registry.setHandle(previous.id, 'ana');
 
       const { members } = await aggregateTeamRoster(
@@ -151,7 +159,62 @@ describe('aggregateTeamRoster', () => {
         })
       );
 
-      expect(members.find((m) => m.kind === 'agent')?.handle).toBeNull();
+      const successor = members.find((m) => m.kind === 'agent');
+      expect(successor?.handle).toBeNull();
+      // And it does not wear the previous occupant's face either. Both ride the
+      // occupancy stamp, so a join that widened to "any author at this
+      // directory" would hand over the name AND the photo together.
+      expect(successor?.imageUrl).toBeUndefined();
+    });
+  });
+
+  describe('photos', () => {
+    it("carries a person's photo off their author row, beside their emoji and colour", async () => {
+      const before = await aggregateTeamRoster(sources());
+      expect(before.members.find((m) => m.isSelf)?.imageUrl).toBeUndefined();
+
+      registry.resolve({
+        kind: 'human',
+        naturalKey: `user:${OWNER_USER_ID}`,
+        displayName: 'You',
+        imageUrl: '/api/profile/avatar/me?v=one',
+      });
+
+      const after = await aggregateTeamRoster(sources());
+      expect(after.members.find((m) => m.isSelf)?.imageUrl).toBe('/api/profile/avatar/me?v=one');
+    });
+
+    it("carries an agent's photo off the same author row its handle comes from", async () => {
+      // The join already exists for the address; the photo rides it rather than
+      // taking a second route that could disagree. Agents have no photo today —
+      // their identity language is emoji and colour — and the field is here so
+      // one CAN be given a photo without a schema change.
+      const now = new Date().toISOString();
+      db.insert(agents)
+        .values({
+          id: ANA.id,
+          name: 'ana',
+          displayName: 'Ana',
+          runtime: 'claude-code',
+          projectPath: '/Users/dorian/agents/ana',
+          registeredAt: now,
+          updatedAt: now,
+        })
+        .run();
+      registry.resolve({
+        kind: 'agent',
+        naturalKey: '/Users/dorian/agents/ana',
+        displayName: 'Ana',
+        imageUrl: '/api/profile/avatar/ana?v=one',
+      });
+
+      const { members } = await aggregateTeamRoster(
+        sources({ listAgentAuthors: () => registry.listActive('agent') })
+      );
+
+      expect(members.find((m) => m.id === ANA.id)?.imageUrl).toBe('/api/profile/avatar/ana?v=one');
+      // And an agent with no author row at all still renders, with no photo.
+      expect(members.find((m) => m.id === DORKBOT.id)?.imageUrl).toBeUndefined();
     });
   });
 
