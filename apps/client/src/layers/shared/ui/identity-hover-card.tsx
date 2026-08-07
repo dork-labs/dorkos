@@ -5,7 +5,6 @@
  * @module shared/ui/identity-hover-card
  */
 import * as React from 'react';
-import { Bot, Send } from 'lucide-react';
 import { formatDuration } from '../lib/format-duration';
 import { initialOf } from '../lib/initial-of';
 import { cn } from '../lib/utils';
@@ -188,9 +187,12 @@ function IdentityHoverCard({ identity, children, className }: IdentityHoverCardP
             color={avatarColor}
             emoji={emoji}
             fallback={initialOf(displayName)}
-            shape={kind === 'agent' ? 'square' : 'circle'}
-            variant={kind === 'agent' ? 'fill' : 'tint'}
-            badge={kind === 'agent' ? <Bot /> : isExternal ? <Send /> : undefined}
+            // Shape, fill and mark all come from the kind now, and the pulsing
+            // dot from `working` — this card used to hand-roll all four, and
+            // its own dot was a third copy of the same eight lines.
+            kind={kind}
+            origin={origin}
+            working={kind === 'agent' && agent?.working !== undefined}
             size="md"
           />
           <div className="min-w-0">
@@ -206,13 +208,10 @@ function IdentityHoverCard({ identity, children, className }: IdentityHoverCardP
             <InfoChip>{[agent.runtime, agent.model].filter(Boolean).join(' · ')}</InfoChip>
           )}
           {kind === 'agent' && agent?.working && (
+            // The chip says how long; the avatar's own dot says "right now".
+            // The dot used to be drawn twice — once here and once on the disc —
+            // which read as two separate signals for one fact.
             <InfoChip className="bg-status-success-bg text-status-success-fg">
-              <span
-                aria-hidden
-                className="bg-status-success relative inline-flex size-1.5 shrink-0 rounded-full"
-              >
-                <span className="bg-status-success absolute inset-0 animate-ping rounded-full opacity-75 motion-reduce:hidden" />
-              </span>
               Working · {formatDuration(agent.working.forMs)}
             </InfoChip>
           )}

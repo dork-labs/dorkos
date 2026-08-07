@@ -5,9 +5,9 @@
  */
 import { useEffect, useId, useRef } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { Bot, ChevronDown, MoreHorizontal } from 'lucide-react';
+import { ChevronDown, MoreHorizontal } from 'lucide-react';
 import type { RoomKind, RoomRosterEntry } from '@dorkos/shared/room-schemas';
-import { cn, initialOf, type AgentVisual } from '@/layers/shared/lib';
+import { cn, resolveIdentityFace, type AgentVisual } from '@/layers/shared/lib';
 import { useIsMobile } from '@/layers/shared/model';
 import {
   Button,
@@ -111,13 +111,17 @@ export interface RoomMemberRowProps {
  * empty slot says "nobody triggers this one" louder than a label could, which is
  * the same convention the bot glyph keeps.
  *
- * **The face is taken from the freshest source that exists, and never invented.**
- * The agent's own manifest first, so it looks the way it looks everywhere else
- * in the cockpit; then the author record's `emoji`/`color`, which is a
- * server-side render cache and goes stale on a rename; then a letter on a
- * neutral disc. What it will NOT do is hash an id into a confident-looking face:
- * that produces a perfectly stable colour matching nothing, and the one surface
- * that guessed would look the most certain of them all.
+ * **The face is taken from the freshest source that exists, by the same
+ * function the masthead's roster uses.** The agent's own manifest first, so it
+ * looks the way it looks everywhere else in the cockpit; then the author
+ * record's `emoji`/`color`, which is a server-side render cache and goes stale
+ * on a rename; then a letter on a colour hashed from the id. This row used to
+ * answer `currentColor` at that last rung rather than hash, on the argument
+ * that a hashed colour matches nothing — but it matches the roster three
+ * inches away, which hashes the same id through the same function, so refusing
+ * to was what made one member two colours at once. What is still never invented
+ * is an emoji: a letter admits the face is unknown, where a hashed emoji would
+ * look like a face somebody chose.
  *
  * **The `⋯` is desktop only.** Below 768px the sheet is a vaul drawer, and a
  * dropdown portalled inside one is a known-hazard nesting — so Remove moves to
@@ -160,6 +164,11 @@ export function RoomMemberRow({
   const rung = rungOf(member.responseMode, roomKind);
   const rungLabel = RESPONSE_RUNGS.find((option) => option.rung === rung)?.label ?? '';
   const working = presence !== null;
+  // One ladder, shared with the masthead's roster — see `resolveIdentityFace`.
+  // This row is the only one of the two that can reach the fleet, so it is the
+  // only one with an override to pass; everything below that is the same
+  // decision made in the same place.
+  const face = resolveIdentityFace({ record: author, override: visual, origin: member.origin });
 
   /**
    * The confirmation takes the keyboard, so it can be answered without hunting
@@ -183,35 +192,13 @@ export function RoomMemberRow({
           cockpit lets them. */}
       <div className="flex min-h-14 items-center gap-3 md:min-h-0">
         <IdentityAvatar
+          {...face}
+          working={working}
           // 32px under a thumb, 28px under a pointer — the disc is not a
           // control, but it is the thing a finger lands on when aiming at the
           // row, and a roster of 28px discs on a phone reads as a list of dots.
           className="size-8 md:size-7"
-          color={visual?.color ?? author.color ?? 'currentColor'}
-          emoji={visual?.emoji ?? author.emoji}
-          fallback={initialOf(author.displayName)}
-          badge={isAgent ? <Bot /> : undefined}
-        >
-          {working && (
-            // The same green a working agent wears elsewhere, ringed in the
-            // page background so it reads as separate from the disc's tint. The
-            // row's own second line says what it means; this is the glance.
-            <span
-              aria-hidden
-              className="bg-status-success ring-background absolute -top-px -right-px size-2 rounded-full ring-2"
-            >
-              {/* It pulses because the thing it reports is happening RIGHT NOW,
-                  and a still dot says the same about a state that ended an hour
-                  ago. The same ping `AgentAvatar` gives a live agent in the
-                  mesh — which never reached this row, because a room's working
-                  signal and an agent's health are different facts and this row
-                  draws the identity disc rather than the agent one.
-                  `motion-reduce:hidden` leaves the dot itself, so the fact
-                  survives the preference and only the motion goes. */}
-              <span className="bg-status-success absolute inset-0 animate-ping rounded-full opacity-60 motion-reduce:hidden" />
-            </span>
-          )}
-        </IdentityAvatar>
+        />
 
         <div className="min-w-0 flex-1">
           <p className="flex min-w-0 items-center truncate text-sm font-medium">

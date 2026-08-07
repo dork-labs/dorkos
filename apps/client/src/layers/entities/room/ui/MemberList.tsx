@@ -3,12 +3,10 @@
  *
  * @module entities/room/ui/MemberList
  */
-import { ADAPTER_LOGO_MAP } from '@dorkos/icons/adapter-logos';
-import { Send } from 'lucide-react';
 import type { RoomRosterEntry } from '@dorkos/shared/room-schemas';
-import { cn, initialOf } from '@/layers/shared/lib';
+import { cn, resolveIdentityFace } from '@/layers/shared/lib';
 import { IdentityAvatar, Tooltip, TooltipContent, TooltipTrigger } from '@/layers/shared/ui';
-import { authorColor, platformLabel } from '../lib/room-display';
+import { platformLabel } from '../lib/room-display';
 
 /** How many marks are drawn before the rest collapse into a `+N`. */
 const MAX_VISIBLE = 5;
@@ -71,14 +69,14 @@ export function MemberList({ members, onClick, label, className }: MemberListPro
    * in from outside this machine, the platform they are on — for a screen
    * reader.
    *
-   * The platform's own brand mark badges the disc for an external member, the
-   * same visual slot `RoomMemberRow` gives an agent's `Bot` glyph — legible at
-   * a glance rather than only on hover, which is what chats-as-channels §9
-   * requires of every origin mark (see `OriginMark`'s own doc for why).
+   * The face comes from the shared resolver and the marks come from the disc's
+   * own `kind`, so this and the member sheet's row draw one member one way. It
+   * used to badge an external person and nothing else while the sheet badged
+   * agents and nothing else, which meant the same agent wore a mark in one half
+   * of the room and none in the other. Neither file decides it now.
    */
   const disc = ({ author, origin }: RoomRosterEntry) => {
     const isExternal = typeof origin === 'object' && origin !== null;
-    const Logo = isExternal ? ADAPTER_LOGO_MAP[origin.platform] : undefined;
     const name = isExternal
       ? `${author.displayName}, from ${platformLabel(origin.platform)}`
       : author.displayName;
@@ -88,10 +86,7 @@ export function MemberList({ members, onClick, label, className }: MemberListPro
         // otherwise stamp its own slot onto the disc.
         data-slot="room-member-avatar"
         size="xs"
-        color={author.color ?? authorColor(author.id)}
-        emoji={author.emoji}
-        fallback={initialOf(author.displayName)}
-        badge={isExternal ? Logo ? <Logo /> : <Send /> : undefined}
+        {...resolveIdentityFace({ record: author, origin })}
         // A roster disc is a step larger than the sidebar's, and rings itself in
         // the page background so the overlap still reads as separate people.
         className="border-background size-6 border"

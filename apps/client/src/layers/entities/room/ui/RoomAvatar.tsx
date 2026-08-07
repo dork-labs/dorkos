@@ -86,6 +86,11 @@ export interface RoomAvatarProps {
  * cockpit. A conversation with several agents in it draws them as a stack, so a
  * group reads as a group before you read its name.
  *
+ * **A DM's face is an agent's face, and is drawn as one** — the filled square
+ * with the bot mark, not the round person disc. The mark said "agent" in its
+ * colour and emoji and "person" in its shape, in the sidebar, the masthead and
+ * the command palette at once, because all three draw this one component.
+ *
  * A DM whose faces the caller has not resolved falls back to a letter disc
  * tinted from the room's own id. That is stable and honest: guessing an agent
  * from the room's title would silently swap a person's avatar the moment two
@@ -123,6 +128,11 @@ export function RoomAvatar({
       <IdentityAvatar
         aria-hidden
         data-slot="room-avatar"
+        // A direct message's counterpart is an agent by construction — that is
+        // what `dmCounterpart` looks for and all a DM can be with. Saying so
+        // here is what makes the sidebar row, the room masthead and the command
+        // palette draw the agent shape, since all three draw this mark.
+        kind="agent"
         size={size}
         color={faces[0]!.color}
         emoji={faces[0]!.emoji}
@@ -147,6 +157,7 @@ export function RoomAvatar({
             // and two agents can legitimately hash to the same emoji, which
             // rules the face itself out as a key.
             key={i}
+            kind="agent"
             size={size}
             color={face.color}
             emoji={face.emoji}
@@ -161,6 +172,11 @@ export function RoomAvatar({
     <IdentityAvatar
       aria-hidden
       data-slot="room-avatar"
+      // Only when there IS a counterpart: it is an agent, and the same DM must
+      // not change shape depending on whether its face happened to resolve.
+      // With no counterpart this is the room's own letter and nobody's face, so
+      // it claims nothing.
+      kind={counterpart === null ? undefined : 'agent'}
       size={size}
       color={counterpart?.color ?? authorColor(counterpart?.id ?? room.id)}
       emoji={counterpart?.emoji}

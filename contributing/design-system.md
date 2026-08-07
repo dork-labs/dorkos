@@ -383,6 +383,8 @@ Two things make this the shape it is:
 
 **Reaching the disc.** `AgentAvatar` (`entities/agent/ui/AgentAvatar.tsx`) is the agent-side wrapper: it hard-passes `kind="agent"` and deliberately accepts no `shape` or `variant`, so the convention cannot be skipped through it. What it adds is what `shared/` must not learn — a ring keyed on mesh health. Room and roster surfaces pass `kind` to `IdentityAvatar` directly; a room must never import the agent entity to draw an agent square.
 
+**Deciding what to draw: `resolveIdentityFace` (`shared/lib/identity-face.ts`).** One pure function turns the fragments a caller happens to hold into the props the disc takes — colour, emoji, fallback letter, kind, origin. Precedence, highest first: an explicit `override` (an agent's own manifest face, which only a feature-layer caller can reach), then the record's own render cache, then a colour hashed from the opaque id with the first letter of the name. It hashes a colour but never an emoji: a letter admits the face is unknown where an invented emoji would look chosen. It takes no agent types on purpose — that is what lets `entities/room` use the same ladder a feature does, and two roster surfaces hand-rolling their own is what made an agent read as two different identities in one room.
+
 Live states: `/dev/components#identityavatar`.
 
 ---
@@ -983,6 +985,7 @@ All three components are exported from `@/layers/shared/ui`.
 | Component library        | `apps/client/src/layers/shared/ui/`                              |
 | Identity disc            | `apps/client/src/layers/shared/ui/identity-avatar.tsx`           |
 | Agent-side wrapper       | `apps/client/src/layers/entities/agent/ui/AgentAvatar.tsx`       |
+| Identity face resolver   | `apps/client/src/layers/shared/lib/identity-face.ts`             |
 | Table primitives         | `apps/client/src/layers/shared/ui/table.tsx`                     |
 | DataTable                | `apps/client/src/layers/shared/ui/data-table.tsx`                |
 | App crash fallback       | `apps/client/src/layers/shared/ui/app-crash-fallback.tsx`        |
