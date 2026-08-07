@@ -28,6 +28,9 @@ function frozenFlow(
       disclosure: null,
       authorizeUrl: null,
       error: null,
+      errorDetail: null,
+      canUseOwnCredentials: false,
+      savingCredentials: false,
       retryNotice: null,
       toolCount: null,
       ...state,
@@ -35,6 +38,7 @@ function frozenFlow(
     start: () => {},
     authOpened: () => {},
     adopt: () => {},
+    useOwnCredentials: () => {},
     reset: () => {},
   };
 }

@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CheckCircle2, ExternalLink, Loader2, ShieldCheck } from 'lucide-react';
 import { Button } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import type { McpSigninFlow } from '../model/use-mcp-signin-flow';
+import { McpClientCredentialsForm } from './McpClientCredentialsForm';
 
 /** Props for {@link McpSigninBody}. */
 export interface McpSigninBodyProps {
@@ -125,6 +126,14 @@ function politeCopy(flow: McpSigninFlow): React.ReactNode {
  * person is being asked to read — a ring drawn around the inner paragraph looked
  * like a second, nested disclosure, which is the very thing this surface exists
  * to avoid.
+ *
+ * A failure leads with the plain reason and keeps the raw OAuth text behind
+ * Details (DOR-982). One family gets an extra offer: when the provider will not
+ * let DorkOS register itself, the person can paste app credentials they already
+ * have and the sign-in restarts with them. The copy stays scoped to what that
+ * actually does — it supplies an app identity. It does not promise to fix a
+ * provider that rejects the loopback address itself, because DorkOS cannot see
+ * that refusal: it happens on the provider's own page, in the person's browser.
  */
 export function McpSigninBody({
   flow,
@@ -136,6 +145,13 @@ export function McpSigninBody({
   const { state } = flow;
   const disclosureRef = useRef<HTMLDivElement>(null);
   const onDisclosure = state.step === 'disclosure';
+  const [credentialsOpen, setCredentialsOpen] = useState(false);
+  // Kept honest against the flow rather than trusted on its own: the form is for
+  // ONE failure family, and a retry that fails a different way (or succeeds)
+  // must not leave credential fields sitting under it. It stays up while the
+  // save is in flight, which is the one moment the step is no longer `failed`.
+  const showCredentialsForm =
+    credentialsOpen && (state.canUseOwnCredentials || state.savingCredentials);
 
   useEffect(() => {
     if (onDisclosure) disclosureRef.current?.focus();
@@ -184,7 +200,35 @@ export function McpSigninBody({
           <p role="alert" className="text-destructive text-xs leading-relaxed">
             {state.error ?? 'The sign-in did not complete.'}
           </p>
-          {failedActions && <div className="flex gap-2">{failedActions}</div>}
+          {state.errorDetail && (
+            <details className="text-muted-foreground text-xs">
+              <summary className="cursor-pointer focus-visible:ring-2">Details</summary>
+              <code className="mt-1 block font-mono text-[11px] break-all">
+                {state.errorDetail}
+              </code>
+            </details>
+          )}
+          {showCredentialsForm ? (
+            <McpClientCredentialsForm
+              onSave={(credentials) => flow.useOwnCredentials(credentials)}
+              onCancel={() => setCredentialsOpen(false)}
+              saving={state.savingCredentials}
+            />
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {failedActions}
+              {state.canUseOwnCredentials && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setCredentialsOpen(true)}
+                  className="focus-visible:ring-2"
+                >
+                  Use your own app credentials
+                </Button>
+              )}
+            </div>
+          )}
         </div>
       )}
 

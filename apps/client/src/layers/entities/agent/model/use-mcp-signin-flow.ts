@@ -1,8 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient, type Query } from '@tanstack/react-query';
-import type { McpSigninPollResult, StartMcpSigninResult } from '@dorkos/shared/transport';
+import type {
+  McpClientCredentials,
+  McpSigninPollResult,
+  StartMcpSigninResult,
+} from '@dorkos/shared/transport';
 import { useTransport } from '@/layers/shared/model';
 import { agentKeys } from '../api/queries';
+import {
+  describeSigninError,
+  readSigninFailurePayload,
+  type McpSigninErrorView,
+} from '../lib/mcp-signin-errors';
 
 /** How often a waiting flow polls the server, in milliseconds. */
 const FLOW_POLL_INTERVAL_MS = 2_000;
@@ -53,8 +62,21 @@ interface McpSigninFlowState {
   disclosure: string | null;
   /** The sign-in URL, from `disclosure` on. Never opened by the flow itself. */
   authorizeUrl: string | null;
-  /** Why the flow failed, once `failed`. */
+  /** Why the flow failed, once `failed` — the plain sentence, never the raw error. */
   error: string | null;
+  /**
+   * The raw error behind {@link error}, for a Details disclosure. Null when the
+   * plain sentence IS everything that is known.
+   */
+  errorDetail: string | null;
+  /**
+   * Whether this failure is one the person can fix by supplying app credentials
+   * from the provider (DOR-982) — true only when the provider refused to let
+   * DorkOS register itself.
+   */
+  canUseOwnCredentials: boolean;
+  /** True while operator-supplied app credentials are being saved. */
+  savingCredentials: boolean;
   /**
    * Set while the flow is still `waiting` but its status checks are failing —
    * the UI says so plainly instead of showing nothing (or a raw network error).
@@ -100,6 +122,17 @@ export interface McpSigninFlow {
    * @param flow - The pushed flow's id, sign-in link, and custody disclosure.
    */
   adopt: (flow: { flowId: string; authorizeUrl: string; disclosure: string }) => void;
+  /**
+   * Save app credentials the person got from a provider that will not let DorkOS
+   * register itself (DOR-982), then start the sign-in again with them.
+   *
+   * Retrying is part of the action rather than a second button, because saving
+   * credentials is never the thing the person came to do — signing in is. A
+   * failed save leaves the flow `failed` with the save's own reason.
+   *
+   * @param credentials - The client id, and the client secret when there is one.
+   */
+  useOwnCredentials: (credentials: McpClientCredentials) => void;
   /** Abandon this flow and return to `idle`. */
   reset: () => void;
 }
@@ -118,8 +151,8 @@ interface SigninLocalState {
   phase: SigninPhase;
   disclosure: string | null;
   authorizeUrl: string | null;
-  /** The start-path error (a rejected `mcp.signin`); poll-path errors are derived. */
-  startError: string | null;
+  /** The start-path failure (a rejected `mcp.signin`); poll-path errors are derived. */
+  startFailure: McpSigninErrorView | null;
   flowId: string | null;
   /**
    * Watch a flow this instance did not start, from `disclosure` on (DOR-1004).
@@ -140,7 +173,7 @@ const IDLE_STATE: SigninLocalState = {
   phase: 'idle',
   disclosure: null,
   authorizeUrl: null,
-  startError: null,
+  startFailure: null,
   flowId: null,
   watching: false,
 };
@@ -178,6 +211,38 @@ function pollErrorMessage(
   if (data?.status === 'failed') return data.error ?? 'The sign-in did not complete.';
   if (requestFailures >= MAX_POLL_REQUEST_FAILURES) return POLL_UNREACHABLE_MESSAGE;
   return null;
+}
+
+/**
+ * The local state a rejected request lands the flow in: `failed`, carrying the
+ * plain family the server named and the raw text behind it.
+ *
+ * Shared by the two requests that can end a sign-in before it begins — starting
+ * it, and saving the app credentials that would let it start — because a person
+ * reads the same paragraph either way and the two must not drift apart.
+ *
+ * @param err - The rejection.
+ */
+function failedFrom(err: Error): SigninLocalState {
+  return {
+    ...IDLE_STATE,
+    phase: 'failed',
+    startFailure: describeSigninError({ message: err.message, ...readSigninFailurePayload(err) }),
+  };
+}
+
+/**
+ * A poll-path failure as the UI reads it.
+ *
+ * The poll's `error` is already a plain, server-authored sentence — "This
+ * sign-in link expired. Please start again." — so it is passed through rather
+ * than re-classified: there is no family code on this path to classify by, and
+ * inventing one from the wording is exactly what the code exists to avoid.
+ *
+ * @param message - The poll's terminal error, or null while it is healthy.
+ */
+function toPollFailure(message: string | null): McpSigninErrorView | null {
+  return message === null ? null : describeSigninError({ message });
 }
 
 /**
@@ -298,7 +363,9 @@ export function useMcpSigninFlow(agentId: string, serverName: string): McpSignin
           setLocal({
             ...IDLE_STATE,
             phase: 'failed',
-            startError: 'DorkOS could not build a sign-in link for this server.',
+            startFailure: describeSigninError({
+              message: 'DorkOS could not build a sign-in link for this server.',
+            }),
           });
           return;
         }
@@ -307,14 +374,33 @@ export function useMcpSigninFlow(agentId: string, serverName: string): McpSignin
           phase: result.alreadyConnected ? 'connected' : 'disclosure',
           disclosure: result.disclosure,
           authorizeUrl: result.authorizeUrl ?? null,
-          startError: null,
+          startFailure: null,
           flowId: result.flowId,
           watching: false,
         });
       },
-      onError: (err) => setLocal({ ...IDLE_STATE, phase: 'failed', startError: err.message }),
+      onError: (err) => setLocal(failedFrom(err)),
     });
   }, [startMutation, resetPollCounter]);
+
+  const credentialsMutation = useMutation({
+    mutationFn: (credentials: McpClientCredentials) =>
+      transport.setMcpClientCredentials(agentId, serverName, credentials),
+    // The failed step is this mutation's surface too — no global toast.
+    meta: { suppressErrorToast: true },
+  });
+
+  const useOwnCredentials = useCallback(
+    (credentials: McpClientCredentials) => {
+      credentialsMutation.mutate(credentials, {
+        // Saving replaced the client identity server-side, which forgets the old
+        // sign-in — so the retry is the point, not a courtesy.
+        onSuccess: () => start(),
+        onError: (err) => setLocal(failedFrom(err)),
+      });
+    },
+    [credentialsMutation, start]
+  );
 
   const adopt = useCallback(
     (flow: { flowId: string; authorizeUrl: string; disclosure: string }) => {
@@ -335,7 +421,7 @@ export function useMcpSigninFlow(agentId: string, serverName: string): McpSignin
         phase: 'disclosure',
         disclosure: flow.disclosure,
         authorizeUrl: flow.authorizeUrl,
-        startError: null,
+        startFailure: null,
         flowId: flow.flowId,
         watching: true,
       });
@@ -412,7 +498,9 @@ export function useMcpSigninFlow(agentId: string, serverName: string): McpSignin
   // `waiting` meant a watching card that saw the provider refuse the sign-in
   // rendered the generic "did not complete" fallback while the server's actual
   // reason sat unread in the poll body.
-  const error = isPolling(local) ? pollErrorMessage(poll.data, requestFailures) : local.startError;
+  const failure = isPolling(local)
+    ? toPollFailure(pollErrorMessage(poll.data, requestFailures))
+    : local.startFailure;
 
   const retryNotice = step === 'waiting' && requestFailures > 0 ? POLL_RETRY_NOTICE : null;
 
@@ -421,13 +509,17 @@ export function useMcpSigninFlow(agentId: string, serverName: string): McpSignin
       step,
       disclosure: local.disclosure,
       authorizeUrl: local.authorizeUrl,
-      error,
+      error: failure?.message ?? null,
+      errorDetail: failure?.detail ?? null,
+      canUseOwnCredentials: failure?.canUseOwnCredentials ?? false,
+      savingCredentials: credentialsMutation.isPending,
       retryNotice,
       toolCount: step === 'connected' ? readToolCount(poll.data) : null,
     },
     start,
     adopt,
     authOpened,
+    useOwnCredentials,
     reset,
   };
 }
