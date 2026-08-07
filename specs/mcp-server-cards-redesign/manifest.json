@@ -1,0 +1,9 @@
+{
+  "id": "260807-140636",
+  "slug": "mcp-server-cards-redesign",
+  "title": "MCP server cards: one card per server, plain language, and a way back into a sign-in",
+  "created": "2026-08-07",
+  "status": "specified",
+  "linearIssue": "DOR-1005",
+  "followUps": ["DOR-1006"]
+}
