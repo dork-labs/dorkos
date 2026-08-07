@@ -2,6 +2,8 @@
 covers:
   - 'fix(server): harden the managed-MCP OAuth engine after adversarial review (DOR-986)'
   - 'docs(changelog): say what the managed-MCP OAuth fixes mean for people (DOR-986)'
+  - 'fix(server): serialize the MCP callback exchange against a background refresh (DOR-986)'
+  - 'docs(changelog): fold the MCP callback fragment into the DOR-986 entry (DOR-986)'
 ---
 
 ### Fixed
