@@ -105,7 +105,10 @@ export function ApprovalCard({ approval }: ApprovalCardProps) {
             {approval.summary}
           </p>
           <div className="mt-1.5 flex min-w-0 items-center gap-2">
-            <RequestingAgent requestedBy={approval.requestedBy} />
+            <RequestingAgent
+              requestedBy={approval.requestedBy}
+              hasAgentPath={approval.hasAgentPath}
+            />
             <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
               {formatTimeLeft(approval.expiresAt, now)}
             </span>
