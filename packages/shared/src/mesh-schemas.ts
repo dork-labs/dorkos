@@ -220,6 +220,37 @@ export const ManagedMcpServerSchema = z
 
 export type ManagedMcpServer = z.infer<typeof ManagedMcpServerSchema>;
 
+/**
+ * Whether a remote managed server currently has a usable DorkOS-held sign-in.
+ *
+ * `'connected'` means a live access token exists right now; `'needs-auth'` means
+ * the server is known to want an OAuth sign-in and none is held. Absent means
+ * DorkOS has no opinion (a local stdio server, or a remote one that has never
+ * shown it wants a sign-in).
+ */
+export const McpServerAuthStatusSchema = z.enum(['connected', 'needs-auth']);
+
+/** See {@link McpServerAuthStatusSchema}. */
+export type McpServerAuthStatus = z.infer<typeof McpServerAuthStatusSchema>;
+
+/**
+ * A managed server as the LISTING reports it: the stored entry plus
+ * {@link McpServerAuthStatusSchema}, derived per request from the live token
+ * cache and the entry's `authKind` hint.
+ *
+ * `authStatus` is response-layer decoration and is deliberately absent from
+ * {@link ManagedMcpServerSchema}: it describes a moment (is a token live?), not
+ * configuration, so it is never written to `.dork/agent.json`. It exists so a
+ * freshly-started server can tell an operator that a server needs signing in
+ * without waiting for an agent turn to populate the runtime's status cache.
+ */
+export const ManagedMcpServerViewSchema = ManagedMcpServerSchema.extend({
+  authStatus: McpServerAuthStatusSchema.optional(),
+}).openapi('ManagedMcpServerView');
+
+/** See {@link ManagedMcpServerViewSchema}. */
+export type ManagedMcpServerView = z.infer<typeof ManagedMcpServerViewSchema>;
+
 // === Agent Personality ===
 
 /** Personality trait levels (1-5 scale, default 3 = Balanced) */

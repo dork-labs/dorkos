@@ -21,7 +21,12 @@ import path from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { readManifest, writeManifest, MANIFEST_DIR, MANIFEST_FILE } from '@dorkos/shared/manifest';
 import { AgentManifestSchema, McpServerTransportSchema } from '@dorkos/shared/mesh-schemas';
-import type { ManagedMcpServer, McpServerTransport } from '@dorkos/shared/mesh-schemas';
+import type {
+  ManagedMcpServer,
+  ManagedMcpServerView,
+  McpServerAuthStatus,
+  McpServerTransport,
+} from '@dorkos/shared/mesh-schemas';
 import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
 import type { Logger } from '@dorkos/shared/logger';
 
@@ -180,14 +185,80 @@ export class AgentMcpServerService {
   }
 
   /**
-   * List every managed server declared on an agent's manifest.
+   * List every managed server declared on an agent's manifest, each decorated
+   * with its derived {@link ManagedMcpServerView.authStatus}.
+   *
+   * The decoration is what lets a freshly-started server answer "does this need
+   * signing in?" at all: the runtimes' own MCP status caches are written during
+   * turns, so before the agent's first message of the process there is no live
+   * status to read and every row would otherwise read "Unknown" (DOR-985). It is
+   * computed per call and never persisted — see {@link deriveAuthStatus}.
    *
    * @param agentId - The agent's id.
-   * @returns The manifest's `mcpServers` array (empty when none).
+   * @returns The manifest's `mcpServers`, decorated (empty when none).
    */
-  async list(agentId: string): Promise<ManagedMcpServer[]> {
+  async list(agentId: string): Promise<ManagedMcpServerView[]> {
     const { manifest } = await this.load(agentId);
-    return manifest.mcpServers;
+    return manifest.mcpServers.map((server) => {
+      const authStatus = this.deriveAuthStatus(agentId, server);
+      return authStatus ? { ...server, authStatus } : server;
+    });
+  }
+
+  /**
+   * Whether a managed server has a usable DorkOS-held sign-in right now.
+   *
+   * A live cached token wins outright — it is the same lookup injection makes,
+   * so "connected" here means the next turn really does carry a bearer. Failing
+   * that, an `authKind: 'oauth2'` entry is one DorkOS knows wants a sign-in it
+   * does not hold, which is `needs-auth`. Anything else (stdio, or a remote
+   * server that has never demanded auth) gets no opinion rather than a guess.
+   *
+   * @param agentId - The owning agent's id.
+   * @param server - The stored managed entry.
+   */
+  private deriveAuthStatus(
+    agentId: string,
+    server: ManagedMcpServer
+  ): McpServerAuthStatus | undefined {
+    if (server.connection.transport === 'stdio') return undefined;
+    if (this.tokenProvider?.getAccessToken(agentId, server.name)) return 'connected';
+    return server.connection.authKind === 'oauth2' ? 'needs-auth' : undefined;
+  }
+
+  /**
+   * Record that a remote managed server authenticates with OAuth, when evidence
+   * says so and the entry does not already say it.
+   *
+   * Evidence beats declaration here: a server added before DorkOS knew to ask
+   * (or added by hand) carries no `authKind`, so it reads as "no opinion"
+   * forever and never offers a sign-in. A 401 from the reachability probe, or a
+   * sign-in that the provider actually accepted, both prove the server is
+   * OAuth-protected — so the entry is healed on the spot and every later listing
+   * says `needs-auth` without re-probing (DOR-985).
+   *
+   * A no-op for a stdio server, an entry already marked, or an unknown name.
+   *
+   * @param agentId - The agent's id.
+   * @param name - The managed server the evidence is about.
+   * @returns Whether the manifest was written.
+   */
+  async learnOAuthAuthKind(agentId: string, name: string): Promise<boolean> {
+    const { projectPath, manifest } = await this.load(agentId);
+    const existing = manifest.mcpServers.find((s) => s.name === name);
+    if (!existing || existing.connection.transport === 'stdio') return false;
+    if (existing.connection.authKind === 'oauth2') return false;
+
+    const updated: ManagedMcpServer = {
+      ...existing,
+      connection: { ...existing.connection, authKind: 'oauth2' },
+    };
+    await this.persist(
+      projectPath,
+      manifest,
+      manifest.mcpServers.map((s) => (s.name === name ? updated : s))
+    );
+    return true;
   }
 
   /**
@@ -424,7 +495,10 @@ export class AgentMcpServerService {
    *
    * A 401 / unauthorized probe is classified as `needsAuth: true` (DOR-942) so the
    * client can render "Needs sign-in" instead of the raw SDK error; every other
-   * failure keeps its raw message with `needsAuth` absent.
+   * failure keeps its raw message with `needsAuth` absent. That same 401 is also
+   * evidence the server is OAuth-protected, so it is written back through
+   * {@link learnOAuthAuthKind} — one Test heals an entry that never carried the
+   * hint, and it reports needs-auth from then on (DOR-985).
    *
    * @param agentId - The agent's id.
    * @param name - The existing server to probe.
@@ -456,9 +530,18 @@ export class AgentMcpServerService {
       return { ok: true, toolCount: tools.tools.length };
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
-      return isUnauthorizedProbeError(err)
-        ? { ok: false, needsAuth: true, error }
-        : { ok: false, error };
+      if (!isUnauthorizedProbeError(err)) return { ok: false, error };
+      // Best-effort: the probe's answer is what the caller asked for, so a failed
+      // manifest write must not turn a useful result into an error.
+      await this.learnOAuthAuthKind(agentId, name).catch((writeErr: unknown) => {
+        this.logger.warn(
+          `[agent-mcp] could not record authKind for "${name}": ${
+            writeErr instanceof Error ? writeErr.message : String(writeErr)
+          }`
+        );
+        return false;
+      });
+      return { ok: false, needsAuth: true, error };
     } finally {
       await client.close().catch(() => {});
     }
