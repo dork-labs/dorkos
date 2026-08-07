@@ -9,6 +9,7 @@ import type {
   ErrorPart,
 } from '@dorkos/shared/types';
 import type { SessionDiagnostics } from '@/layers/features/status';
+import type { TeamMember } from '@dorkos/shared/team-schemas';
 import {
   createAssistantMessage,
   createUserMessage,
@@ -899,3 +900,134 @@ export const MOCK_IDENTITIES: Record<string, MockIdentity> = {
     emoji: '🏴‍☠️',
   },
 };
+
+// ---------------------------------------------------------------------------
+// Team roster (spec `identity-consistency` §W2.2, §W2.6)
+// ---------------------------------------------------------------------------
+
+/**
+ * A roster the product cannot produce yet, which is exactly why it exists.
+ *
+ * Two people, four agents and two owners. The spec's binding rule for the Buzz
+ * future (§W2.6) is that no component may branch on "there is exactly one
+ * person" — a rule that only means anything if something in the repo draws a
+ * second one. This is that something: the playground renders the real Team page
+ * against it, and the page's jsdom tests assert grouping, the owner filter and
+ * the chips against these same rows, so the showcase and the tests cannot drift
+ * into disagreeing about what a two-person install looks like.
+ *
+ * The edge cases the card has to survive ride along rather than living in a
+ * second fixture: a person bridged in from another platform with a qualified
+ * handle, an agent that belongs to nobody (the system one), an agent with no
+ * handle at all, and a name long enough to need truncating.
+ */
+export const MOCK_TEAM_ROSTER: TeamMember[] = [
+  {
+    id: 'person-dorian',
+    kind: 'human',
+    displayName: 'Dorian',
+    handle: 'dorian',
+    color: '#6d5ae0',
+    isSelf: true,
+    ownerId: null,
+    origin: 'local',
+    person: { role: null, email: 'dorian@dorkos.ai' },
+  },
+  {
+    id: 'person-miguel',
+    kind: 'human',
+    displayName: 'Miguel Ferreira-Santos',
+    // Qualified, because two platforms can each hold a `miguel` and the roster
+    // has to be able to say which one this is.
+    handle: 'miguel.telegram',
+    color: '#0ea5e9',
+    isSelf: false,
+    ownerId: null,
+    origin: { platform: 'telegram' },
+    person: { role: null },
+  },
+  {
+    id: 'agent-warden',
+    kind: 'agent',
+    displayName: 'Warden',
+    handle: 'warden',
+    color: '#6d5ae0',
+    emoji: '🛡️',
+    isSelf: false,
+    ownerId: 'person-dorian',
+    origin: 'local',
+    agent: {
+      manifestId: 'agent-warden',
+      runtime: 'claude-code',
+      model: 'opus-4.8',
+      healthStatus: 'active',
+      recentlyActive: true,
+      isDefault: true,
+      isSystem: false,
+      registeredAt: '2026-07-01T09:00:00.000Z',
+    },
+  },
+  {
+    id: 'agent-scout',
+    kind: 'agent',
+    displayName: 'Scout',
+    handle: 'scout',
+    color: '#f59e0b',
+    emoji: '🔭',
+    isSelf: false,
+    ownerId: 'person-dorian',
+    origin: 'local',
+    agent: {
+      manifestId: 'agent-scout',
+      runtime: 'codex',
+      healthStatus: 'stale',
+      recentlyActive: false,
+      isDefault: false,
+      isSystem: false,
+      registeredAt: '2026-07-04T14:20:00.000Z',
+    },
+  },
+  {
+    id: 'agent-cartographer',
+    kind: 'agent',
+    displayName: 'Cartographer of the Northern Reaches',
+    // Never been in a room, so there is nothing to address it by.
+    handle: null,
+    color: '#0ea5e9',
+    emoji: '🗺️',
+    isSelf: false,
+    ownerId: 'person-miguel',
+    origin: 'local',
+    agent: {
+      manifestId: 'agent-cartographer',
+      runtime: 'opencode',
+      model: 'qwen3-coder',
+      healthStatus: 'inactive',
+      recentlyActive: false,
+      isDefault: false,
+      isSystem: false,
+      registeredAt: '2026-07-06T11:05:00.000Z',
+    },
+  },
+  {
+    id: 'agent-dorkbot',
+    kind: 'agent',
+    displayName: 'DorkBot',
+    handle: 'dorkbot',
+    color: '#334155',
+    emoji: '🤖',
+    isSelf: false,
+    // The system agent belongs to the install, not to a person.
+    ownerId: null,
+    origin: 'local',
+    agent: {
+      manifestId: 'agent-dorkbot',
+      runtime: 'claude-code',
+      healthStatus: 'active',
+      recentlyActive: true,
+      isDefault: false,
+      isSystem: true,
+      registeredAt: '2026-06-20T08:00:00.000Z',
+    },
+  },
+];

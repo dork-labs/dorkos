@@ -45,6 +45,21 @@ export const FEATURES_SECTIONS: PlaygroundSection[] = [
     category: 'Agent',
     keywords: ['agent', 'avatar', 'color', 'emoji', 'picker', 'grid', 'swatch', 'preset'],
   },
+  // TeamShowcases
+  {
+    id: 'team-roster',
+    title: 'Team Roster',
+    page: 'features',
+    category: 'Agent',
+    keywords: ['team', 'roster', 'people', 'agents', 'grid', 'chips', 'group', 'manager', 'owner'],
+  },
+  {
+    id: 'team-card',
+    title: 'Team Card',
+    page: 'features',
+    category: 'Agent',
+    keywords: ['team', 'card', 'member', 'identity', 'handle', 'owner', 'attribution', 'external'],
+  },
   // AgentFleetShowcases
   {
     id: 'agentfleettable',
