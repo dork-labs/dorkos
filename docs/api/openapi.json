@@ -338,6 +338,9 @@
                   "$ref": "#/components/schemas/CapabilityApprovalPart"
                 },
                 {
+                  "$ref": "#/components/schemas/McpSigninPart"
+                },
+                {
                   "$ref": "#/components/schemas/MemoryRecallPart"
                 },
                 {
@@ -357,6 +360,7 @@
                   "error": "#/components/schemas/ErrorPart",
                   "elicitation": "#/components/schemas/ElicitationPart",
                   "capability_approval": "#/components/schemas/CapabilityApprovalPart",
+                  "mcp_signin": "#/components/schemas/McpSigninPart",
                   "memory_recall": "#/components/schemas/MemoryRecallPart",
                   "permission_denied": "#/components/schemas/PermissionDeniedPart",
                   "compact_boundary": "#/components/schemas/CompactBoundaryPart"
@@ -958,6 +962,51 @@
           "hasAgentPath",
           "requestedAt",
           "expiresAt"
+        ]
+      },
+      "McpSigninPart": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "mcp_signin"
+            ]
+          },
+          "serverName": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "flowId": {
+            "type": "string"
+          },
+          "authorizeUrl": {
+            "type": "string"
+          },
+          "disclosure": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "connected",
+              "failed"
+            ]
+          },
+          "toolCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "type",
+          "serverName",
+          "agentId",
+          "flowId",
+          "authorizeUrl",
+          "disclosure"
         ]
       },
       "MemoryRecallPart": {
@@ -1978,6 +2027,80 @@
               "seq",
               "type",
               "approvalId",
+              "outcome"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "mcp_signin_required"
+                ]
+              },
+              "serverName": {
+                "type": "string"
+              },
+              "agentId": {
+                "type": "string"
+              },
+              "flowId": {
+                "type": "string"
+              },
+              "authorizeUrl": {
+                "type": "string"
+              },
+              "disclosure": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "serverName",
+              "agentId",
+              "flowId",
+              "authorizeUrl",
+              "disclosure"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "mcp_signin_resolved"
+                ]
+              },
+              "flowId": {
+                "type": "string"
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "connected",
+                  "failed"
+                ]
+              },
+              "toolCount": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "flowId",
               "outcome"
             ]
           },
@@ -8126,6 +8249,80 @@
                         "seq",
                         "type",
                         "approvalId",
+                        "outcome"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "mcp_signin_required"
+                          ]
+                        },
+                        "serverName": {
+                          "type": "string"
+                        },
+                        "agentId": {
+                          "type": "string"
+                        },
+                        "flowId": {
+                          "type": "string"
+                        },
+                        "authorizeUrl": {
+                          "type": "string"
+                        },
+                        "disclosure": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "serverName",
+                        "agentId",
+                        "flowId",
+                        "authorizeUrl",
+                        "disclosure"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "mcp_signin_resolved"
+                          ]
+                        },
+                        "flowId": {
+                          "type": "string"
+                        },
+                        "outcome": {
+                          "type": "string",
+                          "enum": [
+                            "connected",
+                            "failed"
+                          ]
+                        },
+                        "toolCount": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "flowId",
                         "outcome"
                       ]
                     },
