@@ -152,6 +152,32 @@ export function isLocalRequest(facts: LocalRequestFacts): boolean {
   return isLoopbackPeer(facts.peer) && isLoopbackHostHeader(facts.hostHeader);
 }
 
+/** The Vite dev-server port the cockpit is served from outside production. */
+function viteDevPort(): string {
+  // eslint-disable-next-line no-restricted-syntax -- VITE_PORT is a Vite-specific var not in server env.ts
+  return process.env.VITE_PORT || '4241';
+}
+
+/**
+ * The address a person's browser reaches THE COCKPIT at on this machine — which
+ * is not always the API address, and that difference is the whole reason this
+ * exists.
+ *
+ * In production the server serves the SPA itself, so the cockpit lives at
+ * `DORKOS_PORT`. In development it does not: `express.static` is production-only,
+ * nothing answers `/` on the API port, and the cockpit is on the Vite dev server.
+ * A link built from `DORKOS_PORT` in dev is therefore dead exactly for the people
+ * most likely to click it.
+ *
+ * The one spelling of "where DorkOS is", so a link back into the app (the OAuth
+ * callback landing page) and the always-trusted loopback origins below can never
+ * disagree. Both ports are derived, never hardcoded.
+ */
+export function getLocalCockpitOrigin(): string {
+  const port = env.NODE_ENV === 'production' ? String(env.DORKOS_PORT) : viteDevPort();
+  return `http://localhost:${port}`;
+}
+
 /**
  * Static loopback dev origins the server always trusts: `localhost` and
  * `127.0.0.1` on both the API port (`DORKOS_PORT`) and the Vite dev port
@@ -165,13 +191,12 @@ export function getStaticLocalOrigins(): string[] {
   // legitimate speaks from that port, and anything else that happened to listen
   // there would be trusted — which on the socket path now includes the terminal.
   if (env.NODE_ENV === 'production') {
-    return [`http://localhost:${port}`, `http://127.0.0.1:${port}`];
+    return [getLocalCockpitOrigin(), `http://127.0.0.1:${port}`];
   }
-  // eslint-disable-next-line no-restricted-syntax -- VITE_PORT is a Vite-specific var not in server env.ts
-  const vitePort = process.env.VITE_PORT || '4241';
+  const vitePort = viteDevPort();
   return [
     `http://localhost:${port}`,
-    `http://localhost:${vitePort}`,
+    getLocalCockpitOrigin(),
     `http://127.0.0.1:${port}`,
     `http://127.0.0.1:${vitePort}`,
   ];
