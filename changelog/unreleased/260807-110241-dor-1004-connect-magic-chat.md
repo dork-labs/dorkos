@@ -16,9 +16,10 @@ covers:
   are done (DOR-1004).
 - You can sign in however you like and it still works. Close the tab, reload the page, or
   finish on your phone. The agent still gets going again on its own (DOR-1004).
-- Once the sign-in lands, the card turns into a short note in the conversation saying what
-  you connected and how many tools it added. Your chat can tell you later what you allowed,
-  and when (DOR-1004).
+- Once the sign-in lands, the card turns into a short note saying what you connected and how
+  many tools it added, so you can see it worked. The note sticks around while your agent gets
+  back to work, then the chat moves on. The moment your agent picked the job back up stays in
+  your chat and names the server, so you can still find it later (DOR-1004).
 - The card stays put while you are away signing in. If you open a new tab in the meantime, it
   shows the card too (DOR-1004).
 - Adding a server that needs a sign-in now takes you straight into it. Before, you were

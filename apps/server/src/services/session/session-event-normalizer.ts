@@ -424,12 +424,15 @@ function toCapabilityApprovalResolvedEvent(
  * (DOR-1004).
  *
  * Every field is coerced with `String(... ?? '')` and every default fails toward
- * KEEPING the card on screen, mirroring the approval pair's rule. The one field
- * that could argue for the opposite is `authorizeUrl` — a card with no link is a
- * card nobody can act on — but dropping the event here would strand a person who
- * was just told to sign in with nothing at all, while an empty link renders a
- * card that plainly shows something went wrong. The emitter validates the link
- * before pushing (`in-session-card.ts`), so neither is reachable today.
+ * KEEPING the card on screen, mirroring the approval pair's rule.
+ *
+ * `authorizeUrl` is the one field where that direction is arguable, and it is
+ * settled at the EMITTER rather than here: `in-session-card.ts` refuses to push a
+ * card whose link the schema would reject, so that call falls through to the
+ * ordinary prose result and the person still gets a link — in the agent's reply
+ * instead of on a card. By the time an event reaches this function its link has
+ * already been checked, so the coercion below is a shape guard for a malformed
+ * frame, not the place the decision is made.
  */
 function toMcpSigninRequiredEvent(data: StreamData): RawOf<'mcp_signin_required'> {
   return {

@@ -112,6 +112,23 @@ export interface SessionStreamState {
    * snapshot itself carries fresh history).
    */
   hydrationGeneration: number;
+  /**
+   * Sign-in flows whose one turn of grace is already spent (DOR-1004).
+   *
+   * Held EXPLICITLY, and that is the whole point. The grace mark used to be
+   * inferred — "this list already contains a `turn_start`, so its card has been
+   * through a turn" — which read a fact off data another code path deletes:
+   * `retainOpenSigninCards` strips everything but the sign-in events on every
+   * settled turn, `turn_start` included. So each history reload silently handed
+   * the receipt a fresh turn of grace and it never retired at all, while the
+   * server retired it after one. Two projections of the same conversation
+   * disagreeing about what is on screen is the bug this field exists to make
+   * impossible.
+   *
+   * Bounded by construction: an id is kept only while its card is still on
+   * screen, and dropped with it.
+   */
+  carriedSigninFlowIds: string[];
 }
 
 /** Default state for an un-hydrated session. */
@@ -128,6 +145,7 @@ export const DEFAULT_SESSION_STREAM_STATE: SessionStreamState = {
   connectionState: 'connecting',
   triggerPending: false,
   hydrationGeneration: 0,
+  carriedSigninFlowIds: [],
 };
 
 /** `SessionEvent` member discriminants that map onto a {@link PendingInteractionDTO}. */
@@ -252,26 +270,48 @@ function retainOpenSigninCards(events: SessionEvent[]): SessionEvent[] {
   return events.filter((event) => SIGNIN_CARD_EVENT_TYPES.has(event.type));
 }
 
+/** The flow a sign-in card event belongs to. Both members carry `flowId`. */
+function signinFlowIdOf(event: SessionEvent): string {
+  return (event as Extract<SessionEvent, { type: 'mcp_signin_required' }>).flowId;
+}
+
 /**
- * The sign-in events a NEW turn inherits from the one before it (DOR-1004) —
- * one turn of grace, then gone.
+ * Spend one `turn_start` of every carried sign-in card's grace, retiring the
+ * ones that had already spent theirs (DOR-1004).
  *
- * Signing in triggers a resume turn almost immediately, and clearing the turn on
- * its `turn_start` erased the receipt about a second after it appeared. So a card
- * survives exactly one `turn_start` and the next one retires it, which is the
- * same rule the server projector applies to its own carry.
+ * The client half of the server projector's rule of the same name, and written
+ * to be read beside it: signing in triggers a resume turn almost immediately, so
+ * clearing the turn on its `turn_start` erased the receipt about a second after
+ * it appeared. A card therefore survives exactly one `turn_start`, and the next
+ * one retires it.
  *
- * The "already carried" mark is the list itself rather than a counter: a turn
- * that has begun holds its own `turn_start`, so a card sitting beside one has
- * been through a turn already. That keeps the rule in one pure function with no
- * extra per-session state to reset, migrate, or forget to clear.
+ * The mark is CARRIED IN, not derived. Deriving it from the event list looked
+ * tidier and was wrong: the reload path strips the very `turn_start` the
+ * derivation read, so every reload restored the grace and the receipt became
+ * permanent.
  *
  * @param events - The outgoing turn's events.
- * @returns The events the new turn starts with, before its own `turn_start`.
+ * @param spentFlowIds - Flows whose grace was already spent.
+ * @returns The events the new turn starts with (before its own `turn_start`),
+ *   and the flows that have now spent their grace.
  */
-function carrySigninCards(events: SessionEvent[]): SessionEvent[] {
-  if (events.some((event) => event.type === 'turn_start')) return [];
-  return retainOpenSigninCards(events);
+function ageSigninCards(
+  events: SessionEvent[],
+  spentFlowIds: readonly string[]
+): { kept: SessionEvent[]; spentFlowIds: string[] } {
+  const spent = new Set(spentFlowIds);
+  const kept: SessionEvent[] = [];
+  const nowSpent = new Set<string>();
+  for (const event of events) {
+    if (!SIGNIN_CARD_EVENT_TYPES.has(event.type)) continue;
+    const flowId = signinFlowIdOf(event);
+    // A flow that already had its turn goes, and is forgotten with it — nothing
+    // accumulates across a long session.
+    if (spent.has(flowId)) continue;
+    kept.push(event);
+    nowSpent.add(flowId);
+  }
+  return { kept, spentFlowIds: [...nowSpent] };
 }
 
 interface SessionStreamStoreState {
@@ -468,10 +508,12 @@ function deriveTurnEndLifecycle(
 /** Fold a single event into a session's projection (assumes seq already gated). */
 function projectEvent(session: SessionStreamState, event: SessionEvent): void {
   switch (event.type) {
-    case 'turn_start':
+    case 'turn_start': {
       // A sign-in card (or its receipt) rides one turn further than the rest of
-      // the turn it belonged to — see `carrySigninCards`.
-      session.inProgressTurn = [...carrySigninCards(session.inProgressTurn), event];
+      // the turn it belonged to — see `ageSigninCards`.
+      const aged = ageSigninCards(session.inProgressTurn, session.carriedSigninFlowIds);
+      session.carriedSigninFlowIds = aged.spentFlowIds;
+      session.inProgressTurn = [...aged.kept, event];
       if (session.status) {
         session.status.lifecycle = 'streaming';
         // A new turn clears the previous failure surface (server-projector parity).
@@ -480,6 +522,7 @@ function projectEvent(session: SessionStreamState, event: SessionEvent): void {
       // The triggered turn materialized — the trigger window is over.
       session.triggerPending = false;
       break;
+    }
     case 'turn_end':
       // Settle the lifecycle from the terminal reason — the success path carries
       // it on no other event, so without this the session stays `streaming`
@@ -528,6 +571,15 @@ function projectEvent(session: SessionStreamState, event: SessionEvent): void {
       else session.pendingInteractions[idx] = dto;
       break;
     }
+    case 'mcp_signin_resolved':
+      // The receipt is a NEW thing on screen and gets its own turn of grace,
+      // whatever the card before it had already spent — the same reset the
+      // server projector applies in `attachSigninResolution`.
+      session.carriedSigninFlowIds = session.carriedSigninFlowIds.filter(
+        (flowId) => flowId !== event.flowId
+      );
+      session.inProgressTurn.push(event);
+      break;
     case 'interaction_resolved':
       // Drop the resolved DTO (no more pending card / countdown) AND record the
       // event in the turn so the pure projection can un-pend a part that was
@@ -581,6 +633,11 @@ export const useSessionStreamStore: SessionStreamStore = create<
             session.status = snapshot.status;
             session.pendingInteractions = snapshot.pendingInteractions;
             session.inProgressTurn = snapshot.inProgressTurn ?? [];
+            // The server sends only the sign-in cards it is still carrying, so its
+            // answer replaces this projection's grace bookkeeping wholesale
+            // (DOR-1004). Keeping stale marks would retire a card the server just
+            // said is on screen.
+            session.carriedSigninFlowIds = [];
             session.lastAppliedSeq = snapshot.cursor;
             session.lastEventAt = Date.now();
             session.streamReadyCursor = snapshot.cursor;

@@ -136,6 +136,36 @@ describe('useSessionStreamStore', () => {
     expect(s.inProgressTurn.map((e) => e.type)).toEqual(['mcp_signin_required']);
   });
 
+  /** The `mcp_signin_required` event for the card these tests drive. */
+  function SIGNIN_REQUIRED(seq: number): SessionEvent {
+    return {
+      type: 'mcp_signin_required',
+      seq,
+      serverName: 'granola',
+      agentId: '01HV7KJZZZ0000000000000000',
+      flowId: 'flow-1',
+      authorizeUrl: 'https://mcp.test.local/authorize',
+      disclosure: 'DorkOS stores the token on this machine.',
+    } as SessionEvent;
+  }
+
+  /** Run a turn that asks for a sign-in and ends, as the real flow does. */
+  function signinTurn(store: ReturnType<typeof useSessionStreamStore.getState>, seq: number): void {
+    store.applyEvent(SID, { type: 'turn_start', seq });
+    store.applyEvent(SID, { type: 'text_delta', seq: seq + 1, text: 'Connecting your notes.' });
+    store.applyEvent(SID, SIGNIN_REQUIRED(seq + 2));
+    store.applyEvent(SID, { type: 'turn_end', seq: seq + 3 });
+  }
+
+  /** The sign-in event types currently on screen. */
+  function signinTypes(): string[] {
+    return useSessionStreamStore
+      .getState()
+      .getSession(SID)
+      .inProgressTurn.filter((e) => e.type.startsWith('mcp_signin'))
+      .map((e) => e.type);
+  }
+
   it('setHistoryMessages keeps a RESOLVED card so the receipt survives (DOR-1004)', () => {
     const store = useSessionStreamStore.getState();
     store.applySnapshot(SID, snapshot({ cursor: 0 }));
@@ -213,6 +243,95 @@ describe('useSessionStreamStore', () => {
         .getSession(SID)
         .inProgressTurn.map((e) => e.type)
     ).toEqual(['turn_start']);
+  });
+
+  it('retires the receipt after ONE turn even with a history reload between (DOR-1004)', () => {
+    // The bug this pins: the grace mark used to be inferred from a `turn_start`
+    // sitting in the outgoing list — and the reload path strips exactly that
+    // event. So every settled turn handed the receipt a fresh turn of grace and
+    // it never retired, while the server retired it after one. Four turns and
+    // three reloads later it was still on screen.
+    const store = useSessionStreamStore.getState();
+    store.applySnapshot(SID, snapshot({ cursor: 0 }));
+    signinTurn(store, 1);
+    store.setHistoryMessages(SID, [MESSAGE]);
+    store.applyEvent(SID, {
+      type: 'mcp_signin_resolved',
+      seq: 5,
+      flowId: 'flow-1',
+      outcome: 'connected',
+    });
+
+    // The resume turn: the receipt rides through it, reload and all.
+    store.applyEvent(SID, { type: 'turn_start', seq: 6 });
+    store.applyEvent(SID, { type: 'turn_end', seq: 7 });
+    store.setHistoryMessages(SID, [MESSAGE]);
+    expect(signinTypes()).toEqual(['mcp_signin_required', 'mcp_signin_resolved']);
+
+    // The turn after that retires it, and the reload cannot resurrect it.
+    store.applyEvent(SID, { type: 'turn_start', seq: 8 });
+    expect(signinTypes()).toEqual([]);
+    store.applyEvent(SID, { type: 'turn_end', seq: 9 });
+    store.setHistoryMessages(SID, [MESSAGE]);
+    expect(signinTypes()).toEqual([]);
+
+    // …and it stays gone however many more turns run.
+    store.applyEvent(SID, { type: 'turn_start', seq: 10 });
+    store.setHistoryMessages(SID, [MESSAGE]);
+    expect(signinTypes()).toEqual([]);
+  });
+
+  it('retires an UNRESOLVED card after one turn, reload or not (DOR-1004)', () => {
+    const store = useSessionStreamStore.getState();
+    store.applySnapshot(SID, snapshot({ cursor: 0 }));
+    signinTurn(store, 1);
+    store.setHistoryMessages(SID, [MESSAGE]);
+
+    store.applyEvent(SID, { type: 'turn_start', seq: 5 });
+    expect(signinTypes()).toEqual(['mcp_signin_required']);
+    store.applyEvent(SID, { type: 'turn_end', seq: 6 });
+    store.setHistoryMessages(SID, [MESSAGE]);
+
+    store.applyEvent(SID, { type: 'turn_start', seq: 7 });
+    expect(signinTypes()).toEqual([]);
+  });
+
+  it('gives the receipt its OWN turn of grace, not the card’s leftovers (DOR-1004)', () => {
+    // A sign-in the person takes their time over: the card burns its turn while
+    // they are still in the browser, and the resolution lands afterwards. The
+    // receipt must not inherit a spent grace and vanish immediately — the server
+    // projector resets it in `attachSigninResolution`, and so does this.
+    const store = useSessionStreamStore.getState();
+    store.applySnapshot(SID, snapshot({ cursor: 0 }));
+    signinTurn(store, 1);
+    store.applyEvent(SID, { type: 'turn_start', seq: 5 });
+    store.applyEvent(SID, { type: 'turn_end', seq: 6 });
+
+    store.applyEvent(SID, {
+      type: 'mcp_signin_resolved',
+      seq: 7,
+      flowId: 'flow-1',
+      outcome: 'connected',
+    });
+    store.applyEvent(SID, { type: 'turn_start', seq: 8 });
+
+    expect(signinTypes()).toEqual(['mcp_signin_required', 'mcp_signin_resolved']);
+  });
+
+  it('a snapshot re-baselines the grace from what the server still carries (DOR-1004)', () => {
+    // The server sends only the cards it is still carrying. Keeping a stale
+    // spent-mark would retire, on the very next turn, a card the server had just
+    // said is on screen.
+    const store = useSessionStreamStore.getState();
+    store.applySnapshot(SID, snapshot({ cursor: 0 }));
+    signinTurn(store, 1);
+    store.applyEvent(SID, { type: 'turn_start', seq: 5 });
+    // Grace now spent. A reconnect brings the card back from the server…
+    store.applySnapshot(SID, snapshot({ cursor: 10, inProgressTurn: [SIGNIN_REQUIRED(11)] }));
+
+    store.applyEvent(SID, { type: 'turn_start', seq: 12 });
+
+    expect(signinTypes()).toEqual(['mcp_signin_required']);
   });
 
   it('records the fidelity events (thinking/progress/hook/memory) in the turn (task #19)', () => {

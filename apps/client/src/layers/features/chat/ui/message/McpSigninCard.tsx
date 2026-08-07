@@ -39,12 +39,21 @@ function CardShell({
 }
 
 /**
- * The terminal receipt a finished sign-in leaves in the transcript.
+ * The terminal note a finished sign-in leaves on screen.
  *
- * This is the ONLY durable record of what was authorized and when — the runtime's
- * own transcript never sees a sign-in, and the settings row shows a live status,
- * not a history. So it survives the turn the sign-in triggered, and reads as a
- * statement about the past rather than something to act on.
+ * EPHEMERAL, deliberately, and worth being precise about because an earlier
+ * version of this comment claimed otherwise. The receipt exists to close the
+ * loop for the person standing there: they walk back from their browser, read
+ * "Connected — 7 tools", and watch the agent carry on. It survives the turn the
+ * sign-in triggered and the conversation then moves on without it (one turn of
+ * grace; see `ageSigninCards` on both the projector and the store).
+ *
+ * What DOES persist is the resumed turn itself. The resume rides a `ui_action`
+ * message, which the transcript renders as a chip reading "Sign-in: <server> ·
+ * mcp signin connected" — so a conversation reopened later still shows that this
+ * server was connected and where in the conversation it happened. The tool count
+ * is in that message's payload rather than its visible text, so it is the one
+ * thing the durable record does not say out loud.
  */
 function SigninReceipt({ part }: { part: McpSigninPart }) {
   if (part.outcome === 'failed') {

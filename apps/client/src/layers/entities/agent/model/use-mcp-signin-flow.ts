@@ -92,9 +92,10 @@ export interface McpSigninFlow {
    * disclosure into the conversation (DOR-1004) — and render it from
    * `disclosure` on, with no start request of its own.
    *
-   * Adopting deliberately does NOT confer {@link isOwner}: every tab watching
-   * the session renders the same pushed card, and only the tab the person
-   * actually clicked through may act on the result.
+   * Adopting only WATCHES. It starts no sign-in and it acts on no result: every
+   * tab watching the session renders the same pushed card, and the turn a
+   * finished sign-in triggers is started server-side, once, by the token exchange
+   * itself. Nothing here fires it.
    *
    * @param flow - The pushed flow's id, sign-in link, and custody disclosure.
    */
@@ -147,14 +148,18 @@ const IDLE_STATE: SigninLocalState = {
 /**
  * How many tools the poll body reported, or `null` when it reported none.
  *
- * Written against the WIRE, not the type: `toolCount` is optional and may be
- * absent entirely depending on the server this client is talking to, so the read
- * narrows an unknown rather than trusting a declaration. A negative or
- * non-finite number is treated as absent — "we don't know" is honest, and
- * "-1 tools" is not.
+ * `toolCount` is optional on the wire and absent means "we don't know", never
+ * zero: the server reports a connection whether or not its follow-up probe could
+ * take a count, so a missing value must not become "Connected — 0 tools."
+ *
+ * The finite/non-negative check stays even though the field is typed `number`,
+ * because the type describes what DorkOS sends and this reads what ARRIVED — an
+ * older or partly-upgraded server on the other end of a long-lived page is
+ * exactly the case where a shape drifts, and "-1 tools" on a card is worse than
+ * no count at all.
  */
 function readToolCount(data: McpSigninPollResult | undefined): number | null {
-  const value = (data as { toolCount?: unknown } | undefined)?.toolCount;
+  const value: unknown = data?.toolCount;
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return null;
   return value;
 }

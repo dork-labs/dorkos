@@ -26,6 +26,7 @@
  */
 import { z } from 'zod';
 import type { StreamEvent } from '@dorkos/shared/types';
+import { McpSigninRequiredEventSchema } from '@dorkos/shared/schemas';
 import type { CapabilityHoldSession } from './capability-approval-hold.js';
 
 /**
@@ -42,10 +43,21 @@ export type InSessionCardKind = 'signin' | 'signin_resolved';
 /** The `(agentId, name)` shape every managed-MCP capability takes as input. */
 const AgentServerShape = z.object({ agentId: z.string().min(1), name: z.string().min(1) });
 
-/** The part of `mcp.signin`'s result a sign-in card is built from. */
+/**
+ * The part of `mcp.signin`'s result a sign-in card is built from.
+ *
+ * `authorizeUrl` is validated against the SAME schema the wire event uses, and
+ * that is the point: a card is a button a person is being told it is safe to
+ * press, so a link the event schema would reject must not be turned into one
+ * here. Checking it at the emitter rather than only at the boundary is what makes
+ * the refusal graceful — the card is skipped, the capability's own prose result
+ * (link and disclosure included) is returned untouched, and the person still gets
+ * a sign-in link from the agent. Validating only downstream would drop the frame
+ * silently and leave them with nothing at all.
+ */
 const SigninResultShape = z.object({
   flowId: z.string().min(1),
-  authorizeUrl: z.string().min(1),
+  authorizeUrl: McpSigninRequiredEventSchema.shape.authorizeUrl,
   disclosure: z.string().min(1),
 });
 
@@ -82,9 +94,12 @@ function push(session: CapabilityHoldSession, event: StreamEvent): void {
 /**
  * Draw the sign-in card, and hand the disclosure to it.
  *
- * No card is drawn when the result carries no `authorizeUrl` — an already-
- * connected server has nothing for a person to do — and the payload then passes
- * through untouched, so the agent still reads "you're already signed in".
+ * No card is drawn when the result carries no USABLE `authorizeUrl`: an
+ * already-connected server has nothing for a person to do, and a link the schema
+ * refuses is one nobody should be invited to click. Either way the payload passes
+ * through untouched, so the agent still reads "you're already signed in" — or
+ * still has the provider's link to show in prose, which is strictly better than a
+ * card that silently never appears.
  *
  * @returns The result to return to the agent: the same payload with a `message`
  *   that no longer repeats what the card now shows, or the original when no card

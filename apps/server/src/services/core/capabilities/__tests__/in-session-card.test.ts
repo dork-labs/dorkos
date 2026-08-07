@@ -36,7 +36,11 @@ const FULL_MESSAGE = `[Sign in to ${SERVER}](${AUTHORIZE_URL})\n\n${DISCLOSURE}\
  * pinning the mesh domain's wiring (which `mcp-capabilities-signin.test.ts`
  * covers).
  */
-function domain(pollStatus: 'pending' | 'connected' | 'failed', alreadyConnected = false) {
+function domain(
+  pollStatus: 'pending' | 'connected' | 'failed',
+  alreadyConnected = false,
+  authorizeUrl: string = AUTHORIZE_URL
+) {
   const signin: CapabilityDomain = {
     name: 'fake',
     capabilities: [
@@ -57,7 +61,7 @@ function domain(pollStatus: 'pending' | 'connected' | 'failed', alreadyConnected
         inSessionCard: 'signin',
         invoke: async () => ({
           flowId: 'flow-1',
-          ...(alreadyConnected ? {} : { authorizeUrl: AUTHORIZE_URL }),
+          ...(alreadyConnected ? {} : { authorizeUrl }),
           alreadyConnected,
           disclosure: DISCLOSURE,
           message: alreadyConnected ? `You’re already signed in to ${SERVER}.` : FULL_MESSAGE,
@@ -178,6 +182,51 @@ describe('in-session card seam', () => {
 
       expect(queue).toEqual([]);
       expect(payloadOf(result).message).toContain('already signed in');
+    });
+
+    it.each([
+      ['javascript:alert(1)'],
+      ['data:text/html,<script>alert(1)</script>'],
+      ['http://evil.example/authorize'],
+      ['not-a-url'],
+    ])('refuses to draw a card for an unsafe link (%s), falling back to prose', async (bad) => {
+      // A card is a button a person is told it is safe to press. A link the wire
+      // schema would reject must not become one — and the refusal has to be
+      // GRACEFUL: validating only at the boundary would drop the frame silently
+      // and leave the person with no sign-in at all. Skipping the card returns the
+      // capability's own markdown instead, so the link still reaches them.
+      const registry = composeRegistry([domain('pending', false, bad)], { logger: noopLogger });
+
+      const result = await invokeCapabilityAsMcpResult(
+        registry,
+        'fake.signin',
+        { agentId: AGENT_ID, name: SERVER },
+        undefined,
+        surface
+      );
+
+      expect(queue).toEqual([]);
+      // Untouched: the full message, link and disclosure included.
+      expect(payloadOf(result).message).toBe(FULL_MESSAGE);
+    });
+
+    it('still draws a card for an http link on loopback', async () => {
+      // A provider running on this machine is reached over plain http, and the
+      // mock provider the OAuth tests drive is exactly that. Refusing it would
+      // break local MCP servers for no security gain.
+      const local = 'http://127.0.0.1:9000/authorize';
+      const registry = composeRegistry([domain('pending', false, local)], { logger: noopLogger });
+
+      await invokeCapabilityAsMcpResult(
+        registry,
+        'fake.signin',
+        { agentId: AGENT_ID, name: SERVER },
+        undefined,
+        surface
+      );
+
+      expect(queue).toHaveLength(1);
+      expect(queue[0].data).toMatchObject({ authorizeUrl: local });
     });
 
     it('draws no card for a capability that declares none', async () => {

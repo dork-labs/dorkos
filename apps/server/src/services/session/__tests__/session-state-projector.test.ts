@@ -1325,6 +1325,26 @@ describe('in-conversation MCP sign-in card (DOR-1004)', () => {
     expect(snap.inProgressTurn?.some((e) => e.type === 'mcp_signin_required')).toBe(false);
   });
 
+  it('gives the receipt its OWN turn of grace, not the card’s leftovers', async () => {
+    // A person who takes their time: the card burns its turn while they are still
+    // in the browser, and the resolution lands after. The client store mirrors
+    // this exactly (`session-stream-store.test.ts`), which is what stops the two
+    // projections disagreeing about what is on screen.
+    const p = new SessionStateProjector('s1');
+    signinTurn(p);
+    p.ingest({ type: 'turn_start' });
+    p.ingest({ type: 'turn_end' });
+    p.ingest({ type: 'mcp_signin_resolved', flowId: 'flow-1', outcome: 'connected' });
+    p.ingest({ type: 'turn_start' });
+
+    const snap = await p.buildSnapshot(async () => []);
+    expect(snap.inProgressTurn?.map((e) => e.type)).toEqual([
+      'turn_start',
+      'mcp_signin_required',
+      'mcp_signin_resolved',
+    ]);
+  });
+
   it('ignores a resolution for a card it never saw', async () => {
     // A bare receipt has no server name and no disclosure — it would be a
     // surprise in the transcript, not a record.

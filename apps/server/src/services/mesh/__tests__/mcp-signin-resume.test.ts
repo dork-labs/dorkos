@@ -177,6 +177,27 @@ describe('the connected port', () => {
     expect(connected).toHaveLength(1);
   });
 
+  it('fires once when two callbacks race, not once per callback', async () => {
+    // The reload test above only exercises the PRE-lock fast path: by the time the
+    // second call arrives, the first has finished. Two callbacks landing
+    // CONCURRENTLY — a browser reload during the few hundred ms the exchange is on
+    // the wire — both pass that check while the flow is still pending, and only
+    // the re-check INSIDE the lock stops the second from announcing. Without this
+    // case that guard is unpinned, and one sign-in buys two turns.
+    const { oauth, pkce, connected } = await buildEngine();
+    const started = await oauth.startSignin(TARGET, { originSessionId: SESSION_ID });
+    pkce.challenge = new URL(started.authorizeUrl!).searchParams.get('code_challenge') ?? '';
+
+    const [first, second] = await Promise.all([
+      oauth.handleCallback({ state: started.flowId, code: AUTH_CODE }),
+      oauth.handleCallback({ state: started.flowId, code: AUTH_CODE }),
+    ]);
+
+    expect(first).toEqual({ connected: true, serverName: SERVER });
+    expect(second).toEqual({ connected: true, serverName: SERVER });
+    expect(connected).toHaveLength(1);
+  });
+
   it('does not fire when the sign-in failed', async () => {
     const { oauth, pkce, connected } = await buildEngine();
     const started = await oauth.startSignin(TARGET, { originSessionId: SESSION_ID });
@@ -244,6 +265,9 @@ describe('the connected port', () => {
 });
 
 describe('resumeAfterMcpSignin', () => {
+  /** The directory the session's own projector reports — NOT the server default. */
+  const SESSION_CWD = '/projects/somewhere-else';
+
   const EVENT: McpSigninConnectedEvent = {
     agentId: AGENT_ID,
     serverName: SERVER,
@@ -267,9 +291,10 @@ describe('resumeAfterMcpSignin', () => {
     const warn = vi.fn();
     const info = vi.fn();
     vi.doMock('../../../lib/logger.js', () => ({ logger: { warn, info } }));
+    const getSession = vi.fn(async () => ({ id: SESSION_ID }));
     const runtime = {
       hasSession: () => options.hasSession ?? true,
-      getSession: async () => ({ id: SESSION_ID }),
+      getSession,
       getCapabilities: () => ({ logBackedHistory: false }),
       acquireLock: vi.fn(),
       releaseLock: vi.fn(),
@@ -280,15 +305,16 @@ describe('resumeAfterMcpSignin', () => {
     vi.doMock('../../core/runtime-registry.js', () => ({
       runtimeRegistry: { resolveForSession: async () => runtime },
     }));
+    const getOrCreateProjector = vi.fn((_id: string, _cwd?: string) => ({ cwd: SESSION_CWD }));
     vi.doMock('../../session/index.js', () => ({
       triggerTurn,
-      getOrCreateProjector: () => ({ cwd: '/projects/test' }),
-      peekProjector: () => ({ cwd: '/projects/test', ingest: options.ingest ?? (() => {}) }),
+      getOrCreateProjector,
+      peekProjector: () => ({ cwd: SESSION_CWD, ingest: options.ingest ?? (() => {}) }),
       persistenceModeFor: () => 'record',
       rekeyProjector: vi.fn(),
     }));
     const { resumeAfterMcpSignin } = await import('../mcp-signin-resume.js');
-    return { resumeAfterMcpSignin, triggerTurn, warn, info };
+    return { resumeAfterMcpSignin, triggerTurn, getOrCreateProjector, runtime, warn, info };
   }
 
   afterEach(() => {
@@ -315,6 +341,25 @@ describe('resumeAfterMcpSignin', () => {
     expect(content).toContain('Continue the task');
     expect(content).toContain('Do not describe or narrate');
     expect(content).toContain(SERVER);
+  });
+
+  it('runs the turn in the SESSION’s directory, not the server default', async () => {
+    // Every hop that takes a cwd has to be given one. A turn triggered without it
+    // cold-starts a map-less session against the default root — the wrong
+    // checkout, silently — which is the same bug `/ui-action` threads its request
+    // cwd to avoid. The mocks deliberately report a directory that is NOT the
+    // default, so a dropped hop cannot pass by coincidence.
+    const { resumeAfterMcpSignin, triggerTurn, getOrCreateProjector, runtime } =
+      await loadWithMocks({ accepted: true, hasSession: false });
+
+    await resumeAfterMcpSignin(EVENT);
+
+    // The storage probe that decides whether there is anything to resume…
+    expect(runtime.getSession).toHaveBeenCalledWith(SESSION_CWD, SESSION_ID);
+    // …the projector the turn is flushed through…
+    expect(getOrCreateProjector.mock.calls[0][1]).toBe(SESSION_CWD);
+    // …and the trigger itself.
+    expect(triggerTurn.mock.calls[0][0].cwd).toBe(SESSION_CWD);
   });
 
   it('settles quietly when the session is locked — one attempt, no fault', async () => {

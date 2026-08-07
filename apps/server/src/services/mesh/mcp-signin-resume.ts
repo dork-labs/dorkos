@@ -29,6 +29,22 @@
  * Queueing or retrying would buy a duplicate turn in the common case and a
  * retry storm in the bad one; one log line is the honest cost.
  *
+ * ## Known bound: restart recovery is default-directory only
+ *
+ * The working directory comes from the session's live projector, which is minted
+ * by a client's `/events` connect. If the server restarts (or the session is
+ * evicted) while a person is off in their browser, there is no projector left to
+ * ask and this falls back to `DEFAULT_CWD` — so a session rooted anywhere else
+ * cold-starts against the wrong directory and the storage probe finds nothing to
+ * resume. The sign-in itself is unaffected: the token is stored, the row shows
+ * connected, and the agent picks the server up on the next turn a person starts.
+ * Only the automatic resume is lost, and only across a restart.
+ *
+ * Fixing it means persisting the session's cwd somewhere a cold process can read
+ * it, which is a session-storage question rather than a sign-in one. Written
+ * down here rather than worked around, because a wrong-directory cold start is
+ * worse than an honest miss.
+ *
  * @module services/mesh/mcp-signin-resume
  */
 import { formatUiActionMessage } from '@dorkos/shared/ui-widget';
@@ -126,13 +142,18 @@ export async function resumeAfterMcpSignin(event: McpSigninConnectedEvent): Prom
     settleCard(event);
 
     const runtime = await runtimeRegistry.resolveForSession(sessionId);
+    // WHERE the turn runs, resolved once and threaded through every hop that
+    // takes one — the storage probe, the projector, and the trigger — exactly as
+    // `session-ui-action-handler` threads its request `cwd`. A projector minted
+    // by this session's own `/events` connect knows the real directory; see the
+    // module TSDoc for what happens when there isn't one.
+    const cwd = peekProjector(sessionId)?.cwd ?? DEFAULT_CWD;
     // The live session map empties on restart and on eviction, while a sign-in
     // outlives both — a person can take minutes in a browser. A stored session
     // cold-starts through `triggerTurn`; one that exists nowhere is gone for
     // good and there is nothing to resume.
     if (!runtime.hasSession(sessionId)) {
-      const probeCwd = peekProjector(sessionId)?.cwd ?? DEFAULT_CWD;
-      if (!(await runtime.getSession(probeCwd, sessionId))) {
+      if (!(await runtime.getSession(cwd, sessionId))) {
         logger.info('[mcp-signin-resume] session is gone — nothing to resume', {
           sessionId,
           serverName,
@@ -151,14 +172,16 @@ export async function resumeAfterMcpSignin(event: McpSigninConnectedEvent): Prom
       },
     });
 
-    const projector = getOrCreateProjector(sessionId, undefined, {
+    const projector = getOrCreateProjector(sessionId, cwd, {
       persist: persistenceModeFor(runtime.getCapabilities()),
     });
+    projector.cwd = cwd;
 
     const result = await triggerTurn({
       sessionId,
       clientId: `mcp-signin-${event.flowId}`,
       content,
+      cwd,
       projector,
       deps: {
         acquireLock: (sid, cid, lifecycle, token) =>
