@@ -22,6 +22,7 @@ import type {
   McpSigninPollResult,
 } from '@dorkos/shared/transport';
 import type { RecentSessionsResponse } from '@dorkos/shared/types';
+import type { TeamRosterResponse } from '@dorkos/shared/team-schemas';
 import type { UnattendedAutonomyState } from '@dorkos/shared/permission-semantics';
 import type {
   ApprovalDecisionResponse,
@@ -1032,5 +1033,33 @@ export const mcpManagementStubs = {
 
   async pollMcpSignin(_flowId: string): Promise<McpSigninPollResult> {
     throw new Error(EMBEDDED_MCP_NOTICE);
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Team roster (spec `identity-consistency` §W2.2)
+// ---------------------------------------------------------------------------
+
+/**
+ * The team roster in embedded mode.
+ *
+ * The roster is a server-side aggregation over `authors` and the mesh registry,
+ * and the Obsidian plugin runs beside neither. It answers in the endpoint's own
+ * degraded shape rather than throwing or returning a bare `{ members: [] }`:
+ * the page already knows how to say "a source did not answer", and an empty
+ * roster with no explanation is the one thing the surface must never show —
+ * it would read as "there is nobody here", which is never true.
+ *
+ * `message` is diagnostic, matching every other warning on this envelope
+ * (`err.message` from whatever failed). The sentence a person reads is keyed
+ * off `source` by the banner that draws it, which is the single owner of that
+ * copy — see `SOURCE_COPY` in `features/team-roster`.
+ */
+export const teamStubs = {
+  async getTeamRoster(): Promise<TeamRosterResponse> {
+    return {
+      members: [],
+      warnings: [{ source: 'team', message: 'No DorkOS server in embedded mode.' }],
+    };
   },
 };

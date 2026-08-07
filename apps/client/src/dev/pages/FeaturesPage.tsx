@@ -3,6 +3,7 @@ import { FEATURES_SECTIONS } from '../playground-registry';
 import { AgentIdentityShowcases } from '../showcases/AgentIdentityShowcases';
 import { AgentSidebarShowcases } from '../showcases/AgentSidebarShowcases';
 import { AgentFleetShowcases } from '../showcases/AgentFleetShowcases';
+import { TeamShowcases } from '../showcases/TeamShowcases';
 import { RelayShowcases } from '../showcases/RelayShowcases';
 import { AdapterWizardShowcases } from '../showcases/AdapterWizardShowcases';
 import { MeshShowcases } from '../showcases/MeshShowcases';
@@ -11,6 +12,7 @@ import { PersonalityPickerShowcases } from '../showcases/PersonalityPickerShowca
 import { PipPanelShowcases } from '../showcases/PipPanelShowcases';
 import { ApprovalsShowcases } from '../showcases/ApprovalsShowcases';
 import { ConnectionsShowcases } from '../showcases/ConnectionsShowcases';
+import { McpServerCardShowcases } from '../showcases/McpServerCardShowcases';
 
 /** Feature component showcase page for the dev playground. */
 export function FeaturesPage() {
@@ -22,6 +24,7 @@ export function FeaturesPage() {
     >
       <PersonalityPickerShowcases />
       <AgentIdentityShowcases />
+      <TeamShowcases />
       <AgentSidebarShowcases />
       <AgentFleetShowcases />
       <RelayShowcases />
@@ -31,6 +34,7 @@ export function FeaturesPage() {
       <PipPanelShowcases />
       <ApprovalsShowcases />
       <ConnectionsShowcases />
+      <McpServerCardShowcases />
     </PlaygroundPageLayout>
   );
 }

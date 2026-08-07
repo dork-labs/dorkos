@@ -709,6 +709,10 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     revokeStandingPermission: vi
       .fn()
       .mockImplementation((grantId: string) => Promise.resolve({ ok: true, grantId })),
+    // Team roster (spec `identity-consistency` §W2.2). Honest-empty by default:
+    // `warnings` is OMITTED on a clean read, never `[]`, so a test that does
+    // not opt into degradation never renders the banner by accident.
+    getTeamRoster: vi.fn().mockResolvedValue({ members: [] }),
     // Shapes (DOR-355)
     listShapes: vi.fn().mockResolvedValue([]),
     applyShape: vi.fn(),

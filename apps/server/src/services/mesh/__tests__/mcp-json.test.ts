@@ -60,10 +60,20 @@ describe('summarizeMcpJsonServers', () => {
       stream: { type: 'sse', url: 'https://y' },
     });
     expect(summary).toEqual([
-      { name: 'cmd', type: 'stdio' },
-      { name: 'remote', type: 'http' },
-      { name: 'stream', type: 'sse' },
+      { name: 'cmd', type: 'stdio', scope: 'project' },
+      { name: 'remote', type: 'http', scope: 'project' },
+      { name: 'stream', type: 'sse', scope: 'project' },
     ]);
+  });
+
+  it('stamps the project scope on every entry, because that is where it read them', () => {
+    // This path exists only when the runtime has no live status yet, and it got
+    // there by reading the WORKSPACE's own `.mcp.json`. Leaving the scope absent
+    // left the client unable to distinguish a server the project declares from
+    // one that came from the computer-wide config, and it labelled the former as
+    // the latter (DOR-1005).
+    const summary = summarizeMcpJsonServers({ malformed: 42, ok: { command: 'node' } });
+    expect(summary.every((entry) => entry.scope === 'project')).toBe(true);
   });
 });
 

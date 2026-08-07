@@ -10,6 +10,9 @@ export function useUnregisterAgent() {
     mutationFn: (id: string) => transport.unregisterMeshAgent(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mesh', 'agents'] });
+      // An agent that is gone has to leave the Team roster too. A raw literal:
+      // one entity may not import a sibling entity's constant.
+      queryClient.invalidateQueries({ queryKey: ['team'] });
     },
   });
 }

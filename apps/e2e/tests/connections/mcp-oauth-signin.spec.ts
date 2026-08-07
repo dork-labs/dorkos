@@ -75,9 +75,9 @@ test('add → needs sign-in → Sign in → approve → connected with N tools',
   const mcp = new McpOAuthSigninPage(page);
   await mcp.open(agentDir);
 
-  // The row for the OAuth server reports it needs a sign-in, in plain words.
+  // The card for the OAuth server reports it needs a sign-in, in plain words.
   await expect(mcp.row(SERVER_NAME)).toBeVisible();
-  // Scoped to the row, not the whole section: a status that belonged to some
+  // Scoped to the card, not the whole section: a status that belonged to some
   // other server would otherwise satisfy this.
   await expect(mcp.row(SERVER_NAME).getByText('Needs sign-in')).toBeVisible();
 
@@ -99,12 +99,22 @@ test('add → needs sign-in → Sign in → approve → connected with N tools',
   await mcp.openSignInLink(SERVER_NAME).click();
   const popup = await popupPromise;
   await popup.waitForLoadState('domcontentloaded');
-  // The callback page rendered → the exchange finished and the token is stored.
-  await expect(popup.getByText(/return to DorkOS/i)).toBeVisible();
+  // The callback page rendered its SUCCESS copy → the exchange finished and the
+  // token is stored. Anchored on the headline, which names the server, rather
+  // than on the "Back to DorkOS" link, which the failure page also carries: the
+  // link alone would go green on a failed exchange. (The old assertion looked for
+  // "return to DorkOS", copy that stopped existing in DOR-1004 — it was failing
+  // on `main` before this change too.)
+  await expect(popup.getByText(new RegExp(`signed in to ${SERVER_NAME}`, 'i'))).toBeVisible();
   await popup.close();
 
-  // Polling reaches connected; the row's status flips and the panel confirms it.
-  await expect(mcp.mcpSection.getByText(/available on the next turn/i)).toBeVisible({
+  // Polling reaches connected; the card's status flips and the panel confirms it.
+  // The panel names the payoff: the poll came back connected AND reported how
+  // many tools the mock exposes. (This asserted "available on the next turn"
+  // before — the count-less fallback, which stopped being what this flow says
+  // once DOR-1004 put `toolCount` on the poll result. It was failing on `main`
+  // too.)
+  await expect(mcp.mcpSection.getByText(/Connected — 2 tools\./)).toBeVisible({
     timeout: 15_000,
   });
   // "Signed in", not "Connected": DorkOS now holds a token, but nothing has
@@ -113,7 +123,7 @@ test('add → needs sign-in → Sign in → approve → connected with N tools',
   // same two words.
   await expect(mcp.row(SERVER_NAME).getByText('Signed in', { exact: true })).toBeVisible();
 
-  // Dismissing the panel hands the row back to the runtime's own status, which by
+  // Dismissing the panel hands the card back to the runtime's own status, which by
   // now reports a real connection — the bearer is being injected, so test-mode's
   // getMcpStatus reads `connected`.
   await mcp.dismissSignInPanel().click();

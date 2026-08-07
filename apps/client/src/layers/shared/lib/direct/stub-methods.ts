@@ -24,6 +24,7 @@ import {
   cloudStubs,
   connectorStubs,
   mcpManagementStubs,
+  teamStubs,
 } from '../embedded-mode-stubs';
 
 /** Create the stubbed Transport surface for server-only subsystems. */
@@ -44,5 +45,6 @@ export function createEmbeddedStubMethods() {
     ...cloudStubs,
     ...connectorStubs,
     ...mcpManagementStubs,
+    ...teamStubs,
   };
 }

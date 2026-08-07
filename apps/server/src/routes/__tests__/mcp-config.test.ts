@@ -106,9 +106,12 @@ describe('MCP Config Routes', () => {
     expect(res.status).toBe(200);
     expect(runtimeRegistry.getDefault).toHaveBeenCalled();
     expect(readFileMock).toHaveBeenCalled();
+    // Scoped `project` on the way out: this path reached the roster by reading the
+    // WORKSPACE's own `.mcp.json`, so the scope is provenance rather than a guess,
+    // and the client needs it to say where the server came from (DOR-1005).
     expect(res.body.servers).toEqual([
-      { name: 'linear', type: 'http' },
-      { name: 'fs', type: 'stdio' },
+      { name: 'linear', type: 'http', scope: 'project' },
+      { name: 'fs', type: 'stdio', scope: 'project' },
     ]);
   });
 
