@@ -107,7 +107,17 @@ test('add → needs sign-in → Sign in → approve → connected with N tools',
   await expect(mcp.mcpSection.getByText(/available on the next turn/i)).toBeVisible({
     timeout: 15_000,
   });
-  await expect(mcp.row(SERVER_NAME).getByText('Connected')).toBeVisible();
+  // "Signed in", not "Connected": DorkOS now holds a token, but nothing has
+  // contacted the server since, and the chip says only what is known (DOR-985).
+  // Row-scoped, and `exact` because the success panel's own copy starts with the
+  // same two words.
+  await expect(mcp.row(SERVER_NAME).getByText('Signed in', { exact: true })).toBeVisible();
+
+  // Dismissing the panel hands the row back to the runtime's own status, which by
+  // now reports a real connection — the bearer is being injected, so test-mode's
+  // getMcpStatus reads `connected`.
+  await mcp.dismissSignInPanel().click();
+  await expect(mcp.row(SERVER_NAME).getByText('Connected')).toBeVisible({ timeout: 15_000 });
 
   // The token was stored AND injected: probing through the injected connection
   // now carries the bearer, so the mock lists its two tools.
