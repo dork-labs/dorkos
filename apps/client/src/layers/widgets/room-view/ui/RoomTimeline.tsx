@@ -13,6 +13,7 @@ import {
   toMessageAuthor,
   unreadPlacement,
 } from '../lib/room-timeline';
+import { RoomAgentInfoProvider } from '../model/agent-info-context';
 import { RoomEntryRow } from './RoomEntryRow';
 import { RoomPendingList } from './RoomPendingRow';
 import { RoomThreadReplyRow } from './RoomThreadReplyRow';
@@ -222,7 +223,9 @@ export function RoomTimeline({
   }
 
   return (
-    <>
+    // Wrapped only around the drawn history: the states above have no messages
+    // in them, so nothing there could carry a mention to look an agent up for.
+    <RoomAgentInfoProvider>
       <Feed
         label={`Messages in ${roomName}`}
         className="flex flex-col py-4"
@@ -281,6 +284,6 @@ export function RoomTimeline({
           and outside the feed, because a message the server has not accepted
           yet is not one of its numbered articles. */}
       <RoomPendingList posts={pending} viewerAuthorId={viewerAuthorId} />
-    </>
+    </RoomAgentInfoProvider>
   );
 }

@@ -9,7 +9,7 @@ covers:
 - You can now sign in to an MCP server that needs OAuth right from the agent's server list,
   without asking an agent to do it for you. When a server needs a sign-in, its row shows
   "Needs sign-in" and a Sign in button. Click it, read what DorkOS will do with your sign-in,
-  then open the link and approve access in your browser. The row then shows "Connected" and
+  then open the link and approve access in your browser. DorkOS keeps the sign-in for you, and
   the server's tools work on the agent's next reply.
 
 ### Changed

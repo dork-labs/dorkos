@@ -57,6 +57,21 @@ import {
 export type RawSessionEvent = Omit<SessionEvent, 'seq'>;
 
 /**
+ * How long past its cap an in-session capability hold (DOR-939) keeps pausing
+ * the stall watchdog.
+ *
+ * The cap and `SESSIONS.TURN_STALL_TIMEOUT_MS` are both ten minutes, and both
+ * clocks start on the same event — the inline card. So they expire on the same
+ * millisecond: the hold degrades to the poll payload at exactly the moment the
+ * watchdog would fire, and whichever wins the race decides whether the agent
+ * gets its payload or has its turn interrupted. This grace makes that race
+ * unloseable — the pause outlives the cap by long enough for the degrading
+ * `capability_approval_resolved` to travel the queue and reset the watchdog —
+ * while keeping the bound finite, which is the whole point of bounding it.
+ */
+export const CAPABILITY_HOLD_PAUSE_GRACE_MS = 30_000;
+
+/**
  * The partial status payload carried by a `status_change` event: top-level
  * keys are optional and the nested `contextUsage` is itself partial (a delta
  * may carry only `outputTokens`, or only the context/cache totals).
@@ -250,7 +265,10 @@ export class SessionStateProjector {
    * lock (the same guarantee the three interaction kinds get, without their
    * durable-recovery surface). Each entry carries its own cap so a stranded hold —
    * a turn that threw with a hold outstanding — self-expires rather than pausing
-   * the watchdog forever.
+   * the watchdog forever; `turn_end` clears whatever is left, because a held tool
+   * call cannot outlive its turn. Every read of this map goes through
+   * {@link hasLiveCapabilityHold}: a raw-size read is what let one stranded hold
+   * latch a session at `blocked` for good (DOR-987).
    */
   private readonly capabilityHolds = new Map<string, { startedAt: number; capMs: number }>();
 
@@ -426,6 +444,11 @@ export class SessionStateProjector {
       case 'turn_end':
         this.inProgressTurn = null;
         this.ring.markTurnEnded();
+        // A hold cannot outlive the turn that opened it: the held tool call died
+        // with the turn, so any entry still here is stranded (DOR-987). Dropping
+        // them bounds the map across a long session and keeps the lifecycle
+        // derivation below reading only live state.
+        this.capabilityHolds.clear();
         this.status.lifecycle = this.deriveTurnEndLifecycle(event.terminalReason);
         // A turn that did not settle to error leaves no stale failure behind
         // (a mid-turn error the runtime recovered from must not linger).
@@ -536,12 +559,21 @@ export class SessionStateProjector {
   }
 
   /**
-   * Settle the lifecycle out of `blocked` once nothing — no interaction, no
+   * Settle the lifecycle out of `blocked` once nothing — no interaction, no LIVE
    * capability hold — remains pending. Runs via {@link project}, so the same fold
    * applies on live ingest and any replay.
+   *
+   * The hold half is time-bounded, never a raw map read (DOR-987). A hold entry
+   * CAN strand: the resolution is pushed onto the turn's event queue, and a turn
+   * interrupted with a hold open never drains that queue again. Reading the raw
+   * size meant one stranded hold latched the session at `blocked` for the rest of
+   * its life — every later approval, question and elicitation settled back into
+   * "waiting on you" after the person had already answered. The same
+   * {@link hasLiveCapabilityHold} bound {@link hasPendingInteractions} applies is
+   * used here, so the two answers to "is anyone still waiting?" cannot disagree.
    */
   private settleBlockedLifecycle(): void {
-    if (this.interactions.size === 0 && this.capabilityHolds.size === 0) {
+    if (this.interactions.size === 0 && !this.hasLiveCapabilityHold(Date.now())) {
       if (this.status.lifecycle === 'blocked') {
         this.status.lifecycle = this.inProgressTurn !== null ? 'streaming' : 'idle';
       }
@@ -745,15 +777,16 @@ export class SessionStateProjector {
   }
 
   /**
-   * Whether any in-session capability hold is still within its cap. A hold past
-   * its cap is treated as gone: the held tool call has, or is about to, degrade to
-   * the poll payload, so it must stop pausing the watchdog.
+   * Whether any in-session capability hold is still within its cap (plus
+   * {@link CAPABILITY_HOLD_PAUSE_GRACE_MS}). A hold past that is treated as gone:
+   * the held tool call has, or is about to, degrade to the poll payload, so it
+   * must stop pausing the watchdog and stop holding the lifecycle at `blocked`.
    *
    * @param now - Server epoch ms to evaluate each hold's cap against.
    */
   private hasLiveCapabilityHold(now: number): boolean {
     for (const { startedAt, capMs } of this.capabilityHolds.values()) {
-      if (now - startedAt < capMs) return true;
+      if (now - startedAt < capMs + CAPABILITY_HOLD_PAUSE_GRACE_MS) return true;
     }
     return false;
   }

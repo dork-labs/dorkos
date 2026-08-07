@@ -76,6 +76,7 @@ import type {
   TransportScanEvent,
   TransportScanOptions,
   ManagedMcpServer,
+  ManagedMcpServerView,
   McpServerTransport,
 } from './mesh-schemas.js';
 import type { CapabilityTier } from './capabilities.js';
@@ -1479,12 +1480,15 @@ export interface Transport extends RoomTransport {
 
   /**
    * List an agent's DorkOS-managed MCP servers (the `mcp.list` capability).
-   * Config only — join with {@link getMcpConfig} live status by `name` for the
-   * connection state and tool count.
+   *
+   * Each entry is the stored config plus a derived `authStatus` saying whether a
+   * remote server has a live DorkOS-held sign-in — available immediately, with
+   * no agent turn required. Join with {@link getMcpConfig} live status by `name`
+   * for the runtime's connection state and tool count.
    *
    * @param agentId - ULID of the agent whose managed servers to read.
    */
-  listAgentMcpServers(agentId: string): Promise<ManagedMcpServer[]>;
+  listAgentMcpServers(agentId: string): Promise<ManagedMcpServerView[]>;
 
   /**
    * Add a managed MCP server to an agent (the destructive `mcp.add` capability).

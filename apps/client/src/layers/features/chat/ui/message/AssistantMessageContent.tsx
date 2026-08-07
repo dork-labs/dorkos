@@ -20,6 +20,7 @@ import { ThinkingBlock } from './ThinkingBlock';
 import { ErrorMessageBlock } from './ErrorMessageBlock';
 import { MemoryRecallBlock } from './MemoryRecallBlock';
 import { PermissionDeniedChip } from './PermissionDeniedChip';
+import { CapabilityApprovalTimedOut } from './CapabilityApprovalTimedOut';
 import { CompactBoundaryRow } from './CompactBoundaryRow';
 import { CompactPendingRow, CollapsibleCard } from '../primitives';
 import { TouchChipStrip } from '../chips';
@@ -372,7 +373,16 @@ export function AssistantMessageContent({ message }: { message: ChatMessage }) {
       // An agent's held destructive capability call (DOR-939). The same card a
       // person answers on the dashboard, rendered inline — approving it resolves
       // the same approval through the capability decision route, and the agent's
-      // held call resumes in this turn.
+      // held call resumes in this turn. Once the agent has stopped waiting, the
+      // card becomes a terminal note: the request outlives the hold (DOR-987).
+      if (part.outcome === 'timeout') {
+        return (
+          <CapabilityApprovalTimedOut
+            key={`capability-approval-${part.approval.approvalId}`}
+            title={part.approval.capabilityTitle}
+          />
+        );
+      }
       return (
         <ApprovalCard
           key={`capability-approval-${part.approval.approvalId}`}

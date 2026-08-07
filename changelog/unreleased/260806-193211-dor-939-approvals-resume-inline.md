@@ -12,5 +12,6 @@ covers:
 - When an agent needs your OK for something it cannot undo, like adding a tool server, it now
   waits for your answer and picks up the moment you approve. The request shows up as a card right
   in the chat, and saying yes there lets the agent keep going without you having to tell it to try
-  again. If you step away, nothing is lost: the same request still waits for you in your approvals
-  list, and the agent is never left worse off than before (DOR-939)
+  again. The agent waits about ten minutes; if you take longer it stops waiting and says so, and
+  the request is still there in your Approvals list — answer it, then tell the agent to try again,
+  exactly as before this existed (DOR-939)

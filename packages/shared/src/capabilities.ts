@@ -178,6 +178,17 @@ export interface CapabilityCatalog {
 }
 
 /**
+ * Hard ceiling on how many capabilities one page of the catalog may carry.
+ *
+ * It lives here, not on either side, because two independent surfaces have to
+ * agree on it: the server clamps the `limit` query parameter to it, and the
+ * CLI's pager asks for exactly this many per request. When they disagreed the
+ * CLI silently asked for more than the server would give, so the two now read
+ * the same number.
+ */
+export const MAX_CAPABILITY_LIMIT = 200;
+
+/**
  * Deterministically serialize a JSON-compatible value with object keys sorted
  * recursively, so two structurally-equal values with different key insertion
  * order produce byte-identical output.

@@ -44,6 +44,7 @@ import {
   backfillDefaultTrustStops,
 } from '../config-manager.js';
 import { applyConfigPatch } from '../operator/config-patch.js';
+import { checkMigrationSafety, extractMigrationBodies } from './migration-safety.js';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -2048,104 +2049,78 @@ describe('migrateSidebarMembersToItemRefs migration (sidebar-groups, DOR-579)', 
 });
 
 describe('CONFIG_MIGRATIONS key invariant (DOR-339 regression guard)', () => {
-  // Bit once before (0.47.0 -> 0.48.0, see config-manager.ts around the
-  // '0.48.0' entry) and again on this very branch (a '0.54.0' key drafted as
-  // "the next unreleased version" went stale the moment v0.54.0 was actually
-  // tagged while this branch was still open). conf only runs a key in
-  // `(storedVersion, projectVersion]`, so a key equal to (or behind) an
-  // already-tagged release is silently excluded for every upgrading user —
-  // no error, no warning, the backfill just never runs.
+  // Bit once (0.47.0 -> 0.48.0, see config-manager.ts around the '0.48.0' entry)
+  // and again later (a '0.54.0' key drafted as "the next unreleased version"
+  // went stale the moment v0.54.0 was tagged while its branch was still open).
+  // conf only runs a key in `(storedVersion, projectVersion]`, so a key equal to
+  // (or behind) an already-tagged release is silently excluded for every
+  // upgrading user — no error, no warning, the backfill just never runs.
   //
-  // A local checkout's root package.json is NOT a reliable "already
-  // released?" signal by itself — a feature branch can sit open past a real
-  // release without ever touching its own stale copy of that file (that's
-  // exactly how the 0.54.0 bug slipped through: this branch's package.json
-  // still read 0.53.0 after v0.54.0 shipped on main). Git tags are shared
-  // across every worktree of this checkout regardless of which commit a
-  // branch is sitting on, so they're the ground truth this test checks
-  // against; it degrades to a package.json-only check if tags are
-  // unavailable (e.g. a shallow CI checkout with no tag history) rather than
-  // failing the whole suite over an environment limitation.
-  it('the newest migration key is strictly newer than every released version', () => {
-    const rootPkgPath = path.resolve(
-      path.dirname(fileURLToPath(import.meta.url)),
-      '../../../../../../package.json'
+  // The rule itself lives in `migration-safety.ts`, as a pure function over the
+  // source text and the tag list, and its whole failure matrix is fixture-tested
+  // next door in `migration-safety.test.ts`. This test is the other half: it
+  // feeds that rule the REAL repository. Splitting it that way is what makes the
+  // negative cases testable at all — staging "a migration body appended to an
+  // already-tagged key" against real git would mean fabricating tags.
+  //
+  // Two things this guard checks that the previous one did not. It compares the
+  // CONTENT of every shipped migration against the release, not merely whether
+  // the key is present — a body appended to an already-tagged composite key ships
+  // dead while the key sits there looking fine, and that is DOR-988. And it
+  // covers every key, not only the newest.
+  //
+  // Git tags, not package.json, are the ground truth: a feature branch can sit
+  // open past a real release without ever touching its own stale copy of that
+  // file, which is exactly how the 0.54.0 bug slipped through. Tags are shared
+  // across every worktree of a checkout regardless of which commit a branch sits
+  // on. A checkout with no tags is a LOUD failure rather than a fallback, because
+  // "I cannot see the releases" and "there is nothing wrong" are different
+  // answers; CI checks out with `fetch-depth: 0` for exactly this reason
+  // (.github/workflows/test.yml).
+  const CONFIG_MANAGER_PATH = 'apps/server/src/services/core/config-manager.ts';
+
+  /** Run a git command from the repo root, or return null when it fails. */
+  const git = (args: string): string | null => {
+    try {
+      return execSync(`git ${args}`, {
+        encoding: 'utf-8',
+        cwd: path.dirname(fileURLToPath(import.meta.url)),
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+    } catch {
+      return null;
+    }
+  };
+
+  it('parses the real migration table into exactly the keys the module exports', () => {
+    // Guard the guard: the rule below compares source slices, so a parser that
+    // silently matched nothing would report every migration safe.
+    const source = fs.readFileSync(
+      path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../config-manager.ts'),
+      'utf-8'
     );
-    const rootVersion = (JSON.parse(fs.readFileSync(rootPkgPath, 'utf-8')) as { version: string })
-      .version;
+    expect(Object.keys(extractMigrationBodies(source))).toEqual(Object.keys(CONFIG_MIGRATIONS));
+  });
 
-    // The most-recently-authored migration is the LAST object key, not the
-    // semver-maximum one: the '1.0.0' bootstrap entry (the schema-version-1
-    // seed, predating this file's app-version-keyed migrations) is
-    // semver-greater than every real 0.x.x release key despite being first
-    // in the file. `CONFIG_MIGRATIONS`'s own top-of-file contract is
-    // append-only ("never edit a shipped migration body... append a new
-    // entry instead"), so the newest entry is always the last one inserted —
-    // object key order is insertion order for non-array-index string keys.
-    const keys = Object.keys(CONFIG_MIGRATIONS);
-    expect(keys.length).toBeGreaterThan(0);
-    const newest = keys[keys.length - 1]!;
+  it('every migration key is either unreleased-and-newer or byte-identical to its release', () => {
+    const source = fs.readFileSync(
+      path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../config-manager.ts'),
+      'utf-8'
+    );
+    const tags = (git('tag -l "v*"') ?? '')
+      .split('\n')
+      .map((t) => t.trim().replace(/^v/, ''))
+      .filter((t) => semver.valid(t) !== null);
 
-    let latestReleased = rootVersion;
-    try {
-      const tags = execSync('git tag -l "v*"', { encoding: 'utf-8', cwd: process.cwd() })
-        .split('\n')
-        .map((t) => t.trim().replace(/^v/, ''))
-        .filter((t) => semver.valid(t));
-      if (tags.length > 0) {
-        latestReleased = tags.reduce((a, b) => (semver.gt(a, b) ? a : b));
-      }
-    } catch {
-      // No git available (e.g. a tarball checkout) — fall back to package.json.
-    }
+    const result = checkMigrationSafety({
+      workingSource: source,
+      tags,
+      // `refs/tags/` rather than a bare `v<version>`, so a branch that happens to
+      // share a release's name cannot shadow the tag and be read as the release.
+      readAtTag: (version) => git(`show refs/tags/v${version}:${CONFIG_MANAGER_PATH}`),
+    });
 
-    // The newest key K is safe in exactly two cases, and this guard must pass
-    // for both and fail for everything else:
-    //
-    //   1. K > every release — an unreleased migration that will ship next.
-    //      (`semver.gt` below.)
-    //   2. K already shipped in its OWN version's release: the `vK` tag
-    //      contains the `'K':` key. Every user upgrading INTO version K runs
-    //      that key inside conf's (storedVersion, projectVersion] window, so
-    //      it can never be skipped. A release that ships no new migration at
-    //      all lands here too — e.g. newest 0.57.0 while 0.58.0 is out but
-    //      changed nothing in this file: 0.57.0 is behind the latest tag yet
-    //      present in v0.57.0, so it is safe and the guard must stay green.
-    //
-    // The dangerous case — the 0.54.0-style bug this guard exists for — is a
-    // key <= a release whose OWN tag does NOT contain it: authored after that
-    // version shipped, so every user already on it silently never runs it.
-    // That is neither case above, so the guard reddens.
-    //
-    // The question is answered against K's OWN `vK` tag, not the latest
-    // release: whether 0.57.0 shipped is a fact about v0.57.0, not about
-    // whatever tag happens to be newest. Gating this on `newest ===
-    // latestReleased` (the old bug) made the guard over-fire on every release
-    // that shipped no new migration, because it then never checked K's own tag
-    // at all. `git show <tag>:<path>` resolves from the repo root regardless
-    // of the test's cwd; an unreadable tag (shallow clone, or a genuinely
-    // unreleased K whose `vK` tag does not exist yet) leaves this false and
-    // lets the strict `semver.gt` comparison decide.
-    let shippedInOwnRelease = false;
-    try {
-      const atTag = execSync(
-        `git show v${newest}:apps/server/src/services/core/config-manager.ts`,
-        { encoding: 'utf-8', cwd: process.cwd() }
-      );
-      shippedInOwnRelease = atTag.includes(`'${newest}':`);
-    } catch {
-      // Tag or file unreadable (shallow clone, or K is unreleased so no `vK`
-      // tag exists) — leave false and let the strict comparison below decide.
-    }
-
-    expect(
-      semver.gt(newest, latestReleased) || shippedInOwnRelease,
-      `newest migration key "${newest}" must be > the latest released version "${latestReleased}" ` +
-        `(unreleased, ships next) or already present in its own v${newest} tag (it shipped in that ` +
-        `release). A key <= an already-released version whose own v${newest} tag does NOT contain ` +
-        `it was authored after that release shipped: conf's (storedVersion, projectVersion] window ` +
-        `excludes it and it silently never runs for upgrading users`
-    ).toBe(true);
+    expect(result.ok, result.problems.join('\n')).toBe(true);
   });
 });
 

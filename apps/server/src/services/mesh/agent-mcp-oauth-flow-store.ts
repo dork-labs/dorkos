@@ -120,6 +120,16 @@ export class McpOAuthFlowStore {
     return verifier;
   }
 
+  /**
+   * Forget a live flow's PKCE verifier without touching its status — what the
+   * SDK asks for when it invalidates credentials mid-`auth()` so the retry mints
+   * a fresh verifier instead of reusing a spent one.
+   */
+  clearVerifier(state: string): void {
+    const flow = this.flows.get(state);
+    if (flow) flow.verifier = null;
+  }
+
   /** Record the authorize URL the SDK asked us to redirect to. */
   setAuthorizeUrl(state: string, url: string): void {
     const flow = this.flows.get(state);
@@ -129,6 +139,18 @@ export class McpOAuthFlowStore {
   /** The authorize URL captured for a flow, or `undefined` when unset/unknown. */
   authorizeUrl(state: string): string | undefined {
     return this.flows.get(state)?.authorizeUrl ?? undefined;
+  }
+
+  /**
+   * Forget a flow entirely. Used when a sign-in never got off the ground: no
+   * link was handed out, so nothing can legitimately poll it — and leaving the
+   * `state` claimable would let a stray callback carrying it complete a sign-in
+   * the operator was never shown.
+   *
+   * @param state - The flow id to forget.
+   */
+  drop(state: string): void {
+    this.flows.delete(state);
   }
 
   /** Mark a flow connected (the callback stored a token). */

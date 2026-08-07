@@ -87,6 +87,15 @@ export class ExtensionSecretStore {
     return key in secrets;
   }
 
+  /**
+   * Every key currently stored, names only — nothing is decrypted. Lets a caller
+   * forget a whole family of secrets (every key an agent owns, say) without
+   * having to know each name in advance.
+   */
+  async keys(): Promise<string[]> {
+    return Object.keys(await this.loadSecrets());
+  }
+
   private encrypt(plaintext: string): string {
     const key = this.getDerivedKey();
     const iv = randomBytes(IV_LENGTH);
