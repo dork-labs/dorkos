@@ -1,8 +1,15 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { IdentityAvatar } from '../identity-avatar';
+
+/**
+ * A 1x1 transparent GIF. Inline so nothing here reaches the network — jsdom
+ * never loads it either way, which is exactly why the error path below is
+ * driven by firing the event rather than by waiting for a real failure.
+ */
+const PHOTO = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 
 /** The glyph element — whichever face the disc chose to draw. */
 function glyphOf(container: HTMLElement): HTMLElement {
@@ -408,6 +415,105 @@ describe('IdentityAvatar', () => {
       expect(badgeOf(container)?.querySelector('.lucide-bot')).not.toBeNull();
       expect(dotOf(container)).toHaveClass('-top-px', '-right-px');
       expect(badgeOf(container)).toHaveClass('-bottom-px', '-right-px');
+    });
+  });
+
+  describe('the three faces, in order: photo, emoji, letter', () => {
+    /** The photo, when the disc drew one. */
+    function photoOf(container: HTMLElement): HTMLImageElement | null {
+      return container.querySelector('[data-slot="identity-avatar"] img');
+    }
+
+    it('draws the photo, and does not draw the emoji behind it', () => {
+      const { container } = render(
+        <IdentityAvatar color="#7c3aed" emoji="🐙" fallback="A" imageUrl={PHOTO} />
+      );
+
+      expect(photoOf(container)).toHaveAttribute('src', PHOTO);
+      expect(discOf(container)).not.toHaveTextContent('🐙');
+      expect(discOf(container)).not.toHaveTextContent('A');
+    });
+
+    it('draws the emoji when there is no photo, and the letter when there is neither', () => {
+      const { container: withEmoji } = render(
+        <IdentityAvatar color="#7c3aed" emoji="🐙" fallback="A" />
+      );
+      const { container: letterOnly } = render(<IdentityAvatar color="#7c3aed" fallback="A" />);
+
+      expect(glyphOf(withEmoji).textContent).toBe('🐙');
+      expect(glyphOf(letterOnly).textContent).toBe('A');
+    });
+
+    it('renders NO img element at all when there is no photo', () => {
+      // Structural, not cosmetic. An `<img>` with an empty or absent `src`
+      // paints the browser's own broken-image icon, and no amount of CSS
+      // un-paints it — so absence has to mean the element was never rendered.
+      const { container } = render(<IdentityAvatar color="#7c3aed" emoji="🐙" />);
+
+      expect(photoOf(container)).toBeNull();
+    });
+
+    it('falls back to the emoji when the photo fails to load', () => {
+      // A URL whose bytes have gone — a deleted file, an expired CDN object.
+      // The disc has a face already; showing a broken-image icon instead of it
+      // would be worse than never having had the photo.
+      const { container } = render(
+        <IdentityAvatar color="#7c3aed" emoji="🐙" fallback="A" imageUrl={PHOTO} />
+      );
+      fireEvent.error(photoOf(container)!);
+
+      expect(photoOf(container)).toBeNull();
+      expect(glyphOf(container).textContent).toBe('🐙');
+    });
+
+    it('falls back to the letter when the photo fails and there is no emoji', () => {
+      const { container } = render(
+        <IdentityAvatar color="#7c3aed" fallback="A" imageUrl={PHOTO} />
+      );
+      fireEvent.error(photoOf(container)!);
+
+      expect(photoOf(container)).toBeNull();
+      expect(glyphOf(container).textContent).toBe('A');
+    });
+
+    it('tries again when the photo is replaced, so a new upload is not stuck behind an old failure', () => {
+      const { container, rerender } = render(
+        <IdentityAvatar color="#7c3aed" fallback="A" imageUrl={PHOTO} />
+      );
+      fireEvent.error(photoOf(container)!);
+      expect(photoOf(container)).toBeNull();
+
+      const replaced = `${PHOTO}#v2`;
+      rerender(<IdentityAvatar color="#7c3aed" fallback="A" imageUrl={replaced} />);
+
+      expect(photoOf(container)).toHaveAttribute('src', replaced);
+    });
+
+    it('fills the disc, keeps its shape, and names nobody', () => {
+      // `alt=""` because the disc is decoration — the row's own text names the
+      // identity, and "photo of Dorian" spoken before every message would be
+      // noise. The radius is inherited rather than restated, so an agent's
+      // square photo cannot round itself back into a person's circle.
+      const { container } = render(
+        <IdentityAvatar color="#7c3aed" kind="agent" fallback="A" imageUrl={PHOTO} />
+      );
+
+      expect(photoOf(container)).toHaveAttribute('alt', '');
+      expect(photoOf(container)).toHaveClass('size-full', 'object-cover', 'rounded-[inherit]');
+      expect(discOf(container)).toHaveClass('rounded-lg');
+    });
+
+    it('keeps the badge and the working dot on top of a photo', () => {
+      // The photo is the face, not the whole disc: an agent still wears its
+      // mark and a working identity still pulses.
+      const { container } = render(
+        <IdentityAvatar color="#7c3aed" kind="agent" imageUrl={PHOTO} working />
+      );
+
+      expect(container.querySelector('.lucide-bot')).not.toBeNull();
+      expect(
+        container.querySelector('[data-slot="identity-avatar"] > span.bg-status-success')
+      ).not.toBeNull();
     });
   });
 

@@ -54,6 +54,11 @@ export interface MessageAuthor {
   emoji?: string;
   /** CSS color string for the avatar background. */
   color?: string;
+  /**
+   * The identity's photo, when it has one — the face the avatar prefers over
+   * the emoji. Carried as the resolver received it; nothing here builds a URL.
+   */
+  imageUrl?: string;
   /** Runtime brand key, when the identity falls back to a runtime. */
   runtime?: string;
   /**

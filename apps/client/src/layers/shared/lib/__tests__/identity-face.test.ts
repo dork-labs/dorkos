@@ -75,6 +75,45 @@ describe('resolveIdentityFace', () => {
     ).toBe('?');
   });
 
+  describe('the photo, the fourth cached field', () => {
+    it("carries the record's photo through beside its emoji", () => {
+      // Both travel: this resolver decides nothing about which face wins — the
+      // disc does — so an identity with a photo AND an emoji must arrive with
+      // both intact.
+      const face = resolveIdentityFace({
+        record: { ...RECORD, imageUrl: '/api/profile/avatar/author-ana?v=abc' },
+      });
+
+      expect(face.imageUrl).toBe('/api/profile/avatar/author-ana?v=abc');
+      expect(face.emoji).toBe('📦');
+    });
+
+    it('prefers a fresher photo from the override', () => {
+      const face = resolveIdentityFace({
+        record: { ...RECORD, imageUrl: '/stale.png' },
+        override: { imageUrl: '/fresh.png' },
+      });
+
+      expect(face.imageUrl).toBe('/fresh.png');
+    });
+
+    it('takes the photo on its own axis, like the colour and the emoji', () => {
+      // An override carrying only a colour must not delete the record's photo
+      // on the way past — the failure the per-half ladder above exists for.
+      const face = resolveIdentityFace({
+        record: { ...RECORD, imageUrl: '/photo.png' },
+        override: { color: '#6366f1' },
+      });
+
+      expect(face.imageUrl).toBe('/photo.png');
+      expect(face.color).toBe('#6366f1');
+    });
+
+    it('leaves it undefined when nobody has one, which is everybody today', () => {
+      expect(resolveIdentityFace({ record: RECORD }).imageUrl).toBeUndefined();
+    });
+  });
+
   it('passes the kind and the origin straight through', () => {
     // Both are the disc's to interpret. Red if this function ever starts
     // deciding a badge — the divergence it exists to end was two surfaces each

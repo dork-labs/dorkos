@@ -293,4 +293,58 @@ describe('resolution happens once, at write time', () => {
     });
     expect(addressed.mentions).toEqual([ana.id]);
   });
+
+  it('refreshes a changed photo on the same resolve that leaves the handle alone', () => {
+    // The two halves of the same rule, asserted together because that is where
+    // they are decided: `image_url` is a render CACHE, so it follows its source
+    // the way `display_name`, `emoji` and `color` do — while `handle` is a KEY
+    // and is written once at mint (D12 above). A patch that folded the photo in
+    // by refreshing the whole row would pass the first assertion and fail the
+    // second, which is the point of pairing them.
+    const harness = createRoomHarness({ agents: mutableLookup({}).lookup });
+    const person = harness.authors.resolve({
+      kind: 'human',
+      naturalKey: 'local',
+      displayName: 'You',
+      imageUrl: '/api/profile/avatar/me?v=one',
+    });
+    harness.authors.setHandle(person.id, 'dorian');
+
+    harness.authors.resolve({
+      kind: 'human',
+      naturalKey: 'local',
+      displayName: 'You',
+      imageUrl: '/api/profile/avatar/me?v=two',
+    });
+
+    // Re-read from the table rather than trusting the return value, so a change
+    // that only decorated the response cannot pass.
+    const stored = harness.authors.getById(person.id)!;
+    expect(stored.imageUrl).toBe('/api/profile/avatar/me?v=two');
+    expect(stored.handle).toBe('dorian');
+  });
+
+  it('leaves the stored photo alone for a caller that does not know one, and clears it on null', () => {
+    // The `emoji`/`color` lifecycle exactly: `undefined` is "I do not know",
+    // `null` is "they have none". A caller holding only a name must not blank
+    // somebody's face on its way past.
+    const harness = createRoomHarness({ agents: mutableLookup({}).lookup });
+    const person = harness.authors.resolve({
+      kind: 'human',
+      naturalKey: 'local',
+      displayName: 'You',
+      imageUrl: '/api/profile/avatar/me?v=one',
+    });
+
+    harness.authors.resolve({ kind: 'human', naturalKey: 'local', displayName: 'You' });
+    expect(harness.authors.getById(person.id)!.imageUrl).toBe('/api/profile/avatar/me?v=one');
+
+    harness.authors.resolve({
+      kind: 'human',
+      naturalKey: 'local',
+      displayName: 'You',
+      imageUrl: null,
+    });
+    expect(harness.authors.getById(person.id)!.imageUrl).toBeNull();
+  });
 });
