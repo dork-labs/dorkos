@@ -164,6 +164,14 @@ vi.mock('@/layers/features/composer', async (importActual) => {
   const actual = await importActual<typeof import('@/layers/features/composer')>();
   return {
     Composer: {
+      // ChatPanel renders the real ChatInputContainer, which composes the card
+      // and the lane — so both keys must exist or the container renders
+      // `undefined` and every test in this file dies at mount. Root is a
+      // pass-through (nothing here asserts the chrome, and a real one would
+      // mount react-dropzone's document listeners); the lane is real, since it
+      // is a single positioned div with nothing to stub.
+      Root: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+      OverlayLane: actual.Composer.OverlayLane,
       Input: React.forwardRef<unknown, Record<string, unknown>>(
         function MockComposerInput(_p, ref) {
           React.useImperativeHandle(ref, () => ({
