@@ -2,6 +2,7 @@
 covers:
   - 'fix(identity): resolve every identity face through one shared function (DOR-968)'
   - 'refactor(identity): make the face contract explicit and stop overclaiming it (DOR-968)'
+  - "fix(client): point the merged gutter's IdentityOrigin import at its new shared/lib home"
 ---
 
 ### Fixed
