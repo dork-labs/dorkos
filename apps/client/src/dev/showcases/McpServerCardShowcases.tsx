@@ -31,6 +31,7 @@ function frozenFlow(
       errorDetail: null,
       canUseOwnCredentials: false,
       savingCredentials: false,
+      credentialsError: null,
       retryNotice: null,
       toolCount: null,
       ...state,

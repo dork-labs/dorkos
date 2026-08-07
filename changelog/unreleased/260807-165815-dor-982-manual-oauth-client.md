@@ -2,6 +2,7 @@
 covers:
   - 'feat(server): sign in to providers that need their own app registration (DOR-982)'
   - 'feat(client): a failed sign-in says what went wrong in plain words, and offers the fix (DOR-982)'
+  - 'fix(client): a failed credentials save keeps the form, its input, and its focus (DOR-982)'
 ---
 
 ### Added

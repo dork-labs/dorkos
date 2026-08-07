@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import type { McpClientCredentials } from '@dorkos/shared/transport';
 import { Button, Input, Label, PasswordInput } from '@/layers/shared/ui';
@@ -12,6 +12,8 @@ export interface McpClientCredentialsFormProps {
   onCancel: () => void;
   /** True while the save is on the wire — the controls hold their place, disabled. */
   saving?: boolean;
+  /** Why the last save failed, shown above the buttons. Null when none has. */
+  error?: string | null;
   /** Applied to the form's root, so a caller can indent it with the rest of the body. */
   className?: string;
 }
@@ -29,19 +31,36 @@ export interface McpClientCredentialsFormProps {
  * **The secret is write-only.** There is no read side for it anywhere in DorkOS,
  * so nothing here ever displays a saved value: the field starts empty on every
  * open, and the visibility toggle only reveals what the person themselves just
- * typed. Saving clears both fields.
+ * typed.
+ *
+ * **Nothing is cleared on submit.** A save that fails leaves this form mounted,
+ * and clearing the fields as the request went out threw away what the person had
+ * typed the moment they most needed it back (DOR-982 review). The success path
+ * needs no clearing at all: it restarts the sign-in, which unmounts this form and
+ * takes its state with it.
+ *
+ * Focus moves onto the first field when the form opens, for the same reason it
+ * moves onto the custody panel at the disclosure step: the control that was
+ * pressed to get here is replaced by this form, so without it focus falls to the
+ * document body.
  */
 export function McpClientCredentialsForm({
   onSave,
   onCancel,
   saving = false,
+  error = null,
   className,
 }: McpClientCredentialsFormProps) {
   const fieldId = useId();
+  const clientIdRef = useRef<HTMLInputElement>(null);
   const [clientId, setClientId] = useState('');
   const [clientSecret, setClientSecret] = useState('');
   const trimmedId = clientId.trim();
   const trimmedSecret = clientSecret.trim();
+
+  useEffect(() => {
+    clientIdRef.current?.focus();
+  }, []);
 
   return (
     <form
@@ -50,8 +69,6 @@ export function McpClientCredentialsForm({
         event.preventDefault();
         if (!trimmedId || saving) return;
         onSave({ clientId: trimmedId, ...(trimmedSecret ? { clientSecret: trimmedSecret } : {}) });
-        setClientId('');
-        setClientSecret('');
       }}
     >
       <div className="space-y-1">
@@ -60,6 +77,7 @@ export function McpClientCredentialsForm({
         </Label>
         <Input
           id={`${fieldId}-client-id`}
+          ref={clientIdRef}
           value={clientId}
           onChange={(event) => setClientId(event.target.value)}
           autoComplete="off"
@@ -87,6 +105,12 @@ export function McpClientCredentialsForm({
         From the provider’s developer settings. Stored encrypted on this computer; the agent never
         sees it.
       </p>
+
+      {error && (
+        <p role="alert" className="text-destructive text-xs leading-relaxed">
+          {error}
+        </p>
+      )}
 
       <div className="flex gap-2">
         <Button

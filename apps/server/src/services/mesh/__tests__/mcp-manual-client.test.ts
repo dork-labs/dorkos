@@ -236,14 +236,27 @@ describe('operator-supplied app credentials', () => {
     });
   });
 
-  it('serializes against a concurrent operation on the same server', async () => {
-    const order: string[] = [];
+  it('waits for the target lock instead of writing under an in-flight sign-in', async () => {
+    // A BOUNDED RACE, not a tick count. The first cut of this test awaited one
+    // `setImmediate` and asserted the save had not landed — which measures how
+    // many microtasks an encrypted-store write happens to take, not whether the
+    // lock is held. It stayed green with `refresher.exclusive` removed entirely.
+    //
+    // Racing the save against a timer asks the only question that matters: with
+    // the target's lock held open indefinitely, is the save still unfinished
+    // after a wait far longer than the work itself needs? Unlocked, the save
+    // completes in single-digit milliseconds and this reddens.
+    const LOCK_PROBE_MS = 250;
     let releaseSignin: (() => void) | undefined;
+    let signalHeld!: () => void;
+    const heldAtDiscovery = new Promise<void>((resolve) => {
+      signalHeld = resolve;
+    });
     const gated: typeof fetch = async (input, init) => {
       const url = typeof input === 'string' ? input : input.toString();
       if (url.includes('oauth-protected-resource')) {
-        order.push('signin:discovery');
-        // Hold the sign-in inside the lock until the save has been asked for.
+        signalHeld();
+        // Hold the sign-in — and therefore this target's lock — open.
         await new Promise<void>((resolve) => {
           releaseSignin = resolve;
         });
@@ -253,24 +266,23 @@ describe('operator-supplied app credentials', () => {
     const { oauth, dorkHome } = await makeService(gated);
 
     const signin = oauth.startSignin(TARGET).catch(() => 'failed' as const);
-    // Let the sign-in reach its first request (and therefore hold the lock).
-    await new Promise((resolve) => setImmediate(resolve));
+    await heldAtDiscovery;
 
     const save = oauth
       .saveManualClientInfo(TARGET, { clientId: 'operator-app-id' })
-      .then(() => order.push('save:done'));
-    await new Promise((resolve) => setImmediate(resolve));
+      .then(() => 'saved' as const);
+    const probe = new Promise<'still-blocked'>((resolve) =>
+      setTimeout(() => resolve('still-blocked'), LOCK_PROBE_MS)
+    );
 
-    // The save must NOT have landed while the sign-in still holds the lock —
-    // otherwise it would delete a registration the in-flight `auth()` is midway
-    // through writing, and the two would interleave on one server's store.
-    expect(order).toEqual(['signin:discovery']);
+    // Landing here would mean the save deleted a registration the in-flight
+    // `auth()` is midway through writing — two writers on one server's store.
+    expect(await Promise.race([save, probe])).toBe('still-blocked');
     expect(await storedRecord(dorkHome, 'client')).toBeNull();
 
     releaseSignin?.();
     await signin;
-    await save;
-    expect(order).toEqual(['signin:discovery', 'save:done']);
+    expect(await save).toBe('saved');
     expect(await oauth.clientOrigin(AGENT_ID, SERVER)).toBe('manual');
   });
 });

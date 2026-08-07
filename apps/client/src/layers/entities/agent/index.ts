@@ -52,6 +52,3 @@ export type { PresetPillProps, PresetPillColors } from './ui/PresetPill';
 export { TraitSliders } from './ui/TraitSliders';
 export type { TraitSlidersProps } from './ui/TraitSliders';
 export { McpSigninBody } from './ui/McpSigninBody';
-export { McpClientCredentialsForm } from './ui/McpClientCredentialsForm';
-export { describeSigninError } from './lib/mcp-signin-errors';
-export type { McpSigninErrorView } from './lib/mcp-signin-errors';

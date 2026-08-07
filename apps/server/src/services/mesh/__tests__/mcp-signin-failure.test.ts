@@ -74,6 +74,7 @@ function metadata(extra: Record<string, unknown>): Record<string, unknown> {
 function providerFetch(args: {
   meta: Record<string, unknown> | null;
   registerStatus?: number;
+  registerBody?: string;
 }): typeof fetch {
   return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === 'string' ? input : input.toString();
@@ -86,7 +87,9 @@ function providerFetch(args: {
       return args.meta ? json(args.meta) : new Response('nope', { status: 404 });
     }
     if ((init?.method ?? 'GET') === 'POST' && url.endsWith('/register')) {
-      return new Response('<html>Not Found</html>', { status: args.registerStatus ?? 404 });
+      return new Response(args.registerBody ?? '<html>Not Found</html>', {
+        status: args.registerStatus ?? 404,
+      });
     }
     return new Response('not found', { status: 404 });
   };
@@ -153,6 +156,30 @@ describe('classifying a sign-in that never got off the ground', () => {
 
     expect(failure.code).toBe('SIGNIN_NO_SIGNIN_SUPPORT');
     expect(failure.message).toContain('doesn’t offer sign-in the way DorkOS expects');
+  });
+
+  it('truncates a provider that answers with a whole error page', async () => {
+    // `parseErrorResponse` folds the ENTIRE response body into its message, so a
+    // provider serving a full HTML error page puts kilobytes of markup into the
+    // detail — which then rides a capability payload into a card and, on the
+    // agent-facing surfaces, a transcript. It is cut to a length that still
+    // identifies the failure.
+    const wall = `<html>${'x'.repeat(5000)}</html>`;
+    const oauth = await makeService(
+      providerFetch({
+        meta: metadata({ registration_endpoint: `${ORIGIN}/register` }),
+        registerBody: wall,
+      })
+    );
+
+    const failure = await failureOf(oauth);
+
+    expect(failure.code).toBe('SIGNIN_NO_APP_REGISTRATION');
+    expect(failure.detail.length).toBeLessThanOrEqual(401);
+    expect(failure.detail.endsWith('…')).toBe(true);
+    // The useful head survives the cut — a detail trimmed to nothing would be
+    // no better than dropping it.
+    expect(failure.detail).toContain('404');
   });
 
   it('falls back to plain unreachable when the server cannot be reached', async () => {

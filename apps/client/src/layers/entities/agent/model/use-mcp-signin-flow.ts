@@ -78,6 +78,17 @@ interface McpSigninFlowState {
   /** True while operator-supplied app credentials are being saved. */
   savingCredentials: boolean;
   /**
+   * Why the last attempt to SAVE app credentials failed, or null.
+   *
+   * Held apart from {@link error} rather than folded into it, and the
+   * distinction is load-bearing: a save failure says nothing about why the
+   * SIGN-IN failed, so overwriting the sign-in failure with it would drop
+   * {@link canUseOwnCredentials} to false and take the credentials form off
+   * screen — with the person's typed client id inside it — leaving them no way
+   * back except failing the whole sign-in again (DOR-982 review).
+   */
+  credentialsError: string | null;
+  /**
    * Set while the flow is still `waiting` but its status checks are failing —
    * the UI says so plainly instead of showing nothing (or a raw network error).
    */
@@ -153,6 +164,8 @@ interface SigninLocalState {
   authorizeUrl: string | null;
   /** The start-path failure (a rejected `mcp.signin`); poll-path errors are derived. */
   startFailure: McpSigninErrorView | null;
+  /** Why saving app credentials failed, kept beside (never on top of) the sign-in failure. */
+  credentialsError: string | null;
   flowId: string | null;
   /**
    * Watch a flow this instance did not start, from `disclosure` on (DOR-1004).
@@ -174,6 +187,7 @@ const IDLE_STATE: SigninLocalState = {
   disclosure: null,
   authorizeUrl: null,
   startFailure: null,
+  credentialsError: null,
   flowId: null,
   watching: false,
 };
@@ -375,6 +389,7 @@ export function useMcpSigninFlow(agentId: string, serverName: string): McpSignin
           disclosure: result.disclosure,
           authorizeUrl: result.authorizeUrl ?? null,
           startFailure: null,
+          credentialsError: null,
           flowId: result.flowId,
           watching: false,
         });
@@ -392,14 +407,29 @@ export function useMcpSigninFlow(agentId: string, serverName: string): McpSignin
 
   const useOwnCredentials = useCallback(
     (credentials: McpClientCredentials) => {
+      // Clear the previous attempt's complaint so a second save is not read
+      // through the first one's error.
+      setLocal((prev) =>
+        prev.credentialsError === null ? prev : { ...prev, credentialsError: null }
+      );
       credentialsMutation.mutate(credentials, {
-        // Saving replaced the client identity server-side, which forgets the old
-        // sign-in — so the retry is the point, not a courtesy.
-        onSuccess: () => start(),
-        onError: (err) => setLocal(failedFrom(err)),
+        onSuccess: () => {
+          // The save evicted this server's stored sign-in and replaced its client
+          // identity, so anything holding `authStatus`/`authClientOrigin` from
+          // before is now wrong — including a roster nobody is about to refetch
+          // (the `dorkos call mcp.set_client` path has no card watching it).
+          invalidateStatus();
+          // Saving replaced the client identity server-side, which forgets the old
+          // sign-in — so the retry is the point, not a courtesy.
+          start();
+        },
+        // A failed SAVE leaves the sign-in failure exactly as it was. It has to:
+        // that failure is what says the credentials form belongs on screen, and
+        // clobbering it takes the form away mid-typing (DOR-982 review).
+        onError: (err) => setLocal((prev) => ({ ...prev, credentialsError: err.message })),
       });
     },
-    [credentialsMutation, start]
+    [credentialsMutation, invalidateStatus, start]
   );
 
   const adopt = useCallback(
@@ -422,6 +452,7 @@ export function useMcpSigninFlow(agentId: string, serverName: string): McpSignin
         disclosure: flow.disclosure,
         authorizeUrl: flow.authorizeUrl,
         startFailure: null,
+        credentialsError: null,
         flowId: flow.flowId,
         watching: true,
       });
@@ -513,6 +544,7 @@ export function useMcpSigninFlow(agentId: string, serverName: string): McpSignin
       errorDetail: failure?.detail ?? null,
       canUseOwnCredentials: failure?.canUseOwnCredentials ?? false,
       savingCredentials: credentialsMutation.isPending,
+      credentialsError: local.credentialsError,
       retryNotice,
       toolCount: step === 'connected' ? readToolCount(poll.data) : null,
     },

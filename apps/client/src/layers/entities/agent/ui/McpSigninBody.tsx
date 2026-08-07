@@ -145,17 +145,29 @@ export function McpSigninBody({
   const { state } = flow;
   const disclosureRef = useRef<HTMLDivElement>(null);
   const onDisclosure = state.step === 'disclosure';
+  const offerRef = useRef<HTMLButtonElement>(null);
   const [credentialsOpen, setCredentialsOpen] = useState(false);
+  const [returningFocus, setReturningFocus] = useState(false);
   // Kept honest against the flow rather than trusted on its own: the form is for
   // ONE failure family, and a retry that fails a different way (or succeeds)
-  // must not leave credential fields sitting under it. It stays up while the
-  // save is in flight, which is the one moment the step is no longer `failed`.
-  const showCredentialsForm =
-    credentialsOpen && (state.canUseOwnCredentials || state.savingCredentials);
+  // must not leave credential fields sitting under it. A failed SAVE does not
+  // close it — that failure is reported inside the form, and the flow's own
+  // failure (the thing that says this offer applies) is left standing.
+  const showCredentialsForm = credentialsOpen && state.canUseOwnCredentials;
 
   useEffect(() => {
     if (onDisclosure) disclosureRef.current?.focus();
   }, [onDisclosure]);
+
+  // Cancel puts focus back on the control that opened the form. Without it,
+  // dismissing the form drops focus to the document body — the same failure the
+  // disclosure step's focus move exists to prevent. Deferred to an effect
+  // because the button is remounted by the same state change that hides the form.
+  useEffect(() => {
+    if (!returningFocus || showCredentialsForm) return;
+    offerRef.current?.focus();
+    setReturningFocus(false);
+  }, [returningFocus, showCredentialsForm]);
 
   return (
     <>
@@ -211,14 +223,19 @@ export function McpSigninBody({
           {showCredentialsForm ? (
             <McpClientCredentialsForm
               onSave={(credentials) => flow.useOwnCredentials(credentials)}
-              onCancel={() => setCredentialsOpen(false)}
+              onCancel={() => {
+                setCredentialsOpen(false);
+                setReturningFocus(true);
+              }}
               saving={state.savingCredentials}
+              error={state.credentialsError}
             />
           ) : (
             <div className="flex flex-wrap gap-2">
               {failedActions}
               {state.canUseOwnCredentials && (
                 <Button
+                  ref={offerRef}
                   variant="secondary"
                   size="sm"
                   onClick={() => setCredentialsOpen(true)}

@@ -70,7 +70,7 @@ function renderHarness(transport: Transport) {
       <TransportProvider transport={transport}>{children}</TransportProvider>
     </QueryClientProvider>
   );
-  return render(<Harness />, { wrapper });
+  return { ...render(<Harness />, { wrapper }), queryClient };
 }
 
 beforeEach(() => vi.clearAllMocks());
@@ -165,6 +165,37 @@ describe('a sign-in that could not start', () => {
     ).toBeInTheDocument();
   });
 
+  it('refreshes the server roster once the credentials are stored', async () => {
+    // The save replaced this server's client identity and threw away its token,
+    // so `authStatus`/`authClientOrigin` read before it are now wrong. Nothing
+    // else refetches them on this path — the retry that follows only reaches
+    // `disclosure`, and the connected-invalidation never fires.
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.startMcpSignin)
+      .mockRejectedValueOnce(
+        capabilityRejection(
+          'SIGNIN_NO_APP_REGISTRATION',
+          'HTTP 404',
+          'This server doesn’t let DorkOS register itself.'
+        )
+      )
+      .mockResolvedValue(startResult);
+    const { queryClient } = renderHarness(transport);
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+
+    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+    await user.click(await screen.findByRole('button', { name: 'Use your own app credentials' }));
+    await user.type(screen.getByLabelText(/Client ID/), 'operator-app-id');
+    await user.click(screen.getByRole('button', { name: 'Save and sign in' }));
+
+    await waitFor(() => {
+      expect(invalidate).toHaveBeenCalledWith(
+        expect.objectContaining({ queryKey: ['agents', 'mcp-servers', AGENT_ID] })
+      );
+    });
+  });
+
   it('sends no secret when the provider issued none', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();
@@ -211,9 +242,57 @@ describe('a sign-in that could not start', () => {
     await user.type(screen.getByLabelText(/Client ID/), 'operator-app-id');
     await user.click(screen.getByRole('button', { name: 'Save and sign in' }));
 
-    await waitFor(() => {
-      expect(screen.getByRole('alert')).toHaveTextContent('has no managed MCP server named');
-    });
+    // The save's complaint is reported where the save happened — inside the form.
+    await screen.findByText(/has no managed MCP server named/);
     expect(transport.startMcpSignin).toHaveBeenCalledTimes(1);
+    // And the sign-in's own reason is still on screen beside it, unchanged.
+    expect(screen.getByText(/doesn’t let DorkOS register itself/)).toBeInTheDocument();
+
+    // The form is still standing, still holding what was typed. This is the
+    // whole point: a save failure says nothing about WHY the sign-in failed, so
+    // it must not take the offer away. Folding the save error into the flow's
+    // failure (as the first cut did) drops `canUseOwnCredentials` to false — the
+    // form and the offer button both vanish and the typed id is gone, leaving no
+    // way back but failing the entire sign-in again.
+    const clientIdAfter = screen.getByLabelText(/Client ID/);
+    expect(clientIdAfter).toHaveValue('operator-app-id');
+    expect(screen.getByRole('button', { name: 'Save and sign in' })).toBeEnabled();
+
+    // And a second attempt still works from here, with no retyping.
+    vi.mocked(transport.setMcpClientCredentials).mockResolvedValue(undefined);
+    await user.click(screen.getByRole('button', { name: 'Save and sign in' }));
+    await waitFor(() => {
+      expect(transport.setMcpClientCredentials).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it('puts focus on the first field when the form opens, and back on the offer when it closes', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.startMcpSignin).mockRejectedValue(
+      capabilityRejection(
+        'SIGNIN_NO_APP_REGISTRATION',
+        'HTTP 404',
+        'This server doesn’t let DorkOS register itself.'
+      )
+    );
+    renderHarness(transport);
+
+    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+    const offer = await screen.findByRole('button', { name: 'Use your own app credentials' });
+    await user.click(offer);
+
+    // The control that was pressed is gone, replaced by the form. Without moving
+    // focus, a keyboard user lands on the document body — the same failure the
+    // disclosure step's focus move exists to prevent.
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Client ID/)).toHaveFocus();
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Use your own app credentials' })).toHaveFocus();
+    });
   });
 });
