@@ -4280,6 +4280,14 @@
       "status": "draft",
       "created": "2026-08-06",
       "specSlug": "identity-consistency"
+    },
+    {
+      "id": "260807-173219",
+      "slug": "compound-composer-family",
+      "title": "One compound composer family shared by chat, rooms, and dashboard",
+      "status": "draft",
+      "created": "2026-08-07",
+      "specSlug": "composer-parity"
     }
   ]
 }

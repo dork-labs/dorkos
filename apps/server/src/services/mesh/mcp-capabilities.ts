@@ -2,9 +2,10 @@
  * The `mcp.*` capability domain (spec `mcp-server-management` §5): the eight
  * agent-facing verbs that let a user (or an agent acting for one) manage the MCP
  * servers a specific agent runs — list, add, import, update, remove, enable,
- * disable, and test.
+ * disable, and test — plus the sign-in verbs, which are declared next door in
+ * `mcp-signin-capabilities.ts` and spread in here.
  *
- * Every verb is a thin wrapper over {@link AgentMcpServerService}, which owns the
+ * Every verb is a thin wrapper over `AgentMcpServerService`, which owns the
  * manifest CRUD and the trust model (spec §4). The domain declares each verb once
  * and the Capability Registry projects it onto both MCP servers, the `dorkos call
  * mcp.*` CLI path, and the OpenAPI document — with the tier gate enforced once in
@@ -27,163 +28,22 @@
  * @module services/mesh/mcp-capabilities
  */
 import { z } from 'zod';
-import type { AgentRegistry } from '@dorkos/mesh';
 import {
   McpServerTransportSchema,
   ManagedMcpServerSchema,
   ManagedMcpServerViewSchema,
 } from '@dorkos/shared/mesh-schemas';
-import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
 
 import { defineCapability, type CapabilityDomain } from '../core/capabilities/index.js';
-import type { CapabilityDeps, CapabilityHandlerContext } from '../core/capabilities/index.js';
-import { CapabilityToolError } from '../core/capabilities/mcp-envelope.js';
-import { AgentMcpServerError, type AgentMcpServerService } from './agent-mcp-server-service.js';
-import { mcpOAuthCustodyDisclosure, type AgentMcpOAuthService } from './agent-mcp-oauth-service.js';
-
-/** The service bundle the `mcp.*` capabilities read. */
-export interface McpCapabilityDeps {
-  /** The single source of truth for the management verbs (spec §2). */
-  service: AgentMcpServerService;
-  /** The mesh agent registry — the same instance the service resolves workspace paths through. */
-  agents: AgentRegistry;
-  /**
-   * The managed-MCP OAuth engine backing `mcp.signin`/`mcp.poll_signin` (DOR-942).
-   * Optional so a registry composed without it still exposes the management verbs;
-   * a sign-in call with it absent fails with a clear "sign-in unavailable" error.
-   */
-  oauth?: AgentMcpOAuthService;
-  /**
-   * Fallback connection resolver for `mcp.import`, used only when the agent's
-   * workspace `.mcp.json` cannot resolve the named server. Boot wires it to the
-   * runtime's `getMcpServerConfig`; omitted in tests, which exercise the
-   * `.mcp.json` path directly.
-   */
-  resolveDiscoveredFallback?: (agentId: string, name: string) => McpAppServerConnection | null;
-}
-
-/**
- * Extend the shared dependency bag with the MCP domain's service bundle. Optional
- * so a registry composed from other domains alone need not supply it; every
- * `mcp.*` `invoke` narrows through {@link requireMcpDeps}.
- */
-declare module '../core/capabilities/capability-definition.js' {
-  interface CapabilityDeps {
-    /** MCP-server-management service bundle consumed by the `mcp.*` capabilities. */
-    mcpDeps?: McpCapabilityDeps;
-  }
-}
-
-/**
- * Narrow the shared bag to the MCP service bundle, throwing if a registry that
- * owns `mcp.*` capabilities was composed without it (a wiring bug caught at boot).
- *
- * @param deps - The registry's shared dependency bag.
- * @returns The MCP service bundle.
- */
-function requireMcpDeps(deps: CapabilityDeps): McpCapabilityDeps {
-  if (!deps.mcpDeps) {
-    throw new Error('MCP capability invoked without mcpDeps in the registry bag.');
-  }
-  return deps.mcpDeps;
-}
-
-/**
- * Re-raise an {@link AgentMcpServerError} as a {@link CapabilityToolError} so every
- * surface returns the service's own message + code; rethrow anything else as-is.
- *
- * @param err - The error a service call threw.
- */
-function rethrowAsCapabilityError(err: unknown): never {
-  if (err instanceof AgentMcpServerError) {
-    throw new CapabilityToolError({ error: err.message, code: err.code });
-  }
-  throw err;
-}
-
-/**
- * Resolve the audit principal recorded on an added server: the calling agent's
- * path when one presented an identity, otherwise the human operator.
- *
- * @param context - The capability handler context.
- * @returns The `addedBy` value for the manifest entry.
- */
-function resolveAddedBy(context: CapabilityHandlerContext): string {
-  return context.identity?.agentPath ?? 'operator';
-}
-
-/**
- * Resolve the remote URL of a managed server that can take an OAuth sign-in: it
- * must exist on the agent, and it must be an http/sse (remote) transport — a
- * stdio server has no OAuth endpoint. Errors are the caller-facing
- * {@link CapabilityToolError} shape.
- *
- * @param service - The managed-server service (resolves the agent + its servers).
- * @param agentId - The agent whose server is being signed into.
- * @param name - The managed server's name.
- * @returns The server's remote URL.
- */
-async function resolveOAuthServerUrl(
-  service: AgentMcpServerService,
-  agentId: string,
-  name: string
-): Promise<string> {
-  let servers;
-  try {
-    servers = await service.list(agentId);
-  } catch (err) {
-    rethrowAsCapabilityError(err);
-  }
-  const server = servers.find((s) => s.name === name);
-  if (!server) {
-    throw new CapabilityToolError({
-      error: `Agent ${agentId} has no managed MCP server named "${name}".`,
-      code: 'SERVER_NOT_FOUND',
-    });
-  }
-  if (server.connection.transport === 'stdio') {
-    throw new CapabilityToolError({
-      error: `"${name}" is a local (stdio) server, which has no OAuth sign-in.`,
-      code: 'NOT_OAUTH_SERVER',
-    });
-  }
-  return server.connection.url;
-}
-
-/**
- * Narrow the deps to the OAuth engine, failing with a clear error when a registry
- * that owns `mcp.signin`/`mcp.poll_signin` was composed without one.
- *
- * @param deps - The registry's shared dependency bag.
- * @returns The managed-MCP OAuth engine.
- */
-function requireOAuth(deps: CapabilityDeps): AgentMcpOAuthService {
-  const { oauth } = requireMcpDeps(deps);
-  if (!oauth) {
-    throw new CapabilityToolError({
-      error: 'MCP sign-in is not available on this server.',
-      code: 'SIGNIN_UNAVAILABLE',
-    });
-  }
-  return oauth;
-}
-
-/** The `agentId` every verb is keyed by. */
-const agentIdField = z
-  .string()
-  .min(1)
-  .describe('The id of the agent whose managed MCP servers this acts on.');
-
-/** The server `name` the mutating verbs target — unique within the agent, never `dorkos`. */
-const serverNameField = z
-  .string()
-  .min(1)
-  .max(64)
-  .regex(/^[a-zA-Z0-9_-]+$/, 'Must be alphanumeric with dashes/underscores')
-  .describe('The managed server name, unique within the agent.');
-
-/** `{ agentId, name }` — the shape the single-server verbs share. */
-const AgentServerInput = z.object({ agentId: agentIdField, name: serverNameField });
+import {
+  AgentServerInput,
+  agentIdField,
+  requireMcpDeps,
+  rethrowAsCapabilityError,
+  resolveAddedBy,
+  serverNameField,
+} from './mcp-capability-deps.js';
+import { mcpSigninCapabilities } from './mcp-signin-capabilities.js';
 
 /** The updated managed-server list every mutating verb returns. */
 const ManagedServerListOutput = z.array(ManagedMcpServerSchema);
@@ -486,144 +346,6 @@ export const mcpDomain: CapabilityDomain = {
         }
       },
     }),
-    defineCapability({
-      id: 'mcp.signin',
-      title: 'Start OAuth sign-in for a managed MCP server',
-      description:
-        'Begin signing in to an OAuth-protected managed server. In a DorkOS conversation the ' +
-        'sign-in card is shown to the user automatically — say ONE short line naming what you ' +
-        'are connecting, then stop. Do not repeat the link or the disclosure, do not ask the ' +
-        'user to tell you when they are done, and do not call mcp_poll_signin: you are brought ' +
-        'back automatically once the sign-in lands, with the server named and its tools ready. ' +
-        'On surfaces with no card the result’s message field carries the link and the custody ' +
-        'disclosure instead — show BOTH verbatim there. DorkOS obtains and refreshes the token ' +
-        'for you either way.',
-      // `act`, not `destructive`: the operator already approved this server at
-      // `mcp.add` (a command-diff gate). Sign-in introduces no new command — it
-      // only stores a token for a server that is already trusted — so it needs no
-      // second approval, exactly like connector.start_connect.
-      tier: 'act',
-      input: AgentServerInput,
-      output: z.object({
-        flowId: z.string().describe('The sign-in flow id to pass to mcp_poll_signin.'),
-        authorizeUrl: z
-          .string()
-          .optional()
-          .describe('The sign-in link to open; absent when the server was already connected.'),
-        alreadyConnected: z
-          .boolean()
-          .describe('True when a live token already existed, so no browser step is needed.'),
-        disclosure: z.string().describe('The custody disclosure to show verbatim before the link.'),
-        message: z.string().describe('Ready-to-render markdown carrying the link and disclosure.'),
-      }),
-      surfaces: {
-        mcp: {
-          toolName: 'mcp_signin',
-          servers: ['in-session', 'external'],
-          annotations: { openWorldHint: true },
-        },
-      },
-      // In a conversation the link and the disclosure belong on a card, not in
-      // the agent's prose (DOR-1004). The in-session projection draws it and
-      // rewrites `message` accordingly; every sessionless surface never reaches
-      // that code and keeps the full link-carrying markdown below.
-      inSessionCard: 'signin',
-      invoke: async (deps, input, context) => {
-        const { service } = requireMcpDeps(deps);
-        const oauth = requireOAuth(deps);
-        const serverUrl = await resolveOAuthServerUrl(service, input.agentId, input.name);
-        const disclosure = mcpOAuthCustodyDisclosure(input.name);
-        let started;
-        try {
-          started = await oauth.startSignin(
-            {
-              agentId: input.agentId,
-              serverName: input.name,
-              serverUrl,
-            },
-            // The invoking session, and the whole reason the agent can be brought
-            // back on its own once the token lands (DOR-1004). Set ONLY on the
-            // in-session surface — the external `/mcp` server and HTTP leave it
-            // absent by construction (`CapabilityInvocationContext.sessionId`), so
-            // a sessionless sign-in records no session and resumes nothing. Its
-            // directory rides along so the resume still lands in the right place
-            // after a restart (DOR-981).
-            context.sessionId
-              ? {
-                  originSessionId: context.sessionId,
-                  ...(context.cwd ? { originCwd: context.cwd } : {}),
-                }
-              : {}
-          );
-        } catch (err) {
-          throw new CapabilityToolError({
-            error: err instanceof Error ? err.message : 'Could not start the sign-in.',
-          });
-        }
-        // Getting this far means the provider's OAuth discovery answered, so the
-        // server really is OAuth-protected — record it, so the row keeps offering
-        // a sign-in after a restart even before any turn runs (DOR-985). The
-        // sign-in itself is what the caller asked for, so a failed write is
-        // reported and shrugged off rather than failing the call.
-        await service.learnOAuthAuthKind(input.agentId, input.name).catch((err: unknown) => {
-          deps.logger.warn(
-            `[mcp.signin] could not record authKind for "${input.name}": ${
-              err instanceof Error ? err.message : String(err)
-            }`
-          );
-          return false;
-        });
-        const message = started.alreadyConnected
-          ? `You’re already signed in to ${input.name}. ${disclosure}`
-          : `[Sign in to ${input.name}](${started.authorizeUrl})\n\n${disclosure}\n\n` +
-            `Tell me when you’ve signed in, then I’ll check.`;
-        return {
-          flowId: started.flowId,
-          ...(started.authorizeUrl ? { authorizeUrl: started.authorizeUrl } : {}),
-          alreadyConnected: started.alreadyConnected,
-          disclosure,
-          message,
-        };
-      },
-    }),
-    defineCapability({
-      id: 'mcp.poll_signin',
-      title: 'Check an MCP sign-in flow',
-      description:
-        'Check whether an MCP sign-in the user was sent to complete has finished. Returns ' +
-        'pending, connected, or failed. Call after the user says they have signed in; once ' +
-        'connected, the server’s tools are injected on the next turn. When it returns a ' +
-        'toolCount, tell the user what they just unlocked — "Connected — 12 tools." — and ' +
-        'say plain "Connected." when no count came back (absent means uncounted, not zero).',
-      tier: 'act',
-      input: z.object({
-        flowId: z.string().min(1).describe('The flow id from mcp_signin.'),
-      }),
-      output: z.object({
-        status: z
-          .enum(['pending', 'connected', 'failed'])
-          .describe('Whether the sign-in is still waiting, done, or failed.'),
-        error: z.string().optional().describe('The failure reason, when the status is failed.'),
-        toolCount: z
-          .number()
-          .optional()
-          .describe('How many tools the server exposes, counted once the sign-in connected.'),
-      }),
-      surfaces: {
-        mcp: {
-          toolName: 'mcp_poll_signin',
-          servers: ['in-session', 'external'],
-          annotations: { idempotentHint: true, openWorldHint: true },
-        },
-      },
-      // A terminal answer here retires the conversation's sign-in card, for the
-      // path where the agent — not the person's own browser tab — is what
-      // learns the sign-in landed (DOR-1004).
-      inSessionCard: 'signin_resolved',
-      invoke: async (deps, input) => {
-        const oauth = requireOAuth(deps);
-        return oauth.pollSignin(input.flowId);
-      },
-    }),
+    ...mcpSigninCapabilities,
   ],
 };

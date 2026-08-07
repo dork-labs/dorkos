@@ -86,6 +86,8 @@ export interface McpServerCardDetailsProps {
   connection?: McpServerTransport;
   /** The listing's derived sign-in state, if any. */
   authStatus?: ManagedMcpServerView['authStatus'];
+  /** Which OAuth client identity DorkOS holds for this server, when it holds one. */
+  authClientOrigin?: ManagedMcpServerView['authClientOrigin'];
   /** Where the server came from, or `null` when the runtime would not say. */
   scope: McpServerScope | null;
   /** The plugin it ships with, when its name says so. */
@@ -123,6 +125,7 @@ export interface McpServerCardDetailsProps {
 export function McpServerCardDetails({
   connection,
   authStatus,
+  authClientOrigin,
   scope,
   pluginName,
   rawName,
@@ -141,7 +144,7 @@ export function McpServerCardDetails({
         <DetailRow label="Sign-in">
           <span className="inline-flex items-start gap-1.5">
             <ShieldCheck className="mt-0.5 size-3 shrink-0" aria-hidden />
-            {signInRowCopy({ connection, authStatus })}
+            {signInRowCopy({ connection, authStatus, clientOrigin: authClientOrigin })}
           </span>
         </DetailRow>
       )}

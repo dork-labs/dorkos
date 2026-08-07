@@ -220,6 +220,7 @@ export function ManagedMcpServerCard({
         <McpServerCardDetails
           connection={server.connection}
           authStatus={server.authStatus}
+          authClientOrigin={server.authClientOrigin}
           scope="agent"
           pluginName={parsed.pluginName}
           rawName={parsed.rawName}
