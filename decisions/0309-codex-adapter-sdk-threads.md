@@ -38,3 +38,6 @@ The Codex adapter (`apps/server/src/services/runtimes/codex/`) maps one DorkOS s
 - No interactive tool approvals — the sandbox mode is the only guardrail; capability flags gate the approval UI off honestly.
 - Near-continuous SDK release cadence with occasional breaking changes (0.132.0) demands a pinned version and an upgrade cadence.
 - Known CLI-side logging-volume defect (June 2026, `logs_2.sqlite` unbounded writes) is only partially patched at 0.142.5 (`#29599` lands in 0.143.0); re-pin to ≥0.143.0 during a stabilization pass.
+  **Update, 2026-08-07:** resolved — the pin moved to `~0.147.0` (DOR-1012), well past the
+  ≥0.143.0 threshold, so `#29599` is included and the `logs_2.sqlite` unbounded-write defect
+  is fully patched at the current pin.
