@@ -121,13 +121,23 @@ function ClusterHeader({
  * same key, new index — so `layout="position"` interpolates, and flipping
  * Group-by-manager makes every card slide to its cluster.
  *
- * The spec's alternative was `layoutId`, which does survive a change of parent.
- * It was tried and measured, and it fails two ways that only a browser shows —
- * see the note on `TeamMemberCard`'s `LAYOUT_MOTION`.
+ * The spec's alternative was `layoutId`, which survives a change of parent and
+ * so would not need this structure. This structure is preferred on its own
+ * merits — no shared-layout bookkeeping, and React identity is the thing
+ * actually being preserved — and `layoutId` was additionally measured to misfire
+ * inside this `popLayout` list; see `TeamMemberCard`'s `LAYOUT_MOTION`.
  *
  * Nothing is lost in the accessibility tree. A `<section>` with no accessible
  * name is not exposed as a region at all, so the removed wrappers were never
  * announced; the `<h2>` headings did — and still do — all the structural work.
+ *
+ * **Grouping drops the people, and that is intended.** A cluster is headed by
+ * its owner, so a person who owns agents becomes the header rather than a card
+ * inside their own cluster — six cards flat can become four cards under three
+ * headers. That has always been true of `groupTeamByOwner`; it is only newly
+ * conspicuous now that the change is animated and you can watch the people
+ * leave. The header still names them, still carries their face, and still
+ * filters to them when pressed, so nobody is lost — only re-drawn.
  */
 export function TeamRosterGrid({
   members,

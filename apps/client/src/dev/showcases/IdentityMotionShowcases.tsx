@@ -45,9 +45,10 @@ const ROSTER_SIZES: { multiplier: number; label: string }[] = [
 /**
  * The fixture repeated, with every id made unique.
  *
- * `layoutId` is `member.id`, and two elements claiming one layout id is a
- * shared-layout animation between things that are not the same thing — so the
- * ids and the owner references both carry the copy's index.
+ * Ids are React keys, and two cards sharing one key is a list React cannot
+ * reconcile — which is also what would break the travel, since a card only
+ * animates while it stays the same instance. So the ids and the owner
+ * references both carry the copy's index.
  */
 function scaledRoster(multiplier: number): TeamMember[] {
   if (multiplier === 1) return MOCK_TEAM_ROSTER;
@@ -174,9 +175,17 @@ function BadgeWakeRow() {
   );
 }
 
-/** A disc that answers the control it sits in, keyboard included. */
-function MarkTierLockup() {
-  const face = teamMemberFace(byId('person-dorian'));
+/**
+ * A disc that answers the control it sits in, keyboard included.
+ *
+ * Drawn for a person **and** an agent, because the two are not the same demo.
+ * `identityMarkRing` carries the badge-wake marker as well as the ring, so an
+ * agent's disc in a Mark-tier control both rings itself and wakes its Bot mark
+ * off the same hover — spillover that is only inspectable where a badge exists,
+ * and a person's disc has none.
+ */
+function MarkTierLockup({ memberId, label }: { memberId: string; label: string }) {
+  const face = teamMemberFace(byId(memberId));
 
   return (
     <button
@@ -194,7 +203,7 @@ function MarkTierLockup() {
         fallback={face.fallback}
         className={identityMarkRing.group}
       />
-      <span className="text-sm font-medium">Dorian</span>
+      <span className="text-sm font-medium">{label}</span>
     </button>
   );
 }
@@ -238,9 +247,14 @@ export function IdentityMotionShowcases() {
       <ShowcaseLabel>
         Mark tier — a disc that is itself a target rings itself in its own colour. The ring answers
         the control&rsquo;s hover and its focus alike, so Tab here learns exactly what a mouse does.
+        The agent shows the spillover: the same marker also arms the badge wake, so anywhere on the
+        control rings the disc, and landing on the disc itself additionally leans its Bot mark.
       </ShowcaseLabel>
       <ShowcaseDemo>
-        <MarkTierLockup />
+        <div className="flex flex-wrap items-center gap-3">
+          <MarkTierLockup memberId="person-dorian" label="Dorian" />
+          <MarkTierLockup memberId="agent-warden" label="Warden" />
+        </div>
       </ShowcaseDemo>
 
       <ShowcaseLabel>
@@ -274,8 +288,10 @@ export function IdentityMotionShowcases() {
 
       <ShowcaseLabel>
         Signature 2 — the owner echo. Point at (or Tab to) &ldquo;by @dorian&rdquo; and it says how
-        many agents that person has. The suffix holds its width at rest, so revealing it never
-        shoves the name out from under the cursor that asked for it.
+        many agents that person has. The suffix sits outside the layout, so it costs the row nothing
+        at rest and revealing it never shoves the name out from under the cursor that asked for it.
+        Watch the card stand down at the same time: pointing here is a different verb from opening
+        the profile, so the lift, the border and the badge all calm.
       </ShowcaseLabel>
       <ShowcaseDemo>
         <div className="grid gap-3 md:grid-cols-2">
@@ -307,10 +323,13 @@ export function IdentityMotionShowcases() {
       </ShowcaseDemo>
 
       <ShowcaseLabel>
-        Signature 4 — the badge wake. Point at an agent&rsquo;s disc and its Bot mark tilts six
-        degrees and grows a tenth. Opt-in per call site, so the twenty-plus discs in the sidebar —
-        which are not targets — stay still. Off completely under reduced motion, tilt included: a
-        crooked badge carries no fact worth keeping.
+        Signature 4 — the badge wake. An agent&rsquo;s Bot mark tilts six degrees and grows a tenth.
+        Opt-in per call site, so the twenty-plus discs in the sidebar — which are not targets — stay
+        still. What counts as pointing at it depends on what owns the pixels: these bare discs and
+        the Mark-tier lockup above answer the disc&rsquo;s own hover, while a Team card answers the
+        whole card, because its stretched-link overlay covers the disc and the disc never sees a
+        hover at all. Off completely under reduced motion, tilt included: a crooked badge carries no
+        fact worth keeping.
       </ShowcaseLabel>
       <ShowcaseDemo>
         <BadgeWakeRow />

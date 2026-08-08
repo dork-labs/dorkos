@@ -209,6 +209,45 @@ test.describe('Team — the roster @smoke', () => {
     expect(hits.attribution).toMatch(/^Show only /);
   });
 
+  test('an agent’s badge wakes when you point at its card', async ({
+    page,
+    basePage,
+    roomsApi,
+  }) => {
+    // The signature moment, asserted where it actually lives. Two things make
+    // this worth a browser test rather than a class-string check:
+    //
+    // Tailwind v4 emits `rotate:` and `scale:` as their OWN properties, so a
+    // test reading `transform` would see `none` while the badge was plainly
+    // tilted — and the first version of this fix was measured that way and
+    // looked broken when it was not.
+    //
+    // And the wake is keyed to the CARD, not the disc, because the name
+    // button's stretched overlay owns the disc's pixels — the disc never
+    // receives `:hover`. That is invisible to jsdom, which has no hit testing,
+    // and it is exactly what shipped dead the first time.
+    const agent = await roomsApi.registerAgent(`E2E Wake ${roomsApi.runId}`, '🦊', '#8b5cf6');
+    await page.goto('/team');
+    await basePage.waitForAppReady();
+
+    const agentCard = card(page, agent.name);
+    await expect(agentCard).toBeVisible();
+    const badge = agentCard.locator('[data-slot="identity-badge"]').first();
+
+    const rotateOf = () => badge.evaluate((node) => getComputedStyle(node).rotate);
+
+    await page.mouse.move(0, 0);
+    await expect.poll(rotateOf).toBe('none');
+
+    await agentCard.hover();
+    await expect.poll(rotateOf).toBe('-6deg');
+    expect(await badge.evaluate((node) => getComputedStyle(node).scale)).toBe('1.1');
+
+    // And it settles back, so the tilt is a response and not a new resting pose.
+    await page.mouse.move(0, 0);
+    await expect.poll(rotateOf).toBe('none');
+  });
+
   test('Group: manager clusters the roster under a header', async ({
     page,
     basePage,

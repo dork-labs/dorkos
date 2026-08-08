@@ -25,7 +25,7 @@ import { TeamRosterGrid } from '../ui/TeamRosterGrid';
 
 const TEMPLATE = MOCK_TEAM_ROSTER.find((member) => member.kind === 'agent')!;
 
-/** A roster of `count` distinct agents — distinct ids, because `layoutId` is one. */
+/** A roster of `count` distinct agents — distinct ids, because each is a React key. */
 function rosterOf(count: number): TeamMember[] {
   return Array.from({ length: count }, (_, index) => ({
     ...TEMPLATE,
@@ -91,9 +91,10 @@ describe('the roster FLIP gate', () => {
     // parent and mounts it under another, and the group toggle goes back to
     // teleporting. Measured in a browser both ways.
     //
-    // The spec's alternative, `layoutId`, does survive a change of parent, and
-    // was tried: it stops surviving cards animating at all, and leaves exiting
-    // ones in the DOM forever. See `TeamMemberCard`'s `LAYOUT_MOTION`.
+    // The spec's alternative was `layoutId`, which survives a change of parent.
+    // This structure means it is not needed — and inside this `popLayout` list
+    // it was measured to make survivors teleport and leave exiting cards in the
+    // DOM as ghosts. See `TeamMemberCard`'s `LAYOUT_MOTION` for the numbers.
     const owner = MOCK_TEAM_ROSTER.find((member) => member.id === 'person-dorian')!;
     const owned = MOCK_TEAM_ROSTER.filter((member) => member.ownerId === owner.id);
 
