@@ -143,6 +143,10 @@ export function FileExplorer() {
             onNewFolder={(parent) => startCreate(parent, 'dir')}
             onDelete={(entry) => void explorer.removeEntry(entry)}
             onMove={(from, toDir) => void explorer.moveEntry(from, toDir)}
+            revealLabel={explorer.revealLabel}
+            onReveal={(entry) => void explorer.reveal(entry)}
+            onAddToChat={explorer.addToChat}
+            onCopyPath={(entry, kind) => void explorer.copyPath(entry, kind)}
           />
         )}
       </div>

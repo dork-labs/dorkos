@@ -248,6 +248,25 @@ export function createSystemMethods(baseUrl: string) {
       });
     },
 
+    /** Copy an entry (recursively for directories); rejects (409) if the target exists. */
+    copyEntry(cwd: string, from: string, to: string): Promise<FileMutationResponse> {
+      return fetchJSON<FileMutationResponse>(baseUrl, '/files/copy', {
+        method: 'POST',
+        body: JSON.stringify({ cwd, from, to }),
+      });
+    },
+
+    /** The server runs on a real desktop, so it can drive a file manager. */
+    supportsReveal: true as const,
+
+    /** Show an entry in the server machine's file manager (204, no body). */
+    async revealEntry(cwd: string, filePath: string): Promise<void> {
+      await fetchJSON<void>(baseUrl, '/files/reveal', {
+        method: 'POST',
+        body: JSON.stringify({ cwd, path: filePath }),
+      });
+    },
+
     async writeFile(
       cwd: string,
       filePath: string,

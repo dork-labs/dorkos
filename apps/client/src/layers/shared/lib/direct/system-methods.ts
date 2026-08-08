@@ -508,6 +508,52 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
       return { ok: true };
     },
 
+    /** Copy an entry via direct fs (recursive for directories); throws if the target exists. */
+    async copyEntry(cwd: string, from: string, to: string): Promise<FileMutationResponse> {
+      const fs = (await import('fs/promises')).default;
+      const pathMod = (await import('path')).default;
+      const { root, resolved: fromResolved } = await confineWithin(cwd, from);
+      const { resolved: toResolved } = await confineWithin(cwd, to);
+      if (fromResolved === root || toResolved === root) {
+        throw codedError('Refusing to copy over the working-directory root', 'REFUSE_ROOT');
+      }
+      const sourceStat = await fs.stat(fromResolved).catch(() => {
+        throw codedError('Source not found', 'NOT_FOUND');
+      });
+      const targetExists = await fs
+        .access(toResolved)
+        .then(() => true)
+        .catch(() => false);
+      if (targetExists) throw codedError('Target already exists', 'CONFLICT');
+      if (
+        sourceStat.isDirectory() &&
+        (toResolved === fromResolved || toResolved.startsWith(fromResolved + pathMod.sep))
+      ) {
+        throw codedError('Refusing to copy a folder into itself', 'COPY_INTO_SELF');
+      }
+      await fs.mkdir(pathMod.dirname(toResolved), { recursive: true });
+      try {
+        await fs.cp(fromResolved, toResolved, {
+          recursive: true,
+          errorOnExist: true,
+          force: false,
+        });
+      } catch (err) {
+        // Never leave a half-copied tree behind for the user to clean up.
+        await fs.rm(toResolved, { recursive: true, force: true }).catch(() => {});
+        throw err;
+      }
+      return { ok: true };
+    },
+
+    // Revealing a file needs the desktop shell, which the in-process host does
+    // not expose — the menu item is gated off on `supportsReveal`, so
+    // `revealEntry` is only ever a hard guard (same posture as the terminal).
+    supportsReveal: false as const,
+    revealEntry(): Promise<never> {
+      return Promise.reject(new Error('unsupported'));
+    },
+
     /**
      * Write content back to an existing file, confined to `cwd`. Mirrors the
      * server route's optimistic-concurrency + atomic-write semantics with direct

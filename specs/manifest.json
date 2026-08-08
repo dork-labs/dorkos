@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260808-144053",
+      "slug": "file-explorer-actions",
+      "title": "File explorer: context menu actions, copy/paste, and drag-and-drop",
+      "created": "2026-08-08",
+      "status": "specified"
+    },
+    {
       "id": "260807-231654",
       "slug": "background-task-level-state",
       "title": "Level-Based Background Task State",

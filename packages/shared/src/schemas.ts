@@ -2315,6 +2315,32 @@ export const RenameEntryRequestSchema = z
   })
   .openapi('RenameEntryRequest');
 
+/**
+ * Request for `POST /api/files/copy` — copy an entry (file or directory,
+ * recursively) within a session's working directory. Both `from` and `to` are
+ * boundary-validated. Rejects with 404 when `from` is missing, 409 when `to`
+ * already exists, and 400 when a directory would be copied into itself.
+ */
+export const CopyEntryRequestSchema = z
+  .object({
+    cwd: z.string().min(1),
+    from: z.string().min(1),
+    to: z.string().min(1),
+  })
+  .openapi('CopyEntryRequest');
+
+/**
+ * Request for `POST /api/files/reveal` — show an entry in the operating
+ * system's file manager on the machine the server runs on. The path is
+ * boundary-validated against `cwd`; nothing is read or written.
+ */
+export const RevealEntryRequestSchema = z
+  .object({
+    cwd: z.string().min(1),
+    path: z.string().min(1),
+  })
+  .openapi('RevealEntryRequest');
+
 // ---------------------------------------------------------------------------
 // Diff review (DOR-212) — per-hunk agent-edit review surface
 // ---------------------------------------------------------------------------
@@ -2446,6 +2472,10 @@ export const RevertDiffBaselineRequestSchema = z
 export type RevertDiffBaselineRequest = z.infer<typeof RevertDiffBaselineRequestSchema>;
 
 export type RenameEntryRequest = z.infer<typeof RenameEntryRequestSchema>;
+
+export type CopyEntryRequest = z.infer<typeof CopyEntryRequestSchema>;
+
+export type RevealEntryRequest = z.infer<typeof RevealEntryRequestSchema>;
 
 /** Response for a successful delete or rename. */
 export const FileMutationResponseSchema = z

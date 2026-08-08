@@ -66,6 +66,8 @@ export type {
   CreateEntryResponse,
   DeleteEntryQuery,
   RenameEntryRequest,
+  CopyEntryRequest,
+  RevealEntryRequest,
   FileMutationResponse,
   DiffBaselineOrigin,
   DiffBaselineQuery,

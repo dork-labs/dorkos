@@ -980,6 +980,37 @@ export interface Transport extends RoomTransport {
    * @param to - Destination path, absolute or relative to `cwd`.
    */
   renameEntry(cwd: string, from: string, to: string): Promise<FileMutationResponse>;
+  /**
+   * Copy an entry within `cwd`, recursively for directories. Both `from` and
+   * `to` are confined to `cwd`; rejects when `from` is missing (thrown with
+   * `code: 'NOT_FOUND'`), when `to` already exists (`code: 'CONFLICT'`), or
+   * when a directory would be copied into its own subtree
+   * (`code: 'COPY_INTO_SELF'`).
+   *
+   * @param cwd - Session working directory both paths are resolved within.
+   * @param from - Source path, absolute or relative to `cwd`.
+   * @param to - Destination path, absolute or relative to `cwd`.
+   */
+  copyEntry(cwd: string, from: string, to: string): Promise<FileMutationResponse>;
+  /**
+   * Whether {@link revealEntry} can actually open a file manager. False for the
+   * in-process Obsidian transport, which has no way to drive the desktop shell
+   * — surfaces hide the "Reveal in Finder" action rather than offering one that
+   * fails, the same posture as {@link Transport.supportsTerminal}.
+   */
+  readonly supportsReveal: boolean;
+  /**
+   * Show an entry in the operating system's file manager, on the machine the
+   * server runs on. Reads and writes nothing; the path is confined to `cwd`.
+   * Rejects with `code: 'NOT_FOUND'` when the entry is gone.
+   *
+   * Gate calls on {@link Transport.supportsReveal} — a transport that cannot do
+   * this rejects with `'unsupported'`.
+   *
+   * @param cwd - Session working directory the path is resolved within.
+   * @param filePath - Target path, absolute or relative to `cwd`.
+   */
+  revealEntry(cwd: string, filePath: string): Promise<void>;
 
   /** Get git status (branch, changes) for a working directory. */
   getGitStatus(cwd?: string): Promise<GitStatusResponse | GitStatusError>;

@@ -14,8 +14,11 @@ import {
   CreateEntryRequestSchema,
   DeleteEntryQuerySchema,
   RenameEntryRequestSchema,
+  CopyEntryRequestSchema,
+  RevealEntryRequestSchema,
 } from '@dorkos/shared/schemas';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
+import { revealInFileManager } from '../lib/reveal-in-file-manager.js';
 import {
   MEDIA_CONTENT_TYPES,
   sha256,
@@ -524,6 +527,127 @@ router.post('/rename', async (req, res) => {
   }
 
   return res.json({ ok: true });
+});
+
+/**
+ * Copy an entry within a session's working directory. Mirrors `POST /rename`'s
+ * shape and guards: both `from` and `to` are boundary-validated against `cwd`,
+ * `from` must exist (404), `to` must not (409), and neither may be the `cwd`
+ * root. Directories copy recursively; copying a directory into itself or into
+ * its own subtree is refused (400), because the copy would otherwise recurse
+ * into the destination it is still writing.
+ */
+router.post('/copy', async (req, res) => {
+  const parsed = CopyEntryRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'Invalid body', details: z.flattenError(parsed.error) });
+  }
+  const { cwd, from, to } = parsed.data;
+
+  let validatedCwd: string;
+  let fromResolved: string;
+  let toResolved: string;
+  try {
+    const fromR = await resolveWithinCwd(cwd, from);
+    validatedCwd = fromR.validatedCwd;
+    fromResolved = fromR.resolved;
+    // `to` does not exist yet, so its own realpath falls back to path.resolve;
+    // the containment check still rejects a `..` escape.
+    ({ resolved: toResolved } = await resolveWithinCwd(cwd, to));
+  } catch (err) {
+    if (sendPathError(res, err)) return;
+    logger.error('[files] POST /copy boundary failed', { err, cwd, from, to });
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+
+  if (fromResolved === validatedCwd || toResolved === validatedCwd) {
+    return res
+      .status(400)
+      .json({ error: 'Refusing to copy over the working-directory root', code: 'REFUSE_ROOT' });
+  }
+
+  let sourceIsDir: boolean;
+  try {
+    sourceIsDir = (await fs.stat(fromResolved)).isDirectory();
+  } catch {
+    return res.status(404).json({ error: 'Source not found', code: 'NOT_FOUND' });
+  }
+
+  try {
+    await fs.access(toResolved);
+    return res.status(409).json({ error: 'Target already exists', code: 'CONFLICT' });
+  } catch {
+    // Target free — proceed.
+  }
+
+  if (
+    sourceIsDir &&
+    (toResolved === fromResolved || toResolved.startsWith(fromResolved + path.sep))
+  ) {
+    return res
+      .status(400)
+      .json({ error: 'Refusing to copy a folder into itself', code: 'COPY_INTO_SELF' });
+  }
+
+  try {
+    await fs.mkdir(path.dirname(toResolved), { recursive: true });
+    await fs.cp(fromResolved, toResolved, { recursive: true, errorOnExist: true, force: false });
+  } catch (err) {
+    // A partially-written destination is worse than none: the tree would show a
+    // half-copied folder the user never asked for and would have to clean up.
+    await fs.rm(toResolved, { recursive: true, force: true }).catch(() => {});
+    if ((err as NodeJS.ErrnoException).code === 'EACCES') {
+      return res.status(403).json({ error: 'Permission denied', code: 'EACCES' });
+    }
+    logger.error('[files] POST /copy failed', { err, fromResolved, toResolved });
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+
+  return res.json({ ok: true });
+});
+
+/**
+ * Show an entry in the operating system's file manager, on the machine the
+ * server runs on: Finder (macOS), File Explorer (Windows), or the desktop's
+ * default handler (everything else). The path is boundary-validated against
+ * `cwd` and must exist (404); nothing is read or written.
+ *
+ * Every launcher runs through `execFile` with an argument array — never a
+ * shell — so a file name containing shell metacharacters is passed through as
+ * data rather than parsed as a command.
+ */
+router.post('/reveal', async (req, res) => {
+  const parsed = RevealEntryRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'Invalid body', details: z.flattenError(parsed.error) });
+  }
+  const { cwd, path: relPath } = parsed.data;
+
+  let resolved: string;
+  try {
+    ({ resolved } = await resolveWithinCwd(cwd, relPath));
+  } catch (err) {
+    if (sendPathError(res, err)) return;
+    logger.error('[files] POST /reveal boundary failed', { err, cwd, path: relPath });
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+
+  try {
+    await fs.access(resolved);
+  } catch {
+    return res.status(404).json({ error: 'Path not found', code: 'NOT_FOUND' });
+  }
+
+  try {
+    await revealInFileManager(resolved);
+  } catch (err) {
+    logger.error('[files] POST /reveal failed', { err, resolved });
+    return res
+      .status(500)
+      .json({ error: "Couldn't open the file manager", code: 'REVEAL_UNAVAILABLE' });
+  }
+
+  return res.status(204).end();
 });
 
 export default router;
