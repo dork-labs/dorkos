@@ -60,8 +60,9 @@ const MAX_TEXT_FILE_BYTES = 5 * 1024 * 1024;
 
 /**
  * Build an Error carrying a stable `code`, matching the codes `HttpTransport`
- * surfaces (`CONFLICT`, `DIR_NOT_EMPTY`, `NOT_FOUND`, `REFUSE_ROOT`) so callers
- * (Chunk B) can branch on `err.code` regardless of transport.
+ * surfaces (`CONFLICT`, `DIR_NOT_EMPTY`, `NOT_FOUND`, `REFUSE_ROOT`,
+ * `COPY_INTO_SELF`) so callers (Chunk B) can branch on `err.code` regardless of
+ * transport.
  */
 function codedError(message: string, code: string): Error & { code: string } {
   const err = new Error(message) as Error & { code: string };
