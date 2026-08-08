@@ -4333,6 +4333,33 @@
       "status": "draft",
       "created": "2026-08-08",
       "specSlug": "team-room-home"
+    },
+    {
+      "id": "260808-180001",
+      "slug": "composer-host-contract-is-markdown-text-and-offset",
+      "title": "The composer's host contract is markdown text and a markdown offset",
+      "status": "draft",
+      "created": "2026-08-08",
+      "extractedFrom": "composer-rich-text",
+      "specSlug": "composer-rich-text"
+    },
+    {
+      "id": "260808-180003",
+      "slug": "composer-keyboard-ladder-behind-an-editing-surface-port",
+      "title": "The composer keyboard ladder is surface-agnostic behind an editing-surface port",
+      "status": "draft",
+      "created": "2026-08-08",
+      "extractedFrom": "composer-rich-text",
+      "specSlug": "composer-rich-text"
+    },
+    {
+      "id": "260808-180004",
+      "slug": "composer-mentions-are-token-nodes-decorated-from-a-host-roster",
+      "title": "Composer mentions are token text nodes decorated from a host-supplied roster",
+      "status": "draft",
+      "created": "2026-08-08",
+      "extractedFrom": "composer-rich-text",
+      "specSlug": "composer-rich-text"
     }
   ]
 }
