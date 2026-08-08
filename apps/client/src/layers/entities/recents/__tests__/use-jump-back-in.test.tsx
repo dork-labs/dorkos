@@ -34,6 +34,7 @@ const channel = (id: string, slug: string, lastActivityAt: string): RoomSummary 
   topic: null,
   workspaceId: null,
   archived: false,
+  ambientMaxEntries: 30,
   // Deliberately EARLIER than `lastActivityAt`: a room whose two timestamps are
   // equal has never been used and the model drops it (see `isJumpBackInRoom`).
   createdAt: '2026-07-01T00:00:00.000Z',

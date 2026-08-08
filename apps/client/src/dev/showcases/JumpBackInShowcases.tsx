@@ -58,6 +58,7 @@ function useJumpBackInFixture() {
       topic: null,
       workspaceId: null,
       archived: false,
+      ambientMaxEntries: 30,
       createdAt: minutesAgo(1440),
       lastActivityAt: minutesAgo(30),
       unreadCount: 0,

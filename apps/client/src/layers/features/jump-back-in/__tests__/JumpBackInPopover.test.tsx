@@ -19,6 +19,7 @@ const room = (overrides: Partial<RoomSummary> & Pick<RoomSummary, 'id' | 'kind'>
   topic: null,
   workspaceId: null,
   archived: false,
+  ambientMaxEntries: 30,
   createdAt: '2026-07-01T00:00:00.000Z',
   lastActivityAt: '2026-08-01T10:00:00.000Z',
   unreadCount: 0,

@@ -58,6 +58,7 @@ function room(overrides: Partial<RoomSummary> & Pick<RoomSummary, 'id' | 'kind'>
     topic: null,
     workspaceId: null,
     archived: false,
+    ambientMaxEntries: 30,
     // Earlier than `lastActivityAt`: equal timestamps mean a room nobody has
     // said anything in yet, which the model drops.
     createdAt: '2026-07-01T00:00:00.000Z',

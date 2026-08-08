@@ -39,6 +39,7 @@ const channel = (id: string, slug: string, minutesAgo: number): RoomSummary => (
   topic: null,
   workspaceId: null,
   archived: false,
+  ambientMaxEntries: 30,
   createdAt: '2026-07-01T00:00:00.000Z',
   lastActivityAt: new Date(Date.now() - minutesAgo * 60_000).toISOString(),
   unreadCount: 0,

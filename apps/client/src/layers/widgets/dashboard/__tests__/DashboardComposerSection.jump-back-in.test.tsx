@@ -50,6 +50,7 @@ const channel = (id: string, slug: string, lastActivityAt: string): RoomSummary 
   topic: 'Ship notes',
   workspaceId: null,
   archived: false,
+  ambientMaxEntries: 30,
   createdAt: '2026-07-01T00:00:00.000Z',
   lastActivityAt,
   unreadCount: 0,
