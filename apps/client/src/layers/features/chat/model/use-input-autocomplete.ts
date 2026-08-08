@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import type { CommandEntry } from '@dorkos/shared/types';
 import type { FileEntry } from '@/layers/shared/lib';
 import type { PaletteCommandEntry, RankedCommandEntry } from '@/layers/entities/command';
@@ -82,20 +82,57 @@ export function useInputAutocomplete({
     [fileComplete, cmdPalette]
   );
 
+  /**
+   * The freshest `(value, cursor)` pair, as the field has reported it.
+   *
+   * ## Why a ref and not the state above
+   *
+   * Trigger detection needs BOTH halves, but each handler only carries one:
+   * `handleInputChange` knows the new value and reads the cursor from state,
+   * `handleCursorChange` knows the new cursor and reads the value from state.
+   * When a field reports both in ONE tick — which is what
+   * `TextareaField.handleChange` and Lexical's update listener both do — the
+   * second handler still sees the pre-update state from its own closure, runs
+   * detection against a half-stale pair, and undoes what the first just decided.
+   *
+   * The textarea never showed this: typing also fires a `select` event, so a
+   * THIRD detection ran after the re-render with both halves fresh and quietly
+   * repaired the result. A contenteditable emits no such event, so the repair
+   * never came and `/` stopped opening the command palette (found in a browser,
+   * DOR-948 task 5.2 — a bug in this hook, exposed rather than caused by the
+   * new field).
+   *
+   * Refs make each handler contribute its own half and detect against the pair,
+   * so the result no longer depends on how many events a field happens to fire.
+   */
+  const latest = useRef({ value: input, cursor: 0 });
+
+  // The host owns the value too — it empties the box on send and writes a
+  // dropped file path into it — and those never come through
+  // `handleInputChange`. Syncing after commit keeps the ref honest without
+  // fighting the in-tick writes above, which happen before any render.
+  useEffect(() => {
+    latest.current.value = input;
+  }, [input]);
+
   const handleInputChange = useCallback(
     (value: string) => {
       setInput(value);
-      detectTrigger(value, cursorPos || value.length);
+      // A field that reports no cursor leaves the caret at the end of what it
+      // just typed, which is where typing puts it.
+      latest.current = { value, cursor: latest.current.cursor || value.length };
+      detectTrigger(value, latest.current.cursor);
     },
-    [setInput, detectTrigger, cursorPos]
+    [setInput, detectTrigger]
   );
 
   const handleCursorChange = useCallback(
     (pos: number) => {
       setCursorPos(pos);
-      detectTrigger(input, pos);
+      latest.current = { value: latest.current.value, cursor: pos };
+      detectTrigger(latest.current.value, pos);
     },
-    [input, detectTrigger]
+    [detectTrigger]
   );
 
   const handleCommandSelect = useCallback(

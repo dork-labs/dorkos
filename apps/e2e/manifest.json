@@ -486,6 +486,21 @@
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
+    },
+    "composer-rich-text": {
+      "specFile": "tests/chat/composer-rich-text.spec.ts",
+      "feature": "chat",
+      "description": "the chat composer with formatting on: Enter builds a list before it sends, and the wire still carries markdown",
+      "lastRun": "",
+      "lastStatus": "",
+      "runCount": 0,
+      "passCount": 0,
+      "failCount": 0,
+      "relatedCode": [
+        "apps/client/src/layers/features/composer/ui/field/LexicalField.tsx",
+        "apps/client/src/layers/features/composer/ui/ComposerInput.tsx"
+      ],
+      "lastModified": ""
     }
   },
   "runHistory": [
