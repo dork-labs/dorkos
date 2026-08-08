@@ -723,7 +723,19 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       .fn()
       .mockResolvedValue({ imageUrl: '/api/profile/avatar/person-1?v=abc' }),
     deleteProfileAvatar: vi.fn().mockResolvedValue(undefined),
-    setAuthorHandle: vi.fn(),
+    // Answers with the `AuthorRef` the real route returns, echoing the handle
+    // it was asked for. A bare `vi.fn()` resolves `undefined`, which is not a
+    // shape any caller can read — a component that renders the saved handle
+    // back would crash on it and the test would blame the component.
+    setAuthorHandle: vi.fn().mockImplementation((authorId: string, handle: string) =>
+      Promise.resolve({
+        id: authorId,
+        kind: 'human',
+        displayName: 'You',
+        handle: handle.trim() === '' ? null : handle,
+        origin: 'local',
+      })
+    ),
     // Shapes (DOR-355)
     listShapes: vi.fn().mockResolvedValue([]),
     applyShape: vi.fn(),

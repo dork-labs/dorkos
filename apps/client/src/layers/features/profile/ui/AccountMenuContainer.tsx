@@ -8,6 +8,7 @@
  * @module features/profile/ui/AccountMenuContainer
  */
 import { useCallback } from 'react';
+import { toast } from 'sonner';
 import { useProfileDeepLink, useSettingsDeepLink } from '@/layers/shared/model';
 import { useTeamRoster } from '@/layers/entities/team';
 import { useCurrentUser, useSignOut } from '@/layers/features/auth';
@@ -40,10 +41,23 @@ export function AccountMenuContainer() {
     if (self) openProfile(self.id);
   }, [self, openProfile]);
 
+  // Deliberately no tab argument: this is the generic way into Settings, so it
+  // lands on the dialog's own default. Editing your profile has its own route
+  // through this menu — View profile, then Edit — and making the plain Settings
+  // item jump to the Profile tab would give the menu two doors to one room and
+  // none to the rest of it.
   const handleOpenSettings = useCallback(() => openSettings(), [openSettings]);
 
-  const handleSignOut = useCallback(() => {
-    void signOut.run();
+  const handleSignOut = useCallback(async () => {
+    const result = await signOut.run();
+    // A failed sign-out leaves the person signed IN while the menu closes, which
+    // looks exactly like success. Swallowing it would be the worst kind of quiet
+    // — a toast is the only surface left once the menu is gone.
+    if (!result.ok) {
+      toast.error('Could not sign out', {
+        description: result.error?.message ?? 'Something went wrong. Try again.',
+      });
+    }
   }, [signOut]);
 
   if (!self) return null;

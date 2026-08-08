@@ -13,7 +13,7 @@
  * @module features/profile/ui/ProfilePanel
  */
 import { useRef, useState } from 'react';
-import type { TeamMember } from '@dorkos/shared/team-schemas';
+import { OPERATOR_FALLBACK_DISPLAY_NAME, type TeamMember } from '@dorkos/shared/team-schemas';
 import {
   Button,
   FieldCard,
@@ -22,7 +22,7 @@ import {
   Input,
   SettingRow,
 } from '@/layers/shared/ui';
-import { resolveIdentityFace } from '@/layers/shared/lib';
+import { teamMemberFace } from '@/layers/entities/team';
 import { avatarErrorMessage, handleErrorMessage, nameErrorMessage } from '../model/profile-errors';
 import {
   useDeleteProfileAvatar,
@@ -57,7 +57,25 @@ function useServerSeededDraft(serverValue: string): [string, (next: string) => v
   return [draft, setDraft];
 }
 
-/** One line under a field, saying what just happened to it. */
+/**
+ * One line under a field, saying what just happened to it.
+ *
+ * A refusal is an `alert` because it interrupts what the person was doing; a
+ * confirmation is a `status`, which a screen reader announces without stealing
+ * focus. Both are per field, because the fields save separately.
+ *
+ * **A "Saved" note is drawn only while the field still matches what was saved**
+ * — the call sites compare the draft against the mutation's own `variables`.
+ * TanStack keeps `isSuccess` true indefinitely, so an unconditional note would
+ * sit under a field the person had since edited, claiming their unsaved draft
+ * was stored. Typing clears it; that is the whole lifecycle, and it needs no
+ * timer.
+ *
+ * Compared against what was SENT rather than against what the roster now says,
+ * deliberately: the roster refetch that follows a save is a second round trip,
+ * and gating the confirmation on it would make "Saved" appear late, flicker on
+ * a slow read, and never appear at all where the refetch cannot happen.
+ */
 function FieldNote({ tone, children }: { tone: 'error' | 'ok'; children: React.ReactNode }) {
   return (
     <p
@@ -82,17 +100,7 @@ export interface ProfilePanelProps {
  * one shared "save" button would make the person re-submit the part that worked.
  */
 export function ProfilePanel({ member }: ProfilePanelProps) {
-  const face = resolveIdentityFace({
-    record: {
-      id: member.id,
-      kind: member.kind,
-      displayName: member.displayName,
-      ...(member.emoji ? { emoji: member.emoji } : {}),
-      ...(member.color ? { color: member.color } : {}),
-      ...(member.imageUrl ? { imageUrl: member.imageUrl } : {}),
-    },
-    origin: member.origin,
-  });
+  const face = teamMemberFace(member);
 
   const fileInput = useRef<HTMLInputElement>(null);
   const uploadAvatar = useUploadProfileAvatar();
@@ -100,10 +108,17 @@ export function ProfilePanel({ member }: ProfilePanelProps) {
   const updateName = useUpdateProfileName();
   const setHandle = useSetAuthorHandle();
 
-  const [name, setName] = useServerSeededDraft(member.displayName);
+  // `You` is what the roster falls back to when this install knows no other
+  // name — nobody chose it. Seeding the field with it would present a
+  // placeholder as a decision and then let the person "save" it as their real
+  // name; it belongs in the placeholder, where it reads as the guess it is.
+  const storedName =
+    member.displayName === OPERATOR_FALLBACK_DISPLAY_NAME ? '' : member.displayName;
+
+  const [name, setName] = useServerSeededDraft(storedName);
   const [handle, setHandleText] = useServerSeededDraft(member.handle ?? '');
 
-  const nameChanged = name.trim().length > 0 && name.trim() !== member.displayName;
+  const nameChanged = name.trim().length > 0 && name.trim() !== storedName;
   const handleChanged = handle.trim() !== (member.handle ?? '');
 
   function pickPhoto(files: FileList | null) {
@@ -189,6 +204,7 @@ export function ProfilePanel({ member }: ProfilePanelProps) {
                 value={name}
                 maxLength={80}
                 aria-label="Display name"
+                placeholder={OPERATOR_FALLBACK_DISPLAY_NAME}
                 onChange={(e) => setName(e.target.value)}
               />
               <Button
@@ -202,6 +218,9 @@ export function ProfilePanel({ member }: ProfilePanelProps) {
           </SettingRow>
           {updateName.isError && (
             <FieldNote tone="error">{nameErrorMessage(updateName.error)}</FieldNote>
+          )}
+          {updateName.isSuccess && name.trim() === updateName.variables && (
+            <FieldNote tone="ok">Saved.</FieldNote>
           )}
         </FieldCardContent>
       </FieldCard>
@@ -232,6 +251,9 @@ export function ProfilePanel({ member }: ProfilePanelProps) {
           </SettingRow>
           {setHandle.isError && (
             <FieldNote tone="error">{handleErrorMessage(setHandle.error, handle.trim())}</FieldNote>
+          )}
+          {setHandle.isSuccess && handle.trim() === setHandle.variables?.handle && (
+            <FieldNote tone="ok">Saved.</FieldNote>
           )}
         </FieldCardContent>
       </FieldCard>

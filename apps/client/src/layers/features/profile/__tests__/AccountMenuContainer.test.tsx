@@ -40,8 +40,11 @@ vi.mock('@/layers/shared/model/use-dialog-deep-link', () => ({
   }),
 }));
 
+const mockToastError = vi.fn();
+vi.mock('sonner', () => ({ toast: { error: (...args: unknown[]) => mockToastError(...args) } }));
+
 let mockUser: { id: string } | null = null;
-const mockRun = vi.fn();
+const mockRun = vi.fn().mockResolvedValue({ ok: true });
 vi.mock('@/layers/features/auth', () => ({
   useCurrentUser: () => mockUser,
   useSignOut: () => ({ run: mockRun, isPending: false, error: null, reset: vi.fn() }),
@@ -69,7 +72,14 @@ afterEach(() => {
   cleanup();
   mockUser = null;
   vi.clearAllMocks();
+  mockRun.mockResolvedValue({ ok: true });
 });
+
+/** Open the menu and press Sign out. */
+async function signOutFromMenu() {
+  await userEvent.click(await screen.findByRole('button', { name: /your account/i }));
+  await userEvent.click(await screen.findByText('Sign out'));
+}
 
 describe('AccountMenuContainer', () => {
   it('draws the operator’s own face once the roster names them', async () => {
@@ -99,5 +109,29 @@ describe('AccountMenuContainer', () => {
     await userEvent.click(await screen.findByRole('button', { name: /your account/i }));
     await screen.findByText('View profile');
     expect(screen.queryByText('Sign out')).not.toBeInTheDocument();
+  });
+
+  it('says so when signing out FAILS, instead of closing as though it worked', async () => {
+    mockUser = { id: 'user-1' };
+    mockRun.mockResolvedValue({ ok: false, error: { message: 'Network unreachable' } });
+    renderContainer();
+
+    await signOutFromMenu();
+
+    // The menu closes either way, so without this the person is left signed in
+    // looking at a UI that behaved exactly as it does on success.
+    await waitFor(() => expect(mockToastError).toHaveBeenCalledTimes(1));
+    expect(mockToastError.mock.calls[0][0]).toBe('Could not sign out');
+    expect(mockToastError.mock.calls[0][1]).toMatchObject({ description: 'Network unreachable' });
+  });
+
+  it('stays quiet when signing out works', async () => {
+    mockUser = { id: 'user-1' };
+    renderContainer();
+
+    await signOutFromMenu();
+
+    await waitFor(() => expect(mockRun).toHaveBeenCalledTimes(1));
+    expect(mockToastError).not.toHaveBeenCalled();
   });
 });

@@ -279,3 +279,20 @@ export const ProfileUpdateResponseSchema = z
 
 /** The `PATCH /api/profile` response (see {@link ProfileUpdateResponseSchema}). */
 export type ProfileUpdateResponse = z.infer<typeof ProfileUpdateResponseSchema>;
+
+/**
+ * The name a roster shows for the operator when this install knows no other.
+ *
+ * **Shared because both sides have to agree on it, not because it is tidy.**
+ * The server's `resolveOperatorProfile` returns it as the last rung of the name
+ * ladder, and Settings › Profile has to RECOGNISE it — a form that seeded its
+ * "Display name" field with `You` would present a placeholder as though the
+ * person had chosen it, and then let them "save" it as their real name. One
+ * definition crossing the wire is the only way that recognition cannot drift.
+ *
+ * Note this is a different decision from the `'You'` that `author-registry.ts`
+ * mints a local human's row with. Those two agree today and are deliberately
+ * not coupled: one is what a room calls you, this is what a roster falls back
+ * to. Only the second one has a client that must detect it.
+ */
+export const OPERATOR_FALLBACK_DISPLAY_NAME = 'You';

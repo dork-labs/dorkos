@@ -95,8 +95,10 @@ const AVATAR_FIELD = 'avatar';
 /**
  * Create the profile router.
  *
- * @param deps - The store, the caller resolver and the two identity writers.
- * @returns Express Router serving `/api/profile/avatar`.
+ * @param deps - The avatar store, the caller resolver, and the four identity
+ *   writers: the two the photo lands in and the two the name does.
+ * @returns Express Router serving `PATCH /api/profile` and
+ *   `POST`/`DELETE`/`GET /api/profile/avatar`.
  */
 export function createProfileRouter(deps: ProfileRouterDeps): Router {
   const router = Router();
@@ -165,6 +167,13 @@ export function createProfileRouter(deps: ProfileRouterDeps): Router {
    * writes follow, applied to the precedence that exists rather than the one
    * the table assumed. The author record keeps saying `'You'`, which is still
    * the right word from the operator's own seat in a room.
+   *
+   * **Both writes are behind one ownership check**, which is `writeImageUrl`'s
+   * argument applied to a value that needs it more. `config.profile.displayName`
+   * is install-global rather than per-author, so a second human author saving
+   * their own name would rewrite the OWNER's roster row. ADR 260727-184933 D6
+   * says no such person can exist locally; `room-caller.ts` checks that
+   * invariant anyway rather than assuming it, and so does this.
    */
   router.patch('/', (req, res) => {
     const operator = operatorOrRefuse(res, 'name');
@@ -173,9 +182,18 @@ export function createProfileRouter(deps: ProfileRouterDeps): Router {
     if (!body) return;
 
     const owner = deps.ownerAccount();
-    if (owner && deps.authors.isOwner(operator.id, owner.id)) {
-      deps.setAccountName(owner.id, body.displayName);
+    // `null` is a real answer, not a missing one: with no account the `'local'`
+    // sentinel IS the owner, which is what keeps the default install working.
+    if (!deps.authors.isOwner(operator.id, owner?.id ?? null)) {
+      return sendError(
+        res,
+        403,
+        'Only the person who owns this install can change this name.',
+        'OPERATOR_ONLY'
+      );
     }
+
+    if (owner) deps.setAccountName(owner.id, body.displayName);
     deps.setProfileDisplayName(body.displayName);
 
     // Echoed rather than re-resolved: both sources above the author record now

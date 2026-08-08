@@ -158,6 +158,36 @@ describe('ProfilePanel — name and email', () => {
     await waitFor(() => expect(updateProfile).toHaveBeenCalledWith('Dorian C'));
   });
 
+  it('offers "You" as a placeholder rather than seeding it as a chosen name', () => {
+    // `You` is the roster's fallback when nothing knows this person's name.
+    // Seeding the field with it would present a guess as a decision and then
+    // let them save it — and the Save button would be live for a name they
+    // never typed.
+    renderPanel({ ...SELF, displayName: 'You' });
+    const field = screen.getByLabelText('Display name');
+    expect(field).toHaveValue('');
+    expect(field).toHaveAttribute('placeholder', 'You');
+    expect(saveButtonBeside(field)).toBeDisabled();
+  });
+
+  it('says so after a save, and stops saying so once you type again', async () => {
+    renderPanel(SELF, {
+      updateProfile: vi.fn().mockResolvedValue({ displayName: 'Dorian C' }),
+    } as Partial<Transport>);
+
+    const field = screen.getByLabelText('Display name');
+    await userEvent.type(field, ' C');
+    await userEvent.click(saveButtonBeside(field));
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Saved.');
+
+    // TanStack keeps `isSuccess` true forever, so an unconditional note would
+    // sit under a field the person has since edited and claim their unsaved
+    // draft was stored.
+    await userEvent.type(field, 'x');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
   it('shows the account email and never lets it be edited here', () => {
     renderPanel(SELF);
     const email = screen.getByLabelText('Email');

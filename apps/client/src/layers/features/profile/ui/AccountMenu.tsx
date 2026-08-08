@@ -22,7 +22,7 @@ import {
   ResponsiveDropdownMenuSeparator,
   ResponsiveDropdownMenuTrigger,
 } from '@/layers/shared/ui';
-import { resolveIdentityFace } from '@/layers/shared/lib';
+import { teamMemberFace } from '@/layers/entities/team';
 
 export interface AccountMenuProps {
   /** The operator's own roster row — the one with `isSelf`. */
@@ -60,17 +60,7 @@ export function AccountMenu({
   onOpenSettings,
   onSignOut,
 }: AccountMenuProps) {
-  const face = resolveIdentityFace({
-    record: {
-      id: member.id,
-      kind: member.kind,
-      displayName: member.displayName,
-      ...(member.emoji ? { emoji: member.emoji } : {}),
-      ...(member.color ? { color: member.color } : {}),
-      ...(member.imageUrl ? { imageUrl: member.imageUrl } : {}),
-    },
-    origin: member.origin,
-  });
+  const face = teamMemberFace(member);
 
   return (
     <ResponsiveDropdownMenu>

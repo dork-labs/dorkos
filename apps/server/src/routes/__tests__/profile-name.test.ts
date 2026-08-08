@@ -168,6 +168,24 @@ describe('PATCH /api/profile', () => {
       expect(storedProfileName).toBeNull();
     });
 
+    it('refuses a human author who is not the owner, and writes NOTHING', async () => {
+      // `config.profile.displayName` is install-global rather than per-author,
+      // so a second person saving their own name would rewrite the OWNER's
+      // roster row. ADR 260727-184933 D6 says no such person can exist locally;
+      // this is the guard on that invariant, not a path anything walks.
+      const stranger: AuthorRecord = { ...ownerAuthor, id: 'author-stranger' };
+      const res = await request(app(true, { caller: () => stranger }))
+        .patch('/api/profile')
+        .send({ displayName: 'Not The Owner' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('OPERATOR_ONLY');
+      expect(storedAccountName()).toBe('Dorian');
+      // The half that would otherwise have leaked: the config write is not
+      // behind the account check unless it is put there deliberately.
+      expect(storedProfileName).toBeNull();
+    });
+
     it('refuses an empty name rather than blanking the roster row', async () => {
       const res = await request(app(true)).patch('/api/profile').send({ displayName: '   ' });
       expect(res.status).toBe(400);
