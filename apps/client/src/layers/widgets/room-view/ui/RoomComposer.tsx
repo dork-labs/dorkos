@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence } from 'motion/react';
+import { TOUR_ANCHORS } from '@/layers/shared/config';
 import { Composer, type ComposerInputHandle } from '@/layers/features/composer';
+import { JumpBackInPopover, useJumpBackInPopover } from '@/layers/features/jump-back-in';
 import {
   MentionPalette,
   useMentionAutocomplete,
@@ -36,6 +38,16 @@ interface RoomComposerProps {
    * opens a thread rather than a keyboard over one.
    */
   focusOnMount?: boolean;
+  /**
+   * Float "Jump back in" over this composer while its box is still empty.
+   *
+   * The home surface's composer, and only it (team-room-home spec D2.3): the
+   * panel answers "you have just arrived — where were you?", which is a
+   * question the page you land on asks and a room you deliberately opened does
+   * not. It yields to the `@` picker rather than stacking a second listbox over
+   * the same field; `useJumpBackInPopover`'s `yieldToPalette` owns that rule.
+   */
+  offerJumpBackIn?: boolean;
 }
 
 /**
@@ -77,8 +89,17 @@ interface RoomComposerProps {
  *
  * Its draft is keyed the same way — the room id, or `threadDraftKey` — so the
  * two boxes never share text, and each survives being closed and reopened.
+ *
+ * One host-chosen extra: `offerJumpBackIn` floats the last few threads you were
+ * in over the box while it is still empty. The home surface asks for it and
+ * nothing else does — see the prop.
  */
-export function RoomComposer({ room, threadRootId, focusOnMount }: RoomComposerProps) {
+export function RoomComposer({
+  room,
+  threadRootId,
+  focusOnMount,
+  offerJumpBackIn,
+}: RoomComposerProps) {
   // The one key that decides everything about this composer: which draft it
   // holds, which caret requests are its own, and where refused words go back.
   const draftKey = threadRootId === undefined ? room.id : threadDraftKey(room.id, threadRootId);
@@ -105,6 +126,28 @@ export function RoomComposer({ room, threadRootId, focusOnMount }: RoomComposerP
     members: room.members,
     viewerAuthorId: room.viewerAuthorId,
     text,
+  });
+
+  /**
+   * The recents panel, which can only ever open where it was offered.
+   *
+   * The hook runs on every room composer — it has to, they are hooks — but
+   * `enabled` decides whether it does anything at all, and it must: this
+   * component is mounted in every room and in every thread panel, and only the
+   * home surface offers the panel. Left on, each of those instances subscribed
+   * to the recents fan-out, the room list, the fleet and its manifests, and
+   * re-read them on every session lifecycle event, for a panel no gesture in
+   * that room could raise. Off, every one of those queries stays idle.
+   *
+   * It yields to the `@` picker, which is the one that must win: two listboxes
+   * claiming the same arrow keys over the same field is a fight the reader
+   * loses.
+   */
+  const offersRecents = offerJumpBackIn === true;
+  const jumpBackIn = useJumpBackInPopover({
+    value: text,
+    yieldToPalette: mentions.isOpen,
+    enabled: offersRecents,
   });
 
   /**
@@ -289,7 +332,7 @@ export function RoomComposer({ room, threadRootId, focusOnMount }: RoomComposerP
     void deliver(body, clientId, attachmentNames);
   };
 
-  return (
+  const card = (
     // Passing `onFilesDropped` is the whole attach declaration: it is what
     // mounts the dropzone, the hidden file input and the "Drop files to attach"
     // overlay. There is no flag to set — see `features/composer`'s doctrine.
@@ -319,6 +362,18 @@ export function RoomComposer({ room, threadRootId, focusOnMount }: RoomComposerP
             />
           )}
         </AnimatePresence>
+        {/* Never up at the same time as the picker above it: the recents panel
+            yields to `@`, and typing at all takes it down. */}
+        {jumpBackIn.isOpen && (
+          <JumpBackInPopover
+            rows={jumpBackIn.rows}
+            selectedIndex={jumpBackIn.selectedIndex}
+            agents={jumpBackIn.agents}
+            displayNames={jumpBackIn.displayNames}
+            visualOf={jumpBackIn.visualOf}
+            onSelect={jumpBackIn.selectRow}
+          />
+        )}
         {/* Above the box, in the lane the picker uses, for the reason
             `ClearArmedHint` sets out: anchored to the field it lands on top of
             whatever is stacked over the composer. */}
@@ -347,12 +402,19 @@ export function RoomComposer({ room, threadRootId, focusOnMount }: RoomComposerP
         onCursorChange={mentions.handleCursorChange}
         onSubmit={handleSubmit}
         isStreaming={false}
-        isPaletteOpen={mentions.isOpen}
-        paletteHasResults={mentions.hasSelectableRows}
-        onArrowUp={mentions.moveUp}
-        onArrowDown={mentions.moveDown}
-        onCommandSelect={takeHighlighted}
-        onEscape={mentions.dismiss}
+        // One field, one keyboard, and whichever panel is up owns it. The two
+        // cannot both be open — the recents panel yields to `@` and closes on
+        // the first keystroke — so this is a dispatch, not an arbitration.
+        isPaletteOpen={mentions.isOpen || jumpBackIn.isOpen}
+        paletteHasResults={jumpBackIn.isOpen ? jumpBackIn.hasRows : mentions.hasSelectableRows}
+        onArrowUp={jumpBackIn.isOpen ? jumpBackIn.moveUp : mentions.moveUp}
+        onArrowDown={jumpBackIn.isOpen ? jumpBackIn.moveDown : mentions.moveDown}
+        onCommandSelect={jumpBackIn.isOpen ? jumpBackIn.selectHighlighted : takeHighlighted}
+        onEscape={jumpBackIn.isOpen ? jumpBackIn.dismiss : mentions.dismiss}
+        // Tab picks a row of a palette you ASKED for by typing `@`, and does
+        // not pick one from a panel that floated up because the caret landed in
+        // an empty box — there, tabbing on has to move focus.
+        tabPicks={!jumpBackIn.isOpen}
         // Wiring this is what puts a labelled "Clear message" button on the
         // composer — and `Composer.Input` refuses to raise the armed readout at all
         // without one, because a destructive shortcut that only sighted people
@@ -362,8 +424,10 @@ export function RoomComposer({ room, threadRootId, focusOnMount }: RoomComposerP
           mentions.dismiss();
         }}
         onClearArmedChange={setClearArmed}
-        activeDescendantId={mentions.activeDescendantId}
-        paletteListboxId={mentions.listboxId}
+        activeDescendantId={
+          jumpBackIn.isOpen ? jumpBackIn.activeDescendantId : mentions.activeDescendantId
+        }
+        paletteListboxId={jumpBackIn.isOpen ? jumpBackIn.listboxId : mentions.listboxId}
         // Deliberately NOT gated on a post being in flight. Sending is a
         // fire-and-forget 202, and closing the submit path for its duration
         // would block the second sentence of anyone who types faster than the
@@ -392,5 +456,49 @@ export function RoomComposer({ room, threadRootId, focusOnMount }: RoomComposerP
         }
       />
     </Composer.Root>
+  );
+
+  // Nothing to host: the card is the composer, node for node, exactly as it
+  // ships in every room. The wrapper below is not free — it is a second element
+  // in the DOM parity baseline this composer is held to — so it exists only
+  // where something actually listens.
+  if (!offersRecents) return card;
+
+  return (
+    // Focus and pointer-down are both watched, and both are needed: the
+    // composer can already hold the caret when a person clicks it, which
+    // dispatches no focus event at all, so the click would otherwise do
+    // nothing. The handlers ignore anything that is not the text field, so
+    // reaching for Send or the paperclip never floats a panel up.
+    //
+    // The rule below is about elements that BEHAVE interactively without saying
+    // so. This one takes no focus and offers no action; it only overhears
+    // events from a control inside it that is already a real, keyboard-reachable
+    // combobox announcing the panel through `aria-expanded` and
+    // `aria-activedescendant`. A role or a tab stop here would add a focus stop
+    // that does nothing, which is the defect the rule exists to prevent.
+    //
+    // `flex flex-col` so the card stays a flex item exactly as it was before
+    // the wrapper: as a block child its margins would collapse through this
+    // element instead of spacing it.
+    //
+    // The anchor rides the flag, and that coupling is deliberate but narrow:
+    // `offerJumpBackIn` means "the home surface's composer" today, so this is
+    // the element the general tour spotlights and the browser specs address.
+    // The day a SECOND surface wants the recents panel, two elements would
+    // carry `home-composer` and both the tour and the page objects would go
+    // ambiguous — at that point the anchor needs its own prop rather than a
+    // ride on this one. `tour-anchors.test.tsx` mounts the real home page, so
+    // an anchor that stops being stamped here fails there.
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions -- container overhears its combobox's focus; see above
+    <section
+      className="flex flex-col"
+      data-testid={TOUR_ANCHORS.homeComposer}
+      onFocus={jumpBackIn.handleFocus}
+      onBlur={jumpBackIn.handleBlur}
+      onPointerDown={jumpBackIn.handlePointerDown}
+    >
+      {card}
+    </section>
   );
 }

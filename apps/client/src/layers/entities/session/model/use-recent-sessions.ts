@@ -21,11 +21,17 @@ import { syncSessionDetailCache } from '../lib/sync-session-detail-cache';
  * activity map that drives the per-group "Recent activity" sort.
  *
  * @param limit - Maximum sessions to return (1-50, default 10).
+ * @param options.enabled - Ask the server at all. `false` holds the query idle
+ *   for a caller that is mounted but not showing anything — the room composer's
+ *   recents panel is mounted in every room and offered on one. It never
+ *   suppresses a fetch another observer wants: TanStack runs a query when ANY
+ *   of its observers is enabled.
  */
-export function useRecentSessions(limit = 10) {
+export function useRecentSessions(limit = 10, options: { enabled?: boolean } = {}) {
   const transport = useTransport();
   const queryClient = useQueryClient();
   return useQuery<RecentSessionsResponse>({
+    enabled: options.enabled ?? true,
     queryKey: sessionKeys.recent(limit),
     queryFn: async () => {
       const observedAt = Date.now();

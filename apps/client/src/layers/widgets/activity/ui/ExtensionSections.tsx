@@ -4,8 +4,10 @@
  *
  * The slot id is unchanged, so extensions in the wild keep working with no
  * manifest change; only the surface that draws them moved, because the
- * dashboard page it used to live on is going away. Built-in sections are drawn
- * by `DashboardPage` and skipped here, so nothing renders twice.
+ * dashboard page they used to live on is gone (team-room-home spec D3.5). The
+ * built-in half of the slot went with it, so this filter now guards a case
+ * nothing produces — kept because the slot is public and a first-party
+ * contribution could join it again, and this tab is not where one would belong.
  *
  * @module widgets/activity/ui/ExtensionSections
  */

@@ -39,6 +39,12 @@ export interface UseJumpBackInOptions {
    * nothing is muted.
    */
   mutedRoomIds?: ReadonlySet<string>;
+  /**
+   * Read anything at all. `false` holds both queries idle and answers with an
+   * empty model — for a caller that is mounted but not offering the list, which
+   * is the room composer in every room but the home one. Defaults to `true`.
+   */
+  enabled?: boolean;
 }
 
 /** What {@link useJumpBackIn} answers with. */
@@ -72,9 +78,12 @@ export interface UseJumpBackIn extends JumpBackInModel {
 export function useJumpBackIn({
   limit = MAX_JUMP_BACK_IN,
   mutedRoomIds,
+  enabled = true,
 }: UseJumpBackInOptions = {}): UseJumpBackIn {
-  const recentQuery = useRecentSessions(Math.max(limit * FETCH_WINDOW_FACTOR, MIN_FETCH_WINDOW));
-  const roomsQuery = useRooms();
+  const recentQuery = useRecentSessions(Math.max(limit * FETCH_WINDOW_FACTOR, MIN_FETCH_WINDOW), {
+    enabled,
+  });
+  const roomsQuery = useRooms({ enabled });
 
   const sessions = recentQuery.data?.sessions;
   const rooms = roomsQuery.data;
@@ -86,7 +95,10 @@ export function useJumpBackIn({
 
   return {
     ...model,
-    isLoading: recentQuery.isLoading || roomsQuery.isLoading,
+    // A disabled query is `isLoading` forever in TanStack's reading — it is
+    // pending and not fetching — and a caller that asked for nothing is not
+    // waiting for anything. So "off" reads as loaded-and-empty.
+    isLoading: enabled && (recentQuery.isLoading || roomsQuery.isLoading),
     warnings: recentQuery.data?.warnings ?? [],
   };
 }

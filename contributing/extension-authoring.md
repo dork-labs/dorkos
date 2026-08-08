@@ -24,7 +24,7 @@ Two name collisions worth flagging:
 
 1. Open DorkOS Settings > Extensions
 2. Under **Core extensions**, enable "Hello World" and reload the page
-3. The dashboard shows a new section; the command palette has a "Hello World: Show Greeting" command
+3. The Activity tab shows a new section under "From your extensions"; the command palette has a "Hello World: Show Greeting" command
 
 Hello World is the canonical authoring skeleton — read its `extension.json`, `index.ts`, and `server.ts` to see the smallest working extension.
 
@@ -244,8 +244,8 @@ api.id: string
 
 ### `dashboard.sections` moved to the Activity tab
 
-The home surface is becoming the #team room, so the dashboard page that
-`dashboard.sections` used to fill is going away. **The slot id has not changed**
+The home surface IS the #team room now, and the dashboard page that
+`dashboard.sections` used to fill is gone. **The slot id has not changed**
 — your manifest and your `registerComponent('dashboard.sections', ...)` call
 work exactly as before. Your section now renders in a **"From your extensions"**
 group at the top of the Activity tab (`/activity`), in the same priority order,
@@ -290,7 +290,7 @@ export function activate(api: ExtensionAPI): void {
 }
 ```
 
-**When the tab appears.** Your tab is added to the right panel's tab strip and stays available wherever the panel shows: the public `registerComponent` API accepts `visibleWhen` only for `dashboard.sections`, not for the route/transport/agent predicate built-in right-panel tabs use to scope themselves, so an **extension tab is always visible**. It registers as a _contextual_ tab (never the global fallback). That has a real consequence — the panel auto-selects the first contextual tab when the active one isn't showing, so on routes where no built-in contextual tab is visible (the dashboard, activity, tasks), **your tab can become the default and open on its own**, ahead of the global Pulse tab. Because it can auto-open in any context, always render a useful empty state when there is nothing relevant to show.
+**When the tab appears.** Your tab is added to the right panel's tab strip and stays available wherever the panel shows: the public `registerComponent` API accepts `visibleWhen` only for `dashboard.sections`, not for the route/transport/agent predicate built-in right-panel tabs use to scope themselves, so an **extension tab is always visible**. It registers as a _contextual_ tab (never the global fallback). That has a real consequence — the panel auto-selects the first contextual tab when the active one isn't showing, so on routes where no built-in contextual tab is visible (home, activity, tasks), **your tab can become the default and open on its own**, ahead of the global Pulse tab. Because it can auto-open in any context, always render a useful empty state when there is nothing relevant to show.
 
 ## TypeScript vs JavaScript
 

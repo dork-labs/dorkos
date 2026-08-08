@@ -24,7 +24,7 @@ import {
   ensureTeamRoom,
   joinTeamRoom,
   watchDefaultAgent,
-  TEAM_ROOM_KEY,
+  TEAM_ROOM_WELL_KNOWN,
   type TeamAgent,
   type TeamRoomDeps,
 } from '../ensure-team-room.js';
@@ -89,7 +89,7 @@ function modeOf(harness: RoomHarness, agentPath: string, displayName: string): s
 
 /** The one room carrying the well-known key, read straight from the table. */
 function teamRoom(harness: RoomHarness) {
-  const room = harness.store.findByWellKnown(TEAM_ROOM_KEY);
+  const room = harness.store.findByWellKnown(TEAM_ROOM_WELL_KNOWN);
   if (!room) throw new Error('there is no team room');
   return room;
 }
@@ -110,7 +110,7 @@ describe('opening #team', () => {
     expect(channels(harness)).toHaveLength(1);
     const room = teamRoom(harness);
     expect(room.slug).toBe('team');
-    expect(room.wellKnown).toBe(TEAM_ROOM_KEY);
+    expect(room.wellKnown).toBe(TEAM_ROOM_WELL_KNOWN);
     // Every call ANSWERS with the room, which is a stronger claim than "one row
     // exists": a hook that found nothing and was refused by the unique index
     // would also leave one row, and would silently stop backfilling the roster.
@@ -280,7 +280,7 @@ describe('a newly created agent', () => {
       defaultAgentName: () => 'dorkbot',
     };
     ensureTeamRoom({ ...deps, agents: () => [REGISTERED[DORKBOT]!] });
-    const room = dark.store.findByWellKnown(TEAM_ROOM_KEY)!;
+    const room = dark.store.findByWellKnown(TEAM_ROOM_WELL_KNOWN)!;
     const gone = dark.authors.resolveAgent(NOVA, 'Nova').id;
     dark.service.addMember(room.id, dark.human, { authorId: gone });
 

@@ -57,7 +57,7 @@ async function waitForSpotlight() {
 }
 
 const GENERAL_STEP: TourStep = {
-  anchor: TOUR_ANCHORS.dashboardComposer,
+  anchor: TOUR_ANCHORS.homeComposer,
   caption: CAPTION,
   chipLabel: 'Next',
 };
@@ -76,7 +76,7 @@ afterEach(() => {
 
 describe('TourSpotlight — S1 anchor resolution', () => {
   it('spotlights a present anchor: renders our caption over the real element', async () => {
-    mountRootWithAnchor(TOUR_ANCHORS.dashboardComposer);
+    mountRootWithAnchor(TOUR_ANCHORS.homeComposer);
     render(
       <TourSpotlight steps={[GENERAL_STEP]} activeIndex={0} onAdvance={vi.fn()} onEnd={vi.fn()} />
     );
@@ -113,14 +113,14 @@ describe('TourSpotlight — S1 anchor resolution', () => {
     expect(document.querySelector('.reactour__popover')).toBeNull();
 
     act(() => {
-      mountRootWithAnchor(TOUR_ANCHORS.dashboardComposer);
+      mountRootWithAnchor(TOUR_ANCHORS.homeComposer);
     });
 
     await waitForSpotlight();
   });
 
   it('keeps the caption up when a found anchor is removed and re-stamped (sticky, no end/advance)', async () => {
-    const anchor = mountRootWithAnchor(TOUR_ANCHORS.dashboardComposer);
+    const anchor = mountRootWithAnchor(TOUR_ANCHORS.homeComposer);
     const root = anchor.parentElement as HTMLElement;
     const onAdvance = vi.fn();
     const onEnd = vi.fn();
@@ -138,7 +138,7 @@ describe('TourSpotlight — S1 anchor resolution', () => {
     // The same data-testid is re-stamped on a fresh node; the spotlight swaps in.
     act(() => {
       const fresh = document.createElement('button');
-      fresh.setAttribute('data-testid', TOUR_ANCHORS.dashboardComposer);
+      fresh.setAttribute('data-testid', TOUR_ANCHORS.homeComposer);
       fresh.textContent = 'real target';
       root.appendChild(fresh);
     });
@@ -150,7 +150,7 @@ describe('TourSpotlight — S1 anchor resolution', () => {
 
   it('never self-advances a reached step whose anchor is permanently lost (no cascade)', async () => {
     vi.useFakeTimers();
-    const anchor = mountRootWithAnchor(TOUR_ANCHORS.dashboardComposer);
+    const anchor = mountRootWithAnchor(TOUR_ANCHORS.homeComposer);
     const onAdvance = vi.fn();
     const onEnd = vi.fn();
     // Two steps, so a self-advancing bug would visibly walk the tour.
@@ -184,7 +184,7 @@ describe('TourSpotlight — S1 anchor resolution', () => {
 
 describe('TourSpotlight — S2 fully custom popover', () => {
   it('renders our caption and none of the library chrome', async () => {
-    mountRootWithAnchor(TOUR_ANCHORS.dashboardComposer);
+    mountRootWithAnchor(TOUR_ANCHORS.homeComposer);
     render(
       <TourSpotlight steps={[GENERAL_STEP]} activeIndex={0} onAdvance={vi.fn()} onEnd={vi.fn()} />
     );
@@ -199,7 +199,7 @@ describe('TourSpotlight — S2 fully custom popover', () => {
 describe('TourSpotlight — S3 mobile bottom sheet', () => {
   it('pins the caption to the bottom on a mobile viewport', async () => {
     mockMatchMedia({ mobile: true });
-    mountRootWithAnchor(TOUR_ANCHORS.dashboardComposer);
+    mountRootWithAnchor(TOUR_ANCHORS.homeComposer);
     render(
       <TourSpotlight steps={[GENERAL_STEP]} activeIndex={0} onAdvance={vi.fn()} onEnd={vi.fn()} />
     );
@@ -212,7 +212,7 @@ describe('TourSpotlight — S3 mobile bottom sheet', () => {
 
 describe('TourSpotlight — S4 accessibility bar', () => {
   it('ends the tour on Escape', async () => {
-    mountRootWithAnchor(TOUR_ANCHORS.dashboardComposer);
+    mountRootWithAnchor(TOUR_ANCHORS.homeComposer);
     const onEnd = vi.fn();
     render(
       <TourSpotlight steps={[GENERAL_STEP]} activeIndex={0} onAdvance={vi.fn()} onEnd={onEnd} />
@@ -224,7 +224,7 @@ describe('TourSpotlight — S4 accessibility bar', () => {
   });
 
   it('ends the tour on click-outside (the mask)', async () => {
-    mountRootWithAnchor(TOUR_ANCHORS.dashboardComposer);
+    mountRootWithAnchor(TOUR_ANCHORS.homeComposer);
     const onEnd = vi.fn();
     render(
       <TourSpotlight steps={[GENERAL_STEP]} activeIndex={0} onAdvance={vi.fn()} onEnd={onEnd} />
@@ -241,7 +241,7 @@ describe('TourSpotlight — S4 accessibility bar', () => {
   });
 
   it('moves focus into the caption when a step opens', async () => {
-    mountRootWithAnchor(TOUR_ANCHORS.dashboardComposer);
+    mountRootWithAnchor(TOUR_ANCHORS.homeComposer);
     render(
       <TourSpotlight steps={[GENERAL_STEP]} activeIndex={0} onAdvance={vi.fn()} onEnd={vi.fn()} />
     );
@@ -251,7 +251,7 @@ describe('TourSpotlight — S4 accessibility bar', () => {
   });
 
   it('announces the caption via an aria-live region naming the target', async () => {
-    mountRootWithAnchor(TOUR_ANCHORS.dashboardComposer);
+    mountRootWithAnchor(TOUR_ANCHORS.homeComposer);
     render(
       <TourSpotlight steps={[GENERAL_STEP]} activeIndex={0} onAdvance={vi.fn()} onEnd={vi.fn()} />
     );
@@ -263,7 +263,7 @@ describe('TourSpotlight — S4 accessibility bar', () => {
   });
 
   it('makes the app root inert while active and restores it on end', async () => {
-    mountRootWithAnchor(TOUR_ANCHORS.dashboardComposer);
+    mountRootWithAnchor(TOUR_ANCHORS.homeComposer);
     const { rerender } = render(
       <TourSpotlight steps={[GENERAL_STEP]} activeIndex={0} onAdvance={vi.fn()} onEnd={vi.fn()} />
     );
@@ -278,7 +278,7 @@ describe('TourSpotlight — S4 accessibility bar', () => {
 describe('TourSpotlight — S5 reduced motion', () => {
   it('stills the cutout: applies the reduced-motion mask class', async () => {
     mockMatchMedia({ reduced: true });
-    mountRootWithAnchor(TOUR_ANCHORS.dashboardComposer);
+    mountRootWithAnchor(TOUR_ANCHORS.homeComposer);
     render(
       <TourSpotlight steps={[GENERAL_STEP]} activeIndex={0} onAdvance={vi.fn()} onEnd={vi.fn()} />
     );
@@ -289,7 +289,7 @@ describe('TourSpotlight — S5 reduced motion', () => {
 
   it('animates the cutout when reduced motion is off (no reduced-motion class)', async () => {
     mockMatchMedia({ reduced: false });
-    mountRootWithAnchor(TOUR_ANCHORS.dashboardComposer);
+    mountRootWithAnchor(TOUR_ANCHORS.homeComposer);
     render(
       <TourSpotlight steps={[GENERAL_STEP]} activeIndex={0} onAdvance={vi.fn()} onEnd={vi.fn()} />
     );
@@ -300,7 +300,7 @@ describe('TourSpotlight — S5 reduced motion', () => {
 
   it('applies the eased geometry transition to the cutout once it appears', async () => {
     mockMatchMedia({ reduced: false });
-    mountRootWithAnchor(TOUR_ANCHORS.dashboardComposer);
+    mountRootWithAnchor(TOUR_ANCHORS.homeComposer);
     render(
       <TourSpotlight steps={[GENERAL_STEP]} activeIndex={0} onAdvance={vi.fn()} onEnd={vi.fn()} />
     );
@@ -328,7 +328,7 @@ describe('TourSpotlight — S6 smooth movement between steps', () => {
   function mountRootWithTwoAnchors() {
     const root = document.createElement('div');
     root.id = 'root';
-    for (const id of [TOUR_ANCHORS.dashboardComposer, TOUR_ANCHORS.navAgents]) {
+    for (const id of [TOUR_ANCHORS.homeComposer, TOUR_ANCHORS.navAgents]) {
       const el = document.createElement('button');
       el.setAttribute('data-testid', id);
       el.textContent = id;
@@ -358,7 +358,7 @@ describe('TourSpotlight — S6 smooth movement between steps', () => {
   it('ignores a keyboard advance during the resolve gap (only advances a visible step)', async () => {
     // Only the first step's anchor is present; the second never mounts, so the
     // shown step trails at 0 while step 1 resolves.
-    mountRootWithAnchor(TOUR_ANCHORS.dashboardComposer);
+    mountRootWithAnchor(TOUR_ANCHORS.homeComposer);
     const onAdvance = vi.fn();
     const onEnd = vi.fn();
     const { rerender } = render(

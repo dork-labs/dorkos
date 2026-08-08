@@ -9,11 +9,37 @@ import { AttentionItemRow, type AttentionItem } from '@/layers/features/dashboar
  * How tall the header may grow before it scrolls inside itself.
  *
  * Six approval cards and eight attention rows are more than a phone screen, and
- * a pinned header that covers the composer stops being a header. `svh` rather
- * than `vh` because mobile browsers shrink the visual viewport as their chrome
- * appears, and `vh` measures the larger one.
+ * a header that squeezes the conversation out of the page stops being a header.
+ * `svh` rather than `vh` because mobile browsers shrink the visual viewport as
+ * their chrome appears, and `vh` measures the larger one.
+ *
+ * **Two caps, because a phone has no room to give.** The header is a flex
+ * sibling above the room, so every pixel it takes comes off the feed: at 375
+ * ×812 the room's masthead, composer and presence line already spend ~180px, so
+ * a 50svh header leaves the conversation under a third of the screen. 40svh on
+ * a phone keeps the feed the biggest thing on it, and the desktop — where the
+ * same header is a third of a much taller column — keeps the roomier cap.
+ *
+ * **Why a viewport unit and not `40%` of the column.** A percentage height
+ * resolves only against a parent with a definite height, and this header's
+ * parent is the room column — a `flex-1` item inside `RoomSurface`. On a wide
+ * screen that column is stretched inside a row container whose height is
+ * definite, so a percentage would resolve; on a phone the column is `flex-1` in
+ * a COLUMN container, where its height comes from flex distribution and
+ * percentage resolution is exactly the case browsers have historically
+ * disagreed on. A cap that silently becomes `none` on the narrowest screen is
+ * worse than one that is a few percent off, so the viewport unit stays.
+ *
+ * **The case still to be looked at, for spec task 2.7's visual gate**: a
+ * software keyboard. `svh` measures the small viewport and does not shrink when
+ * the keyboard opens, while the room column beside it does — `RoomSurface`
+ * insets its phone branch by the visual-viewport delta. So a header at its full
+ * cap plus an open keyboard is the one arrangement where the composer can still
+ * be squeezed. It needs a real device to judge, and the fix if it is real is to
+ * measure the keyboard inset in here too rather than to shrink the cap for
+ * everybody.
  */
-const MAX_HEIGHT = 'max-h-[50svh]';
+const MAX_HEIGHT = 'max-h-[40svh] sm:max-h-[50svh]';
 
 /** The collapse the header animates on its way in and out. */
 const COLLAPSE = {
@@ -184,13 +210,17 @@ export function PinnedTriageHeaderView({
             data-slot="pinned-triage-header"
             {...COLLAPSE}
             transition={{ duration: reducedMotion ? 0 : 0.25, ease: [0, 0, 0.2, 1] }}
-            // Sticks to the top of whatever scrolls it — the feed below passes
-            // under it rather than pushing it away. `z-20` ties with the room's
-            // own entry actions, and DOM order settles the tie in this header's
-            // favour; a host that ever mounts it INSIDE the scroller alongside
-            // them should raise it to `z-30`. Overlays stay above at `z-50`.
+            // **Not sticky, and it does not need to be.** It is mounted as a
+            // flex sibling ABOVE the room's scroller (`RoomSurfaceProps.aboveTimeline`),
+            // so the feed scrolls underneath it and the header simply stays —
+            // no positioning involved. Sticking it was the alternative, and it
+            // is the worse one: inside the scroller its height changes fight
+            // the feed's stick-to-bottom pin. A host that ever does mount it in
+            // there needs `sticky top-0 z-30` — `z-30`, not `z-20`, because
+            // `z-20` ties with the room's own entry actions. Overlays stay
+            // above everything at `z-50`.
             className={cn(
-              'bg-background/95 border-border/60 sticky top-0 z-20 overflow-hidden border-b backdrop-blur-sm',
+              'bg-background/95 border-border/60 shrink-0 overflow-hidden border-b backdrop-blur-sm',
               className
             )}
           >

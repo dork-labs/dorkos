@@ -102,16 +102,23 @@ test.describe('Home surface — the shell @smoke', () => {
     }
   });
 
-  test('the retired home sections are gone, not hidden', async ({ page }) => {
-    // "Your agents" duplicated the sidebar roster and "System Status" restated
-    // the header's health dot, so both were removed rather than collapsed. A
+  test('the dashboard is gone, not hidden — Home is the #team room', async ({
+    page,
+    homeSurface,
+  }) => {
+    // The sections that used to be here were retired rather than collapsed. A
     // count of zero is the claim: an element that is merely `hidden` still
     // matches, which is what makes this worth asserting on the real page.
     await expect(page.getByRole('heading', { name: /your agents/i })).toHaveCount(0);
     await expect(page.getByRole('heading', { name: /system status/i })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: /recent activity/i })).toHaveCount(0);
+    // The dashboard composer's question went with it: this box posts to a room
+    // now, it does not birth a session.
+    await expect(page.getByRole('heading', { name: 'What are we building today?' })).toHaveCount(0);
 
-    // The composer is what stands where they were.
-    await expect(page.getByRole('heading', { name: 'What are we building today?' })).toBeVisible();
+    // What stands there instead: the room, named by the box you type in.
+    await expect(homeSurface.composer).toBeVisible();
+    await expect(homeSurface.composerField).toHaveAttribute('placeholder', /#team/);
   });
 });
 

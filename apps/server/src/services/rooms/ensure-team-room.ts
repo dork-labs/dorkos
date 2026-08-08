@@ -41,7 +41,7 @@
  * @module server/services/rooms/ensure-team-room
  */
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
-import type { Room, RoomRosterEntry } from '@dorkos/shared/room-schemas';
+import { TEAM_ROOM_WELL_KNOWN, type Room, type RoomRosterEntry } from '@dorkos/shared/room-schemas';
 import { logger } from '../../lib/logger.js';
 import { DORKBOT_AGENT_NAME } from '../mesh/ensure-dorkbot.js';
 import { CHANNEL_RESPONSE_MODE } from './room-roster.js';
@@ -50,8 +50,12 @@ import type { RoomService } from './room-service.js';
 /**
  * The key #team answers to for the life of the install. Never derived from the
  * slug, so renaming the channel cannot orphan it.
+ *
+ * Re-exported from `@dorkos/shared` rather than declared here: the cockpit's
+ * home tab finds this room by the same key (team-room-home spec D3.2), so the
+ * two ends have to read one spelling from one file.
  */
-export const TEAM_ROOM_KEY = 'team';
+export { TEAM_ROOM_WELL_KNOWN };
 
 /** How #team is opened. Used on creation only — a later edit is the person's. */
 const TEAM_ROOM_SEED = {
@@ -216,11 +220,12 @@ export function watchDefaultAgent(deps: TeamRoomDeps, source: TeamRoomConfigSour
 function openTeamRoom(deps: Pick<TeamRoomDeps, 'service' | 'operatorAuthorId'>): Room | null {
   try {
     const { room, created } = deps.service.ensureSystemChannel(
-      TEAM_ROOM_KEY,
+      TEAM_ROOM_WELL_KNOWN,
       TEAM_ROOM_SEED,
       deps.operatorAuthorId()
     );
-    if (created) logger.info('[Rooms] Opened your team room at #%s', room.slug ?? TEAM_ROOM_KEY);
+    if (created)
+      logger.info('[Rooms] Opened your team room at #%s', room.slug ?? TEAM_ROOM_WELL_KNOWN);
     return room;
   } catch (err) {
     logger.warn('[Rooms] could not open the team room', {

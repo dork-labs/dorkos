@@ -298,6 +298,17 @@ export const RoomBridgeInfoSchema = z
 
 export type RoomBridgeInfo = z.infer<typeof RoomBridgeInfoSchema>;
 
+/**
+ * The `wellKnown` key of #team — the one room every install is opened with and
+ * the room the cockpit's home tab renders (team-room-home spec D3.1).
+ *
+ * It lives on the wire contract rather than in the server, because both ends
+ * read it: the boot hook opens the room under this key, and the client finds it
+ * again by the same key rather than by a slug a person may have renamed. One
+ * spelling, one place.
+ */
+export const TEAM_ROOM_WELL_KNOWN = 'team';
+
 export const RoomSchema = z
   .object({
     id: z.string().min(1),

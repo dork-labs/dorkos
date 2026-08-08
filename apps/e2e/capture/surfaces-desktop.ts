@@ -35,11 +35,14 @@ import {
  * @module capture/surfaces-desktop
  */
 
-/** Capture the cockpit/dashboard home. */
+/** Capture the cockpit home — the #team room. */
 async function shootCockpit(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
   await page.goto(url('/'));
   await page.waitForSelector('[data-testid="app-shell"]', { timeout: WAIT_MS });
-  await page.getByText('Atlas', { exact: false }).first().waitFor({ timeout: WAIT_MS });
+  // The composer, not a seeded agent's name: Home is a room now
+  // (`team-room-home` D3.2), so the money state is "the room has drawn" rather
+  // than "the activity feed has an agent in it".
+  await page.waitForSelector('[data-testid="home-composer"]', { timeout: WAIT_MS });
   await shoot(page, 'cockpit', theme, rec);
 }
 

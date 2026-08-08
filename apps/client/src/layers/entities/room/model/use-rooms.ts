@@ -59,10 +59,17 @@ function compareDirectMessages(a: RoomSummary, b: RoomSummary): number {
  *
  * Each summary carries `unreadCount`, which is `null` for a room the caller has
  * not joined. That is not zero — see {@link RoomSummary}.
+ *
+ * @param options.enabled - Ask the server at all. `false` holds the query idle
+ *   for a caller that is mounted but not showing anything, which is a real case
+ *   here: the recents panel is mounted on every room composer and offered on
+ *   one. It cannot suppress a fetch somebody else wants — TanStack runs a query
+ *   while ANY of its observers is enabled — so the sidebar's copy is untouched.
  */
-export function useRooms(): UseQueryResult<RoomSummary[]> {
+export function useRooms(options: { enabled?: boolean } = {}): UseQueryResult<RoomSummary[]> {
   const transport = useTransport();
   return useQuery({
+    enabled: options.enabled ?? true,
     queryKey: roomKeys.list(),
     queryFn: () => transport.listRooms(),
     staleTime: ROOMS_STALE_TIME_MS,

@@ -80,13 +80,13 @@ src/
 │   │   │   │   └── stream/   # StreamManager, stream-event-handler, classify-transport-error
 │   │   │   ├── api/
 │   │   │   └── index.ts
-│   │   ├── composer/    # The one message box — Composer.Root/.Input/.OverlayLane/.Attachments/.ClearArmedHint, composed by chat, rooms, and the dashboard
+│   │   ├── composer/    # The one message box — Composer.Root/.Input/.OverlayLane/.Attachments/.ClearArmedHint, composed by chat and rooms
 │   │   ├── command-palette/ # Global Cmd+K palette (Fuse.js search, agent preview, sub-menus)
 │   │   ├── commands/    # Inline slash command palette (chat input)
 │   │   ├── session-list/ # SessionSidebar (Obsidian shell), SessionsView, tabbed views
 │   │   ├── dashboard-sidebar/ # DashboardSidebar — navigation + recent agents list at /
-│   │   ├── dashboard-attention/ # NeedsAttentionSection — conditional zero-DOM attention zone
-│   │   ├── dashboard-activity/ # RecentActivityFeed — time-grouped event feed with last-visit tracking
+│   │   ├── dashboard-attention/ # Attention rows + detail sheets — what the triage header composes
+│   │   ├── dashboard-activity/ # useDashboardActivity — time-grouped recent activity, read by Pulse
 │   │   ├── settings/    # SettingsDialog (Appearance, Preferences, Server, Tools, Advanced)
 │   │   ├── agent-settings/ # AgentDialog (IdentityTab, PersonaTab, CapabilitiesTab, IntegrationsTab)
 │   │   ├── files/       # FileBrowser
@@ -107,10 +107,7 @@ src/
 │       │   ├── model/
 │       │   ├── ui/
 │       │   └── index.ts
-│       ├── dashboard/   # DashboardPage — composer + attention overview at /
-│       │   ├── ui/
-│       │   └── index.ts
-│       ├── home/        # HomeSurfaceLayout + HomeTabBar — the tab bar over /, /activity, /tasks, /workspaces
+│       ├── home/        # HomeSurfaceLayout + HomeTabBar + PinnedTriageHeader — the chrome over /, /activity, /tasks, /workspaces
 │       │   ├── lib/     #   home-tabs.ts: the four tabs and the pathname → active-tab resolver
 │       │   ├── ui/
 │       │   └── index.ts

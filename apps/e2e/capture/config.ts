@@ -126,7 +126,7 @@ export interface FleetAgent {
   readonly displayName: string;
   /** One-line description shown on the fleet page. */
   readonly description: string;
-  /** Declared runtime — drives the runtime badge on the agents/dashboard surfaces. */
+  /** Declared runtime — drives the runtime badge on the Team and session surfaces. */
   readonly runtime: 'claude-code' | 'codex' | 'opencode';
   /** Topology cluster. */
   readonly namespace: string;
@@ -355,7 +355,7 @@ export interface DemoSession {
 
 /**
  * Completed sessions seeded before capture so the cockpit, session list, and
- * dashboard look inhabited. Two run the rich coding scenario; the rest are
+ * Home look inhabited. Two run the rich coding scenario; the rest are
  * quick so seeding stays fast.
  */
 export const SESSIONS: readonly DemoSession[] = [

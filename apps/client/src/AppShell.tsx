@@ -245,7 +245,7 @@ function useHeaderSlot({
  * Renders sidebar, header, dialogs, and an Outlet for route content.
  *
  * This is the `component` for the pathless `_shell` layout route.
- * All route pages (DashboardPage, SessionPage) render inside the Outlet.
+ * All route pages (HomeRoomPage, SessionPage) render inside the Outlet.
  *
  * The sidebar body directional-slides (200ms) and header content
  * cross-fades on route change via AnimatePresence, clipped inside the

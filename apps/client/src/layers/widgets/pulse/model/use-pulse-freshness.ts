@@ -57,7 +57,7 @@ import { TASK_RUNS_KEY } from '@/layers/entities/tasks';
 import { DEAD_LETTERS_KEY } from '@/layers/entities/relay';
 import { MESH_STATUS_KEY } from '@/layers/entities/mesh';
 
-/** The two activity caches Pulse and the dashboard's RecentActivityFeed read. */
+/** The two activity caches Pulse and the Activity tab read. */
 const ACTIVITY_KEYS = [DASHBOARD_ACTIVITY_QUERY_KEY, ACTIVITY_QUERY_KEY] as const;
 
 /**

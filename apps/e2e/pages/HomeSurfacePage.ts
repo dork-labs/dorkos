@@ -32,6 +32,10 @@ export const SIDEBAR_NAV_LABELS = ['Home', 'Team', 'Connections', 'Marketplace',
  * `/tasks` and `/workspaces`, the shrunken sidebar beside it, and the "Jump back
  * in" panel that floats over the home composer.
  *
+ * Home IS the #team room now (spec `team-room-home` D3.2), so the composer here
+ * is that room's, and everything below the tab bar is the ordinary room
+ * surface.
+ *
  * The tabs are links, not ARIA tabs (`HomeTabBar.tsx` explains why), so they are
  * located by role `link` and their visible state is read from `data-active`
  * rather than from `aria-current` — `Link` computes the latter itself, so
@@ -49,7 +53,10 @@ export class HomeSurfacePage {
   /** The sidebar's top-level nav block: four destinations plus Search. */
   readonly sidebarNav: Locator;
 
-  /** The home composer section — the box, its heading, and its actions. */
+  /**
+   * The home composer — the #team room's box, and the element the recents panel
+   * floats over. Its testid is a tour anchor (`TOUR_ANCHORS.homeComposer`).
+   */
   readonly composer: Locator;
 
   /**
@@ -70,7 +77,7 @@ export class HomeSurfacePage {
     this.tabBar = page.getByTestId('home-tabs');
     this.tabs = this.tabBar.getByRole('link');
     this.sidebarNav = page.locator('[data-slot="sidebar-header"]');
-    this.composer = page.getByTestId('dashboard-composer');
+    this.composer = page.getByTestId('home-composer');
     this.composerField = this.composer.getByRole('combobox');
     this.jumpBackIn = page.getByRole('listbox', { name: 'Jump back in' });
     this.jumpBackInRows = this.jumpBackIn.getByRole('option');
@@ -94,9 +101,9 @@ export class HomeSurfacePage {
   /**
    * Open the panel by pressing on the empty box, the way a person does.
    *
-   * A click, not a programmatic focus: the composer takes the caret on mount, so
-   * clicking it dispatches no focus event at all and `pointerdown` is the only
-   * signal the gesture produces (`use-jump-back-in-popover.ts`).
+   * A click, not a programmatic focus: a composer that already holds the caret
+   * dispatches no focus event at all, so `pointerdown` is the only signal the
+   * gesture produces (`use-jump-back-in-popover.ts`).
    */
   async openJumpBackIn(): Promise<void> {
     await this.composerField.click();

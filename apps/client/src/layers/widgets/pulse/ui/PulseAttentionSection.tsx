@@ -12,7 +12,7 @@ const PULSE_ATTENTION_CAP = 5;
 /**
  * Stagger container that drives the {@link AttentionItemRow} entrance variants.
  * The rows declare `variants` but no `animate` of their own, so — exactly as the
- * dashboard's NeedsAttentionSection does — the parent must propagate the
+ * home tab's triage header does — the parent must propagate the
  * `animate` label or the rows would render stuck at their initial (invisible)
  * variant.
  */

@@ -186,7 +186,7 @@ export function InputShowcases() {
     <>
       <PlaygroundSection
         title="Composer.Root"
-        description="The card chrome every composer sits in — chat, rooms, and the dashboard. A surface accepts files because it wired onFilesDropped, and for no other reason: drag one onto the second card and the drop overlay appears, drag it onto the first and nothing is listening."
+        description="The card chrome every composer sits in — chat and rooms alike. A surface accepts files because it wired onFilesDropped, and for no other reason: drag one onto the second card and the drop overlay appears, drag it onto the first and nothing is listening."
       >
         <ComposerRootDemo label="Card only — no attach wiring (rooms today)" />
         <ComposerRootDemo label="Card with attach wiring (chat)" onFilesDropped />

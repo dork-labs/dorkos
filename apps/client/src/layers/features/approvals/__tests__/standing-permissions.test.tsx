@@ -32,9 +32,22 @@ vi.mock('sonner', () => ({
 import { toast } from 'sonner';
 import { TransportProvider, useEventSubscription } from '@/layers/shared/model';
 import { createQueryClientConfig } from '@/layers/shared/lib';
-import { PendingApprovalsSection } from '../ui/PendingApprovalsSection';
+import { ApprovalList } from '../ui/ApprovalList';
+import { usePendingApprovals } from '../model/use-pending-approvals';
 import { StandingPermissionsSettings } from '../ui/StandingPermissionsSettings';
 import { useStandingGrantPolicy } from '../model/use-standing-grant-policy';
+
+/**
+ * The live approval queue, drawn the way both real surfaces draw it: the hook
+ * for the cards, `ApprovalList` for the DOM. The home tab's pinned triage
+ * header and the app header's panel each compose exactly this pair, so a card
+ * rendered here is the card a person answers (`widgets/home`,
+ * `widgets/approvals-indicator`).
+ */
+function LiveApprovals() {
+  const { approvals } = usePendingApprovals();
+  return <ApprovalList approvals={approvals} />;
+}
 
 /**
  * Renders the resolved policy, so a test can wait for the config to have ARRIVED
@@ -188,7 +201,7 @@ describe('the third button on an approval card', () => {
     renderWith(
       <>
         <PolicyProbe />
-        <PendingApprovalsSection />
+        <LiveApprovals />
       </>,
       {
         listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
@@ -209,7 +222,7 @@ describe('the third button on an approval card', () => {
     renderWith(
       <>
         <PolicyProbe />
-        <PendingApprovalsSection />
+        <LiveApprovals />
       </>,
       {
         listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
@@ -228,7 +241,7 @@ describe('the third button on an approval card', () => {
     renderWith(
       <>
         <PolicyProbe />
-        <PendingApprovalsSection />
+        <LiveApprovals />
       </>,
       {
         listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
@@ -245,7 +258,7 @@ describe('the third button on an approval card', () => {
     renderWith(
       <>
         <PolicyProbe />
-        <PendingApprovalsSection />
+        <LiveApprovals />
       </>,
       {
         listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
@@ -269,7 +282,7 @@ describe('the third button on an approval card', () => {
     renderWith(
       <>
         <PolicyProbe />
-        <PendingApprovalsSection />
+        <LiveApprovals />
       </>,
       {
         listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
@@ -294,7 +307,7 @@ describe('the third button on an approval card', () => {
     renderWith(
       <>
         <PolicyProbe />
-        <PendingApprovalsSection />
+        <LiveApprovals />
       </>,
       {
         listPendingApprovals: vi.fn().mockResolvedValue({
@@ -318,7 +331,7 @@ describe('the third button on an approval card', () => {
     renderWith(
       <>
         <PolicyProbe />
-        <PendingApprovalsSection />
+        <LiveApprovals />
       </>,
       {
         listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
@@ -344,7 +357,7 @@ describe('the third button on an approval card', () => {
     renderWith(
       <>
         <PolicyProbe />
-        <PendingApprovalsSection />
+        <LiveApprovals />
       </>,
       {
         listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
@@ -373,7 +386,7 @@ describe('the third button on an approval card', () => {
     renderWith(
       <>
         <PolicyProbe />
-        <PendingApprovalsSection />
+        <LiveApprovals />
       </>,
       {
         listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
@@ -399,7 +412,7 @@ describe('the third button on an approval card', () => {
     renderWith(
       <>
         <PolicyProbe />
-        <PendingApprovalsSection />
+        <LiveApprovals />
       </>,
       {
         listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),

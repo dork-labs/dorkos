@@ -10,6 +10,8 @@
  */
 export { roomKeys } from './api/query-keys';
 export { useRooms, useRoomsByKind } from './model/use-rooms';
+export { useTeamRoom } from './model/use-team-room';
+export type { TeamRoomState } from './model/use-team-room';
 export { useThreads } from './model/use-threads';
 export type { RoomsByKind } from './model/use-rooms';
 export { useRoom, useRoomEntries, useLoadedRoomEntries } from './model/use-room';

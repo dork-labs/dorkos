@@ -27,11 +27,16 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ReactNode } from 'react';
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
-import { TransportProvider, useExtensionRegistry } from '@/layers/shared/model';
+import {
+  REACTION_FREQUENTS_DEFAULT,
+  TEAM_ROOM_WELL_KNOWN,
+  type RoomEvent,
+} from '@dorkos/shared/room-schemas';
+import { TransportProvider } from '@/layers/shared/model';
 import { Sidebar, SidebarProvider, TooltipProvider } from '@/layers/shared/ui';
 import { TOUR_ANCHORS, type TourAnchorId, type TourAnchorKey } from '@/layers/shared/config';
 import { TOUR_DEFINITIONS, type TourId } from '@/layers/features/tours';
@@ -39,21 +44,23 @@ import { SidebarNavHeader } from '@/layers/features/dashboard-sidebar';
 import { TasksList } from '@/layers/features/tasks';
 import { TeamRosterGrid } from '@/layers/features/team-roster';
 import { HomeSurfaceLayout } from '@/layers/widgets/home';
-import { DashboardPage, DASHBOARD_SECTION_CONTRIBUTIONS } from '@/layers/widgets/dashboard';
 import { MessagingRegion } from '@/layers/widgets/connections';
+import { HomeRoomPage } from '../app/HomeRoomPage';
 import { MOCK_TEAM_ROSTER } from '@/dev/mock-samples';
 
 // The home surface renders its page through an `Outlet`. On `/` that page is
-// the dashboard, so the mock puts the real one there and the general tour gets
-// the composition it actually runs against: tab bar above, page below.
+// the #team room, so the mock puts the real one there and the general tour gets
+// the composition it actually runs against: tab bar above, room below.
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => vi.fn(),
   useRouterState: ({ select }: { select: (state: unknown) => unknown }) =>
     select({ location: { pathname: '/' } }),
   useSearch: () => ({}),
   useLocation: () => ({ pathname: '/' }),
+  // The thread-URL sync reads the current location through `useInPlaceNavigate`.
+  useRouter: () => ({ state: { location: { pathname: '/', search: {} } } }),
   Link: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>,
-  Outlet: () => <DashboardPage />,
+  Outlet: () => <HomeRoomPage />,
 }));
 
 // The global `/api/events` fan-out needs the app-level `EventStreamProvider`.
@@ -170,6 +177,49 @@ function setViewport(isMobile: boolean) {
   });
 }
 
+/**
+ * A cockpit with a #team room in it.
+ *
+ * The general tour opens on `/`, which IS that room — so without it the home
+ * page draws its honest "not open yet" notice and the composer step would pass
+ * by spotlighting nothing.
+ */
+function transportWithTeamRoom() {
+  const team = {
+    id: 'team-room',
+    kind: 'channel' as const,
+    slug: 'team',
+    title: '#team',
+    topic: null,
+    workspaceId: null,
+    archived: false,
+    ambientMaxEntries: 30,
+    wellKnown: TEAM_ROOM_WELL_KNOWN,
+    createdAt: '2026-08-08T09:00:00.000Z',
+    lastActivityAt: '2026-08-08T10:00:00.000Z',
+  };
+  return createMockTransport({
+    listRooms: vi.fn().mockResolvedValue([{ ...team, unreadCount: 0, participants: null }]),
+    getRoom: vi.fn().mockResolvedValue({
+      ...team,
+      members: [],
+      viewerAuthorId: 'author-you',
+      reactionFrequents: [...REACTION_FREQUENTS_DEFAULT],
+    }),
+    listRoomEntries: vi.fn().mockResolvedValue([]),
+    // A live but silent stream, so the room is not busy reconnecting.
+    subscribeRoom: vi.fn(
+      (_id: string, _cursor: number, signal: AbortSignal): AsyncIterable<RoomEvent> =>
+        (async function* () {
+          await new Promise<void>((resolve) => {
+            if (signal.aborted) return resolve();
+            signal.addEventListener('abort', () => resolve(), { once: true });
+          });
+        })()
+    ),
+  });
+}
+
 /** Mount one tour's surface inside the real app chrome at one width. */
 function renderSurface(tourId: TourId, isMobile: boolean) {
   setViewport(isMobile);
@@ -178,7 +228,7 @@ function renderSurface(tourId: TourId, isMobile: boolean) {
 
   render(
     <QueryClientProvider client={queryClient}>
-      <TransportProvider transport={createMockTransport()}>
+      <TransportProvider transport={transportWithTeamRoom()}>
         <TooltipProvider>
           <SidebarProvider>
             {/* The real sidebar, not just its contents: on a phone this is the
@@ -196,11 +246,6 @@ function renderSurface(tourId: TourId, isMobile: boolean) {
 
 beforeAll(() => {
   setViewport(false);
-  // The dashboard draws whatever the registry holds for its slot, exactly as
-  // `initializeExtensions` fills it at startup. Without this the page renders
-  // an empty div and the composer step would pass by rendering nothing.
-  const { register } = useExtensionRegistry.getState();
-  for (const section of DASHBOARD_SECTION_CONTRIBUTIONS) register('dashboard.sections', section);
   // Radix measures and scrolls things jsdom does not implement.
   window.HTMLElement.prototype.scrollIntoView = vi.fn();
   window.ResizeObserver ??= class {
@@ -220,14 +265,21 @@ describe.each([
 ])('tour anchors on %s', (_label, isMobile) => {
   it.each(Object.values(TOUR_DEFINITIONS).map((tour) => [tour.id, tour] as const))(
     'the %s tour spotlights elements its surface actually renders',
-    (_id, tour) => {
+    async (_id, tour) => {
       renderSurface(tour.id, isMobile);
 
-      const missing = tour.steps
-        .filter((step) => screen.queryByTestId(step.anchor) === null)
-        .map((step) => step.anchor);
+      // Waited for, not read once: the home tab resolves its room before it can
+      // draw a composer, and a spotlight polls for its anchor anyway. What this
+      // asserts is that the element ARRIVES, which is the honest version of the
+      // claim — a step whose anchor never lands is the four-second silent skip
+      // this file exists to catch.
+      await waitFor(() => {
+        const missing = tour.steps
+          .filter((step) => screen.queryByTestId(step.anchor) === null)
+          .map((step) => step.anchor);
 
-      expect(missing).toEqual([]);
+        expect(missing).toEqual([]);
+      });
     }
   );
 });

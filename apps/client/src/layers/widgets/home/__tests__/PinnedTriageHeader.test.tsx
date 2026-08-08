@@ -179,14 +179,18 @@ describe('PinnedTriageHeader', () => {
     );
   });
 
-  it('sticks to the top of the surface that scrolls it', async () => {
+  it('holds its own height rather than being squeezed by the feed under it', async () => {
     renderHeader({
       listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
     });
 
     await screen.findByText('Uninstall a marketplace package');
-    expect(header()?.className).toContain('sticky');
-    expect(header()?.className).toContain('top-0');
+    // It is a flex sibling ABOVE the room's scroller, not a sticky element
+    // inside it (`RoomSurfaceProps.aboveTimeline` explains why that placement
+    // is the whole point). `shrink-0` is what that placement needs: without it
+    // a flex row this tall is compressed by the feed beside it.
+    expect(header()?.className).toContain('shrink-0');
+    expect(header()?.className).not.toContain('sticky');
   });
 
   it('shows an approval waiting on a decision', async () => {

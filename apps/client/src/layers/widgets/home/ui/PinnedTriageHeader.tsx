@@ -7,7 +7,7 @@ import {
   FailedRunDetailSheet,
   OfflineAgentDetailSheet,
 } from '@/layers/features/dashboard-attention';
-import type { DashboardSearch } from '@/router';
+import type { HomeSearch } from '@/router';
 import { PinnedTriageHeaderView, type TriagePresenceSlot } from './PinnedTriageHeaderView';
 
 export interface PinnedTriageHeaderProps {
@@ -49,7 +49,7 @@ export interface PinnedTriageHeaderProps {
 export function PinnedTriageHeader({ presence, className }: PinnedTriageHeaderProps) {
   const { approvals, isError, retry } = usePendingApprovals();
   const { items } = useAttentionItems();
-  const search = useSearch({ strict: false }) as Partial<DashboardSearch>;
+  const search = useSearch({ strict: false }) as Partial<HomeSearch>;
   const navigate = useNavigate();
 
   const closeDetail = useCallback(() => {

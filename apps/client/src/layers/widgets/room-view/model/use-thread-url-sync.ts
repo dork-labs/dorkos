@@ -7,10 +7,23 @@ import { useEffect, useRef } from 'react';
 import { useInPlaceNavigate } from '@/layers/shared/model';
 import { replyRootFor, useRoomOpenThreadStore, type RoomEntry } from '@/layers/entities/room';
 
+/**
+ * The routes a room can be read at, and therefore the addresses `?thread=` can
+ * be mirrored into.
+ *
+ * Two, because the same room widget is reached from two places: `/channels`
+ * addresses any room by search param, and `/` IS the #team room
+ * (team-room-home spec D3.2). Writing the wrong one would navigate a reader off
+ * the page they are on every time they opened a thread.
+ */
+export type ThreadRoute = '/' | '/channels';
+
 /** What the page knows that the open thread and the URL have to agree with. */
 export interface ThreadUrlSync {
   /** The room on screen, or `null` when none is. */
   roomId: string | null;
+  /** The address this room is being read at. */
+  route: ThreadRoute;
   /** `?thread=` as it arrived. */
   urlThreadId: string | undefined;
   /** The thread the store currently has open. */
@@ -57,10 +70,12 @@ export interface ThreadUrlSync {
  * that is in no loaded history is left exactly as it is: that is the orphaned
  * thread, which the panel already says the honest thing about.
  *
- * @param sync - The room, the URL, the open thread, and the history.
+ * @param sync - The room, the address it is read at, the URL, the open thread,
+ * and the history.
  */
 export function useThreadUrlSync({
   roomId,
+  route,
   urlThreadId,
   openThreadId,
   entries,
@@ -111,7 +126,7 @@ export function useThreadUrlSync({
     // panel syncs its URL must not read as a departure (DOR-931). `null` only in
     // the router-less embed, which never mounts this routed room view.
     inPlaceNavigate?.({
-      to: '/channels',
+      to: route,
       search: (prev: Record<string, unknown>) => ({ ...prev, thread: openThreadId }),
       replace: true,
     });
@@ -120,5 +135,5 @@ export function useThreadUrlSync({
     // cannot happen until it does. Without them the effect never re-ran on the
     // load that made the answer knowable, so a link naming a reply stayed
     // unresolved exactly when it mattered.
-  }, [roomId, openThreadId, urlThreadId, entries, historyLoaded, inPlaceNavigate]);
+  }, [roomId, route, openThreadId, urlThreadId, entries, historyLoaded, inPlaceNavigate]);
 }

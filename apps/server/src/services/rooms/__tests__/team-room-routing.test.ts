@@ -16,7 +16,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import type { RoomEntry } from '@dorkos/shared/room-schemas';
-import { ensureTeamRoom, TEAM_ROOM_KEY, type TeamRoomDeps } from '../ensure-team-room.js';
+import { ensureTeamRoom, TEAM_ROOM_WELL_KNOWN, type TeamRoomDeps } from '../ensure-team-room.js';
 import {
   agentLookupFor,
   createRoomHarness,
@@ -389,7 +389,7 @@ describe('changing the default agent', () => {
 
     expect(turnsFor(w, w.ace)).toBe(1);
     expect(turnsFor(w, w.dorkbot)).toBe(0);
-    expect(w.store.findByWellKnown(TEAM_ROOM_KEY)?.id).toBe(w.roomId);
+    expect(w.store.findByWellKnown(TEAM_ROOM_WELL_KNOWN)?.id).toBe(w.roomId);
   });
 });
 
