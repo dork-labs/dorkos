@@ -44,6 +44,101 @@ describe('TeamMemberCard', () => {
     expect(avatarImage()).toBeNull();
     expect(screen.getByText('D')).toBeInTheDocument();
   });
+
+  describe('the Surface tier — the card answers as one thing', () => {
+    /** The card's root article. */
+    const cardOf = (container: HTMLElement) =>
+      container.querySelector('[data-slot="team-member-card"]') as HTMLElement;
+
+    it('paints its border from the identity’s colour at a movable strength', () => {
+      // Two constraints meet here. An ancestor cannot inherit a property its
+      // child declares, so the card publishes the face colour itself. And
+      // `index.css` sets `border-color` on `*` in an UNLAYERED rule, which
+      // outranks Tailwind's whole utilities layer — so no `border-<colour>`
+      // class can paint a border in this app, and the colour has to be inline.
+      // Only its strength moves, through a property a class can still set.
+      const { container } = render(<TeamMemberCard member={SELF} onOpenProfile={() => {}} />);
+      const card = cardOf(container);
+
+      expect(card.style.getPropertyValue('--identity-color')).not.toBe('');
+      expect(card.style.borderColor).toContain('var(--identity-border-strength)');
+      // And the RESTING strength is a class, never inline: an inline value
+      // would be one the `hover:` step could never move, for the same reason
+      // the colour has to be inline to move at all.
+      expect(card.style.getPropertyValue('--identity-border-strength')).toBe('');
+      expect(card.className).toContain('[--identity-border-strength:0%]');
+    });
+
+    it('lifts, deepens and firms its border into that colour on hover', () => {
+      const { container } = render(<TeamMemberCard member={SELF} onOpenProfile={() => {}} />);
+      const card = cardOf(container);
+
+      expect(card.className).toContain('hover:-translate-y-px');
+      expect(card.className).toContain('hover:shadow-elevated');
+      expect(card.className).toContain(
+        'hover:[--identity-border-strength:var(--identity-border-mix)]'
+      );
+      // Card-sized press: 0.99, not the 0.94 a 24px mark takes.
+      expect(card.className).toContain('active:scale-[0.99]');
+      // Named properties, never `transition-all` — what moves stays auditable.
+      expect(card.className).not.toContain('transition-all');
+      // `translate` and `scale`, named as themselves: Tailwind v4 writes those
+      // properties directly, so a list naming `transform` transitions nothing
+      // and the lift snaps. Browser-checked — jsdom cannot see it.
+      expect(card.className).toContain('transition-[box-shadow,border-color,translate,scale]');
+    });
+
+    it('stands down for the attribution, so one pointer lights one action', () => {
+      const owner = MOCK_TEAM_ROSTER.find((m) => m.id === SELF.id)!;
+      const { container } = render(
+        <TeamMemberCard
+          member={SELF}
+          owner={owner}
+          onSelectOwner={() => {}}
+          onOpenProfile={() => {}}
+        />
+      );
+      const card = cardOf(container);
+
+      // Scoped to the attribution BY NAME. A bare `has-[button:hover]` would be
+      // true everywhere on the card, because the name button's `after:` overlay
+      // covers the whole tile and a pseudo-element hit-tests as its own
+      // element — the lift would then never fire at all.
+      expect(card.className).not.toContain('has-[button:hover]');
+      expect(card.className).toContain('has-[[data-slot=team-member-owner]:hover]:translate-y-0');
+      expect(card.className).toContain(
+        'has-[[data-slot=team-member-owner]:hover]:[--identity-border-strength:0%]'
+      );
+      // A keyboard reaching the attribution calms the card the same way.
+      expect(card.className).toContain(
+        'has-[[data-slot=team-member-owner]:focus-visible]:translate-y-0'
+      );
+      expect(container.querySelector('[data-slot="team-member-owner"]')).not.toBeNull();
+    });
+
+    it('answers a keyboard on the attribution exactly as it answers a mouse', () => {
+      const owner = MOCK_TEAM_ROSTER.find((m) => m.id === SELF.id)!;
+      const { container } = render(
+        <TeamMemberCard member={SELF} owner={owner} onSelectOwner={() => {}} />
+      );
+      const attribution = container.querySelector('[data-slot="team-member-owner"]') as HTMLElement;
+
+      // The ring alone says "you are here", not "this filters" — the
+      // informational half of the hover has to fire on focus too.
+      expect(attribution.className).toContain('hover:underline');
+      expect(attribution.className).toContain('focus-visible:underline');
+      expect(attribution.className).toContain('hover:text-foreground');
+      expect(attribution.className).toContain('focus-visible:text-foreground');
+    });
+
+    it('promises nothing on a card with no profile to open', () => {
+      const { container } = render(<TeamMemberCard member={SELF} />);
+      const card = cardOf(container);
+
+      expect(card.className).not.toContain('hover:-translate-y-px');
+      expect(card.className).not.toContain('active:scale-[0.99]');
+    });
+  });
 });
 
 describe('TeamRosterGrid cluster header', () => {

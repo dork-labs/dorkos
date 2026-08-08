@@ -56,6 +56,20 @@ describe('AccountMenu', () => {
     expect(screen.queryByText('Sign out')).not.toBeInTheDocument();
   });
 
+  it('answers your pointer with your own colour, never by dimming your face', () => {
+    renderMenu();
+    const trigger = screen.getByRole('button', { name: /your account/i });
+    const disc = trigger.querySelector('[data-slot="identity-avatar"]') as HTMLElement;
+
+    // It used to fade to 80% — the universal idiom for DISABLED — so your own
+    // face read as switched off the moment you pointed at it.
+    expect(trigger.className).not.toContain('opacity-80');
+    expect(trigger.className).toContain('focus-ring');
+    expect(disc.className).toContain('group-hover/identity:ring-2');
+    expect(disc.className).toContain('group-focus-visible/identity:ring-2');
+    expect(disc.style.getPropertyValue('--identity-color')).not.toBe('');
+  });
+
   it('names the person on the trigger and in the header', async () => {
     renderMenu();
     expect(screen.getByRole('button', { name: `Your account: ${SELF.displayName}` })).toBeVisible();

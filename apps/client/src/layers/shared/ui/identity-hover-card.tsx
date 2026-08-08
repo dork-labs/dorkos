@@ -275,7 +275,13 @@ function IdentityHoverCard({
           </button>
         ) : (
           <div className="border-border mt-auto flex items-center justify-between border-t px-3 py-2">
-            <span className="text-brand text-xs font-medium">View profile</span>
+            {/* Muted, not brand orange. Orange means interaction or action
+                (`contributing/design-system.md`), and this line is neither
+                until something hands it a destination — the branch above is
+                where it earns the colour back. Dressing an inert line as a
+                control is the first thing an architect reading the source
+                notices, and it was true here. */}
+            <span className="text-muted-foreground text-xs font-medium">View profile</span>
             <span className="text-muted-foreground text-[10px] tracking-wide uppercase">soon</span>
           </div>
         )}

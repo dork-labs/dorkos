@@ -199,6 +199,8 @@ Animation should feel like physics, not decoration. Things should move because t
 
 **New messages pill:** Fade in + slide up 8px, 200ms ease-out. Fade out on exit (150ms). Centered horizontally in message area overlay wrapper. Appears when new messages arrive while user is scrolled up; dismissed on click or reaching bottom.
 
+**Identity surfaces have their own named grammar** — three speeds, two curves, three tiers — under [Identity → The interaction grammar](#the-interaction-grammar--what-an-identity-says-when-you-point-at-it). Anything that draws an avatar, a mention pill or a roster card follows that section rather than picking numbers from the table above.
+
 ### What NOT to Animate
 
 - Message content (text should just appear)
@@ -385,7 +387,55 @@ Two things make this the shape it is:
 
 **Deciding what to draw: `resolveIdentityFace` (`shared/lib/identity-face.ts`).** One pure function turns the fragments a caller happens to hold into the props the disc takes — colour, emoji, fallback letter, kind, origin. Precedence, highest first: an explicit `override` (an agent's own manifest face, which only a feature-layer caller can reach), then the record's own render cache, then a colour hashed from the opaque id with the first letter of the name. It hashes a colour but never an emoji: a letter admits the face is unknown where an invented emoji would look chosen. It takes no agent types on purpose — that is what lets `entities/room` use the same ladder a feature does, and two roster surfaces hand-rolling their own is what made an agent read as two different identities in one room.
 
-Live states: `/dev/components#identityavatar`.
+### The interaction grammar — what an identity says when you point at it
+
+Sixteen components draw identities. Before this, four had any hover state and three of those said "something is here" without saying **what pressing it would do**. The grammar below is the consistency layer: it is all CSS, and the tier decides the response so no call site invents one.
+
+**The keystone.** `IdentityAvatar` publishes its colour as `--identity-color` on the disc, alongside the inline `background-color` it always painted. That one line is what makes any of this possible: an inline background outranks every stylesheet rule, so while the colour lived only there, no `:hover` could tint it, ring it, or lend it to an ancestor's border. Custom properties inherit, so the disc, its children, and any ancestor that sets the same property can now reach the colour from a class string. `TeamMemberCard` and `ProfileDrawer` set it on their own roots from the resolved face, for exactly that reason.
+
+**Three speeds and two curves, in `index.css`. There is no fourth.**
+
+| Token                      | Value                          | Applies to                                        |
+| -------------------------- | ------------------------------ | ------------------------------------------------- |
+| `--identity-press`         | 80ms                           | `:active` transforms — land before a finger lifts |
+| `--identity-answer`        | 120ms                          | hover on a **mark** or a **chip** (≤48px)         |
+| `--identity-settle`        | 200ms                          | hover on a **surface**, and any reveal            |
+| `--identity-ease-out`      | `cubic-bezier(0, 0, 0.2, 1)`   | anything arriving, growing, appearing             |
+| `--identity-ease-standard` | `cubic-bezier(0.4, 0, 0.2, 1)` | anything that changes in place and stays          |
+
+Plus two colour steps: `--identity-border-mix` (35%) and `--identity-ring-mix` (60%). **No overshoot lives here** — `[0.34, 1.56, 0.64, 1]` exists in exactly two places, both moments you deliberately went to (the avatar picker, the hub hero). Overshoot is a signature-moment budget line, not a hover curve.
+
+**Three tiers, decided by what the thing does:**
+
+| Tier        | It is…                                             | It answers with                                                       |
+| ----------- | -------------------------------------------------- | --------------------------------------------------------------------- |
+| **Surface** | a card or row whose whole area triggers one action | lift `-1px`, `shadow-elevated`, border firms into the identity colour |
+| **Mark**    | an avatar that is itself the target or trigger     | a ring in its **own** identity colour, `ring-0` → `ring-2`            |
+| **Chip**    | an inline control — a pill, an attribution         | a tint step (colour surfaces) or weight + underline (text surfaces)   |
+
+The Mark tier ships as `identityMarkRing` from `shared/ui` — `.self` for a disc that is the hover target itself, `.group` for a disc inside a control marked `group`. Apply it **at the call site, never inside `AgentAvatar`**: the disc does not know whether anything around it is pressable.
+
+**Two collisions the grammar resolves, rather than ignores:**
+
+- **Health wins.** `AgentAvatar` already spends the 2px ring slot on mesh health. When `healthStatus` is present the disc takes no hover ring at all — a diagnostic signal that changed colour under the pointer would read as a hover state.
+- **Per-area stand-down.** When a card holds more than one action, hovering an inner control calms the card, so one pointer never lights two affordances at once. Scope the `has-[…]` rule to that control **by name** (`has-[[data-slot=team-member-owner]:hover]`), never `has-[button:hover]`: a stretched-link overlay hit-tests as part of the button that generated it, so the generic form is true everywhere on the card and the lift never fires.
+
+**Where the colour may answer, and where it must not.** An identity's colour answers only where that identity is **individually addressable** and **fewer than about a dozen** are on screen. It applies on the roster card, a room's roster discs (list form), an identity lockup used as a control, and your own account face. It does **not** apply on sidebar agent rows (twenty-plus of them, and the left border already spends the colour on a different fact), in the command palette (the selection already rides a `layoutId` pill), or per-disc inside a roster **button** (one target, one action). Twenty rows able to glow is not twenty answers; it is a Christmas tree with a cursor in it.
+
+**Two traps this grammar hit, which apply well beyond identity surfaces:**
+
+- **No Tailwind `border-<colour>` utility can change a border in this app.** `index.css` sets `border-color: hsl(var(--border))` on `*` in an **unlayered** rule, and an unlayered rule outranks every `@layer` — including Tailwind's `utilities`. `border-destructive`, `border-primary`, `border-transparent` and every other border colour class in the codebase currently render as the neutral border; verified in a browser. Until that rule is layered (a repo-wide change with its own visual review), a border colour has to be set **inline**, which does outrank it. Where the colour must also _move_, keep the inline declaration and put only its strength in a custom property a class can set — `TeamMemberCard` is the worked example.
+- **`group-hover:` matches ANY `.group` ancestor, not the nearest one.** Tailwind compiles it to `:where(.group):hover &`. The sidebar wraps its rows in an unnamed `.group` that spans most of the pane, so the bare form left every sidebar face permanently ringed. Always use a **named** group (`group/identity` + `group-hover/identity:`) when the control is anywhere it could be nested.
+
+**Press scales by target size:** `0.99` for a card, `0.98` for a row or chip, `0.94` for a mark used as a button. Scale down only; the release rides the hover duration back up.
+
+**Focus-visible parity is a rule, not a nicety.** If an area has a hover state, it has a focus-visible twin conveying the same information — a keyboard user must never learn less than a mouse user. The ring itself comes from the `focus-ring` utility; the _informational_ half (colour, weight, an underline) gets an explicit `focus-visible:` twin beside every `hover:`. The inverse is equally binding: **never put a `focus-visible:` ring on something no keyboard can reach.** A dormant ring on a `<span>` is an affordance wired to nothing.
+
+**Reduced motion needs no work.** `index.css` collapses every transition and animation duration to `0.01ms` under `prefers-reduced-motion: reduce`, globally. Every prescription above is therefore correct there for free — which is why none of them carries a `motion-reduce:` variant, and why every one of them is a _static_ end state that reads on its own (a ring is present, a border is coloured, a card is lifted). A design that only reads _because_ of the movement is broken there. The one thing the reset does not reach is `motion/react`, which writes inline styles from JS: any `motion.*` component must call `useReducedMotion()` and branch **off**, not shorter.
+
+**Touch invariant:** nothing that exists only on hover may carry information unavailable another way. A card's lift has no touch equivalent and costs nothing, because the tap opens the drawer; an avatar's hover card is reached by long-press (`identity-hover-card.tsx`), which is the one pattern for that — never invent a second.
+
+Full audit and rationale: `plans/identity-micro-interactions/design-spec.md`. Live states: `/dev/components#identityavatar`.
 
 ---
 

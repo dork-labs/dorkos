@@ -11,13 +11,6 @@ import { cn } from '../lib/utils';
 import type { IdentityOrigin } from '../lib/identity-origin';
 
 /**
- * How much of an agent's own colour tints the pill's background — lighter
- * than {@link IdentityAvatar}'s 18% tint, because a pill's background sits
- * directly behind body text rather than behind a large, mostly-empty disc.
- */
-const AGENT_TINT = '14%';
-
-/**
  * How much of an agent's own colour tints the pill's text, mixed toward the
  * theme's own foreground token rather than toward transparent. Mixing
  * against `hsl(var(--foreground))` — which the browser resolves at paint
@@ -41,20 +34,51 @@ const mentionPillVariants = cva(
   {
     variants: {
       /**
-       * `neutral` is a static theme-token pill (human, system); `agent` carries
-       * no classes of its own because its colour is per-identity and applied as
-       * inline `style`, the same sanctioned exception {@link IdentityAvatar}'s
-       * tint already uses.
+       * `neutral` is a static theme-token pill (human, system); `agent` wears
+       * its identity's own colour at **14%** — lighter than
+       * {@link IdentityAvatar}'s 18% tint, because a pill's background sits
+       * directly behind body text rather than behind a large, mostly-empty
+       * disc.
+       *
+       * The colour arrives through `--identity-color`, which the pill publishes
+       * inline, rather than through an inline `background-color`. That is what
+       * makes the hover step below possible at all: an inline background beats
+       * every stylesheet rule, so no `:hover` could ever have moved it.
        */
       tone: {
         neutral: 'bg-secondary text-secondary-foreground',
-        agent: '',
+        agent: 'bg-[color-mix(in_oklch,var(--identity-color)_14%,transparent)]',
       },
       interactive: {
-        true: 'focus-visible:ring-ring cursor-pointer transition-[filter] hover:brightness-95 focus-visible:ring-2 focus-visible:outline-none',
+        true: 'focus-visible:ring-ring cursor-pointer transition-[background-color] duration-(--identity-answer) ease-(--identity-ease-standard) focus-visible:ring-2 focus-visible:outline-none',
         false: '',
       },
     },
+    /**
+     * Chip tier: the tint steps ONE notch and nothing else — no ring, no glow,
+     * no lift. A pill mid-paragraph that glowed would pull the eye out of the
+     * sentence; 14% → 20% is just enough to confirm "yes, this is the thing you
+     * are pointing at" without breaking the line.
+     *
+     * It replaces a `brightness-95` filter, which multiplied a considered
+     * identity colour toward grey — the opposite of the identity answering.
+     * The neutral pill has no identity colour to raise, so it steps its own
+     * surface toward the text instead: `--secondary` is lighter than the
+     * foreground in light mode and darker in dark mode, so one mix reads as a
+     * step up in both without asking the theme any questions.
+     */
+    compoundVariants: [
+      {
+        tone: 'agent',
+        interactive: true,
+        class: 'hover:bg-[color-mix(in_oklch,var(--identity-color)_20%,transparent)]',
+      },
+      {
+        tone: 'neutral',
+        interactive: true,
+        class: 'hover:bg-[color-mix(in_oklch,hsl(var(--secondary)),hsl(var(--foreground))_10%)]',
+      },
+    ],
     defaultVariants: {
       tone: 'neutral',
       interactive: false,
@@ -90,7 +114,7 @@ export interface MentionPillProps extends Omit<React.ComponentProps<'span'>, 'co
   resolved: boolean;
   /**
    * Whether this pill carries a hover/click affordance — the cursor, the hover
-   * brightness and the focus ring.
+   * tint step and the focus ring.
    *
    * **Appearance only; the behaviour is the caller's.** This pill stays a
    * `<span>`, so a caller that turns this on also passes what makes it real —
@@ -150,10 +174,15 @@ function MentionPill({
         data-kind="agent"
         title={title}
         className={cn(mentionPillVariants({ tone: 'agent', interactive }), className)}
-        style={{
-          backgroundColor: `color-mix(in oklch, ${color ?? 'currentColor'} ${AGENT_TINT}, transparent)`,
-          color: `color-mix(in oklch, ${color ?? 'currentColor'} ${AGENT_TEXT_MIX}, hsl(var(--foreground)))`,
-        }}
+        style={
+          {
+            // Published, not painted: the background lives in a class that
+            // reads this (see the `tone` variant), so a `:hover` rule can step
+            // it. The text colour stays inline because it does not move.
+            '--identity-color': color ?? 'currentColor',
+            color: `color-mix(in oklch, ${color ?? 'currentColor'} ${AGENT_TEXT_MIX}, hsl(var(--foreground)))`,
+          } as React.CSSProperties
+        }
         {...props}
       >
         <Bot aria-hidden className="mr-0.5 inline-block size-[0.85em] align-[-0.15em]" />

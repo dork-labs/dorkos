@@ -1,5 +1,6 @@
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/layers/shared/lib';
+import { identityMarkRing, IDENTITY_MARK_GROUP } from '@/layers/shared/ui';
 import type { AgentHealthStatus } from '@dorkos/shared/mesh-schemas';
 import { AgentAvatar } from './AgentAvatar';
 
@@ -140,6 +141,17 @@ export function AgentIdentity({
     </span>
   );
 
+  // Mark tier: when this lockup (or its face alone) is a control, the disc
+  // answers the pointer by ringing itself in the agent's own colour.
+  //
+  // **Health wins.** A disc already spending its 2px ring on mesh health takes
+  // no hover ring at all — a ring that changed colour under the pointer would
+  // make a diagnostic signal look like a hover state. Suppressed here, at the
+  // caller, rather than inside `AgentAvatar`: the disc does not know whether
+  // anything around it is pressable.
+  const marksIdentity =
+    (onClick !== undefined || onAvatarClick !== undefined) && healthStatus === undefined;
+
   const avatar = (
     <AgentAvatar
       color={color}
@@ -147,6 +159,7 @@ export function AgentIdentity({
       imageUrl={imageUrl}
       size={size}
       healthStatus={healthStatus}
+      className={cn(marksIdentity && identityMarkRing.group)}
     />
   );
 
@@ -161,7 +174,15 @@ export function AgentIdentity({
           // `rounded-md`, matching the disc it wraps: an agent's face is a
           // rounded SQUARE (spec `identity-consistency` §W1), so a circular
           // focus ring around it draws a shape the identity does not have.
-          className="focus-ring shrink-0 cursor-pointer rounded-md transition-opacity hover:opacity-80"
+          //
+          // The NAMED group is what lets the disc inside answer this button's
+          // hover and its keyboard focus with the same ring — and nothing
+          // else's. The press scales to 0.94 — the mark-sized step, because one
+          // number cannot fit a 300px card and a 24px disc.
+          className={cn(
+            IDENTITY_MARK_GROUP,
+            'focus-ring shrink-0 cursor-pointer rounded-md transition-[scale] duration-(--identity-press) ease-(--identity-ease-out) active:scale-[0.94]'
+          )}
         >
           {avatar}
         </button>
@@ -180,7 +201,16 @@ export function AgentIdentity({
         onClick={onClick}
         className={cn(
           identityVariants({ size }),
-          'cursor-pointer transition-opacity hover:opacity-80',
+          // Chip tier. It used to dim to 80% on hover, which is the universal
+          // idiom for DISABLED — the one thing a live control must not say. The
+          // identity's own colour answers instead, on the disc, through the
+          // named group.
+          //
+          // `focus-ring` is new here, not moved: this branch had no keyboard
+          // response of any kind, so a keyboard user learned strictly less than
+          // a mouse user. `rounded-md` gives that ring a shape to follow.
+          IDENTITY_MARK_GROUP,
+          'focus-ring cursor-pointer rounded-md transition-[scale] duration-(--identity-press) ease-(--identity-ease-out) active:scale-[0.98]',
           className
         )}
       >

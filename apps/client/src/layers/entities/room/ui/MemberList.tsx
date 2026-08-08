@@ -5,7 +5,13 @@
  */
 import type { RoomRosterEntry } from '@dorkos/shared/room-schemas';
 import { cn, resolveIdentityFace } from '@/layers/shared/lib';
-import { IdentityAvatar, Tooltip, TooltipContent, TooltipTrigger } from '@/layers/shared/ui';
+import {
+  IdentityAvatar,
+  identityMarkRing,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/layers/shared/ui';
 import { platformLabel } from '../lib/room-display';
 
 /** How many marks are drawn before the rest collapse into a `+N`. */
@@ -84,8 +90,12 @@ export function MemberList({ members, onClick, label, className }: MemberListPro
    * used to badge an external person and nothing else while the sheet badged
    * agents and nothing else, which meant the same agent wore a mark in one half
    * of the room and none in the other. Neither file decides it now.
+   *
+   * `discClassName` is how the two shapes differ under a pointer. In the list
+   * each disc is its own tooltip trigger, so each answers; in the button five
+   * discs share one action, and five answers to one hover would suggest five.
    */
-  const disc = ({ author, origin }: RoomRosterEntry) => {
+  const disc = ({ author, origin }: RoomRosterEntry, discClassName?: string) => {
     const isExternal = typeof origin === 'object' && origin !== null;
     const name = isExternal
       ? `${author.displayName}, from ${platformLabel(origin.platform)}`
@@ -108,7 +118,7 @@ export function MemberList({ members, onClick, label, className }: MemberListPro
         origin={face.origin}
         // A roster disc is a step larger than the sidebar's, and rings itself in
         // the page background so the overlap still reads as separate people.
-        className="border-background size-6 border"
+        className={cn('border-background size-6 border', discClassName)}
       >
         <span className="sr-only">{name}</span>
       </IdentityAvatar>
@@ -152,7 +162,14 @@ export function MemberList({ members, onClick, label, className }: MemberListPro
       {visible.map((member) => (
         <li key={member.author.id}>
           <Tooltip>
-            <TooltipTrigger asChild>{disc(member)}</TooltipTrigger>
+            {/* Mark tier. The disc answers in its member's own colour the
+                moment you point at it, rather than leaving the tooltip to be
+                the first sign that anything here is hoverable. `hover:z-10`
+                lifts the ring clear of the disc overlapping it — paint order
+                only, so nothing on the row moves. */}
+            <TooltipTrigger asChild>
+              {disc(member, cn(identityMarkRing.self, 'hover:z-10'))}
+            </TooltipTrigger>
             <TooltipContent>
               {typeof member.origin === 'object' && member.origin !== null
                 ? `${member.author.displayName} · ${platformLabel(member.origin.platform)}`

@@ -517,6 +517,38 @@ describe('IdentityAvatar', () => {
     });
   });
 
+  describe('publishing the identity colour to CSS', () => {
+    it('carries the colour as --identity-color, not only as a background', () => {
+      // The keystone of the interaction grammar. An inline `background-color`
+      // outranks every stylesheet rule, so while the colour lived only there
+      // no `:hover` could tint it, ring it, or lend it to an ancestor. A
+      // custom property inherits and IS reachable from a class string.
+      const { container } = render(<IdentityAvatar color="#7c3aed" fallback="A" />);
+
+      expect(discOf(container).style.getPropertyValue('--identity-color')).toBe('#7c3aed');
+    });
+
+    it('publishes the fill colour too, not just the tint', () => {
+      // `fill` and `tint` compute different backgrounds from the same colour;
+      // the property is the colour itself either way, so a Mark-tier ring on
+      // an agent's square and on a person's circle are the same shade.
+      const { container } = render(<IdentityAvatar color="#7c3aed" kind="agent" fallback="A" />);
+
+      expect(discOf(container).style.getPropertyValue('--identity-color')).toBe('#7c3aed');
+    });
+
+    it('still lets a caller override the whole style object', () => {
+      // Purely additive: `style` is spread last, exactly as it was before.
+      const { container } = render(
+        <IdentityAvatar color="#7c3aed" fallback="A" style={{ opacity: 0.5 }} />
+      );
+      const disc = discOf(container);
+
+      expect(disc.style.opacity).toBe('0.5');
+      expect(disc.style.getPropertyValue('--identity-color')).toBe('#7c3aed');
+    });
+  });
+
   it('contributes nothing to the accessibility tree on its own', () => {
     // An emoji has a spoken name nobody asked to hear; a caller that stands the
     // mark alone adds an sr-only label of its own.

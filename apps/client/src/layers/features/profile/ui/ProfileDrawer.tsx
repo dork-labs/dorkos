@@ -8,6 +8,7 @@
  *
  * @module features/profile/ui/ProfileDrawer
  */
+import type { CSSProperties } from 'react';
 import type { TeamAgentFacts, TeamMember } from '@dorkos/shared/team-schemas';
 import {
   Badge,
@@ -155,11 +156,33 @@ export function ProfileDrawer({
       <ResponsiveSheetContent
         data-slot="profile-drawer"
         data-member-id={member.id}
+        // The panel wears this identity's colour so the rule under its header
+        // can be drawn in it — the drawer is about exactly one identity, and
+        // until now said so nowhere.
+        style={{ '--identity-color': face.color } as CSSProperties}
         className="flex flex-col gap-0 p-0"
       >
         {/* The rule under the header belongs to the body it separates — with no
-            facts to draw, a hairline would fence off nothing. */}
-        <ResponsiveSheetHeader className={cn('gap-3 p-4', facts.length > 0 && 'border-b')}>
+            facts to draw, a hairline would fence off nothing.
+
+            Where there IS one, it is this identity's own colour at 55%, and it
+            is deliberately STATIC. This is the drawer's "the identity answers"
+            moment, and the calm version of that is a panel that states whose it
+            is without moving to say so. */}
+        <ResponsiveSheetHeader
+          // The colour is inline for the reason the Team card's is: `index.css`
+          // sets a neutral `border-color` on `*` in an unlayered rule, which
+          // outranks Tailwind's whole utilities layer, so no `border-<colour>`
+          // class can paint a border in this app. The width stays a class.
+          style={
+            facts.length > 0
+              ? ({
+                  borderBottomColor: 'color-mix(in oklch, var(--identity-color) 55%, transparent)',
+                } as CSSProperties)
+              : undefined
+          }
+          className={cn('gap-3 p-4', facts.length > 0 && 'border-b-2')}
+        >
           <div className="flex items-start gap-3">
             <IdentityAvatar
               size="lg"

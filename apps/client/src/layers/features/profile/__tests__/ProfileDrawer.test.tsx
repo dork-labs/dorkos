@@ -34,6 +34,39 @@ afterEach(() => {
   cleanup();
 });
 
+/** The drawer's own panel, portalled into `document.body`. */
+function panel(): HTMLElement {
+  const el = document.body.querySelector('[data-slot="profile-drawer"]');
+  expect(el).not.toBeNull();
+  return el as HTMLElement;
+}
+
+describe('ProfileDrawer — whose panel this is', () => {
+  it('wears the identity’s own colour, and says so with a static rule', () => {
+    // A full panel about exactly one identity that mentioned that identity's
+    // colour nowhere. The rule under the header is the answer, and it is
+    // deliberately STATIC: the calm version of "the identity answers" is a
+    // panel that states whose it is without moving to say so.
+    render(<ProfileDrawer member={warden} open onOpenChange={() => {}} />);
+
+    expect(panel().style.getPropertyValue('--identity-color')).not.toBe('');
+    // Inline, because `index.css` sets `border-color` on `*` in an unlayered
+    // rule that outranks Tailwind's whole utilities layer — no `border-<colour>`
+    // class paints a border in this app.
+    expect(panel().innerHTML).toContain('var(--identity-color) 55%');
+    expect(panel().innerHTML).toContain('border-b-2');
+  });
+
+  it('draws no rule at all when there is no body to separate', () => {
+    // A hairline under a header with nothing beneath it fences off nothing.
+    // Miguel is a person: no project, no namespace, no registration date, and
+    // not you, so `factsFor` returns an empty list.
+    render(<ProfileDrawer member={miguel} open onOpenChange={() => {}} />);
+
+    expect(panel().innerHTML).not.toContain('var(--identity-color) 55%');
+  });
+});
+
 describe('ProfileDrawer — an agent', () => {
   it('draws the agent silhouette: a square disc, never a person’s circle', () => {
     render(<ProfileDrawer member={warden} open onOpenChange={() => {}} />);

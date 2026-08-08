@@ -96,6 +96,28 @@ describe('IdentityHoverCard', () => {
     await openOn({ kind: 'human', displayName: 'Ana', handle: 'ana' });
     expect(screen.getByText('View profile').closest('button, a')).toBeNull();
     expect(screen.getByText('soon')).toBeInTheDocument();
+    // And it does not DRESS as one either. Brand orange means interaction or
+    // action; an inert line wearing it is an affordance wired to nothing —
+    // the first thing an architect reading the source notices.
+    expect(screen.getByText('View profile').className).not.toContain('text-brand');
+    expect(screen.getByText('View profile').className).toContain('text-muted-foreground');
+  });
+
+  it('gives "View profile" the brand colour back once it is a real control', async () => {
+    // Orange is earned by doing something. The wired branch does.
+    const user = userEvent.setup();
+    render(
+      <IdentityHoverCard
+        identity={{ kind: 'human', displayName: 'Ana', handle: 'ana' }}
+        onViewProfile={vi.fn()}
+      >
+        <button type="button">Ana</button>
+      </IdentityHoverCard>
+    );
+    await user.hover(screen.getByRole('button', { name: 'Ana' }));
+
+    const viewProfile = await screen.findByRole('button', { name: 'View profile' });
+    expect(viewProfile.className).toContain('text-brand');
   });
 
   it('turns "View profile" into a real control once a destination is supplied', async () => {
