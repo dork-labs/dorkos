@@ -210,3 +210,95 @@ describe('Enter inside a list — rows six and seven', () => {
     expect(onKeyDown).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('Enter ENDS a list from an empty item', () => {
+  // The locked decision has two halves and this is the second: Enter continues
+  // a list, and Enter on an EMPTY item exits it. Without the exit there is no
+  // way off a list from the keyboard at all — the second Enter is a no-op and
+  // the person is stuck adding blank bullets.
+  it('turns an empty trailing item into a paragraph', async () => {
+    const onKeyDown = vi.fn((e: React.KeyboardEvent) => e.preventDefault());
+    const seen: string[] = [];
+    const field = await renderWithCaret({
+      initialValue: '- one',
+      onKeyDown,
+      onValue: (v) => seen.push(v),
+    });
+
+    // First Enter continues the list: two items, the second empty.
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await waitFor(() => expect(field.querySelectorAll('li').length).toBe(2));
+
+    // Second Enter, now on the empty item, must LEAVE the list.
+    fireEvent.keyDown(field, { key: 'Enter' });
+
+    // Both facts in ONE waitFor: the item count settles a tick before the new
+    // paragraph is reconciled, so asserting them in sequence races the flush.
+    await waitFor(() => {
+      expect(field.querySelectorAll('li').length).toBe(1);
+      expect(field.querySelector('p')).not.toBeNull();
+    });
+    // The ladder was never consulted for either press — both belong to the list.
+    expect(onKeyDown).not.toHaveBeenCalled();
+    // `\n\n`, not nothing: the document really does now hold the list PLUS the
+    // empty paragraph the exit just created, and the serializer says so. Sending
+    // trims it, and re-parsing it collapses back to `- one` in one pass — the
+    // trailing-blank-line normalization the round-trip corpus already pins.
+    await waitFor(() => expect(seen.at(-1)).toBe('- one\n\n'));
+  });
+
+  // The other half of the exit: once out, Enter belongs to the ladder again.
+  // Driven from a document that already HAS a paragraph after the list rather
+  // than by pressing Enter a third time — a keypress fired immediately after
+  // the exit races Lexical's selection sync, and re-firing a side-effecting
+  // key inside a `waitFor` is not a fix.
+  it('hands Enter back to the ladder once the caret is out of the list', async () => {
+    const onKeyDown = vi.fn((e: React.KeyboardEvent) => e.preventDefault());
+    const field = await renderWithCaret({ initialValue: '- one\n\ntail', onKeyDown });
+    await waitFor(() => {
+      expect(field.querySelectorAll('li').length).toBe(1);
+      expect(field.querySelector('p')?.textContent).toBe('tail');
+    });
+
+    fireEvent.keyDown(field, { key: 'Enter' });
+
+    await waitFor(() => expect(onKeyDown).toHaveBeenCalledTimes(1));
+  });
+
+  it('still continues a NON-empty item rather than exiting', async () => {
+    const onKeyDown = vi.fn((e: React.KeyboardEvent) => e.preventDefault());
+    const field = await renderWithCaret({ initialValue: '- one\n- two', onKeyDown });
+    await waitFor(() => expect(field.querySelectorAll('li').length).toBe(2));
+
+    fireEvent.keyDown(field, { key: 'Enter' });
+
+    await waitFor(() => expect(field.querySelectorAll('li').length).toBe(3));
+    expect(onKeyDown).not.toHaveBeenCalled();
+  });
+});
+
+describe('Enter in a document that contains a NESTED list', () => {
+  // Nesting is reachable on INPUT — `@lexical/markdown`'s list regexes capture
+  // leading whitespace, and four spaces build a real `listitem > list >
+  // listitem`. It is NOT reachable on output: this composer's serializer writes
+  // no indentation, so the value flattens to `- a\n- b`. That is pinned as a
+  // normalization in the round-trip corpus, and it has a consequence this test
+  // deliberately does not paper over — a markdown offset cannot address a
+  // nested position, so `focusAt` cannot reliably land in the inner item.
+  //
+  // What IS true regardless of depth, and is what this fix is about: an empty
+  // item hands Enter to the list, and the list ends it.
+  it('still ends an empty item, and never consults the ladder', async () => {
+    const onKeyDown = vi.fn((e: React.KeyboardEvent) => e.preventDefault());
+    const field = await renderWithCaret({ initialValue: '- a\n    - b', onKeyDown });
+    await waitFor(() => expect(field.querySelectorAll('li').length).toBeGreaterThan(1));
+
+    fireEvent.keyDown(field, { key: 'Enter' });
+    fireEvent.keyDown(field, { key: 'Enter' });
+
+    // The empty item became a paragraph; the surrounding list survived.
+    await waitFor(() => expect(field.querySelectorAll('p').length).toBe(1));
+    expect(field.querySelectorAll('li').length).toBeGreaterThan(0);
+    expect(onKeyDown).not.toHaveBeenCalled();
+  });
+});

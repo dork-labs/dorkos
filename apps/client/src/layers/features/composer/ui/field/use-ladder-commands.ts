@@ -76,11 +76,21 @@ function runLadder(event: KeyboardEvent, onKeyDown: (event: React.KeyboardEvent)
   return consumed;
 }
 
-/** Whether the caret sits inside a list item. */
+/**
+ * Whether the caret sits inside a list item.
+ *
+ * The anchor node itself is checked, not only its ancestors, and that is the
+ * whole of it: in a NON-empty item the anchor is the text node and the item is
+ * one of its parents, but in an EMPTY item there is no text node and the anchor
+ * IS the `ListItemNode`. `getParents()` never includes the node it was called
+ * on, so an ancestors-only check answered `false` on exactly the item Enter is
+ * supposed to exit from — and the exit rung was unreachable.
+ */
 function $isCaretInListItem(): boolean {
   const selection = $getSelection();
   if (!$isRangeSelection(selection)) return false;
-  return selection.anchor.getNode().getParents().some($isListItemNode);
+  const anchor = selection.anchor.getNode();
+  return $isListItemNode(anchor) || anchor.getParents().some($isListItemNode);
 }
 
 /**

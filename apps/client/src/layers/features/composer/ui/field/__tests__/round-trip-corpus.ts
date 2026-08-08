@@ -100,6 +100,26 @@ export const ROUND_TRIP_CORPUS: readonly RoundTripCase[] = [
   { md: '# h1\n\npara' },
   { md: 'para\n\n- a\n- b' },
   {
+    md: '- a\n    - b',
+    normalizesTo: '- a\n- b',
+    why:
+      'Four spaces DO build a nested list in the document, but the serializer ' +
+      'writes no indentation, so nesting is lost on the way out. Pinned because ' +
+      'it is a real limitation with a second consequence: a markdown offset ' +
+      'cannot address a position inside a nested item, so focusAt cannot land ' +
+      'there either. Fixing it means teaching the serializer indentation AND ' +
+      'the offset map about depth.',
+  },
+  {
+    md: '- one\n\n',
+    normalizesTo: '- one',
+    why:
+      'Trailing blank lines are not a block. Worth pinning because the editor ' +
+      'PRODUCES this string when Enter exits a list: the live document holds the ' +
+      'list plus the empty paragraph the exit created, and re-parsing that string ' +
+      'collapses it back in one pass.',
+  },
+  {
     md: 'a\n\n\nb',
     normalizesTo: 'a\n\nb',
     why: 'Two paragraphs is two paragraphs; the model has no third blank line to keep.',
