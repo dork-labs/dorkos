@@ -132,6 +132,14 @@ export function TeamMemberCard({
           'transition-[box-shadow,border-color,translate,scale] duration-(--identity-settle) ease-(--identity-ease-standard)',
           'hover:shadow-elevated hover:-translate-y-px',
           'hover:[--identity-border-strength:var(--identity-border-mix)]',
+          // Focus-visible parity, on the CARD rather than only on the word. A
+          // keyboard reaching the primary control must learn what a pointer
+          // learns: the whole tile is the target. Without this, Tab drew a ring
+          // around a name while a mouse got the whole card answering — and the
+          // negative twin below (standing down for the attribution's focus)
+          // already existed, which is what made the gap an oversight.
+          'has-[[data-slot=team-member-open]:focus-visible]:shadow-elevated has-[[data-slot=team-member-open]:focus-visible]:-translate-y-px',
+          'has-[[data-slot=team-member-open]:focus-visible]:[--identity-border-strength:var(--identity-border-mix)]',
           'active:translate-y-0 active:scale-[0.99] active:duration-(--identity-press)',
           // Per-area stand-down: hovering the attribution — a DIFFERENT action
           // inside the same card — calms the card, so one pointer never lights
@@ -144,6 +152,10 @@ export function TeamMemberCard({
           // everywhere on the card and the lift would never fire at all.
           'has-[[data-slot=team-member-owner]:hover]:shadow-soft has-[[data-slot=team-member-owner]:hover]:translate-y-0 has-[[data-slot=team-member-owner]:hover]:[--identity-border-strength:0%]',
           'has-[[data-slot=team-member-owner]:focus-visible]:shadow-soft has-[[data-slot=team-member-owner]:focus-visible]:translate-y-0 has-[[data-slot=team-member-owner]:focus-visible]:[--identity-border-strength:0%]',
+          // `:active` propagates to ancestors, so without this the card would
+          // shrink under a press the stand-down had only just calmed — the
+          // press echoing on the surface that is deliberately NOT answering.
+          'has-[[data-slot=team-member-owner]:active]:scale-100',
         ],
         className
       )}
@@ -167,6 +179,10 @@ export function TeamMemberCard({
               // split the attribution below already makes.
               <button
                 type="button"
+                // Named so the card can answer this control's keyboard focus
+                // the way it answers a pointer — see the `has-[…]` rules on the
+                // article above.
+                data-slot="team-member-open"
                 onClick={() => onOpenProfile(member.id)}
                 aria-label={`Open ${member.displayName}’s profile`}
                 className="focus-ring max-w-full truncate rounded text-left after:absolute after:inset-0 after:rounded-lg after:content-['']"
@@ -215,10 +231,11 @@ export function TeamMemberCard({
             // positioned, and later in the DOM, so it paints on top and takes
             // its own press. Without it the overlay would swallow every click
             // here and the attribution would silently open a profile instead.
-            // Chip tier on a text surface: the weight of the text steps up and
-            // an underline arrives. The `focus-visible:` twins are not
-            // decoration — a keyboard user must never learn less than a mouse
-            // user, and the ring alone says "you are here", not "this filters".
+            // Chip tier on a text surface: the text steps up to full foreground
+            // colour and an underline arrives. The `focus-visible:` twins are
+            // not decoration — a keyboard user must never learn less than a
+            // mouse user, and the ring alone says "you are here", not "this
+            // filters".
             className="text-muted-foreground hover:text-foreground focus-visible:text-foreground focus-ring relative mt-1.5 max-w-full truncate rounded text-xs underline-offset-2 transition-[color] duration-(--identity-answer) ease-(--identity-ease-standard) hover:underline focus-visible:underline"
           >
             by {teamMemberLabel(owner)}

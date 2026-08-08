@@ -411,16 +411,23 @@ Plus two colour steps: `--identity-border-mix` (35%) and `--identity-ring-mix` (
 | ----------- | -------------------------------------------------- | --------------------------------------------------------------------- |
 | **Surface** | a card or row whose whole area triggers one action | lift `-1px`, `shadow-elevated`, border firms into the identity colour |
 | **Mark**    | an avatar that is itself the target or trigger     | a ring in its **own** identity colour, `ring-0` → `ring-2`            |
-| **Chip**    | an inline control — a pill, an attribution         | a tint step (colour surfaces) or weight + underline (text surfaces)   |
+| **Chip**    | an inline control — a pill, an attribution         | a tint step (colour surfaces) or colour + underline (text surfaces)   |
 
-The Mark tier ships as `identityMarkRing` from `shared/ui` — `.self` for a disc that is the hover target itself, `.group` for a disc inside a control marked `group`. Apply it **at the call site, never inside `AgentAvatar`**: the disc does not know whether anything around it is pressable.
+The Mark tier ships as `identityMarkRing` from `shared/ui` — `.self` for a disc that is the hover target itself, `.group` for a disc inside a control marked `IDENTITY_MARK_GROUP`. Apply it **at the call site, never inside `AgentAvatar`**: the disc does not know whether anything around it is pressable. Shipped Mark surfaces today are the sidebar agent face, the account face, and `MemberList`'s list form (no live caller yet — `RoomHeader` renders the button form, which takes no per-disc response).
 
 **Two collisions the grammar resolves, rather than ignores:**
 
-- **Health wins.** `AgentAvatar` already spends the 2px ring slot on mesh health. When `healthStatus` is present the disc takes no hover ring at all — a diagnostic signal that changed colour under the pointer would read as a hover state.
+- **Health wins.** `AgentAvatar` already spends the 2px ring slot on mesh health. When `healthStatus` is present the disc takes no hover ring at all — a diagnostic signal that changed colour under the pointer would read as a hover state. A control whose identity is silenced this way falls back to the neutral `hover:bg-accent` rather than to nothing: suppressing one answer must not leave a live control with none.
 - **Per-area stand-down.** When a card holds more than one action, hovering an inner control calms the card, so one pointer never lights two affordances at once. Scope the `has-[…]` rule to that control **by name** (`has-[[data-slot=team-member-owner]:hover]`), never `has-[button:hover]`: a stretched-link overlay hit-tests as part of the button that generated it, so the generic form is true everywhere on the card and the lift never fires.
 
-**Where the colour may answer, and where it must not.** An identity's colour answers only where that identity is **individually addressable** and **fewer than about a dozen** are on screen. It applies on the roster card, a room's roster discs (list form), an identity lockup used as a control, and your own account face. It does **not** apply on sidebar agent rows (twenty-plus of them, and the left border already spends the colour on a different fact), in the command palette (the selection already rides a `layoutId` pill), or per-disc inside a roster **button** (one target, one action). Twenty rows able to glow is not twenty answers; it is a Christmas tree with a cursor in it.
+**Where the colour may answer, and where it must not.** The line is not the row — it is the **control**. An identity's colour answers where that identity is a target you can address on its own, and stays out of a container's own hover.
+
+- **It applies to identity controls, even inside a dense row.** The sidebar agent face is the worked example: hovering the face rings it in that agent's colour, because pressing the face opens that agent's profile. Same for the account face, an identity lockup used as a button, and the roster card, whose whole area is one identity's action.
+- **It does not apply to the ROW's own hover, which stays neutral.** A sidebar row selects an agent and opens its last session — a different verb from the face inside it — so the row keeps `hover:bg-accent` and nothing more. Its left border already spends the identity colour on a different fact (active + idle); a second colour signal in a 32px row is not two facts, it is noise.
+- **It does not apply where the selection already speaks.** The command palette's selection rides a `layoutId` pill; a per-row colour would fight the thing doing real work.
+- **It does not apply per-disc where several discs share one action.** `MemberList`'s button form is one target and one verb, so the button's own `hover:bg-accent` is the answer; five discs each answering would suggest five actions.
+
+The bound behind all four: an identity's colour answers only where that identity is **individually addressable** and **fewer than about a dozen** are on screen at once. Twenty rows able to glow is not twenty answers; it is a Christmas tree with a cursor in it.
 
 **Two traps this grammar hit, which apply well beyond identity surfaces:**
 
@@ -429,13 +436,13 @@ The Mark tier ships as `identityMarkRing` from `shared/ui` — `.self` for a dis
 
 **Press scales by target size:** `0.99` for a card, `0.98` for a row or chip, `0.94` for a mark used as a button. Scale down only; the release rides the hover duration back up.
 
-**Focus-visible parity is a rule, not a nicety.** If an area has a hover state, it has a focus-visible twin conveying the same information — a keyboard user must never learn less than a mouse user. The ring itself comes from the `focus-ring` utility; the _informational_ half (colour, weight, an underline) gets an explicit `focus-visible:` twin beside every `hover:`. The inverse is equally binding: **never put a `focus-visible:` ring on something no keyboard can reach.** A dormant ring on a `<span>` is an affordance wired to nothing.
+**Focus-visible parity is a rule, not a nicety.** If an area has a hover state, it has a focus-visible twin conveying the same information — a keyboard user must never learn less than a mouse user. The ring itself comes from the `focus-ring` utility; the _informational_ half (a colour step, an underline, a lift) gets an explicit `focus-visible:` twin beside every `hover:`. That includes a Surface: when the card's primary control takes focus, the **card** answers, not just the word inside it — `has-[[data-slot=team-member-open]:focus-visible]:` is how the roster card does it. The inverse is equally binding: **never put a `focus-visible:` ring on something no keyboard can reach.** A dormant ring on a `<span>` is an affordance wired to nothing.
 
 **Reduced motion needs no work.** `index.css` collapses every transition and animation duration to `0.01ms` under `prefers-reduced-motion: reduce`, globally. Every prescription above is therefore correct there for free — which is why none of them carries a `motion-reduce:` variant, and why every one of them is a _static_ end state that reads on its own (a ring is present, a border is coloured, a card is lifted). A design that only reads _because_ of the movement is broken there. The one thing the reset does not reach is `motion/react`, which writes inline styles from JS: any `motion.*` component must call `useReducedMotion()` and branch **off**, not shorter.
 
 **Touch invariant:** nothing that exists only on hover may carry information unavailable another way. A card's lift has no touch equivalent and costs nothing, because the tap opens the drawer; an avatar's hover card is reached by long-press (`identity-hover-card.tsx`), which is the one pattern for that — never invent a second.
 
-Full audit and rationale: `plans/identity-micro-interactions/design-spec.md`. Live states: `/dev/components#identityavatar`.
+Full audit and rationale: `plans/identity-micro-interactions/design-spec.md`. `/dev/components#identityavatar` shows the disc's own states; the hover, press and focus states above are not in the playground yet — they land with the slice-2 playground pass. Until then, read them on the Team page and the sidebar.
 
 ---
 

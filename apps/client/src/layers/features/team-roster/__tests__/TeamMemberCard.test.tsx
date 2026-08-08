@@ -88,6 +88,46 @@ describe('TeamMemberCard', () => {
       expect(card.className).toContain('transition-[box-shadow,border-color,translate,scale]');
     });
 
+    it('answers a keyboard on the CARD exactly as it answers a mouse', () => {
+      // The S-tier gap this grammar's own rule forbids: a mouse got the whole
+      // tile answering while Tab got a ring around a word. The negative twin
+      // (standing down when the attribution takes focus) already existed, which
+      // is what made the missing positive one read as an oversight rather than
+      // a decision.
+      const { container } = render(<TeamMemberCard member={SELF} onOpenProfile={() => {}} />);
+      const card = cardOf(container);
+
+      expect(container.querySelector('[data-slot="team-member-open"]')).not.toBeNull();
+      expect(card.className).toContain(
+        'has-[[data-slot=team-member-open]:focus-visible]:-translate-y-px'
+      );
+      expect(card.className).toContain(
+        'has-[[data-slot=team-member-open]:focus-visible]:shadow-elevated'
+      );
+      expect(card.className).toContain(
+        'has-[[data-slot=team-member-open]:focus-visible]:[--identity-border-strength:var(--identity-border-mix)]'
+      );
+    });
+
+    it('does not shrink for a press it just stood down for', () => {
+      // `:active` propagates to ancestors, so pressing the attribution would
+      // scale the card the stand-down had only just calmed — the press echoing
+      // on the wrong surface.
+      const owner = MOCK_TEAM_ROSTER.find((m) => m.id === SELF.id)!;
+      const { container } = render(
+        <TeamMemberCard
+          member={SELF}
+          owner={owner}
+          onSelectOwner={() => {}}
+          onOpenProfile={() => {}}
+        />
+      );
+
+      expect(cardOf(container).className).toContain(
+        'has-[[data-slot=team-member-owner]:active]:scale-100'
+      );
+    });
+
     it('stands down for the attribution, so one pointer lights one action', () => {
       const owner = MOCK_TEAM_ROSTER.find((m) => m.id === SELF.id)!;
       const { container } = render(

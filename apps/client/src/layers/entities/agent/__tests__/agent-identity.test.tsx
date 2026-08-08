@@ -289,6 +289,19 @@ describe('AgentIdentity', () => {
       expect(avatar.className).toContain('ring-status-warning/60');
       expect(avatar.className).not.toContain('group-hover/identity:ring-2');
       expect(avatar.className).not.toContain('ring-0');
+      // And it still answers, neutrally. Suppressing the identity ring must not
+      // leave a live control with no hover state at all.
+      expect(screen.getByRole('button').className).toContain('hover:bg-accent');
+    });
+
+    it('keeps the neutral fallback off a lockup whose identity can answer', () => {
+      // Two answers to one hover is the noise this grammar exists to remove.
+      const { container } = render(<AgentIdentity {...baseProps} onClick={vi.fn()} />);
+
+      expect(screen.getByRole('button').className).not.toContain('hover:bg-accent');
+      expect(container.querySelector('[data-slot="agent-avatar"]')!.className).toContain(
+        'group-hover/identity:ring-2'
+      );
     });
 
     it('leaves an inert lockup with no states to promise', () => {

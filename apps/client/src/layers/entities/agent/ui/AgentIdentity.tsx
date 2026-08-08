@@ -211,6 +211,12 @@ export function AgentIdentity({
           // a mouse user. `rounded-md` gives that ring a shape to follow.
           IDENTITY_MARK_GROUP,
           'focus-ring cursor-pointer rounded-md transition-[scale] duration-(--identity-press) ease-(--identity-ease-out) active:scale-[0.98]',
+          // When health owns the ring, the identity has no way to answer — so
+          // the lockup falls back to the repo's neutral row hover rather than
+          // to nothing at all. Latent today (no caller passes `healthStatus`
+          // alongside `onClick`), and cheap enough to be worth having before
+          // one does.
+          !marksIdentity && 'hover:bg-accent',
           className
         )}
       >
