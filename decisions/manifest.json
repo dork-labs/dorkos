@@ -4253,33 +4253,37 @@
       "id": "260806-222535",
       "slug": "team-roster-is-a-read-surface-over-existing-identity-stores",
       "title": "The Team roster is a read-surface aggregation over existing identity stores",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-08-06",
-      "specSlug": "identity-consistency"
+      "specSlug": "identity-consistency",
+      "lastVerified": "2026-08-08"
     },
     {
       "id": "260806-222545",
       "slug": "identity-kind-drives-shape-fill-and-badge",
       "title": "Identity kind drives shape, fill and badge in IdentityAvatar",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-08-06",
-      "specSlug": "identity-consistency"
+      "specSlug": "identity-consistency",
+      "lastVerified": "2026-08-08"
     },
     {
       "id": "260806-222546",
       "slug": "imageurl-is-the-fourth-render-cache-field-stored-locally",
       "title": "imageUrl is the fourth render-cache field, stored locally behind a sync-ready seam",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-08-06",
-      "specSlug": "identity-consistency"
+      "specSlug": "identity-consistency",
+      "lastVerified": "2026-08-08"
     },
     {
       "id": "260806-222547",
       "slug": "a-profile-is-a-drawer-to-view-and-a-settings-tab-to-edit",
       "title": "A profile is a drawer to view and a settings tab to edit",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-08-06",
-      "specSlug": "identity-consistency"
+      "specSlug": "identity-consistency",
+      "lastVerified": "2026-08-08"
     },
     {
       "id": "260807-173219",

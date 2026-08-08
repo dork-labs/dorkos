@@ -1,7 +1,7 @@
 ---
 id: 260806-222546
 title: imageUrl is the fourth render-cache field, stored locally behind a sync-ready seam
-status: draft
+status: accepted
 created: 2026-08-06
 spec: identity-consistency
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: identity-consistency)
+Accepted (2026-08-08) — implemented across the Team, Identity & Profiles programme (DOR-966). (auto-extracted from spec: identity-consistency)
 
 ## Context
 
