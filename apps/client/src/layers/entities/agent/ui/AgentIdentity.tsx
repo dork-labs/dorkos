@@ -76,6 +76,20 @@ export interface AgentIdentityProps extends VariantProps<typeof identityVariants
    * Enables interactive entry points (e.g. opening the Agent Hub).
    */
   onClick?: (e: React.MouseEvent) => void;
+  /**
+   * Make the FACE alone a control, leaving the name as plain text.
+   *
+   * For the surfaces where the row AROUND this lockup already owns the click —
+   * a sidebar agent row selects the agent — so the whole-lockup
+   * {@link AgentIdentityProps.onClick} would eat the row's own target. The
+   * caller stops the event itself if the row must not also fire.
+   *
+   * Ignored when `onClick` is set: that path is already a `<button>`, and a
+   * button inside a button is invalid HTML that browsers silently unnest.
+   */
+  onAvatarClick?: (e: React.MouseEvent) => void;
+  /** Accessible name for the avatar button — required to make one, ignored otherwise. */
+  avatarLabel?: string;
 }
 
 /**
@@ -96,6 +110,8 @@ export function AgentIdentity({
   nameHidden,
   className,
   onClick,
+  onAvatarClick,
+  avatarLabel,
 }: AgentIdentityProps) {
   const resolvedSize: IdentitySize = size ?? 'sm';
   const isStacked = resolvedSize === 'md' || resolvedSize === 'lg';
@@ -107,15 +123,31 @@ export function AgentIdentity({
     </span>
   );
 
+  const avatar = (
+    <AgentAvatar
+      color={color}
+      emoji={emoji}
+      imageUrl={imageUrl}
+      size={size}
+      healthStatus={healthStatus}
+    />
+  );
+
   const content = (
     <>
-      <AgentAvatar
-        color={color}
-        emoji={emoji}
-        imageUrl={imageUrl}
-        size={size}
-        healthStatus={healthStatus}
-      />
+      {onAvatarClick && !onClick && avatarLabel ? (
+        <button
+          type="button"
+          data-slot="agent-identity-face"
+          onClick={onAvatarClick}
+          aria-label={avatarLabel}
+          className="focus-ring shrink-0 cursor-pointer rounded-full transition-opacity hover:opacity-80"
+        >
+          {avatar}
+        </button>
+      ) : (
+        avatar
+      )}
       {nameHidden ? <span className="sr-only">{name}</span> : label}
     </>
   );

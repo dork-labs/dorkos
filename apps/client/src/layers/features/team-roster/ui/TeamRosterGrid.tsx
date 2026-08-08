@@ -16,6 +16,8 @@ export interface TeamRosterGridProps {
   grouped: boolean;
   /** Narrow the roster to one person. */
   onSelectOwner?: (ownerId: string) => void;
+  /** Open one identity's profile — the card body's own action. */
+  onOpenProfile?: (memberId: string) => void;
   className?: string;
 }
 
@@ -95,6 +97,7 @@ export function TeamRosterGrid({
   roster,
   grouped,
   onSelectOwner,
+  onOpenProfile,
   className,
 }: TeamRosterGridProps) {
   if (!grouped) {
@@ -106,6 +109,7 @@ export function TeamRosterGrid({
             member={member}
             owner={findTeamOwner(member, roster)}
             onSelectOwner={onSelectOwner}
+            onOpenProfile={onOpenProfile}
           />
         ))}
       </div>
@@ -128,7 +132,7 @@ export function TeamRosterGrid({
               // No attribution inside a cluster: the header above the cards
               // already says whose these are, and repeating it under every one
               // would be the same sentence N times.
-              <TeamMemberCard key={member.id} member={member} />
+              <TeamMemberCard key={member.id} member={member} onOpenProfile={onOpenProfile} />
             ))}
           </div>
         </section>

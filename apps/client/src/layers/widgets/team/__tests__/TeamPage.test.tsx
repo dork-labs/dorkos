@@ -17,6 +17,10 @@ import type { Transport } from '@dorkos/shared/transport';
 import type { TeamMember, TeamRosterResponse } from '@dorkos/shared/team-schemas';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
+import {
+  buildProfileDeepLinkHarness,
+  type ProfileDeepLinkHarness,
+} from '@/test-helpers/profile-deep-link';
 import { MOCK_TEAM_ROSTER } from '@/dev/mock-samples';
 import { TeamPage } from '../ui/TeamPage';
 
@@ -34,6 +38,14 @@ vi.mock('motion/react', () => ({
   AnimatePresence: ({ children }: { children?: ReactNode }) => <>{children}</>,
 }));
 
+/**
+ * The router the page's own profile links write into.
+ *
+ * Rebuilt per test in `beforeEach`, so one test's open profile cannot leak into
+ * the next through a shared history.
+ */
+let harness: ProfileDeepLinkHarness;
+
 function renderPage(roster: TeamRosterResponse) {
   const transport = createMockTransport({
     getTeamRoster: vi.fn().mockResolvedValue(roster),
@@ -45,7 +57,9 @@ function renderPage(roster: TeamRosterResponse) {
   function Wrapper({ children }: { children: ReactNode }) {
     return (
       <QueryClientProvider client={queryClient}>
-        <TransportProvider transport={transport}>{children}</TransportProvider>
+        <TransportProvider transport={transport}>
+          <harness.Wrapper>{children}</harness.Wrapper>
+        </TransportProvider>
       </QueryClientProvider>
     );
   }
@@ -64,6 +78,7 @@ const chip = (name: string) => screen.getByRole('button', { name });
 
 beforeEach(() => {
   vi.clearAllMocks();
+  harness = buildProfileDeepLinkHarness();
 });
 
 afterEach(() => {
@@ -224,9 +239,41 @@ describe('TeamPage — the owner filter', () => {
     // The label says what it does; the visible text says whose it is.
     expect(attribution).toHaveTextContent('by @dorian');
 
-    // The system agent belongs to the install, not to a person.
+    // The system agent belongs to the install, not to a person — so no
+    // attribution. Named rather than "no button at all": every card now carries
+    // the profile control, and this is about the ATTRIBUTION being absent.
     const dorkbot = screen.getByText('DorkBot').closest('article')!;
-    expect(within(dorkbot).queryByRole('button')).toBeNull();
+    expect(within(dorkbot).queryByRole('button', { name: /^Show only/ })).toBeNull();
+  });
+});
+
+describe('TeamPage — a card opens its own profile', () => {
+  it('puts the member’s id on the URL, which is what a reload reopens', async () => {
+    const user = userEvent.setup();
+    renderPage({ members: MOCK_TEAM_ROSTER });
+    await screen.findByText('Warden');
+
+    const warden = MOCK_TEAM_ROSTER.find((m) => m.displayName === 'Warden')!;
+    await user.click(screen.getByRole('button', { name: 'Open Warden’s profile' }));
+
+    expect(harness.openProfileId()).toBe(warden.id);
+  });
+
+  it('does not open a profile when the attribution inside the card is pressed', async () => {
+    // The card-wide control and a control INSIDE it: pressing the inner one
+    // must reach only itself. This is red the moment the card opens the profile
+    // from a handler the attribution's click can travel up to.
+    const user = userEvent.setup();
+    renderPage({ members: MOCK_TEAM_ROSTER });
+    await screen.findByText('Warden');
+
+    // Scoped to the card: the toolbar carries a person chip with the same label.
+    const warden = screen.getByText('Warden').closest('article')!;
+    await user.click(
+      within(warden).getByRole('button', { name: 'Show only Dorian and their agents' })
+    );
+
+    expect(harness.openProfileId()).toBeNull();
   });
 });
 

@@ -37,9 +37,15 @@ function Pill({
  * A hover-card trigger, styled like the pill or avatar it would wrap in the
  * real feed — the card itself only draws once the pointer sits on this.
  */
-function Trigger({ identity }: { identity: MockIdentity }) {
+function Trigger({
+  identity,
+  onViewProfile,
+}: {
+  identity: MockIdentity;
+  onViewProfile?: () => void;
+}) {
   return (
-    <IdentityHoverCard identity={identity}>
+    <IdentityHoverCard identity={identity} onViewProfile={onViewProfile}>
       <button
         type="button"
         className="hover:bg-accent focus-visible:ring-ring rounded-md border px-2.5 py-1.5 text-sm font-medium focus-visible:ring-2 focus-visible:outline-none"
@@ -50,15 +56,24 @@ function Trigger({ identity }: { identity: MockIdentity }) {
   );
 }
 
+/** Stands in for `useProfileDeepLink().open(id)` — the bench has no roster to open. */
+function benchViewProfile(identity: MockIdentity) {
+  return () => window.alert(`Would open the profile drawer for ${identity.displayName}`);
+}
+
 // --- A mention inside a real message ------------------------------------
 
 /** Where the benched agent "lives" — both halves of the join derive from this. */
 const WARDEN_PATH = '/w/warden';
 const WARDEN_REF = agentAuthorRef(WARDEN_PATH);
 
-/** What the fleet would have said about Warden, keyed the way the real join keys it. */
+/**
+ * What the fleet would have said about Warden, keyed the way the real join keys
+ * it. `manifestId` is the roster id the pill's click carries — the id space the
+ * room itself does not hold for an agent.
+ */
 const BENCH_AGENT_INFO: ReadonlyMap<string, RosterAgentInfo> = new Map([
-  [WARDEN_REF, { runtime: 'Claude Code', model: 'opus' }],
+  [WARDEN_REF, { manifestId: 'agent-warden-manifest', runtime: 'Claude Code', model: 'opus' }],
 ]);
 
 const BENCH_TEXT = 'can you take a look at the failing build, @warden?';
@@ -198,7 +213,9 @@ export function IdentityShowcases() {
           </p>
         </ShowcaseDemo>
 
-        <ShowcaseLabel>Interactive — hover/cursor affordance, click still deferred</ShowcaseLabel>
+        <ShowcaseLabel>
+          Interactive — the cursor and focus ring a pill wears once its click opens a profile
+        </ShowcaseLabel>
         <ShowcaseDemo>
           <div className="flex flex-wrap items-center gap-2">
             <Pill identity={MOCK_IDENTITIES.warden} interactive />
@@ -219,8 +236,22 @@ export function IdentityShowcases() {
 
       <PlaygroundSection
         title="IdentityHoverCard"
-        description="The compact card that opens over an identity: name, @handle subtitle, a couple of fact chips, and a footer pinned under everything for a profile view that doesn't exist yet. Opens on pointer hover, keyboard focus, or (touch devices only) a long-press on the trigger — a quick tap does nothing, on purpose."
+        description="The compact card that opens over an identity: name, @handle subtitle, a couple of fact chips, and a footer that opens the profile drawer. Opens on pointer hover, keyboard focus, or (touch devices only) a long-press on the trigger — a quick tap goes straight to the profile instead."
       >
+        <ShowcaseLabel>
+          The footer, both ways — wired to a profile, and left unwired where the surface has no id
+          to open one with
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <div className="flex flex-wrap gap-3">
+            <Trigger
+              identity={MOCK_IDENTITIES.warden}
+              onViewProfile={benchViewProfile(MOCK_IDENTITIES.warden)}
+            />
+            <Trigger identity={MOCK_IDENTITIES.ana} />
+          </div>
+        </ShowcaseDemo>
+
         <ShowcaseLabel>Agent — working, and idle</ShowcaseLabel>
         <ShowcaseDemo>
           <div className="flex flex-wrap gap-3">

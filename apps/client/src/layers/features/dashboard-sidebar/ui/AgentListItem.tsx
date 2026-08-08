@@ -86,6 +86,14 @@ interface AgentListItemProps {
   onToggleExpand: () => void;
   /** Open agent profile in the right panel hub. */
   onOpenProfile: () => void;
+  /**
+   * Open this agent's identity profile — the drawer, from its face.
+   *
+   * Absent when the mesh cannot name this agent to the roster (an id the drawer
+   * would find nothing for), and the face is then plain, unclickable art rather
+   * than a control that opens an empty panel.
+   */
+  onViewProfile?: () => void;
   /** Open the inline group-create flow, moving this agent into the new group on commit. */
   onRequestNewGroup: (ref: SidebarItemRef) => void;
   /** Recent sessions for this agent (only needed when expanded). */
@@ -123,6 +131,7 @@ export function AgentListItem({
   onSelect,
   onToggleExpand,
   onOpenProfile,
+  onViewProfile,
   onRequestNewGroup,
   sessions,
   isLoadingSessions,
@@ -223,7 +232,22 @@ export function AgentListItem({
             )}
           >
             <span className="flex min-w-0 flex-1 items-center gap-1">
-              <AgentIdentity {...visual} name={displayName} size="xs" />
+              <AgentIdentity
+                {...visual}
+                name={displayName}
+                size="xs"
+                // The FACE opens the profile; the row keeps its own click,
+                // which selects the agent and opens its last session. The stop
+                // is what keeps one press from doing both.
+                onAvatarClick={
+                  onViewProfile &&
+                  ((event) => {
+                    event.stopPropagation();
+                    onViewProfile();
+                  })
+                }
+                avatarLabel={`Open ${displayName}’s profile`}
+              />
               {isMuted && (
                 <BellOff className="text-muted-foreground/60 size-3 shrink-0" aria-label="Muted" />
               )}

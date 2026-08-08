@@ -207,16 +207,20 @@ vi.mock('@/layers/features/agent-hub', () => ({
   useAgentHubStore: { getState: () => ({ openHub: vi.fn() }) },
 }));
 
+/** The fleet as `GET /api/mesh/agent-paths` returns it — id and path deliberately unequal. */
+const meshFleet = () =>
+  mockMeshPaths().map((p) => ({
+    id: `mesh-id${p}`,
+    name: p.split('/').pop() ?? 'agent',
+    projectPath: p,
+  }));
+
 vi.mock('@/layers/entities/mesh', () => ({
-  useMeshAgentPaths: () => ({
-    data: {
-      agents: mockMeshPaths().map((p) => ({
-        id: p,
-        name: p.split('/').pop() ?? 'agent',
-        projectPath: p,
-      })),
-    },
-  }),
+  useMeshAgentPaths: () => ({ data: { agents: meshFleet() } }),
+  // The real join, not a stub of it: a row's profile link is only correct if
+  // this returns the REGISTRY id for a path, and a mock keyed the other way
+  // would hide exactly that.
+  useMeshMemberIds: () => new Map(meshFleet().map((a) => [a.projectPath, a.id])),
 }));
 
 vi.mock('@/layers/entities/agent', async () => ({

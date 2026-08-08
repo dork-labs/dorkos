@@ -1,7 +1,8 @@
 import { useStartNewSession } from '@/layers/entities/session';
 import { useCallback } from 'react';
-import { useAppStore } from '@/layers/shared/model';
+import { useAppStore, useProfileDeepLink } from '@/layers/shared/model';
 import { AgentIdentity } from '@/layers/entities/agent';
+import { useMeshMemberId } from '@/layers/entities/mesh';
 import { useAgentHubStore } from '@/layers/features/agent-hub';
 import { AgentChipContextMenu } from './AgentChipContextMenu';
 
@@ -21,9 +22,19 @@ interface AgentIdentityChipProps {
 /**
  * Who you are talking to — the identity anchor of the status line's left cluster.
  *
- * Click opens the agent profile; right-click (long-press on touch) offers
- * switch agent / profile / new session. Renders nothing until name, color, and
- * emoji have all resolved, so the chip never flashes a half-formed identity.
+ * **Click opens the profile drawer** — the one identity surface every other face
+ * in the cockpit now opens (spec `identity-consistency` §W3.2). Right-click
+ * (long-press on touch) still offers switch agent / Agent Hub / new session,
+ * unchanged: the Hub is this agent's workbench — sessions, config, toolkit — and
+ * it keeps its own entry points, here and everywhere else.
+ *
+ * The Hub is also the FALLBACK for the click, and deliberately so: when the mesh
+ * cannot name this agent there is no roster id to open a drawer with, and the
+ * chip does what it has always done rather than becoming a control that opens
+ * nothing.
+ *
+ * Renders nothing until name, color, and emoji have all resolved, so the chip
+ * never flashes a half-formed identity.
  */
 export function AgentIdentityChip({
   agentName,
@@ -32,12 +43,20 @@ export function AgentIdentityChip({
   agentPath,
   nameHidden,
 }: AgentIdentityChipProps) {
-  const handleOpenProfile = useCallback(() => {
+  const memberId = useMeshMemberId(agentPath);
+  const { open: openProfile } = useProfileDeepLink();
+
+  const handleOpenHub = useCallback(() => {
     if (!agentPath) return;
     useAgentHubStore.getState().openHub(agentPath);
     useAppStore.getState().setRightPanelOpen(true);
     useAppStore.getState().setActiveRightPanelTab('agent-hub');
   }, [agentPath]);
+
+  const handleOpenProfile = useCallback(() => {
+    if (memberId === undefined) return handleOpenHub();
+    openProfile(memberId);
+  }, [memberId, openProfile, handleOpenHub]);
 
   const handleSwitchAgent = useCallback(() => {
     useAppStore.getState().openGlobalPaletteWithSearch('@');
@@ -55,7 +74,7 @@ export function AgentIdentityChip({
       {agentPath ? (
         <AgentChipContextMenu
           onSwitchAgent={handleSwitchAgent}
-          onOpenProfile={handleOpenProfile}
+          onOpenHub={handleOpenHub}
           onNewSession={handleNewSession}
         >
           {/* `max-w-full` is what makes the name truncate instead of overflowing.
