@@ -154,6 +154,22 @@ export const FEATURES_SECTIONS: PlaygroundSection[] = [
     ],
   },
   {
+    id: 'jump-back-in-popover',
+    title: 'Jump back in popover',
+    page: 'features',
+    category: 'Agent',
+    keywords: [
+      'jump back in',
+      'popover',
+      'composer',
+      'recents',
+      'home',
+      'listbox',
+      'palette',
+      'shortcut',
+    ],
+  },
+  {
     id: 'sidebarsectionheader',
     title: 'SidebarSectionHeader',
     page: 'features',

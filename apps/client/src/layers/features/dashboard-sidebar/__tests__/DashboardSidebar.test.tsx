@@ -201,6 +201,11 @@ vi.mock('@/layers/entities/config', () => {
     setUngroupedCollapsed: passthrough,
     setUngroupedSortMode: passthrough,
     setGroupsHintDismissed: passthrough,
+    // The real derivation, not a stub: it is the one reader the sidebar and the
+    // "Jump back in" popover share, and a fake here would let the two disagree
+    // about muted rooms with every test still green.
+    mutedRoomIds: (prev: SidebarPrefs) =>
+      new Set(prev.muted.flatMap((ref) => (ref.kind === 'room' ? [ref.roomId] : []))),
   };
 });
 
@@ -441,9 +446,9 @@ describe('DashboardSidebar', () => {
 
   // --- Navigation ---
 
-  it('renders Dashboard nav item', () => {
+  it('renders the Home nav item', () => {
     renderWithProviders(<DashboardSidebar />);
-    expect(screen.getAllByText('Dashboard').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Home').length).toBeGreaterThanOrEqual(1);
   });
 
   it('navigates to /team from the Team nav item', () => {

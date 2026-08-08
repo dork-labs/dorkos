@@ -8,6 +8,9 @@
  * @module features/dashboard-sidebar
  */
 export { DashboardSidebar } from './ui/DashboardSidebar';
+// The nav header on its own — exported for the tour-anchor guard, which mounts
+// the sidebar chrome at both widths without the roster's data behind it.
+export { SidebarNavHeader } from './ui/SidebarNavHeader';
 export { AgentListItem } from './ui/AgentListItem';
 export { AgentContextMenu } from './ui/AgentContextMenu';
 export { AgentActivityBadge } from './ui/AgentActivityBadge';

@@ -47,5 +47,6 @@ export {
   setUngroupedDisplayFilter,
   muteItem,
   unmuteItem,
+  mutedRoomIds,
 } from './model/use-sidebar-prefs';
 export type { UpdateSidebarPrefs } from './model/use-sidebar-prefs';

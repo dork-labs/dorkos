@@ -25,6 +25,7 @@ import {
   createGroup,
   createSmartGroup,
   moveToGroup,
+  mutedRoomIds,
   setGroupsHintDismissed,
 } from '@/layers/entities/config';
 import { useMeshAgentPaths, useMeshMemberIds } from '@/layers/entities/mesh';
@@ -94,7 +95,6 @@ import {
   evaluateSmartGroups,
   groupMemberItems,
   individuallyMutedAgentPaths,
-  individuallyMutedRoomIds,
 } from '../model/sidebar-membership';
 import {
   meetsSmartGroupDisclosureThreshold,
@@ -251,7 +251,10 @@ export function DashboardSidebar() {
   const { brokenPaths } = useExecutionExceptions();
   const attentionMap = useAgentAttentionMap(rawPaths, brokenPaths);
   const mutedPathsSet = useMemo(() => individuallyMutedAgentPaths(sidebarPrefs), [sidebarPrefs]);
-  const mutedRoomIdSet = useMemo(() => individuallyMutedRoomIds(sidebarPrefs), [sidebarPrefs]);
+  // Read from the prefs entity rather than derived here: "Jump back in" reads
+  // the same set from the same place, so the sidebar and its popover cannot
+  // disagree about which rooms were told to stop pulling anyone back in.
+  const mutedRoomIdSet = useMemo(() => mutedRoomIds(sidebarPrefs), [sidebarPrefs]);
 
   // ── "Jump back in" — sessions, DMs and channels as one ordered list ──
   // Fed the muted set: a muted room is one the operator asked not to be pulled
