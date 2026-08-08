@@ -227,19 +227,6 @@ export interface RoomTransport {
    */
   setAuthorHandle(authorId: string, handle: string): Promise<AuthorRef>;
   /**
-   * Advance the caller's read cursor in one room.
-   *
-   * Monotonic server-side — a lower value is ignored — so a second client that
-   * is further behind can never un-read a room for the first. A person's write
-   * lands in the same read state {@link Transport.setReadCursor} addresses and
-   * broadcasts the same `read_cursor` event, so the two are one fact reached two
-   * ways; an agent's stays on its membership row.
-   *
-   * @param id - The room id.
-   * @param lastReadSeq - The `seq` the caller has read up to.
-   */
-  setRoomReadCursor(id: string, lastReadSeq: number): Promise<RoomMember>;
-  /**
    * Subscribe to a room's durable event stream (`GET /rooms/:id/events`).
    *
    * Modeled on {@link subscribeSession}: with `sinceCursor` the server replays

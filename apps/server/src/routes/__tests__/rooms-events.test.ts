@@ -352,15 +352,16 @@ describe('GET /api/rooms/:id/events', () => {
   });
 });
 
-describe('PUT /api/rooms/:id/read-cursor on the global stream', () => {
+describe('PUT /api/read-cursors/room/:id on the global stream', () => {
   let roomId: string;
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    // Both halves of the same subsystem: the rooms service the room route
-    // reaches, and the read-cursor service the generic route resolves. Built as
-    // one so the two routes provably write the same table — wiring them
-    // separately is how a test would "pass" against two databases.
+    // Both halves of the same subsystem: the rooms service the generic route
+    // delegates a room write into, and the read-cursor service it reads the
+    // stored cursor back from. Built as one so the route provably writes the
+    // table the room list reads — wiring them separately is how a test would
+    // "pass" against two databases.
     const rooms = createRoomSubsystem({ db: createTestDb() });
     setRoomService(rooms.service);
     setReadCursorService(rooms.readCursors);
@@ -390,11 +391,11 @@ describe('PUT /api/rooms/:id/read-cursor on the global stream', () => {
     });
     await stream.ready;
 
-    await request(app).put(`/api/rooms/${roomId}/read-cursor`).send({ lastReadSeq: 3 }).expect(200);
+    await request(app).put(`/api/read-cursors/room/${roomId}`).send({ lastReadSeq: 3 }).expect(200);
     // The same cursor again: monotonic, so it writes nothing and must therefore
     // say nothing. Opening a room already read is the common case, and an event
     // per no-op would be the loudest name on this stream.
-    await request(app).put(`/api/rooms/${roomId}/read-cursor`).send({ lastReadSeq: 3 }).expect(200);
+    await request(app).put(`/api/read-cursors/room/${roomId}`).send({ lastReadSeq: 3 }).expect(200);
     await request(app).post(`/api/rooms/${roomId}/entries`).send({ text: 'sentinel' });
 
     const frames = await stream.frames;
@@ -402,9 +403,9 @@ describe('PUT /api/rooms/:id/read-cursor on the global stream', () => {
 
     const cursors = frames.filter((f) => f.event === 'read_cursor');
     expect(cursors).toHaveLength(1);
-    // The same event name and the same shape the generic route emits — one
-    // read-state system, addressed two ways (team-room-home §D4). The unread
-    // count rides along because the sidebar cannot work it out from a cursor.
+    // One read-state system with one write path (team-room-home §D4): a room is
+    // `threadKind: 'room'` and not an endpoint of its own. The unread count
+    // rides along because the sidebar cannot work it out from a cursor.
     expect(cursors[0].data).toEqual({
       userId: getRoomService().authorRegistry.localHuman().id,
       threadKind: 'room',
@@ -414,15 +415,19 @@ describe('PUT /api/rooms/:id/read-cursor on the global stream', () => {
     });
   });
 
-  it('lands in the same place whichever route the person marks it read through', async () => {
-    // Two routes, one write path: the room route is the only one an AGENT may
-    // use, and the generic one is the one a session or the inbox will use, so
-    // they have to agree for a person or read state forks by URL.
+  it('leaves one cursor behind, with the room-shaped URL gone', async () => {
+    // The migration's closing condition. There used to be a second URL
+    // (`PUT /api/rooms/:id/read-cursor`) onto this same write, kept while
+    // clients moved; it is removed, and the proof has to be both halves — the
+    // old URL 404s AND the surviving one still lands where the room list reads.
+    // Asserting only the 404 would pass against a route that stopped working.
     const { getRoomService } = await import('../../services/rooms/index.js');
     const me = getRoomService().authorRegistry.localHuman().id;
     for (const text of ['one', 'two', 'three']) {
       await request(app).post(`/api/rooms/${roomId}/entries`).send({ text });
     }
+
+    await request(app).put(`/api/rooms/${roomId}/read-cursor`).send({ lastReadSeq: 1 }).expect(404);
 
     const server = await listen();
     const stream = openSseStream(server.port, '/api/events', {
@@ -430,36 +435,34 @@ describe('PUT /api/rooms/:id/read-cursor on the global stream', () => {
     });
     await stream.ready;
 
-    await request(app).put(`/api/rooms/${roomId}/read-cursor`).send({ lastReadSeq: 1 }).expect(200);
     await request(app).put(`/api/read-cursors/room/${roomId}`).send({ lastReadSeq: 2 }).expect(200);
     await request(app).post(`/api/rooms/${roomId}/entries`).send({ text: 'sentinel' });
 
     const frames = await stream.frames;
     server.close();
 
+    // `unreadCount` included, because the generic route delegates room writes
+    // into `RoomService` rather than dropping a bare number on the table. The
+    // countless variant would be exactly the bug: an event the room list has
+    // nothing to patch with, leaving the badge lit on the reader's other device.
     const cursors = frames.filter((f) => f.event === 'read_cursor');
-    // The SAME frame shape from both, `unreadCount` included. The generic route
-    // delegates room writes into `RoomService`, so it cannot emit the countless
-    // variant the room list has nothing to patch with — which is exactly the bug
-    // that shape asymmetry would be: a room marked read through the generic
-    // route leaving the badge lit on the reader's other device.
     expect(cursors.map((f) => f.data)).toEqual([
-      { userId: me, threadKind: 'room', threadId: roomId, lastReadSeq: 1, unreadCount: 2 },
       { userId: me, threadKind: 'room', threadId: roomId, lastReadSeq: 2, unreadCount: 1 },
     ]);
-    // One stored cursor, not two: the room route wrote where the generic one
-    // reads, which is the whole claim of this task.
+
+    // One stored cursor, read back through the ROOM's own vocabulary: the
+    // membership the room detail reports carries what the cursor table holds.
     const room = await request(app).get(`/api/rooms/${roomId}`).expect(200);
     expect(room.body.members.find((m: { authorId: string }) => m.authorId === me).lastReadSeq).toBe(
       2
     );
   });
 
-  it('refuses a room the caller is not in, through the generic route too', async () => {
+  it('refuses a room the caller is not in', async () => {
     // The delegation is what buys this: without it the generic route would
     // happily store a cursor for a room this caller cannot see, and answer 200.
-    // 404 rather than 403 because it is the rooms domain answering, in the same
-    // words its own route uses.
+    // 404 rather than 403 because it is the rooms domain answering, in the words
+    // the rest of the room surface uses.
     const res = await request(app)
       .put('/api/read-cursors/room/01JQZZZZZZZZZZZZZZZZZZZZZZ')
       .send({ lastReadSeq: 1 })

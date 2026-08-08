@@ -25,7 +25,6 @@ import {
   PostThreadReplyRequestSchema,
   PostToRoomRequestSchema,
   SetAuthorHandleRequestSchema,
-  SetReadCursorRequestSchema,
   ToggleReactionRequestSchema,
   UpdateMembershipRequestSchema,
   UpdateRoomRequestSchema,
@@ -161,7 +160,7 @@ router.post('/:id/entries', (req, res) => {
  *
  * **POST rather than PUT, and the verb is the honest one.** The default body is
  * a toggle, and a toggle is not idempotent: sending it twice is not sending it
- * once, which is what PUT promises. `PUT /:id/read-cursor` next door IS
+ * once, which is what PUT promises. `PUT /api/read-cursors/room/:id` IS
  * idempotent — it sets a cursor to a value — and the two must not be spelled
  * alike. What IS idempotent here whatever the body says is the KEY:
  * `(you, this entry, this emoji)` holds at most one reaction however many times
@@ -275,39 +274,23 @@ router.delete('/:id/members/:authorId', (req, res) => {
   }
 });
 
-/**
- * PUT /:id/read-cursor — advance the caller's read cursor in this room.
+/*
+ * There is deliberately no `PUT /:id/read-cursor` here. A read cursor is not a
+ * room concept — the same table answers for rooms, agent sessions and the inbox
+ * — so the one write path is `PUT /api/read-cursors/room/:id`, which delegates
+ * into `RoomService.setReadCursor` for exactly the checks this route would have
+ * made (team-room-home spec §D4, ADR 260808-140956). The room-shaped URL that
+ * stood here through the migration is gone now that every client writes through
+ * the generic one: a second URL onto one implementation is still a second thing
+ * to keep true.
  *
- * **One write path, two cursors, and this route does not choose between them.**
- * `RoomService.setReadCursor` does: a person's place goes to `read_cursors` and
- * broadcasts `read_cursor`, an agent's stays on its membership row and says
- * nothing (team-room-home spec §D4).
- *
- * **`PUT /api/read-cursors/room/:id` delegates into that same method**, so the
- * two routes are one implementation reached by two URLs rather than two
- * implementations that happen to agree today. They emit the same event with the
- * same unread count, refuse with the same statuses, and leave the same single
- * row behind — which is what makes it safe for the cockpit to use either.
- *
- * **What is left that is only here is the AGENT.** The generic route is
- * people-only by contract — an agent is refused with `PEOPLE_ONLY` — so this is
- * the only HTTP way an agent's own cursor moves. The removal condition is
- * therefore not "the client migrates": it is an agent cursor reachable some
- * other way, or agents no longer needing one at all. Until then, deleting this
- * route silently takes a capability away from agents, while the cockpit may keep
- * using it or move to the generic route without changing anything a person
- * sees.
+ * It is not missed by AGENTS either, which is the objection worth answering.
+ * What an agent has been shown is `room_members.last_read_seq`, and that is
+ * advanced by the ambient participation loop as entries are actually delivered
+ * to it — never by the agent asking. The route removed here was the one way an
+ * agent could have claimed to have read entries it was never handed, so its
+ * removal closes that door rather than taking a capability away.
  */
-router.put('/:id/read-cursor', (req, res) => {
-  const body = parseBody(SetReadCursorRequestSchema, req.body, res);
-  if (!body) return;
-  try {
-    const caller = resolveCaller(res);
-    res.json(getRoomService().setReadCursor(req.params.id, caller.id, body.lastReadSeq));
-  } catch (err) {
-    sendRoomError(res, err, 'PUT /:id/read-cursor');
-  }
-});
 
 /**
  * POST /:id/threads — reply inside a thread off an entry in this room.

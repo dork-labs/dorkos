@@ -31,8 +31,10 @@ import express from 'express';
 import request from 'supertest';
 import { createDb, runMigrations, user, type Db } from '@dorkos/db';
 import roomRoutes from '../rooms.js';
+import readCursorRoutes from '../read-cursors.js';
 import { getAuth, initAuth, sessionGate, toNodeHandler } from '../../services/core/auth/index.js';
 import { createRoomSubsystem, setRoomService } from '../../services/rooms/index.js';
+import { setReadCursorService } from '../../services/core/read-cursor-service.js';
 import { configManager, initConfigManager } from '../../services/core/config-manager.js';
 import { env } from '../../env.js';
 
@@ -43,6 +45,10 @@ function buildApp(): express.Express {
   app.use(express.json({ limit: '1mb' }));
   app.use(sessionGate);
   app.use('/api/rooms', roomRoutes);
+  // Mounted because a read cursor is not a room route: `/api/read-cursors` is
+  // the one write path onto read state, and this test's whole subject is that
+  // the SAME author id carries across it and `/api/rooms` alike.
+  app.use('/api/read-cursors', readCursorRoutes);
   return app;
 }
 
@@ -68,7 +74,9 @@ describe('resolveCaller — one owner, one author id, across every login posture
     db = createDb(path.join(tmpDir, 'caller-test.db'));
     runMigrations(db);
     initAuth(db, tmpDir);
-    setRoomService(createRoomSubsystem({ db }).service);
+    const rooms = createRoomSubsystem({ db });
+    setRoomService(rooms.service);
+    setReadCursorService(rooms.readCursors);
     app = buildApp();
   });
 
@@ -98,7 +106,7 @@ describe('resolveCaller — one owner, one author id, across every login posture
     const seq = posted.body.seq as number;
 
     expect(
-      (await request(app).put(`/api/rooms/${roomId}/read-cursor`).send({ lastReadSeq: seq })).status
+      (await request(app).put(`/api/read-cursors/room/${roomId}`).send({ lastReadSeq: seq })).status
     ).toBe(200);
 
     // ---- Phase 2: the owner registers (the enable-login flow) ----

@@ -790,12 +790,6 @@ export const SetAuthorHandleRequestSchema = z
 
 export type SetAuthorHandleRequest = z.infer<typeof SetAuthorHandleRequestSchema>;
 
-export const SetReadCursorRequestSchema = z
-  .object({ lastReadSeq: z.number().int().min(0) })
-  .openapi('SetReadCursorRequest');
-
-export type SetReadCursorRequest = z.infer<typeof SetReadCursorRequestSchema>;
-
 /**
  * Post a reply inside a thread.
  *

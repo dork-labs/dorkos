@@ -3,6 +3,7 @@ title: Rooms
 description: Channels and direct messages, for talking to one agent or several without picking a project folder first
 ---
 
+import { Callout } from 'fumadocs-ui/components/callout';
 import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Rooms
@@ -140,6 +141,23 @@ browser reconnects, the line appears within about ten seconds rather than instan
 missing while you were expecting it, that is worth reading as "DorkOS isn't sure right now" — your
 browser may have lost the room's live connection, or the agent may genuinely have stopped.
 
+## Where you left off
+
+A room keeps going while you are away. When you come back, DorkOS puts a **New messages** line
+right where you stopped, so you can see what is new without scrolling and guessing. The room's row
+in the sidebar carries a count of what is waiting, and it clears once you catch up.
+
+**One mark, all your devices.** The mark belongs to you, not to the browser you happened to use.
+Read a channel on your laptop and the count clears on your phone too, with no reload and no
+refresh button.
+
+**Nobody else can see it.** This is not a read receipt. No other person and no agent can find out
+what you have read or when you read it. DorkOS shows no "seen by" list anywhere, and there is no
+setting that turns one on. Your mark is a private note to yourself about where you stopped.
+
+Agents keep a mark of their own, but it answers a different question: which messages have already
+been handed to an agent, so it does not answer the same one twice. It is not a record of you.
+
 ## Good to know
 
 - **Mentioning someone.** Type `@` followed by their handle to address just them. It's how you get
@@ -173,8 +191,8 @@ session's does: a snapshot on connect, gap-free replay via `Last-Event-ID` on re
 events with a monotonic sequence number.
 
 A second, global stream, `GET /api/events`, carries the signals that keep the sidebar's room list
-current (a room's name changing, a new room appearing, an unread count going up) without needing a
-subscription to every room at once.
+current (a room's name changing, a new room appearing, an unread count going up, your own read
+mark moving on another device) without needing a subscription to every room at once.
 
 ### REST surface
 
@@ -189,10 +207,35 @@ subscription to every room at once.
 | `POST`   | `/api/rooms/:id/members`           | Add a member.                                    |
 | `PATCH`  | `/api/rooms/:id/members/:authorId` | Change a member's response mode.                 |
 | `DELETE` | `/api/rooms/:id/members/:authorId` | Remove a member.                                 |
-| `PUT`    | `/api/rooms/:id/read-cursor`       | Mark the room read up to a point.                |
 | `GET`    | `/api/rooms/:id/events`            | The room's live event stream.                    |
 
 The full request and response shapes are in the [API reference](/docs/api).
+
+### Marking a room read
+
+Read state is not a room endpoint. One address covers every kind of conversation a person reads:
+
+| Method | Path                         | Purpose                                    |
+| ------ | ---------------------------- | ------------------------------------------ |
+| `PUT`  | `/api/read-cursors/room/:id` | Move your mark in this room to a position. |
+| `GET`  | `/api/read-cursors/room/:id` | Read your mark back.                       |
+
+Both are people-only. A caller the server resolves as an agent gets `403 PEOPLE_ONLY` rather than a
+row of its own, and there is no way to name a different user in the request, so a cursor is only
+ever written and read back by the person it belongs to.
+
+A `room` cursor is delegated into the room service, so it runs the room's own visibility check and
+recomputes the unread count the sidebar draws. A cursor that actually moves is announced as a
+`read_cursor` event on the global `GET /api/events` stream, which is how your other open windows
+catch up without polling.
+
+What an agent has been shown is a separate number, `room_members.last_read_seq`, advanced by the
+room's participation loop as entries are handed to that agent. No route writes it.
+
+<Callout type="warn">
+  `PUT /api/rooms/:id/read-cursor` is gone. If you wrote a script against it, point it at `PUT
+  /api/read-cursors/room/:id` instead. The request body is the same.
+</Callout>
 
 ### Who answers, and when
 

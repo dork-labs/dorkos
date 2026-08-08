@@ -877,10 +877,6 @@ export const roomStubs = {
     throw new Error('Rooms are not supported in embedded mode');
   },
 
-  async setRoomReadCursor(_id: string, _lastReadSeq: number): Promise<RoomMember> {
-    throw new Error('Rooms are not supported in embedded mode');
-  },
-
   subscribeRoom(
     _roomId: string,
     _sinceCursor?: number,

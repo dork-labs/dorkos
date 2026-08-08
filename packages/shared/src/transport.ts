@@ -1948,11 +1948,11 @@ export interface Transport extends RoomTransport {
    * session, or the inbox.
    *
    * One method for all three, because there is one table and one route behind
-   * it. {@link setRoomReadCursor} reaches the SAME read state for a room — the
-   * room route delegates here for a person — and additionally moves the room
-   * MEMBERSHIP cursor when the caller is an agent. That one is what an agent's
-   * ambient turn has been shown; this one is what a person has looked at, and
-   * neither is derived from the other.
+   * it — a room has no read-cursor method of its own, it is `threadKind:
+   * 'room'`. What an AGENT has been shown is a different fact living on its
+   * `room_members` row, advanced by the ambient participation loop as entries
+   * are delivered to it; this cursor is what a PERSON has looked at, and neither
+   * is derived from the other.
    *
    * **Monotonic, so this is safe to call on every scroll.** A position at or
    * below the stored one is ignored rather than refused, which is what stops a

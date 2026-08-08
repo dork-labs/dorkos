@@ -42,6 +42,15 @@ Codex and OpenCode sessions work the same way in spirit: each tool keeps its own
 and DorkOS reads from all three to build one combined list. If DorkOS can't reach one of them, it
 still shows you the others and flags which one it missed.
 
+**A "New messages" line remembers where you stopped.** Come back to a chat that ran on without
+you and DorkOS marks the spot. Everything you have not seen sits below the line.
+
+That mark belongs to you rather than to one browser, so reading a chat on your laptop moves it on
+your phone too, with no reload. It is also private: nobody else can see what you have read, and
+neither can your agents. DorkOS has no "seen by" list and no read receipts. Chats used to keep this
+mark in a single browser, and that old copy is thrown away the next time you open a chat there, so
+the line may sit further back than you expect once. Reading the chat sets it straight.
+
 **See how full each session's context is.** Every row in the list shows a small gauge of how much
 of its context window is used, so you can spot which agents are running low before they slow down.
 A line at the top of the list sums it up, "2 near full · 1 auto-compacted", so you know which one
@@ -101,6 +110,25 @@ sending a fresh snapshot instead.
 The sidebar list stays live the same way: a single global stream, `GET /api/events`, announces
 `session_upserted`, `session_removed`, and `session_status` events as sessions are created,
 deleted, or change state, across every client and the CLI.
+
+### Read state
+
+How far you have read in a session is stored server-side, in the same table rooms use, keyed by
+`(user, thread kind, thread id)`. Two endpoints cover it:
+
+| Method | Path                            | Purpose                       |
+| ------ | ------------------------------- | ----------------------------- |
+| `PUT`  | `/api/read-cursors/session/:id` | Move your mark to a position. |
+| `GET`  | `/api/read-cursors/session/:id` | Read your mark back.          |
+
+The stored position counts the messages the server has confirmed, not durable-stream sequence
+numbers, so it survives a reconnect and a replay. Both endpoints are people-only: a caller resolved
+as an agent gets `403 PEOPLE_ONLY`, and no request can name a user other than the caller. A cursor
+that actually moves is broadcast as a `read_cursor` event on the global `GET /api/events` stream,
+which is what updates a second window without polling.
+
+In Obsidian there is no server to hold the mark, so it is kept in that browser profile instead. The
+"New messages" line still works there; it just does not travel to your other devices.
 
 ### Session metadata
 

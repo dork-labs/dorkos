@@ -103,7 +103,6 @@ import {
   RoomSnapshotSchema,
   RoomWithRosterSchema,
   SetAuthorHandleRequestSchema,
-  SetReadCursorRequestSchema,
   ToggleReactionRequestSchema,
   ToggleReactionResponseSchema,
   UpdateMembershipRequestSchema,
@@ -3441,36 +3440,6 @@ registry.registerPath({
 });
 
 registry.registerPath({
-  method: 'put',
-  path: '/api/rooms/{id}/read-cursor',
-  tags: ['Rooms'],
-  summary: "Advance the caller's read cursor",
-  description:
-    'The cursor the unread divider and the room badge read. Monotonic — a lower value is ignored, ' +
-    'so a stale client cannot un-read a room for another client. **Two cursors answer through one ' +
-    "route, decided by who is calling**: a person's place lands in read state proper (the same " +
-    'store `PUT /api/read-cursors/room/{id}` writes, and it broadcasts `read_cursor` the same ' +
-    "way), while an agent's stays on its membership row, which is what its ambient turn reads. " +
-    'That is why this route survives beside the generic one — the generic one is people-only, so ' +
-    "this is the only way an agent's cursor moves.",
-  request: {
-    params: RoomIdParams,
-    body: { content: { 'application/json': { schema: SetReadCursorRequestSchema } } },
-  },
-  responses: {
-    200: {
-      description: 'The updated membership',
-      content: { 'application/json': { schema: RoomMemberSchema } },
-    },
-    400: roomValidationError,
-    404: {
-      description: 'No such room, or not a member of it',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-  },
-});
-
-registry.registerPath({
   method: 'post',
   path: '/api/rooms/{id}/threads',
   tags: ['Rooms'],
@@ -3581,12 +3550,12 @@ registry.registerPath({
     "this request, and therefore no way to read or move anybody else's read state. **Only people " +
     'have read state here** — a caller the server resolves as an agent (one presenting ' +
     '`X-DorkOS-Agent`) is refused with 403 `PEOPLE_ONLY`, because what an agent has been shown is ' +
-    'the room-MEMBERSHIP cursor and not this one. **A `room` cursor is written through the rooms ' +
-    'domain**, which is the same call `PUT /api/rooms/{id}/read-cursor` makes: the caller must be ' +
-    'able to see the room (404 `ROOM_NOT_FOUND` / `MEMBER_NOT_FOUND` otherwise), and the ' +
-    'broadcast carries the unread count the room list redraws from. A `session` or `inbox` cursor ' +
-    'names a thread this server cannot check and is stored as given. The room route additionally ' +
-    'remains the one route an agent may move its own membership cursor through.',
+    'the room-MEMBERSHIP cursor and not this one — advanced by the ambient participation loop as ' +
+    'entries are delivered to it, and reachable through no route at all. **A `room` cursor is ' +
+    'written through the rooms domain**, so the caller must be able to see the room (404 ' +
+    '`ROOM_NOT_FOUND` / `MEMBER_NOT_FOUND` otherwise), and the broadcast carries the unread count ' +
+    'the room list redraws from. A `session` or `inbox` cursor names a thread this server cannot ' +
+    'check and is stored as given.',
   request: {
     params: ReadCursorParamsSchema,
     body: {
