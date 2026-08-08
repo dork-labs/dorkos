@@ -74,9 +74,13 @@ describe('DashboardHeader', () => {
     cleanup();
   });
 
-  it('renders "Dashboard" text', () => {
+  it('titles the page "Home", the same word as its tab', () => {
+    // The tab bar sits directly below this header, so the two must say the same
+    // thing; "Dashboard" over a tab reading "Home" was one screen disagreeing
+    // with itself.
     renderWithTooltip(<DashboardHeader />);
-    expect(screen.getByText('Dashboard')).toBeInTheDocument();
+    expect(screen.getByText('Home')).toBeInTheDocument();
+    expect(screen.queryByText('Dashboard')).not.toBeInTheDocument();
   });
 
   it('renders CommandPaletteTrigger', () => {

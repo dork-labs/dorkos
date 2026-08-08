@@ -64,7 +64,7 @@ describe('projectName', () => {
 
 describe('fallbackTabLabel', () => {
   it('names each route the way a person would', () => {
-    expect(fallbackTabLabel(parseTabHref('/'))).toBe('Dashboard');
+    expect(fallbackTabLabel(parseTabHref('/'))).toBe('Home');
     expect(fallbackTabLabel(parseTabHref('/team'))).toBe('Team');
     // The `/agents` alias, labelled for where it lands. This is the whole
     // justification for keeping the alias, made checkable: the Electron shell

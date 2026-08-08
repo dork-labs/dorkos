@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { zodValidator } from '@tanstack/zod-adapter';
 import { AppShell } from './AppShell';
 import { DashboardPage } from '@/layers/widgets/dashboard';
+import { HomeSurfaceLayout } from '@/layers/widgets/home';
 import { SessionPage } from '@/layers/widgets/session';
 import { TeamRoute } from '@/layers/widgets/team';
 import { ActivityPage } from '@/layers/widgets/activity';
@@ -176,9 +177,22 @@ const marketplaceRouteSearchSchema = mergeDialogSearch(marketplaceSearchSchema);
 /** Search params available on the `/marketplace` route. */
 export type MarketplaceSearch = z.infer<typeof marketplaceRouteSearchSchema>;
 
+// ── Pathless layout route (home surface) ────────────────────
+// Uses `id` not `path` — no URL segment added, so `/`, `/activity`, `/tasks`
+// and `/workspaces` keep the exact addresses they have always had. All this
+// route contributes is the tab bar above them and the fact that they are now
+// one surface rather than four sidebar destinations. It declares no
+// `validateSearch`, so each child keeps its own search schema untouched and a
+// deep link like `/activity?categories=session` arrives with its filter intact.
+const homeSurfaceRoute = createRoute({
+  getParentRoute: () => appShellRoute,
+  id: '_home',
+  component: HomeSurfaceLayout,
+});
+
 // ── Dashboard at / ──────────────────────────────────────────
 const indexRoute = createRoute({
-  getParentRoute: () => appShellRoute,
+  getParentRoute: () => homeSurfaceRoute,
   path: '/',
   validateSearch: zodValidator(dashboardSearchSchema),
   component: DashboardPage,
@@ -316,9 +330,9 @@ const agentsAliasRoute = createRoute({
   },
 });
 
-// ── Tasks at /tasks ──────────────────────────────────────────
+// ── Tasks at /tasks — the "Scheduled" tab ────────────────────
 const tasksRoute = createRoute({
-  getParentRoute: () => appShellRoute,
+  getParentRoute: () => homeSurfaceRoute,
   path: '/tasks',
   component: TasksPage,
 });
@@ -365,7 +379,7 @@ const channelsRoute = createRoute({
 
 // ── Workspaces at /workspaces ────────────────────────────────
 const workspacesRoute = createRoute({
-  getParentRoute: () => appShellRoute,
+  getParentRoute: () => homeSurfaceRoute,
   path: '/workspaces',
   component: WorkspacesPage,
 });
@@ -415,7 +429,7 @@ const activitySearchSchema = mergeDialogSearch(
 export type ActivitySearch = z.infer<typeof activitySearchSchema>;
 
 const activityRoute = createRoute({
-  getParentRoute: () => appShellRoute,
+  getParentRoute: () => homeSurfaceRoute,
   path: '/activity',
   validateSearch: zodValidator(activitySearchSchema),
   component: ActivityPage,
@@ -431,15 +445,12 @@ const feedbackRequestsRoute = createRoute({
 // ── Route tree ──────────────────────────────────────────────
 const routeTree = rootRoute.addChildren([
   appShellRoute.addChildren([
-    indexRoute,
+    homeSurfaceRoute.addChildren([indexRoute, activityRoute, tasksRoute, workspacesRoute]),
     sessionRoute,
     teamRoute,
     agentsAliasRoute,
-    tasksRoute,
     channelsRoute,
-    workspacesRoute,
     connectionsRoute,
-    activityRoute,
     marketplaceRoute,
     marketplaceSourcesRoute,
     feedbackRequestsRoute,
