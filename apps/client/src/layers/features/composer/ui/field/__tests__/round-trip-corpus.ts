@@ -91,20 +91,7 @@ export const ROUND_TRIP_CORPUS: readonly RoundTripCase[] = [
 
   // The backslash-continuation rung depends on this surviving byte for byte.
   { md: 'foo\\' },
-  {
-    md: 'foo\\\\',
-    normalizesTo: 'foo\\',
-    why:
-      'The PARSER applies CommonMark backslash escapes, so `foo\\\\` and `foo\\` both parse to ' +
-      'the same one-backslash document and only one of them can be written back. Re-escaping ' +
-      'on the way out is not the fix: it is what the stock serializer does, and it is what ' +
-      "turns a typed `foo\\` into `foo\\\\` and flips the ladder's odd/even rule the wrong way. " +
-      'Consequence worth knowing: HYDRATING a stored draft that ends in two backslashes halves ' +
-      'them, so Enter continues the line where it would have sent. Typing is unaffected — ' +
-      'nothing parses what you type. Phase 3 owns the hydration path and can close this by ' +
-      'doubling backslashes before handing a host value to the parser, which makes the ' +
-      "parser's un-escaping a no-op.",
-  },
+  { md: 'foo\\\\' },
 
   // Line endings and blank lines.
   { md: 'a\r\nb' },

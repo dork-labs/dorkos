@@ -1,10 +1,8 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
-import { $convertFromMarkdownString } from '@lexical/markdown';
 import { createEditor, type LexicalEditor } from 'lexical';
 import { COMPOSER_NODES } from '../lexical-nodes';
-import { COMPOSER_TRANSFORMERS } from '../lexical-transformers';
-import { $serializeWithOffsets } from '../markdown-offsets';
+import { $parseComposerMarkdown, $serializeWithOffsets } from '../markdown-offsets';
 import { ROUND_TRIP_CORPUS } from './round-trip-corpus';
 
 /** A headless editor with the composer's node set. No React, no field. */
@@ -23,7 +21,7 @@ function roundTrip(md: string, editor: LexicalEditor = makeEditor()): string {
   let out = '';
   editor.update(
     () => {
-      $convertFromMarkdownString(md, [...COMPOSER_TRANSFORMERS]);
+      $parseComposerMarkdown(md);
     },
     { discrete: true }
   );

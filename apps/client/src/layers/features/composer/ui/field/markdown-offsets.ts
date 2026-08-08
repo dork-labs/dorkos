@@ -55,6 +55,7 @@
  * @module features/composer/ui/field/markdown-offsets
  */
 import { $isListItemNode, $isListNode } from '@lexical/list';
+import { $convertFromMarkdownString } from '@lexical/markdown';
 import { $isHeadingNode } from '@lexical/rich-text';
 import {
   $getNodeByKey,
@@ -69,6 +70,32 @@ import {
   type NodeKey,
   type TextNode,
 } from 'lexical';
+import { COMPOSER_TRANSFORMERS } from './lexical-transformers';
+
+/**
+ * Parse a host's markdown into the document.
+ *
+ * **Why this is not a bare `$convertFromMarkdownString`.** The parser applies
+ * CommonMark backslash escapes, so `foo\\` and `foo\` both arrive as the same
+ * one-backslash document and `a\*b` arrives as `a*b`. Left alone that halves
+ * the backslashes in a restored draft — and the keyboard ladder's continuation
+ * rung reads an ODD trailing run as "continue the line" and an even one as
+ * "send", so a draft that used to send would start inserting newlines instead.
+ *
+ * Doubling every backslash first makes the parser's un-escaping a no-op: each
+ * `\\` it consumes gives back exactly the one `\` the person typed. Nothing
+ * else in the composer's closed syntax set contains a backslash, so nothing
+ * else is affected — and the serializer escapes nothing on the way out, so the
+ * pair is a clean identity. Pinned by the `foo\\` case in the round-trip
+ * corpus.
+ *
+ * Must run inside `editor.update()`.
+ *
+ * @param markdown - The host's value.
+ */
+export function $parseComposerMarkdown(markdown: string): void {
+  $convertFromMarkdownString(markdown.replace(/\\/g, '\\\\'), [...COMPOSER_TRANSFORMERS]);
+}
 
 /**
  * One node's contribution to the markdown string.

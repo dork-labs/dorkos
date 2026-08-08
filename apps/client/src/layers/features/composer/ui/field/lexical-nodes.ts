@@ -75,6 +75,8 @@ export class MentionNode extends TextNode {
   readonly __identityColor: string | null;
 
   /**
+   * Build a mention whose text is `@handle`.
+   *
    * @param handle - The handle, without its leading `@`.
    * @param kind - Whether the mention points at a person or an agent.
    * @param identityColor - The agent's identity colour; `null` for a human.
