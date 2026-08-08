@@ -1,4 +1,13 @@
-import { useRef, useCallback, useState, useEffect, forwardRef, useImperativeHandle } from 'react';
+import {
+  useRef,
+  useCallback,
+  useState,
+  useEffect,
+  forwardRef,
+  useImperativeHandle,
+  lazy,
+  Suspense,
+} from 'react';
 import { motion } from 'motion/react';
 import { X, Paperclip } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
@@ -7,7 +16,15 @@ import { useInputKeyboard } from './use-input-keyboard';
 import { INERT_SURFACE } from './editing-surface';
 import type { EditingSurface } from './editing-surface';
 import { TextareaField } from './field/TextareaField';
-import type { ComposerFieldHandle } from './field/ComposerFieldProps';
+import type { ComposerFieldHandle, ComposerFieldProps } from './field/ComposerFieldProps';
+
+/**
+ * The rich-text field, in its own chunk.
+ *
+ * Reached only through this `lazy`, which is what keeps every Lexical byte out
+ * of the entry chunk when the flag is off.
+ */
+const LexicalField = lazy(() => import('./field/LexicalField'));
 import { InputActionButton } from './InputActionButton';
 
 export interface ComposerInputHandle {
@@ -154,6 +171,14 @@ export interface ComposerInputProps {
    * missing or disabled — see {@link ComposerInputProps.onClear}.
    */
   onClearArmedChange?: (armed: boolean) => void;
+  /**
+   * Show formatting as you type — bold, headings and lists take shape in the
+   * box instead of staying as markdown characters.
+   *
+   * Additive and optional, so every existing call site compiles untouched and
+   * never reads it. Off means the plain field, byte for byte what shipped.
+   */
+  richText?: boolean;
 }
 
 /**
@@ -219,6 +244,7 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
       queueHasItems = false,
       canSubmit = true,
       canSubmitReason,
+      richText = false,
     },
     ref
   ) {
@@ -285,6 +311,25 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
       setIsFocused(false);
       if (isPaletteOpen) onEscape?.();
     }, [isPaletteOpen, onEscape]);
+
+    // One narrowed object, so both fields are given exactly the same props and
+    // the swap cannot drift.
+    const fieldProps: ComposerFieldProps & { ref: typeof fieldRef } = {
+      ref: fieldRef,
+      value,
+      onChange,
+      onCursorChange,
+      onKeyDown: handleKeyDown,
+      onFocus: handleFocus,
+      onBlur: handleBlur,
+      placeholder,
+      placeholderOverlay,
+      isPaletteOpen,
+      paletteHasResults,
+      paletteListboxId,
+      activeDescendantId,
+      onSurfaceChange: setSurface,
+    };
 
     const hasText = value.trim().length > 0;
     const showClear = hasText && !sessionBusy;
@@ -353,22 +398,17 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
               </button>
             </>
           )}
-          <TextareaField
-            ref={fieldRef}
-            value={value}
-            onChange={onChange}
-            onCursorChange={onCursorChange}
-            onKeyDown={handleKeyDown}
-            onFocus={handleFocus}
-            onBlur={handleBlur}
-            placeholder={placeholder}
-            placeholderOverlay={placeholderOverlay}
-            isPaletteOpen={isPaletteOpen}
-            paletteHasResults={paletteHasResults}
-            paletteListboxId={paletteListboxId}
-            activeDescendantId={activeDescendantId}
-            onSurfaceChange={setSurface}
-          />
+          {richText ? (
+            // The fallback is the TEXTAREA, not a spinner: a composer that is
+            // briefly un-typeable is worse than one that is briefly plain, and
+            // the two share `value`/`onChange`, so nothing is lost when the
+            // chunk arrives.
+            <Suspense fallback={<TextareaField {...fieldProps} />}>
+              <LexicalField {...fieldProps} />
+            </Suspense>
+          ) : (
+            <TextareaField {...fieldProps} />
+          )}
           {/* Only rendered when there is something to clear TO. Hosts that pass no
             `onClear` (the dashboard and onboarding composers) used to show this
             X at half opacity, enabled and tab-reachable, wired to nothing. */}
