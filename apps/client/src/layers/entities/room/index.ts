@@ -18,10 +18,15 @@ export type { RoomStreamState } from './model/use-room-stream';
 export {
   useRoomPresence,
   useRoomPresenceAuthorIds,
+  useRoomPresenceEverywhere,
   useRoomPresenceStore,
   PRESENCE_TICK_MS,
 } from './model/use-room-presence';
-export type { PresenceScope, RoomPresenceAuthor } from './model/use-room-presence';
+export type {
+  PresenceScope,
+  RoomPresenceAuthor,
+  RoomPresenceClaim,
+} from './model/use-room-presence';
 export { useRoomWorking, useRoomWorkingStore, useOpenRoomWorking } from './model/use-room-working';
 export { usePostToRoom } from './model/use-post-to-room';
 export type { PostToRoomInput } from './model/use-post-to-room';
@@ -89,7 +94,16 @@ export { roomIdentityMark, identityMarkFaces } from './lib/identity-mark';
 export type { IdentityMark, RoomIdentityMarkInput } from './lib/identity-mark';
 export { replyRootFor, threadReplySummary, threadRootIdOf } from './lib/thread';
 export type { ThreadReplySummary } from './lib/thread';
-export { presenceElapsed } from './lib/presence-copy';
+export {
+  PRESENCE_NAME_LIMIT,
+  presenceCountSentence,
+  presenceDetail,
+  presenceElapsed,
+  presenceListRow,
+  presenceRow,
+  presenceSentence,
+} from './lib/presence-copy';
+export type { PresenceCopyState } from './lib/presence-copy';
 export { RESPONSE_RUNGS, rungOf, modeForRung, explainRung } from './lib/response-mode';
 export type {
   EngagedWindow,

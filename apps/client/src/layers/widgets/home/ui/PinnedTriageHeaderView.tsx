@@ -85,10 +85,15 @@ export interface TriagePresenceSlot {
   /**
    * Whether the strip will draw anything.
    *
-   * `true` keeps the header on screen by itself — which is what the strip
-   * wants, because "nobody is working" is still worth one quiet line. `false`
-   * means the strip is standing down, and the header lives or dies on the two
-   * groups alone.
+   * `true` keeps the header on screen by itself: somebody is working, and that
+   * is worth a line even with nothing waiting and nothing wrong. `false` means
+   * the strip is standing down, and the header lives or dies on the two groups
+   * alone.
+   *
+   * **Nobody working is `false`.** The strip draws no "nobody is working" line
+   * of its own — an idle cockpit collapses this header away entirely, and the
+   * quiet-state copy belongs to the home surface, which knows what else is on
+   * the page to say instead.
    */
   occupied: boolean;
   /** The strip itself, drawn whenever the header draws at all. */

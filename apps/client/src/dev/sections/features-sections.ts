@@ -10,8 +10,8 @@ import type { PlaygroundSection } from '../playground-registry';
  *
  * Sources: PersonalityPickerShowcases, AgentSidebarShowcases, AgentFleetShowcases,
  * RelayShowcases, AdapterWizardShowcases, MeshShowcases, TasksShowcases,
- * PipPanelShowcases, ApprovalsShowcases, TriageHeaderShowcases, ConnectionsShowcases,
- * McpServerCardShowcases.
+ * PipPanelShowcases, ApprovalsShowcases, TriageHeaderShowcases, PresenceStripShowcases,
+ * ConnectionsShowcases, McpServerCardShowcases.
  */
 export const FEATURES_SECTIONS: PlaygroundSection[] = [
   // PersonalityPickerShowcases
@@ -324,6 +324,25 @@ export const FEATURES_SECTIONS: PlaygroundSection[] = [
       'approval',
       'sticky',
       'presence',
+    ],
+  },
+  // PresenceStripShowcases
+  {
+    id: 'presence-strip',
+    title: 'Presence strip',
+    page: 'features',
+    category: 'Home',
+    keywords: [
+      'presence',
+      'working',
+      'strip',
+      'home',
+      'header',
+      'who is working',
+      'follow',
+      'viewer',
+      'watch',
+      'avatar',
     ],
   },
   // ConnectionsShowcases

@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 import {
   PRESENCE_NAME_LIMIT,
   presenceCountSentence,
+  presenceDetail,
   presenceListRow,
+  presenceRow,
   presenceSentence,
 } from '../lib/presence-copy';
 
@@ -62,6 +64,41 @@ describe('presenceListRow', () => {
     // twenty minutes late read exactly like four healthy ones.
     expect(presenceListRow('Kai', 'working_late', '20m')).toBe(
       'Kai · 20m · taking longer than usual'
+    );
+  });
+});
+
+describe('presenceRow', () => {
+  it('prints a name and what the claim is bound to', () => {
+    expect(presenceRow('tangerines', 'replying in #release-train', 'working')).toBe(
+      'tangerines · replying in #release-train'
+    );
+  });
+
+  it('says nothing but the name when nothing can say where', () => {
+    // The whole no-binding rule in one assertion: a row that cannot name the
+    // binding says the name and stops. Red the moment anything invents a
+    // stand-in clause ("working on something", "somewhere") to fill the gap.
+    expect(presenceRow('DorkBot', null, 'working')).toBe('DorkBot');
+  });
+
+  it('still admits a long wait with no binding to hang it on', () => {
+    expect(presenceRow('DorkBot', null, 'working_late')).toBe('DorkBot · taking longer than usual');
+  });
+});
+
+describe('presenceDetail', () => {
+  it('is absent when there is neither a binding nor a long wait', () => {
+    expect(presenceDetail(null, 'working')).toBeNull();
+  });
+
+  it('is absent for an empty binding, which is not a binding', () => {
+    expect(presenceDetail('', 'working')).toBeNull();
+  });
+
+  it('carries the long wait behind the binding', () => {
+    expect(presenceDetail('replying in #team', 'working_late')).toBe(
+      'replying in #team · taking longer than usual'
     );
   });
 });

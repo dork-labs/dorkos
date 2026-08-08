@@ -405,3 +405,88 @@ export function useRoomPresenceAuthorIds(
     return working.map((agent) => agent.authorId);
   }, [indicators, scope]);
 }
+
+/**
+ * One agent's live claim, with the room it was taken in — and WITHOUT the
+ * clock.
+ *
+ * It carries `since`, which never changes, rather than an elapsed time, which
+ * changes every second. See {@link useRoomPresenceEverywhere} for why that is
+ * the difference between a caller that re-renders on events and one that
+ * re-renders forever.
+ */
+export interface RoomPresenceClaim extends Omit<RoomPresenceAuthor, 'elapsedMs'> {
+  /** The room the claim was taken in. */
+  roomId: string;
+}
+
+/** One shared empty answer, so a quiet cockpit never re-renders its reader. */
+const NOBODY_ANYWHERE: RoomPresenceClaim[] = [];
+
+/**
+ * Who is working, in every room this client can hear at once.
+ *
+ * The same claims {@link useRoomPresence} answers with, unscoped to any one
+ * room — for the surface that asks "who on this team is working right now"
+ * rather than "is this room still waiting". The home header's presence strip is
+ * that surface.
+ *
+ * **This is bounded by what the client can HEAR, and that is the honest
+ * bound.** Claims reach the store from a room's own `/api/rooms/:id/events`
+ * stream, so this answers for the rooms this client is subscribed to and says
+ * nothing about the rest. The global fan-out carries a bare count per room
+ * (`useRoomWorking`) with no author on it, so there is no second source to fold
+ * in here that would not be an invention — a strip that guessed would be
+ * exactly the lie the spec forbids.
+ *
+ * **No clock, for the reason {@link useRoomPresenceAuthorIds} exists.** This
+ * answers with each claim's immutable `since` and never an elapsed time, so a
+ * second passing changes nothing and the array it returns keeps its identity
+ * until presence actually moves. Its caller is a header pinned above a feed:
+ * handing it a number that changes every second would re-render that header,
+ * its avatars and its hover cards once a second for as long as any agent
+ * anywhere is working. The elapsed time belongs to the leaf that draws it.
+ *
+ * **One timer per reader, and it only prunes.** It runs while this reader has
+ * live presence to hold, drops what has aged past {@link PRESENCE_TTL_MS}, and
+ * carries no re-render of its own — expiry is a change to the STORE, and the
+ * store already re-renders its readers (the same shape `useRoomWorking` uses).
+ * A cockpit where nothing is working runs no timer at all.
+ *
+ * @returns One entry per agent per room, oldest claim first. Empty when nobody
+ *   anywhere is working.
+ */
+export function useRoomPresenceEverywhere(): readonly RoomPresenceClaim[] {
+  const rooms = useRoomPresenceStore((held) => held.rooms);
+  const live = Object.keys(rooms).length > 0;
+
+  useEffect(() => {
+    if (!live) return;
+    const timer = setInterval(() => useRoomPresenceStore.getState().prune(), PRESENCE_TICK_MS);
+    return () => clearInterval(timer);
+  }, [live]);
+
+  return useMemo(() => {
+    const claims: RoomPresenceClaim[] = [];
+    for (const [roomId, indicators] of Object.entries(rooms)) {
+      // `summarize` reads the clock to age records out, which is a filter here
+      // rather than a value: its elapsed time is dropped on the next line, so
+      // nothing this hook returns is a function of when it was called.
+      for (const agent of summarize(indicators, undefined)) {
+        claims.push({
+          roomId,
+          authorId: agent.authorId,
+          state: agent.state,
+          since: agent.since,
+        });
+      }
+    }
+    if (claims.length === 0) return NOBODY_ANYWHERE;
+    // Oldest claim first, exactly as within one room — the agent that has been
+    // waiting longest is the one a person most needs to see, whichever room it
+    // is in. The author id breaks ties so the order cannot flicker.
+    return claims.sort(
+      (a, b) => Date.parse(a.since) - Date.parse(b.since) || a.authorId.localeCompare(b.authorId)
+    );
+  }, [rooms]);
+}
