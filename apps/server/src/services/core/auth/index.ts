@@ -251,6 +251,31 @@ export function setUserImage(userId: string, image: string | null): void {
 }
 
 /**
+ * Set an account's `user.name` — what this person wants to be called.
+ *
+ * The sibling of {@link setUserImage}, and it exists for the same reason with
+ * one extra edge: `user.name` is the FIRST rung of the roster's name ladder
+ * (`services/identity/operator-profile.ts`), so on an install with an account
+ * nothing else a person types can change what the roster calls them. The one
+ * caller is `PATCH /api/profile`, which writes it beside
+ * `config.profile.displayName` so the two rungs cannot disagree.
+ *
+ * Nullable is deliberately not offered: Better Auth's column is `NOT NULL`, and
+ * "no name" is not a thing the profile form can ask for.
+ *
+ * A no-op when auth was never initialized — an install with login off has a
+ * roster and no `user` row, which is a supported state rather than a failure.
+ *
+ * @param userId - The Better Auth user id.
+ * @param name - The name to store, already trimmed and length-checked by the
+ *   route's Zod schema.
+ */
+export function setUserName(userId: string, name: string): void {
+  if (!activeDb) return;
+  activeDb.update(user).set({ name }).where(eq(user.id, userId)).run();
+}
+
+/**
  * Whether at least one user (owner) account exists in the auth `user` table.
  *
  * Returns `false` when auth was never initialized (no db bound — e.g. a unit

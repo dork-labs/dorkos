@@ -11,6 +11,7 @@
  * @module shared/transport-rooms
  */
 import type {
+  AuthorRef,
   AddRoomMemberRequest,
   CreateRoomRequest,
   HaltRoomResponse,
@@ -206,6 +207,25 @@ export interface RoomTransport {
    * @param authorId - The member being removed.
    */
   removeRoomMember(id: string, authorId: string): Promise<void>;
+  /**
+   * Set or clear what somebody types after an `@` to reach this author.
+   *
+   * **The only write path for a handle**, and deliberately the handles spec's
+   * own route rather than a second one under the profile surface that edits it
+   * (spec `handles` S6): nothing agent-reachable may write a handle, and an
+   * invariant kept in one place is a test rather than a convention.
+   *
+   * Three refusals, and they are three different things for the person to do
+   * about it, so a caller that collapses them into one message is throwing away
+   * the answer: `HANDLE_TAKEN` (somebody else has it), `HANDLE_RESERVED` (a
+   * handle they released, or a broadcast word like `everyone`) and
+   * `INVALID_HANDLE` (the spelling itself is not addressable). Each arrives as
+   * the `code` on the thrown error.
+   *
+   * @param authorId - Whose handle to set.
+   * @param handle - The new handle, without the `@`. Empty clears it.
+   */
+  setAuthorHandle(authorId: string, handle: string): Promise<AuthorRef>;
   /**
    * Advance the caller's `(member, room)` read cursor.
    *

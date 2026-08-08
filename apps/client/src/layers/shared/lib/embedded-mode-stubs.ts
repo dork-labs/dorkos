@@ -56,6 +56,7 @@ import type {
   RoomEntry,
   RoomEvent,
   RoomMember,
+  AuthorRef,
   RoomRosterEntry,
   RoomSummary,
   RoomWithRoster,
@@ -872,6 +873,10 @@ export const roomStubs = {
     throw new Error('Rooms are not supported in embedded mode');
   },
 
+  async setAuthorHandle(_authorId: string, _handle: string): Promise<AuthorRef> {
+    throw new Error('Rooms are not supported in embedded mode');
+  },
+
   async setRoomReadCursor(_id: string, _lastReadSeq: number): Promise<RoomMember> {
     throw new Error('Rooms are not supported in embedded mode');
   },
@@ -1070,5 +1075,35 @@ export const teamStubs = {
       members: [],
       warnings: [{ source: 'team', message: 'No DorkOS server in embedded mode.' }],
     };
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Profile stubs
+// ---------------------------------------------------------------------------
+
+/**
+ * Editing your own identity, in a plugin with no server behind it.
+ *
+ * These throw rather than answer emptily, and the difference matters here more
+ * than it does for a read: a read that quietly returns nothing shows an empty
+ * page, but a WRITE that quietly succeeds tells somebody their new name was
+ * saved when nothing stored it. The surfaces that offer these are not reachable
+ * in the embed anyway — the account menu and Settings › Profile both hang off
+ * the roster, which is empty here — so this is the guard on that, not the path.
+ *
+ * @internal
+ */
+export const profileStubs = {
+  async updateProfile(_displayName: string): Promise<never> {
+    throw new Error('Editing your profile needs a DorkOS server');
+  },
+
+  async uploadProfileAvatar(_file: Blob, _filename: string): Promise<never> {
+    throw new Error('Profile photos need a DorkOS server');
+  },
+
+  async deleteProfileAvatar(): Promise<never> {
+    throw new Error('Profile photos need a DorkOS server');
   },
 };

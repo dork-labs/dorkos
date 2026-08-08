@@ -17,3 +17,11 @@ export {
   ProfileDrawerContainer,
   type ProfileDrawerContainerProps,
 } from './ui/ProfileDrawerContainer';
+export { AccountMenu, type AccountMenuProps } from './ui/AccountMenu';
+export { AccountMenuContainer } from './ui/AccountMenuContainer';
+export { ProfilePanel, type ProfilePanelProps } from './ui/ProfilePanel';
+export { ProfilePanelContainer } from './ui/ProfilePanelContainer';
+// Exported for the playground, which shows the three handle refusals side by
+// side. Rendering them through the real mapping is what stops the showcase
+// drifting into a set of sentences the product no longer says.
+export { handleErrorMessage } from './model/profile-errors';

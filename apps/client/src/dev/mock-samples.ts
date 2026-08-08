@@ -964,6 +964,12 @@ export const MOCK_TEAM_ROSTER: TeamMember[] = [
     // has to be able to say which one this is.
     handle: 'miguel.telegram',
     color: '#0ea5e9',
+    // The roster's photo case. On the SELF row it would be redundant with the
+    // Account Menu and Profile Tab showcases, which already draw one; here it
+    // also proves the Team card draws a photo for somebody who is not you —
+    // the surface that silently dropped `imageUrl` until `teamMemberFace`
+    // (DOR-979 review, N2).
+    imageUrl: MOCK_PHOTO,
     isSelf: false,
     ownerId: null,
     origin: { platform: 'telegram' },

@@ -20,10 +20,10 @@ import {
   ResponsiveSheetHeader,
   ResponsiveSheetTitle,
 } from '@/layers/shared/ui';
-import { cn, resolveIdentityFace } from '@/layers/shared/lib';
+import { cn } from '@/layers/shared/lib';
 import { formatRuntimeIdentity } from '@/layers/entities/runtime';
 import { platformLabel } from '@/layers/entities/room';
-import { teamMemberLabel } from '@/layers/entities/team';
+import { teamMemberFace, teamMemberLabel } from '@/layers/entities/team';
 
 /**
  * How recently this agent was heard from, in words.
@@ -143,17 +143,7 @@ export function ProfileDrawer({
   onOpenSession,
   onEdit,
 }: ProfileDrawerProps) {
-  const face = resolveIdentityFace({
-    record: {
-      id: member.id,
-      kind: member.kind,
-      displayName: member.displayName,
-      ...(member.emoji ? { emoji: member.emoji } : {}),
-      ...(member.color ? { color: member.color } : {}),
-      ...(member.imageUrl ? { imageUrl: member.imageUrl } : {}),
-    },
-    origin: member.origin,
-  });
+  const face = teamMemberFace(member);
 
   const agent = member.agent;
   const person = member.person;

@@ -5,6 +5,7 @@ import { AgentSidebarShowcases } from '../showcases/AgentSidebarShowcases';
 import { AgentFleetShowcases } from '../showcases/AgentFleetShowcases';
 import { TeamShowcases } from '../showcases/TeamShowcases';
 import { ProfileShowcases } from '../showcases/ProfileShowcases';
+import { AccountMenuShowcases, ProfileTabShowcases } from '../showcases/AccountShowcases';
 import { RelayShowcases } from '../showcases/RelayShowcases';
 import { AdapterWizardShowcases } from '../showcases/AdapterWizardShowcases';
 import { MeshShowcases } from '../showcases/MeshShowcases';
@@ -27,6 +28,8 @@ export function FeaturesPage() {
       <AgentIdentityShowcases />
       <TeamShowcases />
       <ProfileShowcases />
+      <AccountMenuShowcases />
+      <ProfileTabShowcases />
       <AgentSidebarShowcases />
       <AgentFleetShowcases />
       <RelayShowcases />

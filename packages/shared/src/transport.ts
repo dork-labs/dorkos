@@ -130,7 +130,11 @@ import type {
   ForkShapeResult,
 } from './marketplace-schemas.js';
 import type { RoomTransport } from './transport-rooms.js';
-import type { TeamRosterResponse } from './team-schemas.js';
+import type {
+  ProfileAvatarResponse,
+  ProfileUpdateResponse,
+  TeamRosterResponse,
+} from './team-schemas.js';
 import type { CloudLinkStatus, CloudLinkSummary, StartLinkResult } from './cloud-schemas.js';
 import type { FeedbackListItem, FeedbackSubmission } from './telemetry-events.js';
 import type {
@@ -1868,6 +1872,42 @@ export interface Transport extends RoomTransport {
    * `warnings` is omitted entirely on a clean read, never `[]`.
    */
   getTeamRoster(): Promise<TeamRosterResponse>;
+
+  // --- The operator's own profile (spec `identity-consistency` §W3.3, §W3.5) ---
+
+  /**
+   * Set what the person at the keyboard wants to be called.
+   *
+   * Writes the two sources the roster reads above the author record — the
+   * account name and the stored profile — so nothing can end up half-renamed.
+   * The author record is deliberately not one of them; `routes/profile.ts` says
+   * why at length.
+   *
+   * @param displayName - The new name. Trimmed, 1–80 characters; the server
+   *   refuses anything else rather than blanking the roster row.
+   */
+  updateProfile(displayName: string): Promise<ProfileUpdateResponse>;
+
+  /**
+   * Replace the operator's photo.
+   *
+   * PNG, JPEG or WebP, 2 MB or less, decided by the bytes rather than the
+   * filename — an SVG or a mislabelled GIF is refused (`AVATAR_TYPE_UNSUPPORTED`),
+   * as is anything over the cap (`AVATAR_TOO_LARGE`). Nothing is resized.
+   *
+   * @param file - The image bytes.
+   * @param filename - What to call it in the multipart part. Cosmetic: the
+   *   server reads the bytes and ignores this.
+   * @returns The URL to render and to keep. Opaque — server-relative today,
+   *   absolute the day a remote store backs it.
+   */
+  uploadProfileAvatar(file: Blob, filename: string): Promise<ProfileAvatarResponse>;
+
+  /**
+   * Remove the operator's photo, so their disc falls back to their emoji and
+   * then to their initial. Idempotent.
+   */
+  deleteProfileAvatar(): Promise<void>;
 
   // --- Shapes (DOR-355) ---
 

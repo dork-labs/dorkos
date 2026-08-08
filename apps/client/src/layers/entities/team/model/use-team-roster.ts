@@ -8,10 +8,17 @@ const ROSTER_STALE_MS = 30_000;
 /** How a caller narrows when the roster is worth reading at all. */
 export interface UseTeamRosterOptions {
   /**
-   * Whether to read it now. Defaults to `true` — a page showing the roster
-   * always wants it. The profile drawer is the caller that does not: it mounts
-   * on every route and reads only once something opens it, so an always-on
-   * query there would cost every page a request nobody asked for.
+   * Whether to read it now. Defaults to `true`, which is what almost every
+   * caller wants — a page showing the roster, the Settings tab editing your own
+   * row, and the sidebar's account menu, which is mounted app-wide and shares
+   * this one cache entry with all of them.
+   *
+   * The profile drawer is the caller that passes `false`: it mounts on every
+   * route but shows nobody until a link or a click names somebody, and gating
+   * on that is how a route that never opens a profile never asks for one. Since
+   * the account menu landed, the drawer's read is usually a cache hit rather
+   * than a request — the gate stops the drawer from being the reason a request
+   * happens, which is still true and still worth keeping.
    */
   enabled?: boolean;
 }
