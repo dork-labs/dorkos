@@ -66,6 +66,11 @@ describe('fallbackTabLabel', () => {
   it('names each route the way a person would', () => {
     expect(fallbackTabLabel(parseTabHref('/'))).toBe('Dashboard');
     expect(fallbackTabLabel(parseTabHref('/team'))).toBe('Team');
+    // The `/agents` alias, labelled for where it lands. This is the whole
+    // justification for keeping the alias, made checkable: the Electron shell
+    // persists raw pathnames, so a tab saved before the rename restores as
+    // `/agents` and must not come back reading "DorkOS" or "Agents".
+    expect(fallbackTabLabel(parseTabHref('/agents'))).toBe('Team');
     expect(fallbackTabLabel(parseTabHref('/activity'))).toBe('Activity');
     // Before this, a channel or DM tab fell through to the unknown-route label
     // ("DorkOS") — the same class of defect DOR-587 fixes for the header, one

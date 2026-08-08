@@ -264,7 +264,7 @@ DorkOS dialogs (Settings, Agent, Tasks, Relay, Mesh) are URL-addressable via sea
 Example URLs:
 
 - `/?settings=tools` — Settings on Dashboard, Tools tab
-- `/agents?settings=tools&settingsSection=external-mcp` — Settings on Agents page, Tools tab, scrolled to External MCP
+- `/team?settings=tools&settingsSection=external-mcp` — Settings on the Team page, Tools tab, scrolled to External MCP
 - `/?agent=identity&agentPath=/abs/path/to/repo` — Agent dialog → Identity for that project
 
 ## Agent UI Control

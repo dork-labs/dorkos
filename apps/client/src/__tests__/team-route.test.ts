@@ -56,6 +56,26 @@ describe('the /team route', () => {
     expect(teamSearchSchema.parse({}).kind).toBe('all');
     expect(teamSearchSchema.parse({}).group).toBe('none');
   });
+
+  it('lands on the roster when a stale URL names something it no longer knows', () => {
+    // A URL is hand-editable, bookmarkable, and outlives release notes. A value
+    // this route stopped serving is a stale address, not a broken app — it used
+    // to throw, and the person got "Something went wrong" over a raw Zod dump.
+    const parsed = teamSearchSchema.parse({ view: 'bogus', kind: 'nope', group: 'weird' });
+
+    expect(parsed.view).toBe('cards');
+    expect(parsed.kind).toBe('all');
+    expect(parsed.group).toBe('none');
+  });
+
+  it('keeps the good params when only one of them is stale', () => {
+    // Falling back on `view` must not throw away a filter the person set.
+    const parsed = teamSearchSchema.parse({ view: 'bogus', kind: 'agents', owner: 'person-1' });
+
+    expect(parsed.view).toBe('cards');
+    expect(parsed.kind).toBe('agents');
+    expect(parsed.owner).toBe('person-1');
+  });
 });
 
 describe('the /agents alias', () => {

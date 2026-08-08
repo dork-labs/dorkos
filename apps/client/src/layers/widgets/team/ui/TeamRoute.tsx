@@ -130,7 +130,10 @@ export function TeamRoute() {
         )}
         {viewMode === 'table' && (
           <motion.div key="view-table" {...FADE} className="flex h-full flex-col">
-            <AgentsList agents={agents} isLoading={isLoading} />
+            {/* The same filters the cards obey. A chip that narrowed one view
+                and not the other would leave the URL describing a page that is
+                not on screen. */}
+            <AgentsList agents={agents} isLoading={isLoading} rosterFilters={filters} />
           </motion.div>
         )}
         {viewMode === 'topology' && (

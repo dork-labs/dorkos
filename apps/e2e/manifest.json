@@ -341,10 +341,10 @@
       "specFile": "tests/team/team-page.spec.ts",
       "feature": "team",
       "description": "the sidebar reaches the Team page, /agents redirects to /team keeping the view, the operator is on the roster drawn as a circle, an agent is drawn as a square with who it belongs to, the Agents chip hides the people, clicking an attribution filters to that owner, Group: manager clusters the roster under a header, a filtered roster survives a reload, the view switch reaches the table and the topology, the Denied view reports having blocked nothing, the Access view renders the cross-project access surface, and on a phone the roster draws one column with no table option",
-      "lastRun": "",
-      "lastStatus": "unknown",
-      "runCount": 0,
-      "passCount": 0,
+      "lastRun": "2026-08-07T23:57:01.343Z",
+      "lastStatus": "passed",
+      "runCount": 1,
+      "passCount": 1,
       "failCount": 0,
       "relatedCode": [
         "apps/client/src/router.tsx",
@@ -477,15 +477,6 @@
     }
   },
   "runHistory": [
-    {
-      "id": "2026-07-29T19-21-24",
-      "timestamp": "2026-07-29T19:21:24.207Z",
-      "total": 3,
-      "passed": 2,
-      "failed": 1,
-      "skipped": 0,
-      "duration": 55813
-    },
     {
       "id": "2026-07-29T19-24-43",
       "timestamp": "2026-07-29T19:24:43.247Z",
@@ -1376,6 +1367,15 @@
       "failed": 0,
       "skipped": 0,
       "duration": 155583
+    },
+    {
+      "id": "2026-08-07T23-57-01",
+      "timestamp": "2026-08-07T23:57:01.343Z",
+      "total": 13,
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 31393
     }
   ]
 }

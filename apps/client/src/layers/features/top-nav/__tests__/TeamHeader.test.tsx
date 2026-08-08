@@ -186,5 +186,25 @@ describe('TeamHeader', () => {
       // bar wearing a table.
       expect(screen.queryByRole('option', { name: 'Table' })).not.toBeInTheDocument();
     });
+
+    it('still names the table when that is where you already are', () => {
+      // `/agents?view=list` redirects to `?view=table`, so a phone reaches this
+      // view in one hop. A Select whose value matches no item renders blank —
+      // the switch would go silent about where you are.
+      mockIsMobile = true;
+      render(<TeamHeader viewMode="table" />);
+
+      expect(screen.getByRole('combobox')).toHaveTextContent('Table');
+    });
+
+    it('offers a way off the table once you are on it', async () => {
+      mockIsMobile = true;
+      render(<TeamHeader viewMode="table" />);
+
+      fireEvent.click(screen.getByRole('combobox'));
+      expect(await screen.findByRole('option', { name: 'Table' })).toBeInTheDocument();
+      // The point of keeping it listed is being able to leave.
+      expect(screen.getByRole('option', { name: 'Cards' })).toBeInTheDocument();
+    });
   });
 });

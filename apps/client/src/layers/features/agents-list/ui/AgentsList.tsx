@@ -3,7 +3,12 @@ import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { TopologyAgent } from '@dorkos/shared/mesh-schemas';
 import { useAgentAttentionMap } from '@/layers/entities/session';
-import { findTeamOwner, teamMemberLabel, useTeamRoster } from '@/layers/entities/team';
+import {
+  findTeamOwner,
+  teamMemberLabel,
+  useTeamRoster,
+  type TeamRosterFilters,
+} from '@/layers/entities/team';
 import { applySortAndFilter } from '@/layers/shared/lib';
 import { useFilterState, useTransport } from '@/layers/shared/model';
 import { FilterBar } from '@/layers/shared/ui/filter-bar';
@@ -18,13 +23,22 @@ import {
   ATTENTION_SORT_FIELD,
 } from '../lib/agent-filter-schema';
 import { isPastOnboardingGrace, sortAgentsByAttention } from '../lib/agent-attention';
+import { narrowAgentsByRoster } from '../lib/roster-narrowing';
 import type { AgentTableRow } from '../lib/agent-columns';
-import { AgentEmptyFilterState } from './AgentEmptyFilterState';
+import { AgentEmptyFilterState, AgentRosterFilterEmpty } from './AgentEmptyFilterState';
 import { AgentFleetTable } from './AgentFleetTable';
 
 interface AgentsListProps {
   agents: TopologyAgent[];
   isLoading: boolean;
+  /**
+   * What the Team page's roster controls say, when a route is driving them.
+   *
+   * The table is one of `/team`'s views, so `?kind=`, `?owner=` and `?q=` have
+   * to narrow it exactly as they narrow the cards. Optional because the dev
+   * playground renders this list with no route behind it.
+   */
+  rosterFilters?: TeamRosterFilters;
 }
 
 /**
@@ -35,7 +49,7 @@ interface AgentsListProps {
  * field from the sort menu flattens the groups and sorts purely by that field —
  * the grouping is the default answer, not a cage.
  */
-export function AgentsList({ agents, isLoading }: AgentsListProps) {
+export function AgentsList({ agents, isLoading, rosterFilters }: AgentsListProps) {
   const navigate = useNavigate();
   const transport = useTransport();
 
@@ -43,10 +57,25 @@ export function AgentsList({ agents, isLoading }: AgentsListProps) {
     debounce: { search: 200 },
   });
 
+  // The roster is read once, for two jobs: narrowing the fleet to what the Team
+  // page's controls admit, and naming each agent's owner in the Managed by cell.
+  const { data: rosterData } = useTeamRoster();
+  const rosterMembers = useMemo(() => rosterData?.members ?? [], [rosterData]);
+
+  // The Team page's filters narrow the population BEFORE this table's own
+  // filter bar runs, so "showing 2 of 3" counts what the roster admitted rather
+  // than a fleet the URL already excluded.
+  const rosterAgents = useMemo(
+    () => narrowAgentsByRoster(agents, rosterMembers, rosterFilters),
+    [agents, rosterMembers, rosterFilters]
+  );
+
   // Derive dynamic namespace options from the agent list
   const namespaceOptions = useMemo(
-    () => [...new Set(agents.map((a) => a.namespace).filter((ns): ns is string => Boolean(ns)))],
-    [agents]
+    () => [
+      ...new Set(rosterAgents.map((a) => a.namespace).filter((ns): ns is string => Boolean(ns))),
+    ],
+    [rosterAgents]
   );
 
   // No `sort` param means attention order, so a first visit lands on it.
@@ -57,12 +86,24 @@ export function AgentsList({ agents, isLoading }: AgentsListProps) {
   const filteredAgents = useMemo(
     () =>
       isAttentionOrder
-        ? agentFilterSchema.applyFilters(agents, filterState.values)
-        : applySortAndFilter(agents, agentFilterSchema, filterState.values, agentSortOptions, {
-            field: filterState.sortField,
-            direction: filterState.sortDirection,
-          }),
-    [agents, isAttentionOrder, filterState.values, filterState.sortField, filterState.sortDirection]
+        ? agentFilterSchema.applyFilters(rosterAgents, filterState.values)
+        : applySortAndFilter(
+            rosterAgents,
+            agentFilterSchema,
+            filterState.values,
+            agentSortOptions,
+            {
+              field: filterState.sortField,
+              direction: filterState.sortDirection,
+            }
+          ),
+    [
+      rosterAgents,
+      isAttentionOrder,
+      filterState.values,
+      filterState.sortField,
+      filterState.sortDirection,
+    ]
   );
 
   // Fleet-wide chat state per agent folder. `useAgentAttentionMap` is the app's
@@ -90,17 +131,15 @@ export function AgentsList({ agents, isLoading }: AgentsListProps) {
   // ownership is derived at read time from the `authors` table beside it
   // (spec §W1.6). Resolved here rather than in a cell so the table is handed a
   // label, the same way the Team card is.
-  const { data: rosterData } = useTeamRoster();
   const ownerLabels = useMemo(() => {
-    const members = rosterData?.members ?? [];
     const labels = new Map<string, string>();
-    for (const member of members) {
+    for (const member of rosterMembers) {
       if (member.kind !== 'agent') continue;
-      const owner = findTeamOwner(member, members);
+      const owner = findTeamOwner(member, rosterMembers);
       if (owner) labels.set(member.id, teamMemberLabel(owner));
     }
     return labels;
-  }, [rosterData]);
+  }, [rosterMembers]);
 
   // Enrich topology agents with computed fields, then apply attention order
   const tableData: AgentTableRow[] = useMemo(() => {
@@ -160,6 +199,28 @@ export function AgentsList({ agents, isLoading }: AgentsListProps) {
     [handleNavigate, handleManage, handleStartSession]
   );
 
+  /**
+   * The table, or whichever empty state is true.
+   *
+   * Which one depends on WHO emptied it: the Team page's roster filters and
+   * this table's own filter bar need different words, because they have
+   * different ways out.
+   */
+  function renderBody() {
+    if (rosterAgents.length === 0 && agents.length > 0) {
+      return <AgentRosterFilterEmpty peopleOnly={rosterFilters?.kind === 'people'} />;
+    }
+    if (filteredAgents.length === 0 && rosterAgents.length > 0) {
+      return (
+        <AgentEmptyFilterState
+          onClearFilters={filterState.clearAll}
+          filterDescription={filterState.describeActive()}
+        />
+      );
+    }
+    return <AgentFleetTable rows={tableData} grouped={isAttentionOrder} callbacks={callbacks} />;
+  }
+
   if (isLoading) {
     return (
       <div className="space-y-3 p-4">
@@ -177,20 +238,18 @@ export function AgentsList({ agents, isLoading }: AgentsListProps) {
         <FilterBar.Primary name="status" />
         <FilterBar.AddFilter dynamicOptions={{ namespace: namespaceOptions }} />
         <FilterBar.Sort options={agentSortMenuOptions} defaultField={ATTENTION_SORT_FIELD} />
-        <FilterBar.ResultCount count={filteredAgents.length} total={agents.length} noun="agent" />
+        {/* Counted against what the roster admitted, not the whole fleet:
+            "2 of 3" beside a URL that already excluded 40 agents would be
+            answering a question nobody asked. */}
+        <FilterBar.ResultCount
+          count={filteredAgents.length}
+          total={rosterAgents.length}
+          noun="agent"
+        />
         <FilterBar.ActiveFilters />
       </FilterBar>
       <ScrollArea className="min-h-0 flex-1">
-        <div className="px-4 pb-4">
-          {filteredAgents.length === 0 && agents.length > 0 ? (
-            <AgentEmptyFilterState
-              onClearFilters={filterState.clearAll}
-              filterDescription={filterState.describeActive()}
-            />
-          ) : (
-            <AgentFleetTable rows={tableData} grouped={isAttentionOrder} callbacks={callbacks} />
-          )}
-        </div>
+        <div className="px-4 pb-4">{renderBody()}</div>
       </ScrollArea>
     </div>
   );

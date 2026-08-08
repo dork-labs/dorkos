@@ -26,15 +26,25 @@ const MANAGEMENT_TABS: ViewTab[] = [
 ];
 
 /**
- * The table is not offered on a phone.
+ * What the switch offers on a phone.
  *
- * Six columns at 375px is not a view, it is a horizontal scroll bar wearing
- * one — and everything the table says is on the cards, which are built for that
- * width. So the option is absent rather than present-and-bad.
+ * The table is not among them: six columns at 375px is not a view, it is a
+ * horizontal scroll bar wearing one, and everything the table says is on the
+ * cards, which are built for that width. So the option is absent rather than
+ * present-and-bad.
+ *
+ * **Unless you are already on it.** `/agents?view=list` is a live external
+ * address, so a phone can land on the table in one hop, and a Select whose
+ * value matches no item renders BLANK — the switch would stop saying where you
+ * are at exactly the moment you most need it to. So the current view is always
+ * in the list, even when it is one this width does not otherwise offer.
+ *
+ * @param viewMode - The view showing right now.
  */
-const MOBILE_TABS: ViewTab[] = [...PRIMARY_TABS, ...MANAGEMENT_TABS].filter(
-  (tab) => tab.mode !== 'table'
-);
+function mobileTabs(viewMode: TeamViewMode): ViewTab[] {
+  const offered = [...PRIMARY_TABS, ...MANAGEMENT_TABS];
+  return offered.filter((tab) => tab.mode !== 'table' || viewMode === 'table');
+}
 
 const TAB_CLASS = 'text-xs font-medium transition-colors';
 const TAB_ACTIVE = 'bg-background text-foreground rounded-md px-3 py-1 shadow-sm';
@@ -96,7 +106,7 @@ export function TeamHeader({ viewMode }: TeamHeaderProps) {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {MOBILE_TABS.map(({ mode, label }) => (
+            {mobileTabs(viewMode).map(({ mode, label }) => (
               <SelectItem key={mode} value={mode}>
                 {label}
               </SelectItem>

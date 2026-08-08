@@ -48,8 +48,11 @@ vi.mock('@/layers/features/agent-settings', () => ({
   AgentDialog: () => null,
 }));
 
-// Mock AgentEmptyFilterState to make it easily assertable
-vi.mock('../ui/AgentEmptyFilterState', () => ({
+// Mock AgentEmptyFilterState to make it easily assertable. `AgentRosterFilterEmpty`
+// keeps its real copy: the words are the assertion, since that state's whole job
+// is telling you WHICH filters emptied the table.
+vi.mock('../ui/AgentEmptyFilterState', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../ui/AgentEmptyFilterState')>()),
   AgentEmptyFilterState: ({
     onClearFilters,
   }: {
@@ -575,5 +578,32 @@ describe('AgentsList', () => {
     expect(screen.getByRole('button', { name: 'Manage Agent B' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Chat with Agent C' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Manage Agent C' })).toBeInTheDocument();
+  });
+
+  // The Team page's chips, group toggle and search box all narrow this table
+  // too. They used to narrow nothing: `?kind=people` listed every agent while
+  // the URL claimed people-only. `narrowAgentsByRoster` is unit-tested on its
+  // own; this proves the prop actually reaches it.
+  describe('the Team roster filters', () => {
+    it('shows no agents when the roster is narrowed to people', () => {
+      render(
+        <AgentsList
+          agents={multiNsAgents}
+          isLoading={false}
+          rosterFilters={{ kind: 'people', group: 'none' }}
+        />,
+        { wrapper: createWrapper() }
+      );
+
+      expect(screen.queryByRole('button', { name: 'Chat with Agent A' })).not.toBeInTheDocument();
+      expect(screen.getByText(/This table lists agents/)).toBeInTheDocument();
+    });
+
+    it('leaves the fleet alone when no roster filter is driving it', () => {
+      render(<AgentsList agents={multiNsAgents} isLoading={false} />, { wrapper: createWrapper() });
+
+      expect(screen.getByRole('button', { name: 'Chat with Agent A' })).toBeInTheDocument();
+      expect(screen.queryByText(/This table lists agents/)).not.toBeInTheDocument();
+    });
   });
 });

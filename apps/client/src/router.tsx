@@ -133,6 +133,14 @@ export type DashboardSearch = z.infer<typeof dashboardSearchSchema>;
  * replaces: the table view is the same fleet table, and its filter bar reads
  * them straight out of the URL.
  *
+ * **Every enum here `.catch()`es rather than throwing.** A URL is something a
+ * person can hand-edit, a bookmark can preserve past a rename, and an old
+ * release note can outlive. A value this route no longer knows is a stale
+ * address, not a broken app, so it falls back to the default and shows the
+ * roster — the same forgiving read `normalizeTeamView` documents. Without this
+ * the route threw, and `?view=bogus` rendered a "Something went wrong" page
+ * with a raw Zod dump on it.
+ *
  * @internal Exported for testing only.
  */
 export const teamSearchSchema = mergeDialogSearch(
@@ -140,14 +148,14 @@ export const teamSearchSchema = mergeDialogSearch(
     .object({
       view: z.preprocess(
         (value) => (value === LEGACY_TABLE_VIEW ? 'table' : value),
-        z.enum(TEAM_VIEWS).optional().default(DEFAULT_TEAM_VIEW)
+        z.enum(TEAM_VIEWS).catch(DEFAULT_TEAM_VIEW)
       ),
       /** The filter chips: everyone, only people, only agents. */
-      kind: z.enum(['all', 'people', 'agents']).optional().default('all'),
+      kind: z.enum(['all', 'people', 'agents']).catch('all'),
       /** A person's roster id — narrows to them and the agents they own. */
       owner: z.string().optional(),
       /** Whether agent cards cluster under the person they belong to. */
-      group: z.enum(['none', 'manager']).optional().default('none'),
+      group: z.enum(['none', 'manager']).catch('none'),
       /** The roster search box. */
       q: z.string().optional(),
       // No `member` param, despite spec §W2.1 listing one for the profile
