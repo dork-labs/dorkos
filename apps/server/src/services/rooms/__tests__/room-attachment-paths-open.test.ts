@@ -66,9 +66,13 @@ describe('every path the agent is told about', () => {
       { kind: 'channel', title: 'Backend', members: [], agentPaths: ['/agents/ana'] },
       human
     );
-    // A channel seeds `mention-only`; this test wants every post to trigger.
+    // `mention-only` so the messages carrying files do NOT wake Ana: her read
+    // cursor stays where it started, so those messages are still unread — and
+    // therefore still in the context window — when the final `@ana` triggers
+    // her. Under `always` each post advances the cursor past itself, and the
+    // window this test is about would be empty (main's ambient window, RP3).
     const ana = authors.resolveAgent('/agents/ana', 'Ana').id;
-    service.updateMembership(room.id, human, ana, 'always');
+    service.updateMembership(room.id, human, ana, 'mention-only');
   });
 
   afterEach(async () => {
@@ -140,7 +144,7 @@ describe('every path the agent is told about', () => {
       attachmentIds: [first, second],
     });
     await service.triggersIdle();
-    service.post(room.id, { authorId: human, text: 'any idea?' });
+    service.post(room.id, { authorId: human, text: '@ana any idea?' });
     await service.triggersIdle();
 
     const { block, projection } = lastTurn();
@@ -194,7 +198,7 @@ describe('every path the agent is told about', () => {
     const file = await upload(longName);
     service.post(room.id, { authorId: human, text: 'the big one', attachmentIds: [file] });
     await service.triggersIdle();
-    service.post(room.id, { authorId: human, text: 'any idea?' });
+    service.post(room.id, { authorId: human, text: '@ana any idea?' });
     await service.triggersIdle();
 
     const { block, projection } = lastTurn();
@@ -226,7 +230,7 @@ describe('every path the agent is told about', () => {
   it('tells the agent nothing when a message carried no files', async () => {
     service.post(room.id, { authorId: human, text: 'just words' });
     await service.triggersIdle();
-    service.post(room.id, { authorId: human, text: 'any idea?' });
+    service.post(room.id, { authorId: human, text: '@ana any idea?' });
     await service.triggersIdle();
 
     const { block, projection } = lastTurn();

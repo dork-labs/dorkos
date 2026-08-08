@@ -13,7 +13,7 @@ import {
   Button,
 } from '@/layers/shared/ui';
 import { useAppStore } from '@/layers/shared/model';
-import { joinPath, parentOf, ROOT_KEY } from '../model/tree';
+import { isAtOrUnder, joinPath, parentOf, ROOT_KEY } from '../model/tree';
 import { useFileExplorer } from '../model/use-file-explorer';
 import { useFileExplorerStore } from '../model/file-explorer-store';
 import { FileTree } from './FileTree';
@@ -42,9 +42,20 @@ export function FileExplorer() {
   // refresh; `renamingPath`/`draft` stay component-local (ephemeral, D7).
   const selectedPath = useFileExplorerStore((s) => s.selectedPath);
   const setSelectedPath = useFileExplorerStore((s) => s.setSelectedPath);
+  const clipboard = useFileExplorerStore((s) => s.clipboard);
 
   const [draft, setDraft] = useState<DraftCreate | null>(null);
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
+
+  // Paste is offered only where it could actually land: something has to be on
+  // the clipboard, and a folder cannot be pasted inside itself. Dimming the
+  // item is what makes that legible — the refusal toast is the safety net for
+  // the keyboard, not the explanation.
+  const canPasteInto = useCallback(
+    (toDir: string): boolean =>
+      clipboard !== null && !(clipboard.isDir && isAtOrUnder(toDir, clipboard.path)),
+    [clipboard]
+  );
 
   const startCreate = useCallback(
     (parent: string, type: 'file' | 'dir') => {
@@ -143,6 +154,22 @@ export function FileExplorer() {
             onNewFolder={(parent) => startCreate(parent, 'dir')}
             onDelete={(entry) => void explorer.removeEntry(entry)}
             onMove={(from, toDir) => void explorer.moveEntry(from, toDir)}
+            onCopyInto={(from, toDir) => void explorer.copyEntry(from, toDir)}
+            onCopy={explorer.copyToClipboard}
+            onPaste={(toDir) => {
+              if (clipboard) void explorer.copyEntry(clipboard, toDir);
+            }}
+            onDuplicate={(entry) =>
+              void explorer.copyEntry(
+                { path: entry.path, isDir: entry.type === 'dir' },
+                parentOf(entry.path)
+              )
+            }
+            canPasteInto={canPasteInto}
+            revealLabel={explorer.revealLabel}
+            onReveal={(entry) => void explorer.reveal(entry)}
+            onAddToChat={explorer.addToChat}
+            onCopyPath={(entry, kind) => void explorer.copyPath(entry, kind)}
           />
         )}
       </div>

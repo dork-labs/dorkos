@@ -31,6 +31,17 @@ export function joinPath(parent: string, name: string): string {
 }
 
 /**
+ * Whether `path` is `dir` itself or something inside it.
+ *
+ * The question behind "can this folder go there?": a folder cannot be moved or
+ * copied into itself or its own subtree, and a paste target inside the copied
+ * folder is the same mistake.
+ */
+export function isAtOrUnder(path: string, dir: string): boolean {
+  return path === dir || path.startsWith(`${dir}/`);
+}
+
+/**
  * Ancestor directory paths of a cwd-relative path, nearest-root first, excluding
  * the path itself and the root (`src/a/b.ts` → `['src', 'src/a']`).
  */

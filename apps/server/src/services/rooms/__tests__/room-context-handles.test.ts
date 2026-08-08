@@ -409,6 +409,14 @@ describe('every @name in the room-context block reaches the member it names', ()
     // handle here would be inert at best, and at worst would reach whoever
     // answers to that name now.
     await openAndSpeak(() => null);
+    // Back to answering only when named, so Priya's message is still UNREAD when
+    // the last line wakes Ana: a turn advances the cursor past what it answered
+    // (spec §8.3), so a message every agent was triggered by is not history any
+    // of them is shown again.
+    for (const member of room.members) {
+      if (member.author.kind !== 'agent') continue;
+      service.updateMembership(room.id, harness.human, member.author.id, 'mention-only');
+    }
     const priya = harness.authors.resolve({
       kind: 'human',
       naturalKey: 'user:priya',
@@ -420,7 +428,7 @@ describe('every @name in the room-context block reaches the member it names', ()
     service.removeMember(room.id, harness.human, priya.id);
     harness.runner.turns.length = 0;
 
-    service.post(room.id, { authorId: harness.human, text: 'anyone?' });
+    service.post(room.id, { authorId: harness.human, text: '@ana anyone?' });
     await service.triggersIdle();
 
     const context = harness.runner.turns[0]!.roomContext;

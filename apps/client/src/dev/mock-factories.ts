@@ -175,6 +175,7 @@ export function createRoomMember(overrides: Partial<RoomRosterEntry> = {}): Room
     authorId: author.id,
     responseMode: 'engaged',
     joinedAt: minutesBeforeNow(60 * 24 * 3),
+    joinedSeq: 0,
     lastReadSeq: 0,
     origin: 'local',
     ...overrides,
@@ -193,6 +194,7 @@ export function createRoomWithRoster(overrides: Partial<RoomWithRoster> = {}): R
     topic: 'Where the day starts',
     workspaceId: null,
     archived: false,
+    ambientMaxEntries: 30,
     createdAt: minutesBeforeNow(60 * 24 * 12),
     lastActivityAt: minutesBeforeNow(9),
     viewerAuthorId:

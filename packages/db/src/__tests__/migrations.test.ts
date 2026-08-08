@@ -136,7 +136,7 @@ describe('Database Migrations', () => {
       'relay_traces',
       // Files uploaded into a room, bound to the entry that carries them inside
       // that entry's own transaction — nullable `entry_id` is the "uploaded,
-      // not yet posted" state (room-attachments spec, migration 0057).
+      // not yet posted" state (room-attachments spec, migration 0058).
       'room_attachments',
       // A room's durable bridge identity and its platform-message external-ref
       // table — the chats-as-channels foundation (spec §3.1, §6.3, migration
@@ -383,7 +383,7 @@ describe('Database Migrations', () => {
     // Nullable on purpose: a file exists before the message that carries it, and
     // SQLite skips the composite foreign-key check while `entry_id` is NULL.
     expect(columns.find((c) => c.name === 'entry_id')?.notnull).toBe(0);
-    // Whatever the store answered, stored rather than rebuilt (migration 0058).
+    // Whatever the store answered, stored rather than rebuilt (migration 0059).
     // A bucket-backed store's absolute URL is not derivable from the ids, so a
     // reader that recomputed it would work today and break the day it mattered.
     expect(columns.find((c) => c.name === 'url')?.notnull).toBe(1);

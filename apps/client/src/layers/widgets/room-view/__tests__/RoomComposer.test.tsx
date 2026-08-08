@@ -56,6 +56,7 @@ function roomWith(overrides: Partial<RoomWithRoster> = {}): RoomWithRoster {
     topic: null,
     workspaceId: null,
     archived: false,
+    ambientMaxEntries: 30,
     createdAt: '2026-07-26T09:00:00.000Z',
     lastActivityAt: '2026-07-26T10:00:00.000Z',
     members: [],

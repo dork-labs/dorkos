@@ -2,18 +2,75 @@
   "version": 1,
   "specs": [
     {
+      "id": "260808-144053",
+      "slug": "file-explorer-actions",
+      "title": "File explorer: context menu actions, copy/paste, and drag-and-drop",
+      "created": "2026-08-08",
+      "status": "specified",
+      "linearIssue": "DOR-1032"
+    },
+    {
+      "id": "260807-231654",
+      "slug": "background-task-level-state",
+      "title": "Level-Based Background Task State",
+      "created": "2026-08-07",
+      "status": "ideation"
+    },
+    {
+      "id": "260807-231653",
+      "slug": "verified-message-origin",
+      "title": "Verified Message Origin for Relay and Mesh",
+      "created": "2026-08-07",
+      "status": "ideation"
+    },
+    {
+      "id": "260807-231652",
+      "slug": "runtime-prompt-redelivery",
+      "title": "Runtime Prompt Redelivery After Transport Gaps",
+      "created": "2026-08-07",
+      "status": "ideation"
+    },
+    {
+      "id": "260807-231651",
+      "slug": "runtime-interrupt-receipts",
+      "title": "Runtime Interrupt Receipts — Stop That Actually Stops",
+      "created": "2026-08-07",
+      "status": "ideation"
+    },
+    {
+      "id": "260807-231650",
+      "slug": "opencode-sdk-upgrade-1.18.15",
+      "title": "OpenCode SDK Upgrade to 1.18.15",
+      "created": "2026-08-07",
+      "status": "ideation"
+    },
+    {
+      "id": "260807-231649",
+      "slug": "codex-sdk-upgrade-0.147.0",
+      "title": "Codex SDK Upgrade to 0.147.0",
+      "created": "2026-08-07",
+      "status": "ideation"
+    },
+    {
+      "id": "260807-231648",
+      "slug": "claude-agent-sdk-upgrade-0.3.224",
+      "title": "Claude Agent SDK Upgrade to 0.3.224",
+      "created": "2026-08-07",
+      "status": "ideation"
+    },
+    {
       "id": "260807-170131",
       "slug": "team-room-home",
       "title": "The home is a room: #team room home, tabs IA, jump back in",
       "created": "2026-08-07",
-      "status": "ideation"
+      "status": "specified"
     },
     {
       "id": "260806-215029",
       "slug": "composer-rich-text",
       "title": "Rich text via markdown in the composer (Lexical)",
       "created": "2026-08-06",
-      "status": "ideation"
+      "status": "specified"
     },
     {
       "id": "260806-215028",

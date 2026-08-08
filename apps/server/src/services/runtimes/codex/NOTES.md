@@ -185,6 +185,13 @@ to a user's `$CODEX_HOME`.
 to ≥ 0.143.0 during P2 stabilization to pick up #29599, and note the residual write churn in
 the runtime's docs until then.
 
+**2026-08-07 update:** the pin moved to `~0.147.0` (DOR-1012), well past the ≥0.143.0
+threshold above. `#29599` ("Stop persisting bridged log events") is included, so the
+`logs_2.sqlite` unbounded-write defect is fully patched at the current pin — the residual
+write churn described above no longer applies. Not re-verified live (no re-probe of
+`logs_2.sqlite` growth at 0.147.0); recorded from the changelog per
+`research/runtime-upgrades/codex-sdk/0.144.1-to-0.147.0/impact-assessment.md`.
+
 ## Additional live-verified facts for 2.4 / 2.5
 
 - **JSONL events are stdout-only; tracing lines are stderr-only** (verified with separate

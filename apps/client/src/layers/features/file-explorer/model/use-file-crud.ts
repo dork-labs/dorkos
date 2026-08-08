@@ -1,9 +1,12 @@
 import { useCallback, useMemo, useState, type RefObject } from 'react';
+import { toast } from 'sonner';
 import type { QueryClient } from '@tanstack/react-query';
 import type { FileEntry, FileTreeResponse } from '@dorkos/shared/types';
 import { useTransport } from '@/layers/shared/model';
-import { toastCrudError, getErrorCode } from '../lib/crud-errors';
-import { baseName, joinPath, parentOf, sortEntries } from './tree';
+import { toastCrudError, getErrorCode, COPY_INTO_SELF_MESSAGE } from '../lib/crud-errors';
+import { freeCopyName } from '../lib/copy-name';
+import type { EntryRef } from './types';
+import { baseName, isAtOrUnder, joinPath, parentOf, ROOT_KEY, sortEntries } from './tree';
 import { useFileExplorerStore } from './file-explorer-store';
 
 /**
@@ -45,6 +48,15 @@ export interface FileCrudApi {
   renameEntry: (entry: FileEntry, newName: string) => Promise<boolean>;
   removeEntry: (entry: FileEntry) => Promise<void>;
   moveEntry: (fromPath: string, toDir: string) => Promise<void>;
+  /**
+   * Copy an entry into a directory, naming it so it never lands on something
+   * that is already there. Pass the entry's own parent to duplicate in place.
+   *
+   * Takes an {@link EntryRef} rather than a path because the source is often
+   * long gone from the screen by the time this runs — the clipboard outlives
+   * the row that filled it.
+   */
+  copyEntry: (from: EntryRef, toDir: string) => Promise<void>;
   /** A non-empty directory awaiting recursive-delete confirmation, or null. */
   pendingRecursiveDelete: FileEntry | null;
   confirmRecursiveDelete: () => Promise<void>;
@@ -89,6 +101,25 @@ export function useFileCrud(deps: FileCrudDeps): FileCrudApi {
         queryClient.getQueryData<FileTreeResponse>(treeKey(path))?.entries ?? [],
       /** Whether a directory's listing has been fetched into the cache. */
       isLoaded: (path: string): boolean => queryClient.getQueryData(treeKey(path)) !== undefined,
+      /**
+       * Every name a directory holds, hidden entries included — what a copy has
+       * to steer around.
+       *
+       * Read straight from the transport rather than through the cache, on
+       * purpose. The tree's own listing is filtered by the show-hidden toggle,
+       * and a name you cannot see is still a name you cannot use: computing a
+       * copy's name from the filtered listing lands `.env` on top of an
+       * existing `.env` and the server answers 409. Reading it fresh also means
+       * the answer is never a stale cache entry, which for "is this name free?"
+       * is the only useful kind.
+       */
+      takenNames: async (path: string): Promise<string[]> => {
+        const listing = await transport.readFileTree(cwd, {
+          path: path === ROOT_KEY ? undefined : path,
+          showHidden: true,
+        });
+        return listing.entries.map((e) => e.name);
+      },
       /** Snapshot a directory's cached response for rollback. */
       snapshot: (path: string): FileTreeResponse | undefined =>
         queryClient.getQueryData<FileTreeResponse>(treeKey(path)),
@@ -107,7 +138,7 @@ export function useFileCrud(deps: FileCrudDeps): FileCrudApi {
         void queryClient.invalidateQueries({ queryKey: treeKey(path), exact: true });
       },
     };
-  }, [queryClient, cwd, showHidden]);
+  }, [queryClient, transport, cwd, showHidden]);
 
   const createEntry = useCallback(
     (parent: string, name: string, type: 'file' | 'dir'): Promise<boolean> =>
@@ -236,7 +267,7 @@ export function useFileCrud(deps: FileCrudDeps): FileCrudApi {
         // No-ops and self-nesting: dropping onto the current parent, onto itself,
         // or into its own subtree.
         if (toDir === fromParent || newPath === fromPath) return;
-        if (toDir === fromPath || toDir.startsWith(`${fromPath}/`)) return;
+        if (isAtOrUnder(toDir, fromPath)) return;
         const entry = cache.getChildren(fromParent).find((e) => e.path === fromPath);
         if (!entry) return;
 
@@ -267,11 +298,67 @@ export function useFileCrud(deps: FileCrudDeps): FileCrudApi {
     [transport, cwd, cache, guard]
   );
 
+  const copyEntry = useCallback(
+    (from: EntryRef, toDir: string): Promise<void> =>
+      guard(async () => {
+        // A folder cannot go inside itself. The server refuses it too (400
+        // COPY_INTO_SELF, which reads the same), but the round trip buys nothing
+        // — and this used to return in silence, which is how a paste right after
+        // copying a folder looked like nothing happening at all.
+        if (from.isDir && isAtOrUnder(toDir, from.path)) {
+          toast.error(COPY_INTO_SELF_MESSAGE);
+          return;
+        }
+
+        let taken: string[];
+        try {
+          taken = await cache.takenNames(toDir);
+        } catch (err) {
+          toastCrudError(err, "Couldn't copy");
+          return;
+        }
+        const name = freeCopyName({
+          name: baseName(from.path),
+          isDir: from.isDir,
+          taken,
+        });
+        const newPath = joinPath(toDir, name);
+
+        // Show the copy where it will land — but only where the destination's
+        // listing is already on screen, exactly as a move does. Writing a row
+        // into a directory that was never fetched would invent a listing
+        // containing nothing but that row.
+        //
+        // The name is free by construction, so unlike create/rename/move there
+        // is no collision case: the optimistic row can never be standing on top
+        // of an existing one, and rolling it back can never take one out.
+        const destShown = cache.isLoaded(toDir);
+        const prev = destShown ? cache.snapshot(toDir) : undefined;
+        if (destShown) {
+          const source = cache.getChildren(parentOf(from.path)).find((e) => e.path === from.path);
+          const copied: FileEntry = source
+            ? { ...source, name, path: newPath }
+            : draftEntry(newPath, name, from.isDir ? 'dir' : 'file');
+          cache.setChildren(toDir, (es) => [...es, copied]);
+        }
+        try {
+          await transport.copyEntry(cwd, from.path, newPath);
+        } catch (err) {
+          if (destShown) cache.restore(toDir, prev);
+          toastCrudError(err, "Couldn't copy");
+        } finally {
+          cache.invalidate(toDir);
+        }
+      }),
+    [transport, cwd, cache, guard]
+  );
+
   return {
     createEntry,
     renameEntry,
     removeEntry,
     moveEntry,
+    copyEntry,
     pendingRecursiveDelete,
     confirmRecursiveDelete,
     cancelRecursiveDelete,

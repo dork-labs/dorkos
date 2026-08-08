@@ -308,7 +308,13 @@ describe('acknowledgments in the room context', () => {
     it('renders OUTSIDE the untrusted fence, beside the agent’s own words', async () => {
       const entryId = await anaSaid('Deployed.');
       service.toggleReaction(room.id, entryId, human, '👍');
-      await say('and the rollback plan?');
+      // A turn advances Ana's cursor past the message it answered (spec §8.3), so
+      // an `always` agent never has a backlog and the block would open no fence
+      // at all. One message she is not woken for is what puts one there.
+      service.updateMembership(room.id, human, ana, 'mention-only');
+      service.post(room.id, { authorId: human, text: 'overheard chatter' });
+      await service.triggersIdle();
+      await say('@ana and the rollback plan?');
 
       const block = formatRoomContext(anaContext(), { nonce: FENCE_NONCE });
       const acknowledgment = block.indexOf('Reactions to what you said here:');

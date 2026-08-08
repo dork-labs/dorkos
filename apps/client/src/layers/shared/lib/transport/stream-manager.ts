@@ -216,10 +216,10 @@ export const GENERIC_EVENTS = [
   'approval_resolved',
   'approval_grant_changed',
   // Rooms (spec `rooms`, ADR 260726-170125). The ENTRIES of a room ride that
-  // room on its own durable stream (`/api/rooms/:id/events`); these six are the
-  // global signals for a reader NOT connected to it — the room list changing,
-  // an activity bump that reorders the list and marks a room unread, and the
-  // count of agents working in it.
+  // room on its own durable stream (`/api/rooms/:id/events`); these seven are
+  // the global signals for a reader NOT connected to it — the room list
+  // changing, an activity bump that reorders the list and marks a room unread,
+  // the count of agents working in it, and a read cursor moving.
   // (No apostrophes here on purpose: the guard test parses this block with a
   // single-quote regex, so a contraction would read as an event name.)
   'room_created',
@@ -231,6 +231,11 @@ export const GENERIC_EVENTS = [
   // claim-time, where `room_activity` above is durable and entry-time — which is
   // exactly why it is a sixth name rather than a payload field on the fifth.
   'room_presence',
+  // Somebody moved their read cursor in a room — the same person on a second
+  // device, most of the time. It carries who moved it and the unread count the
+  // room list should now draw, so a badge cleared on one screen clears on the
+  // other without waiting for a poll.
+  'room_read_cursor',
   // The whole session list is stale — drop it and refetch (spec
   // `claude-code-accounts` D5). Emitted when the Claude accounts move: the
   // restarted watcher upserts sessions from the roots it now watches but never

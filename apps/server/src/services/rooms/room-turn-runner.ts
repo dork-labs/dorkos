@@ -288,23 +288,6 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         },
       });
 
-      // The turn started, so the session is real: record which runtime owns it.
-      // The registry binds a session that has no runtime yet and leaves a bound
-      // one untouched, so a resumed session is a no-op.
-      //
-      // No `interactive` flag, deliberately: the configured default trust stop
-      // is for sessions a person is watching (spec `trust-dial`, decision 6).
-      // A room turn runs into the dark, so it keeps the runtime's own default —
-      // the same reason the seed above carries model and effort and nothing
-      // about permissions.
-      if (result.accepted) {
-        await runtimeRegistry.persistSessionRuntime(
-          result.canonicalId ?? sessionId,
-          runtimeType,
-          request.agentPath
-        );
-      }
-
       if (!result.accepted) {
         // Somebody else is writing to this session — the operator, most likely,
         // typing into the very agent the room just addressed. Skipping the turn
@@ -322,6 +305,46 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       }
 
       const canonicalId = result.canonicalId ?? sessionId;
+
+      // The turn started, so the session is real: record which runtime owns it.
+      // The registry binds a session that has no runtime yet and leaves a bound
+      // one untouched, so a resumed session is a no-op.
+      //
+      // No `interactive` flag, deliberately: the configured default trust stop
+      // is for sessions a person is watching (spec `trust-dial`, decision 6).
+      // A room turn runs into the dark, so it keeps the runtime's own default —
+      // the same reason the seed above carries model and effort and nothing
+      // about permissions.
+      //
+      // **BELOW the `!accepted` return, and its failure is LOGGED rather than
+      // thrown.** Both halves of that are load-bearing, and it used to be one
+      // `await` above the guard.
+      //
+      // This is bookkeeping about a turn that has already happened — the query
+      // was accepted, the model streamed, the answer is sitting in `collecting`.
+      // A `SQLITE_BUSY` on this row is a live hazard (`bindRoomSession` in
+      // `room-trigger.ts` is try-wrapped for exactly it), and thrown from here it
+      // escaped `run` entirely: the room reported a turn that ANSWERED as failed,
+      // dropped the answer on the floor, and — because a throw out of `run` is
+      // what the dispatcher reads as "the turn never started" — rewound the read
+      // cursor and replayed the whole window to the next turn
+      // (room-participation spec §8.3).
+      //
+      // So the invariant this line protects is the dispatcher's, not its own: a
+      // throw out of `run` must mean NOTHING RAN. Nothing that happens after the
+      // model has spoken may throw past here. What is lost when this fails is one
+      // runtime-attribution row, which the next turn on this session rewrites.
+      try {
+        await runtimeRegistry.persistSessionRuntime(canonicalId, runtimeType, request.agentPath);
+      } catch (err) {
+        logger.warn('[rooms] could not record which runtime owns this session', {
+          sessionId: canonicalId,
+          roomId: request.room.id,
+          runtimeType,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+
       const reply = await collecting.beforeDeadline;
       if (!reply) {
         // The room stops WAITING here; the turn keeps running. Its answer is

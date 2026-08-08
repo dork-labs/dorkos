@@ -1,14 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, rm } from 'node:fs/promises';
 import type { RuntimeProvisionProgress } from '@dorkos/shared/transport';
-import { provisionOpenCode, resolveProvisionedOpenCodePath } from '../provision.js';
+import { logger } from '../../../../lib/logger.js';
+import {
+  OPENCODE_PACKAGE_VERSION,
+  ensureProvisionedOpenCodeVersion,
+  provisionOpenCode,
+  resolveProvisionedOpenCodePath,
+} from '../provision.js';
 
 // MOCK the spawned installer — never run a real npm install in CI.
 vi.mock('node:child_process', () => ({ spawn: vi.fn() }));
-vi.mock('node:fs', () => ({ existsSync: vi.fn() }));
+vi.mock('node:fs', () => ({ existsSync: vi.fn(), readFileSync: vi.fn() }));
 vi.mock('node:fs/promises', () => ({
   mkdir: vi.fn(async () => undefined),
   rm: vi.fn(async () => undefined),
@@ -133,5 +139,79 @@ describe('provisionOpenCode', () => {
     expect(result.ok).toBe(false);
     expect(result.error).toContain('Could not install OpenCode');
     expect(spawn).not.toHaveBeenCalled();
+  });
+});
+
+describe('ensureProvisionedOpenCodeVersion', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    armSpawn();
+  });
+
+  it('returns null (no re-provision attempted) when nothing is provisioned yet', async () => {
+    vi.mocked(existsSync).mockReturnValue(false);
+
+    const result = await ensureProvisionedOpenCodeVersion();
+
+    expect(result).toBeNull();
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it('reuses the provisioned binary when its version matches the pin — no re-provision', async () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ version: OPENCODE_PACKAGE_VERSION }));
+
+    const result = await ensureProvisionedOpenCodeVersion();
+
+    expect(result).toBe(resolveProvisionedOpenCodePath());
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it('re-provisions in place when the installed version has drifted from the pin', async () => {
+    vi.mocked(existsSync).mockReturnValue(true); // binary present throughout, including post-install
+    vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ version: '1.17.13' }));
+
+    const resultP = ensureProvisionedOpenCodeVersion();
+    await flush();
+    child.stdout.emit('data', Buffer.from('added 1 package'));
+    child.emit('exit', 0);
+    const result = await resultP;
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(spawn).mock.calls[0][1]).toEqual(
+      expect.arrayContaining([`opencode-ai@${OPENCODE_PACKAGE_VERSION}`])
+    );
+    expect(result).toBe(resolveProvisionedOpenCodePath());
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.stringContaining(
+        `provisioned opencode-ai 1.17.13 != pinned ${OPENCODE_PACKAGE_VERSION} — re-provisioning`
+      )
+    );
+  });
+
+  it('treats an unreadable/missing package.json as needing provisioning, without crashing', async () => {
+    vi.mocked(existsSync).mockReturnValue(true); // binary present, but its package.json is gone/corrupt
+    vi.mocked(readFileSync).mockImplementation(() => {
+      throw new Error('ENOENT: no such file or directory');
+    });
+
+    const resultP = ensureProvisionedOpenCodeVersion();
+    await flush();
+    child.emit('exit', 0);
+
+    await expect(resultP).resolves.toBe(resolveProvisionedOpenCodePath());
+    expect(spawn).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns null when re-provisioning is attempted but fails', async () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ version: '1.17.13' }));
+
+    const resultP = ensureProvisionedOpenCodeVersion();
+    await flush();
+    child.stderr.emit('data', Buffer.from('npm ERR! network timeout'));
+    child.emit('exit', 1);
+
+    await expect(resultP).resolves.toBeNull();
   });
 });

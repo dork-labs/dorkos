@@ -251,6 +251,11 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     createEntry: vi.fn().mockResolvedValue({ ok: true, path: 'mock-path' }),
     deleteEntry: vi.fn().mockResolvedValue({ ok: true }),
     renameEntry: vi.fn().mockResolvedValue({ ok: true }),
+    copyEntry: vi.fn().mockResolvedValue({ ok: true }),
+    // Reveal behaves like the HTTP transport by default (supported); tests that
+    // need the DirectTransport path override `supportsReveal: false`.
+    supportsReveal: true,
+    revealEntry: vi.fn().mockResolvedValue(undefined),
     getConfig: vi.fn().mockResolvedValue({
       version: '1.0.0',
       port: 4242,

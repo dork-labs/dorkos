@@ -15,7 +15,7 @@
  * @module services/runtimes/opencode/provision
  */
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import type { RuntimeProvisionProgress, RuntimeProvisionResult } from '@dorkos/shared/transport';
@@ -43,6 +43,67 @@ export function resolveOpenCodeProvisionDir(): string {
 export function resolveProvisionedOpenCodePath(): string {
   const bin = process.platform === 'win32' ? 'opencode.cmd' : 'opencode';
   return path.join(resolveOpenCodeProvisionDir(), 'node_modules', '.bin', bin);
+}
+
+/**
+ * Absolute path to the provisioned `opencode-ai` package's own `package.json` —
+ * the source of truth for which version is actually installed, read to detect
+ * drift from {@link OPENCODE_PACKAGE_VERSION} after a pin bump ships.
+ */
+export function resolveProvisionedOpenCodePackageJsonPath(): string {
+  return path.join(resolveOpenCodeProvisionDir(), 'node_modules', 'opencode-ai', 'package.json');
+}
+
+/**
+ * Read the installed `opencode-ai` version from the provisioned package's own
+ * `package.json`. Returns `null` — never throws — when the file is missing,
+ * unreadable, or malformed; callers treat that the same as a version mismatch
+ * (safest default: re-provision rather than trust an unverifiable install).
+ */
+function readProvisionedOpenCodeVersion(): string | null {
+  try {
+    const raw = readFileSync(resolveProvisionedOpenCodePackageJsonPath(), 'utf-8');
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      parsed !== null &&
+      typeof parsed === 'object' &&
+      'version' in parsed &&
+      typeof parsed.version === 'string'
+    ) {
+      return parsed.version;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve the provisioned `opencode` binary, re-provisioning first when the
+ * installed `opencode-ai` version has drifted from the current
+ * {@link OPENCODE_PACKAGE_VERSION} pin (the fix for DOR-1034: a version bump to
+ * the pin previously left an existing provisioned install stale forever, since
+ * nothing ever re-checked it after the initial install).
+ *
+ * Returns `null` when there is nothing usable — no provisioned install exists
+ * yet (the ordinary "not provisioned" case, left to the normal Connect/Install
+ * flow), or a re-provision attempt failed — so resolution falls through to the
+ * next candidate (`PATH`) exactly as a missing binary always has. Never throws.
+ */
+export async function ensureProvisionedOpenCodeVersion(): Promise<string | null> {
+  const binaryPath = resolveProvisionedOpenCodePath();
+  if (!existsSync(binaryPath)) return null;
+
+  const installed = readProvisionedOpenCodeVersion();
+  if (installed === OPENCODE_PACKAGE_VERSION) return binaryPath;
+
+  logger.info(
+    installed
+      ? `[OpenCode] provisioned opencode-ai ${installed} != pinned ${OPENCODE_PACKAGE_VERSION} — re-provisioning`
+      : `[OpenCode] provisioned opencode-ai version unreadable — re-provisioning`
+  );
+  const result = await provisionOpenCode();
+  return result.ok ? (result.binaryPath ?? null) : null;
 }
 
 /** Package-manager-agnostic installer invocation: a scoped `npm install --prefix`. */

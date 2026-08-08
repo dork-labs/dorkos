@@ -419,6 +419,10 @@ Two clamps, and both matter because every agent cursor is currently `0`.
 
 **The cursor advances when the turn is claimed**, not when the reply posts. A turn that errors still saw the pending entries, and replaying them on the next turn would show the agent the same messages twice.
 
+**Implementation note (2026-08-08).** RP3 shipped in `room-context.ts` with the third clamp spelled as a **newest-first SQL `LIMIT` on qualifying entries**, ceiling at the triggering entry's `seq`, rather than as the literal `latestSeq - ambientMaxEntries` floor above. The two agree whenever nothing is excluded, and the limit is a superset of the floor whenever something is: the seq arithmetic counts POSITIONS, and the window's two exclusions — the agent's own posts and the trigger itself — take positions out of it, so a room whose last 30 entries include five of the agent's own would deliver 25 under the literal floor. That is also what §8.4's second test measures: in a 100-entry room the trigger is entry 100, so the literal floor of 95 exclusive yields four entries, not five. **Do not "restore" the arithmetic formula** — it is the same window on the easy case and a quietly smaller one on every real case.
+
+Two clauses hang off that ceiling and are worth naming because neither is obvious from the formula. The ceiling is what makes the claim-time advance safe: a message landing while a turn is being assembled belongs to the NEXT turn, because the cursor the claim wrote stops at the trigger. And the advance is **rewound**, under a compare-and-set on the value the claim wrote, on the two paths that reach a terminal before any model runs — the session was busy, or the runner threw on the way in. Nothing was shown on either, so nothing was read; leaving the cursor forward made the whole backlog permanently invisible, and the busy notice then invited a re-send that landed above it. A turn that RAN and failed keeps the advance, which is the case this section's own sentence is about.
+
 ### 8.4 Testing
 
 - A `mention-only` agent joined at seq 40 and mentioned at seq 50 sees entries 41 to 49 in `pending`, and nothing at or below 40.

@@ -30,7 +30,7 @@ import { logger, logError } from '../../../lib/logger.js';
  * so the provisioned CLI and the SDK never drift. Reversible: a future SDK bump
  * updates this in lockstep.
  */
-export const CODEX_PACKAGE_VERSION = '0.144.1';
+export const CODEX_PACKAGE_VERSION = '0.147.0';
 
 /** Dork-home-scoped directory the provisioned `@openai/codex` package is installed into. */
 export function resolveCodexProvisionDir(): string {

@@ -16,9 +16,10 @@ import {
   ResponsiveContextMenuSeparator,
   ResponsiveContextMenuTrigger,
 } from '@/layers/shared/ui';
-import { cn } from '@/layers/shared/lib';
+import { cn, FILE_PATH_DRAG_TYPE, hasFilePathDrag, readFilePathDrag } from '@/layers/shared/lib';
 import { parentOf } from '../model/tree';
 import type { FlatRow } from '../model/types';
+import type { CopyPathKind } from '../model/use-file-actions';
 
 /** Left indentation per nesting level, in pixels. */
 const INDENT_STEP = 12;
@@ -40,14 +41,38 @@ interface FileTreeRowProps {
   onStartRename: (entry: FileEntry) => void;
   onDelete: (entry: FileEntry) => void;
   onMove: (fromPath: string, toDir: string) => void;
+  /** Copy rather than move — an Alt-held drop, or Paste and Duplicate. */
+  onCopyInto: (fromPath: string, toDir: string) => void;
+  /** Put this entry on the explorer clipboard. */
+  onCopy: (entry: FileEntry) => void;
+  /** Paste the clipboard into a directory. */
+  onPaste: (toDir: string) => void;
+  /** Copy this entry beside itself. */
+  onDuplicate: (entry: FileEntry) => void;
+  /** Whether the clipboard holds something a given directory could take. */
+  canPasteInto: (toDir: string) => boolean;
+  /**
+   * Label for the reveal item, named after the server platform's file manager —
+   * `null` hides the item where no file manager can be opened at all.
+   */
+  revealLabel: string | null;
+  onReveal: (entry: FileEntry) => void;
+  onAddToChat: (entry: FileEntry) => void;
+  onCopyPath: (entry: FileEntry, kind: CopyPathKind) => void;
 }
 
 /**
  * One file-explorer tree row (spec right-panel-workbench, Chunk B): indentation
  * by depth, an expand chevron for directories, an inline rename input, a
- * right-click / long-press context menu (New File, New Folder, Rename, Delete),
- * and HTML5 drag-to-move. Selection and keyboard navigation are owned by the
- * parent `FileTree`; this row only reports intent.
+ * right-click / long-press context menu, and HTML5 drag-to-move. Selection and
+ * keyboard navigation are owned by the parent `FileTree`; this row only reports
+ * intent.
+ *
+ * The menu is grouped the way editors group theirs (DOR-1032): make something,
+ * then take it somewhere (the file manager, the chat), then copy and paste it,
+ * then copy its path, then change or remove it — destructive last.
+ *
+ * Dragging a row moves it; holding Alt while dropping copies instead.
  */
 export function FileTreeRow({
   row,
@@ -64,6 +89,15 @@ export function FileTreeRow({
   onStartRename,
   onDelete,
   onMove,
+  onCopyInto,
+  onCopy,
+  onPaste,
+  onDuplicate,
+  canPasteInto,
+  revealLabel,
+  onReveal,
+  onAddToChat,
+  onCopyPath,
 }: FileTreeRowProps) {
   const { entry, depth, expanded, loading } = row;
   const isDir = entry.type === 'dir';
@@ -90,19 +124,39 @@ export function FileTreeRow({
             }
           }}
           draggable={!renaming}
-          onDragStart={(e) => e.dataTransfer.setData('text/plain', entry.path)}
+          onDragStart={(e) => {
+            // `text/plain` so dropping into an outside editor pastes the path;
+            // the custom type is what our own surfaces recognise as a file
+            // reference rather than a file upload.
+            e.dataTransfer.setData('text/plain', entry.path);
+            e.dataTransfer.setData(FILE_PATH_DRAG_TYPE, entry.path);
+            // Without `copyMove` the browser refuses an Alt-held copy outright.
+            e.dataTransfer.effectAllowed = 'copyMove';
+          }}
           onDragOver={(e) => {
-            if (!isDir) return;
+            // Even a file row swallows this: whatever is under the pointer is a
+            // row, so the tree's own empty-space drop (the root) must not also
+            // claim it.
+            e.stopPropagation();
+            // Only our own rows are droppable here. Text dragged out of another
+            // app carries `text/plain` too, and reading that alone turned a
+            // dragged sentence into a move of whatever file it happened to name.
+            if (!isDir || !hasFilePathDrag(e.dataTransfer.types)) return;
             e.preventDefault();
+            // Alt held = copy, so the cursor shows a + before the drop lands.
+            e.dataTransfer.dropEffect = e.altKey ? 'copy' : 'move';
             setDropTarget(true);
           }}
           onDragLeave={() => setDropTarget(false)}
           onDrop={(e) => {
+            e.stopPropagation();
             if (!isDir) return;
-            e.preventDefault();
             setDropTarget(false);
-            const from = e.dataTransfer.getData('text/plain');
-            if (from) onMove(from, entry.path);
+            const from = readFilePathDrag(e.dataTransfer);
+            if (from === null) return;
+            e.preventDefault();
+            if (e.altKey) onCopyInto(from, entry.path);
+            else onMove(from, entry.path);
           }}
           onClick={() => {
             onSelect(entry);
@@ -158,12 +212,37 @@ export function FileTreeRow({
           )}
         </div>
       </ResponsiveContextMenuTrigger>
-      <ResponsiveContextMenuContent className="w-44">
+      <ResponsiveContextMenuContent className="w-52">
         <ResponsiveContextMenuItem onClick={() => onNewFile(parent)}>
           New File
         </ResponsiveContextMenuItem>
         <ResponsiveContextMenuItem onClick={() => onNewFolder(parent)}>
           New Folder
+        </ResponsiveContextMenuItem>
+        <ResponsiveContextMenuSeparator />
+        {revealLabel && (
+          <ResponsiveContextMenuItem onClick={() => onReveal(entry)}>
+            {revealLabel}
+          </ResponsiveContextMenuItem>
+        )}
+        <ResponsiveContextMenuItem onClick={() => onAddToChat(entry)}>
+          Add to Chat
+        </ResponsiveContextMenuItem>
+        <ResponsiveContextMenuSeparator />
+        <ResponsiveContextMenuItem onClick={() => onCopy(entry)}>Copy</ResponsiveContextMenuItem>
+        {/* On a folder the paste lands inside it; on a file, beside it. */}
+        <ResponsiveContextMenuItem disabled={!canPasteInto(parent)} onClick={() => onPaste(parent)}>
+          Paste
+        </ResponsiveContextMenuItem>
+        <ResponsiveContextMenuItem onClick={() => onDuplicate(entry)}>
+          Duplicate
+        </ResponsiveContextMenuItem>
+        <ResponsiveContextMenuSeparator />
+        <ResponsiveContextMenuItem onClick={() => onCopyPath(entry, 'absolute')}>
+          Copy Path
+        </ResponsiveContextMenuItem>
+        <ResponsiveContextMenuItem onClick={() => onCopyPath(entry, 'relative')}>
+          Copy Relative Path
         </ResponsiveContextMenuItem>
         <ResponsiveContextMenuSeparator />
         <ResponsiveContextMenuItem onClick={() => onStartRename(entry)}>

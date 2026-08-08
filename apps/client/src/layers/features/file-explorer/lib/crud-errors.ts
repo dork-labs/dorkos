@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 /** The coded file-service failures the explorer distinguishes. */
 export type CrudErrorCode =
   | 'CONFLICT'
+  | 'COPY_INTO_SELF'
   | 'DIR_NOT_EMPTY'
   | 'NOT_FOUND'
   | 'REFUSE_ROOT'
@@ -19,6 +20,7 @@ export type CrudErrorCode =
 
 const KNOWN_CODES: readonly CrudErrorCode[] = [
   'CONFLICT',
+  'COPY_INTO_SELF',
   'DIR_NOT_EMPTY',
   'NOT_FOUND',
   'REFUSE_ROOT',
@@ -34,9 +36,21 @@ export function getErrorCode(err: unknown): CrudErrorCode | undefined {
     : undefined;
 }
 
+/**
+ * The one sentence the "folder into itself" refusal says.
+ *
+ * Exported because two things can catch it: the explorer refuses the obvious
+ * cases before asking, and the server refuses the rest — including the ones the
+ * client cannot see, like a case-insensitive filesystem where `SRC` and `src`
+ * are the same folder. Both must read the same, or the same mistake would
+ * produce two different explanations.
+ */
+export const COPY_INTO_SELF_MESSAGE = "Can't copy a folder into itself";
+
 /** User-facing, boundary-safe message for each coded failure. */
 const MESSAGES: Record<CrudErrorCode, string> = {
   CONFLICT: 'That name already exists',
+  COPY_INTO_SELF: COPY_INTO_SELF_MESSAGE,
   DIR_NOT_EMPTY: "This folder isn't empty",
   NOT_FOUND: 'That item no longer exists',
   REFUSE_ROOT: "Can't modify the working directory root",

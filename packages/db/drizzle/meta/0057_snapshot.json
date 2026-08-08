@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "a60d2980-1e17-4c98-aaa8-da34afa68e6e",
+  "id": "dd2ed775-dd80-4825-9ed9-78c66cbae8ba",
   "prevId": "532ebb83-d0f5-4539-b7eb-85f0e2feb914",
   "tables": {
     "a2a_tasks": {
@@ -2629,128 +2629,6 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
-    "room_attachments": {
-      "name": "room_attachments",
-      "columns": {
-        "room_id": {
-          "name": "room_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "entry_id": {
-          "name": "entry_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "author_id": {
-          "name": "author_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "extension": {
-          "name": "extension",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "mime_type": {
-          "name": "mime_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "size": {
-          "name": "size",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "preview": {
-          "name": "preview",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "idx_room_attachments_entry": {
-          "name": "idx_room_attachments_entry",
-          "columns": [
-            "room_id",
-            "entry_id"
-          ],
-          "isUnique": false
-        },
-        "idx_room_attachments_unbound": {
-          "name": "idx_room_attachments_unbound",
-          "columns": [
-            "room_id",
-            "created_at"
-          ],
-          "isUnique": false,
-          "where": "\"entry_id\" IS NULL"
-        }
-      },
-      "foreignKeys": {
-        "room_attachments_entry_fk": {
-          "name": "room_attachments_entry_fk",
-          "tableFrom": "room_attachments",
-          "tableTo": "room_entries",
-          "columnsFrom": [
-            "room_id",
-            "entry_id"
-          ],
-          "columnsTo": [
-            "room_id",
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "room_attachments_room_id_id_pk": {
-          "columns": [
-            "room_id",
-            "id"
-          ],
-          "name": "room_attachments_room_id_id_pk"
-        }
-      },
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
     "room_entries": {
       "name": "room_entries",
       "columns": {
@@ -3015,6 +2893,14 @@
           "notNull": true,
           "autoincrement": false
         },
+        "joined_seq": {
+          "name": "joined_seq",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
         "last_read_seq": {
           "name": "last_read_seq",
           "type": "integer",
@@ -3136,6 +3022,14 @@
           "notNull": true,
           "autoincrement": false,
           "default": false
+        },
+        "ambient_max_entries": {
+          "name": "ambient_max_entries",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 30
         },
         "created_at": {
           "name": "created_at",

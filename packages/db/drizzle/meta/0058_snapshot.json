@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "5e2f1d83-d564-40a9-a69f-c715971646fb",
-  "prevId": "a60d2980-1e17-4c98-aaa8-da34afa68e6e",
+  "id": "fee56a93-7d2d-4424-92f9-23f6431208f9",
+  "prevId": "dd2ed775-dd80-4825-9ed9-78c66cbae8ba",
   "tables": {
     "a2a_tasks": {
       "name": "a2a_tasks",
@@ -2695,14 +2695,6 @@
           "notNull": false,
           "autoincrement": false
         },
-        "url": {
-          "name": "url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "''"
-        },
         "created_at": {
           "name": "created_at",
           "type": "text",
@@ -3023,6 +3015,14 @@
           "notNull": true,
           "autoincrement": false
         },
+        "joined_seq": {
+          "name": "joined_seq",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
         "last_read_seq": {
           "name": "last_read_seq",
           "type": "integer",
@@ -3144,6 +3144,14 @@
           "notNull": true,
           "autoincrement": false,
           "default": false
+        },
+        "ambient_max_entries": {
+          "name": "ambient_max_entries",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 30
         },
         "created_at": {
           "name": "created_at",

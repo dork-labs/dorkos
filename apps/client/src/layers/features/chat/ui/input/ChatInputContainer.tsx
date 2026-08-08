@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { RefObject } from 'react';
 import type { SessionStatusEvent } from '@dorkos/shared/types';
@@ -19,7 +19,11 @@ import { CommandPalette } from '@/layers/features/commands';
 import { FilePalette } from '@/layers/features/files';
 import { ScanLine } from '@/layers/shared/ui';
 import { useAppStore, useTransport } from '@/layers/shared/model';
-import { getAgentDisplayName } from '@/layers/shared/lib';
+import {
+  composerFileReference,
+  getAgentDisplayName,
+  registerComposerInsert,
+} from '@/layers/shared/lib';
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
 import {
   useDirectoryState,
@@ -168,6 +172,29 @@ export function ChatInputContainer({
     [sessionId, transport]
   );
 
+  // Text arriving from outside the composer — "Add to Chat" in the file
+  // explorer, or a file dragged onto the box — is appended to whatever is
+  // already typed, with the caret left after it. The current text is read
+  // through a ref so the registration survives every keystroke instead of
+  // re-running on each render.
+  const latestInputRef = useRef(input);
+  useEffect(() => {
+    latestInputRef.current = input;
+  });
+  const insertIntoComposer = useCallback(
+    (text: string) => {
+      const current = latestInputRef.current;
+      const separator = current.length > 0 && !/\s$/.test(current) ? ' ' : '';
+      const next = `${current}${separator}${text}`;
+      setInput(next);
+      chatInputRef.current?.focusAt(next.length);
+    },
+    [setInput, chatInputRef]
+  );
+  // The file explorer reaches this through `shared/lib/composer-insert`, since
+  // one feature may not import another's model.
+  useEffect(() => registerComposerInsert(insertIntoComposer), [insertIntoComposer]);
+
   const isIdle = !isStreaming && chatQueue.editingIndex === null;
   const rotatingPlaceholder = useRotatingPlaceholder({
     defaultText: defaultPlaceholder,
@@ -202,7 +229,13 @@ export function ChatInputContainer({
     // safe-area rule in `index.css`, and it rides on the card element itself.
     // Root never bakes it in — chat passes it, because chat is the only surface
     // that sits against the bottom of a notched screen.
-    <Composer.Root className="chat-input-container" onFilesDropped={onFilesSelected}>
+    <Composer.Root
+      className="chat-input-container"
+      onFilesDropped={onFilesSelected}
+      // A file dragged out of the Files panel is already on this machine, so it
+      // becomes a reference in the message rather than an upload.
+      onPathDropped={(path) => insertIntoComposer(composerFileReference(path))}
+    >
       {/* Chat-only, so it arrives as a child rather than living in Root. */}
       <AnimatePresence>
         {isStreaming && (

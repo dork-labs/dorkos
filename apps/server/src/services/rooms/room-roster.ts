@@ -295,10 +295,14 @@ export class RoomRoster {
    * members — so for them it is inert, and they get the enum's own default
    * rather than a restriction nothing enforces and nobody chose.
    *
-   * @param room - The room being joined.
+   * @param room - The room being joined, of which only its KIND is read. Narrow
+   *   on purpose: `RoomService` asks this question about a room that does not
+   *   exist yet, and a whole-`Room` parameter made it assemble a plausible row
+   *   for columns nothing here looks at — which is a fiction the next person has
+   *   to maintain every time the table gains one.
    * @param author - The author joining.
    */
-  seedResponseMode(room: Room, author: AuthorRecord): ResponseMode {
+  seedResponseMode(room: Pick<Room, 'kind'>, author: AuthorRecord): ResponseMode {
     if (author.kind !== 'agent') return INERT_RESPONSE_MODE;
     if (room.kind === 'channel') return CHANNEL_RESPONSE_MODE;
     return this.agents.byPath(author.naturalKey)?.responseMode ?? 'always';

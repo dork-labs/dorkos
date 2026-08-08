@@ -32,6 +32,7 @@ export const THREAD_ID = 'codex-thread-0001';
 export const DEFAULT_USAGE: Usage = {
   input_tokens: 120,
   cached_input_tokens: 80,
+  cache_write_input_tokens: 0,
   output_tokens: 45,
   reasoning_output_tokens: 10,
 };
