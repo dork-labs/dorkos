@@ -939,13 +939,16 @@ export class RoomStore {
    * you have not seen", which stays true and stays clearable. The grouping
    * belongs in the render.
    *
-   * One caller, one meaning, and it is worth keeping it that way:
-   * `RoomService.listRooms` reads it for the sidebar badge, which is what this
-   * predicate is written for. It briefly had a second reader that took it as a
-   * plain row count for a thread's `replyCount`, sound only while a thread had a
-   * room to itself; that reader and the room kind behind it retired together
-   * (ADR 260728-022013), and `countThreadReplies` is where a reply count comes
-   * from now.
+   * **One meaning, and every reader wants that one.** This is the sidebar-badge
+   * predicate, and the three callers are the three ways that badge is delivered:
+   * `RoomService.listRooms` computes it for a list, `RoomService.setReadCursor`
+   * sends it on the global stream so a second device redraws the same badge
+   * without refetching, and the local `CommunityAdapter` projects it for a room.
+   * A fourth reader is welcome on the same terms — do not bend the predicate to
+   * suit one. It briefly had a reader that took it as a plain row count for a
+   * thread's `replyCount`, sound only while a thread had a room to itself; that
+   * reader and the room kind behind it retired together (ADR 260728-022013), and
+   * `countThreadReplies` is where a reply count comes from now.
    *
    * @param roomId - The room.
    * @param lastReadSeq - The member's read cursor.

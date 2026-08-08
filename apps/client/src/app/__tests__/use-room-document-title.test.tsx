@@ -198,13 +198,16 @@ describe('useRoomDocumentTitle', () => {
     // A room created, renamed, joined, left or spoken in all move the count.
     // `room_presence` rides along because the same hook owns the room-list
     // subscription — it feeds the sidebar's working dots and never the badge,
-    // which is why the count is untouched by it.
+    // which is why the count is untouched by it. `room_read_cursor` does move
+    // the badge: it is this same person reading on another device, and the tab
+    // has to stop asking for their attention when they do.
     expect([...streamHandlers.keys()].sort()).toEqual([
       'room_activity',
       'room_created',
       'room_member_added',
       'room_member_removed',
       'room_presence',
+      'room_read_cursor',
       'room_updated',
     ]);
   });

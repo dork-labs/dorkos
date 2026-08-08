@@ -1324,13 +1324,60 @@ export class RoomService {
   /**
    * Advance a member's read cursor. Monotonic — a lower value is ignored.
    *
+   * A cursor that actually moves is announced on the global fan-out, so a second
+   * browser or device clears the badge on push instead of on its next poll. The
+   * event carries the count the room list would now draw, because a reader
+   * holding only the new cursor cannot work it out: a room summary has no seq to
+   * measure against, so it could only guess zero — and zero is wrong the moment
+   * something arrived after the other device stopped reading.
+   *
+   * **A write that changes nothing says nothing.** Opening a room already read
+   * is the common case, and an event per no-op would put the loudest name on the
+   * stream on a fact nobody could act on.
+   *
+   * **The agent cursor RP3 advances at claim time is deliberately not here.**
+   * That path writes through {@link RoomStore.setReadCursor} directly, once per
+   * agent per turn, which would make it the most frequent event on the global
+   * stream — and nothing in the cockpit draws an agent's read cursor. An agent
+   * that moves its own cursor through THIS method (the REST route, with its own
+   * identity) is announced like anyone else; `authorKind` is what lets a reader
+   * tell whose cursor moved, since only their own may repaint their badge.
+   *
    * @param roomId - The room.
    * @param authorId - The member.
    * @param lastReadSeq - The seq they have read up to.
    */
   setReadCursor(roomId: string, authorId: string, lastReadSeq: number): RoomMember {
     this.requireVisibleRoom(roomId, authorId);
-    return this.roster.setReadCursor(roomId, authorId, lastReadSeq);
+    // Read before the write, so "did it move" is answered by the two values and
+    // not by re-deriving the monotonic rule here. A missing membership makes the
+    // line below throw, so by the comparison `before` is always a number.
+    const before = this.store.getMember(roomId, authorId)?.lastReadSeq;
+    const member = this.roster.setReadCursor(roomId, authorId, lastReadSeq);
+    if (member.lastReadSeq === before) return member;
+
+    // A membership references its author by foreign key, so a member without an
+    // author row cannot happen — which is exactly why it is said out loud rather
+    // than swallowed by an `if`. If it ever does, the write above still stands
+    // and only the announcement is lost, and this line is the only thing that
+    // would tell anybody why one device stopped keeping up with the other.
+    const author = this.authors.getById(authorId);
+    if (!author) {
+      logger.warn('[rooms] a read cursor moved for a member with no author row', {
+        roomId,
+        authorId,
+      });
+      return member;
+    }
+
+    eventFanOut.broadcast('room_read_cursor', {
+      roomId,
+      authorId,
+      authorKind: author.kind,
+      lastReadSeq: member.lastReadSeq,
+      unreadCount: this.store.countUnread(roomId, member.lastReadSeq),
+    });
+    return member;
   }
 
   // === Entries ===
