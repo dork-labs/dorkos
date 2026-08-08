@@ -10,14 +10,13 @@ Generated 2026-08-08T14:17:53Z · mode `full` · 31 tasks across 5 phases.
 
 ## Summary
 
-| Phase | Name | Tasks |
-| --- | --- | --- |
-| 0 | Foundations | 4 |
-| 1 | Home surface shell | 7 |
-| 2 | #team room home | 7 |
-| 3 | Read-state unification | 6 |
-| 4 | Moments + welcome-back | 7 |
-
+| Phase | Name                   | Tasks |
+| ----- | ---------------------- | ----- |
+| 0     | Foundations            | 4     |
+| 1     | Home surface shell     | 7     |
+| 2     | #team room home        | 7     |
+| 3     | Read-state unification | 6     |
+| 4     | Moments + welcome-back | 7     |
 
 ---
 
@@ -42,12 +41,14 @@ WHAT TO BUILD
 BACKGROUND (why this exists): `room_members.lastReadSeq` is the `(member, room)` read cursor, present for every member including agents. Its complete set of readers today is `room-service.ts:419,434` (the sidebar's unread count, scoped to the resolved caller) and the client's unread divider. Nothing reads an agent's cursor and nothing advances it — it is written to `0` at join (`room-store.ts:62,243`) and stays there forever: dead state. RP3 turns that into the mechanism. Silence must stay free: ambient does NOT run a model turn by default.
 
 VALIDATION CRITERIA (DOR-665 §8.4, verbatim — every one of these must be a passing test):
+
 - A `mention-only` agent joined at seq 40 and mentioned at seq 50 sees entries 41 to 49 in `pending`, and nothing at or below 40.
 - With `ambientMaxEntries: 5` and a cursor of `0` in a 100-entry room, `pending` holds 5 entries and `pendingTruncated` is true.
 - A post that triggers nobody runs no `sendMessage`. Assert on the runtime double, not on a log line: this is the `E7` guarantee and a log assertion would not catch a turn.
 - Two turns in a row do not show the same entry twice.
 
 ADDITIONAL ACCEPTANCE
+
 - Migration is idempotent and backfills existing rows; run it against a populated dev `~/.dork` database and confirm no membership ends with a `joinedSeq` newer than its first visible entry.
 - Server integration tests use `FakeAgentRuntime` + scenarios from `@dorkos/test-utils` (see `apps/server/src/services/rooms/__tests__/`).
 - `pnpm --filter @dorkos/server typecheck && pnpm --filter @dorkos/server lint` clean; `pnpm vitest run apps/server/src/services/rooms/__tests__` green.
@@ -72,6 +73,7 @@ WHAT THE ADR MUST SAY
 4. **Consequences**: room↔session identity plumbing (`room_sessions` placeholder ids) stays structurally as-is; the durable cursor lives on the membership row, not the session, which is exactly why it survives session swaps.
 
 ACCEPTANCE
+
 - ADR follows the `writing-adrs` skill's shape (Context / Decision / Consequences), no hype, no filler.
 - `decisions/manifest.json` updated with the new id, slug, status `accepted`, and date.
 - Spec `specs/team-room-home/02-specification.md` "Related ADRs" line for thread-over-sessions can be read as satisfied (draft → accepted).
@@ -87,12 +89,14 @@ ACCEPTANCE
 Close most of the cross-device read-state gap for rooms at trivial cost, ahead of the fuller unification in Phase 3. Today `RoomService.setReadCursor` (`apps/server/src/services/rooms/room-service.ts:1334`) writes the cursor and tells nobody — a second browser or device only catches up on the 30s poll.
 
 WHAT TO BUILD
+
 - `RoomService.setReadCursor` publishes an event on the existing global bus (`eventFanOut`, surfaced at `GET /api/events` via `apps/server/src/routes/events.ts`; the instance is wired in `apps/server/src/index.ts`). Payload carries at minimum: room id, author id (the member whose cursor moved), and the new `lastReadSeq`.
 - Add the new event type to the shared event union in `packages/shared` AND to the client's event allowlist — a new event member that is not added to the client allowlist is silently dropped (this has bitten before; grep for where session/room event types are filtered in `apps/client/src/layers/entities/`).
 - Client: `apps/client/src/layers/entities/room/` consumes the event and updates the TanStack Query cache for room unread counts / the unread divider directly, with no added polling. Reuse the existing global-event subscription; do not open a second stream.
 - Only the CALLER's own cursor moves are actionable on the client; ignore cursor events for other authors (agents' RP3 advances must not repaint the human's divider).
 
 ACCEPTANCE / TESTS
+
 - Server integration test using `collectDurableEvents` from `@dorkos/test-utils`: calling `PUT /api/rooms/:id/read-cursor` emits exactly one cursor event on `GET /api/events` with the expected room id and seq.
 - No event is emitted when the write is a no-op (cursor already at or ahead of the requested seq).
 - Client test (RTL + mock `Transport`): receiving a cursor event for the current user collapses the unread badge without a refetch.
@@ -109,12 +113,14 @@ ACCEPTANCE / TESTS
 The Phase 2 presence strip claims "who is working, and what they are bound to". That claim is only safe if every runtime either answers it truthfully or admits it cannot. Add the assertion to the shared conformance suite so a runtime cannot regress it silently.
 
 WHAT TO BUILD
+
 - Extend `runtimeConformance` in `packages/test-utils/` with presence assertions: for a runtime that reports running state, a session that is mid-turn must report `working` (or `working_late`) and expose its binding (`busyWith`: the room or session it is bound to); a session that is idle must not report working.
 - Where a runtime genuinely cannot expose running state or binding, the conformance case asserts it reports ABSENCE explicitly (undefined / not-supported), never a fabricated value. The rule for the UI downstream: **the strip omits rather than lies.**
 - Run the extended suite against all production runtimes: `apps/server/src/services/runtimes/claude-code/`, `codex/`, `opencode/`, plus `test-mode`. Where a runtime fails honestly (cannot report), record that in the runtime's capability surface rather than weakening the assertion.
 - Update `contributing/adding-a-runtime.md` authoring checklist with the new presence expectation.
 
 ACCEPTANCE
+
 - `pnpm vitest run` over each runtime's conformance test file is green with the new assertions.
 - Seed a deliberate defect (a runtime that reports `working` for an idle session) and confirm the suite goes red — prove the check can fail before trusting it.
 - No runtime is granted an exemption by loosening a shared assertion; exemptions are expressed as capability flags.
@@ -133,13 +139,14 @@ ACCEPTANCE
 Build the home surface as a layout with a tab bar whose tabs are the EXISTING routes rendered inside it. No path changes, no redirects — URLs are contracts.
 
 TAB TABLE (exact)
-| Tab label  | Route         | Renders |
-| Home       | `/`           | current `DashboardPage` as a placeholder until Phase 2 swaps in the #team room |
-| Activity   | `/activity`   | existing `ActivityPage` + its `activitySearchSchema`, untouched |
-| Scheduled  | `/tasks`      | existing `TasksPage`; the LABEL says "Scheduled", the route stays `/tasks` |
+| Tab label | Route | Renders |
+| Home | `/` | current `DashboardPage` as a placeholder until Phase 2 swaps in the #team room |
+| Activity | `/activity` | existing `ActivityPage` + its `activitySearchSchema`, untouched |
+| Scheduled | `/tasks` | existing `TasksPage`; the LABEL says "Scheduled", the route stays `/tasks` |
 | Workspaces | `/workspaces` | existing `WorkspacesPage` |
 
 WHAT TO BUILD
+
 - New FSD widget `apps/client/src/layers/widgets/home/` exporting `HomeSurfaceLayout` (tab bar + outlet) through its barrel `index.ts`. Follow the layer rule `shared ← entities ← features ← widgets`; import only from barrels.
 - `apps/client/src/router.tsx`: `indexRoute` (line ~180, path `/`), `activityRoute` (~417), `tasksRoute` (~320) and `workspacesRoute` (~367) become children of / render through the layout. Keep every existing `validateSearch` schema and loader behaviour exactly as-is.
 - Active-tab state derives from the current pathname; `/` is active only on `/`, and each other tab on its own path. Deep links with search params (`/activity?categories=…`) land on the right tab with params intact.
@@ -148,6 +155,7 @@ WHAT TO BUILD
 - Follow `contributing/design-system.md` and the Calm Tech language; use `motion` for the tab indicator if animated, and respect reduced motion.
 
 ACCEPTANCE / TESTS
+
 - Unit: tab-layout active-state mapping — a table-driven test over the four paths plus an unrelated path (`/team`) asserting which tab reads active.
 - RTL: rendering the layout at `/activity?categories=session` preserves the search param and shows Activity active.
 - Every test that renders a changed component re-runs: grep for test files mounting `ActivityPage`, `TasksPage`, `WorkspacesPage`, `DashboardPage` and the router itself before pushing.
@@ -163,12 +171,14 @@ ACCEPTANCE / TESTS
 The sidebar's nav header goes from 7 items to 4 now that Activity, Scheduled and Workspaces are tabs of the home surface.
 
 WHAT TO BUILD
+
 - `apps/client/src/layers/features/dashboard-sidebar/ui/SidebarNavHeader.tsx`: the item list becomes exactly **Home (`/`) · Team (`/team`) · Connections (`/connections`) · Marketplace (`/marketplace`)**, plus Search. Remove the Activity, Tasks and Workspaces `NavButton`s entirely (no commented-out code, no feature flag).
 - Home's active state covers the whole home surface: active on `/`, `/activity`, `/tasks`, and `/workspaces`.
 - Tour anchors that pointed at removed items must be re-pointed or removed: grep `TOUR_ANCHORS` — known touch points are `apps/client/src/layers/features/tours/model/tour-definitions.ts`, `apps/client/src/layers/features/dashboard-sidebar/ui/SidebarNavHeader.tsx`, and `apps/client/src/layers/features/tasks/ui/TasksList.tsx`. A tour step that anchors to a node that no longer exists must not silently no-op: re-point it at the Home nav item or the relevant tab, and update the step copy so it still reads true.
 - Keyboard navigation and focus order through the shrunken header stay correct; the collapsed/rail sidebar variant still renders 4 items without overflow.
 
 ACCEPTANCE / TESTS
+
 - `apps/client/src/layers/features/dashboard-sidebar/__tests__/SidebarNavHeader.test.tsx` updated: asserts exactly four nav items by accessible name, and asserts Home reads active for each of the four home-surface paths.
 - Tour tests (or a new one) assert every anchor id referenced by a tour definition resolves to a rendered element in the relevant surface.
 - Re-run `DashboardSidebar.test.tsx` and any test mounting `SidebarNavHeader`.
@@ -188,12 +198,13 @@ WHAT TO BUILD
 1. New entities slice `apps/client/src/layers/entities/recents/` exporting `useJumpBackIn()` through its barrel. It merges:
    - recent sessions (the existing `useRecentSessions` from `apps/client/src/layers/entities/session/`, partitioned by origin exactly as today),
    - recent DMs and rooms/channels (from the room entity's list/stream hooks in `apps/client/src/layers/entities/room/`, ordered by latest entry seq / activity),
-   ordered by last activity across all kinds, deduped (one row per thread — a room and a session under it collapse to the room), and capped at ~8.
-   Each item carries: kind (`session` | `dm` | `room`), id, display name, a one-line last-activity summary, and a timestamp for relative rendering.
+     ordered by last activity across all kinds, deduped (one row per thread — a room and a session under it collapse to the room), and capped at ~8.
+     Each item carries: kind (`session` | `dm` | `room`), id, display name, a one-line last-activity summary, and a timestamp for relative rendering.
 2. New `JumpBackInSection` in `apps/client/src/layers/features/dashboard-sidebar/ui/`, replacing `RecentSessionsSection.tsx`. Same collapse preferences and same section-header menu behaviour as the section it replaces — reuse `SidebarSectionHeader` and the existing sidebar prefs plumbing. Delete `RecentSessionsSection.tsx` and its test once nothing imports it (no dead code).
 3. Row rendering: `IdentityAvatar` (or a room glyph for channels) + name + one-line last-activity summary + relative time. Reuse the shipped identity kit; do not fork avatar logic.
 
 ACCEPTANCE / TESTS
+
 - Unit tests for `useJumpBackIn`: merge across the three kinds; ordering strictly by last activity; dedupe (a session belonging to a room does not appear twice); cap at 8; empty state returns an empty list, not a spinner forever.
 - RTL: `JumpBackInSection` renders DM, room and session rows with the right glyphs and navigates to the correct route on click.
 - Grep for every test mounting `RecentSessionsSection` or `DashboardSidebar` and re-run them.
@@ -209,6 +220,7 @@ ACCEPTANCE / TESTS
 Surface two of the same recents model: focusing the home composer WHILE IT IS EMPTY floats up a Jump back in list of recent threads across all surfaces.
 
 WHAT TO BUILD
+
 - A `JumpBackInPopover` component in `apps/client/src/layers/widgets/home/` (or the composer feature slice if it composes more cleanly there), driven by `useJumpBackIn()` from `entities/recents` — the same data, no second query path.
 - Trigger: composer receives focus AND its value is empty. Any keystroke that makes the value non-empty dismisses it. Blur dismisses it.
 - Interaction: arrow keys move the selection; Enter jumps into the selected thread; Escape closes without navigating. The popover must not swallow the composer's own key handling when closed.
@@ -217,6 +229,7 @@ WHAT TO BUILD
 - Dismissal must not fight Radix outside-dismiss: use the established `data-gesture-priority` / yield-to-selector pattern rather than blanket `stopPropagation`.
 
 ACCEPTANCE / TESTS
+
 - RTL: focus-while-empty opens the popover; typing closes it; Escape closes without navigation; Enter on a selected row navigates to that thread's route.
 - Keyboard-only run: tab to composer, arrow to the third row, Enter — lands on the right thread.
 - Mobile (375px): the popover is fully visible and does not push the page into horizontal scroll.
@@ -238,6 +251,7 @@ WHAT TO RETIRE
 3. **`system-status` (the row)** — retired as a row. Delete `apps/client/src/layers/features/dashboard-status/ui/SystemStatusRow.tsx` and `SubsystemCard.tsx`. Every click-through already has a home and must be verified reachable before deletion: Tasks status → the Scheduled tab; Relay / dead letters → `/connections?region=messaging`; Mesh / topology → `/team?view=topology`; the activity sparkline (`ActivitySparkline.tsx`) → moves to the Activity tab header (keep the component, re-home it).
 
 ACCEPTANCE / TESTS
+
 - Unit regression test asserting the built-in contribution list no longer contains `promo`, `your-agents` or `system-status` ids — an orphan-disposition regression guard so removed sections stay removed.
 - Manually drive each re-homed click-through in a real browser and confirm it lands on the right surface with the right filter applied (`/connections?region=messaging`, `/team?view=topology`, Scheduled tab, Activity tab sparkline).
 - `pnpm knip` (after building dists) reports no newly orphaned modules from these deletions; delete anything it flags.
@@ -253,6 +267,7 @@ ACCEPTANCE / TESTS
 The `dashboard.sections` extension slot is KEPT — only its placement moves. Third-party extensions must not lose their surface when the dashboard page is deleted in Phase 2.
 
 WHAT TO BUILD
+
 - The slot id `dashboard.sections` stays stable — extensions in the wild keep working with no manifest change. Do not rename it.
 - Remaining (third-party) contributions render in a **"From your extensions"** section at the TOP of the Activity tab (`/activity`), above the activity feed. Built-in contributions are unregistered as they are absorbed or retired (tasks 1.5 and 2.5), so by the end of the program this section holds only third-party contributions.
 - When there are zero third-party contributions the section renders zero DOM — no empty header, no placeholder card.
@@ -260,6 +275,7 @@ WHAT TO BUILD
 - Docs: update `packages/extension-api` docs and `contributing/architecture.md` to state the new placement and that the slot id is unchanged. Note in the docs that a proper room-widget successor is deferred (Phase 5, not this program).
 
 ACCEPTANCE / TESTS
+
 - RTL: with two fake contributions registered, both render at the top of the Activity tab in priority order; with a `visibleWhen` returning false, that one does not render.
 - With zero contributions, the Activity tab renders no "From your extensions" heading at all.
 - Extension-api docs and `contributing/architecture.md` updated in the same PR.
@@ -275,6 +291,7 @@ ACCEPTANCE / TESTS
 Prove the shell in a real browser and write down what changed, before Phase 2 builds on top of it.
 
 E2E (Playwright, `apps/e2e/tests/`) — follow the `browser-testing` skill:
+
 - Tab navigation preserves deep links: land on `/activity?categories=session`, confirm Activity is the active tab and the filter is applied; move to Scheduled and back; the URL and params survive.
 - The sidebar has exactly four nav items (Home, Team, Connections, Marketplace) plus Search.
 - The Jump back in popover opens on focusing the empty home composer and navigates into the selected thread.
@@ -282,11 +299,13 @@ E2E (Playwright, `apps/e2e/tests/`) — follow the `browser-testing` skill:
 - Add these to a new or existing spec under `apps/e2e/tests/` alongside the existing `dashboard-sidebar/` suite.
 
 DOCS
+
 - `docs/` (Fumadocs): update the home-surface concept page to describe the tabbed home and the four-item sidebar. Follow the `writing-for-humans` skill — plain enough for a smart 9th grader who does not code.
 - `plans/language-ia-simplification.md`: confirm the addendum pointing at this spec is present and accurate (its "sidebar unchanged" line is superseded by this work).
 - `contributing/architecture.md`: note the `widgets/home/` slice and the layout-over-routes approach.
 
 ACCEPTANCE
+
 - Playwright specs pass locally against a real build, not only in mock mode.
 - Prove a check can fail: seed a fifth sidebar item, watch the e2e go red, revert.
 - `docs:coverage` passes if new MDX files are added.
@@ -317,6 +336,7 @@ WHAT TO BUILD
 5. Regenerate OpenAPI (run BOTH doc commands — the `openapi-fresh` gotcha; a single command leaves the check red).
 
 ACCEPTANCE / TESTS
+
 - Server integration: `ensureTeamRoom` idempotency — call it three times, exactly one room exists, membership is not duplicated.
 - Membership defaults: the human and DorkBot are members after first call; a freshly registered agent is a member with `engaged` response mode.
 - System-room guard: an agent-authored rename, archive and delete of #team are each refused with the room's standard error shape; the same operations on an ordinary room still succeed; the DM un-archive path is untouched (regression test).
@@ -334,6 +354,7 @@ ACCEPTANCE / TESTS
 Posting in #team is a room post, full stop. Unaddressed posts must reach exactly one agent, using room semantics rather than new routing machinery.
 
 WHAT TO BUILD
+
 - The **default agent** (from `packages/shared/src/config-schema.ts`, `agents.defaultAgent`, default `'dorkbot'`) holds an `always` response mode on its #team membership. That single configuration is what makes unaddressed posts trigger it. Wire this in `ensureTeamRoom` / the membership defaults so it is true from first boot.
 - Every other agent's #team membership uses the channel default (`engaged` / mention-only semantics) — they do not consume unaddressed messages, so no token burn and no pile-on.
 - `@handle` reaches any member directly; multiple mentions fan out through the existing room dispatch (`apps/server/src/services/rooms/addressing.ts`, `room-trigger.ts`) — unchanged.
@@ -341,6 +362,7 @@ WHAT TO BUILD
 - No new routing layer, no special-case "home composer" code path on the server.
 
 ACCEPTANCE / TESTS
+
 - Server integration with `FakeAgentRuntime`: an unaddressed post in #team triggers exactly one turn, on the default agent. Assert on the runtime double, not on log lines.
 - A post mentioning `@someagent` triggers that agent and NOT the default agent twice.
 - Two mentions fan out to two turns.
@@ -366,6 +388,7 @@ WHAT TO BUILD
 5. Sticky positioning that survives feed scroll on desktop and mobile without covering the composer; 44px touch targets; no page-level horizontal scroll at 375px.
 
 ACCEPTANCE / TESTS
+
 - RTL: approve-in-place resolves the card and decrements the count without a full refetch flash.
 - RTL: approvals fetch failure renders `ApprovalsUnavailable` with a working retry.
 - RTL: with zero approvals and zero attention items, neither group emits any DOM node (assert on absence, not on a hidden class).
@@ -384,6 +407,7 @@ ACCEPTANCE / TESTS
 The bottom line of the pinned header: avatars of the agents currently working, and what each is bound to. Presence is who is online, not a kanban column.
 
 WHAT TO BUILD
+
 - A `PresenceStrip` component in `apps/client/src/layers/widgets/home/`, fed by the existing presence signals (RP9, shipped): `working` / `working_late` states plus the `busyWith` binding. Reuse `IdentityAvatar` from the identity kit and the presence copy helpers already used by `RoomPresenceLine` (`apps/client/src/layers/widgets/room-view/ui/RoomPresenceLine.tsx`, `lib/presence-copy.ts`) — one presence vocabulary, not two.
 - One-liner per agent in the shape "tangerines · replying in #release-train". Where a runtime cannot report a binding truthfully, **the strip omits rather than lies** (this is why task 0.4 puts presence into the runtime conformance suite).
 - Clicking an avatar FOLLOWS INTO that room or session as a VIEWER — watch, not hijack. This is an agent-etiquette rule: opening someone's work must not claim their session or interrupt a turn. Verify the session lock (`X-Client-Id`) is not taken by the follow.
@@ -391,6 +415,7 @@ WHAT TO BUILD
 - Hover reveals the identity hover card (`IdentityHoverCard`) — reuse, do not fork.
 
 ACCEPTANCE / TESTS
+
 - RTL: the strip renders from presence events; a `working` event adds an avatar, an idle event removes it, with no refetch.
 - RTL: an agent whose runtime reports no binding renders the name with no fabricated activity line.
 - Following an agent navigates to the bound room/session and does NOT acquire the session lock.
@@ -416,6 +441,7 @@ WHAT TO BUILD
 6. Run `pnpm knip` (build dists first) and delete everything it flags as newly orphaned.
 
 ACCEPTANCE / TESTS
+
 - Opening `/` shows the #team room: header only when something needs the user, presence strip, feed, composer.
 - `/channels?id=<team>` renders the same widget with no duplicated component tree.
 - Posting from the home composer creates a room entry and triggers the default agent (task 2.2) — no session is born, verified by session count before and after.
@@ -443,6 +469,7 @@ WHAT TO BUILD
 4. Copy follows the `writing-for-humans` skill: plain, no hype, no exclamation marks, describes what happens for the user.
 
 ACCEPTANCE / TESTS
+
 - RTL: with zero room entries and only DorkBot as a member, the starter chips render and clicking one populates the composer with that text (and does not send it).
 - RTL: with entries but none since the last visit and no scheduled runs and no waiting items, the quiet state shows "All quiet." and NO forward-look line.
 - RTL: with a scheduled run tomorrow, the forward-look line names it with a real time.
@@ -459,20 +486,24 @@ ACCEPTANCE / TESTS
 Prove the new home in a real browser, document it, and refresh the marketing and docs media that this change makes stale.
 
 E2E (Playwright, `apps/e2e/tests/`) — follow the `browser-testing` skill:
+
 - Home loads as the #team room: the feed, composer and (when seeded) the pinned header are present at `/`.
 - Approve-from-header round trip: seed a pending approval, approve it from the home header, confirm it resolves in place and the count drops.
 - Posting an unaddressed message from the home composer creates a room entry and does not navigate away.
 - The presence strip renders a working agent and following it opens the bound room as a viewer.
 
 DOCS (Fumadocs, `docs/`)
+
 - `docs/concepts/rooms.mdx`: add #team — what it is, who is in it, why it cannot be deleted, and that new agents join it automatically.
 - Home-surface concept page: the home IS the room; where the old dashboard's information went (approvals and attention are in the header; activity is the Activity tab; agent cards are the presence strip, sidebar roster and `/team`).
 - Follow `writing-for-humans` throughout.
 
 PRODUCT MEDIA
+
 - The dashboard screenshots on the marketing site and in docs are now wrong. Regenerate captures through the `capturing-product-media` flow (`apps/e2e/capture` + the shot registry). Never hand-place files in `apps/site/public/product/`.
 
 ACCEPTANCE
+
 - Playwright specs pass against a real build.
 - Prove a check can fail: break the header mount, watch the approve-from-header spec go red, revert.
 - `docs:coverage` passes; no MDX file references the deleted dashboard.
@@ -493,6 +524,7 @@ ACCEPTANCE
 One table replaces two disagreeing mechanisms. Today chat sessions use a per-browser localStorage watermark and rooms use a server-side `last_read_seq` whose writes are never broadcast, so a second device only catches up on the 30s poll.
 
 WHAT TO BUILD
+
 - New Drizzle schema `read_cursors` in `packages/db/src/schema/` (new file, exported from `packages/db/src/schema/index.ts`):
   - `user_id` (text), `thread_kind` (text, one of `room` | `session` | `inbox`), `thread_id` (text), `last_read_seq` (integer), `updated_at`.
   - Composite primary key or unique index on `(user_id, thread_kind, thread_id)`.
@@ -502,6 +534,7 @@ WHAT TO BUILD
 - **Do not touch the agent cursor.** `room_members.last_read_seq` remains the AGENT-side cursor that RP3 advances; `read_cursors` is the USER-side table. They are different concerns and both survive.
 
 ACCEPTANCE / TESTS
+
 - Unit: set/get round trip; monotonic guard (a lower seq is ignored); distinct users in the same thread hold independent cursors; distinct `thread_kind` values with the same `thread_id` do not collide.
 - The migration applies cleanly to a populated dev database and is idempotent on re-run.
 - `pnpm --filter @dorkos/db typecheck` and `pnpm --filter @dorkos/server typecheck` clean.
@@ -517,6 +550,7 @@ ACCEPTANCE / TESTS
 One route, one bus event, no polling.
 
 WHAT TO BUILD
+
 - `PUT /api/read-cursors/:kind/:id` in a new route module under `apps/server/src/routes/`, registered alongside the existing routers. Body carries `lastReadSeq`. `:kind` validates against `room | session | inbox` via a Zod schema in `packages/shared`; unknown kinds are a 400, not a silent accept.
 - Auth: the same auth as the room routes; the cursor written is always the CALLER's — a caller can never write another user's cursor. No cross-user reads or writes are possible through this route.
 - Express 5 semantics: `req.body` is undefined on an empty POST/PUT — handle that explicitly rather than destructuring blind.
@@ -525,6 +559,7 @@ WHAT TO BUILD
 - Regenerate OpenAPI with BOTH doc commands (the `openapi-fresh` gotcha) and confirm the `docs-openapi` check is green.
 
 ACCEPTANCE / TESTS
+
 - Server integration via `collectDurableEvents`: a successful PUT emits exactly one event with the expected kind, id and seq.
 - A no-op write (seq at or below stored) emits NO event.
 - An unknown `:kind` returns 400 with the standard error shape.
@@ -542,12 +577,14 @@ ACCEPTANCE / TESTS
 Rooms move to the new table with a single write path — no dual-writing left behind.
 
 WHAT TO BUILD
+
 - Migrate the HUMAN read cursor for rooms off `room_members.last_read_seq` onto `read_cursors` (`thread_kind: 'room'`). Backfill existing human memberships in the migration. **The agent cursor stays on the membership row** — RP3 is agent-side, this table is user-side.
 - Move every reader of the human cursor to the new table: `apps/server/src/services/rooms/room-service.ts:1082` (the sidebar unread map, built from `listMembershipsFor(viewerAuthorId)`) and the `room-service.ts:419,434` unread-count readers scoped to the resolved caller.
 - `PUT /api/rooms/:id/read-cursor` (`apps/server/src/routes/rooms.ts:330`) DELEGATES to the new cursor service so there is one write path. Keep the old route for back-compat until the client migrates, then REMOVE it — no lingering legacy. State the removal condition in the route's TSDoc so the follow-up is not forgotten.
 - **Wrap the `CommunityAdapter` seam**: `getReadCursor` / `setReadCursor` on `packages/shared/src/community-adapter.ts` and the local backend in `apps/server/src/services/communities/local/` read and write the new table. The `readCursor` capability field and `communityConformance` gate must still pass — community-server compatibility is preserved, and nothing here builds a community server.
 
 ACCEPTANCE / TESTS
+
 - Server integration: mark-read through the old room route and through the new read-cursors route produce the same stored state and the same broadcast.
 - Backfill: a database with existing `room_members.last_read_seq` values for a human ends with matching `read_cursors` rows and no lost unread state.
 - Two users in one room hold independent cursors.
@@ -565,6 +602,7 @@ ACCEPTANCE / TESTS
 Chat sessions today track "new messages" with a per-browser localStorage watermark, which is why a second device disagrees with the first. Move them onto the shared table and collapse the two divider implementations into one.
 
 WHAT TO BUILD
+
 - Chat sessions write and read `read_cursors` with `thread_kind: 'session'`, keyed by the session's monotonic SSE `seq` (the same `seq` the durable per-session stream `GET /api/sessions/:id/events` already emits). Delete the localStorage watermark code and its storage key entirely — no fallback, no dual-read.
 - One-time client-side carry-over is NOT required (a watermark is cheap to lose); if a stale key remains in a user's browser it must be actively removed rather than left orphaned.
 - **One `UnreadDivider` mechanism everywhere.** Today rooms and chats each render their own. Keep one component (promote it to the `shared` or `entities` layer as the FSD hierarchy `shared ← entities ← features ← widgets` requires) and delete the other. Both rooms and sessions feed it from the unified cursor.
@@ -573,6 +611,7 @@ WHAT TO BUILD
 - Cross-device: because every write broadcasts (task 3.2), a second tab clears its divider on push, not on a poll.
 
 ACCEPTANCE / TESTS
+
 - Unit: the divider position derives identically from a room cursor and a session cursor given the same shaped input.
 - RTL: reading a session advances the cursor via the API, not localStorage; no `localStorage` key is written (assert on the storage mock).
 - RTL: a broadcast cursor event from another device clears the divider without a refetch.
@@ -590,12 +629,14 @@ ACCEPTANCE / TESTS
 Close the migration out. The spec is explicit: back-compat is kept until clients migrate, THEN removed — no lingering legacy.
 
 WHAT TO BUILD
+
 - Remove `PUT /api/rooms/:id/read-cursor` (`apps/server/src/routes/rooms.ts:330`) now that every client writes through `PUT /api/read-cursors/:kind/:id`. Remove its tests, its OpenAPI entry, and the delegation shim added in task 3.3.
 - Audit for any remaining second write path to read state: grep `setReadCursor`, `lastReadSeq`, `last_read_seq`, and the deleted localStorage key across `apps/`, `packages/`, and `apps/obsidian-plugin/`. The only survivors should be (a) the unified cursor service and (b) the RP3 agent-side advance on the membership row.
 - Verify the Obsidian embedded surface (which uses `DirectTransport`, not `HttpTransport`) writes cursors through the same service — embedded mode bypasses the router but must not bypass read state.
 - Regenerate OpenAPI with both doc commands.
 
 ACCEPTANCE / TESTS
+
 - A request to the removed route returns 404; no client code references it.
 - Grep audit documented in the PR description with the surviving call sites enumerated.
 - `communityConformance` and the room/session suites stay green.
@@ -612,18 +653,21 @@ ACCEPTANCE / TESTS
 Prove the cross-device promise in a browser, and write down the model.
 
 E2E (Playwright, `apps/e2e/tests/`)
+
 - Two browser contexts as the same user: reading a room in context A clears the unread mark in context B without a reload and without waiting for a poll interval.
 - The same for a chat session.
 - The unread divider appears in the right place after new entries arrive while the user is away, and does not vanish the instant the user arrives.
 - Add to the existing `apps/e2e/tests/streams/` or `rooms/` suites where they fit.
 
 DOCS
+
 - `docs/concepts/rooms.mdx` and the sessions concept page: how "new messages" works now — one mark per person per conversation, shared across your devices, private (nobody sees what you have read).
 - Be explicit about what is NOT built: social "seen by" read receipts are not shipped; cursors are private markers only.
 - `contributing/architecture.md`: the `read_cursors` table as the single user-side read-state store, with `room_members.last_read_seq` retained as the agent-side RP3 cursor.
 - Follow `writing-for-humans` for the docs pages.
 
 ACCEPTANCE
+
 - Playwright specs pass against a real build with two contexts.
 - Prove a check can fail: disable the broadcast, watch the cross-device spec go red, revert.
 - `docs:coverage` passes.
@@ -643,6 +687,7 @@ ACCEPTANCE
 A moment is a room entry, not a new persistence model. Build the type and the rendering first; the detectors that mint them follow in task 4.2.
 
 WHAT TO BUILD
+
 - A **moment** post type on `room_entries` — a variant of the existing entry shape (author, body, metadata), NOT a new table. Define the type in `packages/shared` so client and server agree, with the metadata a moment carries: a moment kind (first-agent, joined-team, first-pr, first-schedule, first-overnight-run, first-connection, volume-mark, anniversary, agent-minted) and the real data it was derived from.
 - **Derived from real data only.** The type must not permit a moment without a data source reference; an agent-minted moment records which agent minted it.
 - Rendering: a distinct entry style in the room feed — the identity kit (`IdentityAvatar`, `IdentityHoverCard`) plus a moment glyph from `@dorkos/icons`. Quiet and warm, not a confetti banner; follow `contributing/design-system.md` and the Calm Tech language. Reduced motion respected.
@@ -651,6 +696,7 @@ WHAT TO BUILD
 - Copy follows `writing-for-humans`: "tangerines joined your team", not "🎉 New team member onboarded!".
 
 ACCEPTANCE / TESTS
+
 - Unit: a moment entry round-trips through the shared schema; an entry claiming to be a moment without a data source fails validation.
 - RTL: a moment entry renders with the moment style and glyph and is distinguishable from an ordinary entry by an accessible label.
 - An agent-minted moment is subject to the same cascade guard as any other agent post (server test).
@@ -667,6 +713,7 @@ ACCEPTANCE / TESTS
 Detectors live server-side in `apps/server/src/services/rooms/` and post to #team. They run on EXISTING event paths, not timers.
 
 STARTER DETECTOR SET (build exactly these)
+
 - **First agent created** — the user's first agent beyond DorkBot.
 - **"X joined your team"** — on agent creation/registration (the canonical example: "tangerines joined your team").
 - **First PR shipped**, **first schedule created**, **first overnight run**, **first Connection** — each fires once, ever, per install.
@@ -674,6 +721,7 @@ STARTER DETECTOR SET (build exactly these)
 - **Anniversaries** — one week / one month with an agent, 100th session, 1000th message.
 
 RULES THAT BIND EVERY DETECTOR
+
 - **Real data only.** A detector reads what actually happened; nothing is invented, rounded up, or projected.
 - **Fires once.** Each first-of-its-kind detector needs durable idempotency (a persisted marker, not an in-memory flag) so a restart does not re-post it. Anniversaries fire once per anniversary.
 - **Runs on existing event paths** — agent registration, activity ingest — except the daily volume marks, which ride the activity aggregation that already runs.
@@ -681,6 +729,7 @@ RULES THAT BIND EVERY DETECTOR
 - Etiquette (`meta/agent-etiquette.md`): present, useful, and mostly quiet. Over-participation is the failure mode users complain about — if a day would produce several moments, they must not all land.
 
 ACCEPTANCE / TESTS
+
 - Unit per detector: fires on the real event, does NOT fire on a near-miss, and does not fire a second time after a simulated restart (assert against the persisted marker).
 - A volume mark computed from fixture activity matches the fixture exactly — no test tolerates an approximate number.
 - Integration: a burst of qualifying events in one minute does not produce a burst of posts.
@@ -697,7 +746,9 @@ ACCEPTANCE / TESTS
 Config first, so the posting logic in task 4.4 has a knob to read. Follow `contributing/configuration.md` and the `adding-config-fields` skill end to end — Zod field → defaults → conf migration → docs → tests.
 
 WHAT TO BUILD
+
 - New block on `UserConfigSchema` in `packages/shared/src/config-schema.ts`:
+
 ```
 welcomeBack: {
   enabled: boolean (default true),
@@ -705,6 +756,7 @@ welcomeBack: {
   maxPosts: number (default 3),
 }
 ```
+
 - **Zod is the authoritative schema**, and a schema change requires a **semver-keyed migration** in `apps/server/src/services/core/config-manager.ts` (see the existing `'0.44.0'` … `'0.57.0'` migration map). Key it to the release this ships in. The migration backfills the defaults into existing config files.
 - Read-time conversion matters: `conf` only runs a migration when its key is in range, and in a dev tree the version resolves to `0.0.0` and NO migration runs at all. Correctness must not depend on the migration having run — the Zod defaults must produce a valid config on their own.
 - **Settings toggle** in the existing Settings groups (`apps/client/src/layers/features/settings/ui/`): an on/off switch for welcome-back messages, plus the absence threshold if it fits the existing group's density. Start simple — **no per-agent knobs in v1**.
@@ -712,6 +764,7 @@ welcomeBack: {
 - Docs: `docs/` settings page gains the welcome-back toggle.
 
 ACCEPTANCE / TESTS
+
 - Unit: a config file written before this change parses with the defaults applied; the migration applied to that same file writes the block explicitly.
 - The migration is idempotent and does not clobber a user-set value on re-run.
 - RTL: the Settings toggle reflects and writes the stored value.
@@ -730,6 +783,7 @@ When the user returns after a REAL absence, agents active since they left may po
 THE IRON RULE: news, not noise. Every constraint below exists to enforce it.
 
 WHAT TO BUILD
+
 - Detect the user's return after an absence exceeding `welcomeBack.absenceThresholdMinutes` (default 240 — hours, never minutes). Absence is measured from the last real user interaction, not from a tab losing focus.
 - Only agents that were **active since the user left** are candidates, and only those with a **real status delta** — an agent that did nothing new says nothing.
 - **Caps**: at most `welcomeBack.maxPosts` (default 3) posts per return. One line each. Ordered by usefulness, not recency, when more than the cap qualify.
@@ -739,6 +793,7 @@ WHAT TO BUILD
 - Implementation lives in `apps/server/src/services/rooms/`, beside the moment detectors.
 
 ACCEPTANCE / TESTS
+
 - Unit gate logic: absence below the threshold produces nothing; absence above it with zero deltas produces nothing; five qualifying agents produce exactly `maxPosts` posts.
 - No-delta agents are excluded — assert the runtime double records ZERO turns for them.
 - An agent with a status line but no offer produces a post with NO model turn spent (assert on the runtime double, not on logs).
@@ -757,6 +812,7 @@ ACCEPTANCE / TESTS
 The retired `dashboard-main` promo grid (task 1.5) gets a tasteful successor: one gentle DorkBot suggestion in quiet states.
 
 WHAT TO BUILD
+
 - In a quiet state on the home room (nothing waiting, nothing wrong, no new entries), DorkBot may offer ONE suggestion — for example "want your agents working while you sleep?".
 - **One line. Dismissible.** Dismissal is remembered so the same suggestion does not return the next morning.
 - Source the candidate suggestions from the promo registry's existing qualification logic where it fits (`apps/client/src/layers/features/feature-promos/model/promo-registry.ts`, `use-promo-context.ts`, `use-first-use-date.ts`) — reuse the qualification rules rather than writing a second eligibility system. Only surface a suggestion the registry says the user actually qualifies for.
@@ -764,6 +820,7 @@ WHAT TO BUILD
 - No dark patterns: it is a suggestion, not an upsell; dismissing it must be as easy as accepting it, and there is no second nag.
 
 ACCEPTANCE / TESTS
+
 - RTL: in a quiet state with a qualifying promo, exactly one suggestion renders; with two qualifying promos, still exactly one.
 - With nothing qualifying, no suggestion renders and no empty container is emitted.
 - Dismissing hides it and it does not return on remount.
@@ -780,12 +837,14 @@ ACCEPTANCE / TESTS
 Verified 2026-08-08: Tasks and Relay are ALREADY `enabled: true` by default in `packages/shared/src/config-schema.ts` (`relayTools`, `meshTools`, `adapterTools`, `tasksTools` all default true, ~line 961). No defaults flip is needed. The remaining work is a toggle audit.
 
 WHAT TO DO
+
 1. Open `apps/client/src/layers/features/settings/ui/ToolsTab.tsx` (and `ui/tools/`) and confirm a user can turn BOTH Tasks and Relay OFF from the UI. The tab already READS both flags; confirm it can WRITE them.
 2. Where a toggle is missing, add it — same control pattern and grouping as the toggles already there, with copy that follows `writing-for-humans` (say what turning it off means for the user, not which flag it sets).
 3. **Leave `resolveTasksFiring` alone.** The non-production scheduled-firing gate is CORRECT: it gates cron firing in dev so a dev tree does not fire real schedules. Flipping it is explicitly out of scope for this program. Do not "fix" it.
 4. Confirm turning a tool off actually stops the capability being offered to agents (not just a stored boolean) — trace one flag from the toggle to the runtime tool list.
 
 ACCEPTANCE / TESTS
+
 - RTL: the Tools tab renders toggles for Tasks and Relay; toggling each writes the config and reflects the stored value on remount.
 - A server test asserting a disabled flag removes the corresponding tools from what an agent is offered.
 - `resolveTasksFiring` is untouched — confirm by diff.
@@ -801,22 +860,26 @@ ACCEPTANCE / TESTS
 Prove the emotional layer never lies, document it, and close the programme out.
 
 E2E (Playwright, `apps/e2e/tests/`)
+
 - Creating an agent produces exactly one "joined your team" moment in #team, styled as a moment.
 - Simulated return after an absence produces at most three welcome-back posts and none from agents with no delta.
 - With welcome-back disabled in settings, a return produces zero posts.
 - The quiet state renders "All quiet." plus at most one DorkBot suggestion.
 
 DOCS
+
 - `docs/`: a page or section on moments and welcome-back — what they are, that they only ever come from things that really happened, and how to turn welcome-back off. Follow `writing-for-humans`.
 - Settings docs updated with the welcome-back toggle and the absence threshold.
 - `docs/concepts/rooms.mdx`: moments are room entries, not a separate feed.
 
 CLOSE-OUT
+
 - Confirm every Documentation-section requirement of `specs/team-room-home/02-specification.md` is satisfied: home-surface concept page, rooms concept (#team), settings (welcome-back toggle), `contributing/architecture.md` + extension-api `dashboard.sections` re-homing, `plans/language-ia-simplification.md` addendum, OpenAPI regenerated for every new route, changelog fragments present per PR.
 - Confirm every non-goal stayed out: no RP6/RP7/RP8 tools, no community servers, no kanban, no generic widgets, no social read receipts, no fork of the `Composer.*` family, no Obsidian embedded-mode redesign.
 - Run `pnpm verify` and `pnpm knip` (build dists first); resolve anything they flag.
 
 ACCEPTANCE
+
 - Playwright specs pass against a real build.
 - Prove a check can fail: make a detector fire twice, watch the moment spec go red, revert.
 - `docs:coverage` passes.
