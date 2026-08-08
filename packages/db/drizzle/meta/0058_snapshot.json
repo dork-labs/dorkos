@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "8c4a330b-e304-462a-9a58-cb2735b52c01",
+  "id": "5e2f1d83-d564-40a9-a69f-c715971646fb",
   "prevId": "a60d2980-1e17-4c98-aaa8-da34afa68e6e",
   "tables": {
     "a2a_tasks": {
@@ -2700,7 +2700,8 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "autoincrement": false
+          "autoincrement": false,
+          "default": "''"
         },
         "created_at": {
           "name": "created_at",

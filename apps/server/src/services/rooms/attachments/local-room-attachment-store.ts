@@ -13,23 +13,15 @@
  *
  * @module server/services/rooms/attachments/local-room-attachment-store
  */
-import { createHash, randomUUID } from 'crypto';
+import { randomUUID } from 'crypto';
 import { createReadStream } from 'fs';
-import { mkdir, readFile, rename, rm, stat, writeFile } from 'fs/promises';
+import { mkdir, rename, rm, stat, writeFile } from 'fs/promises';
 import path from 'path';
 import {
   InvalidRoomAttachmentIdError,
   type RoomAttachmentStore,
   type StoredRoomAttachment,
 } from './room-attachment-store.js';
-
-/**
- * How much of the content hash rides in an ETag.
- *
- * 64 bits of SHA-256, which is far past the point where two files in one room
- * could collide, and short enough to read in a header.
- */
-const HASH_LENGTH = 16;
 
 /**
  * The characters a room id or an attachment id may be made of.
@@ -98,8 +90,13 @@ export class LocalRoomAttachmentStore implements RoomAttachmentStore {
    * Open one back, or answer `null` — which covers "no such file", "no such
    * room", and "that id is not one an attachment could have".
    *
-   * The content hash is computed from the file on the way out rather than
-   * cached, so the ETag cannot drift from the bytes actually being served.
+   * **The bytes are streamed, never buffered** — the validator comes from one
+   * `stat`, so serving a 200 costs no extra read and answering a 304 costs no
+   * read at all. Hashing the content here instead meant reading the whole file
+   * into memory to decide whether to send it, which is the opposite of what a
+   * conditional request is for and scaled with the size of every attachment
+   * anyone had ever uploaded.
+   *
    * `contentType` is whatever the row says: this store never decides what a file
    * is, because the only trustworthy answer to that was settled at upload.
    *
@@ -116,13 +113,13 @@ export class LocalRoomAttachmentStore implements RoomAttachmentStore {
   ): Promise<StoredRoomAttachment | null> {
     const file = this.safeFileOrNull(roomId, attachmentId, extension);
     if (!file) return null;
-    const bytes = await readIfPresent(file);
-    if (!bytes) return null;
+    const info = await statIfPresent(file);
+    if (!info) return null;
     return {
       stream: createReadStream(file),
       contentType,
-      etag: `"${hashOf(bytes)}"`,
-      size: bytes.byteLength,
+      etag: weakEtag(info.size, info.mtimeMs),
+      size: info.size,
     };
   }
 
@@ -151,14 +148,21 @@ export class LocalRoomAttachmentStore implements RoomAttachmentStore {
   }
 
   /**
-   * Drop every file a room holds. Idempotent — `force` is what makes deleting a
-   * room that never had one a success.
+   * Drop one file. Idempotent — `force` is what makes deleting one that is
+   * already gone a success.
    *
-   * @param roomId - The room to clear.
+   * An unusable id is nothing to delete rather than an error, the same
+   * asymmetry {@link LocalRoomAttachmentStore.get} draws: the caller's intent
+   * (that file is not here any more) is satisfied either way.
+   *
+   * @param roomId - The room the file was uploaded into.
+   * @param attachmentId - The attachment id.
+   * @param extension - The file suffix the row recorded, without a dot.
    */
-  async deleteRoom(roomId: string): Promise<void> {
-    assertSafeId(roomId);
-    await rm(this.dirFor(roomId), { recursive: true, force: true });
+  async delete(roomId: string, attachmentId: string, extension: string): Promise<void> {
+    const file = this.safeFileOrNull(roomId, attachmentId, extension);
+    if (!file) return;
+    await rm(file, { force: true });
   }
 
   /** Where one room's files live, refusing a room id that could be a path. */
@@ -205,15 +209,27 @@ function assertSafeId(id: string): void {
   if (!SAFE_ID.test(id)) throw new InvalidRoomAttachmentIdError(id);
 }
 
-/** The short content hash that fills an ETag. */
-function hashOf(bytes: Buffer): string {
-  return createHash('sha256').update(bytes).digest('hex').slice(0, HASH_LENGTH);
+/**
+ * The validator a conditional request compares against: size and mtime, weak.
+ *
+ * **Weak (`W/`) because it is honest.** A strong ETag promises byte equality,
+ * and size-plus-mtime cannot: two different files could in principle share
+ * both. What it can promise is that this exact stored file has not been
+ * replaced, which is all a validator has to do — and here it is stronger in
+ * practice than the label suggests, because an attachment is written once under
+ * a freshly minted ULID and never rewritten.
+ *
+ * Hex to keep the header short.
+ */
+function weakEtag(size: number, mtimeMs: number): string {
+  return `W/"${size.toString(16)}-${Math.floor(mtimeMs).toString(16)}"`;
 }
 
-/** The file's bytes, or `null` when it is not there. */
-async function readIfPresent(file: string): Promise<Buffer | null> {
+/** The file's size and mtime, or `null` when it is not there. */
+async function statIfPresent(file: string): Promise<{ size: number; mtimeMs: number } | null> {
   try {
-    return await readFile(file);
+    const info = await stat(file);
+    return { size: info.size, mtimeMs: info.mtimeMs };
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw err;

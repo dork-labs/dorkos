@@ -126,9 +126,13 @@ export function RoomPendingRow({ post, viewerAuthorId }: RoomPendingRowProps) {
         // to and nothing to draw a thumbnail from. The chips say only what a
         // person needs to know here — the files are still in this message.
         <ul className="flex flex-wrap gap-1.5">
-          {post.attachmentNames.map((name) => (
+          {post.attachmentNames.map((name, index) => (
             <li
-              key={name}
+              // Keyed by position, not by name: attaching two files called
+              // `log.txt` is ordinary, and duplicate keys make React drop one of
+              // the chips. The list is inert and never reorders — it is one
+              // frozen message — so the index is a stable identity here.
+              key={`${index}-${name}`}
               className="bg-muted text-muted-foreground flex items-center gap-1 rounded-md px-2 py-1 text-xs"
             >
               <FileIcon aria-hidden className="size-3 shrink-0" />

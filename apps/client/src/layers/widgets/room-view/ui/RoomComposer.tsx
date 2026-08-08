@@ -87,6 +87,14 @@ export function RoomComposer({ room, threadRootId, focusOnMount }: RoomComposerP
   const reply = useReplyInThread();
   const focusRequest = useComposerFocusRequest(draftKey);
   const inputRef = useRef<ComposerInputHandle>(null);
+  /**
+   * Whether a send is currently waiting for its files to reach the server.
+   *
+   * A ref rather than state on purpose: it is read and written inside one
+   * keystroke's synchronous path, and a re-render between the two would be
+   * exactly the stale-closure window it exists to close.
+   */
+  const uploading = useRef(false);
   // The chip bar. Keyed to nothing: this composer's files are this composer's,
   // because the state is its own — see `useRoomAttachments`. None of it reaches
   // `Composer.Input`, which holds no attachment state at all, so DOR-948's swap
@@ -206,6 +214,11 @@ export function RoomComposer({ room, threadRootId, focusOnMount }: RoomComposerP
    */
   const deliver = async (body: string, clientId: string, attachmentNames: string[]) => {
     let attachmentIds: string[];
+    // Only a send that actually carries files can be re-entered destructively,
+    // and only that kind arms the guard: two text-only messages in one tick are
+    // ordinary and must both go.
+    const carriesFiles = attachmentNames.length > 0;
+    if (carriesFiles) uploading.current = true;
     try {
       attachmentIds = await attachments.uploadAndGetIds();
     } catch {
@@ -219,6 +232,10 @@ export function RoomComposer({ room, threadRootId, focusOnMount }: RoomComposerP
       const store = useRoomDraftStore.getState();
       if ((store.drafts[draftKey] ?? '') === '') store.set(draftKey, body);
       return;
+    } finally {
+      // Released whichever way it went, so a failed upload does not wedge the
+      // composer shut.
+      if (carriesFiles) uploading.current = false;
     }
     // Cleared only once the ids are safely in the message: a chip removed before
     // that would take a file out of a send that had not gone yet.
@@ -241,6 +258,17 @@ export function RoomComposer({ room, threadRootId, focusOnMount }: RoomComposerP
 
   const handleSubmit = () => {
     if (room.archived) return;
+    // **One send at a time while files are still going up.** `pendingFiles` is
+    // cleared only once the ids are safely in a message, so a second Enter
+    // arriving during that await would read the SAME files and upload them
+    // again — posting duplicates, or taking a 409 for ids the first send had
+    // already claimed. The draft is deliberately NOT taken here: refusing early
+    // leaves the sentence in the box, where the person can send it a moment
+    // later, rather than consuming it into a message that cannot be written.
+    //
+    // Text-only sends never arm this, so two sentences in one tick still both
+    // go — that is the behaviour DOR-783 asked for and it is unchanged.
+    if (uploading.current) return;
     // Sending takes the picker down with it: Enter reaches this path only when
     // there was no row to pick, and nothing else would close a "No one by that
     // name." panel until the next keystroke.

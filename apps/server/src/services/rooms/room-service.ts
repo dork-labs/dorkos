@@ -1421,14 +1421,24 @@ export class RoomService {
     }
     // Resolved before the write, so a refusal leaves the room exactly as it was.
     const attachments = this.resolveAttachments(roomId, input.authorId, input.attachmentIds);
+    const attachmentIds = attachments.map((file) => file.id);
     return this.writePost(room, input, undefined, {
-      bind: (entryId, tx) =>
-        void this.attachments.bind(
-          roomId,
-          attachments.map((file) => file.id),
-          entryId,
-          tx
-        ),
+      bind: (entryId, tx) => {
+        const bound = this.attachments.bind(roomId, attachmentIds, entryId, tx);
+        // **Asserted, not assumed.** `bind` re-checks `entry_id IS NULL`, so a
+        // file that another post claimed between resolution and here simply
+        // does not update — and without this check the entry would commit
+        // carrying a reference to a file it does not own, which is the one
+        // state the foreign key cannot catch. Throwing rolls the whole
+        // transaction back, entry included, which is exactly the outcome:
+        // either the message and all its files land, or none of it does.
+        if (bound !== attachmentIds.length) {
+          throw new RoomError(
+            'ATTACHMENT_ALREADY_POSTED',
+            'That file was attached to another message first'
+          );
+        }
+      },
       attachments,
     });
   }

@@ -35,7 +35,7 @@
  *
  * @module server/services/rooms/attachments/attachment-projection
  */
-import { copyFile, link, mkdir, readdir, rm, stat, writeFile } from 'fs/promises';
+import { copyFile, link, mkdir, readdir, realpath, rm, stat, writeFile } from 'fs/promises';
 import path from 'path';
 import { logError, logger } from '../../../lib/logger.js';
 import type { ProjectableAttachment } from '../room-context.js';
@@ -152,6 +152,22 @@ async function projectOne(
   // stat rather than a copy per turn.
   if (await exists(destination)) return;
 
+  // **Where the root REALLY is, after symlinks — checked before descending into
+  // it.** Every component of this path is server-chosen: the root is a
+  // constant, the ids are ULIDs, and the name was sanitized at upload, so
+  // nothing an uploader writes can steer it. What an uploader cannot control
+  // but an AGENT can is the tree being written into — plant
+  // `.dork/.temp/room-attachments` as a symlink to somewhere else and this
+  // would write room attachments outside the agent's own working directory,
+  // through a path that looks contained at every layer above.
+  //
+  // The root is created and resolved FIRST so a redirected root is refused
+  // before anything is made inside whatever it points at. The sweep inherits
+  // the same protection: it only ever walks this root.
+  const root = path.join(agentPath, PROJECTED_ATTACHMENTS_ROOT);
+  await mkdir(root, { recursive: true });
+  await assertInside(agentPath, root);
+
   await mkdir(path.dirname(destination), { recursive: true });
 
   const source = await store.localPath(roomId, file.attachmentId, file.extension);
@@ -175,6 +191,20 @@ async function projectOne(
   } catch (err) {
     if (!isUnlinkable(err)) throw err;
     await copyFile(source, destination);
+  }
+}
+
+/**
+ * Refuse a destination whose REAL location is outside the agent's tree.
+ *
+ * `realpath` on both sides, so a symlink anywhere along either one is followed
+ * before the comparison; the separator on the prefix stops `/agents/ana-evil`
+ * from passing as inside `/agents/ana`.
+ */
+async function assertInside(agentPath: string, directory: string): Promise<void> {
+  const [root, real] = await Promise.all([realpath(agentPath), realpath(directory)]);
+  if (real !== root && !real.startsWith(root + path.sep)) {
+    throw new Error(`a projected attachment would land outside the agent directory: ${real}`);
   }
 }
 

@@ -17,7 +17,16 @@
  *
  * @module server/services/rooms/attachments/attachment-row-store
  */
-import { roomAttachments, and, eq, inArray, isNull, type Db, type DbTransaction } from '@dorkos/db';
+import {
+  roomAttachments,
+  and,
+  eq,
+  inArray,
+  isNull,
+  lt,
+  type Db,
+  type DbTransaction,
+} from '@dorkos/db';
 import type { RoomAttachment, RoomAttachmentPreview } from '@dorkos/shared/room-schemas';
 
 /** One `room_attachments` row, as this module hands it around. */
@@ -130,8 +139,10 @@ export class AttachmentRowStore {
    * checked at statement time, so this cannot run before the parent row exists
    * — which is exactly why that hook was added. The `entry_id IS NULL` guard is
    * belt-and-braces over the resolution that already refused a posted id: it
-   * makes double-binding impossible even if two posts raced past resolution,
-   * and the caller checks the row count to notice.
+   * makes double-binding impossible even if two posts raced past resolution.
+   * `RoomService` compares the returned count against the ids it asked for and
+   * throws when they differ, so a race cannot commit an entry that references a
+   * file another message already owns.
    *
    * @param roomId - The room.
    * @param attachmentIds - The ids to bind, already resolved.
@@ -215,13 +226,55 @@ export class AttachmentRowStore {
   }
 
   /**
-   * Forget every attachment row a room holds — the row half of
-   * {@link RoomAttachmentStore.deleteRoom}. Idempotent.
+   * The unbound rows in one room older than a cutoff — what the reclamation
+   * sweep reads.
    *
-   * @param roomId - The room to clear.
+   * **This is the query `idx_room_attachments_unbound` was built for**, and the
+   * reason it is a PARTIAL index: `(room_id, created_at) WHERE entry_id IS NULL`
+   * carries a row per staged file rather than one per file ever posted, so the
+   * sweep touches only the vanishing minority that could possibly match.
+   *
+   * @param roomId - The room to sweep.
+   * @param before - ISO 8601 cutoff; rows created strictly before it are stale.
    */
-  deleteRoom(roomId: string): void {
-    this.db.delete(roomAttachments).where(eq(roomAttachments.roomId, roomId)).run();
+  listUnboundBefore(roomId: string, before: string): AttachmentRow[] {
+    return this.db
+      .select()
+      .from(roomAttachments)
+      .where(
+        and(
+          eq(roomAttachments.roomId, roomId),
+          isNull(roomAttachments.entryId),
+          lt(roomAttachments.createdAt, before)
+        )
+      )
+      .all()
+      .map(toRow);
+  }
+
+  /**
+   * Forget these rows, but ONLY while they are still unbound.
+   *
+   * The `entry_id IS NULL` guard is what makes this safe to call from a sweep
+   * that read its list a moment ago: a file posted in between is now part of
+   * somebody's message, and a message must never lose the file it is about.
+   *
+   * @param roomId - The room.
+   * @param attachmentIds - The rows to drop.
+   * @returns How many were actually removed.
+   */
+  deleteUnbound(roomId: string, attachmentIds: readonly string[]): number {
+    if (attachmentIds.length === 0) return 0;
+    return this.db
+      .delete(roomAttachments)
+      .where(
+        and(
+          eq(roomAttachments.roomId, roomId),
+          isNull(roomAttachments.entryId),
+          inArray(roomAttachments.id, [...attachmentIds])
+        )
+      )
+      .run().changes;
   }
 }
 

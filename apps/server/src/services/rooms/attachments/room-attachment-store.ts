@@ -79,12 +79,22 @@ export interface RoomAttachmentStore {
   localPath(roomId: string, attachmentId: string, extension: string): Promise<string | null>;
 
   /**
-   * Forget every attachment of one room. Idempotent: clearing a room that has
-   * none is a success, because the caller's intent is satisfied either way.
+   * Forget one attachment's bytes. Idempotent: deleting one that is already
+   * gone is a success, because the caller's intent is satisfied either way.
    *
-   * @param roomId - The room to clear.
+   * The reclamation half of the port. It exists because a file can be uploaded
+   * and never posted — a person who attaches something and then closes the tab
+   * — and those bytes belong to nobody. `deleteRoom` used to sit here instead
+   * and had no caller at all: nothing in this product deletes a room, so it was
+   * scaffolding for a verb that does not exist. **When room deletion does
+   * arrive it has to bring attachment cleanup with it**, and this is the method
+   * it should loop over.
+   *
+   * @param roomId - The room the file was uploaded into.
+   * @param attachmentId - The opaque attachment id.
+   * @param extension - The file suffix the row recorded, without a dot.
    */
-  deleteRoom(roomId: string): Promise<void>;
+  delete(roomId: string, attachmentId: string, extension: string): Promise<void>;
 }
 
 /**

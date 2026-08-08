@@ -46,6 +46,7 @@ import {
 import { InvalidRoomAttachmentIdError } from '../services/rooms/attachments/room-attachment-store.js';
 import { sniffImageContentType } from '../services/identity/image-sniff.js';
 import { storedExtension } from '../services/rooms/attachments/attachment-paths.js';
+import { sweepUnboundAttachments } from '../services/rooms/attachments/unbound-sweep.js';
 import { configManager } from '../services/core/config-manager.js';
 import { parseBody, sendError } from '../lib/route-utils.js';
 import { roomEventsHandler } from './room-events-handler.js';
@@ -317,9 +318,15 @@ router.post('/:id/attachments', (req, res) => {
       );
     }
 
+    const store = getRoomAttachmentStore();
+    const rows = getAttachmentRowStore();
+    // Everything this request has committed so far, so a failure part-way can
+    // be undone. Without it, a throw on file three left files one and two on
+    // disk with rows nobody would ever reference — the same orphan the TTL
+    // sweep below exists to catch, minted by the happy path's own error handler.
+    const committed: Array<{ id: string; extension: string }> = [];
+
     try {
-      const store = getRoomAttachmentStore();
-      const rows = getAttachmentRowStore();
       const stored: RoomAttachment[] = [];
       for (const file of files) {
         const name = sanitizeAttachmentName(file.originalname);
@@ -329,6 +336,7 @@ router.post('/:id/attachments', (req, res) => {
         const sniffed = sniffImageContentType(file.buffer);
         const id = ulid();
         const { url } = await store.put(req.params.id, id, extension, file.buffer);
+        committed.push({ id, extension });
         const row = {
           roomId: req.params.id,
           id,
@@ -350,9 +358,31 @@ router.post('/:id/attachments', (req, res) => {
           url,
         });
       }
+
+      // Housekeeping on the path that creates the mess: whatever this room
+      // staged a day ago and never sent. Awaited but never fatal — it swallows
+      // its own errors — so an upload cannot fail because a sweep did.
+      void (await sweepUnboundAttachments({ rows, store, roomId: req.params.id }));
+
       // In request order, so the composer's chips and the message's files agree.
       return res.json({ attachments: stored });
     } catch (storeErr) {
+      // All-or-nothing: the caller got no ids, so nothing here may survive to be
+      // referenced later. Best-effort by necessity — a cleanup failure must not
+      // replace the error the caller actually needs to see — and anything that
+      // does survive is unbound, so the TTL sweep collects it within the day.
+      for (const orphan of committed) {
+        try {
+          rows.deleteUnbound(req.params.id, [orphan.id]);
+          await store.delete(req.params.id, orphan.id, orphan.extension);
+        } catch (cleanupErr) {
+          logger.warn('[rooms] could not clean up a half-finished upload', {
+            roomId: req.params.id,
+            attachmentId: orphan.id,
+            error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
+          });
+        }
+      }
       if (storeErr instanceof InvalidRoomAttachmentIdError) {
         return sendError(res, 400, 'That file could not be stored.', 'ATTACHMENT_ID_INVALID');
       }

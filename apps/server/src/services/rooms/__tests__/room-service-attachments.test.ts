@@ -155,6 +155,26 @@ describe('room attachments', () => {
       );
     });
 
+    it('refuses to commit an entry when a file was claimed mid-write', () => {
+      const file = upload();
+      const before = store.maxSeq(room.id);
+      // The race resolution cannot see: the id passed `resolveAttachments`, and
+      // another post binds it in the instant before this one's own bind runs.
+      // The UPDATE then matches nothing, and an entry that committed anyway
+      // would reference a file belonging to somebody else's message — a state
+      // the foreign key cannot catch, because the row it points at is perfectly
+      // valid, just not this entry's.
+      vi.spyOn(attachments, 'bind').mockReturnValue(0);
+
+      expect(() =>
+        service.post(room.id, { authorId: human, text: 'mine', attachmentIds: [file] })
+      ).toThrow(expect.objectContaining({ code: 'ATTACHMENT_ALREADY_POSTED' }));
+
+      // Rolled back whole: no entry, and nothing published.
+      expect(store.maxSeq(room.id)).toBe(before);
+      expect(entryFrames()).toEqual([]);
+    });
+
     it('leaves a post with no attachments completely alone', () => {
       const entry = service.post(room.id, { authorId: human, text: 'just words' });
 

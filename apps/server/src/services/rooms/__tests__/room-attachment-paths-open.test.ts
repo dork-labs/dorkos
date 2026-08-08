@@ -24,7 +24,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { access, mkdtemp, readdir, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
-import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
+import { ROOM_ATTACHMENT_NAME_MAX, type RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { formatRoomContext } from '../../runtimes/shared/room-context-block.js';
 import type { AuthorRegistry } from '../author-registry.js';
 import type { AttachmentRowStore } from '../attachments/attachment-row-store.js';
@@ -179,6 +179,48 @@ describe('every path the agent is told about', () => {
     );
     expect(projectedFiles.sort()).toEqual([`${first}-crash.log`, `${second}-trace.txt`]);
     expect(projectedFiles.some((name) => name.includes('ancient'))).toBe(false);
+  });
+
+  it('can be opened even when the filename is the longest one allowed', async () => {
+    // `ROOM_ATTACHMENT_NAME_MAX` is 255, and the projected basename prefixes the
+    // name with a 26-character ULID and a dash — 282 bytes, past the 255-byte
+    // NAME_MAX every mainstream filesystem enforces. Before this was capped the
+    // link/copy threw ENAMETOOLONG, the projector logged and swallowed it, and
+    // the model was handed a path to a file that was never written: exactly the
+    // half-state ADR 260807-233816 says cannot happen.
+    const longName = `${'x'.repeat(ROOM_ATTACHMENT_NAME_MAX - '.log'.length)}.log`;
+    expect(longName).toHaveLength(ROOM_ATTACHMENT_NAME_MAX);
+
+    const file = await upload(longName);
+    service.post(room.id, { authorId: human, text: 'the big one', attachmentIds: [file] });
+    await service.triggersIdle();
+    service.post(room.id, { authorId: human, text: 'any idea?' });
+    await service.triggersIdle();
+
+    const { block, projection } = lastTurn();
+    await projectRoomAttachments({
+      store: () => store,
+      roomId: room.id,
+      agentPath,
+      attachments: projection,
+    });
+
+    const told = toldPaths(block);
+    expect(told).toHaveLength(1);
+    // Every component of the path a filesystem has to hold is within its limit.
+    for (const segment of told[0].split('/')) {
+      expect(Buffer.byteLength(segment), `segment "${segment}" is too long`).toBeLessThanOrEqual(
+        255
+      );
+    }
+    // And the trimmed name still ends in the suffix it was uploaded with, so the
+    // file still reads as what it is.
+    expect(told[0].endsWith('.log')).toBe(true);
+    // THE claim: the path the model was told still opens.
+    await expect(
+      access(path.join(agentPath, told[0])),
+      `the agent was told about ${told[0]}, which is not there`
+    ).resolves.toBeUndefined();
   });
 
   it('tells the agent nothing when a message carried no files', async () => {

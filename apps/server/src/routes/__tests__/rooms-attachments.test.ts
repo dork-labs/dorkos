@@ -188,6 +188,32 @@ describe('/api/rooms/:id/attachments', () => {
       expect(res.status).toBe(400);
       expect(res.body.code).toBe('ATTACHMENT_MISSING');
     });
+
+    it('leaves nothing behind when one file of several fails', async () => {
+      // The caller gets no ids back, so anything that survived here could never
+      // be referenced by any message — a permanent orphan minted by the error
+      // path itself.
+      const realPut = store.put.bind(store);
+      let puts = 0;
+      vi.spyOn(store, 'put').mockImplementation(async (room, id, extension, bytes) => {
+        puts += 1;
+        if (puts === 2) throw new Error('disk is on fire');
+        return realPut(room, id, extension, bytes);
+      });
+
+      const res = await request(app)
+        .post(`/api/rooms/${roomId}/attachments`)
+        .attach('files', TEXT, { filename: 'one.log' })
+        .attach('files', TEXT, { filename: 'two.log' });
+
+      expect(res.status).toBe(500);
+      // The first file's bytes AND its row are both gone.
+      await expect(readdir(attachmentDir())).resolves.toEqual([]);
+      expect(rows.listUnboundFor(roomId, [])).toEqual([]);
+      expect(db.$client.prepare('SELECT COUNT(*) AS n FROM room_attachments').get()).toEqual({
+        n: 0,
+      });
+    });
   });
 
   describe('what a file is judged to be', () => {
@@ -297,6 +323,25 @@ describe('/api/rooms/:id/attachments', () => {
       const res = await request(app).get(posted.body.attachments[0].url);
 
       expect(res.status).toBe(200);
+    });
+
+    it('hides a POSTED file from somebody who cannot see the room', async () => {
+      const posted = await upload(TEXT, 'crash.log');
+      await request(app)
+        .post(`/api/rooms/${roomId}/entries`)
+        .send({ text: 'here it is', attachmentIds: [posted.body.attachments[0].id] });
+
+      // A person, not an agent, and not on this room's roster. Being posted
+      // makes a file readable by anyone who may read the MESSAGE — which is not
+      // the same as everyone, and this is the half of that rule the sibling test
+      // above cannot see: with the room check removed it still passes.
+      caller = authors.human('someone-else');
+      const res = await request(app).get(posted.body.attachments[0].url);
+
+      // 404 rather than 403: a stranger learns nothing, not even that the file
+      // is real.
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('ATTACHMENT_NOT_FOUND');
     });
 
     it('404s a file that never existed', async () => {

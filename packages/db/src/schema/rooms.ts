@@ -510,6 +510,15 @@ export const roomEntryReactions = sqliteTable(
  * files nobody ever posted. The second is partial because "unbound" is the rare
  * state — a full index would carry a row per posted file to serve a lookup that
  * only ever asks for a null entry.
+ *
+ * **What reclaims rows here, and what does not.** Unbound rows are collected by
+ * `attachments/unbound-sweep.ts` once they are a day old — a person who
+ * attaches a file and closes the tab leaves bytes nobody can reach. BOUND rows
+ * are reclaimed by nothing, because nothing in this product deletes a room or
+ * an entry; the `ON DELETE CASCADE` above is the standing answer for entries.
+ * **When room deletion arrives it must bring attachment cleanup with it** —
+ * these rows and, separately, the bytes behind `RoomAttachmentStore.delete`,
+ * which the cascade cannot reach.
  */
 export const roomAttachments = sqliteTable(
   'room_attachments',
@@ -554,8 +563,15 @@ export const roomAttachments = sqliteTable(
      * precisely the day the seam exists for. Same reasoning, same shape as the
      * identity render cache storing `imageUrl` from `AvatarStore.put`
      * (ADR 260806-222546).
+     *
+     * **The `''` default exists for the migration, not for the model.** SQLite
+     * refuses `ADD COLUMN ... NOT NULL` without one on any table that already
+     * holds rows, so without it migration 0058 would fail outright for anyone
+     * who had applied 0057 and stored a file. Nothing writes an empty url: the
+     * upload route always has one from `RoomAttachmentStore.put` before the row
+     * is created.
      */
-    url: text('url').notNull(),
+    url: text('url').notNull().default(''),
 
     createdAt: text('created_at').notNull(),
   },

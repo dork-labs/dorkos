@@ -31,7 +31,7 @@ const cdn: RoomAttachmentStore = {
   put: async () => ({ url: 'https://cdn.example/x.bin' }),
   get: async () => null,
   localPath: async () => null,
-  deleteRoom: async () => {},
+  delete: async () => {},
 };
 
 describe('the RoomAttachmentStore seam', () => {
@@ -39,7 +39,7 @@ describe('the RoomAttachmentStore seam', () => {
     // The compiler is doing the real work here: `cdn` is annotated with the
     // interface, so a method the port grew and a remote store could not answer
     // would fail this file before it ran.
-    await expect(cdn.deleteRoom('room1')).resolves.toBeUndefined();
+    await expect(cdn.delete('room1', 'att1', 'bin')).resolves.toBeUndefined();
   });
 
   it('answers put with the absolute URL it chose, untouched by any path logic', async () => {

@@ -524,6 +524,44 @@ describe('RoomComposer — attaching a file', () => {
     expect(held!.attachmentIds).toEqual(['att-1', 'att-2']);
   });
 
+  it('refuses a second Enter while the files are still going up', async () => {
+    // The window: `pendingFiles` is cleared only once the ids are in a message,
+    // so a second Enter during the upload would read the SAME files and send
+    // them again — a duplicate post, or a 409 for ids the first send owns.
+    const transport = createMockTransport();
+    let release!: (value: RoomAttachment[]) => void;
+    vi.mocked(transport.uploadRoomAttachments).mockReturnValue(
+      new Promise<RoomAttachment[]>((resolve) => {
+        release = resolve;
+      })
+    );
+    const field = renderComposer(transport);
+
+    choose(fileInputs()[1]!, [NOTES]);
+    await waitFor(() => expect(screen.getByText('notes.txt')).toBeInTheDocument());
+
+    type(field, 'first');
+    fireEvent.keyDown(field, { key: 'Enter' });
+    // The upload is now in flight and has not answered.
+    await waitFor(() => expect(transport.uploadRoomAttachments).toHaveBeenCalledTimes(1));
+
+    // A second sentence, sent before the first one's files have landed.
+    type(field, 'second');
+    fireEvent.keyDown(field, { key: 'Enter' });
+
+    // Refused, and refused WITHOUT eating the words: no second upload, and the
+    // sentence is still in the box for the person to send a moment later.
+    expect(transport.uploadRoomAttachments).toHaveBeenCalledTimes(1);
+    expect(field.value).toBe('second');
+
+    release([attachment('att-1', 'notes.txt')]);
+    await waitFor(() => expect(transport.postToRoom).toHaveBeenCalledTimes(1));
+    expect(transport.postToRoom).toHaveBeenCalledWith('room-1', {
+      text: 'first',
+      attachmentIds: ['att-1'],
+    });
+  });
+
   it('does not send while a file has failed, and says why', async () => {
     const transport = createMockTransport();
     vi.mocked(transport.uploadRoomAttachments).mockRejectedValue(new Error('Upload failed'));

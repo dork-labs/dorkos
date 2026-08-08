@@ -15,8 +15,7 @@
  * `dork-home.ts` is needed or wanted.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { createHash } from 'crypto';
-import { mkdtemp, rm, readdir, readFile, writeFile, mkdir } from 'fs/promises';
+import { mkdtemp, rm, readdir, readFile, utimes, writeFile, mkdir } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
 import { InvalidRoomAttachmentIdError } from '../room-attachment-store.js';
@@ -24,11 +23,6 @@ import { LocalRoomAttachmentStore } from '../local-room-attachment-store.js';
 
 const BYTES = Buffer.from('the crash log, verbatim\n');
 const OTHER_BYTES = Buffer.from('a different crash log\n');
-
-/** What the ETag is asserted against — the store's hash, computed independently. */
-function shortHash(bytes: Buffer): string {
-  return createHash('sha256').update(bytes).digest('hex').slice(0, 16);
-}
 
 async function drain(stream: NodeJS.ReadableStream): Promise<Buffer> {
   const chunks: Buffer[] = [];
@@ -64,7 +58,7 @@ describe('LocalRoomAttachmentStore', () => {
     expect(await readdir(path.join(dorkHome, 'rooms', 'room1', 'attachments'))).toEqual(['att1']);
   });
 
-  it('round-trips the bytes with the type it was told and a strong ETag', async () => {
+  it('round-trips the bytes with the type it was told and a weak ETag', async () => {
     await store.put('room1', 'att1', 'log', BYTES);
     const stored = await store.get('room1', 'att1', 'log', 'text/plain');
 
@@ -72,18 +66,48 @@ describe('LocalRoomAttachmentStore', () => {
     // The store was TOLD this; it never sniffed the bytes on the way out.
     expect(stored?.contentType).toBe('text/plain');
     expect(stored?.size).toBe(BYTES.byteLength);
-    expect(stored?.etag).toBe(`"${shortHash(BYTES)}"`);
+    // Weak, and derived from one `stat` — the bytes are streamed, never read
+    // into memory to decide whether to send them.
+    expect(stored?.etag).toMatch(/^W\/"[0-9a-f]+-[0-9a-f]+"$/);
     expect(await drain(stored!.stream)).toEqual(BYTES);
   });
 
   it('changes the ETag when the bytes change, so a replaced file is not a stale cache hit', async () => {
     await store.put('room1', 'att1', 'log', BYTES);
     const first = await store.get('room1', 'att1', 'log', 'text/plain');
-    await store.put('room1', 'att1', 'log', OTHER_BYTES);
+    // A different LENGTH, so the validator moves even if the clock does not tick
+    // between two writes in the same millisecond.
+    await store.put('room1', 'att1', 'log', Buffer.concat([OTHER_BYTES, OTHER_BYTES]));
     const second = await store.get('room1', 'att1', 'log', 'text/plain');
 
     expect(second?.etag).not.toBe(first?.etag);
-    expect(second?.etag).toBe(`"${shortHash(OTHER_BYTES)}"`);
+  });
+
+  it('derives the validator from the file’s metadata, not from its content', async () => {
+    // The property that replaced content hashing: the validator comes from one
+    // `stat`, so a 304 costs no read at all. Asserted by moving the MTIME while
+    // leaving the bytes identical — a content hash cannot see that, and this
+    // must.
+    await store.put('room1', 'att1', 'log', BYTES);
+    const before = await store.get('room1', 'att1', 'log', 'text/plain');
+
+    const file = (await store.localPath('room1', 'att1', 'log'))!;
+    const later = new Date(Date.now() + 60_000);
+    await utimes(file, later, later);
+    const after = await store.get('room1', 'att1', 'log', 'text/plain');
+
+    expect(await readFile(file)).toEqual(BYTES);
+    expect(after?.etag).not.toBe(before?.etag);
+  });
+
+  it('hands the stream over unread, so a 304 pays for nothing', async () => {
+    await store.put('room1', 'att1', 'log', BYTES);
+
+    const stored = await store.get('room1', 'att1', 'log', 'text/plain');
+
+    // Draining is the caller's choice; the conditional path destroys it instead.
+    expect(stored?.stream.readableEnded).toBe(false);
+    stored?.stream.destroy();
   });
 
   it('answers a real path from localPath, which really opens', async () => {
@@ -104,23 +128,31 @@ describe('LocalRoomAttachmentStore', () => {
     expect(await store.get('nosuchroom', 'att1', 'log', 'text/plain')).toBeNull();
   });
 
-  it('deletes a room’s files, and deleting again is not an error', async () => {
+  it('deletes one file, and deleting again is not an error', async () => {
     await store.put('room1', 'att1', 'log', BYTES);
-    await store.deleteRoom('room1');
-    await store.deleteRoom('room1');
+    await store.delete('room1', 'att1', 'log');
+    await store.delete('room1', 'att1', 'log');
 
     expect(await store.get('room1', 'att1', 'log', 'text/plain')).toBeNull();
-    // The attachment directory itself is gone, not merely emptied — the room's
-    // own directory is not this store's to remove.
-    await expect(readdir(path.join(dorkHome, 'rooms', 'room1', 'attachments'))).rejects.toThrow();
+    expect(await readdir(path.join(dorkHome, 'rooms', 'room1', 'attachments'))).toEqual([]);
   });
 
-  it('leaves another room alone when one is cleared', async () => {
+  it('leaves this room’s other files, and other rooms, alone', async () => {
     await store.put('room1', 'att1', 'log', BYTES);
-    await store.put('room2', 'att2', 'log', OTHER_BYTES);
-    await store.deleteRoom('room1');
+    await store.put('room1', 'att2', 'log', OTHER_BYTES);
+    await store.put('room2', 'att3', 'log', OTHER_BYTES);
 
-    expect(await store.get('room2', 'att2', 'log', 'text/plain')).not.toBeNull();
+    await store.delete('room1', 'att1', 'log');
+
+    expect(await store.get('room1', 'att2', 'log', 'text/plain')).not.toBeNull();
+    expect(await store.get('room2', 'att3', 'log', 'text/plain')).not.toBeNull();
+  });
+
+  it('treats an unusable id as nothing to delete rather than an error', async () => {
+    // The same asymmetry `get` draws: the caller's intent — that file is not
+    // here any more — is satisfied either way.
+    await expect(store.delete('../escape', 'att1', 'log')).resolves.toBeUndefined();
+    await expect(store.delete('room1', '../escape', 'log')).resolves.toBeUndefined();
   });
 
   it.each(['../escape', 'a/b', '..', '', '.', 'a\0b'])(
@@ -129,7 +161,6 @@ describe('LocalRoomAttachmentStore', () => {
       await expect(store.put(roomId, 'att1', 'log', BYTES)).rejects.toBeInstanceOf(
         InvalidRoomAttachmentIdError
       );
-      await expect(store.deleteRoom(roomId)).rejects.toBeInstanceOf(InvalidRoomAttachmentIdError);
       expect(await store.get(roomId, 'att1', 'log', 'text/plain')).toBeNull();
       expect(await store.localPath(roomId, 'att1', 'log')).toBeNull();
     }

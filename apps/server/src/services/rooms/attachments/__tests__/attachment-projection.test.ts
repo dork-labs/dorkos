@@ -12,7 +12,17 @@
  * that copied every large attachment on every turn.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtemp, mkdir, readFile, readdir, rm, stat, utimes, writeFile } from 'fs/promises';
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  symlink,
+  utimes,
+  writeFile,
+} from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
 import { Readable } from 'stream';
@@ -183,6 +193,26 @@ describe('projecting room attachments', () => {
     await expect(project([ghost])).resolves.toBeUndefined();
   });
 
+  it('refuses to write through a symlink that escapes the agent directory', async () => {
+    // The steer an AGENT can plant: replace its own projection root with a link
+    // to somewhere else, and every layer above still sees a contained relative
+    // path. `realpath` is what sees through it.
+    const outside = await mkdtemp(path.join(tmpdir(), 'dorkos-projection-outside-'));
+    try {
+      await mkdir(path.join(agentPath, '.dork', '.temp'), { recursive: true });
+      await symlink(outside, path.join(agentPath, PROJECTED_ATTACHMENTS_ROOT));
+      const file = await staged();
+
+      // Swallowed like any other projection failure — a turn must not die — so
+      // the assertion is that nothing was written where it was aimed.
+      await expect(project([file])).resolves.toBeUndefined();
+
+      expect(await readdir(outside)).toEqual([]);
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
   describe('when the bytes are not on this machine', () => {
     /**
      * A store that keeps nothing locally — `localPath` answering `null` is the
@@ -198,7 +228,7 @@ describe('projecting room attachments', () => {
         size: BYTES.byteLength,
       }),
       localPath: async () => null,
-      deleteRoom: async () => {},
+      delete: async () => {},
     };
 
     it('fetches the bytes instead of linking them', async () => {
